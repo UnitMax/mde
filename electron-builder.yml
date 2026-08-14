@@ -1,0 +1,33 @@
+appId: dev.mde.app
+productName: mde
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**
+  - package.json
+  - '!**/*.{ts,map,md}'
+# node-pty ships a .node binary; it cannot be loaded from inside an asar archive.
+asarUnpack:
+  - '**/node_modules/node-pty/**'
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: ${productName}-${version}-setup.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: mde
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  category: Development
+  synopsis: Agentic dev environment
+  artifactName: ${productName}-${version}.${ext}
