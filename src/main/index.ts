@@ -4,6 +4,7 @@ import { IpcEvents } from '@shared/ipc'
 import { registerIpcHandlers } from './ipc'
 import { PtyManager } from './pty/manager'
 import { initProjectStore } from './store/projects'
+import { adjustZoomFactor, DEFAULT_ZOOM_FACTOR, getZoomAction } from './zoom'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -49,6 +50,14 @@ function createWindow(): void {
     return { action: 'deny' }
   })
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault())
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    const action = getZoomAction(input)
+    if (!action) return
+
+    event.preventDefault()
+    const current = mainWindow?.webContents.getZoomFactor() ?? DEFAULT_ZOOM_FACTOR
+    mainWindow?.webContents.setZoomFactor(adjustZoomFactor(current, action))
+  })
 
   const devServerUrl = process.env.ELECTRON_RENDERER_URL
   if (!app.isPackaged && devServerUrl) {
