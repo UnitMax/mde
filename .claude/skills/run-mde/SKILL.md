@@ -9,6 +9,21 @@ full behavioural suite in `verify.mjs`.
 
 All paths are relative to the repo root.
 
+## Scope — read this before trusting a green run
+
+**Both scripts are Linux-only, and they exercise only `kind: 'native'`
+projects.** `verify.mjs` counts shells with `ps` via bash; `driver.mjs` reads
+`/dev/stdin`. Neither runs on Windows.
+
+That means the WSL paths — distro enumeration, `wslpath`, validating a folder
+inside a distro, and the `wsl.exe -d <distro> --cd <path> -- bash -lic` launch —
+are **not covered here at all**, and those are the parts most worth covering.
+They need a Windows host and a suite that speaks PowerShell and `tasklist`.
+The pure functions behind them are covered by `npm test`; the runtime is not.
+
+A green run here says the app's terminal plumbing works on Linux. It says
+nothing about Windows.
+
 ## Prerequisites
 
 ```sh
@@ -115,8 +130,11 @@ real `projects.json`. Override with `MDE_USER_DATA`.
   write a file from the shell and read it from Node, which is what `verify.mjs`
   does throughout.
 - **WSL projects cannot be exercised on Linux.** `kind: 'wsl'` is a Windows-only
-  path; `buildLaunchSpec` throws off Windows by design. The pure functions are
-  covered by `npm test`; the rest needs a Windows host.
+  path; `buildLaunchSpec` throws off Windows by design. See Scope above.
+- **The sidebar is addressed through `data-testid`,** not styling classes:
+  `project-row`, `project-name`, and `project-status` (which also carries
+  `data-status="none|running|exited"`). Keep those attributes when restyling —
+  hooking Tailwind utilities instead makes a restyle look like a regression.
 
 ## Troubleshooting
 

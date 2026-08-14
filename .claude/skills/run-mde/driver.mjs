@@ -4,6 +4,10 @@
 //   node .claude/skills/run-mde/driver.mjs
 //
 // Wrap in tmux for interactive use; see SKILL.md.
+//
+// LINUX ONLY, because the REPL reads /dev/stdin directly (Electron takes over
+// the normal stdin stream). Porting to Windows means replacing that read; the
+// rest is platform-agnostic.
 import { _electron as electron } from 'playwright-core'
 import * as readline from 'node:readline'
 import * as fs from 'node:fs'
@@ -17,10 +21,7 @@ const USER_DATA = process.env.MDE_USER_DATA || path.join(os.tmpdir(), 'mde-drive
 
 fs.mkdirSync(SHOT_DIR, { recursive: true })
 
-const electronBin =
-  process.platform === 'win32'
-    ? path.join(APP_DIR, 'node_modules/electron/dist/electron.exe')
-    : path.join(APP_DIR, 'node_modules/electron/dist/electron')
+const electronBin = path.join(APP_DIR, 'node_modules/electron/dist/electron')
 
 let app = null
 let page = null
@@ -30,13 +31,13 @@ const need = () => {
   if (!page) throw new Error('launch first')
 }
 
-/** Sidebar rows, with the status-dot colour so PTY state is visible. */
+/** Sidebar rows, including PTY state from the status dot. */
 const readRows = () =>
   page.evaluate(() =>
-    [...document.querySelectorAll('aside [role="button"]')].map((el) => ({
-      name: el.querySelector('.min-w-0 > div')?.textContent ?? '',
-      subtitle: el.querySelector('.min-w-0 > div:nth-child(2)')?.textContent ?? '',
-      dot: getComputedStyle(el.querySelector('span')).backgroundColor,
+    [...document.querySelectorAll('[data-testid="project-row"]')].map((el) => ({
+      name: el.querySelector('[data-testid="project-name"]')?.textContent ?? '',
+      subtitle: el.querySelector('[data-testid="project-name"] + div')?.textContent ?? '',
+      status: el.querySelector('[data-testid="project-status"]')?.dataset.status ?? '',
       selected: el.className.includes('bg-active')
     }))
   )
@@ -105,7 +106,7 @@ const COMMANDS = {
   async select(name) {
     need()
     const hit = await page.evaluate((wanted) => {
-      const row = [...document.querySelectorAll('aside [role="button"]')].find((el) =>
+      const row = [...document.querySelectorAll('[data-testid="project-row"]')].find((el) =>
         el.textContent?.includes(wanted)
       )
       row?.click()
@@ -200,7 +201,7 @@ const COMMANDS = {
   async menu(name) {
     need()
     await page.evaluate((wanted) => {
-      const row = [...document.querySelectorAll('aside [role="button"]')].find((el) =>
+      const row = [...document.querySelectorAll('[data-testid="project-row"]')].find((el) =>
         el.textContent?.includes(wanted)
       )
       row?.dispatchEvent(

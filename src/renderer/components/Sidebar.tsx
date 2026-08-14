@@ -37,7 +37,14 @@ const STATUS_STYLE: Record<PtyStatus, { dot: string; label: string }> = {
 
 function StatusDot({ status }: { status: PtyStatus }): JSX.Element {
   const style = STATUS_STYLE[status]
-  return <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', style.dot)} title={style.label} />
+  return (
+    <span
+      data-testid="project-status"
+      data-status={status}
+      className={cn('h-1.5 w-1.5 shrink-0 rounded-full', style.dot)}
+      title={style.label}
+    />
+  )
 }
 
 interface ProjectRowProps {
@@ -87,6 +94,7 @@ function ProjectRow({ project, status, selected, onSelect }: ProjectRowProps): J
             ref={rowRef}
             role="button"
             tabIndex={0}
+            data-testid="project-row"
             onClick={onSelect}
             onKeyDown={(event) => {
               if (event.key === 'Enter' || event.key === ' ') {
@@ -120,7 +128,9 @@ function ProjectRow({ project, status, selected, onSelect }: ProjectRowProps): J
                   className="h-5 w-full rounded-sm border border-accent bg-bg px-1 text-[13px] text-fg outline-none"
                 />
               ) : (
-                <div className="truncate text-[13px] leading-tight">{project.name}</div>
+                <div data-testid="project-name" className="truncate text-[13px] leading-tight">
+                  {project.name}
+                </div>
               )}
               <div className="truncate text-[11px] leading-tight text-fg-subtle" title={project.path}>
                 {subtitle}

@@ -1,15 +1,26 @@
 // End-to-end check of the terminal behaviours that only a running window can
 // prove. Exits non-zero on any failure.
 //
-//   node .claude/skills/run-mde/verify.mjs           (dev tree, out/)
+//   node .claude/skills/run-mde/verify.mjs            (dev tree, out/)
 //   node .claude/skills/run-mde/verify.mjs --packaged (dist/linux-unpacked)
 //
 // Requires `npx electron-vite build` (or `npm run build` for --packaged) first.
+//
+// LINUX ONLY. The orphan check shells out to ps via bash, and the shell it
+// drives is the POSIX branch of buildLaunchSpec. It therefore does NOT cover
+// the WSL paths, which are the ones most worth covering — those need a Windows
+// host and a suite that speaks PowerShell and tasklist. Do not read a green run
+// here as evidence about Windows.
 import { _electron as electron } from 'playwright-core'
 import { execFileSync } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
+
+if (process.platform !== 'linux') {
+  console.error(`verify.mjs is Linux-only; this is ${process.platform}. See the header comment.`)
+  process.exit(2)
+}
 
 const APP_DIR = path.resolve(import.meta.dirname, '../../..')
 const PACKAGED = process.argv.includes('--packaged')
@@ -47,17 +58,16 @@ function shellPids() {
 
 function launchOptions() {
   if (PACKAGED) {
-    const bin =
-      process.platform === 'win32'
-        ? path.join(APP_DIR, 'dist/win-unpacked/mde.exe')
-        : path.join(APP_DIR, 'dist/linux-unpacked/mde')
-    return { executablePath: bin, args: [`--user-data-dir=${USER_DATA}`] }
+    return {
+      executablePath: path.join(APP_DIR, 'dist/linux-unpacked/mde'),
+      args: [`--user-data-dir=${USER_DATA}`]
+    }
   }
-  const bin =
-    process.platform === 'win32'
-      ? path.join(APP_DIR, 'node_modules/electron/dist/electron.exe')
-      : path.join(APP_DIR, 'node_modules/electron/dist/electron')
-  return { executablePath: bin, args: ['.', `--user-data-dir=${USER_DATA}`], cwd: APP_DIR }
+  return {
+    executablePath: path.join(APP_DIR, 'node_modules/electron/dist/electron'),
+    args: ['.', `--user-data-dir=${USER_DATA}`],
+    cwd: APP_DIR
+  }
 }
 
 async function launch() {
@@ -78,8 +88,8 @@ async function term(page, text, settle = 700) {
 
 const rows = (page) =>
   page.evaluate(() =>
-    [...document.querySelectorAll('aside [role="button"]')].map(
-      (el) => el.querySelector('.min-w-0 > div')?.textContent ?? ''
+    [...document.querySelectorAll('[data-testid="project-row"]')].map(
+      (el) => el.querySelector('[data-testid="project-name"]')?.textContent ?? ''
     )
   )
 
@@ -106,7 +116,7 @@ async function createProject(page, dir, name) {
 
 async function select(page, name) {
   await page.evaluate((wanted) => {
-    ;[...document.querySelectorAll('aside [role="button"]')]
+    ;[...document.querySelectorAll('[data-testid="project-row"]')]
       .find((el) => el.textContent?.includes(wanted))
       ?.click()
   }, name)
@@ -224,7 +234,7 @@ await select(page, 'alpha')
 await term(page, 'echo alpha-live', 800)
 const pidsWithAlpha = shellPids()
 await page.evaluate(() => {
-  ;[...document.querySelectorAll('aside [role="button"]')]
+  ;[...document.querySelectorAll('[data-testid="project-row"]')]
     .find((el) => el.textContent?.includes('alpha'))
     ?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 120, clientY: 120 }))
 })
