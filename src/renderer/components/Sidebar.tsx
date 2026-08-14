@@ -141,7 +141,9 @@ function ProjectRow({ project, status, selected, onSelect }: ProjectRowProps): J
           </div>
         </ContextMenuTrigger>
 
-        <ContextMenuContent>
+        {/* Radix would pull focus back to the row on close, stealing it from
+            the rename input and from the remove confirmation. */}
+        <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
           <ContextMenuItem
             onSelect={() => {
               setDraftName(project.name)

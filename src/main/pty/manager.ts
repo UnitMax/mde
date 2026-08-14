@@ -61,11 +61,14 @@ export class PtyManager {
     return out
   }
 
-  /** Creates the PTY if there is not already a live one. Idempotent. */
+  /**
+   * Creates the PTY on first view of a project. Idempotent, and deliberately
+   * never respawns: an exited shell stays exited until the user asks for a
+   * restart, so switching back to the project does not silently revive it.
+   */
   ensure(project: Project, size: PtySize): PtyStatus {
     const existing = this.sessions.get(project.id)
-    if (existing && existing.status === 'running') return 'running'
-    if (existing) this.dispose(project.id)
+    if (existing) return existing.status
 
     const spec = buildLaunchSpec(project, launchContext())
     const { cols, rows } = clampSize(size)
