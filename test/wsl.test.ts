@@ -44,6 +44,35 @@ describe('parseDistroList', () => {
   })
 })
 
+/**
+ * Byte-for-byte capture of `wsl.exe --list --verbose` from a real Windows 11
+ * host (WSL_UTF8 unset, so UTF-16LE). Pins both the decoder and the column
+ * widths the parser has to cope with.
+ */
+const REAL_UTF16LE_LIST = Buffer.from(
+  'IAAgAE4AQQBNAEUAIAAgACAAIAAgACAAIAAgACAAIAAgACAAUwBUAEEAVABFACAAIAAgACAAIAAgACAAIAAgACAAIABWAEUAUgBTAEkATwBOAA0ACgAqACAAVQBiAHUAbgB0AHUALQAyADQALgAwADQAIAAgACAAIABSAHUAbgBuAGkAbgBnACAAIAAgACAAIAAgACAAIAAgADIADQAKAA==',
+  'base64'
+)
+
+describe('real wsl.exe output', () => {
+  it('decodes and parses a capture from an actual Windows host', () => {
+    const decoded = decodeWslOutput(REAL_UTF16LE_LIST)
+    expect(decoded).toContain('Ubuntu-24.04')
+    expect(parseDistroList(decoded)).toEqual([
+      { name: 'Ubuntu-24.04', state: 'Running', version: 2, isDefault: true }
+    ])
+  })
+
+  it('would silently produce garbage if the UTF-16 bytes were read as UTF-8', () => {
+    // The failure mode the WSL_UTF8 env var exists to prevent.
+    const naive = REAL_UTF16LE_LIST.toString('utf8')
+    expect(naive.includes(String.fromCharCode(0))).toBe(true)
+    expect(parseDistroList(naive)).not.toEqual([
+      { name: 'Ubuntu-24.04', state: 'Running', version: 2, isDefault: true }
+    ])
+  })
+})
+
 describe('decodeWslOutput', () => {
   it('decodes UTF-8 output as-is', () => {
     expect(decodeWslOutput(Buffer.from('Ubuntu-24.04\n', 'utf8'))).toBe('Ubuntu-24.04\n')
