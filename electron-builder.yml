@@ -11,6 +11,7 @@ files:
 asarUnpack:
   - '**/node_modules/node-pty/**'
 win:
+  icon: build/icon.ico
   target:
     - target: nsis
       arch: [x64]
@@ -23,6 +24,7 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: mde
 linux:
+  icon: build/icon.png
   target:
     - target: AppImage
       arch: [x64]
@@ -30,4 +32,6 @@ linux:
       arch: [x64]
   category: Development
   synopsis: Agentic dev environment
+  syncDesktopName: true
+  maintainer: UnitMax <105129888+UnitMax@users.noreply.github.com>
   artifactName: ${productName}-${version}.${ext}

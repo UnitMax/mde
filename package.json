@@ -3,7 +3,11 @@
   "version": "0.1.0",
   "description": "Agentic dev environment — project sidebar and a persistent terminal per project, with first-class WSL support",
   "main": "./out/main/index.js",
-  "author": "mde",
+  "homepage": "https://github.com/UnitMax/mde",
+  "author": {
+    "name": "UnitMax",
+    "email": "105129888+UnitMax@users.noreply.github.com"
+  },
   "license": "MIT",
   "private": true,
   "scripts": {
@@ -55,5 +59,6 @@
     "vite": "^7.3.6",
     "vitest": "^4.1.10",
     "zustand": "^5.0.15"
-  }
+  },
+  "desktopName": "mde.desktop"
 }
