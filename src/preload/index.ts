@@ -13,17 +13,25 @@ const api: RendererApi = {
     info: () => ipcRenderer.invoke(IpcChannels.platformInfo)
   },
   projects: {
-    list: () => ipcRenderer.invoke(IpcChannels.projectsList),
     create: (input) => ipcRenderer.invoke(IpcChannels.projectsCreate, input),
     update: (req) => ipcRenderer.invoke(IpcChannels.projectsUpdate, req),
     remove: (id) => ipcRenderer.invoke(IpcChannels.projectsRemove, id)
+  },
+  workspace: {
+    list: () => ipcRenderer.invoke(IpcChannels.workspaceList)
+  },
+  sessions: {
+    create: (input) => ipcRenderer.invoke(IpcChannels.sessionsCreate, input),
+    update: (req) => ipcRenderer.invoke(IpcChannels.sessionsUpdate, req),
+    move: (req) => ipcRenderer.invoke(IpcChannels.sessionsMove, req),
+    remove: (id) => ipcRenderer.invoke(IpcChannels.sessionsRemove, id)
   },
   pty: {
     ensure: (req) => ipcRenderer.invoke(IpcChannels.ptyEnsure, req),
     write: (req) => ipcRenderer.invoke(IpcChannels.ptyWrite, req),
     resize: (req) => ipcRenderer.invoke(IpcChannels.ptyResize, req),
     restart: (req) => ipcRenderer.invoke(IpcChannels.ptyRestart, req),
-    dispose: (projectId) => ipcRenderer.invoke(IpcChannels.ptyDispose, projectId),
+    dispose: (sessionId) => ipcRenderer.invoke(IpcChannels.ptyDispose, sessionId),
     statuses: () => ipcRenderer.invoke(IpcChannels.ptyStatuses),
     onData: (listener) => subscribe<PtyDataChunk>(IpcEvents.ptyData, listener),
     onExit: (listener) => subscribe<PtyExitInfo>(IpcEvents.ptyExit, listener)
@@ -36,7 +44,7 @@ const api: RendererApi = {
     browse: () => ipcRenderer.invoke(IpcChannels.pathBrowse),
     resolve: (req) => ipcRenderer.invoke(IpcChannels.pathResolve, req),
     validate: (req) => ipcRenderer.invoke(IpcChannels.pathValidate, req),
-    reveal: (projectId) => ipcRenderer.invoke(IpcChannels.pathReveal, projectId)
+    reveal: (sessionId) => ipcRenderer.invoke(IpcChannels.pathReveal, sessionId)
   }
 }
 

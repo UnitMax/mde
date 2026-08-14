@@ -1,4 +1,4 @@
-import type { Project } from '@shared/types'
+import type { Session } from '@shared/types'
 
 export interface LaunchSpec {
   file: string
@@ -21,26 +21,26 @@ const DEFAULT_WINDOWS_SHELL = 'powershell.exe'
 const DEFAULT_POSIX_SHELL = '/bin/bash'
 
 /**
- * Builds the spawn command for a project. This is the seam a future OpenCode
+ * Builds the spawn command for a session. This is the seam a future OpenCode
  * integration slots into — nothing else needs to know how a shell is started.
  */
-export function buildLaunchSpec(project: Project, context: LaunchContext): LaunchSpec {
-  if (project.kind === 'wsl') {
+export function buildLaunchSpec(session: Session, context: LaunchContext): LaunchSpec {
+  if (session.kind === 'wsl') {
     if (context.platform !== 'win32') {
-      throw new Error('WSL projects can only be launched on Windows')
+      throw new Error('WSL sessions can only be launched on Windows')
     }
-    if (!project.distro) {
-      throw new Error(`WSL project "${project.name}" has no distro`)
+    if (!session.distro) {
+      throw new Error(`WSL session "${session.name}" has no distro`)
     }
 
-    const shell = project.shell ?? 'bash'
+    const shell = session.shell ?? 'bash'
     return {
       file: 'wsl.exe',
       args: [
         '-d',
-        project.distro,
+        session.distro,
         '--cd',
-        project.path,
+        session.path,
         '--',
         shell,
         // A login+interactive shell is required: nvm/mise/bun/asdf put their
@@ -51,21 +51,21 @@ export function buildLaunchSpec(project: Project, context: LaunchContext): Launc
       ]
       // cwd is deliberately absent: --cd sets the working directory inside the
       // distro, and the Windows-side cwd is irrelevant (and must be a valid
-      // Windows path, which project.path is not).
+      // Windows path, which session.path is not).
     }
   }
 
   if (context.platform === 'win32') {
     return {
-      file: project.shell ?? DEFAULT_WINDOWS_SHELL,
+      file: session.shell ?? DEFAULT_WINDOWS_SHELL,
       args: [],
-      cwd: project.path
+      cwd: session.path
     }
   }
 
   return {
-    file: project.shell ?? context.defaultShell ?? DEFAULT_POSIX_SHELL,
+    file: session.shell ?? context.defaultShell ?? DEFAULT_POSIX_SHELL,
     args: ['-l'],
-    cwd: project.path
+    cwd: session.path
   }
 }

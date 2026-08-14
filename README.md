@@ -1,7 +1,7 @@
 # mde
 
-Cross-platform desktop shell for an agentic dev environment: a project sidebar and one
-persistent terminal per project, with first-class WSL support on Windows.
+Cross-platform desktop shell for an agentic dev environment: grouped projects containing
+persistent terminal sessions, with first-class WSL support on Windows.
 
 This is v1 — the shell only. There is no OpenCode integration, no git/PR features, and no
 settings screen. The launch command lives in a single pure function
@@ -48,24 +48,29 @@ src/
   shared/    IPC channel names + payload types, imported by both sides so they cannot drift
 ```
 
-### Terminal sessions
+### Projects and terminal sessions
 
-`src/renderer/terminal/sessions.ts` keeps one `xterm` instance per project id in a plain Map,
-outside React. Selecting a different project re-parents that terminal's container element
-rather than disposing it, so the process, its scrollback and its cursor position all survive.
-The PTY itself lives in the main process and is never touched by a project switch — only by
-removing the project, restarting explicitly, or quitting.
+Projects are label-only groups. Sessions own the name, path, platform, distro and optional shell
+override. `src/renderer/terminal/sessions.ts` keeps one `xterm` instance per session id in a
+plain Map, outside React. Selecting a different session re-parents that terminal's container
+element rather than disposing it, so the process, its scrollback and its cursor position all
+survive. The PTY itself lives in the main process and is never touched by a session switch —
+only by removing the session/project, restarting explicitly, or quitting.
+
+The workspace is stored as `workspace.json` with separate `projects` and `sessions` arrays. This
+early POC intentionally starts with an empty workspace if only the previous flat project store is
+present; no migration is attempted.
 
 ### WSL
 
 - Every `wsl.exe` invocation goes through `runWsl()` in `src/main/wsl/distros.ts`, which sets
   `WSL_UTF8=1`. Without it `wsl.exe` emits UTF-16LE and every string comparison downstream
   silently fails.
-- WSL projects launch as
+- WSL sessions launch as
   `wsl.exe -d <distro> --cd <path> -- bash -lic 'exec bash -i'`. The login+interactive shell
   is required: nvm/mise/bun/asdf put their shims on `PATH` from the login profile.
-- Project paths are stored in the target's own format. `wslpath` is used only at the UI
+- Session paths are stored in the target's own format. `wslpath` is used only at the UI
   boundary — when the Windows folder picker returns a `\\wsl$\` / `\\wsl.localhost\` UNC path
   or a drive path, and when revealing a folder in Explorer.
-- A project whose files sit under `/mnt/c` gets an inline warning about 9p performance. It is
+- A session whose files sit under `/mnt/c` gets an inline warning about 9p performance. It is
   a warning, not a block.

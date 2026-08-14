@@ -1,6 +1,10 @@
 import { useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import {
+  ChevronDown,
+  ChevronRight,
+  Folder,
   FolderOpen,
+  FolderPlus,
   MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
@@ -8,7 +12,7 @@ import {
   Plus,
   Trash2
 } from 'lucide-react'
-import type { Project, PtyStatus } from '@shared/types'
+import type { Project, PtyStatus, Session } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import {
   AlertDialog,
@@ -26,8 +30,17 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger
 } from '@/components/ui/context-menu'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { useProjects } from '@/store/projects'
+import { useWorkspace } from '@/store/workspace'
 
 const STATUS_STYLE: Record<PtyStatus, { dot: string; label: string }> = {
   none: { dot: 'bg-fg-subtle', label: 'No shell running' },
@@ -39,7 +52,7 @@ function StatusDot({ status }: { status: PtyStatus }): JSX.Element {
   const style = STATUS_STYLE[status]
   return (
     <span
-      data-testid="project-status"
+      data-testid="session-status"
       data-status={status}
       className={cn('h-1.5 w-1.5 shrink-0 rounded-full', style.dot)}
       title={style.label}
@@ -47,31 +60,34 @@ function StatusDot({ status }: { status: PtyStatus }): JSX.Element {
   )
 }
 
-interface ProjectRowProps {
-  project: Project
+interface SessionRowProps {
+  session: Session
   status: PtyStatus
   selected: boolean
   onSelect: () => void
 }
 
-function ProjectRow({ project, status, selected, onSelect }: ProjectRowProps): JSX.Element {
-  const renameProject = useProjects((state) => state.renameProject)
-  const removeProject = useProjects((state) => state.removeProject)
-  const revealProject = useProjects((state) => state.revealProject)
+function SessionRow({ session, status, selected, onSelect }: SessionRowProps): JSX.Element {
+  const renameSession = useWorkspace((state) => state.renameSession)
+  const moveSession = useWorkspace((state) => state.moveSession)
+  const removeSession = useWorkspace((state) => state.removeSession)
+  const revealSession = useWorkspace((state) => state.revealSession)
+  const projects = useWorkspace((state) => state.projects)
 
   const rowRef = useRef<HTMLDivElement>(null)
   const [renaming, setRenaming] = useState(false)
-  const [draftName, setDraftName] = useState(project.name)
+  const [draftName, setDraftName] = useState(session.name)
   const [confirmingRemove, setConfirmingRemove] = useState(false)
+  const [moving, setMoving] = useState(false)
+  const [targetProjectId, setTargetProjectId] = useState(session.projectId)
 
   const commitRename = (): void => {
     setRenaming(false)
     const name = draftName.trim()
-    if (name && name !== project.name) void renameProject(project.id, name)
-    else setDraftName(project.name)
+    if (name && name !== session.name) void renameSession(session.id, name)
+    else setDraftName(session.name)
   }
 
-  // Lets the hover "…" button open the very same menu as a right-click.
   const openMenuFromButton = (event: ReactMouseEvent<HTMLButtonElement>): void => {
     event.stopPropagation()
     const rect = event.currentTarget.getBoundingClientRect()
@@ -84,7 +100,16 @@ function ProjectRow({ project, status, selected, onSelect }: ProjectRowProps): J
     )
   }
 
-  const subtitle = project.kind === 'wsl' ? (project.distro ?? 'WSL') : 'Local'
+  const move = async (): Promise<void> => {
+    if (!targetProjectId || targetProjectId === session.projectId) {
+      setMoving(false)
+      return
+    }
+    await moveSession(session.id, targetProjectId)
+    setMoving(false)
+  }
+
+  const location = session.kind === 'wsl' ? `${session.distro ?? 'WSL'} · ${session.path}` : session.path
 
   return (
     <>
@@ -94,7 +119,7 @@ function ProjectRow({ project, status, selected, onSelect }: ProjectRowProps): J
             ref={rowRef}
             role="button"
             tabIndex={0}
-            data-testid="project-row"
+            data-testid="session-row"
             onClick={onSelect}
             onKeyDown={(event) => {
               if (event.key === 'Enter' || event.key === ' ') {
@@ -103,7 +128,7 @@ function ProjectRow({ project, status, selected, onSelect }: ProjectRowProps): J
               }
             }}
             className={cn(
-              'group flex w-full cursor-default items-center gap-2 rounded px-2 py-1.5 text-left',
+              'group ml-3 flex w-[calc(100%-0.75rem)] cursor-default items-center gap-2 rounded px-2 py-1.5 text-left',
               selected ? 'bg-active text-fg' : 'text-fg-muted hover:bg-hover hover:text-fg'
             )}
           >
@@ -119,7 +144,7 @@ function ProjectRow({ project, status, selected, onSelect }: ProjectRowProps): J
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') commitRename()
                     if (event.key === 'Escape') {
-                      setDraftName(project.name)
+                      setDraftName(session.name)
                       setRenaming(false)
                     }
                     event.stopPropagation()
@@ -128,19 +153,19 @@ function ProjectRow({ project, status, selected, onSelect }: ProjectRowProps): J
                   className="h-5 w-full rounded-sm border border-accent bg-bg px-1 text-[13px] text-fg outline-none"
                 />
               ) : (
-                <div data-testid="project-name" className="truncate text-[13px] leading-tight">
-                  {project.name}
+                <div data-testid="session-name" className="truncate text-[13px] leading-tight">
+                  {session.name}
                 </div>
               )}
-              <div className="truncate text-[11px] leading-tight text-fg-subtle" title={project.path}>
-                {subtitle}
+              <div className="truncate text-[11px] leading-tight text-fg-subtle" title={location}>
+                {location}
               </div>
             </div>
 
             <button
               type="button"
               onClick={openMenuFromButton}
-              title="Project actions"
+              title="Session actions"
               className={cn(
                 'shrink-0 rounded p-0.5 text-fg-subtle opacity-0 transition-opacity',
                 'hover:bg-elevated hover:text-fg focus:opacity-100 group-hover:opacity-100'
@@ -151,8 +176,171 @@ function ProjectRow({ project, status, selected, onSelect }: ProjectRowProps): J
           </div>
         </ContextMenuTrigger>
 
-        {/* Radix would pull focus back to the row on close, stealing it from
-            the rename input and from the remove confirmation. */}
+        <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
+          <ContextMenuItem
+            onSelect={() => {
+              setDraftName(session.name)
+              setRenaming(true)
+            }}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Rename
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => void revealSession(session.id)}>
+            <FolderOpen className="h-3.5 w-3.5" />
+            Reveal in file manager
+          </ContextMenuItem>
+          <ContextMenuItem
+            onSelect={() => {
+              setTargetProjectId(session.projectId)
+              setMoving(true)
+            }}
+          >
+            <Folder className="h-3.5 w-3.5" />
+            Move to project
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem destructive onSelect={() => setConfirmingRemove(true)}>
+            <Trash2 className="h-3.5 w-3.5" />
+            Remove session
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+
+      <Dialog open={moving} onOpenChange={setMoving}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Move session</DialogTitle>
+            <DialogDescription>Choose the project label for “{session.name}”.</DialogDescription>
+          </DialogHeader>
+          <Select value={targetProjectId} onValueChange={setTargetProjectId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select a project" />
+            </SelectTrigger>
+            <SelectContent>
+              {projects.map((project) => (
+                <SelectItem key={project.id} value={project.id}>
+                  {project.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <DialogFooter>
+            <Button variant="secondary" size="sm" onClick={() => setMoving(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={targetProjectId === session.projectId}
+              onClick={() => void move()}
+            >
+              Move
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={confirmingRemove} onOpenChange={setConfirmingRemove}>
+        <AlertDialogContent>
+          <AlertDialogTitle>Remove “{session.name}”?</AlertDialogTitle>
+          <AlertDialogDescription>
+            The session and its terminal process are removed from mde. Nothing on disk is deleted.
+          </AlertDialogDescription>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void removeSession(session.id)}>
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  )
+}
+
+interface ProjectGroupProps {
+  project: Project
+  sessions: Session[]
+  statuses: Record<string, PtyStatus>
+  selectedSessionId: string | null
+  onSelectSession: (id: string) => void
+  onNewSession: (projectId: string) => void
+}
+
+function ProjectGroup({
+  project,
+  sessions,
+  statuses,
+  selectedSessionId,
+  onSelectSession,
+  onNewSession
+}: ProjectGroupProps): JSX.Element {
+  const renameProject = useWorkspace((state) => state.renameProject)
+  const removeProject = useWorkspace((state) => state.removeProject)
+  const [collapsed, setCollapsed] = useState(false)
+  const [renaming, setRenaming] = useState(false)
+  const [draftName, setDraftName] = useState(project.name)
+  const [confirmingRemove, setConfirmingRemove] = useState(false)
+
+  const commitRename = (): void => {
+    setRenaming(false)
+    const name = draftName.trim()
+    if (name && name !== project.name) void renameProject(project.id, name)
+    else setDraftName(project.name)
+  }
+
+  return (
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div className="group flex w-full items-center gap-1 rounded px-2 py-1 text-left text-fg-muted hover:bg-hover hover:text-fg">
+            {renaming ? (
+              <input
+                autoFocus
+                value={draftName}
+                onChange={(event) => setDraftName(event.target.value)}
+                onBlur={commitRename}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') commitRename()
+                  if (event.key === 'Escape') {
+                    setDraftName(project.name)
+                    setRenaming(false)
+                  }
+                  event.stopPropagation()
+                }}
+                className="h-6 min-w-0 flex-1 rounded-sm border border-accent bg-bg px-1 text-[13px] text-fg outline-none"
+              />
+            ) : (
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                onClick={() => setCollapsed((value) => !value)}
+                title={collapsed ? 'Expand project' : 'Collapse project'}
+              >
+                {collapsed ? (
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                )}
+                <Folder className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate text-[13px] font-medium">{project.name}</span>
+                <span className="text-[11px] text-fg-subtle">{sessions.length}</span>
+              </button>
+            )}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="ml-auto shrink-0 opacity-0 group-hover:opacity-100"
+              onClick={(event) => {
+                event.stopPropagation()
+                onNewSession(project.id)
+              }}
+              title="New session in this project"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </ContextMenuTrigger>
         <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
           <ContextMenuItem
             onSelect={() => {
@@ -161,31 +349,38 @@ function ProjectRow({ project, status, selected, onSelect }: ProjectRowProps): J
             }}
           >
             <Pencil className="h-3.5 w-3.5" />
-            Rename
-          </ContextMenuItem>
-          <ContextMenuItem onSelect={() => void revealProject(project.id)}>
-            <FolderOpen className="h-3.5 w-3.5" />
-            Reveal in file manager
+            Rename project
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem destructive onSelect={() => setConfirmingRemove(true)}>
             <Trash2 className="h-3.5 w-3.5" />
-            Remove
+            Remove project
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
+
+      {!collapsed &&
+        sessions.map((session) => (
+          <SessionRow
+            key={session.id}
+            session={session}
+            status={statuses[session.id] ?? 'none'}
+            selected={session.id === selectedSessionId}
+            onSelect={() => onSelectSession(session.id)}
+          />
+        ))}
 
       <AlertDialog open={confirmingRemove} onOpenChange={setConfirmingRemove}>
         <AlertDialogContent>
           <AlertDialogTitle>Remove “{project.name}”?</AlertDialogTitle>
           <AlertDialogDescription>
-            The project is removed from mde and its terminal session is killed. Nothing on disk is
-            deleted.
+            This removes the project label, all of its sessions, and their terminal processes.
+            Nothing on disk is deleted.
           </AlertDialogDescription>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={() => void removeProject(project.id)}>
-              Remove
+              Remove project
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -196,15 +391,17 @@ function ProjectRow({ project, status, selected, onSelect }: ProjectRowProps): J
 
 interface SidebarProps {
   onNewProject: () => void
+  onNewSession: (projectId?: string) => void
 }
 
-export function Sidebar({ onNewProject }: SidebarProps): JSX.Element {
-  const projects = useProjects((state) => state.projects)
-  const statuses = useProjects((state) => state.statuses)
-  const selectedId = useProjects((state) => state.selectedId)
-  const select = useProjects((state) => state.select)
-  const collapsed = useProjects((state) => state.sidebarCollapsed)
-  const toggleSidebar = useProjects((state) => state.toggleSidebar)
+export function Sidebar({ onNewProject, onNewSession }: SidebarProps): JSX.Element {
+  const projects = useWorkspace((state) => state.projects)
+  const sessions = useWorkspace((state) => state.sessions)
+  const statuses = useWorkspace((state) => state.statuses)
+  const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
+  const selectSession = useWorkspace((state) => state.selectSession)
+  const collapsed = useWorkspace((state) => state.sidebarCollapsed)
+  const toggleSidebar = useWorkspace((state) => state.toggleSidebar)
 
   if (collapsed) {
     return (
@@ -213,32 +410,52 @@ export function Sidebar({ onNewProject }: SidebarProps): JSX.Element {
           <PanelLeftOpen className="h-4 w-4" />
         </Button>
         <div className="mt-2 flex w-full flex-col items-center gap-1 overflow-y-auto">
-          {projects.map((project) => (
-            <button
-              key={project.id}
-              type="button"
-              onClick={() => select(project.id)}
-              title={`${project.name} — ${project.kind === 'wsl' ? (project.distro ?? 'WSL') : 'Local'}`}
-              className={cn(
-                'relative flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase',
-                project.id === selectedId
-                  ? 'bg-active text-fg'
-                  : 'text-fg-muted hover:bg-hover hover:text-fg'
-              )}
-            >
-              {project.name.slice(0, 2)}
-              <span
-                className={cn(
-                  'absolute -bottom-0.5 right-0.5 h-1.5 w-1.5 rounded-full ring-2 ring-panel',
-                  STATUS_STYLE[statuses[project.id] ?? 'none'].dot
-                )}
-              />
-            </button>
-          ))}
+          {projects.map((project) => {
+            const projectSessions = sessions.filter((session) => session.projectId === project.id)
+            return projectSessions.length > 0 ? (
+              projectSessions.map((session) => (
+                <button
+                  key={session.id}
+                  type="button"
+                  onClick={() => selectSession(session.id)}
+                  title={`${project.name} · ${session.name}`}
+                  className={cn(
+                    'relative flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase',
+                    session.id === selectedSessionId
+                      ? 'bg-active text-fg'
+                      : 'text-fg-muted hover:bg-hover hover:text-fg'
+                  )}
+                >
+                  {session.name.slice(0, 2)}
+                  <span
+                    className={cn(
+                      'absolute -bottom-0.5 right-0.5 h-1.5 w-1.5 rounded-full ring-2 ring-panel',
+                      STATUS_STYLE[statuses[session.id] ?? 'none'].dot
+                    )}
+                  />
+                </button>
+              ))
+            ) : (
+              <button
+                key={project.id}
+                type="button"
+                onClick={() => onNewSession(project.id)}
+                title={`${project.name} · New session`}
+                className="flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase text-fg-muted hover:bg-hover hover:text-fg"
+              >
+                {project.name.slice(0, 2)}
+              </button>
+            )
+          })}
         </div>
-        <Button variant="ghost" size="icon" className="mt-auto" onClick={onNewProject} title="New project">
-          <Plus className="h-4 w-4" />
-        </Button>
+        <div className="mt-auto flex flex-col gap-1">
+          <Button variant="ghost" size="icon" onClick={() => onNewSession()} title="New session">
+            <Plus className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" onClick={onNewProject} title="New project">
+            <FolderPlus className="h-4 w-4" />
+          </Button>
+        </div>
       </aside>
     )
   }
@@ -259,8 +476,19 @@ export function Sidebar({ onNewProject }: SidebarProps): JSX.Element {
         </Button>
       </div>
 
-      <div className="px-3 pb-1 pt-3 text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
-        Projects
+      <div className="flex items-center px-3 pb-1 pt-3">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
+          Projects
+        </span>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="ml-auto"
+          onClick={onNewProject}
+          title="New project"
+        >
+          <FolderPlus className="h-3.5 w-3.5" />
+        </Button>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
@@ -268,21 +496,23 @@ export function Sidebar({ onNewProject }: SidebarProps): JSX.Element {
           <p className="px-2 py-1 text-xs text-fg-subtle">No projects yet.</p>
         ) : (
           projects.map((project) => (
-            <ProjectRow
+            <ProjectGroup
               key={project.id}
               project={project}
-              status={statuses[project.id] ?? 'none'}
-              selected={project.id === selectedId}
-              onSelect={() => select(project.id)}
+              sessions={sessions.filter((session) => session.projectId === project.id)}
+              statuses={statuses}
+              selectedSessionId={selectedSessionId}
+              onSelectSession={selectSession}
+              onNewSession={(projectId) => onNewSession(projectId)}
             />
           ))
         )}
       </div>
 
       <div className="shrink-0 border-t border-line p-2">
-        <Button variant="secondary" size="sm" className="w-full" onClick={onNewProject}>
+        <Button variant="secondary" size="sm" className="w-full" onClick={() => onNewSession()}>
           <Plus className="h-3.5 w-3.5" />
-          New project
+          New session
         </Button>
       </div>
     </aside>

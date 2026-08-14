@@ -6,7 +6,6 @@ import {
   parseWslUncPath,
   uncPathFor
 } from '../src/main/wsl/paths'
-import { validateProject, validateProjectList } from '../src/main/store/projects'
 
 // Exactly the shape wsl.exe --list --verbose emits with WSL_UTF8=1 set.
 const LIST_OUTPUT = [
@@ -133,40 +132,5 @@ describe('path classification', () => {
     expect(uncPathFor('Ubuntu-24.04', '/home/me/src')).toBe(
       '\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\src'
     )
-  })
-})
-
-describe('project validation', () => {
-  const valid = {
-    id: 'abc',
-    name: 'app',
-    kind: 'wsl',
-    distro: 'Ubuntu-24.04',
-    path: '/home/me/src/app',
-    createdAt: '2026-01-01T00:00:00.000Z'
-  }
-
-  it('accepts a well-formed project', () => {
-    expect(validateProject(valid)).toEqual(valid)
-  })
-
-  it('rejects a WSL project with no distro', () => {
-    expect(validateProject({ ...valid, distro: undefined })).toBeNull()
-  })
-
-  it('rejects unknown kinds and missing fields', () => {
-    expect(validateProject({ ...valid, kind: 'ssh' })).toBeNull()
-    expect(validateProject({ ...valid, path: '' })).toBeNull()
-    expect(validateProject(null)).toBeNull()
-    expect(validateProject('nope')).toBeNull()
-  })
-
-  it('drops malformed and duplicate entries instead of throwing', () => {
-    const list = validateProjectList([valid, { junk: true }, valid, null])
-    expect(list).toHaveLength(1)
-  })
-
-  it('returns an empty list when the file is not an array', () => {
-    expect(validateProjectList({ projects: [] })).toEqual([])
   })
 })

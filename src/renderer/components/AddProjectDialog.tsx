@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
-import { useProjects } from '@/store/projects'
+import { useWorkspace } from '@/store/workspace'
 
 type Validation = 'idle' | 'checking' | 'ok' | 'missing'
 
@@ -32,23 +32,30 @@ function basename(path: string): string {
   return parts[parts.length - 1] ?? ''
 }
 
-interface AddProjectDialogProps {
+interface AddSessionDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  defaultProjectId?: string
 }
 
-export function AddProjectDialog({ open, onOpenChange }: AddProjectDialogProps): JSX.Element {
-  const platform = useProjects((state) => state.platform)
-  const wslAvailable = useProjects((state) => state.wslAvailable)
-  const distros = useProjects((state) => state.distros)
-  const refreshDistros = useProjects((state) => state.refreshDistros)
-  const addProject = useProjects((state) => state.addProject)
+export function AddSessionDialog({
+  open,
+  onOpenChange,
+  defaultProjectId
+}: AddSessionDialogProps): JSX.Element {
+  const platform = useWorkspace((state) => state.platform)
+  const projects = useWorkspace((state) => state.projects)
+  const wslAvailable = useWorkspace((state) => state.wslAvailable)
+  const distros = useWorkspace((state) => state.distros)
+  const refreshDistros = useWorkspace((state) => state.refreshDistros)
+  const addSession = useWorkspace((state) => state.addSession)
 
   // The location choice only exists on Windows, and only with a working wsl.exe.
   const showLocationChoice = Boolean(platform?.isWindows) && wslAvailable
 
   const [name, setName] = useState('')
   const [nameTouched, setNameTouched] = useState(false)
+  const [projectId, setProjectId] = useState('')
   const [kind, setKind] = useState<ProjectKind>('native')
   const [distro, setDistro] = useState('')
   const [path, setPath] = useState('')
@@ -63,19 +70,23 @@ export function AddProjectDialog({ open, onOpenChange }: AddProjectDialogProps):
     if (!open) return
     setName('')
     setNameTouched(false)
+    setProjectId(
+      defaultProjectId && projects.some((project) => project.id === defaultProjectId)
+        ? defaultProjectId
+        : (projects[0]?.id ?? '')
+    )
     setKind('native')
     setPath('')
     setWarning(undefined)
     setValidation('idle')
     setValidationError(undefined)
     setCreating(false)
-    if (wslAvailable) {
-      void refreshDistros()
-      setDistro((current) => current || (distros.find((d) => d.isDefault)?.name ?? ''))
-    }
-    // `distros` is intentionally not a dependency: this is a one-shot reset.
+    setDistro(wslAvailable ? (distros.find((d) => d.isDefault)?.name ?? '') : '')
+    if (wslAvailable) void refreshDistros()
+    // This resets the form once per open. A distro refresh must not clear fields
+    // the user has already entered.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, wslAvailable, refreshDistros])
+  }, [open, defaultProjectId, projects, wslAvailable, refreshDistros])
 
   useEffect(() => {
     if (!distro && distros.length > 0) {
@@ -141,6 +152,7 @@ export function AddProjectDialog({ open, onOpenChange }: AddProjectDialogProps):
   }, [open, path, kind, distro])
 
   const canCreate =
+    projectId.length > 0 &&
     name.trim().length > 0 &&
     path.trim().length > 0 &&
     validation === 'ok' &&
@@ -151,7 +163,8 @@ export function AddProjectDialog({ open, onOpenChange }: AddProjectDialogProps):
     if (!canCreate) return
     setCreating(true)
     try {
-      await addProject({
+      await addSession({
+        projectId,
         name: name.trim(),
         kind,
         path: path.trim(),
@@ -174,13 +187,35 @@ export function AddProjectDialog({ open, onOpenChange }: AddProjectDialogProps):
         }}
       >
         <DialogHeader>
-          <DialogTitle>New project</DialogTitle>
+          <DialogTitle>New session</DialogTitle>
           <DialogDescription>
-            Point mde at a folder. It opens a shell there and keeps it alive while the app runs.
+            Add a terminal session to a project. Each session can point at a different folder.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3.5">
+          {projects.length === 0 ? (
+            <p className="rounded border border-warn/40 bg-warn/10 p-2.5 text-xs text-warn">
+              Create a project before adding a session.
+            </p>
+          ) : (
+            <div className="space-y-1.5">
+              <Label>Project</Label>
+              <Select value={projectId} onValueChange={setProjectId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a project" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           {showLocationChoice && (
             <div className="space-y-1.5">
               <Label>Location</Label>
@@ -220,10 +255,10 @@ export function AddProjectDialog({ open, onOpenChange }: AddProjectDialogProps):
           )}
 
           <div className="space-y-1.5">
-            <Label htmlFor="project-path">Path</Label>
+            <Label htmlFor="session-path">Path</Label>
             <div className="flex gap-2">
               <Input
-                id="project-path"
+                id="session-path"
                 value={path}
                 spellCheck={false}
                 placeholder={kind === 'wsl' ? '/home/me/src/app' : 'Choose a folder'}
@@ -264,9 +299,9 @@ export function AddProjectDialog({ open, onOpenChange }: AddProjectDialogProps):
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="project-name">Name</Label>
+            <Label htmlFor="session-name">Session name</Label>
             <Input
-              id="project-name"
+              id="session-name"
               value={name}
               placeholder="app"
               onChange={(event) => {

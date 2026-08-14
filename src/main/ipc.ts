@@ -3,10 +3,12 @@ import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import {
   IpcChannels,
   type EnsurePtyRequest,
+  type MoveSessionRequest,
   type PlatformInfo,
   type ResizePtyRequest,
   type ResolvePathRequest,
   type UpdateProjectRequest,
+  type UpdateSessionRequest,
   type ValidatePathRequest,
   type WritePtyRequest
 } from '@shared/ipc'
@@ -14,9 +16,11 @@ import type {
   Distro,
   HostPlatform,
   NewProject,
+  NewSession,
   PathCheckResult,
   PathResolution,
   Project,
+  Session,
   PtyStatus
 } from '@shared/types'
 import type { PtyManager } from './pty/manager'
@@ -24,11 +28,15 @@ import { isWslAvailable, listDistros, runWsl } from './wsl/distros'
 import { resolveForTarget, toWindows, uncPathFor } from './wsl/paths'
 import {
   createProject,
-  getProject,
-  loadProjects,
+  createSession,
+  getSession,
+  loadWorkspace,
+  moveSession,
   removeProject,
-  updateProject
-} from './store/projects'
+  removeSession,
+  updateProject,
+  updateSession
+} from './store/workspace'
 
 function hostPlatform(): HostPlatform {
   switch (process.platform) {
@@ -66,16 +74,16 @@ async function validatePath(req: ValidatePathRequest): Promise<PathCheckResult> 
   }
 }
 
-async function revealProject(project: Project): Promise<void> {
-  if (project.kind === 'native') {
-    await shell.openPath(project.path)
+async function revealSession(session: Session): Promise<void> {
+  if (session.kind === 'native') {
+    await shell.openPath(session.path)
     return
   }
 
-  const distro = project.distro
+  const distro = session.distro
   if (!distro) return
   // The file manager needs a Windows-side path; this is a display conversion.
-  const windowsPath = (await toWindows(distro, project.path)) ?? uncPathFor(distro, project.path)
+  const windowsPath = (await toWindows(distro, session.path)) ?? uncPathFor(distro, session.path)
   await shell.openPath(windowsPath)
 }
 
@@ -92,35 +100,50 @@ export function registerIpcHandlers(ptyManager: PtyManager): void {
     isWindows: process.platform === 'win32'
   }))
 
-  handle<void, Project[]>(IpcChannels.projectsList, () => loadProjects())
+  handle<void, { projects: Project[]; sessions: Session[] }>(IpcChannels.workspaceList, () =>
+    loadWorkspace()
+  )
   handle<NewProject, Project>(IpcChannels.projectsCreate, (input) => createProject(input))
   handle<UpdateProjectRequest, Project | null>(IpcChannels.projectsUpdate, (req) =>
-    updateProject(req.id, req.patch)
+    updateProject(req)
   )
   handle<string, void>(IpcChannels.projectsRemove, async (id) => {
-    // Removing a project must not leave its shell running.
-    ptyManager.dispose(id)
+    // Removing a project must not leave any child shell running.
+    const workspace = await loadWorkspace()
+    for (const session of workspace.sessions) {
+      if (session.projectId === id) ptyManager.dispose(session.id)
+    }
     await removeProject(id)
   })
 
+  handle<NewSession, Session>(IpcChannels.sessionsCreate, (input) => createSession(input))
+  handle<UpdateSessionRequest, Session | null>(IpcChannels.sessionsUpdate, (req) =>
+    updateSession(req)
+  )
+  handle<MoveSessionRequest, Session | null>(IpcChannels.sessionsMove, (req) => moveSession(req))
+  handle<string, void>(IpcChannels.sessionsRemove, async (id) => {
+    ptyManager.dispose(id)
+    await removeSession(id)
+  })
+
   handle<EnsurePtyRequest, PtyStatus>(IpcChannels.ptyEnsure, async (req) => {
-    const project = await getProject(req.projectId)
-    if (!project) return 'none'
-    return ptyManager.ensure(project, req.size)
+    const session = await getSession(req.sessionId)
+    if (!session) return 'none'
+    return ptyManager.ensure(session, req.size)
   })
   handle<EnsurePtyRequest, PtyStatus>(IpcChannels.ptyRestart, async (req) => {
-    const project = await getProject(req.projectId)
-    if (!project) return 'none'
-    return ptyManager.restart(project, req.size)
+    const session = await getSession(req.sessionId)
+    if (!session) return 'none'
+    return ptyManager.restart(session, req.size)
   })
   handle<WritePtyRequest, void>(IpcChannels.ptyWrite, (req) => {
-    ptyManager.write(req.projectId, req.data)
+    ptyManager.write(req.sessionId, req.data)
   })
   handle<ResizePtyRequest, void>(IpcChannels.ptyResize, (req) => {
-    ptyManager.resize(req.projectId, req.size)
+    ptyManager.resize(req.sessionId, req.size)
   })
-  handle<string, void>(IpcChannels.ptyDispose, (projectId) => {
-    ptyManager.dispose(projectId)
+  handle<string, void>(IpcChannels.ptyDispose, (sessionId) => {
+    ptyManager.dispose(sessionId)
   })
   handle<void, Record<string, PtyStatus>>(IpcChannels.ptyStatuses, () => ptyManager.statuses())
 
@@ -143,8 +166,8 @@ export function registerIpcHandlers(ptyManager: PtyManager): void {
     resolveForTarget(req.kind, req.distro, req.rawPath)
   )
   handle<ValidatePathRequest, PathCheckResult>(IpcChannels.pathValidate, (req) => validatePath(req))
-  handle<string, void>(IpcChannels.pathReveal, async (projectId) => {
-    const project = await getProject(projectId)
-    if (project) await revealProject(project)
+  handle<string, void>(IpcChannels.pathReveal, async (sessionId) => {
+    const session = await getSession(sessionId)
+    if (session) await revealSession(session)
   })
 }

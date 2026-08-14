@@ -2,24 +2,37 @@ import type {
   Distro,
   HostPlatform,
   NewProject,
+  NewSession,
   PathCheckResult,
   PathResolution,
   Project,
+  ProjectKind,
+  Session,
   PtyDataChunk,
   PtyExitInfo,
   PtySize,
   PtyStatus
 } from './types'
 
+export interface WorkspaceData {
+  projects: Project[]
+  sessions: Session[]
+}
+
 /**
  * Every channel name lives here exactly once. Main registers handlers from
  * `IpcChannels`, preload invokes from `IpcChannels`; a typo cannot compile.
  */
 export const IpcChannels = {
-  projectsList: 'projects:list',
+  workspaceList: 'workspace:list',
   projectsCreate: 'projects:create',
   projectsUpdate: 'projects:update',
   projectsRemove: 'projects:remove',
+
+  sessionsCreate: 'sessions:create',
+  sessionsUpdate: 'sessions:update',
+  sessionsMove: 'sessions:move',
+  sessionsRemove: 'sessions:remove',
 
   ptyEnsure: 'pty:ensure',
   ptyWrite: 'pty:write',
@@ -51,36 +64,46 @@ export interface PlatformInfo {
 }
 
 export interface ResolvePathRequest {
-  kind: Project['kind']
+  kind: ProjectKind
   distro?: string
   /** Raw path as it came out of the picker or the text field. */
   rawPath: string
 }
 
 export interface ValidatePathRequest {
-  kind: Project['kind']
+  kind: ProjectKind
   distro?: string
   path: string
 }
 
 export interface EnsurePtyRequest {
-  projectId: string
+  sessionId: string
   size: PtySize
 }
 
 export interface ResizePtyRequest {
-  projectId: string
+  sessionId: string
   size: PtySize
 }
 
 export interface WritePtyRequest {
-  projectId: string
+  sessionId: string
   data: string
 }
 
 export interface UpdateProjectRequest {
   id: string
-  patch: Partial<Pick<Project, 'name' | 'path' | 'shell'>>
+  patch: Partial<Pick<Project, 'name'>>
+}
+
+export interface UpdateSessionRequest {
+  id: string
+  patch: Partial<Pick<Session, 'name' | 'path' | 'shell'>>
+}
+
+export interface MoveSessionRequest {
+  id: string
+  projectId: string
 }
 
 /**
@@ -92,9 +115,17 @@ export interface RendererApi {
     info(): Promise<PlatformInfo>
   }
   projects: {
-    list(): Promise<Project[]>
     create(input: NewProject): Promise<Project>
     update(req: UpdateProjectRequest): Promise<Project | null>
+    remove(id: string): Promise<void>
+  }
+  workspace: {
+    list(): Promise<WorkspaceData>
+  }
+  sessions: {
+    create(input: NewSession): Promise<Session>
+    update(req: UpdateSessionRequest): Promise<Session | null>
+    move(req: MoveSessionRequest): Promise<Session | null>
     remove(id: string): Promise<void>
   }
   pty: {
@@ -102,7 +133,7 @@ export interface RendererApi {
     write(req: WritePtyRequest): Promise<void>
     resize(req: ResizePtyRequest): Promise<void>
     restart(req: EnsurePtyRequest): Promise<PtyStatus>
-    dispose(projectId: string): Promise<void>
+    dispose(sessionId: string): Promise<void>
     statuses(): Promise<Record<string, PtyStatus>>
     onData(listener: (chunk: PtyDataChunk) => void): () => void
     onExit(listener: (info: PtyExitInfo) => void): () => void
@@ -115,6 +146,6 @@ export interface RendererApi {
     browse(): Promise<string | null>
     resolve(req: ResolvePathRequest): Promise<PathResolution>
     validate(req: ValidatePathRequest): Promise<PathCheckResult>
-    reveal(projectId: string): Promise<void>
+    reveal(sessionId: string): Promise<void>
   }
 }

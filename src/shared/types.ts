@@ -6,6 +6,13 @@ export type HostPlatform = 'win32' | 'linux' | 'darwin' | 'other'
 export interface Project {
   id: string
   name: string
+  createdAt: string
+}
+
+export interface Session {
+  id: string
+  projectId: string
+  name: string
   kind: ProjectKind
   /** Required when kind === 'wsl', e.g. "Ubuntu-24.04". */
   distro?: string
@@ -22,6 +29,7 @@ export interface Project {
 }
 
 export type NewProject = Omit<Project, 'id' | 'createdAt'>
+export type NewSession = Omit<Session, 'id' | 'createdAt'>
 
 export interface Distro {
   name: string
@@ -30,7 +38,7 @@ export interface Distro {
   isDefault: boolean
 }
 
-/** Lifecycle of the PTY belonging to a project, as tracked by the main process. */
+/** Lifecycle of the PTY belonging to a session, as tracked by the main process. */
 export type PtyStatus = 'none' | 'running' | 'exited'
 
 export interface PtySize {
@@ -39,13 +47,13 @@ export interface PtySize {
 }
 
 export interface PtyExitInfo {
-  projectId: string
+  sessionId: string
   exitCode: number
   signal?: number
 }
 
 export interface PtyDataChunk {
-  projectId: string
+  sessionId: string
   data: string
 }
 
@@ -60,7 +68,7 @@ export interface PathCheckResult {
  * into the format the target expects.
  */
 export interface PathResolution {
-  /** Path in the target's own format, ready to store on the Project. */
+  /** Path in the target's own format, ready to store on the Session. */
   path: string
   /** Distro parsed out of a \\wsl$\ or \\wsl.localhost\ UNC path, if any. */
   distro?: string

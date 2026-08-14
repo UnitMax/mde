@@ -1,0 +1,274 @@
+import { randomUUID } from 'node:crypto'
+import { promises as fs } from 'node:fs'
+import { join } from 'node:path'
+import type { WorkspaceData, MoveSessionRequest, UpdateSessionRequest, UpdateProjectRequest } from '@shared/ipc'
+import type { NewProject, NewSession, Project, Session } from '@shared/types'
+
+const FILE_NAME = 'workspace.json'
+
+let storeDir: string | null = null
+let cache: WorkspaceData | null = null
+
+/** Called once from main/index.ts with app.getPath('userData'). */
+export function initWorkspaceStore(dir: string): void {
+  storeDir = dir
+  cache = null
+}
+
+function storeFile(): string {
+  if (!storeDir) throw new Error('Workspace store used before initWorkspaceStore()')
+  return join(storeDir, FILE_NAME)
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function uniqueEntries<T extends { id: string }>(entries: T[], kind: string): T[] {
+  const seen = new Set<string>()
+  return entries.filter((entry) => {
+    if (seen.has(entry.id)) {
+      console.warn(`[workspace] dropping duplicate ${kind} id ${entry.id}`)
+      return false
+    }
+    seen.add(entry.id)
+    return true
+  })
+}
+
+export function validateProject(raw: unknown): Project | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const r = raw as Record<string, unknown>
+  if (!isNonEmptyString(r.id) || !isNonEmptyString(r.name)) return null
+
+  return {
+    id: r.id,
+    name: r.name,
+    createdAt: isNonEmptyString(r.createdAt) ? r.createdAt : new Date(0).toISOString()
+  }
+}
+
+export function validateProjectList(raw: unknown): Project[] {
+  if (!Array.isArray(raw)) return []
+  return uniqueEntries(
+    raw.map(validateProject).filter((project): project is Project => project !== null),
+    'project'
+  )
+}
+
+export function validateSession(raw: unknown, projectIds: Set<string>): Session | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const r = raw as Record<string, unknown>
+  if (
+    !isNonEmptyString(r.id) ||
+    !isNonEmptyString(r.projectId) ||
+    !projectIds.has(r.projectId) ||
+    !isNonEmptyString(r.name) ||
+    (r.kind !== 'native' && r.kind !== 'wsl') ||
+    !isNonEmptyString(r.path)
+  ) {
+    return null
+  }
+  if (r.kind === 'wsl' && !isNonEmptyString(r.distro)) return null
+
+  const session: Session = {
+    id: r.id,
+    projectId: r.projectId,
+    name: r.name,
+    kind: r.kind,
+    path: r.path,
+    createdAt: isNonEmptyString(r.createdAt) ? r.createdAt : new Date(0).toISOString()
+  }
+  if (r.kind === 'wsl' && isNonEmptyString(r.distro)) session.distro = r.distro
+  if (isNonEmptyString(r.shell)) session.shell = r.shell
+  return session
+}
+
+export function validateSessionList(raw: unknown, projectIds: Set<string>): Session[] {
+  if (!Array.isArray(raw)) return []
+  return uniqueEntries(
+    raw
+      .map((entry) => validateSession(entry, projectIds))
+      .filter((session): session is Session => session !== null),
+    'session'
+  )
+}
+
+export function validateWorkspace(raw: unknown): WorkspaceData {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    return { projects: [], sessions: [] }
+  }
+  const record = raw as Record<string, unknown>
+  const projects = validateProjectList(record.projects)
+  const projectIds = new Set(projects.map((project) => project.id))
+  const sessions = validateSessionList(record.sessions, projectIds)
+  return { projects, sessions }
+}
+
+export async function loadWorkspace(): Promise<WorkspaceData> {
+  if (cache) return cache
+
+  let text: string
+  try {
+    text = await fs.readFile(storeFile(), 'utf8')
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code !== 'ENOENT') {
+      console.warn('[workspace] could not read workspace.json, starting empty:', error)
+    }
+    cache = { projects: [], sessions: [] }
+    return cache
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch (error) {
+    console.warn('[workspace] workspace.json is not valid JSON, starting empty:', error)
+    cache = { projects: [], sessions: [] }
+    return cache
+  }
+
+  cache = validateWorkspace(parsed)
+  return cache
+}
+
+/** Serialises writes so rapid mutations cannot interleave their renames. */
+let writeQueue: Promise<void> = Promise.resolve()
+
+function enqueueWrite(workspace: WorkspaceData): Promise<void> {
+  const run = writeQueue.then(() => persist(workspace))
+  writeQueue = run.catch(() => undefined)
+  return run
+}
+
+async function persist(workspace: WorkspaceData): Promise<void> {
+  const target = storeFile()
+  const tmp = `${target}.${process.pid}.${Date.now()}.tmp`
+  const contents = `${JSON.stringify(workspace, null, 2)}\n`
+
+  await fs.mkdir(storeDir as string, { recursive: true })
+  const handle = await fs.open(tmp, 'w')
+  try {
+    await handle.writeFile(contents, 'utf8')
+    await handle.sync()
+  } finally {
+    await handle.close()
+  }
+  await fs.rename(tmp, target)
+}
+
+export async function createProject(input: NewProject): Promise<Project> {
+  const workspace = await loadWorkspace()
+  const name = input.name.trim()
+  if (!name) throw new Error('Project name cannot be empty')
+
+  const project: Project = { id: randomUUID(), name, createdAt: new Date().toISOString() }
+  cache = { ...workspace, projects: [...workspace.projects, project] }
+  await enqueueWrite(cache)
+  return project
+}
+
+export async function updateProject(
+  req: UpdateProjectRequest
+): Promise<Project | null> {
+  const workspace = await loadWorkspace()
+  const index = workspace.projects.findIndex((project) => project.id === req.id)
+  const existing = workspace.projects[index]
+  if (!existing) return null
+
+  const name = req.patch.name?.trim()
+  if (!name) return existing
+  const updated = { ...existing, name }
+  const projects = [...workspace.projects]
+  projects[index] = updated
+  cache = { ...workspace, projects }
+  await enqueueWrite(cache)
+  return updated
+}
+
+export async function removeProject(id: string): Promise<string[]> {
+  const workspace = await loadWorkspace()
+  const removedSessionIds = workspace.sessions
+    .filter((session) => session.projectId === id)
+    .map((session) => session.id)
+  cache = {
+    projects: workspace.projects.filter((project) => project.id !== id),
+    sessions: workspace.sessions.filter((session) => session.projectId !== id)
+  }
+  await enqueueWrite(cache)
+  return removedSessionIds
+}
+
+export async function createSession(input: NewSession): Promise<Session> {
+  const workspace = await loadWorkspace()
+  if (!workspace.projects.some((project) => project.id === input.projectId)) {
+    throw new Error('Cannot create a session without a valid project')
+  }
+  if (!input.name.trim() || !input.path.trim()) throw new Error('Session name and path are required')
+  if (input.kind === 'wsl' && !input.distro?.trim()) {
+    throw new Error('WSL sessions require a distro')
+  }
+
+  const session: Session = {
+    id: randomUUID(),
+    projectId: input.projectId,
+    name: input.name.trim(),
+    kind: input.kind,
+    path: input.path.trim(),
+    createdAt: new Date().toISOString()
+  }
+  if (input.kind === 'wsl' && input.distro) session.distro = input.distro.trim()
+  if (input.shell?.trim()) session.shell = input.shell.trim()
+
+  cache = { ...workspace, sessions: [...workspace.sessions, session] }
+  await enqueueWrite(cache)
+  return session
+}
+
+export async function updateSession(req: UpdateSessionRequest): Promise<Session | null> {
+  const workspace = await loadWorkspace()
+  const index = workspace.sessions.findIndex((session) => session.id === req.id)
+  const existing = workspace.sessions[index]
+  if (!existing) return null
+
+  const updated: Session = { ...existing }
+  if (req.patch.name?.trim()) updated.name = req.patch.name.trim()
+  if (req.patch.path?.trim()) updated.path = req.patch.path.trim()
+  if (req.patch.shell !== undefined) {
+    if (req.patch.shell.trim()) updated.shell = req.patch.shell.trim()
+    else delete updated.shell
+  }
+
+  const sessions = [...workspace.sessions]
+  sessions[index] = updated
+  cache = { ...workspace, sessions }
+  await enqueueWrite(cache)
+  return updated
+}
+
+export async function moveSession(req: MoveSessionRequest): Promise<Session | null> {
+  const workspace = await loadWorkspace()
+  if (!workspace.projects.some((project) => project.id === req.projectId)) return null
+  const index = workspace.sessions.findIndex((session) => session.id === req.id)
+  const existing = workspace.sessions[index]
+  if (!existing) return null
+
+  const updated = { ...existing, projectId: req.projectId }
+  const sessions = [...workspace.sessions]
+  sessions[index] = updated
+  cache = { ...workspace, sessions }
+  await enqueueWrite(cache)
+  return updated
+}
+
+export async function removeSession(id: string): Promise<void> {
+  const workspace = await loadWorkspace()
+  cache = { ...workspace, sessions: workspace.sessions.filter((session) => session.id !== id) }
+  await enqueueWrite(cache)
+}
+
+export async function getSession(id: string): Promise<Session | null> {
+  const workspace = await loadWorkspace()
+  return workspace.sessions.find((session) => session.id === id) ?? null
+}

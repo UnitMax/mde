@@ -3,7 +3,7 @@ import { app, BrowserWindow, shell } from 'electron'
 import { IpcEvents } from '@shared/ipc'
 import { registerIpcHandlers } from './ipc'
 import { PtyManager } from './pty/manager'
-import { initProjectStore } from './store/projects'
+import { initWorkspaceStore } from './store/workspace'
 import { adjustZoomFactor, DEFAULT_ZOOM_FACTOR, getZoomAction } from './zoom'
 
 let mainWindow: BrowserWindow | null = null
@@ -67,7 +67,7 @@ function createWindow(): void {
   }
 }
 
-// Two instances would race each other writing projects.json.
+// Two instances would race each other writing workspace.json.
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
@@ -79,7 +79,7 @@ if (!app.requestSingleInstanceLock()) {
 
   void app.whenReady().then(() => {
     app.setAppUserModelId('dev.mde.app')
-    initProjectStore(app.getPath('userData'))
+    initWorkspaceStore(app.getPath('userData'))
     registerIpcHandlers(ptyManager)
     createWindow()
 

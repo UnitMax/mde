@@ -6,12 +6,12 @@ import type { PtySize } from '@shared/types'
 export type RendererKind = 'webgl' | 'dom'
 
 export interface TerminalSession {
-  projectId: string
+  sessionId: string
   term: Terminal
   fit: FitAddon
   /**
    * The element xterm was opened into. It is moved between hosts and never
-   * destroyed, which is what makes a session survive switching projects.
+   * destroyed, which is what makes a session survive switching sessions.
    */
   container: HTMLDivElement
   renderer: RendererKind
@@ -41,7 +41,7 @@ const THEME = {
   brightWhite: '#f0f3f7'
 }
 
-/** One live xterm per project id, independent of what React currently renders. */
+/** One live xterm per session id, independent of what React currently renders. */
 const sessions = new Map<string, TerminalSession>()
 
 let bridgeReady = false
@@ -50,16 +50,16 @@ let bridgeReady = false
 export function initTerminalBridge(): void {
   if (bridgeReady) return
   bridgeReady = true
-  window.api.pty.onData(({ projectId, data }) => {
-    sessions.get(projectId)?.term.write(data)
+  window.api.pty.onData(({ sessionId, data }) => {
+    sessions.get(sessionId)?.term.write(data)
   })
 }
 
-export function getSession(projectId: string): TerminalSession | undefined {
-  return sessions.get(projectId)
+export function getSession(sessionId: string): TerminalSession | undefined {
+  return sessions.get(sessionId)
 }
 
-function createSession(projectId: string, host: HTMLElement): TerminalSession {
+function createSession(sessionId: string, host: HTMLElement): TerminalSession {
   const container = document.createElement('div')
   container.className = 'h-full w-full'
   host.appendChild(container)
@@ -94,31 +94,31 @@ function createSession(projectId: string, host: HTMLElement): TerminalSession {
   }
 
   term.onData((data) => {
-    void window.api.pty.write({ projectId, data })
+    void window.api.pty.write({ sessionId, data })
   })
 
-  const session: TerminalSession = { projectId, term, fit, container, renderer }
-  sessions.set(projectId, session)
+  const session: TerminalSession = { sessionId, term, fit, container, renderer }
+  sessions.set(sessionId, session)
   return session
 }
 
 /** Creates the session on first view, or re-parents the existing one. */
-export function attachSession(projectId: string, host: HTMLElement): TerminalSession {
-  const existing = sessions.get(projectId)
-  if (!existing) return createSession(projectId, host)
+export function attachSession(sessionId: string, host: HTMLElement): TerminalSession {
+  const existing = sessions.get(sessionId)
+  if (!existing) return createSession(sessionId, host)
   if (existing.container.parentElement !== host) host.appendChild(existing.container)
   return existing
 }
 
 /** Takes the terminal out of the DOM without destroying it. */
-export function detachSession(projectId: string): void {
-  sessions.get(projectId)?.container.remove()
+export function detachSession(sessionId: string): void {
+  sessions.get(sessionId)?.container.remove()
 }
 
-export function disposeSession(projectId: string): void {
-  const session = sessions.get(projectId)
+export function disposeSession(sessionId: string): void {
+  const session = sessions.get(sessionId)
   if (!session) return
-  sessions.delete(projectId)
+  sessions.delete(sessionId)
   session.container.remove()
   session.term.dispose()
 }

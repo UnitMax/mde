@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { buildLaunchSpec } from '../src/main/pty/launch'
-import type { Project } from '@shared/types'
+import type { Session } from '@shared/types'
 
-function project(overrides: Partial<Project> = {}): Project {
+function session(overrides: Partial<Session> = {}): Session {
   return {
     id: 'p1',
+    projectId: 'project-1',
     name: 'app',
     kind: 'native',
     path: '/home/me/src/app',
@@ -16,7 +17,7 @@ function project(overrides: Partial<Project> = {}): Project {
 describe('buildLaunchSpec', () => {
   it('launches a WSL project inside the distro with a login+interactive shell', () => {
     const spec = buildLaunchSpec(
-      project({ kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/src/app' }),
+      session({ kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/src/app' }),
       { platform: 'win32' }
     )
 
@@ -36,7 +37,7 @@ describe('buildLaunchSpec', () => {
   })
 
   it('keeps -lic so nvm/mise/bun shims land on PATH', () => {
-    const spec = buildLaunchSpec(project({ kind: 'wsl', distro: 'Ubuntu-24.04' }), {
+    const spec = buildLaunchSpec(session({ kind: 'wsl', distro: 'Ubuntu-24.04' }), {
       platform: 'win32'
     })
     expect(spec.args).toContain('-lic')
@@ -44,7 +45,7 @@ describe('buildLaunchSpec', () => {
 
   it('honours a shell override for WSL projects', () => {
     const spec = buildLaunchSpec(
-      project({ kind: 'wsl', distro: 'Ubuntu-24.04', shell: 'zsh' }),
+      session({ kind: 'wsl', distro: 'Ubuntu-24.04', shell: 'zsh' }),
       { platform: 'win32' }
     )
     expect(spec.args.slice(-3)).toEqual(['zsh', '-lic', 'exec zsh -i'])
@@ -52,35 +53,35 @@ describe('buildLaunchSpec', () => {
 
   it('refuses to launch a WSL project off Windows', () => {
     expect(() =>
-      buildLaunchSpec(project({ kind: 'wsl', distro: 'Ubuntu-24.04' }), { platform: 'linux' })
+      buildLaunchSpec(session({ kind: 'wsl', distro: 'Ubuntu-24.04' }), { platform: 'linux' })
     ).toThrow(/only be launched on Windows/)
   })
 
   it('refuses a WSL project with no distro', () => {
-    expect(() => buildLaunchSpec(project({ kind: 'wsl' }), { platform: 'win32' })).toThrow(
+    expect(() => buildLaunchSpec(session({ kind: 'wsl' }), { platform: 'win32' })).toThrow(
       /no distro/
     )
   })
 
   it('spawns powershell in the project directory for native Windows projects', () => {
-    const spec = buildLaunchSpec(project({ kind: 'native', path: 'C:\\src\\app' }), {
+    const spec = buildLaunchSpec(session({ kind: 'native', path: 'C:\\src\\app' }), {
       platform: 'win32'
     })
     expect(spec).toEqual({ file: 'powershell.exe', args: [], cwd: 'C:\\src\\app' })
   })
 
   it('spawns a login shell in the project directory on Linux', () => {
-    const spec = buildLaunchSpec(project(), { platform: 'linux', defaultShell: '/usr/bin/fish' })
+    const spec = buildLaunchSpec(session(), { platform: 'linux', defaultShell: '/usr/bin/fish' })
     expect(spec).toEqual({ file: '/usr/bin/fish', args: ['-l'], cwd: '/home/me/src/app' })
   })
 
   it('falls back to /bin/bash when SHELL is unset', () => {
-    const spec = buildLaunchSpec(project(), { platform: 'linux' })
+    const spec = buildLaunchSpec(session(), { platform: 'linux' })
     expect(spec.file).toBe('/bin/bash')
   })
 
   it('prefers the project shell override over SHELL on Linux', () => {
-    const spec = buildLaunchSpec(project({ shell: '/bin/zsh' }), {
+    const spec = buildLaunchSpec(session({ shell: '/bin/zsh' }), {
       platform: 'linux',
       defaultShell: '/bin/bash'
     })
