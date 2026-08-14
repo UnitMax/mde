@@ -34,7 +34,6 @@ export const IpcChannels = {
   pathResolve: 'path:resolve',
   pathValidate: 'path:validate',
   pathReveal: 'path:reveal',
-  pathDisplay: 'path:display',
 
   platformInfo: 'platform:info'
 } as const
@@ -115,8 +114,6 @@ export interface RendererApi {
     browse(): Promise<string | null>
     resolve(req: ResolvePathRequest): Promise<PathResolution>
     validate(req: ValidatePathRequest): Promise<PathCheckResult>
-    /** Human-readable rendering of a project's path for the header strip. */
-    display(project: Project): Promise<string>
-    reveal(project: Project): Promise<void>
+    reveal(projectId: string): Promise<void>
   }
 }
