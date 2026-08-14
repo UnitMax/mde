@@ -1,5 +1,6 @@
 import type {
   Distro,
+  HostPlatform,
   NewProject,
   PathCheckResult,
   PathResolution,
@@ -45,7 +46,7 @@ export const IpcEvents = {
 } as const
 
 export interface PlatformInfo {
-  platform: NodeJS.Platform
+  platform: HostPlatform
   isWindows: boolean
 }
 

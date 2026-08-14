@@ -1,0 +1,127 @@
+@import 'tailwindcss';
+
+/*
+ * Single dark palette. Theming is out of scope for this version, so the tokens
+ * are defined once rather than doubled up behind a light/dark switch.
+ */
+@theme {
+  --color-bg: #0b0e13;
+  --color-panel: #10141b;
+  --color-elevated: #171d27;
+  --color-hover: #1a212c;
+  --color-active: #232c3b;
+  --color-line: #222a36;
+  --color-line-strong: #2e3846;
+
+  --color-fg: #d8dee9;
+  --color-fg-muted: #7b8698;
+  --color-fg-subtle: #58616f;
+
+  --color-accent: #5b8cff;
+  --color-accent-hover: #6f9bff;
+  --color-accent-fg: #06090f;
+
+  --color-ok: #3fb950;
+  --color-warn: #d8a325;
+  --color-danger: #f0574f;
+
+  --font-mono:
+    'Cascadia Mono', 'JetBrains Mono', 'Fira Code', 'DejaVu Sans Mono', Menlo, Consolas, monospace;
+  --font-sans:
+    'Segoe UI', Inter, ui-sans-serif, system-ui, 'Helvetica Neue', Arial, sans-serif;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-line);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  input,
+  textarea {
+    user-select: text;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line-strong);
+    border: 2px solid transparent;
+    background-clip: content-box;
+    border-radius: 6px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3b4757;
+    background-clip: content-box;
+  }
+}
+
+@layer components {
+  /* xterm paints its own background; keep the viewport flush with the panel. */
+  .terminal-host .xterm {
+    height: 100%;
+    padding: 6px 0 6px 8px;
+  }
+
+  .terminal-host .xterm-viewport {
+    background-color: transparent !important;
+  }
+}
+
+@keyframes mde-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes mde-content-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -48%) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes mde-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

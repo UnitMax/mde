@@ -1,5 +1,8 @@
 export type ProjectKind = 'native' | 'wsl'
 
+/** Narrow platform union so the renderer does not need Node's types. */
+export type HostPlatform = 'win32' | 'linux' | 'darwin' | 'other'
+
 export interface Project {
   id: string
   name: string

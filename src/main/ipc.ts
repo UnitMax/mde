@@ -12,6 +12,7 @@ import {
 } from '@shared/ipc'
 import type {
   Distro,
+  HostPlatform,
   NewProject,
   PathCheckResult,
   PathResolution,
@@ -28,6 +29,17 @@ import {
   removeProject,
   updateProject
 } from './store/projects'
+
+function hostPlatform(): HostPlatform {
+  switch (process.platform) {
+    case 'win32':
+    case 'linux':
+    case 'darwin':
+      return process.platform
+    default:
+      return 'other'
+  }
+}
 
 async function validatePath(req: ValidatePathRequest): Promise<PathCheckResult> {
   const path = req.path.trim()
@@ -76,7 +88,7 @@ export function registerIpcHandlers(ptyManager: PtyManager): void {
   }
 
   handle<void, PlatformInfo>(IpcChannels.platformInfo, () => ({
-    platform: process.platform,
+    platform: hostPlatform(),
     isWindows: process.platform === 'win32'
   }))
 
