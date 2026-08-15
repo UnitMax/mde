@@ -16,6 +16,7 @@ import type {
   ListOpenCodeModelsRequest,
   ListOpenCodeModelsResponse,
   CreateOpenCodeSessionRequest,
+  ExecuteOpenCodeCommandRequest,
   OpenCodeConversationResponse,
   RevertOpenCodeMessageRequest,
   UnrevertOpenCodeSessionRequest,
@@ -63,6 +64,7 @@ export const IpcChannels = {
   pathReveal: 'path:reveal',
 
   opencodeSend: 'opencode:send',
+  opencodeCommand: 'opencode:command',
   opencodeSessionsList: 'opencode:sessions-list',
   opencodeModelsList: 'opencode:models-list',
   opencodeSessionSelect: 'opencode:session-select',
@@ -173,6 +175,7 @@ export interface RendererApi {
   }
   opencode: {
     send(req: SendOpenCodeMessageRequest): Promise<SendOpenCodeMessageResponse>
+    executeCommand(req: ExecuteOpenCodeCommandRequest): Promise<OpenCodeConversationResponse>
     listSessions(req: ListOpenCodeSessionsRequest): Promise<ListOpenCodeSessionsResponse>
     listModels(req: ListOpenCodeModelsRequest): Promise<ListOpenCodeModelsResponse>
     selectSession(req: SelectOpenCodeSessionRequest): Promise<OpenCodeConversationResponse>

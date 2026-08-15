@@ -37,6 +37,7 @@ describe('renderer workspace event bridge', () => {
     },
     opencode: {
       send: vi.fn(),
+      executeCommand: vi.fn(),
       listSessions: vi.fn(),
       listModels: vi.fn(),
       selectSession: vi.fn(),
@@ -58,6 +59,7 @@ describe('renderer workspace event bridge', () => {
     api.pty.onExit.mockClear()
     api.sessions.update.mockClear()
     api.opencode.send.mockReset()
+    api.opencode.executeCommand.mockReset()
     api.opencode.listSessions.mockReset()
     api.opencode.listModels.mockReset()
     api.opencode.selectSession.mockReset()
@@ -342,6 +344,89 @@ describe('renderer workspace event bridge', () => {
       openCodeSessionId: created.id,
       messages: [],
       availableSessions: [created]
+    })
+  })
+
+  it('executes supported slash commands and replaces the transcript with OpenCode history', async () => {
+    const model: OpenCodeModelOption = {
+      key: 'cloud/model-a',
+      providerID: 'cloud',
+      providerName: 'Cloud Provider',
+      modelID: 'model-a',
+      modelName: 'Model A'
+    }
+    const conversation: OpenCodeSessionSummary = {
+      id: 'opencode-1',
+      title: 'App',
+      directory: '/workspace/app',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-02T00:00:00.000Z'
+    }
+    api.opencode.executeCommand.mockResolvedValue({
+      sessionId: conversation.id,
+      session: conversation,
+      messages: [
+        { id: 'user-1', role: 'user', text: '/init' },
+        { id: 'assistant-1', role: 'assistant', text: 'Created AGENTS.md.' }
+      ],
+      revert: null,
+      undoSupported: true
+    })
+    api.opencode.listSessions.mockResolvedValue({
+      sessions: [conversation],
+      selectedSessionId: conversation.id,
+      undoSupported: true
+    })
+    useWorkspace.setState({
+      selectedSessionId: 'session-1',
+      sessions: [
+        {
+          id: 'session-1',
+          projectId: 'project-1',
+          name: 'App',
+          kind: 'native',
+          path: '/workspace/app',
+          opencodeSessionId: conversation.id,
+          createdAt: '2026-01-01T00:00:00.000Z'
+        }
+      ],
+      opencodeChats: {
+        'session-1': {
+          messages: [{ id: 'old', role: 'assistant', text: 'Old transcript' }],
+          availableSessions: [conversation],
+          availableModels: [model],
+          selectedModel: model,
+          subagents: [],
+          revert: null,
+          undoSupported: false,
+          undoing: false,
+          redoing: false,
+          externalBusy: false,
+          openCodeSessionId: conversation.id,
+          liveItems: [],
+          pending: false,
+          sessionsLoading: false,
+          modelsLoading: false,
+          error: null,
+          unreadCompletion: false
+        }
+      }
+    })
+
+    await useWorkspace.getState().executeOpenCodeCommand('session-1', 'init')
+
+    expect(api.opencode.executeCommand).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      command: 'init',
+      model
+    })
+    expect(useWorkspace.getState().opencodeChats['session-1']).toMatchObject({
+      messages: [
+        { id: 'user-1', role: 'user', text: '/init' },
+        { id: 'assistant-1', role: 'assistant', text: 'Created AGENTS.md.' }
+      ],
+      pending: false,
+      undoSupported: true
     })
   })
 

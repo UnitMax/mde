@@ -25,6 +25,7 @@ import type {
   ListOpenCodeModelsRequest,
   ListOpenCodeModelsResponse,
   CreateOpenCodeSessionRequest,
+  ExecuteOpenCodeCommandRequest,
   OpenCodeConversationResponse,
   RevertOpenCodeMessageRequest,
   UnrevertOpenCodeSessionRequest,
@@ -149,6 +150,14 @@ export function registerIpcHandlers(ptyManager: PtyManager, opencodeManager: Ope
       const session = await getSession(req.sessionId)
       if (!session) throw new Error('Session no longer exists.')
       return await opencodeManager.send(session, req.text, req.model)
+    }
+  )
+  handle<ExecuteOpenCodeCommandRequest, OpenCodeConversationResponse>(
+    IpcChannels.opencodeCommand,
+    async (req) => {
+      const session = await getSession(req.sessionId)
+      if (!session) throw new Error('Session no longer exists.')
+      return opencodeManager.executeCommand(session, req.command, req.model)
     }
   )
   handle<ListOpenCodeSessionsRequest, ListOpenCodeSessionsResponse>(

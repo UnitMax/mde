@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   createPromptBody,
+  createOpenCodeSessionOperationBody,
   describeResponseParts,
   extractReasoningMessages,
   extractHistoryMessages,
@@ -45,6 +46,12 @@ describe('OpenCode GUI protocol helpers', () => {
       model: { providerID: 'anthropic', modelID: 'claude-sonnet', variant: 'high' },
       parts: [{ type: 'text', text: 'Use the high effort variant' }]
     })
+  })
+
+  it('builds the model body used by session compaction and initialization', () => {
+    expect(
+      createOpenCodeSessionOperationBody({ providerID: 'cloud', modelID: 'model-a', variant: 'fast' })
+    ).toEqual({ providerID: 'cloud', modelID: 'model-a' })
   })
 
   it('normalizes providers, models, and model variants for the picker', () => {

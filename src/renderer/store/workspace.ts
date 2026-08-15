@@ -13,6 +13,7 @@ import type {
   OpenCodeSubagent,
   OpenCodePermissionReply,
   OpenCodeSessionSummary,
+  OpenCodeSlashCommand,
   OpenCodeStreamChunk,
   Project,
   PtyExitInfo,
@@ -218,6 +219,7 @@ interface WorkspaceState {
   ) => Promise<void>
   loadOpenCodeModels: (sessionId: string) => Promise<void>
   selectOpenCodeModel: (sessionId: string, model: OpenCodeModelSelection) => Promise<void>
+  executeOpenCodeCommand: (sessionId: string, command: OpenCodeSlashCommand) => Promise<void>
   refreshOpenCodeSessionList: (sessionId: string) => Promise<void>
   loadOpenCodeSessions: (sessionId: string) => Promise<void>
   selectOpenCodeSession: (sessionId: string, openCodeSessionId: string) => Promise<void>
@@ -622,6 +624,87 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               pending: false,
               error: message,
               liveItems: retainActiveSubagentPermissions(current.liveItems, current.subagents),
+              unreadCompletion: state.selectedSessionId !== sessionId
+            }
+          }
+        }
+      })
+    }
+  },
+
+  executeOpenCodeCommand: async (sessionId, command) => {
+    const current = get().opencodeChats[sessionId]
+    const selectedModel = current?.selectedModel
+    if (!selectedModel) {
+      set((state) => ({
+        opencodeChats: {
+          ...state.opencodeChats,
+          [sessionId]: { ...(state.opencodeChats[sessionId] ?? EMPTY_CHAT), error: 'Select a model before sending.' }
+        }
+      }))
+      return
+    }
+    if (current?.pending || current?.externalBusy) return
+
+    set((state) => {
+      const previous = state.opencodeChats[sessionId] ?? EMPTY_CHAT
+      return {
+        opencodeChats: {
+          ...state.opencodeChats,
+          [sessionId]: {
+            ...previous,
+            liveItems: retainActiveSubagentPermissions(previous.liveItems, previous.subagents),
+            subagents: previous.subagents.filter(subagentIsActive),
+            pending: true,
+            sessionsLoading: false,
+            error: null,
+            unreadCompletion: false
+          }
+        }
+      }
+    })
+
+    try {
+      const result = await window.api.opencode.executeCommand({
+        sessionId,
+        command,
+        model: selectedModel
+      })
+      set((state) => {
+        const chat = state.opencodeChats[sessionId]
+        if (!chat) return state
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: {
+              ...chat,
+              messages: result.messages,
+              openCodeSessionId: result.sessionId,
+              pending: false,
+              revert: result.revert,
+              undoSupported: result.undoSupported,
+              externalBusy: false,
+              liveItems: retainActiveSubagentPermissions(chat.liveItems, chat.subagents),
+              unreadCompletion: state.selectedSessionId !== sessionId
+            }
+          }
+        }
+      })
+      await get().persistOpenCodeSelection(sessionId, result.sessionId, selectedModel)
+      await get().refreshOpenCodeSessionList(sessionId)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'OpenCode command failed.'
+      set((state) => {
+        const chat = state.opencodeChats[sessionId]
+        if (!chat) return state
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: {
+              ...chat,
+              pending: false,
+              error: message,
+              liveItems: retainActiveSubagentPermissions(chat.liveItems, chat.subagents),
               unreadCompletion: state.selectedSessionId !== sessionId
             }
           }

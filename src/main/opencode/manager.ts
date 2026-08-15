@@ -12,6 +12,7 @@ import type {
   OpenCodeSessionSummary,
   OpenCodeModelOption,
   OpenCodeModelSelection,
+  OpenCodeSlashCommand,
   OpenCodeSubagent,
   OpenCodeSubagentStatus,
   OpenCodeRevertState,
@@ -670,6 +671,13 @@ export function createPromptBody(text: string, model: OpenCodeModelSelection): {
   }
 }
 
+export function createOpenCodeSessionOperationBody(model: OpenCodeModelSelection): {
+  providerID: string
+  modelID: string
+} {
+  return { providerID: model.providerID, modelID: model.modelID }
+}
+
 function modelKey(model: OpenCodeModelSelection): string {
   return `${model.providerID}/${model.modelID}${model.variant ? `#${model.variant}` : ''}`
 }
@@ -975,6 +983,54 @@ export class OpenCodeManager {
           { id: response.info.id, role: 'assistant', text: reply }
         ]
       }
+    } finally {
+      this.pending.delete(session.id)
+    }
+  }
+
+  async executeCommand(
+    session: Session,
+    command: OpenCodeSlashCommand,
+    model: OpenCodeModelSelection
+  ): Promise<OpenCodeConversationResponse> {
+    if (session.kind !== 'native') {
+      throw new Error('OpenCode GUI integration currently supports native sessions only.')
+    }
+
+    if (this.pending.has(session.id)) {
+      throw new Error('A message is already being sent for this session.')
+    }
+
+    this.pending.add(session.id)
+    try {
+      const runtime = await this.ensureRuntime(session)
+      if (!runtime.models) await this.listModels(session)
+      if (!runtime.models?.some((option) => modelSelectionMatches(option, model))) {
+        throw new Error('That model is no longer available. Refresh the model list and select another model.')
+      }
+      if (!runtime.openCodeSessionId) {
+        await this.createSession(session)
+      }
+      const openCodeSessionId = runtime.openCodeSessionId
+      if (!openCodeSessionId) throw new Error('OpenCode conversation is not selected.')
+
+      if (command === 'init') {
+        await requestJson<boolean>(
+          runtime.url,
+          `/session/${encodeURIComponent(openCodeSessionId)}/init`,
+          createOpenCodeSessionOperationBody(model),
+          REQUEST_TIMEOUT_MS
+        )
+      } else {
+        await requestJson<boolean>(
+          runtime.url,
+          `/session/${encodeURIComponent(openCodeSessionId)}/summarize`,
+          createOpenCodeSessionOperationBody(model),
+          REQUEST_TIMEOUT_MS
+        )
+      }
+
+      return this.loadConversation(runtime, openCodeSessionId)
     } finally {
       this.pending.delete(session.id)
     }

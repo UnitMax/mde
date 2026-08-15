@@ -240,6 +240,15 @@ export interface SendOpenCodeMessageResponse {
   messages: OpenCodeChatItem[]
 }
 
+/** Slash commands supported directly by the MDE OpenCode GUI. */
+export type OpenCodeSlashCommand = 'compact' | 'init'
+
+export interface ExecuteOpenCodeCommandRequest {
+  sessionId: string
+  command: OpenCodeSlashCommand
+  model: OpenCodeModelSelection
+}
+
 export interface OpenCodeRevertState {
   messageID: string
   partID?: string

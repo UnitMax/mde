@@ -23,6 +23,7 @@ import type {
   OpenCodeModelSelection,
   OpenCodePermissionReply,
   OpenCodeReasoningMessage,
+  OpenCodeSlashCommand,
   OpenCodeSubagent,
   OpenCodeToolMessage,
   PtySize,
@@ -39,6 +40,7 @@ import {
   AlertDialogTitle
 } from '@/components/ui/alert-dialog'
 import { MarkdownMessage } from '@/components/MarkdownMessage'
+import { GUI_SLASH_COMMANDS, resolveSlashCommand, slashCommandDraft } from '@/components/slash-commands'
 import { describeBuiltInTool } from '@/components/tool-summary'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -538,8 +540,10 @@ function SubagentActivityPanel({ subagents }: { subagents: OpenCodeSubagent[] })
 
 function GuiView({ session }: { session: Session }): JSX.Element {
   const [draft, setDraft] = useState('')
+  const [slashError, setSlashError] = useState<string | null>(null)
   const chat = useWorkspace((state) => state.opencodeChats[session.id])
   const sendOpenCodeMessage = useWorkspace((state) => state.sendOpenCodeMessage)
+  const executeOpenCodeCommand = useWorkspace((state) => state.executeOpenCodeCommand)
   const loadOpenCodeModels = useWorkspace((state) => state.loadOpenCodeModels)
   const selectOpenCodeModel = useWorkspace((state) => state.selectOpenCodeModel)
   const loadOpenCodeSessions = useWorkspace((state) => state.loadOpenCodeSessions)
@@ -568,6 +572,30 @@ function GuiView({ session }: { session: Session }): JSX.Element {
   const latestTurnId = latestCompletedTurnId(messages)
   const assistantLabel = selectedModel ? modelLabel(selectedModel, availableModels) : 'OpenCode'
   const logRef = useRef<HTMLOListElement>(null)
+  const slashDraft = slashCommandDraft(draft)
+  const slashQuery = slashDraft && !slashDraft.hasArguments ? slashDraft.token.toLowerCase() : null
+  const slashSuggestions =
+    slashQuery === null
+      ? []
+      : GUI_SLASH_COMMANDS.filter(
+          (candidate) =>
+            candidate.command.includes(slashQuery) || candidate.aliases.some((alias) => alias.includes(slashQuery))
+        )
+  const draftRef = useRef<HTMLTextAreaElement>(null)
+  const slashSuggestionRefs = useRef<Array<HTMLButtonElement | null>>([])
+
+  const focusSlashSuggestion = (index: number): void => {
+    const count = slashSuggestions.length
+    if (count === 0) return
+    const normalized = (index + count) % count
+    slashSuggestionRefs.current[normalized]?.focus()
+  }
+
+  const completeSlashCommand = (command: OpenCodeSlashCommand): void => {
+    setDraft(`/${command}`)
+    setSlashError(null)
+    window.requestAnimationFrame(() => draftRef.current?.focus())
+  }
 
   useEffect(() => {
     if (nativeSession) {
@@ -587,6 +615,17 @@ function GuiView({ session }: { session: Session }): JSX.Element {
     if (!nativeSession || pending || externalBusy || !draft.trim()) return
     const message = draft
     setDraft('')
+    const slashCommand = resolveSlashCommand(message)
+    if (slashCommand?.error) {
+      setSlashError(slashCommand.error)
+      setDraft(message)
+      return
+    }
+    setSlashError(null)
+    if (slashCommand?.command) {
+      void executeOpenCodeCommand(session.id, slashCommand.command)
+      return
+    }
     void sendOpenCodeMessage(session.id, message)
   }
 
@@ -692,14 +731,28 @@ function GuiView({ session }: { session: Session }): JSX.Element {
             {error}
           </p>
         )}
+        {slashError && (
+          <p role="alert" className="mb-2 text-xs text-danger">
+            {slashError}
+          </p>
+        )}
         <SubagentActivityPanel subagents={subagents} />
         <div className="mx-auto w-full max-w-4xl rounded-xl border border-line-strong bg-bg shadow-lg shadow-black/10 transition-colors focus-within:border-accent/70">
           <textarea
+            ref={draftRef}
             aria-label="Message"
             rows={2}
             value={draft}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => {
+              setDraft(event.target.value)
+              setSlashError(null)
+            }}
             onKeyDown={(event) => {
+              if (event.key === 'Tab' && slashSuggestions.length > 0) {
+                event.preventDefault()
+                focusSlashSuggestion(0)
+                return
+              }
               if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
                 event.preventDefault()
                 send()
@@ -711,6 +764,43 @@ function GuiView({ session }: { session: Session }): JSX.Element {
             }
             className="block min-h-[68px] max-h-48 w-full resize-none overflow-y-auto rounded-t-xl border-0 bg-transparent px-4 pb-2 pt-3 text-[13px] text-fg placeholder:text-fg-subtle focus:outline-none focus:ring-0 disabled:cursor-not-allowed disabled:opacity-50"
           />
+
+          {slashSuggestions.length > 0 && !pending && !externalBusy && (
+            <div className="border-t border-line px-2 py-1.5" role="listbox" aria-label="Slash commands">
+              {slashSuggestions.map((candidate, index) => (
+                <button
+                  type="button"
+                  key={candidate.command}
+                  role="option"
+                  ref={(element) => {
+                    slashSuggestionRefs.current[index] = element
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Tab') {
+                      event.preventDefault()
+                      focusSlashSuggestion(event.shiftKey ? index - 1 : index + 1)
+                    } else if (event.key === 'ArrowDown') {
+                      event.preventDefault()
+                      focusSlashSuggestion(index + 1)
+                    } else if (event.key === 'ArrowUp') {
+                      event.preventDefault()
+                      focusSlashSuggestion(index - 1)
+                    } else if (event.key === 'Escape') {
+                      event.preventDefault()
+                      draftRef.current?.focus()
+                    }
+                  }}
+                  className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs text-fg-muted hover:bg-hover hover:text-fg"
+                  onClick={() => {
+                    completeSlashCommand(candidate.command)
+                  }}
+                >
+                  <span className="font-medium">/{candidate.command}</span>
+                  <span className="text-[10px] text-fg-subtle">{candidate.description}</span>
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="flex items-center justify-between gap-2 px-2 pb-2">
             <div className="flex min-w-0 items-center gap-1">
