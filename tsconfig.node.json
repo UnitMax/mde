@@ -8,6 +8,7 @@
     "src/renderer/store/workspace.ts",
     "src/renderer/terminal/sessions.ts",
     "src/renderer/components/MarkdownMessage.tsx",
+    "src/renderer/components/tool-summary.ts",
     "src/renderer/lib/utils.ts",
     "src/shared/**/*",
     "test/**/*"

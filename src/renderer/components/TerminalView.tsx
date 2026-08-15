@@ -39,6 +39,7 @@ import {
   AlertDialogTitle
 } from '@/components/ui/alert-dialog'
 import { MarkdownMessage } from '@/components/MarkdownMessage'
+import { describeBuiltInTool } from '@/components/tool-summary'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -123,6 +124,7 @@ function ToolMessageView({
   live?: boolean
 }): JSX.Element {
   const statusClass = message.status === 'error' ? 'text-danger' : 'text-fg-subtle'
+  const summary = describeBuiltInTool(message)
 
   return (
     <li
@@ -131,7 +133,7 @@ function ToolMessageView({
     >
       <details open={live ? true : undefined}>
         <summary className="cursor-pointer select-none text-xs">
-          <span className="font-medium text-fg">{message.tool}</span>
+          <span className="font-medium text-fg" title={summary}>{summary}</span>
           <span className={`ml-2 ${statusClass}`}>{message.status}</span>
         </summary>
         <div className="mt-2 space-y-2 border-t border-line pt-2 text-xs">
