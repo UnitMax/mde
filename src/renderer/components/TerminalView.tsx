@@ -749,7 +749,11 @@ function GuiView({ session }: { session: Session }): JSX.Element {
   const replyOpenCodePermission = useWorkspace((state) => state.replyOpenCodePermission)
   const undoOpenCodeLastTurn = useWorkspace((state) => state.undoOpenCodeLastTurn)
   const redoOpenCodeLastTurn = useWorkspace((state) => state.redoOpenCodeLastTurn)
-  const nativeSession = session.kind === 'native'
+  const platform = useWorkspace((state) => state.platform)
+  const wslAvailable = useWorkspace((state) => state.wslAvailable)
+  const openCodeSupported =
+    session.kind === 'native' ||
+    (session.kind === 'wsl' && platform?.isWindows === true && wslAvailable && Boolean(session.distro))
   const pending = chat?.pending ?? false
   const compacting = chat?.compacting ?? false
   const error = chat?.error ?? null
@@ -798,11 +802,11 @@ function GuiView({ session }: { session: Session }): JSX.Element {
   }
 
   useEffect(() => {
-    if (nativeSession) {
+    if (openCodeSupported) {
       void loadOpenCodeModels(session.id)
       void loadOpenCodeSessions(session.id)
     }
-  }, [loadOpenCodeModels, loadOpenCodeSessions, nativeSession, session.id])
+  }, [loadOpenCodeModels, loadOpenCodeSessions, openCodeSupported, session.id])
 
   useEffect(() => {
     const log = logRef.current
@@ -812,7 +816,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
   }, [messages, liveItems, pending])
 
   const send = (): void => {
-    if (!nativeSession || pending || externalBusy || !draft.trim()) return
+    if (!openCodeSupported || pending || externalBusy || !draft.trim()) return
     const message = draft
     setDraft('')
     const slashCommand = resolveSlashCommand(message)
@@ -934,9 +938,9 @@ function GuiView({ session }: { session: Session }): JSX.Element {
       </ol>
 
       <div className="shrink-0 border-t border-line bg-panel px-3 py-3">
-        {!nativeSession && (
+        {!openCodeSupported && (
           <p role="alert" className="mb-2 text-xs text-warn">
-            OpenCode GUI integration currently supports native sessions only.
+            OpenCode GUI requires a native session or a Windows WSL session with OpenCode installed in the selected distro.
           </p>
         )}
         {error && (
@@ -973,7 +977,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
             }}
             placeholder="Message OpenCode..."
             disabled={
-              !nativeSession || pending || externalBusy || sessionsLoading || modelsLoading || !selectedModel
+              !openCodeSupported || pending || externalBusy || sessionsLoading || modelsLoading || !selectedModel
             }
             className="block min-h-[68px] max-h-48 w-full resize-none overflow-y-auto rounded-t-xl border-0 bg-transparent px-4 pb-2 pt-3 text-[13px] text-fg placeholder:text-fg-subtle focus:outline-none focus:ring-0 disabled:cursor-not-allowed disabled:opacity-50"
           />
@@ -1020,7 +1024,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
               <Select
                 value={openCodeSessionId ?? NEW_CONVERSATION_VALUE}
                 onValueChange={selectConversation}
-                disabled={!nativeSession || pending || externalBusy || sessionsLoading}
+                disabled={!openCodeSupported || pending || externalBusy || sessionsLoading}
               >
                 <SelectTrigger
                   aria-label="OpenCode conversation"
@@ -1047,7 +1051,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
                 size="icon-sm"
                 aria-label="Refresh OpenCode conversations"
                 title="Refresh OpenCode conversations"
-                disabled={!nativeSession || pending || externalBusy || sessionsLoading}
+                disabled={!openCodeSupported || pending || externalBusy || sessionsLoading}
                 onClick={() => void loadOpenCodeSessions(session.id)}
               >
                 <RefreshCw className={sessionsLoading ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'} />
@@ -1056,7 +1060,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
                 models={availableModels}
                 selected={selectedModel}
                 loading={modelsLoading}
-                disabled={!nativeSession || pending || externalBusy || sessionsLoading || modelsLoading}
+                disabled={!openCodeSupported || pending || externalBusy || sessionsLoading || modelsLoading}
                 onSelect={(model) => void selectOpenCodeModel(session.id, model)}
                 onRefresh={() => void loadOpenCodeModels(session.id)}
               />
@@ -1070,7 +1074,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
               title="Send message"
               className="h-8 w-8 shrink-0 rounded-lg"
               disabled={
-                !nativeSession ||
+                !openCodeSupported ||
                 pending ||
                 externalBusy ||
                 sessionsLoading ||

@@ -23,6 +23,7 @@ import type {
   Session
 } from '@shared/types'
 type OpenCodeSubagentStreamItem = Extract<OpenCodeStreamItem, { kind: 'subagent' }>
+const OPENCODE_SERVER_ARGS = ['serve', '--pure', '--hostname=127.0.0.1', '--port=0']
 const SERVER_START_TIMEOUT_MS = 10_000
 const REQUEST_TIMEOUT_MS = 120_000
 const HISTORY_REQUEST_TIMEOUT_MS = 10_000
@@ -43,15 +44,47 @@ export interface OpenCodeEvents {
 }
 
 export function createOpenCodeLaunch(
-  cwd: string,
-  environment: NodeJS.ProcessEnv = process.env
+  session: Session,
+  environment: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform
 ): {
+  file: string
   args: string[]
-  options: { cwd: string; env: NodeJS.ProcessEnv; windowsHide: true }
+  options: { cwd?: string; env: NodeJS.ProcessEnv; windowsHide: true }
 } {
+  if (session.kind === 'wsl') {
+    if (platform !== 'win32') {
+      throw new Error('WSL OpenCode sessions can only be launched on Windows.')
+    }
+    if (!session.distro) {
+      throw new Error(`WSL session "${session.name}" has no distro.`)
+    }
+
+    // Run through a login Bash shell so OpenCode installations managed by
+    // nvm/mise/bun/asdf are available on PATH inside the distro.
+    return {
+      file: 'wsl.exe',
+      args: [
+        '-d',
+        session.distro,
+        '--cd',
+        session.path,
+        '--',
+        'bash',
+        '-lic',
+        `exec opencode ${OPENCODE_SERVER_ARGS.join(' ')}`
+      ],
+      options: {
+        env: { ...environment, WSL_UTF8: '1' },
+        windowsHide: true
+      }
+    }
+  }
+
   return {
-    args: ['serve', '--pure', '--hostname=127.0.0.1', '--port=0'],
-    options: { cwd, env: { ...environment }, windowsHide: true }
+    file: 'opencode',
+    args: OPENCODE_SERVER_ARGS,
+    options: { cwd: session.path, env: { ...environment }, windowsHide: true }
   }
 }
 
@@ -437,12 +470,27 @@ interface OpenCodeHistoryMessage {
   parts: unknown
 }
 
-export function normalizeOpenCodeDirectory(value: string): string {
+export function normalizeOpenCodeDirectory(value: string, caseInsensitive?: boolean): string {
   const normalized = posix.normalize(value.trim().replaceAll('\\', '/'))
   const withoutTrailingSlash = normalized.length > 1 ? normalized.replace(/\/$/, '') : normalized
-  return process.platform === 'win32' || /^[A-Za-z]:\//.test(withoutTrailingSlash)
+  const shouldFoldCase =
+    caseInsensitive ?? (process.platform === 'win32' || /^[A-Za-z]:\//.test(withoutTrailingSlash))
+  return shouldFoldCase
     ? withoutTrailingSlash.toLowerCase()
     : withoutTrailingSlash
+}
+
+function assertOpenCodeSessionSupported(session: Session): void {
+  if (session.kind === 'native') return
+  if (session.kind !== 'wsl') {
+    throw new Error('OpenCode GUI integration does not support this session type.')
+  }
+  if (process.platform !== 'win32') {
+    throw new Error('WSL OpenCode sessions can only be launched on Windows.')
+  }
+  if (!session.distro) {
+    throw new Error(`WSL session "${session.name}" has no distro.`)
+  }
 }
 
 function timestamp(value: unknown): string {
@@ -1001,9 +1049,9 @@ function providerError(error: unknown): string {
 }
 
 /**
- * Runs one local OpenCode server for each native mde session. The
- * server and OpenCode session live only for this mde process; no credentials
- * cross the Electron boundary.
+ * Runs one local OpenCode server for each MDE session. The server and
+ * OpenCode session live only for this MDE process; no credentials cross the
+ * Electron boundary.
  */
 export class OpenCodeManager {
   private readonly runtimes = new Map<string, OpenCodeRuntime>()
@@ -1015,9 +1063,7 @@ export class OpenCodeManager {
   constructor(private readonly events?: OpenCodeEvents) {}
 
   async listSessions(session: Session): Promise<ListOpenCodeSessionsResponse> {
-    if (session.kind !== 'native') {
-      throw new Error('OpenCode GUI integration currently supports native sessions only.')
-    }
+    assertOpenCodeSessionSupported(session)
 
     const runtime = await this.ensureRuntime(session)
     const undoSupported = await this.isUndoSupported(runtime)
@@ -1028,11 +1074,12 @@ export class OpenCodeManager {
       HISTORY_REQUEST_TIMEOUT_MS,
       'GET'
     )
-    const directory = normalizeOpenCodeDirectory(session.path)
+    const caseInsensitive = process.platform === 'win32' && session.kind === 'native'
+    const directory = normalizeOpenCodeDirectory(session.path, caseInsensitive)
     const sessions = response
       .map(toSessionSummary)
       .filter((item): item is OpenCodeSessionSummary => item !== null)
-      .filter((item) => normalizeOpenCodeDirectory(item.directory) === directory)
+      .filter((item) => normalizeOpenCodeDirectory(item.directory, caseInsensitive) === directory)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 
     const selectedSessionId =
@@ -1045,9 +1092,7 @@ export class OpenCodeManager {
   }
 
   async listModels(session: Session): Promise<ListOpenCodeModelsResponse> {
-    if (session.kind !== 'native') {
-      throw new Error('OpenCode GUI integration currently supports native sessions only.')
-    }
+    assertOpenCodeSessionSupported(session)
 
     const runtime = await this.ensureRuntime(session)
     const response = await requestJson<OpenCodeProviderResponse>(
@@ -1063,9 +1108,7 @@ export class OpenCodeManager {
   }
 
   async selectSession(session: Session, openCodeSessionId: string): Promise<OpenCodeConversationResponse> {
-    if (session.kind !== 'native') {
-      throw new Error('OpenCode GUI integration currently supports native sessions only.')
-    }
+    assertOpenCodeSessionSupported(session)
     if (!openCodeSessionId.trim()) throw new Error('OpenCode session ID cannot be empty.')
 
     const runtime = await this.ensureRuntime(session)
@@ -1079,9 +1122,7 @@ export class OpenCodeManager {
   }
 
   async createSession(session: Session): Promise<OpenCodeConversationResponse> {
-    if (session.kind !== 'native') {
-      throw new Error('OpenCode GUI integration currently supports native sessions only.')
-    }
+    assertOpenCodeSessionSupported(session)
 
     const runtime = await this.ensureRuntime(session)
     const created = await requestJson<OpenCodeSessionResponse>(
@@ -1112,9 +1153,7 @@ export class OpenCodeManager {
   ): Promise<SendOpenCodeMessageResponse> {
     const prompt = text.trim()
     if (!prompt) throw new Error('Message cannot be empty.')
-    if (session.kind !== 'native') {
-      throw new Error('OpenCode GUI integration currently supports native sessions only.')
-    }
+    assertOpenCodeSessionSupported(session)
     if (this.pending.has(session.id)) throw new Error('A message is already being sent for this session.')
 
     this.pending.add(session.id)
@@ -1193,9 +1232,7 @@ export class OpenCodeManager {
     command: OpenCodeSlashCommand,
     model: OpenCodeModelSelection
   ): Promise<OpenCodeConversationResponse> {
-    if (session.kind !== 'native') {
-      throw new Error('OpenCode GUI integration currently supports native sessions only.')
-    }
+    assertOpenCodeSessionSupported(session)
 
     if (this.pending.has(session.id)) {
       throw new Error('A message is already being sent for this session.')
@@ -1240,9 +1277,7 @@ export class OpenCodeManager {
   }
 
   async revert(session: Session, messageId: string): Promise<OpenCodeConversationResponse> {
-    if (session.kind !== 'native') {
-      throw new Error('OpenCode GUI integration currently supports native sessions only.')
-    }
+    assertOpenCodeSessionSupported(session)
     if (!messageId.trim()) throw new Error('OpenCode message ID cannot be empty.')
 
     const runtime = await this.ensureRuntime(session)
@@ -1265,9 +1300,7 @@ export class OpenCodeManager {
   }
 
   async unrevert(session: Session): Promise<OpenCodeConversationResponse> {
-    if (session.kind !== 'native') {
-      throw new Error('OpenCode GUI integration currently supports native sessions only.')
-    }
+    assertOpenCodeSessionSupported(session)
 
     const runtime = await this.ensureRuntime(session)
     const openCodeSessionId = runtime.openCodeSessionId
@@ -1391,9 +1424,9 @@ export class OpenCodeManager {
   }
 
   private async startRuntime(session: Session): Promise<OpenCodeRuntime> {
-    const launch = createOpenCodeLaunch(session.path)
+    const launch = createOpenCodeLaunch(session)
     const child = spawn(
-      'opencode',
+      launch.file,
       launch.args,
       launch.options
     )

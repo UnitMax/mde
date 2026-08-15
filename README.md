@@ -3,9 +3,10 @@
 Cross-platform desktop shell for an agentic dev environment: grouped projects containing
 persistent terminal sessions, with first-class WSL support on Windows.
 
-This is v1 — the shell only. There is no OpenCode integration, no git/PR features, and no
-settings screen. The launch command lives in a single pure function
-(`src/main/pty/launch.ts`) so OpenCode can be slotted in later without touching anything else.
+This is v1 — a desktop shell with OpenCode GUI integration. There are no git/PR features or
+settings screen. OpenCode is an external executable and is launched in the target environment:
+native sessions use the host OpenCode CLI, while Windows WSL sessions use the CLI installed in
+their selected distro.
 
 ## Requirements
 
@@ -18,6 +19,9 @@ settings screen. The launch command lives in a single pure function
 - Linux only, to *run* Electron: `libnss3 libnspr4 libasound2t64` (`libasound2` on older
   releases). Without them the Electron binary fails with
   `error while loading shared libraries: libnspr4.so`.
+- OpenCode GUI sessions require OpenCode to be installed and authenticated in the target
+  environment. For WSL sessions, install it inside the selected WSL 2 distro and ensure it is
+  available from a login Bash shell (`bash -lic 'command -v opencode'`).
 
 ## Development
 
@@ -81,12 +85,16 @@ present; no migration is attempted.
 
 ### WSL
 
-- Every `wsl.exe` invocation goes through `runWsl()` in `src/main/wsl/distros.ts`, which sets
-  `WSL_UTF8=1`. Without it `wsl.exe` emits UTF-16LE and every string comparison downstream
-  silently fails.
+- Short-lived `wsl.exe` queries and path conversions go through `runWsl()` in
+  `src/main/wsl/distros.ts`, which sets `WSL_UTF8=1`. The long-lived OpenCode server is spawned
+  directly so MDE can keep its process and event stream attached.
 - WSL sessions launch as
   `wsl.exe -d <distro> --cd <path> -- bash -lic 'exec bash -i'`. The login+interactive shell
   is required: nvm/mise/bun/asdf put their shims on `PATH` from the login profile.
+- OpenCode GUI sessions use the same WSL boundary: MDE starts
+  `opencode serve --pure --hostname=127.0.0.1 --port=0` inside the selected distro and talks to
+  its localhost HTTP/SSE server from the Windows process. WSL OpenCode uses the distro's own
+  installation, credentials, configuration, and filesystem paths.
 - Session paths are stored in the target's own format. `wslpath` is used only at the UI
   boundary — when the Windows folder picker returns a `\\wsl$\` / `\\wsl.localhost\` UNC path
   or a drive path, and when revealing a folder in Explorer.

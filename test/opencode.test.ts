@@ -18,14 +18,33 @@ import {
   isGitVcsResponse
 } from '../src/main/opencode/manager'
 import { estimateTokenCount } from '../src/shared/generation-metrics'
+import type { Session } from '../src/shared/types'
 
 const TEST_MODEL = { providerID: 'opencode', modelID: 'nemotron-3.5-lightning-free' } as const
+const nativeSession: Session = {
+  id: 'native-1',
+  projectId: 'project-1',
+  name: 'Native app',
+  kind: 'native',
+  path: 'C:\\Work\\App',
+  createdAt: '2026-01-01T00:00:00.000Z'
+}
+const wslSession: Session = {
+  id: 'wsl-1',
+  projectId: 'project-1',
+  name: 'WSL app',
+  kind: 'wsl',
+  distro: 'Ubuntu-24.04',
+  path: '/home/max/src/app',
+  createdAt: '2026-01-01T00:00:00.000Z'
+}
 
 describe('OpenCode GUI protocol helpers', () => {
   it('normalizes native OpenCode directory spellings before matching', () => {
     expect(normalizeOpenCodeDirectory('/workspace/app/')).toBe('/workspace/app')
     expect(normalizeOpenCodeDirectory('/workspace/app\\nested')).toBe('/workspace/app/nested')
     expect(normalizeOpenCodeDirectory('C:\\Work\\App\\')).toBe('c:/work/app')
+    expect(normalizeOpenCodeDirectory('/Home/Max/App', false)).toBe('/Home/Max/App')
   })
   it('recognizes live Git VCS responses for undo support', () => {
     expect(isGitVcsResponse({ branch: 'main' })).toBe(true)
@@ -216,18 +235,42 @@ describe('OpenCode GUI protocol helpers', () => {
   })
 
   it('uses the regular OpenCode config while retaining pure server startup', () => {
-    const launch = createOpenCodeLaunch('/workspace', {
+    const launch = createOpenCodeLaunch(nativeSession, {
       OPENCODE_CONFIG: '/tmp/opencode.json',
       OPENCODE_CONFIG_DIR: '/tmp/config',
       OPENCODE_CONFIG_CONTENT: '{"permission":{"bash":"ask"}}'
     })
+    expect(launch.file).toBe('opencode')
     expect(launch.args).toEqual(['serve', '--pure', '--hostname=127.0.0.1', '--port=0'])
-    expect(launch.options.cwd).toBe('/workspace')
+    expect(launch.options.cwd).toBe('C:\\Work\\App')
     expect(launch.options.env).toMatchObject({
       OPENCODE_CONFIG: '/tmp/opencode.json',
       OPENCODE_CONFIG_DIR: '/tmp/config',
       OPENCODE_CONFIG_CONTENT: '{"permission":{"bash":"ask"}}'
     })
+  })
+
+  it('launches OpenCode inside the selected WSL distro with a login shell', () => {
+    const launch = createOpenCodeLaunch(wslSession, { PATH: '/usr/bin' }, 'win32')
+
+    expect(launch.file).toBe('wsl.exe')
+    expect(launch.args).toEqual([
+      '-d',
+      'Ubuntu-24.04',
+      '--cd',
+      '/home/max/src/app',
+      '--',
+      'bash',
+      '-lic',
+      'exec opencode serve --pure --hostname=127.0.0.1 --port=0'
+    ])
+    expect(launch.options.cwd).toBeUndefined()
+    expect(launch.options.env).toMatchObject({ PATH: '/usr/bin', WSL_UTF8: '1' })
+  })
+
+  it('rejects WSL OpenCode launches outside Windows', () => {
+    expect(() => createOpenCodeLaunch(wslSession, {}, 'linux')).toThrow(/only be launched on Windows/)
+    expect(() => createOpenCodeLaunch({ ...wslSession, distro: undefined }, {}, 'win32')).toThrow(/no distro/)
   })
 
   it('finds the localhost URL emitted by opencode serve', () => {
