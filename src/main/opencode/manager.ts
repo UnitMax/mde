@@ -74,17 +74,27 @@ export class TextDeltaTracker {
   accept(event: unknown): string | null {
     if (!isRecord(event) || !isRecord(event.properties)) return null
     const properties = event.properties
-    if (properties.sessionID !== this.sessionId) return null
 
     if (event.type === 'message.part.updated' && isRecord(properties.part)) {
       const part = properties.part
       if (typeof part.id !== 'string') return null
+      const partSessionId = typeof part.sessionID === 'string' ? part.sessionID : properties.sessionID
+      if (partSessionId !== this.sessionId) return null
       if (part.type === 'text') this.textPartIds.add(part.id)
       else this.textPartIds.delete(part.id)
+
+      // Some OpenCode versions include the incremental text on the part update
+      // itself instead of emitting a separate message.part.delta event.
+      if (part.type === 'text' && typeof properties.delta === 'string') {
+        const separator = this.lastPartId !== null && this.lastPartId !== part.id ? '\n\n' : ''
+        this.lastPartId = part.id
+        return `${separator}${properties.delta}`
+      }
       return null
     }
 
     if (event.type !== 'message.part.delta') return null
+    if (properties.sessionID !== this.sessionId) return null
     if (properties.field !== 'text' || typeof properties.delta !== 'string') return null
     if (typeof properties.partID !== 'string' || !this.textPartIds.has(properties.partID)) return null
 

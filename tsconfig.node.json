@@ -1,8 +1,12 @@
 {
+  "files": ["src/preload/index.d.ts"],
   "include": [
     "electron.vite.config.ts",
     "src/main/**/*",
     "src/preload/**/*",
+    "src/preload/index.d.ts",
+    "src/renderer/store/workspace.ts",
+    "src/renderer/terminal/sessions.ts",
     "src/shared/**/*",
     "test/**/*"
   ],
@@ -11,7 +15,7 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "DOM"],
     "types": ["node"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
@@ -27,6 +31,7 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
+      "@/*": ["src/renderer/*"],
       "@shared/*": ["src/shared/*"]
     }
   }

@@ -158,7 +158,7 @@ describe('OpenCode event stream', () => {
     })
     const opened = (id: string, type: string): unknown => ({
       type: 'message.part.updated',
-      properties: { sessionID: 'ses_1', part: { id, type, text: '' } }
+      properties: { part: { id, sessionID: 'ses_1', type, text: '' } }
     })
 
     // A reasoning part streams through the same `field: "text"` shape.
@@ -179,7 +179,7 @@ describe('OpenCode event stream', () => {
     expect(
       tracker.accept({
         type: 'message.part.updated',
-        properties: { sessionID: 'ses_other', part: { id: 'prt_x', type: 'text' } }
+        properties: { part: { id: 'prt_x', sessionID: 'ses_other', type: 'text' } }
       })
     ).toBeNull()
     expect(
@@ -197,5 +197,18 @@ describe('OpenCode event stream', () => {
     ).toBeNull()
     expect(tracker.accept({ type: 'session.idle', properties: { sessionID: 'ses_1' } })).toBeNull()
     expect(tracker.accept(null)).toBeNull()
+  })
+
+  it('accepts incremental text carried by a part-updated event', () => {
+    const tracker = new TextDeltaTracker('ses_1')
+    expect(
+      tracker.accept({
+        type: 'message.part.updated',
+        properties: {
+          part: { id: 'prt_text', sessionID: 'ses_1', type: 'text', text: 'Hello' },
+          delta: 'Hello'
+        }
+      })
+    ).toBe('Hello')
   })
 })

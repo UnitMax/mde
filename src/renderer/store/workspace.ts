@@ -23,6 +23,7 @@ export interface OpenCodeChatState {
 }
 
 const EMPTY_CHAT: OpenCodeChatState = { messages: [], pending: false, error: null, streamingText: '' }
+let eventBridgeReady = false
 
 interface WorkspaceState {
   projects: Project[]
@@ -73,6 +74,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   ready: false,
 
   init: async () => {
+    // React StrictMode may run the mount effect more than once in development.
+    // These are process-lifetime push subscriptions, so install them once.
+    if (!eventBridgeReady) {
+      eventBridgeReady = true
+      window.api.pty.onExit((info) => get().noteExit(info))
+      window.api.opencode.onStream((chunk) => get().appendOpenCodeStream(chunk))
+    }
+
     const [platform, workspace, statuses, wslAvailable] = await Promise.all([
       window.api.platform.info(),
       window.api.workspace.list(),
@@ -92,8 +101,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     })
 
     if (wslAvailable) void get().refreshDistros()
-    window.api.pty.onExit((info) => get().noteExit(info))
-    window.api.opencode.onStream((chunk) => get().appendOpenCodeStream(chunk))
   },
 
   selectSession: (id) => set({ selectedSessionId: id }),
