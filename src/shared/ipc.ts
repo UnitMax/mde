@@ -10,6 +10,7 @@ import type {
   Session,
   SendOpenCodeMessageRequest,
   SendOpenCodeMessageResponse,
+  SendOpenCodePermissionReplyRequest,
   OpenCodeStreamChunk,
   PtyDataChunk,
   PtyExitInfo,
@@ -53,6 +54,7 @@ export const IpcChannels = {
   pathReveal: 'path:reveal',
 
   opencodeSend: 'opencode:send',
+  opencodePermissionReply: 'opencode:permission-reply',
 
   platformInfo: 'platform:info'
 } as const
@@ -156,6 +158,7 @@ export interface RendererApi {
   }
   opencode: {
     send(req: SendOpenCodeMessageRequest): Promise<SendOpenCodeMessageResponse>
+    replyPermission(req: SendOpenCodePermissionReplyRequest): Promise<void>
     /** Live text, reasoning, and tool-part updates while `send` is in flight. */
     onStream(listener: (chunk: OpenCodeStreamChunk) => void): () => void
   }

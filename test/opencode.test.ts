@@ -6,7 +6,7 @@ import {
   extractReasoningMessages,
   extractTurnItems,
   extractTextParts,
-  OPENCODE_INLINE_CONFIG,
+  createOpenCodeLaunch,
   OpenCodeStreamTracker,
   parseServerUrl,
   parseSseFrames
@@ -21,16 +21,18 @@ describe('OpenCode GUI protocol helpers', () => {
     })
   })
 
-  it('starts OpenCode with read-only workspace tools enabled', () => {
-    expect(OPENCODE_INLINE_CONFIG).toEqual({
-      permission: {
-        '*': 'deny',
-        read: 'allow',
-        glob: 'allow',
-        grep: 'allow',
-        list: 'allow',
-        external_directory: 'deny'
-      }
+  it('uses the regular OpenCode config while retaining pure server startup', () => {
+    const launch = createOpenCodeLaunch('/workspace', {
+      OPENCODE_CONFIG: '/tmp/opencode.json',
+      OPENCODE_CONFIG_DIR: '/tmp/config',
+      OPENCODE_CONFIG_CONTENT: '{"permission":{"bash":"ask"}}'
+    })
+    expect(launch.args).toEqual(['serve', '--pure', '--hostname=127.0.0.1', '--port=0'])
+    expect(launch.options.cwd).toBe('/workspace')
+    expect(launch.options.env).toMatchObject({
+      OPENCODE_CONFIG: '/tmp/opencode.json',
+      OPENCODE_CONFIG_DIR: '/tmp/config',
+      OPENCODE_CONFIG_CONTENT: '{"permission":{"bash":"ask"}}'
     })
   })
 
@@ -318,6 +320,55 @@ describe('OpenCode event stream', () => {
       output: 'contents',
       durationMs: 150
     })
+  })
+
+  it('normalizes permission requests and ignores other sessions', () => {
+    const tracker = new OpenCodeStreamTracker('ses_1')
+    expect(
+      tracker.accept({
+        type: 'permission.asked',
+        properties: {
+          requestID: 'permission-1',
+          sessionID: 'ses_1',
+          permission: 'bash',
+          patterns: ['git status *'],
+          title: 'Inspect the repository'
+        }
+      })
+    ).toEqual({
+      kind: 'permission',
+      requestId: 'permission-1',
+      permission: 'bash',
+      patterns: ['git status *'],
+      title: 'Inspect the repository'
+    })
+    expect(
+      tracker.accept({
+        type: 'permission.updated',
+        properties: {
+          id: 'permission-2',
+          sessionID: 'ses_1',
+          type: 'read',
+          pattern: '/workspace/**'
+        }
+      })
+    ).toEqual({
+      kind: 'permission',
+      requestId: 'permission-2',
+      permission: 'read',
+      patterns: ['/workspace/**']
+    })
+    expect(
+      tracker.accept({
+        type: 'permission.asked',
+        properties: {
+          requestID: 'other-permission',
+          sessionID: 'ses_other',
+          permission: 'bash',
+          patterns: ['rm -rf /']
+        }
+      })
+    ).toBeNull()
   })
 
   it('accepts the global event envelope used by the OpenCode event endpoint', () => {

@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowUp, ChevronRight, RotateCw } from 'lucide-react'
 import type {
   OpenCodeLiveChatItem,
+  OpenCodeLivePermissionMessage,
   OpenCodeLiveReasoningMessage,
   OpenCodeLiveToolMessage,
+  OpenCodePermissionReply,
   OpenCodeReasoningMessage,
   OpenCodeToolMessage,
   PtySize,
@@ -175,9 +177,55 @@ function LiveTextMessageView({ text }: { text: string }): JSX.Element {
   )
 }
 
-function LiveItemView({ item }: { item: OpenCodeLiveChatItem }): JSX.Element {
+function PermissionMessageView({
+  message,
+  onReply
+}: {
+  message: OpenCodeLivePermissionMessage
+  onReply: (reply: OpenCodePermissionReply) => void
+}): JSX.Element {
+  return (
+    <li
+      aria-live="polite"
+      className="max-w-[90%] rounded border border-warn/40 bg-panel px-3 py-2 text-fg-muted"
+    >
+      <p className="text-xs font-medium text-fg">Permission requested</p>
+      <p className="mt-1 text-xs text-fg-subtle">
+        OpenCode needs permission for <span className="font-medium text-fg">{message.permission}</span>.
+      </p>
+      {message.title && <p className="mt-1 text-xs text-fg-subtle">{message.title}</p>}
+      {message.patterns.length > 0 && (
+        <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-bg p-2 text-[11px] text-fg-muted">
+          {message.patterns.join('\n')}
+        </pre>
+      )}
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Button size="sm" disabled={message.responding} onClick={() => onReply('once')}>
+          Once
+        </Button>
+        <Button size="sm" variant="secondary" disabled={message.responding} onClick={() => onReply('always')}>
+          Always
+        </Button>
+        <Button size="sm" variant="danger" disabled={message.responding} onClick={() => onReply('reject')}>
+          Reject
+        </Button>
+      </div>
+    </li>
+  )
+}
+
+function LiveItemView({
+  item,
+  onPermissionReply
+}: {
+  item: OpenCodeLiveChatItem
+  onPermissionReply: (requestId: string, reply: OpenCodePermissionReply) => void
+}): JSX.Element {
   if (item.role === 'tool') return <ToolMessageView message={item} live />
   if (item.role === 'reasoning') return <ReasoningMessageView message={item} live />
+  if (item.role === 'permission') {
+    return <PermissionMessageView message={item} onReply={(reply) => onPermissionReply(item.id, reply)} />
+  }
   return <LiveTextMessageView text={item.text} />
 }
 
@@ -185,6 +233,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
   const [draft, setDraft] = useState('')
   const chat = useWorkspace((state) => state.opencodeChats[session.id])
   const sendOpenCodeMessage = useWorkspace((state) => state.sendOpenCodeMessage)
+  const replyOpenCodePermission = useWorkspace((state) => state.replyOpenCodePermission)
   const nativeSession = session.kind === 'native'
   const pending = chat?.pending ?? false
   const error = chat?.error ?? null
@@ -204,6 +253,10 @@ function GuiView({ session }: { session: Session }): JSX.Element {
     const message = draft
     setDraft('')
     void sendOpenCodeMessage(session.id, message)
+  }
+
+  const replyPermission = (requestId: string, reply: OpenCodePermissionReply): void => {
+    void replyOpenCodePermission(session.id, requestId, reply)
   }
 
   return (
@@ -234,7 +287,10 @@ function GuiView({ session }: { session: Session }): JSX.Element {
             </li>
           )
         )}
-        {pending && liveItems.map((item) => <LiveItemView key={item.id} item={item} />)}
+        {pending &&
+          liveItems.map((item) => (
+            <LiveItemView key={item.id} item={item} onPermissionReply={replyPermission} />
+          ))}
         {pending && liveItems.length === 0 && (
           <li className="max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
             Nemotron is responding…

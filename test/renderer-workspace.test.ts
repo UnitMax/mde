@@ -20,6 +20,7 @@ describe('renderer workspace event bridge', () => {
     },
     opencode: {
       send: vi.fn(),
+      replyPermission: vi.fn(async () => undefined),
       onStream: vi.fn((listener: (chunk: OpenCodeStreamChunk) => void) => {
         streamListeners.push(listener)
         return vi.fn()
@@ -33,6 +34,7 @@ describe('renderer workspace event bridge', () => {
     useWorkspace.setState({ opencodeChats: {} })
     api.pty.onExit.mockClear()
     api.opencode.onStream.mockClear()
+    api.opencode.replyPermission.mockClear()
   })
 
   it('registers process-lifetime push listeners only once', async () => {
@@ -74,6 +76,16 @@ describe('renderer workspace event bridge', () => {
     })
     streamListeners[0]?.({
       sessionId: 'session-1',
+      item: {
+        kind: 'permission',
+        requestId: 'permission-1',
+        permission: 'bash',
+        patterns: ['git status *'],
+        title: 'Inspect the repository'
+      }
+    })
+    streamListeners[0]?.({
+      sessionId: 'session-1',
       item: { kind: 'reasoning', partId: 'reasoning-1', delta: ' Next.', done: false }
     })
     expect(useWorkspace.getState().opencodeChats['session-1']?.liveItems).toEqual([
@@ -87,8 +99,26 @@ describe('renderer workspace event bridge', () => {
         input: {},
         rawInput: '{"filePath":"/tmp/a"}'
       },
-      { id: 'text-1', role: 'assistant', text: 'Hello', live: true }
+      { id: 'text-1', role: 'assistant', text: 'Hello', live: true },
+      {
+        id: 'permission-1',
+        role: 'permission',
+        live: true,
+        permission: 'bash',
+        patterns: ['git status *'],
+        title: 'Inspect the repository'
+      }
     ])
+
+    await useWorkspace.getState().replyOpenCodePermission('session-1', 'permission-1', 'once')
+    expect(api.opencode.replyPermission).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      requestId: 'permission-1',
+      reply: 'once'
+    })
+    expect(
+      useWorkspace.getState().opencodeChats['session-1']?.liveItems.some((item) => item.id === 'permission-1')
+    ).toBe(false)
 
     streamListeners[0]?.({
       sessionId: 'session-1',

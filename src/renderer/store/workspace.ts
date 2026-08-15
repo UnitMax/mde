@@ -7,6 +7,7 @@ import type {
   OpenCodeChatItem,
   OpenCodeChatMessage,
   OpenCodeLiveChatItem,
+  OpenCodePermissionReply,
   OpenCodeStreamChunk,
   Project,
   PtyExitInfo,
@@ -26,7 +27,7 @@ const EMPTY_CHAT: OpenCodeChatState = { messages: [], liveItems: [], pending: fa
 let eventBridgeReady = false
 
 function upsertLiveItem(items: OpenCodeLiveChatItem[], item: OpenCodeStreamChunk['item']): OpenCodeLiveChatItem[] {
-  const id = item.partId
+  const id = item.kind === 'permission' ? item.requestId : item.partId
   const index = items.findIndex((current) => current.id === id)
 
   if (item.kind === 'text') {
@@ -55,6 +56,21 @@ function upsertLiveItem(items: OpenCodeLiveChatItem[], item: OpenCodeStreamChunk
             live: true,
             ...(item.durationMs === undefined ? {} : { durationMs: item.durationMs })
           }
+    if (index < 0) return [...items, next]
+    return items.map((current, currentIndex) => (currentIndex === index ? next : current))
+  }
+
+  if (item.kind === 'permission') {
+    const existing = index >= 0 ? items[index] : undefined
+    const next: OpenCodeLiveChatItem = {
+      ...(existing?.role === 'permission' ? existing : {}),
+      id,
+      role: 'permission',
+      live: true,
+      permission: item.permission,
+      patterns: item.patterns,
+      ...(item.title === undefined ? {} : { title: item.title })
+    }
     if (index < 0) return [...items, next]
     return items.map((current, currentIndex) => (currentIndex === index ? next : current))
   }
@@ -108,6 +124,11 @@ interface WorkspaceState {
   noteExit: (info: PtyExitInfo) => void
   clearExit: (id: string) => void
   sendOpenCodeMessage: (sessionId: string, text: string) => Promise<void>
+  replyOpenCodePermission: (
+    sessionId: string,
+    requestId: string,
+    reply: OpenCodePermissionReply
+  ) => Promise<void>
   appendOpenCodeStream: (chunk: OpenCodeStreamChunk) => void
   refreshDistros: () => Promise<void>
 }
@@ -310,6 +331,72 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
           opencodeChats: {
             ...state.opencodeChats,
             [sessionId]: { ...current, pending: false, error: message, liveItems: [] }
+          }
+        }
+      })
+    }
+  },
+
+  replyOpenCodePermission: async (sessionId, requestId, reply) => {
+    const current = get().opencodeChats[sessionId]
+    const permission = current?.liveItems.find(
+      (item) => item.role === 'permission' && item.id === requestId
+    )
+    if (!permission || permission.role !== 'permission' || permission.responding) return
+
+    set((state) => {
+      const chat = state.opencodeChats[sessionId]
+      if (!chat) return state
+      return {
+        opencodeChats: {
+          ...state.opencodeChats,
+          [sessionId]: {
+            ...chat,
+            liveItems: chat.liveItems.map((item) =>
+              item.role === 'permission' && item.id === requestId
+                ? { ...item, responding: true }
+                : item
+            ),
+            error: null
+          }
+        }
+      }
+    })
+
+    try {
+      await window.api.opencode.replyPermission({ sessionId, requestId, reply })
+      set((state) => {
+        const chat = state.opencodeChats[sessionId]
+        if (!chat) return state
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: {
+              ...chat,
+              liveItems: chat.liveItems.filter(
+                (item) => !(item.role === 'permission' && item.id === requestId)
+              )
+            }
+          }
+        }
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'OpenCode permission reply failed.'
+      set((state) => {
+        const chat = state.opencodeChats[sessionId]
+        if (!chat) return state
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: {
+              ...chat,
+              error: message,
+              liveItems: chat.liveItems.map((item) =>
+                item.role === 'permission' && item.id === requestId
+                  ? { ...item, responding: false }
+                  : item
+              )
+            }
           }
         }
       })

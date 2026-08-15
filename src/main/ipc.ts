@@ -22,6 +22,7 @@ import type {
   Project,
   SendOpenCodeMessageRequest,
   SendOpenCodeMessageResponse,
+  SendOpenCodePermissionReplyRequest,
   Session,
   PtyStatus
 } from '@shared/types'
@@ -139,6 +140,14 @@ export function registerIpcHandlers(ptyManager: PtyManager, opencodeManager: Ope
       const session = await getSession(req.sessionId)
       if (!session) throw new Error('Session no longer exists.')
       return { messages: await opencodeManager.send(session, req.text) }
+    }
+  )
+  handle<SendOpenCodePermissionReplyRequest, void>(
+    IpcChannels.opencodePermissionReply,
+    async (req) => {
+      const session = await getSession(req.sessionId)
+      if (!session) throw new Error('Session no longer exists.')
+      await opencodeManager.replyPermission(req.sessionId, req.requestId, req.reply)
     }
   )
 

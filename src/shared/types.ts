@@ -91,6 +91,16 @@ export interface OpenCodeToolMessage {
 
 export type OpenCodeChatItem = OpenCodeChatMessage | OpenCodeToolMessage | OpenCodeReasoningMessage
 
+export type OpenCodePermissionReply = 'once' | 'always' | 'reject'
+
+/** A permission request emitted by OpenCode while a tool is waiting. */
+export interface OpenCodePermissionRequest {
+  id: string
+  permission: string
+  patterns: string[]
+  title?: string
+}
+
 /** A live assistant text item while OpenCode is still generating. */
 export interface OpenCodeLiveTextMessage {
   id: string
@@ -111,10 +121,18 @@ export interface OpenCodeLiveToolMessage extends OpenCodeToolMessage {
   rawInput?: string
 }
 
+/** A live permission prompt rendered alongside the current turn. */
+export interface OpenCodeLivePermissionMessage extends OpenCodePermissionRequest {
+  role: 'permission'
+  live: true
+  responding?: boolean
+}
+
 export type OpenCodeLiveChatItem =
   | OpenCodeLiveTextMessage
   | OpenCodeLiveReasoningMessage
   | OpenCodeLiveToolMessage
+  | OpenCodeLivePermissionMessage
 
 export type OpenCodeStreamItem =
   | {
@@ -141,6 +159,13 @@ export type OpenCodeStreamItem =
       error?: string
       durationMs?: number
     })
+  | {
+      kind: 'permission'
+      requestId: string
+      permission: string
+      patterns: string[]
+      title?: string
+    }
 
 /** A normalized live OpenCode part update pushed over the existing IPC stream. */
 export interface OpenCodeStreamChunk {
@@ -155,6 +180,12 @@ export interface SendOpenCodeMessageRequest {
 
 export interface SendOpenCodeMessageResponse {
   messages: OpenCodeChatItem[]
+}
+
+export interface SendOpenCodePermissionReplyRequest {
+  sessionId: string
+  requestId: string
+  reply: OpenCodePermissionReply
 }
 
 export interface PathCheckResult {

@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import type {
   OpenCodeChatItem,
+  OpenCodePermissionReply,
   OpenCodeReasoningMessage,
   OpenCodeStreamChunk,
   OpenCodeStreamItem,
@@ -9,16 +10,6 @@ import type {
 } from '@shared/types'
 
 export const NEMOTRON_MODEL = { providerID: 'opencode', modelID: 'nemotron-3.5-lightning-free' } as const
-export const OPENCODE_INLINE_CONFIG = {
-  permission: {
-    '*': 'deny',
-    read: 'allow',
-    glob: 'allow',
-    grep: 'allow',
-    list: 'allow',
-    external_directory: 'deny'
-  }
-} as const
 const SERVER_START_TIMEOUT_MS = 10_000
 const REQUEST_TIMEOUT_MS = 120_000
 const HISTORY_REQUEST_TIMEOUT_MS = 10_000
@@ -34,6 +25,19 @@ interface OpenCodeRuntime {
 
 export interface OpenCodeEvents {
   onStream(chunk: OpenCodeStreamChunk): void
+}
+
+export function createOpenCodeLaunch(
+  cwd: string,
+  environment: NodeJS.ProcessEnv = process.env
+): {
+  args: string[]
+  options: { cwd: string; env: NodeJS.ProcessEnv; windowsHide: true }
+} {
+  return {
+    args: ['serve', '--pure', '--hostname=127.0.0.1', '--port=0'],
+    options: { cwd, env: { ...environment }, windowsHide: true }
+  }
 }
 
 /**
@@ -78,6 +82,39 @@ export class OpenCodeStreamTracker {
     const payload = unwrapEvent(event)
     if (!isRecord(payload) || !isRecord(payload.properties)) return null
     const properties = payload.properties
+
+    if (payload.type === 'permission.asked' || payload.type === 'permission.updated') {
+      const requestId =
+        typeof properties.requestID === 'string'
+          ? properties.requestID
+          : typeof properties.id === 'string'
+            ? properties.id
+            : undefined
+      const permission =
+        typeof properties.permission === 'string'
+          ? properties.permission
+          : typeof properties.type === 'string'
+            ? properties.type
+            : undefined
+      const sessionId = properties.sessionID
+      if (requestId === undefined || permission === undefined || sessionId !== this.sessionId) return null
+
+      const patterns = Array.isArray(properties.patterns)
+        ? properties.patterns.filter((pattern): pattern is string => typeof pattern === 'string')
+        : typeof properties.pattern === 'string'
+          ? [properties.pattern]
+          : Array.isArray(properties.pattern)
+            ? properties.pattern.filter((pattern): pattern is string => typeof pattern === 'string')
+            : []
+      const title = typeof properties.title === 'string' ? properties.title : undefined
+      return {
+        kind: 'permission',
+        requestId,
+        permission,
+        patterns,
+        ...(title ? { title } : {})
+      }
+    }
 
     if (payload.type === 'message.updated' && isRecord(properties.info)) {
       const info = properties.info
@@ -490,6 +527,18 @@ export class OpenCodeManager {
     }
   }
 
+  async replyPermission(sessionId: string, requestId: string, reply: OpenCodePermissionReply): Promise<void> {
+    const runtime = this.runtimes.get(sessionId)
+    if (!runtime) throw new Error('OpenCode is not running for this session.')
+
+    await requestJson<boolean>(
+      runtime.url,
+      `/permission/${encodeURIComponent(requestId)}/reply`,
+      { reply },
+      REQUEST_TIMEOUT_MS
+    )
+  }
+
   dispose(sessionId: string): void {
     this.streams.get(sessionId)?.abort()
     this.streams.delete(sessionId)
@@ -522,19 +571,11 @@ export class OpenCodeManager {
   }
 
   private async startRuntime(session: Session): Promise<OpenCodeRuntime> {
+    const launch = createOpenCodeLaunch(session.path)
     const child = spawn(
       'opencode',
-      ['serve', '--pure', '--hostname=127.0.0.1', '--port=0'],
-      {
-        cwd: session.path,
-        env: {
-          ...process.env,
-          // Inline configuration has higher precedence than project config.
-          // Only read-only workspace inspection tools are available in this GUI prototype.
-          OPENCODE_CONFIG_CONTENT: JSON.stringify(OPENCODE_INLINE_CONFIG)
-        },
-        windowsHide: true
-      }
+      launch.args,
+      launch.options
     )
     this.children.set(session.id, child)
 
