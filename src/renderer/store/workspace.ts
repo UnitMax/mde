@@ -7,6 +7,8 @@ import type {
   OpenCodeChatItem,
   OpenCodeChatMessage,
   OpenCodeLiveChatItem,
+  OpenCodeModelOption,
+  OpenCodeModelSelection,
   OpenCodePermissionReply,
   OpenCodeSessionSummary,
   OpenCodeStreamChunk,
@@ -20,10 +22,13 @@ import { disposeSession } from '@/terminal/sessions'
 export interface OpenCodeChatState {
   messages: OpenCodeChatItem[]
   availableSessions: OpenCodeSessionSummary[]
+  availableModels: OpenCodeModelOption[]
+  selectedModel: OpenCodeModelSelection | null
   openCodeSessionId: string | null
   liveItems: OpenCodeLiveChatItem[]
   pending: boolean
   sessionsLoading: boolean
+  modelsLoading: boolean
   error: string | null
   unreadCompletion: boolean
 }
@@ -31,10 +36,13 @@ export interface OpenCodeChatState {
 const EMPTY_CHAT: OpenCodeChatState = {
   messages: [],
   availableSessions: [],
+  availableModels: [],
+  selectedModel: null,
   openCodeSessionId: null,
   liveItems: [],
   pending: false,
   sessionsLoading: false,
+  modelsLoading: false,
   error: null,
   unreadCompletion: false
 }
@@ -107,6 +115,25 @@ function upsertLiveItem(items: OpenCodeLiveChatItem[], item: OpenCodeStreamChunk
   return items.map((current, currentIndex) => (currentIndex === index ? next : current))
 }
 
+function sameModel(a: OpenCodeModelSelection, b: OpenCodeModelSelection): boolean {
+  return a.providerID === b.providerID && a.modelID === b.modelID && a.variant === b.variant
+}
+
+function findModel(
+  models: OpenCodeModelOption[],
+  selection: OpenCodeModelSelection | undefined
+): OpenCodeModelSelection | null {
+  if (!selection) return null
+  const available = models.find((model) => sameModel(model, selection))
+  return available
+    ? {
+        providerID: available.providerID,
+        modelID: available.modelID,
+        ...(available.variant ? { variant: available.variant } : {})
+      }
+    : null
+}
+
 interface WorkspaceState {
   projects: Project[]
   sessions: Session[]
@@ -138,6 +165,8 @@ interface WorkspaceState {
   noteExit: (info: PtyExitInfo) => void
   clearExit: (id: string) => void
   persistOpenCodeSelection: (sessionId: string, openCodeSessionId: string | null) => Promise<void>
+  loadOpenCodeModels: (sessionId: string) => Promise<void>
+  selectOpenCodeModel: (sessionId: string, model: OpenCodeModelSelection) => Promise<void>
   refreshOpenCodeSessionList: (sessionId: string) => Promise<void>
   loadOpenCodeSessions: (sessionId: string) => Promise<void>
   selectOpenCodeSession: (sessionId: string, openCodeSessionId: string) => Promise<void>
@@ -324,6 +353,87 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     }
   },
 
+  loadOpenCodeModels: async (sessionId) => {
+    const existing = get().opencodeChats[sessionId]
+    if (existing?.pending || existing?.modelsLoading) return
+
+    set((state) => {
+      const previous = state.opencodeChats[sessionId] ?? EMPTY_CHAT
+      return {
+        opencodeChats: {
+          ...state.opencodeChats,
+          [sessionId]: { ...previous, modelsLoading: true, error: null }
+        }
+      }
+    })
+
+    try {
+      const result = await window.api.opencode.listModels({ sessionId })
+      const current = get().opencodeChats[sessionId]
+      if (!current) return
+      const workspaceSession = get().sessions.find((session) => session.id === sessionId)
+      const saved = current.openCodeSessionId
+        ? workspaceSession?.opencodeModelSelections?.[current.openCodeSessionId]
+        : undefined
+      const selected = findModel(result.models, saved ?? current.selectedModel ?? undefined)
+      set((state) => ({
+        opencodeChats: {
+          ...state.opencodeChats,
+          [sessionId]: {
+            ...current,
+            availableModels: result.models,
+            selectedModel: selected,
+            modelsLoading: false
+          }
+        }
+      }))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not load OpenCode models.'
+      set((state) => {
+        const previous = state.opencodeChats[sessionId] ?? EMPTY_CHAT
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: { ...previous, modelsLoading: false, error: message }
+          }
+        }
+      })
+    }
+  },
+
+  selectOpenCodeModel: async (sessionId, model) => {
+    const current = get().opencodeChats[sessionId]
+    const selected = current ? findModel(current.availableModels, model) : null
+    if (!selected) return
+    const openCodeSessionId = current?.openCodeSessionId
+    if (!openCodeSessionId) return
+
+    const workspaceSession = get().sessions.find((session) => session.id === sessionId)
+    const selections = {
+      ...(workspaceSession?.opencodeModelSelections ?? {}),
+      [openCodeSessionId]: selected
+    }
+    set((state) => ({
+      opencodeChats: {
+        ...state.opencodeChats,
+        [sessionId]: { ...(state.opencodeChats[sessionId] ?? EMPTY_CHAT), selectedModel: selected, error: null }
+      }
+    }))
+
+    try {
+      const updated = await window.api.sessions.update({
+        id: sessionId,
+        patch: { opencodeModelSelections: selections }
+      })
+      if (!updated) return
+      set((state) => ({
+        sessions: state.sessions.map((session) => (session.id === sessionId ? updated : session))
+      }))
+    } catch {
+      // The selection remains active for this process if persistence is unavailable.
+    }
+  },
+
   refreshOpenCodeSessionList: async (sessionId) => {
     try {
       const result = await window.api.opencode.listSessions({ sessionId })
@@ -336,6 +446,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
             ...current,
             availableSessions: result.sessions,
             openCodeSessionId: result.selectedSessionId,
+            selectedModel: result.selectedSessionId
+              ? findModel(
+                  current.availableModels,
+                  get().sessions.find((session) => session.id === sessionId)?.opencodeModelSelections?.[
+                    result.selectedSessionId
+                  ]
+                )
+              : null,
             ...(result.selectedSessionId ? {} : { messages: [], liveItems: [] })
           }
         }
@@ -354,6 +472,17 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     const prompt = text.trim()
     if (!prompt) return
 
+    const selectedModel = get().opencodeChats[sessionId]?.selectedModel
+    if (!selectedModel) {
+      set((state) => ({
+        opencodeChats: {
+          ...state.opencodeChats,
+          [sessionId]: { ...(state.opencodeChats[sessionId] ?? EMPTY_CHAT), error: 'Select a model before sending.' }
+        }
+      }))
+      return
+    }
+
     const userMessage: OpenCodeChatMessage = {
       id: `user-${crypto.randomUUID()}`,
       role: 'user',
@@ -366,9 +495,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         opencodeChats: {
           ...state.opencodeChats,
           [sessionId]: {
+            ...previous,
             messages: [...previous.messages, userMessage],
-            availableSessions: previous.availableSessions,
-            openCodeSessionId: previous.openCodeSessionId,
             liveItems: [],
             pending: true,
             sessionsLoading: false,
@@ -380,7 +508,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     })
 
     try {
-      const { sessionId: openCodeSessionId, messages } = await window.api.opencode.send({ sessionId, text: prompt })
+      const { sessionId: openCodeSessionId, messages } = await window.api.opencode.send({
+        sessionId,
+        text: prompt,
+        model: selectedModel
+      })
       set((state) => {
         const current = state.opencodeChats[sessionId]
         if (!current) return state
@@ -502,6 +634,12 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
                   : [result.session, ...previous.availableSessions]
                 : previous.availableSessions,
               openCodeSessionId: result.sessionId,
+              selectedModel: findModel(
+                previous.availableModels,
+                get().sessions.find((session) => session.id === sessionId)?.opencodeModelSelections?.[
+                  result.sessionId
+                ]
+              ),
               liveItems: [],
               sessionsLoading: false,
               error: null
@@ -552,6 +690,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
                 ? [result.session, ...previous.availableSessions.filter((item) => item.id !== result.sessionId)]
                 : previous.availableSessions,
               openCodeSessionId: result.sessionId,
+              selectedModel: null,
               liveItems: [],
               sessionsLoading: false,
               error: null

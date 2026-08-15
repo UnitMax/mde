@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowUp, ChevronRight, RefreshCw, RotateCw } from 'lucide-react'
+import { ArrowUp, Check, ChevronRight, RefreshCw, RotateCw, Search } from 'lucide-react'
 import type {
   OpenCodeLiveChatItem,
   OpenCodeLivePermissionMessage,
   OpenCodeLiveReasoningMessage,
   OpenCodeLiveToolMessage,
+  OpenCodeModelOption,
+  OpenCodeModelSelection,
   OpenCodePermissionReply,
   OpenCodeReasoningMessage,
   OpenCodeToolMessage,
@@ -13,6 +15,8 @@ import type {
 } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { MarkdownMessage } from '@/components/MarkdownMessage'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useWorkspace } from '@/store/workspace'
 import { attachSession, detachSession, fitSession, getSession } from '@/terminal/sessions'
@@ -171,13 +175,13 @@ function ReasoningMessageView({
   )
 }
 
-function LiveTextMessageView({ text }: { text: string }): JSX.Element {
+function LiveTextMessageView({ text, assistantLabel }: { text: string; assistantLabel: string }): JSX.Element {
   return (
     <li
       aria-live="polite"
       className="max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-fg-muted"
     >
-      <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-fg-subtle">Nemotron</p>
+      <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-fg-subtle">{assistantLabel}</p>
       <MarkdownMessage text={text} streaming />
     </li>
   )
@@ -222,23 +226,155 @@ function PermissionMessageView({
 
 function LiveItemView({
   item,
-  onPermissionReply
+  onPermissionReply,
+  assistantLabel
 }: {
   item: OpenCodeLiveChatItem
   onPermissionReply: (requestId: string, reply: OpenCodePermissionReply) => void
+  assistantLabel: string
 }): JSX.Element {
   if (item.role === 'tool') return <ToolMessageView message={item} live />
   if (item.role === 'reasoning') return <ReasoningMessageView message={item} live />
   if (item.role === 'permission') {
     return <PermissionMessageView message={item} onReply={(reply) => onPermissionReply(item.id, reply)} />
   }
-  return <LiveTextMessageView text={item.text} />
+  return <LiveTextMessageView text={item.text} assistantLabel={assistantLabel} />
+}
+
+function modelLabel(model: OpenCodeModelSelection | null, models: OpenCodeModelOption[]): string {
+  if (!model) return 'Select a model'
+  const option = models.find(
+    (candidate) =>
+      candidate.providerID === model.providerID &&
+      candidate.modelID === model.modelID &&
+      candidate.variant === model.variant
+  )
+  if (option) return `${option.modelName} · ${option.providerName}`
+  return `${model.modelID} · ${model.providerID}`
+}
+
+function ModelPicker({
+  models,
+  selected,
+  loading,
+  disabled,
+  onSelect,
+  onRefresh
+}: {
+  models: OpenCodeModelOption[]
+  selected: OpenCodeModelSelection | null
+  loading: boolean
+  disabled: boolean
+  onSelect: (model: OpenCodeModelSelection) => void
+  onRefresh: () => void
+}): JSX.Element {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const normalizedQuery = query.trim().toLowerCase()
+  const filtered = models.filter((model) =>
+    `${model.providerName} ${model.providerID} ${model.modelName} ${model.modelID} ${model.variant ?? ''}`
+      .toLowerCase()
+      .includes(normalizedQuery)
+  )
+  const grouped = filtered.reduce<Record<string, OpenCodeModelOption[]>>((groups, model) => {
+    const group = groups[model.providerName] ?? []
+    group.push(model)
+    groups[model.providerName] = group
+    return groups
+  }, {})
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen)
+        if (!nextOpen) setQuery('')
+      }}
+    >
+      <button
+        type="button"
+        aria-label="Model"
+        disabled={disabled}
+        onClick={() => setOpen(true)}
+        className="flex h-7 max-w-[260px] min-w-0 items-center gap-1 rounded px-2 text-xs text-fg-muted hover:bg-hover hover:text-fg disabled:pointer-events-none disabled:opacity-40"
+      >
+        <span className="truncate">{loading ? 'Loading models…' : modelLabel(selected, models)}</span>
+        <span className="text-fg-subtle">⌄</span>
+      </button>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Select an OpenCode model</DialogTitle>
+          <DialogDescription>Choose the model used for future prompts in this conversation.</DialogDescription>
+        </DialogHeader>
+        <div className="relative mb-3">
+          <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-fg-subtle" />
+          <Input
+            autoFocus
+            aria-label="Search models"
+            placeholder="Search providers and models"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            className="pl-8"
+          />
+        </div>
+        <div className="max-h-80 space-y-3 overflow-y-auto pr-1">
+          {loading && <p className="py-6 text-center text-xs text-fg-subtle">Loading models…</p>}
+          {!loading && filtered.length === 0 && (
+            <p className="py-6 text-center text-xs text-fg-subtle">
+              {models.length === 0 ? 'No models were returned by OpenCode.' : 'No matching models.'}
+            </p>
+          )}
+          {!loading &&
+            Object.entries(grouped).map(([provider, providerModels]) => (
+              <section key={provider}>
+                <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wide text-fg-subtle">
+                  {provider}
+                </p>
+                <div className="space-y-0.5">
+                  {providerModels.map((model) => {
+                    const isSelected =
+                      selected?.providerID === model.providerID &&
+                      selected.modelID === model.modelID &&
+                      selected.variant === model.variant
+                    return (
+                      <button
+                        type="button"
+                        key={model.key}
+                        className="flex w-full items-center justify-between rounded px-2 py-2 text-left text-xs text-fg hover:bg-hover"
+                        onClick={() => {
+                          onSelect(model)
+                          setOpen(false)
+                        }}
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate text-fg">{model.modelName}</span>
+                          <span className="block truncate text-[10px] text-fg-subtle">{model.modelID}</span>
+                        </span>
+                        {isSelected && <Check className="h-3.5 w-3.5 shrink-0 text-accent" />}
+                      </button>
+                    )
+                  })}
+                </div>
+              </section>
+            ))}
+        </div>
+        <div className="mt-4 flex justify-end">
+          <Button variant="ghost" size="sm" disabled={loading} onClick={onRefresh}>
+            <RefreshCw className="h-3.5 w-3.5" />
+            Refresh models
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
 }
 
 function GuiView({ session }: { session: Session }): JSX.Element {
   const [draft, setDraft] = useState('')
   const chat = useWorkspace((state) => state.opencodeChats[session.id])
   const sendOpenCodeMessage = useWorkspace((state) => state.sendOpenCodeMessage)
+  const loadOpenCodeModels = useWorkspace((state) => state.loadOpenCodeModels)
+  const selectOpenCodeModel = useWorkspace((state) => state.selectOpenCodeModel)
   const loadOpenCodeSessions = useWorkspace((state) => state.loadOpenCodeSessions)
   const selectOpenCodeSession = useWorkspace((state) => state.selectOpenCodeSession)
   const createOpenCodeSession = useWorkspace((state) => state.createOpenCodeSession)
@@ -251,11 +387,18 @@ function GuiView({ session }: { session: Session }): JSX.Element {
   const availableSessions = chat?.availableSessions ?? []
   const openCodeSessionId = chat?.openCodeSessionId ?? null
   const sessionsLoading = chat?.sessionsLoading ?? false
+  const modelsLoading = chat?.modelsLoading ?? false
+  const availableModels = chat?.availableModels ?? []
+  const selectedModel = chat?.selectedModel ?? null
+  const assistantLabel = selectedModel ? modelLabel(selectedModel, availableModels) : 'OpenCode'
   const logRef = useRef<HTMLOListElement>(null)
 
   useEffect(() => {
-    if (nativeSession) void loadOpenCodeSessions(session.id)
-  }, [loadOpenCodeSessions, nativeSession, session.id])
+    if (nativeSession) {
+      void loadOpenCodeModels(session.id)
+      void loadOpenCodeSessions(session.id)
+    }
+  }, [loadOpenCodeModels, loadOpenCodeSessions, nativeSession, session.id])
 
   useEffect(() => {
     const log = logRef.current
@@ -305,7 +448,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
               }
             >
               <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
-                {message.role === 'user' ? 'You' : 'Nemotron'}
+                {message.role === 'user' ? 'You' : assistantLabel}
               </p>
               {message.role === 'assistant' ? (
                 <MarkdownMessage text={message.text} />
@@ -317,11 +460,16 @@ function GuiView({ session }: { session: Session }): JSX.Element {
         )}
         {pending &&
           liveItems.map((item) => (
-            <LiveItemView key={item.id} item={item} onPermissionReply={replyPermission} />
+            <LiveItemView
+              key={item.id}
+              item={item}
+              onPermissionReply={replyPermission}
+              assistantLabel={assistantLabel}
+            />
           ))}
         {pending && liveItems.length === 0 && (
-          <li className="max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
-            Nemotron is responding…
+            <li className="max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
+            OpenCode is responding…
           </li>
         )}
         {!pending && sessionsLoading && messages.length === 0 && (
@@ -354,8 +502,8 @@ function GuiView({ session }: { session: Session }): JSX.Element {
                 send()
               }
             }}
-            placeholder="Message Nemotron..."
-            disabled={!nativeSession || pending || sessionsLoading}
+            placeholder="Message OpenCode..."
+            disabled={!nativeSession || pending || sessionsLoading || modelsLoading || !selectedModel}
             className="block min-h-[68px] max-h-48 w-full resize-none overflow-y-auto rounded-t-xl border-0 bg-transparent px-4 pb-2 pt-3 text-[13px] text-fg placeholder:text-fg-subtle focus:outline-none focus:ring-0 disabled:cursor-not-allowed disabled:opacity-50"
           />
 
@@ -396,19 +544,14 @@ function GuiView({ session }: { session: Session }): JSX.Element {
               >
                 <RefreshCw className={sessionsLoading ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'} />
               </Button>
-              <Select value="opencode/nemotron-3.5-lightning-free" disabled>
-                <SelectTrigger
-                  aria-label="Model"
-                  className="h-7 w-auto min-w-0 max-w-[220px] border-0 bg-transparent px-2 text-xs text-fg-muted shadow-none hover:bg-hover hover:text-fg"
-                >
-                  <SelectValue className="truncate" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="opencode/nemotron-3.5-lightning-free">
-                    Nemotron 3.5 Lightning · OpenCode Zen
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+              <ModelPicker
+                models={availableModels}
+                selected={selectedModel}
+                loading={modelsLoading}
+                disabled={!nativeSession || pending || sessionsLoading || !openCodeSessionId}
+                onSelect={(model) => void selectOpenCodeModel(session.id, model)}
+                onRefresh={() => void loadOpenCodeModels(session.id)}
+              />
             </div>
 
             <Button
@@ -416,7 +559,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
               aria-label="Send message"
               title="Send message"
               className="h-8 w-8 shrink-0 rounded-lg"
-              disabled={!nativeSession || pending || sessionsLoading || !draft.trim()}
+              disabled={!nativeSession || pending || sessionsLoading || modelsLoading || !selectedModel || !draft.trim()}
               onClick={send}
             >
               <ArrowUp className="h-4 w-4" />

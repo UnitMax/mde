@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import type { WorkspaceData, MoveSessionRequest, UpdateSessionRequest, UpdateProjectRequest } from '@shared/ipc'
-import type { NewProject, NewSession, Project, Session } from '@shared/types'
+import type { NewProject, NewSession, OpenCodeModelSelection, Project, Session } from '@shared/types'
 
 const FILE_NAME = 'workspace.json'
 
@@ -22,6 +22,30 @@ function storeFile(): string {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
+}
+
+function validModelSelection(value: unknown): value is OpenCodeModelSelection {
+  if (typeof value !== 'object' || value === null) return false
+  const record = value as Record<string, unknown>
+  return (
+    isNonEmptyString(record.providerID) &&
+    isNonEmptyString(record.modelID) &&
+    (record.variant === undefined || isNonEmptyString(record.variant))
+  )
+}
+
+function validateModelSelections(value: unknown): Record<string, OpenCodeModelSelection> | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const selections: Record<string, OpenCodeModelSelection> = {}
+  for (const [conversationId, selection] of Object.entries(value)) {
+    if (!isNonEmptyString(conversationId) || !validModelSelection(selection)) continue
+    selections[conversationId] = {
+      providerID: selection.providerID.trim(),
+      modelID: selection.modelID.trim(),
+      ...(selection.variant?.trim() ? { variant: selection.variant.trim() } : {})
+    }
+  }
+  return Object.keys(selections).length > 0 ? selections : undefined
 }
 
 function uniqueEntries<T extends { id: string }>(entries: T[], kind: string): T[] {
@@ -82,6 +106,8 @@ export function validateSession(raw: unknown, projectIds: Set<string>): Session 
   if (r.kind === 'wsl' && isNonEmptyString(r.distro)) session.distro = r.distro
   if (isNonEmptyString(r.shell)) session.shell = r.shell
   if (isNonEmptyString(r.opencodeSessionId)) session.opencodeSessionId = r.opencodeSessionId
+  const modelSelections = validateModelSelections(r.opencodeModelSelections)
+  if (modelSelections) session.opencodeModelSelections = modelSelections
   return session
 }
 
@@ -243,6 +269,11 @@ export async function updateSession(req: UpdateSessionRequest): Promise<Session 
   if (req.patch.opencodeSessionId !== undefined) {
     if (req.patch.opencodeSessionId.trim()) updated.opencodeSessionId = req.patch.opencodeSessionId.trim()
     else delete updated.opencodeSessionId
+  }
+  if (req.patch.opencodeModelSelections !== undefined) {
+    const selections = validateModelSelections(req.patch.opencodeModelSelections)
+    if (selections) updated.opencodeModelSelections = selections
+    else delete updated.opencodeModelSelections
   }
 
   const sessions = [...workspace.sessions]

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  NEMOTRON_MODEL,
   createPromptBody,
   describeResponseParts,
   extractReasoningMessages,
@@ -11,8 +10,11 @@ import {
   OpenCodeStreamTracker,
   parseServerUrl,
   parseSseFrames,
-  normalizeOpenCodeDirectory
+  normalizeOpenCodeDirectory,
+  normalizeOpenCodeModels
 } from '../src/main/opencode/manager'
+
+const TEST_MODEL = { providerID: 'opencode', modelID: 'nemotron-3.5-lightning-free' } as const
 
 describe('OpenCode GUI protocol helpers', () => {
   it('normalizes native OpenCode directory spellings before matching', () => {
@@ -20,12 +22,73 @@ describe('OpenCode GUI protocol helpers', () => {
     expect(normalizeOpenCodeDirectory('/workspace/app\\nested')).toBe('/workspace/app/nested')
     expect(normalizeOpenCodeDirectory('C:\\Work\\App\\')).toBe('c:/work/app')
   })
-  it('locks every prompt to the free OpenCode Zen Nemotron 3.5 Lightning model', () => {
-    expect(NEMOTRON_MODEL).toEqual({ providerID: 'opencode', modelID: 'nemotron-3.5-lightning-free' })
-    expect(createPromptBody('Reply only with pong')).toEqual({
+  it('uses the explicitly selected model and does not apply a production default', () => {
+    expect(createPromptBody('Reply only with pong', TEST_MODEL)).toEqual({
       model: { providerID: 'opencode', modelID: 'nemotron-3.5-lightning-free' },
       parts: [{ type: 'text', text: 'Reply only with pong' }]
     })
+    expect(
+      createPromptBody('Use the high effort variant', {
+        providerID: 'anthropic',
+        modelID: 'claude-sonnet',
+        variant: 'high'
+      })
+    ).toEqual({
+      model: { providerID: 'anthropic', modelID: 'claude-sonnet', variant: 'high' },
+      parts: [{ type: 'text', text: 'Use the high effort variant' }]
+    })
+  })
+
+  it('normalizes providers, models, and model variants for the picker', () => {
+    expect(
+      normalizeOpenCodeModels({
+        providers: [
+          {
+            id: 'cloud',
+            name: 'Cloud Provider',
+            models: {
+              'model-a': { name: 'Model A', reasoning: true, variants: { fast: {}, deep: {} } },
+              'model-b': { name: 'Model B' }
+            }
+          },
+          { id: 'broken', models: { ignored: null } }
+        ]
+      })
+    ).toEqual([
+      {
+        key: 'cloud/model-a',
+        providerID: 'cloud',
+        providerName: 'Cloud Provider',
+        modelID: 'model-a',
+        modelName: 'Model A',
+        reasoning: true
+      },
+      {
+        key: 'cloud/model-a#deep',
+        providerID: 'cloud',
+        providerName: 'Cloud Provider',
+        modelID: 'model-a',
+        modelName: 'Model A · deep',
+        reasoning: true,
+        variant: 'deep'
+      },
+      {
+        key: 'cloud/model-a#fast',
+        providerID: 'cloud',
+        providerName: 'Cloud Provider',
+        modelID: 'model-a',
+        modelName: 'Model A · fast',
+        reasoning: true,
+        variant: 'fast'
+      },
+      {
+        key: 'cloud/model-b',
+        providerID: 'cloud',
+        providerName: 'Cloud Provider',
+        modelID: 'model-b',
+        modelName: 'Model B'
+      }
+    ])
   })
 
   it('uses the regular OpenCode config while retaining pure server startup', () => {

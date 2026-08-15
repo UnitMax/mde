@@ -9,11 +9,12 @@ import type {
   OpenCodeToolMessage,
   OpenCodeConversationResponse,
   OpenCodeSessionSummary,
+  OpenCodeModelOption,
+  OpenCodeModelSelection,
+  ListOpenCodeModelsResponse,
   ListOpenCodeSessionsResponse,
   Session
 } from '@shared/types'
-
-export const NEMOTRON_MODEL = { providerID: 'opencode', modelID: 'nemotron-3.5-lightning-free' } as const
 const SERVER_START_TIMEOUT_MS = 10_000
 const REQUEST_TIMEOUT_MS = 120_000
 const HISTORY_REQUEST_TIMEOUT_MS = 10_000
@@ -25,6 +26,7 @@ interface OpenCodeRuntime {
   child: ChildProcessWithoutNullStreams
   url: string
   openCodeSessionId: string | null
+  models?: OpenCodeModelOption[]
   tracker?: OpenCodeStreamTracker
 }
 
@@ -217,6 +219,10 @@ interface OpenCodeSessionResponse {
   title?: unknown
   directory?: unknown
   time?: unknown
+}
+
+interface OpenCodeProviderResponse {
+  providers?: unknown
 }
 
 interface OpenCodePromptResponse {
@@ -474,14 +480,94 @@ export function extractHistoryMessages(history: unknown): OpenCodeChatItem[] {
   return messages
 }
 
-export function createPromptBody(text: string): {
-  model: typeof NEMOTRON_MODEL
+export function createPromptBody(text: string, model: OpenCodeModelSelection): {
+  model: OpenCodeModelSelection
   parts: Array<{ type: 'text'; text: string }>
 } {
   return {
-    model: NEMOTRON_MODEL,
+    model: {
+      providerID: model.providerID,
+      modelID: model.modelID,
+      ...(model.variant ? { variant: model.variant } : {})
+    },
     parts: [{ type: 'text', text }]
   }
+}
+
+function modelKey(model: OpenCodeModelSelection): string {
+  return `${model.providerID}/${model.modelID}${model.variant ? `#${model.variant}` : ''}`
+}
+
+function optionalBoolean(record: Record<string, unknown>, ...keys: string[]): boolean | undefined {
+  for (const key of keys) {
+    if (typeof record[key] === 'boolean') return record[key]
+  }
+  return undefined
+}
+
+/** Normalizes the provider catalog returned by OpenCode into picker options. */
+export function normalizeOpenCodeModels(payload: unknown): OpenCodeModelOption[] {
+  const providers =
+    isRecord(payload) && Array.isArray(payload.providers) ? payload.providers : Array.isArray(payload) ? payload : []
+  const options: OpenCodeModelOption[] = []
+  const seen = new Set<string>()
+
+  for (const providerValue of providers) {
+    if (!isRecord(providerValue) || !isRecord(providerValue.models)) continue
+    const providerID = typeof providerValue.id === 'string' ? providerValue.id.trim() : ''
+    if (!providerID) continue
+    const providerName =
+      typeof providerValue.name === 'string' && providerValue.name.trim()
+        ? providerValue.name.trim()
+        : providerID
+
+    for (const [modelID, modelValue] of Object.entries(providerValue.models)) {
+      if (!isRecord(modelValue) || !modelID.trim()) continue
+      const modelName =
+        typeof modelValue.name === 'string' && modelValue.name.trim() ? modelValue.name.trim() : modelID
+      const common = {
+        providerID,
+        providerName,
+        modelID,
+        modelName,
+        ...(optionalBoolean(modelValue, 'reasoning') === undefined
+          ? {}
+          : { reasoning: optionalBoolean(modelValue, 'reasoning') }),
+        ...(optionalBoolean(modelValue, 'tool_call', 'toolCall') === undefined
+          ? {}
+          : { toolCall: optionalBoolean(modelValue, 'tool_call', 'toolCall') })
+      }
+      const add = (variant?: string): void => {
+        const normalizedVariant = variant?.trim() || undefined
+        const selection = { providerID, modelID, ...(normalizedVariant ? { variant: normalizedVariant } : {}) }
+        const key = modelKey(selection)
+        if (seen.has(key)) return
+        seen.add(key)
+        options.push({
+          key,
+          ...common,
+          ...(normalizedVariant ? { variant: normalizedVariant, modelName: `${modelName} · ${normalizedVariant}` } : {})
+        })
+      }
+
+      add()
+      if (isRecord(modelValue.variants)) {
+        for (const variant of Object.keys(modelValue.variants)) add(variant)
+      }
+    }
+  }
+
+  return options.sort((a, b) =>
+    `${a.providerName}/${a.modelName}`.localeCompare(`${b.providerName}/${b.modelName}`)
+  )
+}
+
+function modelSelectionMatches(option: OpenCodeModelOption, selection: OpenCodeModelSelection): boolean {
+  return (
+    option.providerID === selection.providerID &&
+    option.modelID === selection.modelID &&
+    option.variant === selection.variant
+  )
 }
 
 /** The OpenCode SDK uses this same startup marker for `opencode serve`. */
@@ -587,6 +673,24 @@ export class OpenCodeManager {
     return { sessions, selectedSessionId }
   }
 
+  async listModels(session: Session): Promise<ListOpenCodeModelsResponse> {
+    if (session.kind !== 'native') {
+      throw new Error('OpenCode GUI integration currently supports native sessions only.')
+    }
+
+    const runtime = await this.ensureRuntime(session)
+    const response = await requestJson<OpenCodeProviderResponse>(
+      runtime.url,
+      '/config/providers',
+      undefined,
+      HISTORY_REQUEST_TIMEOUT_MS,
+      'GET'
+    )
+    const models = normalizeOpenCodeModels(response)
+    runtime.models = models
+    return { models }
+  }
+
   async selectSession(session: Session, openCodeSessionId: string): Promise<OpenCodeConversationResponse> {
     if (session.kind !== 'native') {
       throw new Error('OpenCode GUI integration currently supports native sessions only.')
@@ -626,7 +730,11 @@ export class OpenCodeManager {
     }
   }
 
-  async send(session: Session, text: string): Promise<{ sessionId: string; messages: OpenCodeChatItem[] }> {
+  async send(
+    session: Session,
+    text: string,
+    model: OpenCodeModelSelection
+  ): Promise<{ sessionId: string; messages: OpenCodeChatItem[] }> {
     const prompt = text.trim()
     if (!prompt) throw new Error('Message cannot be empty.')
     if (session.kind !== 'native') {
@@ -637,6 +745,10 @@ export class OpenCodeManager {
     this.pending.add(session.id)
     try {
       const runtime = await this.ensureRuntime(session)
+      if (!runtime.models) await this.listModels(session)
+      if (!runtime.models?.some((option) => modelSelectionMatches(option, model))) {
+        throw new Error('That model is no longer available. Refresh the model list and select another model.')
+      }
       if (!runtime.openCodeSessionId) {
         await this.createSession(session)
       }
@@ -645,7 +757,7 @@ export class OpenCodeManager {
       const response = await requestJson<OpenCodePromptResponse>(
         runtime.url,
         `/session/${encodeURIComponent(openCodeSessionId)}/message`,
-        createPromptBody(prompt),
+        createPromptBody(prompt, model),
         REQUEST_TIMEOUT_MS
       )
 

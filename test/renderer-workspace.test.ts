@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { OpenCodeChatItem, OpenCodeSessionSummary, OpenCodeStreamChunk, Session } from '../src/shared/types'
+import type {
+  OpenCodeChatItem,
+  OpenCodeModelOption,
+  OpenCodeSessionSummary,
+  OpenCodeStreamChunk,
+  Session
+} from '../src/shared/types'
 
 vi.mock('../src/renderer/terminal/sessions', () => ({ disposeSession: vi.fn() }))
 
@@ -32,6 +38,7 @@ describe('renderer workspace event bridge', () => {
     opencode: {
       send: vi.fn(),
       listSessions: vi.fn(),
+      listModels: vi.fn(),
       selectSession: vi.fn(),
       createSession: vi.fn(),
       replyPermission: vi.fn(async () => undefined),
@@ -50,6 +57,7 @@ describe('renderer workspace event bridge', () => {
     api.sessions.update.mockClear()
     api.opencode.send.mockReset()
     api.opencode.listSessions.mockReset()
+    api.opencode.listModels.mockReset()
     api.opencode.selectSession.mockReset()
     api.opencode.createSession.mockReset()
     api.opencode.onStream.mockClear()
@@ -63,6 +71,42 @@ describe('renderer workspace event bridge', () => {
     expect(api.opencode.onStream).toHaveBeenCalledTimes(1)
 
     useWorkspace.getState().selectSession('session-1')
+    const model: OpenCodeModelOption = {
+      key: 'opencode/test-model',
+      providerID: 'opencode',
+      providerName: 'OpenCode',
+      modelID: 'test-model',
+      modelName: 'Test model'
+    }
+    useWorkspace.setState({
+      sessions: [
+        {
+          id: 'session-1',
+          projectId: 'project-1',
+          name: 'App',
+          kind: 'native',
+          path: '/workspace/app',
+          opencodeSessionId: 'opencode-1',
+          opencodeModelSelections: { 'opencode-1': model },
+          createdAt: '2026-01-01T00:00:00.000Z'
+        }
+      ],
+      opencodeChats: {
+        'session-1': {
+          messages: [],
+          availableSessions: [],
+          availableModels: [model],
+          selectedModel: model,
+          openCodeSessionId: 'opencode-1',
+          liveItems: [],
+          pending: false,
+          sessionsLoading: false,
+          modelsLoading: false,
+          error: null,
+          unreadCompletion: false
+        }
+      }
+    })
 
     let resolveSend: ((value: { sessionId: string; messages: OpenCodeChatItem[] }) => void) | undefined
     api.opencode.send.mockImplementation(
@@ -76,6 +120,7 @@ describe('renderer workspace event bridge', () => {
     await Promise.resolve()
     expect(streamListeners).toHaveLength(1)
     expect(useWorkspace.getState().opencodeChats['session-1']?.pending).toBe(true)
+    expect(api.opencode.send).toHaveBeenCalledWith({ sessionId: 'session-1', text: 'hello', model })
 
     streamListeners[0]?.({
       sessionId: 'session-1',
@@ -214,6 +259,7 @@ describe('renderer workspace event bridge', () => {
       sessions: [second, first],
       selectedSessionId: first.id
     })
+    api.opencode.listModels.mockResolvedValue({ models: [] })
     api.opencode.selectSession.mockResolvedValue({
       sessionId: first.id,
       session: first,
@@ -282,6 +328,67 @@ describe('renderer workspace event bridge', () => {
       openCodeSessionId: created.id,
       messages: [],
       availableSessions: [created]
+    })
+  })
+
+  it('loads the live model catalog and persists a choice per conversation', async () => {
+    const model: OpenCodeModelOption = {
+      key: 'cloud/model-a#fast',
+      providerID: 'cloud',
+      providerName: 'Cloud Provider',
+      modelID: 'model-a',
+      modelName: 'Model A · fast',
+      variant: 'fast'
+    }
+    const conversation: OpenCodeSessionSummary = {
+      id: 'opencode-model-session',
+      title: 'Model test',
+      directory: '/workspace/app',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z'
+    }
+    api.opencode.listModels.mockResolvedValue({ models: [model] })
+    api.opencode.listSessions.mockResolvedValue({ sessions: [conversation], selectedSessionId: conversation.id })
+    api.opencode.selectSession.mockResolvedValue({
+      sessionId: conversation.id,
+      session: conversation,
+      messages: []
+    })
+    useWorkspace.setState({
+      sessions: [
+        {
+          id: 'session-1',
+          projectId: 'project-1',
+          name: 'App',
+          kind: 'native',
+          path: '/workspace/app',
+          createdAt: '2026-01-01T00:00:00.000Z'
+        }
+      ],
+      opencodeChats: {}
+    })
+
+    await useWorkspace.getState().loadOpenCodeModels('session-1')
+    expect(useWorkspace.getState().opencodeChats['session-1']).toMatchObject({
+      availableModels: [model],
+      selectedModel: null,
+      modelsLoading: false
+    })
+
+    await useWorkspace.getState().loadOpenCodeSessions('session-1')
+    await useWorkspace.getState().selectOpenCodeModel('session-1', model)
+    expect(api.sessions.update).toHaveBeenLastCalledWith({
+      id: 'session-1',
+      patch: {
+        opencodeModelSelections: {
+          [conversation.id]: { providerID: 'cloud', modelID: 'model-a', variant: 'fast' }
+        }
+      }
+    })
+    expect(useWorkspace.getState().opencodeChats['session-1']?.selectedModel).toEqual({
+      providerID: 'cloud',
+      modelID: 'model-a',
+      variant: 'fast'
     })
   })
 })

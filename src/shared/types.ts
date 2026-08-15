@@ -27,6 +27,8 @@ export interface Session {
   shell?: string
   /** OpenCode conversation currently selected for this MDE workspace session. */
   opencodeSessionId?: string
+  /** Explicit model choices made in MDE, keyed by OpenCode conversation ID. */
+  opencodeModelSelections?: Record<string, OpenCodeModelSelection>
   createdAt: string
 }
 
@@ -94,6 +96,22 @@ export interface OpenCodeToolMessage {
 export type OpenCodeChatItem = OpenCodeChatMessage | OpenCodeToolMessage | OpenCodeReasoningMessage
 
 export type OpenCodePermissionReply = 'once' | 'always' | 'reject'
+
+/** The model identity OpenCode expects in a prompt request. */
+export interface OpenCodeModelSelection {
+  providerID: string
+  modelID: string
+  variant?: string
+}
+
+/** A renderer-friendly model or model variant from OpenCode's live catalog. */
+export interface OpenCodeModelOption extends OpenCodeModelSelection {
+  key: string
+  providerName: string
+  modelName: string
+  reasoning?: boolean
+  toolCall?: boolean
+}
 
 /** A permission request emitted by OpenCode while a tool is waiting. */
 export interface OpenCodePermissionRequest {
@@ -178,6 +196,7 @@ export interface OpenCodeStreamChunk {
 export interface SendOpenCodeMessageRequest {
   sessionId: string
   text: string
+  model: OpenCodeModelSelection
 }
 
 export interface SendOpenCodeMessageResponse {
@@ -205,6 +224,14 @@ export interface CreateOpenCodeSessionRequest {
 export interface ListOpenCodeSessionsResponse {
   sessions: OpenCodeSessionSummary[]
   selectedSessionId: string | null
+}
+
+export interface ListOpenCodeModelsRequest {
+  sessionId: string
+}
+
+export interface ListOpenCodeModelsResponse {
+  models: OpenCodeModelOption[]
 }
 
 export interface SelectOpenCodeSessionRequest {

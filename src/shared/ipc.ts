@@ -13,6 +13,8 @@ import type {
   SendOpenCodePermissionReplyRequest,
   ListOpenCodeSessionsRequest,
   ListOpenCodeSessionsResponse,
+  ListOpenCodeModelsRequest,
+  ListOpenCodeModelsResponse,
   CreateOpenCodeSessionRequest,
   OpenCodeConversationResponse,
   SelectOpenCodeSessionRequest,
@@ -60,6 +62,7 @@ export const IpcChannels = {
 
   opencodeSend: 'opencode:send',
   opencodeSessionsList: 'opencode:sessions-list',
+  opencodeModelsList: 'opencode:models-list',
   opencodeSessionSelect: 'opencode:session-select',
   opencodeSessionCreate: 'opencode:session-create',
   opencodePermissionReply: 'opencode:permission-reply',
@@ -114,7 +117,7 @@ export interface UpdateProjectRequest {
 
 export interface UpdateSessionRequest {
   id: string
-  patch: Partial<Pick<Session, 'name' | 'path' | 'shell' | 'opencodeSessionId'>>
+  patch: Partial<Pick<Session, 'name' | 'path' | 'shell' | 'opencodeSessionId' | 'opencodeModelSelections'>>
 }
 
 export interface MoveSessionRequest {
@@ -167,6 +170,7 @@ export interface RendererApi {
   opencode: {
     send(req: SendOpenCodeMessageRequest): Promise<SendOpenCodeMessageResponse>
     listSessions(req: ListOpenCodeSessionsRequest): Promise<ListOpenCodeSessionsResponse>
+    listModels(req: ListOpenCodeModelsRequest): Promise<ListOpenCodeModelsResponse>
     selectSession(req: SelectOpenCodeSessionRequest): Promise<OpenCodeConversationResponse>
     createSession(req: CreateOpenCodeSessionRequest): Promise<OpenCodeConversationResponse>
     replyPermission(req: SendOpenCodePermissionReplyRequest): Promise<void>

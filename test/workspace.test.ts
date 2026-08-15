@@ -52,6 +52,27 @@ describe('workspace validation', () => {
     expect(validateSession({ ...session, opencodeSessionId: '' }, projectIds)).toEqual(session)
   })
 
+  it('keeps only valid per-conversation model selections', () => {
+    const projectIds = new Set([project.id])
+    expect(
+      validateSession(
+        {
+          ...session,
+          opencodeModelSelections: {
+            ses_existing: { providerID: 'cloud', modelID: 'model-a', variant: 'fast' },
+            malformed: { providerID: '', modelID: 'model-b' },
+            wrongType: 'model-b'
+          }
+        },
+        projectIds
+      )
+    ).toMatchObject({
+      opencodeModelSelections: {
+        ses_existing: { providerID: 'cloud', modelID: 'model-a', variant: 'fast' }
+      }
+    })
+  })
+
   it('loads grouped projects and sessions from the new workspace shape', () => {
     expect(validateWorkspace({ projects: [project], sessions: [session] })).toEqual({
       projects: [project],

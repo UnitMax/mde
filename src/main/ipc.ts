@@ -22,6 +22,8 @@ import type {
   Project,
   ListOpenCodeSessionsRequest,
   ListOpenCodeSessionsResponse,
+  ListOpenCodeModelsRequest,
+  ListOpenCodeModelsResponse,
   CreateOpenCodeSessionRequest,
   OpenCodeConversationResponse,
   SelectOpenCodeSessionRequest,
@@ -144,7 +146,7 @@ export function registerIpcHandlers(ptyManager: PtyManager, opencodeManager: Ope
     async (req) => {
       const session = await getSession(req.sessionId)
       if (!session) throw new Error('Session no longer exists.')
-      return await opencodeManager.send(session, req.text)
+      return await opencodeManager.send(session, req.text, req.model)
     }
   )
   handle<ListOpenCodeSessionsRequest, ListOpenCodeSessionsResponse>(
@@ -153,6 +155,14 @@ export function registerIpcHandlers(ptyManager: PtyManager, opencodeManager: Ope
       const session = await getSession(req.sessionId)
       if (!session) throw new Error('Session no longer exists.')
       return opencodeManager.listSessions(session)
+    }
+  )
+  handle<ListOpenCodeModelsRequest, ListOpenCodeModelsResponse>(
+    IpcChannels.opencodeModelsList,
+    async (req) => {
+      const session = await getSession(req.sessionId)
+      if (!session) throw new Error('Session no longer exists.')
+      return opencodeManager.listModels(session)
     }
   )
   handle<SelectOpenCodeSessionRequest, OpenCodeConversationResponse>(
