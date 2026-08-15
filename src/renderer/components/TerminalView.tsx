@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { RotateCw } from 'lucide-react'
 import type { PtySize, Session } from '@shared/types'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useWorkspace } from '@/store/workspace'
 import { attachSession, detachSession, fitSession, getSession } from '@/terminal/sessions'
 
@@ -10,23 +11,19 @@ const RESIZE_DEBOUNCE_MS = 100
 
 interface TerminalViewProps {
   session: Session
+  viewMode: SessionViewMode
+  onViewModeChange: (mode: SessionViewMode) => void
 }
 
-export function TerminalView({ session: selectedSession }: TerminalViewProps): JSX.Element {
+export type SessionViewMode = 'terminal' | 'gui'
+
+interface TerminalSurfaceProps {
+  session: Session
+}
+
+function TerminalSurface({ session: selectedSession }: TerminalSurfaceProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
   const setStatus = useWorkspace((state) => state.setStatus)
-  const clearExit = useWorkspace((state) => state.clearExit)
-  const exit = useWorkspace((state) => state.exits[selectedSession.id])
-
-  const restart = useCallback(async () => {
-    const session = getSession(selectedSession.id)
-    session?.term.reset()
-    const size = (session && fitSession(session)) || FALLBACK_SIZE
-    clearExit(selectedSession.id)
-    const status = await window.api.pty.restart({ sessionId: selectedSession.id, size })
-    setStatus(selectedSession.id, status)
-    session?.term.focus()
-  }, [selectedSession.id, clearExit, setStatus])
 
   useEffect(() => {
     const host = hostRef.current
@@ -67,6 +64,62 @@ export function TerminalView({ session: selectedSession }: TerminalViewProps): J
     }
   }, [selectedSession.id, setStatus])
 
+  return <div ref={hostRef} className="terminal-host relative min-h-0 flex-1 overflow-hidden" />
+}
+
+function GuiView(): JSX.Element {
+  const [draft, setDraft] = useState('')
+  const [model, setModel] = useState('model-a')
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col bg-bg">
+      <div className="min-h-0 flex-1" aria-hidden="true" />
+
+      <div className="shrink-0 border-t border-line bg-panel p-3">
+        <div className="flex items-end gap-2">
+          <textarea
+            aria-label="Message"
+            rows={3}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder="Type a message..."
+            className="min-h-[72px] min-w-0 flex-1 resize-none rounded border border-line-strong bg-bg px-2.5 py-2 text-[13px] text-fg placeholder:text-fg-subtle focus:border-accent focus:outline-none"
+          />
+
+          <Select value={model} onValueChange={setModel}>
+            <SelectTrigger aria-label="Model" className="w-32 shrink-0">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="model-a">Model A</SelectItem>
+              <SelectItem value="model-b">Model B</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function TerminalView({
+  session: selectedSession,
+  viewMode,
+  onViewModeChange
+}: TerminalViewProps): JSX.Element {
+  const clearExit = useWorkspace((state) => state.clearExit)
+  const setStatus = useWorkspace((state) => state.setStatus)
+  const exit = useWorkspace((state) => state.exits[selectedSession.id])
+
+  const restart = useCallback(async () => {
+    const session = getSession(selectedSession.id)
+    session?.term.reset()
+    const size = (session && fitSession(session)) || FALLBACK_SIZE
+    clearExit(selectedSession.id)
+    const status = await window.api.pty.restart({ sessionId: selectedSession.id, size })
+    setStatus(selectedSession.id, status)
+    if (viewMode === 'terminal') session?.term.focus()
+  }, [selectedSession.id, clearExit, setStatus, viewMode])
+
   const location =
     selectedSession.kind === 'wsl'
       ? `${selectedSession.distro ?? 'WSL'} · ${selectedSession.path}`
@@ -76,9 +129,45 @@ export function TerminalView({ session: selectedSession }: TerminalViewProps): J
     <div className="flex h-full min-w-0 flex-col bg-bg">
       <header className="flex h-9 shrink-0 items-center gap-3 border-b border-line px-3">
         <span className="shrink-0 text-[13px] font-medium text-fg">{selectedSession.name}</span>
-        <span className="truncate font-mono text-xs text-fg-subtle" title={location}>
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg-subtle" title={location}>
           {location}
         </span>
+
+        <div
+          aria-label="Session view"
+          role="tablist"
+          className="flex shrink-0 items-center gap-0.5 rounded border border-line bg-panel p-0.5"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={viewMode === 'terminal'}
+            data-testid="session-tab-terminal"
+            onClick={() => onViewModeChange('terminal')}
+            className={
+              viewMode === 'terminal'
+                ? 'rounded-sm bg-active px-2 py-0.5 text-xs text-fg'
+                : 'rounded-sm px-2 py-0.5 text-xs text-fg-subtle hover:bg-hover hover:text-fg'
+            }
+          >
+            Terminal
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={viewMode === 'gui'}
+            data-testid="session-tab-gui"
+            onClick={() => onViewModeChange('gui')}
+            className={
+              viewMode === 'gui'
+                ? 'rounded-sm bg-active px-2 py-0.5 text-xs text-fg'
+                : 'rounded-sm px-2 py-0.5 text-xs text-fg-subtle hover:bg-hover hover:text-fg'
+            }
+          >
+            GUI
+          </button>
+        </div>
+
         <Button
           variant="ghost"
           size="sm"
@@ -103,7 +192,11 @@ export function TerminalView({ session: selectedSession }: TerminalViewProps): J
         </div>
       )}
 
-      <div ref={hostRef} className="terminal-host relative min-h-0 flex-1 overflow-hidden" />
+      {viewMode === 'terminal' ? (
+        <TerminalSurface session={selectedSession} />
+      ) : (
+        <GuiView />
+      )}
     </div>
   )
 }

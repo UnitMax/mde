@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { AddSessionDialog } from '@/components/AddProjectDialog'
 import { NewProjectDialog } from '@/components/NewProjectDialog'
 import { Sidebar } from '@/components/Sidebar'
-import { TerminalView } from '@/components/TerminalView'
+import { TerminalView, type SessionViewMode } from '@/components/TerminalView'
 import { useWorkspace } from '@/store/workspace'
 
 function EmptyState({ onNewSession }: { onNewSession: () => void }): JSX.Element {
@@ -33,6 +33,7 @@ export function App(): JSX.Element {
   const [newSessionOpen, setNewSessionOpen] = useState(false)
   const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [defaultProjectId, setDefaultProjectId] = useState<string | undefined>(undefined)
+  const [viewModes, setViewModes] = useState<Record<string, SessionViewMode>>({})
 
   useEffect(() => {
     void init()
@@ -45,6 +46,10 @@ export function App(): JSX.Element {
     setNewSessionOpen(true)
   }
 
+  const setSessionViewMode = (sessionId: string, mode: SessionViewMode): void => {
+    setViewModes((current) => ({ ...current, [sessionId]: mode }))
+  }
+
   return (
     <div className="flex h-full w-full overflow-hidden bg-bg">
       <Sidebar onNewProject={() => setNewProjectOpen(true)} onNewSession={openNewSession} />
@@ -53,7 +58,12 @@ export function App(): JSX.Element {
         {!ready ? null : selected ? (
           // Keyed so switching sessions mounts a fresh view; the xterm instance
           // behind it is kept alive by the session registry, not by React.
-          <TerminalView key={selected.id} session={selected} />
+          <TerminalView
+            key={selected.id}
+            session={selected}
+            viewMode={viewModes[selected.id] ?? 'terminal'}
+            onViewModeChange={(mode) => setSessionViewMode(selected.id, mode)}
+          />
         ) : (
           <EmptyState onNewSession={() => openNewSession()} />
         )}
