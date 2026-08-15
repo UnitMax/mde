@@ -10,6 +10,11 @@ files:
 # node-pty ships a .node binary; it cannot be loaded from inside an asar archive.
 asarUnpack:
   - '**/node_modules/node-pty/**'
+extraResources:
+  - from: LICENSE
+    to: LICENSE
+  - from: THIRD_PARTY_NOTICES.md
+    to: THIRD_PARTY_NOTICES.md
 win:
   icon: build/icon.ico
   target:

@@ -38,6 +38,24 @@ npm run build:linux    # AppImage + deb  -> dist/mde-<version>.AppImage, .deb
 
 Cross-building the Windows installer from Linux is not supported here; build it on Windows.
 
+## Licensing
+
+MDE's first-party source, documentation, scripts, and branding are licensed under the MIT
+License in `LICENSE`. Third-party packages remain under their own licenses; the complete
+locked dependency inventory and available package license/notice text are recorded in
+`THIRD_PARTY_NOTICES.md`.
+
+Regenerate the notices after changing dependencies with:
+
+```sh
+npm run licenses
+npm run licenses:check
+```
+
+Packaged installers include MDE's MIT license and third-party notices alongside Electron's
+and Chromium's generated legal files. OpenCode is an external executable/service and is not
+bundled or relicensed by MDE.
+
 ## Architecture
 
 ```
