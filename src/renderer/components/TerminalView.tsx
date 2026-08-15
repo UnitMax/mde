@@ -1,5 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowUp, Check, ChevronRight, RefreshCw, RotateCw, Search } from 'lucide-react'
+import {
+  ArrowUp,
+  Check,
+  CheckCircle2,
+  ChevronRight,
+  CircleAlert,
+  CircleX,
+  LoaderCircle,
+  RefreshCw,
+  RotateCw,
+  Search
+} from 'lucide-react'
 import type {
   OpenCodeLiveChatItem,
   OpenCodeLivePermissionMessage,
@@ -9,6 +20,7 @@ import type {
   OpenCodeModelSelection,
   OpenCodePermissionReply,
   OpenCodeReasoningMessage,
+  OpenCodeSubagent,
   OpenCodeToolMessage,
   PtySize,
   Session
@@ -369,6 +381,93 @@ function ModelPicker({
   )
 }
 
+function formatSubagentDuration(subagent: OpenCodeSubagent, now: number): string {
+  const end = subagent.finishedAt ?? now
+  const seconds = Math.max(0, Math.round((end - subagent.startedAt) / 1000))
+  if (seconds < 60) return `${seconds}s`
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+}
+
+function SubagentActivityPanel({ subagents }: { subagents: OpenCodeSubagent[] }): JSX.Element | null {
+  const [collapsed, setCollapsed] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
+  const hasActive = subagents.some((subagent) => subagent.status === 'working' || subagent.status === 'waiting')
+
+  useEffect(() => {
+    if (!hasActive) return
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [hasActive])
+
+  if (subagents.length === 0) return null
+
+  const byId = new Map(subagents.map((subagent) => [subagent.id, subagent]))
+  const depth = (subagent: OpenCodeSubagent): number => {
+    let current = subagent
+    let value = 0
+    const seen = new Set<string>()
+    while (current.parentSubagentId && !seen.has(current.parentSubagentId)) {
+      seen.add(current.parentSubagentId)
+      const parent = byId.get(current.parentSubagentId)
+      if (!parent) break
+      value += 1
+      current = parent
+    }
+    return Math.min(value, 3)
+  }
+
+  const statusIcon = (status: OpenCodeSubagent['status']): JSX.Element => {
+    if (status === 'working') return <LoaderCircle className="h-3.5 w-3.5 animate-spin text-accent" />
+    if (status === 'waiting') return <CircleAlert className="h-3.5 w-3.5 text-accent" />
+    if (status === 'completed') return <CheckCircle2 className="h-3.5 w-3.5 text-ok" />
+    return <CircleX className="h-3.5 w-3.5 text-danger" />
+  }
+
+  const statusLabel = (status: OpenCodeSubagent['status']): string => {
+    if (status === 'working') return 'Working'
+    if (status === 'waiting') return 'Waiting for permission'
+    if (status === 'completed') return 'Completed'
+    if (status === 'cancelled') return 'Cancelled'
+    return 'Failed'
+  }
+
+  return (
+    <section className="mx-auto mb-2 w-full max-w-4xl rounded-lg border border-line bg-bg/70">
+      <button
+        type="button"
+        aria-expanded={!collapsed}
+        onClick={() => setCollapsed((value) => !value)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-fg-muted hover:bg-hover hover:text-fg"
+      >
+        <ChevronRight className={`h-3.5 w-3.5 transition-transform ${collapsed ? '' : 'rotate-90'}`} />
+        <span className="font-medium text-fg">Subagents</span>
+        <span className="text-fg-subtle">{subagents.length}</span>
+        {hasActive && <span className="ml-auto text-accent">Active</span>}
+      </button>
+      {!collapsed && (
+        <ul className="space-y-1 border-t border-line px-3 py-2">
+          {subagents.map((subagent) => (
+            <li
+              key={subagent.id}
+              className="flex min-w-0 items-center gap-2 text-xs text-fg-muted"
+              style={{ paddingLeft: `${depth(subagent) * 16}px` }}
+            >
+              <span className="shrink-0">{statusIcon(subagent.status)}</span>
+              <span className="min-w-0 flex-1 truncate" title={subagent.description}>
+                {subagent.agent ? `@${subagent.agent} · ` : ''}
+                {subagent.description}
+              </span>
+              <span className="shrink-0 text-[10px] text-fg-subtle">
+                {statusLabel(subagent.status)} · {formatSubagentDuration(subagent, now)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
 function GuiView({ session }: { session: Session }): JSX.Element {
   const [draft, setDraft] = useState('')
   const chat = useWorkspace((state) => state.opencodeChats[session.id])
@@ -384,6 +483,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
   const error = chat?.error ?? null
   const messages = chat?.messages ?? []
   const liveItems = chat?.liveItems ?? []
+  const subagents = chat?.subagents ?? []
   const availableSessions = chat?.availableSessions ?? []
   const openCodeSessionId = chat?.openCodeSessionId ?? null
   const sessionsLoading = chat?.sessionsLoading ?? false
@@ -458,17 +558,16 @@ function GuiView({ session }: { session: Session }): JSX.Element {
             </li>
           )
         )}
-        {pending &&
-          liveItems.map((item) => (
-            <LiveItemView
-              key={item.id}
-              item={item}
-              onPermissionReply={replyPermission}
-              assistantLabel={assistantLabel}
-            />
-          ))}
+        {liveItems.map((item) => (
+          <LiveItemView
+            key={item.id}
+            item={item}
+            onPermissionReply={replyPermission}
+            assistantLabel={assistantLabel}
+          />
+        ))}
         {pending && liveItems.length === 0 && (
-            <li className="max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
+          <li className="max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
             OpenCode is responding…
           </li>
         )}
@@ -490,6 +589,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
             {error}
           </p>
         )}
+        <SubagentActivityPanel subagents={subagents} />
         <div className="mx-auto w-full max-w-4xl rounded-xl border border-line-strong bg-bg shadow-lg shadow-black/10 transition-colors focus-within:border-accent/70">
           <textarea
             aria-label="Message"

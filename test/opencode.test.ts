@@ -428,6 +428,88 @@ describe('OpenCode event stream', () => {
     })
   })
 
+  it('tracks foreground and nested subagents from Task metadata and child status events', () => {
+    const tracker = new OpenCodeStreamTracker('root')
+    const task = (sessionID: string, id: string, childSessionId: string, description: string): unknown => ({
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          id,
+          sessionID,
+          type: 'tool',
+          tool: 'task',
+          state: {
+            status: 'running',
+            title: description,
+            input: { description, subagent_type: 'explore' },
+            metadata: { sessionId: childSessionId, parentSessionId: sessionID }
+          }
+        }
+      }
+    })
+
+    expect(tracker.accept(task('root', 'task-1', 'child-1', 'Inspect the codebase'))).toMatchObject({
+      kind: 'subagent',
+      subagent: {
+        id: 'child-1',
+        taskId: 'task-1',
+        description: 'Inspect the codebase',
+        agent: 'explore',
+        status: 'working'
+      }
+    })
+    expect(tracker.accept(task('child-1', 'task-2', 'child-2', 'Inspect the tests'))).toMatchObject({
+      kind: 'subagent',
+      subagent: { id: 'child-2', parentSubagentId: 'child-1', status: 'working' }
+    })
+    expect(
+      tracker.accept({
+        type: 'session.status',
+        properties: { sessionID: 'child-1', status: { type: 'busy' } }
+      })
+    ).toMatchObject({ kind: 'subagent', subagent: { id: 'child-1', status: 'working' } })
+    expect(
+      tracker.accept({ type: 'session.status', properties: { sessionID: 'child-1', status: { type: 'idle' } } })
+    ).toMatchObject({ kind: 'subagent', subagent: { id: 'child-1', status: 'completed' } })
+    expect(
+      tracker.accept({ type: 'session.idle', properties: { sessionID: 'child-2' } })
+    ).toMatchObject({ kind: 'subagent', subagent: { id: 'child-2', status: 'completed' } })
+    expect(
+      tracker.accept({
+        type: 'message.part.updated',
+        properties: { part: { id: 'child-text', sessionID: 'child-1', type: 'text', text: 'hidden child output' } }
+      })
+    ).toBeNull()
+  })
+
+  it('keeps background subagents working until the child session becomes idle', () => {
+    const tracker = new OpenCodeStreamTracker('root')
+    const state = (status: string): unknown => ({
+      status,
+      input: { description: 'Run the audit', subagent_type: 'review' },
+      metadata: { sessionId: 'background-child', parentSessionId: 'root', background: true }
+    })
+    const event = (status: string): unknown => ({
+      type: 'message.part.updated',
+      properties: { part: { id: 'task-background', sessionID: 'root', type: 'tool', tool: 'task', state: state(status) } }
+    })
+
+    expect(tracker.accept(event('running'))).toMatchObject({
+      kind: 'subagent',
+      subagent: { id: 'background-child', status: 'working', background: true }
+    })
+    expect(tracker.accept(event('completed'))).toMatchObject({
+      kind: 'subagent',
+      subagent: { id: 'background-child', status: 'working', background: true }
+    })
+    expect(
+      tracker.accept({
+        type: 'session.status',
+        properties: { sessionID: 'background-child', status: { type: 'idle' } }
+      })
+    ).toMatchObject({ kind: 'subagent', subagent: { id: 'background-child', status: 'completed' } })
+  })
+
   it('normalizes permission requests and ignores other sessions', () => {
     const tracker = new OpenCodeStreamTracker('ses_1')
     expect(
@@ -475,6 +557,52 @@ describe('OpenCode event stream', () => {
         }
       })
     ).toBeNull()
+  })
+
+  it('marks child sessions waiting for permission and resumes them after a reply', () => {
+    const tracker = new OpenCodeStreamTracker('root')
+    tracker.accept({
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          id: 'task-1',
+          sessionID: 'root',
+          type: 'tool',
+          tool: 'task',
+          state: {
+            status: 'running',
+            input: { description: 'Check the repository', subagent_type: 'explore' },
+            metadata: { sessionId: 'child-1' }
+          }
+        }
+      }
+    })
+
+    expect(
+      tracker.accept({
+        type: 'permission.asked',
+        properties: {
+          requestID: 'child-permission',
+          sessionID: 'child-1',
+          permission: 'bash',
+          patterns: ['git status']
+        }
+      })
+    ).toMatchObject({
+      kind: 'subagent',
+      subagent: { id: 'child-1', status: 'waiting' },
+      permission: { requestId: 'child-permission', permission: 'bash' }
+    })
+    expect(
+      tracker.accept({
+        type: 'permission.replied',
+        properties: { permissionID: 'child-permission', sessionID: 'child-1', response: 'once' }
+      })
+    ).toMatchObject({
+      kind: 'subagent',
+      subagent: { id: 'child-1', status: 'working' },
+      permissionResolved: 'child-permission'
+    })
   })
 
   it('accepts the global event envelope used by the OpenCode event endpoint', () => {

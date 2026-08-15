@@ -11,10 +11,13 @@ import type {
   OpenCodeSessionSummary,
   OpenCodeModelOption,
   OpenCodeModelSelection,
+  OpenCodeSubagent,
+  OpenCodeSubagentStatus,
   ListOpenCodeModelsResponse,
   ListOpenCodeSessionsResponse,
   Session
 } from '@shared/types'
+type OpenCodeSubagentStreamItem = Extract<OpenCodeStreamItem, { kind: 'subagent' }>
 const SERVER_START_TIMEOUT_MS = 10_000
 const REQUEST_TIMEOUT_MS = 120_000
 const HISTORY_REQUEST_TIMEOUT_MS = 10_000
@@ -80,6 +83,9 @@ export class OpenCodeStreamTracker {
   private readonly partTypes = new Map<string, string>()
   private readonly partTexts = new Map<string, string>()
   private readonly messageRoles = new Map<string, string>()
+  private readonly childSessions = new Set<string>()
+  private readonly subagents = new Map<string, OpenCodeSubagent>()
+  private readonly taskToSubagent = new Map<string, string>()
   private lastTextPartId: string | null = null
 
   constructor(private sessionId: string | null) {}
@@ -90,6 +96,9 @@ export class OpenCodeStreamTracker {
     this.partTypes.clear()
     this.partTexts.clear()
     this.messageRoles.clear()
+    this.childSessions.clear()
+    this.subagents.clear()
+    this.taskToSubagent.clear()
     this.lastTextPartId = null
   }
 
@@ -98,6 +107,13 @@ export class OpenCodeStreamTracker {
     const payload = unwrapEvent(event)
     if (!isRecord(payload) || !isRecord(payload.properties)) return null
     const properties = payload.properties
+
+    if (payload.type === 'permission.replied') {
+      const sessionId = stringValue(properties.sessionID)
+      const requestId = stringValue(properties.permissionID) ?? stringValue(properties.requestID)
+      if (!sessionId || !requestId || !this.childSessions.has(sessionId)) return null
+      return this.updateSubagent(sessionId, 'working', { permissionResolved: requestId })
+    }
 
     if (payload.type === 'permission.asked' || payload.type === 'permission.updated') {
       const requestId =
@@ -113,7 +129,7 @@ export class OpenCodeStreamTracker {
             ? properties.type
             : undefined
       const sessionId = properties.sessionID
-      if (requestId === undefined || permission === undefined || sessionId !== this.sessionId) return null
+      if (requestId === undefined || permission === undefined || typeof sessionId !== 'string') return null
 
       const patterns = Array.isArray(properties.patterns)
         ? properties.patterns.filter((pattern): pattern is string => typeof pattern === 'string')
@@ -123,6 +139,15 @@ export class OpenCodeStreamTracker {
             ? properties.pattern.filter((pattern): pattern is string => typeof pattern === 'string')
             : []
       const title = typeof properties.title === 'string' ? properties.title : undefined
+      if (sessionId !== this.sessionId) {
+        if (!this.childSessions.has(sessionId)) return null
+        const subagent = this.updateSubagent(sessionId, 'waiting')
+        if (!subagent || subagent.kind !== 'subagent') return null
+        return {
+          ...subagent,
+          permission: { requestId, permission, patterns, ...(title ? { title } : {}) }
+        }
+      }
       return {
         kind: 'permission',
         requestId,
@@ -135,20 +160,43 @@ export class OpenCodeStreamTracker {
     if (payload.type === 'message.updated' && isRecord(properties.info)) {
       const info = properties.info
       if (typeof info.id === 'string' && typeof info.role === 'string') {
-        const messageSessionId = info.sessionID
-        if (messageSessionId === undefined || messageSessionId === this.sessionId) {
-          this.messageRoles.set(info.id, info.role)
+        const messageSessionId = typeof info.sessionID === 'string' ? info.sessionID : this.sessionId
+        if (messageSessionId) {
+          this.messageRoles.set(`${messageSessionId}:${info.id}`, info.role)
         }
       }
       return null
+    }
+
+    if (payload.type === 'session.status' || payload.type === 'session.idle') {
+      const sessionId = stringValue(properties.sessionID)
+      if (!sessionId || !this.childSessions.has(sessionId)) return null
+      const status =
+        payload.type === 'session.idle'
+          ? 'idle'
+          : isRecord(properties.status) && typeof properties.status.type === 'string'
+            ? properties.status.type
+            : undefined
+      if (status === 'idle') return this.updateSubagent(sessionId, 'completed')
+      if (status === 'busy' || status === 'retry') return this.updateSubagent(sessionId, 'working')
+      return null
+    }
+
+    if (payload.type === 'session.error') {
+      const sessionId = stringValue(properties.sessionID)
+      if (!sessionId || !this.childSessions.has(sessionId)) return null
+      return this.updateSubagent(sessionId, 'error')
     }
 
     if (payload.type === 'message.part.updated' && isRecord(properties.part)) {
       const part = properties.part
       if (typeof part.id !== 'string' || typeof part.type !== 'string') return null
       const partSessionId = typeof part.sessionID === 'string' ? part.sessionID : properties.sessionID
+      if (typeof partSessionId !== 'string') return null
+      const subagent = this.acceptTaskPart(part, partSessionId)
+      if (subagent) return subagent
       if (partSessionId !== this.sessionId) return null
-      if (this.isUserMessage(part.messageID)) return null
+      if (this.isUserMessage(partSessionId, part.messageID)) return null
       this.partTypes.set(part.id, part.type)
 
       if (part.type === 'text' || part.type === 'reasoning') {
@@ -178,7 +226,8 @@ export class OpenCodeStreamTracker {
 
     if (payload.type !== 'message.part.delta') return null
     if (properties.sessionID !== this.sessionId) return null
-    if (this.isUserMessage(properties.messageID)) return null
+    if (typeof properties.sessionID !== 'string' || properties.sessionID !== this.sessionId) return null
+    if (this.isUserMessage(properties.sessionID, properties.messageID)) return null
     if (properties.field !== 'text' || typeof properties.delta !== 'string') return null
     if (typeof properties.partID !== 'string') return null
 
@@ -196,6 +245,90 @@ export class OpenCodeStreamTracker {
     return { kind: 'reasoning', partId: properties.partID, delta, done: false }
   }
 
+  private acceptTaskPart(part: Record<string, unknown>, partSessionId: string): OpenCodeStreamItem | null {
+    if (part.type !== 'tool' || part.tool !== 'task' || typeof part.id !== 'string') return null
+
+    const state = isRecord(part.state) ? part.state : {}
+    const metadata = isRecord(state.metadata) ? state.metadata : {}
+    const input = isRecord(state.input) ? state.input : {}
+    const childSessionId = stringValue(metadata.sessionId) ?? stringValue(metadata.sessionID)
+    const previousId = this.taskToSubagent.get(part.id)
+    const subagentId = childSessionId ?? previousId ?? `task:${part.id}`
+    const previous = previousId ? this.subagents.get(previousId) : undefined
+
+    if (previousId && childSessionId && previousId !== childSessionId) {
+      this.subagents.delete(previousId)
+    }
+    if (childSessionId) this.childSessions.add(childSessionId)
+    this.taskToSubagent.set(part.id, subagentId)
+
+    const description =
+      stringValue(input.description) ??
+      stringValue(metadata.description) ??
+      stringValue(state.title) ??
+      previous?.description ??
+      'Subagent task'
+    const agent = stringValue(input.subagent_type) ?? stringValue(metadata.subagent_type) ?? previous?.agent
+    const background = metadata.background === true || previous?.background === true
+    const rawStatus = stringValue(state.status)
+    let status: OpenCodeSubagentStatus =
+      rawStatus === 'error'
+        ? 'error'
+        : rawStatus === 'completed'
+          ? background && childSessionId
+            ? 'working'
+            : 'completed'
+          : 'working'
+
+    if (previous?.status === 'waiting' && status === 'working') status = 'waiting'
+    const updated = this.upsertSubagent(subagentId, {
+      taskId: part.id,
+      parentSubagentId:
+        partSessionId !== this.sessionId && this.childSessions.has(partSessionId) ? partSessionId : undefined,
+      description,
+      ...(agent ? { agent } : {}),
+      status,
+      ...(background ? { background: true } : {})
+    })
+    return previousId && previousId !== subagentId ? { ...updated, replacesId: previousId } : updated
+  }
+
+  private upsertSubagent(
+    id: string,
+    update: Omit<Partial<OpenCodeSubagent>, 'id' | 'startedAt'> & Pick<OpenCodeSubagent, 'taskId' | 'description' | 'status'>
+  ): OpenCodeSubagentStreamItem {
+    const previous = this.subagents.get(id)
+    const terminal = update.status === 'completed' || update.status === 'error' || update.status === 'cancelled'
+    const subagent: OpenCodeSubagent = {
+      id,
+      taskId: update.taskId,
+      description: update.description,
+      status: update.status,
+      startedAt: previous?.startedAt ?? Date.now(),
+      ...(previous?.parentSubagentId === undefined && update.parentSubagentId === undefined
+        ? {}
+        : { parentSubagentId: update.parentSubagentId ?? previous?.parentSubagentId }),
+      ...(update.agent ?? previous?.agent ? { agent: update.agent ?? previous?.agent } : {}),
+      ...(update.background || previous?.background ? { background: true } : {}),
+      ...(terminal ? { finishedAt: previous?.finishedAt ?? Date.now() } : {})
+    }
+    this.subagents.set(id, subagent)
+    return { kind: 'subagent', subagent }
+  }
+
+  private updateSubagent(
+    sessionId: string,
+    status: OpenCodeSubagentStatus,
+    extra: { permissionResolved?: string } = {}
+  ): OpenCodeSubagentStreamItem | null {
+    const current = this.subagents.get(sessionId)
+    if (!current) return null
+    if (current.status === 'error' || current.status === 'cancelled') return null
+    if (current.status === 'completed' && status !== 'error') return null
+    const next = this.upsertSubagent(sessionId, { ...current, status })
+    return { ...next, ...extra }
+  }
+
   private textDelta(partId: string, snapshot: unknown, delta: unknown): string {
     const previous = this.partTexts.get(partId) ?? ''
     if (typeof snapshot === 'string') {
@@ -209,8 +342,8 @@ export class OpenCodeStreamTracker {
     return delta
   }
 
-  private isUserMessage(messageId: unknown): boolean {
-    return typeof messageId === 'string' && this.messageRoles.get(messageId) === 'user'
+  private isUserMessage(sessionId: string, messageId: unknown): boolean {
+    return typeof messageId === 'string' && this.messageRoles.get(`${sessionId}:${messageId}`) === 'user'
   }
 }
 
@@ -273,6 +406,10 @@ function toSessionSummary(value: OpenCodeSessionResponse): OpenCodeSessionSummar
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
 
 function unwrapEvent(value: unknown): unknown {

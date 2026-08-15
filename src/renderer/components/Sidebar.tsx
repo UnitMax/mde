@@ -69,10 +69,13 @@ const OPENCODE_STATUS_STYLE: Record<OpenCodeIndicatorStatus, Omit<SessionIndicat
 
 function sessionIndicator(status: PtyStatus, chat?: OpenCodeChatState): SessionIndicator {
   if (!chat) return { status, ...STATUS_STYLE[status] }
-  if (chat.pending) {
+  const activeSubagent = chat.subagents.some(
+    (subagent) => subagent.status === 'working' || subagent.status === 'waiting'
+  )
+  if (chat.pending || activeSubagent) {
     const waitingForPermission = chat.liveItems.some(
       (item) => item.role === 'permission' && !item.responding
-    )
+    ) || chat.subagents.some((subagent) => subagent.status === 'waiting')
     if (waitingForPermission) return { status: 'attention', ...OPENCODE_STATUS_STYLE.attention }
     return { status: 'working', ...OPENCODE_STATUS_STYLE.working }
   }

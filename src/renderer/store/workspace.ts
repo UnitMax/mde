@@ -9,6 +9,7 @@ import type {
   OpenCodeLiveChatItem,
   OpenCodeModelOption,
   OpenCodeModelSelection,
+  OpenCodeSubagent,
   OpenCodePermissionReply,
   OpenCodeSessionSummary,
   OpenCodeStreamChunk,
@@ -24,6 +25,7 @@ export interface OpenCodeChatState {
   availableSessions: OpenCodeSessionSummary[]
   availableModels: OpenCodeModelOption[]
   selectedModel: OpenCodeModelSelection | null
+  subagents: OpenCodeSubagent[]
   openCodeSessionId: string | null
   liveItems: OpenCodeLiveChatItem[]
   pending: boolean
@@ -38,6 +40,7 @@ const EMPTY_CHAT: OpenCodeChatState = {
   availableSessions: [],
   availableModels: [],
   selectedModel: null,
+  subagents: [],
   openCodeSessionId: null,
   liveItems: [],
   pending: false,
@@ -49,6 +52,7 @@ const EMPTY_CHAT: OpenCodeChatState = {
 let eventBridgeReady = false
 
 function upsertLiveItem(items: OpenCodeLiveChatItem[], item: OpenCodeStreamChunk['item']): OpenCodeLiveChatItem[] {
+  if (item.kind === 'subagent') return items
   const id = item.kind === 'permission' ? item.requestId : item.partId
   const index = items.findIndex((current) => current.id === id)
 
@@ -91,6 +95,7 @@ function upsertLiveItem(items: OpenCodeLiveChatItem[], item: OpenCodeStreamChunk
       live: true,
       permission: item.permission,
       patterns: item.patterns,
+      ...('subagentId' in item && item.subagentId ? { subagentId: item.subagentId } : {}),
       ...(item.title === undefined ? {} : { title: item.title })
     }
     if (index < 0) return [...items, next]
@@ -132,6 +137,28 @@ function findModel(
         ...(available.variant ? { variant: available.variant } : {})
       }
     : null
+}
+
+function upsertSubagent(items: OpenCodeSubagent[], next: OpenCodeSubagent): OpenCodeSubagent[] {
+  const index = items.findIndex((item) => item.id === next.id)
+  if (index < 0) return [...items, next]
+  return items.map((item, itemIndex) => (itemIndex === index ? next : item))
+}
+
+function subagentIsActive(subagent: OpenCodeSubagent): boolean {
+  return subagent.status === 'working' || subagent.status === 'waiting'
+}
+
+function retainActiveSubagentPermissions(
+  liveItems: OpenCodeLiveChatItem[],
+  subagents: OpenCodeSubagent[]
+): OpenCodeLiveChatItem[] {
+  return liveItems.filter(
+    (item) =>
+      item.role === 'permission' &&
+      item.subagentId !== undefined &&
+      subagents.some((subagent) => subagent.id === item.subagentId && subagentIsActive(subagent))
+  )
 }
 
 interface WorkspaceState {
@@ -497,7 +524,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
           [sessionId]: {
             ...previous,
             messages: [...previous.messages, userMessage],
-            liveItems: [],
+            liveItems: retainActiveSubagentPermissions(previous.liveItems, previous.subagents),
+            subagents: previous.subagents.filter(subagentIsActive),
             pending: true,
             sessionsLoading: false,
             error: null,
@@ -525,7 +553,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               messages: [...current.messages, ...messages],
               openCodeSessionId,
               pending: false,
-              liveItems: [],
+              liveItems: retainActiveSubagentPermissions(current.liveItems, current.subagents),
               unreadCompletion: state.selectedSessionId !== sessionId
             }
           }
@@ -545,7 +573,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               ...current,
               pending: false,
               error: message,
-              liveItems: [],
+              liveItems: retainActiveSubagentPermissions(current.liveItems, current.subagents),
               unreadCompletion: state.selectedSessionId !== sessionId
             }
           }
@@ -641,6 +669,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
                 ]
               ),
               liveItems: [],
+              subagents: [],
               sessionsLoading: false,
               error: null
             }
@@ -692,6 +721,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               openCodeSessionId: result.sessionId,
               selectedModel: null,
               liveItems: [],
+              subagents: [],
               sessionsLoading: false,
               error: null
             }
@@ -782,8 +812,49 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   appendOpenCodeStream: ({ sessionId, item }) =>
     set((state) => {
       const current = state.opencodeChats[sessionId]
-      // Deltas that arrive outside a turn belong to no visible message.
-      if (!current?.pending) return state
+      if (!current) return state
+
+      if (item.kind === 'subagent') {
+        const previous = current.subagents.find((subagent) => subagent.id === item.subagent.id)
+        const existingSubagents = item.replacesId
+          ? current.subagents.filter((subagent) => subagent.id !== item.replacesId)
+          : current.subagents
+        let liveItems = current.liveItems
+        if (item.permission) {
+          liveItems = upsertLiveItem(liveItems, {
+            kind: 'permission',
+            requestId: item.permission.requestId,
+            permission: item.permission.permission,
+            patterns: item.permission.patterns,
+            ...(item.permission.title ? { title: item.permission.title } : {}),
+            subagentId: item.subagent.id
+          })
+        }
+        if (item.permissionResolved) {
+          liveItems = liveItems.filter((liveItem) => liveItem.id !== item.permissionResolved)
+        }
+        const finished =
+          previous && subagentIsActive(previous) &&
+          (item.subagent.status === 'completed' ||
+            item.subagent.status === 'error' ||
+            item.subagent.status === 'cancelled')
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: {
+              ...current,
+              subagents: upsertSubagent(existingSubagents, item.subagent),
+              liveItems,
+              unreadCompletion:
+                finished && state.selectedSessionId !== sessionId ? true : current.unreadCompletion
+            }
+          }
+        }
+      }
+
+      // Ordinary text/tool/reasoning deltas outside a parent turn belong to no
+      // visible message, while subagent status events are handled above.
+      if (!current.pending) return state
       return {
         opencodeChats: {
           ...state.opencodeChats,

@@ -97,6 +97,22 @@ export type OpenCodeChatItem = OpenCodeChatMessage | OpenCodeToolMessage | OpenC
 
 export type OpenCodePermissionReply = 'once' | 'always' | 'reject'
 
+export type OpenCodeSubagentStatus = 'working' | 'waiting' | 'completed' | 'error' | 'cancelled'
+
+/** Status-only information about a child session created by OpenCode's Task tool. */
+export interface OpenCodeSubagent {
+  /** Child session ID, or a provisional task-part ID until OpenCode reports it. */
+  id: string
+  taskId: string
+  parentSubagentId?: string
+  description: string
+  agent?: string
+  status: OpenCodeSubagentStatus
+  background?: boolean
+  startedAt: number
+  finishedAt?: number
+}
+
 /** The model identity OpenCode expects in a prompt request. */
 export interface OpenCodeModelSelection {
   providerID: string
@@ -145,6 +161,7 @@ export interface OpenCodeLiveToolMessage extends OpenCodeToolMessage {
 export interface OpenCodeLivePermissionMessage extends OpenCodePermissionRequest {
   role: 'permission'
   live: true
+  subagentId?: string
   responding?: boolean
 }
 
@@ -185,6 +202,19 @@ export type OpenCodeStreamItem =
       permission: string
       patterns: string[]
       title?: string
+      subagentId?: string
+    }
+  | {
+      kind: 'subagent'
+      subagent: OpenCodeSubagent
+      replacesId?: string
+      permission?: {
+        requestId: string
+        permission: string
+        patterns: string[]
+        title?: string
+      }
+      permissionResolved?: string
     }
 
 /** A normalized live OpenCode part update pushed over the existing IPC stream. */

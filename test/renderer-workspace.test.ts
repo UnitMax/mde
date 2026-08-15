@@ -97,6 +97,7 @@ describe('renderer workspace event bridge', () => {
           availableSessions: [],
           availableModels: [model],
           selectedModel: model,
+          subagents: [],
           openCodeSessionId: 'opencode-1',
           liveItems: [],
           pending: false,
@@ -389,6 +390,108 @@ describe('renderer workspace event bridge', () => {
       providerID: 'cloud',
       modelID: 'model-a',
       variant: 'fast'
+    })
+  })
+
+  it('keeps subagent status visible after the parent response completes', () => {
+    const model: OpenCodeModelOption = {
+      key: 'cloud/model-a',
+      providerID: 'cloud',
+      providerName: 'Cloud Provider',
+      modelID: 'model-a',
+      modelName: 'Model A'
+    }
+    useWorkspace.setState({
+      selectedSessionId: 'session-2',
+      sessions: [
+        {
+          id: 'session-1',
+          projectId: 'project-1',
+          name: 'App',
+          kind: 'native',
+          path: '/workspace/app',
+          createdAt: '2026-01-01T00:00:00.000Z'
+        }
+      ],
+      opencodeChats: {
+        'session-1': {
+          messages: [],
+          availableSessions: [],
+          availableModels: [model],
+          selectedModel: model,
+          subagents: [],
+          openCodeSessionId: 'opencode-1',
+          liveItems: [],
+          pending: false,
+          sessionsLoading: false,
+          modelsLoading: false,
+          error: null,
+          unreadCompletion: false
+        }
+      }
+    })
+
+    useWorkspace.getState().appendOpenCodeStream({
+      sessionId: 'session-1',
+      item: {
+        kind: 'subagent',
+        subagent: {
+          id: 'child-1',
+          taskId: 'task-1',
+          description: 'Inspect the repository',
+          agent: 'explore',
+          status: 'working',
+          startedAt: 100
+        }
+      }
+    })
+    expect(useWorkspace.getState().opencodeChats['session-1']?.subagents).toMatchObject([
+      { id: 'child-1', status: 'working' }
+    ])
+
+    useWorkspace.getState().appendOpenCodeStream({
+      sessionId: 'session-1',
+      item: {
+        kind: 'subagent',
+        subagent: {
+          id: 'child-1',
+          taskId: 'task-1',
+          description: 'Inspect the repository',
+          agent: 'explore',
+          status: 'waiting',
+          startedAt: 100
+        },
+        permission: {
+          requestId: 'child-permission',
+          permission: 'bash',
+          patterns: ['git status']
+        }
+      }
+    })
+    expect(useWorkspace.getState().opencodeChats['session-1']?.liveItems).toMatchObject([
+      { id: 'child-permission', role: 'permission', subagentId: 'child-1' }
+    ])
+
+    useWorkspace.getState().appendOpenCodeStream({
+      sessionId: 'session-1',
+      item: {
+        kind: 'subagent',
+        subagent: {
+          id: 'child-1',
+          taskId: 'task-1',
+          description: 'Inspect the repository',
+          agent: 'explore',
+          status: 'completed',
+          startedAt: 100,
+          finishedAt: 200
+        },
+        permissionResolved: 'child-permission'
+      }
+    })
+    expect(useWorkspace.getState().opencodeChats['session-1']).toMatchObject({
+      subagents: [{ id: 'child-1', status: 'completed' }],
+      liveItems: [],
+      unreadCompletion: true
     })
   })
 })
