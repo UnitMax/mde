@@ -43,6 +43,8 @@ describe('renderer workspace event bridge', () => {
     expect(api.pty.onExit).toHaveBeenCalledTimes(1)
     expect(api.opencode.onStream).toHaveBeenCalledTimes(1)
 
+    useWorkspace.getState().selectSession('session-1')
+
     let resolveSend: ((value: { messages: OpenCodeChatItem[] }) => void) | undefined
     api.opencode.send.mockImplementation(
       () =>
@@ -54,6 +56,7 @@ describe('renderer workspace event bridge', () => {
     const send = useWorkspace.getState().sendOpenCodeMessage('session-1', 'hello')
     await Promise.resolve()
     expect(streamListeners).toHaveLength(1)
+    expect(useWorkspace.getState().opencodeChats['session-1']?.pending).toBe(true)
 
     streamListeners[0]?.({
       sessionId: 'session-1',
@@ -141,10 +144,36 @@ describe('renderer workspace event bridge', () => {
     resolveSend?.({ messages: [{ id: 'answer-1', role: 'assistant', text: 'Final answer.' }] })
     await send
     expect(useWorkspace.getState().opencodeChats['session-1']?.liveItems).toEqual([])
+    expect(useWorkspace.getState().opencodeChats['session-1']?.unreadCompletion).toBe(false)
     expect(useWorkspace.getState().opencodeChats['session-1']?.messages.at(-1)).toEqual({
       id: 'answer-1',
       role: 'assistant',
       text: 'Final answer.'
+    })
+
+    useWorkspace.getState().selectSession('session-2')
+    let resolveAway: ((value: { messages: OpenCodeChatItem[] }) => void) | undefined
+    api.opencode.send.mockImplementationOnce(
+      () =>
+        new Promise<{ messages: OpenCodeChatItem[] }>((resolve) => {
+          resolveAway = resolve
+        })
+    )
+    const awaySend = useWorkspace.getState().sendOpenCodeMessage('session-1', 'follow up')
+    await Promise.resolve()
+    resolveAway?.({ messages: [] })
+    await awaySend
+    expect(useWorkspace.getState().opencodeChats['session-1']?.unreadCompletion).toBe(true)
+
+    useWorkspace.getState().selectSession('session-1')
+    expect(useWorkspace.getState().opencodeChats['session-1']?.unreadCompletion).toBe(false)
+
+    useWorkspace.getState().selectSession('session-2')
+    api.opencode.send.mockRejectedValueOnce(new Error('OpenCode failed'))
+    await useWorkspace.getState().sendOpenCodeMessage('session-1', 'fails away')
+    expect(useWorkspace.getState().opencodeChats['session-1']).toMatchObject({
+      error: 'OpenCode failed',
+      unreadCompletion: true
     })
   })
 })

@@ -21,9 +21,16 @@ export interface OpenCodeChatState {
   liveItems: OpenCodeLiveChatItem[]
   pending: boolean
   error: string | null
+  unreadCompletion: boolean
 }
 
-const EMPTY_CHAT: OpenCodeChatState = { messages: [], liveItems: [], pending: false, error: null }
+const EMPTY_CHAT: OpenCodeChatState = {
+  messages: [],
+  liveItems: [],
+  pending: false,
+  error: null,
+  unreadCompletion: false
+}
 let eventBridgeReady = false
 
 function upsertLiveItem(items: OpenCodeLiveChatItem[], item: OpenCodeStreamChunk['item']): OpenCodeLiveChatItem[] {
@@ -176,7 +183,18 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     if (wslAvailable) void get().refreshDistros()
   },
 
-  selectSession: (id) => set({ selectedSessionId: id }),
+  selectSession: (id) =>
+    set((state) => {
+      const chat = id ? state.opencodeChats[id] : undefined
+      if (!id || !chat?.unreadCompletion) return { selectedSessionId: id }
+      return {
+        selectedSessionId: id,
+        opencodeChats: {
+          ...state.opencodeChats,
+          [id]: { ...chat, unreadCompletion: false }
+        }
+      }
+    }),
 
   toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
 
@@ -298,7 +316,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
             messages: [...previous.messages, userMessage],
             liveItems: [],
             pending: true,
-            error: null
+            error: null,
+            unreadCompletion: false
           }
         }
       }
@@ -317,7 +336,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               // The returned transcript supersedes the streamed preview.
               messages: [...current.messages, ...messages],
               pending: false,
-              liveItems: []
+              liveItems: [],
+              unreadCompletion: state.selectedSessionId !== sessionId
             }
           }
         }
@@ -330,7 +350,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         return {
           opencodeChats: {
             ...state.opencodeChats,
-            [sessionId]: { ...current, pending: false, error: message, liveItems: [] }
+            [sessionId]: {
+              ...current,
+              pending: false,
+              error: message,
+              liveItems: [],
+              unreadCompletion: state.selectedSessionId !== sessionId
+            }
           }
         }
       })

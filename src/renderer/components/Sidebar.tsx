@@ -2,9 +2,11 @@ import { useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import {
   ChevronDown,
   ChevronRight,
+  CircleAlert,
   Folder,
   FolderOpen,
   FolderPlus,
+  LoaderCircle,
   MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
@@ -40,7 +42,7 @@ import {
 } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { useWorkspace } from '@/store/workspace'
+import { useWorkspace, type OpenCodeChatState } from '@/store/workspace'
 
 const STATUS_STYLE: Record<PtyStatus, { dot: string; label: string }> = {
   none: { dot: 'bg-fg-subtle', label: 'No shell running' },
@@ -48,14 +50,70 @@ const STATUS_STYLE: Record<PtyStatus, { dot: string; label: string }> = {
   exited: { dot: 'bg-danger', label: 'Shell exited' }
 }
 
-function StatusDot({ status }: { status: PtyStatus }): JSX.Element {
-  const style = STATUS_STYLE[status]
+type OpenCodeIndicatorStatus = 'idle' | 'working' | 'attention' | 'completed' | 'error'
+
+interface SessionIndicator {
+  status: PtyStatus | OpenCodeIndicatorStatus
+  dot: string
+  label: string
+  row?: string
+}
+
+const OPENCODE_STATUS_STYLE: Record<OpenCodeIndicatorStatus, Omit<SessionIndicator, 'status'>> = {
+  idle: { dot: 'bg-fg-subtle', label: 'OpenCode idle' },
+  working: { dot: 'text-accent', label: 'OpenCode is working' },
+  attention: { dot: 'text-accent', label: 'OpenCode is waiting for permission', row: 'bg-accent/10' },
+  completed: { dot: 'bg-ok', label: 'OpenCode finished', row: 'bg-ok/10' },
+  error: { dot: 'bg-danger', label: 'OpenCode request failed', row: 'bg-danger/10' }
+}
+
+function sessionIndicator(status: PtyStatus, chat?: OpenCodeChatState): SessionIndicator {
+  if (!chat) return { status, ...STATUS_STYLE[status] }
+  if (chat.pending) {
+    const waitingForPermission = chat.liveItems.some(
+      (item) => item.role === 'permission' && !item.responding
+    )
+    if (waitingForPermission) return { status: 'attention', ...OPENCODE_STATUS_STYLE.attention }
+    return { status: 'working', ...OPENCODE_STATUS_STYLE.working }
+  }
+  if (chat.unreadCompletion) {
+    const guiStatus = chat.error ? 'error' : 'completed'
+    return { status: guiStatus, ...OPENCODE_STATUS_STYLE[guiStatus] }
+  }
+  return { status: 'idle', ...OPENCODE_STATUS_STYLE.idle }
+}
+
+function StatusDot({
+  indicator,
+  className
+}: {
+  indicator: SessionIndicator
+  className?: string
+}): JSX.Element {
+  const sharedProps = {
+    'data-testid': 'session-status',
+    'data-status': indicator.status,
+    title: indicator.label
+  }
+
+  if (indicator.status === 'working' || indicator.status === 'attention') {
+    const Icon = indicator.status === 'attention' ? CircleAlert : LoaderCircle
+    return (
+      <Icon
+        {...sharedProps}
+        className={cn(
+          'h-2.5 w-2.5 shrink-0 text-accent',
+          indicator.status === 'working' && 'animate-spin',
+          className
+        )}
+      />
+    )
+  }
+
   return (
     <span
-      data-testid="session-status"
-      data-status={status}
-      className={cn('h-1.5 w-1.5 shrink-0 rounded-full', style.dot)}
-      title={style.label}
+      {...sharedProps}
+      className={cn('h-1.5 w-1.5 shrink-0 rounded-full', indicator.dot, className)}
     />
   )
 }
@@ -63,11 +121,12 @@ function StatusDot({ status }: { status: PtyStatus }): JSX.Element {
 interface SessionRowProps {
   session: Session
   status: PtyStatus
+  chat?: OpenCodeChatState
   selected: boolean
   onSelect: () => void
 }
 
-function SessionRow({ session, status, selected, onSelect }: SessionRowProps): JSX.Element {
+function SessionRow({ session, status, chat, selected, onSelect }: SessionRowProps): JSX.Element {
   const renameSession = useWorkspace((state) => state.renameSession)
   const moveSession = useWorkspace((state) => state.moveSession)
   const removeSession = useWorkspace((state) => state.removeSession)
@@ -110,6 +169,7 @@ function SessionRow({ session, status, selected, onSelect }: SessionRowProps): J
   }
 
   const location = session.kind === 'wsl' ? `${session.distro ?? 'WSL'} · ${session.path}` : session.path
+  const indicator = sessionIndicator(status, chat)
 
   return (
     <>
@@ -129,10 +189,15 @@ function SessionRow({ session, status, selected, onSelect }: SessionRowProps): J
             }}
             className={cn(
               'group ml-3 flex w-[calc(100%-0.75rem)] cursor-default items-center gap-2 rounded px-2 py-1.5 text-left',
-              selected ? 'bg-active text-fg' : 'text-fg-muted hover:bg-hover hover:text-fg'
+              selected
+                ? cn(
+                    'bg-active text-fg',
+                    indicator.status === 'attention' && 'ring-1 ring-accent/60'
+                  )
+                : cn('text-fg-muted hover:bg-hover hover:text-fg', indicator.row)
             )}
           >
-            <StatusDot status={status} />
+            <StatusDot indicator={indicator} />
 
             <div className="min-w-0 flex-1">
               {renaming ? (
@@ -262,6 +327,7 @@ interface ProjectGroupProps {
   project: Project
   sessions: Session[]
   statuses: Record<string, PtyStatus>
+  opencodeChats: Record<string, OpenCodeChatState>
   selectedSessionId: string | null
   onSelectSession: (id: string) => void
   onNewSession: (projectId: string) => void
@@ -271,6 +337,7 @@ function ProjectGroup({
   project,
   sessions,
   statuses,
+  opencodeChats,
   selectedSessionId,
   onSelectSession,
   onNewSession
@@ -365,6 +432,7 @@ function ProjectGroup({
             key={session.id}
             session={session}
             status={statuses[session.id] ?? 'none'}
+            chat={opencodeChats[session.id]}
             selected={session.id === selectedSessionId}
             onSelect={() => onSelectSession(session.id)}
           />
@@ -398,6 +466,7 @@ export function Sidebar({ onNewProject, onNewSession }: SidebarProps): JSX.Eleme
   const projects = useWorkspace((state) => state.projects)
   const sessions = useWorkspace((state) => state.sessions)
   const statuses = useWorkspace((state) => state.statuses)
+  const opencodeChats = useWorkspace((state) => state.opencodeChats)
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
   const selectSession = useWorkspace((state) => state.selectSession)
   const collapsed = useWorkspace((state) => state.sidebarCollapsed)
@@ -413,28 +482,32 @@ export function Sidebar({ onNewProject, onNewSession }: SidebarProps): JSX.Eleme
           {projects.map((project) => {
             const projectSessions = sessions.filter((session) => session.projectId === project.id)
             return projectSessions.length > 0 ? (
-              projectSessions.map((session) => (
-                <button
-                  key={session.id}
-                  type="button"
-                  onClick={() => selectSession(session.id)}
-                  title={`${project.name} · ${session.name}`}
-                  className={cn(
-                    'relative flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase',
-                    session.id === selectedSessionId
-                      ? 'bg-active text-fg'
-                      : 'text-fg-muted hover:bg-hover hover:text-fg'
-                  )}
-                >
-                  {session.name.slice(0, 2)}
-                  <span
+              projectSessions.map((session) => {
+                const indicator = sessionIndicator(statuses[session.id] ?? 'none', opencodeChats[session.id])
+                return (
+                  <button
+                    key={session.id}
+                    type="button"
+                    onClick={() => selectSession(session.id)}
+                    title={`${project.name} · ${session.name}`}
                     className={cn(
-                      'absolute -bottom-0.5 right-0.5 h-1.5 w-1.5 rounded-full ring-2 ring-panel',
-                      STATUS_STYLE[statuses[session.id] ?? 'none'].dot
+                      'relative flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase',
+                      session.id === selectedSessionId
+                        ? cn(
+                            'bg-active text-fg',
+                            indicator.status === 'attention' && 'ring-1 ring-accent/60'
+                          )
+                        : cn('text-fg-muted hover:bg-hover hover:text-fg', indicator.row)
                     )}
-                  />
-                </button>
-              ))
+                  >
+                    {session.name.slice(0, 2)}
+                    <StatusDot
+                      indicator={indicator}
+                      className="absolute -bottom-0.5 right-0.5 ring-2 ring-panel"
+                    />
+                  </button>
+                )
+              })
             ) : (
               <button
                 key={project.id}
@@ -501,6 +574,7 @@ export function Sidebar({ onNewProject, onNewSession }: SidebarProps): JSX.Eleme
               project={project}
               sessions={sessions.filter((session) => session.projectId === project.id)}
               statuses={statuses}
+              opencodeChats={opencodeChats}
               selectedSessionId={selectedSessionId}
               onSelectSession={selectSession}
               onNewSession={(projectId) => onNewSession(projectId)}
