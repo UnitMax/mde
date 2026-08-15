@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IpcChannels, IpcEvents, type RendererApi } from '@shared/ipc'
-import type { PtyDataChunk, PtyExitInfo } from '@shared/types'
+import type { OpenCodeStreamChunk, PtyDataChunk, PtyExitInfo } from '@shared/types'
 
 function subscribe<T>(channel: string, listener: (payload: T) => void): () => void {
   const wrapped = (_event: Electron.IpcRendererEvent, payload: T): void => listener(payload)
@@ -47,7 +47,8 @@ const api: RendererApi = {
     reveal: (sessionId) => ipcRenderer.invoke(IpcChannels.pathReveal, sessionId)
   },
   opencode: {
-    send: (req) => ipcRenderer.invoke(IpcChannels.opencodeSend, req)
+    send: (req) => ipcRenderer.invoke(IpcChannels.opencodeSend, req),
+    onStream: (listener) => subscribe<OpenCodeStreamChunk>(IpcEvents.opencodeStream, listener)
   }
 }
 

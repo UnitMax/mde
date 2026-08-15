@@ -6,6 +6,7 @@ import type {
   NewSession,
   OpenCodeChatItem,
   OpenCodeChatMessage,
+  OpenCodeStreamChunk,
   Project,
   PtyExitInfo,
   PtyStatus,
@@ -17,7 +18,11 @@ export interface OpenCodeChatState {
   messages: OpenCodeChatItem[]
   pending: boolean
   error: string | null
+  /** Assistant text streamed so far this turn; replaced by the final transcript. */
+  streamingText: string
 }
+
+const EMPTY_CHAT: OpenCodeChatState = { messages: [], pending: false, error: null, streamingText: '' }
 
 interface WorkspaceState {
   projects: Project[]
@@ -50,6 +55,7 @@ interface WorkspaceState {
   noteExit: (info: PtyExitInfo) => void
   clearExit: (id: string) => void
   sendOpenCodeMessage: (sessionId: string, text: string) => Promise<void>
+  appendOpenCodeStream: (chunk: OpenCodeStreamChunk) => void
   refreshDistros: () => Promise<void>
 }
 
@@ -87,6 +93,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
     if (wslAvailable) void get().refreshDistros()
     window.api.pty.onExit((info) => get().noteExit(info))
+    window.api.opencode.onStream((chunk) => get().appendOpenCodeStream(chunk))
   },
 
   selectSession: (id) => set({ selectedSessionId: id }),
@@ -203,18 +210,15 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     }
 
     set((state) => {
-      const previous = state.opencodeChats[sessionId] ?? {
-        messages: [],
-        pending: false,
-        error: null
-      }
+      const previous = state.opencodeChats[sessionId] ?? EMPTY_CHAT
       return {
         opencodeChats: {
           ...state.opencodeChats,
           [sessionId]: {
             messages: [...previous.messages, userMessage],
             pending: true,
-            error: null
+            error: null,
+            streamingText: ''
           }
         }
       }
@@ -228,7 +232,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         return {
           opencodeChats: {
             ...state.opencodeChats,
-            [sessionId]: { ...current, messages: [...current.messages, ...messages], pending: false }
+            [sessionId]: {
+              ...current,
+              // The returned transcript supersedes the streamed preview.
+              messages: [...current.messages, ...messages],
+              pending: false,
+              streamingText: ''
+            }
           }
         }
       })
@@ -240,12 +250,25 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         return {
           opencodeChats: {
             ...state.opencodeChats,
-            [sessionId]: { ...current, pending: false, error: message }
+            [sessionId]: { ...current, pending: false, error: message, streamingText: '' }
           }
         }
       })
     }
   },
+
+  appendOpenCodeStream: ({ sessionId, delta }) =>
+    set((state) => {
+      const current = state.opencodeChats[sessionId]
+      // Deltas that arrive outside a turn belong to no visible message.
+      if (!current?.pending) return state
+      return {
+        opencodeChats: {
+          ...state.opencodeChats,
+          [sessionId]: { ...current, streamingText: current.streamingText + delta }
+        }
+      }
+    }),
 
   refreshDistros: async () => {
     const distros = await window.api.wsl.distros()

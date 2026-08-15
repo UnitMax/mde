@@ -7,7 +7,9 @@ import {
   extractTurnItems,
   extractTextParts,
   OPENCODE_INLINE_CONFIG,
-  parseServerUrl
+  parseServerUrl,
+  parseSseFrames,
+  TextDeltaTracker
 } from '../src/main/opencode/manager'
 
 describe('OpenCode GUI protocol helpers', () => {
@@ -133,5 +135,67 @@ describe('OpenCode GUI protocol helpers', () => {
       ])
     ).toEqual([{ id: 'r1', role: 'reasoning', text: 'Now I can answer.' }])
     expect(extractReasoningMessages(undefined)).toEqual([])
+  })
+})
+
+describe('OpenCode event stream', () => {
+  it('splits complete SSE frames and keeps the partial tail', () => {
+    const first = parseSseFrames('data: {"a":1}\n\ndata: {"b":2}\n\ndata: {"c"')
+    expect(first.events).toEqual(['{"a":1}', '{"b":2}'])
+    expect(first.rest).toBe('data: {"c"')
+
+    // The tail completes once the rest of the frame arrives.
+    expect(parseSseFrames(`${first.rest}:3}\n\n`).events).toEqual(['{"c":3}'])
+    expect(parseSseFrames('event: ping\r\ndata: {"d":4}\r\n\r\n').events).toEqual(['{"d":4}'])
+    expect(parseSseFrames(': comment only\n\n').events).toEqual([])
+  })
+
+  it('streams text deltas while ignoring reasoning from the same message', () => {
+    const tracker = new TextDeltaTracker('ses_1')
+    const delta = (partID: string, text: string): unknown => ({
+      type: 'message.part.delta',
+      properties: { sessionID: 'ses_1', messageID: 'msg_1', partID, field: 'text', delta: text }
+    })
+    const opened = (id: string, type: string): unknown => ({
+      type: 'message.part.updated',
+      properties: { sessionID: 'ses_1', part: { id, type, text: '' } }
+    })
+
+    // A reasoning part streams through the same `field: "text"` shape.
+    expect(tracker.accept(opened('prt_reasoning', 'reasoning'))).toBeNull()
+    expect(tracker.accept(delta('prt_reasoning', 'thinking out loud'))).toBeNull()
+
+    expect(tracker.accept(opened('prt_text', 'text'))).toBeNull()
+    expect(tracker.accept(delta('prt_text', 'Hello'))).toBe('Hello')
+    expect(tracker.accept(delta('prt_text', ' world'))).toBe(' world')
+
+    // A second text part is a separate block of the reply.
+    expect(tracker.accept(opened('prt_text2', 'text'))).toBeNull()
+    expect(tracker.accept(delta('prt_text2', 'Second'))).toBe('\n\nSecond')
+  })
+
+  it('ignores events from other sessions and unknown parts', () => {
+    const tracker = new TextDeltaTracker('ses_1')
+    expect(
+      tracker.accept({
+        type: 'message.part.updated',
+        properties: { sessionID: 'ses_other', part: { id: 'prt_x', type: 'text' } }
+      })
+    ).toBeNull()
+    expect(
+      tracker.accept({
+        type: 'message.part.delta',
+        properties: { sessionID: 'ses_other', partID: 'prt_x', field: 'text', delta: 'nope' }
+      })
+    ).toBeNull()
+    // Never announced, so its kind is unknown and it cannot be assumed to be text.
+    expect(
+      tracker.accept({
+        type: 'message.part.delta',
+        properties: { sessionID: 'ses_1', partID: 'prt_unseen', field: 'text', delta: 'nope' }
+      })
+    ).toBeNull()
+    expect(tracker.accept({ type: 'session.idle', properties: { sessionID: 'ses_1' } })).toBeNull()
+    expect(tracker.accept(null)).toBeNull()
   })
 })

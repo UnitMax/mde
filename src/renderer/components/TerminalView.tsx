@@ -143,6 +143,15 @@ function GuiView({ session }: { session: Session }): JSX.Element {
   const pending = chat?.pending ?? false
   const error = chat?.error ?? null
   const messages = chat?.messages ?? []
+  const streamingText = chat?.streamingText ?? ''
+  const logRef = useRef<HTMLOListElement>(null)
+
+  useEffect(() => {
+    const log = logRef.current
+    if (!log) return
+    // Streaming appends below the fold; keep the newest text in view.
+    log.scrollTop = log.scrollHeight
+  }, [messages, streamingText, pending])
 
   const send = (): void => {
     if (!nativeSession || pending || !draft.trim()) return
@@ -153,7 +162,11 @@ function GuiView({ session }: { session: Session }): JSX.Element {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-bg">
-      <ol className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3" aria-label="OpenCode conversation">
+      <ol
+        ref={logRef}
+        className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3"
+        aria-label="OpenCode conversation"
+      >
         {messages.map((message) =>
           message.role === 'tool' ? (
             <ToolMessageView key={message.id} message={message} />
@@ -175,11 +188,25 @@ function GuiView({ session }: { session: Session }): JSX.Element {
             </li>
           )
         )}
-        {pending && (
-          <li className="max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
-            Nemotron is responding…
-          </li>
-        )}
+        {pending &&
+          (streamingText ? (
+            <li
+              aria-live="polite"
+              className="max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-fg-muted"
+            >
+              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
+                Nemotron
+              </p>
+              <p className="whitespace-pre-wrap text-[13px]">
+                {streamingText}
+                <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-fg-subtle" />
+              </p>
+            </li>
+          ) : (
+            <li className="max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
+              Nemotron is responding…
+            </li>
+          ))}
       </ol>
 
       <div className="shrink-0 border-t border-line bg-panel p-3">

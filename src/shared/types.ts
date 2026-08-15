@@ -91,6 +91,12 @@ export interface OpenCodeToolMessage {
 
 export type OpenCodeChatItem = OpenCodeChatMessage | OpenCodeToolMessage | OpenCodeReasoningMessage
 
+/** A live assistant text fragment, pushed while OpenCode is still generating. */
+export interface OpenCodeStreamChunk {
+  sessionId: string
+  delta: string
+}
+
 export interface SendOpenCodeMessageRequest {
   sessionId: string
   text: string

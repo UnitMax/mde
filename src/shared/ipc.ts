@@ -10,6 +10,7 @@ import type {
   Session,
   SendOpenCodeMessageRequest,
   SendOpenCodeMessageResponse,
+  OpenCodeStreamChunk,
   PtyDataChunk,
   PtyExitInfo,
   PtySize,
@@ -59,7 +60,8 @@ export const IpcChannels = {
 /** Main -> renderer pushes. */
 export const IpcEvents = {
   ptyData: 'pty:data',
-  ptyExit: 'pty:exit'
+  ptyExit: 'pty:exit',
+  opencodeStream: 'opencode:stream'
 } as const
 
 export interface PlatformInfo {
@@ -154,5 +156,7 @@ export interface RendererApi {
   }
   opencode: {
     send(req: SendOpenCodeMessageRequest): Promise<SendOpenCodeMessageResponse>
+    /** Live assistant text while `send` is still in flight. */
+    onStream(listener: (chunk: OpenCodeStreamChunk) => void): () => void
   }
 }

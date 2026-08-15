@@ -21,7 +21,13 @@ const ptyManager = new PtyManager({
     }
   }
 })
-const opencodeManager = new OpenCodeManager()
+const opencodeManager = new OpenCodeManager({
+  onStream: (chunk) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(IpcEvents.opencodeStream, chunk)
+    }
+  }
+})
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({

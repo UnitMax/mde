@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import type {
   OpenCodeChatItem,
   OpenCodeReasoningMessage,
+  OpenCodeStreamChunk,
   OpenCodeToolMessage,
   Session
 } from '@shared/types'
@@ -28,6 +29,70 @@ interface OpenCodeRuntime {
   child: ChildProcessWithoutNullStreams
   url: string
   sessionId: string
+}
+
+export interface OpenCodeEvents {
+  onStream(chunk: OpenCodeStreamChunk): void
+}
+
+/**
+ * Splits an SSE byte buffer into complete frames, returning the trailing
+ * partial frame so the caller can prepend it to the next chunk.
+ */
+export function parseSseFrames(buffer: string): { events: string[]; rest: string } {
+  const frames = buffer.split(/\r?\n\r?\n/)
+  const rest = frames.pop() ?? ''
+  const events: string[] = []
+
+  for (const frame of frames) {
+    const data = frame
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trimStart())
+      .join('\n')
+    if (data) events.push(data)
+  }
+
+  return { events, rest }
+}
+
+/**
+ * Turns the OpenCode event bus into the assistant text of a single session.
+ *
+ * `message.part.delta` names the part it belongs to but not the part's kind,
+ * so reasoning and text deltas are indistinguishable on their own. The
+ * `message.part.updated` event that opens every part carries the kind, so the
+ * tracker learns which part IDs are text and routes deltas accordingly.
+ */
+export class TextDeltaTracker {
+  private readonly textPartIds = new Set<string>()
+  private lastPartId: string | null = null
+
+  constructor(private readonly sessionId: string) {}
+
+  /** Returns the text to append for this event, or null if it carries none. */
+  accept(event: unknown): string | null {
+    if (!isRecord(event) || !isRecord(event.properties)) return null
+    const properties = event.properties
+    if (properties.sessionID !== this.sessionId) return null
+
+    if (event.type === 'message.part.updated' && isRecord(properties.part)) {
+      const part = properties.part
+      if (typeof part.id !== 'string') return null
+      if (part.type === 'text') this.textPartIds.add(part.id)
+      else this.textPartIds.delete(part.id)
+      return null
+    }
+
+    if (event.type !== 'message.part.delta') return null
+    if (properties.field !== 'text' || typeof properties.delta !== 'string') return null
+    if (typeof properties.partID !== 'string' || !this.textPartIds.has(properties.partID)) return null
+
+    // Separate text parts are distinct blocks of the reply, not one run-on line.
+    const separator = this.lastPartId !== null && this.lastPartId !== properties.partID ? '\n\n' : ''
+    this.lastPartId = properties.partID
+    return `${separator}${properties.delta}`
+  }
 }
 
 interface OpenCodeSessionResponse {
@@ -267,6 +332,9 @@ export class OpenCodeManager {
   private readonly starting = new Map<string, Promise<OpenCodeRuntime>>()
   private readonly children = new Map<string, ChildProcessWithoutNullStreams>()
   private readonly pending = new Set<string>()
+  private readonly streams = new Map<string, AbortController>()
+
+  constructor(private readonly events?: OpenCodeEvents) {}
 
   async send(session: Session, text: string): Promise<OpenCodeChatItem[]> {
     const prompt = text.trim()
@@ -320,6 +388,8 @@ export class OpenCodeManager {
   }
 
   dispose(sessionId: string): void {
+    this.streams.get(sessionId)?.abort()
+    this.streams.delete(sessionId)
     this.runtimes.delete(sessionId)
     const child = this.children.get(sessionId)
     this.children.delete(sessionId)
@@ -376,10 +446,79 @@ export class OpenCodeManager {
         if (runtime?.child === child) this.runtimes.delete(session.id)
       })
 
-      return { child, url, sessionId: created.id }
+      const runtime = { child, url, sessionId: created.id }
+      // Awaited: the first prompt follows immediately, and its early deltas are
+      // lost if the subscription is not live yet.
+      if (this.events) await this.openEventStream(session.id, runtime)
+      return runtime
     } catch (error) {
       this.dispose(session.id)
       throw error
+    }
+  }
+
+  /**
+   * Subscribes to the server's event bus. Resolves once the subscription is
+   * live, because a prompt sent before then would generate its first deltas
+   * with nobody listening. Streaming is a preview only: `send` still returns
+   * the authoritative transcript, so any failure here is silent rather than
+   * fatal.
+   */
+  private async openEventStream(sessionId: string, runtime: OpenCodeRuntime): Promise<void> {
+    const controller = new AbortController()
+    this.streams.get(sessionId)?.abort()
+    this.streams.set(sessionId, controller)
+
+    let response: Response
+    try {
+      response = await fetch(`${runtime.url}/event`, {
+        headers: { accept: 'text/event-stream' },
+        signal: controller.signal
+      })
+    } catch {
+      this.streams.delete(sessionId)
+      return
+    }
+
+    if (!response.ok || !response.body) {
+      this.streams.delete(sessionId)
+      return
+    }
+
+    void this.pumpEvents(sessionId, runtime, response, controller)
+  }
+
+  /** Drains the subscribed stream in the background for the runtime's lifetime. */
+  private async pumpEvents(
+    sessionId: string,
+    runtime: OpenCodeRuntime,
+    response: Response,
+    controller: AbortController
+  ): Promise<void> {
+    const tracker = new TextDeltaTracker(runtime.sessionId)
+    try {
+      const decoder = new TextDecoder()
+      let buffer = ''
+      for await (const bytes of response.body as unknown as AsyncIterable<Uint8Array>) {
+        buffer += decoder.decode(bytes, { stream: true })
+        const { events, rest } = parseSseFrames(buffer)
+        buffer = rest
+
+        for (const raw of events) {
+          let event: unknown
+          try {
+            event = JSON.parse(raw)
+          } catch {
+            continue
+          }
+          const delta = tracker.accept(event)
+          if (delta) this.events?.onStream({ sessionId, delta })
+        }
+      }
+    } catch {
+      // Aborted on dispose, or the server went away; the transcript still arrives.
+    } finally {
+      if (this.streams.get(sessionId) === controller) this.streams.delete(sessionId)
     }
   }
 
