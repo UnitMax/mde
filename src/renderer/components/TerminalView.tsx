@@ -872,7 +872,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
                 focusSlashSuggestion(0)
                 return
               }
-              if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+              if (event.key === 'Enter' && !event.shiftKey && !event.ctrlKey) {
                 event.preventDefault()
                 send()
               }
