@@ -2,6 +2,11 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import type { PtySize } from '@shared/types'
+import {
+  getTerminalFontSettings,
+  xtermFontFamily,
+  type TerminalFontSettings
+} from './font-settings'
 
 export type RendererKind = 'webgl' | 'dom'
 
@@ -64,12 +69,12 @@ function createSession(sessionId: string, host: HTMLElement): TerminalSession {
   container.className = 'h-full w-full'
   host.appendChild(container)
 
+  const font = getTerminalFontSettings()
   const term = new Terminal({
     allowProposedApi: true,
     cursorBlink: true,
-    fontFamily:
-      "'Cascadia Mono', 'JetBrains Mono', 'Fira Code', 'DejaVu Sans Mono', Menlo, Consolas, monospace",
-    fontSize: 13,
+    fontFamily: xtermFontFamily(font.family),
+    fontSize: font.size,
     lineHeight: 1.2,
     scrollback: 10_000,
     theme: THEME
@@ -100,6 +105,14 @@ function createSession(sessionId: string, host: HTMLElement): TerminalSession {
   const session: TerminalSession = { sessionId, term, fit, container, renderer }
   sessions.set(sessionId, session)
   return session
+}
+
+/** Applies font settings without recreating terminals or their PTY processes. */
+export function applyTerminalFontSettings(settings: TerminalFontSettings): void {
+  for (const session of sessions.values()) {
+    session.term.options.fontFamily = xtermFontFamily(settings.family)
+    session.term.options.fontSize = settings.size
+  }
 }
 
 /** Creates the session on first view, or re-parents the existing one. */

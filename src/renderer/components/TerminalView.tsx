@@ -11,6 +11,7 @@ import {
   RefreshCw,
   RotateCw,
   Search,
+  Type,
   Undo2
 } from 'lucide-react'
 import type {
@@ -54,7 +55,20 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useWorkspace } from '@/store/workspace'
-import { attachSession, detachSession, fitSession, getSession } from '@/terminal/sessions'
+import {
+  applyTerminalFontSettings,
+  attachSession,
+  detachSession,
+  fitSession,
+  getSession
+} from '@/terminal/sessions'
+import {
+  getTerminalFontSettings,
+  listTerminalFonts,
+  saveTerminalFontSettings,
+  TERMINAL_FONT_SIZES,
+  type TerminalFontSettings
+} from '@/terminal/font-settings'
 
 const FALLBACK_SIZE: PtySize = { cols: 80, rows: 24 }
 const RESIZE_DEBOUNCE_MS = 100
@@ -116,6 +130,86 @@ function TerminalSurface({ session: selectedSession }: TerminalSurfaceProps): JS
   }, [selectedSession.id, setStatus])
 
   return <div ref={hostRef} className="terminal-host relative min-h-0 flex-1 overflow-hidden" />
+}
+
+function TerminalFontControl({ sessionId }: { sessionId: string }): JSX.Element {
+  const [open, setOpen] = useState(false)
+  const [settings, setSettings] = useState<TerminalFontSettings>(() => getTerminalFontSettings())
+  const [availableFonts] = useState(() => listTerminalFonts())
+
+  const updateSettings = (patch: Partial<TerminalFontSettings>): void => {
+    const next = { ...settings, ...patch }
+    setSettings(next)
+    saveTerminalFontSettings(next)
+    applyTerminalFontSettings(next)
+
+    const session = getSession(sessionId)
+    const size = session ? fitSession(session) : null
+    if (size) void window.api.pty.resize({ sessionId, size })
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <button
+        type="button"
+        aria-label="Change terminal font"
+        data-testid="terminal-font-control"
+        title="Change terminal font"
+        onClick={() => setOpen(true)}
+        className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded px-2 text-xs text-fg-subtle hover:bg-hover hover:text-fg"
+      >
+        <Type className="h-3.5 w-3.5" />
+        Font
+      </button>
+
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Terminal font</DialogTitle>
+          <DialogDescription>Changes apply immediately to all terminal sessions and are saved for later.</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <label className="block text-xs font-medium text-fg-muted">
+            Font family
+            <Select value={settings.family} onValueChange={(family) => updateSettings({ family })}>
+              <SelectTrigger className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {availableFonts.map((font) => (
+                  <SelectItem key={font.family} value={font.family}>
+                    {font.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+
+          <label className="block text-xs font-medium text-fg-muted">
+            Font size
+            <Select
+              value={String(settings.size)}
+              onValueChange={(value) => {
+                const size = TERMINAL_FONT_SIZES.find((candidate) => String(candidate) === value)
+                if (size !== undefined) updateSettings({ size })
+              }}
+            >
+              <SelectTrigger className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TERMINAL_FONT_SIZES.map((size) => (
+                  <SelectItem key={size} value={String(size)}>
+                    {size}px
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
 }
 
 function formatToolInput(input: Record<string, unknown>): string {
@@ -1061,6 +1155,8 @@ export function TerminalView({
             GUI
           </button>
         </div>
+
+        {viewMode === 'terminal' && <TerminalFontControl sessionId={selectedSession.id} />}
 
         <Button
           variant="ghost"
