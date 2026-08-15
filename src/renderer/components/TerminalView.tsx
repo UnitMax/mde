@@ -12,6 +12,7 @@ import type {
   Session
 } from '@shared/types'
 import { Button } from '@/components/ui/button'
+import { MarkdownMessage } from '@/components/MarkdownMessage'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useWorkspace } from '@/store/workspace'
 import { attachSession, detachSession, fitSession, getSession } from '@/terminal/sessions'
@@ -154,9 +155,10 @@ function ReasoningMessageView({
               : `Thought for ${formatThinkingDuration(message.durationMs)}`}
           </span>
         </summary>
-        <p className="ml-4 mt-1.5 whitespace-pre-wrap border-l border-line pl-3 text-[12px] italic text-fg-subtle">
-          {message.text}
-        </p>
+        <MarkdownMessage
+          text={message.text}
+          className="ml-4 mt-1.5 border-l border-line pl-3 text-[12px] italic text-fg-subtle"
+        />
       </details>
     </li>
   )
@@ -169,10 +171,7 @@ function LiveTextMessageView({ text }: { text: string }): JSX.Element {
       className="max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-fg-muted"
     >
       <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-fg-subtle">Nemotron</p>
-      <p className="whitespace-pre-wrap text-[13px]">
-        {text}
-        <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-fg-subtle" />
-      </p>
+      <MarkdownMessage text={text} streaming />
     </li>
   )
 }
@@ -283,7 +282,11 @@ function GuiView({ session }: { session: Session }): JSX.Element {
               <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
                 {message.role === 'user' ? 'You' : 'Nemotron'}
               </p>
-              <p className="whitespace-pre-wrap text-[13px]">{message.text}</p>
+              {message.role === 'assistant' ? (
+                <MarkdownMessage text={message.text} />
+              ) : (
+                <p className="whitespace-pre-wrap text-[13px]">{message.text}</p>
+              )}
             </li>
           )
         )}

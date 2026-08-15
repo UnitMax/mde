@@ -25,7 +25,9 @@
     "postinstall": "electron-rebuild --force --only node-pty"
   },
   "dependencies": {
-    "node-pty": "^1.1.0"
+    "node-pty": "^1.1.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",
