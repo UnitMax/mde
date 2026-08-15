@@ -743,6 +743,11 @@ function GuiView({ session }: { session: Session }): JSX.Element {
             assistantLabel={assistantLabel}
           />
         ))}
+        {externalBusy && !pending && liveItems.length === 0 && (
+          <li className="max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
+            OpenCode is busy in another client…
+          </li>
+        )}
         {compacting && (
           <li
             aria-live="polite"
@@ -753,7 +758,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
         )}
         {pending && !compacting && liveItems.length === 0 && (
           <li className="max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
-            {externalBusy ? 'OpenCode is busy in another client…' : 'OpenCode is responding…'}
+            OpenCode is responding…
           </li>
         )}
         {!pending && sessionsLoading && messages.length === 0 && (

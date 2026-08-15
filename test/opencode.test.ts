@@ -432,6 +432,27 @@ describe('OpenCode event stream', () => {
     expect(tracker.accept(null)).toBeNull()
   })
 
+  it('does not report the GUI request as external activity', () => {
+    const tracker = new OpenCodeStreamTracker('ses_1')
+    tracker.setLocalRequestActive(true)
+
+    expect(
+      tracker.accept({
+        type: 'session.status',
+        properties: { sessionID: 'ses_1', status: { type: 'busy' } }
+      })
+    ).toBeNull()
+    expect(tracker.accept({ type: 'session.idle', properties: { sessionID: 'ses_1' } })).toBeNull()
+
+    tracker.setLocalRequestActive(false)
+    expect(
+      tracker.accept({
+        type: 'session.status',
+        properties: { sessionID: 'ses_1', status: { type: 'busy' } }
+      })
+    ).toEqual({ kind: 'status', status: 'busy' })
+  })
+
   it('accepts incremental text carried by a part-updated event', () => {
     const tracker = new OpenCodeStreamTracker('ses_1')
     expect(

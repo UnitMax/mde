@@ -138,6 +138,12 @@ describe('renderer workspace event bridge', () => {
 
     streamListeners[0]?.({
       sessionId: 'session-1',
+      item: { kind: 'status', status: 'busy' }
+    })
+    expect(useWorkspace.getState().opencodeChats['session-1']?.externalBusy).toBe(false)
+
+    streamListeners[0]?.({
+      sessionId: 'session-1',
       item: { kind: 'compaction', status: 'started', automatic: true }
     })
     expect(useWorkspace.getState().opencodeChats['session-1']?.compacting).toBe(true)
@@ -243,6 +249,11 @@ describe('renderer workspace event bridge', () => {
       role: 'assistant',
       text: 'Final answer.'
     })
+
+    streamListeners[0]?.({ sessionId: 'session-1', item: { kind: 'status', status: 'busy' } })
+    expect(useWorkspace.getState().opencodeChats['session-1']?.externalBusy).toBe(true)
+    streamListeners[0]?.({ sessionId: 'session-1', item: { kind: 'status', status: 'idle' } })
+    expect(useWorkspace.getState().opencodeChats['session-1']?.externalBusy).toBe(false)
 
     useWorkspace.getState().selectSession('session-2')
     let resolveAway: ((value: { sessionId: string; userMessageId: string | null; messages: OpenCodeChatItem[] }) => void) | undefined

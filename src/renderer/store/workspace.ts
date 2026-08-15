@@ -586,6 +586,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
             liveItems: retainActiveSubagentPermissions(previous.liveItems, previous.subagents),
             subagents: previous.subagents.filter(subagentIsActive),
             pending: true,
+            externalBusy: false,
             sessionsLoading: false,
             error: null,
             unreadCompletion: false
@@ -682,6 +683,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
             liveItems: retainActiveSubagentPermissions(previous.liveItems, previous.subagents),
             subagents: previous.subagents.filter(subagentIsActive),
             pending: true,
+            externalBusy: false,
             sessionsLoading: false,
             error: null,
             unreadCompletion: false
@@ -1147,7 +1149,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         return {
           opencodeChats: {
             ...state.opencodeChats,
-            [sessionId]: { ...current, externalBusy: item.status === 'busy' }
+            [sessionId]: {
+              ...current,
+              externalBusy: item.status === 'busy' && !current.pending
+            }
           }
         }
       }

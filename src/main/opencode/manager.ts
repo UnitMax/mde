@@ -93,8 +93,13 @@ export class OpenCodeStreamTracker {
   private lastTextPartId: string | null = null
   private compactionActive = false
   private compactionAutomatic = true
+  private localRequestActive = false
 
   constructor(private sessionId: string | null) {}
+
+  setLocalRequestActive(active: boolean): void {
+    this.localRequestActive = active
+  }
 
   setSessionId(sessionId: string | null): void {
     if (this.sessionId === sessionId) return
@@ -199,6 +204,7 @@ export class OpenCodeStreamTracker {
           this.compactionActive = false
           return { kind: 'compaction', status: 'completed', automatic }
         }
+        if (this.localRequestActive) return null
         if (status === 'busy' || status === 'retry') return { kind: 'status', status: 'busy' }
         if (status === 'idle') return { kind: 'status', status: 'idle' }
         return null
@@ -1031,8 +1037,9 @@ export class OpenCodeManager {
     if (this.pending.has(session.id)) throw new Error('A message is already being sent for this session.')
 
     this.pending.add(session.id)
+    let runtime: OpenCodeRuntime | undefined
     try {
-      const runtime = await this.ensureRuntime(session)
+      runtime = await this.ensureRuntime(session)
       if (!runtime.models) await this.listModels(session)
       if (!runtime.models?.some((option) => modelSelectionMatches(option, model))) {
         throw new Error('That model is no longer available. Refresh the model list and select another model.')
@@ -1042,6 +1049,7 @@ export class OpenCodeManager {
       }
       const openCodeSessionId = runtime.openCodeSessionId
       if (!openCodeSessionId) throw new Error('OpenCode conversation is not selected.')
+      runtime.tracker?.setLocalRequestActive(true)
       const response = await requestJson<OpenCodePromptResponse>(
         runtime.url,
         `/session/${encodeURIComponent(openCodeSessionId)}/message`,
@@ -1087,6 +1095,7 @@ export class OpenCodeManager {
         ]
       }
     } finally {
+      runtime?.tracker?.setLocalRequestActive(false)
       this.pending.delete(session.id)
     }
   }
@@ -1105,8 +1114,9 @@ export class OpenCodeManager {
     }
 
     this.pending.add(session.id)
+    let runtime: OpenCodeRuntime | undefined
     try {
-      const runtime = await this.ensureRuntime(session)
+      runtime = await this.ensureRuntime(session)
       if (!runtime.models) await this.listModels(session)
       if (!runtime.models?.some((option) => modelSelectionMatches(option, model))) {
         throw new Error('That model is no longer available. Refresh the model list and select another model.')
@@ -1116,6 +1126,7 @@ export class OpenCodeManager {
       }
       const openCodeSessionId = runtime.openCodeSessionId
       if (!openCodeSessionId) throw new Error('OpenCode conversation is not selected.')
+      runtime.tracker?.setLocalRequestActive(true)
 
       if (command === 'init') {
         await requestJson<boolean>(
@@ -1135,6 +1146,7 @@ export class OpenCodeManager {
 
       return this.loadConversation(runtime, openCodeSessionId)
     } finally {
+      runtime?.tracker?.setLocalRequestActive(false)
       this.pending.delete(session.id)
     }
   }
