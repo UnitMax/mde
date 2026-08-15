@@ -3,6 +3,7 @@ import type {
   OpenCodeChatItem,
   OpenCodeReasoningMessage,
   OpenCodeStreamChunk,
+  OpenCodeStreamItem,
   OpenCodeToolMessage,
   Session
 } from '@shared/types'
@@ -57,51 +58,106 @@ export function parseSseFrames(buffer: string): { events: string[]; rest: string
 }
 
 /**
- * Turns the OpenCode event bus into the assistant text of a single session.
+ * Turns OpenCode's part lifecycle events into renderer-safe live updates.
  *
- * `message.part.delta` names the part it belongs to but not the part's kind,
- * so reasoning and text deltas are indistinguishable on their own. The
- * `message.part.updated` event that opens every part carries the kind, so the
- * tracker learns which part IDs are text and routes deltas accordingly.
+ * Current OpenCode versions send `message.part.updated` with a cumulative
+ * part snapshot and optional delta. Older versions also expose
+ * `message.part.delta`; accepting both keeps the stream compatible while the
+ * per-part snapshots prevent the same text from being appended twice.
  */
-export class TextDeltaTracker {
-  private readonly textPartIds = new Set<string>()
-  private lastPartId: string | null = null
+export class OpenCodeStreamTracker {
+  private readonly partTypes = new Map<string, string>()
+  private readonly partTexts = new Map<string, string>()
+  private readonly messageRoles = new Map<string, string>()
+  private lastTextPartId: string | null = null
 
   constructor(private readonly sessionId: string) {}
 
-  /** Returns the text to append for this event, or null if it carries none. */
-  accept(event: unknown): string | null {
-    if (!isRecord(event) || !isRecord(event.properties)) return null
-    const properties = event.properties
+  /** Returns a normalized update for this event, or null if it is irrelevant. */
+  accept(event: unknown): OpenCodeStreamItem | null {
+    const payload = unwrapEvent(event)
+    if (!isRecord(payload) || !isRecord(payload.properties)) return null
+    const properties = payload.properties
 
-    if (event.type === 'message.part.updated' && isRecord(properties.part)) {
-      const part = properties.part
-      if (typeof part.id !== 'string') return null
-      const partSessionId = typeof part.sessionID === 'string' ? part.sessionID : properties.sessionID
-      if (partSessionId !== this.sessionId) return null
-      if (part.type === 'text') this.textPartIds.add(part.id)
-      else this.textPartIds.delete(part.id)
-
-      // Some OpenCode versions include the incremental text on the part update
-      // itself instead of emitting a separate message.part.delta event.
-      if (part.type === 'text' && typeof properties.delta === 'string') {
-        const separator = this.lastPartId !== null && this.lastPartId !== part.id ? '\n\n' : ''
-        this.lastPartId = part.id
-        return `${separator}${properties.delta}`
+    if (payload.type === 'message.updated' && isRecord(properties.info)) {
+      const info = properties.info
+      if (typeof info.id === 'string' && typeof info.role === 'string') {
+        const messageSessionId = info.sessionID
+        if (messageSessionId === undefined || messageSessionId === this.sessionId) {
+          this.messageRoles.set(info.id, info.role)
+        }
       }
       return null
     }
 
-    if (event.type !== 'message.part.delta') return null
-    if (properties.sessionID !== this.sessionId) return null
-    if (properties.field !== 'text' || typeof properties.delta !== 'string') return null
-    if (typeof properties.partID !== 'string' || !this.textPartIds.has(properties.partID)) return null
+    if (payload.type === 'message.part.updated' && isRecord(properties.part)) {
+      const part = properties.part
+      if (typeof part.id !== 'string' || typeof part.type !== 'string') return null
+      const partSessionId = typeof part.sessionID === 'string' ? part.sessionID : properties.sessionID
+      if (partSessionId !== this.sessionId) return null
+      if (this.isUserMessage(part.messageID)) return null
+      this.partTypes.set(part.id, part.type)
 
-    // Separate text parts are distinct blocks of the reply, not one run-on line.
-    const separator = this.lastPartId !== null && this.lastPartId !== properties.partID ? '\n\n' : ''
-    this.lastPartId = properties.partID
-    return `${separator}${properties.delta}`
+      if (part.type === 'text' || part.type === 'reasoning') {
+        const firstSnapshot = !this.partTexts.has(part.id)
+        const delta = this.textDelta(part.id, part.text, properties.delta)
+        if (part.type === 'text') {
+          if (!delta) return null
+          const separator = this.lastTextPartId !== null && this.lastTextPartId !== part.id ? '\n\n' : ''
+          this.lastTextPartId = part.id
+          return { kind: 'text', partId: part.id, delta: `${separator}${delta}` }
+        }
+
+        const durationMs = partDuration(part)
+        if (!delta && !firstSnapshot && durationMs === undefined) return null
+        return {
+          kind: 'reasoning',
+          partId: part.id,
+          delta,
+          done: durationMs !== undefined,
+          ...(durationMs === undefined ? {} : { durationMs })
+        }
+      }
+
+      if (part.type === 'tool') return toStreamToolItem(part)
+      return null
+    }
+
+    if (payload.type !== 'message.part.delta') return null
+    if (properties.sessionID !== this.sessionId) return null
+    if (this.isUserMessage(properties.messageID)) return null
+    if (properties.field !== 'text' || typeof properties.delta !== 'string') return null
+    if (typeof properties.partID !== 'string') return null
+
+    const partType = this.partTypes.get(properties.partID)
+    if (partType !== 'text' && partType !== 'reasoning') return null
+    const delta = this.textDelta(properties.partID, undefined, properties.delta)
+    if (!delta) return null
+
+    if (partType === 'text') {
+      const separator = this.lastTextPartId !== null && this.lastTextPartId !== properties.partID ? '\n\n' : ''
+      this.lastTextPartId = properties.partID
+      return { kind: 'text', partId: properties.partID, delta: `${separator}${delta}` }
+    }
+
+    return { kind: 'reasoning', partId: properties.partID, delta, done: false }
+  }
+
+  private textDelta(partId: string, snapshot: unknown, delta: unknown): string {
+    const previous = this.partTexts.get(partId) ?? ''
+    if (typeof snapshot === 'string') {
+      this.partTexts.set(partId, snapshot)
+      if (snapshot.startsWith(previous)) return snapshot.slice(previous.length)
+    }
+
+    if (typeof delta !== 'string') return ''
+    const next = `${previous}${delta}`
+    this.partTexts.set(partId, next)
+    return delta
+  }
+
+  private isUserMessage(messageId: unknown): boolean {
+    return typeof messageId === 'string' && this.messageRoles.get(messageId) === 'user'
   }
 }
 
@@ -129,6 +185,11 @@ interface OpenCodeHistoryMessage {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
+}
+
+function unwrapEvent(value: unknown): unknown {
+  if (!isRecord(value) || !isRecord(value.payload)) return value
+  return value.payload
 }
 
 function clip(value: string, maxLength = MAX_DIAGNOSTIC_LENGTH): string {
@@ -168,6 +229,38 @@ function toolStatus(value: unknown): OpenCodeToolMessage['status'] {
     return value
   }
   return 'error'
+}
+
+function partDuration(part: Record<string, unknown>): number | undefined {
+  const time = isRecord(part.time) ? part.time : {}
+  const start = typeof time.start === 'number' ? time.start : undefined
+  const end = typeof time.end === 'number' ? time.end : undefined
+  return start !== undefined && end !== undefined && end >= start ? end - start : undefined
+}
+
+function toStreamToolItem(part: Record<string, unknown>): OpenCodeStreamItem | null {
+  if (typeof part.id !== 'string' || typeof part.tool !== 'string') return null
+
+  const state = isRecord(part.state) ? part.state : {}
+  const input = isRecord(state.input) ? state.input : {}
+  const rawInput = typeof state.raw === 'string' && state.raw ? clip(state.raw, MAX_TOOL_OUTPUT_LENGTH) : undefined
+  const title = typeof state.title === 'string' && state.title ? state.title : undefined
+  const output = typeof state.output === 'string' ? clip(state.output, MAX_TOOL_OUTPUT_LENGTH) : undefined
+  const error = typeof state.error === 'string' ? clip(state.error, MAX_TOOL_OUTPUT_LENGTH) : undefined
+  const durationMs = partDuration(state)
+
+  return {
+    kind: 'tool',
+    partId: part.id,
+    tool: part.tool,
+    status: toolStatus(state.status),
+    input,
+    ...(rawInput ? { rawInput } : {}),
+    ...(title ? { title } : {}),
+    ...(output ? { output } : {}),
+    ...(error ? { error } : {}),
+    ...(durationMs === undefined ? {} : { durationMs })
+  }
 }
 
 function toToolMessage(part: Record<string, unknown>): OpenCodeToolMessage | null {
@@ -505,7 +598,7 @@ export class OpenCodeManager {
     response: Response,
     controller: AbortController
   ): Promise<void> {
-    const tracker = new TextDeltaTracker(runtime.sessionId)
+    const tracker = new OpenCodeStreamTracker(runtime.sessionId)
     try {
       const decoder = new TextDecoder()
       let buffer = ''
@@ -521,8 +614,8 @@ export class OpenCodeManager {
           } catch {
             continue
           }
-          const delta = tracker.accept(event)
-          if (delta) this.events?.onStream({ sessionId, delta })
+          const item = tracker.accept(event)
+          if (item) this.events?.onStream({ sessionId, item })
         }
       }
     } catch {

@@ -91,10 +91,61 @@ export interface OpenCodeToolMessage {
 
 export type OpenCodeChatItem = OpenCodeChatMessage | OpenCodeToolMessage | OpenCodeReasoningMessage
 
-/** A live assistant text fragment, pushed while OpenCode is still generating. */
+/** A live assistant text item while OpenCode is still generating. */
+export interface OpenCodeLiveTextMessage {
+  id: string
+  role: 'assistant'
+  text: string
+  live: true
+}
+
+/** A live reasoning item while OpenCode is still generating. */
+export interface OpenCodeLiveReasoningMessage extends OpenCodeReasoningMessage {
+  live: true
+}
+
+/** A live tool item while OpenCode is still generating. */
+export interface OpenCodeLiveToolMessage extends OpenCodeToolMessage {
+  live: true
+  /** Raw tool arguments are available before OpenCode parses them into input. */
+  rawInput?: string
+}
+
+export type OpenCodeLiveChatItem =
+  | OpenCodeLiveTextMessage
+  | OpenCodeLiveReasoningMessage
+  | OpenCodeLiveToolMessage
+
+export type OpenCodeStreamItem =
+  | {
+      kind: 'text'
+      partId: string
+      delta: string
+    }
+  | {
+      kind: 'reasoning'
+      partId: string
+      delta: string
+      done: boolean
+      durationMs?: number
+    }
+  | ({
+      kind: 'tool'
+      partId: string
+      tool: string
+      status: OpenCodeToolStatus
+      input: Record<string, unknown>
+      rawInput?: string
+      title?: string
+      output?: string
+      error?: string
+      durationMs?: number
+    })
+
+/** A normalized live OpenCode part update pushed over the existing IPC stream. */
 export interface OpenCodeStreamChunk {
   sessionId: string
-  delta: string
+  item: OpenCodeStreamItem
 }
 
 export interface SendOpenCodeMessageRequest {

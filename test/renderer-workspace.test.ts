@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { OpenCodeChatItem, OpenCodeStreamChunk } from '../src/shared/types'
 
 vi.mock('../src/renderer/terminal/sessions', () => ({ disposeSession: vi.fn() }))
 
 import { useWorkspace } from '../src/renderer/store/workspace'
 
 describe('renderer workspace event bridge', () => {
-  const streamListeners: Array<(chunk: { sessionId: string; delta: string }) => void> = []
+  const streamListeners: Array<(chunk: OpenCodeStreamChunk) => void> = []
   const api = {
     platform: { info: vi.fn(async () => ({ platform: 'linux', arch: 'x64' })) },
     workspace: { list: vi.fn(async () => ({ projects: [], sessions: [] })) },
@@ -19,7 +20,7 @@ describe('renderer workspace event bridge', () => {
     },
     opencode: {
       send: vi.fn(),
-      onStream: vi.fn((listener: (chunk: { sessionId: string; delta: string }) => void) => {
+      onStream: vi.fn((listener: (chunk: OpenCodeStreamChunk) => void) => {
         streamListeners.push(listener)
         return vi.fn()
       })
@@ -29,6 +30,7 @@ describe('renderer workspace event bridge', () => {
   beforeEach(() => {
     streamListeners.length = 0
     vi.stubGlobal('window', { api })
+    useWorkspace.setState({ opencodeChats: {} })
     api.pty.onExit.mockClear()
     api.opencode.onStream.mockClear()
   })
@@ -39,10 +41,10 @@ describe('renderer workspace event bridge', () => {
     expect(api.pty.onExit).toHaveBeenCalledTimes(1)
     expect(api.opencode.onStream).toHaveBeenCalledTimes(1)
 
-    let resolveSend: ((value: { messages: [] }) => void) | undefined
+    let resolveSend: ((value: { messages: OpenCodeChatItem[] }) => void) | undefined
     api.opencode.send.mockImplementation(
       () =>
-        new Promise<{ messages: [] }>((resolve) => {
+        new Promise<{ messages: OpenCodeChatItem[] }>((resolve) => {
           resolveSend = resolve
         })
     )
@@ -51,10 +53,68 @@ describe('renderer workspace event bridge', () => {
     await Promise.resolve()
     expect(streamListeners).toHaveLength(1)
 
-    streamListeners[0]?.({ sessionId: 'session-1', delta: 'Hello' })
-    expect(useWorkspace.getState().opencodeChats['session-1']?.streamingText).toBe('Hello')
+    streamListeners[0]?.({
+      sessionId: 'session-1',
+      item: { kind: 'reasoning', partId: 'reasoning-1', delta: 'I should inspect this.', done: false }
+    })
+    streamListeners[0]?.({
+      sessionId: 'session-1',
+      item: {
+        kind: 'tool',
+        partId: 'tool-1',
+        tool: 'read',
+        status: 'pending',
+        input: {},
+        rawInput: '{"filePath":"/tmp/a"}'
+      }
+    })
+    streamListeners[0]?.({
+      sessionId: 'session-1',
+      item: { kind: 'text', partId: 'text-1', delta: 'Hello' }
+    })
+    streamListeners[0]?.({
+      sessionId: 'session-1',
+      item: { kind: 'reasoning', partId: 'reasoning-1', delta: ' Next.', done: false }
+    })
+    expect(useWorkspace.getState().opencodeChats['session-1']?.liveItems).toEqual([
+      { id: 'reasoning-1', role: 'reasoning', text: 'I should inspect this. Next.', live: true },
+      {
+        id: 'tool-1',
+        role: 'tool',
+        live: true,
+        tool: 'read',
+        status: 'pending',
+        input: {},
+        rawInput: '{"filePath":"/tmp/a"}'
+      },
+      { id: 'text-1', role: 'assistant', text: 'Hello', live: true }
+    ])
 
-    resolveSend?.({ messages: [] })
+    streamListeners[0]?.({
+      sessionId: 'session-1',
+      item: {
+        kind: 'tool',
+        partId: 'tool-1',
+        tool: 'read',
+        status: 'completed',
+        input: { filePath: '/tmp/a' },
+        output: 'contents'
+      }
+    })
+    expect(useWorkspace.getState().opencodeChats['session-1']?.liveItems[1]).toMatchObject({
+      id: 'tool-1',
+      status: 'completed',
+      input: { filePath: '/tmp/a' },
+      output: 'contents'
+    })
+
+    resolveSend?.({ messages: [{ id: 'answer-1', role: 'assistant', text: 'Final answer.' }] })
     await send
+    expect(useWorkspace.getState().opencodeChats['session-1']?.liveItems).toEqual([])
+    expect(useWorkspace.getState().opencodeChats['session-1']?.messages.at(-1)).toEqual({
+      id: 'answer-1',
+      role: 'assistant',
+      text: 'Final answer.'
+    })
   })
 })

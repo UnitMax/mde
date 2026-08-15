@@ -156,7 +156,7 @@ export interface RendererApi {
   }
   opencode: {
     send(req: SendOpenCodeMessageRequest): Promise<SendOpenCodeMessageResponse>
-    /** Live assistant text while `send` is still in flight. */
+    /** Live text, reasoning, and tool-part updates while `send` is in flight. */
     onStream(listener: (chunk: OpenCodeStreamChunk) => void): () => void
   }
 }

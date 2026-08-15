@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronRight, RotateCw } from 'lucide-react'
-import type { OpenCodeReasoningMessage, OpenCodeToolMessage, PtySize, Session } from '@shared/types'
+import type {
+  OpenCodeLiveChatItem,
+  OpenCodeLiveReasoningMessage,
+  OpenCodeLiveToolMessage,
+  OpenCodeReasoningMessage,
+  OpenCodeToolMessage,
+  PtySize,
+  Session
+} from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useWorkspace } from '@/store/workspace'
@@ -75,12 +83,21 @@ function formatToolInput(input: Record<string, unknown>): string {
   }
 }
 
-function ToolMessageView({ message }: { message: OpenCodeToolMessage }): JSX.Element {
+function ToolMessageView({
+  message,
+  live = false
+}: {
+  message: OpenCodeToolMessage | OpenCodeLiveToolMessage
+  live?: boolean
+}): JSX.Element {
   const statusClass = message.status === 'error' ? 'text-danger' : 'text-fg-subtle'
 
   return (
-    <li className="max-w-[90%] rounded border border-line bg-panel px-3 py-2 text-fg-muted">
-      <details>
+    <li
+      aria-live={live ? 'polite' : undefined}
+      className="max-w-[90%] rounded border border-line bg-panel px-3 py-2 text-fg-muted"
+    >
+      <details open={live ? true : undefined}>
         <summary className="cursor-pointer select-none text-xs">
           <span className="font-medium text-fg">{message.tool}</span>
           <span className={`ml-2 ${statusClass}`}>{message.status}</span>
@@ -89,8 +106,10 @@ function ToolMessageView({ message }: { message: OpenCodeToolMessage }): JSX.Ele
           {message.title && <p className="text-fg-subtle">{message.title}</p>}
           <div>
             <p className="mb-1 font-medium text-fg-subtle">Input</p>
-            <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded bg-bg p-2 text-[11px] text-fg-muted">
-              {formatToolInput(message.input)}
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-bg p-2 text-[11px] text-fg-muted">
+              {'rawInput' in message && message.rawInput && Object.keys(message.input).length === 0
+                ? message.rawInput
+                : formatToolInput(message.input)}
             </pre>
           </div>
           {message.output && (
@@ -115,10 +134,16 @@ function formatThinkingDuration(durationMs: number): string {
   return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`
 }
 
-function ReasoningMessageView({ message }: { message: OpenCodeReasoningMessage }): JSX.Element {
+function ReasoningMessageView({
+  message,
+  live = false
+}: {
+  message: OpenCodeReasoningMessage | OpenCodeLiveReasoningMessage
+  live?: boolean
+}): JSX.Element {
   return (
-    <li className="max-w-[90%] text-fg-subtle">
-      <details className="group">
+    <li aria-live={live ? 'polite' : undefined} className="max-w-[90%] text-fg-subtle">
+      <details className="group" open={live ? true : undefined}>
         <summary className="inline-flex cursor-pointer select-none items-center gap-1 text-xs text-fg-subtle hover:text-fg-muted">
           <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
           <span>
@@ -135,6 +160,27 @@ function ReasoningMessageView({ message }: { message: OpenCodeReasoningMessage }
   )
 }
 
+function LiveTextMessageView({ text }: { text: string }): JSX.Element {
+  return (
+    <li
+      aria-live="polite"
+      className="max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-fg-muted"
+    >
+      <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-fg-subtle">Nemotron</p>
+      <p className="whitespace-pre-wrap text-[13px]">
+        {text}
+        <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-fg-subtle" />
+      </p>
+    </li>
+  )
+}
+
+function LiveItemView({ item }: { item: OpenCodeLiveChatItem }): JSX.Element {
+  if (item.role === 'tool') return <ToolMessageView message={item} live />
+  if (item.role === 'reasoning') return <ReasoningMessageView message={item} live />
+  return <LiveTextMessageView text={item.text} />
+}
+
 function GuiView({ session }: { session: Session }): JSX.Element {
   const [draft, setDraft] = useState('')
   const chat = useWorkspace((state) => state.opencodeChats[session.id])
@@ -143,7 +189,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
   const pending = chat?.pending ?? false
   const error = chat?.error ?? null
   const messages = chat?.messages ?? []
-  const streamingText = chat?.streamingText ?? ''
+  const liveItems = chat?.liveItems ?? []
   const logRef = useRef<HTMLOListElement>(null)
 
   useEffect(() => {
@@ -151,7 +197,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
     if (!log) return
     // Streaming appends below the fold; keep the newest text in view.
     log.scrollTop = log.scrollHeight
-  }, [messages, streamingText, pending])
+  }, [messages, liveItems, pending])
 
   const send = (): void => {
     if (!nativeSession || pending || !draft.trim()) return
@@ -188,25 +234,12 @@ function GuiView({ session }: { session: Session }): JSX.Element {
             </li>
           )
         )}
-        {pending &&
-          (streamingText ? (
-            <li
-              aria-live="polite"
-              className="max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-fg-muted"
-            >
-              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
-                Nemotron
-              </p>
-              <p className="whitespace-pre-wrap text-[13px]">
-                {streamingText}
-                <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-fg-subtle" />
-              </p>
-            </li>
-          ) : (
-            <li className="max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
-              Nemotron is responding…
-            </li>
-          ))}
+        {pending && liveItems.map((item) => <LiveItemView key={item.id} item={item} />)}
+        {pending && liveItems.length === 0 && (
+          <li className="max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
+            Nemotron is responding…
+          </li>
+        )}
       </ol>
 
       <div className="shrink-0 border-t border-line bg-panel p-3">

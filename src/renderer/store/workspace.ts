@@ -6,6 +6,7 @@ import type {
   NewSession,
   OpenCodeChatItem,
   OpenCodeChatMessage,
+  OpenCodeLiveChatItem,
   OpenCodeStreamChunk,
   Project,
   PtyExitInfo,
@@ -16,14 +17,65 @@ import { disposeSession } from '@/terminal/sessions'
 
 export interface OpenCodeChatState {
   messages: OpenCodeChatItem[]
+  liveItems: OpenCodeLiveChatItem[]
   pending: boolean
   error: string | null
-  /** Assistant text streamed so far this turn; replaced by the final transcript. */
-  streamingText: string
 }
 
-const EMPTY_CHAT: OpenCodeChatState = { messages: [], pending: false, error: null, streamingText: '' }
+const EMPTY_CHAT: OpenCodeChatState = { messages: [], liveItems: [], pending: false, error: null }
 let eventBridgeReady = false
+
+function upsertLiveItem(items: OpenCodeLiveChatItem[], item: OpenCodeStreamChunk['item']): OpenCodeLiveChatItem[] {
+  const id = item.partId
+  const index = items.findIndex((current) => current.id === id)
+
+  if (item.kind === 'text') {
+    const existing = index >= 0 ? items[index] : undefined
+    const next: OpenCodeLiveChatItem =
+      existing?.role === 'assistant'
+        ? { ...existing, text: existing.text + item.delta }
+        : { id, role: 'assistant', text: item.delta, live: true }
+    if (index < 0) return [...items, next]
+    return items.map((current, currentIndex) => (currentIndex === index ? next : current))
+  }
+
+  if (item.kind === 'reasoning') {
+    const existing = index >= 0 ? items[index] : undefined
+    const next: OpenCodeLiveChatItem =
+      existing?.role === 'reasoning'
+        ? {
+            ...existing,
+            text: existing.text + item.delta,
+            ...(item.durationMs === undefined ? {} : { durationMs: item.durationMs })
+          }
+        : {
+            id,
+            role: 'reasoning',
+            text: item.delta,
+            live: true,
+            ...(item.durationMs === undefined ? {} : { durationMs: item.durationMs })
+          }
+    if (index < 0) return [...items, next]
+    return items.map((current, currentIndex) => (currentIndex === index ? next : current))
+  }
+
+  const existing = index >= 0 ? items[index] : undefined
+  const next: OpenCodeLiveChatItem = {
+    ...(existing?.role === 'tool' ? existing : {}),
+    id,
+    role: 'tool',
+    live: true,
+    tool: item.tool,
+    status: item.status,
+    input: item.input,
+    ...(item.rawInput === undefined ? {} : { rawInput: item.rawInput }),
+    ...(item.title === undefined ? {} : { title: item.title }),
+    ...(item.output === undefined ? {} : { output: item.output }),
+    ...(item.error === undefined ? {} : { error: item.error })
+  }
+  if (index < 0) return [...items, next]
+  return items.map((current, currentIndex) => (currentIndex === index ? next : current))
+}
 
 interface WorkspaceState {
   projects: Project[]
@@ -223,9 +275,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
           ...state.opencodeChats,
           [sessionId]: {
             messages: [...previous.messages, userMessage],
+            liveItems: [],
             pending: true,
-            error: null,
-            streamingText: ''
+            error: null
           }
         }
       }
@@ -244,7 +296,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               // The returned transcript supersedes the streamed preview.
               messages: [...current.messages, ...messages],
               pending: false,
-              streamingText: ''
+              liveItems: []
             }
           }
         }
@@ -257,14 +309,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         return {
           opencodeChats: {
             ...state.opencodeChats,
-            [sessionId]: { ...current, pending: false, error: message, streamingText: '' }
+            [sessionId]: { ...current, pending: false, error: message, liveItems: [] }
           }
         }
       })
     }
   },
 
-  appendOpenCodeStream: ({ sessionId, delta }) =>
+  appendOpenCodeStream: ({ sessionId, item }) =>
     set((state) => {
       const current = state.opencodeChats[sessionId]
       // Deltas that arrive outside a turn belong to no visible message.
@@ -272,7 +324,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       return {
         opencodeChats: {
           ...state.opencodeChats,
-          [sessionId]: { ...current, streamingText: current.streamingText + delta }
+          [sessionId]: { ...current, liveItems: upsertLiveItem(current.liveItems, item) }
         }
       }
     }),
