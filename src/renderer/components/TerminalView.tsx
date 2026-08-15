@@ -67,34 +67,92 @@ function TerminalSurface({ session: selectedSession }: TerminalSurfaceProps): JS
   return <div ref={hostRef} className="terminal-host relative min-h-0 flex-1 overflow-hidden" />
 }
 
-function GuiView(): JSX.Element {
+function GuiView({ session }: { session: Session }): JSX.Element {
   const [draft, setDraft] = useState('')
-  const [model, setModel] = useState('model-a')
+  const chat = useWorkspace((state) => state.opencodeChats[session.id])
+  const sendOpenCodeMessage = useWorkspace((state) => state.sendOpenCodeMessage)
+  const nativeSession = session.kind === 'native'
+  const pending = chat?.pending ?? false
+  const error = chat?.error ?? null
+  const messages = chat?.messages ?? []
+
+  const send = (): void => {
+    if (!nativeSession || pending || !draft.trim()) return
+    const message = draft
+    setDraft('')
+    void sendOpenCodeMessage(session.id, message)
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-bg">
-      <div className="min-h-0 flex-1" aria-hidden="true" />
+      <ol className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3" aria-label="OpenCode conversation">
+        {messages.map((message) => (
+          <li
+            key={message.id}
+            className={
+              message.role === 'user'
+                ? 'ml-auto max-w-[80%] rounded bg-active px-3 py-2 text-fg'
+                : 'max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-fg-muted'
+            }
+          >
+            <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
+              {message.role === 'user' ? 'You' : 'Big Pickle'}
+            </p>
+            <p className="whitespace-pre-wrap text-[13px]">{message.text}</p>
+          </li>
+        ))}
+        {pending && (
+          <li className="max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
+            Big Pickle is responding…
+          </li>
+        )}
+      </ol>
 
       <div className="shrink-0 border-t border-line bg-panel p-3">
+        {!nativeSession && (
+          <p role="alert" className="mb-2 text-xs text-warn">
+            OpenCode GUI integration currently supports native sessions only.
+          </p>
+        )}
+        {error && (
+          <p role="alert" className="mb-2 text-xs text-danger">
+            {error}
+          </p>
+        )}
         <div className="flex items-end gap-2">
           <textarea
             aria-label="Message"
             rows={3}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                event.preventDefault()
+                send()
+              }
+            }}
             placeholder="Type a message..."
-            className="min-h-[72px] min-w-0 flex-1 resize-none rounded border border-line-strong bg-bg px-2.5 py-2 text-[13px] text-fg placeholder:text-fg-subtle focus:border-accent focus:outline-none"
+            disabled={!nativeSession || pending}
+            className="min-h-[72px] min-w-0 flex-1 resize-none rounded border border-line-strong bg-bg px-2.5 py-2 text-[13px] text-fg placeholder:text-fg-subtle focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
           />
 
-          <Select value={model} onValueChange={setModel}>
-            <SelectTrigger aria-label="Model" className="w-32 shrink-0">
+          <Select value="opencode/big-pickle" disabled>
+            <SelectTrigger aria-label="Model" className="w-48 shrink-0">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="model-a">Model A</SelectItem>
-              <SelectItem value="model-b">Model B</SelectItem>
+              <SelectItem value="opencode/big-pickle">Big Pickle · OpenCode Zen</SelectItem>
             </SelectContent>
           </Select>
+
+          <Button
+            size="sm"
+            className="shrink-0"
+            disabled={!nativeSession || pending || !draft.trim()}
+            onClick={send}
+          >
+            Send
+          </Button>
         </div>
       </div>
     </div>
@@ -195,7 +253,7 @@ export function TerminalView({
       {viewMode === 'terminal' ? (
         <TerminalSurface session={selectedSession} />
       ) : (
-        <GuiView />
+        <GuiView session={selectedSession} />
       )}
     </div>
   )

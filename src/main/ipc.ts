@@ -20,10 +20,13 @@ import type {
   PathCheckResult,
   PathResolution,
   Project,
+  SendOpenCodeMessageRequest,
+  SendOpenCodeMessageResponse,
   Session,
   PtyStatus
 } from '@shared/types'
 import type { PtyManager } from './pty/manager'
+import type { OpenCodeManager } from './opencode/manager'
 import { isWslAvailable, listDistros, runWsl } from './wsl/distros'
 import { resolveForTarget, toWindows, uncPathFor } from './wsl/paths'
 import {
@@ -87,7 +90,7 @@ async function revealSession(session: Session): Promise<void> {
   await shell.openPath(windowsPath)
 }
 
-export function registerIpcHandlers(ptyManager: PtyManager): void {
+export function registerIpcHandlers(ptyManager: PtyManager, opencodeManager: OpenCodeManager): void {
   const handle = <Req, Res>(
     channel: string,
     handler: (req: Req, event: Electron.IpcMainInvokeEvent) => Promise<Res> | Res
@@ -111,7 +114,10 @@ export function registerIpcHandlers(ptyManager: PtyManager): void {
     // Removing a project must not leave any child shell running.
     const workspace = await loadWorkspace()
     for (const session of workspace.sessions) {
-      if (session.projectId === id) ptyManager.dispose(session.id)
+      if (session.projectId === id) {
+        ptyManager.dispose(session.id)
+        opencodeManager.dispose(session.id)
+      }
     }
     await removeProject(id)
   })
@@ -123,8 +129,18 @@ export function registerIpcHandlers(ptyManager: PtyManager): void {
   handle<MoveSessionRequest, Session | null>(IpcChannels.sessionsMove, (req) => moveSession(req))
   handle<string, void>(IpcChannels.sessionsRemove, async (id) => {
     ptyManager.dispose(id)
+    opencodeManager.dispose(id)
     await removeSession(id)
   })
+
+  handle<SendOpenCodeMessageRequest, SendOpenCodeMessageResponse>(
+    IpcChannels.opencodeSend,
+    async (req) => {
+      const session = await getSession(req.sessionId)
+      if (!session) throw new Error('Session no longer exists.')
+      return { message: await opencodeManager.send(session, req.text) }
+    }
+  )
 
   handle<EnsurePtyRequest, PtyStatus>(IpcChannels.ptyEnsure, async (req) => {
     const session = await getSession(req.sessionId)

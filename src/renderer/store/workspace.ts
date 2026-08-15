@@ -4,6 +4,7 @@ import type {
   Distro,
   NewProject,
   NewSession,
+  OpenCodeChatMessage,
   Project,
   PtyExitInfo,
   PtyStatus,
@@ -11,12 +12,19 @@ import type {
 } from '@shared/types'
 import { disposeSession } from '@/terminal/sessions'
 
+export interface OpenCodeChatState {
+  messages: OpenCodeChatMessage[]
+  pending: boolean
+  error: string | null
+}
+
 interface WorkspaceState {
   projects: Project[]
   sessions: Session[]
   selectedSessionId: string | null
   statuses: Record<string, PtyStatus>
   exits: Record<string, PtyExitInfo>
+  opencodeChats: Record<string, OpenCodeChatState>
   platform: PlatformInfo | null
   wslAvailable: boolean
   distros: Distro[]
@@ -40,6 +48,7 @@ interface WorkspaceState {
   setStatus: (id: string, status: PtyStatus) => void
   noteExit: (info: PtyExitInfo) => void
   clearExit: (id: string) => void
+  sendOpenCodeMessage: (sessionId: string, text: string) => Promise<void>
   refreshDistros: () => Promise<void>
 }
 
@@ -49,6 +58,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   selectedSessionId: null,
   statuses: {},
   exits: {},
+  opencodeChats: {},
   platform: null,
   wslAvailable: false,
   distros: [],
@@ -103,9 +113,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     set((state) => {
       const statuses = { ...state.statuses }
       const exits = { ...state.exits }
+      const opencodeChats = { ...state.opencodeChats }
       childIds.forEach((sessionId) => {
         delete statuses[sessionId]
         delete exits[sessionId]
+        delete opencodeChats[sessionId]
       })
       return {
         projects: state.projects.filter((project) => project.id !== id),
@@ -115,7 +127,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
             ? null
             : state.selectedSessionId,
         statuses,
-        exits
+        exits,
+        opencodeChats
       }
     })
   },
@@ -144,13 +157,16 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     set((state) => {
       const statuses = { ...state.statuses }
       const exits = { ...state.exits }
+      const opencodeChats = { ...state.opencodeChats }
       delete statuses[id]
       delete exits[id]
+      delete opencodeChats[id]
       return {
         sessions: state.sessions.filter((session) => session.id !== id),
         selectedSessionId: state.selectedSessionId === id ? null : state.selectedSessionId,
         statuses,
-        exits
+        exits,
+        opencodeChats
       }
     })
   },
@@ -174,6 +190,61 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       delete exits[id]
       return { exits }
     }),
+
+  sendOpenCodeMessage: async (sessionId, text) => {
+    const prompt = text.trim()
+    if (!prompt) return
+
+    const userMessage: OpenCodeChatMessage = {
+      id: `user-${crypto.randomUUID()}`,
+      role: 'user',
+      text: prompt
+    }
+
+    set((state) => {
+      const previous = state.opencodeChats[sessionId] ?? {
+        messages: [],
+        pending: false,
+        error: null
+      }
+      return {
+        opencodeChats: {
+          ...state.opencodeChats,
+          [sessionId]: {
+            messages: [...previous.messages, userMessage],
+            pending: true,
+            error: null
+          }
+        }
+      }
+    })
+
+    try {
+      const { message } = await window.api.opencode.send({ sessionId, text: prompt })
+      set((state) => {
+        const current = state.opencodeChats[sessionId]
+        if (!current) return state
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: { ...current, messages: [...current.messages, message], pending: false }
+          }
+        }
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'OpenCode request failed.'
+      set((state) => {
+        const current = state.opencodeChats[sessionId]
+        if (!current) return state
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: { ...current, pending: false, error: message }
+          }
+        }
+      })
+    }
+  },
 
   refreshDistros: async () => {
     const distros = await window.api.wsl.distros()

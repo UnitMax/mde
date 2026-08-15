@@ -8,6 +8,8 @@ import type {
   Project,
   ProjectKind,
   Session,
+  SendOpenCodeMessageRequest,
+  SendOpenCodeMessageResponse,
   PtyDataChunk,
   PtyExitInfo,
   PtySize,
@@ -48,6 +50,8 @@ export const IpcChannels = {
   pathResolve: 'path:resolve',
   pathValidate: 'path:validate',
   pathReveal: 'path:reveal',
+
+  opencodeSend: 'opencode:send',
 
   platformInfo: 'platform:info'
 } as const
@@ -147,5 +151,8 @@ export interface RendererApi {
     resolve(req: ResolvePathRequest): Promise<PathResolution>
     validate(req: ValidatePathRequest): Promise<PathCheckResult>
     reveal(sessionId: string): Promise<void>
+  }
+  opencode: {
+    send(req: SendOpenCodeMessageRequest): Promise<SendOpenCodeMessageResponse>
   }
 }

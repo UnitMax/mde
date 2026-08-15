@@ -45,6 +45,9 @@ const api: RendererApi = {
     resolve: (req) => ipcRenderer.invoke(IpcChannels.pathResolve, req),
     validate: (req) => ipcRenderer.invoke(IpcChannels.pathValidate, req),
     reveal: (sessionId) => ipcRenderer.invoke(IpcChannels.pathReveal, sessionId)
+  },
+  opencode: {
+    send: (req) => ipcRenderer.invoke(IpcChannels.opencodeSend, req)
   }
 }
 

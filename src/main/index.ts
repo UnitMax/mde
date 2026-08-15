@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { app, BrowserWindow, shell } from 'electron'
 import { IpcEvents } from '@shared/ipc'
 import { registerIpcHandlers } from './ipc'
+import { OpenCodeManager } from './opencode/manager'
 import { PtyManager } from './pty/manager'
 import { initWorkspaceStore } from './store/workspace'
 import { adjustZoomFactor, DEFAULT_ZOOM_FACTOR, getZoomAction } from './zoom'
@@ -20,6 +21,7 @@ const ptyManager = new PtyManager({
     }
   }
 })
+const opencodeManager = new OpenCodeManager()
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -80,7 +82,7 @@ if (!app.requestSingleInstanceLock()) {
   void app.whenReady().then(() => {
     app.setAppUserModelId('dev.mde.app')
     initWorkspaceStore(app.getPath('userData'))
-    registerIpcHandlers(ptyManager)
+    registerIpcHandlers(ptyManager, opencodeManager)
     createWindow()
 
     app.on('activate', () => {
@@ -94,5 +96,6 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('before-quit', () => {
     ptyManager.disposeAll()
+    opencodeManager.disposeAll()
   })
 }

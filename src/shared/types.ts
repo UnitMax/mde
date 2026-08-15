@@ -57,6 +57,24 @@ export interface PtyDataChunk {
   data: string
 }
 
+export type OpenCodeChatRole = 'user' | 'assistant'
+
+/** A plain-text chat item rendered in a session's GUI view. */
+export interface OpenCodeChatMessage {
+  id: string
+  role: OpenCodeChatRole
+  text: string
+}
+
+export interface SendOpenCodeMessageRequest {
+  sessionId: string
+  text: string
+}
+
+export interface SendOpenCodeMessageResponse {
+  message: OpenCodeChatMessage
+}
+
 export interface PathCheckResult {
   exists: boolean
   /** Populated when the check itself could not run (e.g. distro not running). */
