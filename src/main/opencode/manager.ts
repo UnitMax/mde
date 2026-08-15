@@ -9,6 +9,7 @@ import type {
   OpenCodeToolMessage,
   OpenCodeConversationResponse,
   OpenCodeContextUsage,
+  OpenCodeGenerationStats,
   SendOpenCodeMessageResponse,
   OpenCodeSessionSummary,
   OpenCodeModelOption,
@@ -417,6 +418,7 @@ interface OpenCodePromptResponse {
     providerID?: string
     modelID?: string
     tokens?: unknown
+    time?: unknown
     error?: unknown
   }
   parts: unknown
@@ -430,6 +432,7 @@ interface OpenCodeHistoryMessage {
     providerID?: string
     modelID?: string
     tokens?: unknown
+    time?: unknown
   }
   parts: unknown
 }
@@ -752,6 +755,84 @@ function parseTokenUsage(value: unknown): ParsedTokenUsage | null {
     input,
     cacheRead: finiteNumber(cache.read) ?? 0,
     cacheWrite: finiteNumber(cache.write) ?? 0
+  }
+}
+
+interface ParsedGenerationUsage {
+  output: number
+  reasoning: number
+}
+
+function parseGenerationUsage(value: unknown): ParsedGenerationUsage | null {
+  if (!isRecord(value)) return null
+  const output = finiteNumber(value.output)
+  const reasoning = finiteNumber(value.reasoning)
+  if (output === undefined || reasoning === undefined) return null
+  return { output, reasoning }
+}
+
+function generationDuration(value: unknown): number | null {
+  if (!isRecord(value)) return null
+  const time = value.time
+  if (!isRecord(time)) return null
+  const created = finiteNumber(time.created)
+  const completed = finiteNumber(time.completed)
+  if (created === undefined || completed === undefined || completed < created) return null
+  return completed - created
+}
+
+/** Extracts exact output/reasoning usage and whole-turn timing for one assistant response. */
+export function extractGenerationStats(
+  history: unknown,
+  finalMessageId?: string,
+  fallbackInfo?: unknown
+): OpenCodeGenerationStats | null {
+  const entries = Array.isArray(history) ? history : []
+  let selected: Record<string, unknown> | null = null
+
+  for (const entry of entries) {
+    if (!isRecord(entry) || !isRecord(entry.info) || entry.info.role !== 'assistant') continue
+    if (finalMessageId) {
+      if (entry.info.id === finalMessageId) {
+        selected = entry
+        break
+      }
+      continue
+    }
+    selected = entry
+  }
+
+  const info = selected && isRecord(selected.info) ? selected.info : isRecord(fallbackInfo) ? fallbackInfo : null
+  if (!info) return null
+
+  let usage: ParsedGenerationUsage | null = null
+  if (selected && Array.isArray(selected.parts)) {
+    let output = 0
+    let reasoning = 0
+    let foundStepUsage = false
+    for (const part of selected.parts) {
+      if (!isRecord(part) || part.type !== 'step-finish') continue
+      const step = parseGenerationUsage(part.tokens)
+      if (!step) continue
+      foundStepUsage = true
+      output += step.output
+      reasoning += step.reasoning
+    }
+    if (foundStepUsage) usage = { output, reasoning }
+  }
+  usage ??= parseGenerationUsage(info.tokens)
+  if (!usage) return null
+
+  const durationMs = generationDuration(info)
+  const totalTokens = usage.output + usage.reasoning
+  return {
+    outputTokens: usage.output,
+    reasoningTokens: usage.reasoning,
+    totalTokens,
+    durationMs,
+    tokensPerSecond:
+      durationMs !== null && durationMs > 0 ? totalTokens / (durationMs / 1000) : null,
+    timeToFirstTokenMs: null
   }
 }
 
@@ -1080,6 +1161,12 @@ export class OpenCodeManager {
         }
       }
 
+      const generationStats = extractGenerationStats(
+        history ?? [{ info: { ...response.info, role: 'assistant' }, parts: response.parts }],
+        response.info.id,
+        response.info
+      )
+
       return {
         sessionId: openCodeSessionId,
         userMessageId: response.info.parentID ?? null,
@@ -1087,6 +1174,7 @@ export class OpenCodeManager {
           history ?? [{ info: { ...response.info, role: 'assistant' }, parts: response.parts }],
           runtime.models ?? []
         ),
+        generationStats,
         messages: [
           ...turnItems,
           // Reasoning that belongs to the final message precedes its text.
@@ -1144,7 +1232,7 @@ export class OpenCodeManager {
         )
       }
 
-      return this.loadConversation(runtime, openCodeSessionId)
+      return this.loadConversation(runtime, openCodeSessionId, undefined, true)
     } finally {
       runtime?.tracker?.setLocalRequestActive(false)
       this.pending.delete(session.id)
@@ -1213,7 +1301,8 @@ export class OpenCodeManager {
   private async loadConversation(
     runtime: OpenCodeRuntime,
     openCodeSessionId: string,
-    summary?: OpenCodeSessionSummary
+    summary?: OpenCodeSessionSummary,
+    includeGenerationStats = false
   ): Promise<OpenCodeConversationResponse> {
     const [state, history, undoSupported] = await Promise.all([
       requestJson<OpenCodeSessionResponse>(
@@ -1233,7 +1322,8 @@ export class OpenCodeManager {
       messages: extractHistoryMessages(history, revert),
       revert,
       undoSupported,
-      contextUsage: extractContextUsage(history, runtime.models ?? [])
+      contextUsage: extractContextUsage(history, runtime.models ?? []),
+      ...(includeGenerationStats ? { generationStats: extractGenerationStats(history) } : {})
     }
   }
 

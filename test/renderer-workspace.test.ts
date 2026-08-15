@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   OpenCodeChatItem,
+  OpenCodeGenerationStats,
   OpenCodeModelOption,
   OpenCodeSessionSummary,
   OpenCodeStreamChunk,
@@ -102,6 +103,7 @@ describe('renderer workspace event bridge', () => {
           messages: [],
           contextUsage: null,
           compacting: false,
+          generation: null,
           availableSessions: [],
           availableModels: [model],
           selectedModel: model,
@@ -122,10 +124,20 @@ describe('renderer workspace event bridge', () => {
       }
     })
 
-    let resolveSend: ((value: { sessionId: string; userMessageId: string | null; messages: OpenCodeChatItem[] }) => void) | undefined
+    let resolveSend: ((value: {
+      sessionId: string
+      userMessageId: string | null
+      messages: OpenCodeChatItem[]
+      generationStats?: OpenCodeGenerationStats
+    }) => void) | undefined
     api.opencode.send.mockImplementation(
       () =>
-        new Promise<{ sessionId: string; userMessageId: string | null; messages: OpenCodeChatItem[] }>((resolve) => {
+        new Promise<{
+          sessionId: string
+          userMessageId: string | null
+          messages: OpenCodeChatItem[]
+          generationStats?: OpenCodeGenerationStats
+        }>((resolve) => {
           resolveSend = resolve
         })
     )
@@ -157,6 +169,10 @@ describe('renderer workspace event bridge', () => {
       sessionId: 'session-1',
       item: { kind: 'reasoning', partId: 'reasoning-1', delta: 'I should inspect this.', done: false }
     })
+    expect(useWorkspace.getState().opencodeChats['session-1']?.generation?.live).toMatchObject({
+      phase: 'thinking',
+      estimatedTokens: 6
+    })
     streamListeners[0]?.({
       sessionId: 'session-1',
       item: {
@@ -167,6 +183,10 @@ describe('renderer workspace event bridge', () => {
         input: {},
         rawInput: '{"filePath":"/tmp/a"}'
       }
+    })
+    expect(useWorkspace.getState().opencodeChats['session-1']?.generation?.live).toMatchObject({
+      phase: 'tool',
+      toolWaiting: false
     })
     streamListeners[0]?.({
       sessionId: 'session-1',
@@ -239,7 +259,15 @@ describe('renderer workspace event bridge', () => {
     resolveSend?.({
       sessionId: 'opencode-1',
       userMessageId: 'user-1',
-      messages: [{ id: 'answer-1', role: 'assistant', text: 'Final answer.' }]
+      messages: [{ id: 'answer-1', role: 'assistant', text: 'Final answer.' }],
+      generationStats: {
+        outputTokens: 12,
+        reasoningTokens: 6,
+        totalTokens: 18,
+        durationMs: 2_000,
+        tokensPerSecond: 9,
+        timeToFirstTokenMs: null
+      }
     })
     await send
     expect(useWorkspace.getState().opencodeChats['session-1']?.liveItems).toEqual([])
@@ -248,6 +276,11 @@ describe('renderer workspace event bridge', () => {
       id: 'answer-1',
       role: 'assistant',
       text: 'Final answer.'
+    })
+    expect(useWorkspace.getState().opencodeChats['session-1']?.generation?.final).toMatchObject({
+      outputTokens: 12,
+      totalTokens: 18,
+      timeToFirstTokenMs: expect.any(Number)
     })
 
     streamListeners[0]?.({ sessionId: 'session-1', item: { kind: 'status', status: 'busy' } })
@@ -419,6 +452,7 @@ describe('renderer workspace event bridge', () => {
           messages: [{ id: 'old', role: 'assistant', text: 'Old transcript' }],
           contextUsage: null,
           compacting: false,
+          generation: null,
           availableSessions: [conversation],
           availableModels: [model],
           selectedModel: model,
@@ -629,6 +663,7 @@ describe('renderer workspace event bridge', () => {
           messages: [],
           contextUsage: null,
           compacting: false,
+          generation: null,
           availableSessions: [conversation],
           availableModels: [],
           selectedModel: null,
@@ -679,6 +714,7 @@ describe('renderer workspace event bridge', () => {
           messages: [],
           contextUsage: null,
           compacting: false,
+          generation: null,
           availableSessions: [],
           availableModels: [model],
           selectedModel: model,
@@ -794,6 +830,7 @@ describe('renderer workspace event bridge', () => {
           messages: beforeUndo,
           contextUsage: null,
           compacting: false,
+          generation: null,
           availableSessions: [],
           availableModels: [model],
           selectedModel: model,

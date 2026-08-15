@@ -8,6 +8,7 @@ import {
   extractTurnItems,
   extractTextParts,
   extractContextUsage,
+  extractGenerationStats,
   createOpenCodeLaunch,
   OpenCodeStreamTracker,
   parseServerUrl,
@@ -16,6 +17,7 @@ import {
   normalizeOpenCodeModels,
   isGitVcsResponse
 } from '../src/main/opencode/manager'
+import { estimateTokenCount } from '../src/shared/generation-metrics'
 
 const TEST_MODEL = { providerID: 'opencode', modelID: 'nemotron-3.5-lightning-free' } as const
 
@@ -167,6 +169,50 @@ describe('OpenCode GUI protocol helpers', () => {
         }]
       )
     ).toBeNull()
+  })
+
+  it('extracts exact generation usage from step finishes and assistant timing', () => {
+    expect(
+      extractGenerationStats([
+        {
+          info: {
+            id: 'assistant-1',
+            role: 'assistant',
+            tokens: { output: 99, reasoning: 99 },
+            time: { created: 1_000, completed: 3_000 }
+          },
+          parts: [
+            { type: 'step-finish', tokens: { output: 10, reasoning: 2 } },
+            { type: 'step-finish', tokens: { output: 5, reasoning: 1 } }
+          ]
+        }
+      ], 'assistant-1')
+    ).toEqual({
+      outputTokens: 15,
+      reasoningTokens: 3,
+      totalTokens: 18,
+      durationMs: 2_000,
+      tokensPerSecond: 9,
+      timeToFirstTokenMs: null
+    })
+  })
+
+  it('uses assistant usage as the generation fallback and estimates live deltas deterministically', () => {
+    expect(
+      extractGenerationStats(
+        [],
+        'assistant-1',
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          tokens: { output: 8, reasoning: 2 },
+          time: { created: 100, completed: 1_100 }
+        }
+      )
+    ).toMatchObject({ outputTokens: 8, reasoningTokens: 2, totalTokens: 10, tokensPerSecond: 10 })
+    expect(estimateTokenCount('')).toBe(0)
+    expect(estimateTokenCount('hello')).toBe(2)
+    expect(estimateTokenCount('😀😀😀😀')).toBe(1)
   })
 
   it('uses the regular OpenCode config while retaining pure server startup', () => {

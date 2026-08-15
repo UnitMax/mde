@@ -16,6 +16,7 @@ import {
 import type {
   OpenCodeChatItem,
   OpenCodeContextUsage,
+  OpenCodeGenerationState,
   OpenCodeLiveChatItem,
   OpenCodeLivePermissionMessage,
   OpenCodeLiveReasoningMessage,
@@ -48,6 +49,7 @@ import {
 } from '@/components/context-usage'
 import { GUI_SLASH_COMMANDS, resolveSlashCommand, slashCommandDraft } from '@/components/slash-commands'
 import { describeBuiltInTool } from '@/components/tool-summary'
+import { formatMetricDuration, formatMetricRate } from '@shared/generation-metrics'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -368,6 +370,74 @@ function ContextUsage({
   )
 }
 
+function generationPhaseLabel(phase: NonNullable<OpenCodeGenerationState['live']>['phase']): string {
+  if (phase === 'thinking') return 'Thinking'
+  if (phase === 'tool') return 'Tool call'
+  if (phase === 'response') return 'Responding'
+  return 'OpenCode'
+}
+
+function GenerationMetrics({
+  generation,
+  pending
+}: {
+  generation: OpenCodeGenerationState | null
+  pending: boolean
+}): JSX.Element | null {
+  const [now, setNow] = useState(() => Date.now())
+  const live = generation?.live ?? null
+
+  useEffect(() => {
+    if (!live) return
+    const timer = window.setInterval(() => setNow(Date.now()), 250)
+    return () => window.clearInterval(timer)
+  }, [Boolean(live)])
+
+  if (pending && live) {
+    const firstTokenElapsed = live.firstTokenAt ? now - live.firstTokenAt : null
+    const rate =
+      firstTokenElapsed !== null && firstTokenElapsed > 0
+        ? live.estimatedTokens / (firstTokenElapsed / 1000)
+        : null
+    const stale = live.lastTokenAt !== null && now - live.lastTokenAt > 1_000
+    const waiting = live.toolWaiting || stale
+    const label =
+      live.firstTokenAt === null
+        ? `Waiting · TTFT ${formatMetricDuration(now - live.startedAt)}`
+        : waiting
+          ? `${generationPhaseLabel(live.phase)} · Waiting`
+          : `${generationPhaseLabel(live.phase)} · ~${formatMetricRate(rate)} tok/s`
+    const title =
+      live.firstTokenAt === null
+        ? 'Waiting for the first generated token.'
+        : `Estimated live rate: ${formatMetricRate(rate)} tokens per second.`
+
+    return (
+      <span
+        aria-label={title}
+        title={title}
+        className="shrink-0 whitespace-nowrap rounded px-1.5 py-1 text-[10px] text-fg-subtle"
+      >
+        {label}
+      </span>
+    )
+  }
+
+  const final = generation?.final
+  if (!final) return null
+  const label = `TTFT ${formatMetricDuration(final.timeToFirstTokenMs)} · ${formatMetricRate(final.tokensPerSecond)} tok/s`
+  const title = `${final.totalTokens.toLocaleString()} generated tokens (${final.outputTokens.toLocaleString()} output + ${final.reasoningTokens.toLocaleString()} reasoning) over ${formatMetricDuration(final.durationMs)}.`
+  return (
+    <span
+      aria-label={title}
+      title={title}
+      className="shrink-0 whitespace-nowrap rounded px-1.5 py-1 text-[10px] text-fg-subtle"
+    >
+      {label}
+    </span>
+  )
+}
+
 function ModelPicker({
   models,
   selected,
@@ -599,6 +669,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
   const availableModels = chat?.availableModels ?? []
   const selectedModel = chat?.selectedModel ?? null
   const contextUsage = chat?.contextUsage ?? null
+  const generation = chat?.generation ?? null
   const revert = chat?.revert ?? null
   const undoSupported = chat?.undoSupported ?? false
   const undoing = chat?.undoing ?? false
@@ -896,6 +967,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
                 onRefresh={() => void loadOpenCodeModels(session.id)}
               />
               <ContextUsage usage={contextUsage} selectedModel={selectedModel} />
+              <GenerationMetrics generation={generation} pending={pending} />
             </div>
 
             <Button

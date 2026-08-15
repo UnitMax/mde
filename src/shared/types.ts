@@ -246,6 +246,7 @@ export interface SendOpenCodeMessageResponse {
   userMessageId: string | null
   messages: OpenCodeChatItem[]
   contextUsage: OpenCodeContextUsage | null
+  generationStats: OpenCodeGenerationStats | null
 }
 
 /** The latest reported model context usage for an OpenCode conversation. */
@@ -257,6 +258,34 @@ export interface OpenCodeContextUsage {
   /** `usedTokens / contextWindow * 100`. */
   percentage: number
   model: OpenCodeModelSelection
+}
+
+export type OpenCodeGenerationPhase = 'thinking' | 'tool' | 'response'
+
+/** Exact token statistics reported after a generated OpenCode turn completes. */
+export interface OpenCodeGenerationStats {
+  outputTokens: number
+  reasoningTokens: number
+  totalTokens: number
+  durationMs: number | null
+  tokensPerSecond: number | null
+  timeToFirstTokenMs: number | null
+}
+
+/** Renderer-owned live generation state built from streamed OpenCode deltas. */
+export interface OpenCodeLiveGenerationState {
+  startedAt: number
+  firstTokenAt: number | null
+  lastTokenAt: number | null
+  phase: OpenCodeGenerationPhase | null
+  estimatedTokens: number
+  toolWaiting: boolean
+  toolInputSnapshots: Record<string, string>
+}
+
+export interface OpenCodeGenerationState {
+  live: OpenCodeLiveGenerationState | null
+  final: OpenCodeGenerationStats | null
 }
 
 /** Slash commands supported directly by the MDE OpenCode GUI. */
@@ -325,6 +354,7 @@ export interface OpenCodeConversationResponse {
   revert: OpenCodeRevertState | null
   undoSupported: boolean
   contextUsage: OpenCodeContextUsage | null
+  generationStats?: OpenCodeGenerationStats | null
 }
 
 export interface SendOpenCodePermissionReplyRequest {

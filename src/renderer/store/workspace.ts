@@ -7,6 +7,9 @@ import type {
   OpenCodeChatItem,
   OpenCodeChatMessage,
   OpenCodeContextUsage,
+  OpenCodeGenerationPhase,
+  OpenCodeGenerationState,
+  OpenCodeGenerationStats,
   OpenCodeLiveChatItem,
   OpenCodeModelOption,
   OpenCodeModelSelection,
@@ -22,10 +25,12 @@ import type {
   Session
 } from '@shared/types'
 import { disposeSession } from '@/terminal/sessions'
+import { estimateTokenCount } from '@shared/generation-metrics'
 
 export interface OpenCodeChatState {
   messages: OpenCodeChatItem[]
   contextUsage: OpenCodeContextUsage | null
+  generation: OpenCodeGenerationState | null
   compacting: boolean
   availableSessions: OpenCodeSessionSummary[]
   availableModels: OpenCodeModelOption[]
@@ -48,6 +53,7 @@ export interface OpenCodeChatState {
 const EMPTY_CHAT: OpenCodeChatState = {
   messages: [],
   contextUsage: null,
+  generation: null,
   compacting: false,
   availableSessions: [],
   availableModels: [],
@@ -177,6 +183,93 @@ function latestCompletedUserId(messages: OpenCodeChatItem[]): string | null {
     if (messages.slice(index + 1).some((item) => item.role === 'assistant')) return message.id
   }
   return null
+}
+
+function newGenerationState(): OpenCodeGenerationState {
+  return {
+    live: {
+      startedAt: Date.now(),
+      firstTokenAt: null,
+      lastTokenAt: null,
+      phase: null,
+      estimatedTokens: 0,
+      toolWaiting: false,
+      toolInputSnapshots: {}
+    },
+    final: null
+  }
+}
+
+function generationPhase(item: OpenCodeStreamChunk['item']): OpenCodeGenerationPhase | null {
+  if (item.kind === 'reasoning') return 'thinking'
+  if (item.kind === 'text') return 'response'
+  if (item.kind === 'tool') return 'tool'
+  return null
+}
+
+function toolInputDelta(
+  live: NonNullable<OpenCodeGenerationState['live']>,
+  item: Extract<OpenCodeStreamChunk['item'], { kind: 'tool' }>
+): { delta: string; snapshots: Record<string, string> } {
+  const previous = live.toolInputSnapshots[item.partId] ?? ''
+  const snapshot =
+    item.rawInput ?? (previous ? '' : Object.keys(item.input).length > 0 ? JSON.stringify(item.input) ?? '' : '')
+  if (!snapshot) return { delta: '', snapshots: live.toolInputSnapshots }
+  const delta = snapshot.startsWith(previous) ? snapshot.slice(previous.length) : snapshot
+  return {
+    delta,
+    snapshots: { ...live.toolInputSnapshots, [item.partId]: snapshot }
+  }
+}
+
+function updateGenerationState(
+  generation: OpenCodeGenerationState | null,
+  item: OpenCodeStreamChunk['item']
+): OpenCodeGenerationState | null {
+  if (!generation?.live) return generation
+  const phase = generationPhase(item)
+  if (!phase) return generation
+
+  const live = generation.live
+  let delta = ''
+  let snapshots = live.toolInputSnapshots
+  if (item.kind === 'text' || item.kind === 'reasoning') delta = item.delta
+  if (item.kind === 'tool') {
+    const result = toolInputDelta(live, item)
+    delta = result.delta
+    snapshots = result.snapshots
+  }
+
+  const estimatedDelta = estimateTokenCount(delta)
+  const now = Date.now()
+  const waiting = item.kind === 'tool' && (item.status === 'pending' || item.status === 'running') && !delta
+  return {
+    ...generation,
+    live: {
+      ...live,
+      phase,
+      firstTokenAt: live.firstTokenAt ?? (estimatedDelta > 0 ? now : null),
+      lastTokenAt: estimatedDelta > 0 ? now : live.lastTokenAt,
+      estimatedTokens: live.estimatedTokens + estimatedDelta,
+      toolWaiting: waiting,
+      toolInputSnapshots: snapshots
+    }
+  }
+}
+
+function completedGenerationStats(
+  stats: OpenCodeGenerationStats | null,
+  generation: OpenCodeGenerationState | null
+): OpenCodeGenerationStats | null {
+  if (!stats) return null
+  const firstTokenAt = generation?.live?.firstTokenAt
+  return {
+    ...stats,
+    timeToFirstTokenMs:
+      firstTokenAt === null || firstTokenAt === undefined || generation?.live?.startedAt === undefined
+        ? null
+        : Math.max(0, firstTokenAt - generation.live.startedAt)
+  }
 }
 
 function retainActiveSubagentPermissions(
@@ -539,7 +632,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
                   ]
                 )
               : current.selectedModel,
-            ...(result.selectedSessionId ? {} : { messages: [], liveItems: [] })
+            ...(result.selectedSessionId ? {} : { messages: [], liveItems: [], generation: null })
           }
         }
       }))
@@ -583,6 +676,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
             ...previous,
             messages: [...previous.messages, userMessage],
             compacting: false,
+            generation: newGenerationState(),
             liveItems: retainActiveSubagentPermissions(previous.liveItems, previous.subagents),
             subagents: previous.subagents.filter(subagentIsActive),
             pending: true,
@@ -596,7 +690,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     })
 
     try {
-      const { sessionId: openCodeSessionId, userMessageId, messages, contextUsage } = await window.api.opencode.send({
+      const { sessionId: openCodeSessionId, userMessageId, messages, contextUsage, generationStats } = await window.api.opencode.send({
         sessionId,
         text: prompt,
         model: selectedModel
@@ -625,6 +719,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               openCodeSessionId,
               contextUsage: contextUsage ?? null,
               compacting: false,
+              generation: {
+                live: null,
+                final: completedGenerationStats(generationStats ?? null, current.generation)
+              },
               pending: false,
               revert: null,
               externalBusy: false,
@@ -648,6 +746,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               ...current,
               pending: false,
               compacting: false,
+              generation: null,
               error: message,
               liveItems: retainActiveSubagentPermissions(current.liveItems, current.subagents),
               unreadCompletion: state.selectedSessionId !== sessionId
@@ -680,6 +779,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
           [sessionId]: {
             ...previous,
             compacting: false,
+            generation: newGenerationState(),
             liveItems: retainActiveSubagentPermissions(previous.liveItems, previous.subagents),
             subagents: previous.subagents.filter(subagentIsActive),
             pending: true,
@@ -709,6 +809,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               messages: result.messages,
               contextUsage: result.contextUsage ?? null,
               compacting: false,
+              generation: {
+                live: null,
+                final: completedGenerationStats(result.generationStats ?? null, chat.generation)
+              },
               openCodeSessionId: result.sessionId,
               pending: false,
               revert: result.revert,
@@ -734,6 +838,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               ...chat,
               pending: false,
               compacting: false,
+              generation: null,
               error: message,
               liveItems: retainActiveSubagentPermissions(chat.liveItems, chat.subagents),
               unreadCompletion: state.selectedSessionId !== sessionId
@@ -781,6 +886,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               messages: result.messages,
               contextUsage: result.contextUsage ?? null,
               compacting: false,
+              generation: null,
               openCodeSessionId: result.sessionId,
               revert: result.revert,
               undoSupported: result.undoSupported,
@@ -842,6 +948,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               messages: result.messages,
               contextUsage: result.contextUsage ?? null,
               compacting: false,
+              generation: null,
               openCodeSessionId: result.sessionId,
               revert: result.revert,
               undoSupported: result.undoSupported,
@@ -943,6 +1050,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               messages: result.messages,
               contextUsage: result.contextUsage ?? null,
               compacting: false,
+              generation: null,
               availableSessions: result.session
                 ? previous.availableSessions.some((item) => item.id === result.session?.id)
                   ? previous.availableSessions.map((item) =>
@@ -1008,6 +1116,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               messages: [],
               contextUsage: null,
               compacting: false,
+              generation: null,
               availableSessions: result.session
                 ? [result.session, ...previous.availableSessions.filter((item) => item.id !== result.sessionId)]
                 : previous.availableSessions,
@@ -1136,6 +1245,17 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
             ...state.opencodeChats,
             [sessionId]: {
               ...current,
+              generation:
+                current.pending && current.generation?.live
+                  ? {
+                      ...current.generation,
+                      live: {
+                        ...current.generation.live,
+                        phase: 'tool',
+                        toolWaiting: item.subagent.status === 'working' || item.subagent.status === 'waiting'
+                      }
+                    }
+                  : current.generation,
               subagents: upsertSubagent(existingSubagents, item.subagent),
               liveItems,
               unreadCompletion:
@@ -1169,10 +1289,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       // Ordinary text/tool/reasoning deltas outside a parent turn belong to no
       // visible message, while subagent status events are handled above.
       if (!current.pending) return state
+      const generation = updateGenerationState(current.generation, item)
       return {
         opencodeChats: {
           ...state.opencodeChats,
-          [sessionId]: { ...current, liveItems: upsertLiveItem(current.liveItems, item) }
+          [sessionId]: { ...current, generation, liveItems: upsertLiveItem(current.liveItems, item) }
         }
       }
     }),
