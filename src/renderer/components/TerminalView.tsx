@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronRight, RotateCw } from 'lucide-react'
+import { ArrowUp, ChevronRight, RotateCw } from 'lucide-react'
 import type {
   OpenCodeLiveChatItem,
   OpenCodeLiveReasoningMessage,
@@ -242,7 +242,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
         )}
       </ol>
 
-      <div className="shrink-0 border-t border-line bg-panel p-3">
+      <div className="shrink-0 border-t border-line bg-panel px-3 py-3">
         {!nativeSession && (
           <p role="alert" className="mb-2 text-xs text-warn">
             OpenCode GUI integration currently supports native sessions only.
@@ -253,10 +253,10 @@ function GuiView({ session }: { session: Session }): JSX.Element {
             {error}
           </p>
         )}
-        <div className="flex items-end gap-2">
+        <div className="mx-auto w-full max-w-4xl rounded-xl border border-line-strong bg-bg shadow-lg shadow-black/10 transition-colors focus-within:border-accent/70">
           <textarea
             aria-label="Message"
-            rows={3}
+            rows={2}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
@@ -265,30 +265,37 @@ function GuiView({ session }: { session: Session }): JSX.Element {
                 send()
               }
             }}
-            placeholder="Type a message..."
+            placeholder="Message Nemotron..."
             disabled={!nativeSession || pending}
-            className="min-h-[72px] min-w-0 flex-1 resize-none rounded border border-line-strong bg-bg px-2.5 py-2 text-[13px] text-fg placeholder:text-fg-subtle focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+            className="block min-h-[68px] max-h-48 w-full resize-none overflow-y-auto rounded-t-xl border-0 bg-transparent px-4 pb-2 pt-3 text-[13px] text-fg placeholder:text-fg-subtle focus:outline-none focus:ring-0 disabled:cursor-not-allowed disabled:opacity-50"
           />
 
-          <Select value="opencode/nemotron-3.5-lightning-free" disabled>
-            <SelectTrigger aria-label="Model" className="w-48 shrink-0">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="opencode/nemotron-3.5-lightning-free">
-                Nemotron 3.5 Lightning · OpenCode Zen
-              </SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex items-center justify-between gap-2 px-2 pb-2">
+            <Select value="opencode/nemotron-3.5-lightning-free" disabled>
+              <SelectTrigger
+                aria-label="Model"
+                className="h-7 w-auto min-w-0 max-w-[calc(100%-3rem)] border-0 bg-transparent px-2 text-xs text-fg-muted shadow-none hover:bg-hover hover:text-fg"
+              >
+                <SelectValue className="truncate" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="opencode/nemotron-3.5-lightning-free">
+                  Nemotron 3.5 Lightning · OpenCode Zen
+                </SelectItem>
+              </SelectContent>
+            </Select>
 
-          <Button
-            size="sm"
-            className="shrink-0"
-            disabled={!nativeSession || pending || !draft.trim()}
-            onClick={send}
-          >
-            Send
-          </Button>
+            <Button
+              size="icon"
+              aria-label="Send message"
+              title="Send message"
+              className="h-8 w-8 shrink-0 rounded-lg"
+              disabled={!nativeSession || pending || !draft.trim()}
+              onClick={send}
+            >
+              <ArrowUp className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </div>
     </div>
