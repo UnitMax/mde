@@ -4,15 +4,22 @@ import {
   createPromptBody,
   describeResponseParts,
   extractReasoningMessages,
+  extractHistoryMessages,
   extractTurnItems,
   extractTextParts,
   createOpenCodeLaunch,
   OpenCodeStreamTracker,
   parseServerUrl,
-  parseSseFrames
+  parseSseFrames,
+  normalizeOpenCodeDirectory
 } from '../src/main/opencode/manager'
 
 describe('OpenCode GUI protocol helpers', () => {
+  it('normalizes native OpenCode directory spellings before matching', () => {
+    expect(normalizeOpenCodeDirectory('/workspace/app/')).toBe('/workspace/app')
+    expect(normalizeOpenCodeDirectory('/workspace/app\\nested')).toBe('/workspace/app/nested')
+    expect(normalizeOpenCodeDirectory('C:\\Work\\App\\')).toBe('c:/work/app')
+  })
   it('locks every prompt to the free OpenCode Zen Nemotron 3.5 Lightning model', () => {
     expect(NEMOTRON_MODEL).toEqual({ providerID: 'opencode', modelID: 'nemotron-3.5-lightning-free' })
     expect(createPromptBody('Reply only with pong')).toEqual({
@@ -137,6 +144,42 @@ describe('OpenCode GUI protocol helpers', () => {
       ])
     ).toEqual([{ id: 'r1', role: 'reasoning', text: 'Now I can answer.' }])
     expect(extractReasoningMessages(undefined)).toEqual([])
+  })
+
+  it('converts an existing OpenCode history into ordered GUI items', () => {
+    expect(
+      extractHistoryMessages([
+        {
+          info: { id: 'user-1', role: 'user' },
+          parts: [{ id: 'user-part', type: 'text', text: 'List the files.' }]
+        },
+        {
+          info: { id: 'assistant-1', role: 'assistant' },
+          parts: [
+            { id: 'reasoning-1', type: 'reasoning', text: 'I should inspect the folder.' },
+            {
+              id: 'tool-1',
+              type: 'tool',
+              tool: 'list',
+              state: { status: 'completed', input: { path: '.' }, output: 'README.md' }
+            },
+            { id: 'text-1', type: 'text', text: 'The folder contains README.md.' }
+          ]
+        }
+      ])
+    ).toEqual([
+      { id: 'user-1', role: 'user', text: 'List the files.' },
+      { id: 'reasoning-1', role: 'reasoning', text: 'I should inspect the folder.' },
+      {
+        id: 'tool-1',
+        role: 'tool',
+        tool: 'list',
+        status: 'completed',
+        input: { path: '.' },
+        output: 'README.md'
+      },
+      { id: 'text-1', role: 'assistant', text: 'The folder contains README.md.' }
+    ])
   })
 })
 

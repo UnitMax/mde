@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { posix } from 'node:path'
 import type {
   OpenCodeChatItem,
   OpenCodePermissionReply,
@@ -6,6 +7,9 @@ import type {
   OpenCodeStreamChunk,
   OpenCodeStreamItem,
   OpenCodeToolMessage,
+  OpenCodeConversationResponse,
+  OpenCodeSessionSummary,
+  ListOpenCodeSessionsResponse,
   Session
 } from '@shared/types'
 
@@ -20,7 +24,8 @@ const MAX_REASONING_LENGTH = 20_000
 interface OpenCodeRuntime {
   child: ChildProcessWithoutNullStreams
   url: string
-  sessionId: string
+  openCodeSessionId: string | null
+  tracker?: OpenCodeStreamTracker
 }
 
 export interface OpenCodeEvents {
@@ -75,7 +80,16 @@ export class OpenCodeStreamTracker {
   private readonly messageRoles = new Map<string, string>()
   private lastTextPartId: string | null = null
 
-  constructor(private readonly sessionId: string) {}
+  constructor(private sessionId: string | null) {}
+
+  setSessionId(sessionId: string | null): void {
+    if (this.sessionId === sessionId) return
+    this.sessionId = sessionId
+    this.partTypes.clear()
+    this.partTexts.clear()
+    this.messageRoles.clear()
+    this.lastTextPartId = null
+  }
 
   /** Returns a normalized update for this event, or null if it is irrelevant. */
   accept(event: unknown): OpenCodeStreamItem | null {
@@ -200,6 +214,9 @@ export class OpenCodeStreamTracker {
 
 interface OpenCodeSessionResponse {
   id: string
+  title?: unknown
+  directory?: unknown
+  time?: unknown
 }
 
 interface OpenCodePromptResponse {
@@ -218,6 +235,34 @@ interface OpenCodeHistoryMessage {
     role?: string
   }
   parts: unknown
+}
+
+export function normalizeOpenCodeDirectory(value: string): string {
+  const normalized = posix.normalize(value.trim().replaceAll('\\', '/'))
+  const withoutTrailingSlash = normalized.length > 1 ? normalized.replace(/\/$/, '') : normalized
+  return process.platform === 'win32' || /^[A-Za-z]:\//.test(withoutTrailingSlash)
+    ? withoutTrailingSlash.toLowerCase()
+    : withoutTrailingSlash
+}
+
+function timestamp(value: unknown): string {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? new Date(value).toISOString()
+    : new Date(0).toISOString()
+}
+
+function toSessionSummary(value: OpenCodeSessionResponse): OpenCodeSessionSummary | null {
+  if (typeof value.id !== 'string' || typeof value.title !== 'string' || typeof value.directory !== 'string') {
+    return null
+  }
+  const time = isRecord(value.time) ? value.time : {}
+  return {
+    id: value.id,
+    title: value.title,
+    directory: value.directory,
+    createdAt: timestamp(time.created),
+    updatedAt: timestamp(time.updated)
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -392,6 +437,43 @@ export function extractTurnItems(
   return messages
 }
 
+/** Converts a complete OpenCode message history into GUI chat items. */
+export function extractHistoryMessages(history: unknown): OpenCodeChatItem[] {
+  if (!Array.isArray(history)) return []
+
+  const messages: OpenCodeChatItem[] = []
+  for (const entry of history) {
+    if (!isRecord(entry) || !isRecord(entry.info) || !Array.isArray(entry.parts)) continue
+    const info = entry.info
+    if (typeof info.id !== 'string' || (info.role !== 'user' && info.role !== 'assistant')) continue
+
+    if (info.role === 'user') {
+      const text = extractTextParts(entry.parts)
+      if (text) messages.push({ id: info.id, role: 'user', text })
+      continue
+    }
+
+    for (const part of entry.parts) {
+      if (!isRecord(part)) continue
+      if (part.type === 'text' && typeof part.id === 'string' && typeof part.text === 'string') {
+        const text = part.text.trim()
+        if (text && part.ignored !== true) messages.push({ id: part.id, role: 'assistant', text })
+        continue
+      }
+
+      const item =
+        part.type === 'tool'
+          ? toToolMessage(part)
+          : part.type === 'reasoning'
+            ? toReasoningMessage(part)
+            : null
+      if (item) messages.push(item)
+    }
+  }
+
+  return messages
+}
+
 export function createPromptBody(text: string): {
   model: typeof NEMOTRON_MODEL
   parts: Array<{ type: 'text'; text: string }>
@@ -476,7 +558,75 @@ export class OpenCodeManager {
 
   constructor(private readonly events?: OpenCodeEvents) {}
 
-  async send(session: Session, text: string): Promise<OpenCodeChatItem[]> {
+  async listSessions(session: Session): Promise<ListOpenCodeSessionsResponse> {
+    if (session.kind !== 'native') {
+      throw new Error('OpenCode GUI integration currently supports native sessions only.')
+    }
+
+    const runtime = await this.ensureRuntime(session)
+    const response = await requestJson<OpenCodeSessionResponse[]>(
+      runtime.url,
+      `/session?roots=true&directory=${encodeURIComponent(session.path)}&limit=100`,
+      undefined,
+      HISTORY_REQUEST_TIMEOUT_MS,
+      'GET'
+    )
+    const directory = normalizeOpenCodeDirectory(session.path)
+    const sessions = response
+      .map(toSessionSummary)
+      .filter((item): item is OpenCodeSessionSummary => item !== null)
+      .filter((item) => normalizeOpenCodeDirectory(item.directory) === directory)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+
+    const selectedSessionId =
+      runtime.openCodeSessionId && sessions.some((item) => item.id === runtime.openCodeSessionId)
+        ? runtime.openCodeSessionId
+        : sessions[0]?.id ?? null
+    this.setActiveSession(runtime, selectedSessionId)
+
+    return { sessions, selectedSessionId }
+  }
+
+  async selectSession(session: Session, openCodeSessionId: string): Promise<OpenCodeConversationResponse> {
+    if (session.kind !== 'native') {
+      throw new Error('OpenCode GUI integration currently supports native sessions only.')
+    }
+    if (!openCodeSessionId.trim()) throw new Error('OpenCode session ID cannot be empty.')
+
+    const runtime = await this.ensureRuntime(session)
+    const available = await this.listSessions(session)
+    const summary = available.sessions.find((item) => item.id === openCodeSessionId)
+    if (!summary) throw new Error('That OpenCode conversation is not available for this folder.')
+
+    const history = await this.loadHistory(runtime, openCodeSessionId)
+    this.setActiveSession(runtime, openCodeSessionId)
+    return { sessionId: openCodeSessionId, session: summary, messages: extractHistoryMessages(history) }
+  }
+
+  async createSession(session: Session): Promise<OpenCodeConversationResponse> {
+    if (session.kind !== 'native') {
+      throw new Error('OpenCode GUI integration currently supports native sessions only.')
+    }
+
+    const runtime = await this.ensureRuntime(session)
+    const created = await requestJson<OpenCodeSessionResponse>(
+      runtime.url,
+      '/session',
+      { title: session.name },
+      SERVER_START_TIMEOUT_MS
+    )
+    if (!created.id) throw new Error('OpenCode did not create a session.')
+
+    const summary = toSessionSummary(created)
+    this.setActiveSession(runtime, created.id)
+    return {
+      sessionId: created.id,
+      ...(summary ? { session: summary } : {}),
+      messages: []
+    }
+  }
+
+  async send(session: Session, text: string): Promise<{ sessionId: string; messages: OpenCodeChatItem[] }> {
     const prompt = text.trim()
     if (!prompt) throw new Error('Message cannot be empty.')
     if (session.kind !== 'native') {
@@ -487,9 +637,14 @@ export class OpenCodeManager {
     this.pending.add(session.id)
     try {
       const runtime = await this.ensureRuntime(session)
+      if (!runtime.openCodeSessionId) {
+        await this.createSession(session)
+      }
+      const openCodeSessionId = runtime.openCodeSessionId
+      if (!openCodeSessionId) throw new Error('OpenCode conversation is not selected.')
       const response = await requestJson<OpenCodePromptResponse>(
         runtime.url,
-        `/session/${encodeURIComponent(runtime.sessionId)}/message`,
+        `/session/${encodeURIComponent(openCodeSessionId)}/message`,
         createPromptBody(prompt),
         REQUEST_TIMEOUT_MS
       )
@@ -505,7 +660,7 @@ export class OpenCodeManager {
         try {
           const history = await requestJson<OpenCodeHistoryMessage[]>(
             runtime.url,
-            `/session/${encodeURIComponent(runtime.sessionId)}/message`,
+            `/session/${encodeURIComponent(openCodeSessionId)}/message`,
             undefined,
             HISTORY_REQUEST_TIMEOUT_MS,
             'GET'
@@ -516,15 +671,33 @@ export class OpenCodeManager {
         }
       }
 
-      return [
-        ...turnItems,
-        // Reasoning that belongs to the final message precedes its text.
-        ...extractReasoningMessages(response.parts),
-        { id: response.info.id, role: 'assistant', text: reply }
-      ]
+      return {
+        sessionId: openCodeSessionId,
+        messages: [
+          ...turnItems,
+          // Reasoning that belongs to the final message precedes its text.
+          ...extractReasoningMessages(response.parts),
+          { id: response.info.id, role: 'assistant', text: reply }
+        ]
+      }
     } finally {
       this.pending.delete(session.id)
     }
+  }
+
+  private async loadHistory(runtime: OpenCodeRuntime, openCodeSessionId: string): Promise<OpenCodeHistoryMessage[]> {
+    return requestJson<OpenCodeHistoryMessage[]>(
+      runtime.url,
+      `/session/${encodeURIComponent(openCodeSessionId)}/message`,
+      undefined,
+      HISTORY_REQUEST_TIMEOUT_MS,
+      'GET'
+    )
+  }
+
+  private setActiveSession(runtime: OpenCodeRuntime, openCodeSessionId: string | null): void {
+    runtime.openCodeSessionId = openCodeSessionId
+    runtime.tracker?.setSessionId(openCodeSessionId)
   }
 
   async replyPermission(sessionId: string, requestId: string, reply: OpenCodePermissionReply): Promise<void> {
@@ -581,8 +754,6 @@ export class OpenCodeManager {
 
     try {
       const url = await this.waitForServerUrl(child)
-      const created = await requestJson<OpenCodeSessionResponse>(url, '/session', { title: session.name }, SERVER_START_TIMEOUT_MS)
-      if (!created.id) throw new Error('OpenCode did not create a session.')
 
       child.once('exit', () => {
         if (this.children.get(session.id) === child) this.children.delete(session.id)
@@ -590,7 +761,11 @@ export class OpenCodeManager {
         if (runtime?.child === child) this.runtimes.delete(session.id)
       })
 
-      const runtime = { child, url, sessionId: created.id }
+      const runtime: OpenCodeRuntime = {
+        child,
+        url,
+        openCodeSessionId: session.opencodeSessionId ?? null
+      }
       // Awaited: the first prompt follows immediately, and its early deltas are
       // lost if the subscription is not live yet.
       if (this.events) await this.openEventStream(session.id, runtime)
@@ -639,7 +814,8 @@ export class OpenCodeManager {
     response: Response,
     controller: AbortController
   ): Promise<void> {
-    const tracker = new OpenCodeStreamTracker(runtime.sessionId)
+    const tracker = new OpenCodeStreamTracker(runtime.openCodeSessionId)
+    runtime.tracker = tracker
     try {
       const decoder = new TextDecoder()
       let buffer = ''
@@ -662,6 +838,7 @@ export class OpenCodeManager {
     } catch {
       // Aborted on dispose, or the server went away; the transcript still arrives.
     } finally {
+      if (runtime.tracker === tracker) delete runtime.tracker
       if (this.streams.get(sessionId) === controller) this.streams.delete(sessionId)
     }
   }

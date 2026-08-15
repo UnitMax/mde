@@ -43,6 +43,15 @@ describe('workspace validation', () => {
     expect(validateSessionList([session, session], projectIds)).toHaveLength(1)
   })
 
+  it('keeps a persisted OpenCode conversation selection', () => {
+    const projectIds = new Set([project.id])
+    expect(validateSession({ ...session, opencodeSessionId: 'ses_existing' }, projectIds)).toMatchObject({
+      id: session.id,
+      opencodeSessionId: 'ses_existing'
+    })
+    expect(validateSession({ ...session, opencodeSessionId: '' }, projectIds)).toEqual(session)
+  })
+
   it('loads grouped projects and sessions from the new workspace shape', () => {
     expect(validateWorkspace({ projects: [project], sessions: [session] })).toEqual({
       projects: [project],

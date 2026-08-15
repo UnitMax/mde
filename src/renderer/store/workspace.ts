@@ -8,6 +8,7 @@ import type {
   OpenCodeChatMessage,
   OpenCodeLiveChatItem,
   OpenCodePermissionReply,
+  OpenCodeSessionSummary,
   OpenCodeStreamChunk,
   Project,
   PtyExitInfo,
@@ -18,16 +19,22 @@ import { disposeSession } from '@/terminal/sessions'
 
 export interface OpenCodeChatState {
   messages: OpenCodeChatItem[]
+  availableSessions: OpenCodeSessionSummary[]
+  openCodeSessionId: string | null
   liveItems: OpenCodeLiveChatItem[]
   pending: boolean
+  sessionsLoading: boolean
   error: string | null
   unreadCompletion: boolean
 }
 
 const EMPTY_CHAT: OpenCodeChatState = {
   messages: [],
+  availableSessions: [],
+  openCodeSessionId: null,
   liveItems: [],
   pending: false,
+  sessionsLoading: false,
   error: null,
   unreadCompletion: false
 }
@@ -130,6 +137,11 @@ interface WorkspaceState {
   setStatus: (id: string, status: PtyStatus) => void
   noteExit: (info: PtyExitInfo) => void
   clearExit: (id: string) => void
+  persistOpenCodeSelection: (sessionId: string, openCodeSessionId: string | null) => Promise<void>
+  refreshOpenCodeSessionList: (sessionId: string) => Promise<void>
+  loadOpenCodeSessions: (sessionId: string) => Promise<void>
+  selectOpenCodeSession: (sessionId: string, openCodeSessionId: string) => Promise<void>
+  createOpenCodeSession: (sessionId: string) => Promise<void>
   sendOpenCodeMessage: (sessionId: string, text: string) => Promise<void>
   replyOpenCodePermission: (
     sessionId: string,
@@ -297,6 +309,47 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       return { exits }
     }),
 
+  persistOpenCodeSelection: async (sessionId, openCodeSessionId) => {
+    try {
+      const updated = await window.api.sessions.update({
+        id: sessionId,
+        patch: { opencodeSessionId: openCodeSessionId ?? '' }
+      })
+      if (!updated) return
+      set((state) => ({
+        sessions: state.sessions.map((session) => (session.id === sessionId ? updated : session))
+      }))
+    } catch {
+      // Conversation state remains usable if workspace persistence is temporarily unavailable.
+    }
+  },
+
+  refreshOpenCodeSessionList: async (sessionId) => {
+    try {
+      const result = await window.api.opencode.listSessions({ sessionId })
+      const current = get().opencodeChats[sessionId]
+      if (!current) return
+      set((state) => ({
+        opencodeChats: {
+          ...state.opencodeChats,
+          [sessionId]: {
+            ...current,
+            availableSessions: result.sessions,
+            openCodeSessionId: result.selectedSessionId,
+            ...(result.selectedSessionId ? {} : { messages: [], liveItems: [] })
+          }
+        }
+      }))
+      if (result.selectedSessionId && result.selectedSessionId !== current.openCodeSessionId) {
+        await get().persistOpenCodeSelection(sessionId, result.selectedSessionId)
+      } else if (!result.selectedSessionId && current.openCodeSessionId) {
+        await get().persistOpenCodeSelection(sessionId, null)
+      }
+    } catch {
+      // A successful response should remain visible even if refreshing the picker fails.
+    }
+  },
+
   sendOpenCodeMessage: async (sessionId, text) => {
     const prompt = text.trim()
     if (!prompt) return
@@ -314,8 +367,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
           ...state.opencodeChats,
           [sessionId]: {
             messages: [...previous.messages, userMessage],
+            availableSessions: previous.availableSessions,
+            openCodeSessionId: previous.openCodeSessionId,
             liveItems: [],
             pending: true,
+            sessionsLoading: false,
             error: null,
             unreadCompletion: false
           }
@@ -324,7 +380,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     })
 
     try {
-      const { messages } = await window.api.opencode.send({ sessionId, text: prompt })
+      const { sessionId: openCodeSessionId, messages } = await window.api.opencode.send({ sessionId, text: prompt })
       set((state) => {
         const current = state.opencodeChats[sessionId]
         if (!current) return state
@@ -335,6 +391,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               ...current,
               // The returned transcript supersedes the streamed preview.
               messages: [...current.messages, ...messages],
+              openCodeSessionId,
               pending: false,
               liveItems: [],
               unreadCompletion: state.selectedSessionId !== sessionId
@@ -342,6 +399,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
           }
         }
       })
+      await get().persistOpenCodeSelection(sessionId, openCodeSessionId)
+      await get().refreshOpenCodeSessionList(sessionId)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'OpenCode request failed.'
       set((state) => {
@@ -357,6 +416,158 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               liveItems: [],
               unreadCompletion: state.selectedSessionId !== sessionId
             }
+          }
+        }
+      })
+    }
+  },
+
+  loadOpenCodeSessions: async (sessionId) => {
+    const existing = get().opencodeChats[sessionId]
+    if (existing?.pending || existing?.sessionsLoading) return
+
+    set((state) => {
+      const previous = state.opencodeChats[sessionId] ?? EMPTY_CHAT
+      return {
+        opencodeChats: {
+          ...state.opencodeChats,
+          [sessionId]: { ...previous, sessionsLoading: true, error: null }
+        }
+      }
+    })
+
+    try {
+      const result = await window.api.opencode.listSessions({ sessionId })
+      set((state) => {
+        const previous = state.opencodeChats[sessionId] ?? EMPTY_CHAT
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: {
+              ...previous,
+              availableSessions: result.sessions,
+              openCodeSessionId: result.selectedSessionId,
+              sessionsLoading: false
+            }
+          }
+        }
+      })
+
+      if (result.selectedSessionId) {
+        await get().selectOpenCodeSession(sessionId, result.selectedSessionId)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not load OpenCode conversations.'
+      set((state) => {
+        const previous = state.opencodeChats[sessionId] ?? EMPTY_CHAT
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: { ...previous, sessionsLoading: false, error: message }
+          }
+        }
+      })
+    }
+  },
+
+  selectOpenCodeSession: async (sessionId, openCodeSessionId) => {
+    const current = get().opencodeChats[sessionId]
+    if (current?.pending || current?.sessionsLoading) return
+
+    set((state) => {
+      const previous = state.opencodeChats[sessionId] ?? EMPTY_CHAT
+      return {
+        opencodeChats: {
+          ...state.opencodeChats,
+          [sessionId]: { ...previous, sessionsLoading: true, error: null }
+        }
+      }
+    })
+
+    try {
+      const result = await window.api.opencode.selectSession({ sessionId, openCodeSessionId })
+      set((state) => {
+        const previous = state.opencodeChats[sessionId] ?? EMPTY_CHAT
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: {
+              ...previous,
+              messages: result.messages,
+              availableSessions: result.session
+                ? previous.availableSessions.some((item) => item.id === result.session?.id)
+                  ? previous.availableSessions.map((item) =>
+                      item.id === result.session?.id ? result.session : item
+                    )
+                  : [result.session, ...previous.availableSessions]
+                : previous.availableSessions,
+              openCodeSessionId: result.sessionId,
+              liveItems: [],
+              sessionsLoading: false,
+              error: null
+            }
+          }
+        }
+      })
+      await get().persistOpenCodeSelection(sessionId, result.sessionId)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not load the OpenCode conversation.'
+      set((state) => {
+        const previous = state.opencodeChats[sessionId] ?? EMPTY_CHAT
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: { ...previous, sessionsLoading: false, error: message }
+          }
+        }
+      })
+    }
+  },
+
+  createOpenCodeSession: async (sessionId) => {
+    const current = get().opencodeChats[sessionId]
+    if (current?.pending || current?.sessionsLoading) return
+
+    set((state) => {
+      const previous = state.opencodeChats[sessionId] ?? EMPTY_CHAT
+      return {
+        opencodeChats: {
+          ...state.opencodeChats,
+          [sessionId]: { ...previous, sessionsLoading: true, error: null }
+        }
+      }
+    })
+
+    try {
+      const result = await window.api.opencode.createSession({ sessionId })
+      set((state) => {
+        const previous = state.opencodeChats[sessionId] ?? EMPTY_CHAT
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: {
+              ...previous,
+              messages: [],
+              availableSessions: result.session
+                ? [result.session, ...previous.availableSessions.filter((item) => item.id !== result.sessionId)]
+                : previous.availableSessions,
+              openCodeSessionId: result.sessionId,
+              liveItems: [],
+              sessionsLoading: false,
+              error: null
+            }
+          }
+        }
+      })
+      await get().persistOpenCodeSelection(sessionId, result.sessionId)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not create an OpenCode conversation.'
+      set((state) => {
+        const previous = state.opencodeChats[sessionId] ?? EMPTY_CHAT
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: { ...previous, sessionsLoading: false, error: message }
           }
         }
       })

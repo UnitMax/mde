@@ -25,6 +25,8 @@ export interface Session {
   path: string
   /** Optional shell override; default is resolved per platform. */
   shell?: string
+  /** OpenCode conversation currently selected for this MDE workspace session. */
+  opencodeSessionId?: string
   createdAt: string
 }
 
@@ -179,6 +181,40 @@ export interface SendOpenCodeMessageRequest {
 }
 
 export interface SendOpenCodeMessageResponse {
+  sessionId: string
+  messages: OpenCodeChatItem[]
+}
+
+/** A persisted OpenCode conversation available for the current project. */
+export interface OpenCodeSessionSummary {
+  id: string
+  title: string
+  directory: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ListOpenCodeSessionsRequest {
+  sessionId: string
+}
+
+export interface CreateOpenCodeSessionRequest {
+  sessionId: string
+}
+
+export interface ListOpenCodeSessionsResponse {
+  sessions: OpenCodeSessionSummary[]
+  selectedSessionId: string | null
+}
+
+export interface SelectOpenCodeSessionRequest {
+  sessionId: string
+  openCodeSessionId: string
+}
+
+export interface OpenCodeConversationResponse {
+  sessionId: string
+  session?: OpenCodeSessionSummary
   messages: OpenCodeChatItem[]
 }
 

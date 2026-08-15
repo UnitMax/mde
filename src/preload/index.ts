@@ -48,6 +48,9 @@ const api: RendererApi = {
   },
   opencode: {
     send: (req) => ipcRenderer.invoke(IpcChannels.opencodeSend, req),
+    listSessions: (req) => ipcRenderer.invoke(IpcChannels.opencodeSessionsList, req),
+    selectSession: (req) => ipcRenderer.invoke(IpcChannels.opencodeSessionSelect, req),
+    createSession: (req) => ipcRenderer.invoke(IpcChannels.opencodeSessionCreate, req),
     replyPermission: (req) => ipcRenderer.invoke(IpcChannels.opencodePermissionReply, req),
     onStream: (listener) => subscribe<OpenCodeStreamChunk>(IpcEvents.opencodeStream, listener)
   }

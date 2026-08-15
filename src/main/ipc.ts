@@ -20,6 +20,11 @@ import type {
   PathCheckResult,
   PathResolution,
   Project,
+  ListOpenCodeSessionsRequest,
+  ListOpenCodeSessionsResponse,
+  CreateOpenCodeSessionRequest,
+  OpenCodeConversationResponse,
+  SelectOpenCodeSessionRequest,
   SendOpenCodeMessageRequest,
   SendOpenCodeMessageResponse,
   SendOpenCodePermissionReplyRequest,
@@ -139,7 +144,31 @@ export function registerIpcHandlers(ptyManager: PtyManager, opencodeManager: Ope
     async (req) => {
       const session = await getSession(req.sessionId)
       if (!session) throw new Error('Session no longer exists.')
-      return { messages: await opencodeManager.send(session, req.text) }
+      return await opencodeManager.send(session, req.text)
+    }
+  )
+  handle<ListOpenCodeSessionsRequest, ListOpenCodeSessionsResponse>(
+    IpcChannels.opencodeSessionsList,
+    async (req) => {
+      const session = await getSession(req.sessionId)
+      if (!session) throw new Error('Session no longer exists.')
+      return opencodeManager.listSessions(session)
+    }
+  )
+  handle<SelectOpenCodeSessionRequest, OpenCodeConversationResponse>(
+    IpcChannels.opencodeSessionSelect,
+    async (req) => {
+      const session = await getSession(req.sessionId)
+      if (!session) throw new Error('Session no longer exists.')
+      return opencodeManager.selectSession(session, req.openCodeSessionId)
+    }
+  )
+  handle<CreateOpenCodeSessionRequest, OpenCodeConversationResponse>(
+    IpcChannels.opencodeSessionCreate,
+    async (req) => {
+      const session = await getSession(req.sessionId)
+      if (!session) throw new Error('Session no longer exists.')
+      return opencodeManager.createSession(session)
     }
   )
   handle<SendOpenCodePermissionReplyRequest, void>(

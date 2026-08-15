@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { OpenCodeChatItem, OpenCodeStreamChunk } from '../src/shared/types'
+import type { OpenCodeChatItem, OpenCodeSessionSummary, OpenCodeStreamChunk, Session } from '../src/shared/types'
 
 vi.mock('../src/renderer/terminal/sessions', () => ({ disposeSession: vi.fn() }))
 
@@ -10,6 +10,17 @@ describe('renderer workspace event bridge', () => {
   const api = {
     platform: { info: vi.fn(async () => ({ platform: 'linux', arch: 'x64' })) },
     workspace: { list: vi.fn(async () => ({ projects: [], sessions: [] })) },
+    sessions: {
+      update: vi.fn(async ({ id, patch }: { id: string; patch: Partial<Session> }) => ({
+        id,
+        projectId: 'project-1',
+        name: 'App',
+        kind: 'native' as const,
+        path: '/workspace/app',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        ...patch
+      }))
+    },
     pty: {
       statuses: vi.fn(async () => ({})),
       onExit: vi.fn(() => vi.fn())
@@ -20,6 +31,9 @@ describe('renderer workspace event bridge', () => {
     },
     opencode: {
       send: vi.fn(),
+      listSessions: vi.fn(),
+      selectSession: vi.fn(),
+      createSession: vi.fn(),
       replyPermission: vi.fn(async () => undefined),
       onStream: vi.fn((listener: (chunk: OpenCodeStreamChunk) => void) => {
         streamListeners.push(listener)
@@ -33,6 +47,11 @@ describe('renderer workspace event bridge', () => {
     vi.stubGlobal('window', { api })
     useWorkspace.setState({ opencodeChats: {} })
     api.pty.onExit.mockClear()
+    api.sessions.update.mockClear()
+    api.opencode.send.mockReset()
+    api.opencode.listSessions.mockReset()
+    api.opencode.selectSession.mockReset()
+    api.opencode.createSession.mockReset()
     api.opencode.onStream.mockClear()
     api.opencode.replyPermission.mockClear()
   })
@@ -45,10 +64,10 @@ describe('renderer workspace event bridge', () => {
 
     useWorkspace.getState().selectSession('session-1')
 
-    let resolveSend: ((value: { messages: OpenCodeChatItem[] }) => void) | undefined
+    let resolveSend: ((value: { sessionId: string; messages: OpenCodeChatItem[] }) => void) | undefined
     api.opencode.send.mockImplementation(
       () =>
-        new Promise<{ messages: OpenCodeChatItem[] }>((resolve) => {
+        new Promise<{ sessionId: string; messages: OpenCodeChatItem[] }>((resolve) => {
           resolveSend = resolve
         })
     )
@@ -141,7 +160,7 @@ describe('renderer workspace event bridge', () => {
       output: 'contents'
     })
 
-    resolveSend?.({ messages: [{ id: 'answer-1', role: 'assistant', text: 'Final answer.' }] })
+    resolveSend?.({ sessionId: 'opencode-1', messages: [{ id: 'answer-1', role: 'assistant', text: 'Final answer.' }] })
     await send
     expect(useWorkspace.getState().opencodeChats['session-1']?.liveItems).toEqual([])
     expect(useWorkspace.getState().opencodeChats['session-1']?.unreadCompletion).toBe(false)
@@ -152,16 +171,16 @@ describe('renderer workspace event bridge', () => {
     })
 
     useWorkspace.getState().selectSession('session-2')
-    let resolveAway: ((value: { messages: OpenCodeChatItem[] }) => void) | undefined
+    let resolveAway: ((value: { sessionId: string; messages: OpenCodeChatItem[] }) => void) | undefined
     api.opencode.send.mockImplementationOnce(
       () =>
-        new Promise<{ messages: OpenCodeChatItem[] }>((resolve) => {
+        new Promise<{ sessionId: string; messages: OpenCodeChatItem[] }>((resolve) => {
           resolveAway = resolve
         })
     )
     const awaySend = useWorkspace.getState().sendOpenCodeMessage('session-1', 'follow up')
     await Promise.resolve()
-    resolveAway?.({ messages: [] })
+    resolveAway?.({ sessionId: 'opencode-1', messages: [] })
     await awaySend
     expect(useWorkspace.getState().opencodeChats['session-1']?.unreadCompletion).toBe(true)
 
@@ -174,6 +193,95 @@ describe('renderer workspace event bridge', () => {
     expect(useWorkspace.getState().opencodeChats['session-1']).toMatchObject({
       error: 'OpenCode failed',
       unreadCompletion: true
+    })
+  })
+
+  it('loads, switches, and persists existing OpenCode conversations', async () => {
+    const first: OpenCodeSessionSummary = {
+      id: 'opencode-1',
+      title: 'Earlier work',
+      directory: '/workspace/app',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-02T00:00:00.000Z'
+    }
+    const second: OpenCodeSessionSummary = {
+      ...first,
+      id: 'opencode-2',
+      title: 'Latest work',
+      updatedAt: '2026-01-03T00:00:00.000Z'
+    }
+    api.opencode.listSessions.mockResolvedValue({
+      sessions: [second, first],
+      selectedSessionId: first.id
+    })
+    api.opencode.selectSession.mockResolvedValue({
+      sessionId: first.id,
+      session: first,
+      messages: [{ id: 'history-1', role: 'user', text: 'Old prompt' }]
+    })
+
+    useWorkspace.setState({
+      sessions: [
+        {
+          id: 'session-1',
+          projectId: 'project-1',
+          name: 'App',
+          kind: 'native',
+          path: '/workspace/app',
+          createdAt: '2026-01-01T00:00:00.000Z'
+        }
+      ],
+      opencodeChats: {}
+    })
+
+    await useWorkspace.getState().loadOpenCodeSessions('session-1')
+    expect(api.opencode.selectSession).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      openCodeSessionId: first.id
+    })
+    expect(useWorkspace.getState().opencodeChats['session-1']).toMatchObject({
+      openCodeSessionId: first.id,
+      messages: [{ id: 'history-1', role: 'user', text: 'Old prompt' }],
+      availableSessions: [second, first],
+      sessionsLoading: false
+    })
+    expect(api.sessions.update).toHaveBeenCalledWith({
+      id: 'session-1',
+      patch: { opencodeSessionId: first.id }
+    })
+
+    api.opencode.selectSession.mockResolvedValueOnce({
+      sessionId: second.id,
+      session: second,
+      messages: [{ id: 'history-2', role: 'assistant', text: 'New branch' }]
+    })
+    await useWorkspace.getState().selectOpenCodeSession('session-1', second.id)
+    expect(useWorkspace.getState().opencodeChats['session-1']).toMatchObject({
+      openCodeSessionId: second.id,
+      messages: [{ id: 'history-2', role: 'assistant', text: 'New branch' }]
+    })
+  })
+
+  it('creates a new conversation without deleting the existing list', async () => {
+    const created: OpenCodeSessionSummary = {
+      id: 'opencode-new',
+      title: 'App',
+      directory: '/workspace/app',
+      createdAt: '2026-01-04T00:00:00.000Z',
+      updatedAt: '2026-01-04T00:00:00.000Z'
+    }
+    api.opencode.createSession.mockResolvedValue({
+      sessionId: created.id,
+      session: created,
+      messages: []
+    })
+    useWorkspace.setState({ opencodeChats: {} })
+
+    await useWorkspace.getState().createOpenCodeSession('session-1')
+    expect(useWorkspace.getState().opencodeChats['session-1']).toMatchObject({
+      openCodeSessionId: created.id,
+      messages: [],
+      availableSessions: [created]
     })
   })
 })

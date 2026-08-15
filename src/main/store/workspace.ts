@@ -81,6 +81,7 @@ export function validateSession(raw: unknown, projectIds: Set<string>): Session 
   }
   if (r.kind === 'wsl' && isNonEmptyString(r.distro)) session.distro = r.distro
   if (isNonEmptyString(r.shell)) session.shell = r.shell
+  if (isNonEmptyString(r.opencodeSessionId)) session.opencodeSessionId = r.opencodeSessionId
   return session
 }
 
@@ -238,6 +239,10 @@ export async function updateSession(req: UpdateSessionRequest): Promise<Session 
   if (req.patch.shell !== undefined) {
     if (req.patch.shell.trim()) updated.shell = req.patch.shell.trim()
     else delete updated.shell
+  }
+  if (req.patch.opencodeSessionId !== undefined) {
+    if (req.patch.opencodeSessionId.trim()) updated.opencodeSessionId = req.patch.opencodeSessionId.trim()
+    else delete updated.opencodeSessionId
   }
 
   const sessions = [...workspace.sessions]

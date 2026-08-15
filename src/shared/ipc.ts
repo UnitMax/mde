@@ -11,6 +11,11 @@ import type {
   SendOpenCodeMessageRequest,
   SendOpenCodeMessageResponse,
   SendOpenCodePermissionReplyRequest,
+  ListOpenCodeSessionsRequest,
+  ListOpenCodeSessionsResponse,
+  CreateOpenCodeSessionRequest,
+  OpenCodeConversationResponse,
+  SelectOpenCodeSessionRequest,
   OpenCodeStreamChunk,
   PtyDataChunk,
   PtyExitInfo,
@@ -54,6 +59,9 @@ export const IpcChannels = {
   pathReveal: 'path:reveal',
 
   opencodeSend: 'opencode:send',
+  opencodeSessionsList: 'opencode:sessions-list',
+  opencodeSessionSelect: 'opencode:session-select',
+  opencodeSessionCreate: 'opencode:session-create',
   opencodePermissionReply: 'opencode:permission-reply',
 
   platformInfo: 'platform:info'
@@ -106,7 +114,7 @@ export interface UpdateProjectRequest {
 
 export interface UpdateSessionRequest {
   id: string
-  patch: Partial<Pick<Session, 'name' | 'path' | 'shell'>>
+  patch: Partial<Pick<Session, 'name' | 'path' | 'shell' | 'opencodeSessionId'>>
 }
 
 export interface MoveSessionRequest {
@@ -158,6 +166,9 @@ export interface RendererApi {
   }
   opencode: {
     send(req: SendOpenCodeMessageRequest): Promise<SendOpenCodeMessageResponse>
+    listSessions(req: ListOpenCodeSessionsRequest): Promise<ListOpenCodeSessionsResponse>
+    selectSession(req: SelectOpenCodeSessionRequest): Promise<OpenCodeConversationResponse>
+    createSession(req: CreateOpenCodeSessionRequest): Promise<OpenCodeConversationResponse>
     replyPermission(req: SendOpenCodePermissionReplyRequest): Promise<void>
     /** Live text, reasoning, and tool-part updates while `send` is in flight. */
     onStream(listener: (chunk: OpenCodeStreamChunk) => void): () => void

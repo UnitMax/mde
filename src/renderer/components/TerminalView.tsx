@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowUp, ChevronRight, RotateCw } from 'lucide-react'
+import { ArrowUp, ChevronRight, RefreshCw, RotateCw } from 'lucide-react'
 import type {
   OpenCodeLiveChatItem,
   OpenCodeLivePermissionMessage,
@@ -19,6 +19,7 @@ import { attachSession, detachSession, fitSession, getSession } from '@/terminal
 
 const FALLBACK_SIZE: PtySize = { cols: 80, rows: 24 }
 const RESIZE_DEBOUNCE_MS = 100
+const NEW_CONVERSATION_VALUE = '__new-opencode-conversation__'
 
 interface TerminalViewProps {
   session: Session
@@ -137,6 +138,12 @@ function formatThinkingDuration(durationMs: number): string {
   return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`
 }
 
+function formatConversationDate(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
 function ReasoningMessageView({
   message,
   live = false
@@ -232,13 +239,23 @@ function GuiView({ session }: { session: Session }): JSX.Element {
   const [draft, setDraft] = useState('')
   const chat = useWorkspace((state) => state.opencodeChats[session.id])
   const sendOpenCodeMessage = useWorkspace((state) => state.sendOpenCodeMessage)
+  const loadOpenCodeSessions = useWorkspace((state) => state.loadOpenCodeSessions)
+  const selectOpenCodeSession = useWorkspace((state) => state.selectOpenCodeSession)
+  const createOpenCodeSession = useWorkspace((state) => state.createOpenCodeSession)
   const replyOpenCodePermission = useWorkspace((state) => state.replyOpenCodePermission)
   const nativeSession = session.kind === 'native'
   const pending = chat?.pending ?? false
   const error = chat?.error ?? null
   const messages = chat?.messages ?? []
   const liveItems = chat?.liveItems ?? []
+  const availableSessions = chat?.availableSessions ?? []
+  const openCodeSessionId = chat?.openCodeSessionId ?? null
+  const sessionsLoading = chat?.sessionsLoading ?? false
   const logRef = useRef<HTMLOListElement>(null)
+
+  useEffect(() => {
+    if (nativeSession) void loadOpenCodeSessions(session.id)
+  }, [loadOpenCodeSessions, nativeSession, session.id])
 
   useEffect(() => {
     const log = logRef.current
@@ -256,6 +273,14 @@ function GuiView({ session }: { session: Session }): JSX.Element {
 
   const replyPermission = (requestId: string, reply: OpenCodePermissionReply): void => {
     void replyOpenCodePermission(session.id, requestId, reply)
+  }
+
+  const selectConversation = (value: string): void => {
+    if (value === NEW_CONVERSATION_VALUE) {
+      void createOpenCodeSession(session.id)
+      return
+    }
+    void selectOpenCodeSession(session.id, value)
   }
 
   return (
@@ -299,6 +324,11 @@ function GuiView({ session }: { session: Session }): JSX.Element {
             Nemotron is responding…
           </li>
         )}
+        {!pending && sessionsLoading && messages.length === 0 && (
+          <li className="max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
+            Loading OpenCode conversations…
+          </li>
+        )}
       </ol>
 
       <div className="shrink-0 border-t border-line bg-panel px-3 py-3">
@@ -325,31 +355,68 @@ function GuiView({ session }: { session: Session }): JSX.Element {
               }
             }}
             placeholder="Message Nemotron..."
-            disabled={!nativeSession || pending}
+            disabled={!nativeSession || pending || sessionsLoading}
             className="block min-h-[68px] max-h-48 w-full resize-none overflow-y-auto rounded-t-xl border-0 bg-transparent px-4 pb-2 pt-3 text-[13px] text-fg placeholder:text-fg-subtle focus:outline-none focus:ring-0 disabled:cursor-not-allowed disabled:opacity-50"
           />
 
           <div className="flex items-center justify-between gap-2 px-2 pb-2">
-            <Select value="opencode/nemotron-3.5-lightning-free" disabled>
-              <SelectTrigger
-                aria-label="Model"
-                className="h-7 w-auto min-w-0 max-w-[calc(100%-3rem)] border-0 bg-transparent px-2 text-xs text-fg-muted shadow-none hover:bg-hover hover:text-fg"
+            <div className="flex min-w-0 items-center gap-1">
+              <Select
+                value={openCodeSessionId ?? NEW_CONVERSATION_VALUE}
+                onValueChange={selectConversation}
+                disabled={!nativeSession || pending || sessionsLoading}
               >
-                <SelectValue className="truncate" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="opencode/nemotron-3.5-lightning-free">
-                  Nemotron 3.5 Lightning · OpenCode Zen
-                </SelectItem>
-              </SelectContent>
-            </Select>
+                <SelectTrigger
+                  aria-label="OpenCode conversation"
+                  className="h-7 w-[220px] min-w-0 border-0 bg-transparent px-2 text-xs text-fg-muted shadow-none hover:bg-hover hover:text-fg"
+                >
+                  <SelectValue placeholder="New conversation" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableSessions.map((conversation) => (
+                    <SelectItem key={conversation.id} value={conversation.id}>
+                      <span className="flex max-w-[260px] items-center gap-2">
+                        <span className="truncate">{conversation.title}</span>
+                        <span className="shrink-0 text-[10px] text-fg-subtle">
+                          {formatConversationDate(conversation.updatedAt)}
+                        </span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                  <SelectItem value={NEW_CONVERSATION_VALUE}>New conversation</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Refresh OpenCode conversations"
+                title="Refresh OpenCode conversations"
+                disabled={!nativeSession || pending || sessionsLoading}
+                onClick={() => void loadOpenCodeSessions(session.id)}
+              >
+                <RefreshCw className={sessionsLoading ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'} />
+              </Button>
+              <Select value="opencode/nemotron-3.5-lightning-free" disabled>
+                <SelectTrigger
+                  aria-label="Model"
+                  className="h-7 w-auto min-w-0 max-w-[220px] border-0 bg-transparent px-2 text-xs text-fg-muted shadow-none hover:bg-hover hover:text-fg"
+                >
+                  <SelectValue className="truncate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="opencode/nemotron-3.5-lightning-free">
+                    Nemotron 3.5 Lightning · OpenCode Zen
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
             <Button
               size="icon"
               aria-label="Send message"
               title="Send message"
               className="h-8 w-8 shrink-0 rounded-lg"
-              disabled={!nativeSession || pending || !draft.trim()}
+              disabled={!nativeSession || pending || sessionsLoading || !draft.trim()}
               onClick={send}
             >
               <ArrowUp className="h-4 w-4" />
