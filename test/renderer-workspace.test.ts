@@ -101,6 +101,7 @@ describe('renderer workspace event bridge', () => {
         'session-1': {
           messages: [],
           contextUsage: null,
+          compacting: false,
           availableSessions: [],
           availableModels: [model],
           selectedModel: model,
@@ -134,6 +135,17 @@ describe('renderer workspace event bridge', () => {
     expect(streamListeners).toHaveLength(1)
     expect(useWorkspace.getState().opencodeChats['session-1']?.pending).toBe(true)
     expect(api.opencode.send).toHaveBeenCalledWith({ sessionId: 'session-1', text: 'hello', model })
+
+    streamListeners[0]?.({
+      sessionId: 'session-1',
+      item: { kind: 'compaction', status: 'started', automatic: true }
+    })
+    expect(useWorkspace.getState().opencodeChats['session-1']?.compacting).toBe(true)
+    streamListeners[0]?.({
+      sessionId: 'session-1',
+      item: { kind: 'compaction', status: 'completed', automatic: true }
+    })
+    expect(useWorkspace.getState().opencodeChats['session-1']?.compacting).toBe(false)
 
     streamListeners[0]?.({
       sessionId: 'session-1',
@@ -395,6 +407,7 @@ describe('renderer workspace event bridge', () => {
         'session-1': {
           messages: [{ id: 'old', role: 'assistant', text: 'Old transcript' }],
           contextUsage: null,
+          compacting: false,
           availableSessions: [conversation],
           availableModels: [model],
           selectedModel: model,
@@ -604,6 +617,7 @@ describe('renderer workspace event bridge', () => {
         'session-1': {
           messages: [],
           contextUsage: null,
+          compacting: false,
           availableSessions: [conversation],
           availableModels: [],
           selectedModel: null,
@@ -653,6 +667,7 @@ describe('renderer workspace event bridge', () => {
         'session-1': {
           messages: [],
           contextUsage: null,
+          compacting: false,
           availableSessions: [],
           availableModels: [model],
           selectedModel: model,
@@ -767,6 +782,7 @@ describe('renderer workspace event bridge', () => {
         'session-1': {
           messages: beforeUndo,
           contextUsage: null,
+          compacting: false,
           availableSessions: [],
           availableModels: [model],
           selectedModel: model,

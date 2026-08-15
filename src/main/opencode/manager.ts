@@ -91,6 +91,8 @@ export class OpenCodeStreamTracker {
   private readonly subagents = new Map<string, OpenCodeSubagent>()
   private readonly taskToSubagent = new Map<string, string>()
   private lastTextPartId: string | null = null
+  private compactionActive = false
+  private compactionAutomatic = true
 
   constructor(private sessionId: string | null) {}
 
@@ -104,6 +106,8 @@ export class OpenCodeStreamTracker {
     this.subagents.clear()
     this.taskToSubagent.clear()
     this.lastTextPartId = null
+    this.compactionActive = false
+    this.compactionAutomatic = true
   }
 
   /** Returns a normalized update for this event, or null if it is irrelevant. */
@@ -111,6 +115,14 @@ export class OpenCodeStreamTracker {
     const payload = unwrapEvent(event)
     if (!isRecord(payload) || !isRecord(payload.properties)) return null
     const properties = payload.properties
+
+    if (payload.type === 'session.compacted') {
+      const sessionId = stringValue(properties.sessionID)
+      if (sessionId !== this.sessionId) return null
+      const automatic = this.compactionAutomatic
+      this.compactionActive = false
+      return { kind: 'compaction', status: 'completed', automatic }
+    }
 
     if (payload.type === 'permission.replied') {
       const sessionId = stringValue(properties.sessionID)
@@ -182,6 +194,11 @@ export class OpenCodeStreamTracker {
             ? properties.status.type
             : undefined
       if (sessionId === this.sessionId) {
+        if (this.compactionActive && status === 'idle') {
+          const automatic = this.compactionAutomatic
+          this.compactionActive = false
+          return { kind: 'compaction', status: 'completed', automatic }
+        }
         if (status === 'busy' || status === 'retry') return { kind: 'status', status: 'busy' }
         if (status === 'idle') return { kind: 'status', status: 'idle' }
         return null
@@ -194,6 +211,11 @@ export class OpenCodeStreamTracker {
 
     if (payload.type === 'session.error') {
       const sessionId = stringValue(properties.sessionID)
+      if (sessionId === this.sessionId && this.compactionActive) {
+        const automatic = this.compactionAutomatic
+        this.compactionActive = false
+        return { kind: 'compaction', status: 'error', automatic }
+      }
       if (!sessionId || !this.childSessions.has(sessionId)) return null
       return this.updateSubagent(sessionId, 'error')
     }
@@ -206,6 +228,15 @@ export class OpenCodeStreamTracker {
       const subagent = this.acceptTaskPart(part, partSessionId)
       if (subagent) return subagent
       if (partSessionId !== this.sessionId) return null
+      if (part.type === 'compaction') {
+        this.compactionActive = true
+        this.compactionAutomatic = part.auto !== false
+        return {
+          kind: 'compaction',
+          status: 'started',
+          automatic: this.compactionAutomatic
+        }
+      }
       if (this.isUserMessage(partSessionId, part.messageID)) return null
       this.partTypes.set(part.id, part.type)
 

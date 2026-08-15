@@ -26,6 +26,7 @@ import { disposeSession } from '@/terminal/sessions'
 export interface OpenCodeChatState {
   messages: OpenCodeChatItem[]
   contextUsage: OpenCodeContextUsage | null
+  compacting: boolean
   availableSessions: OpenCodeSessionSummary[]
   availableModels: OpenCodeModelOption[]
   selectedModel: OpenCodeModelSelection | null
@@ -47,6 +48,7 @@ export interface OpenCodeChatState {
 const EMPTY_CHAT: OpenCodeChatState = {
   messages: [],
   contextUsage: null,
+  compacting: false,
   availableSessions: [],
   availableModels: [],
   selectedModel: null,
@@ -67,7 +69,7 @@ const EMPTY_CHAT: OpenCodeChatState = {
 let eventBridgeReady = false
 
 function upsertLiveItem(items: OpenCodeLiveChatItem[], item: OpenCodeStreamChunk['item']): OpenCodeLiveChatItem[] {
-  if (item.kind === 'subagent' || item.kind === 'status') return items
+  if (item.kind === 'subagent' || item.kind === 'status' || item.kind === 'compaction') return items
   const id = item.kind === 'permission' ? item.requestId : item.partId
   const index = items.findIndex((current) => current.id === id)
 
@@ -580,6 +582,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
           [sessionId]: {
             ...previous,
             messages: [...previous.messages, userMessage],
+            compacting: false,
             liveItems: retainActiveSubagentPermissions(previous.liveItems, previous.subagents),
             subagents: previous.subagents.filter(subagentIsActive),
             pending: true,
@@ -620,6 +623,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               })(),
               openCodeSessionId,
               contextUsage: contextUsage ?? null,
+              compacting: false,
               pending: false,
               revert: null,
               externalBusy: false,
@@ -642,6 +646,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
             [sessionId]: {
               ...current,
               pending: false,
+              compacting: false,
               error: message,
               liveItems: retainActiveSubagentPermissions(current.liveItems, current.subagents),
               unreadCompletion: state.selectedSessionId !== sessionId
@@ -673,6 +678,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
           ...state.opencodeChats,
           [sessionId]: {
             ...previous,
+            compacting: false,
             liveItems: retainActiveSubagentPermissions(previous.liveItems, previous.subagents),
             subagents: previous.subagents.filter(subagentIsActive),
             pending: true,
@@ -700,6 +706,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               ...chat,
               messages: result.messages,
               contextUsage: result.contextUsage ?? null,
+              compacting: false,
               openCodeSessionId: result.sessionId,
               pending: false,
               revert: result.revert,
@@ -724,6 +731,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
             [sessionId]: {
               ...chat,
               pending: false,
+              compacting: false,
               error: message,
               liveItems: retainActiveSubagentPermissions(chat.liveItems, chat.subagents),
               unreadCompletion: state.selectedSessionId !== sessionId
@@ -770,6 +778,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               ...chat,
               messages: result.messages,
               contextUsage: result.contextUsage ?? null,
+              compacting: false,
               openCodeSessionId: result.sessionId,
               revert: result.revert,
               undoSupported: result.undoSupported,
@@ -830,6 +839,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               ...chat,
               messages: result.messages,
               contextUsage: result.contextUsage ?? null,
+              compacting: false,
               openCodeSessionId: result.sessionId,
               revert: result.revert,
               undoSupported: result.undoSupported,
@@ -930,6 +940,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               ...previous,
               messages: result.messages,
               contextUsage: result.contextUsage ?? null,
+              compacting: false,
               availableSessions: result.session
                 ? previous.availableSessions.some((item) => item.id === result.session?.id)
                   ? previous.availableSessions.map((item) =>
@@ -994,6 +1005,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               ...previous,
               messages: [],
               contextUsage: null,
+              compacting: false,
               availableSessions: result.session
                 ? [result.session, ...previous.availableSessions.filter((item) => item.id !== result.sessionId)]
                 : previous.availableSessions,
@@ -1136,6 +1148,15 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
           opencodeChats: {
             ...state.opencodeChats,
             [sessionId]: { ...current, externalBusy: item.status === 'busy' }
+          }
+        }
+      }
+
+      if (item.kind === 'compaction') {
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: { ...current, compacting: item.status === 'started' }
           }
         }
       }

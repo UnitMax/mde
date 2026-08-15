@@ -222,6 +222,11 @@ export type OpenCodeStreamItem =
       kind: 'status'
       status: 'busy' | 'idle'
     }
+  | {
+      kind: 'compaction'
+      status: 'started' | 'completed' | 'error'
+      automatic: boolean
+    }
 
 /** A normalized live OpenCode part update pushed over the existing IPC stream. */
 export interface OpenCodeStreamChunk {

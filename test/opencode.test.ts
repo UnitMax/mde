@@ -445,6 +445,51 @@ describe('OpenCode event stream', () => {
     ).toEqual({ kind: 'text', partId: 'prt_text', delta: 'Hello' })
   })
 
+  it('tracks automatic compaction from start through completion', () => {
+    const tracker = new OpenCodeStreamTracker('ses_1')
+
+    expect(
+      tracker.accept({
+        type: 'message.part.updated',
+        properties: {
+          part: {
+            id: 'compaction-1',
+            sessionID: 'ses_1',
+            messageID: 'user-1',
+            type: 'compaction',
+            auto: true
+          }
+        }
+      })
+    ).toEqual({ kind: 'compaction', status: 'started', automatic: true })
+
+    expect(
+      tracker.accept({ type: 'session.compacted', properties: { sessionID: 'ses_other' } })
+    ).toBeNull()
+    expect(tracker.accept({ type: 'session.compacted', properties: { sessionID: 'ses_1' } })).toEqual({
+      kind: 'compaction',
+      status: 'completed',
+      automatic: true
+    })
+  })
+
+  it('reports compaction errors and preserves manual compaction metadata', () => {
+    const tracker = new OpenCodeStreamTracker('ses_1')
+    expect(
+      tracker.accept({
+        type: 'message.part.updated',
+        properties: {
+          part: { id: 'compaction-1', sessionID: 'ses_1', type: 'compaction', auto: false }
+        }
+      })
+    ).toEqual({ kind: 'compaction', status: 'started', automatic: false })
+    expect(tracker.accept({ type: 'session.error', properties: { sessionID: 'ses_1' } })).toEqual({
+      kind: 'compaction',
+      status: 'error',
+      automatic: false
+    })
+  })
+
   it('deduplicates cumulative snapshots and streams reasoning updates live', () => {
     const tracker = new OpenCodeStreamTracker('ses_1')
     const update = (text: string, delta?: string): unknown => ({

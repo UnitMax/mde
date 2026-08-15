@@ -587,6 +587,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
   const redoOpenCodeLastTurn = useWorkspace((state) => state.redoOpenCodeLastTurn)
   const nativeSession = session.kind === 'native'
   const pending = chat?.pending ?? false
+  const compacting = chat?.compacting ?? false
   const error = chat?.error ?? null
   const messages = chat?.messages ?? []
   const liveItems = chat?.liveItems ?? []
@@ -742,7 +743,15 @@ function GuiView({ session }: { session: Session }): JSX.Element {
             assistantLabel={assistantLabel}
           />
         ))}
-        {pending && liveItems.length === 0 && (
+        {compacting && (
+          <li
+            aria-live="polite"
+            className="max-w-[80%] rounded border border-accent/30 bg-accent/5 px-3 py-2 text-xs text-fg-subtle"
+          >
+            Compacting context…
+          </li>
+        )}
+        {pending && !compacting && liveItems.length === 0 && (
           <li className="max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
             {externalBusy ? 'OpenCode is busy in another client…' : 'OpenCode is responding…'}
           </li>
