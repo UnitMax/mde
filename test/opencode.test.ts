@@ -3,6 +3,7 @@ import {
   BIG_PICKLE_MODEL,
   createPromptBody,
   describeResponseParts,
+  extractToolMessages,
   extractTextParts,
   OPENCODE_INLINE_CONFIG,
   parseServerUrl
@@ -54,5 +55,58 @@ describe('OpenCode GUI protocol helpers', () => {
     )
     expect(describeResponseParts([])).toBe('none')
     expect(describeResponseParts(undefined)).toBe('none')
+  })
+
+  it('extracts only tool calls from the current turn', () => {
+    expect(
+      extractToolMessages(
+        [
+          {
+            info: { id: 'old-assistant', parentID: 'old-user', role: 'assistant' },
+            parts: [
+              {
+                id: 'old-tool',
+                type: 'tool',
+                tool: 'read',
+                state: { status: 'completed', input: { filePath: '/old' }, output: 'old output' }
+              }
+            ]
+          },
+          {
+            info: { id: 'tool-assistant', parentID: 'current-user', role: 'assistant' },
+            parts: [
+              {
+                id: 'current-tool',
+                type: 'tool',
+                tool: 'read',
+                state: {
+                  status: 'completed',
+                  input: { filePath: '/workspace' },
+                  output: 'file listing',
+                  title: 'List directory'
+                }
+              },
+              { id: 'reasoning', type: 'reasoning', text: 'not shown' }
+            ]
+          },
+          {
+            info: { id: 'final-assistant', parentID: 'current-user', role: 'assistant' },
+            parts: [{ id: 'final-text', type: 'text', text: 'Here are the files.' }]
+          }
+        ],
+        'current-user',
+        'final-assistant'
+      )
+    ).toEqual([
+      {
+        id: 'current-tool',
+        role: 'tool',
+        tool: 'read',
+        status: 'completed',
+        input: { filePath: '/workspace' },
+        title: 'List directory',
+        output: 'file listing'
+      }
+    ])
   })
 })

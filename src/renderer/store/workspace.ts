@@ -4,6 +4,7 @@ import type {
   Distro,
   NewProject,
   NewSession,
+  OpenCodeChatItem,
   OpenCodeChatMessage,
   Project,
   PtyExitInfo,
@@ -13,7 +14,7 @@ import type {
 import { disposeSession } from '@/terminal/sessions'
 
 export interface OpenCodeChatState {
-  messages: OpenCodeChatMessage[]
+  messages: OpenCodeChatItem[]
   pending: boolean
   error: string | null
 }
@@ -220,14 +221,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     })
 
     try {
-      const { message } = await window.api.opencode.send({ sessionId, text: prompt })
+      const { messages } = await window.api.opencode.send({ sessionId, text: prompt })
       set((state) => {
         const current = state.opencodeChats[sessionId]
         if (!current) return state
         return {
           opencodeChats: {
             ...state.opencodeChats,
-            [sessionId]: { ...current, messages: [...current.messages, message], pending: false }
+            [sessionId]: { ...current, messages: [...current.messages, ...messages], pending: false }
           }
         }
       })

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { RotateCw } from 'lucide-react'
-import type { PtySize, Session } from '@shared/types'
+import type { OpenCodeToolMessage, PtySize, Session } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useWorkspace } from '@/store/workspace'
@@ -67,6 +67,47 @@ function TerminalSurface({ session: selectedSession }: TerminalSurfaceProps): JS
   return <div ref={hostRef} className="terminal-host relative min-h-0 flex-1 overflow-hidden" />
 }
 
+function formatToolInput(input: Record<string, unknown>): string {
+  try {
+    return JSON.stringify(input, null, 2) ?? '{}'
+  } catch {
+    return '{}'
+  }
+}
+
+function ToolMessageView({ message }: { message: OpenCodeToolMessage }): JSX.Element {
+  const statusClass = message.status === 'error' ? 'text-danger' : 'text-fg-subtle'
+
+  return (
+    <li className="max-w-[90%] rounded border border-line bg-panel px-3 py-2 text-fg-muted">
+      <details>
+        <summary className="cursor-pointer select-none text-xs">
+          <span className="font-medium text-fg">{message.tool}</span>
+          <span className={`ml-2 ${statusClass}`}>{message.status}</span>
+        </summary>
+        <div className="mt-2 space-y-2 border-t border-line pt-2 text-xs">
+          {message.title && <p className="text-fg-subtle">{message.title}</p>}
+          <div>
+            <p className="mb-1 font-medium text-fg-subtle">Input</p>
+            <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded bg-bg p-2 text-[11px] text-fg-muted">
+              {formatToolInput(message.input)}
+            </pre>
+          </div>
+          {message.output && (
+            <div>
+              <p className="mb-1 font-medium text-fg-subtle">Output</p>
+              <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-bg p-2 text-[11px] text-fg-muted">
+                {message.output}
+              </pre>
+            </div>
+          )}
+          {message.error && <p className="whitespace-pre-wrap text-danger">{message.error}</p>}
+        </div>
+      </details>
+    </li>
+  )
+}
+
 function GuiView({ session }: { session: Session }): JSX.Element {
   const [draft, setDraft] = useState('')
   const chat = useWorkspace((state) => state.opencodeChats[session.id])
@@ -86,21 +127,25 @@ function GuiView({ session }: { session: Session }): JSX.Element {
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-bg">
       <ol className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3" aria-label="OpenCode conversation">
-        {messages.map((message) => (
-          <li
-            key={message.id}
-            className={
-              message.role === 'user'
-                ? 'ml-auto max-w-[80%] rounded bg-active px-3 py-2 text-fg'
-                : 'max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-fg-muted'
-            }
-          >
-            <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
-              {message.role === 'user' ? 'You' : 'Big Pickle'}
-            </p>
-            <p className="whitespace-pre-wrap text-[13px]">{message.text}</p>
-          </li>
-        ))}
+        {messages.map((message) =>
+          message.role === 'tool' ? (
+            <ToolMessageView key={message.id} message={message} />
+          ) : (
+            <li
+              key={message.id}
+              className={
+                message.role === 'user'
+                  ? 'ml-auto max-w-[80%] rounded bg-active px-3 py-2 text-fg'
+                  : 'max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-fg-muted'
+              }
+            >
+              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
+                {message.role === 'user' ? 'You' : 'Big Pickle'}
+              </p>
+              <p className="whitespace-pre-wrap text-[13px]">{message.text}</p>
+            </li>
+          )
+        )}
         {pending && (
           <li className="max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
             Big Pickle is responding…

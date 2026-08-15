@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import type { OpenCodeChatMessage, Session } from '@shared/types'
+import type { OpenCodeChatItem, OpenCodeToolMessage, Session } from '@shared/types'
 
 export const BIG_PICKLE_MODEL = { providerID: 'opencode', modelID: 'big-pickle' } as const
 export const OPENCODE_INLINE_CONFIG = {
@@ -14,7 +14,9 @@ export const OPENCODE_INLINE_CONFIG = {
 } as const
 const SERVER_START_TIMEOUT_MS = 10_000
 const REQUEST_TIMEOUT_MS = 120_000
+const HISTORY_REQUEST_TIMEOUT_MS = 10_000
 const MAX_DIAGNOSTIC_LENGTH = 1_000
+const MAX_TOOL_OUTPUT_LENGTH = 4_000
 
 interface OpenCodeRuntime {
   child: ChildProcessWithoutNullStreams
@@ -29,7 +31,17 @@ interface OpenCodeSessionResponse {
 interface OpenCodePromptResponse {
   info: {
     id: string
+    parentID?: string
     error?: unknown
+  }
+  parts: unknown
+}
+
+interface OpenCodeHistoryMessage {
+  info: {
+    id: string
+    parentID?: string
+    role?: string
   }
   parts: unknown
 }
@@ -38,8 +50,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
-function clip(value: string): string {
-  return value.length > MAX_DIAGNOSTIC_LENGTH ? `${value.slice(0, MAX_DIAGNOSTIC_LENGTH)}…` : value
+function clip(value: string, maxLength = MAX_DIAGNOSTIC_LENGTH): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value
 }
 
 function errorMessage(value: unknown): string {
@@ -68,6 +80,60 @@ export function describeResponseParts(parts: unknown): string {
     parts.map((part) => (isRecord(part) && typeof part.type === 'string' ? part.type : 'unknown'))
   )
   return [...types].join(', ')
+}
+
+function toolStatus(value: unknown): OpenCodeToolMessage['status'] {
+  if (value === 'pending' || value === 'running' || value === 'completed' || value === 'error') {
+    return value
+  }
+  return 'error'
+}
+
+/** Converts tool parts from the current OpenCode turn into renderer-safe chat items. */
+export function extractToolMessages(
+  history: unknown,
+  parentId: string,
+  finalMessageId: string
+): OpenCodeToolMessage[] {
+  if (!Array.isArray(history)) return []
+
+  const messages: OpenCodeToolMessage[] = []
+  for (const entry of history) {
+    if (!isRecord(entry) || !isRecord(entry.info)) continue
+    if (
+      entry.info.id === finalMessageId ||
+      entry.info.parentID !== parentId ||
+      entry.info.role !== 'assistant' ||
+      !Array.isArray(entry.parts)
+    ) {
+      continue
+    }
+
+    for (const part of entry.parts) {
+      if (!isRecord(part) || part.type !== 'tool' || typeof part.id !== 'string' || typeof part.tool !== 'string') {
+        continue
+      }
+
+      const state = isRecord(part.state) ? part.state : {}
+      const input = isRecord(state.input) ? state.input : {}
+      const title = typeof state.title === 'string' && state.title ? state.title : undefined
+      const output = typeof state.output === 'string' ? clip(state.output, MAX_TOOL_OUTPUT_LENGTH) : undefined
+      const error = typeof state.error === 'string' ? clip(state.error, MAX_TOOL_OUTPUT_LENGTH) : undefined
+
+      messages.push({
+        id: part.id,
+        role: 'tool',
+        tool: part.tool,
+        status: toolStatus(state.status),
+        input,
+        ...(title ? { title } : {}),
+        ...(output ? { output } : {}),
+        ...(error ? { error } : {})
+      })
+    }
+  }
+
+  return messages
 }
 
 export function createPromptBody(text: string): {
@@ -101,14 +167,16 @@ async function requestJson<T>(
   url: string,
   path: string,
   body: unknown,
-  timeoutMs: number
+  timeoutMs: number,
+  method: 'GET' | 'POST' = 'POST'
 ): Promise<T> {
   let response: Response
   try {
+    const serializedBody = body === undefined ? undefined : JSON.stringify(body)
     response = await fetch(`${url}${path}`, {
-      method: 'POST',
+      method,
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
+      ...(serializedBody === undefined ? {} : { body: serializedBody }),
       signal: AbortSignal.timeout(timeoutMs)
     })
   } catch (error) {
@@ -139,7 +207,7 @@ function providerError(error: unknown): string {
 }
 
 /**
- * Runs one local, text-only OpenCode server for each native mde session. The
+ * Runs one local OpenCode server for each native mde session. The
  * server and OpenCode session live only for this mde process; no credentials
  * cross the Electron boundary.
  */
@@ -149,7 +217,7 @@ export class OpenCodeManager {
   private readonly children = new Map<string, ChildProcessWithoutNullStreams>()
   private readonly pending = new Set<string>()
 
-  async send(session: Session, text: string): Promise<OpenCodeChatMessage> {
+  async send(session: Session, text: string): Promise<OpenCodeChatItem[]> {
     const prompt = text.trim()
     if (!prompt) throw new Error('Message cannot be empty.')
     if (session.kind !== 'native') {
@@ -173,7 +241,23 @@ export class OpenCodeManager {
         throw new Error(`OpenCode returned no visible text (response parts: ${describeResponseParts(response.parts)}).`)
       }
 
-      return { id: response.info.id, role: 'assistant', text: reply }
+      let toolMessages: OpenCodeToolMessage[] = []
+      if (response.info.parentID) {
+        try {
+          const history = await requestJson<OpenCodeHistoryMessage[]>(
+            runtime.url,
+            `/session/${encodeURIComponent(runtime.sessionId)}/message`,
+            undefined,
+            HISTORY_REQUEST_TIMEOUT_MS,
+            'GET'
+          )
+          toolMessages = extractToolMessages(history, response.info.parentID, response.info.id)
+        } catch {
+          // The successful final response is still useful if history inspection fails.
+        }
+      }
+
+      return [...toolMessages, { id: response.info.id, role: 'assistant', text: reply }]
     } finally {
       this.pending.delete(session.id)
     }

@@ -138,7 +138,7 @@ export function registerIpcHandlers(ptyManager: PtyManager, opencodeManager: Ope
     async (req) => {
       const session = await getSession(req.sessionId)
       if (!session) throw new Error('Session no longer exists.')
-      return { message: await opencodeManager.send(session, req.text) }
+      return { messages: await opencodeManager.send(session, req.text) }
     }
   )
 

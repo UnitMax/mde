@@ -66,13 +66,29 @@ export interface OpenCodeChatMessage {
   text: string
 }
 
+export type OpenCodeToolStatus = 'pending' | 'running' | 'completed' | 'error'
+
+/** A tool invocation returned by OpenCode between the prompt and final text. */
+export interface OpenCodeToolMessage {
+  id: string
+  role: 'tool'
+  tool: string
+  status: OpenCodeToolStatus
+  input: Record<string, unknown>
+  title?: string
+  output?: string
+  error?: string
+}
+
+export type OpenCodeChatItem = OpenCodeChatMessage | OpenCodeToolMessage
+
 export interface SendOpenCodeMessageRequest {
   sessionId: string
   text: string
 }
 
 export interface SendOpenCodeMessageResponse {
-  message: OpenCodeChatMessage
+  messages: OpenCodeChatItem[]
 }
 
 export interface PathCheckResult {
