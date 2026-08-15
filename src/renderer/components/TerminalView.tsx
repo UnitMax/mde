@@ -203,7 +203,7 @@ function LiveTextMessageView({ text, assistantLabel }: { text: string; assistant
   return (
     <li
       aria-live="polite"
-      className="max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-fg-muted"
+      className="max-w-[80%] select-text rounded border border-line bg-panel px-3 py-2 text-fg-muted"
     >
       <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-fg-subtle">{assistantLabel}</p>
       <MarkdownMessage text={text} streaming />
@@ -628,8 +628,8 @@ function GuiView({ session }: { session: Session }): JSX.Element {
               key={message.id}
               className={
                 message.role === 'user'
-                  ? 'ml-auto max-w-[80%] rounded bg-active px-3 py-2 text-fg'
-                  : 'max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-fg-muted'
+                  ? 'ml-auto max-w-[80%] select-text rounded bg-active px-3 py-2 text-fg'
+                  : 'max-w-[80%] select-text rounded border border-line bg-panel px-3 py-2 text-fg-muted'
               }
             >
               <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
