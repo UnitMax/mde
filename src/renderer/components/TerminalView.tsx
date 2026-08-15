@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { RotateCw } from 'lucide-react'
-import type { OpenCodeToolMessage, PtySize, Session } from '@shared/types'
+import { ChevronRight, RotateCw } from 'lucide-react'
+import type { OpenCodeReasoningMessage, OpenCodeToolMessage, PtySize, Session } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useWorkspace } from '@/store/workspace'
@@ -108,6 +108,33 @@ function ToolMessageView({ message }: { message: OpenCodeToolMessage }): JSX.Ele
   )
 }
 
+function formatThinkingDuration(durationMs: number): string {
+  const seconds = durationMs / 1000
+  if (seconds < 10) return `${Math.round(seconds * 10) / 10}s`
+  if (seconds < 60) return `${Math.round(seconds)}s`
+  return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`
+}
+
+function ReasoningMessageView({ message }: { message: OpenCodeReasoningMessage }): JSX.Element {
+  return (
+    <li className="max-w-[90%] text-fg-subtle">
+      <details className="group">
+        <summary className="inline-flex cursor-pointer select-none items-center gap-1 text-xs text-fg-subtle hover:text-fg-muted">
+          <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
+          <span>
+            {message.durationMs === undefined
+              ? 'Thinking'
+              : `Thought for ${formatThinkingDuration(message.durationMs)}`}
+          </span>
+        </summary>
+        <p className="ml-4 mt-1.5 whitespace-pre-wrap border-l border-line pl-3 text-[12px] italic text-fg-subtle">
+          {message.text}
+        </p>
+      </details>
+    </li>
+  )
+}
+
 function GuiView({ session }: { session: Session }): JSX.Element {
   const [draft, setDraft] = useState('')
   const chat = useWorkspace((state) => state.opencodeChats[session.id])
@@ -130,6 +157,8 @@ function GuiView({ session }: { session: Session }): JSX.Element {
         {messages.map((message) =>
           message.role === 'tool' ? (
             <ToolMessageView key={message.id} message={message} />
+          ) : message.role === 'reasoning' ? (
+            <ReasoningMessageView key={message.id} message={message} />
           ) : (
             <li
               key={message.id}
@@ -140,7 +169,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
               }
             >
               <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
-                {message.role === 'user' ? 'You' : 'Big Pickle'}
+                {message.role === 'user' ? 'You' : 'Nemotron'}
               </p>
               <p className="whitespace-pre-wrap text-[13px]">{message.text}</p>
             </li>
@@ -148,7 +177,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
         )}
         {pending && (
           <li className="max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
-            Big Pickle is responding…
+            Nemotron is responding…
           </li>
         )}
       </ol>
@@ -181,12 +210,14 @@ function GuiView({ session }: { session: Session }): JSX.Element {
             className="min-h-[72px] min-w-0 flex-1 resize-none rounded border border-line-strong bg-bg px-2.5 py-2 text-[13px] text-fg placeholder:text-fg-subtle focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
           />
 
-          <Select value="opencode/big-pickle" disabled>
+          <Select value="opencode/nemotron-3.5-lightning-free" disabled>
             <SelectTrigger aria-label="Model" className="w-48 shrink-0">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="opencode/big-pickle">Big Pickle · OpenCode Zen</SelectItem>
+              <SelectItem value="opencode/nemotron-3.5-lightning-free">
+                Nemotron 3.5 Lightning · OpenCode Zen
+              </SelectItem>
             </SelectContent>
           </Select>
 

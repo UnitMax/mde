@@ -1,7 +1,12 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import type { OpenCodeChatItem, OpenCodeToolMessage, Session } from '@shared/types'
+import type {
+  OpenCodeChatItem,
+  OpenCodeReasoningMessage,
+  OpenCodeToolMessage,
+  Session
+} from '@shared/types'
 
-export const BIG_PICKLE_MODEL = { providerID: 'opencode', modelID: 'big-pickle' } as const
+export const NEMOTRON_MODEL = { providerID: 'opencode', modelID: 'nemotron-3.5-lightning-free' } as const
 export const OPENCODE_INLINE_CONFIG = {
   permission: {
     '*': 'deny',
@@ -17,6 +22,7 @@ const REQUEST_TIMEOUT_MS = 120_000
 const HISTORY_REQUEST_TIMEOUT_MS = 10_000
 const MAX_DIAGNOSTIC_LENGTH = 1_000
 const MAX_TOOL_OUTPUT_LENGTH = 4_000
+const MAX_REASONING_LENGTH = 20_000
 
 interface OpenCodeRuntime {
   child: ChildProcessWithoutNullStreams
@@ -89,15 +95,72 @@ function toolStatus(value: unknown): OpenCodeToolMessage['status'] {
   return 'error'
 }
 
-/** Converts tool parts from the current OpenCode turn into renderer-safe chat items. */
-export function extractToolMessages(
+function toToolMessage(part: Record<string, unknown>): OpenCodeToolMessage | null {
+  if (typeof part.id !== 'string' || typeof part.tool !== 'string') return null
+
+  const state = isRecord(part.state) ? part.state : {}
+  const input = isRecord(state.input) ? state.input : {}
+  const title = typeof state.title === 'string' && state.title ? state.title : undefined
+  const output = typeof state.output === 'string' ? clip(state.output, MAX_TOOL_OUTPUT_LENGTH) : undefined
+  const error = typeof state.error === 'string' ? clip(state.error, MAX_TOOL_OUTPUT_LENGTH) : undefined
+
+  return {
+    id: part.id,
+    role: 'tool',
+    tool: part.tool,
+    status: toolStatus(state.status),
+    input,
+    ...(title ? { title } : {}),
+    ...(output ? { output } : {}),
+    ...(error ? { error } : {})
+  }
+}
+
+function toReasoningMessage(part: Record<string, unknown>): OpenCodeReasoningMessage | null {
+  if (typeof part.id !== 'string' || typeof part.text !== 'string') return null
+  const text = part.text.trim()
+  if (!text) return null
+
+  // OpenCode only fills in `end` once the block is closed, so an in-flight
+  // reasoning block simply carries no duration.
+  const time = isRecord(part.time) ? part.time : {}
+  const start = typeof time.start === 'number' ? time.start : undefined
+  const end = typeof time.end === 'number' ? time.end : undefined
+  const durationMs = start !== undefined && end !== undefined && end >= start ? end - start : undefined
+
+  return {
+    id: part.id,
+    role: 'reasoning',
+    text: clip(text, MAX_REASONING_LENGTH),
+    ...(durationMs === undefined ? {} : { durationMs })
+  }
+}
+
+/** Converts reasoning parts of a single message into renderer-safe chat items. */
+export function extractReasoningMessages(parts: unknown): OpenCodeReasoningMessage[] {
+  if (!Array.isArray(parts)) return []
+
+  const messages: OpenCodeReasoningMessage[] = []
+  for (const part of parts) {
+    if (!isRecord(part) || part.type !== 'reasoning') continue
+    const message = toReasoningMessage(part)
+    if (message) messages.push(message)
+  }
+  return messages
+}
+
+/**
+ * Converts reasoning and tool parts from the current OpenCode turn into
+ * renderer-safe chat items, preserving the order the model produced them in.
+ */
+export function extractTurnItems(
   history: unknown,
   parentId: string,
   finalMessageId: string
-): OpenCodeToolMessage[] {
+): Array<OpenCodeToolMessage | OpenCodeReasoningMessage> {
   if (!Array.isArray(history)) return []
 
-  const messages: OpenCodeToolMessage[] = []
+  const messages: Array<OpenCodeToolMessage | OpenCodeReasoningMessage> = []
   for (const entry of history) {
     if (!isRecord(entry) || !isRecord(entry.info)) continue
     if (
@@ -110,26 +173,14 @@ export function extractToolMessages(
     }
 
     for (const part of entry.parts) {
-      if (!isRecord(part) || part.type !== 'tool' || typeof part.id !== 'string' || typeof part.tool !== 'string') {
-        continue
-      }
-
-      const state = isRecord(part.state) ? part.state : {}
-      const input = isRecord(state.input) ? state.input : {}
-      const title = typeof state.title === 'string' && state.title ? state.title : undefined
-      const output = typeof state.output === 'string' ? clip(state.output, MAX_TOOL_OUTPUT_LENGTH) : undefined
-      const error = typeof state.error === 'string' ? clip(state.error, MAX_TOOL_OUTPUT_LENGTH) : undefined
-
-      messages.push({
-        id: part.id,
-        role: 'tool',
-        tool: part.tool,
-        status: toolStatus(state.status),
-        input,
-        ...(title ? { title } : {}),
-        ...(output ? { output } : {}),
-        ...(error ? { error } : {})
-      })
+      if (!isRecord(part)) continue
+      const message =
+        part.type === 'tool'
+          ? toToolMessage(part)
+          : part.type === 'reasoning'
+            ? toReasoningMessage(part)
+            : null
+      if (message) messages.push(message)
     }
   }
 
@@ -137,11 +188,11 @@ export function extractToolMessages(
 }
 
 export function createPromptBody(text: string): {
-  model: typeof BIG_PICKLE_MODEL
+  model: typeof NEMOTRON_MODEL
   parts: Array<{ type: 'text'; text: string }>
 } {
   return {
-    model: BIG_PICKLE_MODEL,
+    model: NEMOTRON_MODEL,
     parts: [{ type: 'text', text }]
   }
 }
@@ -241,7 +292,7 @@ export class OpenCodeManager {
         throw new Error(`OpenCode returned no visible text (response parts: ${describeResponseParts(response.parts)}).`)
       }
 
-      let toolMessages: OpenCodeToolMessage[] = []
+      let turnItems: Array<OpenCodeToolMessage | OpenCodeReasoningMessage> = []
       if (response.info.parentID) {
         try {
           const history = await requestJson<OpenCodeHistoryMessage[]>(
@@ -251,13 +302,18 @@ export class OpenCodeManager {
             HISTORY_REQUEST_TIMEOUT_MS,
             'GET'
           )
-          toolMessages = extractToolMessages(history, response.info.parentID, response.info.id)
+          turnItems = extractTurnItems(history, response.info.parentID, response.info.id)
         } catch {
           // The successful final response is still useful if history inspection fails.
         }
       }
 
-      return [...toolMessages, { id: response.info.id, role: 'assistant', text: reply }]
+      return [
+        ...turnItems,
+        // Reasoning that belongs to the final message precedes its text.
+        ...extractReasoningMessages(response.parts),
+        { id: response.info.id, role: 'assistant', text: reply }
+      ]
     } finally {
       this.pending.delete(session.id)
     }

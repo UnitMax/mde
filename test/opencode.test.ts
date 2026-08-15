@@ -1,19 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import {
-  BIG_PICKLE_MODEL,
+  NEMOTRON_MODEL,
   createPromptBody,
   describeResponseParts,
-  extractToolMessages,
+  extractReasoningMessages,
+  extractTurnItems,
   extractTextParts,
   OPENCODE_INLINE_CONFIG,
   parseServerUrl
 } from '../src/main/opencode/manager'
 
 describe('OpenCode GUI protocol helpers', () => {
-  it('locks every prompt to the free OpenCode Zen Big Pickle model', () => {
-    expect(BIG_PICKLE_MODEL).toEqual({ providerID: 'opencode', modelID: 'big-pickle' })
+  it('locks every prompt to the free OpenCode Zen Nemotron 3.5 Lightning model', () => {
+    expect(NEMOTRON_MODEL).toEqual({ providerID: 'opencode', modelID: 'nemotron-3.5-lightning-free' })
     expect(createPromptBody('Reply only with pong')).toEqual({
-      model: { providerID: 'opencode', modelID: 'big-pickle' },
+      model: { providerID: 'opencode', modelID: 'nemotron-3.5-lightning-free' },
       parts: [{ type: 'text', text: 'Reply only with pong' }]
     })
   })
@@ -57,9 +58,9 @@ describe('OpenCode GUI protocol helpers', () => {
     expect(describeResponseParts(undefined)).toBe('none')
   })
 
-  it('extracts only tool calls from the current turn', () => {
+  it('extracts reasoning and tool calls from the current turn, in order', () => {
     expect(
-      extractToolMessages(
+      extractTurnItems(
         [
           {
             info: { id: 'old-assistant', parentID: 'old-user', role: 'assistant' },
@@ -76,6 +77,12 @@ describe('OpenCode GUI protocol helpers', () => {
             info: { id: 'tool-assistant', parentID: 'current-user', role: 'assistant' },
             parts: [
               {
+                id: 'current-reasoning',
+                type: 'reasoning',
+                text: '  I should list the workspace first.  ',
+                time: { start: 1_000, end: 3_500 }
+              },
+              {
                 id: 'current-tool',
                 type: 'tool',
                 tool: 'read',
@@ -86,7 +93,7 @@ describe('OpenCode GUI protocol helpers', () => {
                   title: 'List directory'
                 }
               },
-              { id: 'reasoning', type: 'reasoning', text: 'not shown' }
+              { id: 'empty-reasoning', type: 'reasoning', text: '   ' }
             ]
           },
           {
@@ -99,6 +106,12 @@ describe('OpenCode GUI protocol helpers', () => {
       )
     ).toEqual([
       {
+        id: 'current-reasoning',
+        role: 'reasoning',
+        text: 'I should list the workspace first.',
+        durationMs: 2_500
+      },
+      {
         id: 'current-tool',
         role: 'tool',
         tool: 'read',
@@ -108,5 +121,17 @@ describe('OpenCode GUI protocol helpers', () => {
         output: 'file listing'
       }
     ])
+  })
+
+  it('keeps reasoning attached to the final assistant message', () => {
+    expect(
+      extractReasoningMessages([
+        { id: 'r1', type: 'reasoning', text: 'Now I can answer.', time: { start: 10 } },
+        { id: 'r2', type: 'reasoning', text: '' },
+        { type: 'reasoning', text: 'no id' },
+        { id: 't1', type: 'text', text: 'Here are the files.' }
+      ])
+    ).toEqual([{ id: 'r1', role: 'reasoning', text: 'Now I can answer.' }])
+    expect(extractReasoningMessages(undefined)).toEqual([])
   })
 })

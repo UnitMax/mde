@@ -66,6 +66,15 @@ export interface OpenCodeChatMessage {
   text: string
 }
 
+/** Reasoning text OpenCode exposes for models that emit it. */
+export interface OpenCodeReasoningMessage {
+  id: string
+  role: 'reasoning'
+  text: string
+  /** Present when OpenCode reported both a start and an end time for the block. */
+  durationMs?: number
+}
+
 export type OpenCodeToolStatus = 'pending' | 'running' | 'completed' | 'error'
 
 /** A tool invocation returned by OpenCode between the prompt and final text. */
@@ -80,7 +89,7 @@ export interface OpenCodeToolMessage {
   error?: string
 }
 
-export type OpenCodeChatItem = OpenCodeChatMessage | OpenCodeToolMessage
+export type OpenCodeChatItem = OpenCodeChatMessage | OpenCodeToolMessage | OpenCodeReasoningMessage
 
 export interface SendOpenCodeMessageRequest {
   sessionId: string
