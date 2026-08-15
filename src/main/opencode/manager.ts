@@ -2,7 +2,16 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import type { OpenCodeChatMessage, Session } from '@shared/types'
 
 export const BIG_PICKLE_MODEL = { providerID: 'opencode', modelID: 'big-pickle' } as const
-export const OPENCODE_INLINE_CONFIG = { permission: 'deny' } as const
+export const OPENCODE_INLINE_CONFIG = {
+  permission: {
+    '*': 'deny',
+    read: 'allow',
+    glob: 'allow',
+    grep: 'allow',
+    list: 'allow',
+    external_directory: 'deny'
+  }
+} as const
 const SERVER_START_TIMEOUT_MS = 10_000
 const REQUEST_TIMEOUT_MS = 120_000
 const MAX_DIAGNOSTIC_LENGTH = 1_000
@@ -50,6 +59,15 @@ export function extractTextParts(parts: unknown): string {
     .map((part) => part.text as string)
     .join('\n')
     .trim()
+}
+
+export function describeResponseParts(parts: unknown): string {
+  if (!Array.isArray(parts) || parts.length === 0) return 'none'
+
+  const types = new Set(
+    parts.map((part) => (isRecord(part) && typeof part.type === 'string' ? part.type : 'unknown'))
+  )
+  return [...types].join(', ')
 }
 
 export function createPromptBody(text: string): {
@@ -151,7 +169,9 @@ export class OpenCodeManager {
 
       if (response.info.error) throw new Error(providerError(response.info.error))
       const reply = extractTextParts(response.parts)
-      if (!reply) throw new Error('OpenCode returned no text response.')
+      if (!reply) {
+        throw new Error(`OpenCode returned no visible text (response parts: ${describeResponseParts(response.parts)}).`)
+      }
 
       return { id: response.info.id, role: 'assistant', text: reply }
     } finally {
@@ -197,7 +217,7 @@ export class OpenCodeManager {
         env: {
           ...process.env,
           // Inline configuration has higher precedence than project config.
-          // No filesystem or shell tool can run in this GUI prototype.
+          // Only read-only workspace inspection tools are available in this GUI prototype.
           OPENCODE_CONFIG_CONTENT: JSON.stringify(OPENCODE_INLINE_CONFIG)
         },
         windowsHide: true

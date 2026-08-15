@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   BIG_PICKLE_MODEL,
   createPromptBody,
+  describeResponseParts,
   extractTextParts,
   OPENCODE_INLINE_CONFIG,
   parseServerUrl
@@ -16,8 +17,17 @@ describe('OpenCode GUI protocol helpers', () => {
     })
   })
 
-  it('starts OpenCode in text-only mode with every tool permission denied', () => {
-    expect(OPENCODE_INLINE_CONFIG).toEqual({ permission: 'deny' })
+  it('starts OpenCode with read-only workspace tools enabled', () => {
+    expect(OPENCODE_INLINE_CONFIG).toEqual({
+      permission: {
+        '*': 'deny',
+        read: 'allow',
+        glob: 'allow',
+        grep: 'allow',
+        list: 'allow',
+        external_directory: 'deny'
+      }
+    })
   })
 
   it('finds the localhost URL emitted by opencode serve', () => {
@@ -36,5 +46,13 @@ describe('OpenCode GUI protocol helpers', () => {
         { type: 'text', text: 'Second paragraph' }
       ])
     ).toBe('First paragraph\nSecond paragraph')
+  })
+
+  it('describes response parts when OpenCode has no visible text', () => {
+    expect(describeResponseParts([{ type: 'reasoning' }, { type: 'tool' }, { type: 'step-finish' }])).toBe(
+      'reasoning, tool, step-finish'
+    )
+    expect(describeResponseParts([])).toBe('none')
+    expect(describeResponseParts(undefined)).toBe('none')
   })
 })
