@@ -216,6 +216,10 @@ export type OpenCodeStreamItem =
       }
       permissionResolved?: string
     }
+  | {
+      kind: 'status'
+      status: 'busy' | 'idle'
+    }
 
 /** A normalized live OpenCode part update pushed over the existing IPC stream. */
 export interface OpenCodeStreamChunk {
@@ -231,7 +235,23 @@ export interface SendOpenCodeMessageRequest {
 
 export interface SendOpenCodeMessageResponse {
   sessionId: string
+  /** The real OpenCode user-message ID that owns this completed turn. */
+  userMessageId: string | null
   messages: OpenCodeChatItem[]
+}
+
+export interface OpenCodeRevertState {
+  messageID: string
+  partID?: string
+}
+
+export interface RevertOpenCodeMessageRequest {
+  sessionId: string
+  messageId: string
+}
+
+export interface UnrevertOpenCodeSessionRequest {
+  sessionId: string
 }
 
 /** A persisted OpenCode conversation available for the current project. */
@@ -254,6 +274,7 @@ export interface CreateOpenCodeSessionRequest {
 export interface ListOpenCodeSessionsResponse {
   sessions: OpenCodeSessionSummary[]
   selectedSessionId: string | null
+  undoSupported: boolean
 }
 
 export interface ListOpenCodeModelsRequest {
@@ -273,6 +294,8 @@ export interface OpenCodeConversationResponse {
   sessionId: string
   session?: OpenCodeSessionSummary
   messages: OpenCodeChatItem[]
+  revert: OpenCodeRevertState | null
+  undoSupported: boolean
 }
 
 export interface SendOpenCodePermissionReplyRequest {

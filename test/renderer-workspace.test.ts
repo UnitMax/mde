@@ -41,6 +41,8 @@ describe('renderer workspace event bridge', () => {
       listModels: vi.fn(),
       selectSession: vi.fn(),
       createSession: vi.fn(),
+      revert: vi.fn(),
+      unrevert: vi.fn(),
       replyPermission: vi.fn(async () => undefined),
       onStream: vi.fn((listener: (chunk: OpenCodeStreamChunk) => void) => {
         streamListeners.push(listener)
@@ -60,6 +62,8 @@ describe('renderer workspace event bridge', () => {
     api.opencode.listModels.mockReset()
     api.opencode.selectSession.mockReset()
     api.opencode.createSession.mockReset()
+    api.opencode.revert.mockReset()
+    api.opencode.unrevert.mockReset()
     api.opencode.onStream.mockClear()
     api.opencode.replyPermission.mockClear()
   })
@@ -98,6 +102,11 @@ describe('renderer workspace event bridge', () => {
           availableModels: [model],
           selectedModel: model,
           subagents: [],
+          revert: null,
+          undoSupported: true,
+          undoing: false,
+          redoing: false,
+          externalBusy: false,
           openCodeSessionId: 'opencode-1',
           liveItems: [],
           pending: false,
@@ -109,10 +118,10 @@ describe('renderer workspace event bridge', () => {
       }
     })
 
-    let resolveSend: ((value: { sessionId: string; messages: OpenCodeChatItem[] }) => void) | undefined
+    let resolveSend: ((value: { sessionId: string; userMessageId: string | null; messages: OpenCodeChatItem[] }) => void) | undefined
     api.opencode.send.mockImplementation(
       () =>
-        new Promise<{ sessionId: string; messages: OpenCodeChatItem[] }>((resolve) => {
+        new Promise<{ sessionId: string; userMessageId: string | null; messages: OpenCodeChatItem[] }>((resolve) => {
           resolveSend = resolve
         })
     )
@@ -206,7 +215,11 @@ describe('renderer workspace event bridge', () => {
       output: 'contents'
     })
 
-    resolveSend?.({ sessionId: 'opencode-1', messages: [{ id: 'answer-1', role: 'assistant', text: 'Final answer.' }] })
+    resolveSend?.({
+      sessionId: 'opencode-1',
+      userMessageId: 'user-1',
+      messages: [{ id: 'answer-1', role: 'assistant', text: 'Final answer.' }]
+    })
     await send
     expect(useWorkspace.getState().opencodeChats['session-1']?.liveItems).toEqual([])
     expect(useWorkspace.getState().opencodeChats['session-1']?.unreadCompletion).toBe(false)
@@ -217,16 +230,16 @@ describe('renderer workspace event bridge', () => {
     })
 
     useWorkspace.getState().selectSession('session-2')
-    let resolveAway: ((value: { sessionId: string; messages: OpenCodeChatItem[] }) => void) | undefined
+    let resolveAway: ((value: { sessionId: string; userMessageId: string | null; messages: OpenCodeChatItem[] }) => void) | undefined
     api.opencode.send.mockImplementationOnce(
       () =>
-        new Promise<{ sessionId: string; messages: OpenCodeChatItem[] }>((resolve) => {
+        new Promise<{ sessionId: string; userMessageId: string | null; messages: OpenCodeChatItem[] }>((resolve) => {
           resolveAway = resolve
         })
     )
     const awaySend = useWorkspace.getState().sendOpenCodeMessage('session-1', 'follow up')
     await Promise.resolve()
-    resolveAway?.({ sessionId: 'opencode-1', messages: [] })
+    resolveAway?.({ sessionId: 'opencode-1', userMessageId: null, messages: [] })
     await awaySend
     expect(useWorkspace.getState().opencodeChats['session-1']?.unreadCompletion).toBe(true)
 
@@ -420,6 +433,11 @@ describe('renderer workspace event bridge', () => {
           availableModels: [model],
           selectedModel: model,
           subagents: [],
+          revert: null,
+          undoSupported: true,
+          undoing: false,
+          redoing: false,
+          externalBusy: false,
           openCodeSessionId: 'opencode-1',
           liveItems: [],
           pending: false,
@@ -492,6 +510,84 @@ describe('renderer workspace event bridge', () => {
       subagents: [{ id: 'child-1', status: 'completed' }],
       liveItems: [],
       unreadCompletion: true
+    })
+  })
+
+  it('undoes and redoes the latest completed OpenCode turn using its real message ID', async () => {
+    const model: OpenCodeModelOption = {
+      key: 'cloud/model-a',
+      providerID: 'cloud',
+      providerName: 'Cloud Provider',
+      modelID: 'model-a',
+      modelName: 'Model A'
+    }
+    const beforeUndo: OpenCodeChatItem[] = [
+      { id: 'msg-user-1', role: 'user', text: 'Earlier' },
+      { id: 'assistant-1', role: 'assistant', text: 'Earlier answer' },
+      { id: 'msg-user-2', role: 'user', text: 'Latest' },
+      { id: 'assistant-2', role: 'assistant', text: 'Latest answer' }
+    ]
+    useWorkspace.setState({
+      selectedSessionId: 'session-1',
+      sessions: [
+        {
+          id: 'session-1',
+          projectId: 'project-1',
+          name: 'App',
+          kind: 'native',
+          path: '/workspace/app',
+          createdAt: '2026-01-01T00:00:00.000Z'
+        }
+      ],
+      opencodeChats: {
+        'session-1': {
+          messages: beforeUndo,
+          availableSessions: [],
+          availableModels: [model],
+          selectedModel: model,
+          subagents: [],
+          revert: null,
+          undoSupported: true,
+          undoing: false,
+          redoing: false,
+          externalBusy: false,
+          openCodeSessionId: 'opencode-1',
+          liveItems: [],
+          pending: false,
+          sessionsLoading: false,
+          modelsLoading: false,
+          error: null,
+          unreadCompletion: false
+        }
+      }
+    })
+    api.opencode.revert.mockResolvedValue({
+      sessionId: 'opencode-1',
+      messages: beforeUndo.slice(0, 2),
+      revert: { messageID: 'msg-user-2' },
+      undoSupported: true
+    })
+    api.opencode.unrevert.mockResolvedValue({
+      sessionId: 'opencode-1',
+      messages: beforeUndo,
+      revert: null,
+      undoSupported: true
+    })
+
+    await useWorkspace.getState().undoOpenCodeLastTurn('session-1')
+    expect(api.opencode.revert).toHaveBeenCalledWith({ sessionId: 'session-1', messageId: 'msg-user-2' })
+    expect(useWorkspace.getState().opencodeChats['session-1']).toMatchObject({
+      messages: beforeUndo.slice(0, 2),
+      revert: { messageID: 'msg-user-2' },
+      undoing: false
+    })
+
+    await useWorkspace.getState().redoOpenCodeLastTurn('session-1')
+    expect(api.opencode.unrevert).toHaveBeenCalledWith({ sessionId: 'session-1' })
+    expect(useWorkspace.getState().opencodeChats['session-1']).toMatchObject({
+      messages: beforeUndo,
+      revert: null,
+      redoing: false
     })
   })
 })

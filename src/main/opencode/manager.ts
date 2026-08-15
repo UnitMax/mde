@@ -8,11 +8,13 @@ import type {
   OpenCodeStreamItem,
   OpenCodeToolMessage,
   OpenCodeConversationResponse,
+  SendOpenCodeMessageResponse,
   OpenCodeSessionSummary,
   OpenCodeModelOption,
   OpenCodeModelSelection,
   OpenCodeSubagent,
   OpenCodeSubagentStatus,
+  OpenCodeRevertState,
   ListOpenCodeModelsResponse,
   ListOpenCodeSessionsResponse,
   Session
@@ -170,13 +172,19 @@ export class OpenCodeStreamTracker {
 
     if (payload.type === 'session.status' || payload.type === 'session.idle') {
       const sessionId = stringValue(properties.sessionID)
-      if (!sessionId || !this.childSessions.has(sessionId)) return null
+      if (!sessionId) return null
       const status =
         payload.type === 'session.idle'
           ? 'idle'
           : isRecord(properties.status) && typeof properties.status.type === 'string'
             ? properties.status.type
             : undefined
+      if (sessionId === this.sessionId) {
+        if (status === 'busy' || status === 'retry') return { kind: 'status', status: 'busy' }
+        if (status === 'idle') return { kind: 'status', status: 'idle' }
+        return null
+      }
+      if (!this.childSessions.has(sessionId)) return null
       if (status === 'idle') return this.updateSubagent(sessionId, 'completed')
       if (status === 'busy' || status === 'retry') return this.updateSubagent(sessionId, 'working')
       return null
@@ -352,6 +360,11 @@ interface OpenCodeSessionResponse {
   title?: unknown
   directory?: unknown
   time?: unknown
+  revert?: unknown
+}
+
+interface OpenCodeProjectResponse {
+  vcs?: unknown
 }
 
 interface OpenCodeProviderResponse {
@@ -401,6 +414,14 @@ function toSessionSummary(value: OpenCodeSessionResponse): OpenCodeSessionSummar
     directory: value.directory,
     createdAt: timestamp(time.created),
     updatedAt: timestamp(time.updated)
+  }
+}
+
+function toRevertState(value: unknown): OpenCodeRevertState | null {
+  if (!isRecord(value) || typeof value.messageID !== 'string' || !value.messageID.trim()) return null
+  return {
+    messageID: value.messageID,
+    ...(typeof value.partID === 'string' && value.partID.trim() ? { partID: value.partID } : {})
   }
 }
 
@@ -581,23 +602,36 @@ export function extractTurnItems(
 }
 
 /** Converts a complete OpenCode message history into GUI chat items. */
-export function extractHistoryMessages(history: unknown): OpenCodeChatItem[] {
+export function extractHistoryMessages(
+  history: unknown,
+  revert?: OpenCodeRevertState | null
+): OpenCodeChatItem[] {
   if (!Array.isArray(history)) return []
 
   const messages: OpenCodeChatItem[] = []
+  let reverted = false
   for (const entry of history) {
     if (!isRecord(entry) || !isRecord(entry.info) || !Array.isArray(entry.parts)) continue
     const info = entry.info
     if (typeof info.id !== 'string' || (info.role !== 'user' && info.role !== 'assistant')) continue
 
+    if (reverted) break
+    const isRevertTarget = revert?.messageID === info.id
+    if (isRevertTarget && !revert?.partID) break
+
     if (info.role === 'user') {
       const text = extractTextParts(entry.parts)
-      if (text) messages.push({ id: info.id, role: 'user', text })
+      if (text && !isRevertTarget) messages.push({ id: info.id, role: 'user', text })
+      if (isRevertTarget) reverted = true
       continue
     }
 
     for (const part of entry.parts) {
       if (!isRecord(part)) continue
+      if (isRevertTarget && part.id === revert?.partID) {
+        reverted = true
+        break
+      }
       if (part.type === 'text' && typeof part.id === 'string' && typeof part.text === 'string') {
         const text = part.text.trim()
         if (text && part.ignored !== true) messages.push({ id: part.id, role: 'assistant', text })
@@ -750,8 +784,11 @@ async function requestJson<T>(
 
   const text = await response.text()
   if (!response.ok) {
+    if (response.status === 409) throw new Error('OpenCode is busy. Wait until the current operation is idle and try again.')
     throw new Error(`OpenCode request failed (${response.status}): ${clip(text)}`)
   }
+
+  if (!text.trim()) return undefined as T
 
   try {
     return JSON.parse(text) as T
@@ -787,6 +824,7 @@ export class OpenCodeManager {
     }
 
     const runtime = await this.ensureRuntime(session)
+    const undoSupported = await this.isUndoSupported(runtime)
     const response = await requestJson<OpenCodeSessionResponse[]>(
       runtime.url,
       `/session?roots=true&directory=${encodeURIComponent(session.path)}&limit=100`,
@@ -807,7 +845,7 @@ export class OpenCodeManager {
         : sessions[0]?.id ?? null
     this.setActiveSession(runtime, selectedSessionId)
 
-    return { sessions, selectedSessionId }
+    return { sessions, selectedSessionId, undoSupported }
   }
 
   async listModels(session: Session): Promise<ListOpenCodeModelsResponse> {
@@ -839,9 +877,8 @@ export class OpenCodeManager {
     const summary = available.sessions.find((item) => item.id === openCodeSessionId)
     if (!summary) throw new Error('That OpenCode conversation is not available for this folder.')
 
-    const history = await this.loadHistory(runtime, openCodeSessionId)
     this.setActiveSession(runtime, openCodeSessionId)
-    return { sessionId: openCodeSessionId, session: summary, messages: extractHistoryMessages(history) }
+    return this.loadConversation(runtime, openCodeSessionId, summary)
   }
 
   async createSession(session: Session): Promise<OpenCodeConversationResponse> {
@@ -860,10 +897,13 @@ export class OpenCodeManager {
 
     const summary = toSessionSummary(created)
     this.setActiveSession(runtime, created.id)
+    const undoSupported = await this.isUndoSupported(runtime)
     return {
       sessionId: created.id,
       ...(summary ? { session: summary } : {}),
-      messages: []
+      messages: [],
+      revert: null,
+      undoSupported
     }
   }
 
@@ -871,7 +911,7 @@ export class OpenCodeManager {
     session: Session,
     text: string,
     model: OpenCodeModelSelection
-  ): Promise<{ sessionId: string; messages: OpenCodeChatItem[] }> {
+  ): Promise<SendOpenCodeMessageResponse> {
     const prompt = text.trim()
     if (!prompt) throw new Error('Message cannot be empty.')
     if (session.kind !== 'native') {
@@ -922,6 +962,7 @@ export class OpenCodeManager {
 
       return {
         sessionId: openCodeSessionId,
+        userMessageId: response.info.parentID ?? null,
         messages: [
           ...turnItems,
           // Reasoning that belongs to the final message precedes its text.
@@ -934,6 +975,53 @@ export class OpenCodeManager {
     }
   }
 
+  async revert(session: Session, messageId: string): Promise<OpenCodeConversationResponse> {
+    if (session.kind !== 'native') {
+      throw new Error('OpenCode GUI integration currently supports native sessions only.')
+    }
+    if (!messageId.trim()) throw new Error('OpenCode message ID cannot be empty.')
+
+    const runtime = await this.ensureRuntime(session)
+    const openCodeSessionId = runtime.openCodeSessionId
+    if (!openCodeSessionId) throw new Error('OpenCode conversation is not selected.')
+    if (!(await this.isUndoSupported(runtime))) {
+      throw new Error('Undo is unavailable because this project is not a Git repository.')
+    }
+
+    await requestJson<unknown>(
+      runtime.url,
+      `/session/${encodeURIComponent(openCodeSessionId)}/revert`,
+      { messageID: messageId },
+      REQUEST_TIMEOUT_MS
+    )
+    const result = await this.loadConversation(runtime, openCodeSessionId)
+    if (!result.revert) throw new Error('OpenCode did not create a rollback for that turn.')
+    return result
+  }
+
+  async unrevert(session: Session): Promise<OpenCodeConversationResponse> {
+    if (session.kind !== 'native') {
+      throw new Error('OpenCode GUI integration currently supports native sessions only.')
+    }
+
+    const runtime = await this.ensureRuntime(session)
+    const openCodeSessionId = runtime.openCodeSessionId
+    if (!openCodeSessionId) throw new Error('OpenCode conversation is not selected.')
+    if (!(await this.isUndoSupported(runtime))) {
+      throw new Error('Redo is unavailable because this project is not a Git repository.')
+    }
+
+    await requestJson<unknown>(
+      runtime.url,
+      `/session/${encodeURIComponent(openCodeSessionId)}/unrevert`,
+      undefined,
+      REQUEST_TIMEOUT_MS
+    )
+    const result = await this.loadConversation(runtime, openCodeSessionId)
+    if (result.revert) throw new Error('OpenCode did not restore the reverted turn.')
+    return result
+  }
+
   private async loadHistory(runtime: OpenCodeRuntime, openCodeSessionId: string): Promise<OpenCodeHistoryMessage[]> {
     return requestJson<OpenCodeHistoryMessage[]>(
       runtime.url,
@@ -942,6 +1030,47 @@ export class OpenCodeManager {
       HISTORY_REQUEST_TIMEOUT_MS,
       'GET'
     )
+  }
+
+  private async loadConversation(
+    runtime: OpenCodeRuntime,
+    openCodeSessionId: string,
+    summary?: OpenCodeSessionSummary
+  ): Promise<OpenCodeConversationResponse> {
+    const [state, history, undoSupported] = await Promise.all([
+      requestJson<OpenCodeSessionResponse>(
+        runtime.url,
+        `/session/${encodeURIComponent(openCodeSessionId)}`,
+        undefined,
+        HISTORY_REQUEST_TIMEOUT_MS,
+        'GET'
+      ),
+      this.loadHistory(runtime, openCodeSessionId),
+      this.isUndoSupported(runtime)
+    ])
+    const revert = toRevertState(state.revert)
+    return {
+      sessionId: openCodeSessionId,
+      session: summary ?? toSessionSummary(state) ?? undefined,
+      messages: extractHistoryMessages(history, revert),
+      revert,
+      undoSupported
+    }
+  }
+
+  private async isUndoSupported(runtime: OpenCodeRuntime): Promise<boolean> {
+    try {
+      const project = await requestJson<OpenCodeProjectResponse>(
+        runtime.url,
+        '/project/current',
+        undefined,
+        HISTORY_REQUEST_TIMEOUT_MS,
+        'GET'
+      )
+      return project.vcs === 'git'
+    } catch {
+      return false
+    }
   }
 
   private setActiveSession(runtime: OpenCodeRuntime, openCodeSessionId: string | null): void {

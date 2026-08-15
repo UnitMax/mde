@@ -244,6 +244,32 @@ describe('OpenCode GUI protocol helpers', () => {
       { id: 'text-1', role: 'assistant', text: 'The folder contains README.md.' }
     ])
   })
+
+  it('hides the reverted turn while preserving earlier history', () => {
+    const history = [
+      {
+        info: { id: 'user-1', role: 'user' },
+        parts: [{ id: 'user-1-part', type: 'text', text: 'First prompt' }]
+      },
+      {
+        info: { id: 'assistant-1', role: 'assistant' },
+        parts: [{ id: 'assistant-1-part', type: 'text', text: 'First answer' }]
+      },
+      {
+        info: { id: 'user-2', role: 'user' },
+        parts: [{ id: 'user-2-part', type: 'text', text: 'Second prompt' }]
+      },
+      {
+        info: { id: 'assistant-2', role: 'assistant' },
+        parts: [{ id: 'assistant-2-part', type: 'text', text: 'Second answer' }]
+      }
+    ]
+
+    expect(extractHistoryMessages(history, { messageID: 'user-2' })).toEqual([
+      { id: 'user-1', role: 'user', text: 'First prompt' },
+      { id: 'assistant-1-part', role: 'assistant', text: 'First answer' }
+    ])
+  })
 })
 
 describe('OpenCode event stream', () => {
@@ -321,7 +347,10 @@ describe('OpenCode event stream', () => {
         properties: { sessionID: 'ses_1', partID: 'prt_unseen', field: 'text', delta: 'nope' }
       })
     ).toBeNull()
-    expect(tracker.accept({ type: 'session.idle', properties: { sessionID: 'ses_1' } })).toBeNull()
+    expect(tracker.accept({ type: 'session.idle', properties: { sessionID: 'ses_1' } })).toEqual({
+      kind: 'status',
+      status: 'idle'
+    })
     expect(tracker.accept(null)).toBeNull()
   })
 

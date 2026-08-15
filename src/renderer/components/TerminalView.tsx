@@ -7,11 +7,14 @@ import {
   CircleAlert,
   CircleX,
   LoaderCircle,
+  Redo2,
   RefreshCw,
   RotateCw,
-  Search
+  Search,
+  Undo2
 } from 'lucide-react'
 import type {
+  OpenCodeChatItem,
   OpenCodeLiveChatItem,
   OpenCodeLivePermissionMessage,
   OpenCodeLiveReasoningMessage,
@@ -26,6 +29,15 @@ import type {
   Session
 } from '@shared/types'
 import { Button } from '@/components/ui/button'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogTitle
+} from '@/components/ui/alert-dialog'
 import { MarkdownMessage } from '@/components/MarkdownMessage'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -253,6 +265,60 @@ function LiveItemView({
   return <LiveTextMessageView text={item.text} assistantLabel={assistantLabel} />
 }
 
+function RollbackAction({
+  mode,
+  disabled,
+  busy,
+  onConfirm
+}: {
+  mode: 'undo' | 'redo'
+  disabled: boolean
+  busy: boolean
+  onConfirm: () => void
+}): JSX.Element {
+  const [open, setOpen] = useState(false)
+  const undo = mode === 'undo'
+  return (
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <button
+        type="button"
+        disabled={disabled || busy}
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-fg-subtle hover:bg-hover hover:text-fg disabled:pointer-events-none disabled:opacity-40"
+      >
+        {undo ? <Undo2 className="h-3 w-3" /> : <Redo2 className="h-3 w-3" />}
+        {busy ? (undo ? 'Undoing…' : 'Redoing…') : undo ? 'Undo' : 'Redo'}
+      </button>
+      <AlertDialogContent>
+        <AlertDialogTitle>{undo ? 'Undo the latest OpenCode turn?' : 'Redo the reverted OpenCode turn?'}</AlertDialogTitle>
+        <AlertDialogDescription>
+          {undo
+            ? 'This removes the latest prompt and its responses from the visible conversation and restores files changed during that turn.'
+            : 'This restores the reverted prompt, responses, and file changes to the project.'}
+        </AlertDialogDescription>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            className={undo ? undefined : 'bg-accent text-accent-fg hover:bg-accent-hover'}
+            onClick={onConfirm}
+          >
+            {undo ? 'Undo turn' : 'Redo turn'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}
+
+function latestCompletedTurnId(messages: OpenCodeChatItem[]): string | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (!message || message.role !== 'user' || message.id.startsWith('user-')) continue
+    if (messages.slice(index + 1).some((item) => item.role === 'assistant')) return message.id
+  }
+  return null
+}
+
 function modelLabel(model: OpenCodeModelSelection | null, models: OpenCodeModelOption[]): string {
   if (!model) return 'Select a model'
   const option = models.find(
@@ -478,6 +544,8 @@ function GuiView({ session }: { session: Session }): JSX.Element {
   const selectOpenCodeSession = useWorkspace((state) => state.selectOpenCodeSession)
   const createOpenCodeSession = useWorkspace((state) => state.createOpenCodeSession)
   const replyOpenCodePermission = useWorkspace((state) => state.replyOpenCodePermission)
+  const undoOpenCodeLastTurn = useWorkspace((state) => state.undoOpenCodeLastTurn)
+  const redoOpenCodeLastTurn = useWorkspace((state) => state.redoOpenCodeLastTurn)
   const nativeSession = session.kind === 'native'
   const pending = chat?.pending ?? false
   const error = chat?.error ?? null
@@ -490,6 +558,12 @@ function GuiView({ session }: { session: Session }): JSX.Element {
   const modelsLoading = chat?.modelsLoading ?? false
   const availableModels = chat?.availableModels ?? []
   const selectedModel = chat?.selectedModel ?? null
+  const revert = chat?.revert ?? null
+  const undoSupported = chat?.undoSupported ?? false
+  const undoing = chat?.undoing ?? false
+  const redoing = chat?.redoing ?? false
+  const externalBusy = chat?.externalBusy ?? false
+  const latestTurnId = latestCompletedTurnId(messages)
   const assistantLabel = selectedModel ? modelLabel(selectedModel, availableModels) : 'OpenCode'
   const logRef = useRef<HTMLOListElement>(null)
 
@@ -508,7 +582,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
   }, [messages, liveItems, pending])
 
   const send = (): void => {
-    if (!nativeSession || pending || !draft.trim()) return
+    if (!nativeSession || pending || externalBusy || !draft.trim()) return
     const message = draft
     setDraft('')
     void sendOpenCodeMessage(session.id, message)
@@ -533,6 +607,17 @@ function GuiView({ session }: { session: Session }): JSX.Element {
         className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3"
         aria-label="OpenCode conversation"
       >
+        {revert && (
+          <li className="mx-auto flex w-full max-w-4xl items-center justify-between rounded border border-accent/30 bg-accent/5 px-3 py-2 text-xs text-fg-muted">
+            <span>This turn is undone. A new prompt will commit the rollback.</span>
+            <RollbackAction
+              mode="redo"
+              disabled={!undoSupported || pending || externalBusy}
+              busy={redoing}
+              onConfirm={() => void redoOpenCodeLastTurn(session.id)}
+            />
+          </li>
+        )}
         {messages.map((message) =>
           message.role === 'tool' ? (
             <ToolMessageView key={message.id} message={message} />
@@ -555,6 +640,22 @@ function GuiView({ session }: { session: Session }): JSX.Element {
               ) : (
                 <p className="whitespace-pre-wrap text-[13px]">{message.text}</p>
               )}
+              {message.role === 'user' && message.id === latestTurnId && !revert && (
+                <div className="mt-2 flex items-center gap-2 border-t border-white/5 pt-1">
+                  {undoSupported ? (
+                    <RollbackAction
+                      mode="undo"
+                      disabled={pending || externalBusy || undoing || redoing}
+                      busy={undoing}
+                      onConfirm={() => void undoOpenCodeLastTurn(session.id)}
+                    />
+                  ) : (
+                    <span className="text-[10px] text-fg-subtle">
+                      Undo unavailable — OpenCode snapshots require a Git repository.
+                    </span>
+                  )}
+                </div>
+              )}
             </li>
           )
         )}
@@ -568,7 +669,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
         ))}
         {pending && liveItems.length === 0 && (
           <li className="max-w-[80%] rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
-            OpenCode is responding…
+            {externalBusy ? 'OpenCode is busy in another client…' : 'OpenCode is responding…'}
           </li>
         )}
         {!pending && sessionsLoading && messages.length === 0 && (
@@ -603,7 +704,9 @@ function GuiView({ session }: { session: Session }): JSX.Element {
               }
             }}
             placeholder="Message OpenCode..."
-            disabled={!nativeSession || pending || sessionsLoading || modelsLoading || !selectedModel}
+            disabled={
+              !nativeSession || pending || externalBusy || sessionsLoading || modelsLoading || !selectedModel
+            }
             className="block min-h-[68px] max-h-48 w-full resize-none overflow-y-auto rounded-t-xl border-0 bg-transparent px-4 pb-2 pt-3 text-[13px] text-fg placeholder:text-fg-subtle focus:outline-none focus:ring-0 disabled:cursor-not-allowed disabled:opacity-50"
           />
 
@@ -612,7 +715,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
               <Select
                 value={openCodeSessionId ?? NEW_CONVERSATION_VALUE}
                 onValueChange={selectConversation}
-                disabled={!nativeSession || pending || sessionsLoading}
+                disabled={!nativeSession || pending || externalBusy || sessionsLoading}
               >
                 <SelectTrigger
                   aria-label="OpenCode conversation"
@@ -639,7 +742,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
                 size="icon-sm"
                 aria-label="Refresh OpenCode conversations"
                 title="Refresh OpenCode conversations"
-                disabled={!nativeSession || pending || sessionsLoading}
+                disabled={!nativeSession || pending || externalBusy || sessionsLoading}
                 onClick={() => void loadOpenCodeSessions(session.id)}
               >
                 <RefreshCw className={sessionsLoading ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'} />
@@ -648,7 +751,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
                 models={availableModels}
                 selected={selectedModel}
                 loading={modelsLoading}
-                disabled={!nativeSession || pending || sessionsLoading || !openCodeSessionId}
+                disabled={!nativeSession || pending || externalBusy || sessionsLoading || !openCodeSessionId}
                 onSelect={(model) => void selectOpenCodeModel(session.id, model)}
                 onRefresh={() => void loadOpenCodeModels(session.id)}
               />
@@ -659,7 +762,15 @@ function GuiView({ session }: { session: Session }): JSX.Element {
               aria-label="Send message"
               title="Send message"
               className="h-8 w-8 shrink-0 rounded-lg"
-              disabled={!nativeSession || pending || sessionsLoading || modelsLoading || !selectedModel || !draft.trim()}
+              disabled={
+                !nativeSession ||
+                pending ||
+                externalBusy ||
+                sessionsLoading ||
+                modelsLoading ||
+                !selectedModel ||
+                !draft.trim()
+              }
               onClick={send}
             >
               <ArrowUp className="h-4 w-4" />

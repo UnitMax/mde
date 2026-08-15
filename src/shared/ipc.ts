@@ -17,6 +17,8 @@ import type {
   ListOpenCodeModelsResponse,
   CreateOpenCodeSessionRequest,
   OpenCodeConversationResponse,
+  RevertOpenCodeMessageRequest,
+  UnrevertOpenCodeSessionRequest,
   SelectOpenCodeSessionRequest,
   OpenCodeStreamChunk,
   PtyDataChunk,
@@ -66,6 +68,8 @@ export const IpcChannels = {
   opencodeSessionSelect: 'opencode:session-select',
   opencodeSessionCreate: 'opencode:session-create',
   opencodePermissionReply: 'opencode:permission-reply',
+  opencodeRevert: 'opencode:revert',
+  opencodeUnrevert: 'opencode:unrevert',
 
   platformInfo: 'platform:info'
 } as const
@@ -173,6 +177,8 @@ export interface RendererApi {
     listModels(req: ListOpenCodeModelsRequest): Promise<ListOpenCodeModelsResponse>
     selectSession(req: SelectOpenCodeSessionRequest): Promise<OpenCodeConversationResponse>
     createSession(req: CreateOpenCodeSessionRequest): Promise<OpenCodeConversationResponse>
+    revert(req: RevertOpenCodeMessageRequest): Promise<OpenCodeConversationResponse>
+    unrevert(req: UnrevertOpenCodeSessionRequest): Promise<OpenCodeConversationResponse>
     replyPermission(req: SendOpenCodePermissionReplyRequest): Promise<void>
     /** Live text, reasoning, and tool-part updates while `send` is in flight. */
     onStream(listener: (chunk: OpenCodeStreamChunk) => void): () => void

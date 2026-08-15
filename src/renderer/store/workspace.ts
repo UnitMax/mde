@@ -9,6 +9,7 @@ import type {
   OpenCodeLiveChatItem,
   OpenCodeModelOption,
   OpenCodeModelSelection,
+  OpenCodeRevertState,
   OpenCodeSubagent,
   OpenCodePermissionReply,
   OpenCodeSessionSummary,
@@ -26,6 +27,11 @@ export interface OpenCodeChatState {
   availableModels: OpenCodeModelOption[]
   selectedModel: OpenCodeModelSelection | null
   subagents: OpenCodeSubagent[]
+  revert: OpenCodeRevertState | null
+  undoSupported: boolean
+  undoing: boolean
+  redoing: boolean
+  externalBusy: boolean
   openCodeSessionId: string | null
   liveItems: OpenCodeLiveChatItem[]
   pending: boolean
@@ -41,6 +47,11 @@ const EMPTY_CHAT: OpenCodeChatState = {
   availableModels: [],
   selectedModel: null,
   subagents: [],
+  revert: null,
+  undoSupported: false,
+  undoing: false,
+  redoing: false,
+  externalBusy: false,
   openCodeSessionId: null,
   liveItems: [],
   pending: false,
@@ -52,7 +63,7 @@ const EMPTY_CHAT: OpenCodeChatState = {
 let eventBridgeReady = false
 
 function upsertLiveItem(items: OpenCodeLiveChatItem[], item: OpenCodeStreamChunk['item']): OpenCodeLiveChatItem[] {
-  if (item.kind === 'subagent') return items
+  if (item.kind === 'subagent' || item.kind === 'status') return items
   const id = item.kind === 'permission' ? item.requestId : item.partId
   const index = items.findIndex((current) => current.id === id)
 
@@ -149,6 +160,15 @@ function subagentIsActive(subagent: OpenCodeSubagent): boolean {
   return subagent.status === 'working' || subagent.status === 'waiting'
 }
 
+function latestCompletedUserId(messages: OpenCodeChatItem[]): string | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (!message || message.role !== 'user' || message.id.startsWith('user-')) continue
+    if (messages.slice(index + 1).some((item) => item.role === 'assistant')) return message.id
+  }
+  return null
+}
+
 function retainActiveSubagentPermissions(
   liveItems: OpenCodeLiveChatItem[],
   subagents: OpenCodeSubagent[]
@@ -199,6 +219,8 @@ interface WorkspaceState {
   selectOpenCodeSession: (sessionId: string, openCodeSessionId: string) => Promise<void>
   createOpenCodeSession: (sessionId: string) => Promise<void>
   sendOpenCodeMessage: (sessionId: string, text: string) => Promise<void>
+  undoOpenCodeLastTurn: (sessionId: string) => Promise<void>
+  redoOpenCodeLastTurn: (sessionId: string) => Promise<void>
   replyOpenCodePermission: (
     sessionId: string,
     requestId: string,
@@ -473,6 +495,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
             ...current,
             availableSessions: result.sessions,
             openCodeSessionId: result.selectedSessionId,
+            undoSupported: result.undoSupported,
             selectedModel: result.selectedSessionId
               ? findModel(
                   current.availableModels,
@@ -536,7 +559,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     })
 
     try {
-      const { sessionId: openCodeSessionId, messages } = await window.api.opencode.send({
+      const { sessionId: openCodeSessionId, userMessageId, messages } = await window.api.opencode.send({
         sessionId,
         text: prompt,
         model: selectedModel
@@ -550,9 +573,22 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
             [sessionId]: {
               ...current,
               // The returned transcript supersedes the streamed preview.
-              messages: [...current.messages, ...messages],
+              messages: (() => {
+                const next = [...current.messages]
+                const optimisticIndex = [...next]
+                  .map((item, index) => ({ item, index }))
+                  .reverse()
+                  .find(({ item }) => item.role === 'user' && item.id.startsWith('user-'))?.index
+                if (optimisticIndex !== undefined && userMessageId) {
+                  const optimistic = next[optimisticIndex]
+                  if (optimistic?.role === 'user') next[optimisticIndex] = { ...optimistic, id: userMessageId }
+                }
+                return [...next, ...messages]
+              })(),
               openCodeSessionId,
               pending: false,
+              revert: null,
+              externalBusy: false,
               liveItems: retainActiveSubagentPermissions(current.liveItems, current.subagents),
               unreadCompletion: state.selectedSessionId !== sessionId
             }
@@ -576,6 +612,126 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               liveItems: retainActiveSubagentPermissions(current.liveItems, current.subagents),
               unreadCompletion: state.selectedSessionId !== sessionId
             }
+          }
+        }
+      })
+    }
+  },
+
+  undoOpenCodeLastTurn: async (sessionId) => {
+    const current = get().opencodeChats[sessionId]
+    if (
+      !current ||
+      !current.undoSupported ||
+      current.pending ||
+      current.externalBusy ||
+      current.undoing ||
+      current.redoing ||
+      current.revert ||
+      current.subagents.some(subagentIsActive)
+    ) {
+      return
+    }
+
+    const messageId = latestCompletedUserId(current.messages)
+    if (!messageId) return
+    set((state) => ({
+      opencodeChats: {
+        ...state.opencodeChats,
+        [sessionId]: { ...current, undoing: true, error: null }
+      }
+    }))
+
+    try {
+      const result = await window.api.opencode.revert({ sessionId, messageId })
+      set((state) => {
+        const chat = state.opencodeChats[sessionId]
+        if (!chat) return state
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: {
+              ...chat,
+              messages: result.messages,
+              openCodeSessionId: result.sessionId,
+              revert: result.revert,
+              undoSupported: result.undoSupported,
+              undoing: false,
+              liveItems: [],
+              subagents: [],
+              error: null
+            }
+          }
+        }
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'OpenCode undo failed.'
+      set((state) => {
+        const chat = state.opencodeChats[sessionId]
+        if (!chat) return state
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: { ...chat, undoing: false, error: message }
+          }
+        }
+      })
+    }
+  },
+
+  redoOpenCodeLastTurn: async (sessionId) => {
+    const current = get().opencodeChats[sessionId]
+    if (
+      !current ||
+      !current.undoSupported ||
+      !current.revert ||
+      current.pending ||
+      current.externalBusy ||
+      current.undoing ||
+      current.redoing ||
+      current.subagents.some(subagentIsActive)
+    ) {
+      return
+    }
+
+    set((state) => ({
+      opencodeChats: {
+        ...state.opencodeChats,
+        [sessionId]: { ...current, redoing: true, error: null }
+      }
+    }))
+
+    try {
+      const result = await window.api.opencode.unrevert({ sessionId })
+      set((state) => {
+        const chat = state.opencodeChats[sessionId]
+        if (!chat) return state
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: {
+              ...chat,
+              messages: result.messages,
+              openCodeSessionId: result.sessionId,
+              revert: result.revert,
+              undoSupported: result.undoSupported,
+              redoing: false,
+              liveItems: [],
+              subagents: [],
+              error: null
+            }
+          }
+        }
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'OpenCode redo failed.'
+      set((state) => {
+        const chat = state.opencodeChats[sessionId]
+        if (!chat) return state
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: { ...chat, redoing: false, error: message }
           }
         }
       })
@@ -607,6 +763,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               ...previous,
               availableSessions: result.sessions,
               openCodeSessionId: result.selectedSessionId,
+              undoSupported: result.undoSupported,
               sessionsLoading: false
             }
           }
@@ -662,6 +819,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
                   : [result.session, ...previous.availableSessions]
                 : previous.availableSessions,
               openCodeSessionId: result.sessionId,
+              revert: result.revert,
+              undoSupported: result.undoSupported,
               selectedModel: findModel(
                 previous.availableModels,
                 get().sessions.find((session) => session.id === sessionId)?.opencodeModelSelections?.[
@@ -848,6 +1007,15 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               unreadCompletion:
                 finished && state.selectedSessionId !== sessionId ? true : current.unreadCompletion
             }
+          }
+        }
+      }
+
+      if (item.kind === 'status') {
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: { ...current, externalBusy: item.status === 'busy' }
           }
         }
       }
