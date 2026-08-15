@@ -127,6 +127,8 @@ export interface OpenCodeModelOption extends OpenCodeModelSelection {
   modelName: string
   reasoning?: boolean
   toolCall?: boolean
+  /** Maximum input context reported by OpenCode for this model. */
+  contextWindow?: number
 }
 
 /** A permission request emitted by OpenCode while a tool is waiting. */
@@ -238,6 +240,18 @@ export interface SendOpenCodeMessageResponse {
   /** The real OpenCode user-message ID that owns this completed turn. */
   userMessageId: string | null
   messages: OpenCodeChatItem[]
+  contextUsage: OpenCodeContextUsage | null
+}
+
+/** The latest reported model context usage for an OpenCode conversation. */
+export interface OpenCodeContextUsage {
+  /** Model input tokens, including provider-reported cache tokens. */
+  usedTokens: number
+  /** The selected model's configured context limit. */
+  contextWindow: number
+  /** `usedTokens / contextWindow * 100`. */
+  percentage: number
+  model: OpenCodeModelSelection
 }
 
 /** Slash commands supported directly by the MDE OpenCode GUI. */
@@ -305,6 +319,7 @@ export interface OpenCodeConversationResponse {
   messages: OpenCodeChatItem[]
   revert: OpenCodeRevertState | null
   undoSupported: boolean
+  contextUsage: OpenCodeContextUsage | null
 }
 
 export interface SendOpenCodePermissionReplyRequest {

@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import type {
   OpenCodeChatItem,
+  OpenCodeContextUsage,
   OpenCodeLiveChatItem,
   OpenCodeLivePermissionMessage,
   OpenCodeLiveReasoningMessage,
@@ -40,6 +41,11 @@ import {
   AlertDialogTitle
 } from '@/components/ui/alert-dialog'
 import { MarkdownMessage } from '@/components/MarkdownMessage'
+import {
+  contextUsageMatchesModel,
+  contextUsageTone,
+  formatContextUsage
+} from '@/components/context-usage'
 import { GUI_SLASH_COMMANDS, resolveSlashCommand, slashCommandDraft } from '@/components/slash-commands'
 import { describeBuiltInTool } from '@/components/tool-summary'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -335,6 +341,33 @@ function modelLabel(model: OpenCodeModelSelection | null, models: OpenCodeModelO
   return `${model.modelID} · ${model.providerID}`
 }
 
+function ContextUsage({
+  usage,
+  selectedModel
+}: {
+  usage: OpenCodeContextUsage | null
+  selectedModel: OpenCodeModelSelection | null
+}): JSX.Element {
+  const current = contextUsageMatchesModel(usage, selectedModel) ? usage : null
+  const tone = current ? contextUsageTone(current.percentage) : 'normal'
+  const toneClass =
+    tone === 'danger' ? 'text-danger' : tone === 'warning' ? 'text-warn' : 'text-fg-subtle'
+  const label = formatContextUsage(current)
+  const title = current
+    ? `Context: ${current.usedTokens.toLocaleString()} of ${current.contextWindow.toLocaleString()} tokens (${current.percentage.toFixed(1)}%)`
+    : 'Context usage will appear after OpenCode reports token metadata for this model.'
+
+  return (
+    <span
+      aria-label={title}
+      title={title}
+      className={`shrink-0 whitespace-nowrap rounded px-1.5 py-1 text-[10px] ${toneClass}`}
+    >
+      {label}
+    </span>
+  )
+}
+
 function ModelPicker({
   models,
   selected,
@@ -564,6 +597,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
   const modelsLoading = chat?.modelsLoading ?? false
   const availableModels = chat?.availableModels ?? []
   const selectedModel = chat?.selectedModel ?? null
+  const contextUsage = chat?.contextUsage ?? null
   const revert = chat?.revert ?? null
   const undoSupported = chat?.undoSupported ?? false
   const undoing = chat?.undoing ?? false
@@ -847,6 +881,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
                 onSelect={(model) => void selectOpenCodeModel(session.id, model)}
                 onRefresh={() => void loadOpenCodeModels(session.id)}
               />
+              <ContextUsage usage={contextUsage} selectedModel={selectedModel} />
             </div>
 
             <Button

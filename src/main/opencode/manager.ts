@@ -8,6 +8,7 @@ import type {
   OpenCodeStreamItem,
   OpenCodeToolMessage,
   OpenCodeConversationResponse,
+  OpenCodeContextUsage,
   SendOpenCodeMessageResponse,
   OpenCodeSessionSummary,
   OpenCodeModelOption,
@@ -376,6 +377,9 @@ interface OpenCodePromptResponse {
   info: {
     id: string
     parentID?: string
+    providerID?: string
+    modelID?: string
+    tokens?: unknown
     error?: unknown
   }
   parts: unknown
@@ -386,6 +390,9 @@ interface OpenCodeHistoryMessage {
     id: string
     parentID?: string
     role?: string
+    providerID?: string
+    modelID?: string
+    tokens?: unknown
   }
   parts: unknown
 }
@@ -689,6 +696,62 @@ function optionalBoolean(record: Record<string, unknown>, ...keys: string[]): bo
   return undefined
 }
 
+interface ParsedTokenUsage {
+  input: number
+  cacheRead: number
+  cacheWrite: number
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined
+}
+
+function parseTokenUsage(value: unknown): ParsedTokenUsage | null {
+  if (!isRecord(value)) return null
+  const input = finiteNumber(value.input)
+  if (input === undefined) return null
+  const cache = isRecord(value.cache) ? value.cache : {}
+  return {
+    input,
+    cacheRead: finiteNumber(cache.read) ?? 0,
+    cacheWrite: finiteNumber(cache.write) ?? 0
+  }
+}
+
+/**
+ * Finds the latest assistant request reported by OpenCode and converts its
+ * input usage into the context-window metric shown by the GUI.
+ *
+ * Cache read/write tokens are part of the model input, but are deliberately
+ * taken from one latest assistant message rather than summed across the
+ * session. OpenCode also stores cumulative session counters for statistics.
+ */
+export function extractContextUsage(history: unknown, models: OpenCodeModelOption[]): OpenCodeContextUsage | null {
+  if (!Array.isArray(history)) return null
+
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const entry = history[index]
+    if (!isRecord(entry) || !isRecord(entry.info) || entry.info.role !== 'assistant') continue
+    const providerID = stringValue(entry.info.providerID)
+    const modelID = stringValue(entry.info.modelID)
+    const tokens = parseTokenUsage(entry.info.tokens)
+    if (!providerID || !modelID || !tokens) return null
+
+    const model = models.find((option) => option.providerID === providerID && option.modelID === modelID)
+    if (!model?.contextWindow || model.contextWindow <= 0) return null
+
+    const usedTokens = tokens.input + tokens.cacheRead + tokens.cacheWrite
+    return {
+      usedTokens,
+      contextWindow: model.contextWindow,
+      percentage: (usedTokens / model.contextWindow) * 100,
+      model: { providerID, modelID }
+    }
+  }
+
+  return null
+}
+
 /** Normalizes the provider catalog returned by OpenCode into picker options. */
 export function normalizeOpenCodeModels(payload: unknown): OpenCodeModelOption[] {
   const providers =
@@ -709,11 +772,13 @@ export function normalizeOpenCodeModels(payload: unknown): OpenCodeModelOption[]
       if (!isRecord(modelValue) || !modelID.trim()) continue
       const modelName =
         typeof modelValue.name === 'string' && modelValue.name.trim() ? modelValue.name.trim() : modelID
+      const limit = isRecord(modelValue.limit) ? modelValue.limit : {}
       const common = {
         providerID,
         providerName,
         modelID,
         modelName,
+        ...(finiteNumber(limit.context) === undefined ? {} : { contextWindow: finiteNumber(limit.context) }),
         ...(optionalBoolean(modelValue, 'reasoning') === undefined
           ? {}
           : { reasoning: optionalBoolean(modelValue, 'reasoning') }),
@@ -889,6 +954,7 @@ export class OpenCodeManager {
     const available = await this.listSessions(session)
     const summary = available.sessions.find((item) => item.id === openCodeSessionId)
     if (!summary) throw new Error('That OpenCode conversation is not available for this folder.')
+    if (!runtime.models) await this.listModels(session)
 
     this.setActiveSession(runtime, openCodeSessionId)
     return this.loadConversation(runtime, openCodeSessionId, summary)
@@ -916,7 +982,8 @@ export class OpenCodeManager {
       ...(summary ? { session: summary } : {}),
       messages: [],
       revert: null,
-      undoSupported
+      undoSupported,
+      contextUsage: null
     }
   }
 
@@ -958,9 +1025,10 @@ export class OpenCodeManager {
       }
 
       let turnItems: Array<OpenCodeToolMessage | OpenCodeReasoningMessage> = []
+      let history: OpenCodeHistoryMessage[] | null = null
       if (response.info.parentID) {
         try {
-          const history = await requestJson<OpenCodeHistoryMessage[]>(
+          history = await requestJson<OpenCodeHistoryMessage[]>(
             runtime.url,
             `/session/${encodeURIComponent(openCodeSessionId)}/message`,
             undefined,
@@ -976,6 +1044,10 @@ export class OpenCodeManager {
       return {
         sessionId: openCodeSessionId,
         userMessageId: response.info.parentID ?? null,
+        contextUsage: extractContextUsage(
+          history ?? [{ info: { ...response.info, role: 'assistant' }, parts: response.parts }],
+          runtime.models ?? []
+        ),
         messages: [
           ...turnItems,
           // Reasoning that belongs to the final message precedes its text.
@@ -1045,6 +1117,7 @@ export class OpenCodeManager {
     const runtime = await this.ensureRuntime(session)
     const openCodeSessionId = runtime.openCodeSessionId
     if (!openCodeSessionId) throw new Error('OpenCode conversation is not selected.')
+    if (!runtime.models) await this.listModels(session)
     if (!(await this.isUndoSupported(runtime))) {
       throw new Error('Undo is unavailable because this project is not a Git repository.')
     }
@@ -1068,6 +1141,7 @@ export class OpenCodeManager {
     const runtime = await this.ensureRuntime(session)
     const openCodeSessionId = runtime.openCodeSessionId
     if (!openCodeSessionId) throw new Error('OpenCode conversation is not selected.')
+    if (!runtime.models) await this.listModels(session)
     if (!(await this.isUndoSupported(runtime))) {
       throw new Error('Redo is unavailable because this project is not a Git repository.')
     }
@@ -1115,7 +1189,8 @@ export class OpenCodeManager {
       session: summary ?? toSessionSummary(state) ?? undefined,
       messages: extractHistoryMessages(history, revert),
       revert,
-      undoSupported
+      undoSupported,
+      contextUsage: extractContextUsage(history, runtime.models ?? [])
     }
   }
 

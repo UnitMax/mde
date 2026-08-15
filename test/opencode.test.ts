@@ -7,6 +7,7 @@ import {
   extractHistoryMessages,
   extractTurnItems,
   extractTextParts,
+  extractContextUsage,
   createOpenCodeLaunch,
   OpenCodeStreamTracker,
   parseServerUrl,
@@ -104,6 +105,68 @@ describe('OpenCode GUI protocol helpers', () => {
         modelName: 'Model B'
       }
     ])
+  })
+
+  it('preserves model context limits and uses only the latest assistant usage', () => {
+    const models = normalizeOpenCodeModels({
+      providers: [
+        {
+          id: 'cloud',
+          models: {
+            'model-a': { name: 'Model A', limit: { context: 200_000, output: 32_000 } }
+          }
+        }
+      ]
+    })
+
+    expect(models[0]?.contextWindow).toBe(200_000)
+    expect(
+      extractContextUsage(
+        [
+          {
+            info: {
+              id: 'old',
+              role: 'assistant',
+              providerID: 'cloud',
+              modelID: 'model-a',
+              tokens: { input: 190_000, output: 500, cache: { read: 0, write: 0 } }
+            },
+            parts: []
+          },
+          {
+            info: {
+              id: 'latest',
+              role: 'assistant',
+              providerID: 'cloud',
+              modelID: 'model-a',
+              tokens: { input: 10_000, output: 500, cache: { read: 2_000, write: 1_000 } }
+            },
+            parts: []
+          }
+        ],
+        models
+      )
+    ).toEqual({
+      usedTokens: 13_000,
+      contextWindow: 200_000,
+      percentage: 6.5,
+      model: { providerID: 'cloud', modelID: 'model-a' }
+    })
+  })
+
+  it('does not invent context usage when token metadata or model limits are missing', () => {
+    expect(
+      extractContextUsage(
+        [{ info: { id: 'assistant', role: 'assistant', providerID: 'cloud', modelID: 'model-a' }, parts: [] }],
+        [{
+          key: 'cloud/model-a',
+          providerID: 'cloud',
+          providerName: 'Cloud',
+          modelID: 'model-a',
+          modelName: 'Model A'
+        }]
+      )
+    ).toBeNull()
   })
 
   it('uses the regular OpenCode config while retaining pure server startup', () => {

@@ -6,6 +6,7 @@ import type {
   NewSession,
   OpenCodeChatItem,
   OpenCodeChatMessage,
+  OpenCodeContextUsage,
   OpenCodeLiveChatItem,
   OpenCodeModelOption,
   OpenCodeModelSelection,
@@ -24,6 +25,7 @@ import { disposeSession } from '@/terminal/sessions'
 
 export interface OpenCodeChatState {
   messages: OpenCodeChatItem[]
+  contextUsage: OpenCodeContextUsage | null
   availableSessions: OpenCodeSessionSummary[]
   availableModels: OpenCodeModelOption[]
   selectedModel: OpenCodeModelSelection | null
@@ -44,6 +46,7 @@ export interface OpenCodeChatState {
 
 const EMPTY_CHAT: OpenCodeChatState = {
   messages: [],
+  contextUsage: null,
   availableSessions: [],
   availableModels: [],
   selectedModel: null,
@@ -134,6 +137,10 @@ function upsertLiveItem(items: OpenCodeLiveChatItem[], item: OpenCodeStreamChunk
 
 function sameModel(a: OpenCodeModelSelection, b: OpenCodeModelSelection): boolean {
   return a.providerID === b.providerID && a.modelID === b.modelID && a.variant === b.variant
+}
+
+function contextUsageMatchesModel(usage: OpenCodeContextUsage | null, model: OpenCodeModelSelection): boolean {
+  return usage?.model.providerID === model.providerID && usage.model.modelID === model.modelID
 }
 
 function findModel(
@@ -446,6 +453,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
             ...current,
             availableModels: result.models,
             selectedModel: selected,
+            contextUsage:
+              current.contextUsage && selected && contextUsageMatchesModel(current.contextUsage, selected)
+                ? current.contextUsage
+                : null,
             modelsLoading: false
           }
         }
@@ -473,7 +484,15 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     set((state) => ({
       opencodeChats: {
         ...state.opencodeChats,
-        [sessionId]: { ...(state.opencodeChats[sessionId] ?? EMPTY_CHAT), selectedModel: selected, error: null }
+        [sessionId]: {
+          ...(state.opencodeChats[sessionId] ?? EMPTY_CHAT),
+          selectedModel: selected,
+          contextUsage:
+            current?.contextUsage && contextUsageMatchesModel(current.contextUsage, selected)
+              ? current.contextUsage
+              : null,
+          error: null
+        }
       }
     }))
     if (!openCodeSessionId) return
@@ -573,7 +592,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     })
 
     try {
-      const { sessionId: openCodeSessionId, userMessageId, messages } = await window.api.opencode.send({
+      const { sessionId: openCodeSessionId, userMessageId, messages, contextUsage } = await window.api.opencode.send({
         sessionId,
         text: prompt,
         model: selectedModel
@@ -600,6 +619,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
                 return [...next, ...messages]
               })(),
               openCodeSessionId,
+              contextUsage: contextUsage ?? null,
               pending: false,
               revert: null,
               externalBusy: false,
@@ -679,6 +699,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
             [sessionId]: {
               ...chat,
               messages: result.messages,
+              contextUsage: result.contextUsage ?? null,
               openCodeSessionId: result.sessionId,
               pending: false,
               revert: result.revert,
@@ -748,6 +769,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
             [sessionId]: {
               ...chat,
               messages: result.messages,
+              contextUsage: result.contextUsage ?? null,
               openCodeSessionId: result.sessionId,
               revert: result.revert,
               undoSupported: result.undoSupported,
@@ -807,6 +829,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
             [sessionId]: {
               ...chat,
               messages: result.messages,
+              contextUsage: result.contextUsage ?? null,
               openCodeSessionId: result.sessionId,
               revert: result.revert,
               undoSupported: result.undoSupported,
@@ -906,6 +929,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
             [sessionId]: {
               ...previous,
               messages: result.messages,
+              contextUsage: result.contextUsage ?? null,
               availableSessions: result.session
                 ? previous.availableSessions.some((item) => item.id === result.session?.id)
                   ? previous.availableSessions.map((item) =>
@@ -969,6 +993,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
             [sessionId]: {
               ...previous,
               messages: [],
+              contextUsage: null,
               availableSessions: result.session
                 ? [result.session, ...previous.availableSessions.filter((item) => item.id !== result.sessionId)]
                 : previous.availableSessions,

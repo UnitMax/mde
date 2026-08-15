@@ -100,6 +100,7 @@ describe('renderer workspace event bridge', () => {
       opencodeChats: {
         'session-1': {
           messages: [],
+          contextUsage: null,
           availableSessions: [],
           availableModels: [model],
           selectedModel: model,
@@ -393,6 +394,7 @@ describe('renderer workspace event bridge', () => {
       opencodeChats: {
         'session-1': {
           messages: [{ id: 'old', role: 'assistant', text: 'Old transcript' }],
+          contextUsage: null,
           availableSessions: [conversation],
           availableModels: [model],
           selectedModel: model,
@@ -601,6 +603,7 @@ describe('renderer workspace event bridge', () => {
       opencodeChats: {
         'session-1': {
           messages: [],
+          contextUsage: null,
           availableSessions: [conversation],
           availableModels: [],
           selectedModel: null,
@@ -649,6 +652,7 @@ describe('renderer workspace event bridge', () => {
       opencodeChats: {
         'session-1': {
           messages: [],
+          contextUsage: null,
           availableSessions: [],
           availableModels: [model],
           selectedModel: model,
@@ -762,6 +766,7 @@ describe('renderer workspace event bridge', () => {
       opencodeChats: {
         'session-1': {
           messages: beforeUndo,
+          contextUsage: null,
           availableSessions: [],
           availableModels: [model],
           selectedModel: model,
