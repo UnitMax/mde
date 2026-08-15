@@ -363,8 +363,8 @@ interface OpenCodeSessionResponse {
   revert?: unknown
 }
 
-interface OpenCodeProjectResponse {
-  vcs?: unknown
+interface OpenCodeVcsResponse {
+  branch?: unknown
 }
 
 interface OpenCodeProviderResponse {
@@ -427,6 +427,11 @@ function toRevertState(value: unknown): OpenCodeRevertState | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
+}
+
+/** OpenCode returns VCS information only when the current project is Git-backed. */
+export function isGitVcsResponse(value: unknown): boolean {
+  return isRecord(value) && typeof value.branch === 'string'
 }
 
 function stringValue(value: unknown): string | undefined {
@@ -1060,14 +1065,14 @@ export class OpenCodeManager {
 
   private async isUndoSupported(runtime: OpenCodeRuntime): Promise<boolean> {
     try {
-      const project = await requestJson<OpenCodeProjectResponse>(
+      const vcs = await requestJson<OpenCodeVcsResponse>(
         runtime.url,
-        '/project/current',
+        '/vcs',
         undefined,
         HISTORY_REQUEST_TIMEOUT_MS,
         'GET'
       )
-      return project.vcs === 'git'
+      return isGitVcsResponse(vcs)
     } catch {
       return false
     }

@@ -211,7 +211,11 @@ interface WorkspaceState {
   setStatus: (id: string, status: PtyStatus) => void
   noteExit: (info: PtyExitInfo) => void
   clearExit: (id: string) => void
-  persistOpenCodeSelection: (sessionId: string, openCodeSessionId: string | null) => Promise<void>
+  persistOpenCodeSelection: (
+    sessionId: string,
+    openCodeSessionId: string | null,
+    model?: OpenCodeModelSelection
+  ) => Promise<void>
   loadOpenCodeModels: (sessionId: string) => Promise<void>
   selectOpenCodeModel: (sessionId: string, model: OpenCodeModelSelection) => Promise<void>
   refreshOpenCodeSessionList: (sessionId: string) => Promise<void>
@@ -387,11 +391,19 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       return { exits }
     }),
 
-  persistOpenCodeSelection: async (sessionId, openCodeSessionId) => {
+  persistOpenCodeSelection: async (sessionId, openCodeSessionId, model) => {
     try {
+      const workspaceSession = get().sessions.find((session) => session.id === sessionId)
+      const modelSelections =
+        openCodeSessionId && model
+          ? { ...(workspaceSession?.opencodeModelSelections ?? {}), [openCodeSessionId]: model }
+          : undefined
       const updated = await window.api.sessions.update({
         id: sessionId,
-        patch: { opencodeSessionId: openCodeSessionId ?? '' }
+        patch: {
+          opencodeSessionId: openCodeSessionId ?? '',
+          ...(modelSelections ? { opencodeModelSelections: modelSelections } : {})
+        }
       })
       if (!updated) return
       set((state) => ({
@@ -455,6 +467,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     const selected = current ? findModel(current.availableModels, model) : null
     if (!selected) return
     const openCodeSessionId = current?.openCodeSessionId
+
+    set((state) => ({
+      opencodeChats: {
+        ...state.opencodeChats,
+        [sessionId]: { ...(state.opencodeChats[sessionId] ?? EMPTY_CHAT), selectedModel: selected, error: null }
+      }
+    }))
     if (!openCodeSessionId) return
 
     const workspaceSession = get().sessions.find((session) => session.id === sessionId)
@@ -462,13 +481,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       ...(workspaceSession?.opencodeModelSelections ?? {}),
       [openCodeSessionId]: selected
     }
-    set((state) => ({
-      opencodeChats: {
-        ...state.opencodeChats,
-        [sessionId]: { ...(state.opencodeChats[sessionId] ?? EMPTY_CHAT), selectedModel: selected, error: null }
-      }
-    }))
-
     try {
       const updated = await window.api.sessions.update({
         id: sessionId,
@@ -503,7 +515,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
                     result.selectedSessionId
                   ]
                 )
-              : null,
+              : current.selectedModel,
             ...(result.selectedSessionId ? {} : { messages: [], liveItems: [] })
           }
         }
@@ -595,7 +607,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
           }
         }
       })
-      await get().persistOpenCodeSelection(sessionId, openCodeSessionId)
+      await get().persistOpenCodeSelection(sessionId, openCodeSessionId, selectedModel)
       await get().refreshOpenCodeSessionList(sessionId)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'OpenCode request failed.'

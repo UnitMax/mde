@@ -406,6 +406,141 @@ describe('renderer workspace event bridge', () => {
     })
   })
 
+  it('allows selecting a model before lazily creating the first conversation', async () => {
+    const model: OpenCodeModelOption = {
+      key: 'cloud/model-a',
+      providerID: 'cloud',
+      providerName: 'Cloud Provider',
+      modelID: 'model-a',
+      modelName: 'Model A'
+    }
+    api.opencode.listModels.mockResolvedValue({ models: [model] })
+    const createdConversation: OpenCodeSessionSummary = {
+      id: 'opencode-new',
+      title: 'Empty folder',
+      directory: '/workspace/empty',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z'
+    }
+    api.opencode.listSessions
+      .mockResolvedValueOnce({ sessions: [], selectedSessionId: null, undoSupported: false })
+      .mockResolvedValueOnce({ sessions: [], selectedSessionId: null, undoSupported: false })
+      .mockResolvedValueOnce({
+        sessions: [createdConversation],
+        selectedSessionId: createdConversation.id,
+        undoSupported: false
+      })
+    api.opencode.send.mockResolvedValue({
+      sessionId: 'opencode-new',
+      userMessageId: 'user-new',
+      messages: [{ id: 'answer-new', role: 'assistant', text: 'Ready.' }]
+    })
+    useWorkspace.setState({
+      sessions: [
+        {
+          id: 'session-1',
+          projectId: 'project-1',
+          name: 'Empty folder',
+          kind: 'native',
+          path: '/workspace/empty',
+          createdAt: '2026-01-01T00:00:00.000Z'
+        }
+      ],
+      opencodeChats: {}
+    })
+
+    await useWorkspace.getState().loadOpenCodeModels('session-1')
+    await useWorkspace.getState().loadOpenCodeSessions('session-1')
+    await useWorkspace.getState().selectOpenCodeModel('session-1', model)
+
+    expect(useWorkspace.getState().opencodeChats['session-1']?.selectedModel).toEqual({
+      providerID: 'cloud',
+      modelID: 'model-a'
+    })
+    expect(api.sessions.update).not.toHaveBeenCalled()
+
+    await useWorkspace.getState().refreshOpenCodeSessionList('session-1')
+    expect(useWorkspace.getState().opencodeChats['session-1']).toMatchObject({
+      openCodeSessionId: null,
+      selectedModel: { providerID: 'cloud', modelID: 'model-a' }
+    })
+
+    await useWorkspace.getState().sendOpenCodeMessage('session-1', 'First prompt')
+
+    expect(api.opencode.send).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      text: 'First prompt',
+      model: { providerID: 'cloud', modelID: 'model-a' }
+    })
+    expect(api.sessions.update).toHaveBeenCalledWith({
+      id: 'session-1',
+      patch: {
+        opencodeSessionId: 'opencode-new',
+        opencodeModelSelections: {
+          'opencode-new': { providerID: 'cloud', modelID: 'model-a' }
+        }
+      }
+    })
+    expect(useWorkspace.getState().opencodeChats['session-1']).toMatchObject({
+      openCodeSessionId: 'opencode-new',
+      selectedModel: { providerID: 'cloud', modelID: 'model-a' },
+      pending: false
+    })
+  })
+
+  it('refreshes undo support when a project becomes a Git repository', async () => {
+    const conversation: OpenCodeSessionSummary = {
+      id: 'opencode-1',
+      title: 'App',
+      directory: '/workspace/app',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z'
+    }
+    api.opencode.listSessions.mockResolvedValue({
+      sessions: [conversation],
+      selectedSessionId: conversation.id,
+      undoSupported: true
+    })
+    useWorkspace.setState({
+      sessions: [
+        {
+          id: 'session-1',
+          projectId: 'project-1',
+          name: 'App',
+          kind: 'native',
+          path: '/workspace/app',
+          opencodeSessionId: conversation.id,
+          createdAt: '2026-01-01T00:00:00.000Z'
+        }
+      ],
+      opencodeChats: {
+        'session-1': {
+          messages: [],
+          availableSessions: [conversation],
+          availableModels: [],
+          selectedModel: null,
+          subagents: [],
+          revert: null,
+          undoSupported: false,
+          undoing: false,
+          redoing: false,
+          externalBusy: false,
+          openCodeSessionId: conversation.id,
+          liveItems: [],
+          pending: false,
+          sessionsLoading: false,
+          modelsLoading: false,
+          error: null,
+          unreadCompletion: false
+        }
+      }
+    })
+
+    await useWorkspace.getState().refreshOpenCodeSessionList('session-1')
+
+    expect(useWorkspace.getState().opencodeChats['session-1']?.undoSupported).toBe(true)
+  })
+
   it('keeps subagent status visible after the parent response completes', () => {
     const model: OpenCodeModelOption = {
       key: 'cloud/model-a',

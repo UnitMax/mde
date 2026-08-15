@@ -11,7 +11,8 @@ import {
   parseServerUrl,
   parseSseFrames,
   normalizeOpenCodeDirectory,
-  normalizeOpenCodeModels
+  normalizeOpenCodeModels,
+  isGitVcsResponse
 } from '../src/main/opencode/manager'
 
 const TEST_MODEL = { providerID: 'opencode', modelID: 'nemotron-3.5-lightning-free' } as const
@@ -21,6 +22,13 @@ describe('OpenCode GUI protocol helpers', () => {
     expect(normalizeOpenCodeDirectory('/workspace/app/')).toBe('/workspace/app')
     expect(normalizeOpenCodeDirectory('/workspace/app\\nested')).toBe('/workspace/app/nested')
     expect(normalizeOpenCodeDirectory('C:\\Work\\App\\')).toBe('c:/work/app')
+  })
+  it('recognizes live Git VCS responses for undo support', () => {
+    expect(isGitVcsResponse({ branch: 'main' })).toBe(true)
+    expect(isGitVcsResponse({ branch: '' })).toBe(true)
+    expect(isGitVcsResponse({ vcs: 'git' })).toBe(false)
+    expect(isGitVcsResponse({})).toBe(false)
+    expect(isGitVcsResponse(null)).toBe(false)
   })
   it('uses the explicitly selected model and does not apply a production default', () => {
     expect(createPromptBody('Reply only with pong', TEST_MODEL)).toEqual({

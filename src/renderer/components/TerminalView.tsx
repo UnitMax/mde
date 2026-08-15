@@ -751,7 +751,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
                 models={availableModels}
                 selected={selectedModel}
                 loading={modelsLoading}
-                disabled={!nativeSession || pending || externalBusy || sessionsLoading || !openCodeSessionId}
+                disabled={!nativeSession || pending || externalBusy || sessionsLoading || modelsLoading}
                 onSelect={(model) => void selectOpenCodeModel(session.id, model)}
                 onRefresh={() => void loadOpenCodeModels(session.id)}
               />
