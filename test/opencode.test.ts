@@ -12,6 +12,7 @@ import {
   createOpenCodeLaunch,
   OpenCodeStreamTracker,
   parseServerUrl,
+  serverUrlForHost,
   parseSseFrames,
   normalizeOpenCodeDirectory,
   normalizeOpenCodeModels,
@@ -251,7 +252,7 @@ describe('OpenCode GUI protocol helpers', () => {
   })
 
   it('launches OpenCode inside the selected WSL distro with a login shell', () => {
-    const launch = createOpenCodeLaunch(wslSession, { PATH: '/usr/bin' }, 'win32')
+    const launch = createOpenCodeLaunch(wslSession, { PATH: '/usr/bin' }, 'win32', '172.29.246.101')
 
     expect(launch.file).toBe('wsl.exe')
     expect(launch.args).toEqual([
@@ -262,7 +263,7 @@ describe('OpenCode GUI protocol helpers', () => {
       '--',
       'bash',
       '-lic',
-      'exec opencode serve --pure --hostname=127.0.0.1 --port=0'
+      'exec opencode serve --pure --hostname=172.29.246.101 --port=0'
     ])
     expect(launch.options.cwd).toBeUndefined()
     expect(launch.options.env).toMatchObject({ PATH: '/usr/bin', WSL_UTF8: '1' })
@@ -271,6 +272,7 @@ describe('OpenCode GUI protocol helpers', () => {
   it('rejects WSL OpenCode launches outside Windows', () => {
     expect(() => createOpenCodeLaunch(wslSession, {}, 'linux')).toThrow(/only be launched on Windows/)
     expect(() => createOpenCodeLaunch({ ...wslSession, distro: undefined }, {}, 'win32')).toThrow(/no distro/)
+    expect(() => createOpenCodeLaunch(wslSession, {}, 'win32')).toThrow(/network address/)
   })
 
   it('finds the localhost URL emitted by opencode serve', () => {
@@ -278,6 +280,12 @@ describe('OpenCode GUI protocol helpers', () => {
       'http://127.0.0.1:43123'
     )
     expect(parseServerUrl('booting')).toBeNull()
+  })
+
+  it('rewrites a WSL server URL to the host reachable from Windows', () => {
+    expect(serverUrlForHost('http://0.0.0.0:43123', '172.29.246.101')).toBe(
+      'http://172.29.246.101:43123'
+    )
   })
 
   it('keeps only visible text parts from an assistant response', () => {

@@ -2,8 +2,8 @@ import { execFile } from 'node:child_process'
 import type { Distro } from '@shared/types'
 
 /**
- * `wsl.exe` emits UTF-16LE unless WSL_UTF8 is set in its environment. Every
- * invocation in this app goes through here so that can never be forgotten.
+ * Short-lived `wsl.exe` queries emit UTF-16LE unless WSL_UTF8 is set in their
+ * environment. Long-lived child processes set the same variable at launch.
  */
 export function wslEnv(): NodeJS.ProcessEnv {
   return { ...process.env, WSL_UTF8: '1' }
@@ -13,6 +13,22 @@ export interface WslResult {
   stdout: string
   stderr: string
   code: number
+}
+
+function isIpv4Address(value: string): boolean {
+  const octets = value.split('.')
+  return (
+    octets.length === 4 &&
+    octets.every((octet) => /^(?:0|[1-9]\d{0,2})$/.test(octet) && Number(octet) <= 255)
+  )
+}
+
+/** Parses the first usable IPv4 address from `hostname -I` output. */
+export function parseWslHostAddress(output: string): string | null {
+  return output
+    .trim()
+    .split(/\s+/)
+    .find((candidate) => isIpv4Address(candidate)) ?? null
 }
 
 /** Runs wsl.exe and resolves with the exit code instead of throwing on non-zero. */
@@ -30,6 +46,23 @@ export function runWsl(args: string[], timeoutMs = 15_000): Promise<WslResult> {
       }
     )
   })
+}
+
+/** Resolves the address Windows can use to reach a service inside a WSL distro. */
+export async function resolveWslHostAddress(distro: string): Promise<string> {
+  const result = await runWsl(['-d', distro, '--', 'hostname', '-I'])
+  if (result.code !== 0) {
+    const detail = result.stderr.trim()
+    throw new Error(
+      `Could not determine the WSL network address for "${distro}".${detail ? ` ${detail}` : ''}`
+    )
+  }
+
+  const address = parseWslHostAddress(result.stdout)
+  if (!address) {
+    throw new Error(`WSL distro "${distro}" did not report a usable IPv4 address.`)
+  }
+  return address
 }
 
 /**

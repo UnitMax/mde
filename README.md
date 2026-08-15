@@ -92,9 +92,10 @@ present; no migration is attempted.
   `wsl.exe -d <distro> --cd <path> -- bash -lic 'exec bash -i'`. The login+interactive shell
   is required: nvm/mise/bun/asdf put their shims on `PATH` from the login profile.
 - OpenCode GUI sessions use the same WSL boundary: MDE starts
-  `opencode serve --pure --hostname=127.0.0.1 --port=0` inside the selected distro and talks to
-  its localhost HTTP/SSE server from the Windows process. WSL OpenCode uses the distro's own
-  installation, credentials, configuration, and filesystem paths.
+  `opencode serve --pure --hostname=<wsl-ip> --port=0` inside the selected distro. MDE resolves
+  `<wsl-ip>` with `hostname -I` and uses it for the Windows-side HTTP/SSE connection instead of
+  assuming WSL localhost forwarding. WSL OpenCode uses the distro's own installation,
+  credentials, configuration, and filesystem paths.
 - Session paths are stored in the target's own format. `wslpath` is used only at the UI
   boundary — when the Windows folder picker returns a `\\wsl$\` / `\\wsl.localhost\` UNC path
   or a drive path, and when revealing a folder in Explorer.

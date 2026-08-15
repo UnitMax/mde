@@ -22,8 +22,8 @@ import type {
   ListOpenCodeSessionsResponse,
   Session
 } from '@shared/types'
+import { resolveWslHostAddress } from '../wsl/distros'
 type OpenCodeSubagentStreamItem = Extract<OpenCodeStreamItem, { kind: 'subagent' }>
-const OPENCODE_SERVER_ARGS = ['serve', '--pure', '--hostname=127.0.0.1', '--port=0']
 const SERVER_START_TIMEOUT_MS = 10_000
 const REQUEST_TIMEOUT_MS = 120_000
 const HISTORY_REQUEST_TIMEOUT_MS = 10_000
@@ -46,7 +46,8 @@ export interface OpenCodeEvents {
 export function createOpenCodeLaunch(
   session: Session,
   environment: NodeJS.ProcessEnv = process.env,
-  platform: NodeJS.Platform = process.platform
+  platform: NodeJS.Platform = process.platform,
+  wslHost?: string
 ): {
   file: string
   args: string[]
@@ -58,6 +59,9 @@ export function createOpenCodeLaunch(
     }
     if (!session.distro) {
       throw new Error(`WSL session "${session.name}" has no distro.`)
+    }
+    if (!wslHost) {
+      throw new Error(`Could not determine the WSL network address for "${session.distro}".`)
     }
 
     // Run through a login Bash shell so OpenCode installations managed by
@@ -72,7 +76,7 @@ export function createOpenCodeLaunch(
         '--',
         'bash',
         '-lic',
-        `exec opencode ${OPENCODE_SERVER_ARGS.join(' ')}`
+        `exec opencode serve --pure --hostname=${wslHost} --port=0`
       ],
       options: {
         env: { ...environment, WSL_UTF8: '1' },
@@ -83,7 +87,7 @@ export function createOpenCodeLaunch(
 
   return {
     file: 'opencode',
-    args: OPENCODE_SERVER_ARGS,
+    args: ['serve', '--pure', '--hostname=127.0.0.1', '--port=0'],
     options: { cwd: session.path, env: { ...environment }, windowsHide: true }
   }
 }
@@ -994,6 +998,13 @@ export function parseServerUrl(output: string): string | null {
   return null
 }
 
+/** Replaces a WSL server's announced host with the address reachable from Windows. */
+export function serverUrlForHost(url: string, host: string): string {
+  const parsed = new URL(url)
+  parsed.hostname = host
+  return parsed.origin
+}
+
 function terminationError(error: unknown): Error {
   const code = isRecord(error) && typeof error.code === 'string' ? error.code : undefined
   if (code === 'ENOENT') {
@@ -1023,7 +1034,7 @@ async function requestJson<T>(
     if (message.includes('timeout') || message.includes('aborted')) {
       throw new Error('OpenCode did not respond within two minutes.')
     }
-    throw new Error(`OpenCode request failed: ${message}`)
+    throw new Error(`OpenCode request failed (${url}${path}): ${message}`)
   }
 
   const text = await response.text()
@@ -1424,7 +1435,9 @@ export class OpenCodeManager {
   }
 
   private async startRuntime(session: Session): Promise<OpenCodeRuntime> {
-    const launch = createOpenCodeLaunch(session)
+    const wslHost =
+      session.kind === 'wsl' && session.distro ? await resolveWslHostAddress(session.distro) : undefined
+    const launch = createOpenCodeLaunch(session, process.env, process.platform, wslHost)
     const child = spawn(
       launch.file,
       launch.args,
@@ -1433,7 +1446,8 @@ export class OpenCodeManager {
     this.children.set(session.id, child)
 
     try {
-      const url = await this.waitForServerUrl(child)
+      const announcedUrl = await this.waitForServerUrl(child)
+      const url = wslHost ? serverUrlForHost(announcedUrl, wslHost) : announcedUrl
 
       child.once('exit', () => {
         if (this.children.get(session.id) === child) this.children.delete(session.id)
