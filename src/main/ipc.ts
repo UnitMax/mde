@@ -46,7 +46,7 @@ import type { OpenCodeManager } from './opencode/manager'
 import type { OpenCodeTuiStatusManager } from './opencode/tui-status'
 import { createAppInfo } from '@shared/app-info'
 import { isWslAvailable, listDistros, runWsl } from './wsl/distros'
-import { resolveForTarget, toWindows, uncPathFor } from './wsl/paths'
+import { canonicalizeWslPath, resolveForTarget, toWindows, uncPathFor } from './wsl/paths'
 import { launchVsCodeSession } from './vscode'
 import {
   createProject,
@@ -81,7 +81,8 @@ async function validatePath(req: ValidatePathRequest): Promise<PathCheckResult> 
 
     // Validated inside the distro, not through the Windows filesystem: a path
     // like /home/me/src does not exist on Windows at all.
-    const result = await runWsl(['-d', req.distro, 'test', '-d', path])
+    const canonical = await canonicalizeWslPath(req.distro, path)
+    const result = await runWsl(['-d', req.distro, 'test', '-d', canonical ?? path])
     if (result.code === 0) return { exists: true }
 
     const stderr = result.stderr.trim()

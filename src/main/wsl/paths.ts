@@ -47,6 +47,43 @@ function stripTrailingSeparators(input: string): string {
   return input.replace(/[\\/]+$/, '')
 }
 
+const CANONICALIZE_WSL_PATH_SCRIPT = [
+  'input=$1',
+  'case "$input" in',
+  '  "~") input=$HOME ;;',
+  '  "~/"*) input="$HOME/${input#~/}" ;;',
+  'esac',
+  'if resolved=$(realpath -- "$input" 2>/dev/null); then',
+  '  printf "%s\\n" "$resolved"',
+  'else',
+  '  printf "%s\\n" "$input"',
+  'fi'
+].join('\n')
+
+/**
+ * Resolves WSL shorthand and existing symlinks without interpreting the path
+ * through a shell. The path is passed as a positional argument to bash, so
+ * spaces and shell metacharacters remain ordinary path text.
+ */
+export async function canonicalizeWslPath(distro: string, rawPath: string): Promise<string | null> {
+  const result = await runWsl([
+    '-d',
+    distro,
+    '--',
+    'bash',
+    '-lc',
+    CANONICALIZE_WSL_PATH_SCRIPT,
+    'mde-path',
+    rawPath
+  ])
+  if (result.code !== 0) {
+    console.warn(`[wsl] could not canonicalize path in ${distro}: ${result.stderr.trim()}`)
+    return null
+  }
+  const path = result.stdout.trim()
+  return path.length > 0 ? path : null
+}
+
 /** `wsl.exe -d <distro> wslpath -u <windowsPath>` */
 export async function toWsl(distro: string, windowsPath: string): Promise<string | null> {
   const result = await runWsl(['-d', distro, 'wslpath', '-u', stripTrailingSeparators(windowsPath)])
@@ -120,7 +157,9 @@ export async function resolveForTarget(
   }
 
   const path = stripTrailingSeparators(input)
-  return isWslMountedWindowsPath(path)
-    ? { path, warning: SLOW_MOUNT_WARNING }
-    : { path }
+  const canonical = distro ? await canonicalizeWslPath(distro, path) : null
+  const resolvedPath = stripTrailingSeparators(canonical ?? path)
+  return isWslMountedWindowsPath(resolvedPath)
+    ? { path: resolvedPath, warning: SLOW_MOUNT_WARNING }
+    : { path: resolvedPath }
 }

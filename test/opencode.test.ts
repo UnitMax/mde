@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   createPromptBody,
   createOpenCodeSessionOperationBody,
@@ -16,7 +16,8 @@ import {
   parseSseFrames,
   normalizeOpenCodeDirectory,
   normalizeOpenCodeModels,
-  isGitVcsResponse
+  isGitVcsResponse,
+  OpenCodeManager
 } from '../src/main/opencode/manager'
 import { estimateTokenCount } from '../src/shared/generation-metrics'
 import type { Session } from '../src/shared/types'
@@ -43,6 +44,54 @@ const wslSession: Session = {
 }
 
 describe('OpenCode GUI protocol helpers', () => {
+  it('uses OpenCode’s canonical runtime directory when listing sessions', async () => {
+    const fetchMock = vi.fn(async (input: unknown) => {
+      const url = String(input)
+      if (url.endsWith('/vcs')) {
+        return new Response(JSON.stringify({ branch: 'main' }), { status: 200 })
+      }
+      if (url.endsWith('/path')) {
+        return new Response(JSON.stringify({ directory: '/home/max/dev/testmde' }), { status: 200 })
+      }
+      return new Response(
+        JSON.stringify([
+          {
+            id: 'matching',
+            title: 'Matching folder',
+            directory: '/home/max/dev/testmde',
+            time: { created: 1, updated: 2 }
+          },
+          {
+            id: 'other',
+            title: 'Other folder',
+            directory: '/home/max/dev/other',
+            time: { created: 1, updated: 3 }
+          }
+        ]),
+        { status: 200 }
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const manager = new OpenCodeManager()
+    const runtimes = (manager as unknown as { runtimes: Map<string, unknown> }).runtimes
+    runtimes.set('native-1', { url: 'http://127.0.0.1:43123', openCodeSessionId: null })
+
+    try {
+      await expect(
+        manager.listSessions({ ...nativeSession, path: '~/dev/testmde' })
+      ).resolves.toMatchObject({
+        sessions: [{ id: 'matching' }],
+        selectedSessionId: 'matching'
+      })
+      expect(fetchMock.mock.calls.map(([input]) => String(input))).toContain(
+        'http://127.0.0.1:43123/session?roots=true&directory=%2Fhome%2Fmax%2Fdev%2Ftestmde&limit=100'
+      )
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('normalizes native OpenCode directory spellings before matching', () => {
     expect(normalizeOpenCodeDirectory('/workspace/app/')).toBe('/workspace/app')
     expect(normalizeOpenCodeDirectory('/workspace/app\\nested')).toBe('/workspace/app/nested')

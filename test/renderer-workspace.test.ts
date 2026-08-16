@@ -802,6 +802,64 @@ describe('renderer workspace event bridge', () => {
     expect(useWorkspace.getState().opencodeChats['session-1']?.undoSupported).toBe(true)
   })
 
+  it('keeps the visible conversation when a refresh temporarily finds no session', async () => {
+    const conversation: OpenCodeSessionSummary = {
+      id: 'opencode-1',
+      title: 'App',
+      directory: '/home/max/dev/testmde',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z'
+    }
+    api.opencode.listSessions.mockResolvedValue({ sessions: [], selectedSessionId: null, undoSupported: false })
+    useWorkspace.setState({
+      sessions: [
+        {
+          id: 'session-1',
+          projectId: 'project-1',
+          name: 'App',
+          mode: 'gui',
+          kind: 'wsl',
+          distro: 'Ubuntu-24.04',
+          path: '~/dev/testmde',
+          opencodeSessionId: conversation.id,
+          createdAt: '2026-01-01T00:00:00.000Z'
+        }
+      ],
+      opencodeChats: {
+        'session-1': {
+          messages: [{ id: 'answer-1', role: 'assistant', text: 'Still here.' }],
+          contextUsage: null,
+          compacting: false,
+          generation: null,
+          availableSessions: [conversation],
+          availableModels: [],
+          selectedModel: null,
+          subagents: [],
+          revert: null,
+          undoSupported: true,
+          undoing: false,
+          redoing: false,
+          externalBusy: false,
+          openCodeSessionId: conversation.id,
+          liveItems: [],
+          pending: false,
+          sessionsLoading: false,
+          modelsLoading: false,
+          error: null,
+          unreadCompletion: false
+        }
+      }
+    })
+
+    await useWorkspace.getState().refreshOpenCodeSessionList('session-1')
+
+    expect(useWorkspace.getState().opencodeChats['session-1']).toMatchObject({
+      openCodeSessionId: conversation.id,
+      messages: [{ id: 'answer-1', role: 'assistant', text: 'Still here.' }]
+    })
+    expect(api.sessions.update).not.toHaveBeenCalled()
+  })
+
   it('keeps subagent status visible after the parent response completes', () => {
     const model: OpenCodeModelOption = {
       key: 'cloud/model-a',

@@ -444,6 +444,10 @@ interface OpenCodeVcsResponse {
   branch?: unknown
 }
 
+interface OpenCodePathResponse {
+  directory?: unknown
+}
+
 interface OpenCodeProviderResponse {
   providers?: unknown
 }
@@ -482,6 +486,10 @@ export function normalizeOpenCodeDirectory(value: string, caseInsensitive?: bool
   return shouldFoldCase
     ? withoutTrailingSlash.toLowerCase()
     : withoutTrailingSlash
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
 }
 
 function assertOpenCodeSessionSupported(session: Session): void {
@@ -1078,19 +1086,20 @@ export class OpenCodeManager {
 
     const runtime = await this.ensureRuntime(session)
     const undoSupported = await this.isUndoSupported(runtime)
+    const directory = await this.runtimeDirectory(runtime, session.path)
     const response = await requestJson<OpenCodeSessionResponse[]>(
       runtime.url,
-      `/session?roots=true&directory=${encodeURIComponent(session.path)}&limit=100`,
+      `/session?roots=true&directory=${encodeURIComponent(directory)}&limit=100`,
       undefined,
       HISTORY_REQUEST_TIMEOUT_MS,
       'GET'
     )
     const caseInsensitive = process.platform === 'win32' && session.kind === 'native'
-    const directory = normalizeOpenCodeDirectory(session.path, caseInsensitive)
+    const normalizedDirectory = normalizeOpenCodeDirectory(directory, caseInsensitive)
     const sessions = response
       .map(toSessionSummary)
       .filter((item): item is OpenCodeSessionSummary => item !== null)
-      .filter((item) => normalizeOpenCodeDirectory(item.directory, caseInsensitive) === directory)
+      .filter((item) => normalizeOpenCodeDirectory(item.directory, caseInsensitive) === normalizedDirectory)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 
     const selectedSessionId =
@@ -1100,6 +1109,23 @@ export class OpenCodeManager {
     this.setActiveSession(runtime, selectedSessionId)
 
     return { sessions, selectedSessionId, undoSupported }
+  }
+
+  /** OpenCode is the authority for expanding `~` and resolving symlinked paths. */
+  private async runtimeDirectory(runtime: OpenCodeRuntime, fallback: string): Promise<string> {
+    try {
+      const response = await requestJson<OpenCodePathResponse>(
+        runtime.url,
+        '/path',
+        undefined,
+        HISTORY_REQUEST_TIMEOUT_MS,
+        'GET'
+      )
+      if (isNonEmptyString(response.directory)) return response.directory.trim()
+    } catch {
+      // Older OpenCode versions may not expose /path; the stored path remains a safe fallback.
+    }
+    return fallback
   }
 
   async listModels(session: Session): Promise<ListOpenCodeModelsResponse> {

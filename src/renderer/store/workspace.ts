@@ -655,13 +655,19 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const result = await window.api.opencode.listSessions({ sessionId })
       const current = get().opencodeChats[sessionId]
       if (!current) return
+      // A path-spelling mismatch or a transient server refresh can briefly
+      // return no selected session even though the visible conversation is
+      // still valid. Do not erase the authoritative transcript in that case.
+      const selectedSessionId = result.selectedSessionId ?? current.openCodeSessionId
+      const availableSessions =
+        !result.selectedSessionId && current.openCodeSessionId ? current.availableSessions : result.sessions
       set((state) => ({
         opencodeChats: {
           ...state.opencodeChats,
           [sessionId]: {
             ...current,
-            availableSessions: result.sessions,
-            openCodeSessionId: result.selectedSessionId,
+            availableSessions,
+            openCodeSessionId: selectedSessionId,
             undoSupported: result.undoSupported,
             selectedModel: result.selectedSessionId
               ? findModel(
@@ -671,14 +677,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
                   ]
                 )
               : current.selectedModel,
-            ...(result.selectedSessionId ? {} : { messages: [], liveItems: [], generation: null })
           }
         }
       }))
-      if (result.selectedSessionId && result.selectedSessionId !== current.openCodeSessionId) {
-        await get().persistOpenCodeSelection(sessionId, result.selectedSessionId)
-      } else if (!result.selectedSessionId && current.openCodeSessionId) {
-        await get().persistOpenCodeSelection(sessionId, null)
+      if (selectedSessionId && selectedSessionId !== current.openCodeSessionId) {
+        await get().persistOpenCodeSelection(sessionId, selectedSessionId)
       }
     } catch {
       // A successful response should remain visible even if refreshing the picker fails.

@@ -1,9 +1,17 @@
-import { describe, expect, it } from 'vitest'
-import { decodeWslOutput, parseDistroList, parseWslHostAddress } from '../src/main/wsl/distros'
+import { describe, expect, it, vi } from 'vitest'
+
+vi.mock('../src/main/wsl/distros', async () => ({
+  ...(await vi.importActual<typeof import('../src/main/wsl/distros')>('../src/main/wsl/distros')),
+  runWsl: vi.fn()
+}))
+
+import { decodeWslOutput, parseDistroList, parseWslHostAddress, runWsl } from '../src/main/wsl/distros'
 import {
+  canonicalizeWslPath,
   isWindowsDrivePath,
   isWslMountedWindowsPath,
   parseWslUncPath,
+  resolveForTarget,
   uncPathFor
 } from '../src/main/wsl/paths'
 
@@ -142,5 +150,22 @@ describe('path classification', () => {
     expect(uncPathFor('Ubuntu-24.04', '/home/me/src')).toBe(
       '\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\src'
     )
+  })
+})
+
+describe('WSL path resolution', () => {
+  it('expands home shorthand and stores the canonical directory', async () => {
+    vi.mocked(runWsl).mockResolvedValue({
+      stdout: '/home/max/dev/testmde\n',
+      stderr: '',
+      code: 0
+    })
+
+    await expect(canonicalizeWslPath('Ubuntu-24.04', '~/dev/testmde')).resolves.toBe(
+      '/home/max/dev/testmde'
+    )
+    await expect(resolveForTarget('wsl', 'Ubuntu-24.04', '~/dev/testmde')).resolves.toEqual({
+      path: '/home/max/dev/testmde'
+    })
   })
 })
