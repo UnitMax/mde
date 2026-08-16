@@ -36,6 +36,8 @@ import type {
   SendOpenCodePermissionReplyRequest,
   OpenCodeTuiPluginRequest,
   OpenCodeTuiPluginState,
+  OpenCodeTuiSetEnabledRequest,
+  OpenCodeTuiSettings,
   Session,
   PtyStatus
 } from '@shared/types'
@@ -232,25 +234,27 @@ export function registerIpcHandlers(
   handle<OpenCodeTuiPluginRequest, OpenCodeTuiPluginState>(
     IpcChannels.opencodeTuiPluginState,
     async (req) => {
-      const session = await getSession(req.sessionId)
-      if (!session) throw new Error('Session no longer exists.')
-      return opencodeTuiStatusManager.pluginState(session)
+      return opencodeTuiStatusManager.pluginState(req.distro)
     }
   )
   handle<OpenCodeTuiPluginRequest, OpenCodeTuiPluginState>(
     IpcChannels.opencodeTuiPluginInstall,
-    async (req) => {
-      const session = await getSession(req.sessionId)
-      if (!session) throw new Error('Session no longer exists.')
-      return opencodeTuiStatusManager.installPlugin(session)
-    }
+    (req) => opencodeTuiStatusManager.installPlugin(req.distro)
   )
   handle<OpenCodeTuiPluginRequest, OpenCodeTuiPluginState>(
     IpcChannels.opencodeTuiPluginRemove,
-    async (req) => {
-      const session = await getSession(req.sessionId)
-      if (!session) throw new Error('Session no longer exists.')
-      return opencodeTuiStatusManager.removePlugin(session)
+    (req) => opencodeTuiStatusManager.removePlugin(req.distro)
+  )
+  handle<void, OpenCodeTuiSettings>(IpcChannels.opencodeTuiSettings, () =>
+    opencodeTuiStatusManager.settings()
+  )
+  handle<OpenCodeTuiSetEnabledRequest, OpenCodeTuiSettings>(
+    IpcChannels.opencodeTuiSetEnabled,
+    (req) => {
+      if (typeof req?.enabled !== 'boolean') {
+        throw new Error('Invalid OpenCode TUI enabled setting.')
+      }
+      return opencodeTuiStatusManager.setEnabled(req.enabled)
     }
   )
 

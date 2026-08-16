@@ -29,6 +29,8 @@ import type {
   OpenCodeSlashCommand,
   OpenCodeSubagent,
   OpenCodeToolMessage,
+  OpenCodeTuiPluginState,
+  OpenCodeTuiSettings,
   PtySize,
   Session
 } from '@shared/types'
@@ -219,10 +221,38 @@ function LayoutGlyph({ layout }: { layout: TerminalLayout }): JSX.Element {
   )
 }
 
+function pluginStatusLabel(state: OpenCodeTuiPluginState | undefined): string {
+  if (!state) return 'Checking…'
+  if (state.status === 'installed') return `Installed · v${state.installedVersion}`
+  if (state.status === 'outdated') {
+    return `Update available · v${state.installedVersion ?? 'unknown'} → v${state.currentVersion}`
+  }
+  if (state.status === 'conflict') return 'Another plugin owns this file'
+  return 'Not installed'
+}
+
 function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Element {
   const [open, setOpen] = useState(false)
   const [settings, setSettings] = useState<TerminalSettings>(() => getTerminalSettings())
   const [availableFonts] = useState(() => listTerminalFonts())
+  const platform = useWorkspace((state) => state.platform)
+  const wslAvailable = useWorkspace((state) => state.wslAvailable)
+  const distros = useWorkspace((state) => state.distros)
+  const refreshDistros = useWorkspace((state) => state.refreshDistros)
+  const [tuiSettings, setTuiSettings] = useState<OpenCodeTuiSettings>({
+    enabled: false,
+    currentPluginVersion: ''
+  })
+  const [pluginStates, setPluginStates] = useState<Record<string, OpenCodeTuiPluginState>>({})
+  const [tuiLoading, setTuiLoading] = useState(false)
+  const [tuiBusyDistro, setTuiBusyDistro] = useState<string | null>(null)
+  const [tuiError, setTuiError] = useState<string | null>(null)
+
+  const canManageTui = platform?.isWindows === true && wslAvailable
+
+  useEffect(() => {
+    if (open && canManageTui) void refreshDistros()
+  }, [canManageTui, open, refreshDistros])
 
   const updateSettings = (patch: Partial<TerminalSettings>): void => {
     const next = { ...settings, ...patch }
@@ -235,6 +265,71 @@ function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JS
       const size = terminal ? fitSession(terminal) : null
       if (size) void window.api.pty.resize({ terminalId, size })
     })
+  }
+
+  useEffect(() => {
+    if (!open || !canManageTui) return
+    let cancelled = false
+    setTuiLoading(true)
+    setTuiError(null)
+    void Promise.all([
+      window.api.opencodeTui.settings(),
+      Promise.allSettled(
+        distros.map((distro) => window.api.opencodeTui.pluginState({ distro: distro.name }))
+      )
+    ])
+      .then(([nextSettings, stateResults]) => {
+        if (cancelled) return
+        const nextStates: Record<string, OpenCodeTuiPluginState> = {}
+        const failures: string[] = []
+        stateResults.forEach((result) => {
+          if (result.status === 'fulfilled') {
+            nextStates[result.value.distro] = result.value
+          } else {
+            failures.push(result.reason instanceof Error ? result.reason.message : String(result.reason))
+          }
+        })
+        setTuiSettings(nextSettings)
+        setPluginStates(nextStates)
+        if (failures.length > 0) setTuiError(failures[0] ?? 'Could not inspect one or more WSL distros.')
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setTuiError(error instanceof Error ? error.message : String(error))
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setTuiLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [canManageTui, distros, open])
+
+  const setTuiEnabled = async (): Promise<void> => {
+    setTuiError(null)
+    try {
+      const next = await window.api.opencodeTui.setEnabled({ enabled: !tuiSettings.enabled })
+      setTuiSettings(next)
+    } catch (error) {
+      setTuiError(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const changePlugin = async (distro: string, action: 'install' | 'remove'): Promise<void> => {
+    setTuiBusyDistro(distro)
+    setTuiError(null)
+    try {
+      const state =
+        action === 'install'
+          ? await window.api.opencodeTui.install({ distro })
+          : await window.api.opencodeTui.remove({ distro })
+      setPluginStates((current) => ({ ...current, [distro]: state }))
+    } catch (error) {
+      setTuiError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setTuiBusyDistro(null)
+    }
   }
 
   return (
@@ -251,76 +346,178 @@ function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JS
         Terminal settings
       </button>
 
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Terminal settings</DialogTitle>
           <DialogDescription>
-            Changes apply immediately to all terminal sessions and are saved for later.
+            Cosmetic changes apply immediately. OpenCode TUI plugin changes apply after the TUI is restarted.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <label className="block text-xs font-medium text-fg-muted">
-            Font family
-            <Select value={settings.family} onValueChange={(family) => updateSettings({ family })}>
-              <SelectTrigger className="mt-1">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {availableFonts.map((font) => (
-                  <SelectItem key={font.family} value={font.family}>
-                    {font.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </label>
+        <div className="space-y-5">
+          <section className="space-y-3" aria-labelledby="terminal-cosmetic-settings">
+            <h3 id="terminal-cosmetic-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
+              Cosmetic
+            </h3>
+            <div className="space-y-4">
+              <label className="block text-xs font-medium text-fg-muted">
+                Font family
+                <Select value={settings.family} onValueChange={(family) => updateSettings({ family })}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableFonts.map((font) => (
+                      <SelectItem key={font.family} value={font.family}>
+                        {font.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </label>
 
-          <label className="block text-xs font-medium text-fg-muted">
-            Font size
-            <Select
-              value={String(settings.size)}
-              onValueChange={(value) => {
-                const size = TERMINAL_FONT_SIZES.find((candidate) => String(candidate) === value)
-                if (size !== undefined) updateSettings({ size })
-              }}
-            >
-              <SelectTrigger className="mt-1">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TERMINAL_FONT_SIZES.map((size) => (
-                  <SelectItem key={size} value={String(size)}>
-                    {size}px
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </label>
+              <label className="block text-xs font-medium text-fg-muted">
+                Font size
+                <Select
+                  value={String(settings.size)}
+                  onValueChange={(value) => {
+                    const size = TERMINAL_FONT_SIZES.find((candidate) => String(candidate) === value)
+                    if (size !== undefined) updateSettings({ size })
+                  }}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TERMINAL_FONT_SIZES.map((size) => (
+                      <SelectItem key={size} value={String(size)}>
+                        {size}px
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </label>
 
-          <label className="block text-xs font-medium text-fg-muted">
-            Line height
-            <Select
-              value={String(settings.lineHeight)}
-              onValueChange={(value) => {
-                const lineHeight = TERMINAL_LINE_HEIGHTS.find(
-                  (candidate) => String(candidate) === value
-                )
-                if (lineHeight !== undefined) updateSettings({ lineHeight })
-              }}
-            >
-              <SelectTrigger className="mt-1">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TERMINAL_LINE_HEIGHTS.map((lineHeight) => (
-                  <SelectItem key={lineHeight} value={String(lineHeight)}>
-                    {lineHeight.toFixed(1)}×
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </label>
+              <label className="block text-xs font-medium text-fg-muted">
+                Line height
+                <Select
+                  value={String(settings.lineHeight)}
+                  onValueChange={(value) => {
+                    const lineHeight = TERMINAL_LINE_HEIGHTS.find(
+                      (candidate) => String(candidate) === value
+                    )
+                    if (lineHeight !== undefined) updateSettings({ lineHeight })
+                  }}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TERMINAL_LINE_HEIGHTS.map((lineHeight) => (
+                      <SelectItem key={lineHeight} value={String(lineHeight)}>
+                        {lineHeight.toFixed(1)}×
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </label>
+            </div>
+          </section>
+
+          <section className="space-y-3 border-t border-line pt-4" aria-labelledby="opencode-tui-settings">
+            <div>
+              <h3 id="opencode-tui-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
+                OpenCode TUI plugin
+              </h3>
+              <p className="mt-1 text-xs text-fg-subtle">
+                Install the plugin per WSL distro. Status reporting is controlled globally.
+              </p>
+            </div>
+
+            {!canManageTui ? (
+              <p className="rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
+                This integration is available only on Windows with WSL 2.
+              </p>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={tuiSettings.enabled}
+                  data-testid="opencode-tui-enabled"
+                  disabled={tuiLoading || !tuiSettings.currentPluginVersion}
+                  onClick={() => void setTuiEnabled()}
+                  className="flex w-full items-center justify-between rounded border border-line bg-panel px-3 py-2 text-left text-xs text-fg-muted hover:bg-hover disabled:pointer-events-none disabled:opacity-50"
+                >
+                  <span>
+                    <span className="block font-medium text-fg">Enable status reporting</span>
+                    <span className="mt-0.5 block text-fg-subtle">
+                      {tuiSettings.enabled
+                        ? 'New and restarted terminals will report OpenCode TUI status.'
+                        : 'Status reporting is disabled until you enable it.'}
+                    </span>
+                  </span>
+                  <span
+                    className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+                      tuiSettings.enabled ? 'bg-accent' : 'bg-line-strong'
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+                        tuiSettings.enabled ? 'translate-x-4' : 'translate-x-0.5'
+                      }`}
+                    />
+                  </span>
+                </button>
+
+                <div className="space-y-2">
+                  {distros.length === 0 ? (
+                    <p className="text-xs text-fg-subtle">No WSL 2 distros found.</p>
+                  ) : (
+                    distros.map((distro) => {
+                      const state = pluginStates[distro.name]
+                      const busy = tuiBusyDistro === distro.name
+                      const action = state?.status === 'installed' ? 'remove' : 'install'
+                      const actionLabel =
+                        state?.status === 'outdated'
+                          ? 'Replace'
+                          : state?.status === 'installed'
+                            ? 'Uninstall'
+                            : state?.status === 'conflict'
+                              ? 'Unavailable'
+                              : 'Install'
+                      return (
+                        <div
+                          key={distro.name}
+                          className="flex items-center gap-3 rounded border border-line bg-panel px-3 py-2"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-xs font-medium text-fg">{distro.name}</div>
+                            <div className="truncate text-[11px] text-fg-subtle">
+                              {distro.state} · {pluginStatusLabel(state)}
+                            </div>
+                          </div>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={busy || state?.status === 'conflict' || !state}
+                            onClick={() => void changePlugin(distro.name, action)}
+                          >
+                            {busy ? 'Working…' : actionLabel}
+                          </Button>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+                <p className="text-[11px] text-fg-subtle">
+                  Current plugin version: v{tuiSettings.currentPluginVersion || '…'}. Restart OpenCode after installing,
+                  replacing, or uninstalling the plugin.
+                </p>
+              </>
+            )}
+            {tuiError && <p className="text-xs text-danger">{tuiError}</p>}
+          </section>
         </div>
       </DialogContent>
     </Dialog>

@@ -56,9 +56,29 @@ describe('renderer workspace event bridge', () => {
       })
     },
     opencodeTui: {
-      pluginState: vi.fn(async () => ({ installed: false })),
-      install: vi.fn(async () => ({ installed: true })),
-      remove: vi.fn(async () => ({ installed: false })),
+      settings: vi.fn(async () => ({ enabled: false, currentPluginVersion: '1.0.0' })),
+      setEnabled: vi.fn(async ({ enabled }: { enabled: boolean }) => ({
+        enabled,
+        currentPluginVersion: '1.0.0'
+      })),
+      pluginState: vi.fn(async ({ distro }: { distro: string }) => ({
+        distro,
+        status: 'not-installed' as const,
+        installedVersion: null,
+        currentVersion: '1.0.0'
+      })),
+      install: vi.fn(async ({ distro }: { distro: string }) => ({
+        distro,
+        status: 'installed' as const,
+        installedVersion: '1.0.0',
+        currentVersion: '1.0.0'
+      })),
+      remove: vi.fn(async ({ distro }: { distro: string }) => ({
+        distro,
+        status: 'not-installed' as const,
+        installedVersion: null,
+        currentVersion: '1.0.0'
+      })),
       onStatus: vi.fn((listener: (update: OpenCodeTuiStatusUpdate) => void) => {
         tuiStatusListeners.push(listener)
         return vi.fn()

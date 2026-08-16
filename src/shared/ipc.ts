@@ -22,6 +22,8 @@ import type {
   UnrevertOpenCodeSessionRequest,
   SelectOpenCodeSessionRequest,
   OpenCodeStreamChunk,
+  OpenCodeTuiSetEnabledRequest,
+  OpenCodeTuiSettings,
   OpenCodeTuiPluginRequest,
   OpenCodeTuiPluginState,
   OpenCodeTuiStatusUpdate,
@@ -79,6 +81,8 @@ export const IpcChannels = {
   opencodeTuiPluginState: 'opencode-tui:plugin-state',
   opencodeTuiPluginInstall: 'opencode-tui:plugin-install',
   opencodeTuiPluginRemove: 'opencode-tui:plugin-remove',
+  opencodeTuiSettings: 'opencode-tui:settings',
+  opencodeTuiSetEnabled: 'opencode-tui:set-enabled',
 
   appInfo: 'app:info',
   platformInfo: 'platform:info'
@@ -209,6 +213,8 @@ export interface RendererApi {
     onStream(listener: (chunk: OpenCodeStreamChunk) => void): () => void
   }
   opencodeTui: {
+    settings(): Promise<OpenCodeTuiSettings>
+    setEnabled(req: OpenCodeTuiSetEnabledRequest): Promise<OpenCodeTuiSettings>
     pluginState(req: OpenCodeTuiPluginRequest): Promise<OpenCodeTuiPluginState>
     install(req: OpenCodeTuiPluginRequest): Promise<OpenCodeTuiPluginState>
     remove(req: OpenCodeTuiPluginRequest): Promise<OpenCodeTuiPluginState>

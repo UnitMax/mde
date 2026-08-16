@@ -68,6 +68,8 @@ const api: RendererApi = {
     onStream: (listener) => subscribe<OpenCodeStreamChunk>(IpcEvents.opencodeStream, listener)
   },
   opencodeTui: {
+    settings: () => ipcRenderer.invoke(IpcChannels.opencodeTuiSettings),
+    setEnabled: (req) => ipcRenderer.invoke(IpcChannels.opencodeTuiSetEnabled, req),
     pluginState: (req) => ipcRenderer.invoke(IpcChannels.opencodeTuiPluginState, req),
     install: (req) => ipcRenderer.invoke(IpcChannels.opencodeTuiPluginInstall, req),
     remove: (req) => ipcRenderer.invoke(IpcChannels.opencodeTuiPluginRemove, req),

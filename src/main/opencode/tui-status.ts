@@ -1,13 +1,15 @@
 import { promises as fs } from 'node:fs'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type {
   OpenCodeTuiAttentionReason,
+  OpenCodeTuiPluginInstallStatus,
   OpenCodeTuiPluginState,
+  OpenCodeTuiSettings,
   OpenCodeTuiStatus,
   OpenCodeTuiStatusSnapshot,
   OpenCodeTuiStatusUpdate,
-  Session
+  Session,
 } from '@shared/types'
 import { uncPathFor } from '../wsl/paths'
 import { runWsl } from '../wsl/distros'
@@ -18,9 +20,13 @@ export const TUI_STATUS_ROOT = '/tmp/mde-opencode'
 export const TUI_STATUS_POLL_MS = 500
 export const TUI_STATUS_STALE_MS = 8_000
 export const TUI_STATUS_PLUGIN_MARKER = 'mde-opencode-tui-status-plugin-v1'
+export const TUI_STATUS_PLUGIN_VERSION = '1.0.0'
+export const TUI_STATUS_PLUGIN_VERSION_MARKER = 'mde-opencode-tui-status-plugin-version:'
+const TUI_STATUS_SETTINGS_FILE = 'opencode-tui.json'
 
 /** Plain JavaScript loaded by OpenCode inside the WSL distro. */
 export const TUI_STATUS_PLUGIN_SOURCE = `// ${TUI_STATUS_PLUGIN_MARKER}
+// ${TUI_STATUS_PLUGIN_VERSION_MARKER} ${TUI_STATUS_PLUGIN_VERSION}
 const file = process.env.MDE_OPENCODE_STATUS_FILE
 const protocol = process.env.MDE_OPENCODE_STATUS_PROTOCOL
 
@@ -254,23 +260,75 @@ function sameStatus(a: EffectiveStatus, b: EffectiveStatus): boolean {
   return a.status === b.status && a.attentionReason === b.attentionReason && a.revision === b.revision
 }
 
-function assertWslSession(session: Session): string {
-  if (process.platform !== 'win32') throw new Error('OpenCode TUI status integration requires Windows.')
-  if (session.kind !== 'wsl' || !session.distro) {
-    throw new Error('OpenCode TUI status integration requires a WSL session with a distro.')
+function assertDistro(distro: string): string {
+  const value = distro.trim()
+  if (process.platform !== 'win32') {
+    throw new Error('OpenCode TUI status integration requires Windows.')
   }
-  return session.distro
+  if (!/^[A-Za-z0-9][A-Za-z0-9._ -]{0,127}$/.test(value)) {
+    throw new Error(`Invalid WSL distro name: "${distro}".`)
+  }
+  return value
+}
+
+export function parseTuiPluginVersion(source: string): string | null {
+  const prefix = `// ${TUI_STATUS_PLUGIN_VERSION_MARKER}`
+  const line = source.split(/\r?\n/).find((value) => value.startsWith(prefix))
+  const version = line?.slice(prefix.length).trim()
+  return version && /^\d+\.\d+\.\d+$/.test(version) ? version : null
+}
+
+export function classifyTuiPluginSource(source: string | null): OpenCodeTuiPluginInstallStatus {
+  if (source === null) return 'not-installed'
+  if (!source.includes(TUI_STATUS_PLUGIN_MARKER)) return 'conflict'
+  return parseTuiPluginVersion(source) === TUI_STATUS_PLUGIN_VERSION ? 'installed' : 'outdated'
 }
 
 export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
   private readonly runtimes = new Map<string, Runtime>()
   private readonly sessionStatuses = new Map<string, EffectiveStatus>()
   private readonly homeDirectories = new Map<string, string>()
+  private settingsDirectory: string | null = null
+  private enabled = false
 
   constructor(private readonly events: OpenCodeTuiStatusEvents) {}
 
+  async configure(settingsDirectory: string): Promise<void> {
+    this.settingsDirectory = settingsDirectory
+    try {
+      const source = await fs.readFile(join(settingsDirectory, TUI_STATUS_SETTINGS_FILE), 'utf8')
+      const parsed: unknown = JSON.parse(source)
+      this.enabled =
+        typeof parsed === 'object' && parsed !== null && (parsed as Record<string, unknown>).enabled === true
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.warn('[opencode-tui] could not read settings; defaulting to disabled:', error)
+      }
+      this.enabled = false
+    }
+  }
+
+  settings(): OpenCodeTuiSettings {
+    return { enabled: this.enabled, currentPluginVersion: TUI_STATUS_PLUGIN_VERSION }
+  }
+
+  async setEnabled(enabled: boolean): Promise<OpenCodeTuiSettings> {
+    const previous = this.enabled
+    this.enabled = enabled
+    try {
+      await this.persistSettings()
+    } catch (error) {
+      this.enabled = previous
+      throw error
+    }
+    if (!enabled) this.disposeAll()
+    return this.settings()
+  }
+
   prepare(terminalId: string, session: Session): Record<string, string> | undefined {
-    if (process.platform !== 'win32' || session.kind !== 'wsl' || !session.distro) return undefined
+    if (!this.enabled || process.platform !== 'win32' || session.kind !== 'wsl' || !session.distro) {
+      return undefined
+    }
 
     const token = randomUUID()
     const wslPath = `${TUI_STATUS_ROOT}/${token}.json`
@@ -305,47 +363,62 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
     for (const terminalId of [...this.runtimes.keys()]) this.dispose(terminalId)
   }
 
-  async pluginState(session: Session): Promise<OpenCodeTuiPluginState> {
-    const pluginPath = await this.pluginPath(assertWslSession(session))
-    try {
-      const source = await fs.readFile(pluginPath, 'utf8')
-      return { installed: source.includes(TUI_STATUS_PLUGIN_MARKER) }
-    } catch {
-      return { installed: false }
+  async pluginState(distro: string): Promise<OpenCodeTuiPluginState> {
+    const name = assertDistro(distro)
+    const pluginPath = await this.pluginPath(name)
+    const source = await this.readPlugin(pluginPath)
+    const installedVersion = source ? parseTuiPluginVersion(source) : null
+    return {
+      distro: name,
+      status: classifyTuiPluginSource(source),
+      installedVersion,
+      currentVersion: TUI_STATUS_PLUGIN_VERSION
     }
   }
 
-  async installPlugin(session: Session): Promise<OpenCodeTuiPluginState> {
-    const pluginPath = await this.pluginPath(assertWslSession(session))
-    await fs.mkdir(dirname(pluginPath), { recursive: true })
-
-    try {
-      const existing = await fs.readFile(pluginPath, 'utf8')
-      if (!existing.includes(TUI_STATUS_PLUGIN_MARKER)) {
-        throw new Error(`Refusing to overwrite an existing OpenCode plugin at ${pluginPath}.`)
-      }
-    } catch (error) {
-      if (error instanceof Error && !error.message.includes('ENOENT')) throw error
+  async installPlugin(distro: string): Promise<OpenCodeTuiPluginState> {
+    const name = assertDistro(distro)
+    const pluginPath = await this.pluginPath(name)
+    const existing = await this.readPlugin(pluginPath)
+    if (existing !== null && !existing.includes(TUI_STATUS_PLUGIN_MARKER)) {
+      throw new Error(`Refusing to overwrite an existing OpenCode plugin at ${pluginPath}.`)
     }
+    await fs.mkdir(dirname(pluginPath), { recursive: true })
 
     const temporary = `${pluginPath}.tmp-${randomUUID()}`
     await fs.writeFile(temporary, TUI_STATUS_PLUGIN_SOURCE, 'utf8')
     await fs.rename(temporary, pluginPath)
-    return { installed: true }
+    return this.pluginState(name)
   }
 
-  async removePlugin(session: Session): Promise<OpenCodeTuiPluginState> {
-    const pluginPath = await this.pluginPath(assertWslSession(session))
-    try {
-      const existing = await fs.readFile(pluginPath, 'utf8')
-      if (!existing.includes(TUI_STATUS_PLUGIN_MARKER)) {
-        throw new Error(`Refusing to remove a non-MDE OpenCode plugin at ${pluginPath}.`)
-      }
-      await fs.unlink(pluginPath)
-    } catch (error) {
-      if (error instanceof Error && !error.message.includes('ENOENT')) throw error
+  async removePlugin(distro: string): Promise<OpenCodeTuiPluginState> {
+    const name = assertDistro(distro)
+    const pluginPath = await this.pluginPath(name)
+    const existing = await this.readPlugin(pluginPath)
+    if (existing === null) return this.pluginState(name)
+    if (!existing.includes(TUI_STATUS_PLUGIN_MARKER)) {
+      throw new Error(`Refusing to remove a non-MDE OpenCode plugin at ${pluginPath}.`)
     }
-    return { installed: false }
+    await fs.unlink(pluginPath)
+    return this.pluginState(name)
+  }
+
+  private async persistSettings(): Promise<void> {
+    if (!this.settingsDirectory) return
+    await fs.mkdir(this.settingsDirectory, { recursive: true })
+    const target = join(this.settingsDirectory, TUI_STATUS_SETTINGS_FILE)
+    const temporary = `${target}.tmp-${randomUUID()}`
+    await fs.writeFile(temporary, `${JSON.stringify({ enabled: this.enabled })}\n`, 'utf8')
+    await fs.rename(temporary, target)
+  }
+
+  private async readPlugin(pluginPath: string): Promise<string | null> {
+    try {
+      return await fs.readFile(pluginPath, 'utf8')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+      throw error
+    }
   }
 
   private async pluginPath(distro: string): Promise<string> {

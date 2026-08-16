@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import {
   ChevronDown,
   ChevronRight,
@@ -188,8 +188,6 @@ function SessionRow({ session, status, chat, tuiStatus, selected, onSelect }: Se
   const [confirmingRemove, setConfirmingRemove] = useState(false)
   const [moving, setMoving] = useState(false)
   const [targetProjectId, setTargetProjectId] = useState(session.projectId)
-  const [tuiPluginInstalled, setTuiPluginInstalled] = useState<boolean | null>(null)
-  const [tuiPluginBusy, setTuiPluginBusy] = useState(false)
 
   const commitRename = (): void => {
     setRenaming(false)
@@ -223,46 +221,6 @@ function SessionRow({ session, status, chat, tuiStatus, selected, onSelect }: Se
   const indicator = sessionIndicator(status, chat, tuiStatus)
   const canOpenInVsCode =
     platform?.isWindows === true && wslAvailable && session.kind === 'wsl' && Boolean(session.distro)
-  const canUseTuiStatus =
-    platform?.isWindows === true &&
-    wslAvailable &&
-    session.kind === 'wsl' &&
-    session.mode === 'terminal' &&
-    Boolean(session.distro)
-
-  useEffect(() => {
-    if (!canUseTuiStatus) {
-      setTuiPluginInstalled(null)
-      return
-    }
-    let cancelled = false
-    void window.api.opencodeTui
-      .pluginState({ sessionId: session.id })
-      .then(({ installed }) => {
-        if (!cancelled) setTuiPluginInstalled(installed)
-      })
-      .catch(() => {
-        if (!cancelled) setTuiPluginInstalled(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [canUseTuiStatus, session.id])
-
-  const toggleTuiPlugin = async (): Promise<void> => {
-    setTuiPluginBusy(true)
-    try {
-      const result = tuiPluginInstalled
-        ? await window.api.opencodeTui.remove({ sessionId: session.id })
-        : await window.api.opencodeTui.install({ sessionId: session.id })
-      setTuiPluginInstalled(result.installed)
-    } catch (error) {
-      console.warn('[opencode-tui] plugin change failed:', error)
-    } finally {
-      setTuiPluginBusy(false)
-    }
-  }
-
   return (
     <>
       <ContextMenu>
@@ -352,15 +310,6 @@ function SessionRow({ session, status, chat, tuiStatus, selected, onSelect }: Se
             <ContextMenuItem onSelect={() => void openSessionInVsCode(session.id)}>
               <Code className="h-3.5 w-3.5" />
               Open in VS Code
-            </ContextMenuItem>
-          )}
-          {canUseTuiStatus && (
-            <ContextMenuItem
-              disabled={tuiPluginBusy}
-              onSelect={() => void toggleTuiPlugin()}
-              title={!tuiPluginInstalled ? 'Restart OpenCode after enabling' : undefined}
-            >
-              {tuiPluginInstalled ? 'Disable OpenCode TUI status' : 'Enable OpenCode TUI status'}
             </ContextMenuItem>
           )}
           <ContextMenuItem

@@ -94,9 +94,10 @@ if (!app.requestSingleInstanceLock()) {
     mainWindow.focus()
   })
 
-  void app.whenReady().then(() => {
+  void app.whenReady().then(async () => {
     app.setAppUserModelId('dev.mde.app')
     initWorkspaceStore(app.getPath('userData'))
+    await opencodeTuiStatusManager.configure(app.getPath('userData'))
     registerIpcHandlers(ptyManager, opencodeManager, opencodeTuiStatusManager)
     createWindow()
 

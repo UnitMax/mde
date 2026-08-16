@@ -69,12 +69,30 @@ export interface OpenCodeTuiStatusUpdate {
   revision: number
 }
 
+export type OpenCodeTuiPluginInstallStatus =
+  | 'not-installed'
+  | 'installed'
+  | 'outdated'
+  | 'conflict'
+
+export interface OpenCodeTuiSettings {
+  enabled: boolean
+  currentPluginVersion: string
+}
+
+export interface OpenCodeTuiSetEnabledRequest {
+  enabled: boolean
+}
+
 export interface OpenCodeTuiPluginRequest {
-  sessionId: string
+  distro: string
 }
 
 export interface OpenCodeTuiPluginState {
-  installed: boolean
+  distro: string
+  status: OpenCodeTuiPluginInstallStatus
+  installedVersion: string | null
+  currentVersion: string
 }
 
 export interface PtySize {
