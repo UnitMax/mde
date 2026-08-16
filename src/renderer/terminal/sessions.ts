@@ -3,10 +3,10 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import type { PtySize } from '@shared/types'
 import {
-  getTerminalFontSettings,
+  getTerminalSettings,
   xtermFontFamily,
-  type TerminalFontSettings
-} from './font-settings'
+  type TerminalSettings
+} from './terminal-settings'
 
 export type RendererKind = 'webgl' | 'dom'
 
@@ -56,13 +56,13 @@ function createSession(sessionId: string, host: HTMLElement): TerminalSession {
   container.className = 'h-full w-full'
   host.appendChild(container)
 
-  const font = getTerminalFontSettings()
+  const settings = getTerminalSettings()
   const term = new Terminal({
     allowProposedApi: true,
     cursorBlink: true,
-    fontFamily: xtermFontFamily(font.family),
-    fontSize: font.size,
-    lineHeight: 1.2,
+    fontFamily: xtermFontFamily(settings.family),
+    fontSize: settings.size,
+    lineHeight: settings.lineHeight,
     scrollback: 10_000,
     theme: THEME
   })
@@ -94,11 +94,12 @@ function createSession(sessionId: string, host: HTMLElement): TerminalSession {
   return session
 }
 
-/** Applies font settings without recreating terminals or their PTY processes. */
-export function applyTerminalFontSettings(settings: TerminalFontSettings): void {
+/** Applies terminal settings without recreating terminals or their PTY processes. */
+export function applyTerminalSettings(settings: TerminalSettings): void {
   for (const session of sessions.values()) {
     session.term.options.fontFamily = xtermFontFamily(settings.family)
     session.term.options.fontSize = settings.size
+    session.term.options.lineHeight = settings.lineHeight
   }
 }
 

@@ -1,6 +1,8 @@
-export interface TerminalFontSettings {
+export interface TerminalSettings {
   family: string
   size: number
+  /** xterm line-height multiplier relative to the selected font size. */
+  lineHeight: number
 }
 
 export interface TerminalFontOption {
@@ -9,7 +11,9 @@ export interface TerminalFontOption {
 }
 
 export const TERMINAL_FONT_SIZES = [11, 12, 13, 14, 16, 18] as const
-export const TERMINAL_FONT_STORAGE_KEY = 'mde.terminal-font-settings'
+export const TERMINAL_LINE_HEIGHTS = [1, 1.1, 1.2, 1.3, 1.4, 1.5] as const
+export const TERMINAL_SETTINGS_STORAGE_KEY = 'mde.terminal-settings'
+export const LEGACY_TERMINAL_FONT_STORAGE_KEY = 'mde.terminal-font-settings'
 
 const CURATED_FONT_OPTIONS: readonly TerminalFontOption[] = [
   { family: 'Cascadia Mono', label: 'Cascadia Mono' },
@@ -21,7 +25,9 @@ const CURATED_FONT_OPTIONS: readonly TerminalFontOption[] = [
   { family: 'monospace', label: 'System monospace' }
 ]
 
-export function listTerminalFonts(isInstalled: (family: string) => boolean = isSystemFontInstalled): TerminalFontOption[] {
+export function listTerminalFonts(
+  isInstalled: (family: string) => boolean = isSystemFontInstalled
+): TerminalFontOption[] {
   const installed = CURATED_FONT_OPTIONS.filter(
     (option) => option.family === 'monospace' || isInstalled(option.family)
   )
@@ -33,10 +39,13 @@ function isSystemFontInstalled(family: string): boolean {
   return document.fonts.check(`13px "${family}"`)
 }
 
-export function defaultTerminalFontSettings(availableFonts: readonly TerminalFontOption[]): TerminalFontSettings {
+export function defaultTerminalSettings(
+  availableFonts: readonly TerminalFontOption[]
+): TerminalSettings {
   return {
     family: availableFonts[0]?.family ?? 'monospace',
-    size: 13
+    size: 13,
+    lineHeight: 1
   }
 }
 
@@ -44,37 +53,48 @@ function isTerminalFontSize(value: unknown): value is (typeof TERMINAL_FONT_SIZE
   return typeof value === 'number' && TERMINAL_FONT_SIZES.includes(value as (typeof TERMINAL_FONT_SIZES)[number])
 }
 
-export function resolveTerminalFontSettings(
+function isTerminalLineHeight(value: unknown): value is (typeof TERMINAL_LINE_HEIGHTS)[number] {
+  return (
+    typeof value === 'number' &&
+    TERMINAL_LINE_HEIGHTS.includes(value as (typeof TERMINAL_LINE_HEIGHTS)[number])
+  )
+}
+
+export function resolveTerminalSettings(
   value: unknown,
   availableFonts: readonly TerminalFontOption[]
-): TerminalFontSettings {
-  const fallback = defaultTerminalFontSettings(availableFonts)
+): TerminalSettings {
+  const fallback = defaultTerminalSettings(availableFonts)
   if (typeof value !== 'object' || value === null) return fallback
 
   const record = value as Record<string, unknown>
   const family = typeof record.family === 'string' ? record.family : fallback.family
   const size = isTerminalFontSize(record.size) ? record.size : fallback.size
+  const lineHeight = isTerminalLineHeight(record.lineHeight) ? record.lineHeight : fallback.lineHeight
   return {
     family: availableFonts.some((option) => option.family === family) ? family : fallback.family,
-    size
+    size,
+    lineHeight
   }
 }
 
-export function getTerminalFontSettings(): TerminalFontSettings {
+export function getTerminalSettings(): TerminalSettings {
   const availableFonts = listTerminalFonts()
-  if (typeof localStorage === 'undefined') return defaultTerminalFontSettings(availableFonts)
+  if (typeof localStorage === 'undefined') return defaultTerminalSettings(availableFonts)
 
   try {
-    const stored = localStorage.getItem(TERMINAL_FONT_STORAGE_KEY)
-    return resolveTerminalFontSettings(stored ? JSON.parse(stored) : null, availableFonts)
+    const stored =
+      localStorage.getItem(TERMINAL_SETTINGS_STORAGE_KEY) ??
+      localStorage.getItem(LEGACY_TERMINAL_FONT_STORAGE_KEY)
+    return resolveTerminalSettings(stored ? JSON.parse(stored) : null, availableFonts)
   } catch {
-    return defaultTerminalFontSettings(availableFonts)
+    return defaultTerminalSettings(availableFonts)
   }
 }
 
-export function saveTerminalFontSettings(settings: TerminalFontSettings): void {
+export function saveTerminalSettings(settings: TerminalSettings): void {
   try {
-    localStorage.setItem(TERMINAL_FONT_STORAGE_KEY, JSON.stringify(settings))
+    localStorage.setItem(TERMINAL_SETTINGS_STORAGE_KEY, JSON.stringify(settings))
   } catch {
     // A restricted storage environment should not prevent terminal use.
   }

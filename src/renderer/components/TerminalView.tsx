@@ -11,7 +11,7 @@ import {
   RefreshCw,
   RotateCw,
   Search,
-  Type,
+  Settings2,
   Undo2
 } from 'lucide-react'
 import type {
@@ -56,19 +56,20 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useWorkspace } from '@/store/workspace'
 import {
-  applyTerminalFontSettings,
+  applyTerminalSettings,
   attachSession,
   detachSession,
   fitSession,
   getSession
 } from '@/terminal/sessions'
 import {
-  getTerminalFontSettings,
+  getTerminalSettings,
   listTerminalFonts,
-  saveTerminalFontSettings,
+  saveTerminalSettings,
+  TERMINAL_LINE_HEIGHTS,
   TERMINAL_FONT_SIZES,
-  type TerminalFontSettings
-} from '@/terminal/font-settings'
+  type TerminalSettings
+} from '@/terminal/terminal-settings'
 
 const FALLBACK_SIZE: PtySize = { cols: 80, rows: 24 }
 const RESIZE_DEBOUNCE_MS = 100
@@ -132,16 +133,16 @@ function TerminalSurface({ session: selectedSession }: TerminalSurfaceProps): JS
   return <div ref={hostRef} className="terminal-host relative min-h-0 flex-1 overflow-hidden" />
 }
 
-function TerminalFontControl({ sessionId }: { sessionId: string }): JSX.Element {
+function TerminalSettingsControl({ sessionId }: { sessionId: string }): JSX.Element {
   const [open, setOpen] = useState(false)
-  const [settings, setSettings] = useState<TerminalFontSettings>(() => getTerminalFontSettings())
+  const [settings, setSettings] = useState<TerminalSettings>(() => getTerminalSettings())
   const [availableFonts] = useState(() => listTerminalFonts())
 
-  const updateSettings = (patch: Partial<TerminalFontSettings>): void => {
+  const updateSettings = (patch: Partial<TerminalSettings>): void => {
     const next = { ...settings, ...patch }
     setSettings(next)
-    saveTerminalFontSettings(next)
-    applyTerminalFontSettings(next)
+    saveTerminalSettings(next)
+    applyTerminalSettings(next)
 
     const session = getSession(sessionId)
     const size = session ? fitSession(session) : null
@@ -152,20 +153,22 @@ function TerminalFontControl({ sessionId }: { sessionId: string }): JSX.Element 
     <Dialog open={open} onOpenChange={setOpen}>
       <button
         type="button"
-        aria-label="Change terminal font"
-        data-testid="terminal-font-control"
-        title="Change terminal font"
+        aria-label="Change terminal settings"
+        data-testid="terminal-settings-control"
+        title="Terminal settings"
         onClick={() => setOpen(true)}
         className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded px-2 text-xs text-fg-subtle hover:bg-hover hover:text-fg"
       >
-        <Type className="h-3.5 w-3.5" />
-        Font
+        <Settings2 className="h-3.5 w-3.5" />
+        Terminal settings
       </button>
 
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Terminal font</DialogTitle>
-          <DialogDescription>Changes apply immediately to all terminal sessions and are saved for later.</DialogDescription>
+          <DialogTitle>Terminal settings</DialogTitle>
+          <DialogDescription>
+            Changes apply immediately to all terminal sessions and are saved for later.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -201,6 +204,30 @@ function TerminalFontControl({ sessionId }: { sessionId: string }): JSX.Element 
                 {TERMINAL_FONT_SIZES.map((size) => (
                   <SelectItem key={size} value={String(size)}>
                     {size}px
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+
+          <label className="block text-xs font-medium text-fg-muted">
+            Line height
+            <Select
+              value={String(settings.lineHeight)}
+              onValueChange={(value) => {
+                const lineHeight = TERMINAL_LINE_HEIGHTS.find(
+                  (candidate) => String(candidate) === value
+                )
+                if (lineHeight !== undefined) updateSettings({ lineHeight })
+              }}
+            >
+              <SelectTrigger className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TERMINAL_LINE_HEIGHTS.map((lineHeight) => (
+                  <SelectItem key={lineHeight} value={String(lineHeight)}>
+                    {lineHeight.toFixed(1)}×
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1160,7 +1187,7 @@ export function TerminalView({
           </button>
         </div>
 
-        {viewMode === 'terminal' && <TerminalFontControl sessionId={selectedSession.id} />}
+        {viewMode === 'terminal' && <TerminalSettingsControl sessionId={selectedSession.id} />}
 
         <Button
           variant="ghost"
