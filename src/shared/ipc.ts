@@ -145,7 +145,7 @@ export interface UpdateProjectRequest {
 
 export interface UpdateSessionRequest {
   id: string
-  patch: Partial<Pick<Session, 'name' | 'path' | 'shell' | 'opencodeSessionId' | 'opencodeModelSelections'>>
+  patch: Partial<Pick<Session, 'name' | 'path' | 'shell' | 'color' | 'opencodeSessionId' | 'opencodeModelSelections'>>
 }
 
 export interface MoveSessionRequest {

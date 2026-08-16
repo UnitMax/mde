@@ -25,7 +25,8 @@ import type {
   Project,
   PtyExitInfo,
   PtyStatus,
-  Session
+  Session,
+  SessionColor
 } from '@shared/types'
 import { disposeSession } from '@/terminal/sessions'
 import { estimateTokenCount } from '@shared/generation-metrics'
@@ -318,6 +319,7 @@ interface WorkspaceState {
 
   addSession: (input: NewSession) => Promise<Session>
   renameSession: (id: string, name: string) => Promise<void>
+  setSessionColor: (id: string, color: SessionColor) => Promise<void>
   moveSession: (id: string, projectId: string) => Promise<void>
   removeSession: (id: string) => Promise<void>
   revealSession: (id: string) => Promise<void>
@@ -472,6 +474,12 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   renameSession: async (id, name) => {
     const updated = await window.api.sessions.update({ id, patch: { name } })
+    if (!updated) return
+    set((state) => ({ sessions: state.sessions.map((session) => (session.id === id ? updated : session)) }))
+  },
+
+  setSessionColor: async (id, color) => {
+    const updated = await window.api.sessions.update({ id, patch: { color } })
     if (!updated) return
     set((state) => ({ sessions: state.sessions.map((session) => (session.id === id ? updated : session)) }))
   },

@@ -2,6 +2,7 @@ import { useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import {
   ChevronDown,
   ChevronRight,
+  Check,
   CircleAlert,
   Code,
   Folder,
@@ -33,6 +34,9 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger
 } from '@/components/ui/context-menu'
 import {
@@ -46,6 +50,11 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { useWorkspace, type OpenCodeChatState, type OpenCodeTuiStatusState } from '@/store/workspace'
+import {
+  DEFAULT_SESSION_COLOR,
+  SESSION_COLORS,
+  sessionColorHex
+} from '@shared/session-colors'
 
 const STATUS_STYLE: Record<PtyStatus, { dot: string; label: string }> = {
   none: { dot: 'bg-fg-subtle', label: 'No shell running' },
@@ -113,6 +122,49 @@ function sessionIndicator(
   return { status, ...STATUS_STYLE[status] }
 }
 
+function customSessionColor(color: Session['color']): Session['color'] {
+  return color && color !== DEFAULT_SESSION_COLOR ? color : undefined
+}
+
+function sessionStatusTint(status: SessionIndicator['status']): string | undefined {
+  switch (status) {
+    case 'attention':
+      return 'linear-gradient(rgba(91, 140, 255, 0.12), rgba(91, 140, 255, 0.12))'
+    case 'completed':
+      return 'linear-gradient(rgba(63, 185, 80, 0.12), rgba(63, 185, 80, 0.12))'
+    case 'error':
+      return 'linear-gradient(rgba(240, 87, 79, 0.14), rgba(240, 87, 79, 0.14))'
+    default:
+      return undefined
+  }
+}
+
+function customSessionStatusRing(status: SessionIndicator['status']): string | undefined {
+  switch (status) {
+    case 'attention':
+      return 'ring-1 ring-accent/70'
+    case 'completed':
+      return 'ring-1 ring-ok/70'
+    case 'error':
+      return 'ring-1 ring-danger/70'
+    default:
+      return undefined
+  }
+}
+
+function sessionBackgroundStyle(
+  color: Session['color'],
+  indicator: SessionIndicator
+): { backgroundColor: string; backgroundImage?: string } | undefined {
+  const customColor = customSessionColor(color)
+  if (!customColor) return undefined
+  const tint = sessionStatusTint(indicator.status)
+  return {
+    backgroundColor: sessionColorHex(customColor),
+    ...(tint ? { backgroundImage: tint } : {})
+  }
+}
+
 function StatusDot({
   indicator,
   className
@@ -174,6 +226,7 @@ interface SessionRowProps {
 
 function SessionRow({ session, status, chat, tuiStatus, selected, onSelect }: SessionRowProps): JSX.Element {
   const renameSession = useWorkspace((state) => state.renameSession)
+  const setSessionColor = useWorkspace((state) => state.setSessionColor)
   const moveSession = useWorkspace((state) => state.moveSession)
   const removeSession = useWorkspace((state) => state.removeSession)
   const revealSession = useWorkspace((state) => state.revealSession)
@@ -224,6 +277,9 @@ function SessionRow({ session, status, chat, tuiStatus, selected, onSelect }: Se
 
   const location = session.kind === 'wsl' ? `${session.distro ?? 'WSL'} · ${session.path}` : session.path
   const indicator = sessionIndicator(status, chat, tuiStatus)
+  const sessionColor = session.color ?? DEFAULT_SESSION_COLOR
+  const customColor = customSessionColor(session.color)
+  const backgroundStyle = sessionBackgroundStyle(session.color, indicator)
   const canOpenInVsCode =
     platform?.isWindows === true && wslAvailable && session.kind === 'wsl' && Boolean(session.distro)
   return (
@@ -249,13 +305,16 @@ function SessionRow({ session, status, chat, tuiStatus, selected, onSelect }: Se
             }}
             className={cn(
               'group ml-3 flex w-[calc(100%-0.75rem)] cursor-default items-center gap-2 rounded px-2 py-1.5 text-left',
-              selected
-                ? cn(
-                    'bg-active text-fg',
-                    indicator.status === 'attention' && 'ring-1 ring-accent/60'
-                  )
-                : cn('text-fg-muted hover:bg-hover hover:text-fg', indicator.row)
+              customColor
+                ? cn('text-fg transition-[filter] hover:brightness-110', customSessionStatusRing(indicator.status))
+                : selected
+                  ? cn(
+                      'bg-active text-fg',
+                      indicator.status === 'attention' && 'ring-1 ring-accent/60'
+                    )
+                  : cn('text-fg-muted hover:bg-hover hover:text-fg', indicator.row)
             )}
+            style={backgroundStyle}
           >
             <SessionModeIcon mode={session.mode} />
             <StatusDot indicator={indicator} />
@@ -309,6 +368,34 @@ function SessionRow({ session, status, chat, tuiStatus, selected, onSelect }: Se
             <Pencil className="h-3.5 w-3.5" />
             Rename
           </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>
+              <span
+                aria-hidden="true"
+                className="h-3 w-3 shrink-0 rounded-full border border-white/20"
+                style={{ backgroundColor: sessionColorHex(sessionColor) }}
+              />
+              <span className="flex-1">Session color</span>
+              <ChevronRight className="h-3.5 w-3.5 text-fg-subtle" />
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent>
+              {SESSION_COLORS.map((option) => (
+                <ContextMenuItem
+                  key={option.id}
+                  onSelect={() => void setSessionColor(session.id, option.id)}
+                >
+                  <span
+                    aria-hidden="true"
+                    className="h-3 w-3 shrink-0 rounded-full border border-white/20"
+                    style={{ backgroundColor: option.hex }}
+                  />
+                  <span className="flex-1">{option.label}</span>
+                  {sessionColor === option.id && <Check className="h-3.5 w-3.5" />}
+                </ContextMenuItem>
+              ))}
+            </ContextMenuSubContent>
+          </ContextMenuSub>
           <ContextMenuItem onSelect={() => void revealSession(session.id)}>
             <FolderOpen className="h-3.5 w-3.5" />
             Reveal in file manager
@@ -557,6 +644,7 @@ export function Sidebar({ onNewProject, onNewSession, onAbout }: SidebarProps): 
                   opencodeChats[session.id],
                   opencodeTuiStatuses[session.id]
                 )
+                const customColor = customSessionColor(session.color)
                 return (
                   <button
                     key={session.id}
@@ -565,13 +653,19 @@ export function Sidebar({ onNewProject, onNewSession, onAbout }: SidebarProps): 
                     title={`${project.name} · ${session.name} · ${session.mode === 'terminal' ? 'Terminal' : 'GUI'}`}
                     className={cn(
                       'relative flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase',
-                      session.id === selectedSessionId
+                      customColor
                         ? cn(
-                            'bg-active text-fg',
-                            indicator.status === 'attention' && 'ring-1 ring-accent/60'
+                            'text-fg transition-[filter] hover:brightness-110',
+                            customSessionStatusRing(indicator.status)
                           )
-                        : cn('text-fg-muted hover:bg-hover hover:text-fg', indicator.row)
+                        : session.id === selectedSessionId
+                          ? cn(
+                              'bg-active text-fg',
+                              indicator.status === 'attention' && 'ring-1 ring-accent/60'
+                            )
+                          : cn('text-fg-muted hover:bg-hover hover:text-fg', indicator.row)
                     )}
+                    style={sessionBackgroundStyle(session.color, indicator)}
                   >
                     {session.name.slice(0, 2)}
                     <SessionModeIcon

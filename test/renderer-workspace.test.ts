@@ -177,6 +177,53 @@ describe('renderer workspace event bridge', () => {
     expect(useWorkspace.getState().selectedSessionId).toBe('gui-session')
   })
 
+  it('persists and updates a session color', async () => {
+    const session: Session = {
+      id: 'session-1',
+      projectId: 'project-1',
+      name: 'App',
+      mode: 'gui',
+      kind: 'native',
+      path: '/workspace/app',
+      createdAt: '2026-01-01T00:00:00.000Z'
+    }
+    useWorkspace.setState({ sessions: [session] })
+    api.sessions.update.mockResolvedValueOnce({ ...session, color: 'teal' })
+
+    await useWorkspace.getState().setSessionColor('session-1', 'teal')
+
+    expect(api.sessions.update).toHaveBeenCalledWith({
+      id: 'session-1',
+      patch: { color: 'teal' }
+    })
+    expect(useWorkspace.getState().sessions[0]).toMatchObject({ id: 'session-1', color: 'teal' })
+  })
+
+  it('keeps session colors unchanged when OpenCode status events arrive', () => {
+    const session: Session = {
+      id: 'session-1',
+      projectId: 'project-1',
+      name: 'App',
+      color: 'teal',
+      mode: 'gui',
+      kind: 'native',
+      path: '/workspace/app',
+      createdAt: '2026-01-01T00:00:00.000Z'
+    }
+    useWorkspace.setState({ sessions: [session], selectedSessionId: 'other-session' })
+
+    useWorkspace.getState().appendOpenCodeTuiStatus({
+      sessionId: 'session-1',
+      status: 'attention',
+      revision: 1
+    })
+
+    expect(useWorkspace.getState().sessions).toEqual([session])
+    expect(useWorkspace.getState().opencodeTuiStatuses['session-1']).toMatchObject({
+      status: 'attention'
+    })
+  })
+
   it('registers process-lifetime push listeners only once', async () => {
     await Promise.all([useWorkspace.getState().init(), useWorkspace.getState().init()])
 

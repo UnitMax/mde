@@ -2,6 +2,18 @@ export type ProjectKind = 'native' | 'wsl'
 
 export type SessionMode = 'terminal' | 'gui'
 
+export type SessionColor =
+  | 'default'
+  | 'blue'
+  | 'indigo'
+  | 'violet'
+  | 'plum'
+  | 'rose'
+  | 'red'
+  | 'orange'
+  | 'green'
+  | 'teal'
+
 /** Narrow platform union so the renderer does not need Node's types. */
 export type HostPlatform = 'win32' | 'linux' | 'darwin' | 'other'
 
@@ -15,6 +27,8 @@ export interface Session {
   id: string
   projectId: string
   name: string
+  /** Optional predefined sidebar color; absent means the default Slate color. */
+  color?: SessionColor
   mode: SessionMode
   kind: ProjectKind
   /** Required when kind === 'wsl', e.g. "Ubuntu-24.04". */
@@ -36,7 +50,7 @@ export interface Session {
 }
 
 export type NewProject = Omit<Project, 'id' | 'createdAt'>
-export type NewSession = Omit<Session, 'id' | 'createdAt'>
+export type NewSession = Omit<Session, 'id' | 'createdAt' | 'color'>
 
 export interface Distro {
   name: string

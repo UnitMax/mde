@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import type { WorkspaceData, MoveSessionRequest, UpdateSessionRequest, UpdateProjectRequest } from '@shared/ipc'
 import type { NewProject, NewSession, OpenCodeModelSelection, Project, Session } from '@shared/types'
+import { isSessionColor } from '@shared/session-colors'
 
 const FILE_NAME = 'workspace.json'
 
@@ -106,6 +107,7 @@ export function validateSession(raw: unknown, projectIds: Set<string>): Session 
     createdAt: isNonEmptyString(r.createdAt) ? r.createdAt : new Date(0).toISOString()
   }
   if (r.kind === 'wsl' && isNonEmptyString(r.distro)) session.distro = r.distro
+  if (isSessionColor(r.color)) session.color = r.color
   if (isNonEmptyString(r.shell)) session.shell = r.shell
   if (isNonEmptyString(r.opencodeSessionId)) session.opencodeSessionId = r.opencodeSessionId
   const modelSelections = validateModelSelections(r.opencodeModelSelections)
@@ -268,6 +270,7 @@ export async function updateSession(req: UpdateSessionRequest): Promise<Session 
   const updated: Session = { ...existing }
   if (req.patch.name?.trim()) updated.name = req.patch.name.trim()
   if (req.patch.path?.trim()) updated.path = req.patch.path.trim()
+  if (isSessionColor(req.patch.color)) updated.color = req.patch.color
   if (req.patch.shell !== undefined) {
     if (req.patch.shell.trim()) updated.shell = req.patch.shell.trim()
     else delete updated.shell

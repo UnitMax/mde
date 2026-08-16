@@ -39,6 +39,8 @@ describe('workspace validation', () => {
   it('requires sessions to reference a project and retain their own path', () => {
     const projectIds = new Set([project.id])
     expect(validateSession(session, projectIds)).toEqual(session)
+    expect(validateSession({ ...session, color: 'teal' }, projectIds)).toMatchObject({ color: 'teal' })
+    expect(validateSession({ ...session, color: 'not-a-color' }, projectIds)).toEqual(session)
     expect(validateSession({ ...session, mode: undefined }, projectIds)).toBeNull()
     expect(validateSession({ ...session, mode: 'other' }, projectIds)).toBeNull()
     expect(validateSession({ ...session, projectId: 'missing' }, projectIds)).toBeNull()
