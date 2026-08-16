@@ -189,6 +189,11 @@ function SessionRow({ session, status, chat, tuiStatus, selected, onSelect }: Se
   const [moving, setMoving] = useState(false)
   const [targetProjectId, setTargetProjectId] = useState(session.projectId)
 
+  const startRename = (): void => {
+    setDraftName(session.name)
+    setRenaming(true)
+  }
+
   const commitRename = (): void => {
     setRenaming(false)
     const name = draftName.trim()
@@ -232,6 +237,11 @@ function SessionRow({ session, status, chat, tuiStatus, selected, onSelect }: Se
             data-testid="session-row"
             onClick={onSelect}
             onKeyDown={(event) => {
+              if (event.key === 'F2' && event.target === event.currentTarget) {
+                event.preventDefault()
+                startRename()
+                return
+              }
               if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault()
                 onSelect()
@@ -294,10 +304,7 @@ function SessionRow({ session, status, chat, tuiStatus, selected, onSelect }: Se
 
         <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
           <ContextMenuItem
-            onSelect={() => {
-              setDraftName(session.name)
-              setRenaming(true)
-            }}
+            onSelect={startRename}
           >
             <Pencil className="h-3.5 w-3.5" />
             Rename
