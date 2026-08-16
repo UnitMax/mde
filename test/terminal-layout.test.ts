@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   createSessionTerminalLayout,
+  getTerminalLayoutShortcut,
   layoutClass,
   layoutForCount,
   panesToTrim,
@@ -9,6 +10,44 @@ import {
 } from '../src/renderer/terminal/layout'
 
 describe('terminal layouts', () => {
+  it('maps Ctrl+1 through Ctrl+4 to the supported layouts', () => {
+    const input = (key: string, overrides: Partial<{ code: string; control: boolean; meta: boolean; alt: boolean; shift: boolean; type: string }> = {}) => ({
+      type: 'keydown',
+      key,
+      code: `Digit${key}`,
+      control: true,
+      meta: false,
+      alt: false,
+      shift: false,
+      ...overrides
+    })
+
+    expect(getTerminalLayoutShortcut(input('1'))).toBe('single')
+    expect(getTerminalLayoutShortcut(input('2'))).toBe('columns')
+    expect(getTerminalLayoutShortcut(input('3'))).toBe('three')
+    expect(getTerminalLayoutShortcut(input('4'))).toBe('quadrant')
+  })
+
+  it('ignores layout shortcuts without plain Ctrl modifier state', () => {
+    const input = (overrides: Partial<{ key: string; code: string; control: boolean; meta: boolean; alt: boolean; shift: boolean; type: string }> = {}) => ({
+      type: 'keydown',
+      key: '1',
+      code: 'Digit1',
+      control: true,
+      meta: false,
+      alt: false,
+      shift: false,
+      ...overrides
+    })
+
+    expect(getTerminalLayoutShortcut(input({ control: false }))).toBeNull()
+    expect(getTerminalLayoutShortcut(input({ meta: true }))).toBeNull()
+    expect(getTerminalLayoutShortcut(input({ alt: true }))).toBeNull()
+    expect(getTerminalLayoutShortcut(input({ shift: true }))).toBeNull()
+    expect(getTerminalLayoutShortcut(input({ type: 'keyup' }))).toBeNull()
+    expect(getTerminalLayoutShortcut(input({ key: '5', code: 'Digit5' }))).toBeNull()
+  })
+
   it('maps each supported layout to its pane count', () => {
     expect(terminalCount('single')).toBe(1)
     expect(terminalCount('columns')).toBe(2)

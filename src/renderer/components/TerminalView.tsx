@@ -80,6 +80,7 @@ import {
   panesToTrim,
   TERMINAL_LAYOUTS,
   terminalCount,
+  getTerminalLayoutShortcut,
   type SessionTerminalLayout,
   type TerminalLayout,
   type TerminalPaneState
@@ -1496,14 +1497,41 @@ export function TerminalView({
     session?.term.focus()
   }, [clearExit, onRestartPrimary, selectedSession.id, setStatus])
 
-  const requestLayout = (layout: TerminalLayout): void => {
+  const requestLayout = useCallback((layout: TerminalLayout): void => {
     const targetCount = terminalCount(layout)
     if (targetCount >= terminalLayout.panes.length) {
       onLayoutChange(layout)
       return
     }
     setPendingLayout(layout)
-  }
+  }, [onLayoutChange, terminalLayout.panes.length])
+
+  useEffect(() => {
+    if (selectedSession.mode !== 'terminal') return
+
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const target = event.target
+      if (target instanceof HTMLElement && target.closest('[role="dialog"]')) return
+
+      const layout = getTerminalLayoutShortcut({
+        type: event.type,
+        key: event.key,
+        code: event.code,
+        control: event.ctrlKey,
+        meta: event.metaKey,
+        alt: event.altKey,
+        shift: event.shiftKey
+      })
+      if (!layout) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      requestLayout(layout)
+    }
+
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [requestLayout, selectedSession.mode])
 
   const confirmReduceLayout = (): void => {
     if (!pendingLayout) return
@@ -1538,7 +1566,7 @@ export function TerminalView({
                   aria-label={candidate.label}
                   aria-pressed={terminalLayout.layout === candidate.value}
                   data-testid={`terminal-layout-${candidate.value}`}
-                  title={candidate.label}
+                  title={`${candidate.label} (Ctrl+${candidate.count})`}
                   onClick={() => requestLayout(candidate.value)}
                   className={
                     terminalLayout.layout === candidate.value

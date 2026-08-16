@@ -30,6 +30,27 @@ export function layoutForCount(count: number): TerminalLayout {
   return TERMINAL_LAYOUTS.find((candidate) => candidate.count === count)?.value ?? 'single'
 }
 
+export interface TerminalLayoutShortcutInput {
+  type: string
+  key: string
+  code?: string
+  control: boolean
+  meta: boolean
+  alt: boolean
+  shift: boolean
+}
+
+export function getTerminalLayoutShortcut(input: TerminalLayoutShortcutInput): TerminalLayout | null {
+  if (input.type !== 'keydown' || !input.control || input.meta || input.alt || input.shift) return null
+
+  const digit = /^[1-4]$/.test(input.key)
+    ? input.key
+    : input.code?.match(/^(?:Digit|Numpad)([1-4])$/)?.[1]
+  if (!digit) return null
+
+  return layoutForCount(Number(digit))
+}
+
 export function layoutClass(layout: TerminalLayout): string {
   if (layout === 'single') return 'grid-cols-1 grid-rows-1'
   return layout === 'three' || layout === 'quadrant'
