@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Session } from '@shared/types'
 
 type FakeChild = {
@@ -22,6 +22,25 @@ vi.mock('node-pty', () => ({ spawn: ptyMock.spawn }))
 
 import { PtyManager } from '../src/main/pty/manager'
 
+const palette = { foreground: '#d8dee9', background: '#0b0e13' }
+
+function createFakeChild(): FakeChild {
+  const child = {} as FakeChild
+  child.write = vi.fn()
+  child.resize = vi.fn()
+  child.kill = vi.fn()
+  child.onData = (listener) => {
+    child.dataListener = listener
+    return { dispose: vi.fn() }
+  }
+  child.onExit = (listener) => {
+    child.exitListener = listener
+    return { dispose: vi.fn() }
+  }
+  ptyMock.children.set(`pane-${ptyMock.children.size + 1}`, child)
+  return child
+}
+
 function sourceSession(): Session {
   return {
     id: 'session-1',
@@ -42,21 +61,12 @@ describe('PtyManager runtime terminal identities', () => {
       void file
       void args
       void options
-      const child = {} as FakeChild
-      child.write = vi.fn()
-      child.resize = vi.fn()
-      child.kill = vi.fn()
-      child.onData = (listener) => {
-        child.dataListener = listener
-        return { dispose: vi.fn() }
-      }
-      child.onExit = (listener) => {
-        child.exitListener = listener
-        return { dispose: vi.fn() }
-      }
-      ptyMock.children.set(`pane-${ptyMock.children.size + 1}`, child)
-      return child
+      return createFakeChild()
     })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('routes independent panes launched from one workspace session', () => {
@@ -65,8 +75,8 @@ describe('PtyManager runtime terminal identities', () => {
     const source = sourceSession()
     const size = { cols: 80, rows: 24 }
 
-    manager.ensure('pane-a', source, size)
-    manager.ensure('pane-b', source, size)
+    manager.ensure('pane-a', source, size, palette)
+    manager.ensure('pane-b', source, size, palette)
 
     expect(ptyMock.spawn).toHaveBeenCalledTimes(2)
     const first = ptyMock.children.get('pane-1')
@@ -92,12 +102,12 @@ describe('PtyManager runtime terminal identities', () => {
   it('restarts and disposes panes independently', () => {
     const manager = new PtyManager({ onData: vi.fn(), onExit: vi.fn() })
     const source = sourceSession()
-    manager.ensure('pane-a', source, { cols: 80, rows: 24 })
-    manager.ensure('pane-b', source, { cols: 80, rows: 24 })
+    manager.ensure('pane-a', source, { cols: 80, rows: 24 }, palette)
+    manager.ensure('pane-b', source, { cols: 80, rows: 24 }, palette)
     const first = ptyMock.children.get('pane-1')
     const second = ptyMock.children.get('pane-2')
 
-    manager.restart('pane-a', source, { cols: 100, rows: 25 })
+    manager.restart('pane-a', source, { cols: 100, rows: 25 }, palette)
     expect(first?.kill).toHaveBeenCalledTimes(1)
     expect(ptyMock.spawn).toHaveBeenCalledTimes(3)
     expect(manager.status('pane-a')).toBe('running')
@@ -106,5 +116,79 @@ describe('PtyManager runtime terminal identities', () => {
     expect(second?.kill).toHaveBeenCalledTimes(1)
     expect(manager.status('pane-b')).toBe('none')
     expect(manager.status('pane-a')).toBe('running')
+  })
+
+  it('answers palette queries directly at the PTY boundary', () => {
+    const events = { onData: vi.fn(), onExit: vi.fn() }
+    const manager = new PtyManager(events)
+    manager.ensure('pane-a', sourceSession(), { cols: 80, rows: 24 }, palette)
+    const child = ptyMock.children.get('pane-1')
+
+    child?.dataListener?.('before\u001b]11;?\u001b\\after')
+
+    expect(child?.write).toHaveBeenCalledWith(
+      '\u001b]11;rgb:0b0b/0e0e/1313\u001b\\'
+    )
+    expect(events.onData).toHaveBeenCalledWith({
+      terminalId: 'pane-a',
+      data: 'beforeafter'
+    })
+  })
+
+  it('uses bundled ConPTY for Windows terminals', () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const manager = new PtyManager({ onData: vi.fn(), onExit: vi.fn() })
+
+    manager.ensure('pane-a', sourceSession(), { cols: 80, rows: 24 }, palette)
+
+    expect(ptyMock.spawn).toHaveBeenCalledOnce()
+    expect(ptyMock.spawn.mock.calls[0]?.[2]).toMatchObject({
+      useConpty: true,
+      useConptyDll: true,
+    })
+  })
+
+  it('does not request a Windows backend on non-Windows platforms', () => {
+    const manager = new PtyManager({ onData: vi.fn(), onExit: vi.fn() })
+
+    manager.ensure('pane-a', sourceSession(), { cols: 80, rows: 24 }, palette)
+
+    expect(ptyMock.spawn.mock.calls[0]?.[2]).not.toHaveProperty('useConpty')
+    expect(ptyMock.spawn.mock.calls[0]?.[2]).not.toHaveProperty('useConptyDll')
+  })
+
+  it('falls back to inbox ConPTY when the bundled backend cannot initialize', () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    ptyMock.spawn
+      .mockImplementationOnce(() => {
+        throw new Error('Cannot find conpty.dll at expected path')
+      })
+      .mockImplementationOnce(() => createFakeChild())
+    const manager = new PtyManager({ onData: vi.fn(), onExit: vi.fn() })
+
+    manager.ensure('pane-a', sourceSession(), { cols: 80, rows: 24 }, palette)
+
+    expect(ptyMock.spawn).toHaveBeenCalledTimes(2)
+    expect(ptyMock.spawn.mock.calls[0]?.[2]).toMatchObject({
+      useConptyDll: true,
+    })
+    expect(ptyMock.spawn.mock.calls[1]?.[2]).toMatchObject({
+      useConptyDll: false,
+    })
+    expect(warning).toHaveBeenCalledOnce()
+  })
+
+  it('does not mask unrelated Windows launch failures with a retry', () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    ptyMock.spawn.mockImplementationOnce(() => {
+      throw new Error('File not found: missing-shell.exe')
+    })
+    const manager = new PtyManager({ onData: vi.fn(), onExit: vi.fn() })
+
+    expect(() => (
+      manager.ensure('pane-a', sourceSession(), { cols: 80, rows: 24 }, palette)
+    )).toThrow('File not found: missing-shell.exe')
+    expect(ptyMock.spawn).toHaveBeenCalledOnce()
   })
 })

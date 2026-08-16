@@ -1,8 +1,11 @@
+import { isTerminalThemeId, type TerminalThemeId } from './terminal-themes'
+
 export interface TerminalSettings {
   family: string
   size: number
   /** xterm line-height multiplier relative to the selected font size. */
   lineHeight: number
+  theme: TerminalThemeId
 }
 
 export interface TerminalFontOption {
@@ -45,7 +48,8 @@ export function defaultTerminalSettings(
   return {
     family: availableFonts[0]?.family ?? 'monospace',
     size: 13,
-    lineHeight: 1
+    lineHeight: 1,
+    theme: 'slate'
   }
 }
 
@@ -71,10 +75,12 @@ export function resolveTerminalSettings(
   const family = typeof record.family === 'string' ? record.family : fallback.family
   const size = isTerminalFontSize(record.size) ? record.size : fallback.size
   const lineHeight = isTerminalLineHeight(record.lineHeight) ? record.lineHeight : fallback.lineHeight
+  const theme = isTerminalThemeId(record.theme) ? record.theme : fallback.theme
   return {
     family: availableFonts.some((option) => option.family === family) ? family : fallback.family,
     size,
-    lineHeight
+    lineHeight,
+    theme
   }
 }
 

@@ -1,14 +1,17 @@
 import { homedir } from 'node:os'
 import * as nodePty from 'node-pty'
-import type { IPty } from 'node-pty'
+import type { IPty, IWindowsPtyForkOptions } from 'node-pty'
+import type { TerminalPalette } from '@shared/ipc'
 import type { Session, PtyDataChunk, PtyExitInfo, PtySize, PtyStatus } from '@shared/types'
 import { buildLaunchSpec, type LaunchContext } from './launch'
+import { TerminalQueryResponder } from './terminal-queries'
 
 interface PtySession {
   pty: IPty
   sourceSessionId: string
   status: PtyStatus
   disposeListeners: () => void
+  queryResponder: TerminalQueryResponder
 }
 
 export interface PtyEvents {
@@ -47,6 +50,42 @@ function ptyEnv(): Record<string, string> {
   return env
 }
 
+function isBundledConptyError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return [
+    'conpty.dll',
+    'Cannot launch conpty',
+    'Failed to load conpty',
+  ].some((fragment) => message.includes(fragment))
+}
+
+function spawnPty(
+  file: string,
+  args: string[],
+  options: IWindowsPtyForkOptions,
+  platform: NodeJS.Platform,
+): IPty {
+  if (platform !== 'win32') return nodePty.spawn(file, args, options)
+
+  try {
+    // The bundled backend passes terminal-owned queries through to MDE. The
+    // inbox ConPTY consumes OSC 10/11 without replying on affected systems.
+    return nodePty.spawn(file, args, {
+      ...options,
+      useConpty: true,
+      useConptyDll: true,
+    })
+  } catch (error) {
+    if (!isBundledConptyError(error)) throw error
+    console.warn('[pty] bundled ConPTY unavailable; falling back to inbox ConPTY:', error)
+    return nodePty.spawn(file, args, {
+      ...options,
+      useConpty: true,
+      useConptyDll: false,
+    })
+  }
+}
+
 /**
  * Owns every node-pty instance, keyed by runtime terminal id. Multiple PTYs
  * may be launched from one persisted workspace session when the terminal view
@@ -75,9 +114,17 @@ export class PtyManager {
    * never respawns: an exited shell stays exited until the user asks for a
    * restart, so switching back to the session does not silently revive it.
    */
-  ensure(terminalId: string, session: Session, size: PtySize): PtyStatus {
+  ensure(
+    terminalId: string,
+    session: Session,
+    size: PtySize,
+    palette: TerminalPalette,
+  ): PtyStatus {
     const existing = this.sessions.get(terminalId)
-    if (existing) return existing.status
+    if (existing) {
+      existing.queryResponder.setPalette(palette)
+      return existing.status
+    }
 
     const spec = buildLaunchSpec(session, {
       ...launchContext(),
@@ -87,25 +134,29 @@ export class PtyManager {
 
     let child: IPty
     try {
-      child = nodePty.spawn(spec.file, spec.args, {
+      child = spawnPty(spec.file, spec.args, {
         name: 'xterm-256color',
         cols,
         rows,
         cwd: spec.cwd ?? homedir(),
         env: ptyEnv(),
-        useConpty: process.platform === 'win32'
-      })
+      }, process.platform)
     } catch (error) {
       this.integration?.dispose(terminalId)
       throw error
     }
 
-    // Forward output the moment it arrives. Buffering into lines would stall
-    // TUI redraws, which depend on partial writes landing promptly.
+    const queryResponder = new TerminalQueryResponder(palette)
+    // Answer palette probes beside the PTY so latency-sensitive TUIs do not
+    // have to wait for a main -> renderer -> main IPC round trip.
     const dataListener = child.onData((data) => {
-      this.events.onData({ terminalId, data })
+      const result = queryResponder.process(data)
+      for (const response of result.responses) child.write(response)
+      if (result.data) this.events.onData({ terminalId, data: result.data })
     })
     const exitListener = child.onExit(({ exitCode, signal }) => {
+      const pending = queryResponder.flush()
+      if (pending) this.events.onData({ terminalId, data: pending })
       const current = this.sessions.get(terminalId)
       if (current) current.status = 'exited'
       this.integration?.dispose(terminalId)
@@ -118,6 +169,7 @@ export class PtyManager {
       pty: child,
       sourceSessionId: session.id,
       status: 'running',
+      queryResponder,
       disposeListeners: () => {
         dataListener.dispose()
         exitListener.dispose()
@@ -127,9 +179,14 @@ export class PtyManager {
     return 'running'
   }
 
-  restart(terminalId: string, session: Session, size: PtySize): PtyStatus {
+  restart(
+    terminalId: string,
+    session: Session,
+    size: PtySize,
+    palette: TerminalPalette,
+  ): PtyStatus {
     this.dispose(terminalId)
-    return this.ensure(terminalId, session, size)
+    return this.ensure(terminalId, session, size, palette)
   }
 
   write(terminalId: string, data: string): void {
@@ -148,6 +205,10 @@ export class PtyManager {
       // Racing a process that exited between the check and the call.
       console.warn(`[pty] resize failed for ${terminalId}:`, error)
     }
+  }
+
+  setPalette(terminalId: string, palette: TerminalPalette): void {
+    this.sessions.get(terminalId)?.queryResponder.setPalette(palette)
   }
 
   dispose(terminalId: string): void {

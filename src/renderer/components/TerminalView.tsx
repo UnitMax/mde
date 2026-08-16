@@ -64,6 +64,7 @@ import {
   fitSession,
   getSession
 } from '@/terminal/sessions'
+import { terminalSizeAction } from '@/terminal/terminal-compat'
 import {
   getTerminalSettings,
   listTerminalFonts,
@@ -72,6 +73,7 @@ import {
   TERMINAL_FONT_SIZES,
   type TerminalSettings
 } from '@/terminal/terminal-settings'
+import { getTerminalPalette, TERMINAL_THEMES } from '@/terminal/terminal-themes'
 import {
   layoutClass,
   paneClass,
@@ -112,19 +114,55 @@ function TerminalSurface({ session: sourceSession, pane }: TerminalSurfaceProps)
     // Re-parents the existing terminal, or builds it on first view of this session.
     const terminal = attachSession(pane.terminalId, host)
     let cancelled = false
+    let ensured = false
+    let previousSize: PtySize | null = null
+    let ensurePromise: Promise<void> | null = null
+    let retry: number | undefined
 
-    const frame = requestAnimationFrame(() => {
-      const size = fitSession(terminal) ?? FALLBACK_SIZE
-      void window.api.pty.ensure({
-        terminalId: pane.terminalId,
-        sessionId: sourceSession.id,
-        size
-      }).then((status) => {
-        if (cancelled) return
-        if (pane.primary) setStatus(sourceSession.id, status)
-        terminal.term.focus()
-      })
-    })
+    const syncSize = (): void => {
+      if (cancelled) return
+
+      const action = terminalSizeAction(fitSession(terminal), ensured, previousSize)
+      if (action.type === 'wait') {
+        if (!ensured && retry === undefined) {
+          retry = window.setTimeout(() => {
+            retry = undefined
+            syncSize()
+          }, RESIZE_DEBOUNCE_MS)
+        }
+        return
+      }
+
+      if (action.type === 'ensure') {
+        ensured = true
+        previousSize = action.size
+        ensurePromise = window.api.pty.ensure({
+          terminalId: pane.terminalId,
+          sessionId: sourceSession.id,
+          size: action.size,
+          palette: getTerminalPalette(terminal.themeId)
+        }).then((status) => {
+          if (cancelled) return
+          if (pane.primary) setStatus(sourceSession.id, status)
+          terminal.term.focus()
+        }).catch((error: unknown) => {
+          console.warn('[terminal] PTY ensure failed:', error)
+          ensured = false
+          previousSize = null
+        }).finally(() => {
+          ensurePromise = null
+          if (!cancelled) syncSize()
+        })
+        return
+      }
+
+      if (ensurePromise) {
+        return
+      }
+
+      previousSize = action.size
+      void window.api.pty.resize({ terminalId: pane.terminalId, size: action.size })
+    }
 
     let debounce: number | undefined
     const observer = new ResizeObserver(() => {
@@ -132,16 +170,17 @@ function TerminalSurface({ session: sourceSession, pane }: TerminalSurfaceProps)
       // Resizing on every observer callback would flood the PTY with SIGWINCH
       // and leave TUIs redrawing against a stale geometry.
       debounce = window.setTimeout(() => {
-        const size = fitSession(terminal)
-        if (size) void window.api.pty.resize({ terminalId: pane.terminalId, size })
+        syncSize()
       }, RESIZE_DEBOUNCE_MS)
     })
     observer.observe(host)
+    const frame = requestAnimationFrame(syncSize)
 
     return () => {
       cancelled = true
       cancelAnimationFrame(frame)
       window.clearTimeout(debounce)
+      window.clearTimeout(retry)
       observer.disconnect()
       // Detach only: the process, its scrollback and its cursor all stay alive.
       detachSession(pane.terminalId)
@@ -171,7 +210,8 @@ function TerminalPane({
     const status = await window.api.pty.restart({
       terminalId: pane.terminalId,
       sessionId: session.id,
-      size
+      size,
+      palette: getTerminalPalette(terminal?.themeId ?? getTerminalSettings().theme)
     })
     if (pane.primary) setStatus(session.id, status)
   }
@@ -360,6 +400,28 @@ function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JS
               Cosmetic
             </h3>
             <div className="space-y-4">
+              <label className="block text-xs font-medium text-fg-muted">
+                Color scheme
+                <Select
+                  value={settings.theme}
+                  onValueChange={(value) => {
+                    const theme = TERMINAL_THEMES.find((option) => option.id === value)
+                    if (theme) updateSettings({ theme: theme.id })
+                  }}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TERMINAL_THEMES.map((option) => (
+                      <SelectItem key={option.id} value={option.id}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </label>
+
               <label className="block text-xs font-medium text-fg-muted">
                 Font family
                 <Select value={settings.family} onValueChange={(family) => updateSettings({ family })}>
@@ -1427,7 +1489,8 @@ export function TerminalView({
     const status = await window.api.pty.restart({
       terminalId: selectedSession.id,
       sessionId: selectedSession.id,
-      size
+      size,
+      palette: getTerminalPalette(session?.themeId ?? getTerminalSettings().theme)
     })
     setStatus(selectedSession.id, status)
     session?.term.focus()

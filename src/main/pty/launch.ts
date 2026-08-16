@@ -21,6 +21,10 @@ export interface LaunchContext {
 
 const DEFAULT_WINDOWS_SHELL = 'powershell.exe'
 const DEFAULT_POSIX_SHELL = '/bin/bash'
+const WSL_TERMINAL_ENVIRONMENT = {
+  TERM: 'xterm-256color',
+  COLORTERM: 'truecolor'
+}
 
 function wslEnvironmentArgs(environment: Record<string, string> | undefined): string[] {
   if (!environment) return []
@@ -45,7 +49,10 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
     }
 
     const shell = session.shell ?? 'bash'
-    const environment = wslEnvironmentArgs(context.wslEnvironment)
+    const environment = wslEnvironmentArgs({
+      ...context.wslEnvironment,
+      ...WSL_TERMINAL_ENVIRONMENT
+    })
     return {
       file: 'wsl.exe',
       args: [

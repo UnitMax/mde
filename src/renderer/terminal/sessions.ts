@@ -7,6 +7,11 @@ import {
   xtermFontFamily,
   type TerminalSettings
 } from './terminal-settings'
+import {
+  getTerminalPalette,
+  getTerminalTheme,
+  type TerminalThemeId
+} from './terminal-themes'
 
 export type RendererKind = 'webgl' | 'dom'
 
@@ -20,17 +25,7 @@ export interface TerminalSession {
    */
   container: HTMLDivElement
   renderer: RendererKind
-}
-
-const THEME = {
-  // Keep the terminal's base surface aligned with MDE, but leave xterm's
-  // ANSI palette untouched. CLI TUIs use those palette entries (including
-  // reverse video and background colors) for elements such as prompt bars.
-  background: '#0b0e13',
-  foreground: '#d8dee9',
-  cursor: '#5b8cff',
-  cursorAccent: '#0b0e13',
-  selectionBackground: '#2c3a52'
+  themeId: TerminalThemeId
 }
 
 /** One live xterm per runtime terminal id, independent of React rendering. */
@@ -64,7 +59,7 @@ function createSession(terminalId: string, host: HTMLElement): TerminalSession {
     fontSize: settings.size,
     lineHeight: settings.lineHeight,
     scrollback: 10_000,
-    theme: THEME
+    theme: getTerminalTheme(settings.theme)
   })
 
   const fit = new FitAddon()
@@ -89,7 +84,14 @@ function createSession(terminalId: string, host: HTMLElement): TerminalSession {
     void window.api.pty.write({ terminalId, data })
   })
 
-  const session: TerminalSession = { terminalId, term, fit, container, renderer }
+  const session: TerminalSession = {
+    terminalId,
+    term,
+    fit,
+    container,
+    renderer,
+    themeId: settings.theme
+  }
   sessions.set(terminalId, session)
   return session
 }
@@ -100,6 +102,24 @@ export function applyTerminalSettings(settings: TerminalSettings): void {
     session.term.options.fontFamily = xtermFontFamily(settings.family)
     session.term.options.fontSize = settings.size
     session.term.options.lineHeight = settings.lineHeight
+    session.term.options.theme = getTerminalTheme(settings.theme)
+    session.themeId = settings.theme
+    void window.api.pty.setPalette({
+      terminalId: session.terminalId,
+      palette: getTerminalPalette(settings.theme)
+    })
+  }
+}
+
+export function applyTerminalTheme(themeId: TerminalThemeId): void {
+  const theme = getTerminalTheme(themeId)
+  for (const session of sessions.values()) {
+    session.term.options.theme = theme
+    session.themeId = themeId
+    void window.api.pty.setPalette({
+      terminalId: session.terminalId,
+      palette: getTerminalPalette(themeId)
+    })
   }
 }
 

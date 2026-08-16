@@ -56,6 +56,7 @@ export const IpcChannels = {
   ptyEnsure: 'pty:ensure',
   ptyWrite: 'pty:write',
   ptyResize: 'pty:resize',
+  ptyPalette: 'pty:palette',
   ptyRestart: 'pty:restart',
   ptyDispose: 'pty:dispose',
   ptyStatuses: 'pty:statuses',
@@ -126,6 +127,12 @@ export interface EnsurePtyRequest {
   /** Persisted workspace session used as the launch source. */
   sessionId: string
   size: PtySize
+  palette: TerminalPalette
+}
+
+export interface TerminalPalette {
+  foreground: string
+  background: string
 }
 
 export interface ResizePtyRequest {
@@ -136,6 +143,11 @@ export interface ResizePtyRequest {
 export interface WritePtyRequest {
   terminalId: string
   data: string
+}
+
+export interface UpdatePtyPaletteRequest {
+  terminalId: string
+  palette: TerminalPalette
 }
 
 export interface UpdateProjectRequest {
@@ -182,6 +194,7 @@ export interface RendererApi {
     ensure(req: EnsurePtyRequest): Promise<PtyStatus>
     write(req: WritePtyRequest): Promise<void>
     resize(req: ResizePtyRequest): Promise<void>
+    setPalette(req: UpdatePtyPaletteRequest): Promise<void>
     restart(req: EnsurePtyRequest): Promise<PtyStatus>
     dispose(terminalId: string): Promise<void>
     statuses(): Promise<Record<string, PtyStatus>>

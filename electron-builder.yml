@@ -3,6 +3,7 @@ productName: mde
 directories:
   output: dist
   buildResources: build
+afterPack: ./scripts/stage-node-pty-conpty.mjs
 files:
   - out/**
   - package.json

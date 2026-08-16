@@ -8,6 +8,8 @@ import {
   type PlatformInfo,
   type ResizePtyRequest,
   type ResolvePathRequest,
+  type TerminalPalette,
+  type UpdatePtyPaletteRequest,
   type UpdateProjectRequest,
   type UpdateSessionRequest,
   type ValidatePathRequest,
@@ -69,6 +71,15 @@ function hostPlatform(): HostPlatform {
     default:
       return 'other'
   }
+}
+
+function validateTerminalPalette(palette: TerminalPalette): TerminalPalette {
+  const isColor = (value: unknown): value is string =>
+    typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)
+  if (!palette || !isColor(palette.foreground) || !isColor(palette.background)) {
+    throw new Error('Invalid terminal palette.')
+  }
+  return palette
 }
 
 async function validatePath(req: ValidatePathRequest): Promise<PathCheckResult> {
@@ -262,18 +273,31 @@ export function registerIpcHandlers(
   handle<EnsurePtyRequest, PtyStatus>(IpcChannels.ptyEnsure, async (req) => {
     const session = await getSession(req.sessionId)
     if (!session) return 'none'
-    return ptyManager.ensure(req.terminalId, session, req.size)
+    return ptyManager.ensure(
+      req.terminalId,
+      session,
+      req.size,
+      validateTerminalPalette(req.palette)
+    )
   })
   handle<EnsurePtyRequest, PtyStatus>(IpcChannels.ptyRestart, async (req) => {
     const session = await getSession(req.sessionId)
     if (!session) return 'none'
-    return ptyManager.restart(req.terminalId, session, req.size)
+    return ptyManager.restart(
+      req.terminalId,
+      session,
+      req.size,
+      validateTerminalPalette(req.palette)
+    )
   })
   handle<WritePtyRequest, void>(IpcChannels.ptyWrite, (req) => {
     ptyManager.write(req.terminalId, req.data)
   })
   handle<ResizePtyRequest, void>(IpcChannels.ptyResize, (req) => {
     ptyManager.resize(req.terminalId, req.size)
+  })
+  handle<UpdatePtyPaletteRequest, void>(IpcChannels.ptyPalette, (req) => {
+    ptyManager.setPalette(req.terminalId, validateTerminalPalette(req.palette))
   })
   handle<string, void>(IpcChannels.ptyDispose, (sessionId) => {
     ptyManager.dispose(sessionId)

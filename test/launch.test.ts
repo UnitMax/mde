@@ -29,6 +29,9 @@ describe('buildLaunchSpec', () => {
       '--cd',
       '/home/me/src/app',
       '--',
+      'env',
+      'TERM=xterm-256color',
+      'COLORTERM=truecolor',
       'bash',
       '-lic',
       'exec bash -i'
@@ -73,6 +76,8 @@ describe('buildLaunchSpec', () => {
       'env',
       "MDE_OPENCODE_STATUS_FILE=/tmp/mde-opencode/status's file.json",
       'MDE_OPENCODE_STATUS_PROTOCOL=1',
+      'TERM=xterm-256color',
+      'COLORTERM=truecolor',
       'bash',
       '-lic',
       'exec bash -i'

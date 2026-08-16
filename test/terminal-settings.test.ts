@@ -11,6 +11,7 @@ import {
   TERMINAL_LINE_HEIGHTS,
   xtermFontFamily
 } from '../src/renderer/terminal/terminal-settings'
+import { TERMINAL_THEMES } from '../src/renderer/terminal/terminal-themes'
 
 function createStorage(initial: Record<string, string> = {}): Storage {
   const values = new Map(Object.entries(initial))
@@ -41,22 +42,26 @@ describe('terminal settings', () => {
     expect(defaultTerminalSettings(available)).toEqual({
       family: 'JetBrains Mono',
       size: 13,
-      lineHeight: 1
+      lineHeight: 1,
+      theme: 'slate'
     })
   })
 
   it('rejects unavailable families, unsupported sizes, and unsupported line heights', () => {
-    expect(resolveTerminalSettings({ family: 'Missing Font', size: 99, lineHeight: 2 }, available)).toEqual({
-      family: 'JetBrains Mono',
-      size: 13,
-      lineHeight: 1
-    })
+    expect(
+      resolveTerminalSettings({ family: 'Missing Font', size: 99, lineHeight: 2, theme: 'missing' }, available)
+    ).toEqual({ family: 'JetBrains Mono', size: 13, lineHeight: 1, theme: 'slate' })
     expect(
       resolveTerminalSettings(
-        { family: 'monospace', size: TERMINAL_FONT_SIZES[3], lineHeight: TERMINAL_LINE_HEIGHTS[4] },
+        {
+          family: 'monospace',
+          size: TERMINAL_FONT_SIZES[3],
+          lineHeight: TERMINAL_LINE_HEIGHTS[4],
+          theme: 'frost'
+        },
         available
       )
-    ).toEqual({ family: 'monospace', size: 14, lineHeight: 1.4 })
+    ).toEqual({ family: 'monospace', size: 14, lineHeight: 1.4, theme: 'frost' })
   })
 
   it('loads legacy font settings and supplies the line-height default', () => {
@@ -67,17 +72,44 @@ describe('terminal settings', () => {
       })
     )
 
-    expect(getTerminalSettings()).toEqual({ family: 'monospace', size: 14, lineHeight: 1 })
+    expect(getTerminalSettings()).toEqual({ family: 'monospace', size: 14, lineHeight: 1, theme: 'slate' })
   })
 
   it('saves complete settings under the new storage key', () => {
     const storage = createStorage()
     vi.stubGlobal('localStorage', storage)
-    const settings = { family: 'monospace', size: 14, lineHeight: 1.4 }
+    const settings = { family: 'monospace', size: 14, lineHeight: 1.4, theme: 'ember' as const }
 
     saveTerminalSettings(settings)
 
     expect(storage.getItem(TERMINAL_SETTINGS_STORAGE_KEY)).toBe(JSON.stringify(settings))
+  })
+
+  it('defines complete xterm palettes for every built-in theme', () => {
+    for (const option of TERMINAL_THEMES) {
+      expect(option.theme).toMatchObject({
+        background: expect.stringMatching(/^#[0-9a-f]{6}$/),
+        foreground: expect.stringMatching(/^#[0-9a-f]{6}$/),
+        cursor: expect.stringMatching(/^#[0-9a-f]{6}$/),
+        selectionBackground: expect.stringMatching(/^#[0-9a-f]{6}$/),
+        black: expect.stringMatching(/^#[0-9a-f]{6}$/),
+        red: expect.stringMatching(/^#[0-9a-f]{6}$/),
+        green: expect.stringMatching(/^#[0-9a-f]{6}$/),
+        yellow: expect.stringMatching(/^#[0-9a-f]{6}$/),
+        blue: expect.stringMatching(/^#[0-9a-f]{6}$/),
+        magenta: expect.stringMatching(/^#[0-9a-f]{6}$/),
+        cyan: expect.stringMatching(/^#[0-9a-f]{6}$/),
+        white: expect.stringMatching(/^#[0-9a-f]{6}$/),
+        brightBlack: expect.stringMatching(/^#[0-9a-f]{6}$/),
+        brightRed: expect.stringMatching(/^#[0-9a-f]{6}$/),
+        brightGreen: expect.stringMatching(/^#[0-9a-f]{6}$/),
+        brightYellow: expect.stringMatching(/^#[0-9a-f]{6}$/),
+        brightBlue: expect.stringMatching(/^#[0-9a-f]{6}$/),
+        brightMagenta: expect.stringMatching(/^#[0-9a-f]{6}$/),
+        brightCyan: expect.stringMatching(/^#[0-9a-f]{6}$/),
+        brightWhite: expect.stringMatching(/^#[0-9a-f]{6}$/)
+      })
+    }
   })
 
   it('builds an xterm family with a monospace fallback', () => {

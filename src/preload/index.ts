@@ -38,6 +38,7 @@ const api: RendererApi = {
     ensure: (req) => ipcRenderer.invoke(IpcChannels.ptyEnsure, req),
     write: (req) => ipcRenderer.invoke(IpcChannels.ptyWrite, req),
     resize: (req) => ipcRenderer.invoke(IpcChannels.ptyResize, req),
+    setPalette: (req) => ipcRenderer.invoke(IpcChannels.ptyPalette, req),
     restart: (req) => ipcRenderer.invoke(IpcChannels.ptyRestart, req),
     dispose: (sessionId) => ipcRenderer.invoke(IpcChannels.ptyDispose, sessionId),
     statuses: () => ipcRenderer.invoke(IpcChannels.ptyStatuses),
