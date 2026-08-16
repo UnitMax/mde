@@ -71,6 +71,22 @@ describe('renderer workspace event bridge', () => {
     api.opencode.replyPermission.mockClear()
   })
 
+  it('does not mark the source session exited when a split pane exits', () => {
+    useWorkspace.setState({ statuses: {}, exits: {} })
+
+    useWorkspace.getState().noteExit({
+      sessionId: 'session-1',
+      terminalId: 'session-1:split:1',
+      exitCode: 0
+    })
+    expect(useWorkspace.getState().statuses).toEqual({})
+    expect(useWorkspace.getState().exits).toEqual({})
+
+    useWorkspace.getState().noteExit({ sessionId: 'session-1', terminalId: 'session-1', exitCode: 1 })
+    expect(useWorkspace.getState().statuses['session-1']).toBe('exited')
+    expect(useWorkspace.getState().exits['session-1']).toMatchObject({ exitCode: 1 })
+  })
+
   it('registers process-lifetime push listeners only once', async () => {
     await Promise.all([useWorkspace.getState().init(), useWorkspace.getState().init()])
 

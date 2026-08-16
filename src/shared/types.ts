@@ -52,12 +52,14 @@ export interface PtySize {
 
 export interface PtyExitInfo {
   sessionId: string
+  /** Runtime terminal identity; the primary terminal uses the session id. */
+  terminalId: string
   exitCode: number
   signal?: number
 }
 
 export interface PtyDataChunk {
-  sessionId: string
+  terminalId: string
   data: string
 }
 

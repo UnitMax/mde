@@ -221,18 +221,18 @@ export function registerIpcHandlers(ptyManager: PtyManager, opencodeManager: Ope
   handle<EnsurePtyRequest, PtyStatus>(IpcChannels.ptyEnsure, async (req) => {
     const session = await getSession(req.sessionId)
     if (!session) return 'none'
-    return ptyManager.ensure(session, req.size)
+    return ptyManager.ensure(req.terminalId, session, req.size)
   })
   handle<EnsurePtyRequest, PtyStatus>(IpcChannels.ptyRestart, async (req) => {
     const session = await getSession(req.sessionId)
     if (!session) return 'none'
-    return ptyManager.restart(session, req.size)
+    return ptyManager.restart(req.terminalId, session, req.size)
   })
   handle<WritePtyRequest, void>(IpcChannels.ptyWrite, (req) => {
-    ptyManager.write(req.sessionId, req.data)
+    ptyManager.write(req.terminalId, req.data)
   })
   handle<ResizePtyRequest, void>(IpcChannels.ptyResize, (req) => {
-    ptyManager.resize(req.sessionId, req.size)
+    ptyManager.resize(req.terminalId, req.size)
   })
   handle<string, void>(IpcChannels.ptyDispose, (sessionId) => {
     ptyManager.dispose(sessionId)

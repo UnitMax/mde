@@ -488,10 +488,15 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     set((state) => ({ statuses: { ...state.statuses, [id]: status } })),
 
   noteExit: (info) =>
-    set((state) => ({
-      statuses: { ...state.statuses, [info.sessionId]: 'exited' },
-      exits: { ...state.exits, [info.sessionId]: info }
-    })),
+    set((state) => {
+      // Split-created PTYs share a workspace session as their launch source,
+      // but must not mark that session's primary shell as exited.
+      if (info.terminalId !== info.sessionId) return state
+      return {
+        statuses: { ...state.statuses, [info.sessionId]: 'exited' },
+        exits: { ...state.exits, [info.sessionId]: info }
+      }
+    }),
 
   clearExit: (id) =>
     set((state) => {

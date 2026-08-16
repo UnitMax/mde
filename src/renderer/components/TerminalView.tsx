@@ -70,6 +70,16 @@ import {
   TERMINAL_FONT_SIZES,
   type TerminalSettings
 } from '@/terminal/terminal-settings'
+import {
+  layoutClass,
+  paneClass,
+  panesToTrim,
+  TERMINAL_LAYOUTS,
+  terminalCount,
+  type SessionTerminalLayout,
+  type TerminalLayout,
+  type TerminalPaneState
+} from '@/terminal/layout'
 
 const FALLBACK_SIZE: PtySize = { cols: 80, rows: 24 }
 const RESIZE_DEBOUNCE_MS = 100
@@ -79,15 +89,21 @@ interface TerminalViewProps {
   session: Session
   viewMode: SessionViewMode
   onViewModeChange: (mode: SessionViewMode) => void
+  terminalLayout: SessionTerminalLayout
+  onLayoutChange: (layout: TerminalLayout) => void
+  onReduceLayout: (layout: TerminalLayout, paneIds: string[]) => void
+  onClosePane: (terminalId: string) => void
+  onRestartPrimary: () => void
 }
 
 export type SessionViewMode = 'terminal' | 'gui'
 
 interface TerminalSurfaceProps {
   session: Session
+  pane: TerminalPaneState
 }
 
-function TerminalSurface({ session: selectedSession }: TerminalSurfaceProps): JSX.Element {
+function TerminalSurface({ session: sourceSession, pane }: TerminalSurfaceProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
   const setStatus = useWorkspace((state) => state.setStatus)
 
@@ -96,15 +112,19 @@ function TerminalSurface({ session: selectedSession }: TerminalSurfaceProps): JS
     if (!host) return
 
     // Re-parents the existing terminal, or builds it on first view of this session.
-    const session = attachSession(selectedSession.id, host)
+    const terminal = attachSession(pane.terminalId, host)
     let cancelled = false
 
     const frame = requestAnimationFrame(() => {
-      const size = fitSession(session) ?? FALLBACK_SIZE
-      void window.api.pty.ensure({ sessionId: selectedSession.id, size }).then((status) => {
+      const size = fitSession(terminal) ?? FALLBACK_SIZE
+      void window.api.pty.ensure({
+        terminalId: pane.terminalId,
+        sessionId: sourceSession.id,
+        size
+      }).then((status) => {
         if (cancelled) return
-        setStatus(selectedSession.id, status)
-        session.term.focus()
+        if (pane.primary) setStatus(sourceSession.id, status)
+        terminal.term.focus()
       })
     })
 
@@ -114,8 +134,8 @@ function TerminalSurface({ session: selectedSession }: TerminalSurfaceProps): JS
       // Resizing on every observer callback would flood the PTY with SIGWINCH
       // and leave TUIs redrawing against a stale geometry.
       debounce = window.setTimeout(() => {
-        const size = fitSession(session)
-        if (size) void window.api.pty.resize({ sessionId: selectedSession.id, size })
+        const size = fitSession(terminal)
+        if (size) void window.api.pty.resize({ terminalId: pane.terminalId, size })
       }, RESIZE_DEBOUNCE_MS)
     })
     observer.observe(host)
@@ -126,14 +146,84 @@ function TerminalSurface({ session: selectedSession }: TerminalSurfaceProps): JS
       window.clearTimeout(debounce)
       observer.disconnect()
       // Detach only: the process, its scrollback and its cursor all stay alive.
-      detachSession(selectedSession.id)
+      detachSession(pane.terminalId)
     }
-  }, [selectedSession.id, setStatus])
+  }, [pane.primary, pane.terminalId, setStatus, sourceSession.id])
 
   return <div ref={hostRef} className="terminal-host relative min-h-0 flex-1 overflow-hidden" />
 }
 
-function TerminalSettingsControl({ sessionId }: { sessionId: string }): JSX.Element {
+function TerminalPane({
+  session,
+  pane,
+  onClose
+}: {
+  session: Session
+  pane: TerminalPaneState
+  onClose: () => void
+}): JSX.Element {
+  const clearExit = useWorkspace((state) => state.clearExit)
+  const setStatus = useWorkspace((state) => state.setStatus)
+
+  const restart = async (): Promise<void> => {
+    const terminal = getSession(pane.terminalId)
+    terminal?.term.reset()
+    const size = (terminal && fitSession(terminal)) || FALLBACK_SIZE
+    if (pane.primary) clearExit(session.id)
+    const status = await window.api.pty.restart({
+      terminalId: pane.terminalId,
+      sessionId: session.id,
+      size
+    })
+    if (pane.primary) setStatus(session.id, status)
+  }
+
+  return (
+    <div className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden border border-line bg-bg">
+      <TerminalSurface session={session} pane={pane} />
+      <div className="absolute right-2 top-2 z-10 flex gap-1 opacity-0 transition-opacity hover:opacity-100 focus-within:opacity-100">
+        <Button
+          variant="secondary"
+          size="icon-sm"
+          aria-label="Restart terminal"
+          title="Restart terminal"
+          onClick={() => void restart()}
+        >
+          <RotateCw className="h-3.5 w-3.5" />
+        </Button>
+        {!pane.primary && (
+          <Button
+            variant="secondary"
+            size="icon-sm"
+            aria-label="Close terminal"
+            title="Close terminal"
+            onClick={onClose}
+          >
+            <CircleX className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function LayoutGlyph({ layout }: { layout: TerminalLayout }): JSX.Element {
+  const count = terminalCount(layout)
+  const columns = layout === 'single' ? 'grid-cols-1' : 'grid-cols-2'
+  const rows = layout === 'single' || layout === 'columns' ? 'grid-rows-1' : 'grid-rows-2'
+  return (
+    <span className={`grid h-3.5 w-4 gap-px ${columns} ${rows}`} aria-hidden="true">
+      {Array.from({ length: count }, (_, index) => (
+        <span
+          key={index}
+          className={`rounded-[1px] bg-current ${layout === 'three' && index === 2 ? 'col-span-2' : ''}`}
+        />
+      ))}
+    </span>
+  )
+}
+
+function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Element {
   const [open, setOpen] = useState(false)
   const [settings, setSettings] = useState<TerminalSettings>(() => getTerminalSettings())
   const [availableFonts] = useState(() => listTerminalFonts())
@@ -144,9 +234,11 @@ function TerminalSettingsControl({ sessionId }: { sessionId: string }): JSX.Elem
     saveTerminalSettings(next)
     applyTerminalSettings(next)
 
-    const session = getSession(sessionId)
-    const size = session ? fitSession(session) : null
-    if (size) void window.api.pty.resize({ sessionId, size })
+    terminalIds.forEach((terminalId) => {
+      const terminal = getSession(terminalId)
+      const size = terminal ? fitSession(terminal) : null
+      if (size) void window.api.pty.resize({ terminalId, size })
+    })
   }
 
   return (
@@ -1123,21 +1215,47 @@ function GuiView({ session }: { session: Session }): JSX.Element {
 export function TerminalView({
   session: selectedSession,
   viewMode,
-  onViewModeChange
+  onViewModeChange,
+  terminalLayout,
+  onLayoutChange,
+  onReduceLayout,
+  onClosePane,
+  onRestartPrimary
 }: TerminalViewProps): JSX.Element {
   const clearExit = useWorkspace((state) => state.clearExit)
   const setStatus = useWorkspace((state) => state.setStatus)
   const exit = useWorkspace((state) => state.exits[selectedSession.id])
+  const [pendingLayout, setPendingLayout] = useState<TerminalLayout | null>(null)
 
   const restart = useCallback(async () => {
+    onRestartPrimary()
     const session = getSession(selectedSession.id)
     session?.term.reset()
     const size = (session && fitSession(session)) || FALLBACK_SIZE
     clearExit(selectedSession.id)
-    const status = await window.api.pty.restart({ sessionId: selectedSession.id, size })
+    const status = await window.api.pty.restart({
+      terminalId: selectedSession.id,
+      sessionId: selectedSession.id,
+      size
+    })
     setStatus(selectedSession.id, status)
     if (viewMode === 'terminal') session?.term.focus()
-  }, [selectedSession.id, clearExit, setStatus, viewMode])
+  }, [clearExit, onRestartPrimary, selectedSession.id, setStatus, viewMode])
+
+  const requestLayout = (layout: TerminalLayout): void => {
+    const targetCount = terminalCount(layout)
+    if (targetCount >= terminalLayout.panes.length) {
+      onLayoutChange(layout)
+      return
+    }
+    setPendingLayout(layout)
+  }
+
+  const confirmReduceLayout = (): void => {
+    if (!pendingLayout) return
+    onReduceLayout(pendingLayout, panesToTrim(terminalLayout.panes, terminalCount(pendingLayout)))
+    setPendingLayout(null)
+  }
 
   const location =
     selectedSession.kind === 'wsl'
@@ -1187,7 +1305,37 @@ export function TerminalView({
           </button>
         </div>
 
-        {viewMode === 'terminal' && <TerminalSettingsControl sessionId={selectedSession.id} />}
+        {viewMode === 'terminal' && (
+          <>
+            <div
+              aria-label="Terminal layout"
+              role="group"
+              className="flex shrink-0 items-center gap-0.5 rounded border border-line bg-panel p-0.5"
+            >
+              {TERMINAL_LAYOUTS.map((candidate) => (
+                <button
+                  key={candidate.value}
+                  type="button"
+                  aria-label={candidate.label}
+                  aria-pressed={terminalLayout.layout === candidate.value}
+                  data-testid={`terminal-layout-${candidate.value}`}
+                  title={candidate.label}
+                  onClick={() => requestLayout(candidate.value)}
+                  className={
+                    terminalLayout.layout === candidate.value
+                      ? 'rounded-sm bg-active px-1.5 py-1 text-fg'
+                      : 'rounded-sm px-1.5 py-1 text-fg-subtle hover:bg-hover hover:text-fg'
+                  }
+                >
+                  <LayoutGlyph layout={candidate.value} />
+                </button>
+              ))}
+            </div>
+            <TerminalSettingsControl
+              terminalIds={terminalLayout.panes.map((pane) => pane.terminalId)}
+            />
+          </>
+        )}
 
         <Button
           variant="ghost"
@@ -1214,10 +1362,41 @@ export function TerminalView({
       )}
 
       {viewMode === 'terminal' ? (
-        <TerminalSurface session={selectedSession} />
+        <div className={`grid h-full min-h-0 flex-1 gap-px bg-line ${layoutClass(terminalLayout.layout)}`}>
+          {terminalLayout.panes.map((pane, index) => (
+            <div
+              key={pane.terminalId}
+              className={`h-full min-h-0 min-w-0 ${paneClass(terminalLayout.layout, index)}`}
+            >
+              <TerminalPane
+                session={selectedSession}
+                pane={pane}
+                onClose={() => onClosePane(pane.terminalId)}
+              />
+            </div>
+          ))}
+        </div>
       ) : (
         <GuiView session={selectedSession} />
       )}
+
+      <AlertDialog
+        open={pendingLayout !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingLayout(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogTitle>Close extra terminals?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Changing to {pendingLayout ? TERMINAL_LAYOUTS.find((candidate) => candidate.value === pendingLayout)?.label.toLowerCase() : 'a smaller layout'} will close the extra split terminals.
+          </AlertDialogDescription>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep current layout</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmReduceLayout}>Close terminals</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

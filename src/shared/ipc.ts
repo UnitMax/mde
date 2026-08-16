@@ -103,17 +103,20 @@ export interface ValidatePathRequest {
 }
 
 export interface EnsurePtyRequest {
+  /** Runtime terminal identity, unique even when panes share a session. */
+  terminalId: string
+  /** Persisted workspace session used as the launch source. */
   sessionId: string
   size: PtySize
 }
 
 export interface ResizePtyRequest {
-  sessionId: string
+  terminalId: string
   size: PtySize
 }
 
 export interface WritePtyRequest {
-  sessionId: string
+  terminalId: string
   data: string
 }
 
@@ -159,7 +162,7 @@ export interface RendererApi {
     write(req: WritePtyRequest): Promise<void>
     resize(req: ResizePtyRequest): Promise<void>
     restart(req: EnsurePtyRequest): Promise<PtyStatus>
-    dispose(sessionId: string): Promise<void>
+    dispose(terminalId: string): Promise<void>
     statuses(): Promise<Record<string, PtyStatus>>
     onData(listener: (chunk: PtyDataChunk) => void): () => void
     onExit(listener: (info: PtyExitInfo) => void): () => void

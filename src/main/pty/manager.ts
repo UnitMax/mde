@@ -6,6 +6,7 @@ import { buildLaunchSpec, type LaunchContext } from './launch'
 
 interface PtySession {
   pty: IPty
+  sourceSessionId: string
   status: PtyStatus
   disposeListeners: () => void
 }
@@ -42,17 +43,17 @@ function ptyEnv(): Record<string, string> {
 }
 
 /**
- * Owns every node-pty instance, keyed by session id. One PTY per session,
- * created lazily and kept alive until the session is removed or the app quits —
- * switching sessions in the sidebar must never reach this class.
+ * Owns every node-pty instance, keyed by runtime terminal id. Multiple PTYs
+ * may be launched from one persisted workspace session when the terminal view
+ * is split.
  */
 export class PtyManager {
   private readonly sessions = new Map<string, PtySession>()
 
   constructor(private readonly events: PtyEvents) {}
 
-  status(sessionId: string): PtyStatus {
-    return this.sessions.get(sessionId)?.status ?? 'none'
+  status(terminalId: string): PtyStatus {
+    return this.sessions.get(terminalId)?.status ?? 'none'
   }
 
   statuses(): Record<string, PtyStatus> {
@@ -62,12 +63,12 @@ export class PtyManager {
   }
 
   /**
-   * Creates the PTY on first view of a session. Idempotent, and deliberately
+   * Creates the PTY on first view of a terminal. Idempotent, and deliberately
    * never respawns: an exited shell stays exited until the user asks for a
    * restart, so switching back to the session does not silently revive it.
    */
-  ensure(session: Session, size: PtySize): PtyStatus {
-    const existing = this.sessions.get(session.id)
+  ensure(terminalId: string, session: Session, size: PtySize): PtyStatus {
+    const existing = this.sessions.get(terminalId)
     if (existing) return existing.status
 
     const spec = buildLaunchSpec(session, launchContext())
@@ -85,18 +86,19 @@ export class PtyManager {
     // Forward output the moment it arrives. Buffering into lines would stall
     // TUI redraws, which depend on partial writes landing promptly.
     const dataListener = child.onData((data) => {
-      this.events.onData({ sessionId: session.id, data })
+      this.events.onData({ terminalId, data })
     })
     const exitListener = child.onExit(({ exitCode, signal }) => {
-      const current = this.sessions.get(session.id)
+      const current = this.sessions.get(terminalId)
       if (current) current.status = 'exited'
-      const info: PtyExitInfo = { sessionId: session.id, exitCode }
+      const info: PtyExitInfo = { sessionId: session.id, terminalId, exitCode }
       if (signal !== undefined) info.signal = signal
       this.events.onExit(info)
     })
 
-    this.sessions.set(session.id, {
+    this.sessions.set(terminalId, {
       pty: child,
+      sourceSessionId: session.id,
       status: 'running',
       disposeListeners: () => {
         dataListener.dispose()
@@ -107,39 +109,39 @@ export class PtyManager {
     return 'running'
   }
 
-  restart(session: Session, size: PtySize): PtyStatus {
-    this.dispose(session.id)
-    return this.ensure(session, size)
+  restart(terminalId: string, session: Session, size: PtySize): PtyStatus {
+    this.dispose(terminalId)
+    return this.ensure(terminalId, session, size)
   }
 
-  write(sessionId: string, data: string): void {
-    const session = this.sessions.get(sessionId)
+  write(terminalId: string, data: string): void {
+    const session = this.sessions.get(terminalId)
     if (!session || session.status !== 'running') return
     session.pty.write(data)
   }
 
-  resize(sessionId: string, size: PtySize): void {
-    const session = this.sessions.get(sessionId)
+  resize(terminalId: string, size: PtySize): void {
+    const session = this.sessions.get(terminalId)
     if (!session || session.status !== 'running') return
     const { cols, rows } = clampSize(size)
     try {
       session.pty.resize(cols, rows)
     } catch (error) {
       // Racing a process that exited between the check and the call.
-      console.warn(`[pty] resize failed for ${sessionId}:`, error)
+      console.warn(`[pty] resize failed for ${terminalId}:`, error)
     }
   }
 
-  dispose(sessionId: string): void {
-    const session = this.sessions.get(sessionId)
+  dispose(terminalId: string): void {
+    const session = this.sessions.get(terminalId)
     if (!session) return
-    this.sessions.delete(sessionId)
+    this.sessions.delete(terminalId)
     session.disposeListeners()
     if (session.status === 'running') {
       try {
         session.pty.kill()
       } catch (error) {
-        console.warn(`[pty] kill failed for ${sessionId}:`, error)
+        console.warn(`[pty] kill failed for ${terminalId}:`, error)
       }
     }
   }
