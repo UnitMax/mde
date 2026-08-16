@@ -14,6 +14,9 @@ function subscribe<T>(channel: string, listener: (payload: T) => void): () => vo
 }
 
 const api: RendererApi = {
+  clipboard: {
+    writeText: (text) => ipcRenderer.invoke(IpcChannels.clipboardWriteText, text)
+  },
   app: {
     info: () => ipcRenderer.invoke(IpcChannels.appInfo)
   },

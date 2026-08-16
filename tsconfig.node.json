@@ -10,6 +10,7 @@
     "src/renderer/terminal/terminal-themes.ts",
     "src/renderer/terminal/terminal-compat.ts",
     "src/renderer/terminal/layout.ts",
+    "src/renderer/terminal/clipboard.ts",
     "src/renderer/terminal/sessions.ts",
     "src/renderer/components/MarkdownMessage.tsx",
     "src/renderer/components/context-usage.ts",

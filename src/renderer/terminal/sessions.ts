@@ -2,6 +2,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import type { PtySize } from '@shared/types'
+import { decodeOsc52Clipboard, terminalClipboardAction } from './clipboard'
 import {
   getTerminalSettings,
   xtermFontFamily,
@@ -26,6 +27,7 @@ export interface TerminalSession {
   container: HTMLDivElement
   renderer: RendererKind
   themeId: TerminalThemeId
+  disposeClipboardHandlers: () => void
 }
 
 /** One live xterm per runtime terminal id, independent of React rendering. */
@@ -66,6 +68,56 @@ function createSession(terminalId: string, host: HTMLElement): TerminalSession {
   term.loadAddon(fit)
   term.open(container)
 
+  const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
+  term.attachCustomKeyEventHandler((event) => {
+    const action = terminalClipboardAction(
+      {
+        key: event.key,
+        code: event.code,
+        control: event.ctrlKey,
+        meta: event.metaKey,
+        alt: event.altKey,
+        shift: event.shiftKey
+      },
+      term.hasSelection(),
+      isMac
+    )
+    if (!action) return true
+
+    if (action === 'copy') {
+      event.preventDefault()
+      event.stopPropagation()
+      void window.api.clipboard.writeText(term.getSelection()).catch((error: unknown) => {
+        console.warn('[terminal] clipboard copy failed:', error)
+      })
+    }
+
+    // Returning false prevents xterm from sending the shortcut bytes to the
+    // PTY. Paste actions intentionally leave the browser default untouched so
+    // xterm's native paste event inserts the clipboard exactly once.
+    return false
+  })
+
+  const osc52Disposable = term.parser.registerOscHandler(52, (data) => {
+    const text = decodeOsc52Clipboard(data)
+    if (text !== null) {
+      void window.api.clipboard.writeText(text).catch((error: unknown) => {
+        console.warn('[terminal] OSC 52 clipboard write failed:', error)
+      })
+    }
+    return true
+  })
+
+  const onCopy = (event: ClipboardEvent): void => {
+    if (!term.hasSelection()) return
+    event.preventDefault()
+    event.stopPropagation()
+    void window.api.clipboard.writeText(term.getSelection()).catch((error: unknown) => {
+      console.warn('[terminal] clipboard copy failed:', error)
+    })
+  }
+  container.addEventListener('copy', onCopy, true)
+
   let renderer: RendererKind = 'dom'
   try {
     const webgl = new WebglAddon()
@@ -90,7 +142,11 @@ function createSession(terminalId: string, host: HTMLElement): TerminalSession {
     fit,
     container,
     renderer,
-    themeId: settings.theme
+    themeId: settings.theme,
+    disposeClipboardHandlers: () => {
+      container.removeEventListener('copy', onCopy, true)
+      osc52Disposable.dispose()
+    }
   }
   sessions.set(terminalId, session)
   return session
@@ -141,6 +197,7 @@ export function disposeSession(terminalId: string): void {
   if (!session) return
   sessions.delete(terminalId)
   session.container.remove()
+  session.disposeClipboardHandlers()
   session.term.dispose()
 }
 

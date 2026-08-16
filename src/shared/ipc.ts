@@ -63,6 +63,8 @@ export const IpcChannels = {
   ptyDispose: 'pty:dispose',
   ptyStatuses: 'pty:statuses',
 
+  clipboardWriteText: 'clipboard:write-text',
+
   wslAvailable: 'wsl:available',
   wslDistros: 'wsl:distros',
 
@@ -175,6 +177,9 @@ export interface MoveSessionRequest {
  * consumed in the renderer, and mirrored by the main-process handlers.
  */
 export interface RendererApi {
+  clipboard: {
+    writeText(text: string): Promise<void>
+  }
   app: {
     info(): Promise<AppInfo>
   }

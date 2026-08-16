@@ -92,6 +92,13 @@ The workspace is stored as `workspace.json` with separate `projects` and `sessio
 early POC intentionally starts with an empty workspace if only the previous flat project store is
 present; no migration is attempted.
 
+Terminal clipboard shortcuts use the host Windows clipboard, including for WSL sessions. `Ctrl+C`
+copies selected terminal text and remains the normal interrupt when there is no selection;
+`Ctrl+Shift+C`, `Ctrl+Insert`, `Ctrl+V`, `Ctrl+Shift+V`, and `Shift+Insert` are also supported.
+On macOS, use the corresponding `Command` shortcuts. OSC 52 clipboard sequences are accepted, so
+copying a selection from the OpenCode TUI updates the system clipboard even while its mouse mode
+is enabled.
+
 ### WSL
 
 - Short-lived `wsl.exe` queries and path conversions go through `runWsl()` in

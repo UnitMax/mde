@@ -1,5 +1,5 @@
 import { promises as fs } from 'node:fs'
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import {
   type AppInfo,
   IpcChannels,
@@ -143,6 +143,11 @@ export function registerIpcHandlers(
     platform: hostPlatform(),
     isWindows: process.platform === 'win32'
   }))
+
+  handle<string, void>(IpcChannels.clipboardWriteText, (text) => {
+    if (typeof text !== 'string') throw new Error('Invalid clipboard text.')
+    clipboard.writeText(text)
+  })
 
   handle<void, { projects: Project[]; sessions: Session[] }>(IpcChannels.workspaceList, () =>
     loadWorkspace()
