@@ -96,6 +96,11 @@ present; no migration is attempted.
   `<wsl-ip>` with `hostname -I` and uses it for the Windows-side HTTP/SSE connection instead of
   assuming WSL localhost forwarding. WSL OpenCode uses the distro's own installation,
   credentials, configuration, and filesystem paths.
+- OpenCode TUI status is optional for WSL terminal sessions. Use the session context menu to
+  install MDE's small global status plugin in the selected distro, then restart OpenCode. The
+  plugin is inert outside MDE terminals, writes only a short runtime snapshot under `/tmp`, and
+  does not modify project files or OpenCode configuration. MDE reads that snapshot through the
+  distro's `\\wsl.localhost\\...` path and falls back to normal shell status when it is absent.
 - Session paths are stored in the target's own format. `wslpath` is used only at the UI
   boundary — when the Windows folder picker returns a `\\wsl$\` / `\\wsl.localhost\` UNC path
   or a drive path, and when revealing a folder in Explorer.

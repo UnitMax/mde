@@ -22,6 +22,9 @@ import type {
   UnrevertOpenCodeSessionRequest,
   SelectOpenCodeSessionRequest,
   OpenCodeStreamChunk,
+  OpenCodeTuiPluginRequest,
+  OpenCodeTuiPluginState,
+  OpenCodeTuiStatusUpdate,
   PtyDataChunk,
   PtyExitInfo,
   PtySize,
@@ -73,6 +76,9 @@ export const IpcChannels = {
   opencodePermissionReply: 'opencode:permission-reply',
   opencodeRevert: 'opencode:revert',
   opencodeUnrevert: 'opencode:unrevert',
+  opencodeTuiPluginState: 'opencode-tui:plugin-state',
+  opencodeTuiPluginInstall: 'opencode-tui:plugin-install',
+  opencodeTuiPluginRemove: 'opencode-tui:plugin-remove',
 
   appInfo: 'app:info',
   platformInfo: 'platform:info'
@@ -82,7 +88,8 @@ export const IpcChannels = {
 export const IpcEvents = {
   ptyData: 'pty:data',
   ptyExit: 'pty:exit',
-  opencodeStream: 'opencode:stream'
+  opencodeStream: 'opencode:stream',
+  opencodeTuiStatus: 'opencode-tui:status'
 } as const
 
 export interface PlatformInfo {
@@ -200,5 +207,11 @@ export interface RendererApi {
     replyPermission(req: SendOpenCodePermissionReplyRequest): Promise<void>
     /** Live text, reasoning, and tool-part updates while `send` is in flight. */
     onStream(listener: (chunk: OpenCodeStreamChunk) => void): () => void
+  }
+  opencodeTui: {
+    pluginState(req: OpenCodeTuiPluginRequest): Promise<OpenCodeTuiPluginState>
+    install(req: OpenCodeTuiPluginRequest): Promise<OpenCodeTuiPluginState>
+    remove(req: OpenCodeTuiPluginRequest): Promise<OpenCodeTuiPluginState>
+    onStatus(listener: (update: OpenCodeTuiStatusUpdate) => void): () => void
   }
 }

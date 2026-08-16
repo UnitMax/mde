@@ -1,6 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IpcChannels, IpcEvents, type RendererApi } from '@shared/ipc'
-import type { OpenCodeStreamChunk, PtyDataChunk, PtyExitInfo } from '@shared/types'
+import type {
+  OpenCodeStreamChunk,
+  OpenCodeTuiStatusUpdate,
+  PtyDataChunk,
+  PtyExitInfo
+} from '@shared/types'
 
 function subscribe<T>(channel: string, listener: (payload: T) => void): () => void {
   const wrapped = (_event: Electron.IpcRendererEvent, payload: T): void => listener(payload)
@@ -61,6 +66,12 @@ const api: RendererApi = {
     unrevert: (req) => ipcRenderer.invoke(IpcChannels.opencodeUnrevert, req),
     replyPermission: (req) => ipcRenderer.invoke(IpcChannels.opencodePermissionReply, req),
     onStream: (listener) => subscribe<OpenCodeStreamChunk>(IpcEvents.opencodeStream, listener)
+  },
+  opencodeTui: {
+    pluginState: (req) => ipcRenderer.invoke(IpcChannels.opencodeTuiPluginState, req),
+    install: (req) => ipcRenderer.invoke(IpcChannels.opencodeTuiPluginInstall, req),
+    remove: (req) => ipcRenderer.invoke(IpcChannels.opencodeTuiPluginRemove, req),
+    onStatus: (listener) => subscribe<OpenCodeTuiStatusUpdate>(IpcEvents.opencodeTuiStatus, listener)
   }
 }
 

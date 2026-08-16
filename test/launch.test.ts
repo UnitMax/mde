@@ -52,6 +52,33 @@ describe('buildLaunchSpec', () => {
     expect(spec.args.slice(-3)).toEqual(['zsh', '-lic', 'exec zsh -i'])
   })
 
+  it('passes MDE status variables into the WSL login shell', () => {
+    const spec = buildLaunchSpec(
+      session({ kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/src/app' }),
+      {
+        platform: 'win32',
+        wslEnvironment: {
+          MDE_OPENCODE_STATUS_FILE: "/tmp/mde-opencode/status's file.json",
+          MDE_OPENCODE_STATUS_PROTOCOL: '1'
+        }
+      }
+    )
+
+    expect(spec.args).toEqual([
+      '-d',
+      'Ubuntu-24.04',
+      '--cd',
+      '/home/me/src/app',
+      '--',
+      'env',
+      "MDE_OPENCODE_STATUS_FILE=/tmp/mde-opencode/status's file.json",
+      'MDE_OPENCODE_STATUS_PROTOCOL=1',
+      'bash',
+      '-lic',
+      'exec bash -i'
+    ])
+  })
+
   it('refuses to launch a WSL project off Windows', () => {
     expect(() =>
       buildLaunchSpec(session({ kind: 'wsl', distro: 'Ubuntu-24.04' }), { platform: 'linux' })

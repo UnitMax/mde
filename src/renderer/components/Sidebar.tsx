@@ -1,4 +1,4 @@
-import { useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import {
   ChevronDown,
   ChevronRight,
@@ -45,7 +45,7 @@ import {
 } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { useWorkspace, type OpenCodeChatState } from '@/store/workspace'
+import { useWorkspace, type OpenCodeChatState, type OpenCodeTuiStatusState } from '@/store/workspace'
 
 const STATUS_STYLE: Record<PtyStatus, { dot: string; label: string }> = {
   none: { dot: 'bg-fg-subtle', label: 'No shell running' },
@@ -65,28 +65,52 @@ interface SessionIndicator {
 const OPENCODE_STATUS_STYLE: Record<OpenCodeIndicatorStatus, Omit<SessionIndicator, 'status'>> = {
   idle: { dot: 'bg-fg-subtle', label: 'OpenCode idle' },
   working: { dot: 'text-accent', label: 'OpenCode is working' },
-  attention: { dot: 'text-accent', label: 'OpenCode is waiting for permission', row: 'bg-accent/10' },
+  attention: { dot: 'text-accent', label: 'OpenCode needs input', row: 'bg-accent/10' },
   completed: { dot: 'bg-ok', label: 'OpenCode finished', row: 'bg-ok/10' },
   error: { dot: 'bg-danger', label: 'OpenCode request failed', row: 'bg-danger/10' }
 }
 
-function sessionIndicator(status: PtyStatus, chat?: OpenCodeChatState): SessionIndicator {
-  if (!chat) return { status, ...STATUS_STYLE[status] }
-  const activeSubagent = chat.subagents.some(
-    (subagent) => subagent.status === 'working' || subagent.status === 'waiting'
-  )
-  if (chat.pending || activeSubagent) {
-    const waitingForPermission = chat.liveItems.some(
-      (item) => item.role === 'permission' && !item.responding
-    ) || chat.subagents.some((subagent) => subagent.status === 'waiting')
-    if (waitingForPermission) return { status: 'attention', ...OPENCODE_STATUS_STYLE.attention }
-    return { status: 'working', ...OPENCODE_STATUS_STYLE.working }
+function attentionIndicator(reason: 'permission' | 'question'): SessionIndicator {
+  return {
+    status: 'attention',
+    dot: 'text-accent',
+    label: reason === 'question' ? 'OpenCode is asking a question' : 'OpenCode is waiting for permission',
+    row: 'bg-accent/10'
   }
-  if (chat.unreadCompletion) {
-    const guiStatus = chat.error ? 'error' : 'completed'
-    return { status: guiStatus, ...OPENCODE_STATUS_STYLE[guiStatus] }
+}
+
+function sessionIndicator(
+  status: PtyStatus,
+  chat?: OpenCodeChatState,
+  tuiStatus?: OpenCodeTuiStatusState
+): SessionIndicator {
+  if (chat) {
+    const activeSubagent = chat.subagents.some(
+      (subagent) => subagent.status === 'working' || subagent.status === 'waiting'
+    )
+    if (chat.pending || activeSubagent) {
+      const waitingForPermission = chat.liveItems.some(
+        (item) => item.role === 'permission' && !item.responding
+      ) || chat.subagents.some((subagent) => subagent.status === 'waiting')
+      if (waitingForPermission) return attentionIndicator('permission')
+      return { status: 'working', ...OPENCODE_STATUS_STYLE.working }
+    }
+    if (chat.unreadCompletion) {
+      const guiStatus = chat.error ? 'error' : 'completed'
+      return { status: guiStatus, ...OPENCODE_STATUS_STYLE[guiStatus] }
+    }
+    return { status: 'idle', ...OPENCODE_STATUS_STYLE.idle }
   }
-  return { status: 'idle', ...OPENCODE_STATUS_STYLE.idle }
+  if (tuiStatus) {
+    if ((tuiStatus.status === 'completed' || tuiStatus.status === 'error') && !tuiStatus.unread) {
+      return { status: 'idle', ...OPENCODE_STATUS_STYLE.idle }
+    }
+    if (tuiStatus.status === 'attention') {
+      return attentionIndicator(tuiStatus.attentionReason ?? 'permission')
+    }
+    return { status: tuiStatus.status, ...OPENCODE_STATUS_STYLE[tuiStatus.status] }
+  }
+  return { status, ...STATUS_STYLE[status] }
 }
 
 function StatusDot({
@@ -143,11 +167,12 @@ interface SessionRowProps {
   session: Session
   status: PtyStatus
   chat?: OpenCodeChatState
+  tuiStatus?: OpenCodeTuiStatusState
   selected: boolean
   onSelect: () => void
 }
 
-function SessionRow({ session, status, chat, selected, onSelect }: SessionRowProps): JSX.Element {
+function SessionRow({ session, status, chat, tuiStatus, selected, onSelect }: SessionRowProps): JSX.Element {
   const renameSession = useWorkspace((state) => state.renameSession)
   const moveSession = useWorkspace((state) => state.moveSession)
   const removeSession = useWorkspace((state) => state.removeSession)
@@ -163,6 +188,8 @@ function SessionRow({ session, status, chat, selected, onSelect }: SessionRowPro
   const [confirmingRemove, setConfirmingRemove] = useState(false)
   const [moving, setMoving] = useState(false)
   const [targetProjectId, setTargetProjectId] = useState(session.projectId)
+  const [tuiPluginInstalled, setTuiPluginInstalled] = useState<boolean | null>(null)
+  const [tuiPluginBusy, setTuiPluginBusy] = useState(false)
 
   const commitRename = (): void => {
     setRenaming(false)
@@ -193,9 +220,48 @@ function SessionRow({ session, status, chat, selected, onSelect }: SessionRowPro
   }
 
   const location = session.kind === 'wsl' ? `${session.distro ?? 'WSL'} · ${session.path}` : session.path
-  const indicator = sessionIndicator(status, chat)
+  const indicator = sessionIndicator(status, chat, tuiStatus)
   const canOpenInVsCode =
     platform?.isWindows === true && wslAvailable && session.kind === 'wsl' && Boolean(session.distro)
+  const canUseTuiStatus =
+    platform?.isWindows === true &&
+    wslAvailable &&
+    session.kind === 'wsl' &&
+    session.mode === 'terminal' &&
+    Boolean(session.distro)
+
+  useEffect(() => {
+    if (!canUseTuiStatus) {
+      setTuiPluginInstalled(null)
+      return
+    }
+    let cancelled = false
+    void window.api.opencodeTui
+      .pluginState({ sessionId: session.id })
+      .then(({ installed }) => {
+        if (!cancelled) setTuiPluginInstalled(installed)
+      })
+      .catch(() => {
+        if (!cancelled) setTuiPluginInstalled(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [canUseTuiStatus, session.id])
+
+  const toggleTuiPlugin = async (): Promise<void> => {
+    setTuiPluginBusy(true)
+    try {
+      const result = tuiPluginInstalled
+        ? await window.api.opencodeTui.remove({ sessionId: session.id })
+        : await window.api.opencodeTui.install({ sessionId: session.id })
+      setTuiPluginInstalled(result.installed)
+    } catch (error) {
+      console.warn('[opencode-tui] plugin change failed:', error)
+    } finally {
+      setTuiPluginBusy(false)
+    }
+  }
 
   return (
     <>
@@ -288,6 +354,15 @@ function SessionRow({ session, status, chat, selected, onSelect }: SessionRowPro
               Open in VS Code
             </ContextMenuItem>
           )}
+          {canUseTuiStatus && (
+            <ContextMenuItem
+              disabled={tuiPluginBusy}
+              onSelect={() => void toggleTuiPlugin()}
+              title={!tuiPluginInstalled ? 'Restart OpenCode after enabling' : undefined}
+            >
+              {tuiPluginInstalled ? 'Disable OpenCode TUI status' : 'Enable OpenCode TUI status'}
+            </ContextMenuItem>
+          )}
           <ContextMenuItem
             onSelect={() => {
               setTargetProjectId(session.projectId)
@@ -361,6 +436,7 @@ interface ProjectGroupProps {
   sessions: Session[]
   statuses: Record<string, PtyStatus>
   opencodeChats: Record<string, OpenCodeChatState>
+  opencodeTuiStatuses: Record<string, OpenCodeTuiStatusState>
   selectedSessionId: string | null
   onSelectSession: (id: string) => void
   onNewSession: (projectId: string) => void
@@ -371,6 +447,7 @@ function ProjectGroup({
   sessions,
   statuses,
   opencodeChats,
+  opencodeTuiStatuses,
   selectedSessionId,
   onSelectSession,
   onNewSession
@@ -466,6 +543,7 @@ function ProjectGroup({
             session={session}
             status={statuses[session.id] ?? 'none'}
             chat={opencodeChats[session.id]}
+            tuiStatus={opencodeTuiStatuses[session.id]}
             selected={session.id === selectedSessionId}
             onSelect={() => onSelectSession(session.id)}
           />
@@ -501,6 +579,7 @@ export function Sidebar({ onNewProject, onNewSession, onAbout }: SidebarProps): 
   const sessions = useWorkspace((state) => state.sessions)
   const statuses = useWorkspace((state) => state.statuses)
   const opencodeChats = useWorkspace((state) => state.opencodeChats)
+  const opencodeTuiStatuses = useWorkspace((state) => state.opencodeTuiStatuses)
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
   const selectSession = useWorkspace((state) => state.selectSession)
   const collapsed = useWorkspace((state) => state.sidebarCollapsed)
@@ -517,7 +596,11 @@ export function Sidebar({ onNewProject, onNewSession, onAbout }: SidebarProps): 
             const projectSessions = sessions.filter((session) => session.projectId === project.id)
             return projectSessions.length > 0 ? (
               projectSessions.map((session) => {
-                const indicator = sessionIndicator(statuses[session.id] ?? 'none', opencodeChats[session.id])
+                const indicator = sessionIndicator(
+                  statuses[session.id] ?? 'none',
+                  opencodeChats[session.id],
+                  opencodeTuiStatuses[session.id]
+                )
                 return (
                   <button
                     key={session.id}
@@ -622,6 +705,7 @@ export function Sidebar({ onNewProject, onNewSession, onAbout }: SidebarProps): 
               sessions={sessions.filter((session) => session.projectId === project.id)}
               statuses={statuses}
               opencodeChats={opencodeChats}
+              opencodeTuiStatuses={opencodeTuiStatuses}
               selectedSessionId={selectedSessionId}
               onSelectSession={selectSession}
               onNewSession={(projectId) => onNewSession(projectId)}

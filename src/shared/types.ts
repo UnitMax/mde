@@ -48,6 +48,35 @@ export interface Distro {
 /** Lifecycle of the PTY belonging to a session, as tracked by the main process. */
 export type PtyStatus = 'none' | 'running' | 'exited'
 
+export type OpenCodeTuiStatus = 'idle' | 'working' | 'attention' | 'completed' | 'error'
+
+export type OpenCodeTuiAttentionReason = 'permission' | 'question'
+
+/** A privacy-safe status snapshot written by the optional WSL TUI plugin. */
+export interface OpenCodeTuiStatusSnapshot {
+  protocol: 1
+  status: OpenCodeTuiStatus
+  attentionReason?: OpenCodeTuiAttentionReason
+  revision: number
+  updatedAt: number
+}
+
+/** Main-process status transition for one MDE workspace session. */
+export interface OpenCodeTuiStatusUpdate {
+  sessionId: string
+  status: OpenCodeTuiStatus | null
+  attentionReason?: OpenCodeTuiAttentionReason
+  revision: number
+}
+
+export interface OpenCodeTuiPluginRequest {
+  sessionId: string
+}
+
+export interface OpenCodeTuiPluginState {
+  installed: boolean
+}
+
 export interface PtySize {
   cols: number
   rows: number

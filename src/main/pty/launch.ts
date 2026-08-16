@@ -15,10 +15,21 @@ export interface LaunchContext {
   platform: NodeJS.Platform
   /** process.env.SHELL on the host, if set. */
   defaultShell?: string
+  /** Environment variables that should be inherited by commands inside WSL. */
+  wslEnvironment?: Record<string, string>
 }
 
 const DEFAULT_WINDOWS_SHELL = 'powershell.exe'
 const DEFAULT_POSIX_SHELL = '/bin/bash'
+
+function wslEnvironmentArgs(environment: Record<string, string> | undefined): string[] {
+  if (!environment) return []
+  return Object.entries(environment)
+    .filter(([key]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key))
+    // These are argv entries to `env`, not shell source. Keeping each value as
+    // one entry preserves spaces, quotes, and other path characters exactly.
+    .map(([key, value]) => `${key}=${value}`)
+}
 
 /**
  * Builds the spawn command for a session. This is the seam a future OpenCode
@@ -34,6 +45,7 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
     }
 
     const shell = session.shell ?? 'bash'
+    const environment = wslEnvironmentArgs(context.wslEnvironment)
     return {
       file: 'wsl.exe',
       args: [
@@ -42,7 +54,7 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
         '--cd',
         session.path,
         '--',
-        shell,
+        ...(environment.length > 0 ? ['env', ...environment, shell] : [shell]),
         // A login+interactive shell is required: nvm/mise/bun/asdf put their
         // shims on PATH from the login profile, and a plain interactive shell
         // would leave those tools missing.

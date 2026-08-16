@@ -3,11 +3,20 @@ import { app, BrowserWindow, shell } from 'electron'
 import { IpcEvents } from '@shared/ipc'
 import { registerIpcHandlers } from './ipc'
 import { OpenCodeManager } from './opencode/manager'
+import { OpenCodeTuiStatusManager } from './opencode/tui-status'
 import { PtyManager } from './pty/manager'
 import { initWorkspaceStore } from './store/workspace'
 import { adjustZoomFactor, DEFAULT_ZOOM_FACTOR, getZoomAction } from './zoom'
 
 let mainWindow: BrowserWindow | null = null
+
+const opencodeTuiStatusManager = new OpenCodeTuiStatusManager({
+  onStatus: (update) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(IpcEvents.opencodeTuiStatus, update)
+    }
+  }
+})
 
 const ptyManager = new PtyManager({
   onData: (chunk) => {
@@ -20,7 +29,7 @@ const ptyManager = new PtyManager({
       mainWindow.webContents.send(IpcEvents.ptyExit, info)
     }
   }
-})
+}, opencodeTuiStatusManager)
 const opencodeManager = new OpenCodeManager({
   onStream: (chunk) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -88,7 +97,7 @@ if (!app.requestSingleInstanceLock()) {
   void app.whenReady().then(() => {
     app.setAppUserModelId('dev.mde.app')
     initWorkspaceStore(app.getPath('userData'))
-    registerIpcHandlers(ptyManager, opencodeManager)
+    registerIpcHandlers(ptyManager, opencodeManager, opencodeTuiStatusManager)
     createWindow()
 
     app.on('activate', () => {
@@ -102,6 +111,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('before-quit', () => {
     ptyManager.disposeAll()
+    opencodeTuiStatusManager.disposeAll()
     opencodeManager.disposeAll()
   })
 }

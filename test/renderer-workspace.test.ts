@@ -5,6 +5,7 @@ import type {
   OpenCodeModelOption,
   OpenCodeSessionSummary,
   OpenCodeStreamChunk,
+  OpenCodeTuiStatusUpdate,
   Session
 } from '../src/shared/types'
 
@@ -14,6 +15,7 @@ import { useWorkspace } from '../src/renderer/store/workspace'
 
 describe('renderer workspace event bridge', () => {
   const streamListeners: Array<(chunk: OpenCodeStreamChunk) => void> = []
+  const tuiStatusListeners: Array<(update: OpenCodeTuiStatusUpdate) => void> = []
   const api = {
     platform: { info: vi.fn(async () => ({ platform: 'linux', arch: 'x64' })) },
     workspace: { list: vi.fn(async () => ({ projects: [], sessions: [] })) },
@@ -52,13 +54,23 @@ describe('renderer workspace event bridge', () => {
         streamListeners.push(listener)
         return vi.fn()
       })
+    },
+    opencodeTui: {
+      pluginState: vi.fn(async () => ({ installed: false })),
+      install: vi.fn(async () => ({ installed: true })),
+      remove: vi.fn(async () => ({ installed: false })),
+      onStatus: vi.fn((listener: (update: OpenCodeTuiStatusUpdate) => void) => {
+        tuiStatusListeners.push(listener)
+        return vi.fn()
+      })
     }
   }
 
   beforeEach(() => {
     streamListeners.length = 0
+    tuiStatusListeners.length = 0
     vi.stubGlobal('window', { api })
-    useWorkspace.setState({ opencodeChats: {} })
+    useWorkspace.setState({ opencodeChats: {}, opencodeTuiStatuses: {} })
     api.pty.onExit.mockClear()
     api.sessions.create.mockReset()
     api.sessions.update.mockClear()
@@ -72,6 +84,7 @@ describe('renderer workspace event bridge', () => {
     api.opencode.unrevert.mockReset()
     api.opencode.onStream.mockClear()
     api.opencode.replyPermission.mockClear()
+    api.opencodeTui.onStatus.mockClear()
   })
 
   it('does not mark the source session exited when a split pane exits', () => {
@@ -88,6 +101,30 @@ describe('renderer workspace event bridge', () => {
     useWorkspace.getState().noteExit({ sessionId: 'session-1', terminalId: 'session-1', exitCode: 1 })
     expect(useWorkspace.getState().statuses['session-1']).toBe('exited')
     expect(useWorkspace.getState().exits['session-1']).toMatchObject({ exitCode: 1 })
+  })
+
+  it('tracks TUI completion as unread until the session is selected', () => {
+    useWorkspace.setState({ selectedSessionId: 'other-session', opencodeTuiStatuses: {} })
+
+    useWorkspace.getState().appendOpenCodeTuiStatus({
+      sessionId: 'terminal-1',
+      status: 'completed',
+      revision: 1
+    })
+    expect(useWorkspace.getState().opencodeTuiStatuses['terminal-1']).toMatchObject({
+      status: 'completed',
+      unread: true
+    })
+
+    useWorkspace.getState().selectSession('terminal-1')
+    expect(useWorkspace.getState().opencodeTuiStatuses['terminal-1']?.unread).toBe(false)
+
+    useWorkspace.getState().appendOpenCodeTuiStatus({
+      sessionId: 'terminal-1',
+      status: null,
+      revision: 0
+    })
+    expect(useWorkspace.getState().opencodeTuiStatuses['terminal-1']).toBeUndefined()
   })
 
   it('creates and selects a session with its persisted mode', async () => {
@@ -125,6 +162,7 @@ describe('renderer workspace event bridge', () => {
 
     expect(api.pty.onExit).toHaveBeenCalledTimes(1)
     expect(api.opencode.onStream).toHaveBeenCalledTimes(1)
+    expect(api.opencodeTui.onStatus).toHaveBeenCalledTimes(1)
 
     useWorkspace.getState().selectSession('session-1')
     const model: OpenCodeModelOption = {

@@ -19,6 +19,9 @@ import type {
   OpenCodeSessionSummary,
   OpenCodeSlashCommand,
   OpenCodeStreamChunk,
+  OpenCodeTuiAttentionReason,
+  OpenCodeTuiStatus,
+  OpenCodeTuiStatusUpdate,
   Project,
   PtyExitInfo,
   PtyStatus,
@@ -48,6 +51,13 @@ export interface OpenCodeChatState {
   modelsLoading: boolean
   error: string | null
   unreadCompletion: boolean
+}
+
+export interface OpenCodeTuiStatusState {
+  status: OpenCodeTuiStatus
+  attentionReason?: OpenCodeTuiAttentionReason
+  revision: number
+  unread: boolean
 }
 
 const EMPTY_CHAT: OpenCodeChatState = {
@@ -291,6 +301,7 @@ interface WorkspaceState {
   statuses: Record<string, PtyStatus>
   exits: Record<string, PtyExitInfo>
   opencodeChats: Record<string, OpenCodeChatState>
+  opencodeTuiStatuses: Record<string, OpenCodeTuiStatusState>
   platform: PlatformInfo | null
   wslAvailable: boolean
   distros: Distro[]
@@ -336,6 +347,7 @@ interface WorkspaceState {
     reply: OpenCodePermissionReply
   ) => Promise<void>
   appendOpenCodeStream: (chunk: OpenCodeStreamChunk) => void
+  appendOpenCodeTuiStatus: (update: OpenCodeTuiStatusUpdate) => void
   refreshDistros: () => Promise<void>
 }
 
@@ -346,6 +358,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   statuses: {},
   exits: {},
   opencodeChats: {},
+  opencodeTuiStatuses: {},
   platform: null,
   wslAvailable: false,
   distros: [],
@@ -359,6 +372,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       eventBridgeReady = true
       window.api.pty.onExit((info) => get().noteExit(info))
       window.api.opencode.onStream((chunk) => get().appendOpenCodeStream(chunk))
+      window.api.opencodeTui.onStatus((update) => get().appendOpenCodeTuiStatus(update))
     }
 
     const [platform, workspace, statuses, wslAvailable] = await Promise.all([
@@ -374,6 +388,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       projects,
       sessions,
       statuses,
+      opencodeTuiStatuses: {},
       wslAvailable,
       selectedSessionId: null,
       ready: true
@@ -385,13 +400,21 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   selectSession: (id) =>
     set((state) => {
       const chat = id ? state.opencodeChats[id] : undefined
-      if (!id || !chat?.unreadCompletion) return { selectedSessionId: id }
+      const tuiStatus = id ? state.opencodeTuiStatuses[id] : undefined
+      if (!id || (!chat?.unreadCompletion && !tuiStatus?.unread)) return { selectedSessionId: id }
+      const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
+      if (tuiStatus) opencodeTuiStatuses[id] = { ...tuiStatus, unread: false }
       return {
         selectedSessionId: id,
-        opencodeChats: {
-          ...state.opencodeChats,
-          [id]: { ...chat, unreadCompletion: false }
-        }
+        opencodeTuiStatuses,
+        ...(chat?.unreadCompletion
+          ? {
+              opencodeChats: {
+                ...state.opencodeChats,
+                [id]: { ...chat, unreadCompletion: false }
+              }
+            }
+          : {})
       }
     }),
 
@@ -419,10 +442,12 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const statuses = { ...state.statuses }
       const exits = { ...state.exits }
       const opencodeChats = { ...state.opencodeChats }
+      const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
       childIds.forEach((sessionId) => {
         delete statuses[sessionId]
         delete exits[sessionId]
         delete opencodeChats[sessionId]
+        delete opencodeTuiStatuses[sessionId]
       })
       return {
         projects: state.projects.filter((project) => project.id !== id),
@@ -433,7 +458,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
             : state.selectedSessionId,
         statuses,
         exits,
-        opencodeChats
+        opencodeChats,
+        opencodeTuiStatuses
       }
     })
   },
@@ -463,15 +489,18 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const statuses = { ...state.statuses }
       const exits = { ...state.exits }
       const opencodeChats = { ...state.opencodeChats }
+      const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
       delete statuses[id]
       delete exits[id]
       delete opencodeChats[id]
+      delete opencodeTuiStatuses[id]
       return {
         sessions: state.sessions.filter((session) => session.id !== id),
         selectedSessionId: state.selectedSessionId === id ? null : state.selectedSessionId,
         statuses,
         exits,
-        opencodeChats
+        opencodeChats,
+        opencodeTuiStatuses
       }
     })
   },
@@ -1304,6 +1333,35 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         opencodeChats: {
           ...state.opencodeChats,
           [sessionId]: { ...current, generation, liveItems: upsertLiveItem(current.liveItems, item) }
+        }
+      }
+    }),
+
+  appendOpenCodeTuiStatus: ({ sessionId, status, attentionReason, revision }) =>
+    set((state) => {
+      if (status === null) {
+        if (!state.opencodeTuiStatuses[sessionId]) return state
+        const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
+        delete opencodeTuiStatuses[sessionId]
+        return { opencodeTuiStatuses }
+      }
+
+      const previous = state.opencodeTuiStatuses[sessionId]
+      if (previous?.revision === revision && previous.status === status && previous.attentionReason === attentionReason) {
+        return state
+      }
+      return {
+        opencodeTuiStatuses: {
+          ...state.opencodeTuiStatuses,
+          [sessionId]: {
+            status,
+            ...(attentionReason ? { attentionReason } : {}),
+            revision,
+            unread:
+              status === 'completed' || status === 'error'
+                ? state.selectedSessionId !== sessionId
+                : previous?.unread ?? false
+          }
         }
       }
     }),

@@ -16,6 +16,11 @@ export interface PtyEvents {
   onExit(info: PtyExitInfo): void
 }
 
+export interface PtyLaunchIntegration {
+  prepare(terminalId: string, session: Session): Record<string, string> | undefined
+  dispose(terminalId: string): void
+}
+
 function clampSize(size: PtySize): PtySize {
   return {
     cols: Math.max(1, Math.floor(size.cols) || 80),
@@ -50,7 +55,10 @@ function ptyEnv(): Record<string, string> {
 export class PtyManager {
   private readonly sessions = new Map<string, PtySession>()
 
-  constructor(private readonly events: PtyEvents) {}
+  constructor(
+    private readonly events: PtyEvents,
+    private readonly integration?: PtyLaunchIntegration
+  ) {}
 
   status(terminalId: string): PtyStatus {
     return this.sessions.get(terminalId)?.status ?? 'none'
@@ -71,17 +79,26 @@ export class PtyManager {
     const existing = this.sessions.get(terminalId)
     if (existing) return existing.status
 
-    const spec = buildLaunchSpec(session, launchContext())
+    const spec = buildLaunchSpec(session, {
+      ...launchContext(),
+      wslEnvironment: this.integration?.prepare(terminalId, session)
+    })
     const { cols, rows } = clampSize(size)
 
-    const child = nodePty.spawn(spec.file, spec.args, {
-      name: 'xterm-256color',
-      cols,
-      rows,
-      cwd: spec.cwd ?? homedir(),
-      env: ptyEnv(),
-      useConpty: process.platform === 'win32'
-    })
+    let child: IPty
+    try {
+      child = nodePty.spawn(spec.file, spec.args, {
+        name: 'xterm-256color',
+        cols,
+        rows,
+        cwd: spec.cwd ?? homedir(),
+        env: ptyEnv(),
+        useConpty: process.platform === 'win32'
+      })
+    } catch (error) {
+      this.integration?.dispose(terminalId)
+      throw error
+    }
 
     // Forward output the moment it arrives. Buffering into lines would stall
     // TUI redraws, which depend on partial writes landing promptly.
@@ -91,6 +108,7 @@ export class PtyManager {
     const exitListener = child.onExit(({ exitCode, signal }) => {
       const current = this.sessions.get(terminalId)
       if (current) current.status = 'exited'
+      this.integration?.dispose(terminalId)
       const info: PtyExitInfo = { sessionId: session.id, terminalId, exitCode }
       if (signal !== undefined) info.signal = signal
       this.events.onExit(info)
@@ -136,6 +154,7 @@ export class PtyManager {
     const session = this.sessions.get(terminalId)
     if (!session) return
     this.sessions.delete(terminalId)
+    this.integration?.dispose(terminalId)
     session.disposeListeners()
     if (session.status === 'running') {
       try {

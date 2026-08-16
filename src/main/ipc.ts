@@ -34,11 +34,14 @@ import type {
   SendOpenCodeMessageRequest,
   SendOpenCodeMessageResponse,
   SendOpenCodePermissionReplyRequest,
+  OpenCodeTuiPluginRequest,
+  OpenCodeTuiPluginState,
   Session,
   PtyStatus
 } from '@shared/types'
 import type { PtyManager } from './pty/manager'
 import type { OpenCodeManager } from './opencode/manager'
+import type { OpenCodeTuiStatusManager } from './opencode/tui-status'
 import { createAppInfo } from '@shared/app-info'
 import { isWslAvailable, listDistros, runWsl } from './wsl/distros'
 import { resolveForTarget, toWindows, uncPathFor } from './wsl/paths'
@@ -104,7 +107,11 @@ async function revealSession(session: Session): Promise<void> {
   await shell.openPath(windowsPath)
 }
 
-export function registerIpcHandlers(ptyManager: PtyManager, opencodeManager: OpenCodeManager): void {
+export function registerIpcHandlers(
+  ptyManager: PtyManager,
+  opencodeManager: OpenCodeManager,
+  opencodeTuiStatusManager: OpenCodeTuiStatusManager
+): void {
   const handle = <Req, Res>(
     channel: string,
     handler: (req: Req, event: Electron.IpcMainInvokeEvent) => Promise<Res> | Res
@@ -219,6 +226,31 @@ export function registerIpcHandlers(ptyManager: PtyManager, opencodeManager: Ope
       const session = await getSession(req.sessionId)
       if (!session) throw new Error('Session no longer exists.')
       await opencodeManager.replyPermission(req.sessionId, req.requestId, req.reply)
+    }
+  )
+
+  handle<OpenCodeTuiPluginRequest, OpenCodeTuiPluginState>(
+    IpcChannels.opencodeTuiPluginState,
+    async (req) => {
+      const session = await getSession(req.sessionId)
+      if (!session) throw new Error('Session no longer exists.')
+      return opencodeTuiStatusManager.pluginState(session)
+    }
+  )
+  handle<OpenCodeTuiPluginRequest, OpenCodeTuiPluginState>(
+    IpcChannels.opencodeTuiPluginInstall,
+    async (req) => {
+      const session = await getSession(req.sessionId)
+      if (!session) throw new Error('Session no longer exists.')
+      return opencodeTuiStatusManager.installPlugin(session)
+    }
+  )
+  handle<OpenCodeTuiPluginRequest, OpenCodeTuiPluginState>(
+    IpcChannels.opencodeTuiPluginRemove,
+    async (req) => {
+      const session = await getSession(req.sessionId)
+      if (!session) throw new Error('Session no longer exists.')
+      return opencodeTuiStatusManager.removePlugin(session)
     }
   )
 
