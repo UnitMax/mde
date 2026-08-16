@@ -31,6 +31,7 @@ import type {
   OpenCodeToolMessage,
   OpenCodeTuiPluginState,
   OpenCodeTuiSettings,
+  OpenCodeAlertSettings,
   PtySize,
   Session
 } from '@shared/types'
@@ -288,6 +289,9 @@ function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JS
   const [tuiLoading, setTuiLoading] = useState(false)
   const [tuiBusyDistro, setTuiBusyDistro] = useState<string | null>(null)
   const [tuiError, setTuiError] = useState<string | null>(null)
+  const [alertSettings, setAlertSettings] = useState<OpenCodeAlertSettings>({ enabled: true })
+  const [alertLoading, setAlertLoading] = useState(false)
+  const [alertError, setAlertError] = useState<string | null>(null)
 
   const canManageTui = platform?.isWindows === true && wslAvailable
 
@@ -347,6 +351,27 @@ function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JS
     }
   }, [canManageTui, distros, open])
 
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    setAlertLoading(true)
+    setAlertError(null)
+    void window.api.opencodeAlerts
+      .settings()
+      .then((next) => {
+        if (!cancelled) setAlertSettings(next)
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setAlertError(error instanceof Error ? error.message : String(error))
+      })
+      .finally(() => {
+        if (!cancelled) setAlertLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open])
+
   const setTuiEnabled = async (): Promise<void> => {
     setTuiError(null)
     try {
@@ -354,6 +379,19 @@ function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JS
       setTuiSettings(next)
     } catch (error) {
       setTuiError(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const setAlertsEnabled = async (): Promise<void> => {
+    setAlertError(null)
+    setAlertLoading(true)
+    try {
+      const next = await window.api.opencodeAlerts.setEnabled({ enabled: !alertSettings.enabled })
+      setAlertSettings(next)
+    } catch (error) {
+      setAlertError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setAlertLoading(false)
     }
   }
 
@@ -485,6 +523,46 @@ function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JS
                 </Select>
               </label>
             </div>
+          </section>
+
+          <section className="space-y-3 border-t border-line pt-4" aria-labelledby="opencode-alert-settings">
+            <div>
+              <h3 id="opencode-alert-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
+                OpenCode alerts
+              </h3>
+              <p className="mt-1 text-xs text-fg-subtle">
+                Flash the taskbar and play a sound when OpenCode finishes, needs input, or encounters an error while MDE is unfocused.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              role="switch"
+              aria-checked={alertSettings.enabled}
+              data-testid="opencode-alerts-enabled"
+              disabled={alertLoading}
+              onClick={() => void setAlertsEnabled()}
+              className="flex w-full items-center justify-between rounded border border-line bg-panel px-3 py-2 text-left text-xs text-fg-muted hover:bg-hover disabled:pointer-events-none disabled:opacity-50"
+            >
+              <span>
+                <span className="block font-medium text-fg">Enable OpenCode alerts</span>
+                <span className="mt-0.5 block text-fg-subtle">
+                  {alertSettings.enabled ? 'Alerts are enabled.' : 'Alerts are disabled.'}
+                </span>
+              </span>
+              <span
+                className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+                  alertSettings.enabled ? 'bg-accent' : 'bg-line-strong'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+                    alertSettings.enabled ? 'translate-x-4' : 'translate-x-0.5'
+                  }`}
+                />
+              </span>
+            </button>
+            {alertError && <p className="text-xs text-danger">{alertError}</p>}
           </section>
 
           <section className="space-y-3 border-t border-line pt-4" aria-labelledby="opencode-tui-settings">

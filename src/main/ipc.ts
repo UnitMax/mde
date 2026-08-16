@@ -40,12 +40,15 @@ import type {
   OpenCodeTuiPluginState,
   OpenCodeTuiSetEnabledRequest,
   OpenCodeTuiSettings,
+  OpenCodeAlertSetEnabledRequest,
+  OpenCodeAlertSettings,
   Session,
   PtyStatus
 } from '@shared/types'
 import type { PtyManager } from './pty/manager'
 import type { OpenCodeManager } from './opencode/manager'
 import type { OpenCodeTuiStatusManager } from './opencode/tui-status'
+import type { OpenCodeAlertManager } from './opencode/alerts'
 import { createAppInfo } from '@shared/app-info'
 import { isWslAvailable, listDistros, runWsl } from './wsl/distros'
 import { canonicalizeWslPath, resolveForTarget, toWindows, uncPathFor } from './wsl/paths'
@@ -124,7 +127,8 @@ async function revealSession(session: Session): Promise<void> {
 export function registerIpcHandlers(
   ptyManager: PtyManager,
   opencodeManager: OpenCodeManager,
-  opencodeTuiStatusManager: OpenCodeTuiStatusManager
+  opencodeTuiStatusManager: OpenCodeTuiStatusManager,
+  opencodeAlertManager: OpenCodeAlertManager
 ): void {
   const handle = <Req, Res>(
     channel: string,
@@ -267,6 +271,19 @@ export function registerIpcHandlers(
         throw new Error('Invalid OpenCode TUI enabled setting.')
       }
       return opencodeTuiStatusManager.setEnabled(req.enabled)
+    }
+  )
+
+  handle<void, OpenCodeAlertSettings>(IpcChannels.opencodeAlertsSettings, () =>
+    opencodeAlertManager.settings()
+  )
+  handle<OpenCodeAlertSetEnabledRequest, OpenCodeAlertSettings>(
+    IpcChannels.opencodeAlertsSetEnabled,
+    (req) => {
+      if (typeof req?.enabled !== 'boolean') {
+        throw new Error('Invalid OpenCode alerts enabled setting.')
+      }
+      return opencodeAlertManager.setEnabled(req.enabled)
     }
   )
 

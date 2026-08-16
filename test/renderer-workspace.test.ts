@@ -83,14 +83,14 @@ describe('renderer workspace event bridge', () => {
         tuiStatusListeners.push(listener)
         return vi.fn()
       })
-    }
+    },
   }
 
   beforeEach(() => {
     streamListeners.length = 0
     tuiStatusListeners.length = 0
     vi.stubGlobal('window', { api })
-    useWorkspace.setState({ opencodeChats: {}, opencodeTuiStatuses: {} })
+    useWorkspace.setState({ opencodeChats: {}, opencodeTuiStatuses: {}, sessions: [], selectedSessionId: null })
     api.pty.onExit.mockClear()
     api.sessions.create.mockReset()
     api.sessions.update.mockClear()

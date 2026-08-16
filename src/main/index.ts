@@ -1,8 +1,10 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, shell } from 'electron'
 import { IpcEvents } from '@shared/ipc'
+import type { OpenCodeAlertEvent } from '@shared/types'
 import { registerIpcHandlers } from './ipc'
 import { OpenCodeManager } from './opencode/manager'
+import { OpenCodeAlertManager } from './opencode/alerts'
 import { OpenCodeTuiStatusManager } from './opencode/tui-status'
 import { PtyManager } from './pty/manager'
 import { initWorkspaceStore } from './store/workspace'
@@ -10,8 +12,21 @@ import { adjustZoomFactor, DEFAULT_ZOOM_FACTOR, getZoomAction } from './zoom'
 
 let mainWindow: BrowserWindow | null = null
 
+const opencodeAlertManager = new OpenCodeAlertManager({
+  getWindow: () => mainWindow,
+  beep: () => shell.beep()
+})
+
 const opencodeTuiStatusManager = new OpenCodeTuiStatusManager({
   onStatus: (update) => {
+    if (update.status === 'attention' || update.status === 'completed' || update.status === 'error') {
+      opencodeAlertManager.alert({
+        sessionId: update.sessionId,
+        source: 'tui',
+        kind: update.status,
+        ...(update.attentionReason ? { attentionReason: update.attentionReason } : {})
+      })
+    }
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send(IpcEvents.opencodeTuiStatus, update)
     }
@@ -35,6 +50,9 @@ const opencodeManager = new OpenCodeManager({
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send(IpcEvents.opencodeStream, chunk)
     }
+  },
+  onAlert: (event: OpenCodeAlertEvent) => {
+    opencodeAlertManager.alert(event)
   }
 })
 
@@ -57,7 +75,9 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => mainWindow?.show())
+  mainWindow.on('focus', () => opencodeAlertManager.clearFlashing())
   mainWindow.on('closed', () => {
+    opencodeAlertManager.clearFlashing()
     mainWindow = null
   })
 
@@ -95,10 +115,10 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   void app.whenReady().then(async () => {
-    app.setAppUserModelId('dev.mde.app')
     initWorkspaceStore(app.getPath('userData'))
     await opencodeTuiStatusManager.configure(app.getPath('userData'))
-    registerIpcHandlers(ptyManager, opencodeManager, opencodeTuiStatusManager)
+    await opencodeAlertManager.configure(app.getPath('userData'))
+    registerIpcHandlers(ptyManager, opencodeManager, opencodeTuiStatusManager, opencodeAlertManager)
     createWindow()
 
     app.on('activate', () => {
@@ -111,6 +131,7 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.on('before-quit', () => {
+    opencodeAlertManager.dispose()
     ptyManager.disposeAll()
     opencodeTuiStatusManager.disposeAll()
     opencodeManager.disposeAll()

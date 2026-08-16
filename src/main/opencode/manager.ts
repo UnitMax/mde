@@ -20,6 +20,7 @@ import type {
   OpenCodeRevertState,
   ListOpenCodeModelsResponse,
   ListOpenCodeSessionsResponse,
+  OpenCodeAlertEvent,
   Session
 } from '@shared/types'
 import { resolveWslHostAddress } from '../wsl/distros'
@@ -41,6 +42,7 @@ interface OpenCodeRuntime {
 
 export interface OpenCodeEvents {
   onStream(chunk: OpenCodeStreamChunk): void
+  onAlert?(event: OpenCodeAlertEvent): void
 }
 
 export function createOpenCodeLaunch(
@@ -132,11 +134,15 @@ export class OpenCodeStreamTracker {
   private compactionActive = false
   private compactionAutomatic = true
   private localRequestActive = false
+  private externalActive = false
+  private readonly openPermissions = new Set<string>()
+  private readonly openQuestions = new Set<string>()
 
   constructor(private sessionId: string | null) {}
 
   setLocalRequestActive(active: boolean): void {
     this.localRequestActive = active
+    if (active) this.externalActive = false
   }
 
   setSessionId(sessionId: string | null): void {
@@ -151,6 +157,75 @@ export class OpenCodeStreamTracker {
     this.lastTextPartId = null
     this.compactionActive = false
     this.compactionAutomatic = true
+    this.externalActive = false
+    this.openPermissions.clear()
+    this.openQuestions.clear()
+  }
+
+  alertEvents(event: unknown, workspaceSessionId: string): OpenCodeAlertEvent[] {
+    const payload = unwrapEvent(event)
+    if (!isRecord(payload) || !isRecord(payload.properties)) return []
+    const properties = payload.properties
+    const sessionId = stringValue(properties.sessionID)
+    const belongsToRuntime = sessionId === this.sessionId || (sessionId ? this.childSessions.has(sessionId) : false)
+    if (!belongsToRuntime) return []
+
+    const attention = (attentionReason: 'permission' | 'question'): OpenCodeAlertEvent => ({
+      sessionId: workspaceSessionId,
+      source: 'gui',
+      kind: 'attention',
+      attentionReason
+    })
+
+    if (payload.type === 'permission.asked' || payload.type === 'permission.updated') {
+      const requestId = stringValue(properties.requestID) ?? stringValue(properties.id)
+      if (!requestId || this.openPermissions.has(requestId)) return []
+      this.openPermissions.add(requestId)
+      return [attention('permission')]
+    }
+
+    if (payload.type === 'permission.replied') {
+      const requestId = stringValue(properties.permissionID) ?? stringValue(properties.requestID)
+      if (requestId) this.openPermissions.delete(requestId)
+      return []
+    }
+
+    if (payload.type === 'question.asked') {
+      const requestId = stringValue(properties.requestID) ?? stringValue(properties.id)
+      if (!requestId || this.openQuestions.has(requestId)) return []
+      this.openQuestions.add(requestId)
+      return [attention('question')]
+    }
+
+    if (payload.type === 'question.replied' || payload.type === 'question.rejected') {
+      const requestId = stringValue(properties.requestID) ?? stringValue(properties.id)
+      if (requestId) this.openQuestions.delete(requestId)
+      return []
+    }
+
+    if (sessionId !== this.sessionId) return []
+    if (payload.type === 'session.error') {
+      if (this.localRequestActive) return []
+      return [{ sessionId: workspaceSessionId, source: 'gui', kind: 'error' }]
+    }
+
+    if (payload.type !== 'session.status' && payload.type !== 'session.idle') return []
+    const status =
+      payload.type === 'session.idle'
+        ? 'idle'
+        : isRecord(properties.status) && typeof properties.status.type === 'string'
+          ? properties.status.type
+          : undefined
+    if (this.localRequestActive) return []
+    if (status === 'busy' || status === 'retry') {
+      this.externalActive = true
+      return []
+    }
+    if (status === 'idle' && this.externalActive) {
+      this.externalActive = false
+      return [{ sessionId: workspaceSessionId, source: 'gui', kind: 'completed' }]
+    }
+    return []
   }
 
   /** Returns a normalized update for this event, or null if it is irrelevant. */
@@ -1243,6 +1318,8 @@ export class OpenCodeManager {
         response.info
       )
 
+      this.events?.onAlert?.({ sessionId: session.id, source: 'gui', kind: 'completed' })
+
       return {
         sessionId: openCodeSessionId,
         userMessageId: response.info.parentID ?? null,
@@ -1258,6 +1335,9 @@ export class OpenCodeManager {
           { id: response.info.id, role: 'assistant', text: reply }
         ]
       }
+    } catch (error) {
+      this.events?.onAlert?.({ sessionId: session.id, source: 'gui', kind: 'error' })
+      throw error
     } finally {
       runtime?.tracker?.setLocalRequestActive(false)
       this.pending.delete(session.id)
@@ -1306,7 +1386,12 @@ export class OpenCodeManager {
         )
       }
 
-      return this.loadConversation(runtime, openCodeSessionId, undefined, true)
+      const result = await this.loadConversation(runtime, openCodeSessionId, undefined, true)
+      this.events?.onAlert?.({ sessionId: session.id, source: 'gui', kind: 'completed' })
+      return result
+    } catch (error) {
+      this.events?.onAlert?.({ sessionId: session.id, source: 'gui', kind: 'error' })
+      throw error
     } finally {
       runtime?.tracker?.setLocalRequestActive(false)
       this.pending.delete(session.id)
@@ -1553,6 +1638,9 @@ export class OpenCodeManager {
           }
           const item = tracker.accept(event)
           if (item) this.events?.onStream({ sessionId, item })
+          for (const alert of tracker.alertEvents(event, sessionId)) {
+            this.events?.onAlert?.(alert)
+          }
         }
       }
     } catch {

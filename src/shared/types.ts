@@ -109,6 +109,24 @@ export interface OpenCodeTuiPluginState {
   currentVersion: string
 }
 
+export type OpenCodeAlertKind = 'attention' | 'completed' | 'error'
+export type OpenCodeAlertSource = 'tui' | 'gui'
+
+export interface OpenCodeAlertEvent {
+  sessionId: string
+  source: OpenCodeAlertSource
+  kind: OpenCodeAlertKind
+  attentionReason?: OpenCodeTuiAttentionReason
+}
+
+export interface OpenCodeAlertSettings {
+  enabled: boolean
+}
+
+export interface OpenCodeAlertSetEnabledRequest {
+  enabled: boolean
+}
+
 export interface PtySize {
   cols: number
   rows: number

@@ -27,6 +27,8 @@ import type {
   OpenCodeTuiPluginRequest,
   OpenCodeTuiPluginState,
   OpenCodeTuiStatusUpdate,
+  OpenCodeAlertSetEnabledRequest,
+  OpenCodeAlertSettings,
   PtyDataChunk,
   PtyExitInfo,
   PtySize,
@@ -84,6 +86,9 @@ export const IpcChannels = {
   opencodeTuiPluginRemove: 'opencode-tui:plugin-remove',
   opencodeTuiSettings: 'opencode-tui:settings',
   opencodeTuiSetEnabled: 'opencode-tui:set-enabled',
+
+  opencodeAlertsSettings: 'opencode-alerts:settings',
+  opencodeAlertsSetEnabled: 'opencode-alerts:set-enabled',
 
   appInfo: 'app:info',
   platformInfo: 'platform:info'
@@ -232,5 +237,9 @@ export interface RendererApi {
     install(req: OpenCodeTuiPluginRequest): Promise<OpenCodeTuiPluginState>
     remove(req: OpenCodeTuiPluginRequest): Promise<OpenCodeTuiPluginState>
     onStatus(listener: (update: OpenCodeTuiStatusUpdate) => void): () => void
+  }
+  opencodeAlerts: {
+    settings(): Promise<OpenCodeAlertSettings>
+    setEnabled(req: OpenCodeAlertSetEnabledRequest): Promise<OpenCodeAlertSettings>
   }
 }

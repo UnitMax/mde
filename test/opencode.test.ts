@@ -601,6 +601,50 @@ describe('OpenCode event stream', () => {
     ).toEqual({ kind: 'status', status: 'busy' })
   })
 
+  it('normalizes GUI attention and external completion alerts', () => {
+    const tracker = new OpenCodeStreamTracker('ses_1')
+
+    expect(
+      tracker.alertEvents({
+        type: 'permission.asked',
+        properties: { sessionID: 'ses_1', requestID: 'permission-1' }
+      }, 'workspace-1')
+    ).toEqual([
+      { sessionId: 'workspace-1', source: 'gui', kind: 'attention', attentionReason: 'permission' }
+    ])
+    expect(
+      tracker.alertEvents({
+        type: 'permission.updated',
+        properties: { sessionID: 'ses_1', requestID: 'permission-1' }
+      }, 'workspace-1')
+    ).toEqual([])
+    tracker.alertEvents({
+      type: 'permission.replied',
+      properties: { sessionID: 'ses_1', permissionID: 'permission-1' }
+    }, 'workspace-1')
+
+    expect(
+      tracker.alertEvents({
+        type: 'question.asked',
+        properties: { sessionID: 'ses_1', requestID: 'question-1' }
+      }, 'workspace-1')
+    ).toEqual([
+      { sessionId: 'workspace-1', source: 'gui', kind: 'attention', attentionReason: 'question' }
+    ])
+    expect(
+      tracker.alertEvents({
+        type: 'session.status',
+        properties: { sessionID: 'ses_1', status: { type: 'busy' } }
+      }, 'workspace-1')
+    ).toEqual([])
+    expect(
+      tracker.alertEvents({
+        type: 'session.idle',
+        properties: { sessionID: 'ses_1' }
+      }, 'workspace-1')
+    ).toEqual([{ sessionId: 'workspace-1', source: 'gui', kind: 'completed' }])
+  })
+
   it('accepts incremental text carried by a part-updated event', () => {
     const tracker = new OpenCodeStreamTracker('ses_1')
     expect(
