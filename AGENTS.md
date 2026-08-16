@@ -35,6 +35,10 @@ Vitest runs Node-environment tests matched by `test/**/*.test.ts`. Name tests af
 
 Recent commits use short, imperative, sentence-style subjects (for example, `Preserve ANSI terminal colors`). Keep commits focused. Pull requests should explain the user-visible change, implementation impact, and verification commands; include screenshots for UI changes and note Windows/WSL testing. Update documentation or third-party notices when affected.
 
+## Versioning
+
+The application version is authoritative in `package.json` and must stay synchronized with `package-lock.json`. The initial version is `0.0.1`; increase the patch version by `0.0.1` for every commit unless the user explicitly says otherwise. The About dialog must display this same package version.
+
 ## Security & Configuration Tips
 
 Keep `contextIsolation` and renderer sandboxing intact. Validate WSL/process arguments and never log credentials or session data. Do not commit workspace state, build artifacts, or secrets.

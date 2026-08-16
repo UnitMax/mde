@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Plus, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AddSessionDialog } from '@/components/AddProjectDialog'
+import { AboutDialog } from '@/components/AboutDialog'
 import { NewProjectDialog } from '@/components/NewProjectDialog'
 import { Sidebar } from '@/components/Sidebar'
 import { TerminalView, type SessionViewMode } from '@/components/TerminalView'
@@ -40,6 +41,7 @@ export function App(): JSX.Element {
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
   const [newSessionOpen, setNewSessionOpen] = useState(false)
   const [newProjectOpen, setNewProjectOpen] = useState(false)
+  const [aboutOpen, setAboutOpen] = useState(false)
   const [defaultProjectId, setDefaultProjectId] = useState<string | undefined>(undefined)
   const [viewModes, setViewModes] = useState<Record<string, SessionViewMode>>({})
   const [terminalLayouts, setTerminalLayouts] = useState<Record<string, SessionTerminalLayout>>({})
@@ -211,7 +213,11 @@ export function App(): JSX.Element {
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-bg">
-      <Sidebar onNewProject={() => setNewProjectOpen(true)} onNewSession={openNewSession} />
+      <Sidebar
+        onNewProject={() => setNewProjectOpen(true)}
+        onNewSession={openNewSession}
+        onAbout={() => setAboutOpen(true)}
+      />
 
       <main className="h-full min-w-0 flex-1">
         {!ready ? null : selected ? (
@@ -239,6 +245,7 @@ export function App(): JSX.Element {
         defaultProjectId={defaultProjectId}
       />
       <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
+      <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
     </div>
   )
 }

@@ -475,9 +475,10 @@ function ProjectGroup({
 interface SidebarProps {
   onNewProject: () => void
   onNewSession: (projectId?: string) => void
+  onAbout: () => void
 }
 
-export function Sidebar({ onNewProject, onNewSession }: SidebarProps): JSX.Element {
+export function Sidebar({ onNewProject, onNewSession, onAbout }: SidebarProps): JSX.Element {
   const projects = useWorkspace((state) => state.projects)
   const sessions = useWorkspace((state) => state.sessions)
   const statuses = useWorkspace((state) => state.statuses)
@@ -551,7 +552,16 @@ export function Sidebar({ onNewProject, onNewSession }: SidebarProps): JSX.Eleme
   return (
     <aside className="flex w-[260px] shrink-0 flex-col border-r border-line bg-panel">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-line px-3">
-        <span className="text-[13px] font-semibold tracking-tight text-fg">mde</span>
+        <button
+          type="button"
+          onClick={onAbout}
+          title="About MDE"
+          aria-label="About MDE"
+          data-testid="about-mde"
+          className="rounded text-[13px] font-semibold tracking-tight text-fg hover:text-accent focus:outline-none focus:ring-1 focus:ring-accent"
+        >
+          mde
+        </button>
         <span className="text-[11px] text-fg-subtle">agentic dev environment</span>
         <Button
           variant="ghost"

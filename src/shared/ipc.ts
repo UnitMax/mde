@@ -74,6 +74,7 @@ export const IpcChannels = {
   opencodeRevert: 'opencode:revert',
   opencodeUnrevert: 'opencode:unrevert',
 
+  appInfo: 'app:info',
   platformInfo: 'platform:info'
 } as const
 
@@ -87,6 +88,12 @@ export const IpcEvents = {
 export interface PlatformInfo {
   platform: HostPlatform
   isWindows: boolean
+}
+
+export interface AppInfo {
+  name: string
+  fullName: string
+  version: string
 }
 
 export interface ResolvePathRequest {
@@ -140,6 +147,9 @@ export interface MoveSessionRequest {
  * consumed in the renderer, and mirrored by the main-process handlers.
  */
 export interface RendererApi {
+  app: {
+    info(): Promise<AppInfo>
+  }
   platform: {
     info(): Promise<PlatformInfo>
   }

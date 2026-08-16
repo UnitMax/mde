@@ -9,6 +9,9 @@ function subscribe<T>(channel: string, listener: (payload: T) => void): () => vo
 }
 
 const api: RendererApi = {
+  app: {
+    info: () => ipcRenderer.invoke(IpcChannels.appInfo)
+  },
   platform: {
     info: () => ipcRenderer.invoke(IpcChannels.platformInfo)
   },

@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs'
-import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import {
+  type AppInfo,
   IpcChannels,
   type EnsurePtyRequest,
   type MoveSessionRequest,
@@ -38,6 +39,7 @@ import type {
 } from '@shared/types'
 import type { PtyManager } from './pty/manager'
 import type { OpenCodeManager } from './opencode/manager'
+import { createAppInfo } from '@shared/app-info'
 import { isWslAvailable, listDistros, runWsl } from './wsl/distros'
 import { resolveForTarget, toWindows, uncPathFor } from './wsl/paths'
 import { launchVsCodeSession } from './vscode'
@@ -109,6 +111,8 @@ export function registerIpcHandlers(ptyManager: PtyManager, opencodeManager: Ope
   ): void => {
     ipcMain.handle(channel, (event, req: Req) => handler(req, event))
   }
+
+  handle<void, AppInfo>(IpcChannels.appInfo, () => createAppInfo(app.getVersion()))
 
   handle<void, PlatformInfo>(IpcChannels.platformInfo, () => ({
     platform: hostPlatform(),
