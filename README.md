@@ -38,12 +38,18 @@ npm run typecheck
 ## Packaging
 
 ```sh
-npm run build          # typecheck, bundle, then package for the current platform
-npm run build:win      # NSIS installer  -> dist/mde-<version>-setup.exe
-npm run build:linux    # AppImage + deb  -> dist/mde-<version>.AppImage, .deb
+npm run build             # typecheck, bundle, then package for the current platform
+npm run build:win         # NSIS installer + portable exe -> dist/mde-<version>-setup.exe, dist/mde <version>.exe
+npm run build:win:portable  # portable exe only
+npm run build:linux       # AppImage + deb  -> dist/mde-<version>.AppImage, .deb
 ```
 
-Cross-building the Windows installer from Linux is not supported here; build it on Windows.
+Cross-building for Windows from Linux is not supported here; build it on Windows. If you develop
+in WSL, `npm run build:win:remote` automates this: it rsyncs the repo to `C:\dev\mde-winbuild`
+(preserving `node_modules` there between runs) and runs `npm ci && npm run build:win:portable`
+using the native Windows npm/node from WSL, so `node-pty` gets rebuilt with the Windows
+toolchain. Requires Node.js and Visual Studio Build Tools ("Desktop development with C++")
+installed on Windows first (see Requirements above).
 
 ## Licensing
 
