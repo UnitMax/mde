@@ -37,7 +37,7 @@ Recent commits use short, imperative, sentence-style subjects (for example, `Pre
 
 ## Versioning
 
-The application version is authoritative in `package.json` and must stay synchronized with `package-lock.json`. The initial version is `0.0.1`; increase the patch version by `0.0.1` for every commit unless the user explicitly says otherwise. The About dialog must display this same package version.
+The application version is authoritative in `package.json` and must stay synchronized with `package-lock.json`. The initial version is `0.0.1`. Increase the patch version by `0.0.1` once when preparing each commit unless the user explicitly says otherwise; do not increase it merely because a task changes files, and do not increase it again when committing a version that was already bumped for that commit. The About dialog must display this same package version.
 
 ## Security & Configuration Tips
 

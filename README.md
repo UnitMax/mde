@@ -22,6 +22,9 @@ their selected distro.
 - OpenCode GUI sessions require OpenCode to be installed and authenticated in the target
   environment. For WSL sessions, install it inside the selected WSL 2 distro and ensure it is
   available from a login Bash shell (`bash -lic 'command -v opencode'`).
+- Opening a WSL session in VS Code requires Windows VS Code with the Remote - WSL extension
+  installed locally. MDE uses VS Code's registered remote URI, so the `code` command does not
+  need to be on PATH.
 
 ## Development
 

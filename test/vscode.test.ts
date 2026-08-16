@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildVsCodeLaunchSpec } from '../src/main/vscode'
+import { buildVsCodeRemoteUri } from '../src/main/vscode'
 import type { Session } from '@shared/types'
 
 function session(overrides: Partial<Session> = {}): Session {
@@ -16,39 +16,39 @@ function session(overrides: Partial<Session> = {}): Session {
   }
 }
 
-describe('buildVsCodeLaunchSpec', () => {
-  it('opens a WSL folder through Windows VS Code Remote - WSL', () => {
-    expect(buildVsCodeLaunchSpec(session(), 'win32')).toEqual({
-      file: 'code',
-      args: ['--remote', 'wsl+Ubuntu-24.04', '/home/me/src/app/']
-    })
+describe('buildVsCodeRemoteUri', () => {
+  it('opens a WSL folder through the registered Windows VS Code protocol', () => {
+    expect(buildVsCodeRemoteUri(session(), 'win32')).toBe(
+      'vscode://vscode-remote/wsl+Ubuntu-24.04/home/me/src/app/'
+    )
   })
 
   it('preserves spaces and forces dotted paths to be folders', () => {
-    expect(
-      buildVsCodeLaunchSpec(
-        session({ distro: 'My Distro', path: '/home/me/my.project with spaces' }),
-        'win32'
-      )
-    ).toEqual({
-      file: 'code',
-      args: ['--remote', 'wsl+My Distro', '/home/me/my.project with spaces/']
-    })
+    expect(buildVsCodeRemoteUri(
+      session({ distro: 'My Distro', path: '/home/me/my.project with spaces' }),
+      'win32'
+    )).toBe('vscode://vscode-remote/wsl+My%20Distro/home/me/my.project%20with%20spaces/')
   })
 
   it('does not add a second slash to a root path', () => {
-    expect(buildVsCodeLaunchSpec(session({ path: '/' }), 'win32').args).toEqual([
-      '--remote',
-      'wsl+Ubuntu-24.04',
-      '/'
-    ])
+    expect(buildVsCodeRemoteUri(session({ path: '/' }), 'win32')).toBe(
+      'vscode://vscode-remote/wsl+Ubuntu-24.04/'
+    )
+  })
+
+  it('encodes authority and path characters without changing path separators', () => {
+    expect(buildVsCodeRemoteUri(
+      session({ distro: 'Ubuntu+Dev', path: '/home/me/project#1?draft' }),
+      'win32'
+    )).toBe('vscode://vscode-remote/wsl+Ubuntu%2BDev/home/me/project%231%3Fdraft/')
   })
 
   it('rejects unsupported hosts and session kinds', () => {
-    expect(() => buildVsCodeLaunchSpec(session(), 'linux')).toThrow(/only supported on Windows/)
-    expect(() => buildVsCodeLaunchSpec(session({ kind: 'native' }), 'win32')).toThrow(
+    expect(() => buildVsCodeRemoteUri(session(), 'linux')).toThrow(/only supported on Windows/)
+    expect(() => buildVsCodeRemoteUri(session({ kind: 'native' }), 'win32')).toThrow(
       /Only WSL sessions/
     )
-    expect(() => buildVsCodeLaunchSpec(session({ distro: undefined }), 'win32')).toThrow(/no distro/)
+    expect(() => buildVsCodeRemoteUri(session({ distro: undefined }), 'win32')).toThrow(/no distro/)
+    expect(() => buildVsCodeRemoteUri(session({ path: '  ' }), 'win32')).toThrow(/no project path/)
   })
 })

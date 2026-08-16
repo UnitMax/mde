@@ -47,7 +47,7 @@ import type { OpenCodeTuiStatusManager } from './opencode/tui-status'
 import { createAppInfo } from '@shared/app-info'
 import { isWslAvailable, listDistros, runWsl } from './wsl/distros'
 import { canonicalizeWslPath, resolveForTarget, toWindows, uncPathFor } from './wsl/paths'
-import { launchVsCodeSession } from './vscode'
+import { buildVsCodeRemoteUri } from './vscode'
 import {
   createProject,
   createSession,
@@ -308,12 +308,12 @@ export function registerIpcHandlers(
     if (!session || process.platform !== 'win32' || session.kind !== 'wsl' || !session.distro) return
 
     try {
-      await launchVsCodeSession(session, process.platform)
+      await shell.openExternal(buildVsCodeRemoteUri(session, process.platform))
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
       dialog.showErrorBox(
         'Could not open VS Code',
-        `Make sure the Windows VS Code command-line launcher (code) is installed and available on PATH.\n\n${detail}`
+        `Could not hand the WSL folder to the registered Windows VS Code installation. Make sure VS Code is installed and the Remote - WSL extension is available locally.\n\n${detail}`
       )
     }
   })
