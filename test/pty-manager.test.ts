@@ -27,6 +27,7 @@ function sourceSession(): Session {
     id: 'session-1',
     projectId: 'project-1',
     name: 'App',
+    mode: 'terminal',
     kind: 'native',
     path: '/tmp/app',
     createdAt: '2026-01-01T00:00:00.000Z'

@@ -17,6 +17,7 @@ const session = {
   id: 'session-1',
   projectId: 'project-1',
   name: 'App',
+  mode: 'gui',
   kind: 'wsl',
   distro: 'Ubuntu-24.04',
   path: '/home/me/src/app',
@@ -38,6 +39,8 @@ describe('workspace validation', () => {
   it('requires sessions to reference a project and retain their own path', () => {
     const projectIds = new Set([project.id])
     expect(validateSession(session, projectIds)).toEqual(session)
+    expect(validateSession({ ...session, mode: undefined }, projectIds)).toBeNull()
+    expect(validateSession({ ...session, mode: 'other' }, projectIds)).toBeNull()
     expect(validateSession({ ...session, projectId: 'missing' }, projectIds)).toBeNull()
     expect(validateSession({ ...session, kind: 'wsl', distro: undefined }, projectIds)).toBeNull()
     expect(validateSessionList([session, session], projectIds)).toHaveLength(1)

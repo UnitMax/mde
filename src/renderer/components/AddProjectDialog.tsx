@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Check, FolderSearch, LoaderCircle, TriangleAlert } from 'lucide-react'
-import type { ProjectKind } from '@shared/types'
+import type { ProjectKind, SessionMode } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -56,6 +56,7 @@ export function AddSessionDialog({
   const [name, setName] = useState('')
   const [nameTouched, setNameTouched] = useState(false)
   const [projectId, setProjectId] = useState('')
+  const [mode, setMode] = useState<SessionMode>('terminal')
   const [kind, setKind] = useState<ProjectKind>('native')
   const [distro, setDistro] = useState('')
   const [path, setPath] = useState('')
@@ -75,6 +76,7 @@ export function AddSessionDialog({
         ? defaultProjectId
         : (projects[0]?.id ?? '')
     )
+    setMode('terminal')
     setKind('native')
     setPath('')
     setWarning(undefined)
@@ -166,6 +168,7 @@ export function AddSessionDialog({
       await addSession({
         projectId,
         name: name.trim(),
+        mode,
         kind,
         path: path.trim(),
         ...(kind === 'wsl' ? { distro } : {})
@@ -189,7 +192,7 @@ export function AddSessionDialog({
         <DialogHeader>
           <DialogTitle>New session</DialogTitle>
           <DialogDescription>
-            Add a terminal session to a project. Each session can point at a different folder.
+            Add a terminal or GUI session to a project. Each session can point at a different folder.
           </DialogDescription>
         </DialogHeader>
 
@@ -215,6 +218,14 @@ export function AddSessionDialog({
               </Select>
             </div>
           )}
+
+          <div className="space-y-1.5">
+            <Label>Mode</Label>
+            <RadioGroup value={mode} onValueChange={(value) => setMode(value as SessionMode)}>
+              <RadioGroupItem value="terminal">Terminal</RadioGroupItem>
+              <RadioGroupItem value="gui">GUI</RadioGroupItem>
+            </RadioGroup>
+          </div>
 
           {showLocationChoice && (
             <div className="space-y-1.5">

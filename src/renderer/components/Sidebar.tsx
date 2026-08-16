@@ -8,11 +8,13 @@ import {
   FolderOpen,
   FolderPlus,
   LoaderCircle,
+  MessageSquare,
   MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
   Plus,
+  Terminal,
   Trash2
 } from 'lucide-react'
 import type { Project, PtyStatus, Session } from '@shared/types'
@@ -122,6 +124,21 @@ function StatusDot({
   )
 }
 
+function SessionModeIcon({ mode, className }: { mode: Session['mode']; className?: string }): JSX.Element {
+  const Icon = mode === 'terminal' ? Terminal : MessageSquare
+  const label = mode === 'terminal' ? 'Terminal session' : 'GUI session'
+  return (
+    <Icon
+      aria-label={label}
+      data-testid="session-mode"
+      data-mode={mode}
+      className={cn('h-3.5 w-3.5 shrink-0 text-fg-subtle', className)}
+    >
+      <title>{label}</title>
+    </Icon>
+  )
+}
+
 interface SessionRowProps {
   session: Session
   status: PtyStatus
@@ -206,6 +223,7 @@ function SessionRow({ session, status, chat, selected, onSelect }: SessionRowPro
                 : cn('text-fg-muted hover:bg-hover hover:text-fg', indicator.row)
             )}
           >
+            <SessionModeIcon mode={session.mode} />
             <StatusDot indicator={indicator} />
 
             <div className="min-w-0 flex-1">
@@ -505,7 +523,7 @@ export function Sidebar({ onNewProject, onNewSession, onAbout }: SidebarProps): 
                     key={session.id}
                     type="button"
                     onClick={() => selectSession(session.id)}
-                    title={`${project.name} · ${session.name}`}
+                    title={`${project.name} · ${session.name} · ${session.mode === 'terminal' ? 'Terminal' : 'GUI'}`}
                     className={cn(
                       'relative flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase',
                       session.id === selectedSessionId
@@ -517,6 +535,10 @@ export function Sidebar({ onNewProject, onNewSession, onAbout }: SidebarProps): 
                     )}
                   >
                     {session.name.slice(0, 2)}
+                    <SessionModeIcon
+                      mode={session.mode}
+                      className="absolute -left-0.5 -top-0.5 h-3 w-3 rounded-sm bg-panel"
+                    />
                     <StatusDot
                       indicator={indicator}
                       className="absolute -bottom-0.5 right-0.5 ring-2 ring-panel"

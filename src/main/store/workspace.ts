@@ -88,6 +88,7 @@ export function validateSession(raw: unknown, projectIds: Set<string>): Session 
     !isNonEmptyString(r.projectId) ||
     !projectIds.has(r.projectId) ||
     !isNonEmptyString(r.name) ||
+    (r.mode !== 'terminal' && r.mode !== 'gui') ||
     (r.kind !== 'native' && r.kind !== 'wsl') ||
     !isNonEmptyString(r.path)
   ) {
@@ -99,6 +100,7 @@ export function validateSession(raw: unknown, projectIds: Set<string>): Session 
     id: r.id,
     projectId: r.projectId,
     name: r.name,
+    mode: r.mode,
     kind: r.kind,
     path: r.path,
     createdAt: isNonEmptyString(r.createdAt) ? r.createdAt : new Date(0).toISOString()
@@ -232,6 +234,9 @@ export async function createSession(input: NewSession): Promise<Session> {
   if (!workspace.projects.some((project) => project.id === input.projectId)) {
     throw new Error('Cannot create a session without a valid project')
   }
+  if (input.mode !== 'terminal' && input.mode !== 'gui') {
+    throw new Error('Session mode must be terminal or gui')
+  }
   if (!input.name.trim() || !input.path.trim()) throw new Error('Session name and path are required')
   if (input.kind === 'wsl' && !input.distro?.trim()) {
     throw new Error('WSL sessions require a distro')
@@ -241,6 +246,7 @@ export async function createSession(input: NewSession): Promise<Session> {
     id: randomUUID(),
     projectId: input.projectId,
     name: input.name.trim(),
+    mode: input.mode,
     kind: input.kind,
     path: input.path.trim(),
     createdAt: new Date().toISOString()

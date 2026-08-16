@@ -5,7 +5,7 @@ import { AddSessionDialog } from '@/components/AddProjectDialog'
 import { AboutDialog } from '@/components/AboutDialog'
 import { NewProjectDialog } from '@/components/NewProjectDialog'
 import { Sidebar } from '@/components/Sidebar'
-import { TerminalView, type SessionViewMode } from '@/components/TerminalView'
+import { TerminalView } from '@/components/TerminalView'
 import { useWorkspace } from '@/store/workspace'
 import { disposeSession } from '@/terminal/sessions'
 import {
@@ -43,7 +43,6 @@ export function App(): JSX.Element {
   const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [aboutOpen, setAboutOpen] = useState(false)
   const [defaultProjectId, setDefaultProjectId] = useState<string | undefined>(undefined)
-  const [viewModes, setViewModes] = useState<Record<string, SessionViewMode>>({})
   const [terminalLayouts, setTerminalLayouts] = useState<Record<string, SessionTerminalLayout>>({})
   const terminalIdCounter = useRef(0)
   const terminalLayoutsRef = useRef(terminalLayouts)
@@ -100,10 +99,6 @@ export function App(): JSX.Element {
   const openNewSession = (projectId?: string): void => {
     setDefaultProjectId(projectId)
     setNewSessionOpen(true)
-  }
-
-  const setSessionViewMode = (sessionId: string, mode: SessionViewMode): void => {
-    setViewModes((current) => ({ ...current, [sessionId]: mode }))
   }
 
   const disposeRuntimeTerminal = (terminalId: string): void => {
@@ -226,8 +221,6 @@ export function App(): JSX.Element {
           <TerminalView
             key={selected.id}
             session={selected}
-            viewMode={viewModes[selected.id] ?? 'terminal'}
-            onViewModeChange={(mode) => setSessionViewMode(selected.id, mode)}
             terminalLayout={layoutForSession!}
             onLayoutChange={(layout) => changeTerminalLayout(selected.id, layout)}
             onReduceLayout={(layout, paneIds) => reduceTerminalLayout(selected.id, layout, paneIds)}

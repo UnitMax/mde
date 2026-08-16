@@ -18,10 +18,12 @@ describe('renderer workspace event bridge', () => {
     platform: { info: vi.fn(async () => ({ platform: 'linux', arch: 'x64' })) },
     workspace: { list: vi.fn(async () => ({ projects: [], sessions: [] })) },
     sessions: {
+      create: vi.fn(),
       update: vi.fn(async ({ id, patch }: { id: string; patch: Partial<Session> }) => ({
         id,
         projectId: 'project-1',
         name: 'App',
+        mode: 'gui' as const,
         kind: 'native' as const,
         path: '/workspace/app',
         createdAt: '2026-01-01T00:00:00.000Z',
@@ -58,6 +60,7 @@ describe('renderer workspace event bridge', () => {
     vi.stubGlobal('window', { api })
     useWorkspace.setState({ opencodeChats: {} })
     api.pty.onExit.mockClear()
+    api.sessions.create.mockReset()
     api.sessions.update.mockClear()
     api.opencode.send.mockReset()
     api.opencode.executeCommand.mockReset()
@@ -87,6 +90,36 @@ describe('renderer workspace event bridge', () => {
     expect(useWorkspace.getState().exits['session-1']).toMatchObject({ exitCode: 1 })
   })
 
+  it('creates and selects a session with its persisted mode', async () => {
+    api.sessions.create.mockResolvedValue({
+      id: 'gui-session',
+      projectId: 'project-1',
+      name: 'GUI app',
+      mode: 'gui',
+      kind: 'native',
+      path: '/workspace/app',
+      createdAt: '2026-01-01T00:00:00.000Z'
+    })
+
+    const session = await useWorkspace.getState().addSession({
+      projectId: 'project-1',
+      name: 'GUI app',
+      mode: 'gui',
+      kind: 'native',
+      path: '/workspace/app'
+    })
+
+    expect(api.sessions.create).toHaveBeenCalledWith({
+      projectId: 'project-1',
+      name: 'GUI app',
+      mode: 'gui',
+      kind: 'native',
+      path: '/workspace/app'
+    })
+    expect(session.mode).toBe('gui')
+    expect(useWorkspace.getState().selectedSessionId).toBe('gui-session')
+  })
+
   it('registers process-lifetime push listeners only once', async () => {
     await Promise.all([useWorkspace.getState().init(), useWorkspace.getState().init()])
 
@@ -107,6 +140,7 @@ describe('renderer workspace event bridge', () => {
           id: 'session-1',
           projectId: 'project-1',
           name: 'App',
+          mode: 'gui',
           kind: 'native',
           path: '/workspace/app',
           opencodeSessionId: 'opencode-1',
@@ -361,6 +395,7 @@ describe('renderer workspace event bridge', () => {
           id: 'session-1',
           projectId: 'project-1',
           name: 'App',
+          mode: 'gui',
           kind: 'native',
           path: '/workspace/app',
           createdAt: '2026-01-01T00:00:00.000Z'
@@ -457,6 +492,7 @@ describe('renderer workspace event bridge', () => {
           id: 'session-1',
           projectId: 'project-1',
           name: 'App',
+          mode: 'gui',
           kind: 'native',
           path: '/workspace/app',
           opencodeSessionId: conversation.id,
@@ -535,6 +571,7 @@ describe('renderer workspace event bridge', () => {
           id: 'session-1',
           projectId: 'project-1',
           name: 'App',
+          mode: 'gui',
           kind: 'native',
           path: '/workspace/app',
           createdAt: '2026-01-01T00:00:00.000Z'
@@ -602,6 +639,7 @@ describe('renderer workspace event bridge', () => {
           id: 'session-1',
           projectId: 'project-1',
           name: 'Empty folder',
+          mode: 'gui',
           kind: 'native',
           path: '/workspace/empty',
           createdAt: '2026-01-01T00:00:00.000Z'
@@ -668,6 +706,7 @@ describe('renderer workspace event bridge', () => {
           id: 'session-1',
           projectId: 'project-1',
           name: 'App',
+          mode: 'gui',
           kind: 'native',
           path: '/workspace/app',
           opencodeSessionId: conversation.id,
@@ -720,6 +759,7 @@ describe('renderer workspace event bridge', () => {
           id: 'session-1',
           projectId: 'project-1',
           name: 'App',
+          mode: 'gui',
           kind: 'native',
           path: '/workspace/app',
           createdAt: '2026-01-01T00:00:00.000Z'
@@ -836,6 +876,7 @@ describe('renderer workspace event bridge', () => {
           id: 'session-1',
           projectId: 'project-1',
           name: 'App',
+          mode: 'gui',
           kind: 'native',
           path: '/workspace/app',
           createdAt: '2026-01-01T00:00:00.000Z'

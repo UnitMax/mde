@@ -10,7 +10,8 @@ function session(overrides: Partial<Session> = {}): Session {
     kind: 'native',
     path: '/home/me/src/app',
     createdAt: '2026-01-01T00:00:00.000Z',
-    ...overrides
+    ...overrides,
+    mode: overrides.mode ?? 'terminal'
   }
 }
 

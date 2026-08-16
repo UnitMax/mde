@@ -26,6 +26,7 @@ const nativeSession: Session = {
   id: 'native-1',
   projectId: 'project-1',
   name: 'Native app',
+  mode: 'gui',
   kind: 'native',
   path: 'C:\\Work\\App',
   createdAt: '2026-01-01T00:00:00.000Z'
@@ -34,6 +35,7 @@ const wslSession: Session = {
   id: 'wsl-1',
   projectId: 'project-1',
   name: 'WSL app',
+  mode: 'gui',
   kind: 'wsl',
   distro: 'Ubuntu-24.04',
   path: '/home/max/src/app',

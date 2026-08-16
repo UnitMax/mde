@@ -87,16 +87,12 @@ const NEW_CONVERSATION_VALUE = '__new-opencode-conversation__'
 
 interface TerminalViewProps {
   session: Session
-  viewMode: SessionViewMode
-  onViewModeChange: (mode: SessionViewMode) => void
   terminalLayout: SessionTerminalLayout
   onLayoutChange: (layout: TerminalLayout) => void
   onReduceLayout: (layout: TerminalLayout, paneIds: string[]) => void
   onClosePane: (terminalId: string) => void
   onRestartPrimary: () => void
 }
-
-export type SessionViewMode = 'terminal' | 'gui'
 
 interface TerminalSurfaceProps {
   session: Session
@@ -1214,8 +1210,6 @@ function GuiView({ session }: { session: Session }): JSX.Element {
 
 export function TerminalView({
   session: selectedSession,
-  viewMode,
-  onViewModeChange,
   terminalLayout,
   onLayoutChange,
   onReduceLayout,
@@ -1239,8 +1233,8 @@ export function TerminalView({
       size
     })
     setStatus(selectedSession.id, status)
-    if (viewMode === 'terminal') session?.term.focus()
-  }, [clearExit, onRestartPrimary, selectedSession.id, setStatus, viewMode])
+    session?.term.focus()
+  }, [clearExit, onRestartPrimary, selectedSession.id, setStatus])
 
   const requestLayout = (layout: TerminalLayout): void => {
     const targetCount = terminalCount(layout)
@@ -1270,42 +1264,7 @@ export function TerminalView({
           {location}
         </span>
 
-        <div
-          aria-label="Session view"
-          role="tablist"
-          className="flex shrink-0 items-center gap-0.5 rounded border border-line bg-panel p-0.5"
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={viewMode === 'terminal'}
-            data-testid="session-tab-terminal"
-            onClick={() => onViewModeChange('terminal')}
-            className={
-              viewMode === 'terminal'
-                ? 'rounded-sm bg-active px-2 py-0.5 text-xs text-fg'
-                : 'rounded-sm px-2 py-0.5 text-xs text-fg-subtle hover:bg-hover hover:text-fg'
-            }
-          >
-            Terminal
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={viewMode === 'gui'}
-            data-testid="session-tab-gui"
-            onClick={() => onViewModeChange('gui')}
-            className={
-              viewMode === 'gui'
-                ? 'rounded-sm bg-active px-2 py-0.5 text-xs text-fg'
-                : 'rounded-sm px-2 py-0.5 text-xs text-fg-subtle hover:bg-hover hover:text-fg'
-            }
-          >
-            GUI
-          </button>
-        </div>
-
-        {viewMode === 'terminal' && (
+        {selectedSession.mode === 'terminal' && (
           <>
             <div
               aria-label="Terminal layout"
@@ -1337,19 +1296,21 @@ export function TerminalView({
           </>
         )}
 
-        <Button
-          variant="ghost"
-          size="sm"
-          className="ml-auto shrink-0"
-          onClick={() => void restart()}
-          title="Restart the shell for this session"
-        >
-          <RotateCw className="h-3.5 w-3.5" />
-          Restart
-        </Button>
+        {selectedSession.mode === 'terminal' && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto shrink-0"
+            onClick={() => void restart()}
+            title="Restart the shell for this session"
+          >
+            <RotateCw className="h-3.5 w-3.5" />
+            Restart
+          </Button>
+        )}
       </header>
 
-      {exit && (
+      {selectedSession.mode === 'terminal' && exit && (
         <div className="flex shrink-0 items-center gap-3 border-b border-danger/30 bg-danger/10 px-3 py-1.5">
           <span className="text-xs text-danger">
             Process exited (code {exit.exitCode}
@@ -1361,7 +1322,7 @@ export function TerminalView({
         </div>
       )}
 
-      {viewMode === 'terminal' ? (
+      {selectedSession.mode === 'terminal' ? (
         <div className={`grid h-full min-h-0 flex-1 gap-px bg-line ${layoutClass(terminalLayout.layout)}`}>
           {terminalLayout.panes.map((pane, index) => (
             <div

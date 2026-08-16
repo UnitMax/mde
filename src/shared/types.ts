@@ -1,5 +1,7 @@
 export type ProjectKind = 'native' | 'wsl'
 
+export type SessionMode = 'terminal' | 'gui'
+
 /** Narrow platform union so the renderer does not need Node's types. */
 export type HostPlatform = 'win32' | 'linux' | 'darwin' | 'other'
 
@@ -13,6 +15,7 @@ export interface Session {
   id: string
   projectId: string
   name: string
+  mode: SessionMode
   kind: ProjectKind
   /** Required when kind === 'wsl', e.g. "Ubuntu-24.04". */
   distro?: string

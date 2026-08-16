@@ -11,7 +11,8 @@ function session(overrides: Partial<Session> = {}): Session {
     distro: 'Ubuntu-24.04',
     path: '/home/me/src/app',
     createdAt: '2026-01-01T00:00:00.000Z',
-    ...overrides
+    ...overrides,
+    mode: overrides.mode ?? 'terminal'
   }
 }
 
