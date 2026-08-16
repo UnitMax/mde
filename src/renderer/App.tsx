@@ -5,7 +5,9 @@ import { AddSessionDialog } from '@/components/AddProjectDialog'
 import { AboutDialog } from '@/components/AboutDialog'
 import { NewProjectDialog } from '@/components/NewProjectDialog'
 import { Sidebar } from '@/components/Sidebar'
+import { SessionSwitcher } from '@/components/SessionSwitcher'
 import { TerminalView } from '@/components/TerminalView'
+import { isSessionSwitcherShortcut } from '@/lib/session-switcher'
 import { useWorkspace } from '@/store/workspace'
 import { disposeSession } from '@/terminal/sessions'
 import {
@@ -42,6 +44,7 @@ export function App(): JSX.Element {
   const [newSessionOpen, setNewSessionOpen] = useState(false)
   const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [aboutOpen, setAboutOpen] = useState(false)
+  const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false)
   const [defaultProjectId, setDefaultProjectId] = useState<string | undefined>(undefined)
   const [terminalLayouts, setTerminalLayouts] = useState<Record<string, SessionTerminalLayout>>({})
   const terminalIdCounter = useRef(0)
@@ -54,6 +57,27 @@ export function App(): JSX.Element {
   useEffect(() => {
     void init()
   }, [init])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (
+        !isSessionSwitcherShortcut(event) ||
+        sessionSwitcherOpen ||
+        newSessionOpen ||
+        newProjectOpen ||
+        aboutOpen
+      ) {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+      setSessionSwitcherOpen(true)
+    }
+
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [aboutOpen, newProjectOpen, newSessionOpen, sessionSwitcherOpen])
 
   useEffect(() => {
     const unsubscribe = window.api.pty.onExit((info) => {
@@ -239,6 +263,7 @@ export function App(): JSX.Element {
       />
       <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
+      <SessionSwitcher open={sessionSwitcherOpen} onOpenChange={setSessionSwitcherOpen} />
     </div>
   )
 }

@@ -8,25 +8,39 @@ export const DialogTrigger = DialogPrimitive.Trigger
 export const DialogClose = DialogPrimitive.Close
 
 const overlayClass =
-  'fixed inset-0 z-50 bg-black/60 backdrop-blur-[1px] [animation:mde-overlay-in_120ms_ease-out]'
+  'fixed inset-0 z-50 bg-black/60 backdrop-blur-[1px]'
 
 const contentClass =
   'fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 ' +
-  'rounded-lg border border-line-strong bg-elevated p-5 shadow-2xl shadow-black/60 ' +
-  '[animation:mde-content-in_140ms_ease-out]'
+  'rounded-lg border border-line-strong bg-elevated p-5 shadow-2xl shadow-black/60'
+
+const overlayAnimationClass = '[animation:mde-overlay-in_120ms_ease-out]'
+const contentAnimationClass = '[animation:mde-content-in_140ms_ease-out]'
+
+interface DialogContentProps
+  extends React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {
+  animated?: boolean
+  showCloseButton?: boolean
+}
 
 export const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => (
+  DialogContentProps
+>(({ className, children, animated = true, showCloseButton = true, ...props }, ref) => (
   <DialogPrimitive.Portal>
-    <DialogPrimitive.Overlay className={overlayClass} />
-    <DialogPrimitive.Content ref={ref} className={cn(contentClass, className)} {...props}>
+    <DialogPrimitive.Overlay className={cn(overlayClass, animated && overlayAnimationClass)} />
+    <DialogPrimitive.Content
+      ref={ref}
+      className={cn(contentClass, animated && contentAnimationClass, className)}
+      {...props}
+    >
       {children}
-      <DialogPrimitive.Close className="absolute right-3 top-3 rounded p-1 text-fg-subtle transition-colors hover:bg-hover hover:text-fg">
-        <X className="h-3.5 w-3.5" />
-        <span className="sr-only">Close</span>
-      </DialogPrimitive.Close>
+      {showCloseButton && (
+        <DialogPrimitive.Close className="absolute right-3 top-3 rounded p-1 text-fg-subtle transition-colors hover:bg-hover hover:text-fg">
+          <X className="h-3.5 w-3.5" />
+          <span className="sr-only">Close</span>
+        </DialogPrimitive.Close>
+      )}
     </DialogPrimitive.Content>
   </DialogPrimitive.Portal>
 ))
