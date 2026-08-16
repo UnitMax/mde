@@ -62,6 +62,7 @@ export const IpcChannels = {
   pathResolve: 'path:resolve',
   pathValidate: 'path:validate',
   pathReveal: 'path:reveal',
+  pathOpenInVsCode: 'path:open-in-vscode',
 
   opencodeSend: 'opencode:send',
   opencodeCommand: 'opencode:command',
@@ -172,6 +173,7 @@ export interface RendererApi {
     resolve(req: ResolvePathRequest): Promise<PathResolution>
     validate(req: ValidatePathRequest): Promise<PathCheckResult>
     reveal(sessionId: string): Promise<void>
+    openInVsCode(sessionId: string): Promise<void>
   }
   opencode: {
     send(req: SendOpenCodeMessageRequest): Promise<SendOpenCodeMessageResponse>

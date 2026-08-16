@@ -310,6 +310,7 @@ interface WorkspaceState {
   moveSession: (id: string, projectId: string) => Promise<void>
   removeSession: (id: string) => Promise<void>
   revealSession: (id: string) => Promise<void>
+  openSessionInVsCode: (id: string) => Promise<void>
 
   setStatus: (id: string, status: PtyStatus) => void
   noteExit: (info: PtyExitInfo) => void
@@ -477,6 +478,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   revealSession: async (id) => {
     await window.api.paths.reveal(id)
+  },
+
+  openSessionInVsCode: async (id) => {
+    await window.api.paths.openInVsCode(id)
   },
 
   setStatus: (id, status) =>

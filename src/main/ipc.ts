@@ -40,6 +40,7 @@ import type { PtyManager } from './pty/manager'
 import type { OpenCodeManager } from './opencode/manager'
 import { isWslAvailable, listDistros, runWsl } from './wsl/distros'
 import { resolveForTarget, toWindows, uncPathFor } from './wsl/paths'
+import { launchVsCodeSession } from './vscode'
 import {
   createProject,
   createSession,
@@ -260,5 +261,19 @@ export function registerIpcHandlers(ptyManager: PtyManager, opencodeManager: Ope
   handle<string, void>(IpcChannels.pathReveal, async (sessionId) => {
     const session = await getSession(sessionId)
     if (session) await revealSession(session)
+  })
+  handle<string, void>(IpcChannels.pathOpenInVsCode, async (sessionId) => {
+    const session = await getSession(sessionId)
+    if (!session || process.platform !== 'win32' || session.kind !== 'wsl' || !session.distro) return
+
+    try {
+      await launchVsCodeSession(session, process.platform)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      dialog.showErrorBox(
+        'Could not open VS Code',
+        `Make sure the Windows VS Code command-line launcher (code) is installed and available on PATH.\n\n${detail}`
+      )
+    }
   })
 }

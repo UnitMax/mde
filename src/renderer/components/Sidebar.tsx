@@ -3,6 +3,7 @@ import {
   ChevronDown,
   ChevronRight,
   CircleAlert,
+  Code,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -134,7 +135,10 @@ function SessionRow({ session, status, chat, selected, onSelect }: SessionRowPro
   const moveSession = useWorkspace((state) => state.moveSession)
   const removeSession = useWorkspace((state) => state.removeSession)
   const revealSession = useWorkspace((state) => state.revealSession)
+  const openSessionInVsCode = useWorkspace((state) => state.openSessionInVsCode)
   const projects = useWorkspace((state) => state.projects)
+  const platform = useWorkspace((state) => state.platform)
+  const wslAvailable = useWorkspace((state) => state.wslAvailable)
 
   const rowRef = useRef<HTMLDivElement>(null)
   const [renaming, setRenaming] = useState(false)
@@ -173,6 +177,8 @@ function SessionRow({ session, status, chat, selected, onSelect }: SessionRowPro
 
   const location = session.kind === 'wsl' ? `${session.distro ?? 'WSL'} · ${session.path}` : session.path
   const indicator = sessionIndicator(status, chat)
+  const canOpenInVsCode =
+    platform?.isWindows === true && wslAvailable && session.kind === 'wsl' && Boolean(session.distro)
 
   return (
     <>
@@ -258,6 +264,12 @@ function SessionRow({ session, status, chat, selected, onSelect }: SessionRowPro
             <FolderOpen className="h-3.5 w-3.5" />
             Reveal in file manager
           </ContextMenuItem>
+          {canOpenInVsCode && (
+            <ContextMenuItem onSelect={() => void openSessionInVsCode(session.id)}>
+              <Code className="h-3.5 w-3.5" />
+              Open in VS Code
+            </ContextMenuItem>
+          )}
           <ContextMenuItem
             onSelect={() => {
               setTargetProjectId(session.projectId)
