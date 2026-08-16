@@ -50,9 +50,13 @@ function licenseFiles(packagePath) {
   return files.sort((a, b) => a.name.localeCompare(b.name))
 }
 
+function isPlatformConditioned(metadata) {
+  return metadata.optional === true && (metadata.os || metadata.cpu)
+}
+
 function packageEntries() {
   return Object.entries(packages)
-    .filter(([packagePath]) => packagePath !== '')
+    .filter(([packagePath, metadata]) => packagePath !== '' && !metadata.dev)
     .map(([packagePath, metadata]) => ({
       packagePath,
       metadata,
@@ -60,7 +64,12 @@ function packageEntries() {
       version: typeof metadata.version === 'string' ? metadata.version : 'unknown',
       license: typeof metadata.license === 'string' ? metadata.license : 'Not declared',
       repository: repositoryUrl(metadata),
-      files: licenseFiles(packagePath)
+      // Platform-specific optional packages (e.g. esbuild/rollup native binaries)
+      // are only present on disk for whichever OS ran npm ci, which would make
+      // the rendered notice text differ by host platform. Skip embedding their
+      // license file text so output is identical on Linux and Windows; they
+      // still appear in the inventory table above from lockfile metadata alone.
+      files: isPlatformConditioned(metadata) ? [] : licenseFiles(packagePath)
     }))
     .sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version) || a.packagePath.localeCompare(b.packagePath))
 }
@@ -111,7 +120,7 @@ function render() {
     '',
     '## Locked package inventory',
     '',
-    `Generated from \`package-lock.json\` by \`npm run licenses\`. ${entries.length} package entries are listed, including development and build-time dependencies.`,
+    `Generated from \`package-lock.json\` by \`npm run licenses\`. ${entries.length} runtime package entries are listed; development and build-time-only dependencies are not shipped and are excluded.`,
     '',
     '| Package | Version | Direct dependency | Declared license | Source |',
     '| --- | --- | --- | --- | --- |'
@@ -137,6 +146,7 @@ function render() {
   return `${lines.join('\n')}\n`
 }
 
+const entryCount = packageEntries().length
 const rendered = render()
 if (process.argv.includes('--check')) {
   const current = existsSync(outputPath) ? readFileSync(outputPath, 'utf8') : ''
@@ -146,5 +156,5 @@ if (process.argv.includes('--check')) {
   }
 } else {
   writeFileSync(outputPath, rendered)
-  console.log(`Wrote ${relative(root, outputPath)} from ${Object.keys(packages).length - 1} locked package entries.`)
+  console.log(`Wrote ${relative(root, outputPath)} from ${entryCount} runtime package entries.`)
 }
