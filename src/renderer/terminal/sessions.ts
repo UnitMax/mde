@@ -23,27 +23,14 @@ export interface TerminalSession {
 }
 
 const THEME = {
+  // Keep the terminal's base surface aligned with MDE, but leave xterm's
+  // ANSI palette untouched. CLI TUIs use those palette entries (including
+  // reverse video and background colors) for elements such as prompt bars.
   background: '#0b0e13',
   foreground: '#d8dee9',
   cursor: '#5b8cff',
   cursorAccent: '#0b0e13',
-  selectionBackground: '#2c3a52',
-  black: '#0b0e13',
-  red: '#f0574f',
-  green: '#3fb950',
-  yellow: '#d8a325',
-  blue: '#5b8cff',
-  magenta: '#bc7cf0',
-  cyan: '#39c5cf',
-  white: '#b6bec9',
-  brightBlack: '#58616f',
-  brightRed: '#ff7b72',
-  brightGreen: '#56d364',
-  brightYellow: '#e3b341',
-  brightBlue: '#79a4ff',
-  brightMagenta: '#d2a8ff',
-  brightCyan: '#56d4dd',
-  brightWhite: '#f0f3f7'
+  selectionBackground: '#2c3a52'
 }
 
 /** One live xterm per session id, independent of what React currently renders. */
