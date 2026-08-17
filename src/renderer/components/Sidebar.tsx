@@ -101,6 +101,10 @@ function sessionIndicator(
   tuiStatus?: OpenCodeTuiStatusState
 ): SessionIndicator {
   if (chat) {
+    const waitingForQuestion = chat.liveItems.some(
+      (item) => item.role === 'question' && !item.responding
+    )
+    if (waitingForQuestion) return attentionIndicator('question')
     const activeSubagent = chat.subagents.some(
       (subagent) => subagent.status === 'working' || subagent.status === 'waiting'
     )

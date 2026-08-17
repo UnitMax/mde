@@ -52,6 +52,8 @@ describe('renderer workspace event bridge', () => {
       revert: vi.fn(),
       unrevert: vi.fn(),
       replyPermission: vi.fn(async () => undefined),
+      replyQuestion: vi.fn(async () => undefined),
+      rejectQuestion: vi.fn(async () => undefined),
       onStream: vi.fn((listener: (chunk: OpenCodeStreamChunk) => void) => {
         streamListeners.push(listener)
         return vi.fn()
@@ -108,6 +110,8 @@ describe('renderer workspace event bridge', () => {
     api.opencode.unrevert.mockReset()
     api.opencode.onStream.mockClear()
     api.opencode.replyPermission.mockClear()
+    api.opencode.replyQuestion.mockClear()
+    api.opencode.rejectQuestion.mockClear()
     api.opencodeTui.onStatus.mockClear()
   })
 
@@ -467,6 +471,84 @@ describe('renderer workspace event bridge', () => {
     expect(
       useWorkspace.getState().opencodeChats['session-1']?.liveItems.some((item) => item.id === 'permission-1')
     ).toBe(false)
+
+    streamListeners[0]?.({
+      sessionId: 'session-1',
+      item: {
+        kind: 'question',
+        requestId: 'question-1',
+        status: 'asked',
+        questions: [
+          {
+            header: 'Scope',
+            question: 'Which scope should I inspect?',
+            options: [
+              { label: 'Current file', description: 'Only inspect the selected file.' },
+              { label: 'Whole project', description: 'Inspect all project files.' }
+            ]
+          },
+          {
+            header: 'Checks',
+            question: 'Which checks should run?',
+            multiple: true,
+            custom: false,
+            options: [
+              { label: 'Tests', description: 'Run the test suite.' },
+              { label: 'Types', description: 'Run TypeScript checks.' }
+            ]
+          }
+        ]
+      }
+    })
+    expect(useWorkspace.getState().opencodeChats['session-1']?.generation?.live).toMatchObject({
+      phase: 'tool',
+      toolWaiting: true
+    })
+    expect(useWorkspace.getState().opencodeChats['session-1']?.liveItems).toContainEqual({
+      id: 'question-1',
+      role: 'question',
+      live: true,
+      questions: expect.any(Array)
+    })
+
+    await useWorkspace.getState().replyOpenCodeQuestion('session-1', 'question-1', [['Whole project'], []])
+    expect(api.opencode.replyQuestion).not.toHaveBeenCalled()
+    expect(useWorkspace.getState().opencodeChats['session-1']?.error).toBe('Answer every question before submitting.')
+
+    await useWorkspace.getState().replyOpenCodeQuestion('session-1', 'question-1', [
+      ['Whole project'],
+      ['Tests', 'Types']
+    ])
+    expect(api.opencode.replyQuestion).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      requestId: 'question-1',
+      answers: [['Whole project'], ['Tests', 'Types']]
+    })
+    expect(useWorkspace.getState().opencodeChats['session-1']?.liveItems).not.toContainEqual(
+      expect.objectContaining({ id: 'question-1' })
+    )
+
+    streamListeners[0]?.({
+      sessionId: 'session-1',
+      item: {
+        kind: 'question',
+        requestId: 'question-2',
+        status: 'asked',
+        questions: [
+          {
+            header: 'Custom',
+            question: 'Anything else?',
+            options: [],
+            custom: true
+          }
+        ]
+      }
+    })
+    await useWorkspace.getState().rejectOpenCodeQuestion('session-1', 'question-2')
+    expect(api.opencode.rejectQuestion).toHaveBeenCalledWith({ sessionId: 'session-1', requestId: 'question-2' })
+    expect(useWorkspace.getState().opencodeChats['session-1']?.liveItems).not.toContainEqual(
+      expect.objectContaining({ id: 'question-2' })
+    )
 
     streamListeners[0]?.({
       sessionId: 'session-1',

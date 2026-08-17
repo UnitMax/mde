@@ -3,6 +3,7 @@ import { posix } from 'node:path'
 import type {
   OpenCodeChatItem,
   OpenCodePermissionReply,
+  OpenCodeQuestionPrompt,
   OpenCodeReasoningMessage,
   OpenCodeStreamChunk,
   OpenCodeStreamItem,
@@ -247,6 +248,38 @@ export class OpenCodeStreamTracker {
       const requestId = stringValue(properties.permissionID) ?? stringValue(properties.requestID)
       if (!sessionId || !requestId || !this.childSessions.has(sessionId)) return null
       return this.updateSubagent(sessionId, 'working', { permissionResolved: requestId })
+    }
+
+    if (payload.type === 'question.replied' || payload.type === 'question.rejected') {
+      const sessionId = stringValue(properties.sessionID)
+      const requestId = stringValue(properties.requestID) ?? stringValue(properties.id)
+      if (!sessionId || !requestId) return null
+      const isRoot = sessionId === this.sessionId
+      if (!isRoot && !this.childSessions.has(sessionId)) return null
+      if (!isRoot) this.updateSubagent(sessionId, 'working')
+      return {
+        kind: 'question',
+        requestId,
+        status: payload.type === 'question.replied' ? 'replied' : 'rejected',
+        ...(!isRoot ? { subagentId: sessionId } : {})
+      }
+    }
+
+    if (payload.type === 'question.asked') {
+      const requestId = stringValue(properties.requestID) ?? stringValue(properties.id)
+      const sessionId = stringValue(properties.sessionID)
+      const questions = toQuestionPrompts(properties.questions)
+      if (!requestId || !sessionId || questions.length === 0) return null
+      const isRoot = sessionId === this.sessionId
+      if (!isRoot && !this.childSessions.has(sessionId)) return null
+      if (!isRoot) this.updateSubagent(sessionId, 'waiting')
+      return {
+        kind: 'question',
+        requestId,
+        status: 'asked',
+        questions,
+        ...(!isRoot ? { subagentId: sessionId } : {})
+      }
     }
 
     if (payload.type === 'permission.asked' || payload.type === 'permission.updated') {
@@ -628,6 +661,34 @@ function unwrapEvent(value: unknown): unknown {
 
 function clip(value: string, maxLength = MAX_DIAGNOSTIC_LENGTH): string {
   return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value
+}
+
+function toQuestionPrompts(value: unknown): OpenCodeQuestionPrompt[] {
+  if (!Array.isArray(value)) return []
+
+  return value.flatMap((candidate) => {
+    if (!isRecord(candidate)) return []
+    const question = stringValue(candidate.question) ?? stringValue(candidate.header)
+    const header = stringValue(candidate.header) ?? question
+    if (!question || !header) return []
+    const options = Array.isArray(candidate.options)
+      ? candidate.options.flatMap((option) => {
+          if (!isRecord(option)) return []
+          const label = stringValue(option.label)
+          if (!label) return []
+          return [{ label, description: typeof option.description === 'string' ? option.description : '' }]
+        })
+      : []
+    return [
+      {
+        question,
+        header,
+        options,
+        ...(typeof candidate.multiple === 'boolean' ? { multiple: candidate.multiple } : {}),
+        ...(typeof candidate.custom === 'boolean' ? { custom: candidate.custom } : {})
+      }
+    ]
+  })
 }
 
 function errorMessage(value: unknown): string {
@@ -1511,6 +1572,31 @@ export class OpenCodeManager {
       `/permission/${encodeURIComponent(requestId)}/reply`,
       { reply },
       REQUEST_TIMEOUT_MS
+    )
+  }
+
+  async replyQuestion(sessionId: string, requestId: string, answers: string[][]): Promise<void> {
+    const runtime = this.runtimes.get(sessionId)
+    if (!runtime) throw new Error('OpenCode is not running for this session.')
+
+    await requestJson<boolean>(
+      runtime.url,
+      `/question/${encodeURIComponent(requestId)}/reply`,
+      { answers },
+      REQUEST_TIMEOUT_MS
+    )
+  }
+
+  async rejectQuestion(sessionId: string, requestId: string): Promise<void> {
+    const runtime = this.runtimes.get(sessionId)
+    if (!runtime) throw new Error('OpenCode is not running for this session.')
+
+    await requestJson<boolean>(
+      runtime.url,
+      `/question/${encodeURIComponent(requestId)}/reject`,
+      undefined,
+      REQUEST_TIMEOUT_MS,
+      'POST'
     )
   }
 

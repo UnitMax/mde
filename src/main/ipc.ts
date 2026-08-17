@@ -37,6 +37,8 @@ import type {
   SendOpenCodeMessageRequest,
   SendOpenCodeMessageResponse,
   SendOpenCodePermissionReplyRequest,
+  SendOpenCodeQuestionReplyRequest,
+  SendOpenCodeQuestionRejectRequest,
   OpenCodeTuiPluginRequest,
   OpenCodeTuiPluginState,
   OpenCodeTuiSetEnabledRequest,
@@ -256,6 +258,22 @@ export function registerIpcHandlers(
       const session = await getSession(req.sessionId)
       if (!session) throw new Error('Session no longer exists.')
       await opencodeManager.replyPermission(req.sessionId, req.requestId, req.reply)
+    }
+  )
+  handle<SendOpenCodeQuestionReplyRequest, void>(
+    IpcChannels.opencodeQuestionReply,
+    async (req) => {
+      const session = await getSession(req.sessionId)
+      if (!session) throw new Error('Session no longer exists.')
+      await opencodeManager.replyQuestion(req.sessionId, req.requestId, req.answers)
+    }
+  )
+  handle<SendOpenCodeQuestionRejectRequest, void>(
+    IpcChannels.opencodeQuestionReject,
+    async (req) => {
+      const session = await getSession(req.sessionId)
+      if (!session) throw new Error('Session no longer exists.')
+      await opencodeManager.rejectQuestion(req.sessionId, req.requestId)
     }
   )
 

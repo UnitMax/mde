@@ -11,6 +11,8 @@ import type {
   SendOpenCodeMessageRequest,
   SendOpenCodeMessageResponse,
   SendOpenCodePermissionReplyRequest,
+  SendOpenCodeQuestionReplyRequest,
+  SendOpenCodeQuestionRejectRequest,
   ListOpenCodeSessionsRequest,
   ListOpenCodeSessionsResponse,
   ListOpenCodeModelsRequest,
@@ -83,6 +85,8 @@ export const IpcChannels = {
   opencodeSessionSelect: 'opencode:session-select',
   opencodeSessionCreate: 'opencode:session-create',
   opencodePermissionReply: 'opencode:permission-reply',
+  opencodeQuestionReply: 'opencode:question-reply',
+  opencodeQuestionReject: 'opencode:question-reject',
   opencodeRevert: 'opencode:revert',
   opencodeUnrevert: 'opencode:unrevert',
   opencodeTuiPluginState: 'opencode-tui:plugin-state',
@@ -242,6 +246,8 @@ export interface RendererApi {
     revert(req: RevertOpenCodeMessageRequest): Promise<OpenCodeConversationResponse>
     unrevert(req: UnrevertOpenCodeSessionRequest): Promise<OpenCodeConversationResponse>
     replyPermission(req: SendOpenCodePermissionReplyRequest): Promise<void>
+    replyQuestion(req: SendOpenCodeQuestionReplyRequest): Promise<void>
+    rejectQuestion(req: SendOpenCodeQuestionRejectRequest): Promise<void>
     /** Live text, reasoning, and tool-part updates while `send` is in flight. */
     onStream(listener: (chunk: OpenCodeStreamChunk) => void): () => void
   }

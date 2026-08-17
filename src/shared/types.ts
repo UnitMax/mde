@@ -223,6 +223,28 @@ export interface OpenCodePermissionRequest {
   title?: string
 }
 
+export interface OpenCodeQuestionOption {
+  label: string
+  description: string
+}
+
+/** A prompt in an OpenCode question request. */
+export interface OpenCodeQuestionPrompt {
+  question: string
+  header: string
+  options: OpenCodeQuestionOption[]
+  multiple?: boolean
+  custom?: boolean
+}
+
+/** A renderer-safe question request waiting for user input. */
+export interface OpenCodeQuestionRequest {
+  id: string
+  questions: OpenCodeQuestionPrompt[]
+}
+
+export type OpenCodeQuestionAnswers = string[][]
+
 /** A live assistant text item while OpenCode is still generating. */
 export interface OpenCodeLiveTextMessage {
   id: string
@@ -251,11 +273,20 @@ export interface OpenCodeLivePermissionMessage extends OpenCodePermissionRequest
   responding?: boolean
 }
 
+/** A live question request rendered alongside the current turn. */
+export interface OpenCodeLiveQuestionMessage extends OpenCodeQuestionRequest {
+  role: 'question'
+  live: true
+  subagentId?: string
+  responding?: boolean
+}
+
 export type OpenCodeLiveChatItem =
   | OpenCodeLiveTextMessage
   | OpenCodeLiveReasoningMessage
   | OpenCodeLiveToolMessage
   | OpenCodeLivePermissionMessage
+  | OpenCodeLiveQuestionMessage
 
 export type OpenCodeStreamItem =
   | {
@@ -288,6 +319,19 @@ export type OpenCodeStreamItem =
       permission: string
       patterns: string[]
       title?: string
+      subagentId?: string
+    }
+  | {
+      kind: 'question'
+      requestId: string
+      status: 'asked'
+      questions: OpenCodeQuestionPrompt[]
+      subagentId?: string
+    }
+  | {
+      kind: 'question'
+      requestId: string
+      status: 'replied' | 'rejected'
       subagentId?: string
     }
   | {
@@ -445,6 +489,17 @@ export interface SendOpenCodePermissionReplyRequest {
   sessionId: string
   requestId: string
   reply: OpenCodePermissionReply
+}
+
+export interface SendOpenCodeQuestionReplyRequest {
+  sessionId: string
+  requestId: string
+  answers: OpenCodeQuestionAnswers
+}
+
+export interface SendOpenCodeQuestionRejectRequest {
+  sessionId: string
+  requestId: string
 }
 
 export interface PathCheckResult {

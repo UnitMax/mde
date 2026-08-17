@@ -924,6 +924,107 @@ describe('OpenCode event stream', () => {
     ).toBeNull()
   })
 
+  it('normalizes question requests and question resolution events', () => {
+    const tracker = new OpenCodeStreamTracker('ses_1')
+    expect(
+      tracker.accept({
+        type: 'question.asked',
+        properties: {
+          id: 'question-1',
+          sessionID: 'ses_1',
+          questions: [
+            {
+              header: 'Scope',
+              question: 'Which scope?',
+              options: [{ label: 'File', description: 'Only this file.' }],
+              multiple: false,
+              custom: true
+            }
+          ]
+        }
+      })
+    ).toEqual({
+      kind: 'question',
+      requestId: 'question-1',
+      status: 'asked',
+      questions: [
+        {
+          header: 'Scope',
+          question: 'Which scope?',
+          options: [{ label: 'File', description: 'Only this file.' }],
+          multiple: false,
+          custom: true
+        }
+      ]
+    })
+    expect(
+      tracker.accept({
+        type: 'question.replied',
+        properties: { sessionID: 'ses_1', requestID: 'question-1' }
+      })
+    ).toEqual({ kind: 'question', requestId: 'question-1', status: 'replied' })
+    expect(
+      tracker.accept({
+        type: 'question.asked',
+        properties: {
+          sessionID: 'ses_other',
+          requestID: 'other-question',
+          questions: [{ header: 'Other', question: 'Other?', options: [] }]
+        }
+      })
+    ).toBeNull()
+
+    const childTracker = new OpenCodeStreamTracker('root')
+    childTracker.accept({
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          id: 'task-1',
+          sessionID: 'root',
+          type: 'tool',
+          tool: 'task',
+          state: {
+            status: 'running',
+            input: { description: 'Inspect the repository' },
+            metadata: { sessionId: 'child-1' }
+          }
+        }
+      }
+    })
+    expect(
+      childTracker.accept({
+        type: 'question.asked',
+        properties: {
+          sessionID: 'child-1',
+          requestID: 'child-question',
+          questions: [{ header: 'Child', question: 'Continue?', options: [] }]
+        }
+      })
+    ).toMatchObject({ kind: 'question', requestId: 'child-question', subagentId: 'child-1' })
+  })
+
+  it('replies to and rejects questions through the OpenCode HTTP API', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const manager = new OpenCodeManager()
+    const runtimes = (manager as unknown as { runtimes: Map<string, unknown> }).runtimes
+    runtimes.set('native-1', { url: 'http://127.0.0.1:43123', openCodeSessionId: 'ses_1' })
+
+    await manager.replyQuestion('native-1', 'question/1', [['File']])
+    await manager.rejectQuestion('native-1', 'question-2')
+
+    expect(fetchMock.mock.calls).toEqual([
+      [
+        'http://127.0.0.1:43123/question/question%2F1/reply',
+        expect.objectContaining({ method: 'POST', body: JSON.stringify({ answers: [['File']] }) })
+      ],
+      [
+        'http://127.0.0.1:43123/question/question-2/reject',
+        expect.objectContaining({ method: 'POST' })
+      ]
+    ])
+  })
+
   it('marks child sessions waiting for permission and resumes them after a reply', () => {
     const tracker = new OpenCodeStreamTracker('root')
     tracker.accept({

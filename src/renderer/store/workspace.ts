@@ -16,6 +16,8 @@ import type {
   OpenCodeRevertState,
   OpenCodeSubagent,
   OpenCodePermissionReply,
+  OpenCodeQuestionAnswers,
+  OpenCodeQuestionPrompt,
   OpenCodeSessionSummary,
   OpenCodeSlashCommand,
   OpenCodeStreamChunk,
@@ -87,7 +89,10 @@ let eventBridgeReady = false
 
 function upsertLiveItem(items: OpenCodeLiveChatItem[], item: OpenCodeStreamChunk['item']): OpenCodeLiveChatItem[] {
   if (item.kind === 'subagent' || item.kind === 'status' || item.kind === 'compaction') return items
-  const id = item.kind === 'permission' ? item.requestId : item.partId
+  if (item.kind === 'question' && item.status !== 'asked') {
+    return items.filter((current) => current.id !== item.requestId)
+  }
+  const id = item.kind === 'permission' || item.kind === 'question' ? item.requestId : item.partId
   const index = items.findIndex((current) => current.id === id)
 
   if (item.kind === 'text') {
@@ -131,6 +136,20 @@ function upsertLiveItem(items: OpenCodeLiveChatItem[], item: OpenCodeStreamChunk
       patterns: item.patterns,
       ...('subagentId' in item && item.subagentId ? { subagentId: item.subagentId } : {}),
       ...(item.title === undefined ? {} : { title: item.title })
+    }
+    if (index < 0) return [...items, next]
+    return items.map((current, currentIndex) => (currentIndex === index ? next : current))
+  }
+
+  if (item.kind === 'question') {
+    const existing = index >= 0 ? items[index] : undefined
+    const next: OpenCodeLiveChatItem = {
+      ...(existing?.role === 'question' ? existing : {}),
+      id,
+      role: 'question',
+      live: true,
+      questions: item.questions,
+      ...('subagentId' in item && item.subagentId ? { subagentId: item.subagentId } : {})
     }
     if (index < 0) return [...items, next]
     return items.map((current, currentIndex) => (currentIndex === index ? next : current))
@@ -215,6 +234,7 @@ function generationPhase(item: OpenCodeStreamChunk['item']): OpenCodeGenerationP
   if (item.kind === 'reasoning') return 'thinking'
   if (item.kind === 'text') return 'response'
   if (item.kind === 'tool') return 'tool'
+  if (item.kind === 'question' && item.status === 'asked') return 'tool'
   return null
 }
 
@@ -253,7 +273,9 @@ function updateGenerationState(
 
   const estimatedDelta = estimateTokenCount(delta)
   const now = Date.now()
-  const waiting = item.kind === 'tool' && (item.status === 'pending' || item.status === 'running') && !delta
+  const waiting =
+    (item.kind === 'tool' && (item.status === 'pending' || item.status === 'running') && !delta) ||
+    (item.kind === 'question' && item.status === 'asked')
   return {
     ...generation,
     live: {
@@ -283,16 +305,30 @@ function completedGenerationStats(
   }
 }
 
-function retainActiveSubagentPermissions(
+function retainActiveSubagentInteractions(
   liveItems: OpenCodeLiveChatItem[],
   subagents: OpenCodeSubagent[]
 ): OpenCodeLiveChatItem[] {
   return liveItems.filter(
     (item) =>
-      item.role === 'permission' &&
+      (item.role === 'permission' || item.role === 'question') &&
       item.subagentId !== undefined &&
       subagents.some((subagent) => subagent.id === item.subagentId && subagentIsActive(subagent))
   )
+}
+
+function questionAnswersValid(prompts: OpenCodeQuestionPrompt[], answers: OpenCodeQuestionAnswers): boolean {
+  if (prompts.length !== answers.length) return false
+
+  return prompts.every((prompt, index) => {
+    const selected = answers[index]
+    if (!selected || selected.length === 0) return false
+    if (!prompt.multiple && selected.length !== 1) return false
+    if (selected.some((answer) => answer.trim().length === 0)) return false
+    if (prompt.custom !== false) return true
+    const labels = new Set(prompt.options.map((option) => option.label))
+    return selected.every((answer) => labels.has(answer))
+  })
 }
 
 interface WorkspaceState {
@@ -350,6 +386,8 @@ interface WorkspaceState {
     requestId: string,
     reply: OpenCodePermissionReply
   ) => Promise<void>
+  replyOpenCodeQuestion: (sessionId: string, requestId: string, answers: OpenCodeQuestionAnswers) => Promise<void>
+  rejectOpenCodeQuestion: (sessionId: string, requestId: string) => Promise<void>
   appendOpenCodeStream: (chunk: OpenCodeStreamChunk) => void
   appendOpenCodeTuiStatus: (update: OpenCodeTuiStatusUpdate) => void
   refreshDistros: () => Promise<void>
@@ -634,6 +672,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   selectOpenCodeModel: async (sessionId, model) => {
     const current = get().opencodeChats[sessionId]
+    if (current?.liveItems.some((item) => item.role === 'question')) return
     const selected = current ? findModel(current.availableModels, model) : null
     if (!selected) return
     const openCodeSessionId = current?.openCodeSessionId
@@ -715,7 +754,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     const prompt = text.trim()
     if (!prompt) return
 
-    const selectedModel = get().opencodeChats[sessionId]?.selectedModel
+    const current = get().opencodeChats[sessionId]
+    if (current?.pending || current?.externalBusy || current?.liveItems.some((item) => item.role === 'question')) return
+    const selectedModel = current?.selectedModel
     if (!selectedModel) {
       set((state) => ({
         opencodeChats: {
@@ -742,7 +783,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
             messages: [...previous.messages, userMessage],
             compacting: false,
             generation: newGenerationState(),
-            liveItems: retainActiveSubagentPermissions(previous.liveItems, previous.subagents),
+            liveItems: retainActiveSubagentInteractions(previous.liveItems, previous.subagents),
             subagents: previous.subagents.filter(subagentIsActive),
             pending: true,
             externalBusy: false,
@@ -791,7 +832,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               pending: false,
               revert: null,
               externalBusy: false,
-              liveItems: retainActiveSubagentPermissions(current.liveItems, current.subagents),
+              liveItems: retainActiveSubagentInteractions(current.liveItems, current.subagents),
               unreadCompletion: state.selectedSessionId !== sessionId
             }
           }
@@ -813,7 +854,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               compacting: false,
               generation: null,
               error: message,
-              liveItems: retainActiveSubagentPermissions(current.liveItems, current.subagents),
+              liveItems: retainActiveSubagentInteractions(current.liveItems, current.subagents),
               unreadCompletion: state.selectedSessionId !== sessionId
             }
           }
@@ -834,7 +875,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       }))
       return
     }
-    if (current?.pending || current?.externalBusy) return
+    if (current?.pending || current?.externalBusy || current.liveItems.some((item) => item.role === 'question')) return
 
     set((state) => {
       const previous = state.opencodeChats[sessionId] ?? EMPTY_CHAT
@@ -845,7 +886,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
             ...previous,
             compacting: false,
             generation: newGenerationState(),
-            liveItems: retainActiveSubagentPermissions(previous.liveItems, previous.subagents),
+            liveItems: retainActiveSubagentInteractions(previous.liveItems, previous.subagents),
             subagents: previous.subagents.filter(subagentIsActive),
             pending: true,
             externalBusy: false,
@@ -883,7 +924,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               revert: result.revert,
               undoSupported: result.undoSupported,
               externalBusy: false,
-              liveItems: retainActiveSubagentPermissions(chat.liveItems, chat.subagents),
+              liveItems: retainActiveSubagentInteractions(chat.liveItems, chat.subagents),
               unreadCompletion: state.selectedSessionId !== sessionId
             }
           }
@@ -905,7 +946,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               compacting: false,
               generation: null,
               error: message,
-              liveItems: retainActiveSubagentPermissions(chat.liveItems, chat.subagents),
+              liveItems: retainActiveSubagentInteractions(chat.liveItems, chat.subagents),
               unreadCompletion: state.selectedSessionId !== sessionId
             }
           }
@@ -1042,7 +1083,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   loadOpenCodeSessions: async (sessionId) => {
     const existing = get().opencodeChats[sessionId]
-    if (existing?.pending || existing?.sessionsLoading) return
+    if (existing?.pending || existing?.sessionsLoading || existing?.liveItems.some((item) => item.role === 'question')) return
 
     set((state) => {
       const previous = state.opencodeChats[sessionId] ?? EMPTY_CHAT
@@ -1091,7 +1132,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   selectOpenCodeSession: async (sessionId, openCodeSessionId) => {
     const current = get().opencodeChats[sessionId]
-    if (current?.pending || current?.sessionsLoading) return
+    if (current?.pending || current?.sessionsLoading || current?.liveItems.some((item) => item.role === 'question')) return
 
     set((state) => {
       const previous = state.opencodeChats[sessionId] ?? EMPTY_CHAT
@@ -1157,7 +1198,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   createOpenCodeSession: async (sessionId) => {
     const current = get().opencodeChats[sessionId]
-    if (current?.pending || current?.sessionsLoading) return
+    if (current?.pending || current?.sessionsLoading || current?.liveItems.some((item) => item.role === 'question')) return
 
     set((state) => {
       const previous = state.opencodeChats[sessionId] ?? EMPTY_CHAT
@@ -1276,10 +1317,164 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     }
   },
 
+  replyOpenCodeQuestion: async (sessionId, requestId, answers) => {
+    const current = get().opencodeChats[sessionId]
+    const question = current?.liveItems.find((item) => item.role === 'question' && item.id === requestId)
+    if (!question || question.role !== 'question' || question.responding) return
+    if (!questionAnswersValid(question.questions, answers)) {
+      set((state) => ({
+        opencodeChats: {
+          ...state.opencodeChats,
+          [sessionId]: { ...(state.opencodeChats[sessionId] ?? EMPTY_CHAT), error: 'Answer every question before submitting.' }
+        }
+      }))
+      return
+    }
+
+    set((state) => {
+      const chat = state.opencodeChats[sessionId]
+      if (!chat) return state
+      return {
+        opencodeChats: {
+          ...state.opencodeChats,
+          [sessionId]: {
+            ...chat,
+            error: null,
+            liveItems: chat.liveItems.map((item) =>
+              item.role === 'question' && item.id === requestId ? { ...item, responding: true } : item
+            )
+          }
+        }
+      }
+    })
+
+    try {
+      await window.api.opencode.replyQuestion({ sessionId, requestId, answers })
+      set((state) => {
+        const chat = state.opencodeChats[sessionId]
+        if (!chat) return state
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: {
+              ...chat,
+              liveItems: chat.liveItems.filter((item) => !(item.role === 'question' && item.id === requestId))
+            }
+          }
+        }
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'OpenCode question reply failed.'
+      set((state) => {
+        const chat = state.opencodeChats[sessionId]
+        if (!chat) return state
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: {
+              ...chat,
+              error: message,
+              liveItems: chat.liveItems.map((item) =>
+                item.role === 'question' && item.id === requestId ? { ...item, responding: false } : item
+              )
+            }
+          }
+        }
+      })
+    }
+  },
+
+  rejectOpenCodeQuestion: async (sessionId, requestId) => {
+    const current = get().opencodeChats[sessionId]
+    const question = current?.liveItems.find((item) => item.role === 'question' && item.id === requestId)
+    if (!question || question.role !== 'question' || question.responding) return
+
+    set((state) => {
+      const chat = state.opencodeChats[sessionId]
+      if (!chat) return state
+      return {
+        opencodeChats: {
+          ...state.opencodeChats,
+          [sessionId]: {
+            ...chat,
+            error: null,
+            liveItems: chat.liveItems.map((item) =>
+              item.role === 'question' && item.id === requestId ? { ...item, responding: true } : item
+            )
+          }
+        }
+      }
+    })
+
+    try {
+      await window.api.opencode.rejectQuestion({ sessionId, requestId })
+      set((state) => {
+        const chat = state.opencodeChats[sessionId]
+        if (!chat) return state
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: {
+              ...chat,
+              liveItems: chat.liveItems.filter((item) => !(item.role === 'question' && item.id === requestId))
+            }
+          }
+        }
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'OpenCode question rejection failed.'
+      set((state) => {
+        const chat = state.opencodeChats[sessionId]
+        if (!chat) return state
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: {
+              ...chat,
+              error: message,
+              liveItems: chat.liveItems.map((item) =>
+                item.role === 'question' && item.id === requestId ? { ...item, responding: false } : item
+              )
+            }
+          }
+        }
+      })
+    }
+  },
+
   appendOpenCodeStream: ({ sessionId, item }) =>
     set((state) => {
       const current = state.opencodeChats[sessionId]
       if (!current) return state
+
+      if (item.kind === 'question') {
+        const liveItems =
+          item.status === 'asked'
+            ? upsertLiveItem(current.liveItems, item)
+            : current.liveItems.filter((liveItem) => liveItem.id !== item.requestId)
+        const generation =
+          item.status === 'asked'
+            ? updateGenerationState(current.generation, item)
+            : current.generation?.live
+              ? {
+                  ...current.generation,
+                  live: { ...current.generation.live, toolWaiting: false }
+                }
+              : current.generation
+        const subagents = item.subagentId
+          ? current.subagents.map((subagent) =>
+              subagent.id === item.subagentId
+                ? { ...subagent, status: item.status === 'asked' ? ('waiting' as const) : ('working' as const) }
+                : subagent
+            )
+          : current.subagents
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: { ...current, generation, liveItems, subagents }
+          }
+        }
+      }
 
       if (item.kind === 'subagent') {
         const previous = current.subagents.find((subagent) => subagent.id === item.subagent.id)

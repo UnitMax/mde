@@ -54,6 +54,7 @@ import {
   AlertDialogTitle
 } from '@/components/ui/alert-dialog'
 import { MarkdownMessage } from '@/components/MarkdownMessage'
+import { OpenCodeQuestionMessage } from '@/components/OpenCodeQuestionMessage'
 import {
   contextUsageMatchesModel,
   contextUsageTone,
@@ -966,16 +967,29 @@ function PermissionMessageView({
 function LiveItemView({
   item,
   onPermissionReply,
+  onQuestionReply,
+  onQuestionReject,
   assistantLabel
 }: {
   item: OpenCodeLiveChatItem
   onPermissionReply: (requestId: string, reply: OpenCodePermissionReply) => void
+  onQuestionReply: (requestId: string, answers: string[][]) => void
+  onQuestionReject: (requestId: string) => void
   assistantLabel: string
 }): JSX.Element {
   if (item.role === 'tool') return <ToolMessageView message={item} live />
   if (item.role === 'reasoning') return <ReasoningMessageView message={item} live />
   if (item.role === 'permission') {
     return <PermissionMessageView message={item} onReply={(reply) => onPermissionReply(item.id, reply)} />
+  }
+  if (item.role === 'question') {
+    return (
+      <OpenCodeQuestionMessage
+        message={item}
+        onReply={(answers) => onQuestionReply(item.id, answers)}
+        onReject={() => onQuestionReject(item.id)}
+      />
+    )
   }
   return <LiveTextMessageView text={item.text} assistantLabel={assistantLabel} />
 }
@@ -1356,6 +1370,8 @@ function GuiView({ session }: { session: Session }): JSX.Element {
   const selectOpenCodeSession = useWorkspace((state) => state.selectOpenCodeSession)
   const createOpenCodeSession = useWorkspace((state) => state.createOpenCodeSession)
   const replyOpenCodePermission = useWorkspace((state) => state.replyOpenCodePermission)
+  const replyOpenCodeQuestion = useWorkspace((state) => state.replyOpenCodeQuestion)
+  const rejectOpenCodeQuestion = useWorkspace((state) => state.rejectOpenCodeQuestion)
   const undoOpenCodeLastTurn = useWorkspace((state) => state.undoOpenCodeLastTurn)
   const redoOpenCodeLastTurn = useWorkspace((state) => state.redoOpenCodeLastTurn)
   const platform = useWorkspace((state) => state.platform)
@@ -1368,6 +1384,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
   const error = chat?.error ?? null
   const messages = chat?.messages ?? []
   const liveItems = chat?.liveItems ?? []
+  const questionWaiting = liveItems.some((item) => item.role === 'question')
   const subagents = chat?.subagents ?? []
   const availableSessions = chat?.availableSessions ?? []
   const openCodeSessionId = chat?.openCodeSessionId ?? null
@@ -1425,7 +1442,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
   }, [messages, liveItems, pending])
 
   const send = (): void => {
-    if (!openCodeSupported || pending || externalBusy || !draft.trim()) return
+    if (!openCodeSupported || pending || questionWaiting || externalBusy || !draft.trim()) return
     const message = draft
     setDraft('')
     const slashCommand = resolveSlashCommand(message)
@@ -1444,6 +1461,14 @@ function GuiView({ session }: { session: Session }): JSX.Element {
 
   const replyPermission = (requestId: string, reply: OpenCodePermissionReply): void => {
     void replyOpenCodePermission(session.id, requestId, reply)
+  }
+
+  const replyQuestion = (requestId: string, answers: string[][]): void => {
+    void replyOpenCodeQuestion(session.id, requestId, answers)
+  }
+
+  const rejectQuestion = (requestId: string): void => {
+    void rejectOpenCodeQuestion(session.id, requestId)
   }
 
   const selectConversation = (value: string): void => {
@@ -1518,6 +1543,8 @@ function GuiView({ session }: { session: Session }): JSX.Element {
             key={item.id}
             item={item}
             onPermissionReply={replyPermission}
+            onQuestionReply={replyQuestion}
+            onQuestionReject={rejectQuestion}
             assistantLabel={assistantLabel}
           />
         ))}
@@ -1586,12 +1613,18 @@ function GuiView({ session }: { session: Session }): JSX.Element {
             }}
             placeholder="Message OpenCode..."
             disabled={
-              !openCodeSupported || pending || externalBusy || sessionsLoading || modelsLoading || !selectedModel
+              !openCodeSupported ||
+              pending ||
+              questionWaiting ||
+              externalBusy ||
+              sessionsLoading ||
+              modelsLoading ||
+              !selectedModel
             }
             className="block min-h-[68px] max-h-48 w-full resize-none overflow-y-auto rounded-t-xl border-0 bg-transparent px-4 pb-2 pt-3 text-[13px] text-fg placeholder:text-fg-subtle focus:outline-none focus:ring-0 disabled:cursor-not-allowed disabled:opacity-50"
           />
 
-          {slashSuggestions.length > 0 && !pending && !externalBusy && (
+          {slashSuggestions.length > 0 && !pending && !questionWaiting && !externalBusy && (
             <div className="border-t border-line px-2 py-1.5" role="listbox" aria-label="Slash commands">
               {slashSuggestions.map((candidate, index) => (
                 <button
@@ -1633,7 +1666,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
               <Select
                 value={openCodeSessionId ?? NEW_CONVERSATION_VALUE}
                 onValueChange={selectConversation}
-                disabled={!openCodeSupported || pending || externalBusy || sessionsLoading}
+                disabled={!openCodeSupported || pending || questionWaiting || externalBusy || sessionsLoading}
               >
                 <SelectTrigger
                   aria-label="OpenCode conversation"
@@ -1660,7 +1693,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
                 size="icon-sm"
                 aria-label="Refresh OpenCode conversations"
                 title="Refresh OpenCode conversations"
-                disabled={!openCodeSupported || pending || externalBusy || sessionsLoading}
+                disabled={!openCodeSupported || pending || questionWaiting || externalBusy || sessionsLoading}
                 onClick={() => void loadOpenCodeSessions(session.id)}
               >
                 <RefreshCw className={sessionsLoading ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'} />
@@ -1669,7 +1702,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
                 models={availableModels}
                 selected={selectedModel}
                 loading={modelsLoading}
-                disabled={!openCodeSupported || pending || externalBusy || sessionsLoading || modelsLoading}
+                disabled={!openCodeSupported || pending || questionWaiting || externalBusy || sessionsLoading || modelsLoading}
                 onSelect={(model) => void selectOpenCodeModel(session.id, model)}
                 onRefresh={() => void loadOpenCodeModels(session.id)}
               />
@@ -1685,6 +1718,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
               disabled={
                 !openCodeSupported ||
                 pending ||
+                questionWaiting ||
                 externalBusy ||
                 sessionsLoading ||
                 modelsLoading ||

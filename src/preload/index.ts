@@ -71,6 +71,8 @@ const api: RendererApi = {
     revert: (req) => ipcRenderer.invoke(IpcChannels.opencodeRevert, req),
     unrevert: (req) => ipcRenderer.invoke(IpcChannels.opencodeUnrevert, req),
     replyPermission: (req) => ipcRenderer.invoke(IpcChannels.opencodePermissionReply, req),
+    replyQuestion: (req) => ipcRenderer.invoke(IpcChannels.opencodeQuestionReply, req),
+    rejectQuestion: (req) => ipcRenderer.invoke(IpcChannels.opencodeQuestionReject, req),
     onStream: (listener) => subscribe<OpenCodeStreamChunk>(IpcEvents.opencodeStream, listener)
   },
   opencodeTui: {
