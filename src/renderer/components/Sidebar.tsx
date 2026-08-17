@@ -318,7 +318,6 @@ function SessionRow({ session, status, chat, tuiStatus, selected, onSelect }: Se
             )}
             style={backgroundStyle}
           >
-            <SessionModeIcon mode={session.mode} />
             <StatusDot indicator={indicator} />
 
             <div className="min-w-0 flex-1">
@@ -344,8 +343,12 @@ function SessionRow({ session, status, chat, tuiStatus, selected, onSelect }: Se
                   {session.name}
                 </div>
               )}
-              <div className="truncate text-[11px] leading-tight text-fg-subtle" title={location}>
-                {location}
+              <div
+                className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight text-fg-subtle"
+                title={location}
+              >
+                <SessionModeIcon mode={session.mode} />
+                <span className="min-w-0 truncate">{location}</span>
               </div>
             </div>
 
