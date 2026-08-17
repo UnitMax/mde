@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
   createSessionTerminalLayout,
+  defaultTerminalLayoutSizes,
   getTerminalLayoutShortcut,
   layoutClass,
   layoutForCount,
   panesToTrim,
   paneClass,
-  terminalCount
+  terminalCount,
+  terminalGridTemplates,
+  terminalResizeHandles,
+  terminalSplitRatio
 } from '../src/renderer/terminal/layout'
 
 describe('terminal layouts', () => {
@@ -67,6 +71,37 @@ describe('terminal layouts', () => {
     expect(paneClass('quadrant', 2)).toBe('')
   })
 
+  it('defines shared resize tracks for each multi-pane layout', () => {
+    expect(terminalResizeHandles('single')).toEqual([])
+    expect(terminalResizeHandles('columns')).toEqual([{ axis: 'column', scope: 'full' }])
+    expect(terminalResizeHandles('three')).toEqual([
+      { axis: 'column', scope: 'top' },
+      { axis: 'row', scope: 'full' }
+    ])
+    expect(terminalResizeHandles('quadrant')).toEqual([
+      { axis: 'column', scope: 'full' },
+      { axis: 'row', scope: 'full' }
+    ])
+  })
+
+  it('builds grid tracks from the first column and row ratios', () => {
+    expect(terminalGridTemplates('single', { columnRatio: 0.25, rowRatio: 0.75 })).toEqual({
+      columns: 'minmax(0, 1fr)',
+      rows: 'minmax(0, 1fr)'
+    })
+    expect(terminalGridTemplates('quadrant', { columnRatio: 0.25, rowRatio: 0.75 })).toEqual({
+      columns: 'minmax(0, 0.25fr) minmax(0, 0.75fr)',
+      rows: 'minmax(0, 0.75fr) minmax(0, 0.25fr)'
+    })
+  })
+
+  it('clamps a dragged split so both tracks remain usable', () => {
+    expect(terminalSplitRatio(500, 1000)).toBeCloseTo(0.5)
+    expect(terminalSplitRatio(0, 1000)).toBeCloseTo(120 / 999)
+    expect(terminalSplitRatio(1000, 1000)).toBeCloseTo(879 / 999)
+    expect(terminalSplitRatio(0, 100)).toBe(0.5)
+  })
+
   it('keeps the primary pane and trims newest split panes first', () => {
     const panes = [
       { terminalId: 'primary', primary: true },
@@ -82,7 +117,8 @@ describe('terminal layouts', () => {
   it('starts every workspace session with one primary pane', () => {
     expect(createSessionTerminalLayout('session-1')).toEqual({
       layout: 'single',
-      panes: [{ terminalId: 'session-1', primary: true }]
+      panes: [{ terminalId: 'session-1', primary: true }],
+      sizes: defaultTerminalLayoutSizes()
     })
   })
 })

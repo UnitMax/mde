@@ -1,15 +1,34 @@
 export type TerminalLayout = 'single' | 'columns' | 'three' | 'quadrant'
 
+export type TerminalResizeAxis = 'column' | 'row'
+
+export type TerminalResizeScope = 'full' | 'top'
+
 export interface TerminalPaneState {
   terminalId: string
   primary: boolean
   exited?: boolean
 }
 
+/** Ratios describe the first track on each axis; the second track gets the remainder. */
+export interface TerminalLayoutSizes {
+  columnRatio: number
+  rowRatio: number
+}
+
 export interface SessionTerminalLayout {
   layout: TerminalLayout
   panes: TerminalPaneState[]
+  sizes: TerminalLayoutSizes
 }
+
+export interface TerminalResizeHandleDefinition {
+  axis: TerminalResizeAxis
+  scope: TerminalResizeScope
+}
+
+export const TERMINAL_RESIZE_MIN_TRACK_PX = 120
+export const TERMINAL_RESIZE_GAP_PX = 1
 
 export const TERMINAL_LAYOUTS: readonly {
   value: TerminalLayout
@@ -28,6 +47,56 @@ export function terminalCount(layout: TerminalLayout): number {
 
 export function layoutForCount(count: number): TerminalLayout {
   return TERMINAL_LAYOUTS.find((candidate) => candidate.count === count)?.value ?? 'single'
+}
+
+export function defaultTerminalLayoutSizes(): TerminalLayoutSizes {
+  return { columnRatio: 0.5, rowRatio: 0.5 }
+}
+
+export function terminalResizeHandles(layout: TerminalLayout): readonly TerminalResizeHandleDefinition[] {
+  if (layout === 'columns') return [{ axis: 'column', scope: 'full' }]
+  if (layout === 'three') {
+    return [
+      { axis: 'column', scope: 'top' },
+      { axis: 'row', scope: 'full' }
+    ]
+  }
+  if (layout === 'quadrant') {
+    return [
+      { axis: 'column', scope: 'full' },
+      { axis: 'row', scope: 'full' }
+    ]
+  }
+  return []
+}
+
+/** Converts a pointer position into a bounded ratio for two adjacent tracks. */
+export function terminalSplitRatio(
+  pointerPosition: number,
+  trackSize: number,
+  minTrackSize = TERMINAL_RESIZE_MIN_TRACK_PX,
+  gap = TERMINAL_RESIZE_GAP_PX
+): number {
+  const usableSize = Math.max(0, trackSize - gap)
+  if (usableSize === 0) return 0.5
+
+  const usablePosition = Math.min(Math.max(pointerPosition - gap / 2, 0), usableSize)
+  const effectiveMinimum = Math.min(Math.max(minTrackSize, 0), usableSize / 2)
+  const minimumRatio = effectiveMinimum / usableSize
+  return Math.min(Math.max(usablePosition / usableSize, minimumRatio), 1 - minimumRatio)
+}
+
+export function terminalGridTemplates(
+  layout: TerminalLayout,
+  sizes: TerminalLayoutSizes
+): { columns: string; rows: string } {
+  const columns = layout === 'single'
+    ? 'minmax(0, 1fr)'
+    : `minmax(0, ${sizes.columnRatio}fr) minmax(0, ${1 - sizes.columnRatio}fr)`
+  const rows = layout === 'single' || layout === 'columns'
+    ? 'minmax(0, 1fr)'
+    : `minmax(0, ${sizes.rowRatio}fr) minmax(0, ${1 - sizes.rowRatio}fr)`
+  return { columns, rows }
 }
 
 export interface TerminalLayoutShortcutInput {
@@ -65,7 +134,8 @@ export function paneClass(layout: TerminalLayout, index: number): string {
 export function createSessionTerminalLayout(sessionId: string): SessionTerminalLayout {
   return {
     layout: 'single',
-    panes: [{ terminalId: sessionId, primary: true }]
+    panes: [{ terminalId: sessionId, primary: true }],
+    sizes: defaultTerminalLayoutSizes()
   }
 }
 

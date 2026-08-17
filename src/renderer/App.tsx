@@ -12,10 +12,12 @@ import { useWorkspace } from '@/store/workspace'
 import { disposeSession } from '@/terminal/sessions'
 import {
   createSessionTerminalLayout,
+  defaultTerminalLayoutSizes,
   layoutForCount,
   terminalCount,
   type SessionTerminalLayout,
-  type TerminalLayout
+  type TerminalLayout,
+  type TerminalResizeAxis
 } from '@/terminal/layout'
 
 function EmptyState({ onNewSession }: { onNewSession: () => void }): JSX.Element {
@@ -111,7 +113,11 @@ export function App(): JSX.Element {
         const panes = existing.panes.filter((candidate) => candidate.terminalId !== info.terminalId)
         return {
           ...current,
-          [info.sessionId]: { layout: layoutForCount(panes.length), panes }
+          [info.sessionId]: {
+            layout: layoutForCount(panes.length),
+            panes,
+            sizes: defaultTerminalLayoutSizes()
+          }
         }
       })
     })
@@ -153,7 +159,10 @@ export function App(): JSX.Element {
       const targetCount = terminalCount(layout)
       if (targetCount <= existing.panes.length) {
         if (targetCount === existing.panes.length) {
-          return { ...current, [sessionId]: { ...existing, layout } }
+          return {
+            ...current,
+            [sessionId]: { ...existing, layout, sizes: defaultTerminalLayoutSizes() }
+          }
         }
         return current
       }
@@ -166,7 +175,10 @@ export function App(): JSX.Element {
           primary: false
         })
       }
-      return { ...current, [sessionId]: { layout, panes } }
+      return {
+        ...current,
+        [sessionId]: { layout, panes, sizes: defaultTerminalLayoutSizes() }
+      }
     })
   }
 
@@ -179,7 +191,10 @@ export function App(): JSX.Element {
     setTerminalLayouts((current) => {
       const existing = current[sessionId] ?? createSessionTerminalLayout(sessionId)
       const panes = existing.panes.filter((pane) => !paneIds.includes(pane.terminalId))
-      return { ...current, [sessionId]: { layout, panes } }
+      return {
+        ...current,
+        [sessionId]: { layout, panes, sizes: defaultTerminalLayoutSizes() }
+      }
     })
   }
 
@@ -193,7 +208,29 @@ export function App(): JSX.Element {
       const layout = current[sessionId]
       if (!layout) return current
       const panes = layout.panes.filter((candidate) => candidate.terminalId !== terminalId)
-      return { ...current, [sessionId]: { layout: layoutForCount(panes.length), panes } }
+      return {
+        ...current,
+        [sessionId]: {
+          layout: layoutForCount(panes.length),
+          panes,
+          sizes: defaultTerminalLayoutSizes()
+        }
+      }
+    })
+  }
+
+  const resizeTerminalLayout = (
+    sessionId: string,
+    axis: TerminalResizeAxis,
+    ratio: number
+  ): void => {
+    setTerminalLayouts((current) => {
+      const existing = current[sessionId]
+      if (!existing) return current
+      const sizes = axis === 'column'
+        ? { ...existing.sizes, columnRatio: ratio }
+        : { ...existing.sizes, rowRatio: ratio }
+      return { ...current, [sessionId]: { ...existing, sizes } }
     })
   }
 
@@ -222,7 +259,11 @@ export function App(): JSX.Element {
     panes.push({ terminalId: sessionId, primary: true })
     setTerminalLayouts((current) => ({
       ...current,
-      [sessionId]: { layout: layoutForCount(panes.length), panes }
+      [sessionId]: {
+        layout: layoutForCount(panes.length),
+        panes,
+        sizes: defaultTerminalLayoutSizes()
+      }
     }))
   }
 
@@ -247,6 +288,7 @@ export function App(): JSX.Element {
             session={selected}
             terminalLayout={layoutForSession!}
             onLayoutChange={(layout) => changeTerminalLayout(selected.id, layout)}
+            onLayoutResize={(axis, ratio) => resizeTerminalLayout(selected.id, axis, ratio)}
             onReduceLayout={(layout, paneIds) => reduceTerminalLayout(selected.id, layout, paneIds)}
             onClosePane={(terminalId) => closeTerminalPane(selected.id, terminalId)}
             onRestartPrimary={() => restartPrimary(selected.id)}

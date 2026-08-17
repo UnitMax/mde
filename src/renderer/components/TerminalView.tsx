@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject
+} from 'react'
 import {
   ArrowUp,
   Check,
@@ -76,15 +84,20 @@ import {
 } from '@/terminal/terminal-settings'
 import { getTerminalPalette, TERMINAL_THEMES } from '@/terminal/terminal-themes'
 import {
+  terminalGridTemplates,
   layoutClass,
   paneClass,
   panesToTrim,
   TERMINAL_LAYOUTS,
   terminalCount,
   getTerminalLayoutShortcut,
+  terminalResizeHandles,
+  terminalSplitRatio,
   type SessionTerminalLayout,
   type TerminalLayout,
-  type TerminalPaneState
+  type TerminalPaneState,
+  type TerminalResizeAxis,
+  type TerminalResizeScope
 } from '@/terminal/layout'
 
 const FALLBACK_SIZE: PtySize = { cols: 80, rows: 24 }
@@ -95,6 +108,7 @@ interface TerminalViewProps {
   session: Session
   terminalLayout: SessionTerminalLayout
   onLayoutChange: (layout: TerminalLayout) => void
+  onLayoutResize: (axis: TerminalResizeAxis, ratio: number) => void
   onReduceLayout: (layout: TerminalLayout, paneIds: string[]) => void
   onClosePane: (terminalId: string) => void
   onRestartPrimary: () => void
@@ -260,6 +274,148 @@ function LayoutGlyph({ layout }: { layout: TerminalLayout }): JSX.Element {
         />
       ))}
     </span>
+  )
+}
+
+interface TerminalResizeHandleProps {
+  axis: TerminalResizeAxis
+  scope: TerminalResizeScope
+  ratio: number
+  sizes: SessionTerminalLayout['sizes']
+  containerRef: RefObject<HTMLDivElement>
+  onResize: (ratio: number) => void
+}
+
+interface TerminalDragState {
+  pointerId: number
+  pendingRatio: number
+  frame?: number
+  previousCursor: string
+  previousUserSelect: string
+}
+
+function splitLinePosition(ratio: number): string {
+  return `calc(${ratio * 100}% + ${0.5 - ratio}px)`
+}
+
+function terminalResizeHandleStyle(
+  axis: TerminalResizeAxis,
+  scope: TerminalResizeScope,
+  sizes: SessionTerminalLayout['sizes']
+): CSSProperties {
+  if (axis === 'column') {
+    return {
+      left: splitLinePosition(sizes.columnRatio),
+      top: 0,
+      height: scope === 'top' ? splitLinePosition(sizes.rowRatio) : '100%'
+    }
+  }
+
+  return {
+    left: 0,
+    top: splitLinePosition(sizes.rowRatio),
+    width: '100%'
+  }
+}
+
+function TerminalResizeHandle({
+  axis,
+  scope,
+  ratio,
+  sizes,
+  containerRef,
+  onResize
+}: TerminalResizeHandleProps): JSX.Element {
+  const dragRef = useRef<TerminalDragState | null>(null)
+
+  const restoreDocumentStyles = (drag: TerminalDragState): void => {
+    document.body.style.cursor = drag.previousCursor
+    document.body.style.userSelect = drag.previousUserSelect
+  }
+
+  const finishDrag = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+
+    if (drag.frame !== undefined) cancelAnimationFrame(drag.frame)
+    onResize(drag.pendingRatio)
+    dragRef.current = null
+    restoreDocumentStyles(drag)
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      const drag = dragRef.current
+      if (!drag) return
+      if (drag.frame !== undefined) cancelAnimationFrame(drag.frame)
+      restoreDocumentStyles(drag)
+    }
+  }, [])
+
+  const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    const container = containerRef.current
+    if (!container) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    dragRef.current = {
+      pointerId: event.pointerId,
+      pendingRatio: ratio,
+      previousCursor: document.body.style.cursor,
+      previousUserSelect: document.body.style.userSelect
+    }
+    document.body.style.cursor = axis === 'column' ? 'col-resize' : 'row-resize'
+    document.body.style.userSelect = 'none'
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    const drag = dragRef.current
+    const container = containerRef.current
+    if (!drag || drag.pointerId !== event.pointerId || !container) return
+
+    event.preventDefault()
+    const bounds = container.getBoundingClientRect()
+    const pointerPosition = axis === 'column'
+      ? event.clientX - bounds.left
+      : event.clientY - bounds.top
+    const trackSize = axis === 'column' ? bounds.width : bounds.height
+    drag.pendingRatio = terminalSplitRatio(pointerPosition, trackSize)
+
+    if (drag.frame !== undefined) return
+    drag.frame = requestAnimationFrame(() => {
+      const current = dragRef.current
+      if (!current) return
+      current.frame = undefined
+      onResize(current.pendingRatio)
+    })
+  }
+
+  const lineClass = axis === 'column' ? 'h-full w-px' : 'h-px w-full'
+  const handleClass = axis === 'column'
+    ? 'h-full w-2 -translate-x-1/2 cursor-col-resize flex-col'
+    : 'h-2 w-full -translate-y-1/2 cursor-row-resize flex-row'
+
+  return (
+    <div
+      role="separator"
+      aria-label={axis === 'column' ? 'Resize terminal columns' : 'Resize terminal rows'}
+      aria-orientation={axis === 'column' ? 'vertical' : 'horizontal'}
+      data-testid={`terminal-resize-${axis}-${scope}`}
+      className={`group absolute z-20 flex touch-none items-center justify-center ${handleClass}`}
+      style={terminalResizeHandleStyle(axis, scope, sizes)}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={finishDrag}
+      onPointerCancel={finishDrag}
+      onLostPointerCapture={finishDrag}
+    >
+      <span className={`bg-transparent transition-colors group-hover:bg-accent ${lineClass}`} />
+    </div>
   )
 }
 
@@ -1550,6 +1706,7 @@ export function TerminalView({
   session: selectedSession,
   terminalLayout,
   onLayoutChange,
+  onLayoutResize,
   onReduceLayout,
   onClosePane,
   onRestartPrimary
@@ -1558,6 +1715,7 @@ export function TerminalView({
   const setStatus = useWorkspace((state) => state.setStatus)
   const exit = useWorkspace((state) => state.exits[selectedSession.id])
   const [pendingLayout, setPendingLayout] = useState<TerminalLayout | null>(null)
+  const gridRef = useRef<HTMLDivElement>(null)
 
   const restart = useCallback(async () => {
     onRestartPrimary()
@@ -1621,6 +1779,8 @@ export function TerminalView({
     selectedSession.kind === 'wsl'
       ? `${selectedSession.distro ?? 'WSL'} · ${selectedSession.path}`
       : selectedSession.path
+  const gridTemplates = terminalGridTemplates(terminalLayout.layout, terminalLayout.sizes)
+  const resizeHandles = terminalResizeHandles(terminalLayout.layout)
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-bg">
@@ -1689,7 +1849,14 @@ export function TerminalView({
       )}
 
       {selectedSession.mode === 'terminal' ? (
-        <div className={`grid h-full min-h-0 flex-1 gap-px bg-line ${layoutClass(terminalLayout.layout)}`}>
+        <div
+          ref={gridRef}
+          className={`relative grid h-full min-h-0 flex-1 gap-px bg-line ${layoutClass(terminalLayout.layout)}`}
+          style={{
+            gridTemplateColumns: gridTemplates.columns,
+            gridTemplateRows: gridTemplates.rows
+          }}
+        >
           {terminalLayout.panes.map((pane, index) => (
             <div
               key={pane.terminalId}
@@ -1701,6 +1868,17 @@ export function TerminalView({
                 onClose={() => onClosePane(pane.terminalId)}
               />
             </div>
+          ))}
+          {resizeHandles.map(({ axis, scope }) => (
+            <TerminalResizeHandle
+              key={`${axis}-${scope}`}
+              axis={axis}
+              scope={scope}
+              ratio={axis === 'column' ? terminalLayout.sizes.columnRatio : terminalLayout.sizes.rowRatio}
+              sizes={terminalLayout.sizes}
+              containerRef={gridRef}
+              onResize={(ratio) => onLayoutResize(axis, ratio)}
+            />
           ))}
         </div>
       ) : (
