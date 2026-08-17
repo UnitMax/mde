@@ -5,6 +5,7 @@ import {
   Check,
   CircleAlert,
   Code,
+  Copy,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -226,6 +227,7 @@ interface SessionRowProps {
 
 function SessionRow({ session, status, chat, tuiStatus, selected, onSelect }: SessionRowProps): JSX.Element {
   const renameSession = useWorkspace((state) => state.renameSession)
+  const duplicateSession = useWorkspace((state) => state.duplicateSession)
   const setSessionColor = useWorkspace((state) => state.setSessionColor)
   const moveSession = useWorkspace((state) => state.moveSession)
   const removeSession = useWorkspace((state) => state.removeSession)
@@ -368,6 +370,12 @@ function SessionRow({ session, status, chat, tuiStatus, selected, onSelect }: Se
             <Pencil className="h-3.5 w-3.5" />
             Rename
           </ContextMenuItem>
+          {session.mode === 'terminal' && (
+            <ContextMenuItem onSelect={() => void duplicateSession(session.id)}>
+              <Copy className="h-3.5 w-3.5" />
+              Duplicate session
+            </ContextMenuItem>
+          )}
           <ContextMenuSeparator />
           <ContextMenuSub>
             <ContextMenuSubTrigger>

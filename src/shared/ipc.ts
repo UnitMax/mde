@@ -51,6 +51,7 @@ export const IpcChannels = {
   projectsRemove: 'projects:remove',
 
   sessionsCreate: 'sessions:create',
+  sessionsDuplicate: 'sessions:duplicate',
   sessionsUpdate: 'sessions:update',
   sessionsMove: 'sessions:move',
   sessionsRemove: 'sessions:remove',
@@ -196,6 +197,7 @@ export interface RendererApi {
   }
   sessions: {
     create(input: NewSession): Promise<Session>
+    duplicate(id: string): Promise<Session | null>
     update(req: UpdateSessionRequest): Promise<Session | null>
     move(req: MoveSessionRequest): Promise<Session | null>
     remove(id: string): Promise<void>

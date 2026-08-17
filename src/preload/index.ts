@@ -33,6 +33,7 @@ const api: RendererApi = {
   },
   sessions: {
     create: (input) => ipcRenderer.invoke(IpcChannels.sessionsCreate, input),
+    duplicate: (id) => ipcRenderer.invoke(IpcChannels.sessionsDuplicate, id),
     update: (req) => ipcRenderer.invoke(IpcChannels.sessionsUpdate, req),
     move: (req) => ipcRenderer.invoke(IpcChannels.sessionsMove, req),
     remove: (id) => ipcRenderer.invoke(IpcChannels.sessionsRemove, id)

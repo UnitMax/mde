@@ -56,6 +56,7 @@ import { buildVsCodeRemoteUri } from './vscode'
 import {
   createProject,
   createSession,
+  duplicateSession,
   getSession,
   loadWorkspace,
   moveSession,
@@ -169,6 +170,7 @@ export function registerIpcHandlers(
   })
 
   handle<NewSession, Session>(IpcChannels.sessionsCreate, (input) => createSession(input))
+  handle<string, Session | null>(IpcChannels.sessionsDuplicate, (id) => duplicateSession(id))
   handle<UpdateSessionRequest, Session | null>(IpcChannels.sessionsUpdate, (req) =>
     updateSession(req)
   )

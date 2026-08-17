@@ -21,6 +21,7 @@ describe('renderer workspace event bridge', () => {
     workspace: { list: vi.fn(async () => ({ projects: [], sessions: [] })) },
     sessions: {
       create: vi.fn(),
+      duplicate: vi.fn(),
       update: vi.fn(async ({ id, patch }: { id: string; patch: Partial<Session> }) => ({
         id,
         projectId: 'project-1',
@@ -93,6 +94,7 @@ describe('renderer workspace event bridge', () => {
     useWorkspace.setState({ opencodeChats: {}, opencodeTuiStatuses: {}, sessions: [], selectedSessionId: null })
     api.pty.onExit.mockClear()
     api.sessions.create.mockReset()
+    api.sessions.duplicate.mockReset()
     api.sessions.update.mockClear()
     api.opencode.send.mockReset()
     api.opencode.executeCommand.mockReset()
@@ -175,6 +177,36 @@ describe('renderer workspace event bridge', () => {
     })
     expect(session.mode).toBe('gui')
     expect(useWorkspace.getState().selectedSessionId).toBe('gui-session')
+  })
+
+  it('appends and selects a duplicated session returned by the main process', async () => {
+    const source: Session = {
+      id: 'terminal-1',
+      projectId: 'project-1',
+      name: 'App',
+      color: 'teal',
+      mode: 'terminal',
+      kind: 'wsl',
+      distro: 'Ubuntu-24.04',
+      path: '/home/me/src/app',
+      shell: '/bin/zsh',
+      createdAt: '2026-01-01T00:00:00.000Z'
+    }
+    const duplicate: Session = {
+      ...source,
+      id: 'terminal-2',
+      name: 'App (copy)',
+      createdAt: '2026-01-02T00:00:00.000Z'
+    }
+    useWorkspace.setState({ sessions: [source] })
+    api.sessions.duplicate.mockResolvedValue(duplicate)
+
+    const result = await useWorkspace.getState().duplicateSession(source.id)
+
+    expect(api.sessions.duplicate).toHaveBeenCalledWith(source.id)
+    expect(result).toEqual(duplicate)
+    expect(useWorkspace.getState().sessions).toEqual([source, duplicate])
+    expect(useWorkspace.getState().selectedSessionId).toBe(duplicate.id)
   })
 
   it('persists and updates a session color', async () => {

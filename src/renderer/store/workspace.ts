@@ -318,6 +318,7 @@ interface WorkspaceState {
   removeProject: (id: string) => Promise<void>
 
   addSession: (input: NewSession) => Promise<Session>
+  duplicateSession: (id: string) => Promise<Session | null>
   renameSession: (id: string, name: string) => Promise<void>
   setSessionColor: (id: string, color: SessionColor) => Promise<void>
   moveSession: (id: string, projectId: string) => Promise<void>
@@ -468,6 +469,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   addSession: async (input) => {
     const session = await window.api.sessions.create(input)
+    set((state) => ({ sessions: [...state.sessions, session], selectedSessionId: session.id }))
+    return session
+  },
+
+  duplicateSession: async (id) => {
+    const session = await window.api.sessions.duplicate(id)
+    if (!session) return null
     set((state) => ({ sessions: [...state.sessions, session], selectedSessionId: session.id }))
     return session
   },

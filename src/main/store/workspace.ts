@@ -261,6 +261,43 @@ export async function createSession(input: NewSession): Promise<Session> {
   return session
 }
 
+function duplicateSessionName(name: string, existingNames: Set<string>): string {
+  const base = `${name} (copy)`
+  if (!existingNames.has(base)) return base
+
+  let suffix = 2
+  while (existingNames.has(`${name} (copy ${suffix})`)) suffix += 1
+  return `${name} (copy ${suffix})`
+}
+
+export async function duplicateSession(id: string): Promise<Session | null> {
+  const workspace = await loadWorkspace()
+  const source = workspace.sessions.find((session) => session.id === id)
+  if (!source || source.mode !== 'terminal') return null
+
+  const existingNames = new Set(
+    workspace.sessions
+      .filter((session) => session.projectId === source.projectId)
+      .map((session) => session.name)
+  )
+  const session: Session = {
+    id: randomUUID(),
+    projectId: source.projectId,
+    name: duplicateSessionName(source.name, existingNames),
+    ...(source.color ? { color: source.color } : {}),
+    mode: 'terminal',
+    kind: source.kind,
+    ...(source.distro ? { distro: source.distro } : {}),
+    path: source.path,
+    ...(source.shell ? { shell: source.shell } : {}),
+    createdAt: new Date().toISOString()
+  }
+
+  cache = { ...workspace, sessions: [...workspace.sessions, session] }
+  await enqueueWrite(cache)
+  return session
+}
+
 export async function updateSession(req: UpdateSessionRequest): Promise<Session | null> {
   const workspace = await loadWorkspace()
   const index = workspace.sessions.findIndex((session) => session.id === req.id)
