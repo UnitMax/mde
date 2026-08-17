@@ -43,6 +43,8 @@ import type {
   OpenCodeTuiPluginState,
   OpenCodeTuiSetEnabledRequest,
   OpenCodeTuiSettings,
+  OpenCodeTokenRatePluginRequest,
+  OpenCodeTokenRatePluginState,
   OpenCodeAlertSetEnabledRequest,
   OpenCodeAlertSettings,
   Session,
@@ -51,6 +53,7 @@ import type {
 import type { PtyManager } from './pty/manager'
 import type { OpenCodeManager } from './opencode/manager'
 import type { OpenCodeTuiStatusManager } from './opencode/tui-status'
+import type { OpenCodeTokenRatePluginManager } from './opencode/token-rate'
 import type { OpenCodeAlertManager } from './opencode/alerts'
 import { createAppInfo } from '@shared/app-info'
 import { isWslAvailable, listDistros, runWsl } from './wsl/distros'
@@ -133,6 +136,7 @@ export function registerIpcHandlers(
   ptyManager: PtyManager,
   opencodeManager: OpenCodeManager,
   opencodeTuiStatusManager: OpenCodeTuiStatusManager,
+  opencodeTokenRatePluginManager: OpenCodeTokenRatePluginManager,
   opencodeAlertManager: OpenCodeAlertManager
 ): void {
   const handle = <Req, Res>(
@@ -302,6 +306,19 @@ export function registerIpcHandlers(
       }
       return opencodeTuiStatusManager.setEnabled(req.enabled)
     }
+  )
+
+  handle<OpenCodeTokenRatePluginRequest, OpenCodeTokenRatePluginState>(
+    IpcChannels.opencodeTokenRatePluginState,
+    (req) => opencodeTokenRatePluginManager.pluginState(req.target)
+  )
+  handle<OpenCodeTokenRatePluginRequest, OpenCodeTokenRatePluginState>(
+    IpcChannels.opencodeTokenRatePluginInstall,
+    (req) => opencodeTokenRatePluginManager.installPlugin(req.target)
+  )
+  handle<OpenCodeTokenRatePluginRequest, OpenCodeTokenRatePluginState>(
+    IpcChannels.opencodeTokenRatePluginRemove,
+    (req) => opencodeTokenRatePluginManager.removePlugin(req.target)
   )
 
   handle<void, OpenCodeAlertSettings>(IpcChannels.opencodeAlertsSettings, () =>

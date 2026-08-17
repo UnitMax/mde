@@ -99,6 +99,22 @@ describe('PtyManager runtime terminal identities', () => {
     })
   })
 
+  it('applies launch integration environment to native shells and disposes it', () => {
+    const integration = {
+      prepare: vi.fn(() => ({ MDE_OPENCODE_TOKEN_RATE: '1' })),
+      dispose: vi.fn()
+    }
+    const manager = new PtyManager({ onData: vi.fn(), onExit: vi.fn() }, integration)
+
+    manager.ensure('pane-a', sourceSession(), { cols: 80, rows: 24 }, palette)
+
+    expect(ptyMock.spawn.mock.calls[0]?.[2]).toMatchObject({
+      env: expect.objectContaining({ MDE_OPENCODE_TOKEN_RATE: '1' })
+    })
+    manager.dispose('pane-a')
+    expect(integration.dispose).toHaveBeenCalledWith('pane-a')
+  })
+
   it('restarts and disposes panes independently', () => {
     const manager = new PtyManager({ onData: vi.fn(), onExit: vi.fn() })
     const source = sourceSession()

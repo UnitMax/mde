@@ -6,6 +6,7 @@ import { registerIpcHandlers } from './ipc'
 import { OpenCodeManager } from './opencode/manager'
 import { OpenCodeAlertManager } from './opencode/alerts'
 import { OpenCodeTuiStatusManager } from './opencode/tui-status'
+import { OpenCodeTokenRatePluginManager } from './opencode/token-rate'
 import { PtyManager } from './pty/manager'
 import { initWorkspaceStore } from './store/workspace'
 import { adjustZoomFactor, DEFAULT_ZOOM_FACTOR, getZoomAction } from './zoom'
@@ -32,6 +33,7 @@ const opencodeTuiStatusManager = new OpenCodeTuiStatusManager({
     }
   }
 })
+const opencodeTokenRatePluginManager = new OpenCodeTokenRatePluginManager()
 
 const ptyManager = new PtyManager({
   onData: (chunk) => {
@@ -44,7 +46,7 @@ const ptyManager = new PtyManager({
       mainWindow.webContents.send(IpcEvents.ptyExit, info)
     }
   }
-}, opencodeTuiStatusManager)
+}, [opencodeTuiStatusManager, opencodeTokenRatePluginManager])
 const opencodeManager = new OpenCodeManager({
   onStream: (chunk) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -118,7 +120,13 @@ if (!app.requestSingleInstanceLock()) {
     initWorkspaceStore(app.getPath('userData'))
     await opencodeTuiStatusManager.configure(app.getPath('userData'))
     await opencodeAlertManager.configure(app.getPath('userData'))
-    registerIpcHandlers(ptyManager, opencodeManager, opencodeTuiStatusManager, opencodeAlertManager)
+    registerIpcHandlers(
+      ptyManager,
+      opencodeManager,
+      opencodeTuiStatusManager,
+      opencodeTokenRatePluginManager,
+      opencodeAlertManager
+    )
     createWindow()
 
     app.on('activate', () => {

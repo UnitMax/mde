@@ -37,7 +37,7 @@ function launchContext(): LaunchContext {
   return context
 }
 
-function ptyEnv(): Record<string, string> {
+function ptyEnv(additional?: Record<string, string>): Record<string, string> {
   const env: Record<string, string> = {}
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined) env[key] = value
@@ -47,6 +47,7 @@ function ptyEnv(): Record<string, string> {
   delete env.NODE_OPTIONS
   env.TERM = 'xterm-256color'
   env.COLORTERM = 'truecolor'
+  Object.assign(env, additional)
   return env
 }
 
@@ -93,11 +94,30 @@ function spawnPty(
  */
 export class PtyManager {
   private readonly sessions = new Map<string, PtySession>()
+  private readonly integrations: PtyLaunchIntegration[]
 
   constructor(
     private readonly events: PtyEvents,
-    private readonly integration?: PtyLaunchIntegration
-  ) {}
+    integration?: PtyLaunchIntegration | PtyLaunchIntegration[]
+  ) {
+    this.integrations = integration
+      ? Array.isArray(integration)
+        ? integration
+        : [integration]
+      : []
+  }
+
+  private prepareIntegrations(terminalId: string, session: Session): Record<string, string> {
+    const environment: Record<string, string> = {}
+    for (const integration of this.integrations) {
+      Object.assign(environment, integration.prepare(terminalId, session))
+    }
+    return environment
+  }
+
+  private disposeIntegrations(terminalId: string): void {
+    for (const integration of this.integrations) integration.dispose(terminalId)
+  }
 
   status(terminalId: string): PtyStatus {
     return this.sessions.get(terminalId)?.status ?? 'none'
@@ -126,9 +146,11 @@ export class PtyManager {
       return existing.status
     }
 
+    const environment = this.prepareIntegrations(terminalId, session)
     const spec = buildLaunchSpec(session, {
       ...launchContext(),
-      wslEnvironment: this.integration?.prepare(terminalId, session)
+      environment,
+      wslEnvironment: environment
     })
     const { cols, rows } = clampSize(size)
 
@@ -139,10 +161,10 @@ export class PtyManager {
         cols,
         rows,
         cwd: spec.cwd ?? homedir(),
-        env: ptyEnv(),
+        env: ptyEnv(environment),
       }, process.platform)
     } catch (error) {
-      this.integration?.dispose(terminalId)
+      this.disposeIntegrations(terminalId)
       throw error
     }
 
@@ -159,7 +181,7 @@ export class PtyManager {
       if (pending) this.events.onData({ terminalId, data: pending })
       const current = this.sessions.get(terminalId)
       if (current) current.status = 'exited'
-      this.integration?.dispose(terminalId)
+      this.disposeIntegrations(terminalId)
       const info: PtyExitInfo = { sessionId: session.id, terminalId, exitCode }
       if (signal !== undefined) info.signal = signal
       this.events.onExit(info)
@@ -215,7 +237,7 @@ export class PtyManager {
     const session = this.sessions.get(terminalId)
     if (!session) return
     this.sessions.delete(terminalId)
-    this.integration?.dispose(terminalId)
+    this.disposeIntegrations(terminalId)
     session.disposeListeners()
     if (session.status === 'running') {
       try {

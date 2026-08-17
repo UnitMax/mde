@@ -120,6 +120,11 @@ is enabled.
   writes only a short runtime snapshot under `/tmp`, and does not modify project files or
   OpenCode configuration. MDE reads that snapshot through the distro's `\\wsl.localhost\\...`
   path and falls back to normal shell status when it is absent.
+- OpenCode TUI token-rate display is a separate plugin from status reporting. On Linux it can be
+  installed for the native OpenCode target; on Windows it can be installed independently for each
+  WSL 2 distro. It adds a live estimated rate and a final provider-reported rate beside the TUI
+  prompt. Restart OpenCode after installing, updating, or removing it. MDE does not emit a
+  token-rate fallback when the target OpenCode version does not support TUI plugins.
 - Session paths are stored in the target's own format. `wslpath` is used only at the UI
   boundary — when the Windows folder picker returns a `\\wsl$\` / `\\wsl.localhost\` UNC path
   or a drive path, and when revealing a folder in Explorer.

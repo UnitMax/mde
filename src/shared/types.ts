@@ -109,6 +109,32 @@ export interface OpenCodeTuiPluginState {
   currentVersion: string
 }
 
+export type OpenCodePluginTarget =
+  | { kind: 'native' }
+  | { kind: 'wsl'; distro: string }
+
+export type OpenCodeTokenRatePluginInstallStatus =
+  | 'not-installed'
+  | 'installed'
+  | 'outdated'
+  | 'conflict'
+  | 'unsupported'
+  | 'unavailable'
+  | 'repair-needed'
+
+export interface OpenCodeTokenRatePluginRequest {
+  target: OpenCodePluginTarget
+}
+
+export interface OpenCodeTokenRatePluginState {
+  target: OpenCodePluginTarget
+  status: OpenCodeTokenRatePluginInstallStatus
+  installedVersion: string | null
+  currentVersion: string
+  opencodeVersion: string | null
+  registered: boolean
+}
+
 export type OpenCodeAlertKind = 'attention' | 'completed' | 'error'
 export type OpenCodeAlertSource = 'tui' | 'gui'
 

@@ -39,6 +39,8 @@ import type {
   OpenCodeToolMessage,
   OpenCodeTuiPluginState,
   OpenCodeTuiSettings,
+  OpenCodePluginTarget,
+  OpenCodeTokenRatePluginState,
   OpenCodeAlertSettings,
   PtySize,
   Session
@@ -430,6 +432,30 @@ function pluginStatusLabel(state: OpenCodeTuiPluginState | undefined): string {
   return 'Not installed'
 }
 
+function tokenRateTargetKey(target: OpenCodePluginTarget): string {
+  return target.kind === 'native' ? 'native' : 'wsl:' + target.distro
+}
+
+function tokenRateTargetLabel(target: OpenCodePluginTarget): string {
+  return target.kind === 'native' ? 'Native Linux' : target.distro + ' (WSL 2)'
+}
+
+function tokenRatePluginStatusLabel(state: OpenCodeTokenRatePluginState | undefined): string {
+  if (!state) return 'Checking…'
+  if (state.status === 'installed') {
+    return 'Installed · v' + (state.installedVersion ?? state.currentVersion) +
+      (state.opencodeVersion ? ' · OpenCode v' + state.opencodeVersion : '')
+  }
+  if (state.status === 'outdated') {
+    return 'Update available · v' + (state.installedVersion ?? 'unknown') + ' → v' + state.currentVersion
+  }
+  if (state.status === 'conflict') return 'Another plugin owns the MDE plugin file'
+  if (state.status === 'unsupported') return 'Requires OpenCode 1.18.18 or newer'
+  if (state.status === 'unavailable') return 'Could not detect OpenCode from the target login shell'
+  if (state.status === 'repair-needed') return 'Installed file needs registration repair'
+  return 'Not installed'
+}
+
 function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Element {
   const [open, setOpen] = useState(false)
   const [settings, setSettings] = useState<TerminalSettings>(() => getTerminalSettings())
@@ -446,11 +472,21 @@ function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JS
   const [tuiLoading, setTuiLoading] = useState(false)
   const [tuiBusyDistro, setTuiBusyDistro] = useState<string | null>(null)
   const [tuiError, setTuiError] = useState<string | null>(null)
+  const [tokenRateStates, setTokenRateStates] = useState<Record<string, OpenCodeTokenRatePluginState>>({})
+  const [tokenRateLoading, setTokenRateLoading] = useState(false)
+  const [tokenRateBusyTarget, setTokenRateBusyTarget] = useState<string | null>(null)
+  const [tokenRateError, setTokenRateError] = useState<string | null>(null)
   const [alertSettings, setAlertSettings] = useState<OpenCodeAlertSettings>({ enabled: true })
   const [alertLoading, setAlertLoading] = useState(false)
   const [alertError, setAlertError] = useState<string | null>(null)
 
   const canManageTui = platform?.isWindows === true && wslAvailable
+  const canManageTokenRate =
+    platform?.platform === 'linux' || (platform?.isWindows === true && wslAvailable)
+  const tokenRateTargets: OpenCodePluginTarget[] =
+    platform?.platform === 'linux'
+      ? [{ kind: 'native' }]
+      : distros.map((distro) => ({ kind: 'wsl', distro: distro.name }))
 
   useEffect(() => {
     if (open && canManageTui) void refreshDistros()
@@ -509,6 +545,42 @@ function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JS
   }, [canManageTui, distros, open])
 
   useEffect(() => {
+    if (!open || !canManageTokenRate) return
+    let cancelled = false
+    const targets: OpenCodePluginTarget[] =
+      platform?.platform === 'linux'
+        ? [{ kind: 'native' }]
+        : distros.map((distro) => ({ kind: 'wsl', distro: distro.name }))
+    setTokenRateLoading(true)
+    setTokenRateError(null)
+    void Promise.allSettled(
+      targets.map((target) => window.api.opencodeTokenRate.pluginState({ target }))
+    )
+      .then((results) => {
+        if (cancelled) return
+        const nextStates: Record<string, OpenCodeTokenRatePluginState> = {}
+        const failures: string[] = []
+        results.forEach((result, index) => {
+          const target = targets[index]
+          if (!target) return
+          if (result.status === 'fulfilled') {
+            nextStates[tokenRateTargetKey(result.value.target)] = result.value
+          } else {
+            failures.push(result.reason instanceof Error ? result.reason.message : String(result.reason))
+          }
+        })
+        setTokenRateStates(nextStates)
+        if (failures.length > 0) setTokenRateError(failures[0] ?? 'Could not inspect the token-rate plugin.')
+      })
+      .finally(() => {
+        if (!cancelled) setTokenRateLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [canManageTokenRate, distros, open, platform?.platform])
+
+  useEffect(() => {
     if (!open) return
     let cancelled = false
     setAlertLoading(true)
@@ -565,6 +637,23 @@ function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JS
       setTuiError(error instanceof Error ? error.message : String(error))
     } finally {
       setTuiBusyDistro(null)
+    }
+  }
+
+  const changeTokenRatePlugin = async (target: OpenCodePluginTarget, action: 'install' | 'remove'): Promise<void> => {
+    const key = tokenRateTargetKey(target)
+    setTokenRateBusyTarget(key)
+    setTokenRateError(null)
+    try {
+      const state =
+        action === 'install'
+          ? await window.api.opencodeTokenRate.install({ target })
+          : await window.api.opencodeTokenRate.remove({ target })
+      setTokenRateStates((current) => ({ ...current, [key]: state }))
+    } catch (error) {
+      setTokenRateError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setTokenRateBusyTarget(null)
     }
   }
 
@@ -815,6 +904,70 @@ function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JS
               </>
             )}
             {tuiError && <p className="text-xs text-danger">{tuiError}</p>}
+          </section>
+
+          <section className="space-y-3 border-t border-line pt-4" aria-labelledby="opencode-token-rate-settings">
+            <div>
+              <h3 id="opencode-token-rate-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
+                OpenCode token rate
+              </h3>
+              <p className="mt-1 text-xs text-fg-subtle">
+                A separate TUI plugin shows live estimated and final provider-reported tokens per second beside the prompt.
+                It is installed independently from status reporting and does not add a sidebar metric.
+              </p>
+            </div>
+
+            {!canManageTokenRate ? (
+              <p className="rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
+                This integration is available on Linux and on Windows WSL 2 targets.
+              </p>
+            ) : tokenRateTargets.length === 0 ? (
+              <p className="text-xs text-fg-subtle">No WSL 2 distros found.</p>
+            ) : (
+              <div className="space-y-2">
+                {tokenRateTargets.map((target) => {
+                  const key = tokenRateTargetKey(target)
+                  const state = tokenRateStates[key]
+                  const busy = tokenRateBusyTarget === key
+                  const blocked =
+                    state?.status === 'conflict' ||
+                    state?.status === 'unsupported' ||
+                    state?.status === 'unavailable' ||
+                    !state
+                  const action = state?.status === 'installed' ? 'remove' : 'install'
+                  const actionLabel =
+                    state?.status === 'outdated'
+                      ? 'Replace'
+                      : state?.status === 'repair-needed'
+                        ? 'Repair'
+                      : state?.status === 'installed'
+                        ? 'Uninstall'
+                        : 'Install'
+                  return (
+                    <div key={key} className="flex items-center gap-3 rounded border border-line bg-panel px-3 py-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-xs font-medium text-fg">{tokenRateTargetLabel(target)}</div>
+                        <div className="truncate text-[11px] text-fg-subtle">
+                          {tokenRatePluginStatusLabel(state)}
+                        </div>
+                      </div>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={busy || blocked || tokenRateLoading}
+                        onClick={() => void changeTokenRatePlugin(target, action)}
+                      >
+                        {busy ? 'Working…' : actionLabel}
+                      </Button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            <p className="text-[11px] text-fg-subtle">
+              Restart OpenCode after installing, replacing, or uninstalling. No token-rate fallback is emitted when this plugin is unavailable.
+            </p>
+            {tokenRateError && <p className="text-xs text-danger">{tokenRateError}</p>}
           </section>
         </div>
       </DialogContent>

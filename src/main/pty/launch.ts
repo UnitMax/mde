@@ -15,6 +15,8 @@ export interface LaunchContext {
   platform: NodeJS.Platform
   /** process.env.SHELL on the host, if set. */
   defaultShell?: string
+  /** Environment variables that should be inherited by native target shells. */
+  environment?: Record<string, string>
   /** Environment variables that should be inherited by commands inside WSL. */
   wslEnvironment?: Record<string, string>
 }
@@ -50,6 +52,7 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
 
     const shell = session.shell ?? 'bash'
     const environment = wslEnvironmentArgs({
+      ...context.environment,
       ...context.wslEnvironment,
       ...WSL_TERMINAL_ENVIRONMENT
     })
