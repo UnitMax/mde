@@ -1,7 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
-import type { WorkspaceData, MoveSessionRequest, UpdateSessionRequest, UpdateProjectRequest } from '@shared/ipc'
+import type {
+  MoveSessionRequest,
+  ReorderSessionRequest,
+  UpdateProjectRequest,
+  UpdateSessionRequest,
+  WorkspaceData
+} from '@shared/ipc'
 import type { NewProject, NewSession, OpenCodeModelSelection, Project, Session } from '@shared/types'
 import { isSessionColor } from '@shared/session-colors'
 
@@ -342,6 +348,63 @@ export async function moveSession(req: MoveSessionRequest): Promise<Session | nu
   cache = { ...workspace, sessions }
   await enqueueWrite(cache)
   return updated
+}
+
+/**
+ * Reorders a session within its current project while leaving other projects'
+ * positions in the flat persisted array untouched.
+ */
+export function reorderSessionList(
+  sessions: readonly Session[],
+  req: ReorderSessionRequest
+): Session[] | null {
+  if (
+    !req ||
+    typeof req.id !== 'string' ||
+    (req.beforeId !== null && typeof req.beforeId !== 'string')
+  ) {
+    return null
+  }
+
+  const source = sessions.find((session) => session.id === req.id)
+  if (!source) return null
+
+  const projectEntries = sessions
+    .map((session, index) => ({ session, index }))
+    .filter(({ session }) => session.projectId === source.projectId)
+
+  const remaining = projectEntries
+    .filter(({ session }) => session.id !== source.id)
+    .map(({ session }) => session)
+
+  let insertionIndex = remaining.length
+  if (req.beforeId !== null) {
+    insertionIndex = remaining.findIndex((session) => session.id === req.beforeId)
+    if (insertionIndex < 0) return null
+  }
+
+  const reordered = [...remaining]
+  reordered.splice(insertionIndex, 0, source)
+  const currentOrder = projectEntries.map(({ session }) => session.id)
+  const nextOrder = reordered.map((session) => session.id)
+  if (currentOrder.every((id, index) => id === nextOrder[index])) return [...sessions]
+
+  const result = [...sessions]
+  projectEntries.forEach(({ index }, position) => {
+    const session = reordered[position]
+    if (session) result[index] = session
+  })
+  return result
+}
+
+export async function reorderSession(req: ReorderSessionRequest): Promise<Session[] | null> {
+  const workspace = await loadWorkspace()
+  const sessions = reorderSessionList(workspace.sessions, req)
+  if (!sessions) return null
+
+  cache = { ...workspace, sessions }
+  await enqueueWrite(cache)
+  return sessions
 }
 
 export async function removeSession(id: string): Promise<void> {

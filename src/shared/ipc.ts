@@ -54,6 +54,7 @@ export const IpcChannels = {
   sessionsDuplicate: 'sessions:duplicate',
   sessionsUpdate: 'sessions:update',
   sessionsMove: 'sessions:move',
+  sessionsReorder: 'sessions:reorder',
   sessionsRemove: 'sessions:remove',
 
   ptyEnsure: 'pty:ensure',
@@ -173,6 +174,12 @@ export interface MoveSessionRequest {
   projectId: string
 }
 
+export interface ReorderSessionRequest {
+  id: string
+  /** Session to insert before; null appends to the end of the current project. */
+  beforeId: string | null
+}
+
 /**
  * The complete surface exposed over `contextBridge`. Implemented in preload,
  * consumed in the renderer, and mirrored by the main-process handlers.
@@ -200,6 +207,7 @@ export interface RendererApi {
     duplicate(id: string): Promise<Session | null>
     update(req: UpdateSessionRequest): Promise<Session | null>
     move(req: MoveSessionRequest): Promise<Session | null>
+    reorder(req: ReorderSessionRequest): Promise<Session[] | null>
     remove(id: string): Promise<void>
   }
   pty: {

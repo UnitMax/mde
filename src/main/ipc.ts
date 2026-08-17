@@ -6,6 +6,7 @@ import {
   type EnsurePtyRequest,
   type MoveSessionRequest,
   type PlatformInfo,
+  type ReorderSessionRequest,
   type ResizePtyRequest,
   type ResolvePathRequest,
   type TerminalPalette,
@@ -62,6 +63,7 @@ import {
   moveSession,
   removeProject,
   removeSession,
+  reorderSession,
   updateProject,
   updateSession
 } from './store/workspace'
@@ -175,6 +177,9 @@ export function registerIpcHandlers(
     updateSession(req)
   )
   handle<MoveSessionRequest, Session | null>(IpcChannels.sessionsMove, (req) => moveSession(req))
+  handle<ReorderSessionRequest, Session[] | null>(IpcChannels.sessionsReorder, (req) =>
+    reorderSession(req)
+  )
   handle<string, void>(IpcChannels.sessionsRemove, async (id) => {
     ptyManager.dispose(id)
     opencodeManager.dispose(id)

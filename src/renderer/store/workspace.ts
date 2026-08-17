@@ -322,6 +322,7 @@ interface WorkspaceState {
   renameSession: (id: string, name: string) => Promise<void>
   setSessionColor: (id: string, color: SessionColor) => Promise<void>
   moveSession: (id: string, projectId: string) => Promise<void>
+  reorderSession: (id: string, beforeId: string | null) => Promise<void>
   removeSession: (id: string) => Promise<void>
   revealSession: (id: string) => Promise<void>
   openSessionInVsCode: (id: string) => Promise<void>
@@ -496,6 +497,12 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     const updated = await window.api.sessions.move({ id, projectId })
     if (!updated) return
     set((state) => ({ sessions: state.sessions.map((session) => (session.id === id ? updated : session)) }))
+  },
+
+  reorderSession: async (id, beforeId) => {
+    const sessions = await window.api.sessions.reorder({ id, beforeId })
+    if (!sessions) return
+    set({ sessions })
   },
 
   removeSession: async (id) => {

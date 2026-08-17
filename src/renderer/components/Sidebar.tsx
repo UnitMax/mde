@@ -1,4 +1,9 @@
-import { useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import {
+  useRef,
+  useState,
+  type DragEvent as ReactDragEvent,
+  type MouseEvent as ReactMouseEvent
+} from 'react'
 import {
   ChevronDown,
   ChevronRight,
@@ -9,6 +14,7 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
+  GripVertical,
   LoaderCircle,
   MessageSquare,
   MoreHorizontal,
@@ -223,9 +229,30 @@ interface SessionRowProps {
   tuiStatus?: OpenCodeTuiStatusState
   selected: boolean
   onSelect: () => void
+  dragging: boolean
+  dragDisabled: boolean
+  dropPosition: 'before' | 'after' | null
+  onDragStart: () => void
+  onDragEnd: () => void
+  onDragOver: (event: ReactDragEvent<HTMLDivElement>) => void
+  onDrop: (event: ReactDragEvent<HTMLDivElement>) => void
 }
 
-function SessionRow({ session, status, chat, tuiStatus, selected, onSelect }: SessionRowProps): JSX.Element {
+function SessionRow({
+  session,
+  status,
+  chat,
+  tuiStatus,
+  selected,
+  onSelect,
+  dragging,
+  dragDisabled,
+  dropPosition,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop
+}: SessionRowProps): JSX.Element {
   const renameSession = useWorkspace((state) => state.renameSession)
   const duplicateSession = useWorkspace((state) => state.duplicateSession)
   const setSessionColor = useWorkspace((state) => state.setSessionColor)
@@ -294,6 +321,8 @@ function SessionRow({ session, status, chat, tuiStatus, selected, onSelect }: Se
             tabIndex={0}
             data-testid="session-row"
             onClick={onSelect}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
             onKeyDown={(event) => {
               if (event.key === 'F2' && event.target === event.currentTarget) {
                 event.preventDefault()
@@ -314,10 +343,35 @@ function SessionRow({ session, status, chat, tuiStatus, selected, onSelect }: Se
                       'bg-active text-fg',
                       indicator.status === 'attention' && 'ring-1 ring-accent/60'
                     )
-                  : cn('text-fg-muted hover:bg-hover hover:text-fg', indicator.row)
+                  : cn('text-fg-muted hover:bg-hover hover:text-fg', indicator.row),
+              dragging && 'opacity-60',
+              dropPosition === 'before' && 'border-t-2 border-accent',
+              dropPosition === 'after' && 'border-b-2 border-accent'
             )}
             style={backgroundStyle}
           >
+            <button
+              type="button"
+              draggable={!dragDisabled}
+              disabled={dragDisabled}
+              aria-label={`Drag to reorder ${session.name}`}
+              title="Drag to reorder"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+              onDragStart={(event) => {
+                event.stopPropagation()
+                event.dataTransfer.effectAllowed = 'move'
+                event.dataTransfer.setData('text/plain', session.id)
+                onDragStart()
+              }}
+              onDragEnd={(event) => {
+                event.stopPropagation()
+                onDragEnd()
+              }}
+              className="shrink-0 cursor-grab rounded text-fg-subtle hover:text-fg active:cursor-grabbing disabled:cursor-default disabled:opacity-50"
+            >
+              <GripVertical className="h-3.5 w-3.5" />
+            </button>
             <StatusDot indicator={indicator} />
 
             <div className="min-w-0 flex-1">
@@ -485,6 +539,11 @@ function SessionRow({ session, status, chat, tuiStatus, selected, onSelect }: Se
   )
 }
 
+interface SessionDropTarget {
+  sessionId: string
+  position: 'before' | 'after'
+}
+
 interface ProjectGroupProps {
   project: Project
   sessions: Session[]
@@ -508,10 +567,95 @@ function ProjectGroup({
 }: ProjectGroupProps): JSX.Element {
   const renameProject = useWorkspace((state) => state.renameProject)
   const removeProject = useWorkspace((state) => state.removeProject)
+  const reorderSession = useWorkspace((state) => state.reorderSession)
   const [collapsed, setCollapsed] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState(project.name)
   const [confirmingRemove, setConfirmingRemove] = useState(false)
+  const [draggingSessionId, setDraggingSessionId] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<SessionDropTarget | null>(null)
+  const [reordering, setReordering] = useState(false)
+
+  const resetDragState = (): void => {
+    setDraggingSessionId(null)
+    setDropTarget(null)
+  }
+
+  const handleDragStart = (sessionId: string): void => {
+    if (reordering) return
+    setDraggingSessionId(sessionId)
+    setDropTarget(null)
+  }
+
+  const handleDragEnd = (): void => {
+    resetDragState()
+  }
+
+  const handleDragOver = (event: ReactDragEvent<HTMLDivElement>, sessionId: string): void => {
+    if (!draggingSessionId || reordering || sessionId === draggingSessionId) {
+      if (sessionId === draggingSessionId) setDropTarget(null)
+      return
+    }
+
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    const rect = event.currentTarget.getBoundingClientRect()
+    const position = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
+    setDropTarget((current) =>
+      current?.sessionId === sessionId && current.position === position
+        ? current
+        : { sessionId, position }
+    )
+  }
+
+  const commitDrop = async (
+    sourceId: string,
+    targetId: string,
+    position: 'before' | 'after'
+  ): Promise<void> => {
+    const source = sessions.find((session) => session.id === sourceId)
+    const remaining = sessions.filter((session) => session.id !== sourceId)
+    const targetIndex = remaining.findIndex((session) => session.id === targetId)
+    if (!source || targetIndex < 0) {
+      resetDragState()
+      return
+    }
+
+    const insertionIndex = position === 'before' ? targetIndex : targetIndex + 1
+    const beforeId = remaining[insertionIndex]?.id ?? null
+    const nextOrder = [...remaining]
+    nextOrder.splice(insertionIndex, 0, source)
+    if (nextOrder.every((session, index) => session.id === sessions[index]?.id)) {
+      resetDragState()
+      return
+    }
+
+    setReordering(true)
+    resetDragState()
+    try {
+      await reorderSession(sourceId, beforeId)
+    } finally {
+      setReordering(false)
+    }
+  }
+
+  const handleDrop = (event: ReactDragEvent<HTMLDivElement>, targetId: string): void => {
+    event.preventDefault()
+    if (reordering) {
+      resetDragState()
+      return
+    }
+
+    const sourceId = draggingSessionId ?? event.dataTransfer.getData('text/plain')
+    if (!sourceId || sourceId === targetId) {
+      resetDragState()
+      return
+    }
+
+    const rect = event.currentTarget.getBoundingClientRect()
+    const position = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
+    void commitDrop(sourceId, targetId, position)
+  }
 
   const commitRename = (): void => {
     setRenaming(false)
@@ -600,6 +744,15 @@ function ProjectGroup({
             tuiStatus={opencodeTuiStatuses[session.id]}
             selected={session.id === selectedSessionId}
             onSelect={() => onSelectSession(session.id)}
+            dragging={session.id === draggingSessionId}
+            dragDisabled={reordering}
+            dropPosition={
+              dropTarget?.sessionId === session.id ? dropTarget.position : null
+            }
+            onDragStart={() => handleDragStart(session.id)}
+            onDragEnd={handleDragEnd}
+            onDragOver={(event) => handleDragOver(event, session.id)}
+            onDrop={(event) => handleDrop(event, session.id)}
           />
         ))}
 

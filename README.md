@@ -88,9 +88,10 @@ element rather than disposing it, so the process, its scrollback and its cursor 
 survive. The PTY itself lives in the main process and is never touched by a session switch —
 only by removing the session/project, restarting explicitly, or quitting.
 
-The workspace is stored as `workspace.json` with separate `projects` and `sessions` arrays. This
-early POC intentionally starts with an empty workspace if only the previous flat project store is
-present; no migration is attempted.
+The workspace is stored as `workspace.json` with separate `projects` and `sessions` arrays. Session
+array order is the persistent sidebar order within each project. This early POC intentionally
+starts with an empty workspace if only the previous flat project store is present; no migration is
+attempted.
 
 Terminal clipboard shortcuts use the host Windows clipboard, including for WSL sessions. `Ctrl+C`
 copies selected terminal text and remains the normal interrupt when there is no selection;

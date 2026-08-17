@@ -31,7 +31,8 @@ describe('renderer workspace event bridge', () => {
         path: '/workspace/app',
         createdAt: '2026-01-01T00:00:00.000Z',
         ...patch
-      }))
+      })),
+      reorder: vi.fn()
     },
     pty: {
       statuses: vi.fn(async () => ({})),
@@ -96,6 +97,7 @@ describe('renderer workspace event bridge', () => {
     api.sessions.create.mockReset()
     api.sessions.duplicate.mockReset()
     api.sessions.update.mockClear()
+    api.sessions.reorder.mockReset()
     api.opencode.send.mockReset()
     api.opencode.executeCommand.mockReset()
     api.opencode.listSessions.mockReset()
@@ -229,6 +231,47 @@ describe('renderer workspace event bridge', () => {
       patch: { color: 'teal' }
     })
     expect(useWorkspace.getState().sessions[0]).toMatchObject({ id: 'session-1', color: 'teal' })
+  })
+
+  it('persists and applies a reordered session list without changing selection', async () => {
+    const first: Session = {
+      id: 'session-1',
+      projectId: 'project-1',
+      name: 'First',
+      mode: 'terminal',
+      kind: 'native',
+      path: '/workspace/first',
+      createdAt: '2026-01-01T00:00:00.000Z'
+    }
+    const second: Session = { ...first, id: 'session-2', name: 'Second' }
+    const otherProject: Session = { ...first, id: 'session-3', projectId: 'project-2', name: 'Other' }
+    const reordered = [second, otherProject, first]
+    useWorkspace.setState({ sessions: [first, second, otherProject], selectedSessionId: first.id })
+    api.sessions.reorder.mockResolvedValue(reordered)
+
+    await useWorkspace.getState().reorderSession(first.id, second.id)
+
+    expect(api.sessions.reorder).toHaveBeenCalledWith({ id: first.id, beforeId: second.id })
+    expect(useWorkspace.getState().sessions).toEqual(reordered)
+    expect(useWorkspace.getState().selectedSessionId).toBe(first.id)
+  })
+
+  it('leaves the session list unchanged when reorder is rejected', async () => {
+    const session: Session = {
+      id: 'session-1',
+      projectId: 'project-1',
+      name: 'App',
+      mode: 'terminal',
+      kind: 'native',
+      path: '/workspace/app',
+      createdAt: '2026-01-01T00:00:00.000Z'
+    }
+    useWorkspace.setState({ sessions: [session] })
+    api.sessions.reorder.mockResolvedValue(null)
+
+    await useWorkspace.getState().reorderSession(session.id, null)
+
+    expect(useWorkspace.getState().sessions).toEqual([session])
   })
 
   it('keeps session colors unchanged when OpenCode status events arrive', () => {
