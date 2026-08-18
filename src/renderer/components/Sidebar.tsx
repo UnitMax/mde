@@ -798,69 +798,67 @@ export function Sidebar({ onNewProject, onNewSession, onAbout }: SidebarProps): 
 
   if (collapsed) {
     return (
-      <aside className="flex w-11 shrink-0 flex-col items-center border-r border-line bg-panel py-2">
+      <aside className="flex h-full min-h-0 w-11 shrink-0 flex-col items-center overflow-hidden border-r border-line bg-panel py-2">
         <Button variant="ghost" size="icon" onClick={toggleSidebar} title="Expand sidebar">
           <PanelLeftOpen className="h-4 w-4" />
         </Button>
-        <div className="mt-2 flex w-full flex-col items-center gap-1 overflow-y-auto">
-          {projects.map((project) => {
-            const projectSessions = sessions.filter((session) => session.projectId === project.id)
-            return projectSessions.length > 0 ? (
-              projectSessions.map((session) => {
-                const indicator = sessionIndicator(
-                  statuses[session.id] ?? 'none',
-                  opencodeChats[session.id],
-                  opencodeTuiStatuses[session.id]
-                )
-                const customColor = customSessionColor(session.color)
-                return (
-                  <button
-                    key={session.id}
-                    type="button"
-                    onClick={() => selectSession(session.id)}
-                    title={`${project.name} · ${session.name} · ${session.mode === 'terminal' ? 'Terminal' : 'GUI'}`}
-                    className={cn(
-                      'relative flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase',
-                      customColor
-                        ? cn(
-                            'text-fg transition-[filter] hover:brightness-110',
-                            customSessionStatusRing(indicator.status)
-                          )
-                        : session.id === selectedSessionId
+        <div className="mt-2 min-h-0 w-full flex-1 overflow-y-auto">
+          <div className="flex flex-col items-center gap-1">
+            {projects.map((project) => {
+              const projectSessions = sessions.filter((session) => session.projectId === project.id)
+              return projectSessions.length > 0 ? (
+                projectSessions.map((session) => {
+                  const indicator = sessionIndicator(
+                    statuses[session.id] ?? 'none',
+                    opencodeChats[session.id],
+                    opencodeTuiStatuses[session.id]
+                  )
+                  const customColor = customSessionColor(session.color)
+                  return (
+                    <button
+                      key={session.id}
+                      type="button"
+                      onClick={() => selectSession(session.id)}
+                      title={`${project.name} · ${session.name} · ${session.mode === 'terminal' ? 'Terminal' : 'GUI'}`}
+                      className={cn(
+                        'relative flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase',
+                        customColor
                           ? cn(
-                              'bg-active text-fg',
-                              indicator.status === 'attention' && 'ring-1 ring-accent/60'
+                              'text-fg transition-[filter] hover:brightness-110',
+                              customSessionStatusRing(indicator.status)
                             )
-                          : cn('text-fg-muted hover:bg-hover hover:text-fg', indicator.row)
-                    )}
-                    style={sessionBackgroundStyle(session.color, indicator)}
-                  >
-                    {session.name.slice(0, 2)}
-                    <SessionModeIcon
-                      mode={session.mode}
-                      className="absolute -left-0.5 -top-0.5 h-3 w-3 rounded-sm bg-panel"
-                    />
-                    <StatusDot
-                      indicator={indicator}
-                      className="absolute -bottom-0.5 right-0.5 ring-2 ring-panel"
-                    />
-                  </button>
-                )
-              })
-            ) : (
-              <button
-                key={project.id}
-                type="button"
-                onClick={() => onNewSession(project.id)}
-                title={`${project.name} · New session`}
-                className="flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase text-fg-muted hover:bg-hover hover:text-fg"
-              >
-                {project.name.slice(0, 2)}
-              </button>
-            )
-          })}
+                          : session.id === selectedSessionId
+                            ? cn(
+                                'bg-active text-fg',
+                                indicator.status === 'attention' && 'ring-1 ring-accent/60'
+                              )
+                            : cn('text-fg-muted hover:bg-hover hover:text-fg', indicator.row)
+                      )}
+                      style={sessionBackgroundStyle(session.color, indicator)}
+                    >
+                      {session.name.slice(0, 2)}
+                      <StatusDot
+                        indicator={indicator}
+                        className="absolute -bottom-0.5 right-0.5 ring-2 ring-panel"
+                      />
+                    </button>
+                  )
+                })
+              ) : (
+                <button
+                  key={project.id}
+                  type="button"
+                  onClick={() => onNewSession(project.id)}
+                  title={`${project.name} · New session`}
+                  className="flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase text-fg-muted hover:bg-hover hover:text-fg"
+                >
+                  {project.name.slice(0, 2)}
+                </button>
+              )
+            })}
+          </div>
         </div>
-        <div className="mt-auto flex flex-col gap-1">
+        <div className="mt-auto flex shrink-0 flex-col gap-1">
           <Button variant="ghost" size="icon" onClick={() => onNewSession()} title="New session">
             <Plus className="h-4 w-4" />
           </Button>
