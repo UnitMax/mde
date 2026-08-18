@@ -512,8 +512,19 @@ function tokenRatePluginStatusLabel(state: OpenCodeTokenRatePluginState | undefi
   return 'Not installed'
 }
 
+type TerminalSettingsSection = 'cosmetic' | 'alerts' | 'tui' | 'token-rate'
+
+const TERMINAL_SETTINGS_SECTIONS: Array<{ id: TerminalSettingsSection; label: string }> = [
+  { id: 'cosmetic', label: 'Cosmetic' },
+  { id: 'alerts', label: 'OpenCode alerts' },
+  { id: 'tui', label: 'OpenCode TUI plugin' },
+  { id: 'token-rate', label: 'OpenCode token rate' }
+]
+
 function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Element {
   const [open, setOpen] = useState(false)
+  const [activeSection, setActiveSection] = useState<TerminalSettingsSection>('cosmetic')
+  const sectionButtonRefs = useRef<Array<HTMLButtonElement | null>>([])
   const [settings, setSettings] = useState<TerminalSettings>(() => getTerminalSettings())
   const [availableFonts] = useState(() => listTerminalFonts())
   const platform = useWorkspace((state) => state.platform)
@@ -543,6 +554,47 @@ function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JS
     platform?.platform === 'linux'
       ? [{ kind: 'native' }]
       : distros.map((distro) => ({ kind: 'wsl', distro: distro.name }))
+
+  useEffect(() => {
+    if (open) setActiveSection('cosmetic')
+  }, [open])
+
+  const selectSection = (section: TerminalSettingsSection): void => {
+    setActiveSection(section)
+  }
+
+  const moveSection = (currentIndex: number, delta: number): void => {
+    const nextIndex = (currentIndex + delta + TERMINAL_SETTINGS_SECTIONS.length) % TERMINAL_SETTINGS_SECTIONS.length
+    const nextSection = TERMINAL_SETTINGS_SECTIONS[nextIndex]
+    if (!nextSection) return
+    setActiveSection(nextSection.id)
+    sectionButtonRefs.current[nextIndex]?.focus()
+  }
+
+  const handleSectionKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number): void => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+      event.preventDefault()
+      moveSection(index, 1)
+    } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+      event.preventDefault()
+      moveSection(index, -1)
+    } else if (event.key === 'Home') {
+      event.preventDefault()
+      const firstSection = TERMINAL_SETTINGS_SECTIONS[0]
+      if (firstSection) {
+        setActiveSection(firstSection.id)
+        sectionButtonRefs.current[0]?.focus()
+      }
+    } else if (event.key === 'End') {
+      event.preventDefault()
+      const lastIndex = TERMINAL_SETTINGS_SECTIONS.length - 1
+      const lastSection = TERMINAL_SETTINGS_SECTIONS[lastIndex]
+      if (lastSection) {
+        setActiveSection(lastSection.id)
+        sectionButtonRefs.current[lastIndex]?.focus()
+      }
+    }
+  }
 
   useEffect(() => {
     if (open && canManageTui) void refreshDistros()
@@ -727,7 +779,7 @@ function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JS
         Terminal settings
       </button>
 
-      <DialogContent className="max-w-lg">
+      <DialogContent className="flex max-h-[85vh] max-w-3xl flex-col">
         <DialogHeader>
           <DialogTitle>Terminal settings</DialogTitle>
           <DialogDescription>
@@ -735,296 +787,346 @@ function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JS
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-5">
-          <section className="space-y-3" aria-labelledby="terminal-cosmetic-settings">
-            <h3 id="terminal-cosmetic-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
-              Cosmetic
-            </h3>
-            <div className="space-y-4">
-              <label className="block text-xs font-medium text-fg-muted">
-                Color scheme
-                <Select
-                  value={settings.theme}
-                  onValueChange={(value) => {
-                    const theme = TERMINAL_THEMES.find((option) => option.id === value)
-                    if (theme) updateSettings({ theme: theme.id })
-                  }}
-                >
-                  <SelectTrigger className="mt-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TERMINAL_THEMES.map((option) => (
-                      <SelectItem key={option.id} value={option.id}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </label>
-
-              <label className="block text-xs font-medium text-fg-muted">
-                Font family
-                <Select value={settings.family} onValueChange={(family) => updateSettings({ family })}>
-                  <SelectTrigger className="mt-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableFonts.map((font) => (
-                      <SelectItem key={font.family} value={font.family}>
-                        {font.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </label>
-
-              <label className="block text-xs font-medium text-fg-muted">
-                Font size
-                <Select
-                  value={String(settings.size)}
-                  onValueChange={(value) => {
-                    const size = TERMINAL_FONT_SIZES.find((candidate) => String(candidate) === value)
-                    if (size !== undefined) updateSettings({ size })
-                  }}
-                >
-                  <SelectTrigger className="mt-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TERMINAL_FONT_SIZES.map((size) => (
-                      <SelectItem key={size} value={String(size)}>
-                        {size}px
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </label>
-
-              <label className="block text-xs font-medium text-fg-muted">
-                Line height
-                <Select
-                  value={String(settings.lineHeight)}
-                  onValueChange={(value) => {
-                    const lineHeight = TERMINAL_LINE_HEIGHTS.find(
-                      (candidate) => String(candidate) === value
-                    )
-                    if (lineHeight !== undefined) updateSettings({ lineHeight })
-                  }}
-                >
-                  <SelectTrigger className="mt-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TERMINAL_LINE_HEIGHTS.map((lineHeight) => (
-                      <SelectItem key={lineHeight} value={String(lineHeight)}>
-                        {lineHeight.toFixed(1)}×
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </label>
-            </div>
-          </section>
-
-          <section className="space-y-3 border-t border-line pt-4" aria-labelledby="opencode-alert-settings">
-            <div>
-              <h3 id="opencode-alert-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
-                OpenCode alerts
-              </h3>
-              <p className="mt-1 text-xs text-fg-subtle">
-                Flash the taskbar and play a sound when OpenCode finishes, needs input, or encounters an error while MDE is unfocused.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              role="switch"
-              aria-checked={alertSettings.enabled}
-              data-testid="opencode-alerts-enabled"
-              disabled={alertLoading}
-              onClick={() => void setAlertsEnabled()}
-              className="flex w-full items-center justify-between rounded border border-line bg-panel px-3 py-2 text-left text-xs text-fg-muted hover:bg-hover disabled:pointer-events-none disabled:opacity-50"
+        <div className="grid min-h-0 flex-1 grid-cols-[10rem_minmax(0,1fr)] gap-5 overflow-hidden">
+          <div className="min-w-0 border-r border-line pr-3">
+            <div
+              role="tablist"
+              aria-label="Terminal settings sections"
+              aria-orientation="vertical"
+              className="flex flex-col gap-1"
             >
-              <span>
-                <span className="block font-medium text-fg">Enable OpenCode alerts</span>
-                <span className="mt-0.5 block text-fg-subtle">
-                  {alertSettings.enabled ? 'Alerts are enabled.' : 'Alerts are disabled.'}
-                </span>
-              </span>
-              <span
-                className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
-                  alertSettings.enabled ? 'bg-accent' : 'bg-line-strong'
-                }`}
-              >
-                <span
-                  className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-                    alertSettings.enabled ? 'translate-x-4' : 'translate-x-0.5'
-                  }`}
-                />
-              </span>
-            </button>
-            {alertError && <p className="text-xs text-danger">{alertError}</p>}
-          </section>
-
-          <section className="space-y-3 border-t border-line pt-4" aria-labelledby="opencode-tui-settings">
-            <div>
-              <h3 id="opencode-tui-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
-                OpenCode TUI plugin
-              </h3>
-              <p className="mt-1 text-xs text-fg-subtle">
-                Install the plugin per WSL distro. Status reporting is controlled globally.
-              </p>
+              {TERMINAL_SETTINGS_SECTIONS.map((section, index) => {
+                const active = activeSection === section.id
+                return (
+                  <button
+                    key={section.id}
+                    ref={(element) => {
+                      sectionButtonRefs.current[index] = element
+                    }}
+                    type="button"
+                    id={`terminal-settings-tab-${section.id}`}
+                    role="tab"
+                    aria-selected={active}
+                    aria-controls="terminal-settings-panel"
+                    tabIndex={active ? 0 : -1}
+                    onClick={() => selectSection(section.id)}
+                    onKeyDown={(event) => handleSectionKeyDown(event, index)}
+                    className={`w-full rounded px-3 py-2 text-left text-xs font-medium transition-colors ${
+                      active ? 'bg-active text-fg' : 'text-fg-muted hover:bg-hover hover:text-fg'
+                    }`}
+                  >
+                    {section.label}
+                  </button>
+                )
+              })}
             </div>
+          </div>
 
-            {!canManageTui ? (
-              <p className="rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
-                This integration is available only on Windows with WSL 2.
-              </p>
-            ) : (
-              <>
+          <div
+            id="terminal-settings-panel"
+            role="tabpanel"
+            aria-labelledby={`terminal-settings-tab-${activeSection}`}
+            tabIndex={0}
+            className="min-w-0 min-h-0 overflow-y-auto pr-1"
+          >
+            {activeSection === 'cosmetic' && (
+              <section className="space-y-3" aria-labelledby="terminal-cosmetic-settings">
+                <h3 id="terminal-cosmetic-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
+                  Cosmetic
+                </h3>
+                <div className="space-y-4">
+                  <label className="block text-xs font-medium text-fg-muted">
+                    Color scheme
+                    <Select
+                      value={settings.theme}
+                      onValueChange={(value) => {
+                        const theme = TERMINAL_THEMES.find((option) => option.id === value)
+                        if (theme) updateSettings({ theme: theme.id })
+                      }}
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {TERMINAL_THEMES.map((option) => (
+                          <SelectItem key={option.id} value={option.id}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </label>
+
+                  <label className="block text-xs font-medium text-fg-muted">
+                    Font family
+                    <Select value={settings.family} onValueChange={(family) => updateSettings({ family })}>
+                      <SelectTrigger className="mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableFonts.map((font) => (
+                          <SelectItem key={font.family} value={font.family}>
+                            {font.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </label>
+
+                  <label className="block text-xs font-medium text-fg-muted">
+                    Font size
+                    <Select
+                      value={String(settings.size)}
+                      onValueChange={(value) => {
+                        const size = TERMINAL_FONT_SIZES.find((candidate) => String(candidate) === value)
+                        if (size !== undefined) updateSettings({ size })
+                      }}
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {TERMINAL_FONT_SIZES.map((size) => (
+                          <SelectItem key={size} value={String(size)}>
+                            {size}px
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </label>
+
+                  <label className="block text-xs font-medium text-fg-muted">
+                    Line height
+                    <Select
+                      value={String(settings.lineHeight)}
+                      onValueChange={(value) => {
+                        const lineHeight = TERMINAL_LINE_HEIGHTS.find(
+                          (candidate) => String(candidate) === value
+                        )
+                        if (lineHeight !== undefined) updateSettings({ lineHeight })
+                      }}
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {TERMINAL_LINE_HEIGHTS.map((lineHeight) => (
+                          <SelectItem key={lineHeight} value={String(lineHeight)}>
+                            {lineHeight.toFixed(1)}×
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </label>
+                </div>
+              </section>
+            )}
+
+            {activeSection === 'alerts' && (
+              <section className="space-y-3" aria-labelledby="opencode-alert-settings">
+                <div>
+                  <h3 id="opencode-alert-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
+                    OpenCode alerts
+                  </h3>
+                  <p className="mt-1 text-xs text-fg-subtle">
+                    Flash the taskbar and play a sound when OpenCode finishes, needs input, or encounters an error while MDE is unfocused.
+                  </p>
+                </div>
+
                 <button
                   type="button"
                   role="switch"
-                  aria-checked={tuiSettings.enabled}
-                  data-testid="opencode-tui-enabled"
-                  disabled={tuiLoading || !tuiSettings.currentPluginVersion}
-                  onClick={() => void setTuiEnabled()}
+                  aria-checked={alertSettings.enabled}
+                  data-testid="opencode-alerts-enabled"
+                  disabled={alertLoading}
+                  onClick={() => void setAlertsEnabled()}
                   className="flex w-full items-center justify-between rounded border border-line bg-panel px-3 py-2 text-left text-xs text-fg-muted hover:bg-hover disabled:pointer-events-none disabled:opacity-50"
                 >
                   <span>
-                    <span className="block font-medium text-fg">Enable status reporting</span>
+                    <span className="block font-medium text-fg">Enable OpenCode alerts</span>
                     <span className="mt-0.5 block text-fg-subtle">
-                      {tuiSettings.enabled
-                        ? 'New and restarted terminals will report OpenCode TUI status.'
-                        : 'Status reporting is disabled until you enable it.'}
+                      {alertSettings.enabled ? 'Alerts are enabled.' : 'Alerts are disabled.'}
                     </span>
                   </span>
                   <span
                     className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
-                      tuiSettings.enabled ? 'bg-accent' : 'bg-line-strong'
+                      alertSettings.enabled ? 'bg-accent' : 'bg-line-strong'
                     }`}
                   >
                     <span
                       className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-                        tuiSettings.enabled ? 'translate-x-4' : 'translate-x-0.5'
+                        alertSettings.enabled ? 'translate-x-4' : 'translate-x-0.5'
                       }`}
                     />
                   </span>
                 </button>
+                {alertError && <p className="text-xs text-danger">{alertError}</p>}
+              </section>
+            )}
 
-                <div className="space-y-2">
-                  {distros.length === 0 ? (
-                    <p className="text-xs text-fg-subtle">No WSL 2 distros found.</p>
-                  ) : (
-                    distros.map((distro) => {
-                      const state = pluginStates[distro.name]
-                      const busy = tuiBusyDistro === distro.name
+            {activeSection === 'tui' && (
+              <section className="space-y-3" aria-labelledby="opencode-tui-settings">
+                <div>
+                  <h3 id="opencode-tui-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
+                    OpenCode TUI plugin
+                  </h3>
+                  <p className="mt-1 text-xs text-fg-subtle">
+                    Install the plugin per WSL distro. Status reporting is controlled globally.
+                  </p>
+                </div>
+
+                {!canManageTui ? (
+                  <p className="rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
+                    This integration is available only on Windows with WSL 2.
+                  </p>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={tuiSettings.enabled}
+                      data-testid="opencode-tui-enabled"
+                      disabled={tuiLoading || !tuiSettings.currentPluginVersion}
+                      onClick={() => void setTuiEnabled()}
+                      className="flex w-full items-center justify-between rounded border border-line bg-panel px-3 py-2 text-left text-xs text-fg-muted hover:bg-hover disabled:pointer-events-none disabled:opacity-50"
+                    >
+                      <span>
+                        <span className="block font-medium text-fg">Enable status reporting</span>
+                        <span className="mt-0.5 block text-fg-subtle">
+                          {tuiSettings.enabled
+                            ? 'New and restarted terminals will report OpenCode TUI status.'
+                            : 'Status reporting is disabled until you enable it.'}
+                        </span>
+                      </span>
+                      <span
+                        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+                          tuiSettings.enabled ? 'bg-accent' : 'bg-line-strong'
+                        }`}
+                      >
+                        <span
+                          className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+                            tuiSettings.enabled ? 'translate-x-4' : 'translate-x-0.5'
+                          }`}
+                        />
+                      </span>
+                    </button>
+
+                    <div className="space-y-2">
+                      {distros.length === 0 ? (
+                        <p className="text-xs text-fg-subtle">No WSL 2 distros found.</p>
+                      ) : (
+                        distros.map((distro) => {
+                          const state = pluginStates[distro.name]
+                          const busy = tuiBusyDistro === distro.name
+                          const action = state?.status === 'installed' ? 'remove' : 'install'
+                          const actionLabel =
+                            state?.status === 'outdated'
+                              ? 'Replace'
+                              : state?.status === 'installed'
+                                ? 'Uninstall'
+                                : state?.status === 'conflict'
+                                  ? 'Unavailable'
+                                  : 'Install'
+                          return (
+                            <div
+                              key={distro.name}
+                              className="flex items-center gap-3 rounded border border-line bg-panel px-3 py-2"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-xs font-medium text-fg">{distro.name}</div>
+                                <div className="truncate text-[11px] text-fg-subtle">
+                                  {distro.state} · {pluginStatusLabel(state)}
+                                </div>
+                              </div>
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                disabled={busy || state?.status === 'conflict' || !state}
+                                onClick={() => void changePlugin(distro.name, action)}
+                              >
+                                {busy ? 'Working…' : actionLabel}
+                              </Button>
+                            </div>
+                          )
+                        })
+                      )}
+                    </div>
+                    <p className="text-[11px] text-fg-subtle">
+                      Current plugin version: v{tuiSettings.currentPluginVersion || '…'}. Restart OpenCode after installing,
+                      replacing, or uninstalling the plugin.
+                    </p>
+                  </>
+                )}
+                {tuiError && <p className="text-xs text-danger">{tuiError}</p>}
+              </section>
+            )}
+
+            {activeSection === 'token-rate' && (
+              <section className="space-y-3" aria-labelledby="opencode-token-rate-settings">
+                <div>
+                  <h3 id="opencode-token-rate-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
+                    OpenCode token rate
+                  </h3>
+                  <p className="mt-1 text-xs text-fg-subtle">
+                    A separate TUI plugin shows live estimated and final provider-reported tokens per second beside the prompt.
+                    It is installed independently from status reporting and does not add a sidebar metric.
+                  </p>
+                </div>
+
+                {!canManageTokenRate ? (
+                  <p className="rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
+                    This integration is available on Linux and on Windows WSL 2 targets.
+                  </p>
+                ) : tokenRateTargets.length === 0 ? (
+                  <p className="text-xs text-fg-subtle">No WSL 2 distros found.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {tokenRateTargets.map((target) => {
+                      const key = tokenRateTargetKey(target)
+                      const state = tokenRateStates[key]
+                      const busy = tokenRateBusyTarget === key
+                      const blocked =
+                        state?.status === 'conflict' ||
+                        state?.status === 'unsupported' ||
+                        state?.status === 'unavailable' ||
+                        !state
                       const action = state?.status === 'installed' ? 'remove' : 'install'
                       const actionLabel =
                         state?.status === 'outdated'
                           ? 'Replace'
-                          : state?.status === 'installed'
-                            ? 'Uninstall'
-                            : state?.status === 'conflict'
-                              ? 'Unavailable'
+                          : state?.status === 'repair-needed'
+                            ? 'Repair'
+                            : state?.status === 'installed'
+                              ? 'Uninstall'
                               : 'Install'
                       return (
-                        <div
-                          key={distro.name}
-                          className="flex items-center gap-3 rounded border border-line bg-panel px-3 py-2"
-                        >
+                        <div key={key} className="flex items-center gap-3 rounded border border-line bg-panel px-3 py-2">
                           <div className="min-w-0 flex-1">
-                            <div className="truncate text-xs font-medium text-fg">{distro.name}</div>
+                            <div className="truncate text-xs font-medium text-fg">{tokenRateTargetLabel(target)}</div>
                             <div className="truncate text-[11px] text-fg-subtle">
-                              {distro.state} · {pluginStatusLabel(state)}
+                              {tokenRatePluginStatusLabel(state)}
                             </div>
                           </div>
                           <Button
                             variant="secondary"
                             size="sm"
-                            disabled={busy || state?.status === 'conflict' || !state}
-                            onClick={() => void changePlugin(distro.name, action)}
+                            disabled={busy || blocked || tokenRateLoading}
+                            onClick={() => void changeTokenRatePlugin(target, action)}
                           >
                             {busy ? 'Working…' : actionLabel}
                           </Button>
                         </div>
                       )
-                    })
-                  )}
-                </div>
+                    })}
+                  </div>
+                )}
                 <p className="text-[11px] text-fg-subtle">
-                  Current plugin version: v{tuiSettings.currentPluginVersion || '…'}. Restart OpenCode after installing,
-                  replacing, or uninstalling the plugin.
+                  Restart OpenCode after installing, replacing, or uninstalling. No token-rate fallback is emitted when this plugin is unavailable.
                 </p>
-              </>
+                {tokenRateError && <p className="text-xs text-danger">{tokenRateError}</p>}
+              </section>
             )}
-            {tuiError && <p className="text-xs text-danger">{tuiError}</p>}
-          </section>
-
-          <section className="space-y-3 border-t border-line pt-4" aria-labelledby="opencode-token-rate-settings">
-            <div>
-              <h3 id="opencode-token-rate-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
-                OpenCode token rate
-              </h3>
-              <p className="mt-1 text-xs text-fg-subtle">
-                A separate TUI plugin shows live estimated and final provider-reported tokens per second beside the prompt.
-                It is installed independently from status reporting and does not add a sidebar metric.
-              </p>
-            </div>
-
-            {!canManageTokenRate ? (
-              <p className="rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
-                This integration is available on Linux and on Windows WSL 2 targets.
-              </p>
-            ) : tokenRateTargets.length === 0 ? (
-              <p className="text-xs text-fg-subtle">No WSL 2 distros found.</p>
-            ) : (
-              <div className="space-y-2">
-                {tokenRateTargets.map((target) => {
-                  const key = tokenRateTargetKey(target)
-                  const state = tokenRateStates[key]
-                  const busy = tokenRateBusyTarget === key
-                  const blocked =
-                    state?.status === 'conflict' ||
-                    state?.status === 'unsupported' ||
-                    state?.status === 'unavailable' ||
-                    !state
-                  const action = state?.status === 'installed' ? 'remove' : 'install'
-                  const actionLabel =
-                    state?.status === 'outdated'
-                      ? 'Replace'
-                      : state?.status === 'repair-needed'
-                        ? 'Repair'
-                      : state?.status === 'installed'
-                        ? 'Uninstall'
-                        : 'Install'
-                  return (
-                    <div key={key} className="flex items-center gap-3 rounded border border-line bg-panel px-3 py-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-xs font-medium text-fg">{tokenRateTargetLabel(target)}</div>
-                        <div className="truncate text-[11px] text-fg-subtle">
-                          {tokenRatePluginStatusLabel(state)}
-                        </div>
-                      </div>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        disabled={busy || blocked || tokenRateLoading}
-                        onClick={() => void changeTokenRatePlugin(target, action)}
-                      >
-                        {busy ? 'Working…' : actionLabel}
-                      </Button>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-            <p className="text-[11px] text-fg-subtle">
-              Restart OpenCode after installing, replacing, or uninstalling. No token-rate fallback is emitted when this plugin is unavailable.
-            </p>
-            {tokenRateError && <p className="text-xs text-danger">{tokenRateError}</p>}
-          </section>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
