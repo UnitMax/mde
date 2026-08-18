@@ -779,7 +779,7 @@ function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JS
         Terminal settings
       </button>
 
-      <DialogContent className="flex max-h-[85vh] max-w-3xl flex-col">
+      <DialogContent animated={false} className="flex max-h-[85vh] max-w-3xl flex-col">
         <DialogHeader>
           <DialogTitle>Terminal settings</DialogTitle>
           <DialogDescription>
@@ -1514,7 +1514,7 @@ function ModelPicker({
         <span className="truncate">{loading ? 'Loading models…' : modelLabel(selected, models)}</span>
         <span className="text-fg-subtle">⌄</span>
       </button>
-      <DialogContent className="max-w-lg">
+      <DialogContent animated={false} className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Select an OpenCode model</DialogTitle>
           <DialogDescription>Choose the model used for future prompts in this conversation.</DialogDescription>

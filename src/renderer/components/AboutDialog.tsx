@@ -30,7 +30,7 @@ export function AboutDialog({ open, onOpenChange }: AboutDialogProps): JSX.Eleme
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] max-w-3xl flex-col">
+      <DialogContent animated={false} className="flex max-h-[85vh] max-w-3xl flex-col">
         <DialogHeader>
           <DialogTitle>{info?.name ?? 'MDE'}</DialogTitle>
           <DialogDescription>
