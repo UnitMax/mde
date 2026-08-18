@@ -2,6 +2,9 @@ export type ProjectKind = 'native' | 'wsl'
 
 export type SessionMode = 'terminal' | 'gui'
 
+/** Built-in OpenCode primary agents selectable from the GUI. */
+export type OpenCodeAgent = 'build' | 'plan'
+
 export type SessionColor =
   | 'default'
   | 'blue'
@@ -392,6 +395,7 @@ export interface SendOpenCodeMessageRequest {
   sessionId: string
   text: string
   model: OpenCodeModelSelection
+  agent: OpenCodeAgent
 }
 
 export interface SendOpenCodeMessageResponse {
@@ -480,6 +484,7 @@ export interface ListOpenCodeSessionsRequest {
 
 export interface CreateOpenCodeSessionRequest {
   sessionId: string
+  agent: OpenCodeAgent
 }
 
 export interface ListOpenCodeSessionsResponse {

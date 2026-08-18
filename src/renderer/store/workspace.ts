@@ -11,6 +11,7 @@ import type {
   OpenCodeGenerationState,
   OpenCodeGenerationStats,
   OpenCodeLiveChatItem,
+  OpenCodeAgent,
   OpenCodeModelOption,
   OpenCodeModelSelection,
   OpenCodeRevertState,
@@ -41,6 +42,7 @@ export interface OpenCodeChatState {
   availableSessions: OpenCodeSessionSummary[]
   availableModels: OpenCodeModelOption[]
   selectedModel: OpenCodeModelSelection | null
+  agent: OpenCodeAgent
   subagents: OpenCodeSubagent[]
   revert: OpenCodeRevertState | null
   undoSupported: boolean
@@ -71,6 +73,7 @@ const EMPTY_CHAT: OpenCodeChatState = {
   availableSessions: [],
   availableModels: [],
   selectedModel: null,
+  agent: 'build',
   subagents: [],
   revert: null,
   undoSupported: false,
@@ -373,6 +376,7 @@ interface WorkspaceState {
   ) => Promise<void>
   loadOpenCodeModels: (sessionId: string) => Promise<void>
   selectOpenCodeModel: (sessionId: string, model: OpenCodeModelSelection) => Promise<void>
+  selectOpenCodeAgent: (sessionId: string, agent: OpenCodeAgent) => void
   executeOpenCodeCommand: (sessionId: string, command: OpenCodeSlashCommand) => Promise<void>
   refreshOpenCodeSessionList: (sessionId: string) => Promise<void>
   loadOpenCodeSessions: (sessionId: string) => Promise<void>
@@ -712,6 +716,31 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     }
   },
 
+  selectOpenCodeAgent: (sessionId, agent) => {
+    if (agent !== 'build' && agent !== 'plan') return
+    const current = get().opencodeChats[sessionId]
+    if (
+      current?.pending ||
+      current?.externalBusy ||
+      current?.sessionsLoading ||
+      current?.modelsLoading ||
+      current?.liveItems.some((item) => item.role === 'question')
+    ) {
+      return
+    }
+
+    set((state) => {
+      const previous = state.opencodeChats[sessionId] ?? EMPTY_CHAT
+      if (previous.agent === agent) return state
+      return {
+        opencodeChats: {
+          ...state.opencodeChats,
+          [sessionId]: { ...previous, agent, error: null }
+        }
+      }
+    })
+  },
+
   refreshOpenCodeSessionList: async (sessionId) => {
     try {
       const result = await window.api.opencode.listSessions({ sessionId })
@@ -757,6 +786,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     const current = get().opencodeChats[sessionId]
     if (current?.pending || current?.externalBusy || current?.liveItems.some((item) => item.role === 'question')) return
     const selectedModel = current?.selectedModel
+    const agent = current?.agent ?? 'build'
     if (!selectedModel) {
       set((state) => ({
         opencodeChats: {
@@ -799,7 +829,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const { sessionId: openCodeSessionId, userMessageId, messages, contextUsage, generationStats } = await window.api.opencode.send({
         sessionId,
         text: prompt,
-        model: selectedModel
+        model: selectedModel,
+        agent
       })
       set((state) => {
         const current = state.opencodeChats[sessionId]
@@ -1211,7 +1242,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     })
 
     try {
-      const result = await window.api.opencode.createSession({ sessionId })
+      const result = await window.api.opencode.createSession({
+        sessionId,
+        agent: current?.agent ?? 'build'
+      })
       set((state) => {
         const previous = state.opencodeChats[sessionId] ?? EMPTY_CHAT
         return {

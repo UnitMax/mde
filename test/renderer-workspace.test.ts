@@ -341,6 +341,7 @@ describe('renderer workspace event bridge', () => {
           availableSessions: [],
           availableModels: [model],
           selectedModel: model,
+          agent: 'build',
           subagents: [],
           revert: null,
           undoSupported: true,
@@ -376,11 +377,12 @@ describe('renderer workspace event bridge', () => {
         })
     )
 
+    useWorkspace.getState().selectOpenCodeAgent('session-1', 'plan')
     const send = useWorkspace.getState().sendOpenCodeMessage('session-1', 'hello')
     await Promise.resolve()
     expect(streamListeners).toHaveLength(1)
     expect(useWorkspace.getState().opencodeChats['session-1']?.pending).toBe(true)
-    expect(api.opencode.send).toHaveBeenCalledWith({ sessionId: 'session-1', text: 'hello', model })
+    expect(api.opencode.send).toHaveBeenCalledWith({ sessionId: 'session-1', text: 'hello', model, agent: 'plan' })
 
     streamListeners[0]?.({
       sessionId: 'session-1',
@@ -626,6 +628,23 @@ describe('renderer workspace event bridge', () => {
     })
   })
 
+  it('switches OpenCode agents in renderer state without persisting the choice', () => {
+    useWorkspace.getState().selectOpenCodeAgent('session-1', 'plan')
+    expect(useWorkspace.getState().opencodeChats['session-1']?.agent).toBe('plan')
+    expect(api.sessions.update).not.toHaveBeenCalled()
+
+    useWorkspace.getState().selectOpenCodeAgent('session-1', 'build')
+    expect(useWorkspace.getState().opencodeChats['session-1']?.agent).toBe('build')
+
+    const current = useWorkspace.getState().opencodeChats['session-1']
+    if (!current) throw new Error('Expected an OpenCode chat state.')
+    useWorkspace.setState({
+      opencodeChats: { 'session-1': { ...current, pending: true } }
+    })
+    useWorkspace.getState().selectOpenCodeAgent('session-1', 'plan')
+    expect(useWorkspace.getState().opencodeChats['session-1']?.agent).toBe('build')
+  })
+
   it('loads, switches, and persists existing OpenCode conversations', async () => {
     const first: OpenCodeSessionSummary = {
       id: 'opencode-1',
@@ -710,6 +729,7 @@ describe('renderer workspace event bridge', () => {
     useWorkspace.setState({ opencodeChats: {} })
 
     await useWorkspace.getState().createOpenCodeSession('session-1')
+    expect(api.opencode.createSession).toHaveBeenCalledWith({ sessionId: 'session-1', agent: 'build' })
     expect(useWorkspace.getState().opencodeChats['session-1']).toMatchObject({
       openCodeSessionId: created.id,
       messages: [],
@@ -770,6 +790,7 @@ describe('renderer workspace event bridge', () => {
           availableSessions: [conversation],
           availableModels: [model],
           selectedModel: model,
+          agent: 'build',
           subagents: [],
           revert: null,
           undoSupported: false,
@@ -931,7 +952,8 @@ describe('renderer workspace event bridge', () => {
     expect(api.opencode.send).toHaveBeenCalledWith({
       sessionId: 'session-1',
       text: 'First prompt',
-      model: { providerID: 'cloud', modelID: 'model-a' }
+      model: { providerID: 'cloud', modelID: 'model-a' },
+      agent: 'build'
     })
     expect(api.sessions.update).toHaveBeenCalledWith({
       id: 'session-1',
@@ -984,6 +1006,7 @@ describe('renderer workspace event bridge', () => {
           availableSessions: [conversation],
           availableModels: [],
           selectedModel: null,
+          agent: 'build',
           subagents: [],
           revert: null,
           undoSupported: false,
@@ -1038,6 +1061,7 @@ describe('renderer workspace event bridge', () => {
           availableSessions: [conversation],
           availableModels: [],
           selectedModel: null,
+          agent: 'build',
           subagents: [],
           revert: null,
           undoSupported: true,
@@ -1094,6 +1118,7 @@ describe('renderer workspace event bridge', () => {
           availableSessions: [],
           availableModels: [model],
           selectedModel: model,
+          agent: 'build',
           subagents: [],
           revert: null,
           undoSupported: true,
@@ -1211,6 +1236,7 @@ describe('renderer workspace event bridge', () => {
           availableSessions: [],
           availableModels: [model],
           selectedModel: model,
+          agent: 'build',
           subagents: [],
           revert: null,
           undoSupported: true,

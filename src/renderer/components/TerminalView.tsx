@@ -25,6 +25,7 @@ import {
 import type {
   OpenCodeChatItem,
   OpenCodeContextUsage,
+  OpenCodeAgent,
   OpenCodeGenerationState,
   OpenCodeLiveChatItem,
   OpenCodeLivePermissionMessage,
@@ -1511,11 +1512,51 @@ function SubagentActivityPanel({ subagents }: { subagents: OpenCodeSubagent[] })
   )
 }
 
+function OpenCodeAgentToggle({
+  value,
+  disabled,
+  onChange
+}: {
+  value: OpenCodeAgent
+  disabled: boolean
+  onChange: (agent: OpenCodeAgent) => void
+}): JSX.Element {
+  return (
+    <div
+      role="group"
+      aria-label="OpenCode mode"
+      className="inline-flex shrink-0 items-center rounded-md border border-line bg-panel p-0.5"
+    >
+      {(['plan', 'build'] as const).map((agent) => {
+        const selected = agent === value
+        return (
+          <button
+            type="button"
+            key={agent}
+            aria-pressed={selected}
+            aria-label={agent === 'plan' ? 'Plan mode' : 'Build mode'}
+            title={agent === 'plan' ? 'Plan: analyze without making changes' : 'Build: make changes and run tools'}
+            data-testid={`opencode-agent-${agent}`}
+            disabled={disabled}
+            onClick={() => onChange(agent)}
+            className={`rounded px-2 py-1 text-[11px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40 ${
+              selected ? 'bg-active text-fg' : 'text-fg-muted hover:bg-hover hover:text-fg'
+            }`}
+          >
+            {agent === 'plan' ? 'Plan' : 'Build'}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function GuiView({ session }: { session: Session }): JSX.Element {
   const [draft, setDraft] = useState('')
   const [slashError, setSlashError] = useState<string | null>(null)
   const chat = useWorkspace((state) => state.opencodeChats[session.id])
   const sendOpenCodeMessage = useWorkspace((state) => state.sendOpenCodeMessage)
+  const selectOpenCodeAgent = useWorkspace((state) => state.selectOpenCodeAgent)
   const executeOpenCodeCommand = useWorkspace((state) => state.executeOpenCodeCommand)
   const loadOpenCodeModels = useWorkspace((state) => state.loadOpenCodeModels)
   const selectOpenCodeModel = useWorkspace((state) => state.selectOpenCodeModel)
@@ -1545,6 +1586,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
   const modelsLoading = chat?.modelsLoading ?? false
   const availableModels = chat?.availableModels ?? []
   const selectedModel = chat?.selectedModel ?? null
+  const agent = chat?.agent ?? 'build'
   const contextUsage = chat?.contextUsage ?? null
   const generation = chat?.generation ?? null
   const revert = chat?.revert ?? null
@@ -1554,6 +1596,8 @@ function GuiView({ session }: { session: Session }): JSX.Element {
   const externalBusy = chat?.externalBusy ?? false
   const latestTurnId = latestCompletedTurnId(messages)
   const assistantLabel = selectedModel ? modelLabel(selectedModel, availableModels) : 'OpenCode'
+  const agentToggleDisabled =
+    !openCodeSupported || pending || questionWaiting || externalBusy || sessionsLoading || modelsLoading
   const logRef = useRef<HTMLOListElement>(null)
   const slashDraft = slashCommandDraft(draft)
   const slashQuery = slashDraft && !slashDraft.hasArguments ? slashDraft.token.toLowerCase() : null
@@ -1816,6 +1860,11 @@ function GuiView({ session }: { session: Session }): JSX.Element {
 
           <div className="flex items-center justify-between gap-2 px-2 pb-2">
             <div className="flex min-w-0 items-center gap-1">
+              <OpenCodeAgentToggle
+                value={agent}
+                disabled={agentToggleDisabled}
+                onChange={(next) => selectOpenCodeAgent(session.id, next)}
+              />
               <Select
                 value={openCodeSessionId ?? NEW_CONVERSATION_VALUE}
                 onValueChange={selectConversation}

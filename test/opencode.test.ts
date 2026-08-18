@@ -106,8 +106,10 @@ describe('OpenCode GUI protocol helpers', () => {
     expect(isGitVcsResponse(null)).toBe(false)
   })
   it('uses the explicitly selected model and does not apply a production default', () => {
-    expect(createPromptBody('Reply only with pong', TEST_MODEL)).toEqual({
+    expect(createPromptBody('Reply only with pong', TEST_MODEL, 'build')).toEqual({
+      agent: 'build',
       model: { providerID: 'opencode', modelID: 'nemotron-3.5-lightning-free' },
+      system: 'MDE mode context: You are currently operating as the OpenCode build agent (Build mode). If asked which mode is active, answer Build mode.',
       parts: [{ type: 'text', text: 'Reply only with pong' }]
     })
     expect(
@@ -115,11 +117,163 @@ describe('OpenCode GUI protocol helpers', () => {
         providerID: 'anthropic',
         modelID: 'claude-sonnet',
         variant: 'high'
-      })
+      }, 'plan')
     ).toEqual({
+      agent: 'plan',
       model: { providerID: 'anthropic', modelID: 'claude-sonnet', variant: 'high' },
+      system: 'MDE mode context: You are currently operating as the OpenCode plan agent (Plan mode). If asked which mode is active, answer Plan mode.',
       parts: [{ type: 'text', text: 'Use the high effort variant' }]
     })
+  })
+
+  it('sends the selected OpenCode agent on a normal prompt', async () => {
+    const fetchMock = vi.fn(async (_input: unknown, init?: RequestInit) => {
+      if (init?.method === 'GET') {
+        return new Response(
+          JSON.stringify([
+            {
+              info: { id: 'assistant-1', parentID: 'user-1', role: 'assistant' },
+              parts: [{ id: 'assistant-part', type: 'text', text: 'Done.' }]
+            }
+          ]),
+          { status: 200 }
+        )
+      }
+      return new Response(
+        JSON.stringify({
+          info: { id: 'assistant-1', parentID: 'user-1' },
+          parts: [{ id: 'assistant-part', type: 'text', text: 'Done.' }]
+        }),
+        { status: 200 }
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const manager = new OpenCodeManager()
+    const runtimes = (manager as unknown as { runtimes: Map<string, unknown> }).runtimes
+    runtimes.set('native-1', {
+      url: 'http://127.0.0.1:43123',
+      openCodeSessionId: 'ses_1',
+      models: [{
+        key: 'opencode/nemotron-3.5-lightning-free',
+        providerID: TEST_MODEL.providerID,
+        providerName: 'OpenCode',
+        modelID: TEST_MODEL.modelID,
+        modelName: 'Nemotron'
+      }]
+    })
+
+    try {
+      await manager.send(nativeSession, 'Plan this change', TEST_MODEL, 'plan')
+      const [, request] = fetchMock.mock.calls[0] ?? []
+      expect(JSON.parse(String(request?.body))).toEqual({
+        agent: 'plan',
+        model: TEST_MODEL,
+        system: 'MDE mode context: You are currently operating as the OpenCode plan agent (Plan mode). If asked which mode is active, answer Plan mode.',
+        parts: [{ type: 'text', text: 'Plan this change' }]
+      })
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it.each(['build', 'plan'] as const)('initializes a lazy OpenCode session with the selected %s agent', async (agent) => {
+    const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
+      const url = new URL(String(input))
+      if (url.pathname === '/session') {
+        return new Response(
+          JSON.stringify({
+            id: 'ses_new',
+            title: 'Native app',
+            directory: nativeSession.path,
+            agent,
+            time: { created: 1, updated: 1 }
+          }),
+          { status: 200 }
+        )
+      }
+      if (init?.method === 'GET') {
+        return new Response(
+          JSON.stringify([
+            {
+              info: { id: 'assistant-1', parentID: 'user-1', role: 'assistant', agent },
+              parts: [{ id: 'assistant-part', type: 'text', text: 'Done.' }]
+            }
+          ]),
+          { status: 200 }
+        )
+      }
+      return new Response(
+        JSON.stringify({
+          info: { id: 'assistant-1', parentID: 'user-1', agent },
+          parts: [{ id: 'assistant-part', type: 'text', text: 'Done.' }]
+        }),
+        { status: 200 }
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const manager = new OpenCodeManager()
+    const runtimes = (manager as unknown as { runtimes: Map<string, unknown> }).runtimes
+    runtimes.set('native-1', {
+      url: 'http://127.0.0.1:43123',
+      openCodeSessionId: null,
+      models: [{
+        key: 'opencode/nemotron-3.5-lightning-free',
+        providerID: TEST_MODEL.providerID,
+        providerName: 'OpenCode',
+        modelID: TEST_MODEL.modelID,
+        modelName: 'Nemotron'
+      }]
+    })
+
+    try {
+      await manager.send(nativeSession, 'What mode are you in?', TEST_MODEL, agent)
+      const createRequest = fetchMock.mock.calls.find(([input]) => new URL(String(input)).pathname === '/session')?.[1]
+      const promptRequest = fetchMock.mock.calls.find(([input]) => new URL(String(input)).pathname.endsWith('/message'))?.[1]
+      expect(JSON.parse(String(createRequest?.body))).toEqual({ title: nativeSession.name, agent })
+      expect(JSON.parse(String(promptRequest?.body))).toMatchObject({
+        agent,
+        system: `MDE mode context: You are currently operating as the OpenCode ${agent} agent (${agent === 'plan' ? 'Plan' : 'Build'} mode). If asked which mode is active, answer ${agent === 'plan' ? 'Plan' : 'Build'} mode.`
+      })
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('reports when OpenCode ignores the selected agent', async () => {
+    const fetchMock = vi.fn(async (_input: unknown, init?: RequestInit) => {
+      if (init?.method === 'GET') {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      return new Response(
+        JSON.stringify({
+          info: { id: 'assistant-1', parentID: 'user-1', agent: 'plan' },
+          parts: [{ id: 'assistant-part', type: 'text', text: 'Done.' }]
+        }),
+        { status: 200 }
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const manager = new OpenCodeManager()
+    const runtimes = (manager as unknown as { runtimes: Map<string, unknown> }).runtimes
+    runtimes.set('native-1', {
+      url: 'http://127.0.0.1:43123',
+      openCodeSessionId: 'ses_1',
+      models: [{
+        key: 'opencode/nemotron-3.5-lightning-free',
+        providerID: TEST_MODEL.providerID,
+        providerName: 'OpenCode',
+        modelID: TEST_MODEL.modelID,
+        modelName: 'Nemotron'
+      }]
+    })
+
+    try {
+      await expect(manager.send(nativeSession, 'Build this change', TEST_MODEL, 'build')).rejects.toThrow(
+        'OpenCode used plan mode instead of the selected Build mode.'
+      )
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('builds the model body used by session compaction and initialization', () => {

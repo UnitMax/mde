@@ -197,7 +197,7 @@ export function registerIpcHandlers(
     async (req) => {
       const session = await getSession(req.sessionId)
       if (!session) throw new Error('Session no longer exists.')
-      return await opencodeManager.send(session, req.text, req.model)
+      return await opencodeManager.send(session, req.text, req.model, req.agent)
     }
   )
   handle<ExecuteOpenCodeCommandRequest, OpenCodeConversationResponse>(
@@ -237,7 +237,7 @@ export function registerIpcHandlers(
     async (req) => {
       const session = await getSession(req.sessionId)
       if (!session) throw new Error('Session no longer exists.')
-      return opencodeManager.createSession(session)
+      return opencodeManager.createSession(session, req.agent)
     }
   )
   handle<RevertOpenCodeMessageRequest, OpenCodeConversationResponse>(

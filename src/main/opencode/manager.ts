@@ -15,6 +15,7 @@ import type {
   OpenCodeSessionSummary,
   OpenCodeModelOption,
   OpenCodeModelSelection,
+  OpenCodeAgent,
   OpenCodeSlashCommand,
   OpenCodeSubagent,
   OpenCodeSubagentStatus,
@@ -544,6 +545,7 @@ interface OpenCodeSessionResponse {
   id: string
   title?: unknown
   directory?: unknown
+  agent?: unknown
   time?: unknown
   revert?: unknown
 }
@@ -564,6 +566,7 @@ interface OpenCodePromptResponse {
   info: {
     id: string
     parentID?: string
+    agent?: unknown
     providerID?: string
     modelID?: string
     tokens?: unknown
@@ -578,6 +581,7 @@ interface OpenCodeHistoryMessage {
     id: string
     parentID?: string
     role?: string
+    agent?: unknown
     providerID?: string
     modelID?: string
     tokens?: unknown
@@ -611,6 +615,28 @@ function assertOpenCodeSessionSupported(session: Session): void {
   if (!session.distro) {
     throw new Error(`WSL session "${session.name}" has no distro.`)
   }
+}
+
+function assertOpenCodeAgent(agent: OpenCodeAgent): void {
+  if (agent !== 'build' && agent !== 'plan') {
+    throw new Error('OpenCode agent must be build or plan.')
+  }
+}
+
+function openCodeAgentLabel(agent: OpenCodeAgent): string {
+  return agent === 'plan' ? 'Plan' : 'Build'
+}
+
+function assertOpenCodeAgentMatch(value: unknown, requested: OpenCodeAgent): void {
+  if (typeof value !== 'string' || value === requested) return
+  throw new Error(
+    `OpenCode used ${value} mode instead of the selected ${openCodeAgentLabel(requested)} mode.`
+  )
+}
+
+function openCodeModeSystemPrompt(agent: OpenCodeAgent): string {
+  const label = openCodeAgentLabel(agent)
+  return `MDE mode context: You are currently operating as the OpenCode ${agent} agent (${label} mode). If asked which mode is active, answer ${label} mode.`
 }
 
 function timestamp(value: unknown): string {
@@ -900,16 +926,21 @@ export function extractHistoryMessages(
   return messages
 }
 
-export function createPromptBody(text: string, model: OpenCodeModelSelection): {
+export function createPromptBody(text: string, model: OpenCodeModelSelection, agent: OpenCodeAgent): {
+  agent: OpenCodeAgent
   model: OpenCodeModelSelection
+  system: string
   parts: Array<{ type: 'text'; text: string }>
 } {
+  assertOpenCodeAgent(agent)
   return {
+    agent,
     model: {
       providerID: model.providerID,
       modelID: model.modelID,
       ...(model.variant ? { variant: model.variant } : {})
     },
+    system: openCodeModeSystemPrompt(agent),
     parts: [{ type: 'text', text }]
   }
 }
@@ -1157,6 +1188,16 @@ function terminationError(error: unknown): Error {
   return new Error(`Could not start OpenCode: ${errorMessage(error)}`)
 }
 
+class OpenCodeHttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string
+  ) {
+    super(message)
+    this.name = 'OpenCodeHttpError'
+  }
+}
+
 async function requestJson<T>(
   url: string,
   path: string,
@@ -1184,7 +1225,7 @@ async function requestJson<T>(
   const text = await response.text()
   if (!response.ok) {
     if (response.status === 409) throw new Error('OpenCode is busy. Wait until the current operation is idle and try again.')
-    throw new Error(`OpenCode request failed (${response.status}): ${clip(text)}`)
+    throw new OpenCodeHttpError(response.status, `OpenCode request failed (${response.status}): ${clip(text)}`)
   }
 
   if (!text.trim()) return undefined as T
@@ -1294,16 +1335,28 @@ export class OpenCodeManager {
     return this.loadConversation(runtime, openCodeSessionId, summary)
   }
 
-  async createSession(session: Session): Promise<OpenCodeConversationResponse> {
+  async createSession(session: Session, agent: OpenCodeAgent = 'build'): Promise<OpenCodeConversationResponse> {
     assertOpenCodeSessionSupported(session)
+    assertOpenCodeAgent(agent)
 
     const runtime = await this.ensureRuntime(session)
-    const created = await requestJson<OpenCodeSessionResponse>(
-      runtime.url,
-      '/session',
-      { title: session.name },
-      SERVER_START_TIMEOUT_MS
-    )
+    let created: OpenCodeSessionResponse
+    try {
+      created = await requestJson<OpenCodeSessionResponse>(
+        runtime.url,
+        '/session',
+        { title: session.name, agent },
+        SERVER_START_TIMEOUT_MS
+      )
+    } catch (error) {
+      if (!(error instanceof OpenCodeHttpError) || ![400, 422].includes(error.status)) throw error
+      created = await requestJson<OpenCodeSessionResponse>(
+        runtime.url,
+        '/session',
+        { title: session.name },
+        SERVER_START_TIMEOUT_MS
+      )
+    }
     if (!created.id) throw new Error('OpenCode did not create a session.')
 
     const summary = toSessionSummary(created)
@@ -1322,11 +1375,13 @@ export class OpenCodeManager {
   async send(
     session: Session,
     text: string,
-    model: OpenCodeModelSelection
+    model: OpenCodeModelSelection,
+    agent: OpenCodeAgent
   ): Promise<SendOpenCodeMessageResponse> {
     const prompt = text.trim()
     if (!prompt) throw new Error('Message cannot be empty.')
     assertOpenCodeSessionSupported(session)
+    assertOpenCodeAgent(agent)
     if (this.pending.has(session.id)) throw new Error('A message is already being sent for this session.')
 
     this.pending.add(session.id)
@@ -1338,7 +1393,7 @@ export class OpenCodeManager {
         throw new Error('That model is no longer available. Refresh the model list and select another model.')
       }
       if (!runtime.openCodeSessionId) {
-        await this.createSession(session)
+        await this.createSession(session, agent)
       }
       const openCodeSessionId = runtime.openCodeSessionId
       if (!openCodeSessionId) throw new Error('OpenCode conversation is not selected.')
@@ -1346,10 +1401,11 @@ export class OpenCodeManager {
       const response = await requestJson<OpenCodePromptResponse>(
         runtime.url,
         `/session/${encodeURIComponent(openCodeSessionId)}/message`,
-        createPromptBody(prompt, model),
+        createPromptBody(prompt, model, agent),
         REQUEST_TIMEOUT_MS
       )
 
+      assertOpenCodeAgentMatch(response.info.agent, agent)
       if (response.info.error) throw new Error(providerError(response.info.error))
       const reply = extractTextParts(response.parts)
       if (!reply) {
