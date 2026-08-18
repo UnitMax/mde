@@ -49,10 +49,12 @@ npm run build:linux       # AppImage + deb  -> dist/mde-<version>.AppImage, .deb
 
 Cross-building for Windows from Linux is not supported here; build it on Windows. If you develop
 in WSL, `npm run build:win:remote` automates this: it rsyncs the repo to `C:\dev\mde-winbuild`
-(preserving `node_modules` there between runs) and runs `npm ci && npm run build:win:portable`
-using the native Windows npm/node from WSL, so `node-pty` gets rebuilt with the Windows
-toolchain. Requires Node.js and Visual Studio Build Tools ("Desktop development with C++")
-installed on Windows first (see Requirements above).
+and runs the portable build using native Windows npm/node, so `node-pty` gets rebuilt with the
+Windows toolchain when dependencies change. The first build runs `npm ci`; later builds reuse the
+Windows `node_modules` directory until the dependency or native build inputs change. To force a
+clean dependency install, run `npm run build:win:remote -- --force-deps`. Requires Node.js and
+Visual Studio Build Tools ("Desktop development with C++") installed on Windows first (see
+Requirements above).
 
 ## Licensing
 
