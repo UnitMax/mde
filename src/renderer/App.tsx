@@ -14,6 +14,7 @@ import {
   createSessionTerminalLayout,
   defaultTerminalLayoutSizes,
   layoutForCount,
+  orderTerminalPanes,
   terminalCount,
   type SessionTerminalLayout,
   type TerminalLayout,
@@ -234,6 +235,18 @@ export function App(): JSX.Element {
     })
   }
 
+  const reorderTerminalPanes = (sessionId: string, terminalIds: readonly string[]): void => {
+    setTerminalLayouts((current) => {
+      const existing = current[sessionId]
+      if (!existing) return current
+
+      const panes = orderTerminalPanes(existing.panes, terminalIds)
+      if (!panes) return current
+
+      return { ...current, [sessionId]: { ...existing, panes } }
+    })
+  }
+
   const restartPrimary = (sessionId: string): void => {
     const existing = terminalLayoutsRef.current[sessionId] ?? createSessionTerminalLayout(sessionId)
     const primary = existing.panes.find((pane) => pane.primary)
@@ -289,6 +302,7 @@ export function App(): JSX.Element {
             terminalLayout={layoutForSession!}
             onLayoutChange={(layout) => changeTerminalLayout(selected.id, layout)}
             onLayoutResize={(axis, ratio) => resizeTerminalLayout(selected.id, axis, ratio)}
+            onPaneOrderChange={(terminalIds) => reorderTerminalPanes(selected.id, terminalIds)}
             onReduceLayout={(layout, paneIds) => reduceTerminalLayout(selected.id, layout, paneIds)}
             onClosePane={(terminalId) => closeTerminalPane(selected.id, terminalId)}
             onRestartPrimary={() => restartPrimary(selected.id)}

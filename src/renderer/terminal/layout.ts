@@ -148,3 +148,39 @@ export function panesToTrim(panes: readonly TerminalPaneState[], targetCount: nu
     .slice(0, excess)
     .map((pane) => pane.terminalId)
 }
+
+/** Swaps two panes by terminal ID without changing either pane's metadata. */
+export function swapTerminalPanes(
+  panes: readonly TerminalPaneState[],
+  sourceTerminalId: string,
+  targetTerminalId: string
+): TerminalPaneState[] {
+  const sourceIndex = panes.findIndex((pane) => pane.terminalId === sourceTerminalId)
+  const targetIndex = panes.findIndex((pane) => pane.terminalId === targetTerminalId)
+  const next = [...panes]
+
+  if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return next
+
+  const sourcePane = panes[sourceIndex]
+  const targetPane = panes[targetIndex]
+  if (!sourcePane || !targetPane) return next
+
+  next[sourceIndex] = targetPane
+  next[targetIndex] = sourcePane
+  return next
+}
+
+/** Rebuilds pane order from IDs, returning null for anything but a full permutation. */
+export function orderTerminalPanes(
+  panes: readonly TerminalPaneState[],
+  terminalIds: readonly string[]
+): TerminalPaneState[] | null {
+  if (terminalIds.length !== panes.length) return null
+
+  const panesById = new Map(panes.map((pane) => [pane.terminalId, pane]))
+  const ordered = terminalIds.map((terminalId) => panesById.get(terminalId))
+  if (ordered.some((pane) => pane === undefined)) return null
+  if (new Set(terminalIds).size !== panes.length) return null
+
+  return ordered as TerminalPaneState[]
+}

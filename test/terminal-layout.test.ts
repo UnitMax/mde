@@ -5,8 +5,10 @@ import {
   getTerminalLayoutShortcut,
   layoutClass,
   layoutForCount,
+  orderTerminalPanes,
   panesToTrim,
   paneClass,
+  swapTerminalPanes,
   terminalCount,
   terminalGridTemplates,
   terminalResizeHandles,
@@ -112,6 +114,39 @@ describe('terminal layouts', () => {
 
     expect(panesToTrim(panes, 2)).toEqual(['split-3', 'split-2'])
     expect(panesToTrim(panes, 1)).toEqual(['split-3', 'split-2', 'split-1'])
+  })
+
+  it('swaps pane positions while preserving pane metadata', () => {
+    const panes = [
+      { terminalId: 'primary', primary: true, exited: true },
+      { terminalId: 'split-1', primary: false },
+      { terminalId: 'split-2', primary: false, exited: true }
+    ]
+
+    expect(swapTerminalPanes(panes, 'primary', 'split-2')).toEqual([
+      panes[2],
+      panes[1],
+      panes[0]
+    ])
+    expect(panes).toEqual([
+      { terminalId: 'primary', primary: true, exited: true },
+      { terminalId: 'split-1', primary: false },
+      { terminalId: 'split-2', primary: false, exited: true }
+    ])
+    expect(swapTerminalPanes(panes, 'primary', 'primary')).toEqual(panes)
+    expect(swapTerminalPanes(panes, 'missing', 'split-1')).toEqual(panes)
+  })
+
+  it('accepts only complete pane-order permutations', () => {
+    const panes = [
+      { terminalId: 'primary', primary: true },
+      { terminalId: 'split-1', primary: false }
+    ]
+
+    expect(orderTerminalPanes(panes, ['split-1', 'primary'])).toEqual([panes[1], panes[0]])
+    expect(orderTerminalPanes(panes, ['primary'])).toBeNull()
+    expect(orderTerminalPanes(panes, ['primary', 'primary'])).toBeNull()
+    expect(orderTerminalPanes(panes, ['primary', 'missing'])).toBeNull()
   })
 
   it('starts every workspace session with one primary pane', () => {

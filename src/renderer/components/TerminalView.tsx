@@ -95,6 +95,7 @@ import {
   TERMINAL_LAYOUTS,
   terminalCount,
   getTerminalLayoutShortcut,
+  swapTerminalPanes,
   terminalResizeHandles,
   terminalSplitRatio,
   type SessionTerminalLayout,
@@ -113,6 +114,7 @@ interface TerminalViewProps {
   terminalLayout: SessionTerminalLayout
   onLayoutChange: (layout: TerminalLayout) => void
   onLayoutResize: (axis: TerminalResizeAxis, ratio: number) => void
+  onPaneOrderChange: (terminalIds: readonly string[]) => void
   onReduceLayout: (layout: TerminalLayout, paneIds: string[]) => void
   onClosePane: (terminalId: string) => void
   onRestartPrimary: () => void
@@ -213,11 +215,13 @@ function TerminalSurface({ session: sourceSession, pane }: TerminalSurfaceProps)
 function TerminalPane({
   session,
   pane,
-  onClose
+  onClose,
+  reorderState = 'none'
 }: {
   session: Session
   pane: TerminalPaneState
   onClose: () => void
+  reorderState?: 'none' | 'candidate' | 'active'
 }): JSX.Element {
   const clearExit = useWorkspace((state) => state.clearExit)
   const setStatus = useWorkspace((state) => state.setStatus)
@@ -236,8 +240,14 @@ function TerminalPane({
     if (pane.primary) setStatus(session.id, status)
   }
 
+  const borderClass = reorderState === 'active'
+    ? 'border-accent'
+    : reorderState === 'candidate'
+      ? 'border-accent/70'
+      : 'border-line'
+
   return (
-    <div className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden border border-line bg-bg">
+    <div className={`relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden border ${borderClass} bg-bg`}>
       <TerminalSurface session={session} pane={pane} />
       <div className="absolute right-2 top-2 z-10 flex gap-1 opacity-0 transition-opacity hover:opacity-100 focus-within:opacity-100">
         <Button
@@ -263,6 +273,51 @@ function TerminalPane({
       </div>
     </div>
   )
+}
+
+interface TerminalReorderPoint {
+  clientX: number
+  clientY: number
+}
+
+interface TerminalReorderDragState {
+  pointerId: number
+  sourceTerminalId: string
+  originalPanes: TerminalPaneState[]
+  previewPanes: TerminalPaneState[]
+  pendingPoint?: TerminalReorderPoint
+  frame?: number
+  previousCursor: string
+  previousUserSelect: string
+}
+
+function terminalReorderModifierActive(event: {
+  altKey: boolean
+  ctrlKey: boolean
+  metaKey: boolean
+  shiftKey: boolean
+}): boolean {
+  return event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey
+}
+
+function terminalPaneSlotAtPoint(
+  container: HTMLDivElement,
+  clientX: number,
+  clientY: number
+): number | null {
+  const element = document.elementFromPoint(clientX, clientY)
+  if (!element || !container.contains(element)) return null
+
+  const slot = element.closest<HTMLElement>('[data-terminal-pane-slot]')
+  if (!slot || !container.contains(slot)) return null
+
+  const index = Number(slot.dataset.terminalPaneSlot)
+  return Number.isInteger(index) ? index : null
+}
+
+function restoreTerminalReorderStyles(drag: TerminalReorderDragState): void {
+  document.body.style.cursor = drag.previousCursor
+  document.body.style.userSelect = drag.previousUserSelect
 }
 
 function LayoutGlyph({ layout }: { layout: TerminalLayout }): JSX.Element {
@@ -1943,6 +1998,7 @@ export function TerminalView({
   terminalLayout,
   onLayoutChange,
   onLayoutResize,
+  onPaneOrderChange,
   onReduceLayout,
   onClosePane,
   onRestartPrimary
@@ -1951,7 +2007,12 @@ export function TerminalView({
   const setStatus = useWorkspace((state) => state.setStatus)
   const exit = useWorkspace((state) => state.exits[selectedSession.id])
   const [pendingLayout, setPendingLayout] = useState<TerminalLayout | null>(null)
+  const [reorderModifierHeld, setReorderModifierHeld] = useState(false)
+  const [hoveredPaneId, setHoveredPaneId] = useState<string | null>(null)
+  const [reorderSourceId, setReorderSourceId] = useState<string | null>(null)
+  const [reorderPreviewPanes, setReorderPreviewPanes] = useState<TerminalPaneState[] | null>(null)
   const gridRef = useRef<HTMLDivElement>(null)
+  const reorderDragRef = useRef<TerminalReorderDragState | null>(null)
 
   const restart = useCallback(async () => {
     onRestartPrimary()
@@ -1977,6 +2038,191 @@ export function TerminalView({
     }
     setPendingLayout(layout)
   }, [onLayoutChange, terminalLayout.panes.length])
+
+  const cancelReorder = useCallback((): void => {
+    const drag = reorderDragRef.current
+    if (!drag) {
+      setReorderSourceId(null)
+      setReorderPreviewPanes(null)
+      return
+    }
+
+    if (drag.frame !== undefined) cancelAnimationFrame(drag.frame)
+    const grid = gridRef.current
+    reorderDragRef.current = null
+    setReorderSourceId(null)
+    setReorderPreviewPanes(null)
+    restoreTerminalReorderStyles(drag)
+
+    if (grid?.hasPointerCapture(drag.pointerId)) {
+      grid.releasePointerCapture(drag.pointerId)
+    }
+  }, [])
+
+  const updateReorderPreview = (drag: TerminalReorderDragState, point: TerminalReorderPoint): boolean => {
+    const grid = gridRef.current
+    if (!grid) return false
+
+    const targetSlot = terminalPaneSlotAtPoint(grid, point.clientX, point.clientY)
+    if (targetSlot === null) return false
+
+    const targetPane = drag.previewPanes[targetSlot]
+    if (!targetPane || targetPane.terminalId === drag.sourceTerminalId) return true
+
+    drag.previewPanes = swapTerminalPanes(
+      drag.previewPanes,
+      drag.sourceTerminalId,
+      targetPane.terminalId
+    )
+    setReorderPreviewPanes(drag.previewPanes)
+    return true
+  }
+
+  const beginReorder = (event: ReactPointerEvent<HTMLDivElement>, terminalId: string): void => {
+    if (
+      selectedSession.mode !== 'terminal' ||
+      event.pointerType !== 'mouse' ||
+      !event.isPrimary ||
+      event.button !== 0 ||
+      !terminalReorderModifierActive(event) ||
+      reorderDragRef.current
+    ) {
+      return
+    }
+
+    const target = event.target
+    if (
+      target instanceof Element &&
+      target.closest('button, input, textarea, select, a, [role="separator"]')
+    ) {
+      return
+    }
+
+    const grid = gridRef.current
+    if (!grid) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    const drag: TerminalReorderDragState = {
+      pointerId: event.pointerId,
+      sourceTerminalId: terminalId,
+      originalPanes: [...terminalLayout.panes],
+      previewPanes: [...terminalLayout.panes],
+      previousCursor: document.body.style.cursor,
+      previousUserSelect: document.body.style.userSelect
+    }
+    reorderDragRef.current = drag
+    setReorderSourceId(terminalId)
+    setReorderPreviewPanes(drag.previewPanes)
+    document.body.style.cursor = 'grabbing'
+    document.body.style.userSelect = 'none'
+    grid.setPointerCapture(event.pointerId)
+  }
+
+  const moveReorder = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    const drag = reorderDragRef.current
+    const grid = gridRef.current
+    if (!grid) return
+
+    if (!drag) {
+      if (event.pointerType !== 'mouse') return
+      const slot = terminalPaneSlotAtPoint(grid, event.clientX, event.clientY)
+      setHoveredPaneId(slot === null ? null : terminalLayout.panes[slot]?.terminalId ?? null)
+      return
+    }
+
+    if (drag.pointerId !== event.pointerId) return
+    event.preventDefault()
+    drag.pendingPoint = { clientX: event.clientX, clientY: event.clientY }
+
+    if (drag.frame !== undefined) return
+    drag.frame = requestAnimationFrame(() => {
+      const current = reorderDragRef.current
+      if (!current) return
+      current.frame = undefined
+      if (current.pendingPoint) updateReorderPreview(current, current.pendingPoint)
+    })
+  }
+
+  const finishReorder = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    const drag = reorderDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+
+    event.preventDefault()
+    if (drag.frame !== undefined) cancelAnimationFrame(drag.frame)
+    drag.frame = undefined
+    const validTarget = updateReorderPreview(drag, {
+      clientX: event.clientX,
+      clientY: event.clientY
+    })
+    const finalOrder = drag.previewPanes.map((pane) => pane.terminalId)
+    const grid = gridRef.current
+    reorderDragRef.current = null
+    setReorderSourceId(null)
+    setReorderPreviewPanes(null)
+    restoreTerminalReorderStyles(drag)
+
+    if (grid?.hasPointerCapture(drag.pointerId)) {
+      grid.releasePointerCapture(drag.pointerId)
+    }
+    if (validTarget) onPaneOrderChange(finalOrder)
+  }
+
+  useEffect(() => {
+    if (selectedSession.mode !== 'terminal') return
+
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape' && reorderDragRef.current) {
+        event.preventDefault()
+        event.stopPropagation()
+        cancelReorder()
+        return
+      }
+      setReorderModifierHeld(terminalReorderModifierActive(event))
+    }
+    const onKeyUp = (event: KeyboardEvent): void => {
+      const active = terminalReorderModifierActive(event)
+      setReorderModifierHeld(active)
+      if (!active && reorderDragRef.current) cancelReorder()
+    }
+    const onBlur = (): void => {
+      setReorderModifierHeld(false)
+      if (reorderDragRef.current) cancelReorder()
+    }
+
+    window.addEventListener('keydown', onKeyDown, true)
+    window.addEventListener('keyup', onKeyUp, true)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true)
+      window.removeEventListener('keyup', onKeyUp, true)
+      window.removeEventListener('blur', onBlur)
+    }
+  }, [cancelReorder, selectedSession.mode])
+
+  useEffect(() => {
+    const drag = reorderDragRef.current
+    if (!drag) return
+
+    const currentIds = terminalLayout.panes.map((pane) => pane.terminalId)
+    const originalIds = drag.originalPanes.map((pane) => pane.terminalId)
+    if (
+      currentIds.length !== originalIds.length ||
+      currentIds.some((terminalId) => !originalIds.includes(terminalId))
+    ) {
+      cancelReorder()
+    }
+  }, [cancelReorder, terminalLayout.panes])
+
+  useEffect(() => {
+    return () => {
+      const drag = reorderDragRef.current
+      if (!drag) return
+      if (drag.frame !== undefined) cancelAnimationFrame(drag.frame)
+      reorderDragRef.current = null
+      restoreTerminalReorderStyles(drag)
+    }
+  }, [])
 
   useEffect(() => {
     if (selectedSession.mode !== 'terminal') return
@@ -2017,6 +2263,7 @@ export function TerminalView({
       : selectedSession.path
   const gridTemplates = terminalGridTemplates(terminalLayout.layout, terminalLayout.sizes)
   const resizeHandles = terminalResizeHandles(terminalLayout.layout)
+  const renderedPanes = reorderPreviewPanes ?? terminalLayout.panes
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-bg">
@@ -2092,15 +2339,31 @@ export function TerminalView({
             gridTemplateColumns: gridTemplates.columns,
             gridTemplateRows: gridTemplates.rows
           }}
+          onPointerMove={moveReorder}
+          onPointerUp={finishReorder}
+          onPointerCancel={cancelReorder}
+          onLostPointerCapture={cancelReorder}
+          onPointerLeave={() => {
+            if (!reorderDragRef.current) setHoveredPaneId(null)
+          }}
         >
-          {terminalLayout.panes.map((pane, index) => (
+          {renderedPanes.map((pane, index) => (
             <div
               key={pane.terminalId}
+              data-terminal-pane-slot={index}
               className={`h-full min-h-0 min-w-0 ${paneClass(terminalLayout.layout, index)}`}
+              onPointerDownCapture={(event) => beginReorder(event, pane.terminalId)}
             >
               <TerminalPane
                 session={selectedSession}
                 pane={pane}
+                reorderState={
+                  reorderSourceId === pane.terminalId
+                    ? 'active'
+                    : reorderModifierHeld && hoveredPaneId === pane.terminalId
+                      ? 'candidate'
+                      : 'none'
+                }
                 onClose={() => onClosePane(pane.terminalId)}
               />
             </div>
