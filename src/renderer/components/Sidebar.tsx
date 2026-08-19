@@ -792,11 +792,10 @@ function ProjectGroup({
 interface SidebarProps {
   onNewProject: () => void
   onNewSession: (projectId?: string) => void
-  onAbout: () => void
   onOpenGit: (sessionId: string) => void
 }
 
-export function Sidebar({ onNewProject, onNewSession, onAbout, onOpenGit }: SidebarProps): JSX.Element {
+export function Sidebar({ onNewProject, onNewSession, onOpenGit }: SidebarProps): JSX.Element {
   const projects = useWorkspace((state) => state.projects)
   const sessions = useWorkspace((state) => state.sessions)
   const statuses = useWorkspace((state) => state.statuses)
@@ -892,42 +891,30 @@ export function Sidebar({ onNewProject, onNewSession, onAbout, onOpenGit }: Side
 
   return (
     <aside className="flex w-[260px] shrink-0 flex-col border-r border-line bg-panel">
-      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-line px-3">
-        <button
-          type="button"
-          onClick={onAbout}
-          title="About MDE"
-          aria-label="About MDE"
-          data-testid="about-mde"
-          className="rounded text-[13px] font-semibold tracking-tight text-fg hover:text-accent focus:outline-none focus:ring-1 focus:ring-accent"
-        >
-          mde
-        </button>
-        <span className="text-[11px] text-fg-subtle">agentic dev environment</span>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="ml-auto"
-          onClick={toggleSidebar}
-          title="Collapse sidebar"
-        >
-          <PanelLeftClose className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-
       <div className="flex items-center px-3 pb-1 pt-3">
         <span className="text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
           Projects
         </span>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="ml-auto"
-          onClick={onNewProject}
-          title="New project"
-        >
-          <FolderPlus className="h-3.5 w-3.5" />
-        </Button>
+        <div className="ml-auto flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onNewProject}
+            title="New project"
+            aria-label="New project"
+          >
+            <FolderPlus className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={toggleSidebar}
+            title="Collapse sidebar"
+            aria-label="Collapse sidebar"
+          >
+            <PanelLeftClose className="h-3.5 w-3.5" />
+          </Button>
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">

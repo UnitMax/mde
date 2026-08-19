@@ -60,6 +60,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { MarkdownMessage } from '@/components/MarkdownMessage'
 import { OpenCodeQuestionMessage } from '@/components/OpenCodeQuestionMessage'
+import { AboutSettingsPanel } from '@/components/AboutSettingsPanel'
 import {
   contextUsageMatchesModel,
   contextUsageTone,
@@ -536,13 +537,14 @@ function tokenRatePluginStatusLabel(state: OpenCodeTokenRatePluginState | undefi
   return 'Not installed'
 }
 
-type SettingsSection = 'appearance' | 'alerts' | 'tui' | 'token-rate'
+type SettingsSection = 'appearance' | 'alerts' | 'tui' | 'token-rate' | 'about'
 
 const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: 'appearance', label: 'Appearance' },
   { id: 'alerts', label: 'OpenCode alerts' },
   { id: 'tui', label: 'OpenCode TUI plugin' },
-  { id: 'token-rate', label: 'OpenCode token rate' }
+  { id: 'token-rate', label: 'OpenCode token rate' },
+  { id: 'about', label: 'About' }
 ]
 
 function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Element {
@@ -1151,6 +1153,8 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
                 {tokenRateError && <p className="text-xs text-danger">{tokenRateError}</p>}
               </section>
             )}
+
+            {activeSection === 'about' && <AboutSettingsPanel />}
           </div>
         </div>
       </DialogContent>

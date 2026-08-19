@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { Plus, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AddSessionDialog } from '@/components/AddProjectDialog'
-import { AboutDialog } from '@/components/AboutDialog'
 import { GitDialog } from '@/components/GitDialog'
 import { NewProjectDialog } from '@/components/NewProjectDialog'
 import { Sidebar } from '@/components/Sidebar'
@@ -47,7 +46,6 @@ export function App(): JSX.Element {
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
   const [newSessionOpen, setNewSessionOpen] = useState(false)
   const [newProjectOpen, setNewProjectOpen] = useState(false)
-  const [aboutOpen, setAboutOpen] = useState(false)
   const [gitSessionId, setGitSessionId] = useState<string | null>(null)
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false)
   const [defaultProjectId, setDefaultProjectId] = useState<string | undefined>(undefined)
@@ -69,8 +67,7 @@ export function App(): JSX.Element {
         !isSessionSwitcherShortcut(event) ||
         sessionSwitcherOpen ||
         newSessionOpen ||
-        newProjectOpen ||
-        aboutOpen
+        newProjectOpen
       ) {
         return
       }
@@ -82,7 +79,7 @@ export function App(): JSX.Element {
 
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [aboutOpen, newProjectOpen, newSessionOpen, sessionSwitcherOpen])
+  }, [newProjectOpen, newSessionOpen, sessionSwitcherOpen])
 
   useEffect(() => {
     const unsubscribe = window.api.pty.onExit((info) => {
@@ -292,7 +289,6 @@ export function App(): JSX.Element {
       <Sidebar
         onNewProject={() => setNewProjectOpen(true)}
         onNewSession={openNewSession}
-        onAbout={() => setAboutOpen(true)}
         onOpenGit={setGitSessionId}
       />
 
@@ -322,7 +318,6 @@ export function App(): JSX.Element {
         defaultProjectId={defaultProjectId}
       />
       <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
-      <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
       <GitDialog
         open={gitSession !== null}
         session={gitSession}
