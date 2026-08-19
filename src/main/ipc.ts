@@ -367,6 +367,7 @@ export function registerIpcHandlers(
     ptyManager.dispose(sessionId)
   })
   handle<void, Record<string, PtyStatus>>(IpcChannels.ptyStatuses, () => ptyManager.statuses())
+  handle<void, Record<string, string>>(IpcChannels.ptyDirectories, () => ptyManager.directories())
 
   handle<void, boolean>(IpcChannels.wslAvailable, () => isWslAvailable())
   handle<void, Distro[]>(IpcChannels.wslDistros, () => listDistros())
@@ -397,6 +398,23 @@ export function registerIpcHandlers(
 
     try {
       await shell.openExternal(buildVsCodeRemoteUri(session, process.platform))
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      dialog.showErrorBox(
+        'Could not open VS Code',
+        `Could not hand the WSL folder to the registered Windows VS Code installation. Make sure VS Code is installed and the Remote - WSL extension is available locally.\n\n${detail}`
+      )
+    }
+  })
+  handle<string, void>(IpcChannels.pathOpenTerminalInVsCode, async (terminalId) => {
+    const terminal = ptyManager.terminalInfo(terminalId)
+    if (!terminal?.directory) return
+
+    const session = await getSession(terminal.sessionId)
+    if (!session || process.platform !== 'win32' || session.kind !== 'wsl' || !session.distro) return
+
+    try {
+      await shell.openExternal(buildVsCodeRemoteUri(session, process.platform, terminal.directory))
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
       dialog.showErrorBox(

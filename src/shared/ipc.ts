@@ -34,6 +34,7 @@ import type {
   OpenCodeAlertSetEnabledRequest,
   OpenCodeAlertSettings,
   PtyDataChunk,
+  PtyDirectoryUpdate,
   PtyExitInfo,
   PtySize,
   PtyStatus
@@ -68,6 +69,7 @@ export const IpcChannels = {
   ptyRestart: 'pty:restart',
   ptyDispose: 'pty:dispose',
   ptyStatuses: 'pty:statuses',
+  ptyDirectories: 'pty:directories',
 
   clipboardWriteText: 'clipboard:write-text',
 
@@ -79,6 +81,7 @@ export const IpcChannels = {
   pathValidate: 'path:validate',
   pathReveal: 'path:reveal',
   pathOpenInVsCode: 'path:open-in-vscode',
+  pathOpenTerminalInVsCode: 'path:open-terminal-in-vscode',
 
   opencodeSend: 'opencode:send',
   opencodeCommand: 'opencode:command',
@@ -111,6 +114,7 @@ export const IpcChannels = {
 export const IpcEvents = {
   ptyData: 'pty:data',
   ptyExit: 'pty:exit',
+  ptyDirectory: 'pty:directory',
   opencodeStream: 'opencode:stream',
   opencodeTuiStatus: 'opencode-tui:status'
 } as const
@@ -227,7 +231,9 @@ export interface RendererApi {
     restart(req: EnsurePtyRequest): Promise<PtyStatus>
     dispose(terminalId: string): Promise<void>
     statuses(): Promise<Record<string, PtyStatus>>
+    directories(): Promise<Record<string, string>>
     onData(listener: (chunk: PtyDataChunk) => void): () => void
+    onDirectory(listener: (update: PtyDirectoryUpdate) => void): () => void
     onExit(listener: (info: PtyExitInfo) => void): () => void
   }
   wsl: {
@@ -240,6 +246,7 @@ export interface RendererApi {
     validate(req: ValidatePathRequest): Promise<PathCheckResult>
     reveal(sessionId: string): Promise<void>
     openInVsCode(sessionId: string): Promise<void>
+    openTerminalInVsCode(terminalId: string): Promise<void>
   }
   opencode: {
     send(req: SendOpenCodeMessageRequest): Promise<SendOpenCodeMessageResponse>

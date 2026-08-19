@@ -41,6 +41,11 @@ const ptyManager = new PtyManager({
       mainWindow.webContents.send(IpcEvents.ptyData, chunk)
     }
   },
+  onDirectory: (update) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(IpcEvents.ptyDirectory, update)
+    }
+  },
   onExit: (info) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send(IpcEvents.ptyExit, info)

@@ -26,6 +26,7 @@ import type {
   OpenCodeTuiStatus,
   OpenCodeTuiStatusUpdate,
   Project,
+  PtyDirectoryUpdate,
   PtyExitInfo,
   PtyStatus,
   Session,
@@ -339,6 +340,7 @@ interface WorkspaceState {
   sessions: Session[]
   selectedSessionId: string | null
   statuses: Record<string, PtyStatus>
+  terminalDirectories: Record<string, string>
   exits: Record<string, PtyExitInfo>
   opencodeChats: Record<string, OpenCodeChatState>
   opencodeTuiStatuses: Record<string, OpenCodeTuiStatusState>
@@ -367,6 +369,7 @@ interface WorkspaceState {
   openSessionInVsCode: (id: string) => Promise<void>
 
   setStatus: (id: string, status: PtyStatus) => void
+  setTerminalDirectory: (update: PtyDirectoryUpdate) => void
   noteExit: (info: PtyExitInfo) => void
   clearExit: (id: string) => void
   persistOpenCodeSelection: (
@@ -402,6 +405,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   sessions: [],
   selectedSessionId: null,
   statuses: {},
+  terminalDirectories: {},
   exits: {},
   opencodeChats: {},
   opencodeTuiStatuses: {},
@@ -417,14 +421,16 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     if (!eventBridgeReady) {
       eventBridgeReady = true
       window.api.pty.onExit((info) => get().noteExit(info))
+      window.api.pty.onDirectory((update) => get().setTerminalDirectory(update))
       window.api.opencode.onStream((chunk) => get().appendOpenCodeStream(chunk))
       window.api.opencodeTui.onStatus((update) => get().appendOpenCodeTuiStatus(update))
     }
 
-    const [platform, workspace, statuses, wslAvailable] = await Promise.all([
+    const [platform, workspace, statuses, directories, wslAvailable] = await Promise.all([
       window.api.platform.info(),
       window.api.workspace.list(),
       window.api.pty.statuses(),
+      window.api.pty.directories(),
       window.api.wsl.available()
     ])
 
@@ -434,6 +440,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       projects,
       sessions,
       statuses,
+      // The event bridge may receive a report while these startup requests
+      // are in flight. Preserve that newer event over the initial snapshot.
+      terminalDirectories: { ...directories, ...get().terminalDirectories },
       opencodeTuiStatuses: {},
       wslAvailable,
       selectedSessionId: null,
@@ -580,6 +589,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   setStatus: (id, status) =>
     set((state) => ({ statuses: { ...state.statuses, [id]: status } })),
+
+  setTerminalDirectory: (update) =>
+    set((state) => {
+      const terminalDirectories = { ...state.terminalDirectories }
+      if (update.directory === null) delete terminalDirectories[update.terminalId]
+      else terminalDirectories[update.terminalId] = update.directory
+      return { terminalDirectories }
+    }),
 
   noteExit: (info) =>
     set((state) => {

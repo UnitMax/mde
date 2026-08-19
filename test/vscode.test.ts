@@ -43,6 +43,18 @@ describe('buildVsCodeRemoteUri', () => {
     )).toBe('vscode://vscode-remote/wsl+Ubuntu%2BDev/home/me/project%231%3Fdraft/')
   })
 
+  it('opens an explicitly reported terminal directory', () => {
+    expect(buildVsCodeRemoteUri(
+      session({ path: '/home/me/src/app' }),
+      'win32',
+      '/home/me/src/app/packages/client.project'
+    )).toBe('vscode://vscode-remote/wsl+Ubuntu-24.04/home/me/src/app/packages/client.project/')
+  })
+
+  it('rejects an empty explicitly reported directory', () => {
+    expect(() => buildVsCodeRemoteUri(session(), 'win32', '  ')).toThrow(/no project path/)
+  })
+
   it('rejects unsupported hosts and session kinds', () => {
     expect(() => buildVsCodeRemoteUri(session(), 'linux')).toThrow(/only supported on Windows/)
     expect(() => buildVsCodeRemoteUri(session({ kind: 'native' }), 'win32')).toThrow(

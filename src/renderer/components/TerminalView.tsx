@@ -11,6 +11,7 @@ import {
   ArrowUp,
   Check,
   CheckCircle2,
+  Code,
   ChevronRight,
   CircleAlert,
   CircleX,
@@ -225,6 +226,9 @@ function TerminalPane({
 }): JSX.Element {
   const clearExit = useWorkspace((state) => state.clearExit)
   const setStatus = useWorkspace((state) => state.setStatus)
+  const platform = useWorkspace((state) => state.platform)
+  const wslAvailable = useWorkspace((state) => state.wslAvailable)
+  const currentDirectory = useWorkspace((state) => state.terminalDirectories[pane.terminalId])
 
   const restart = async (): Promise<void> => {
     const terminal = getSession(pane.terminalId)
@@ -250,6 +254,21 @@ function TerminalPane({
     <div className={`relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden border ${borderClass} bg-bg`}>
       <TerminalSurface session={session} pane={pane} />
       <div className="absolute right-2 top-2 z-10 flex gap-1 opacity-0 transition-opacity hover:opacity-100 focus-within:opacity-100">
+        {platform?.isWindows === true &&
+          wslAvailable &&
+          session.kind === 'wsl' &&
+          Boolean(session.distro) && (
+            <Button
+              variant="secondary"
+              size="icon-sm"
+              aria-label="Open terminal directory in VS Code"
+              title={currentDirectory ? 'Open current directory in VS Code' : 'Waiting for terminal directory'}
+              disabled={!currentDirectory}
+              onClick={() => void window.api.paths.openTerminalInVsCode(pane.terminalId)}
+            >
+              <Code className="h-3.5 w-3.5" />
+            </Button>
+          )}
         <Button
           variant="secondary"
           size="icon-sm"

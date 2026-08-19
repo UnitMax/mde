@@ -1,6 +1,6 @@
 import type { Session } from '@shared/types'
 
-function validateVsCodeSession(session: Session, platform: NodeJS.Platform): string {
+function validateVsCodeSession(session: Session, platform: NodeJS.Platform, directory: string): string {
   if (platform !== 'win32') {
     throw new Error('Opening WSL sessions in Windows VS Code is only supported on Windows')
   }
@@ -10,7 +10,7 @@ function validateVsCodeSession(session: Session, platform: NodeJS.Platform): str
   if (!session.distro) {
     throw new Error(`WSL session "${session.name}" has no distro`)
   }
-  if (!session.path.trim()) {
+  if (!directory.trim()) {
     throw new Error(`WSL session "${session.name}" has no project path`)
   }
   return session.distro
@@ -29,11 +29,12 @@ function encodeWslPath(path: string): string {
  */
 export function buildVsCodeRemoteUri(
   session: Session,
-  platform: NodeJS.Platform
+  platform: NodeJS.Platform,
+  directory = session.path
 ): string {
-  const distro = validateVsCodeSession(session, platform)
+  const distro = validateVsCodeSession(session, platform, directory)
 
-  const path = session.path.trim()
+  const path = directory.trim()
   // VS Code treats a path with a file-like extension as a file. The trailing
   // slash makes the intent unambiguous for dotted project directories.
   const folderPath = path.endsWith('/') ? path : `${path}/`

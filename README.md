@@ -110,9 +110,14 @@ is enabled.
 - Short-lived `wsl.exe` queries and path conversions go through `runWsl()` in
   `src/main/wsl/distros.ts`, which sets `WSL_UTF8=1`. The long-lived OpenCode server is spawned
   directly so MDE can keep its process and event stream attached.
-- WSL sessions launch as
-  `wsl.exe -d <distro> --cd <path> -- bash -lic 'exec bash -i'`. The login+interactive shell
-  is required: nvm/mise/bun/asdf put their shims on `PATH` from the login profile.
+- WSL sessions launch through a login+interactive shell, always via `wsl.exe -e` and never
+  `wsl.exe --`: `--` hands the rest of the command line to the distro's default shell, which
+  re-parses it and mangles anything containing quotes, `$`, or `;`. The login shell is required
+  because nvm/mise/bun/asdf put their shims on `PATH` from the login profile.
+- The per-terminal Open in VS Code button follows the terminal's current directory. It starts
+  out pointing at the session's configured path, and default Bash sessions then correct it at
+  every prompt by reporting their working directory through OSC 7. Custom shell overrides need
+  to emit OSC 7 themselves; otherwise that button keeps opening the configured path.
 - OpenCode GUI sessions use the same WSL boundary: MDE starts
   `opencode serve --pure --hostname=<wsl-ip> --port=0` inside the selected distro. MDE resolves
   `<wsl-ip>` with `hostname -I` and uses it for the Windows-side HTTP/SSE connection instead of

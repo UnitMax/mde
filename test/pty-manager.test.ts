@@ -53,6 +53,15 @@ function sourceSession(): Session {
   }
 }
 
+function wslSession(): Session {
+  return {
+    ...sourceSession(),
+    kind: 'wsl',
+    distro: 'Ubuntu-24.04',
+    path: '/home/me/app'
+  }
+}
+
 describe('PtyManager runtime terminal identities', () => {
   beforeEach(() => {
     ptyMock.children.clear()
@@ -70,7 +79,7 @@ describe('PtyManager runtime terminal identities', () => {
   })
 
   it('routes independent panes launched from one workspace session', () => {
-    const events = { onData: vi.fn(), onExit: vi.fn() }
+    const events = { onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() }
     const manager = new PtyManager(events)
     const source = sourceSession()
     const size = { cols: 80, rows: 24 }
@@ -104,7 +113,7 @@ describe('PtyManager runtime terminal identities', () => {
       prepare: vi.fn(() => ({ MDE_OPENCODE_TOKEN_RATE: '1' })),
       dispose: vi.fn()
     }
-    const manager = new PtyManager({ onData: vi.fn(), onExit: vi.fn() }, integration)
+    const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() }, integration)
 
     manager.ensure('pane-a', sourceSession(), { cols: 80, rows: 24 }, palette)
 
@@ -116,7 +125,7 @@ describe('PtyManager runtime terminal identities', () => {
   })
 
   it('restarts and disposes panes independently', () => {
-    const manager = new PtyManager({ onData: vi.fn(), onExit: vi.fn() })
+    const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() })
     const source = sourceSession()
     manager.ensure('pane-a', source, { cols: 80, rows: 24 }, palette)
     manager.ensure('pane-b', source, { cols: 80, rows: 24 }, palette)
@@ -135,7 +144,7 @@ describe('PtyManager runtime terminal identities', () => {
   })
 
   it('answers palette queries directly at the PTY boundary', () => {
-    const events = { onData: vi.fn(), onExit: vi.fn() }
+    const events = { onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() }
     const manager = new PtyManager(events)
     manager.ensure('pane-a', sourceSession(), { cols: 80, rows: 24 }, palette)
     const child = ptyMock.children.get('pane-1')
@@ -151,9 +160,79 @@ describe('PtyManager runtime terminal identities', () => {
     })
   })
 
+  it('tracks current directories independently for split panes', () => {
+    const events = { onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() }
+    const manager = new PtyManager(events)
+    const source = sourceSession()
+    manager.ensure('pane-a', source, { cols: 80, rows: 24 }, palette)
+    manager.ensure('pane-b', source, { cols: 80, rows: 24 }, palette)
+
+    ptyMock.children.get('pane-1')?.dataListener?.('\u001b]7;file://localhost/home/me/a\u0007')
+    ptyMock.children.get('pane-2')?.dataListener?.('\u001b]7;file:///tmp/b\u001b\\')
+
+    expect(events.onDirectory).toHaveBeenNthCalledWith(1, {
+      terminalId: 'pane-a',
+      directory: '/home/me/a'
+    })
+    expect(events.onDirectory).toHaveBeenNthCalledWith(2, {
+      terminalId: 'pane-b',
+      directory: '/tmp/b'
+    })
+    expect(manager.terminalInfo('pane-a')).toEqual({
+      sessionId: 'session-1',
+      directory: '/home/me/a'
+    })
+    expect(manager.terminalInfo('pane-b')).toEqual({
+      sessionId: 'session-1',
+      directory: '/tmp/b'
+    })
+    expect(manager.directories()).toEqual({
+      'pane-a': '/home/me/a',
+      'pane-b': '/tmp/b'
+    })
+
+    manager.dispose('pane-a')
+    expect(events.onDirectory).toHaveBeenLastCalledWith({ terminalId: 'pane-a', directory: null })
+    expect(manager.terminalInfo('pane-a')).toBeNull()
+    expect(manager.directories()).toEqual({ 'pane-b': '/tmp/b' })
+  })
+
+  it('reports the WSL launch directory before the first prompt', () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const events = { onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() }
+    const manager = new PtyManager(events)
+
+    manager.ensure('pane-a', wslSession(), { cols: 80, rows: 24 }, palette)
+
+    expect(events.onDirectory).toHaveBeenCalledWith({
+      terminalId: 'pane-a',
+      directory: '/home/me/app'
+    })
+    expect(manager.directories()).toEqual({ 'pane-a': '/home/me/app' })
+  })
+
+  it('updates the stored WSL directory after a prompt reports cd', () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const events = { onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() }
+    const manager = new PtyManager(events)
+    manager.ensure('pane-a', wslSession(), { cols: 80, rows: 24 }, palette)
+    const child = ptyMock.children.get('pane-1')
+
+    child?.dataListener?.('\u001b]7;file://localhost/home/me/other\u0007')
+
+    expect(manager.terminalInfo('pane-a')).toEqual({
+      sessionId: 'session-1',
+      directory: '/home/me/other'
+    })
+    expect(events.onDirectory).toHaveBeenLastCalledWith({
+      terminalId: 'pane-a',
+      directory: '/home/me/other'
+    })
+  })
+
   it('uses bundled ConPTY for Windows terminals', () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    const manager = new PtyManager({ onData: vi.fn(), onExit: vi.fn() })
+    const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() })
 
     manager.ensure('pane-a', sourceSession(), { cols: 80, rows: 24 }, palette)
 
@@ -165,7 +244,7 @@ describe('PtyManager runtime terminal identities', () => {
   })
 
   it('does not request a Windows backend on non-Windows platforms', () => {
-    const manager = new PtyManager({ onData: vi.fn(), onExit: vi.fn() })
+    const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() })
 
     manager.ensure('pane-a', sourceSession(), { cols: 80, rows: 24 }, palette)
 
@@ -181,7 +260,7 @@ describe('PtyManager runtime terminal identities', () => {
         throw new Error('Cannot find conpty.dll at expected path')
       })
       .mockImplementationOnce(() => createFakeChild())
-    const manager = new PtyManager({ onData: vi.fn(), onExit: vi.fn() })
+    const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() })
 
     manager.ensure('pane-a', sourceSession(), { cols: 80, rows: 24 }, palette)
 
@@ -200,7 +279,7 @@ describe('PtyManager runtime terminal identities', () => {
     ptyMock.spawn.mockImplementationOnce(() => {
       throw new Error('File not found: missing-shell.exe')
     })
-    const manager = new PtyManager({ onData: vi.fn(), onExit: vi.fn() })
+    const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() })
 
     expect(() => (
       manager.ensure('pane-a', sourceSession(), { cols: 80, rows: 24 }, palette)

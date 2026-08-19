@@ -2,21 +2,19 @@ import type { TerminalPalette } from '@shared/ipc'
 
 type PaletteSlot = 10 | 11
 
-interface PaletteQuery {
-  sequence: string
-  slot: PaletteSlot
-}
-
-const PALETTE_QUERIES: readonly PaletteQuery[] = [
-  { sequence: '\u001b]10;?\u0007', slot: 10 },
-  { sequence: '\u001b]10;?\u001b\\', slot: 10 },
-  { sequence: '\u001b]11;?\u0007', slot: 11 },
-  { sequence: '\u001b]11;?\u001b\\', slot: 11 }
-]
+/**
+ * How much of an unterminated OSC sequence to hold back while waiting for its
+ * terminator. A stray `ESC ]` with no BEL or ST — a truncated sequence, or a
+ * binary file dumped to the terminal — would otherwise swallow every later
+ * byte for the life of the PTY. Past this the buffered text is released as
+ * ordinary output.
+ */
+const MAX_PENDING_LENGTH = 4096
 
 export interface TerminalQueryResult {
   data: string
   responses: string[]
+  directory?: string
 }
 
 function toOscRgb(color: string): string {
@@ -33,19 +31,7 @@ function paletteResponse(slot: PaletteSlot, palette: TerminalPalette): string {
   return `\u001b]${slot};rgb:${toOscRgb(color)}\u001b\\`
 }
 
-function pendingQueryLength(data: string): number {
-  const maxLength = Math.min(
-    data.length,
-    Math.max(...PALETTE_QUERIES.map(({ sequence }) => sequence.length - 1))
-  )
-  for (let length = maxLength; length > 0; length -= 1) {
-    const suffix = data.slice(-length)
-    if (PALETTE_QUERIES.some(({ sequence }) => sequence.startsWith(suffix))) return length
-  }
-  return 0
-}
-
-/** Handles latency-sensitive terminal color queries before renderer IPC. */
+/** Handles terminal control sequences before renderer IPC. */
 export class TerminalQueryResponder {
   private pending = ''
 
@@ -66,31 +52,77 @@ export class TerminalQueryResponder {
     this.pending = ''
     let visible = ''
     const responses: string[] = []
+    let directory: string | undefined
 
     while (remaining.length > 0) {
-      let matchIndex = -1
-      let match: PaletteQuery | undefined
-      for (const query of PALETTE_QUERIES) {
-        const index = remaining.indexOf(query.sequence)
-        if (index >= 0 && (matchIndex < 0 || index < matchIndex)) {
-          matchIndex = index
-          match = query
+      const start = remaining.indexOf('\u001b]')
+      if (start < 0) {
+        if (remaining.endsWith('\u001b')) {
+          visible += remaining.slice(0, -1)
+          this.pending = '\u001b'
+        } else {
+          visible += remaining
         }
+        remaining = ''
+        break
       }
-      if (!match || matchIndex < 0) break
 
-      visible += remaining.slice(0, matchIndex)
-      responses.push(paletteResponse(match.slot, this.palette))
-      remaining = remaining.slice(matchIndex + match.sequence.length)
+      visible += remaining.slice(0, start)
+      const terminator = oscTerminator(remaining, start + 2)
+      if (!terminator) {
+        const unterminated = remaining.slice(start)
+        // Give up on this sequence rather than block the pane forever.
+        if (unterminated.length > MAX_PENDING_LENGTH) visible += unterminated
+        else this.pending = unterminated
+        remaining = ''
+        break
+      }
+
+      const payload = remaining.slice(start + 2, terminator.index)
+      const raw = remaining.slice(start, terminator.end)
+      const paletteSlot = paletteQuery(payload)
+      if (paletteSlot) {
+        responses.push(paletteResponse(paletteSlot, this.palette))
+      } else if (payload.startsWith('7;')) {
+        const reported = parseOsc7Directory(payload.slice(2))
+        if (reported) directory = reported
+      } else {
+        visible += raw
+      }
+      remaining = remaining.slice(terminator.end)
     }
 
-    visible += remaining
-    const pendingLength = pendingQueryLength(visible)
-    if (pendingLength > 0) {
-      this.pending = visible.slice(-pendingLength)
-      visible = visible.slice(0, -pendingLength)
-    }
-
-    return { data: visible, responses }
+    return directory ? { data: visible, responses, directory } : { data: visible, responses }
   }
+}
+
+function paletteQuery(payload: string): PaletteSlot | null {
+  if (payload === '10;?') return 10
+  if (payload === '11;?') return 11
+  return null
+}
+
+function oscTerminator(data: string, start: number): { index: number; end: number } | null {
+  const bell = data.indexOf('\u0007', start)
+  const st = data.indexOf('\u001b\\', start)
+  if (bell < 0 && st < 0) return null
+  if (bell >= 0 && (st < 0 || bell < st)) return { index: bell, end: bell + 1 }
+  return { index: st, end: st + 2 }
+}
+
+function parseOsc7Directory(value: string): string | null {
+  if (!value.startsWith('file://')) return null
+
+  const slash = value.indexOf('/', 'file://'.length)
+  if (slash < 0) return null
+
+  let directory: string
+  try {
+    directory = decodeURIComponent(value.slice(slash))
+  } catch {
+    return null
+  }
+
+  if (!directory.startsWith('/') || directory.includes('\u0000')) return null
+  return directory
 }

@@ -4,6 +4,7 @@ import type {
   OpenCodeStreamChunk,
   OpenCodeTuiStatusUpdate,
   PtyDataChunk,
+  PtyDirectoryUpdate,
   PtyExitInfo
 } from '@shared/types'
 
@@ -47,7 +48,9 @@ const api: RendererApi = {
     restart: (req) => ipcRenderer.invoke(IpcChannels.ptyRestart, req),
     dispose: (sessionId) => ipcRenderer.invoke(IpcChannels.ptyDispose, sessionId),
     statuses: () => ipcRenderer.invoke(IpcChannels.ptyStatuses),
+    directories: () => ipcRenderer.invoke(IpcChannels.ptyDirectories),
     onData: (listener) => subscribe<PtyDataChunk>(IpcEvents.ptyData, listener),
+    onDirectory: (listener) => subscribe<PtyDirectoryUpdate>(IpcEvents.ptyDirectory, listener),
     onExit: (listener) => subscribe<PtyExitInfo>(IpcEvents.ptyExit, listener)
   },
   wsl: {
@@ -59,7 +62,9 @@ const api: RendererApi = {
     resolve: (req) => ipcRenderer.invoke(IpcChannels.pathResolve, req),
     validate: (req) => ipcRenderer.invoke(IpcChannels.pathValidate, req),
     reveal: (sessionId) => ipcRenderer.invoke(IpcChannels.pathReveal, sessionId),
-    openInVsCode: (sessionId) => ipcRenderer.invoke(IpcChannels.pathOpenInVsCode, sessionId)
+    openInVsCode: (sessionId) => ipcRenderer.invoke(IpcChannels.pathOpenInVsCode, sessionId),
+    openTerminalInVsCode: (terminalId) =>
+      ipcRenderer.invoke(IpcChannels.pathOpenTerminalInVsCode, terminalId)
   },
   opencode: {
     send: (req) => ipcRenderer.invoke(IpcChannels.opencodeSend, req),

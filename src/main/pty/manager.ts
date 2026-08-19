@@ -2,7 +2,14 @@ import { homedir } from 'node:os'
 import * as nodePty from 'node-pty'
 import type { IPty, IWindowsPtyForkOptions } from 'node-pty'
 import type { TerminalPalette } from '@shared/ipc'
-import type { Session, PtyDataChunk, PtyExitInfo, PtySize, PtyStatus } from '@shared/types'
+import type {
+  PtyDataChunk,
+  PtyDirectoryUpdate,
+  PtyExitInfo,
+  PtySize,
+  PtyStatus,
+  Session
+} from '@shared/types'
 import { buildLaunchSpec, type LaunchContext } from './launch'
 import { TerminalQueryResponder } from './terminal-queries'
 
@@ -10,13 +17,20 @@ interface PtySession {
   pty: IPty
   sourceSessionId: string
   status: PtyStatus
+  currentDirectory: string | null
   disposeListeners: () => void
   queryResponder: TerminalQueryResponder
 }
 
 export interface PtyEvents {
   onData(chunk: PtyDataChunk): void
+  onDirectory(update: PtyDirectoryUpdate): void
   onExit(info: PtyExitInfo): void
+}
+
+export interface PtyTerminalInfo {
+  sessionId: string
+  directory: string | null
 }
 
 export interface PtyLaunchIntegration {
@@ -129,6 +143,20 @@ export class PtyManager {
     return out
   }
 
+  directories(): Record<string, string> {
+    const out: Record<string, string> = {}
+    for (const [id, session] of this.sessions) {
+      if (session.currentDirectory) out[id] = session.currentDirectory
+    }
+    return out
+  }
+
+  terminalInfo(terminalId: string): PtyTerminalInfo | null {
+    const session = this.sessions.get(terminalId)
+    if (!session) return null
+    return { sessionId: session.sourceSessionId, directory: session.currentDirectory }
+  }
+
   /**
    * Creates the PTY on first view of a terminal. Idempotent, and deliberately
    * never respawns: an exited shell stays exited until the user asks for a
@@ -169,11 +197,21 @@ export class PtyManager {
     }
 
     const queryResponder = new TerminalQueryResponder(palette)
+    // WSL's --cd gives us a reliable initial directory even before Bash has
+    // displayed its first prompt. OSC 7 then keeps this value current after
+    // every directory change.
+    let currentDirectory: string | null = session.kind === 'wsl' ? session.path : null
     // Answer palette probes beside the PTY so latency-sensitive TUIs do not
     // have to wait for a main -> renderer -> main IPC round trip.
     const dataListener = child.onData((data) => {
       const result = queryResponder.process(data)
       for (const response of result.responses) child.write(response)
+      if (result.directory && result.directory !== currentDirectory) {
+        currentDirectory = result.directory
+        const current = this.sessions.get(terminalId)
+        if (current) current.currentDirectory = currentDirectory
+        this.events.onDirectory({ terminalId, directory: currentDirectory })
+      }
       if (result.data) this.events.onData({ terminalId, data: result.data })
     })
     const exitListener = child.onExit(({ exitCode, signal }) => {
@@ -191,12 +229,16 @@ export class PtyManager {
       pty: child,
       sourceSessionId: session.id,
       status: 'running',
+      currentDirectory,
       queryResponder,
       disposeListeners: () => {
         dataListener.dispose()
         exitListener.dispose()
       }
     })
+    if (currentDirectory) {
+      this.events.onDirectory({ terminalId, directory: currentDirectory })
+    }
 
     return 'running'
   }
@@ -237,6 +279,7 @@ export class PtyManager {
     const session = this.sessions.get(terminalId)
     if (!session) return
     this.sessions.delete(terminalId)
+    this.events.onDirectory({ terminalId, directory: null })
     this.disposeIntegrations(terminalId)
     session.disposeListeners()
     if (session.status === 'running') {

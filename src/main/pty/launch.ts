@@ -28,6 +28,30 @@ const WSL_TERMINAL_ENVIRONMENT = {
   COLORTERM: 'truecolor'
 }
 
+function isBashShell(shell: string): boolean {
+  const normalised = shell.replaceAll('\\', '/')
+  return normalised.slice(normalised.lastIndexOf('/') + 1).toLowerCase() === 'bash'
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`
+}
+
+function wslShellCommand(shell: string): string {
+  if (!isBashShell(shell)) return `exec ${shell} -i`
+
+  const reporter = String.raw`printf '\033]7;file://localhost%s\033\\' "$PWD"`
+  const existingPromptCommand = '${PROMPT_COMMAND:+$PROMPT_COMMAND;}'
+  return [
+    `MDE_CWD_PROMPT_COMMAND=${shellQuote(reporter)}`,
+    'export MDE_CWD_PROMPT_COMMAND',
+    // Read the user's normal interactive setup first, then append our hook.
+    // Installing it in the parent login shell is unreliable: the child shell
+    // can replace PROMPT_COMMAND while loading .bashrc.
+    `exec ${shell} --rcfile <(printf '%s\\n' '[ -r ~/.bashrc ] && . ~/.bashrc' 'PROMPT_COMMAND="${existingPromptCommand}$MDE_CWD_PROMPT_COMMAND"; export PROMPT_COMMAND') -i`
+  ].join('; ')
+}
+
 function wslEnvironmentArgs(environment: Record<string, string> | undefined): string[] {
   if (!environment) return []
   return Object.entries(environment)
@@ -63,13 +87,18 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
         session.distro,
         '--cd',
         session.path,
-        '--',
+        // -e (--exec), never --: wsl.exe hands everything after `--` to the
+        // distro's default shell, which re-parses it. That extra pass splits
+        // the command below on its `;` and eats its quoting, which silently
+        // drops both the login shell and the OSC 7 cwd reporter. -e execs the
+        // argv exactly as given.
+        '-e',
         ...(environment.length > 0 ? ['env', ...environment, shell] : [shell]),
         // A login+interactive shell is required: nvm/mise/bun/asdf put their
         // shims on PATH from the login profile, and a plain interactive shell
         // would leave those tools missing.
         '-lic',
-        `exec ${shell} -i`
+        wslShellCommand(shell)
       ]
       // cwd is deliberately absent: --cd sets the working directory inside the
       // distro, and the Windows-side cwd is irrelevant (and must be a valid

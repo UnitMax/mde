@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import { buildLaunchSpec } from '../src/main/pty/launch'
 import type { Session } from '@shared/types'
@@ -23,19 +24,23 @@ describe('buildLaunchSpec', () => {
     )
 
     expect(spec.file).toBe('wsl.exe')
-    expect(spec.args).toEqual([
+    // -e, not --: `--` hands the rest of the line to the distro's default
+    // shell, which re-parses the OSC 7 setup into separate commands.
+    expect(spec.args.slice(0, -1)).toEqual([
       '-d',
       'Ubuntu-24.04',
       '--cd',
       '/home/me/src/app',
-      '--',
+      '-e',
       'env',
       'TERM=xterm-256color',
       'COLORTERM=truecolor',
       'bash',
-      '-lic',
-      'exec bash -i'
+      '-lic'
     ])
+    expect(spec.args.at(-1)).toMatch(
+      /^MDE_CWD_PROMPT_COMMAND=.*file:\/\/localhost.*exec bash --rcfile <\(printf .*\.bashrc.*PROMPT_COMMAND=.*\) -i$/
+    )
     // --cd sets the directory inside the distro; a Windows-side cwd would be wrong.
     expect(spec.cwd).toBeUndefined()
   })
@@ -45,6 +50,18 @@ describe('buildLaunchSpec', () => {
       platform: 'win32'
     })
     expect(spec.args).toContain('-lic')
+  })
+
+  it('builds syntactically valid Bash cwd-reporting setup', () => {
+    const spec = buildLaunchSpec(session({ kind: 'wsl', distro: 'Ubuntu-24.04' }), {
+      platform: 'win32'
+    })
+    const command = spec.args.at(-1)
+    expect(command).toBeDefined()
+
+    const result = spawnSync('bash', ['-n', '-c', command ?? ''], { encoding: 'utf8' })
+    expect(result.status).toBe(0)
+    expect(result.stderr).toBe('')
   })
 
   it('honours a shell override for WSL projects', () => {
@@ -67,21 +84,21 @@ describe('buildLaunchSpec', () => {
       }
     )
 
-    expect(spec.args).toEqual([
+    expect(spec.args.slice(0, -1)).toEqual([
       '-d',
       'Ubuntu-24.04',
       '--cd',
       '/home/me/src/app',
-      '--',
+      '-e',
       'env',
       "MDE_OPENCODE_STATUS_FILE=/tmp/mde-opencode/status's file.json",
       'MDE_OPENCODE_STATUS_PROTOCOL=1',
       'TERM=xterm-256color',
       'COLORTERM=truecolor',
       'bash',
-      '-lic',
-      'exec bash -i'
+      '-lic'
     ])
+    expect(spec.args.at(-1)).toContain('MDE_CWD_PROMPT_COMMAND=')
   })
 
   it('refuses to launch a WSL project off Windows', () => {

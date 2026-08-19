@@ -174,6 +174,11 @@ export interface PtyDataChunk {
   data: string
 }
 
+export interface PtyDirectoryUpdate {
+  terminalId: string
+  directory: string | null
+}
+
 export type OpenCodeChatRole = 'user' | 'assistant'
 
 /** A plain-text chat item rendered in a session's GUI view. */

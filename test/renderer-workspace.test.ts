@@ -16,6 +16,7 @@ import { useWorkspace } from '../src/renderer/store/workspace'
 describe('renderer workspace event bridge', () => {
   const streamListeners: Array<(chunk: OpenCodeStreamChunk) => void> = []
   const tuiStatusListeners: Array<(update: OpenCodeTuiStatusUpdate) => void> = []
+  const directoryListeners: Array<(update: { terminalId: string; directory: string | null }) => void> = []
   const api = {
     platform: { info: vi.fn(async () => ({ platform: 'linux', arch: 'x64' })) },
     workspace: { list: vi.fn(async () => ({ projects: [], sessions: [] })) },
@@ -36,7 +37,12 @@ describe('renderer workspace event bridge', () => {
     },
     pty: {
       statuses: vi.fn(async () => ({})),
-      onExit: vi.fn(() => vi.fn())
+      directories: vi.fn(async () => ({})),
+      onExit: vi.fn(() => vi.fn()),
+      onDirectory: vi.fn((listener: (update: { terminalId: string; directory: string | null }) => void) => {
+        directoryListeners.push(listener)
+        return vi.fn()
+      })
     },
     wsl: {
       available: vi.fn(async () => false),
@@ -93,6 +99,7 @@ describe('renderer workspace event bridge', () => {
   beforeEach(() => {
     streamListeners.length = 0
     tuiStatusListeners.length = 0
+    directoryListeners.length = 0
     vi.stubGlobal('window', { api })
     useWorkspace.setState({ opencodeChats: {}, opencodeTuiStatuses: {}, sessions: [], selectedSessionId: null })
     api.pty.onExit.mockClear()
@@ -304,11 +311,28 @@ describe('renderer workspace event bridge', () => {
   })
 
   it('registers process-lifetime push listeners only once', async () => {
+    api.pty.directories.mockResolvedValueOnce({
+      'session-1:snapshot': '/home/me/snapshot'
+    })
     await Promise.all([useWorkspace.getState().init(), useWorkspace.getState().init()])
 
     expect(api.pty.onExit).toHaveBeenCalledTimes(1)
+    expect(api.pty.onDirectory).toHaveBeenCalledTimes(1)
     expect(api.opencode.onStream).toHaveBeenCalledTimes(1)
     expect(api.opencodeTui.onStatus).toHaveBeenCalledTimes(1)
+    expect(useWorkspace.getState().terminalDirectories).toEqual({
+      'session-1:snapshot': '/home/me/snapshot'
+    })
+
+    directoryListeners[0]?.({ terminalId: 'session-1:split:1', directory: '/home/me/app' })
+    expect(useWorkspace.getState().terminalDirectories).toEqual({
+      'session-1:snapshot': '/home/me/snapshot',
+      'session-1:split:1': '/home/me/app'
+    })
+    directoryListeners[0]?.({ terminalId: 'session-1:split:1', directory: null })
+    expect(useWorkspace.getState().terminalDirectories).toEqual({
+      'session-1:snapshot': '/home/me/snapshot'
+    })
 
     useWorkspace.getState().selectSession('session-1')
     const model: OpenCodeModelOption = {
