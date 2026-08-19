@@ -176,6 +176,27 @@ describe('OpenCode GUI protocol helpers', () => {
     }
   })
 
+  it('aborts an active OpenCode session through the server API', async () => {
+    const fetchMock = vi.fn(async (_input: unknown, _init?: RequestInit) => new Response(JSON.stringify(true), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const manager = new OpenCodeManager()
+    const runtimes = (manager as unknown as { runtimes: Map<string, unknown> }).runtimes
+    const pending = (manager as unknown as { pending: Set<string> }).pending
+    runtimes.set('native-1', { url: 'http://127.0.0.1:43123', openCodeSessionId: 'ses_1' })
+    pending.add('native-1')
+
+    try {
+      await manager.abort(nativeSession)
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://127.0.0.1:43123/session/ses_1/abort',
+        expect.objectContaining({ method: 'POST' })
+      )
+      expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty('body')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it.each(['build', 'plan'] as const)('initializes a lazy OpenCode session with the selected %s agent', async (agent) => {
     const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
       const url = new URL(String(input))

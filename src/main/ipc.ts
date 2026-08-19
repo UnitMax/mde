@@ -19,6 +19,7 @@ import {
 import type {
   Distro,
   HostPlatform,
+  AbortOpenCodeSessionRequest,
   NewProject,
   NewSession,
   PathCheckResult,
@@ -200,6 +201,11 @@ export function registerIpcHandlers(
       return await opencodeManager.send(session, req.text, req.model, req.agent)
     }
   )
+  handle<AbortOpenCodeSessionRequest, void>(IpcChannels.opencodeAbort, async (req) => {
+    const session = await getSession(req.sessionId)
+    if (!session) throw new Error('Session no longer exists.')
+    await opencodeManager.abort(session)
+  })
   handle<ExecuteOpenCodeCommandRequest, OpenCodeConversationResponse>(
     IpcChannels.opencodeCommand,
     async (req) => {

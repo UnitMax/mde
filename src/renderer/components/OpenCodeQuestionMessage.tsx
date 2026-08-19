@@ -7,12 +7,14 @@ interface OpenCodeQuestionMessageProps {
   message: OpenCodeLiveQuestionMessage
   onReply: (answers: OpenCodeQuestionAnswers) => void
   onReject: () => void
+  disabled?: boolean
 }
 
 export function OpenCodeQuestionMessage({
   message,
   onReply,
-  onReject
+  onReject,
+  disabled = false
 }: OpenCodeQuestionMessageProps): JSX.Element {
   const [answers, setAnswers] = useState<OpenCodeQuestionAnswers>(() =>
     message.questions.map(() => [])
@@ -25,10 +27,11 @@ export function OpenCodeQuestionMessage({
   }, [message.id, message.questions])
 
   const responding = message.responding === true
+  const locked = responding || disabled
   const canSubmit = message.questions.every((_, index) => answers[index]?.some((answer) => answer.trim()) === true)
 
   const selectOption = (questionIndex: number, label: string, multiple: boolean): void => {
-    if (responding) return
+    if (locked) return
     setCustomActive((current) => ({ ...current, [questionIndex]: false }))
     setAnswers((current) => {
       const next = current.map((answer) => [...answer])
@@ -45,7 +48,7 @@ export function OpenCodeQuestionMessage({
   }
 
   const selectCustom = (questionIndex: number): void => {
-    if (responding) return
+    if (locked) return
     setCustomActive((current) => ({ ...current, [questionIndex]: true }))
     setAnswers((current) => current.map((answer, index) => (index === questionIndex ? [] : answer)))
   }
@@ -64,7 +67,7 @@ export function OpenCodeQuestionMessage({
         className="mt-3 space-y-4"
         onSubmit={(event) => {
           event.preventDefault()
-          if (canSubmit && !responding) onReply(answers.map((answer) => answer.map((value) => value.trim())))
+          if (canSubmit && !locked) onReply(answers.map((answer) => answer.map((value) => value.trim())))
         }}
       >
         {message.questions.map((question, questionIndex) => {
@@ -83,7 +86,7 @@ export function OpenCodeQuestionMessage({
                     <button
                       key={option.label}
                       type="button"
-                      disabled={responding}
+                      disabled={locked}
                       aria-pressed={isSelected}
                       onClick={() => selectOption(questionIndex, option.label, question.multiple === true)}
                       className={`block w-full rounded border px-2.5 py-2 text-left transition-colors disabled:pointer-events-none disabled:opacity-50 ${
@@ -100,7 +103,7 @@ export function OpenCodeQuestionMessage({
                 {question.custom !== false && (
                   <button
                     type="button"
-                    disabled={responding}
+                    disabled={locked}
                     aria-pressed={custom}
                     onClick={() => selectCustom(questionIndex)}
                     className={`block w-full rounded border px-2.5 py-2 text-left text-xs transition-colors disabled:pointer-events-none disabled:opacity-50 ${
@@ -119,7 +122,7 @@ export function OpenCodeQuestionMessage({
                   aria-label={`Custom answer for ${question.header}`}
                   placeholder="Enter your answer…"
                   value={selected[0] ?? ''}
-                  disabled={responding}
+                  disabled={locked}
                   onChange={(event) => updateCustom(questionIndex, event.target.value)}
                 />
               )}
@@ -127,10 +130,10 @@ export function OpenCodeQuestionMessage({
           )
         })}
         <div className="flex flex-wrap gap-2 border-t border-line pt-3">
-          <Button type="submit" size="sm" disabled={responding || !canSubmit}>
+          <Button type="submit" size="sm" disabled={locked || !canSubmit}>
             {responding ? 'Sending…' : 'Submit answers'}
           </Button>
-          <Button type="button" size="sm" variant="danger" disabled={responding} onClick={onReject}>
+          <Button type="button" size="sm" variant="danger" disabled={locked} onClick={onReject}>
             Reject
           </Button>
         </div>

@@ -1198,6 +1198,13 @@ class OpenCodeHttpError extends Error {
   }
 }
 
+class OpenCodeAbortError extends Error {
+  constructor() {
+    super('OpenCode operation was stopped.')
+    this.name = 'OpenCodeAbortError'
+  }
+}
+
 async function requestJson<T>(
   url: string,
   path: string,
@@ -1254,6 +1261,7 @@ export class OpenCodeManager {
   private readonly starting = new Map<string, Promise<OpenCodeRuntime>>()
   private readonly children = new Map<string, ChildProcessWithoutNullStreams>()
   private readonly pending = new Set<string>()
+  private readonly abortRequested = new Set<string>()
   private readonly streams = new Map<string, AbortController>()
 
   constructor(private readonly events?: OpenCodeEvents) {}
@@ -1388,13 +1396,17 @@ export class OpenCodeManager {
     let runtime: OpenCodeRuntime | undefined
     try {
       runtime = await this.ensureRuntime(session)
+      this.throwIfAbortRequested(session.id)
       if (!runtime.models) await this.listModels(session)
+      this.throwIfAbortRequested(session.id)
       if (!runtime.models?.some((option) => modelSelectionMatches(option, model))) {
         throw new Error('That model is no longer available. Refresh the model list and select another model.')
       }
       if (!runtime.openCodeSessionId) {
+        this.throwIfAbortRequested(session.id)
         await this.createSession(session, agent)
       }
+      this.throwIfAbortRequested(session.id)
       const openCodeSessionId = runtime.openCodeSessionId
       if (!openCodeSessionId) throw new Error('OpenCode conversation is not selected.')
       runtime.tracker?.setLocalRequestActive(true)
@@ -1453,12 +1465,32 @@ export class OpenCodeManager {
         ]
       }
     } catch (error) {
-      this.events?.onAlert?.({ sessionId: session.id, source: 'gui', kind: 'error' })
+      if (!this.abortRequested.has(session.id)) {
+        this.events?.onAlert?.({ sessionId: session.id, source: 'gui', kind: 'error' })
+      }
       throw error
     } finally {
       runtime?.tracker?.setLocalRequestActive(false)
       this.pending.delete(session.id)
+      this.abortRequested.delete(session.id)
     }
+  }
+
+  async abort(session: Session): Promise<void> {
+    assertOpenCodeSessionSupported(session)
+    if (!this.pending.has(session.id)) return
+
+    this.abortRequested.add(session.id)
+    const runtime = this.runtimes.get(session.id)
+    const openCodeSessionId = runtime?.openCodeSessionId
+    if (!runtime || !openCodeSessionId) return
+
+    await requestJson<boolean>(
+      runtime.url,
+      `/session/${encodeURIComponent(openCodeSessionId)}/abort`,
+      undefined,
+      REQUEST_TIMEOUT_MS
+    )
   }
 
   async executeCommand(
@@ -1476,13 +1508,17 @@ export class OpenCodeManager {
     let runtime: OpenCodeRuntime | undefined
     try {
       runtime = await this.ensureRuntime(session)
+      this.throwIfAbortRequested(session.id)
       if (!runtime.models) await this.listModels(session)
+      this.throwIfAbortRequested(session.id)
       if (!runtime.models?.some((option) => modelSelectionMatches(option, model))) {
         throw new Error('That model is no longer available. Refresh the model list and select another model.')
       }
       if (!runtime.openCodeSessionId) {
+        this.throwIfAbortRequested(session.id)
         await this.createSession(session)
       }
+      this.throwIfAbortRequested(session.id)
       const openCodeSessionId = runtime.openCodeSessionId
       if (!openCodeSessionId) throw new Error('OpenCode conversation is not selected.')
       runtime.tracker?.setLocalRequestActive(true)
@@ -1507,12 +1543,19 @@ export class OpenCodeManager {
       this.events?.onAlert?.({ sessionId: session.id, source: 'gui', kind: 'completed' })
       return result
     } catch (error) {
-      this.events?.onAlert?.({ sessionId: session.id, source: 'gui', kind: 'error' })
+      if (!this.abortRequested.has(session.id)) {
+        this.events?.onAlert?.({ sessionId: session.id, source: 'gui', kind: 'error' })
+      }
       throw error
     } finally {
       runtime?.tracker?.setLocalRequestActive(false)
       this.pending.delete(session.id)
+      this.abortRequested.delete(session.id)
     }
+  }
+
+  private throwIfAbortRequested(sessionId: string): void {
+    if (this.abortRequested.has(sessionId)) throw new OpenCodeAbortError()
   }
 
   async revert(session: Session, messageId: string): Promise<OpenCodeConversationResponse> {

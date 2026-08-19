@@ -68,6 +68,7 @@ const api: RendererApi = {
   },
   opencode: {
     send: (req) => ipcRenderer.invoke(IpcChannels.opencodeSend, req),
+    abort: (req) => ipcRenderer.invoke(IpcChannels.opencodeAbort, req),
     executeCommand: (req) => ipcRenderer.invoke(IpcChannels.opencodeCommand, req),
     listSessions: (req) => ipcRenderer.invoke(IpcChannels.opencodeSessionsList, req),
     listModels: (req) => ipcRenderer.invoke(IpcChannels.opencodeModelsList, req),

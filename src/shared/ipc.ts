@@ -7,6 +7,7 @@ import type {
   PathResolution,
   Project,
   ProjectKind,
+  AbortOpenCodeSessionRequest,
   Session,
   SendOpenCodeMessageRequest,
   SendOpenCodeMessageResponse,
@@ -84,6 +85,7 @@ export const IpcChannels = {
   pathOpenTerminalInVsCode: 'path:open-terminal-in-vscode',
 
   opencodeSend: 'opencode:send',
+  opencodeAbort: 'opencode:abort',
   opencodeCommand: 'opencode:command',
   opencodeSessionsList: 'opencode:sessions-list',
   opencodeModelsList: 'opencode:models-list',
@@ -250,6 +252,7 @@ export interface RendererApi {
   }
   opencode: {
     send(req: SendOpenCodeMessageRequest): Promise<SendOpenCodeMessageResponse>
+    abort(req: AbortOpenCodeSessionRequest): Promise<void>
     executeCommand(req: ExecuteOpenCodeCommandRequest): Promise<OpenCodeConversationResponse>
     listSessions(req: ListOpenCodeSessionsRequest): Promise<ListOpenCodeSessionsResponse>
     listModels(req: ListOpenCodeModelsRequest): Promise<ListOpenCodeModelsResponse>

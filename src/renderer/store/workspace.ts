@@ -53,6 +53,8 @@ export interface OpenCodeChatState {
   openCodeSessionId: string | null
   liveItems: OpenCodeLiveChatItem[]
   pending: boolean
+  operationId?: string | null
+  stopping?: boolean
   sessionsLoading: boolean
   modelsLoading: boolean
   error: string | null
@@ -84,6 +86,8 @@ const EMPTY_CHAT: OpenCodeChatState = {
   openCodeSessionId: null,
   liveItems: [],
   pending: false,
+  operationId: null,
+  stopping: false,
   sessionsLoading: false,
   modelsLoading: false,
   error: null,
@@ -221,6 +225,7 @@ function latestCompletedUserId(messages: OpenCodeChatItem[]): string | null {
 
 function newGenerationState(): OpenCodeGenerationState {
   return {
+    status: 'running',
     live: {
       startedAt: Date.now(),
       firstTokenAt: null,
@@ -321,6 +326,46 @@ function retainActiveSubagentInteractions(
   )
 }
 
+function finalizeCancelledLiveItems(liveItems: OpenCodeLiveChatItem[]): OpenCodeChatItem[] {
+  return liveItems.flatMap((item): OpenCodeChatItem[] => {
+    if (item.role === 'assistant') {
+      return item.text ? [{ id: item.id, role: 'assistant' as const, text: item.text }] : []
+    }
+    if (item.role === 'reasoning') {
+      return item.text
+        ? [{
+            id: item.id,
+            role: 'reasoning' as const,
+            text: item.text,
+            ...(item.durationMs === undefined ? {} : { durationMs: item.durationMs })
+          }]
+        : []
+    }
+    if (item.role !== 'tool') return []
+
+    const unfinished = item.status === 'pending' || item.status === 'running'
+    return [
+      {
+        id: item.id,
+        role: 'tool' as const,
+        tool: item.tool,
+        status: unfinished ? ('error' as const) : item.status,
+        input: item.input,
+        ...(item.title === undefined ? {} : { title: item.title }),
+        ...(item.output === undefined ? {} : { output: item.output }),
+        ...(item.error === undefined && !unfinished ? {} : { error: item.error ?? 'Cancelled' })
+      }
+    ]
+  })
+}
+
+function cancelActiveSubagents(subagents: OpenCodeSubagent[]): OpenCodeSubagent[] {
+  const finishedAt = Date.now()
+  return subagents.map((subagent) =>
+    subagentIsActive(subagent) ? { ...subagent, status: 'cancelled' as const, finishedAt } : subagent
+  )
+}
+
 function questionAnswersValid(prompts: OpenCodeQuestionPrompt[], answers: OpenCodeQuestionAnswers): boolean {
   if (prompts.length !== answers.length) return false
 
@@ -386,6 +431,7 @@ interface WorkspaceState {
   selectOpenCodeSession: (sessionId: string, openCodeSessionId: string) => Promise<void>
   createOpenCodeSession: (sessionId: string) => Promise<void>
   sendOpenCodeMessage: (sessionId: string, text: string) => Promise<void>
+  stopOpenCodeGeneration: (sessionId: string) => Promise<void>
   undoOpenCodeLastTurn: (sessionId: string) => Promise<void>
   redoOpenCodeLastTurn: (sessionId: string) => Promise<void>
   replyOpenCodePermission: (
@@ -819,6 +865,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       role: 'user',
       text: prompt
     }
+    const operationId = crypto.randomUUID()
 
     set((state) => {
       const previous = state.opencodeChats[sessionId] ?? EMPTY_CHAT
@@ -833,6 +880,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
             liveItems: retainActiveSubagentInteractions(previous.liveItems, previous.subagents),
             subagents: previous.subagents.filter(subagentIsActive),
             pending: true,
+            operationId,
+            stopping: false,
             externalBusy: false,
             sessionsLoading: false,
             error: null,
@@ -851,7 +900,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       })
       set((state) => {
         const current = state.opencodeChats[sessionId]
-        if (!current) return state
+        if (!current || current.operationId !== operationId) return state
         return {
           opencodeChats: {
             ...state.opencodeChats,
@@ -874,10 +923,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               contextUsage: contextUsage ?? null,
               compacting: false,
               generation: {
+                status: 'completed',
                 live: null,
                 final: completedGenerationStats(generationStats ?? null, current.generation)
               },
               pending: false,
+              operationId: null,
+              stopping: false,
               revert: null,
               externalBusy: false,
               liveItems: retainActiveSubagentInteractions(current.liveItems, current.subagents),
@@ -892,19 +944,76 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const message = error instanceof Error ? error.message : 'OpenCode request failed.'
       set((state) => {
         const current = state.opencodeChats[sessionId]
-        if (!current) return state
+        if (!current || current.operationId !== operationId || current.stopping) return state
         return {
           opencodeChats: {
             ...state.opencodeChats,
             [sessionId]: {
               ...current,
               pending: false,
+              operationId: null,
+              stopping: false,
               compacting: false,
               generation: null,
               error: message,
               liveItems: retainActiveSubagentInteractions(current.liveItems, current.subagents),
               unreadCompletion: state.selectedSessionId !== sessionId
             }
+          }
+        }
+      })
+    }
+  },
+
+  stopOpenCodeGeneration: async (sessionId) => {
+    const current = get().opencodeChats[sessionId]
+    if (!current?.pending || current.stopping || !current.operationId) return
+    const operationId = current.operationId
+
+    set((state) => {
+      const chat = state.opencodeChats[sessionId]
+      if (!chat || chat.operationId !== operationId || !chat.pending) return state
+      return {
+        opencodeChats: {
+          ...state.opencodeChats,
+          [sessionId]: { ...chat, stopping: true, error: null }
+        }
+      }
+    })
+
+    try {
+      await window.api.opencode.abort({ sessionId })
+      set((state) => {
+        const chat = state.opencodeChats[sessionId]
+        if (!chat || chat.operationId !== operationId || !chat.pending) return state
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: {
+              ...chat,
+              messages: [...chat.messages, ...finalizeCancelledLiveItems(chat.liveItems)],
+              generation: { status: 'cancelled', live: null, final: null },
+              pending: false,
+              operationId: null,
+              stopping: false,
+              compacting: false,
+              externalBusy: false,
+              liveItems: [],
+              subagents: cancelActiveSubagents(chat.subagents),
+              error: null
+            }
+          }
+        }
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not stop OpenCode.'
+      set((state) => {
+        const chat = state.opencodeChats[sessionId]
+        if (!chat || chat.operationId !== operationId) return state
+        return {
+          opencodeChats: {
+            ...state.opencodeChats,
+            [sessionId]: { ...chat, stopping: false, error: message }
           }
         }
       })
@@ -925,6 +1034,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     }
     if (current?.pending || current?.externalBusy || current.liveItems.some((item) => item.role === 'question')) return
 
+    const operationId = crypto.randomUUID()
+
     set((state) => {
       const previous = state.opencodeChats[sessionId] ?? EMPTY_CHAT
       return {
@@ -937,6 +1048,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
             liveItems: retainActiveSubagentInteractions(previous.liveItems, previous.subagents),
             subagents: previous.subagents.filter(subagentIsActive),
             pending: true,
+            operationId,
+            stopping: false,
             externalBusy: false,
             sessionsLoading: false,
             error: null,
@@ -954,7 +1067,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       })
       set((state) => {
         const chat = state.opencodeChats[sessionId]
-        if (!chat) return state
+        if (!chat || chat.operationId !== operationId) return state
         return {
           opencodeChats: {
             ...state.opencodeChats,
@@ -964,11 +1077,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
               contextUsage: result.contextUsage ?? null,
               compacting: false,
               generation: {
+                status: 'completed',
                 live: null,
                 final: completedGenerationStats(result.generationStats ?? null, chat.generation)
               },
               openCodeSessionId: result.sessionId,
               pending: false,
+              operationId: null,
+              stopping: false,
               revert: result.revert,
               undoSupported: result.undoSupported,
               externalBusy: false,
@@ -984,13 +1100,15 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const message = error instanceof Error ? error.message : 'OpenCode command failed.'
       set((state) => {
         const chat = state.opencodeChats[sessionId]
-        if (!chat) return state
+        if (!chat || chat.operationId !== operationId || chat.stopping) return state
         return {
           opencodeChats: {
             ...state.opencodeChats,
             [sessionId]: {
               ...chat,
               pending: false,
+              operationId: null,
+              stopping: false,
               compacting: false,
               generation: null,
               error: message,
@@ -1497,6 +1615,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     set((state) => {
       const current = state.opencodeChats[sessionId]
       if (!current) return state
+      if (current.generation?.status === 'cancelled' && item.kind !== 'status') return state
 
       if (item.kind === 'question') {
         const liveItems =

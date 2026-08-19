@@ -403,6 +403,10 @@ export interface SendOpenCodeMessageRequest {
   agent: OpenCodeAgent
 }
 
+export interface AbortOpenCodeSessionRequest {
+  sessionId: string
+}
+
 export interface SendOpenCodeMessageResponse {
   sessionId: string
   /** The real OpenCode user-message ID that owns this completed turn. */
@@ -447,6 +451,7 @@ export interface OpenCodeLiveGenerationState {
 }
 
 export interface OpenCodeGenerationState {
+  status: 'running' | 'completed' | 'cancelled'
   live: OpenCodeLiveGenerationState | null
   final: OpenCodeGenerationStats | null
 }

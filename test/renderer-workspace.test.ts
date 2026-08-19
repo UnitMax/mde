@@ -11,7 +11,35 @@ import type {
 
 vi.mock('../src/renderer/terminal/sessions', () => ({ disposeSession: vi.fn() }))
 
-import { useWorkspace } from '../src/renderer/store/workspace'
+import { useWorkspace, type OpenCodeChatState } from '../src/renderer/store/workspace'
+
+function activeChat(model: OpenCodeModelOption): OpenCodeChatState {
+  return {
+    messages: [],
+    contextUsage: null,
+    generation: null,
+    compacting: false,
+    availableSessions: [],
+    availableModels: [model],
+    selectedModel: model,
+    agent: 'build',
+    subagents: [],
+    revert: null,
+    undoSupported: true,
+    undoing: false,
+    redoing: false,
+    externalBusy: false,
+    openCodeSessionId: 'opencode-1',
+    liveItems: [],
+    pending: false,
+    operationId: null,
+    stopping: false,
+    sessionsLoading: false,
+    modelsLoading: false,
+    error: null,
+    unreadCompletion: false
+  }
+}
 
 describe('renderer workspace event bridge', () => {
   const streamListeners: Array<(chunk: OpenCodeStreamChunk) => void> = []
@@ -50,6 +78,7 @@ describe('renderer workspace event bridge', () => {
     },
     opencode: {
       send: vi.fn(),
+      abort: vi.fn(async () => undefined),
       executeCommand: vi.fn(),
       listSessions: vi.fn(),
       listModels: vi.fn(),
@@ -108,6 +137,7 @@ describe('renderer workspace event bridge', () => {
     api.sessions.update.mockClear()
     api.sessions.reorder.mockReset()
     api.opencode.send.mockReset()
+    api.opencode.abort.mockReset()
     api.opencode.executeCommand.mockReset()
     api.opencode.listSessions.mockReset()
     api.opencode.listModels.mockReset()
@@ -667,6 +697,140 @@ describe('renderer workspace event bridge', () => {
     })
     useWorkspace.getState().selectOpenCodeAgent('session-1', 'plan')
     expect(useWorkspace.getState().opencodeChats['session-1']?.agent).toBe('build')
+  })
+
+  it('stops a pending GUI turn after abort confirmation and preserves partial output', async () => {
+    const model: OpenCodeModelOption = {
+      key: 'opencode/test-model',
+      providerID: 'opencode',
+      providerName: 'OpenCode',
+      modelID: 'test-model',
+      modelName: 'Test model'
+    }
+    const chat = activeChat(model)
+    useWorkspace.setState({
+      opencodeChats: {
+        'session-1': {
+          ...chat,
+          pending: true,
+          operationId: 'turn-1',
+          generation: { status: 'running', live: null, final: null },
+          liveItems: [
+            { id: 'text-1', role: 'assistant', text: 'Partial answer', live: true },
+            { id: 'reasoning-1', role: 'reasoning', text: 'Partial thought', live: true },
+            { id: 'tool-1', role: 'tool', live: true, tool: 'bash', status: 'running', input: {} },
+            {
+              id: 'question-1',
+              role: 'question',
+              live: true,
+              questions: [{ header: 'Continue', question: 'Continue?', options: [] }]
+            }
+          ]
+        }
+      }
+    })
+
+    let resolveAbort: (() => void) | undefined
+    api.opencode.abort.mockImplementationOnce(
+      () => new Promise<undefined>((resolve) => {
+        resolveAbort = () => resolve(undefined)
+      })
+    )
+
+    const stop = useWorkspace.getState().stopOpenCodeGeneration('session-1')
+    await Promise.resolve()
+    expect(useWorkspace.getState().opencodeChats['session-1']).toMatchObject({ pending: true, stopping: true })
+
+    resolveAbort?.()
+    await stop
+
+    expect(api.opencode.abort).toHaveBeenCalledWith({ sessionId: 'session-1' })
+    expect(useWorkspace.getState().opencodeChats['session-1']).toMatchObject({
+      pending: false,
+      stopping: false,
+      operationId: null,
+      generation: { status: 'cancelled', live: null, final: null },
+      liveItems: []
+    })
+    expect(useWorkspace.getState().opencodeChats['session-1']?.messages).toEqual([
+      { id: 'text-1', role: 'assistant', text: 'Partial answer' },
+      { id: 'reasoning-1', role: 'reasoning', text: 'Partial thought' },
+      { id: 'tool-1', role: 'tool', tool: 'bash', status: 'error', input: {}, error: 'Cancelled' }
+    ])
+  })
+
+  it('keeps a GUI turn pending when abort confirmation fails', async () => {
+    const model: OpenCodeModelOption = {
+      key: 'opencode/test-model',
+      providerID: 'opencode',
+      providerName: 'OpenCode',
+      modelID: 'test-model',
+      modelName: 'Test model'
+    }
+    const chat = activeChat(model)
+    useWorkspace.setState({
+      opencodeChats: {
+        'session-1': {
+          ...chat,
+          pending: true,
+          operationId: 'turn-1',
+          generation: { status: 'running', live: null, final: null }
+        }
+      }
+    })
+    api.opencode.abort.mockRejectedValueOnce(new Error('Abort failed'))
+
+    await useWorkspace.getState().stopOpenCodeGeneration('session-1')
+
+    expect(useWorkspace.getState().opencodeChats['session-1']).toMatchObject({
+      pending: true,
+      stopping: false,
+      operationId: 'turn-1',
+      error: 'Abort failed'
+    })
+  })
+
+  it('ignores a late send response after the GUI turn was stopped', async () => {
+    const model: OpenCodeModelOption = {
+      key: 'opencode/test-model',
+      providerID: 'opencode',
+      providerName: 'OpenCode',
+      modelID: 'test-model',
+      modelName: 'Test model'
+    }
+    useWorkspace.setState({ opencodeChats: { 'session-1': activeChat(model) } })
+
+    let resolveSend: ((value: {
+      sessionId: string
+      userMessageId: string | null
+      messages: OpenCodeChatItem[]
+    }) => void) | undefined
+    api.opencode.send.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSend = resolve
+        })
+    )
+
+    const send = useWorkspace.getState().sendOpenCodeMessage('session-1', 'hello')
+    await Promise.resolve()
+    api.opencode.abort.mockResolvedValueOnce(undefined)
+    await useWorkspace.getState().stopOpenCodeGeneration('session-1')
+
+    resolveSend?.({
+      sessionId: 'opencode-1',
+      userMessageId: 'user-1',
+      messages: [{ id: 'assistant-1', role: 'assistant', text: 'Late answer' }]
+    })
+    await send
+
+    expect(useWorkspace.getState().opencodeChats['session-1']).toMatchObject({
+      pending: false,
+      generation: { status: 'cancelled' }
+    })
+    expect(useWorkspace.getState().opencodeChats['session-1']?.messages).not.toContainEqual(
+      expect.objectContaining({ id: 'assistant-1' })
+    )
   })
 
   it('loads, switches, and persists existing OpenCode conversations', async () => {

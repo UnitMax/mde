@@ -21,6 +21,7 @@ import {
   RotateCw,
   Search,
   Settings2,
+  Square,
   Undo2
 } from 'lucide-react'
 import type {
@@ -1259,10 +1260,12 @@ function LiveTextMessageView({ text, assistantLabel }: { text: string; assistant
 
 function PermissionMessageView({
   message,
-  onReply
+  onReply,
+  disabled
 }: {
   message: OpenCodeLivePermissionMessage
   onReply: (reply: OpenCodePermissionReply) => void
+  disabled: boolean
 }): JSX.Element {
   return (
     <li
@@ -1280,13 +1283,13 @@ function PermissionMessageView({
         </pre>
       )}
       <div className="mt-2 flex flex-wrap gap-2">
-        <Button size="sm" disabled={message.responding} onClick={() => onReply('once')}>
+        <Button size="sm" disabled={disabled || message.responding} onClick={() => onReply('once')}>
           Once
         </Button>
-        <Button size="sm" variant="secondary" disabled={message.responding} onClick={() => onReply('always')}>
+        <Button size="sm" variant="secondary" disabled={disabled || message.responding} onClick={() => onReply('always')}>
           Always
         </Button>
-        <Button size="sm" variant="danger" disabled={message.responding} onClick={() => onReply('reject')}>
+        <Button size="sm" variant="danger" disabled={disabled || message.responding} onClick={() => onReply('reject')}>
           Reject
         </Button>
       </div>
@@ -1299,23 +1302,26 @@ function LiveItemView({
   onPermissionReply,
   onQuestionReply,
   onQuestionReject,
-  assistantLabel
+  assistantLabel,
+  disabled
 }: {
   item: OpenCodeLiveChatItem
   onPermissionReply: (requestId: string, reply: OpenCodePermissionReply) => void
   onQuestionReply: (requestId: string, answers: string[][]) => void
   onQuestionReject: (requestId: string) => void
   assistantLabel: string
+  disabled: boolean
 }): JSX.Element {
   if (item.role === 'tool') return <ToolMessageView message={item} live />
   if (item.role === 'reasoning') return <ReasoningMessageView message={item} live />
   if (item.role === 'permission') {
-    return <PermissionMessageView message={item} onReply={(reply) => onPermissionReply(item.id, reply)} />
+    return <PermissionMessageView message={item} disabled={disabled} onReply={(reply) => onPermissionReply(item.id, reply)} />
   }
   if (item.role === 'question') {
     return (
       <OpenCodeQuestionMessage
         message={item}
+        disabled={disabled}
         onReply={(answers) => onQuestionReply(item.id, answers)}
         onReject={() => onQuestionReject(item.id)}
       />
@@ -1426,10 +1432,12 @@ function generationPhaseLabel(phase: NonNullable<OpenCodeGenerationState['live']
 
 function GenerationMetrics({
   generation,
-  pending
+  pending,
+  stopping
 }: {
   generation: OpenCodeGenerationState | null
   pending: boolean
+  stopping: boolean
 }): JSX.Element | null {
   const [now, setNow] = useState(() => Date.now())
   const live = generation?.live ?? null
@@ -1439,6 +1447,14 @@ function GenerationMetrics({
     const timer = window.setInterval(() => setNow(Date.now()), 250)
     return () => window.clearInterval(timer)
   }, [Boolean(live)])
+
+  if (pending && stopping) {
+    return (
+      <span aria-label="Stopping generation" className="shrink-0 whitespace-nowrap rounded px-1.5 py-1 text-[10px] text-fg-subtle">
+        Stopping…
+      </span>
+    )
+  }
 
   if (pending && live) {
     const firstTokenElapsed = live.firstTokenAt ? now - live.firstTokenAt : null
@@ -1466,6 +1482,14 @@ function GenerationMetrics({
         className="shrink-0 whitespace-nowrap rounded px-1.5 py-1 text-[10px] text-fg-subtle"
       >
         {label}
+      </span>
+    )
+  }
+
+  if (generation?.status === 'cancelled') {
+    return (
+      <span aria-label="Generation stopped" className="shrink-0 whitespace-nowrap rounded px-1.5 py-1 text-[10px] text-fg-subtle">
+        Stopped
       </span>
     )
   }
@@ -1732,6 +1756,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
   const [slashError, setSlashError] = useState<string | null>(null)
   const chat = useWorkspace((state) => state.opencodeChats[session.id])
   const sendOpenCodeMessage = useWorkspace((state) => state.sendOpenCodeMessage)
+  const stopOpenCodeGeneration = useWorkspace((state) => state.stopOpenCodeGeneration)
   const selectOpenCodeAgent = useWorkspace((state) => state.selectOpenCodeAgent)
   const executeOpenCodeCommand = useWorkspace((state) => state.executeOpenCodeCommand)
   const loadOpenCodeModels = useWorkspace((state) => state.loadOpenCodeModels)
@@ -1750,6 +1775,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
     session.kind === 'native' ||
     (session.kind === 'wsl' && platform?.isWindows === true && wslAvailable && Boolean(session.distro))
   const pending = chat?.pending ?? false
+  const stopping = chat?.stopping ?? false
   const compacting = chat?.compacting ?? false
   const error = chat?.error ?? null
   const messages = chat?.messages ?? []
@@ -1830,6 +1856,11 @@ function GuiView({ session }: { session: Session }): JSX.Element {
       return
     }
     void sendOpenCodeMessage(session.id, message)
+  }
+
+  const stop = (): void => {
+    if (!pending || stopping) return
+    void stopOpenCodeGeneration(session.id)
   }
 
   const replyPermission = (requestId: string, reply: OpenCodePermissionReply): void => {
@@ -1915,6 +1946,7 @@ function GuiView({ session }: { session: Session }): JSX.Element {
           <LiveItemView
             key={item.id}
             item={item}
+            disabled={stopping}
             onPermissionReply={replyPermission}
             onQuestionReply={replyQuestion}
             onQuestionReject={rejectQuestion}
@@ -2085,27 +2117,29 @@ function GuiView({ session }: { session: Session }): JSX.Element {
                 onRefresh={() => void loadOpenCodeModels(session.id)}
               />
               <ContextUsage usage={contextUsage} selectedModel={selectedModel} />
-              <GenerationMetrics generation={generation} pending={pending} />
+              <GenerationMetrics generation={generation} pending={pending} stopping={stopping} />
             </div>
 
             <Button
               size="icon"
-              aria-label="Send message"
-              title="Send message"
+              variant={pending ? 'danger' : undefined}
+              aria-label={pending ? (stopping ? 'Stopping generation' : 'Stop generation') : 'Send message'}
+              title={pending ? (stopping ? 'Stopping generation' : 'Stop generation') : 'Send message'}
               className="h-8 w-8 shrink-0 rounded-lg"
               disabled={
-                !openCodeSupported ||
-                pending ||
-                questionWaiting ||
-                externalBusy ||
-                sessionsLoading ||
-                modelsLoading ||
-                !selectedModel ||
-                !draft.trim()
+                pending
+                  ? stopping
+                  : !openCodeSupported ||
+                    questionWaiting ||
+                    externalBusy ||
+                    sessionsLoading ||
+                    modelsLoading ||
+                    !selectedModel ||
+                    !draft.trim()
               }
-              onClick={send}
+              onClick={pending ? stop : send}
             >
-              <ArrowUp className="h-4 w-4" />
+              {pending ? <Square className="h-3.5 w-3.5 fill-current" /> : <ArrowUp className="h-4 w-4" />}
             </Button>
           </div>
         </div>
