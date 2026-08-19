@@ -88,7 +88,11 @@ import {
   TERMINAL_FONT_SIZES,
   type TerminalSettings
 } from '@/terminal/terminal-settings'
-import { getTerminalPalette, TERMINAL_THEMES } from '@/terminal/terminal-themes'
+import {
+  APPLICATION_THEMES,
+  applyApplicationTheme,
+  getTerminalPalette
+} from '@/theme/themes'
 import {
   terminalGridTemplates,
   layoutClass,
@@ -532,18 +536,18 @@ function tokenRatePluginStatusLabel(state: OpenCodeTokenRatePluginState | undefi
   return 'Not installed'
 }
 
-type TerminalSettingsSection = 'cosmetic' | 'alerts' | 'tui' | 'token-rate'
+type SettingsSection = 'appearance' | 'alerts' | 'tui' | 'token-rate'
 
-const TERMINAL_SETTINGS_SECTIONS: Array<{ id: TerminalSettingsSection; label: string }> = [
-  { id: 'cosmetic', label: 'Cosmetic' },
+const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string }> = [
+  { id: 'appearance', label: 'Appearance' },
   { id: 'alerts', label: 'OpenCode alerts' },
   { id: 'tui', label: 'OpenCode TUI plugin' },
   { id: 'token-rate', label: 'OpenCode token rate' }
 ]
 
-function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Element {
+function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Element {
   const [open, setOpen] = useState(false)
-  const [activeSection, setActiveSection] = useState<TerminalSettingsSection>('cosmetic')
+  const [activeSection, setActiveSection] = useState<SettingsSection>('appearance')
   const sectionButtonRefs = useRef<Array<HTMLButtonElement | null>>([])
   const [settings, setSettings] = useState<TerminalSettings>(() => getTerminalSettings())
   const [availableFonts] = useState(() => listTerminalFonts())
@@ -576,16 +580,16 @@ function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JS
       : distros.map((distro) => ({ kind: 'wsl', distro: distro.name }))
 
   useEffect(() => {
-    if (open) setActiveSection('cosmetic')
+    if (open) setActiveSection('appearance')
   }, [open])
 
-  const selectSection = (section: TerminalSettingsSection): void => {
+  const selectSection = (section: SettingsSection): void => {
     setActiveSection(section)
   }
 
   const moveSection = (currentIndex: number, delta: number): void => {
-    const nextIndex = (currentIndex + delta + TERMINAL_SETTINGS_SECTIONS.length) % TERMINAL_SETTINGS_SECTIONS.length
-    const nextSection = TERMINAL_SETTINGS_SECTIONS[nextIndex]
+    const nextIndex = (currentIndex + delta + SETTINGS_SECTIONS.length) % SETTINGS_SECTIONS.length
+    const nextSection = SETTINGS_SECTIONS[nextIndex]
     if (!nextSection) return
     setActiveSection(nextSection.id)
     sectionButtonRefs.current[nextIndex]?.focus()
@@ -600,15 +604,15 @@ function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JS
       moveSection(index, -1)
     } else if (event.key === 'Home') {
       event.preventDefault()
-      const firstSection = TERMINAL_SETTINGS_SECTIONS[0]
+      const firstSection = SETTINGS_SECTIONS[0]
       if (firstSection) {
         setActiveSection(firstSection.id)
         sectionButtonRefs.current[0]?.focus()
       }
     } else if (event.key === 'End') {
       event.preventDefault()
-      const lastIndex = TERMINAL_SETTINGS_SECTIONS.length - 1
-      const lastSection = TERMINAL_SETTINGS_SECTIONS[lastIndex]
+      const lastIndex = SETTINGS_SECTIONS.length - 1
+      const lastSection = SETTINGS_SECTIONS[lastIndex]
       if (lastSection) {
         setActiveSection(lastSection.id)
         sectionButtonRefs.current[lastIndex]?.focus()
@@ -624,6 +628,7 @@ function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JS
     const next = { ...settings, ...patch }
     setSettings(next)
     saveTerminalSettings(next)
+    applyApplicationTheme(next.theme)
     applyTerminalSettings(next)
 
     terminalIds.forEach((terminalId) => {
@@ -789,21 +794,21 @@ function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JS
     <Dialog open={open} onOpenChange={setOpen}>
       <button
         type="button"
-        aria-label="Change terminal settings"
+        aria-label="Change settings"
         data-testid="terminal-settings-control"
-        title="Terminal settings"
+        title="Settings"
         onClick={() => setOpen(true)}
         className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded px-2 text-xs text-fg-subtle hover:bg-hover hover:text-fg"
       >
         <Settings2 className="h-3.5 w-3.5" />
-        Terminal settings
+        Settings
       </button>
 
       <DialogContent animated={false} className="flex max-h-[85vh] max-w-3xl flex-col">
         <DialogHeader>
-          <DialogTitle>Terminal settings</DialogTitle>
+          <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
-            Cosmetic changes apply immediately. OpenCode TUI plugin changes apply after the TUI is restarted.
+            Appearance changes apply immediately. OpenCode TUI plugin changes apply after the TUI is restarted.
           </DialogDescription>
         </DialogHeader>
 
@@ -811,11 +816,11 @@ function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JS
           <div className="min-w-0 border-r border-line pr-3">
             <div
               role="tablist"
-              aria-label="Terminal settings sections"
+              aria-label="Settings sections"
               aria-orientation="vertical"
               className="flex flex-col gap-1"
             >
-              {TERMINAL_SETTINGS_SECTIONS.map((section, index) => {
+              {SETTINGS_SECTIONS.map((section, index) => {
                 const active = activeSection === section.id
                 return (
                   <button
@@ -849,18 +854,18 @@ function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JS
             tabIndex={0}
             className="min-w-0 min-h-0 overflow-y-auto pr-1"
           >
-            {activeSection === 'cosmetic' && (
-              <section className="space-y-3" aria-labelledby="terminal-cosmetic-settings">
-                <h3 id="terminal-cosmetic-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
-                  Cosmetic
+            {activeSection === 'appearance' && (
+              <section className="space-y-3" aria-labelledby="appearance-settings">
+                <h3 id="appearance-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
+                  Appearance
                 </h3>
                 <div className="space-y-4">
                   <label className="block text-xs font-medium text-fg-muted">
-                    Color scheme
+                    Application theme
                     <Select
                       value={settings.theme}
                       onValueChange={(value) => {
-                        const theme = TERMINAL_THEMES.find((option) => option.id === value)
+                        const theme = APPLICATION_THEMES.find((option) => option.id === value)
                         if (theme) updateSettings({ theme: theme.id })
                       }}
                     >
@@ -868,7 +873,7 @@ function TerminalSettingsControl({ terminalIds }: { terminalIds: string[] }): JS
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {TERMINAL_THEMES.map((option) => (
+                        {APPLICATION_THEMES.map((option) => (
                           <SelectItem key={option.id} value={option.id}>
                             {option.label}
                           </SelectItem>
@@ -2454,7 +2459,7 @@ export function TerminalView({
                 </button>
               ))}
             </div>
-            <TerminalSettingsControl
+            <SettingsControl
               terminalIds={terminalLayout.panes.map((pane) => pane.terminalId)}
             />
           </>

@@ -1,9 +1,6 @@
 @import 'tailwindcss';
 
-/*
- * Single dark palette. Theming is out of scope for this version, so the tokens
- * are defined once rather than doubled up behind a light/dark switch.
- */
+/* Slate is the startup fallback; the saved application theme overrides these tokens. */
 @theme {
   --color-bg: #0b0e13;
   --color-panel: #10141b;
@@ -24,6 +21,7 @@
   --color-ok: #3fb950;
   --color-warn: #d8a325;
   --color-danger: #f0574f;
+  --color-scrollbar-hover: #3b4757;
 
   --font-mono:
     'Cascadia Mono', 'JetBrains Mono', 'Fira Code', 'DejaVu Sans Mono', Menlo, Consolas, monospace;
@@ -78,7 +76,7 @@
     border-radius: 6px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #3b4757;
+    background: var(--color-scrollbar-hover);
     background-clip: content-box;
   }
 }

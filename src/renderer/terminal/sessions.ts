@@ -11,8 +11,8 @@ import {
 import {
   getTerminalPalette,
   getTerminalTheme,
-  type TerminalThemeId
-} from './terminal-themes'
+  type ApplicationThemeId
+} from '@/theme/themes'
 
 export type RendererKind = 'webgl' | 'dom'
 
@@ -26,7 +26,7 @@ export interface TerminalSession {
    */
   container: HTMLDivElement
   renderer: RendererKind
-  themeId: TerminalThemeId
+  themeId: ApplicationThemeId
   disposeClipboardHandlers: () => void
 }
 
@@ -167,7 +167,7 @@ export function applyTerminalSettings(settings: TerminalSettings): void {
   }
 }
 
-export function applyTerminalTheme(themeId: TerminalThemeId): void {
+export function applyTerminalTheme(themeId: ApplicationThemeId): void {
   const theme = getTerminalTheme(themeId)
   for (const session of sessions.values()) {
     session.term.options.theme = theme

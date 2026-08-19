@@ -141,11 +141,11 @@ function customSessionColor(color: Session['color']): Session['color'] {
 function sessionStatusTint(status: SessionIndicator['status']): string | undefined {
   switch (status) {
     case 'attention':
-      return 'linear-gradient(rgba(91, 140, 255, 0.12), rgba(91, 140, 255, 0.12))'
+      return 'linear-gradient(color-mix(in srgb, var(--color-accent) 12%, transparent), color-mix(in srgb, var(--color-accent) 12%, transparent))'
     case 'completed':
-      return 'linear-gradient(rgba(63, 185, 80, 0.12), rgba(63, 185, 80, 0.12))'
+      return 'linear-gradient(color-mix(in srgb, var(--color-ok) 12%, transparent), color-mix(in srgb, var(--color-ok) 12%, transparent))'
     case 'error':
-      return 'linear-gradient(rgba(240, 87, 79, 0.14), rgba(240, 87, 79, 0.14))'
+      return 'linear-gradient(color-mix(in srgb, var(--color-danger) 14%, transparent), color-mix(in srgb, var(--color-danger) 14%, transparent))'
     default:
       return undefined
   }

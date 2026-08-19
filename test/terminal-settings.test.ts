@@ -11,7 +11,10 @@ import {
   TERMINAL_LINE_HEIGHTS,
   xtermFontFamily
 } from '../src/renderer/terminal/terminal-settings'
-import { TERMINAL_THEMES } from '../src/renderer/terminal/terminal-themes'
+import {
+  APPLICATION_THEMES,
+  applyApplicationTheme
+} from '../src/renderer/theme/themes'
 
 function createStorage(initial: Record<string, string> = {}): Storage {
   const values = new Map(Object.entries(initial))
@@ -86,8 +89,8 @@ describe('terminal settings', () => {
   })
 
   it('defines complete xterm palettes for every built-in theme', () => {
-    for (const option of TERMINAL_THEMES) {
-      expect(option.theme).toMatchObject({
+    for (const option of APPLICATION_THEMES) {
+      expect(option.terminal).toMatchObject({
         background: expect.stringMatching(/^#[0-9a-f]{6}$/),
         foreground: expect.stringMatching(/^#[0-9a-f]{6}$/),
         cursor: expect.stringMatching(/^#[0-9a-f]{6}$/),
@@ -110,6 +113,56 @@ describe('terminal settings', () => {
         brightWhite: expect.stringMatching(/^#[0-9a-f]{6}$/)
       })
     }
+  })
+
+  it('defines complete application palettes for every built-in theme', () => {
+    const expectedKeys = [
+      'accent',
+      'accentFg',
+      'accentHover',
+      'active',
+      'bg',
+      'danger',
+      'elevated',
+      'fg',
+      'fgMuted',
+      'fgSubtle',
+      'hover',
+      'line',
+      'lineStrong',
+      'ok',
+      'panel',
+      'scrollbarHover',
+      'warn'
+    ]
+
+    for (const option of APPLICATION_THEMES) {
+      expect(Object.keys(option.application).sort()).toEqual(expectedKeys)
+      expect(Object.values(option.application)).toEqual(
+        expect.arrayContaining([expect.stringMatching(/^#[0-9a-f]{6}$/)])
+      )
+      expect(Object.values(option.application).every((color) => /^#[0-9a-f]{6}$/.test(color))).toBe(true)
+    }
+  })
+
+  it('applies and replaces the complete application theme on a root element', () => {
+    const values = new Map<string, string>()
+    const root = {
+      dataset: {} as DOMStringMap,
+      style: { setProperty: (key: string, value: string) => values.set(key, value) }
+    }
+
+    applyApplicationTheme('ember', root)
+    expect(root.dataset.theme).toBe('ember')
+    expect(values.get('--color-bg')).toBe('#1a1110')
+    expect(values.get('--color-accent')).toBe('#ff9f43')
+    expect(values.size).toBe(17)
+
+    applyApplicationTheme('frost', root)
+    expect(root.dataset.theme).toBe('frost')
+    expect(values.get('--color-bg')).toBe('#101923')
+    expect(values.get('--color-accent')).toBe('#67d5ff')
+    expect(values.size).toBe(17)
   })
 
   it('builds an xterm family with a monospace fallback', () => {

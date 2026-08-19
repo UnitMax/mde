@@ -7,7 +7,7 @@
     "src/preload/index.d.ts",
     "src/renderer/store/workspace.ts",
     "src/renderer/terminal/terminal-settings.ts",
-    "src/renderer/terminal/terminal-themes.ts",
+    "src/renderer/theme/themes.ts",
     "src/renderer/terminal/terminal-compat.ts",
     "src/renderer/terminal/layout.ts",
     "src/renderer/terminal/clipboard.ts",
