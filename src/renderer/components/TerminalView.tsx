@@ -2048,16 +2048,16 @@ function GuiView({ session }: { session: Session }): JSX.Element {
               >
                 <SelectTrigger
                   aria-label="OpenCode conversation"
-                  className="h-7 w-[220px] min-w-0 border-0 bg-transparent px-2 text-xs text-fg-muted shadow-none hover:bg-hover hover:text-fg"
+                  className="h-7 w-[260px] min-w-0 border-0 bg-transparent px-2 text-xs text-fg-muted shadow-none hover:bg-hover hover:text-fg"
                 >
                   <SelectValue placeholder="New conversation" />
                 </SelectTrigger>
                 <SelectContent>
                   {availableSessions.map((conversation) => (
                     <SelectItem key={conversation.id} value={conversation.id}>
-                      <span className="flex max-w-[260px] items-center gap-2">
+                      <span className="flex w-full min-w-0 items-center gap-2">
                         <span className="truncate">{conversation.title}</span>
-                        <span className="shrink-0 text-[10px] text-fg-subtle">
+                        <span className="ml-auto shrink-0 text-[10px] text-fg-subtle">
                           {formatConversationDate(conversation.updatedAt)}
                         </span>
                       </span>
