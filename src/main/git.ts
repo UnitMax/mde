@@ -208,22 +208,23 @@ async function readGitChangesAfterRepository(run: GitCommandRunner): Promise<Git
   return parseGitStatus(status.stdout)
 }
 
-/** Parses NUL-delimited `%H`, `%s`, `%cI` records from `git log`. */
+/** Parses NUL-delimited `%H`, `%s`, `%an`, `%cI` records from `git log`. */
 export function parseGitLog(output: string): GitCommit[] {
   const fields = output.split('\u0000')
   if (fields.at(-1) === '') fields.pop()
   if (fields.length === 0) return []
-  if (fields.length % 3 !== 0) throw new Error('Git returned malformed commit history.')
+  if (fields.length % 4 !== 0) throw new Error('Git returned malformed commit history.')
 
   const commits: GitCommit[] = []
-  for (let index = 0; index < fields.length; index += 3) {
+  for (let index = 0; index < fields.length; index += 4) {
     const hash = fields[index]?.trim()
     const message = fields[index + 1]
-    const timestamp = fields[index + 2]?.trim()
-    if (!hash || message === undefined || !timestamp) {
+    const author = fields[index + 2]?.trim()
+    const timestamp = fields[index + 3]?.trim()
+    if (!hash || message === undefined || !author || !timestamp) {
       throw new Error('Git returned malformed commit history.')
     }
-    commits.push({ hash, message, timestamp })
+    commits.push({ hash, message, author, timestamp })
   }
   return commits
 }
@@ -240,7 +241,7 @@ export async function readGitInfoWithRunner(run: GitCommandRunner): Promise<GitI
       '-z',
       '--max-count',
       String(GIT_HISTORY_LIMIT),
-      '--format=%H%x00%s%x00%cI'
+      '--format=%H%x00%s%x00%an%x00%cI'
     ]),
     run(gitStatusArgs)
   ])

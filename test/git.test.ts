@@ -96,7 +96,7 @@ describe('Git history queries', () => {
       if (args.includes('branch')) return result('main\n')
       if (args.includes('status')) return result('')
       return result(
-        '0123456789abcdef\u0000First commit\u00002026-08-19T10:00:00+02:00\u0000'
+        '0123456789abcdef\u0000First commit\u0000Max Mustermann\u00002026-08-19T10:00:00+02:00\u0000'
       )
     }
 
@@ -107,6 +107,7 @@ describe('Git history queries', () => {
         {
           hash: '0123456789abcdef',
           message: 'First commit',
+          author: 'Max Mustermann',
           timestamp: '2026-08-19T10:00:00+02:00'
         }
       ],
@@ -120,7 +121,7 @@ describe('Git history queries', () => {
       '-z',
       '--max-count',
       '50',
-      '--format=%H%x00%s%x00%cI'
+      '--format=%H%x00%s%x00%an%x00%cI'
     ])
   })
 
@@ -145,11 +146,12 @@ describe('Git history queries', () => {
   it('parses empty and NUL-delimited histories', () => {
     expect(parseGitLog('')).toEqual([])
     expect(
-      parseGitLog('abc123\u0000Message with a tab\tinside\u00002026-08-19T10:00:00+02:00\u0000')
+      parseGitLog('abc123\u0000Message with a tab\tinside\u0000Ada Lovelace\u00002026-08-19T10:00:00+02:00\u0000')
     ).toEqual([
       {
         hash: 'abc123',
         message: 'Message with a tab\tinside',
+        author: 'Ada Lovelace',
         timestamp: '2026-08-19T10:00:00+02:00'
       }
     ])

@@ -29,6 +29,8 @@ interface GitDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
+type GitDialogTab = 'changes' | 'history'
+
 const changeStatusLabels: Record<GitChangeStatus, string> = {
   modified: 'Modified',
   added: 'Added',
@@ -88,6 +90,7 @@ export function GitDialog({ open, session, onOpenChange }: GitDialogProps): JSX.
   const [diff, setDiff] = useState<GitDiffResponse | null>(null)
   const [diffLoading, setDiffLoading] = useState(false)
   const [diffError, setDiffError] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<GitDialogTab>('changes')
   const requestSequence = useRef(0)
   const diffRequestSequence = useRef(0)
 
@@ -144,6 +147,7 @@ export function GitDialog({ open, session, onOpenChange }: GitDialogProps): JSX.
       return
     }
 
+    setActiveTab('changes')
     void load()
     return () => {
       requestSequence.current += 1
@@ -238,7 +242,52 @@ export function GitDialog({ open, session, onOpenChange }: GitDialogProps): JSX.
 
         {!loading && !error && info?.repository && (
           <>
-            <section className="mt-4 flex shrink-0 flex-col">
+            <div
+              role="tablist"
+              aria-label="Git view"
+              className="mt-4 flex shrink-0 gap-1 border-b border-line"
+            >
+              <button
+                type="button"
+                role="tab"
+                id="git-changes-tab"
+                aria-controls="git-changes-panel"
+                aria-selected={activeTab === 'changes'}
+                className={cn(
+                  '-mb-px border-b-2 px-3 py-2 text-xs font-medium transition-colors',
+                  activeTab === 'changes'
+                    ? 'border-accent text-fg'
+                    : 'border-transparent text-fg-muted hover:text-fg'
+                )}
+                onClick={() => setActiveTab('changes')}
+              >
+                Changes ({info.changes.length})
+              </button>
+              <button
+                type="button"
+                role="tab"
+                id="git-history-tab"
+                aria-controls="git-history-panel"
+                aria-selected={activeTab === 'history'}
+                className={cn(
+                  '-mb-px border-b-2 px-3 py-2 text-xs font-medium transition-colors',
+                  activeTab === 'history'
+                    ? 'border-accent text-fg'
+                    : 'border-transparent text-fg-muted hover:text-fg'
+                )}
+                onClick={() => setActiveTab('history')}
+              >
+                History
+              </button>
+            </div>
+
+            {activeTab === 'changes' && (
+              <section
+                role="tabpanel"
+                id="git-changes-panel"
+                aria-labelledby="git-changes-tab"
+                className="mt-4 flex shrink-0 flex-col"
+              >
               <h3 className="mb-2 flex shrink-0 items-center gap-2 text-xs font-semibold uppercase tracking-wide text-fg-subtle">
                 Changes
                 <span className="rounded-full bg-active px-1.5 py-0.5 text-[10px] text-fg-muted">{info.changes.length}</span>
@@ -328,9 +377,16 @@ export function GitDialog({ open, session, onOpenChange }: GitDialogProps): JSX.
                   </div>
                 </div>
               )}
-            </section>
+              </section>
+            )}
 
-            <section className="mt-4 shrink-0">
+            {activeTab === 'history' && (
+              <section
+                role="tabpanel"
+                id="git-history-panel"
+                aria-labelledby="git-history-tab"
+                className="mt-4 shrink-0"
+              >
               <h3 className="mb-2 shrink-0 text-xs font-semibold uppercase tracking-wide text-fg-subtle">
                 Recent commits
               </h3>
@@ -357,7 +413,10 @@ export function GitDialog({ open, session, onOpenChange }: GitDialogProps): JSX.
                           <td className="px-3 py-2 font-mono text-fg-muted" title={commit.hash}>
                             {shortGitHash(commit.hash)}
                           </td>
-                          <td className="break-words px-3 py-2 text-fg">{commit.message}</td>
+                          <td className="break-words px-3 py-2">
+                            <div className="text-fg">{commit.message}</div>
+                            <div className="mt-0.5 text-[11px] text-fg-muted">{commit.author}</div>
+                          </td>
                           <td className="whitespace-nowrap px-3 py-2 text-fg-muted">
                             {formatGitTimestamp(commit.timestamp)}
                           </td>
@@ -367,7 +426,8 @@ export function GitDialog({ open, session, onOpenChange }: GitDialogProps): JSX.
                   </table>
                 </div>
               )}
-            </section>
+              </section>
+            )}
           </>
         )}
       </DialogContent>

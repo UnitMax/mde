@@ -567,6 +567,8 @@ export interface GitCommit {
   /** Full object ID; the renderer may shorten this for display. */
   hash: string
   message: string
+  /** Display name recorded for the commit author. */
+  author: string
   /** ISO-8601 committer timestamp from Git. */
   timestamp: string
 }
