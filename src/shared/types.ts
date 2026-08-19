@@ -561,3 +561,19 @@ export interface PathResolution {
   /** Non-blocking advice to surface inline in the UI. */
   warning?: string
 }
+
+/** A single commit shown by the read-only Git history view. */
+export interface GitCommit {
+  /** Full object ID; the renderer may shorten this for display. */
+  hash: string
+  message: string
+  /** ISO-8601 committer timestamp from Git. */
+  timestamp: string
+}
+
+export interface GitInfoResponse {
+  repository: boolean
+  /** Null when the repository is in a detached HEAD state. */
+  branch: string | null
+  commits: GitCommit[]
+}

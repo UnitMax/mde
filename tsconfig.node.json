@@ -17,6 +17,7 @@
     "src/renderer/components/slash-commands.ts",
     "src/renderer/components/tool-summary.ts",
     "src/renderer/lib/utils.ts",
+    "src/renderer/lib/git.ts",
     "src/renderer/lib/session-switcher.ts",
     "src/shared/**/*",
     "test/**/*"

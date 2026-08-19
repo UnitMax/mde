@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import {
   type AppInfo,
+  type GitInfoRequest,
   IpcChannels,
   type EnsurePtyRequest,
   type MoveSessionRequest,
@@ -19,6 +20,7 @@ import {
 import type {
   Distro,
   HostPlatform,
+  GitInfoResponse,
   AbortOpenCodeSessionRequest,
   NewProject,
   NewSession,
@@ -60,6 +62,7 @@ import { createAppInfo } from '@shared/app-info'
 import { isWslAvailable, listDistros, runWsl } from './wsl/distros'
 import { canonicalizeWslPath, resolveForTarget, toWindows, uncPathFor } from './wsl/paths'
 import { buildVsCodeRemoteUri } from './vscode'
+import { readGitInfo } from './git'
 import {
   createProject,
   createSession,
@@ -428,5 +431,14 @@ export function registerIpcHandlers(
         `Could not hand the WSL folder to the registered Windows VS Code installation. Make sure VS Code is installed and the Remote - WSL extension is available locally.\n\n${detail}`
       )
     }
+  })
+
+  handle<GitInfoRequest, GitInfoResponse>(IpcChannels.gitInfo, async (req) => {
+    if (!req || typeof req.sessionId !== 'string' || !req.sessionId) {
+      throw new Error('Invalid Git session request.')
+    }
+    const session = await getSession(req.sessionId)
+    if (!session) throw new Error('Session no longer exists.')
+    return readGitInfo(session)
   })
 }

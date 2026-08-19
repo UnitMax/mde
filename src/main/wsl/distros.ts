@@ -65,6 +65,38 @@ export async function resolveWslHostAddress(distro: string): Promise<string> {
   return address
 }
 
+/** Detects the alternating zero-byte pattern produced by UTF-16LE ASCII output. */
+function isLikelyUtf16Le(buffer: Buffer): boolean {
+  if (buffer.length < 8 || buffer.length % 2 !== 0) return false
+  if (buffer[0] === 0xff && buffer[1] === 0xfe) return true
+
+  const pairCount = buffer.length / 2
+  let oddPositionNuls = 0
+  let evenPositionNuls = 0
+  let asciiPairs = 0
+
+  for (let index = 0; index + 1 < buffer.length; index += 2) {
+    const lowByte = buffer[index]
+    const highByte = buffer[index + 1]
+    if (lowByte === 0) evenPositionNuls += 1
+    if (highByte !== 0) continue
+    oddPositionNuls += 1
+    if (
+      lowByte !== undefined &&
+      (lowByte === 9 || lowByte === 10 || lowByte === 13 || lowByte >= 32)
+    ) {
+      asciiPairs += 1
+    }
+  }
+
+  return (
+    oddPositionNuls >= 4 &&
+    oddPositionNuls >= pairCount * 0.25 &&
+    oddPositionNuls >= evenPositionNuls * 3 &&
+    asciiPairs >= oddPositionNuls * 0.75
+  )
+}
+
 /**
  * Decodes wsl.exe output as UTF-8. WSL_UTF8=1 is always set, so this is the
  * normal path. If a build of wsl.exe ignores the variable the bytes come back
@@ -74,7 +106,7 @@ export async function resolveWslHostAddress(distro: string): Promise<string> {
  */
 export function decodeWslOutput(buffer: Buffer): string {
   const utf8 = buffer.toString('utf8')
-  if (!utf8.includes('\u0000')) return utf8
+  if (!isLikelyUtf16Le(buffer)) return utf8
 
   console.warn('[wsl] wsl.exe ignored WSL_UTF8=1 and returned UTF-16LE; decoding as UTF-16LE')
   return buffer.toString('utf16le').replace(/^\uFEFF/, '')

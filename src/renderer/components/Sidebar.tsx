@@ -14,6 +14,7 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
+  GitBranch,
   GripVertical,
   LoaderCircle,
   MessageSquare,
@@ -233,6 +234,7 @@ interface SessionRowProps {
   tuiStatus?: OpenCodeTuiStatusState
   selected: boolean
   onSelect: () => void
+  onOpenGit: () => void
   dragging: boolean
   dragDisabled: boolean
   dropPosition: 'before' | 'after' | null
@@ -249,6 +251,7 @@ function SessionRow({
   tuiStatus,
   selected,
   onSelect,
+  onOpenGit,
   dragging,
   dragDisabled,
   dropPosition,
@@ -425,6 +428,10 @@ function SessionRow({
         </ContextMenuTrigger>
 
         <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
+          <ContextMenuItem onSelect={onOpenGit}>
+            <GitBranch className="h-3.5 w-3.5" />
+            Git history
+          </ContextMenuItem>
           <ContextMenuItem
             onSelect={startRename}
           >
@@ -556,6 +563,7 @@ interface ProjectGroupProps {
   opencodeTuiStatuses: Record<string, OpenCodeTuiStatusState>
   selectedSessionId: string | null
   onSelectSession: (id: string) => void
+  onOpenGit: (id: string) => void
   onNewSession: (projectId: string) => void
 }
 
@@ -567,6 +575,7 @@ function ProjectGroup({
   opencodeTuiStatuses,
   selectedSessionId,
   onSelectSession,
+  onOpenGit,
   onNewSession
 }: ProjectGroupProps): JSX.Element {
   const renameProject = useWorkspace((state) => state.renameProject)
@@ -748,6 +757,7 @@ function ProjectGroup({
             tuiStatus={opencodeTuiStatuses[session.id]}
             selected={session.id === selectedSessionId}
             onSelect={() => onSelectSession(session.id)}
+            onOpenGit={() => onOpenGit(session.id)}
             dragging={session.id === draggingSessionId}
             dragDisabled={reordering}
             dropPosition={
@@ -783,9 +793,10 @@ interface SidebarProps {
   onNewProject: () => void
   onNewSession: (projectId?: string) => void
   onAbout: () => void
+  onOpenGit: (sessionId: string) => void
 }
 
-export function Sidebar({ onNewProject, onNewSession, onAbout }: SidebarProps): JSX.Element {
+export function Sidebar({ onNewProject, onNewSession, onAbout, onOpenGit }: SidebarProps): JSX.Element {
   const projects = useWorkspace((state) => state.projects)
   const sessions = useWorkspace((state) => state.sessions)
   const statuses = useWorkspace((state) => state.statuses)
@@ -815,33 +826,42 @@ export function Sidebar({ onNewProject, onNewSession, onAbout }: SidebarProps): 
                   )
                   const customColor = customSessionColor(session.color)
                   return (
-                    <button
-                      key={session.id}
-                      type="button"
-                      onClick={() => selectSession(session.id)}
-                      title={`${project.name} · ${session.name} · ${session.mode === 'terminal' ? 'Terminal' : 'GUI'}`}
-                      className={cn(
-                        'relative flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase',
-                        customColor
-                          ? cn(
-                              'text-fg transition-[filter] hover:brightness-110',
-                              customSessionStatusRing(indicator.status)
-                            )
-                          : session.id === selectedSessionId
-                            ? cn(
-                                'bg-active text-fg',
-                                indicator.status === 'attention' && 'ring-1 ring-accent/60'
-                              )
-                            : cn('text-fg-muted hover:bg-hover hover:text-fg', indicator.row)
-                      )}
-                      style={sessionBackgroundStyle(session.color, indicator)}
-                    >
-                      {session.name.slice(0, 2)}
-                      <StatusDot
-                        indicator={indicator}
-                        className="absolute -bottom-0.5 right-0.5 ring-2 ring-panel"
-                      />
-                    </button>
+                    <ContextMenu key={session.id}>
+                      <ContextMenuTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={() => selectSession(session.id)}
+                          title={`${project.name} · ${session.name} · ${session.mode === 'terminal' ? 'Terminal' : 'GUI'}`}
+                          className={cn(
+                            'relative flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase',
+                            customColor
+                              ? cn(
+                                  'text-fg transition-[filter] hover:brightness-110',
+                                  customSessionStatusRing(indicator.status)
+                                )
+                              : session.id === selectedSessionId
+                                ? cn(
+                                    'bg-active text-fg',
+                                    indicator.status === 'attention' && 'ring-1 ring-accent/60'
+                                  )
+                                : cn('text-fg-muted hover:bg-hover hover:text-fg', indicator.row)
+                          )}
+                          style={sessionBackgroundStyle(session.color, indicator)}
+                        >
+                          {session.name.slice(0, 2)}
+                          <StatusDot
+                            indicator={indicator}
+                            className="absolute -bottom-0.5 right-0.5 ring-2 ring-panel"
+                          />
+                        </button>
+                      </ContextMenuTrigger>
+                      <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
+                        <ContextMenuItem onSelect={() => onOpenGit(session.id)}>
+                          <GitBranch className="h-3.5 w-3.5" />
+                          Git history
+                        </ContextMenuItem>
+                      </ContextMenuContent>
+                    </ContextMenu>
                   )
                 })
               ) : (
@@ -924,6 +944,7 @@ export function Sidebar({ onNewProject, onNewSession, onAbout }: SidebarProps): 
               opencodeTuiStatuses={opencodeTuiStatuses}
               selectedSessionId={selectedSessionId}
               onSelectSession={selectSession}
+              onOpenGit={onOpenGit}
               onNewSession={(projectId) => onNewSession(projectId)}
             />
           ))

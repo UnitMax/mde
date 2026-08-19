@@ -85,6 +85,11 @@ describe('decodeWslOutput', () => {
     expect(decodeWslOutput(Buffer.from('Ubuntu-24.04\n', 'utf8'))).toBe('Ubuntu-24.04\n')
   })
 
+  it('preserves UTF-8 output containing NUL delimiters', () => {
+    const gitOutput = '0123456789abcdef\u0000Commit message\u00002026-08-19T10:00:00+02:00\u0000'
+    expect(decodeWslOutput(Buffer.from(gitOutput, 'utf8'))).toBe(gitOutput)
+  })
+
   it('recovers rather than yielding NUL-riddled text when WSL_UTF8 is ignored', () => {
     const utf16 = Buffer.from('Ubuntu-24.04\n', 'utf16le')
     const decoded = decodeWslOutput(utf16)

@@ -3,6 +3,7 @@ import { Plus, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AddSessionDialog } from '@/components/AddProjectDialog'
 import { AboutDialog } from '@/components/AboutDialog'
+import { GitDialog } from '@/components/GitDialog'
 import { NewProjectDialog } from '@/components/NewProjectDialog'
 import { Sidebar } from '@/components/Sidebar'
 import { SessionSwitcher } from '@/components/SessionSwitcher'
@@ -47,6 +48,7 @@ export function App(): JSX.Element {
   const [newSessionOpen, setNewSessionOpen] = useState(false)
   const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [aboutOpen, setAboutOpen] = useState(false)
+  const [gitSessionId, setGitSessionId] = useState<string | null>(null)
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false)
   const [defaultProjectId, setDefaultProjectId] = useState<string | undefined>(undefined)
   const [terminalLayouts, setTerminalLayouts] = useState<Record<string, SessionTerminalLayout>>({})
@@ -126,6 +128,7 @@ export function App(): JSX.Element {
   }, [])
 
   const selected = sessions.find((session) => session.id === selectedSessionId) ?? null
+  const gitSession = sessions.find((session) => session.id === gitSessionId) ?? null
 
   const openNewSession = (projectId?: string): void => {
     setDefaultProjectId(projectId)
@@ -290,6 +293,7 @@ export function App(): JSX.Element {
         onNewProject={() => setNewProjectOpen(true)}
         onNewSession={openNewSession}
         onAbout={() => setAboutOpen(true)}
+        onOpenGit={setGitSessionId}
       />
 
       <main className="h-full min-w-0 flex-1">
@@ -319,6 +323,13 @@ export function App(): JSX.Element {
       />
       <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
+      <GitDialog
+        open={gitSession !== null}
+        session={gitSession}
+        onOpenChange={(open) => {
+          if (!open) setGitSessionId(null)
+        }}
+      />
       <SessionSwitcher open={sessionSwitcherOpen} onOpenChange={setSessionSwitcherOpen} />
     </div>
   )
