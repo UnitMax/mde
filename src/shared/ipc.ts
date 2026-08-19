@@ -1,5 +1,6 @@
 import type {
   Distro,
+  GitDiffResponse,
   GitInfoResponse,
   HostPlatform,
   NewProject,
@@ -86,6 +87,7 @@ export const IpcChannels = {
   pathOpenTerminalInVsCode: 'path:open-terminal-in-vscode',
 
   gitInfo: 'git:info',
+  gitDiff: 'git:diff',
 
   opencodeSend: 'opencode:send',
   opencodeAbort: 'opencode:abort',
@@ -150,6 +152,11 @@ export interface ValidatePathRequest {
 
 export interface GitInfoRequest {
   sessionId: string
+}
+
+export interface GitDiffRequest {
+  sessionId: string
+  path: string
 }
 
 export interface EnsurePtyRequest {
@@ -259,6 +266,7 @@ export interface RendererApi {
   }
   git: {
     info(req: GitInfoRequest): Promise<GitInfoResponse>
+    diff(req: GitDiffRequest): Promise<GitDiffResponse>
   }
   opencode: {
     send(req: SendOpenCodeMessageRequest): Promise<SendOpenCodeMessageResponse>

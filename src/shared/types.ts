@@ -571,9 +571,37 @@ export interface GitCommit {
   timestamp: string
 }
 
+export type GitChangeStatus =
+  | 'modified'
+  | 'added'
+  | 'deleted'
+  | 'renamed'
+  | 'copied'
+  | 'type-changed'
+  | 'unmerged'
+  | 'untracked'
+
+/** A file changed relative to HEAD in the current Git worktree. */
+export interface GitChange {
+  /** Path relative to the Git command's working directory. */
+  path: string
+  /** Original path for Git-detected renames and copies. */
+  oldPath: string | null
+  status: GitChangeStatus
+  staged: boolean
+  unstaged: boolean
+}
+
 export interface GitInfoResponse {
   repository: boolean
   /** Null when the repository is in a detached HEAD state. */
   branch: string | null
   commits: GitCommit[]
+  changes: GitChange[]
+}
+
+export interface GitDiffResponse {
+  path: string
+  diff: string
+  binary: boolean
 }

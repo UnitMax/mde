@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import {
   type AppInfo,
+  type GitDiffRequest,
   type GitInfoRequest,
   IpcChannels,
   type EnsurePtyRequest,
@@ -19,6 +20,7 @@ import {
 } from '@shared/ipc'
 import type {
   Distro,
+  GitDiffResponse,
   HostPlatform,
   GitInfoResponse,
   AbortOpenCodeSessionRequest,
@@ -62,7 +64,7 @@ import { createAppInfo } from '@shared/app-info'
 import { isWslAvailable, listDistros, runWsl } from './wsl/distros'
 import { canonicalizeWslPath, resolveForTarget, toWindows, uncPathFor } from './wsl/paths'
 import { buildVsCodeRemoteUri } from './vscode'
-import { readGitInfo } from './git'
+import { readGitDiff, readGitInfo } from './git'
 import {
   createProject,
   createSession,
@@ -440,5 +442,14 @@ export function registerIpcHandlers(
     const session = await getSession(req.sessionId)
     if (!session) throw new Error('Session no longer exists.')
     return readGitInfo(session)
+  })
+
+  handle<GitDiffRequest, GitDiffResponse>(IpcChannels.gitDiff, async (req) => {
+    if (!req || typeof req.sessionId !== 'string' || !req.sessionId || typeof req.path !== 'string' || !req.path) {
+      throw new Error('Invalid Git diff request.')
+    }
+    const session = await getSession(req.sessionId)
+    if (!session) throw new Error('Session no longer exists.')
+    return readGitDiff(session, req.path)
   })
 }

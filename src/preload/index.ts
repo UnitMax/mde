@@ -67,7 +67,8 @@ const api: RendererApi = {
       ipcRenderer.invoke(IpcChannels.pathOpenTerminalInVsCode, terminalId)
   },
   git: {
-    info: (req) => ipcRenderer.invoke(IpcChannels.gitInfo, req)
+    info: (req) => ipcRenderer.invoke(IpcChannels.gitInfo, req),
+    diff: (req) => ipcRenderer.invoke(IpcChannels.gitDiff, req)
   },
   opencode: {
     send: (req) => ipcRenderer.invoke(IpcChannels.opencodeSend, req),

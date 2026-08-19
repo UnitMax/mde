@@ -1,9 +1,19 @@
 import { execFile } from 'node:child_process'
-import type { GitInfoResponse, GitCommit, Session } from '@shared/types'
+import type {
+  GitChange,
+  GitChangeStatus,
+  GitDiffResponse,
+  GitInfoResponse,
+  GitCommit,
+  Session
+} from '@shared/types'
 import { runWsl } from './wsl/distros'
 
 const GIT_HISTORY_LIMIT = 50
 const GIT_COMMAND_TIMEOUT_MS = 10_000
+const GIT_DIFF_CONTEXT_LINES = 80
+const GIT_MAX_BUFFER = 8 * 1024 * 1024
+const GIT_EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 
 export interface GitCommandResult {
   stdout: string
@@ -23,6 +33,7 @@ function runNativeGit(args: string[], cwd: string): Promise<GitCommandResult> {
         cwd,
         encoding: 'utf8',
         timeout: GIT_COMMAND_TIMEOUT_MS,
+        maxBuffer: GIT_MAX_BUFFER,
         windowsHide: true
       },
       (error, stdout, stderr) => {
@@ -75,6 +86,128 @@ function commandError(command: string, result: GitCommandResult): Error {
   return new Error(`Could not read Git ${command}.`)
 }
 
+function isMissingHead(result: GitCommandResult): boolean {
+  return /needed a single revision|ambiguous argument ['"]?HEAD/i.test(result.stderr)
+}
+
+export function isBinaryGitDiff(diff: string): boolean {
+  return diff.split(/\r?\n/).some((line) =>
+    /^Binary files .* differ$/.test(line) || line === 'GIT binary patch'
+  )
+}
+
+function hasGitStatus(code: string | undefined): boolean {
+  return code !== undefined && code !== ' ' && code !== '.' && code !== '?' && code !== '!'
+}
+
+function statusFromPorcelain(recordType: string, xy: string): GitChangeStatus {
+  if (recordType === '?') return 'untracked'
+  if (recordType === 'u' || xy.includes('U')) return 'unmerged'
+  if (xy.includes('R')) return 'renamed'
+  if (xy.includes('C')) return 'copied'
+  if (xy.includes('D')) return 'deleted'
+  if (xy.includes('A')) return 'added'
+  if (xy.includes('T')) return 'type-changed'
+  return 'modified'
+}
+
+function parseStatusRecord(
+  record: string,
+  fields: string[],
+  fieldIndex: number
+): { change: GitChange; nextFieldIndex: number } {
+  const recordType = record[0]
+  if (recordType === '?') {
+    const path = record.slice(2)
+    if (!path) throw new Error('Git returned malformed change status.')
+    return {
+      change: {
+        path,
+        oldPath: null,
+        status: 'untracked',
+        staged: false,
+        unstaged: true
+      },
+      nextFieldIndex: fieldIndex
+    }
+  }
+
+  if (recordType !== '1' && recordType !== '2' && recordType !== 'u') {
+    throw new Error('Git returned malformed change status.')
+  }
+
+  const parts = record.split(' ')
+  const xy = parts[1]
+  const pathStart = recordType === '1' ? 8 : recordType === '2' ? 9 : 10
+  const path = parts.slice(pathStart).join(' ')
+  if (!xy || !path) throw new Error('Git returned malformed change status.')
+
+  const indexStatus = xy[0]
+  const worktreeStatus = xy[1]
+  const oldPath = recordType === '2' ? fields[fieldIndex] : undefined
+  if (recordType === '2' && !oldPath) throw new Error('Git returned malformed change status.')
+
+  return {
+    change: {
+      path,
+      oldPath: oldPath ?? null,
+      status: statusFromPorcelain(recordType, xy),
+      staged: hasGitStatus(indexStatus),
+      unstaged: hasGitStatus(worktreeStatus)
+    },
+    nextFieldIndex: recordType === '2' ? fieldIndex + 1 : fieldIndex
+  }
+}
+
+/** Parses NUL-delimited Git porcelain v2 records. */
+export function parseGitStatus(output: string): GitChange[] {
+  const fields = output.split('\u0000')
+  if (fields.at(-1) === '') fields.pop()
+
+  const changes: GitChange[] = []
+  let fieldIndex = 0
+  while (fieldIndex < fields.length) {
+    const record = fields[fieldIndex]
+    if (!record) {
+      fieldIndex += 1
+      continue
+    }
+    if (record.startsWith('# ')) {
+      fieldIndex += 1
+      continue
+    }
+    const parsed = parseStatusRecord(record, fields, fieldIndex + 1)
+    changes.push(parsed.change)
+    fieldIndex = parsed.nextFieldIndex
+  }
+  return changes
+}
+
+const gitStatusArgs = [
+  '--no-pager',
+  'status',
+  '--porcelain=v2',
+  '-z',
+  '--untracked-files=all',
+  '--find-renames'
+]
+
+async function ensureRepository(run: GitCommandRunner): Promise<boolean> {
+  const repository = await run(['--no-pager', 'rev-parse', '--is-inside-work-tree'])
+  if (repository.launchError) throw commandError('repository', repository)
+  if (repository.code !== 0) {
+    if (isNotRepository(repository)) return false
+    throw commandError('repository', repository)
+  }
+  return true
+}
+
+async function readGitChangesAfterRepository(run: GitCommandRunner): Promise<GitChange[]> {
+  const status = await run(gitStatusArgs)
+  if (status.code !== 0) throw commandError('status', status)
+  return parseGitStatus(status.stdout)
+}
+
 /** Parses NUL-delimited `%H`, `%s`, `%cI` records from `git log`. */
 export function parseGitLog(output: string): GitCommit[] {
   const fields = output.split('\u0000')
@@ -96,16 +229,10 @@ export function parseGitLog(output: string): GitCommit[] {
 }
 
 export async function readGitInfoWithRunner(run: GitCommandRunner): Promise<GitInfoResponse> {
-  const repository = await run(['--no-pager', 'rev-parse', '--is-inside-work-tree'])
-  if (repository.launchError) throw commandError('repository', repository)
-  if (repository.code !== 0) {
-    if (isNotRepository(repository)) {
-      return { repository: false, branch: null, commits: [] }
-    }
-    throw commandError('repository', repository)
-  }
+  const repository = await ensureRepository(run)
+  if (!repository) return { repository: false, branch: null, commits: [], changes: [] }
 
-  const [branch, history] = await Promise.all([
+  const [branch, history, status] = await Promise.all([
     run(['--no-pager', 'branch', '--show-current']),
     run([
       '--no-pager',
@@ -114,19 +241,80 @@ export async function readGitInfoWithRunner(run: GitCommandRunner): Promise<GitI
       '--max-count',
       String(GIT_HISTORY_LIMIT),
       '--format=%H%x00%s%x00%cI'
-    ])
+    ]),
+    run(gitStatusArgs)
   ])
 
   if (branch.code !== 0) throw commandError('branch', branch)
   if (history.code !== 0) throw commandError('history', history)
+  if (status.code !== 0) throw commandError('status', status)
 
   return {
     repository: true,
     branch: branch.stdout.trim() || null,
-    commits: parseGitLog(history.stdout)
+    commits: parseGitLog(history.stdout),
+    changes: parseGitStatus(status.stdout)
   }
 }
 
 export function readGitInfo(session: Session): Promise<GitInfoResponse> {
   return readGitInfoWithRunner(createGitCommandRunner(session))
+}
+
+export async function readGitDiffWithRunner(
+  run: GitCommandRunner,
+  path: string,
+  nullDevice = '/dev/null'
+): Promise<GitDiffResponse> {
+  if (!path) throw new Error('Invalid Git diff path.')
+  if (!(await ensureRepository(run))) throw new Error('This session folder is not a Git repository.')
+
+  const changes = await readGitChangesAfterRepository(run)
+  const change = changes.find((entry) => entry.path === path)
+  if (!change) throw new Error('The selected Git change is no longer available.')
+
+  const head = await run(['--no-pager', 'rev-parse', '--verify', 'HEAD'])
+  if (head.launchError) throw commandError('HEAD', head)
+  if (head.code !== 0 && !isMissingHead(head)) throw commandError('HEAD', head)
+  const baseline = head.code === 0 ? 'HEAD' : GIT_EMPTY_TREE
+
+  const paths = [change.path, ...(change.oldPath ? [change.oldPath] : [])]
+  const args = change.status === 'untracked'
+    ? [
+        '--no-pager',
+        'diff',
+        '--no-index',
+        '--no-ext-diff',
+        '--no-color',
+        `--unified=${GIT_DIFF_CONTEXT_LINES}`,
+        '--',
+        nullDevice,
+        change.path
+      ]
+    : [
+        '--no-pager',
+        'diff',
+        '--no-ext-diff',
+        '--no-color',
+        '--find-renames',
+        '--find-copies',
+        `--unified=${GIT_DIFF_CONTEXT_LINES}`,
+        baseline,
+        '--',
+        ...paths
+      ]
+  const result = await run(args)
+  const expectedNoIndexDifference = change.status === 'untracked' && result.code === 1
+  if (result.code !== 0 && !expectedNoIndexDifference) throw commandError('diff', result)
+
+  return {
+    path: change.path,
+    diff: result.stdout,
+    binary: isBinaryGitDiff(result.stdout)
+  }
+}
+
+export function readGitDiff(session: Session, path: string): Promise<GitDiffResponse> {
+  const nullDevice = session.kind === 'wsl' || process.platform !== 'win32' ? '/dev/null' : 'NUL'
+  return readGitDiffWithRunner(createGitCommandRunner(session), path, nullDevice)
 }
