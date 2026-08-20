@@ -274,6 +274,37 @@ describe('renderer workspace event bridge', () => {
     expect(useWorkspace.getState().sessions[0]).toMatchObject({ id: 'session-1', color: 'teal' })
   })
 
+  it('persists and updates a session icon', async () => {
+    const session: Session = {
+      id: 'session-1',
+      projectId: 'project-1',
+      name: 'App',
+      mode: 'gui',
+      kind: 'native',
+      path: '/workspace/app',
+      createdAt: '2026-01-01T00:00:00.000Z'
+    }
+    useWorkspace.setState({ sessions: [session] })
+    api.sessions.update.mockResolvedValueOnce({ ...session, icon: 'robot' })
+
+    await useWorkspace.getState().setSessionIcon('session-1', 'robot')
+
+    expect(api.sessions.update).toHaveBeenCalledWith({
+      id: 'session-1',
+      patch: { icon: 'robot' }
+    })
+    expect(useWorkspace.getState().sessions[0]).toMatchObject({ id: 'session-1', icon: 'robot' })
+
+    api.sessions.update.mockResolvedValueOnce(session)
+    await useWorkspace.getState().setSessionIcon('session-1', null)
+
+    expect(api.sessions.update).toHaveBeenLastCalledWith({
+      id: 'session-1',
+      patch: { icon: null }
+    })
+    expect(useWorkspace.getState().sessions[0]?.icon).toBeUndefined()
+  })
+
   it('persists and applies a reordered session list without changing selection', async () => {
     const first: Session = {
       id: 'session-1',

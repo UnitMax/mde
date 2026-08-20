@@ -30,7 +30,8 @@ import type {
   PtyExitInfo,
   PtyStatus,
   Session,
-  SessionColor
+  SessionColor,
+  SessionIcon
 } from '@shared/types'
 import { disposeSession } from '@/terminal/sessions'
 import { estimateTokenCount } from '@shared/generation-metrics'
@@ -407,6 +408,7 @@ interface WorkspaceState {
   duplicateSession: (id: string) => Promise<Session | null>
   renameSession: (id: string, name: string) => Promise<void>
   setSessionColor: (id: string, color: SessionColor) => Promise<void>
+  setSessionIcon: (id: string, icon: SessionIcon | null) => Promise<void>
   moveSession: (id: string, projectId: string) => Promise<void>
   reorderSession: (id: string, beforeId: string | null) => Promise<void>
   removeSession: (id: string) => Promise<void>
@@ -586,6 +588,12 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   setSessionColor: async (id, color) => {
     const updated = await window.api.sessions.update({ id, patch: { color } })
+    if (!updated) return
+    set((state) => ({ sessions: state.sessions.map((session) => (session.id === id ? updated : session)) }))
+  },
+
+  setSessionIcon: async (id, icon) => {
+    const updated = await window.api.sessions.update({ id, patch: { icon } })
     if (!updated) return
     set((state) => ({ sessions: state.sessions.map((session) => (session.id === id ? updated : session)) }))
   },

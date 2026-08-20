@@ -38,6 +38,7 @@ describe('workspace session duplication', () => {
       id: source.id,
       patch: {
         color: 'teal',
+        icon: 'robot',
         opencodeSessionId: 'ses_existing',
         opencodeModelSelections: {
           ses_existing: { providerID: 'cloud', modelID: 'model-a', variant: 'fast' }
@@ -52,6 +53,7 @@ describe('workspace session duplication', () => {
       projectId: project.id,
       name: 'App (copy)',
       color: 'teal',
+      icon: 'robot',
       mode: 'terminal',
       kind: 'wsl',
       distro: 'Ubuntu-24.04',
@@ -66,6 +68,22 @@ describe('workspace session duplication', () => {
     const secondDuplicate = await duplicateSession(source.id)
     expect(secondDuplicate?.name).toBe('App (copy 2)')
     expect((await loadWorkspace()).sessions).toHaveLength(3)
+  })
+
+  it('clears a persisted session icon when requested', async () => {
+    const project = await createProject({ name: 'Work' })
+    const source = await createSession({
+      projectId: project.id,
+      name: 'App',
+      mode: 'gui',
+      kind: 'native',
+      path: '/workspace/app'
+    })
+
+    await updateSession({ id: source.id, patch: { icon: 'robot' } })
+    await updateSession({ id: source.id, patch: { icon: null } })
+
+    expect((await loadWorkspace()).sessions[0]?.icon).toBeUndefined()
   })
 
   it('does not duplicate GUI sessions', async () => {

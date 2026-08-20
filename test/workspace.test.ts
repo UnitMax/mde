@@ -43,6 +43,8 @@ describe('workspace validation', () => {
     expect(validateSession(session, projectIds)).toEqual(session)
     expect(validateSession({ ...session, color: 'teal' }, projectIds)).toMatchObject({ color: 'teal' })
     expect(validateSession({ ...session, color: 'not-a-color' }, projectIds)).toEqual(session)
+    expect(validateSession({ ...session, icon: 'robot' }, projectIds)).toMatchObject({ icon: 'robot' })
+    expect(validateSession({ ...session, icon: 'not-an-icon' }, projectIds)).toEqual(session)
     expect(validateSession({ ...session, mode: undefined }, projectIds)).toBeNull()
     expect(validateSession({ ...session, mode: 'other' }, projectIds)).toBeNull()
     expect(validateSession({ ...session, projectId: 'missing' }, projectIds)).toBeNull()

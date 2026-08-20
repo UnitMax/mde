@@ -23,6 +23,8 @@ import {
   PanelLeftOpen,
   Pencil,
   Plus,
+  RotateCcw,
+  Smile,
   Terminal,
   Trash2
 } from 'lucide-react'
@@ -63,6 +65,7 @@ import {
   SESSION_COLORS,
   sessionColorHex
 } from '@shared/session-colors'
+import { SESSION_ICONS, sessionIconOption } from '@shared/session-icons'
 
 const STATUS_STYLE: Record<PtyStatus, { dot: string; label: string }> = {
   none: { dot: 'bg-fg-subtle', label: 'No shell running' },
@@ -803,6 +806,7 @@ export function Sidebar({ onNewProject, onNewSession, onOpenGit }: SidebarProps)
   const opencodeTuiStatuses = useWorkspace((state) => state.opencodeTuiStatuses)
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
   const selectSession = useWorkspace((state) => state.selectSession)
+  const setSessionIcon = useWorkspace((state) => state.setSessionIcon)
   const collapsed = useWorkspace((state) => state.sidebarCollapsed)
   const toggleSidebar = useWorkspace((state) => state.toggleSidebar)
 
@@ -847,7 +851,9 @@ export function Sidebar({ onNewProject, onNewSession, onOpenGit }: SidebarProps)
                           )}
                           style={sessionBackgroundStyle(session.color, indicator)}
                         >
-                          {session.name.slice(0, 2)}
+                          <span data-testid="collapsed-session-label">
+                            {sessionIconOption(session.icon)?.emoji ?? session.name.slice(0, 2)}
+                          </span>
                           <StatusDot
                             indicator={indicator}
                             className="absolute -bottom-0.5 right-0.5 ring-2 ring-panel"
@@ -855,6 +861,38 @@ export function Sidebar({ onNewProject, onNewSession, onOpenGit }: SidebarProps)
                         </button>
                       </ContextMenuTrigger>
                       <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
+                        <ContextMenuSub>
+                          <ContextMenuSubTrigger>
+                            <Smile className="h-3.5 w-3.5" />
+                            <span className="flex-1">Change icon</span>
+                            <ChevronRight className="h-3.5 w-3.5 text-fg-subtle" />
+                          </ContextMenuSubTrigger>
+                          <ContextMenuSubContent>
+                            {SESSION_ICONS.map((option) => (
+                              <ContextMenuItem
+                                key={option.id}
+                                onSelect={() => void setSessionIcon(session.id, option.id)}
+                              >
+                                <span
+                                  className="w-5 text-center text-base leading-none"
+                                  role="img"
+                                  aria-label={option.label}
+                                >
+                                  {option.emoji}
+                                </span>
+                                <span className="flex-1">{option.label}</span>
+                                {session.icon === option.id && <Check className="h-3.5 w-3.5" />}
+                              </ContextMenuItem>
+                            ))}
+                            <ContextMenuSeparator />
+                            <ContextMenuItem onSelect={() => void setSessionIcon(session.id, null)}>
+                              <RotateCcw className="h-3.5 w-3.5" />
+                              <span className="flex-1">Use initials</span>
+                              {!session.icon && <Check className="h-3.5 w-3.5" />}
+                            </ContextMenuItem>
+                          </ContextMenuSubContent>
+                        </ContextMenuSub>
+                        <ContextMenuSeparator />
                         <ContextMenuItem onSelect={() => onOpenGit(session.id)}>
                           <GitBranch className="h-3.5 w-3.5" />
                           Git history

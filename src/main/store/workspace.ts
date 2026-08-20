@@ -10,6 +10,7 @@ import type {
 } from '@shared/ipc'
 import type { NewProject, NewSession, OpenCodeModelSelection, Project, Session } from '@shared/types'
 import { isSessionColor } from '@shared/session-colors'
+import { isSessionIcon } from '@shared/session-icons'
 
 const FILE_NAME = 'workspace.json'
 
@@ -114,6 +115,7 @@ export function validateSession(raw: unknown, projectIds: Set<string>): Session 
   }
   if (r.kind === 'wsl' && isNonEmptyString(r.distro)) session.distro = r.distro
   if (isSessionColor(r.color)) session.color = r.color
+  if (isSessionIcon(r.icon)) session.icon = r.icon
   if (isNonEmptyString(r.shell)) session.shell = r.shell
   if (isNonEmptyString(r.opencodeSessionId)) session.opencodeSessionId = r.opencodeSessionId
   const modelSelections = validateModelSelections(r.opencodeModelSelections)
@@ -291,6 +293,7 @@ export async function duplicateSession(id: string): Promise<Session | null> {
     projectId: source.projectId,
     name: duplicateSessionName(source.name, existingNames),
     ...(source.color ? { color: source.color } : {}),
+    ...(source.icon ? { icon: source.icon } : {}),
     mode: 'terminal',
     kind: source.kind,
     ...(source.distro ? { distro: source.distro } : {}),
@@ -314,6 +317,8 @@ export async function updateSession(req: UpdateSessionRequest): Promise<Session 
   if (req.patch.name?.trim()) updated.name = req.patch.name.trim()
   if (req.patch.path?.trim()) updated.path = req.patch.path.trim()
   if (isSessionColor(req.patch.color)) updated.color = req.patch.color
+  if (req.patch.icon === null) delete updated.icon
+  else if (isSessionIcon(req.patch.icon)) updated.icon = req.patch.icon
   if (req.patch.shell !== undefined) {
     if (req.patch.shell.trim()) updated.shell = req.patch.shell.trim()
     else delete updated.shell

@@ -2,6 +2,18 @@ export type ProjectKind = 'native' | 'wsl'
 
 export type SessionMode = 'terminal' | 'gui'
 
+export type SessionIcon =
+  | 'computer'
+  | 'robot'
+  | 'rocket'
+  | 'tools'
+  | 'bug'
+  | 'lightning'
+  | 'globe'
+  | 'package'
+  | 'test'
+  | 'palette'
+
 /** Built-in OpenCode primary agents selectable from the GUI. */
 export type OpenCodeAgent = 'build' | 'plan'
 
@@ -32,6 +44,8 @@ export interface Session {
   name: string
   /** Optional predefined sidebar color; absent means the default Slate color. */
   color?: SessionColor
+  /** Optional predefined collapsed-sidebar icon; absent means the session initials. */
+  icon?: SessionIcon
   mode: SessionMode
   kind: ProjectKind
   /** Required when kind === 'wsl', e.g. "Ubuntu-24.04". */
@@ -53,7 +67,7 @@ export interface Session {
 }
 
 export type NewProject = Omit<Project, 'id' | 'createdAt'>
-export type NewSession = Omit<Session, 'id' | 'createdAt' | 'color'>
+export type NewSession = Omit<Session, 'id' | 'createdAt' | 'color' | 'icon'>
 
 export interface Distro {
   name: string
