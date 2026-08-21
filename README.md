@@ -129,7 +129,10 @@ is enabled.
   restart OpenCode after installing or updating it. The plugin is inert outside MDE terminals,
   writes only a short runtime snapshot under `/tmp`, and does not modify project files or
   OpenCode configuration. MDE reads that snapshot through the distro's `\\wsl.localhost\\...`
-  path and falls back to normal shell status when it is absent.
+  path and falls back to normal shell status when it is absent. Each terminal pane with a live
+  OpenCode TUI appears in a collapsible sidebar list beneath its MDE session. Instance labels can
+  use privacy-safe numbering or the current top-level OpenCode session title; prompts, messages,
+  tool data, credentials, and filesystem contents are never included in the snapshot.
 - OpenCode TUI token-rate display is a separate plugin from status reporting. On Linux it can be
   installed for the native OpenCode target; on Windows it can be installed independently for each
   WSL 2 distro. It adds a live estimated rate and a final provider-reported rate beside the TUI

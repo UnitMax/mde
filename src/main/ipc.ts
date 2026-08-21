@@ -47,6 +47,7 @@ import type {
   OpenCodeTuiPluginRequest,
   OpenCodeTuiPluginState,
   OpenCodeTuiSetEnabledRequest,
+  OpenCodeTuiSetInstanceLabelModeRequest,
   OpenCodeTuiSettings,
   OpenCodeTokenRatePluginRequest,
   OpenCodeTokenRatePluginState,
@@ -316,6 +317,15 @@ export function registerIpcHandlers(
         throw new Error('Invalid OpenCode TUI enabled setting.')
       }
       return opencodeTuiStatusManager.setEnabled(req.enabled)
+    }
+  )
+  handle<OpenCodeTuiSetInstanceLabelModeRequest, OpenCodeTuiSettings>(
+    IpcChannels.opencodeTuiSetInstanceLabelMode,
+    (req) => {
+      if (req?.mode !== 'numbered' && req?.mode !== 'title') {
+        throw new Error('Invalid OpenCode TUI instance label mode.')
+      }
+      return opencodeTuiStatusManager.setInstanceLabelMode(req.mode)
     }
   )
 

@@ -41,6 +41,7 @@ import type {
   OpenCodeSubagent,
   OpenCodeToolMessage,
   OpenCodeTuiPluginState,
+  OpenCodeTuiInstanceLabelMode,
   OpenCodeTuiSettings,
   OpenCodePluginTarget,
   OpenCodeTokenRatePluginState,
@@ -557,9 +558,14 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
   const wslAvailable = useWorkspace((state) => state.wslAvailable)
   const distros = useWorkspace((state) => state.distros)
   const refreshDistros = useWorkspace((state) => state.refreshDistros)
+  const opencodeTuiInstanceLabelMode = useWorkspace((state) => state.opencodeTuiInstanceLabelMode)
+  const setOpenCodeTuiInstanceLabelMode = useWorkspace(
+    (state) => state.setOpenCodeTuiInstanceLabelMode
+  )
   const [tuiSettings, setTuiSettings] = useState<OpenCodeTuiSettings>({
     enabled: false,
-    currentPluginVersion: ''
+    currentPluginVersion: '',
+    instanceLabelMode: 'numbered'
   })
   const [pluginStates, setPluginStates] = useState<Record<string, OpenCodeTuiPluginState>>({})
   const [tuiLoading, setTuiLoading] = useState(false)
@@ -741,6 +747,18 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
     try {
       const next = await window.api.opencodeTui.setEnabled({ enabled: !tuiSettings.enabled })
       setTuiSettings(next)
+    } catch (error) {
+      setTuiError(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const changeTuiInstanceLabelMode = async (
+    mode: OpenCodeTuiInstanceLabelMode
+  ): Promise<void> => {
+    setTuiError(null)
+    try {
+      await setOpenCodeTuiInstanceLabelMode(mode)
+      setTuiSettings((current) => ({ ...current, instanceLabelMode: mode }))
     } catch (error) {
       setTuiError(error instanceof Error ? error.message : String(error))
     }
@@ -1037,6 +1055,29 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
                         />
                       </span>
                     </button>
+
+                    <label className="block text-xs font-medium text-fg-muted">
+                      Instance labels
+                      <Select
+                        value={opencodeTuiInstanceLabelMode}
+                        onValueChange={(value) => {
+                          if (value === 'numbered' || value === 'title') {
+                            void changeTuiInstanceLabelMode(value)
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="mt-1" data-testid="opencode-tui-instance-labels">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="numbered">OpenCode 1, 2, …</SelectItem>
+                          <SelectItem value="title">OpenCode session titles</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <span className="mt-1 block text-[11px] font-normal text-fg-subtle">
+                        Session titles stay in MDE's local runtime status snapshot. Numbered labels are used when a title is unavailable.
+                      </span>
+                    </label>
 
                     <div className="space-y-2">
                       {distros.length === 0 ? (

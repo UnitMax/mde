@@ -5,13 +5,15 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   aggregateTuiStatuses,
   classifyTuiPluginSource,
+  collectTuiInstanceStatuses,
   OpenCodeTuiStatusManager,
   parseTuiPluginVersion,
   parseTuiStatusSnapshot,
   TUI_STATUS_PLUGIN_MARKER,
   TUI_STATUS_PLUGIN_SOURCE,
   TUI_STATUS_PLUGIN_VERSION,
-  TUI_STATUS_PROTOCOL
+  TUI_STATUS_PROTOCOL,
+  TUI_STATUS_TITLE_MAX_LENGTH
 } from '../src/main/opencode/tui-status'
 
 describe('OpenCode TUI status protocol', () => {
@@ -34,6 +36,24 @@ describe('OpenCode TUI status protocol', () => {
       revision: 4,
       updatedAt: 10_000
     })
+  })
+
+  it('normalizes and bounds optional session titles', () => {
+    const title = `  Checkout\n${'x'.repeat(TUI_STATUS_TITLE_MAX_LENGTH * 2)}  `
+    expect(
+      parseTuiStatusSnapshot(
+        { protocol: 1, status: 'working', title, revision: 2, updatedAt: 10_000 },
+        10_000
+      )
+    ).toMatchObject({
+      title: `Checkout ${'x'.repeat(TUI_STATUS_TITLE_MAX_LENGTH - 'Checkout '.length)}`
+    })
+    expect(
+      parseTuiStatusSnapshot(
+        { protocol: 1, status: 'working', title: { unsafe: true }, revision: 2, updatedAt: 10_000 },
+        10_000
+      )
+    ).toBeNull()
   })
 
   it('rejects stale, malformed, and incomplete snapshots', () => {
@@ -63,6 +83,49 @@ describe('OpenCode TUI status protocol', () => {
     ).toEqual({ status: 'attention', attentionReason: 'permission', revision: 3 })
   })
 
+  it('keeps live split-pane instances separate from the aggregate status', () => {
+    expect(
+      collectTuiInstanceStatuses(
+        [
+          {
+            sessionId: 'session-1',
+            terminalId: 'session-1',
+            snapshot: {
+              protocol: 1,
+              status: 'working',
+              title: 'Checkout flow',
+              revision: 2,
+              updatedAt: 10
+            }
+          },
+          {
+            sessionId: 'session-1',
+            terminalId: 'session-1:split:1',
+            snapshot: { protocol: 1, status: 'completed', revision: 4, updatedAt: 10 }
+          },
+          {
+            sessionId: 'session-2',
+            terminalId: 'session-2',
+            snapshot: { protocol: 1, status: 'idle', revision: 0, updatedAt: 10 }
+          }
+        ],
+        'session-1'
+      )
+    ).toEqual([
+      {
+        terminalId: 'session-1',
+        status: 'working',
+        title: 'Checkout flow',
+        revision: 2
+      },
+      {
+        terminalId: 'session-1:split:1',
+        status: 'completed',
+        revision: 4
+      }
+    ])
+  })
+
   it('ships an inert, dependency-free plugin with the expected event vocabulary', () => {
     expect(TUI_STATUS_PLUGIN_SOURCE).toContain(TUI_STATUS_PLUGIN_MARKER)
     expect(TUI_STATUS_PLUGIN_SOURCE).toContain(
@@ -71,6 +134,10 @@ describe('OpenCode TUI status protocol', () => {
     expect(TUI_STATUS_PLUGIN_SOURCE).toContain("!file.startsWith('/tmp/mde-opencode/')")
     expect(TUI_STATUS_PLUGIN_SOURCE).toContain("event?.type === 'permission.asked'")
     expect(TUI_STATUS_PLUGIN_SOURCE).toContain("event?.type === 'question.asked'")
+    expect(TUI_STATUS_PLUGIN_SOURCE).toContain("event?.type === 'session.created'")
+    expect(TUI_STATUS_PLUGIN_SOURCE).toContain('info.parentID')
+    expect(TUI_STATUS_PLUGIN_SOURCE).toContain('title')
+    expect(TUI_STATUS_PLUGIN_SOURCE).toContain("value.replace(/\\s+/g, ' ')")
     expect(TUI_STATUS_PLUGIN_SOURCE).not.toContain('prompt')
   })
 
@@ -85,16 +152,21 @@ describe('OpenCode TUI status protocol', () => {
   it('defaults global reporting off and persists the enable choice', async () => {
     const directory = await fs.mkdtemp(join(tmpdir(), 'mde-opencode-tui-'))
     try {
-      const first = new OpenCodeTuiStatusManager({ onStatus: vi.fn() })
+      const first = new OpenCodeTuiStatusManager({ onStatus: vi.fn(), onInstances: vi.fn() })
       await first.configure(directory)
-      expect(first.settings().enabled).toBe(false)
+      expect(first.settings()).toMatchObject({
+        enabled: false,
+        instanceLabelMode: 'numbered'
+      })
 
       await first.setEnabled(true)
-      const second = new OpenCodeTuiStatusManager({ onStatus: vi.fn() })
+      await first.setInstanceLabelMode('title')
+      const second = new OpenCodeTuiStatusManager({ onStatus: vi.fn(), onInstances: vi.fn() })
       await second.configure(directory)
       expect(second.settings()).toMatchObject({
         enabled: true,
-        currentPluginVersion: TUI_STATUS_PLUGIN_VERSION
+        currentPluginVersion: TUI_STATUS_PLUGIN_VERSION,
+        instanceLabelMode: 'title'
       })
     } finally {
       await fs.rm(directory, { recursive: true, force: true })

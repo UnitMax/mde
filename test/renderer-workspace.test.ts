@@ -5,6 +5,7 @@ import type {
   OpenCodeModelOption,
   OpenCodeSessionSummary,
   OpenCodeStreamChunk,
+  OpenCodeTuiInstancesUpdate,
   OpenCodeTuiStatusUpdate,
   Session
 } from '../src/shared/types'
@@ -44,6 +45,7 @@ function activeChat(model: OpenCodeModelOption): OpenCodeChatState {
 describe('renderer workspace event bridge', () => {
   const streamListeners: Array<(chunk: OpenCodeStreamChunk) => void> = []
   const tuiStatusListeners: Array<(update: OpenCodeTuiStatusUpdate) => void> = []
+  const tuiInstanceListeners: Array<(update: OpenCodeTuiInstancesUpdate) => void> = []
   const directoryListeners: Array<(update: { terminalId: string; directory: string | null }) => void> = []
   const api = {
     platform: { info: vi.fn(async () => ({ platform: 'linux', arch: 'x64' })) },
@@ -95,10 +97,20 @@ describe('renderer workspace event bridge', () => {
       })
     },
     opencodeTui: {
-      settings: vi.fn(async () => ({ enabled: false, currentPluginVersion: '1.0.0' })),
+      settings: vi.fn(async () => ({
+        enabled: false,
+        currentPluginVersion: '1.1.0',
+        instanceLabelMode: 'numbered' as const
+      })),
       setEnabled: vi.fn(async ({ enabled }: { enabled: boolean }) => ({
         enabled,
-        currentPluginVersion: '1.0.0'
+        currentPluginVersion: '1.1.0',
+        instanceLabelMode: 'numbered' as const
+      })),
+      setInstanceLabelMode: vi.fn(async ({ mode }: { mode: 'numbered' | 'title' }) => ({
+        enabled: false,
+        currentPluginVersion: '1.1.0',
+        instanceLabelMode: mode
       })),
       pluginState: vi.fn(async ({ distro }: { distro: string }) => ({
         distro,
@@ -121,6 +133,10 @@ describe('renderer workspace event bridge', () => {
       onStatus: vi.fn((listener: (update: OpenCodeTuiStatusUpdate) => void) => {
         tuiStatusListeners.push(listener)
         return vi.fn()
+      }),
+      onInstances: vi.fn((listener: (update: OpenCodeTuiInstancesUpdate) => void) => {
+        tuiInstanceListeners.push(listener)
+        return vi.fn()
       })
     },
   }
@@ -128,9 +144,17 @@ describe('renderer workspace event bridge', () => {
   beforeEach(() => {
     streamListeners.length = 0
     tuiStatusListeners.length = 0
+    tuiInstanceListeners.length = 0
     directoryListeners.length = 0
     vi.stubGlobal('window', { api })
-    useWorkspace.setState({ opencodeChats: {}, opencodeTuiStatuses: {}, sessions: [], selectedSessionId: null })
+    useWorkspace.setState({
+      opencodeChats: {},
+      opencodeTuiStatuses: {},
+      opencodeTuiInstances: {},
+      opencodeTuiInstanceLabelMode: 'numbered',
+      sessions: [],
+      selectedSessionId: null
+    })
     api.pty.onExit.mockClear()
     api.sessions.create.mockReset()
     api.sessions.duplicate.mockReset()
@@ -150,6 +174,8 @@ describe('renderer workspace event bridge', () => {
     api.opencode.replyQuestion.mockClear()
     api.opencode.rejectQuestion.mockClear()
     api.opencodeTui.onStatus.mockClear()
+    api.opencodeTui.onInstances.mockClear()
+    api.opencodeTui.setInstanceLabelMode.mockClear()
   })
 
   it('does not mark the source session exited when a split pane exits', () => {
@@ -190,6 +216,52 @@ describe('renderer workspace event bridge', () => {
       revision: 0
     })
     expect(useWorkspace.getState().opencodeTuiStatuses['terminal-1']).toBeUndefined()
+  })
+
+  it('tracks and removes independent OpenCode TUI pane instances', () => {
+    useWorkspace.getState().appendOpenCodeTuiInstances({
+      sessionId: 'session-1',
+      instances: [
+        {
+          terminalId: 'session-1',
+          status: 'working',
+          title: 'Checkout flow',
+          revision: 2
+        },
+        {
+          terminalId: 'session-1:split:1',
+          status: 'completed',
+          revision: 4
+        }
+      ]
+    })
+
+    expect(useWorkspace.getState().opencodeTuiInstances['session-1']).toEqual([
+      {
+        terminalId: 'session-1',
+        status: 'working',
+        title: 'Checkout flow',
+        revision: 2
+      },
+      {
+        terminalId: 'session-1:split:1',
+        status: 'completed',
+        revision: 4
+      }
+    ])
+
+    useWorkspace.getState().appendOpenCodeTuiInstances({
+      sessionId: 'session-1',
+      instances: []
+    })
+    expect(useWorkspace.getState().opencodeTuiInstances['session-1']).toBeUndefined()
+  })
+
+  it('persists the global OpenCode TUI instance label mode', async () => {
+    await useWorkspace.getState().setOpenCodeTuiInstanceLabelMode('title')
+
+    expect(api.opencodeTui.setInstanceLabelMode).toHaveBeenCalledWith({ mode: 'title' })
+    expect(useWorkspace.getState().opencodeTuiInstanceLabelMode).toBe('title')
   })
 
   it('creates and selects a session with its persisted mode', async () => {
@@ -381,6 +453,7 @@ describe('renderer workspace event bridge', () => {
     expect(api.pty.onDirectory).toHaveBeenCalledTimes(1)
     expect(api.opencode.onStream).toHaveBeenCalledTimes(1)
     expect(api.opencodeTui.onStatus).toHaveBeenCalledTimes(1)
+    expect(api.opencodeTui.onInstances).toHaveBeenCalledTimes(1)
     expect(useWorkspace.getState().terminalDirectories).toEqual({
       'session-1:snapshot': '/home/me/snapshot'
     })

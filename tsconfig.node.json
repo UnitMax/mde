@@ -19,6 +19,7 @@
     "src/renderer/lib/utils.ts",
     "src/renderer/lib/git.ts",
     "src/renderer/lib/session-switcher.ts",
+    "src/renderer/lib/opencode-tui-instances.ts",
     "src/shared/**/*",
     "test/**/*"
   ],

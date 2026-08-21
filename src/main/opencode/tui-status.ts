@@ -3,6 +3,9 @@ import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type {
   OpenCodeTuiAttentionReason,
+  OpenCodeTuiInstanceLabelMode,
+  OpenCodeTuiInstanceStatus,
+  OpenCodeTuiInstancesUpdate,
   OpenCodeTuiPluginInstallStatus,
   OpenCodeTuiPluginState,
   OpenCodeTuiSettings,
@@ -20,8 +23,9 @@ export const TUI_STATUS_ROOT = '/tmp/mde-opencode'
 export const TUI_STATUS_POLL_MS = 500
 export const TUI_STATUS_STALE_MS = 8_000
 export const TUI_STATUS_PLUGIN_MARKER = 'mde-opencode-tui-status-plugin-v1'
-export const TUI_STATUS_PLUGIN_VERSION = '1.0.0'
+export const TUI_STATUS_PLUGIN_VERSION = '1.1.0'
 export const TUI_STATUS_PLUGIN_VERSION_MARKER = 'mde-opencode-tui-status-plugin-version:'
+export const TUI_STATUS_TITLE_MAX_LENGTH = 160
 const TUI_STATUS_SETTINGS_FILE = 'opencode-tui.json'
 
 /** Plain JavaScript loaded by OpenCode inside the WSL distro. */
@@ -36,10 +40,13 @@ export const MdeTuiStatus = async () => {
   let revision = 0
   let status = 'idle'
   let attentionReason
+  let title
   let hadActivity = false
   const activeSessions = new Set()
+  const sessions = new Map()
   const permissions = new Map()
   const questions = new Map()
+  let currentRootSessionId
   let writeChain = Promise.resolve()
 
   const write = () => {
@@ -47,6 +54,7 @@ export const MdeTuiStatus = async () => {
       protocol: 1,
       status,
       ...(attentionReason ? { attentionReason } : {}),
+      ...(title ? { title } : {}),
       revision,
       updatedAt: Date.now(),
     }
@@ -89,6 +97,58 @@ export const MdeTuiStatus = async () => {
         ? properties.id
         : undefined
 
+  const cleanTitle = (value) => {
+    if (typeof value !== 'string') return undefined
+    const cleaned = value.replace(/\\s+/g, ' ').trim().slice(0, ${TUI_STATUS_TITLE_MAX_LENGTH})
+    return cleaned || undefined
+  }
+
+  const rootSessionIdOf = (sessionId) => {
+    let current = sessionId
+    const visited = new Set()
+    while (current && !visited.has(current)) {
+      visited.add(current)
+      const info = sessions.get(current)
+      if (!info) return undefined
+      const parentId = info.parentID
+      if (!parentId) return current
+      current = parentId
+    }
+    return undefined
+  }
+
+  const selectTitleFor = (sessionId) => {
+    const rootSessionId = rootSessionIdOf(sessionId)
+    if (!rootSessionId) return
+    currentRootSessionId = rootSessionId
+    const nextTitle = sessions.get(rootSessionId)?.title
+    if (title === nextTitle) return
+    title = nextTitle
+    write()
+  }
+
+  const rememberSession = (info) => {
+    if (!info || typeof info.id !== 'string') return
+    const nextTitle = cleanTitle(info.title)
+    sessions.set(info.id, {
+      ...(typeof info.parentID === 'string' ? { parentID: info.parentID } : {}),
+      ...(nextTitle ? { title: nextTitle } : {}),
+    })
+    if (!info.parentID || info.id === currentRootSessionId) selectTitleFor(info.id)
+  }
+
+  const forgetSession = (info) => {
+    if (!info || typeof info.id !== 'string') return
+    sessions.delete(info.id)
+    activeSessions.delete(info.id)
+    for (const [id, owner] of permissions) if (owner === info.id) permissions.delete(id)
+    for (const [id, owner] of questions) if (owner === info.id) questions.delete(id)
+    if (info.id !== currentRootSessionId) return
+    currentRootSessionId = undefined
+    title = undefined
+    write()
+  }
+
   publish('idle')
   const heartbeat = setInterval(write, 2_000)
   heartbeat.unref?.()
@@ -99,8 +159,20 @@ export const MdeTuiStatus = async () => {
         const properties = event?.properties ?? {}
         const sessionId = sessionIdOf(properties)
 
+        if (event?.type === 'session.created' || event?.type === 'session.updated') {
+          rememberSession(properties.info)
+          return
+        }
+
+        if (event?.type === 'session.deleted') {
+          forgetSession(properties.info)
+          publishDerived()
+          return
+        }
+
         if (event?.type === 'session.status' || event?.type === 'session.idle') {
           if (!sessionId) return
+          selectTitleFor(sessionId)
           const type = event.type === 'session.idle' ? 'idle' : properties.status?.type
           if (type === 'busy' || type === 'retry') {
             hadActivity = true
@@ -119,6 +191,7 @@ export const MdeTuiStatus = async () => {
 
         if (event?.type === 'session.error') {
           if (!sessionId) return
+          selectTitleFor(sessionId)
           hadActivity = true
           activeSessions.delete(sessionId)
           for (const [id, owner] of permissions) if (owner === sessionId) permissions.delete(id)
@@ -130,6 +203,7 @@ export const MdeTuiStatus = async () => {
         if (event?.type === 'permission.asked') {
           const requestId = requestIdOf(properties)
           if (!requestId || !sessionId) return
+          selectTitleFor(sessionId)
           hadActivity = true
           permissions.set(requestId, sessionId)
           publishDerived()
@@ -147,6 +221,7 @@ export const MdeTuiStatus = async () => {
         if (event?.type === 'question.asked') {
           const requestId = requestIdOf(properties)
           if (!requestId || !sessionId) return
+          selectTitleFor(sessionId)
           hadActivity = true
           questions.set(requestId, sessionId)
           publishDerived()
@@ -170,6 +245,7 @@ export const MdeTuiStatus = async () => {
 
 export interface OpenCodeTuiStatusEvents {
   onStatus(update: OpenCodeTuiStatusUpdate): void
+  onInstances(update: OpenCodeTuiInstancesUpdate): void
 }
 
 interface Runtime {
@@ -186,6 +262,28 @@ interface EffectiveStatus {
   status: OpenCodeTuiStatus | null
   attentionReason?: OpenCodeTuiAttentionReason
   revision: number
+}
+
+export function collectTuiInstanceStatuses(
+  runtimes: Iterable<{
+    sessionId: string
+    terminalId: string
+    snapshot: OpenCodeTuiStatusSnapshot | null
+  }>,
+  sessionId: string
+): OpenCodeTuiInstanceStatus[] {
+  return [...runtimes]
+    .filter((runtime) => runtime.sessionId === sessionId && runtime.snapshot !== null)
+    .map((runtime): OpenCodeTuiInstanceStatus => {
+      const snapshot = runtime.snapshot!
+      return {
+        terminalId: runtime.terminalId,
+        status: snapshot.status,
+        ...(snapshot.attentionReason ? { attentionReason: snapshot.attentionReason } : {}),
+        ...(snapshot.title ? { title: snapshot.title } : {}),
+        revision: snapshot.revision
+      }
+    })
 }
 
 function statusPriority(status: OpenCodeTuiStatus): number {
@@ -229,11 +327,17 @@ export function parseTuiStatusSnapshot(value: unknown, now = Date.now()): OpenCo
   const revision = record.revision
   const updatedAt = record.updatedAt
   if (typeof revision !== 'number' || typeof updatedAt !== 'number') return null
+  if (record.title !== undefined && typeof record.title !== 'string') return null
+  const title = record.title
+    ?.replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, TUI_STATUS_TITLE_MAX_LENGTH)
 
   return {
     protocol: TUI_STATUS_PROTOCOL,
     status: record.status,
     ...(record.status === 'attention' ? { attentionReason: parsedAttentionReason } : {}),
+    ...(title ? { title } : {}),
     revision,
     updatedAt
   }
@@ -258,6 +362,21 @@ export function aggregateTuiStatuses(snapshots: OpenCodeTuiStatusSnapshot[]): Ef
 
 function sameStatus(a: EffectiveStatus, b: EffectiveStatus): boolean {
   return a.status === b.status && a.attentionReason === b.attentionReason && a.revision === b.revision
+}
+
+function sameInstances(
+  a: readonly OpenCodeTuiInstanceStatus[],
+  b: readonly OpenCodeTuiInstanceStatus[]
+): boolean {
+  return a.length === b.length && a.every((instance, index) => {
+    const other = b[index]
+    return other !== undefined &&
+      instance.terminalId === other.terminalId &&
+      instance.status === other.status &&
+      instance.attentionReason === other.attentionReason &&
+      instance.title === other.title &&
+      instance.revision === other.revision
+  })
 }
 
 function assertDistro(distro: string): string {
@@ -287,9 +406,11 @@ export function classifyTuiPluginSource(source: string | null): OpenCodeTuiPlugi
 export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
   private readonly runtimes = new Map<string, Runtime>()
   private readonly sessionStatuses = new Map<string, EffectiveStatus>()
+  private readonly sessionInstances = new Map<string, OpenCodeTuiInstanceStatus[]>()
   private readonly homeDirectories = new Map<string, string>()
   private settingsDirectory: string | null = null
   private enabled = false
+  private instanceLabelMode: OpenCodeTuiInstanceLabelMode = 'numbered'
 
   constructor(private readonly events: OpenCodeTuiStatusEvents) {}
 
@@ -298,18 +419,26 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
     try {
       const source = await fs.readFile(join(settingsDirectory, TUI_STATUS_SETTINGS_FILE), 'utf8')
       const parsed: unknown = JSON.parse(source)
-      this.enabled =
-        typeof parsed === 'object' && parsed !== null && (parsed as Record<string, unknown>).enabled === true
+      const record = typeof parsed === 'object' && parsed !== null
+        ? parsed as Record<string, unknown>
+        : {}
+      this.enabled = record.enabled === true
+      this.instanceLabelMode = record.instanceLabelMode === 'title' ? 'title' : 'numbered'
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         console.warn('[opencode-tui] could not read settings; defaulting to disabled:', error)
       }
       this.enabled = false
+      this.instanceLabelMode = 'numbered'
     }
   }
 
   settings(): OpenCodeTuiSettings {
-    return { enabled: this.enabled, currentPluginVersion: TUI_STATUS_PLUGIN_VERSION }
+    return {
+      enabled: this.enabled,
+      currentPluginVersion: TUI_STATUS_PLUGIN_VERSION,
+      instanceLabelMode: this.instanceLabelMode
+    }
   }
 
   async setEnabled(enabled: boolean): Promise<OpenCodeTuiSettings> {
@@ -322,6 +451,21 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
       throw error
     }
     if (!enabled) this.disposeAll()
+    return this.settings()
+  }
+
+  async setInstanceLabelMode(mode: OpenCodeTuiInstanceLabelMode): Promise<OpenCodeTuiSettings> {
+    if (mode !== 'numbered' && mode !== 'title') {
+      throw new Error('Invalid OpenCode TUI instance label mode.')
+    }
+    const previous = this.instanceLabelMode
+    this.instanceLabelMode = mode
+    try {
+      await this.persistSettings()
+    } catch (error) {
+      this.instanceLabelMode = previous
+      throw error
+    }
     return this.settings()
   }
 
@@ -356,6 +500,7 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
     if (!runtime) return
     clearInterval(runtime.timer)
     this.runtimes.delete(terminalId)
+    this.emitSessionInstances(runtime.sessionId)
     this.emitSessionStatus(runtime.sessionId)
   }
 
@@ -408,7 +553,10 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
     await fs.mkdir(this.settingsDirectory, { recursive: true })
     const target = join(this.settingsDirectory, TUI_STATUS_SETTINGS_FILE)
     const temporary = `${target}.tmp-${randomUUID()}`
-    await fs.writeFile(temporary, `${JSON.stringify({ enabled: this.enabled })}\n`, 'utf8')
+    await fs.writeFile(temporary, `${JSON.stringify({
+      enabled: this.enabled,
+      instanceLabelMode: this.instanceLabelMode
+    })}\n`, 'utf8')
     await fs.rename(temporary, target)
   }
 
@@ -447,11 +595,26 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
       snapshot = null
     }
 
-    if (runtime.snapshot?.revision === snapshot?.revision && runtime.snapshot?.status === snapshot?.status && runtime.snapshot?.attentionReason === snapshot?.attentionReason) {
+    if (
+      runtime.snapshot?.revision === snapshot?.revision &&
+      runtime.snapshot?.status === snapshot?.status &&
+      runtime.snapshot?.attentionReason === snapshot?.attentionReason &&
+      runtime.snapshot?.title === snapshot?.title
+    ) {
       return
     }
     runtime.snapshot = snapshot
+    this.emitSessionInstances(runtime.sessionId)
     this.emitSessionStatus(runtime.sessionId)
+  }
+
+  private emitSessionInstances(sessionId: string): void {
+    const instances = collectTuiInstanceStatuses(this.runtimes.values(), sessionId)
+    const previous = this.sessionInstances.get(sessionId) ?? []
+    if (sameInstances(previous, instances)) return
+    if (instances.length > 0) this.sessionInstances.set(sessionId, instances)
+    else this.sessionInstances.delete(sessionId)
+    this.events.onInstances({ sessionId, instances })
   }
 
   private emitSessionStatus(sessionId: string): void {

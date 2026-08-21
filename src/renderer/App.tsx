@@ -9,7 +9,7 @@ import { SessionSwitcher } from '@/components/SessionSwitcher'
 import { TerminalView } from '@/components/TerminalView'
 import { isSessionSwitcherShortcut } from '@/lib/session-switcher'
 import { useWorkspace } from '@/store/workspace'
-import { disposeSession } from '@/terminal/sessions'
+import { disposeSession, getSession } from '@/terminal/sessions'
 import {
   createSessionTerminalLayout,
   defaultTerminalLayoutSizes,
@@ -44,18 +44,44 @@ export function App(): JSX.Element {
   const ready = useWorkspace((state) => state.ready)
   const sessions = useWorkspace((state) => state.sessions)
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
+  const selectSession = useWorkspace((state) => state.selectSession)
   const [newSessionOpen, setNewSessionOpen] = useState(false)
   const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [gitSessionId, setGitSessionId] = useState<string | null>(null)
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false)
   const [defaultProjectId, setDefaultProjectId] = useState<string | undefined>(undefined)
   const [terminalLayouts, setTerminalLayouts] = useState<Record<string, SessionTerminalLayout>>({})
+  const [pendingTerminalFocus, setPendingTerminalFocus] = useState<{
+    sessionId: string
+    terminalId: string
+  } | null>(null)
   const terminalIdCounter = useRef(0)
   const terminalLayoutsRef = useRef(terminalLayouts)
 
   useEffect(() => {
     terminalLayoutsRef.current = terminalLayouts
   }, [terminalLayouts])
+
+  useEffect(() => {
+    if (!pendingTerminalFocus || selectedSessionId !== pendingTerminalFocus.sessionId) return
+    let frame: number | undefined
+    let attempts = 0
+    const focus = (): void => {
+      const terminal = getSession(pendingTerminalFocus.terminalId)
+      if (terminal?.container.isConnected) {
+        terminal.term.focus()
+        setPendingTerminalFocus(null)
+        return
+      }
+      attempts += 1
+      if (attempts < 5) frame = window.requestAnimationFrame(focus)
+      else setPendingTerminalFocus(null)
+    }
+    frame = window.requestAnimationFrame(focus)
+    return () => {
+      if (frame !== undefined) window.cancelAnimationFrame(frame)
+    }
+  }, [pendingTerminalFocus, selectedSessionId])
 
   useEffect(() => {
     void init()
@@ -130,6 +156,11 @@ export function App(): JSX.Element {
   const openNewSession = (projectId?: string): void => {
     setDefaultProjectId(projectId)
     setNewSessionOpen(true)
+  }
+
+  const focusTerminal = (sessionId: string, terminalId: string): void => {
+    selectSession(sessionId)
+    setPendingTerminalFocus({ sessionId, terminalId })
   }
 
   const disposeRuntimeTerminal = (terminalId: string): void => {
@@ -290,6 +321,8 @@ export function App(): JSX.Element {
         onNewProject={() => setNewProjectOpen(true)}
         onNewSession={openNewSession}
         onOpenGit={setGitSessionId}
+        terminalLayouts={terminalLayouts}
+        onFocusTerminal={focusTerminal}
       />
 
       <main className="h-full min-w-0 flex-1">

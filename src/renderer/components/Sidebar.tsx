@@ -28,7 +28,13 @@ import {
   Terminal,
   Trash2
 } from 'lucide-react'
-import type { Project, PtyStatus, Session } from '@shared/types'
+import type {
+  OpenCodeTuiInstanceLabelMode,
+  OpenCodeTuiInstanceStatus,
+  Project,
+  PtyStatus,
+  Session
+} from '@shared/types'
 import { Button } from '@/components/ui/button'
 import {
   AlertDialog,
@@ -66,6 +72,11 @@ import {
   sessionColorHex
 } from '@shared/session-colors'
 import { SESSION_ICONS, sessionIconOption } from '@shared/session-icons'
+import type { SessionTerminalLayout } from '@/terminal/layout'
+import {
+  openCodeTuiInstanceLabel,
+  orderOpenCodeTuiInstances
+} from '@/lib/opencode-tui-instances'
 
 const STATUS_STYLE: Record<PtyStatus, { dot: string; label: string }> = {
   none: { dot: 'bg-fg-subtle', label: 'No shell running' },
@@ -182,13 +193,15 @@ function sessionBackgroundStyle(
 
 function StatusDot({
   indicator,
-  className
+  className,
+  testId = 'session-status'
 }: {
   indicator: SessionIndicator
   className?: string
+  testId?: string
 }): JSX.Element {
   const sharedProps = {
-    'data-testid': 'session-status',
+    'data-testid': testId,
     'data-status': indicator.status,
     title: indicator.label
   }
@@ -215,6 +228,82 @@ function StatusDot({
   )
 }
 
+const OPENCODE_INSTANCE_STATUS_LABEL: Record<OpenCodeIndicatorStatus, string> = {
+  idle: 'idle',
+  working: 'working',
+  attention: 'needs input',
+  completed: 'done',
+  error: 'failed'
+}
+
+function openCodeInstanceIndicator(instance: OpenCodeTuiInstanceStatus): SessionIndicator {
+  if (instance.status === 'attention') {
+    return attentionIndicator(instance.attentionReason ?? 'permission')
+  }
+  return { status: instance.status, ...OPENCODE_STATUS_STYLE[instance.status] }
+}
+
+function OpenCodeInstances({
+  instances,
+  layout,
+  labelMode,
+  onFocus
+}: {
+  instances: readonly OpenCodeTuiInstanceStatus[]
+  layout?: SessionTerminalLayout
+  labelMode: OpenCodeTuiInstanceLabelMode
+  onFocus: (terminalId: string) => void
+}): JSX.Element | null {
+  const [expanded, setExpanded] = useState(true)
+  if (instances.length === 0) return null
+
+  const ordered = orderOpenCodeTuiInstances(instances, layout)
+  const summary = `${ordered.length} OpenCode ${ordered.length === 1 ? 'instance' : 'instances'}`
+
+  return (
+    <div className="mb-0.5 ml-10 mr-2 mt-0.5" data-testid="opencode-instances">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((value) => !value)}
+        className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-left text-[11px] text-fg-subtle hover:bg-hover hover:text-fg-muted"
+      >
+        {expanded ? (
+          <ChevronDown className="h-3 w-3 shrink-0" />
+        ) : (
+          <ChevronRight className="h-3 w-3 shrink-0" />
+        )}
+        <span>{summary}</span>
+      </button>
+      {expanded && (
+        <div className="mt-0.5 space-y-0.5">
+          {ordered.map((instance, index) => {
+            const indicator = openCodeInstanceIndicator(instance)
+            const label = openCodeTuiInstanceLabel(instance, index, labelMode, layout)
+            const statusLabel = OPENCODE_INSTANCE_STATUS_LABEL[instance.status]
+            return (
+              <button
+                key={instance.terminalId}
+                type="button"
+                title={`${label} · ${indicator.label}`}
+                onClick={() => onFocus(instance.terminalId)}
+                className={cn(
+                  'flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[12px] text-fg-muted hover:bg-hover hover:text-fg',
+                  indicator.row
+                )}
+              >
+                <StatusDot indicator={indicator} testId="opencode-instance-status" />
+                <span className="min-w-0 flex-1 truncate">{label}</span>
+                <span className="shrink-0 text-[10px] text-fg-subtle">{statusLabel}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SessionModeIcon({ mode, className }: { mode: Session['mode']; className?: string }): JSX.Element {
   const Icon = mode === 'terminal' ? Terminal : MessageSquare
   const label = mode === 'terminal' ? 'Terminal session' : 'GUI session'
@@ -235,8 +324,12 @@ interface SessionRowProps {
   status: PtyStatus
   chat?: OpenCodeChatState
   tuiStatus?: OpenCodeTuiStatusState
+  tuiInstances?: OpenCodeTuiInstanceStatus[]
+  terminalLayout?: SessionTerminalLayout
+  instanceLabelMode: OpenCodeTuiInstanceLabelMode
   selected: boolean
   onSelect: () => void
+  onFocusTerminal: (terminalId: string) => void
   onOpenGit: () => void
   dragging: boolean
   dragDisabled: boolean
@@ -252,8 +345,12 @@ function SessionRow({
   status,
   chat,
   tuiStatus,
+  tuiInstances = [],
+  terminalLayout,
+  instanceLabelMode,
   selected,
   onSelect,
+  onFocusTerminal,
   onOpenGit,
   dragging,
   dragDisabled,
@@ -502,6 +599,13 @@ function SessionRow({
         </ContextMenuContent>
       </ContextMenu>
 
+      <OpenCodeInstances
+        instances={tuiInstances}
+        layout={terminalLayout}
+        labelMode={instanceLabelMode}
+        onFocus={onFocusTerminal}
+      />
+
       <Dialog open={moving} onOpenChange={setMoving}>
         <DialogContent>
           <DialogHeader>
@@ -564,8 +668,12 @@ interface ProjectGroupProps {
   statuses: Record<string, PtyStatus>
   opencodeChats: Record<string, OpenCodeChatState>
   opencodeTuiStatuses: Record<string, OpenCodeTuiStatusState>
+  opencodeTuiInstances: Record<string, OpenCodeTuiInstanceStatus[]>
+  terminalLayouts: Record<string, SessionTerminalLayout>
+  instanceLabelMode: OpenCodeTuiInstanceLabelMode
   selectedSessionId: string | null
   onSelectSession: (id: string) => void
+  onFocusTerminal: (sessionId: string, terminalId: string) => void
   onOpenGit: (id: string) => void
   onNewSession: (projectId: string) => void
 }
@@ -576,8 +684,12 @@ function ProjectGroup({
   statuses,
   opencodeChats,
   opencodeTuiStatuses,
+  opencodeTuiInstances,
+  terminalLayouts,
+  instanceLabelMode,
   selectedSessionId,
   onSelectSession,
+  onFocusTerminal,
   onOpenGit,
   onNewSession
 }: ProjectGroupProps): JSX.Element {
@@ -758,8 +870,12 @@ function ProjectGroup({
             status={statuses[session.id] ?? 'none'}
             chat={opencodeChats[session.id]}
             tuiStatus={opencodeTuiStatuses[session.id]}
+            tuiInstances={opencodeTuiInstances[session.id]}
+            terminalLayout={terminalLayouts[session.id]}
+            instanceLabelMode={instanceLabelMode}
             selected={session.id === selectedSessionId}
             onSelect={() => onSelectSession(session.id)}
+            onFocusTerminal={(terminalId) => onFocusTerminal(session.id, terminalId)}
             onOpenGit={() => onOpenGit(session.id)}
             dragging={session.id === draggingSessionId}
             dragDisabled={reordering}
@@ -796,14 +912,24 @@ interface SidebarProps {
   onNewProject: () => void
   onNewSession: (projectId?: string) => void
   onOpenGit: (sessionId: string) => void
+  terminalLayouts: Record<string, SessionTerminalLayout>
+  onFocusTerminal: (sessionId: string, terminalId: string) => void
 }
 
-export function Sidebar({ onNewProject, onNewSession, onOpenGit }: SidebarProps): JSX.Element {
+export function Sidebar({
+  onNewProject,
+  onNewSession,
+  onOpenGit,
+  terminalLayouts,
+  onFocusTerminal
+}: SidebarProps): JSX.Element {
   const projects = useWorkspace((state) => state.projects)
   const sessions = useWorkspace((state) => state.sessions)
   const statuses = useWorkspace((state) => state.statuses)
   const opencodeChats = useWorkspace((state) => state.opencodeChats)
   const opencodeTuiStatuses = useWorkspace((state) => state.opencodeTuiStatuses)
+  const opencodeTuiInstances = useWorkspace((state) => state.opencodeTuiInstances)
+  const instanceLabelMode = useWorkspace((state) => state.opencodeTuiInstanceLabelMode)
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
   const selectSession = useWorkspace((state) => state.selectSession)
   const setSessionIcon = useWorkspace((state) => state.setSessionIcon)
@@ -967,8 +1093,12 @@ export function Sidebar({ onNewProject, onNewSession, onOpenGit }: SidebarProps)
               statuses={statuses}
               opencodeChats={opencodeChats}
               opencodeTuiStatuses={opencodeTuiStatuses}
+              opencodeTuiInstances={opencodeTuiInstances}
+              terminalLayouts={terminalLayouts}
+              instanceLabelMode={instanceLabelMode}
               selectedSessionId={selectedSessionId}
               onSelectSession={selectSession}
+              onFocusTerminal={onFocusTerminal}
               onOpenGit={onOpenGit}
               onNewSession={(projectId) => onNewSession(projectId)}
             />

@@ -31,6 +31,11 @@ const opencodeTuiStatusManager = new OpenCodeTuiStatusManager({
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send(IpcEvents.opencodeTuiStatus, update)
     }
+  },
+  onInstances: (update) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(IpcEvents.opencodeTuiInstances, update)
+    }
   }
 })
 const opencodeTokenRatePluginManager = new OpenCodeTokenRatePluginManager()

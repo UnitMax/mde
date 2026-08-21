@@ -88,6 +88,8 @@ export interface OpenCodeTuiStatusSnapshot {
   protocol: 1
   status: OpenCodeTuiStatus
   attentionReason?: OpenCodeTuiAttentionReason
+  /** Current top-level OpenCode conversation title, when reported by the plugin. */
+  title?: string
   revision: number
   updatedAt: number
 }
@@ -100,19 +102,41 @@ export interface OpenCodeTuiStatusUpdate {
   revision: number
 }
 
+/** Status of one OpenCode TUI process, identified by its owning terminal pane. */
+export interface OpenCodeTuiInstanceStatus {
+  terminalId: string
+  status: OpenCodeTuiStatus
+  attentionReason?: OpenCodeTuiAttentionReason
+  title?: string
+  revision: number
+}
+
+/** Complete live OpenCode TUI instance list for one MDE workspace session. */
+export interface OpenCodeTuiInstancesUpdate {
+  sessionId: string
+  instances: OpenCodeTuiInstanceStatus[]
+}
+
 export type OpenCodeTuiPluginInstallStatus =
   | 'not-installed'
   | 'installed'
   | 'outdated'
   | 'conflict'
 
+export type OpenCodeTuiInstanceLabelMode = 'numbered' | 'title'
+
 export interface OpenCodeTuiSettings {
   enabled: boolean
   currentPluginVersion: string
+  instanceLabelMode: OpenCodeTuiInstanceLabelMode
 }
 
 export interface OpenCodeTuiSetEnabledRequest {
   enabled: boolean
+}
+
+export interface OpenCodeTuiSetInstanceLabelModeRequest {
+  mode: OpenCodeTuiInstanceLabelMode
 }
 
 export interface OpenCodeTuiPluginRequest {

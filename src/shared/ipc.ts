@@ -28,10 +28,12 @@ import type {
   SelectOpenCodeSessionRequest,
   OpenCodeStreamChunk,
   OpenCodeTuiSetEnabledRequest,
+  OpenCodeTuiSetInstanceLabelModeRequest,
   OpenCodeTuiSettings,
   OpenCodeTuiPluginRequest,
   OpenCodeTuiPluginState,
   OpenCodeTuiStatusUpdate,
+  OpenCodeTuiInstancesUpdate,
   OpenCodeTokenRatePluginRequest,
   OpenCodeTokenRatePluginState,
   OpenCodeAlertSetEnabledRequest,
@@ -106,6 +108,7 @@ export const IpcChannels = {
   opencodeTuiPluginRemove: 'opencode-tui:plugin-remove',
   opencodeTuiSettings: 'opencode-tui:settings',
   opencodeTuiSetEnabled: 'opencode-tui:set-enabled',
+  opencodeTuiSetInstanceLabelMode: 'opencode-tui:set-instance-label-mode',
   opencodeTokenRatePluginState: 'opencode-token-rate:plugin-state',
   opencodeTokenRatePluginInstall: 'opencode-token-rate:plugin-install',
   opencodeTokenRatePluginRemove: 'opencode-token-rate:plugin-remove',
@@ -123,7 +126,8 @@ export const IpcEvents = {
   ptyExit: 'pty:exit',
   ptyDirectory: 'pty:directory',
   opencodeStream: 'opencode:stream',
-  opencodeTuiStatus: 'opencode-tui:status'
+  opencodeTuiStatus: 'opencode-tui:status',
+  opencodeTuiInstances: 'opencode-tui:instances'
 } as const
 
 export interface PlatformInfo {
@@ -289,10 +293,12 @@ export interface RendererApi {
   opencodeTui: {
     settings(): Promise<OpenCodeTuiSettings>
     setEnabled(req: OpenCodeTuiSetEnabledRequest): Promise<OpenCodeTuiSettings>
+    setInstanceLabelMode(req: OpenCodeTuiSetInstanceLabelModeRequest): Promise<OpenCodeTuiSettings>
     pluginState(req: OpenCodeTuiPluginRequest): Promise<OpenCodeTuiPluginState>
     install(req: OpenCodeTuiPluginRequest): Promise<OpenCodeTuiPluginState>
     remove(req: OpenCodeTuiPluginRequest): Promise<OpenCodeTuiPluginState>
     onStatus(listener: (update: OpenCodeTuiStatusUpdate) => void): () => void
+    onInstances(listener: (update: OpenCodeTuiInstancesUpdate) => void): () => void
   }
   opencodeTokenRate: {
     pluginState(req: OpenCodeTokenRatePluginRequest): Promise<OpenCodeTokenRatePluginState>

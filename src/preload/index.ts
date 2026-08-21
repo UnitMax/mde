@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IpcChannels, IpcEvents, type RendererApi } from '@shared/ipc'
 import type {
   OpenCodeStreamChunk,
+  OpenCodeTuiInstancesUpdate,
   OpenCodeTuiStatusUpdate,
   PtyDataChunk,
   PtyDirectoryUpdate,
@@ -88,10 +89,14 @@ const api: RendererApi = {
   opencodeTui: {
     settings: () => ipcRenderer.invoke(IpcChannels.opencodeTuiSettings),
     setEnabled: (req) => ipcRenderer.invoke(IpcChannels.opencodeTuiSetEnabled, req),
+    setInstanceLabelMode: (req) =>
+      ipcRenderer.invoke(IpcChannels.opencodeTuiSetInstanceLabelMode, req),
     pluginState: (req) => ipcRenderer.invoke(IpcChannels.opencodeTuiPluginState, req),
     install: (req) => ipcRenderer.invoke(IpcChannels.opencodeTuiPluginInstall, req),
     remove: (req) => ipcRenderer.invoke(IpcChannels.opencodeTuiPluginRemove, req),
-    onStatus: (listener) => subscribe<OpenCodeTuiStatusUpdate>(IpcEvents.opencodeTuiStatus, listener)
+    onStatus: (listener) => subscribe<OpenCodeTuiStatusUpdate>(IpcEvents.opencodeTuiStatus, listener),
+    onInstances: (listener) =>
+      subscribe<OpenCodeTuiInstancesUpdate>(IpcEvents.opencodeTuiInstances, listener)
   },
   opencodeTokenRate: {
     pluginState: (req) => ipcRenderer.invoke(IpcChannels.opencodeTokenRatePluginState, req),

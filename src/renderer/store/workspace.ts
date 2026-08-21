@@ -23,6 +23,9 @@ import type {
   OpenCodeSlashCommand,
   OpenCodeStreamChunk,
   OpenCodeTuiAttentionReason,
+  OpenCodeTuiInstanceLabelMode,
+  OpenCodeTuiInstanceStatus,
+  OpenCodeTuiInstancesUpdate,
   OpenCodeTuiStatus,
   OpenCodeTuiStatusUpdate,
   Project,
@@ -390,6 +393,8 @@ interface WorkspaceState {
   exits: Record<string, PtyExitInfo>
   opencodeChats: Record<string, OpenCodeChatState>
   opencodeTuiStatuses: Record<string, OpenCodeTuiStatusState>
+  opencodeTuiInstances: Record<string, OpenCodeTuiInstanceStatus[]>
+  opencodeTuiInstanceLabelMode: OpenCodeTuiInstanceLabelMode
   platform: PlatformInfo | null
   wslAvailable: boolean
   distros: Distro[]
@@ -445,6 +450,8 @@ interface WorkspaceState {
   rejectOpenCodeQuestion: (sessionId: string, requestId: string) => Promise<void>
   appendOpenCodeStream: (chunk: OpenCodeStreamChunk) => void
   appendOpenCodeTuiStatus: (update: OpenCodeTuiStatusUpdate) => void
+  appendOpenCodeTuiInstances: (update: OpenCodeTuiInstancesUpdate) => void
+  setOpenCodeTuiInstanceLabelMode: (mode: OpenCodeTuiInstanceLabelMode) => Promise<void>
   refreshDistros: () => Promise<void>
 }
 
@@ -457,6 +464,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   exits: {},
   opencodeChats: {},
   opencodeTuiStatuses: {},
+  opencodeTuiInstances: {},
+  opencodeTuiInstanceLabelMode: 'numbered',
   platform: null,
   wslAvailable: false,
   distros: [],
@@ -472,14 +481,16 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       window.api.pty.onDirectory((update) => get().setTerminalDirectory(update))
       window.api.opencode.onStream((chunk) => get().appendOpenCodeStream(chunk))
       window.api.opencodeTui.onStatus((update) => get().appendOpenCodeTuiStatus(update))
+      window.api.opencodeTui.onInstances((update) => get().appendOpenCodeTuiInstances(update))
     }
 
-    const [platform, workspace, statuses, directories, wslAvailable] = await Promise.all([
+    const [platform, workspace, statuses, directories, wslAvailable, opencodeTuiSettings] = await Promise.all([
       window.api.platform.info(),
       window.api.workspace.list(),
       window.api.pty.statuses(),
       window.api.pty.directories(),
-      window.api.wsl.available()
+      window.api.wsl.available(),
+      window.api.opencodeTui.settings()
     ])
 
     const { projects, sessions } = workspace as WorkspaceData
@@ -492,6 +503,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       // are in flight. Preserve that newer event over the initial snapshot.
       terminalDirectories: { ...directories, ...get().terminalDirectories },
       opencodeTuiStatuses: {},
+      opencodeTuiInstanceLabelMode: opencodeTuiSettings.instanceLabelMode,
       wslAvailable,
       selectedSessionId: null,
       ready: true
@@ -546,11 +558,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const exits = { ...state.exits }
       const opencodeChats = { ...state.opencodeChats }
       const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
+      const opencodeTuiInstances = { ...state.opencodeTuiInstances }
       childIds.forEach((sessionId) => {
         delete statuses[sessionId]
         delete exits[sessionId]
         delete opencodeChats[sessionId]
         delete opencodeTuiStatuses[sessionId]
+        delete opencodeTuiInstances[sessionId]
       })
       return {
         projects: state.projects.filter((project) => project.id !== id),
@@ -562,7 +576,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         statuses,
         exits,
         opencodeChats,
-        opencodeTuiStatuses
+        opencodeTuiStatuses,
+        opencodeTuiInstances
       }
     })
   },
@@ -618,17 +633,20 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const exits = { ...state.exits }
       const opencodeChats = { ...state.opencodeChats }
       const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
+      const opencodeTuiInstances = { ...state.opencodeTuiInstances }
       delete statuses[id]
       delete exits[id]
       delete opencodeChats[id]
       delete opencodeTuiStatuses[id]
+      delete opencodeTuiInstances[id]
       return {
         sessions: state.sessions.filter((session) => session.id !== id),
         selectedSessionId: state.selectedSessionId === id ? null : state.selectedSessionId,
         statuses,
         exits,
         opencodeChats,
-        opencodeTuiStatuses
+        opencodeTuiStatuses,
+        opencodeTuiInstances
       }
     })
   },
@@ -1764,6 +1782,28 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         }
       }
     }),
+
+  appendOpenCodeTuiInstances: ({ sessionId, instances }) =>
+    set((state) => {
+      const previous = state.opencodeTuiInstances[sessionId]
+      if (instances.length === 0) {
+        if (!previous) return state
+        const opencodeTuiInstances = { ...state.opencodeTuiInstances }
+        delete opencodeTuiInstances[sessionId]
+        return { opencodeTuiInstances }
+      }
+      return {
+        opencodeTuiInstances: {
+          ...state.opencodeTuiInstances,
+          [sessionId]: instances
+        }
+      }
+    }),
+
+  setOpenCodeTuiInstanceLabelMode: async (mode) => {
+    const settings = await window.api.opencodeTui.setInstanceLabelMode({ mode })
+    set({ opencodeTuiInstanceLabelMode: settings.instanceLabelMode })
+  },
 
   refreshDistros: async () => {
     const distros = await window.api.wsl.distros()
