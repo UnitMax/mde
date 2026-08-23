@@ -23,27 +23,11 @@ import type {
   GitDiffResponse,
   HostPlatform,
   GitInfoResponse,
-  AbortOpenCodeSessionRequest,
   NewProject,
   NewSession,
   PathCheckResult,
   PathResolution,
   Project,
-  ListOpenCodeSessionsRequest,
-  ListOpenCodeSessionsResponse,
-  ListOpenCodeModelsRequest,
-  ListOpenCodeModelsResponse,
-  CreateOpenCodeSessionRequest,
-  ExecuteOpenCodeCommandRequest,
-  OpenCodeConversationResponse,
-  RevertOpenCodeMessageRequest,
-  UnrevertOpenCodeSessionRequest,
-  SelectOpenCodeSessionRequest,
-  SendOpenCodeMessageRequest,
-  SendOpenCodeMessageResponse,
-  SendOpenCodePermissionReplyRequest,
-  SendOpenCodeQuestionReplyRequest,
-  SendOpenCodeQuestionRejectRequest,
   OpenCodeTuiPluginRequest,
   OpenCodeTuiPluginState,
   OpenCodeTuiSetEnabledRequest,
@@ -57,7 +41,6 @@ import type {
   PtyStatus
 } from '@shared/types'
 import type { PtyManager } from './pty/manager'
-import type { OpenCodeManager } from './opencode/manager'
 import type { OpenCodeTuiStatusManager } from './opencode/tui-status'
 import type { OpenCodeTokenRatePluginManager } from './opencode/token-rate'
 import type { OpenCodeAlertManager } from './opencode/alerts'
@@ -141,7 +124,6 @@ async function revealSession(session: Session): Promise<void> {
 
 export function registerIpcHandlers(
   ptyManager: PtyManager,
-  opencodeManager: OpenCodeManager,
   opencodeTuiStatusManager: OpenCodeTuiStatusManager,
   opencodeTokenRatePluginManager: OpenCodeTokenRatePluginManager,
   opencodeAlertManager: OpenCodeAlertManager
@@ -178,7 +160,6 @@ export function registerIpcHandlers(
     for (const session of workspace.sessions) {
       if (session.projectId === id) {
         ptyManager.dispose(session.id)
-        opencodeManager.dispose(session.id)
       }
     }
     await removeProject(id)
@@ -195,103 +176,8 @@ export function registerIpcHandlers(
   )
   handle<string, void>(IpcChannels.sessionsRemove, async (id) => {
     ptyManager.dispose(id)
-    opencodeManager.dispose(id)
     await removeSession(id)
   })
-
-  handle<SendOpenCodeMessageRequest, SendOpenCodeMessageResponse>(
-    IpcChannels.opencodeSend,
-    async (req) => {
-      const session = await getSession(req.sessionId)
-      if (!session) throw new Error('Session no longer exists.')
-      return await opencodeManager.send(session, req.text, req.model, req.agent)
-    }
-  )
-  handle<AbortOpenCodeSessionRequest, void>(IpcChannels.opencodeAbort, async (req) => {
-    const session = await getSession(req.sessionId)
-    if (!session) throw new Error('Session no longer exists.')
-    await opencodeManager.abort(session)
-  })
-  handle<ExecuteOpenCodeCommandRequest, OpenCodeConversationResponse>(
-    IpcChannels.opencodeCommand,
-    async (req) => {
-      const session = await getSession(req.sessionId)
-      if (!session) throw new Error('Session no longer exists.')
-      return opencodeManager.executeCommand(session, req.command, req.model)
-    }
-  )
-  handle<ListOpenCodeSessionsRequest, ListOpenCodeSessionsResponse>(
-    IpcChannels.opencodeSessionsList,
-    async (req) => {
-      const session = await getSession(req.sessionId)
-      if (!session) throw new Error('Session no longer exists.')
-      return opencodeManager.listSessions(session)
-    }
-  )
-  handle<ListOpenCodeModelsRequest, ListOpenCodeModelsResponse>(
-    IpcChannels.opencodeModelsList,
-    async (req) => {
-      const session = await getSession(req.sessionId)
-      if (!session) throw new Error('Session no longer exists.')
-      return opencodeManager.listModels(session)
-    }
-  )
-  handle<SelectOpenCodeSessionRequest, OpenCodeConversationResponse>(
-    IpcChannels.opencodeSessionSelect,
-    async (req) => {
-      const session = await getSession(req.sessionId)
-      if (!session) throw new Error('Session no longer exists.')
-      return opencodeManager.selectSession(session, req.openCodeSessionId)
-    }
-  )
-  handle<CreateOpenCodeSessionRequest, OpenCodeConversationResponse>(
-    IpcChannels.opencodeSessionCreate,
-    async (req) => {
-      const session = await getSession(req.sessionId)
-      if (!session) throw new Error('Session no longer exists.')
-      return opencodeManager.createSession(session, req.agent)
-    }
-  )
-  handle<RevertOpenCodeMessageRequest, OpenCodeConversationResponse>(
-    IpcChannels.opencodeRevert,
-    async (req) => {
-      const session = await getSession(req.sessionId)
-      if (!session) throw new Error('Session no longer exists.')
-      return opencodeManager.revert(session, req.messageId)
-    }
-  )
-  handle<UnrevertOpenCodeSessionRequest, OpenCodeConversationResponse>(
-    IpcChannels.opencodeUnrevert,
-    async (req) => {
-      const session = await getSession(req.sessionId)
-      if (!session) throw new Error('Session no longer exists.')
-      return opencodeManager.unrevert(session)
-    }
-  )
-  handle<SendOpenCodePermissionReplyRequest, void>(
-    IpcChannels.opencodePermissionReply,
-    async (req) => {
-      const session = await getSession(req.sessionId)
-      if (!session) throw new Error('Session no longer exists.')
-      await opencodeManager.replyPermission(req.sessionId, req.requestId, req.reply)
-    }
-  )
-  handle<SendOpenCodeQuestionReplyRequest, void>(
-    IpcChannels.opencodeQuestionReply,
-    async (req) => {
-      const session = await getSession(req.sessionId)
-      if (!session) throw new Error('Session no longer exists.')
-      await opencodeManager.replyQuestion(req.sessionId, req.requestId, req.answers)
-    }
-  )
-  handle<SendOpenCodeQuestionRejectRequest, void>(
-    IpcChannels.opencodeQuestionReject,
-    async (req) => {
-      const session = await getSession(req.sessionId)
-      if (!session) throw new Error('Session no longer exists.')
-      await opencodeManager.rejectQuestion(req.sessionId, req.requestId)
-    }
-  )
 
   handle<OpenCodeTuiPluginRequest, OpenCodeTuiPluginState>(
     IpcChannels.opencodeTuiPluginState,

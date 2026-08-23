@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { MessageSquare, Search, Terminal } from 'lucide-react'
-import type { PtyStatus, Session } from '@shared/types'
+import { Search } from 'lucide-react'
+import type { PtyStatus } from '@shared/types'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -42,11 +42,6 @@ function SessionStatus({ status }: { status: PtyStatus }): JSX.Element {
   )
 }
 
-function SessionMode({ mode }: { mode: Session['mode'] }): JSX.Element {
-  const Icon = mode === 'terminal' ? Terminal : MessageSquare
-  return <Icon className="h-3.5 w-3.5 shrink-0 text-fg-subtle" aria-hidden="true" />
-}
-
 function SessionResult({
   result,
   active,
@@ -64,8 +59,6 @@ function SessionResult({
 }): JSX.Element {
   const { session, project } = result.item
   const location = session.kind === 'wsl' ? `${session.distro ?? 'WSL'} · ${session.path}` : session.path
-  const modeLabel = session.mode === 'terminal' ? 'Terminal' : 'GUI'
-
   return (
     <button
       type="button"
@@ -80,7 +73,6 @@ function SessionResult({
       onClick={onSelect}
       onMouseEnter={onHover}
     >
-      <SessionMode mode={session.mode} />
       <SessionStatus status={status} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[13px] font-medium">
@@ -95,7 +87,6 @@ function SessionResult({
           />
         </span>
       </span>
-      <span className="shrink-0 text-[10px] text-fg-subtle">{modeLabel}</span>
     </button>
   )
 }

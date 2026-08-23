@@ -23,12 +23,11 @@ describe('workspace session duplication', () => {
     await fs.rm(storeDir, { recursive: true, force: true })
   })
 
-  it('copies terminal launch configuration and color without OpenCode state', async () => {
+  it('copies terminal launch configuration and appearance', async () => {
     const project = await createProject({ name: 'Work' })
     const source = await createSession({
       projectId: project.id,
       name: 'App',
-      mode: 'terminal',
       kind: 'wsl',
       distro: 'Ubuntu-24.04',
       path: '/home/me/src/app',
@@ -38,11 +37,7 @@ describe('workspace session duplication', () => {
       id: source.id,
       patch: {
         color: 'teal',
-        icon: 'robot',
-        opencodeSessionId: 'ses_existing',
-        opencodeModelSelections: {
-          ses_existing: { providerID: 'cloud', modelID: 'model-a', variant: 'fast' }
-        }
+        icon: 'robot'
       }
     })
 
@@ -54,7 +49,6 @@ describe('workspace session duplication', () => {
       name: 'App (copy)',
       color: 'teal',
       icon: 'robot',
-      mode: 'terminal',
       kind: 'wsl',
       distro: 'Ubuntu-24.04',
       path: '/home/me/src/app',
@@ -62,9 +56,6 @@ describe('workspace session duplication', () => {
     })
     expect(duplicate.id).not.toBe(source.id)
     expect(Date.parse(duplicate.createdAt)).toBeGreaterThanOrEqual(Date.parse(source.createdAt))
-    expect(duplicate.opencodeSessionId).toBeUndefined()
-    expect(duplicate.opencodeModelSelections).toBeUndefined()
-
     const secondDuplicate = await duplicateSession(source.id)
     expect(secondDuplicate?.name).toBe('App (copy 2)')
     expect((await loadWorkspace()).sessions).toHaveLength(3)
@@ -75,7 +66,6 @@ describe('workspace session duplication', () => {
     const source = await createSession({
       projectId: project.id,
       name: 'App',
-      mode: 'gui',
       kind: 'native',
       path: '/workspace/app'
     })
@@ -86,17 +76,4 @@ describe('workspace session duplication', () => {
     expect((await loadWorkspace()).sessions[0]?.icon).toBeUndefined()
   })
 
-  it('does not duplicate GUI sessions', async () => {
-    const project = await createProject({ name: 'Work' })
-    const source = await createSession({
-      projectId: project.id,
-      name: 'GUI app',
-      mode: 'gui',
-      kind: 'native',
-      path: '/workspace/app'
-    })
-
-    expect(await duplicateSession(source.id)).toBeNull()
-    expect((await loadWorkspace()).sessions).toHaveLength(1)
-  })
 })

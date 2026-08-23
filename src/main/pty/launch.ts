@@ -28,18 +28,11 @@ const WSL_TERMINAL_ENVIRONMENT = {
   COLORTERM: 'truecolor'
 }
 
-function isBashShell(shell: string): boolean {
-  const normalised = shell.replaceAll('\\', '/')
-  return normalised.slice(normalised.lastIndexOf('/') + 1).toLowerCase() === 'bash'
-}
-
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`
 }
 
-function wslShellCommand(shell: string): string {
-  if (!isBashShell(shell)) return `exec ${shell} -i`
-
+function bashStartupCommand(): string {
   const reporter = String.raw`printf '\033]7;file://localhost%s\033\\' "$PWD"`
   const existingPromptCommand = '${PROMPT_COMMAND:+$PROMPT_COMMAND;}'
   return [
@@ -48,8 +41,81 @@ function wslShellCommand(shell: string): string {
     // Read the user's normal interactive setup first, then append our hook.
     // Installing it in the parent login shell is unreliable: the child shell
     // can replace PROMPT_COMMAND while loading .bashrc.
-    `exec ${shell} --rcfile <(printf '%s\\n' '[ -r ~/.bashrc ] && . ~/.bashrc' 'PROMPT_COMMAND="${existingPromptCommand}$MDE_CWD_PROMPT_COMMAND"; export PROMPT_COMMAND') -i`
+    `exec "$SHELL" --rcfile <(printf '%s\\n' '[ -r ~/.bashrc ] && . ~/.bashrc' 'PROMPT_COMMAND="${existingPromptCommand}$MDE_CWD_PROMPT_COMMAND"; export PROMPT_COMMAND') -i`
   ].join('; ')
+}
+
+function fishStartupCommand(): string {
+  const reporter = String.raw`printf '\033]7;file://localhost%s\033\\' "$PWD"`
+  return [
+    'functions --query fish_prompt; and functions --copy fish_prompt __mde_original_fish_prompt',
+    `function fish_prompt; ${reporter}; functions --query __mde_original_fish_prompt; and __mde_original_fish_prompt; end`
+  ].join('; ')
+}
+
+function wslShellCommand(): string {
+  return `
+if [ "$#" -gt 0 ]; then
+  shell=$1
+else
+  account=$(getent passwd "$(id -u)" 2>/dev/null || true)
+  shell=\${account##*:}
+fi
+if [ -z "$shell" ]; then shell=\${SHELL:-/bin/bash}; fi
+case "$shell" in
+  /*) ;;
+  *) shell=$(command -v "$shell" 2>/dev/null || true) ;;
+esac
+if [ -z "$shell" ] || [ ! -x "$shell" ]; then
+  printf 'mde: configured login shell is unavailable; falling back to /bin/bash\\n' >&2
+  shell=/bin/bash
+fi
+export SHELL="$shell"
+case "\${shell##*/}" in
+  bash)
+    exec "$shell" -lic ${shellQuote(bashStartupCommand())}
+    ;;
+  zsh)
+    mde_zdotdir=$(mktemp -d "\${TMPDIR:-/tmp}/mde-zsh.XXXXXX") || exec "$shell" -l -i
+    export MDE_ORIGINAL_ZDOTDIR="\${ZDOTDIR:-$HOME}"
+    export MDE_ZDOTDIR="$mde_zdotdir"
+    export ZDOTDIR="$mde_zdotdir"
+    cat > "$mde_zdotdir/.zshenv" <<'MDE_ZSHENV'
+export ZDOTDIR="$MDE_ORIGINAL_ZDOTDIR"
+[[ -r "$ZDOTDIR/.zshenv" ]] && source "$ZDOTDIR/.zshenv"
+export MDE_ORIGINAL_ZDOTDIR="\${ZDOTDIR:-$HOME}"
+export ZDOTDIR="$MDE_ZDOTDIR"
+MDE_ZSHENV
+    cat > "$mde_zdotdir/.zprofile" <<'MDE_ZPROFILE'
+export ZDOTDIR="$MDE_ORIGINAL_ZDOTDIR"
+[[ -r "$ZDOTDIR/.zprofile" ]] && source "$ZDOTDIR/.zprofile"
+export MDE_ORIGINAL_ZDOTDIR="\${ZDOTDIR:-$HOME}"
+export ZDOTDIR="$MDE_ZDOTDIR"
+MDE_ZPROFILE
+    cat > "$mde_zdotdir/.zshrc" <<'MDE_ZSHRC'
+export ZDOTDIR="$MDE_ORIGINAL_ZDOTDIR"
+[[ -r "$ZDOTDIR/.zshrc" ]] && source "$ZDOTDIR/.zshrc"
+export MDE_ORIGINAL_ZDOTDIR="\${ZDOTDIR:-$HOME}"
+autoload -Uz add-zsh-hook
+function __mde_report_cwd() {
+  printf '\\033]7;file://localhost%s\\033\\\\' "$PWD"
+}
+add-zsh-hook precmd __mde_report_cwd
+export ZDOTDIR="$MDE_ORIGINAL_ZDOTDIR"
+MDE_ZSHRC
+    "$shell" -l -i
+    status=$?
+    rm -rf -- "$mde_zdotdir"
+    exit "$status"
+    ;;
+  fish)
+    exec "$shell" -l -i -C ${shellQuote(fishStartupCommand())}
+    ;;
+  *)
+    exec "$shell" -l
+    ;;
+esac
+`.trim()
 }
 
 function wslEnvironmentArgs(environment: Record<string, string> | undefined): string[] {
@@ -62,7 +128,7 @@ function wslEnvironmentArgs(environment: Record<string, string> | undefined): st
 }
 
 /**
- * Builds the spawn command for a session. This is the seam a future OpenCode
+ * Builds the spawn command for a session. This is the seam a future remote
  * integration slots into — nothing else needs to know how a shell is started.
  */
 export function buildLaunchSpec(session: Session, context: LaunchContext): LaunchSpec {
@@ -74,7 +140,6 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
       throw new Error(`WSL session "${session.name}" has no distro`)
     }
 
-    const shell = session.shell ?? 'bash'
     const environment = wslEnvironmentArgs({
       ...context.environment,
       ...context.wslEnvironment,
@@ -93,12 +158,12 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
         // drops both the login shell and the OSC 7 cwd reporter. -e execs the
         // argv exactly as given.
         '-e',
-        ...(environment.length > 0 ? ['env', ...environment, shell] : [shell]),
-        // A login+interactive shell is required: nvm/mise/bun/asdf put their
-        // shims on PATH from the login profile, and a plain interactive shell
-        // would leave those tools missing.
-        '-lic',
-        wslShellCommand(shell)
+        ...(environment.length > 0 ? ['env', ...environment] : []),
+        '/bin/sh',
+        '-c',
+        wslShellCommand(),
+        'mde-shell',
+        ...(session.shell ? [session.shell] : [])
       ]
       // cwd is deliberately absent: --cd sets the working directory inside the
       // distro, and the Windows-side cwd is irrelevant (and must be a valid

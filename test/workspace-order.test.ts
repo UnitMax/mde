@@ -28,21 +28,18 @@ describe('workspace session ordering persistence', () => {
     const first = await createSession({
       projectId: firstProject.id,
       name: 'First session',
-      mode: 'terminal',
       kind: 'native',
       path: '/workspace/first'
     })
     const other = await createSession({
       projectId: secondProject.id,
       name: 'Other session',
-      mode: 'terminal',
       kind: 'native',
       path: '/workspace/other'
     })
     const last = await createSession({
       projectId: firstProject.id,
       name: 'Last session',
-      mode: 'terminal',
       kind: 'native',
       path: '/workspace/last'
     })

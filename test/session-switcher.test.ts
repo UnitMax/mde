@@ -17,7 +17,6 @@ function session(overrides: Partial<Session> = {}): Session {
     id: 'session-1',
     projectId: project.id,
     name: 'Frontend',
-    mode: 'terminal',
     kind: 'native',
     path: '/workspace/frontend',
     createdAt: '2026-01-01T00:00:00.000Z',
@@ -37,21 +36,14 @@ describe('session search', () => {
     expect(results[0]?.matches.name).toEqual([0, 5, 7])
   })
 
-  it('matches across project, path, distro, and mode fields', () => {
+  it('matches across project, path, and distro fields', () => {
     const results = searchSessions(
-      [
-        item(session({ id: 'wsl-session', name: 'Agent', kind: 'wsl', distro: 'Ubuntu-24.04' }), 0),
-        item(session({ id: 'gui-session', name: 'Design', mode: 'gui' }), 1)
-      ],
+      [item(session({ id: 'wsl-session', name: 'Agent', kind: 'wsl', distro: 'Ubuntu-24.04' }), 0)],
       'ubuntu'
     )
     expect(searchSessions([item(session(), 0)], 'worksp')[0]?.item.session.id).toBe('session-1')
     expect(searchSessions([item(session(), 0)], 'frontend')[0]?.item.session.id).toBe('session-1')
     expect(results[0]?.item.session.id).toBe('wsl-session')
-
-    expect(searchSessions([item(session({ id: 'gui-session', mode: 'gui' }), 0)], 'gui')[0]?.item.session.id).toBe(
-      'gui-session'
-    )
   })
 
   it('ranks stronger fuzzy matches first and preserves input order for ties', () => {

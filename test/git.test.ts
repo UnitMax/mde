@@ -27,7 +27,6 @@ const nativeSession = {
   id: 'native-1',
   projectId: 'project-1',
   name: 'Native app',
-  mode: 'terminal' as const,
   kind: 'native' as const,
   path: '/workspace/native',
   createdAt: '2026-01-01T00:00:00.000Z'

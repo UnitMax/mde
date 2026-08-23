@@ -1,9 +1,7 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, shell } from 'electron'
 import { IpcEvents } from '@shared/ipc'
-import type { OpenCodeAlertEvent } from '@shared/types'
 import { registerIpcHandlers } from './ipc'
-import { OpenCodeManager } from './opencode/manager'
 import { OpenCodeAlertManager } from './opencode/alerts'
 import { OpenCodeTuiStatusManager } from './opencode/tui-status'
 import { OpenCodeTokenRatePluginManager } from './opencode/token-rate'
@@ -21,12 +19,7 @@ const opencodeAlertManager = new OpenCodeAlertManager({
 const opencodeTuiStatusManager = new OpenCodeTuiStatusManager({
   onStatus: (update) => {
     if (update.status === 'attention' || update.status === 'completed' || update.status === 'error') {
-      opencodeAlertManager.alert({
-        sessionId: update.sessionId,
-        source: 'tui',
-        kind: update.status,
-        ...(update.attentionReason ? { attentionReason: update.attentionReason } : {})
-      })
+      opencodeAlertManager.alert()
     }
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send(IpcEvents.opencodeTuiStatus, update)
@@ -57,17 +50,6 @@ const ptyManager = new PtyManager({
     }
   }
 }, [opencodeTuiStatusManager, opencodeTokenRatePluginManager])
-const opencodeManager = new OpenCodeManager({
-  onStream: (chunk) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send(IpcEvents.opencodeStream, chunk)
-    }
-  },
-  onAlert: (event: OpenCodeAlertEvent) => {
-    opencodeAlertManager.alert(event)
-  }
-})
-
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -132,7 +114,6 @@ if (!app.requestSingleInstanceLock()) {
     await opencodeAlertManager.configure(app.getPath('userData'))
     registerIpcHandlers(
       ptyManager,
-      opencodeManager,
       opencodeTuiStatusManager,
       opencodeTokenRatePluginManager,
       opencodeAlertManager
@@ -152,6 +133,5 @@ if (!app.requestSingleInstanceLock()) {
     opencodeAlertManager.dispose()
     ptyManager.disposeAll()
     opencodeTuiStatusManager.disposeAll()
-    opencodeManager.disposeAll()
   })
 }

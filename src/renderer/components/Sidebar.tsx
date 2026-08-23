@@ -17,7 +17,6 @@ import {
   GitBranch,
   GripVertical,
   LoaderCircle,
-  MessageSquare,
   MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
@@ -25,7 +24,6 @@ import {
   Plus,
   RotateCcw,
   Smile,
-  Terminal,
   Trash2
 } from 'lucide-react'
 import type {
@@ -65,7 +63,7 @@ import {
 } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { useWorkspace, type OpenCodeChatState, type OpenCodeTuiStatusState } from '@/store/workspace'
+import { useWorkspace, type OpenCodeTuiStatusState } from '@/store/workspace'
 import {
   DEFAULT_SESSION_COLOR,
   SESSION_COLORS,
@@ -112,30 +110,8 @@ function attentionIndicator(reason: 'permission' | 'question'): SessionIndicator
 
 function sessionIndicator(
   status: PtyStatus,
-  chat?: OpenCodeChatState,
   tuiStatus?: OpenCodeTuiStatusState
 ): SessionIndicator {
-  if (chat) {
-    const waitingForQuestion = chat.liveItems.some(
-      (item) => item.role === 'question' && !item.responding
-    )
-    if (waitingForQuestion) return attentionIndicator('question')
-    const activeSubagent = chat.subagents.some(
-      (subagent) => subagent.status === 'working' || subagent.status === 'waiting'
-    )
-    if (chat.pending || activeSubagent) {
-      const waitingForPermission = chat.liveItems.some(
-        (item) => item.role === 'permission' && !item.responding
-      ) || chat.subagents.some((subagent) => subagent.status === 'waiting')
-      if (waitingForPermission) return attentionIndicator('permission')
-      return { status: 'working', ...OPENCODE_STATUS_STYLE.working }
-    }
-    if (chat.unreadCompletion) {
-      const guiStatus = chat.error ? 'error' : 'completed'
-      return { status: guiStatus, ...OPENCODE_STATUS_STYLE[guiStatus] }
-    }
-    return { status: 'idle', ...OPENCODE_STATUS_STYLE.idle }
-  }
   if (tuiStatus) {
     if ((tuiStatus.status === 'completed' || tuiStatus.status === 'error') && !tuiStatus.unread) {
       return { status: 'idle', ...OPENCODE_STATUS_STYLE.idle }
@@ -304,25 +280,9 @@ function OpenCodeInstances({
   )
 }
 
-function SessionModeIcon({ mode, className }: { mode: Session['mode']; className?: string }): JSX.Element {
-  const Icon = mode === 'terminal' ? Terminal : MessageSquare
-  const label = mode === 'terminal' ? 'Terminal session' : 'GUI session'
-  return (
-    <Icon
-      aria-label={label}
-      data-testid="session-mode"
-      data-mode={mode}
-      className={cn('h-3.5 w-3.5 shrink-0 text-fg-subtle', className)}
-    >
-      <title>{label}</title>
-    </Icon>
-  )
-}
-
 interface SessionRowProps {
   session: Session
   status: PtyStatus
-  chat?: OpenCodeChatState
   tuiStatus?: OpenCodeTuiStatusState
   tuiInstances?: OpenCodeTuiInstanceStatus[]
   terminalLayout?: SessionTerminalLayout
@@ -343,7 +303,6 @@ interface SessionRowProps {
 function SessionRow({
   session,
   status,
-  chat,
   tuiStatus,
   tuiInstances = [],
   terminalLayout,
@@ -412,7 +371,7 @@ function SessionRow({
   }
 
   const location = session.kind === 'wsl' ? `${session.distro ?? 'WSL'} · ${session.path}` : session.path
-  const indicator = sessionIndicator(status, chat, tuiStatus)
+  const indicator = sessionIndicator(status, tuiStatus)
   const sessionColor = session.color ?? DEFAULT_SESSION_COLOR
   const customColor = customSessionColor(session.color)
   const backgroundStyle = sessionBackgroundStyle(session.color, indicator)
@@ -508,7 +467,6 @@ function SessionRow({
                 className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight text-fg-subtle"
                 title={location}
               >
-                <SessionModeIcon mode={session.mode} />
                 <span className="min-w-0 truncate">{location}</span>
               </div>
             </div>
@@ -538,12 +496,10 @@ function SessionRow({
             <Pencil className="h-3.5 w-3.5" />
             Rename
           </ContextMenuItem>
-          {session.mode === 'terminal' && (
-            <ContextMenuItem onSelect={() => void duplicateSession(session.id)}>
-              <Copy className="h-3.5 w-3.5" />
-              Duplicate session
-            </ContextMenuItem>
-          )}
+          <ContextMenuItem onSelect={() => void duplicateSession(session.id)}>
+            <Copy className="h-3.5 w-3.5" />
+            Duplicate session
+          </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuSub>
             <ContextMenuSubTrigger>
@@ -666,7 +622,6 @@ interface ProjectGroupProps {
   project: Project
   sessions: Session[]
   statuses: Record<string, PtyStatus>
-  opencodeChats: Record<string, OpenCodeChatState>
   opencodeTuiStatuses: Record<string, OpenCodeTuiStatusState>
   opencodeTuiInstances: Record<string, OpenCodeTuiInstanceStatus[]>
   terminalLayouts: Record<string, SessionTerminalLayout>
@@ -682,7 +637,6 @@ function ProjectGroup({
   project,
   sessions,
   statuses,
-  opencodeChats,
   opencodeTuiStatuses,
   opencodeTuiInstances,
   terminalLayouts,
@@ -868,7 +822,6 @@ function ProjectGroup({
             key={session.id}
             session={session}
             status={statuses[session.id] ?? 'none'}
-            chat={opencodeChats[session.id]}
             tuiStatus={opencodeTuiStatuses[session.id]}
             tuiInstances={opencodeTuiInstances[session.id]}
             terminalLayout={terminalLayouts[session.id]}
@@ -926,7 +879,6 @@ export function Sidebar({
   const projects = useWorkspace((state) => state.projects)
   const sessions = useWorkspace((state) => state.sessions)
   const statuses = useWorkspace((state) => state.statuses)
-  const opencodeChats = useWorkspace((state) => state.opencodeChats)
   const opencodeTuiStatuses = useWorkspace((state) => state.opencodeTuiStatuses)
   const opencodeTuiInstances = useWorkspace((state) => state.opencodeTuiInstances)
   const instanceLabelMode = useWorkspace((state) => state.opencodeTuiInstanceLabelMode)
@@ -950,7 +902,6 @@ export function Sidebar({
                 projectSessions.map((session) => {
                   const indicator = sessionIndicator(
                     statuses[session.id] ?? 'none',
-                    opencodeChats[session.id],
                     opencodeTuiStatuses[session.id]
                   )
                   const customColor = customSessionColor(session.color)
@@ -960,7 +911,7 @@ export function Sidebar({
                         <button
                           type="button"
                           onClick={() => selectSession(session.id)}
-                          title={`${project.name} · ${session.name} · ${session.mode === 'terminal' ? 'Terminal' : 'GUI'}`}
+                          title={`${project.name} · ${session.name}`}
                           className={cn(
                             'relative flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase',
                             customColor
@@ -1091,7 +1042,6 @@ export function Sidebar({
               project={project}
               sessions={sessions.filter((session) => session.projectId === project.id)}
               statuses={statuses}
-              opencodeChats={opencodeChats}
               opencodeTuiStatuses={opencodeTuiStatuses}
               opencodeTuiInstances={opencodeTuiInstances}
               terminalLayouts={terminalLayouts}

@@ -1,7 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IpcChannels, IpcEvents, type RendererApi } from '@shared/ipc'
 import type {
-  OpenCodeStreamChunk,
   OpenCodeTuiInstancesUpdate,
   OpenCodeTuiStatusUpdate,
   PtyDataChunk,
@@ -70,21 +69,6 @@ const api: RendererApi = {
   git: {
     info: (req) => ipcRenderer.invoke(IpcChannels.gitInfo, req),
     diff: (req) => ipcRenderer.invoke(IpcChannels.gitDiff, req)
-  },
-  opencode: {
-    send: (req) => ipcRenderer.invoke(IpcChannels.opencodeSend, req),
-    abort: (req) => ipcRenderer.invoke(IpcChannels.opencodeAbort, req),
-    executeCommand: (req) => ipcRenderer.invoke(IpcChannels.opencodeCommand, req),
-    listSessions: (req) => ipcRenderer.invoke(IpcChannels.opencodeSessionsList, req),
-    listModels: (req) => ipcRenderer.invoke(IpcChannels.opencodeModelsList, req),
-    selectSession: (req) => ipcRenderer.invoke(IpcChannels.opencodeSessionSelect, req),
-    createSession: (req) => ipcRenderer.invoke(IpcChannels.opencodeSessionCreate, req),
-    revert: (req) => ipcRenderer.invoke(IpcChannels.opencodeRevert, req),
-    unrevert: (req) => ipcRenderer.invoke(IpcChannels.opencodeUnrevert, req),
-    replyPermission: (req) => ipcRenderer.invoke(IpcChannels.opencodePermissionReply, req),
-    replyQuestion: (req) => ipcRenderer.invoke(IpcChannels.opencodeQuestionReply, req),
-    rejectQuestion: (req) => ipcRenderer.invoke(IpcChannels.opencodeQuestionReject, req),
-    onStream: (listener) => subscribe<OpenCodeStreamChunk>(IpcEvents.opencodeStream, listener)
   },
   opencodeTui: {
     settings: () => ipcRenderer.invoke(IpcChannels.opencodeTuiSettings),

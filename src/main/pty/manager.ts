@@ -197,7 +197,7 @@ export class PtyManager {
     }
 
     const queryResponder = new TerminalQueryResponder(palette)
-    // WSL's --cd gives us a reliable initial directory even before Bash has
+    // WSL's --cd gives us a reliable initial directory even before the shell has
     // displayed its first prompt. OSC 7 then keeps this value current after
     // every directory change.
     let currentDirectory: string | null = session.kind === 'wsl' ? session.path : null

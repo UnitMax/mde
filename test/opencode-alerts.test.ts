@@ -4,17 +4,12 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { OpenCodeAlertDependencies, OpenCodeAlertWindow } from '../src/main/opencode/alerts'
 import { OpenCodeAlertManager } from '../src/main/opencode/alerts'
-import type { OpenCodeAlertEvent } from '../src/shared/types'
 
 function dependencies(window: OpenCodeAlertWindow): OpenCodeAlertDependencies {
   return {
     getWindow: () => window,
     beep: vi.fn()
   }
-}
-
-function event(kind: OpenCodeAlertEvent['kind'] = 'completed'): OpenCodeAlertEvent {
-  return { sessionId: 'session-1', source: 'tui', kind }
 }
 
 describe('OpenCode alerts', () => {
@@ -47,7 +42,7 @@ describe('OpenCode alerts', () => {
     try {
       await manager.configure(directory)
 
-      manager.alert(event())
+      manager.alert()
 
       expect(window.flashFrame).toHaveBeenCalledWith(true)
       expect(deps.beep).toHaveBeenCalledOnce()
@@ -69,13 +64,13 @@ describe('OpenCode alerts', () => {
     try {
       await manager.configure(directory)
 
-      manager.alert(event())
+      manager.alert()
       expect(deps.beep).not.toHaveBeenCalled()
       expect(window.flashFrame).not.toHaveBeenCalled()
 
       focused = false
       await manager.setEnabled(false)
-      manager.alert(event('error'))
+      manager.alert()
       expect(deps.beep).not.toHaveBeenCalled()
       expect(window.flashFrame).not.toHaveBeenCalled()
     } finally {
@@ -91,7 +86,7 @@ describe('OpenCode alerts', () => {
     }
     const manager = new OpenCodeAlertManager(dependencies(window))
 
-    manager.alert(event())
+    manager.alert()
     manager.clearFlashing()
 
     expect(window.flashFrame).toHaveBeenLastCalledWith(false)

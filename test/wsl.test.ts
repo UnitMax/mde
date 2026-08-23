@@ -5,7 +5,7 @@ vi.mock('../src/main/wsl/distros', async () => ({
   runWsl: vi.fn()
 }))
 
-import { decodeWslOutput, parseDistroList, parseWslHostAddress, runWsl } from '../src/main/wsl/distros'
+import { decodeWslOutput, parseDistroList, runWsl } from '../src/main/wsl/distros'
 import {
   canonicalizeWslPath,
   isWindowsDrivePath,
@@ -95,16 +95,6 @@ describe('decodeWslOutput', () => {
     const decoded = decodeWslOutput(utf16)
     expect(decoded).toBe('Ubuntu-24.04\n')
     expect(decoded).not.toContain('\u0000')
-  })
-})
-
-describe('parseWslHostAddress', () => {
-  it('returns the first IPv4 address from hostname -I output', () => {
-    expect(parseWslHostAddress('172.29.246.101 192.168.1.25\n')).toBe('172.29.246.101')
-  })
-
-  it('ignores invalid and IPv6-only output', () => {
-    expect(parseWslHostAddress('fe80::1 999.1.1.1 not-an-address\n')).toBeNull()
   })
 })
 

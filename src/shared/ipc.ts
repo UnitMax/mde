@@ -9,24 +9,7 @@ import type {
   PathResolution,
   Project,
   ProjectKind,
-  AbortOpenCodeSessionRequest,
   Session,
-  SendOpenCodeMessageRequest,
-  SendOpenCodeMessageResponse,
-  SendOpenCodePermissionReplyRequest,
-  SendOpenCodeQuestionReplyRequest,
-  SendOpenCodeQuestionRejectRequest,
-  ListOpenCodeSessionsRequest,
-  ListOpenCodeSessionsResponse,
-  ListOpenCodeModelsRequest,
-  ListOpenCodeModelsResponse,
-  CreateOpenCodeSessionRequest,
-  ExecuteOpenCodeCommandRequest,
-  OpenCodeConversationResponse,
-  RevertOpenCodeMessageRequest,
-  UnrevertOpenCodeSessionRequest,
-  SelectOpenCodeSessionRequest,
-  OpenCodeStreamChunk,
   OpenCodeTuiSetEnabledRequest,
   OpenCodeTuiSetInstanceLabelModeRequest,
   OpenCodeTuiSettings,
@@ -91,18 +74,6 @@ export const IpcChannels = {
   gitInfo: 'git:info',
   gitDiff: 'git:diff',
 
-  opencodeSend: 'opencode:send',
-  opencodeAbort: 'opencode:abort',
-  opencodeCommand: 'opencode:command',
-  opencodeSessionsList: 'opencode:sessions-list',
-  opencodeModelsList: 'opencode:models-list',
-  opencodeSessionSelect: 'opencode:session-select',
-  opencodeSessionCreate: 'opencode:session-create',
-  opencodePermissionReply: 'opencode:permission-reply',
-  opencodeQuestionReply: 'opencode:question-reply',
-  opencodeQuestionReject: 'opencode:question-reject',
-  opencodeRevert: 'opencode:revert',
-  opencodeUnrevert: 'opencode:unrevert',
   opencodeTuiPluginState: 'opencode-tui:plugin-state',
   opencodeTuiPluginInstall: 'opencode-tui:plugin-install',
   opencodeTuiPluginRemove: 'opencode-tui:plugin-remove',
@@ -125,7 +96,6 @@ export const IpcEvents = {
   ptyData: 'pty:data',
   ptyExit: 'pty:exit',
   ptyDirectory: 'pty:directory',
-  opencodeStream: 'opencode:stream',
   opencodeTuiStatus: 'opencode-tui:status',
   opencodeTuiInstances: 'opencode-tui:instances'
 } as const
@@ -199,7 +169,7 @@ export interface UpdateProjectRequest {
 
 export interface UpdateSessionRequest {
   id: string
-  patch: Partial<Pick<Session, 'name' | 'path' | 'shell' | 'color' | 'opencodeSessionId' | 'opencodeModelSelections'>> & {
+  patch: Partial<Pick<Session, 'name' | 'path' | 'shell' | 'color'>> & {
     icon?: Session['icon'] | null
   }
 }
@@ -273,22 +243,6 @@ export interface RendererApi {
   git: {
     info(req: GitInfoRequest): Promise<GitInfoResponse>
     diff(req: GitDiffRequest): Promise<GitDiffResponse>
-  }
-  opencode: {
-    send(req: SendOpenCodeMessageRequest): Promise<SendOpenCodeMessageResponse>
-    abort(req: AbortOpenCodeSessionRequest): Promise<void>
-    executeCommand(req: ExecuteOpenCodeCommandRequest): Promise<OpenCodeConversationResponse>
-    listSessions(req: ListOpenCodeSessionsRequest): Promise<ListOpenCodeSessionsResponse>
-    listModels(req: ListOpenCodeModelsRequest): Promise<ListOpenCodeModelsResponse>
-    selectSession(req: SelectOpenCodeSessionRequest): Promise<OpenCodeConversationResponse>
-    createSession(req: CreateOpenCodeSessionRequest): Promise<OpenCodeConversationResponse>
-    revert(req: RevertOpenCodeMessageRequest): Promise<OpenCodeConversationResponse>
-    unrevert(req: UnrevertOpenCodeSessionRequest): Promise<OpenCodeConversationResponse>
-    replyPermission(req: SendOpenCodePermissionReplyRequest): Promise<void>
-    replyQuestion(req: SendOpenCodeQuestionReplyRequest): Promise<void>
-    rejectQuestion(req: SendOpenCodeQuestionRejectRequest): Promise<void>
-    /** Live text, reasoning, and tool-part updates while `send` is in flight. */
-    onStream(listener: (chunk: OpenCodeStreamChunk) => void): () => void
   }
   opencodeTui: {
     settings(): Promise<OpenCodeTuiSettings>

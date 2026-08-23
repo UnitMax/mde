@@ -3,10 +3,9 @@
 Cross-platform desktop shell for an agentic dev environment: grouped projects containing
 persistent terminal sessions, with first-class WSL support on Windows.
 
-This is v1 — a desktop shell with OpenCode GUI integration. There are no git/PR features or
-settings screen. OpenCode is an external executable and is launched in the target environment:
-native sessions use the host OpenCode CLI, while Windows WSL sessions use the CLI installed in
-their selected distro.
+This is v1 — a desktop shell focused on persistent terminal workflows. Optional OpenCode TUI
+plugins provide status, alerts, instance labels, and token-rate information without replacing
+the terminal experience.
 
 ## Requirements
 
@@ -19,12 +18,6 @@ their selected distro.
 - Linux only, to *run* Electron: `libnss3 libnspr4 libasound2t64` (`libasound2` on older
   releases). Without them the Electron binary fails with
   `error while loading shared libraries: libnspr4.so`.
-- OpenCode GUI sessions require OpenCode to be installed and authenticated in the target
-  environment. For WSL sessions, install it inside the selected WSL 2 distro and ensure it is
-  available from a login Bash shell (`bash -lic 'command -v opencode'`).
-- OpenCode GUI prompts can be sent through the built-in Plan or Build agent using the selector in
-  the composer. The choice applies to ordinary prompts, remains in memory for the current MDE GUI
-  session, and resets to Build when MDE restarts.
 - Opening a WSL session in VS Code requires Windows VS Code with the Remote - WSL extension
   installed locally. MDE uses VS Code's registered remote URI, so the `code` command does not
   need to be on PATH.
@@ -71,7 +64,7 @@ npm run licenses:check
 ```
 
 Packaged installers include MDE's MIT license and third-party notices alongside Electron's
-and Chromium's generated legal files. OpenCode is an external executable/service and is not
+and Chromium's generated legal files. OpenCode is an external executable and is not
 bundled or relicensed by MDE.
 
 ## Architecture
@@ -108,21 +101,18 @@ is enabled.
 ### WSL
 
 - Short-lived `wsl.exe` queries and path conversions go through `runWsl()` in
-  `src/main/wsl/distros.ts`, which sets `WSL_UTF8=1`. The long-lived OpenCode server is spawned
-  directly so MDE can keep its process and event stream attached.
-- WSL sessions launch through a login+interactive shell, always via `wsl.exe -e` and never
+  `src/main/wsl/distros.ts`, which sets `WSL_UTF8=1`.
+- WSL sessions launch the distro user's configured login shell, with an optional per-session
+  override. MDE uses `wsl.exe -e` and a non-interactive `/bin/sh` bootstrap to preserve exact
+  argument and environment handling; the visible terminal is the configured shell. MDE never uses
   `wsl.exe --`: `--` hands the rest of the command line to the distro's default shell, which
   re-parses it and mangles anything containing quotes, `$`, or `;`. The login shell is required
   because nvm/mise/bun/asdf put their shims on `PATH` from the login profile.
 - The per-terminal Open in VS Code button follows the terminal's current directory. It starts
-  out pointing at the session's configured path, and default Bash sessions then correct it at
-  every prompt by reporting their working directory through OSC 7. Custom shell overrides need
-  to emit OSC 7 themselves; otherwise that button keeps opening the configured path.
-- OpenCode GUI sessions use the same WSL boundary: MDE starts
-  `opencode serve --pure --hostname=<wsl-ip> --port=0` inside the selected distro. MDE resolves
-  `<wsl-ip>` with `hostname -I` and uses it for the Windows-side HTTP/SSE connection instead of
-  assuming WSL localhost forwarding. WSL OpenCode uses the distro's own installation,
-  credentials, configuration, and filesystem paths.
+  out pointing at the session's configured path, and supported shells then correct it at every
+  prompt by reporting their working directory through OSC 7. MDE installs process-local
+  prompt hooks for Bash, Zsh, and Fish; other custom shells need to emit OSC 7 themselves or that
+  button keeps opening the configured path.
 - OpenCode TUI status is optional and disabled by default for WSL terminal sessions. Open Terminal
   settings, enable global status reporting, and install MDE's small plugin in each WSL distro
   where it is needed;

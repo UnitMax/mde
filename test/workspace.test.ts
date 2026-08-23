@@ -19,7 +19,6 @@ const session = {
   id: 'session-1',
   projectId: 'project-1',
   name: 'App',
-  mode: 'gui',
   kind: 'wsl',
   distro: 'Ubuntu-24.04',
   path: '/home/me/src/app',
@@ -45,41 +44,10 @@ describe('workspace validation', () => {
     expect(validateSession({ ...session, color: 'not-a-color' }, projectIds)).toEqual(session)
     expect(validateSession({ ...session, icon: 'robot' }, projectIds)).toMatchObject({ icon: 'robot' })
     expect(validateSession({ ...session, icon: 'not-an-icon' }, projectIds)).toEqual(session)
-    expect(validateSession({ ...session, mode: undefined }, projectIds)).toBeNull()
-    expect(validateSession({ ...session, mode: 'other' }, projectIds)).toBeNull()
+    expect(validateSession({ ...session, obsolete: true }, projectIds)).toEqual(session)
     expect(validateSession({ ...session, projectId: 'missing' }, projectIds)).toBeNull()
     expect(validateSession({ ...session, kind: 'wsl', distro: undefined }, projectIds)).toBeNull()
     expect(validateSessionList([session, session], projectIds)).toHaveLength(1)
-  })
-
-  it('keeps a persisted OpenCode conversation selection', () => {
-    const projectIds = new Set([project.id])
-    expect(validateSession({ ...session, opencodeSessionId: 'ses_existing' }, projectIds)).toMatchObject({
-      id: session.id,
-      opencodeSessionId: 'ses_existing'
-    })
-    expect(validateSession({ ...session, opencodeSessionId: '' }, projectIds)).toEqual(session)
-  })
-
-  it('keeps only valid per-conversation model selections', () => {
-    const projectIds = new Set([project.id])
-    expect(
-      validateSession(
-        {
-          ...session,
-          opencodeModelSelections: {
-            ses_existing: { providerID: 'cloud', modelID: 'model-a', variant: 'fast' },
-            malformed: { providerID: '', modelID: 'model-b' },
-            wrongType: 'model-b'
-          }
-        },
-        projectIds
-      )
-    ).toMatchObject({
-      opencodeModelSelections: {
-        ses_existing: { providerID: 'cloud', modelID: 'model-a', variant: 'fast' }
-      }
-    })
   })
 
   it('loads grouped projects and sessions from the new workspace shape', () => {
@@ -99,7 +67,6 @@ describe('session ordering', () => {
     id: 'session-1',
     projectId: 'project-1',
     name: 'First',
-    mode: 'gui',
     kind: 'wsl',
     distro: 'Ubuntu-24.04',
     path: '/home/me/src/first',

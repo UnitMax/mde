@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import type { OpenCodeAlertEvent, OpenCodeAlertSettings } from '@shared/types'
+import type { OpenCodeAlertSettings } from '@shared/types'
 
 const SETTINGS_FILE = 'opencode-notifications.json'
 
@@ -59,7 +59,7 @@ export class OpenCodeAlertManager {
     return this.settings()
   }
 
-  alert(_event: OpenCodeAlertEvent): void {
+  alert(): void {
     if (!this.enabled) return
     const window = this.dependencies.getWindow()
     if (!window || window.isDestroyed() || window.isFocused()) return

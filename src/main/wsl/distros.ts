@@ -15,22 +15,6 @@ export interface WslResult {
   code: number
 }
 
-function isIpv4Address(value: string): boolean {
-  const octets = value.split('.')
-  return (
-    octets.length === 4 &&
-    octets.every((octet) => /^(?:0|[1-9]\d{0,2})$/.test(octet) && Number(octet) <= 255)
-  )
-}
-
-/** Parses the first usable IPv4 address from `hostname -I` output. */
-export function parseWslHostAddress(output: string): string | null {
-  return output
-    .trim()
-    .split(/\s+/)
-    .find((candidate) => isIpv4Address(candidate)) ?? null
-}
-
 /** Runs wsl.exe and resolves with the exit code instead of throwing on non-zero. */
 export function runWsl(args: string[], timeoutMs = 15_000): Promise<WslResult> {
   return new Promise((resolve) => {
@@ -46,23 +30,6 @@ export function runWsl(args: string[], timeoutMs = 15_000): Promise<WslResult> {
       }
     )
   })
-}
-
-/** Resolves the address Windows can use to reach a service inside a WSL distro. */
-export async function resolveWslHostAddress(distro: string): Promise<string> {
-  const result = await runWsl(['-d', distro, '--', 'hostname', '-I'])
-  if (result.code !== 0) {
-    const detail = result.stderr.trim()
-    throw new Error(
-      `Could not determine the WSL network address for "${distro}".${detail ? ` ${detail}` : ''}`
-    )
-  }
-
-  const address = parseWslHostAddress(result.stdout)
-  if (!address) {
-    throw new Error(`WSL distro "${distro}" did not report a usable IPv4 address.`)
-  }
-  return address
 }
 
 /** Detects the alternating zero-byte pattern produced by UTF-16LE ASCII output. */

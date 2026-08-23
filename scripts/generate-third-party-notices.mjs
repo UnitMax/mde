@@ -116,7 +116,7 @@ function render() {
     '- `LICENSE.electron.txt`',
     '- `LICENSES.chromium.html`',
     '',
-    'The OpenCode executable and service are external dependencies and are not bundled or relicensed by MDE.',
+    'The OpenCode executable is an external dependency and is not bundled or relicensed by MDE.',
     '',
     '## Locked package inventory',
     '',
