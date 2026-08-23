@@ -500,13 +500,11 @@ function tokenRatePluginStatusLabel(state: OpenCodeTokenRatePluginState | undefi
   return 'Not installed'
 }
 
-type SettingsSection = 'appearance' | 'alerts' | 'tui' | 'token-rate' | 'about'
+type SettingsSection = 'appearance' | 'opencode' | 'about'
 
 const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: 'appearance', label: 'Appearance' },
-  { id: 'alerts', label: 'OpenCode alerts' },
-  { id: 'tui', label: 'OpenCode TUI plugin' },
-  { id: 'token-rate', label: 'OpenCode token rate' },
+  { id: 'opencode', label: 'OpenCode' },
   { id: 'about', label: 'About' }
 ]
 
@@ -786,11 +784,11 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
         Settings
       </button>
 
-      <DialogContent animated={false} className="flex max-h-[85vh] max-w-3xl flex-col">
+      <DialogContent animated={false} className="flex h-[min(42rem,85vh)] max-w-3xl flex-col">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
-            Appearance changes apply immediately. OpenCode TUI plugin changes apply after the TUI is restarted.
+            Appearance changes apply immediately. Plugin changes apply after OpenCode is restarted.
           </DialogDescription>
         </DialogHeader>
 
@@ -929,231 +927,244 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
               </section>
             )}
 
-            {activeSection === 'alerts' && (
-              <section className="space-y-3" aria-labelledby="opencode-alert-settings">
+            {activeSection === 'opencode' && (
+              <section className="space-y-6" aria-labelledby="opencode-settings">
                 <div>
-                  <h3 id="opencode-alert-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
-                    OpenCode alerts
+                  <h3 id="opencode-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
+                    OpenCode
                   </h3>
                   <p className="mt-1 text-xs text-fg-subtle">
-                    Flash the taskbar and play a sound when OpenCode finishes, needs input, or encounters an error while MDE is unfocused.
+                    Configure desktop alerts, session status reporting, and token-rate display.
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={alertSettings.enabled}
-                  data-testid="opencode-alerts-enabled"
-                  disabled={alertLoading}
-                  onClick={() => void setAlertsEnabled()}
-                  className="flex w-full items-center justify-between rounded border border-line bg-panel px-3 py-2 text-left text-xs text-fg-muted hover:bg-hover disabled:pointer-events-none disabled:opacity-50"
-                >
-                  <span>
-                    <span className="block font-medium text-fg">Enable OpenCode alerts</span>
-                    <span className="mt-0.5 block text-fg-subtle">
-                      {alertSettings.enabled ? 'Alerts are enabled.' : 'Alerts are disabled.'}
-                    </span>
-                  </span>
-                  <span
-                    className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
-                      alertSettings.enabled ? 'bg-accent' : 'bg-line-strong'
-                    }`}
+                <section className="space-y-3" aria-labelledby="opencode-alert-settings">
+                  <div>
+                    <h4 id="opencode-alert-settings" className="text-xs font-medium text-fg">
+                      Alerts
+                    </h4>
+                    <p className="mt-1 text-xs text-fg-subtle">
+                      Flash the taskbar and play a sound when OpenCode finishes, needs input, or encounters an error while MDE is unfocused.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={alertSettings.enabled}
+                    data-testid="opencode-alerts-enabled"
+                    disabled={alertLoading}
+                    onClick={() => void setAlertsEnabled()}
+                    className="flex w-full items-center justify-between rounded border border-line bg-panel px-3 py-2 text-left text-xs text-fg-muted hover:bg-hover disabled:pointer-events-none disabled:opacity-50"
                   >
+                    <span>
+                      <span className="block font-medium text-fg">Enable OpenCode alerts</span>
+                      <span className="mt-0.5 block text-fg-subtle">
+                        {alertSettings.enabled ? 'Alerts are enabled.' : 'Alerts are disabled.'}
+                      </span>
+                    </span>
                     <span
-                      className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-                        alertSettings.enabled ? 'translate-x-4' : 'translate-x-0.5'
+                      className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+                        alertSettings.enabled ? 'bg-accent' : 'bg-line-strong'
                       }`}
-                    />
-                  </span>
-                </button>
-                {alertError && <p className="text-xs text-danger">{alertError}</p>}
-              </section>
-            )}
-
-            {activeSection === 'tui' && (
-              <section className="space-y-3" aria-labelledby="opencode-tui-settings">
-                <div>
-                  <h3 id="opencode-tui-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
-                    OpenCode TUI plugin
-                  </h3>
-                  <p className="mt-1 text-xs text-fg-subtle">
-                    Install the plugin per WSL distro. Status reporting is controlled globally.
-                  </p>
-                </div>
-
-                {!canManageTui ? (
-                  <p className="rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
-                    This integration is available only on Windows with WSL 2.
-                  </p>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={tuiSettings.enabled}
-                      data-testid="opencode-tui-enabled"
-                      disabled={tuiLoading || !tuiSettings.currentPluginVersion}
-                      onClick={() => void setTuiEnabled()}
-                      className="flex w-full items-center justify-between rounded border border-line bg-panel px-3 py-2 text-left text-xs text-fg-muted hover:bg-hover disabled:pointer-events-none disabled:opacity-50"
                     >
-                      <span>
-                        <span className="block font-medium text-fg">Enable status reporting</span>
-                        <span className="mt-0.5 block text-fg-subtle">
-                          {tuiSettings.enabled
-                            ? 'New and restarted terminals will report OpenCode TUI status.'
-                            : 'Status reporting is disabled until you enable it.'}
-                        </span>
-                      </span>
                       <span
-                        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
-                          tuiSettings.enabled ? 'bg-accent' : 'bg-line-strong'
+                        className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+                          alertSettings.enabled ? 'translate-x-4' : 'translate-x-0.5'
                         }`}
+                      />
+                    </span>
+                  </button>
+                  {alertError && <p className="text-xs text-danger">{alertError}</p>}
+                </section>
+
+                <section
+                  className="space-y-3 border-t border-line pt-5"
+                  aria-labelledby="opencode-tui-settings"
+                >
+                  <div>
+                    <h4 id="opencode-tui-settings" className="text-xs font-medium text-fg">
+                      Session status
+                    </h4>
+                    <p className="mt-1 text-xs text-fg-subtle">
+                      Install the status plugin per WSL distro and control reporting across new sessions.
+                    </p>
+                  </div>
+
+                  {!canManageTui ? (
+                    <p className="rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
+                      This integration is available only on Windows with WSL 2.
+                    </p>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={tuiSettings.enabled}
+                        data-testid="opencode-tui-enabled"
+                        disabled={tuiLoading || !tuiSettings.currentPluginVersion}
+                        onClick={() => void setTuiEnabled()}
+                        className="flex w-full items-center justify-between rounded border border-line bg-panel px-3 py-2 text-left text-xs text-fg-muted hover:bg-hover disabled:pointer-events-none disabled:opacity-50"
                       >
+                        <span>
+                          <span className="block font-medium text-fg">Enable status reporting</span>
+                          <span className="mt-0.5 block text-fg-subtle">
+                            {tuiSettings.enabled
+                              ? 'New and restarted terminals will report OpenCode TUI status.'
+                              : 'Status reporting is disabled until you enable it.'}
+                          </span>
+                        </span>
                         <span
-                          className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-                            tuiSettings.enabled ? 'translate-x-4' : 'translate-x-0.5'
+                          className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+                            tuiSettings.enabled ? 'bg-accent' : 'bg-line-strong'
                           }`}
-                        />
-                      </span>
-                    </button>
+                        >
+                          <span
+                            className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+                              tuiSettings.enabled ? 'translate-x-4' : 'translate-x-0.5'
+                            }`}
+                          />
+                        </span>
+                      </button>
 
-                    <label className="block text-xs font-medium text-fg-muted">
-                      Instance labels
-                      <Select
-                        value={opencodeTuiInstanceLabelMode}
-                        onValueChange={(value) => {
-                          if (value === 'numbered' || value === 'title') {
-                            void changeTuiInstanceLabelMode(value)
-                          }
-                        }}
-                      >
-                        <SelectTrigger className="mt-1" data-testid="opencode-tui-instance-labels">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="numbered">OpenCode 1, 2, …</SelectItem>
-                          <SelectItem value="title">OpenCode session titles</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <span className="mt-1 block text-[11px] font-normal text-fg-subtle">
-                        Session titles stay in MDE's local runtime status snapshot. Numbered labels are used when a title is unavailable.
-                      </span>
-                    </label>
+                      <label className="block text-xs font-medium text-fg-muted">
+                        Instance labels
+                        <Select
+                          value={opencodeTuiInstanceLabelMode}
+                          onValueChange={(value) => {
+                            if (value === 'numbered' || value === 'title') {
+                              void changeTuiInstanceLabelMode(value)
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="mt-1" data-testid="opencode-tui-instance-labels">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="numbered">OpenCode 1, 2, …</SelectItem>
+                            <SelectItem value="title">OpenCode session titles</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <span className="mt-1 block text-[11px] font-normal text-fg-subtle">
+                          Session titles stay in MDE's local runtime status snapshot. Numbered labels are used when a title is unavailable.
+                        </span>
+                      </label>
 
+                      <div className="space-y-2">
+                        {distros.length === 0 ? (
+                          <p className="text-xs text-fg-subtle">No WSL 2 distros found.</p>
+                        ) : (
+                          distros.map((distro) => {
+                            const state = pluginStates[distro.name]
+                            const busy = tuiBusyDistro === distro.name
+                            const action = state?.status === 'installed' ? 'remove' : 'install'
+                            const actionLabel =
+                              state?.status === 'outdated'
+                                ? 'Replace'
+                                : state?.status === 'installed'
+                                  ? 'Uninstall'
+                                  : state?.status === 'conflict'
+                                    ? 'Unavailable'
+                                    : 'Install'
+                            return (
+                              <div
+                                key={distro.name}
+                                className="flex items-center gap-3 rounded border border-line bg-panel px-3 py-2"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate text-xs font-medium text-fg">{distro.name}</div>
+                                  <div className="truncate text-[11px] text-fg-subtle">
+                                    {distro.state} · {pluginStatusLabel(state)}
+                                  </div>
+                                </div>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  disabled={busy || state?.status === 'conflict' || !state}
+                                  onClick={() => void changePlugin(distro.name, action)}
+                                >
+                                  {busy ? 'Working…' : actionLabel}
+                                </Button>
+                              </div>
+                            )
+                          })
+                        )}
+                      </div>
+                      <p className="text-[11px] text-fg-subtle">
+                        Current plugin version: v{tuiSettings.currentPluginVersion || '…'}. Restart OpenCode after installing,
+                        replacing, or uninstalling the plugin.
+                      </p>
+                    </>
+                  )}
+                  {tuiError && <p className="text-xs text-danger">{tuiError}</p>}
+                </section>
+
+                <section
+                  className="space-y-3 border-t border-line pt-5"
+                  aria-labelledby="opencode-token-rate-settings"
+                >
+                  <div>
+                    <h4 id="opencode-token-rate-settings" className="text-xs font-medium text-fg">
+                      Token rate
+                    </h4>
+                    <p className="mt-1 text-xs text-fg-subtle">
+                      A separate TUI plugin shows live estimated and final provider-reported tokens per second beside the prompt.
+                      It is installed independently from status reporting and does not add a sidebar metric.
+                    </p>
+                  </div>
+
+                  {!canManageTokenRate ? (
+                    <p className="rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
+                      This integration is available on Linux and on Windows WSL 2 targets.
+                    </p>
+                  ) : tokenRateTargets.length === 0 ? (
+                    <p className="text-xs text-fg-subtle">No WSL 2 distros found.</p>
+                  ) : (
                     <div className="space-y-2">
-                      {distros.length === 0 ? (
-                        <p className="text-xs text-fg-subtle">No WSL 2 distros found.</p>
-                      ) : (
-                        distros.map((distro) => {
-                          const state = pluginStates[distro.name]
-                          const busy = tuiBusyDistro === distro.name
-                          const action = state?.status === 'installed' ? 'remove' : 'install'
-                          const actionLabel =
-                            state?.status === 'outdated'
-                              ? 'Replace'
+                      {tokenRateTargets.map((target) => {
+                        const key = tokenRateTargetKey(target)
+                        const state = tokenRateStates[key]
+                        const busy = tokenRateBusyTarget === key
+                        const blocked =
+                          state?.status === 'conflict' ||
+                          state?.status === 'unsupported' ||
+                          state?.status === 'unavailable' ||
+                          !state
+                        const action = state?.status === 'installed' ? 'remove' : 'install'
+                        const actionLabel =
+                          state?.status === 'outdated'
+                            ? 'Replace'
+                            : state?.status === 'repair-needed'
+                              ? 'Repair'
                               : state?.status === 'installed'
                                 ? 'Uninstall'
-                                : state?.status === 'conflict'
-                                  ? 'Unavailable'
-                                  : 'Install'
-                          return (
-                            <div
-                              key={distro.name}
-                              className="flex items-center gap-3 rounded border border-line bg-panel px-3 py-2"
-                            >
-                              <div className="min-w-0 flex-1">
-                                <div className="truncate text-xs font-medium text-fg">{distro.name}</div>
-                                <div className="truncate text-[11px] text-fg-subtle">
-                                  {distro.state} · {pluginStatusLabel(state)}
-                                </div>
+                                : 'Install'
+                        return (
+                          <div key={key} className="flex items-center gap-3 rounded border border-line bg-panel px-3 py-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-xs font-medium text-fg">{tokenRateTargetLabel(target)}</div>
+                              <div className="truncate text-[11px] text-fg-subtle">
+                                {tokenRatePluginStatusLabel(state)}
                               </div>
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                disabled={busy || state?.status === 'conflict' || !state}
-                                onClick={() => void changePlugin(distro.name, action)}
-                              >
-                                {busy ? 'Working…' : actionLabel}
-                              </Button>
                             </div>
-                          )
-                        })
-                      )}
-                    </div>
-                    <p className="text-[11px] text-fg-subtle">
-                      Current plugin version: v{tuiSettings.currentPluginVersion || '…'}. Restart OpenCode after installing,
-                      replacing, or uninstalling the plugin.
-                    </p>
-                  </>
-                )}
-                {tuiError && <p className="text-xs text-danger">{tuiError}</p>}
-              </section>
-            )}
-
-            {activeSection === 'token-rate' && (
-              <section className="space-y-3" aria-labelledby="opencode-token-rate-settings">
-                <div>
-                  <h3 id="opencode-token-rate-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
-                    OpenCode token rate
-                  </h3>
-                  <p className="mt-1 text-xs text-fg-subtle">
-                    A separate TUI plugin shows live estimated and final provider-reported tokens per second beside the prompt.
-                    It is installed independently from status reporting and does not add a sidebar metric.
-                  </p>
-                </div>
-
-                {!canManageTokenRate ? (
-                  <p className="rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
-                    This integration is available on Linux and on Windows WSL 2 targets.
-                  </p>
-                ) : tokenRateTargets.length === 0 ? (
-                  <p className="text-xs text-fg-subtle">No WSL 2 distros found.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {tokenRateTargets.map((target) => {
-                      const key = tokenRateTargetKey(target)
-                      const state = tokenRateStates[key]
-                      const busy = tokenRateBusyTarget === key
-                      const blocked =
-                        state?.status === 'conflict' ||
-                        state?.status === 'unsupported' ||
-                        state?.status === 'unavailable' ||
-                        !state
-                      const action = state?.status === 'installed' ? 'remove' : 'install'
-                      const actionLabel =
-                        state?.status === 'outdated'
-                          ? 'Replace'
-                          : state?.status === 'repair-needed'
-                            ? 'Repair'
-                            : state?.status === 'installed'
-                              ? 'Uninstall'
-                              : 'Install'
-                      return (
-                        <div key={key} className="flex items-center gap-3 rounded border border-line bg-panel px-3 py-2">
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-xs font-medium text-fg">{tokenRateTargetLabel(target)}</div>
-                            <div className="truncate text-[11px] text-fg-subtle">
-                              {tokenRatePluginStatusLabel(state)}
-                            </div>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              disabled={busy || blocked || tokenRateLoading}
+                              onClick={() => void changeTokenRatePlugin(target, action)}
+                            >
+                              {busy ? 'Working…' : actionLabel}
+                            </Button>
                           </div>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            disabled={busy || blocked || tokenRateLoading}
-                            onClick={() => void changeTokenRatePlugin(target, action)}
-                          >
-                            {busy ? 'Working…' : actionLabel}
-                          </Button>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-                <p className="text-[11px] text-fg-subtle">
-                  Restart OpenCode after installing, replacing, or uninstalling. No token-rate fallback is emitted when this plugin is unavailable.
-                </p>
-                {tokenRateError && <p className="text-xs text-danger">{tokenRateError}</p>}
+                        )
+                      })}
+                    </div>
+                  )}
+                  <p className="text-[11px] text-fg-subtle">
+                    Restart OpenCode after installing, replacing, or uninstalling. No token-rate fallback is emitted when this plugin is unavailable.
+                  </p>
+                  {tokenRateError && <p className="text-xs text-danger">{tokenRateError}</p>}
+                </section>
               </section>
             )}
 
@@ -1434,11 +1445,22 @@ export function TerminalView({
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-bg">
-      <header className="flex h-9 shrink-0 items-center gap-3 border-b border-line px-3">
-        <span className="shrink-0 text-[13px] font-medium text-fg">{selectedSession.name}</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg-subtle" title={location}>
-          {location}
-        </span>
+      <header className="flex h-10 shrink-0 items-center gap-3 border-b border-line bg-panel/50 px-3">
+        <div className="flex min-w-0 flex-1 items-baseline gap-2">
+          <span
+            className="min-w-0 max-w-[40%] truncate text-[13px] font-semibold leading-5 text-fg"
+            title={selectedSession.name}
+          >
+            {selectedSession.name}
+          </span>
+          <span aria-hidden="true" className="h-3 w-px shrink-0 self-center bg-line-strong" />
+          <span
+            className="min-w-0 flex-1 truncate font-mono text-xs leading-5 text-fg-muted"
+            title={location}
+          >
+            {location}
+          </span>
+        </div>
 
         <div
           aria-label="Terminal layout"
