@@ -151,16 +151,16 @@ describe('path classification', () => {
 describe('WSL path resolution', () => {
   it('expands home shorthand and stores the canonical directory', async () => {
     vi.mocked(runWsl).mockResolvedValue({
-      stdout: '/home/max/dev/testmde\n',
+      stdout: '/home/me/dev/testmde\n',
       stderr: '',
       code: 0
     })
 
     await expect(canonicalizeWslPath('Ubuntu-24.04', '~/dev/testmde')).resolves.toBe(
-      '/home/max/dev/testmde'
+      '/home/me/dev/testmde'
     )
     await expect(resolveForTarget('wsl', 'Ubuntu-24.04', '~/dev/testmde')).resolves.toEqual({
-      path: '/home/max/dev/testmde'
+      path: '/home/me/dev/testmde'
     })
   })
 })

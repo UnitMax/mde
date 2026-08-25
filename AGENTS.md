@@ -35,6 +35,8 @@ Vitest runs Node-environment tests matched by `test/**/*.test.ts`. Name tests af
 
 Recent commits use short, imperative, sentence-style subjects (for example, `Preserve ANSI terminal colors`). Keep commits focused. Pull requests should explain the user-visible change, implementation impact, and verification commands; include screenshots for UI changes and note Windows/WSL testing. Update documentation or third-party notices when affected.
 
+Run `npm run audit:package` before every commit. It deletes the electron-builder debug dumps that record absolute build-machine paths (`dist/builder-debug.yml`, `dist/builder-effective-config.yaml`) and fails when a home directory, project root, or user profile path leaked into the packaged output, in either UTF-8 or UTF-16. It audits whatever `dist/` currently holds and reports that there is nothing to audit when the directory is absent, so it is safe to run on a working tree that has never been packaged. The same audit runs automatically at the end of every `npm run build*` script.
+
 ## Versioning
 
 The application version is authoritative in `package.json` and must stay synchronized with `package-lock.json`. The initial version is `0.0.1`. Increase the patch version by `0.0.1` once when preparing each commit unless the user explicitly says otherwise; do not increase it merely because a task changes files, and do not increase it again when committing a version that was already bumped for that commit. The About dialog must display this same package version.

@@ -15,7 +15,7 @@ import {
   wslTokenRatePluginSpec
 } from '../src/main/opencode/token-rate'
 
-const spec = wslTokenRatePluginSpec('/home/max/.config/opencode')
+const spec = wslTokenRatePluginSpec('/home/me/.config/opencode')
 
 describe('OpenCode token-rate TUI plugin', () => {
   it('ships a gated TUI-only module with prompt-row and generation event hooks', () => {
@@ -51,9 +51,9 @@ describe('OpenCode token-rate TUI plugin', () => {
   })
 
   it('uses POSIX WSL file URLs and repairs the legacy Windows-separator URL', () => {
-    const legacySpec = legacyWslTokenRatePluginSpec('/home/max/.config/opencode')
-    expect(spec).toBe('file:///home/max/.config/opencode/plugins/mde-token-rate.tsx')
-    expect(legacySpec).toBe('file://%5Chome%5Cmax%5C.config%5Copencode%5Cplugins%5Cmde-token-rate.tsx')
+    const legacySpec = legacyWslTokenRatePluginSpec('/home/me/.config/opencode')
+    expect(spec).toBe('file:///home/me/.config/opencode/plugins/mde-token-rate.tsx')
+    expect(legacySpec).toBe('file://%5Chome%5Cme%5C.config%5Copencode%5Cplugins%5Cmde-token-rate.tsx')
 
     const original = JSON.stringify({ plugin: ['user-plugin', legacySpec] })
     const repaired = repairTokenRatePluginConfig(original, spec, [legacySpec])
@@ -109,7 +109,7 @@ describe('OpenCode token-rate TUI plugin', () => {
   })
 
   it('removes canonical and legacy registrations without removing user plugins', () => {
-    const legacySpec = legacyWslTokenRatePluginSpec('/home/max/.config/opencode')
+    const legacySpec = legacyWslTokenRatePluginSpec('/home/me/.config/opencode')
     const original = JSON.stringify({ plugin: ['user-plugin', spec, legacySpec] })
     const updated = removeTokenRatePluginSpecsFromConfig(original, [spec, legacySpec])
     expect(JSON.parse(updated).plugin).toEqual(['user-plugin'])
