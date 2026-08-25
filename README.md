@@ -35,15 +35,15 @@ npm run typecheck
 
 ```sh
 npm run build             # typecheck, bundle, then package for the current platform
-npm run build:win         # NSIS installer + portable exe -> dist/mde-<version>-setup.exe, dist/mde <version>.exe
+npm run build:win         # NSIS installer + portable exe -> dist/mde-<version>-setup.exe, dist/mde-<version>-portable.exe
 npm run build:win:portable  # portable exe only
 npm run build:linux       # AppImage + deb  -> dist/mde-<version>.AppImage, .deb
 ```
 
 Cross-building for Windows from Linux is not supported here; build it on Windows. If you develop
 in WSL, `npm run build:win:remote` automates this: it rsyncs the repo to `C:\dev\mde-winbuild`
-and runs the portable build using native Windows npm/node, so `node-pty` gets rebuilt with the
-Windows toolchain when dependencies change. The first build runs `npm ci`; later builds reuse the
+and runs the portable build using native Windows npm/node with `node-pty`'s Windows x64 prebuilt
+runtime. The first build runs `npm ci`; later builds reuse the
 Windows `node_modules` directory until the dependency or native build inputs change. To force a
 clean dependency install, run `npm run build:win:remote -- --force-deps`. Requires Node.js and
 Visual Studio Build Tools ("Desktop development with C++") installed on Windows first (see
@@ -66,6 +66,9 @@ npm run licenses:check
 Packaged installers include MDE's MIT license and third-party notices alongside Electron's
 and Chromium's generated legal files. OpenCode is an external executable and is not
 bundled or relicensed by MDE.
+
+See [`docs/windows-release.md`](docs/windows-release.md) for the complete Windows release,
+private-path audit, smoke-test, and publishing checklist.
 
 ## Architecture
 

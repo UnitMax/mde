@@ -24,7 +24,7 @@ mkdir -p "$WIN_DIR"
 rsync -a --delete \
   --exclude='.git/' \
   --exclude='node_modules/' \
-  --exclude='dist/' \
+  --exclude='dist*/' \
   --exclude='out/' \
   --exclude='.mde-windows-deps-fingerprint' \
   "$REPO_ROOT"/ "$WIN_DIR"/

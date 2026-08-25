@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { dirname, join, relative } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -9,6 +9,36 @@ const outputPath = join(root, 'THIRD_PARTY_NOTICES.md')
 const lock = JSON.parse(readFileSync(lockPath, 'utf8'))
 const packages = lock.packages ?? {}
 const rootPackage = packages[''] ?? {}
+const supplementalLicenseFiles = {
+  'node_modules/react-remove-scroll-bar': [{
+    name: 'upstream/LICENSE',
+    path: join(root, 'scripts', 'license-overrides', 'react-remove-scroll-bar-LICENSE'),
+  }],
+}
+
+// electron-vite bundles these renderer libraries into the shipped JavaScript
+// and CSS. They remain devDependencies so electron-builder does not also copy
+// their complete package trees into app.asar, but their runtime dependency
+// closures still require attribution.
+export const bundledRendererDependencies = [
+  '@radix-ui/react-alert-dialog',
+  '@radix-ui/react-context-menu',
+  '@radix-ui/react-dialog',
+  '@radix-ui/react-label',
+  '@radix-ui/react-radio-group',
+  '@radix-ui/react-select',
+  '@radix-ui/react-slot',
+  '@xterm/addon-fit',
+  '@xterm/addon-webgl',
+  '@xterm/xterm',
+  'class-variance-authority',
+  'clsx',
+  'lucide-react',
+  'react',
+  'react-dom',
+  'tailwind-merge',
+  'zustand',
+]
 
 function packageName(packagePath, metadata) {
   if (typeof metadata.name === 'string' && metadata.name) return metadata.name
@@ -32,7 +62,7 @@ function repositoryUrl(metadata) {
 
 function licenseFiles(packagePath) {
   const directory = packageDirectory(packagePath)
-  if (!existsSync(directory)) return []
+  if (!existsSync(directory)) return supplementalLicenseFiles[packagePath] ?? []
 
   const files = []
   const visit = (current) => {
@@ -47,6 +77,7 @@ function licenseFiles(packagePath) {
     }
   }
   visit(directory)
+  files.push(...(supplementalLicenseFiles[packagePath] ?? []))
   return files.sort((a, b) => a.name.localeCompare(b.name))
 }
 
@@ -54,9 +85,63 @@ function isPlatformConditioned(metadata) {
   return metadata.optional === true && (metadata.os || metadata.cpu)
 }
 
+function dependencyPath(packagePath, dependencyName, packageMetadata = packages) {
+  let ancestor = packagePath
+  while (true) {
+    const candidate = ancestor
+      ? `${ancestor}/node_modules/${dependencyName}`
+      : `node_modules/${dependencyName}`
+    if (packageMetadata[candidate]) return candidate
+
+    const marker = ancestor.lastIndexOf('/node_modules/')
+    if (marker >= 0) {
+      ancestor = ancestor.slice(0, marker)
+    } else if (ancestor.startsWith('node_modules/')) {
+      ancestor = ''
+    } else {
+      return null
+    }
+  }
+}
+
+export function dependencyClosure(rootNames, packageMetadata = packages) {
+  const selected = new Set()
+  const pending = rootNames.map((name) => ({ name, parentPath: '' }))
+
+  while (pending.length > 0) {
+    const dependency = pending.shift()
+    const packagePath = dependencyPath(
+      dependency.parentPath,
+      dependency.name,
+      packageMetadata,
+    )
+    if (!packagePath || selected.has(packagePath)) continue
+    selected.add(packagePath)
+
+    const metadata = packageMetadata[packagePath]
+    for (const name of Object.keys(metadata.dependencies ?? {})) {
+      pending.push({ name, parentPath: packagePath })
+    }
+  }
+  return selected
+}
+
+export function attributedPackagePaths(packageMetadata = packages) {
+  const selected = new Set(
+    Object.entries(packageMetadata)
+      .filter(([packagePath, metadata]) => packagePath !== '' && !metadata.dev)
+      .map(([packagePath]) => packagePath),
+  )
+  for (const packagePath of dependencyClosure(bundledRendererDependencies, packageMetadata)) {
+    selected.add(packagePath)
+  }
+  return selected
+}
+
 function packageEntries() {
+  const attributed = attributedPackagePaths()
   return Object.entries(packages)
-    .filter(([packagePath, metadata]) => packagePath !== '' && !metadata.dev)
+    .filter(([packagePath]) => attributed.has(packagePath))
     .map(([packagePath, metadata]) => ({
       packagePath,
       metadata,
@@ -77,7 +162,7 @@ function packageEntries() {
 function directDependencyNames() {
   return new Set([
     ...Object.keys(rootPackage.dependencies ?? {}),
-    ...Object.keys(rootPackage.devDependencies ?? {})
+    ...bundledRendererDependencies,
   ])
 }
 
@@ -89,7 +174,7 @@ function noticeText(entries) {
   const groups = new Map()
   for (const entry of entries) {
     for (const file of entry.files) {
-      const text = readFileSync(file.path, 'utf8').trim()
+      const text = readFileSync(file.path, 'utf8').replaceAll('\r\n', '\n').trim()
       if (!text) continue
       const hash = createHash('sha256').update(text).digest('hex')
       const group = groups.get(hash) ?? { text, files: [], packages: [] }
@@ -101,7 +186,7 @@ function noticeText(entries) {
   return [...groups.values()].sort((a, b) => a.packages[0].localeCompare(b.packages[0]))
 }
 
-function render() {
+export function renderThirdPartyNotices() {
   const entries = packageEntries()
   const direct = directDependencyNames()
   const notices = noticeText(entries)
@@ -118,9 +203,11 @@ function render() {
     '',
     'The OpenCode executable is an external dependency and is not bundled or relicensed by MDE.',
     '',
+    'The `react-remove-scroll-bar@2.3.8` npm tarball declares MIT but omits its license file. Its notice text below is preserved from the upstream repository license at `https://github.com/theKashey/react-remove-scroll-bar/blob/master/LICENSE`.',
+    '',
     '## Locked package inventory',
     '',
-    `Generated from \`package-lock.json\` by \`npm run licenses\`. ${entries.length} runtime package entries are listed; development and build-time-only dependencies are not shipped and are excluded.`,
+    `Generated from \`package-lock.json\` by \`npm run licenses\`. ${entries.length} shipped package entries are listed, including production dependencies and libraries bundled into renderer assets. Build-time-only dependencies are excluded.`,
     '',
     '| Package | Version | Direct dependency | Declared license | Source |',
     '| --- | --- | --- | --- | --- |'
@@ -146,15 +233,23 @@ function render() {
   return `${lines.join('\n')}\n`
 }
 
-const entryCount = packageEntries().length
-const rendered = render()
-if (process.argv.includes('--check')) {
-  const current = existsSync(outputPath) ? readFileSync(outputPath, 'utf8') : ''
-  if (current !== rendered) {
-    console.error('THIRD_PARTY_NOTICES.md is out of date. Run `npm run licenses` and commit the result.')
-    process.exitCode = 1
+export function generateThirdPartyNotices({ check = false } = {}) {
+  const entryCount = packageEntries().length
+  const rendered = renderThirdPartyNotices()
+  if (check) {
+    const current = existsSync(outputPath) ? readFileSync(outputPath, 'utf8') : ''
+    if (current !== rendered) {
+      console.error('THIRD_PARTY_NOTICES.md is out of date. Run `npm run licenses` and commit the result.')
+      process.exitCode = 1
+    }
+  } else {
+    writeFileSync(outputPath, rendered)
+    console.log(`Wrote ${relative(root, outputPath)} from ${entryCount} shipped package entries.`)
   }
-} else {
-  writeFileSync(outputPath, rendered)
-  console.log(`Wrote ${relative(root, outputPath)} from ${entryCount} runtime package entries.`)
+  return { entryCount, rendered }
+}
+
+const invokedPath = process.argv[1] ? resolve(process.argv[1]) : null
+if (invokedPath === fileURLToPath(import.meta.url)) {
+  generateThirdPartyNotices({ check: process.argv.includes('--check') })
 }
