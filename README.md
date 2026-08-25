@@ -108,11 +108,11 @@ is enabled.
   `wsl.exe --`: `--` hands the rest of the command line to the distro's default shell, which
   re-parses it and mangles anything containing quotes, `$`, or `;`. The login shell is required
   because nvm/mise/bun/asdf put their shims on `PATH` from the login profile.
-- The per-terminal Open in VS Code button follows the terminal's current directory. It starts
-  out pointing at the session's configured path, and supported shells then correct it at every
-  prompt by reporting their working directory through OSC 7. MDE installs process-local
-  prompt hooks for Bash, Zsh, and Fish; other custom shells need to emit OSC 7 themselves or that
-  button keeps opening the configured path.
+- The per-terminal Open in VS Code and File Explorer buttons follow the terminal's current
+  directory. They start out pointing at the session's configured path, and supported shells then
+  correct them at every prompt by reporting their working directory through OSC 7. MDE installs
+  process-local prompt hooks for Bash, Zsh, and Fish; other custom shells need to emit OSC 7
+  themselves or those buttons keep opening the configured path.
 - OpenCode TUI status is optional and disabled by default for WSL terminal sessions. Open Terminal
   settings, enable global status reporting, and install MDE's small plugin in each WSL distro
   where it is needed;

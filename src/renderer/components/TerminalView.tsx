@@ -10,6 +10,7 @@ import {
 import {
   Code,
   CircleX,
+  FolderOpen,
   RotateCw,
   Settings2
 } from 'lucide-react'
@@ -227,16 +228,28 @@ function TerminalPane({
           wslAvailable &&
           session.kind === 'wsl' &&
           Boolean(session.distro) && (
-            <Button
-              variant="secondary"
-              size="icon-sm"
-              aria-label="Open terminal directory in VS Code"
-              title={currentDirectory ? 'Open current directory in VS Code' : 'Waiting for terminal directory'}
-              disabled={!currentDirectory}
-              onClick={() => void window.api.paths.openTerminalInVsCode(pane.terminalId)}
-            >
-              <Code className="h-3.5 w-3.5" />
-            </Button>
+            <>
+              <Button
+                variant="secondary"
+                size="icon-sm"
+                aria-label="Open terminal directory in VS Code"
+                title={currentDirectory ? 'Open current directory in VS Code' : 'Waiting for terminal directory'}
+                disabled={!currentDirectory}
+                onClick={() => void window.api.paths.openTerminalInVsCode(pane.terminalId)}
+              >
+                <Code className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="secondary"
+                size="icon-sm"
+                aria-label="Open terminal directory in File Explorer"
+                title={currentDirectory ? 'Open current directory in File Explorer' : 'Waiting for terminal directory'}
+                disabled={!currentDirectory}
+                onClick={() => void window.api.paths.revealTerminal(pane.terminalId)}
+              >
+                <FolderOpen className="h-3.5 w-3.5" />
+              </Button>
+            </>
           )}
         <Button
           variant="secondary"

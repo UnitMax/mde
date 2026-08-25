@@ -109,17 +109,21 @@ async function validatePath(req: ValidatePathRequest): Promise<PathCheckResult> 
   }
 }
 
-async function revealSession(session: Session): Promise<void> {
+async function revealDirectory(session: Session, directory: string): Promise<void> {
   if (session.kind === 'native') {
-    await shell.openPath(session.path)
+    await shell.openPath(directory)
     return
   }
 
   const distro = session.distro
   if (!distro) return
   // The file manager needs a Windows-side path; this is a display conversion.
-  const windowsPath = (await toWindows(distro, session.path)) ?? uncPathFor(distro, session.path)
+  const windowsPath = (await toWindows(distro, directory)) ?? uncPathFor(distro, directory)
   await shell.openPath(windowsPath)
+}
+
+async function revealSession(session: Session): Promise<void> {
+  await revealDirectory(session, session.path)
 }
 
 export function registerIpcHandlers(
@@ -298,6 +302,15 @@ export function registerIpcHandlers(
   handle<string, void>(IpcChannels.pathReveal, async (sessionId) => {
     const session = await getSession(sessionId)
     if (session) await revealSession(session)
+  })
+  handle<string, void>(IpcChannels.pathRevealTerminal, async (terminalId) => {
+    const terminal = ptyManager.terminalInfo(terminalId)
+    if (!terminal?.directory) return
+
+    const session = await getSession(terminal.sessionId)
+    if (!session || process.platform !== 'win32' || session.kind !== 'wsl' || !session.distro) return
+
+    await revealDirectory(session, terminal.directory)
   })
   handle<string, void>(IpcChannels.pathOpenInVsCode, async (sessionId) => {
     const session = await getSession(sessionId)

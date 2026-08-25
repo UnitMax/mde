@@ -68,6 +68,7 @@ export const IpcChannels = {
   pathResolve: 'path:resolve',
   pathValidate: 'path:validate',
   pathReveal: 'path:reveal',
+  pathRevealTerminal: 'path:reveal-terminal',
   pathOpenInVsCode: 'path:open-in-vscode',
   pathOpenTerminalInVsCode: 'path:open-terminal-in-vscode',
 
@@ -237,6 +238,7 @@ export interface RendererApi {
     resolve(req: ResolvePathRequest): Promise<PathResolution>
     validate(req: ValidatePathRequest): Promise<PathCheckResult>
     reveal(sessionId: string): Promise<void>
+    revealTerminal(terminalId: string): Promise<void>
     openInVsCode(sessionId: string): Promise<void>
     openTerminalInVsCode(terminalId: string): Promise<void>
   }
