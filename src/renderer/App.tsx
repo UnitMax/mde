@@ -18,12 +18,15 @@ import {
   terminalIdForPane
 } from '@/terminal/tabs'
 import {
+  MAX_TERMINAL_COUNT,
   defaultTerminalLayoutSizes,
   layoutForCount,
   orderTerminalPanes,
+  panesToTrim,
   terminalCount,
   type SessionTerminalLayout,
   type TerminalLayout,
+  type TerminalColumnIndex,
   type TerminalResizeAxis
 } from '@/terminal/layout'
 import type { PersistedTerminalLayout, Session } from '@shared/types'
@@ -211,11 +214,17 @@ export function App(): JSX.Element {
       }
 
       disposeRuntimeTerminal(info.terminalId)
-      const panes = layout.panes.filter((candidate) => candidate.terminalId !== info.terminalId)
+      let panes = layout.panes.filter((candidate) => candidate.terminalId !== info.terminalId)
+      if (panes.length === 5) {
+        const extraPaneIds = panesToTrim(panes, 4)
+        extraPaneIds.forEach(disposeRuntimeTerminal)
+        panes = panes.filter((candidate) => !extraPaneIds.includes(candidate.terminalId))
+      }
+      const nextLayout = layoutForCount(panes.length)
       const next = {
-        layout: layoutForCount(panes.length),
+        layout: nextLayout,
         panes,
-        sizes: defaultTerminalLayoutSizes()
+        sizes: defaultTerminalLayoutSizes(nextLayout)
       }
       setRuntimeLayout(session.id, tabId, next)
       queueLayoutPersistence(session.id, tabId, next, true)
@@ -366,7 +375,7 @@ export function App(): JSX.Element {
     const targetCount = terminalCount(layout)
     if (targetCount <= existing.panes.length) {
       if (targetCount === existing.panes.length) {
-        const next = { ...existing, layout, sizes: defaultTerminalLayoutSizes() }
+        const next = { ...existing, layout, sizes: defaultTerminalLayoutSizes(layout) }
         setRuntimeLayout(sessionId, tabId, next)
         queueLayoutPersistence(sessionId, tabId, next, true)
       }
@@ -383,7 +392,7 @@ export function App(): JSX.Element {
         primary: false
       })
     }
-    const next = { layout, panes, sizes: defaultTerminalLayoutSizes() }
+    const next = { layout, panes, sizes: defaultTerminalLayoutSizes(layout) }
     setRuntimeLayout(sessionId, tabId, next)
     queueLayoutPersistence(sessionId, tabId, next, true)
   }
@@ -401,7 +410,7 @@ export function App(): JSX.Element {
     const next = {
       layout,
       panes: existing.panes.filter((pane) => !paneIds.includes(pane.terminalId)),
-      sizes: defaultTerminalLayoutSizes()
+      sizes: defaultTerminalLayoutSizes(layout)
     }
     setRuntimeLayout(sessionId, tabId, next)
     queueLayoutPersistence(sessionId, tabId, next, true)
@@ -413,12 +422,16 @@ export function App(): JSX.Element {
     const existing = layoutForTab(session, tabId)
     const pane = existing.panes.find((candidate) => candidate.terminalId === terminalId)
     if (!pane || pane.primary || existing.panes.length <= 1) return
-    disposeRuntimeTerminal(terminalId)
-    const panes = existing.panes.filter((candidate) => candidate.terminalId !== terminalId)
+    const paneIds = existing.layout === 'sixGrid'
+      ? panesToTrim(existing.panes, 4, terminalId)
+      : [terminalId]
+    paneIds.forEach(disposeRuntimeTerminal)
+    const panes = existing.panes.filter((candidate) => !paneIds.includes(candidate.terminalId))
+    const nextLayout = layoutForCount(panes.length)
     const next = {
-      layout: layoutForCount(panes.length),
+      layout: nextLayout,
       panes,
-      sizes: defaultTerminalLayoutSizes()
+      sizes: defaultTerminalLayoutSizes(nextLayout)
     }
     setRuntimeLayout(sessionId, tabId, next)
     queueLayoutPersistence(sessionId, tabId, next, true)
@@ -428,13 +441,16 @@ export function App(): JSX.Element {
     sessionId: string,
     tabId: string,
     axis: TerminalResizeAxis,
-    ratio: number
+    ratio: number,
+    columnIndex?: TerminalColumnIndex
   ): void => {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!session) return
     const existing = layoutForTab(session, tabId)
     const sizes = axis === 'column'
-      ? { ...existing.sizes, columnRatio: ratio }
+      ? columnIndex === 1
+        ? { ...existing.sizes, secondColumnRatio: ratio }
+        : { ...existing.sizes, columnRatio: ratio }
       : { ...existing.sizes, rowRatio: ratio }
     const next = { ...existing, sizes }
     setRuntimeLayout(sessionId, tabId, next)
@@ -467,7 +483,7 @@ export function App(): JSX.Element {
     }
 
     const removable = [...existing.panes].reverse().find((pane) => !pane.primary)
-    if (existing.panes.length >= 4 && removable) disposeRuntimeTerminal(removable.terminalId)
+    if (existing.panes.length >= MAX_TERMINAL_COUNT && removable) disposeRuntimeTerminal(removable.terminalId)
     const panes = existing.panes.filter((pane) => pane.terminalId !== removable?.terminalId)
     const paneId = 'primary'
     panes.push({
@@ -478,7 +494,7 @@ export function App(): JSX.Element {
     const next = {
       layout: layoutForCount(panes.length),
       panes,
-      sizes: defaultTerminalLayoutSizes()
+      sizes: defaultTerminalLayoutSizes(layoutForCount(panes.length))
     }
     setRuntimeLayout(sessionId, tabId, next)
     queueLayoutPersistence(sessionId, tabId, next, true)
@@ -512,7 +528,7 @@ export function App(): JSX.Element {
             onRenameTab={(tabId, name) => renameTab(selected.id, tabId, name)}
             onCloseTab={(tabId) => closeTab(selected.id, tabId)}
             onLayoutChange={(layout) => changeTerminalLayout(selected.id, activeTab.id, layout)}
-            onLayoutResize={(axis, ratio) => resizeTerminalLayout(selected.id, activeTab.id, axis, ratio)}
+            onLayoutResize={(axis, ratio, columnIndex) => resizeTerminalLayout(selected.id, activeTab.id, axis, ratio, columnIndex)}
             onPaneOrderChange={(terminalIds) => reorderTerminalPanes(selected.id, activeTab.id, terminalIds)}
             onReduceLayout={(layout, paneIds) => reduceTerminalLayout(selected.id, activeTab.id, layout, paneIds)}
             onClosePane={(terminalId) => closeTerminalPane(selected.id, activeTab.id, terminalId)}

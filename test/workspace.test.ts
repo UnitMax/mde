@@ -98,6 +98,68 @@ describe('workspace validation', () => {
     })
   })
 
+  it('validates three-column and six-pane layouts with independent column ratios', () => {
+    const projectIds = new Set([project.id])
+    const panes = [
+      { id: 'primary', primary: true },
+      { id: 'pane-1', primary: false },
+      { id: 'pane-2', primary: false },
+      { id: 'pane-3', primary: false },
+      { id: 'pane-4', primary: false },
+      { id: 'pane-5', primary: false }
+    ]
+    const six = validateSession({
+      ...session,
+      tabs: [{
+        id: 'tab-six',
+        name: 'Six',
+        layout: {
+          layout: 'sixGrid',
+          panes,
+          sizes: { columnRatio: 0.3, secondColumnRatio: 0.7, rowRatio: 0.4 }
+        }
+      }]
+    }, projectIds)
+
+    expect(six?.tabs?.[0]?.layout).toEqual({
+      layout: 'sixGrid',
+      panes,
+      sizes: { columnRatio: 0.3, secondColumnRatio: 0.7, rowRatio: 0.4 }
+    })
+
+    const invalidRatios = validateSession({
+      ...session,
+      tabs: [{
+        id: 'tab-three',
+        name: 'Three',
+        layout: {
+          layout: 'threeColumns',
+          panes: panes.slice(0, 3),
+          sizes: { columnRatio: 0.8, secondColumnRatio: 0.2, rowRatio: 0.5 }
+        }
+      }]
+    }, projectIds)
+    expect(invalidRatios?.tabs?.[0]?.layout.sizes).toEqual({
+      columnRatio: 1 / 3,
+      secondColumnRatio: 2 / 3,
+      rowRatio: 0.5
+    })
+
+    const invalidPaneCount = validateSession({
+      ...session,
+      tabs: [{
+        id: 'tab-invalid',
+        name: 'Invalid',
+        layout: {
+          layout: 'sixGrid',
+          panes: panes.slice(0, 5),
+          sizes: { columnRatio: 1 / 3, secondColumnRatio: 2 / 3, rowRatio: 0.5 }
+        }
+      }]
+    }, projectIds)
+    expect(invalidPaneCount?.tabs?.[0]?.name).toBe('Tab 1')
+  })
+
   it('loads grouped projects and sessions from the new workspace shape', () => {
     expect(validateWorkspace({ projects: [project], sessions: [session] })).toEqual({
       projects: [project],

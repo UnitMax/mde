@@ -33,11 +33,19 @@ export interface Project {
   createdAt: string
 }
 
-export type TerminalLayout = 'single' | 'columns' | 'three' | 'quadrant'
+export type TerminalLayout =
+  | 'single'
+  | 'columns'
+  | 'three'
+  | 'quadrant'
+  | 'threeColumns'
+  | 'sixGrid'
 
 export interface TerminalLayoutSizes {
   columnRatio: number
   rowRatio: number
+  /** Second vertical divider ratio for three-column layouts. */
+  secondColumnRatio?: number
 }
 
 export interface PersistedTerminalPane {

@@ -1,6 +1,6 @@
 {
   "name": "mde",
-  "version": "0.0.43",
+  "version": "0.0.44",
   "description": "Agentic dev environment — grouped terminal sessions with first-class WSL support",
   "main": "./out/main/index.js",
   "homepage": "https://github.com/UnitMax/mde",

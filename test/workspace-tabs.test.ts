@@ -87,4 +87,42 @@ describe('workspace session tabs', () => {
     expect(removed?.activeTabId).toBe(tabs[0]?.id)
     expect(await removeSessionTab({ sessionId: session.id, tabId: tabs[0]?.id ?? '' })).toBeNull()
   })
+
+  it('persists a six-pane layout with both column boundaries', async () => {
+    const project = await createProject({ name: 'Work' })
+    const session = await createSession({
+      projectId: project.id,
+      name: 'App',
+      kind: 'native',
+      path: '/workspace/app'
+    })
+    const panes = [
+      { id: 'primary', primary: true },
+      { id: 'pane-1', primary: false },
+      { id: 'pane-2', primary: false },
+      { id: 'pane-3', primary: false },
+      { id: 'pane-4', primary: false },
+      { id: 'pane-5', primary: false }
+    ]
+    const updated = await updateSessionTab({
+      sessionId: session.id,
+      tabId: session.tabs?.[0]?.id ?? '',
+      patch: {
+        layout: {
+          layout: 'sixGrid',
+          panes,
+          sizes: { columnRatio: 0.3, secondColumnRatio: 0.7, rowRatio: 0.4 }
+        }
+      }
+    })
+
+    expect(updated?.tabs?.[0]?.layout).toEqual({
+      layout: 'sixGrid',
+      panes,
+      sizes: { columnRatio: 0.3, secondColumnRatio: 0.7, rowRatio: 0.4 }
+    })
+    await expect(loadWorkspace()).resolves.toMatchObject({
+      sessions: [{ tabs: [{ layout: { layout: 'sixGrid' } }] }]
+    })
+  })
 })

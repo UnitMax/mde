@@ -60,17 +60,28 @@ const TERMINAL_LAYOUT_COUNTS: Record<TerminalLayout, number> = {
   single: 1,
   columns: 2,
   three: 3,
-  quadrant: 4
+  quadrant: 4,
+  threeColumns: 3,
+  sixGrid: 6
 }
 
 function isTerminalLayout(value: unknown): value is TerminalLayout {
-  return value === 'single' || value === 'columns' || value === 'three' || value === 'quadrant'
+  return value === 'single' || value === 'columns' || value === 'three' || value === 'quadrant' ||
+    value === 'threeColumns' || value === 'sixGrid'
 }
 
 function ratio(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 1
     ? value
     : 0.5
+}
+
+function validRatio(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 1
+}
+
+function isThreeColumnLayout(layout: TerminalLayout): boolean {
+  return layout === 'threeColumns' || layout === 'sixGrid'
 }
 
 function defaultTab(sessionId: string): SessionTab {
@@ -103,11 +114,20 @@ function validateTerminalLayout(raw: unknown): PersistedTerminalLayout | null {
   const sizes = typeof record.sizes === 'object' && record.sizes !== null
     ? record.sizes as Record<string, unknown>
     : {}
+  const columnRatio = isThreeColumnLayout(record.layout)
+    ? validRatio(sizes.columnRatio) ? sizes.columnRatio : 1 / 3
+    : ratio(sizes.columnRatio)
+  const secondColumnRatio = isThreeColumnLayout(record.layout)
+    ? validRatio(sizes.secondColumnRatio) ? sizes.secondColumnRatio : 2 / 3
+    : undefined
+  const normalizedColumnRatios = isThreeColumnLayout(record.layout) && columnRatio >= (secondColumnRatio ?? 0)
+    ? { columnRatio: 1 / 3, secondColumnRatio: 2 / 3 }
+    : { columnRatio, ...(secondColumnRatio === undefined ? {} : { secondColumnRatio }) }
   return {
     layout: record.layout,
     panes,
     sizes: {
-      columnRatio: ratio(sizes.columnRatio),
+      ...normalizedColumnRatios,
       rowRatio: ratio(sizes.rowRatio)
     }
   }

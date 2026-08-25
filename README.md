@@ -81,7 +81,8 @@ src/
 
 Projects are label-only groups. Sessions own the name, path, platform, distro and optional shell
 override. Each session persists an ordered set of terminal tabs. Every tab owns an independent
-one-to-four-pane layout, and new tabs start with one fresh terminal. The renderer keeps one
+one-to-six-pane layout options, including three terminals side by side and a six-terminal 3 × 2 grid;
+new tabs start with one fresh terminal. The renderer keeps one
 `xterm` instance per runtime terminal identity in a plain Map outside React. Switching sessions
 or tabs re-parents terminal containers rather than disposing them, so each process, its scrollback
 and its cursor position survive. Unvisited persisted tabs create their PTYs lazily; the PTYs

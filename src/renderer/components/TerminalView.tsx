@@ -64,6 +64,8 @@ import {
 } from '@/theme/themes'
 import {
   terminalGridTemplates,
+  terminalColumnRatios,
+  terminalColumnSplitRatio,
   layoutClass,
   paneClass,
   panesToTrim,
@@ -76,6 +78,7 @@ import {
   type SessionTerminalLayout,
   type TerminalLayout,
   type TerminalPaneState,
+  type TerminalColumnIndex,
   type TerminalResizeAxis,
   type TerminalResizeScope
 } from '@/terminal/layout'
@@ -101,7 +104,7 @@ interface TerminalViewProps {
   onRenameTab: (tabId: string, name: string) => void
   onCloseTab: (tabId: string) => void
   onLayoutChange: (layout: TerminalLayout) => void
-  onLayoutResize: (axis: TerminalResizeAxis, ratio: number) => void
+  onLayoutResize: (axis: TerminalResizeAxis, ratio: number, columnIndex?: TerminalColumnIndex) => void
   onPaneOrderChange: (terminalIds: readonly string[]) => void
   onReduceLayout: (layout: TerminalLayout, paneIds: string[]) => void
   onClosePane: (terminalId: string) => void
@@ -340,8 +343,14 @@ function restoreTerminalReorderStyles(drag: TerminalReorderDragState): void {
 
 function LayoutGlyph({ layout }: { layout: TerminalLayout }): JSX.Element {
   const count = terminalCount(layout)
-  const columns = layout === 'single' ? 'grid-cols-1' : 'grid-cols-2'
-  const rows = layout === 'single' || layout === 'columns' ? 'grid-rows-1' : 'grid-rows-2'
+  const columns = layout === 'single'
+    ? 'grid-cols-1'
+    : layout === 'threeColumns' || layout === 'sixGrid'
+      ? 'grid-cols-3'
+      : 'grid-cols-2'
+  const rows = layout === 'single' || layout === 'columns' || layout === 'threeColumns'
+    ? 'grid-rows-1'
+    : 'grid-rows-2'
   return (
     <span className={`grid h-3.5 w-4 gap-px ${columns} ${rows}`} aria-hidden="true">
       {Array.from({ length: count }, (_, index) => (
@@ -355,8 +364,10 @@ function LayoutGlyph({ layout }: { layout: TerminalLayout }): JSX.Element {
 }
 
 interface TerminalResizeHandleProps {
+  layout: TerminalLayout
   axis: TerminalResizeAxis
   scope: TerminalResizeScope
+  columnIndex?: TerminalColumnIndex
   ratio: number
   sizes: SessionTerminalLayout['sizes']
   containerRef: RefObject<HTMLDivElement>
@@ -371,18 +382,24 @@ interface TerminalDragState {
   previousUserSelect: string
 }
 
-function splitLinePosition(ratio: number): string {
-  return `calc(${ratio * 100}% + ${0.5 - ratio}px)`
+function splitLinePosition(ratio: number, gapCount = 1, dividerIndex = 0): string {
+  return `calc(${ratio * 100}% + ${dividerIndex + 0.5 - ratio * gapCount}px)`
 }
 
 function terminalResizeHandleStyle(
+  layout: TerminalLayout,
   axis: TerminalResizeAxis,
   scope: TerminalResizeScope,
-  sizes: SessionTerminalLayout['sizes']
+  sizes: SessionTerminalLayout['sizes'],
+  columnIndex: TerminalColumnIndex | undefined
 ): CSSProperties {
   if (axis === 'column') {
+    const dividerIndex = columnIndex ?? 0
+    const [firstColumnRatio, secondColumnRatio] = terminalColumnRatios(sizes)
+    const ratio = dividerIndex === 0 ? firstColumnRatio : secondColumnRatio
+    const gapCount = layout === 'threeColumns' || layout === 'sixGrid' ? 2 : 1
     return {
-      left: splitLinePosition(sizes.columnRatio),
+      left: splitLinePosition(ratio, gapCount, dividerIndex),
       top: 0,
       height: scope === 'top' ? splitLinePosition(sizes.rowRatio) : '100%'
     }
@@ -396,8 +413,10 @@ function terminalResizeHandleStyle(
 }
 
 function TerminalResizeHandle({
+  layout,
   axis,
   scope,
+  columnIndex,
   ratio,
   sizes,
   containerRef,
@@ -461,7 +480,11 @@ function TerminalResizeHandle({
       ? event.clientX - bounds.left
       : event.clientY - bounds.top
     const trackSize = axis === 'column' ? bounds.width : bounds.height
-    drag.pendingRatio = terminalSplitRatio(pointerPosition, trackSize)
+    drag.pendingRatio = axis === 'column' &&
+      (layout === 'threeColumns' || layout === 'sixGrid') &&
+      columnIndex !== undefined
+      ? terminalColumnSplitRatio(pointerPosition, trackSize, columnIndex, sizes)
+      : terminalSplitRatio(pointerPosition, trackSize)
 
     if (drag.frame !== undefined) return
     drag.frame = requestAnimationFrame(() => {
@@ -482,9 +505,9 @@ function TerminalResizeHandle({
       role="separator"
       aria-label={axis === 'column' ? 'Resize terminal columns' : 'Resize terminal rows'}
       aria-orientation={axis === 'column' ? 'vertical' : 'horizontal'}
-      data-testid={`terminal-resize-${axis}-${scope}`}
+      data-testid={`terminal-resize-${axis}-${scope}${columnIndex === undefined || columnIndex === 0 ? '' : '-1'}`}
       className={`group absolute z-20 flex touch-none items-center justify-center ${handleClass}`}
-      style={terminalResizeHandleStyle(axis, scope, sizes)}
+      style={terminalResizeHandleStyle(layout, axis, scope, sizes, columnIndex)}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={finishDrag}
@@ -1421,7 +1444,11 @@ export function TerminalView({
   const setStatus = useWorkspace((state) => state.setStatus)
   const primaryPane = terminalLayout.panes.find((pane) => pane.primary)
   const exit = useWorkspace((state) => primaryPane ? state.exits[primaryPane.terminalId] : undefined)
-  const [pendingLayout, setPendingLayout] = useState<TerminalLayout | null>(null)
+  const [pendingReduction, setPendingReduction] = useState<{
+    layout: TerminalLayout
+    paneIds: string[]
+    closingPane: boolean
+  } | null>(null)
   const [reorderModifierHeld, setReorderModifierHeld] = useState(false)
   const [hoveredPaneId, setHoveredPaneId] = useState<string | null>(null)
   const [reorderSourceId, setReorderSourceId] = useState<string | null>(null)
@@ -1454,8 +1481,25 @@ export function TerminalView({
       onLayoutChange(layout)
       return
     }
-    setPendingLayout(layout)
+    setPendingReduction({
+      layout,
+      paneIds: panesToTrim(terminalLayout.panes, targetCount),
+      closingPane: false
+    })
   }, [onLayoutChange, terminalLayout.panes.length])
+
+  const requestClosePane = (terminalId: string): void => {
+    if (terminalLayout.layout === 'sixGrid') {
+      const targetLayout: TerminalLayout = 'quadrant'
+      setPendingReduction({
+        layout: targetLayout,
+        paneIds: panesToTrim(terminalLayout.panes, terminalCount(targetLayout), terminalId),
+        closingPane: true
+      })
+      return
+    }
+    onClosePane(terminalId)
+  }
 
   const cancelReorder = useCallback((): void => {
     const drag = reorderDragRef.current
@@ -1665,9 +1709,9 @@ export function TerminalView({
   }, [requestLayout])
 
   const confirmReduceLayout = (): void => {
-    if (!pendingLayout) return
-    onReduceLayout(pendingLayout, panesToTrim(terminalLayout.panes, terminalCount(pendingLayout)))
-    setPendingLayout(null)
+    if (!pendingReduction) return
+    onReduceLayout(pendingReduction.layout, pendingReduction.paneIds)
+    setPendingReduction(null)
   }
 
   const location =
@@ -1718,7 +1762,7 @@ export function TerminalView({
               aria-label={candidate.label}
               aria-pressed={terminalLayout.layout === candidate.value}
               data-testid={`terminal-layout-${candidate.value}`}
-              title={`${candidate.label} (Ctrl+${candidate.count})`}
+              title={`${candidate.label} (Ctrl+${candidate.shortcut})`}
               onClick={() => requestLayout(candidate.value)}
               className={
                 terminalLayout.layout === candidate.value
@@ -1788,33 +1832,39 @@ export function TerminalView({
                       ? 'candidate'
                       : 'none'
                 }
-                onClose={() => onClosePane(pane.terminalId)}
+                onClose={() => requestClosePane(pane.terminalId)}
               />
             </div>
           ))}
-          {resizeHandles.map(({ axis, scope }) => (
+          {resizeHandles.map(({ axis, scope, columnIndex }) => (
             <TerminalResizeHandle
-              key={`${axis}-${scope}`}
+              key={`${axis}-${scope}-${columnIndex ?? 0}`}
+              layout={terminalLayout.layout}
               axis={axis}
               scope={scope}
-              ratio={axis === 'column' ? terminalLayout.sizes.columnRatio : terminalLayout.sizes.rowRatio}
+              columnIndex={columnIndex}
+              ratio={axis === 'column'
+                ? terminalColumnRatios(terminalLayout.sizes)[columnIndex ?? 0]
+                : terminalLayout.sizes.rowRatio}
               sizes={terminalLayout.sizes}
               containerRef={gridRef}
-              onResize={(ratio) => onLayoutResize(axis, ratio)}
+              onResize={(ratio) => onLayoutResize(axis, ratio, columnIndex)}
             />
           ))}
       </div>
 
       <AlertDialog
-        open={pendingLayout !== null}
+        open={pendingReduction !== null}
         onOpenChange={(open) => {
-          if (!open) setPendingLayout(null)
+          if (!open) setPendingReduction(null)
         }}
       >
         <AlertDialogContent>
           <AlertDialogTitle>Close extra terminals?</AlertDialogTitle>
           <AlertDialogDescription>
-            Changing to {pendingLayout ? TERMINAL_LAYOUTS.find((candidate) => candidate.value === pendingLayout)?.label.toLowerCase() : 'a smaller layout'} will close the extra split terminals.
+            {pendingReduction?.closingPane
+              ? 'Closing a terminal from the six-terminal layout will switch to four terminals and close one additional split terminal.'
+              : `Changing to ${pendingReduction ? TERMINAL_LAYOUTS.find((candidate) => candidate.value === pendingReduction.layout)?.label.toLowerCase() : 'a smaller layout'} will close the extra split terminals.`}
           </AlertDialogDescription>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep current layout</AlertDialogCancel>

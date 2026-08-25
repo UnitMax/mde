@@ -68,4 +68,30 @@ describe('session tab runtime helpers', () => {
     expect(tabCloseSelection(session.tabs!, 'tab-2', 'tab-2')).toBe('tab-1')
     expect(tabCloseSelection(session.tabs!.slice(0, 1), 'tab-1', 'tab-1')).toBeNull()
   })
+
+  it('keeps six-pane tab layouts and both column boundaries stable at runtime', () => {
+    const panes = [
+      { id: 'primary', primary: true },
+      { id: 'pane-1', primary: false },
+      { id: 'pane-2', primary: false },
+      { id: 'pane-3', primary: false },
+      { id: 'pane-4', primary: false },
+      { id: 'pane-5', primary: false }
+    ]
+    const sixTab = {
+      id: 'tab-six',
+      name: 'Six',
+      layout: {
+        layout: 'sixGrid' as const,
+        panes,
+        sizes: { columnRatio: 0.3, secondColumnRatio: 0.7, rowRatio: 0.4 }
+      }
+    }
+    const sixSession = { ...session, tabs: [sixTab], activeTabId: sixTab.id }
+    const runtime = createRuntimeLayout(sixSession.id, sixTab)
+
+    expect(runtime.panes).toHaveLength(6)
+    expect(runtime.panes[5]?.terminalId).toBe('session-1:tab:tab-six:pane:pane-5')
+    expect(persistRuntimeLayout(runtime)).toEqual(sixTab.layout)
+  })
 })
