@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import {
   type AppInfo,
+  type CreateSessionTabRequest,
   type GitDiffRequest,
   type GitInfoRequest,
   IpcChannels,
@@ -9,12 +10,15 @@ import {
   type MoveSessionRequest,
   type PlatformInfo,
   type ReorderSessionRequest,
+  type RemoveSessionTabRequest,
   type ResizePtyRequest,
   type ResolvePathRequest,
   type TerminalPalette,
   type UpdatePtyPaletteRequest,
   type UpdateProjectRequest,
   type UpdateSessionRequest,
+  type UpdateSessionTabRequest,
+  type SelectSessionTabRequest,
   type ValidatePathRequest,
   type WritePtyRequest
 } from '@shared/ipc'
@@ -59,8 +63,12 @@ import {
   removeProject,
   removeSession,
   reorderSession,
+  createSessionTab,
+  removeSessionTab,
+  selectSessionTab,
   updateProject,
-  updateSession
+  updateSession,
+  updateSessionTab
 } from './store/workspace'
 
 function hostPlatform(): HostPlatform {
@@ -163,7 +171,7 @@ export function registerIpcHandlers(
     const workspace = await loadWorkspace()
     for (const session of workspace.sessions) {
       if (session.projectId === id) {
-        ptyManager.dispose(session.id)
+        ptyManager.disposeForSourceSession(session.id)
       }
     }
     await removeProject(id)
@@ -179,9 +187,21 @@ export function registerIpcHandlers(
     reorderSession(req)
   )
   handle<string, void>(IpcChannels.sessionsRemove, async (id) => {
-    ptyManager.dispose(id)
+    ptyManager.disposeForSourceSession(id)
     await removeSession(id)
   })
+  handle<CreateSessionTabRequest, Session | null>(IpcChannels.tabsCreate, (req) =>
+    createSessionTab(req)
+  )
+  handle<SelectSessionTabRequest, Session | null>(IpcChannels.tabsSelect, (req) =>
+    selectSessionTab(req)
+  )
+  handle<UpdateSessionTabRequest, Session | null>(IpcChannels.tabsUpdate, (req) =>
+    updateSessionTab(req)
+  )
+  handle<RemoveSessionTabRequest, Session | null>(IpcChannels.tabsRemove, (req) =>
+    removeSessionTab(req)
+  )
 
   handle<OpenCodeTuiPluginRequest, OpenCodeTuiPluginState>(
     IpcChannels.opencodeTuiPluginState,

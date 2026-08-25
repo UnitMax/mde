@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useRef,
   useState,
   type DragEvent as ReactDragEvent,
@@ -31,7 +32,8 @@ import type {
   OpenCodeTuiInstanceStatus,
   Project,
   PtyStatus,
-  Session
+  Session,
+  SessionTab
 } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import {
@@ -71,6 +73,7 @@ import {
 } from '@shared/session-colors'
 import { SESSION_ICONS, sessionIconOption } from '@shared/session-icons'
 import type { SessionTerminalLayout } from '@/terminal/layout'
+import { sessionTabs } from '@/terminal/tabs'
 import {
   openCodeTuiInstanceLabel,
   orderOpenCodeTuiInstances
@@ -80,6 +83,10 @@ import {
   terminalPaneLabel,
   terminalPanesForSidebar
 } from '@/lib/terminal-instances'
+import {
+  getTerminalSettings,
+  subscribeTerminalSettings
+} from '@/terminal/terminal-settings'
 
 const STATUS_STYLE: Record<PtyStatus, { dot: string; label: string }> = {
   none: { dot: 'bg-fg-subtle', label: 'No shell running' },
@@ -226,132 +233,119 @@ function openCodeInstanceIndicator(instance: OpenCodeTuiInstanceStatus): Session
 
 function OpenCodeInstances({
   instances,
-  layout,
+  tabs,
+  layouts,
   labelMode,
   onFocus
 }: {
   instances: readonly OpenCodeTuiInstanceStatus[]
-  layout?: SessionTerminalLayout
+  tabs: readonly SessionTab[]
+  layouts: Record<string, SessionTerminalLayout>
   labelMode: OpenCodeTuiInstanceLabelMode
-  onFocus: (terminalId: string) => void
+  onFocus: (tabId: string, terminalId: string) => void
 }): JSX.Element | null {
-  const [expanded, setExpanded] = useState(true)
   if (instances.length === 0) return null
 
-  const ordered = orderOpenCodeTuiInstances(instances, layout)
-  const summary = `${ordered.length} OpenCode ${ordered.length === 1 ? 'instance' : 'instances'}`
+  const entries = tabs.flatMap((tab) => {
+    const layout = layouts[tab.id]
+    if (!layout) return []
+    const tabInstances = instances.filter((instance) =>
+      layout.panes.some((pane) => pane.terminalId === instance.terminalId)
+    )
+    return orderOpenCodeTuiInstances(tabInstances, layout).map((instance, index) => ({
+      tab,
+      layout,
+      instance,
+      index
+    }))
+  })
+  if (entries.length === 0) return null
 
   return (
     <div className="mb-0.5 ml-10 mr-2 mt-0.5" data-testid="opencode-instances">
-      <button
-        type="button"
-        aria-expanded={expanded}
-        onClick={() => setExpanded((value) => !value)}
-        className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-left text-[11px] text-fg-subtle hover:bg-hover hover:text-fg-muted"
-      >
-        {expanded ? (
-          <ChevronDown className="h-3 w-3 shrink-0" />
-        ) : (
-          <ChevronRight className="h-3 w-3 shrink-0" />
-        )}
-        <span>{summary}</span>
-      </button>
-      {expanded && (
-        <div className="mt-0.5 space-y-0.5">
-          {ordered.map((instance, index) => {
-            const indicator = openCodeInstanceIndicator(instance)
-            const label = openCodeTuiInstanceLabel(instance, index, labelMode, layout)
-            const statusLabel = OPENCODE_INSTANCE_STATUS_LABEL[instance.status]
-            return (
-              <button
-                key={instance.terminalId}
-                type="button"
-                title={`${label} · ${indicator.label}`}
-                onClick={() => onFocus(instance.terminalId)}
-                className={cn(
-                  'flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[12px] text-fg-muted hover:bg-hover hover:text-fg',
-                  indicator.row
-                )}
-              >
-                <StatusDot indicator={indicator} testId="opencode-instance-status" />
-                <span className="min-w-0 flex-1 truncate">{label}</span>
-                <span className="shrink-0 text-[10px] text-fg-subtle">{statusLabel}</span>
-              </button>
-            )
-          })}
-        </div>
-      )}
+      <div className="space-y-0.5">
+        {entries.map(({ tab, layout, instance, index }) => {
+          const indicator = openCodeInstanceIndicator(instance)
+          const label = openCodeTuiInstanceLabel(instance, index, labelMode, layout)
+          const statusLabel = OPENCODE_INSTANCE_STATUS_LABEL[instance.status]
+          return (
+            <button
+              key={instance.terminalId}
+              type="button"
+              title={`${label} · ${tab.name} · ${indicator.label}`}
+              onClick={() => onFocus(tab.id, instance.terminalId)}
+              className={cn(
+                'flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[12px] text-fg-muted hover:bg-hover hover:text-fg',
+                indicator.row
+              )}
+            >
+              <StatusDot indicator={indicator} testId="opencode-instance-status" />
+              <span className="min-w-0 flex-1 truncate">{label}</span>
+              <span className="max-w-[35%] shrink truncate text-[10px] text-fg-subtle">{tab.name}</span>
+              <span className="shrink-0 text-[10px] text-fg-subtle">{statusLabel}</span>
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }
 
 function TerminalInstances({
-  layout,
+  tabs,
+  layouts,
   statuses,
   directories,
   openCodeTerminalIds,
   onFocus
 }: {
-  layout?: SessionTerminalLayout
+  tabs: readonly SessionTab[]
+  layouts: Record<string, SessionTerminalLayout>
   statuses: Record<string, PtyStatus>
   directories: Record<string, string>
   openCodeTerminalIds: ReadonlySet<string>
-  onFocus: (terminalId: string) => void
+  onFocus: (tabId: string, terminalId: string) => void
 }): JSX.Element | null {
-  const [expanded, setExpanded] = useState(true)
-  if (!layout || layout.panes.length <= 1) return null
-
-  const panes = terminalPanesForSidebar(layout, openCodeTerminalIds)
-  if (panes.length === 0) return null
-
-  const summary = `${panes.length} terminal${panes.length === 1 ? '' : 's'}`
+  const entries = tabs.flatMap((tab) => {
+    const layout = layouts[tab.id]
+    if (!layout || (tabs.length <= 1 && layout.panes.length <= 1)) return []
+    return terminalPanesForSidebar(layout, openCodeTerminalIds).map((pane) => ({
+      tab,
+      layout,
+      pane
+    }))
+  })
+  if (entries.length === 0) return null
 
   return (
     <div className="mb-0.5 ml-10 mr-2 mt-0.5" data-testid="terminal-instances">
-      <button
-        type="button"
-        aria-expanded={expanded}
-        onClick={() => setExpanded((value) => !value)}
-        className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-left text-[11px] text-fg-subtle hover:bg-hover hover:text-fg-muted"
-      >
-        {expanded ? (
-          <ChevronDown className="h-3 w-3 shrink-0" />
-        ) : (
-          <ChevronRight className="h-3 w-3 shrink-0" />
-        )}
-        <span>{summary}</span>
-      </button>
-      {expanded && (
-        <div className="mt-0.5 space-y-0.5">
-          {panes.map((pane) => {
-            const status = statuses[pane.terminalId] ?? (pane.exited ? 'exited' : 'none')
-            const indicator: SessionIndicator = { status, ...STATUS_STYLE[status] }
-            const label = terminalPaneLabel(pane, layout)
-            const directory = directories[pane.terminalId]
-            const directoryLabel = terminalDirectoryLabel(directory)
-            return (
-              <button
-                key={pane.terminalId}
-                type="button"
-                title={`${label} · ${directory ?? 'Directory unavailable'} · ${indicator.label}`}
-                onClick={() => onFocus(pane.terminalId)}
-                className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[12px] text-fg-muted hover:bg-hover hover:text-fg"
-              >
-                <StatusDot indicator={indicator} testId="terminal-instance-status" />
-                <span className="min-w-0 flex-1 truncate">{label}</span>
-                {directoryLabel && (
-                  <span
-                    className="min-w-0 max-w-[45%] shrink text-[10px] text-fg-subtle"
-                    title={directory}
-                  >
-                    {directoryLabel}
-                  </span>
-                )}
-              </button>
-            )
-          })}
-        </div>
-      )}
+      <div className="space-y-0.5">
+        {entries.map(({ tab, layout, pane }) => {
+          const status = statuses[pane.terminalId] ?? (pane.exited ? 'exited' : 'none')
+          const indicator: SessionIndicator = { status, ...STATUS_STYLE[status] }
+          const label = terminalPaneLabel(pane, layout)
+          const directory = directories[pane.terminalId]
+          const directoryLabel = terminalDirectoryLabel(directory)
+          return (
+            <button
+              key={pane.terminalId}
+              type="button"
+              title={`${label} · ${tab.name} · ${directory ?? 'Directory unavailable'} · ${indicator.label}`}
+              onClick={() => onFocus(tab.id, pane.terminalId)}
+              className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[12px] text-fg-muted hover:bg-hover hover:text-fg"
+            >
+              <StatusDot indicator={indicator} testId="terminal-instance-status" />
+              <span className="min-w-0 flex-1 truncate">{label}</span>
+              <span className="max-w-[35%] shrink truncate text-[10px] text-fg-subtle">{tab.name}</span>
+              {directoryLabel && (
+                <span className="min-w-0 max-w-[35%] shrink truncate text-[10px] text-fg-subtle" title={directory}>
+                  {directoryLabel}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -363,11 +357,14 @@ interface SessionRowProps {
   terminalDirectories: Record<string, string>
   tuiStatus?: OpenCodeTuiStatusState
   tuiInstances?: OpenCodeTuiInstanceStatus[]
-  terminalLayout?: SessionTerminalLayout
+  terminalTabs: readonly SessionTab[]
+  terminalLayouts: Record<string, SessionTerminalLayout>
+  showTerminalInstances: boolean
+  showOpenCodeInstances: boolean
   instanceLabelMode: OpenCodeTuiInstanceLabelMode
   selected: boolean
   onSelect: () => void
-  onFocusTerminal: (terminalId: string) => void
+  onFocusTerminal: (tabId: string, terminalId: string) => void
   onOpenGit: () => void
   dragging: boolean
   dragDisabled: boolean
@@ -385,7 +382,10 @@ function SessionRow({
   terminalDirectories,
   tuiStatus,
   tuiInstances = [],
-  terminalLayout,
+  terminalTabs,
+  terminalLayouts,
+  showTerminalInstances,
+  showOpenCodeInstances,
   instanceLabelMode,
   selected,
   onSelect,
@@ -635,20 +635,26 @@ function SessionRow({
         </ContextMenuContent>
       </ContextMenu>
 
-      <OpenCodeInstances
-        instances={tuiInstances}
-        layout={terminalLayout}
-        labelMode={instanceLabelMode}
-        onFocus={onFocusTerminal}
-      />
+      {showOpenCodeInstances && (
+        <OpenCodeInstances
+          instances={tuiInstances}
+          tabs={terminalTabs}
+          layouts={terminalLayouts}
+          labelMode={instanceLabelMode}
+          onFocus={onFocusTerminal}
+        />
+      )}
 
-      <TerminalInstances
-        layout={terminalLayout}
-        statuses={terminalStatuses}
-        directories={terminalDirectories}
-        openCodeTerminalIds={new Set(tuiInstances.map((instance) => instance.terminalId))}
-        onFocus={onFocusTerminal}
-      />
+      {showTerminalInstances && (
+        <TerminalInstances
+          tabs={terminalTabs}
+          layouts={terminalLayouts}
+          statuses={terminalStatuses}
+          directories={terminalDirectories}
+          openCodeTerminalIds={new Set(tuiInstances.map((instance) => instance.terminalId))}
+          onFocus={onFocusTerminal}
+        />
+      )}
 
       <Dialog open={moving} onOpenChange={setMoving}>
         <DialogContent>
@@ -713,13 +719,28 @@ interface ProjectGroupProps {
   terminalDirectories: Record<string, string>
   opencodeTuiStatuses: Record<string, OpenCodeTuiStatusState>
   opencodeTuiInstances: Record<string, OpenCodeTuiInstanceStatus[]>
-  terminalLayouts: Record<string, SessionTerminalLayout>
+  terminalLayouts: Record<string, Record<string, SessionTerminalLayout>>
+  showTerminalInstances: boolean
+  showOpenCodeInstances: boolean
   instanceLabelMode: OpenCodeTuiInstanceLabelMode
   selectedSessionId: string | null
   onSelectSession: (id: string) => void
-  onFocusTerminal: (sessionId: string, terminalId: string) => void
+  onFocusTerminal: (sessionId: string, tabId: string, terminalId: string) => void
   onOpenGit: (id: string) => void
   onNewSession: (projectId: string) => void
+}
+
+function sessionTerminalStatus(
+  session: Session,
+  layouts: Record<string, SessionTerminalLayout> | undefined,
+  statuses: Record<string, PtyStatus>
+): PtyStatus {
+  const values = sessionTabs(session)
+    .flatMap((tab) => layouts?.[tab.id]?.panes ?? [])
+    .map((pane) => statuses[pane.terminalId] ?? (pane.exited ? 'exited' : 'none'))
+  if (values.includes('running')) return 'running'
+  if (values.includes('exited')) return 'exited'
+  return 'none'
 }
 
 function ProjectGroup({
@@ -730,6 +751,8 @@ function ProjectGroup({
   opencodeTuiStatuses,
   opencodeTuiInstances,
   terminalLayouts,
+  showTerminalInstances,
+  showOpenCodeInstances,
   instanceLabelMode,
   selectedSessionId,
   onSelectSession,
@@ -911,16 +934,19 @@ function ProjectGroup({
           <SessionRow
             key={session.id}
             session={session}
-            status={statuses[session.id] ?? 'none'}
+            status={sessionTerminalStatus(session, terminalLayouts[session.id], statuses)}
             terminalStatuses={statuses}
             terminalDirectories={terminalDirectories}
             tuiStatus={opencodeTuiStatuses[session.id]}
             tuiInstances={opencodeTuiInstances[session.id]}
-            terminalLayout={terminalLayouts[session.id]}
+            terminalTabs={sessionTabs(session)}
+            terminalLayouts={terminalLayouts[session.id] ?? {}}
+            showTerminalInstances={showTerminalInstances}
+            showOpenCodeInstances={showOpenCodeInstances}
             instanceLabelMode={instanceLabelMode}
             selected={session.id === selectedSessionId}
             onSelect={() => onSelectSession(session.id)}
-            onFocusTerminal={(terminalId) => onFocusTerminal(session.id, terminalId)}
+            onFocusTerminal={(tabId, terminalId) => onFocusTerminal(session.id, tabId, terminalId)}
             onOpenGit={() => onOpenGit(session.id)}
             dragging={session.id === draggingSessionId}
             dragDisabled={reordering}
@@ -957,8 +983,8 @@ interface SidebarProps {
   onNewProject: () => void
   onNewSession: (projectId?: string) => void
   onOpenGit: (sessionId: string) => void
-  terminalLayouts: Record<string, SessionTerminalLayout>
-  onFocusTerminal: (sessionId: string, terminalId: string) => void
+  terminalLayouts: Record<string, Record<string, SessionTerminalLayout>>
+  onFocusTerminal: (sessionId: string, tabId: string, terminalId: string) => void
 }
 
 export function Sidebar({
@@ -980,6 +1006,9 @@ export function Sidebar({
   const setSessionIcon = useWorkspace((state) => state.setSessionIcon)
   const collapsed = useWorkspace((state) => state.sidebarCollapsed)
   const toggleSidebar = useWorkspace((state) => state.toggleSidebar)
+  const [terminalSettings, setTerminalSettings] = useState(() => getTerminalSettings())
+
+  useEffect(() => subscribeTerminalSettings(() => setTerminalSettings(getTerminalSettings())), [])
 
   if (collapsed) {
     return (
@@ -1139,6 +1168,8 @@ export function Sidebar({
               opencodeTuiStatuses={opencodeTuiStatuses}
               opencodeTuiInstances={opencodeTuiInstances}
               terminalLayouts={terminalLayouts}
+              showTerminalInstances={terminalSettings.showTerminalInstances}
+              showOpenCodeInstances={terminalSettings.showOpenCodeInstances}
               instanceLabelMode={instanceLabelMode}
               selectedSessionId={selectedSessionId}
               onSelectSession={selectSession}

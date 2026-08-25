@@ -291,6 +291,13 @@ export class PtyManager {
     }
   }
 
+  /** Disposes every runtime terminal launched from one persisted session. */
+  disposeForSourceSession(sessionId: string): void {
+    for (const [terminalId, session] of this.sessions) {
+      if (session.sourceSessionId === sessionId) this.dispose(terminalId)
+    }
+  }
+
   disposeAll(): void {
     for (const sessionId of [...this.sessions.keys()]) this.dispose(sessionId)
   }

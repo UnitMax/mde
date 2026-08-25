@@ -10,6 +10,7 @@
     "src/renderer/theme/themes.ts",
     "src/renderer/terminal/terminal-compat.ts",
     "src/renderer/terminal/layout.ts",
+    "src/renderer/terminal/tabs.ts",
     "src/renderer/terminal/clipboard.ts",
     "src/renderer/terminal/sessions.ts",
     "src/renderer/lib/utils.ts",

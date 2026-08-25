@@ -11,8 +11,10 @@ import {
   Code,
   CircleX,
   FolderOpen,
+  Plus,
   RotateCw,
-  Settings2
+  Settings2,
+  X
 } from 'lucide-react'
 import type {
   OpenCodeTuiPluginState,
@@ -22,7 +24,8 @@ import type {
   OpenCodeTokenRatePluginState,
   OpenCodeAlertSettings,
   PtySize,
-  Session
+  Session,
+  SessionTab
 } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import {
@@ -76,13 +79,27 @@ import {
   type TerminalResizeAxis,
   type TerminalResizeScope
 } from '@/terminal/layout'
+import { sessionTabs } from '@/terminal/tabs'
 
 const FALLBACK_SIZE: PtySize = { cols: 80, rows: 24 }
 const RESIZE_DEBOUNCE_MS = 100
 
+function textInputHasFocus(): boolean {
+  const active = document.activeElement
+  return active instanceof HTMLElement && (
+    active.matches('input, textarea, select') || active.isContentEditable
+  )
+}
+
 interface TerminalViewProps {
   session: Session
+  activeTab: SessionTab
   terminalLayout: SessionTerminalLayout
+  onSelectTab: (tabId: string) => void
+  onAddTab: () => void
+  onTabRenameStart: () => void
+  onRenameTab: (tabId: string, name: string) => void
+  onCloseTab: (tabId: string) => void
   onLayoutChange: (layout: TerminalLayout) => void
   onLayoutResize: (axis: TerminalResizeAxis, ratio: number) => void
   onPaneOrderChange: (terminalIds: readonly string[]) => void
@@ -137,7 +154,7 @@ function TerminalSurface({ session: sourceSession, pane }: TerminalSurfaceProps)
         }).then((status) => {
           if (cancelled) return
           setStatus(pane.terminalId, status)
-          terminal.term.focus()
+          if (!textInputHasFocus()) terminal.term.focus()
         }).catch((error: unknown) => {
           console.warn('[terminal] PTY ensure failed:', error)
           ensured = false
@@ -204,7 +221,7 @@ function TerminalPane({
     const terminal = getSession(pane.terminalId)
     terminal?.term.reset()
     const size = (terminal && fitSession(terminal)) || FALLBACK_SIZE
-    if (pane.primary) clearExit(session.id)
+    if (pane.primary) clearExit(pane.terminalId)
     const status = await window.api.pty.restart({
       terminalId: pane.terminalId,
       sessionId: session.id,
@@ -513,13 +530,55 @@ function tokenRatePluginStatusLabel(state: OpenCodeTokenRatePluginState | undefi
   return 'Not installed'
 }
 
-type SettingsSection = 'appearance' | 'opencode' | 'about'
+type SettingsSection = 'appearance' | 'sidebar' | 'opencode' | 'about'
 
 const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: 'appearance', label: 'Appearance' },
+  { id: 'sidebar', label: 'Sidebar' },
   { id: 'opencode', label: 'OpenCode' },
   { id: 'about', label: 'About' }
 ]
+
+function SettingsToggle({
+  checked,
+  label,
+  description,
+  testId,
+  onClick
+}: {
+  checked: boolean
+  label: string
+  description: string
+  testId: string
+  onClick: () => void
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      data-testid={testId}
+      onClick={onClick}
+      className="flex w-full items-center justify-between rounded border border-line bg-panel px-3 py-2 text-left text-xs text-fg-muted hover:bg-hover"
+    >
+      <span>
+        <span className="block font-medium text-fg">{label}</span>
+        <span className="mt-0.5 block text-fg-subtle">{description}</span>
+      </span>
+      <span
+        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+          checked ? 'bg-accent' : 'bg-line-strong'
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+            checked ? 'translate-x-4' : 'translate-x-0.5'
+          }`}
+        />
+      </span>
+    </button>
+  )
+}
 
 function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Element {
   const [open, setOpen] = useState(false)
@@ -940,6 +999,33 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
               </section>
             )}
 
+            {activeSection === 'sidebar' && (
+              <section className="space-y-3" aria-labelledby="sidebar-settings">
+                <div>
+                  <h3 id="sidebar-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
+                    Sidebar
+                  </h3>
+                  <p className="mt-1 text-xs text-fg-subtle">
+                    Choose which individual terminal activity appears beneath each session.
+                  </p>
+                </div>
+                <SettingsToggle
+                  checked={settings.showTerminalInstances}
+                  label="Show terminal instances"
+                  description="List ordinary terminal panes beneath their session."
+                  testId="sidebar-terminal-instances"
+                  onClick={() => updateSettings({ showTerminalInstances: !settings.showTerminalInstances })}
+                />
+                <SettingsToggle
+                  checked={settings.showOpenCodeInstances}
+                  label="Show OpenCode instances"
+                  description="List active OpenCode instances beneath their session."
+                  testId="sidebar-opencode-instances"
+                  onClick={() => updateSettings({ showOpenCodeInstances: !settings.showOpenCodeInstances })}
+                />
+              </section>
+            )}
+
             {activeSection === 'opencode' && (
               <section className="space-y-6" aria-labelledby="opencode-settings">
                 <div>
@@ -1189,9 +1275,141 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
   )
 }
 
+function SessionTabStrip({
+  session,
+  activeTab,
+  onSelect,
+  onAdd,
+  onRenameStart,
+  onRename,
+  onClose
+}: {
+  session: Session
+  activeTab: SessionTab
+  onSelect: (tabId: string) => void
+  onAdd: () => void
+  onRenameStart: () => void
+  onRename: (tabId: string, name: string) => void
+  onClose: (tabId: string) => void
+}): JSX.Element {
+  const tabs = sessionTabs(session)
+  const [renamingTabId, setRenamingTabId] = useState<string | null>(null)
+  const [draftName, setDraftName] = useState('')
+  const renameInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!renamingTabId) return
+    const frame = window.requestAnimationFrame(() => {
+      renameInputRef.current?.focus()
+      renameInputRef.current?.select()
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [renamingTabId])
+
+  const beginRename = (tab: SessionTab): void => {
+    onRenameStart()
+    setRenamingTabId(tab.id)
+    setDraftName(tab.name)
+  }
+
+  const commitRename = (): void => {
+    if (!renamingTabId) return
+    const name = draftName.trim()
+    if (name) onRename(renamingTabId, name)
+    setRenamingTabId(null)
+  }
+
+  return (
+    <div className="flex h-9 shrink-0 items-center gap-1 border-b border-line bg-panel px-2">
+      <div
+        role="tablist"
+        aria-label={`${session.name} terminal tabs`}
+        className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+      >
+        {tabs.map((tab) => {
+          const selected = tab.id === activeTab.id
+          const renaming = tab.id === renamingTabId
+          return (
+            <div
+              key={tab.id}
+              className={`group flex min-w-[7rem] max-w-[13rem] items-center rounded-t border border-b-0 ${
+                selected ? 'border-line bg-bg text-fg' : 'border-transparent text-fg-subtle hover:bg-hover hover:text-fg'
+              }`}
+            >
+              {renaming ? (
+                <input
+                  ref={renameInputRef}
+                  value={draftName}
+                  onChange={(event) => setDraftName(event.target.value)}
+                  onBlur={commitRename}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') commitRename()
+                    if (event.key === 'Escape') setRenamingTabId(null)
+                    event.stopPropagation()
+                  }}
+                  className="h-7 w-full min-w-0 flex-1 rounded-sm border border-accent bg-bg px-2 text-xs text-fg outline-none"
+                />
+              ) : (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  tabIndex={selected ? 0 : -1}
+                  onClick={() => onSelect(tab.id)}
+                  onMouseDown={(event) => {
+                    if (event.detail > 1) event.preventDefault()
+                  }}
+                  onDoubleClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    if (!selected) onSelect(tab.id)
+                    beginRename(tab)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'F2') {
+                      event.preventDefault()
+                      beginRename(tab)
+                    }
+                  }}
+                  className="min-w-0 flex-1 truncate px-2 py-1.5 text-left text-xs"
+                  title={`${tab.name} · Double-click or press F2 to rename`}
+                >
+                  {tab.name}
+                </button>
+              )}
+              <button
+                type="button"
+                aria-label={`Close ${tab.name}`}
+                title={tabs.length <= 1 ? 'A session must keep one tab' : `Close ${tab.name}`}
+                disabled={tabs.length <= 1}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onClose(tab.id)
+                }}
+                className="mr-1 rounded p-1 text-fg-subtle hover:bg-hover hover:text-fg disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          )
+        })}
+      </div>
+      <Button variant="ghost" size="icon-sm" onClick={onAdd} title="New terminal tab" aria-label="New terminal tab">
+        <Plus className="h-3.5 w-3.5" />
+      </Button>
+    </div>
+  )
+}
+
 export function TerminalView({
   session: selectedSession,
+  activeTab,
   terminalLayout,
+  onSelectTab,
+  onAddTab,
+  onTabRenameStart,
+  onRenameTab,
+  onCloseTab,
   onLayoutChange,
   onLayoutResize,
   onPaneOrderChange,
@@ -1201,7 +1419,8 @@ export function TerminalView({
 }: TerminalViewProps): JSX.Element {
   const clearExit = useWorkspace((state) => state.clearExit)
   const setStatus = useWorkspace((state) => state.setStatus)
-  const exit = useWorkspace((state) => state.exits[selectedSession.id])
+  const primaryPane = terminalLayout.panes.find((pane) => pane.primary)
+  const exit = useWorkspace((state) => primaryPane ? state.exits[primaryPane.terminalId] : undefined)
   const [pendingLayout, setPendingLayout] = useState<TerminalLayout | null>(null)
   const [reorderModifierHeld, setReorderModifierHeld] = useState(false)
   const [hoveredPaneId, setHoveredPaneId] = useState<string | null>(null)
@@ -1212,19 +1431,22 @@ export function TerminalView({
 
   const restart = useCallback(async () => {
     onRestartPrimary()
-    const session = getSession(selectedSession.id)
+    const primary = terminalLayout.panes.find((pane) => pane.primary)
+    if (!primary) return
+    const session = getSession(primary.terminalId)
+    if (!session) return
     session?.term.reset()
     const size = (session && fitSession(session)) || FALLBACK_SIZE
-    clearExit(selectedSession.id)
+    clearExit(primary.terminalId)
     const status = await window.api.pty.restart({
-      terminalId: selectedSession.id,
+      terminalId: primary.terminalId,
       sessionId: selectedSession.id,
       size,
       palette: getTerminalPalette(session?.themeId ?? getTerminalSettings().theme)
     })
-    setStatus(selectedSession.id, status)
+    setStatus(primary.terminalId, status)
     session?.term.focus()
-  }, [clearExit, onRestartPrimary, selectedSession.id, setStatus])
+  }, [clearExit, onRestartPrimary, selectedSession.id, setStatus, terminalLayout.panes])
 
   const requestLayout = useCallback((layout: TerminalLayout): void => {
     const targetCount = terminalCount(layout)
@@ -1458,6 +1680,15 @@ export function TerminalView({
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-bg">
+      <SessionTabStrip
+        session={selectedSession}
+        activeTab={activeTab}
+        onSelect={onSelectTab}
+        onAdd={onAddTab}
+        onRenameStart={onTabRenameStart}
+        onRename={onRenameTab}
+        onClose={onCloseTab}
+      />
       <header className="flex h-10 shrink-0 items-center gap-3 border-b border-line bg-panel/50 px-3">
         <div className="flex min-w-0 flex-1 items-baseline gap-2">
           <span

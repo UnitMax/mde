@@ -142,6 +142,27 @@ describe('PtyManager runtime terminal identities', () => {
     expect(manager.status('pane-a')).toBe('running')
   })
 
+  it('disposes every runtime terminal belonging to one source session', () => {
+    const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() })
+    const source = sourceSession()
+    const other = { ...source, id: 'session-2' }
+    manager.ensure('pane-a', source, { cols: 80, rows: 24 }, palette)
+    manager.ensure('pane-b', source, { cols: 80, rows: 24 }, palette)
+    manager.ensure('pane-c', other, { cols: 80, rows: 24 }, palette)
+    const first = ptyMock.children.get('pane-1')
+    const second = ptyMock.children.get('pane-2')
+    const third = ptyMock.children.get('pane-3')
+
+    manager.disposeForSourceSession(source.id)
+
+    expect(first?.kill).toHaveBeenCalledTimes(1)
+    expect(second?.kill).toHaveBeenCalledTimes(1)
+    expect(third?.kill).not.toHaveBeenCalled()
+    expect(manager.status('pane-a')).toBe('none')
+    expect(manager.status('pane-b')).toBe('none')
+    expect(manager.status('pane-c')).toBe('running')
+  })
+
   it('answers palette queries directly at the PTY boundary', () => {
     const events = { onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() }
     const manager = new PtyManager(events)

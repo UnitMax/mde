@@ -25,6 +25,22 @@ const session = {
   createdAt: '2026-01-01T00:00:00.000Z'
 }
 
+const defaultTab = {
+  id: 'session-1:tab:default',
+  name: 'Tab 1',
+  layout: {
+    layout: 'single',
+    panes: [{ id: 'primary', primary: true }],
+    sizes: { columnRatio: 0.5, rowRatio: 0.5 }
+  }
+}
+
+const normalizedSession = {
+  ...session,
+  tabs: [defaultTab],
+  activeTabId: defaultTab.id
+}
+
 describe('workspace validation', () => {
   it('keeps project labels free of session location data', () => {
     expect(validateProject(project)).toEqual(project)
@@ -39,21 +55,53 @@ describe('workspace validation', () => {
 
   it('requires sessions to reference a project and retain their own path', () => {
     const projectIds = new Set([project.id])
-    expect(validateSession(session, projectIds)).toEqual(session)
+    expect(validateSession(session, projectIds)).toEqual(normalizedSession)
     expect(validateSession({ ...session, color: 'teal' }, projectIds)).toMatchObject({ color: 'teal' })
-    expect(validateSession({ ...session, color: 'not-a-color' }, projectIds)).toEqual(session)
+    expect(validateSession({ ...session, color: 'not-a-color' }, projectIds)).toEqual(normalizedSession)
     expect(validateSession({ ...session, icon: 'robot' }, projectIds)).toMatchObject({ icon: 'robot' })
-    expect(validateSession({ ...session, icon: 'not-an-icon' }, projectIds)).toEqual(session)
-    expect(validateSession({ ...session, obsolete: true }, projectIds)).toEqual(session)
+    expect(validateSession({ ...session, icon: 'not-an-icon' }, projectIds)).toEqual(normalizedSession)
+    expect(validateSession({ ...session, obsolete: true }, projectIds)).toEqual(normalizedSession)
     expect(validateSession({ ...session, projectId: 'missing' }, projectIds)).toBeNull()
     expect(validateSession({ ...session, kind: 'wsl', distro: undefined }, projectIds)).toBeNull()
     expect(validateSessionList([session, session], projectIds)).toHaveLength(1)
   })
 
+  it('normalizes tab names, ratios, and malformed tab entries', () => {
+    const projectIds = new Set([project.id])
+    const custom = validateSession({
+      ...session,
+      tabs: [
+        {
+          id: 'tab-custom',
+          name: '  Shell  ',
+          layout: {
+            layout: 'columns',
+            panes: [
+              { id: 'primary', primary: true },
+              { id: 'pane-1', primary: false }
+            ],
+            sizes: { columnRatio: 2, rowRatio: -1 }
+          }
+        },
+        { id: 'broken', name: '', layout: {} }
+      ],
+      activeTabId: 'tab-custom'
+    }, projectIds)
+
+    expect(custom).toMatchObject({
+      tabs: [{
+        id: 'tab-custom',
+        name: 'Shell',
+        layout: { layout: 'columns', sizes: { columnRatio: 0.5, rowRatio: 0.5 } }
+      }],
+      activeTabId: 'tab-custom'
+    })
+  })
+
   it('loads grouped projects and sessions from the new workspace shape', () => {
     expect(validateWorkspace({ projects: [project], sessions: [session] })).toEqual({
       projects: [project],
-      sessions: [session]
+      sessions: [normalizedSession]
     })
   })
 

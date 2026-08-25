@@ -4,11 +4,23 @@ import { join } from 'node:path'
 import type {
   MoveSessionRequest,
   ReorderSessionRequest,
+  CreateSessionTabRequest,
+  RemoveSessionTabRequest,
+  SelectSessionTabRequest,
   UpdateProjectRequest,
   UpdateSessionRequest,
+  UpdateSessionTabRequest,
   WorkspaceData
 } from '@shared/ipc'
-import type { NewProject, NewSession, Project, Session } from '@shared/types'
+import type {
+  NewProject,
+  NewSession,
+  PersistedTerminalLayout,
+  Project,
+  Session,
+  SessionTab,
+  TerminalLayout
+} from '@shared/types'
 import { isSessionColor } from '@shared/session-colors'
 import { isSessionIcon } from '@shared/session-icons'
 
@@ -42,6 +54,90 @@ function uniqueEntries<T extends { id: string }>(entries: T[], kind: string): T[
     seen.add(entry.id)
     return true
   })
+}
+
+const TERMINAL_LAYOUT_COUNTS: Record<TerminalLayout, number> = {
+  single: 1,
+  columns: 2,
+  three: 3,
+  quadrant: 4
+}
+
+function isTerminalLayout(value: unknown): value is TerminalLayout {
+  return value === 'single' || value === 'columns' || value === 'three' || value === 'quadrant'
+}
+
+function ratio(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 1
+    ? value
+    : 0.5
+}
+
+function defaultTab(sessionId: string): SessionTab {
+  return {
+    id: `${sessionId}:tab:default`,
+    name: 'Tab 1',
+    layout: {
+      layout: 'single',
+      panes: [{ id: 'primary', primary: true }],
+      sizes: { columnRatio: 0.5, rowRatio: 0.5 }
+    }
+  }
+}
+
+function validateTerminalLayout(raw: unknown): PersistedTerminalLayout | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const record = raw as Record<string, unknown>
+  if (!isTerminalLayout(record.layout) || !Array.isArray(record.panes)) return null
+
+  const expectedCount = TERMINAL_LAYOUT_COUNTS[record.layout]
+  const panes = record.panes
+    .filter((pane): pane is Record<string, unknown> => typeof pane === 'object' && pane !== null)
+    .filter((pane) => isNonEmptyString(pane.id) && typeof pane.primary === 'boolean')
+    .map((pane) => ({ id: pane.id as string, primary: pane.primary as boolean }))
+  if (panes.length !== expectedCount || new Set(panes.map((pane) => pane.id)).size !== panes.length) {
+    return null
+  }
+  if (panes.filter((pane) => pane.primary).length > 1) return null
+
+  const sizes = typeof record.sizes === 'object' && record.sizes !== null
+    ? record.sizes as Record<string, unknown>
+    : {}
+  return {
+    layout: record.layout,
+    panes,
+    sizes: {
+      columnRatio: ratio(sizes.columnRatio),
+      rowRatio: ratio(sizes.rowRatio)
+    }
+  }
+}
+
+function validateSessionTab(raw: unknown): SessionTab | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const record = raw as Record<string, unknown>
+  if (!isNonEmptyString(record.id) || !isNonEmptyString(record.name)) return null
+  const layout = validateTerminalLayout(record.layout)
+  if (!layout) return null
+  return { id: record.id, name: record.name.trim(), layout }
+}
+
+function sessionTabs(raw: unknown, sessionId: string): { tabs: SessionTab[]; activeTabId: string } {
+  const tabs = Array.isArray(raw)
+    ? uniqueEntries(
+        raw.map(validateSessionTab).filter((tab): tab is SessionTab => tab !== null),
+        'session tab'
+      )
+    : []
+  const normalizedTabs = tabs.length > 0 ? tabs : [defaultTab(sessionId)]
+  return { tabs: normalizedTabs, activeTabId: normalizedTabs[0]!.id }
+}
+
+function nextTabName(tabs: readonly SessionTab[]): string {
+  const names = new Set(tabs.map((tab) => tab.name))
+  let index = 1
+  while (names.has(`Tab ${index}`)) index += 1
+  return `Tab ${index}`
 }
 
 export function validateProject(raw: unknown): Project | null {
@@ -79,13 +175,18 @@ export function validateSession(raw: unknown, projectIds: Set<string>): Session 
   }
   if (r.kind === 'wsl' && !isNonEmptyString(r.distro)) return null
 
+  const normalizedTabs = sessionTabs(r.tabs, r.id)
   const session: Session = {
     id: r.id,
     projectId: r.projectId,
     name: r.name,
     kind: r.kind,
     path: r.path,
-    createdAt: isNonEmptyString(r.createdAt) ? r.createdAt : new Date(0).toISOString()
+    createdAt: isNonEmptyString(r.createdAt) ? r.createdAt : new Date(0).toISOString(),
+    tabs: normalizedTabs.tabs,
+    activeTabId: typeof r.activeTabId === 'string' && normalizedTabs.tabs.some((tab) => tab.id === r.activeTabId)
+      ? r.activeTabId
+      : normalizedTabs.activeTabId
   }
   if (r.kind === 'wsl' && isNonEmptyString(r.distro)) session.distro = r.distro
   if (isSessionColor(r.color)) session.color = r.color
@@ -226,8 +327,11 @@ export async function createSession(input: NewSession): Promise<Session> {
     name: input.name.trim(),
     kind: input.kind,
     path: input.path.trim(),
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    tabs: []
   }
+  session.tabs = [defaultTab(session.id)]
+  session.activeTabId = session.tabs[0]!.id
   if (input.kind === 'wsl' && input.distro) session.distro = input.distro.trim()
   if (input.shell?.trim()) session.shell = input.shell.trim()
 
@@ -265,8 +369,11 @@ export async function duplicateSession(id: string): Promise<Session | null> {
     ...(source.distro ? { distro: source.distro } : {}),
     path: source.path,
     ...(source.shell ? { shell: source.shell } : {}),
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    tabs: []
   }
+  session.tabs = [defaultTab(session.id)]
+  session.activeTabId = session.tabs[0]!.id
 
   cache = { ...workspace, sessions: [...workspace.sessions, session] }
   await enqueueWrite(cache)
@@ -293,6 +400,105 @@ export async function updateSession(req: UpdateSessionRequest): Promise<Session 
   sessions[index] = updated
   cache = { ...workspace, sessions }
   await enqueueWrite(cache)
+  return updated
+}
+
+function replaceSession(workspace: WorkspaceData, index: number, updated: Session): void {
+  const sessions = [...workspace.sessions]
+  sessions[index] = updated
+  cache = { ...workspace, sessions }
+}
+
+export async function createSessionTab(req: CreateSessionTabRequest): Promise<Session | null> {
+  if (!req || typeof req.sessionId !== 'string' || !req.sessionId) return null
+  const workspace = await loadWorkspace()
+  const index = workspace.sessions.findIndex((session) => session.id === req.sessionId)
+  const existing = workspace.sessions[index]
+  if (!existing) return null
+
+  const tabs = existing.tabs ?? [defaultTab(existing.id)]
+  const tab: SessionTab = {
+    id: randomUUID(),
+    name: nextTabName(tabs),
+    layout: defaultTab(existing.id).layout
+  }
+  const updated = { ...existing, tabs: [...tabs, tab], activeTabId: tab.id }
+  replaceSession(workspace, index, updated)
+  await enqueueWrite(cache as WorkspaceData)
+  return updated
+}
+
+export async function selectSessionTab(req: SelectSessionTabRequest): Promise<Session | null> {
+  if (!req || typeof req.sessionId !== 'string' || !req.sessionId || typeof req.tabId !== 'string' || !req.tabId) return null
+  const workspace = await loadWorkspace()
+  const index = workspace.sessions.findIndex((session) => session.id === req.sessionId)
+  const existing = workspace.sessions[index]
+  if (!existing) return null
+  const tabs = existing.tabs ?? [defaultTab(existing.id)]
+  if (!tabs.some((tab) => tab.id === req.tabId)) return null
+  if (existing.activeTabId === req.tabId && existing.tabs) return existing
+
+  const updated = { ...existing, tabs, activeTabId: req.tabId }
+  replaceSession(workspace, index, updated)
+  await enqueueWrite(cache as WorkspaceData)
+  return updated
+}
+
+export async function updateSessionTab(req: UpdateSessionTabRequest): Promise<Session | null> {
+  if (!req || typeof req.sessionId !== 'string' || !req.sessionId || typeof req.tabId !== 'string' || !req.tabId || !req.patch) return null
+  const workspace = await loadWorkspace()
+  const index = workspace.sessions.findIndex((session) => session.id === req.sessionId)
+  const existing = workspace.sessions[index]
+  if (!existing) return null
+  const tabs = existing.tabs ?? [defaultTab(existing.id)]
+  const tabIndex = tabs.findIndex((tab) => tab.id === req.tabId)
+  const tab = tabs[tabIndex]
+  if (!tab) return null
+
+  const updatedTab: SessionTab = { ...tab }
+  if (req.patch.name !== undefined) {
+    const name = req.patch.name.trim()
+    if (!name) return null
+    updatedTab.name = name
+  }
+  if (req.patch.layout !== undefined) {
+    const layout = validateTerminalLayout(req.patch.layout)
+    if (!layout) return null
+    updatedTab.layout = layout
+  }
+
+  const updatedTabs = [...tabs]
+  updatedTabs[tabIndex] = updatedTab
+  const updated = {
+    ...existing,
+    tabs: updatedTabs,
+    activeTabId: existing.activeTabId && updatedTabs.some((candidate) => candidate.id === existing.activeTabId)
+      ? existing.activeTabId
+      : updatedTabs[0]!.id
+  }
+  replaceSession(workspace, index, updated)
+  await enqueueWrite(cache as WorkspaceData)
+  return updated
+}
+
+export async function removeSessionTab(req: RemoveSessionTabRequest): Promise<Session | null> {
+  if (!req || typeof req.sessionId !== 'string' || !req.sessionId || typeof req.tabId !== 'string' || !req.tabId) return null
+  const workspace = await loadWorkspace()
+  const index = workspace.sessions.findIndex((session) => session.id === req.sessionId)
+  const existing = workspace.sessions[index]
+  if (!existing) return null
+  const tabs = existing.tabs ?? [defaultTab(existing.id)]
+  if (tabs.length <= 1) return null
+  const tabIndex = tabs.findIndex((tab) => tab.id === req.tabId)
+  if (tabIndex < 0) return null
+
+  const updatedTabs = tabs.filter((tab) => tab.id !== req.tabId)
+  const activeTabId = existing.activeTabId === req.tabId
+    ? (updatedTabs[tabIndex] ?? updatedTabs[tabIndex - 1] ?? updatedTabs[0]!).id
+    : existing.activeTabId
+  const updated = { ...existing, tabs: updatedTabs, activeTabId }
+  replaceSession(workspace, index, updated)
+  await enqueueWrite(cache as WorkspaceData)
   return updated
 }
 

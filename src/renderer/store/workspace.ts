@@ -11,6 +11,7 @@ import type {
   OpenCodeTuiStatus,
   OpenCodeTuiStatusUpdate,
   Project,
+  PersistedTerminalLayout,
   PtyDirectoryUpdate,
   PtyExitInfo,
   PtyStatus,
@@ -28,6 +29,10 @@ export interface OpenCodeTuiStatusState {
 }
 
 let eventBridgeReady = false
+
+function belongsToSession(runtimeId: string, sessionId: string): boolean {
+  return runtimeId === sessionId || runtimeId.startsWith(`${sessionId}:`)
+}
 
 interface WorkspaceState {
   projects: Project[]
@@ -55,6 +60,11 @@ interface WorkspaceState {
 
   addSession: (input: NewSession) => Promise<Session>
   duplicateSession: (id: string) => Promise<Session | null>
+  addTab: (sessionId: string) => Promise<Session | null>
+  selectTab: (sessionId: string, tabId: string) => Promise<Session | null>
+  renameTab: (sessionId: string, tabId: string, name: string) => Promise<Session | null>
+  updateTabLayout: (sessionId: string, tabId: string, layout: PersistedTerminalLayout) => Promise<Session | null>
+  removeTab: (sessionId: string, tabId: string) => Promise<Session | null>
   renameSession: (id: string, name: string) => Promise<void>
   setSessionColor: (id: string, color: SessionColor) => Promise<void>
   setSessionIcon: (id: string, icon: SessionIcon | null) => Promise<void>
@@ -163,12 +173,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     childIds.forEach(disposeSession)
     set((state) => {
       const statuses = { ...state.statuses }
+      const terminalDirectories = { ...state.terminalDirectories }
       const exits = { ...state.exits }
       const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
       const opencodeTuiInstances = { ...state.opencodeTuiInstances }
       childIds.forEach((sessionId) => {
-        delete statuses[sessionId]
-        delete exits[sessionId]
+        Object.keys(statuses).filter((id) => belongsToSession(id, sessionId)).forEach((id) => delete statuses[id])
+        Object.keys(terminalDirectories).filter((id) => belongsToSession(id, sessionId)).forEach((id) => delete terminalDirectories[id])
+        Object.keys(exits).filter((id) => belongsToSession(id, sessionId)).forEach((id) => delete exits[id])
         delete opencodeTuiStatuses[sessionId]
         delete opencodeTuiInstances[sessionId]
       })
@@ -180,6 +192,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
             ? null
             : state.selectedSessionId,
         statuses,
+        terminalDirectories,
         exits,
         opencodeTuiStatuses,
         opencodeTuiInstances
@@ -198,6 +211,41 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     if (!session) return null
     set((state) => ({ sessions: [...state.sessions, session], selectedSessionId: session.id }))
     return session
+  },
+
+  addTab: async (sessionId) => {
+    const updated = await window.api.tabs.create({ sessionId })
+    if (!updated) return null
+    set((state) => ({ sessions: state.sessions.map((session) => session.id === updated.id ? updated : session) }))
+    return updated
+  },
+
+  selectTab: async (sessionId, tabId) => {
+    const updated = await window.api.tabs.select({ sessionId, tabId })
+    if (!updated) return null
+    set((state) => ({ sessions: state.sessions.map((session) => session.id === updated.id ? updated : session) }))
+    return updated
+  },
+
+  renameTab: async (sessionId, tabId, name) => {
+    const updated = await window.api.tabs.update({ sessionId, tabId, patch: { name } })
+    if (!updated) return null
+    set((state) => ({ sessions: state.sessions.map((session) => session.id === updated.id ? updated : session) }))
+    return updated
+  },
+
+  updateTabLayout: async (sessionId, tabId, layout) => {
+    const updated = await window.api.tabs.update({ sessionId, tabId, patch: { layout } })
+    if (!updated) return null
+    set((state) => ({ sessions: state.sessions.map((session) => session.id === updated.id ? updated : session) }))
+    return updated
+  },
+
+  removeTab: async (sessionId, tabId) => {
+    const updated = await window.api.tabs.remove({ sessionId, tabId })
+    if (!updated) return null
+    set((state) => ({ sessions: state.sessions.map((session) => session.id === updated.id ? updated : session) }))
+    return updated
   },
 
   renameSession: async (id, name) => {
@@ -235,17 +283,20 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     disposeSession(id)
     set((state) => {
       const statuses = { ...state.statuses }
+      const terminalDirectories = { ...state.terminalDirectories }
       const exits = { ...state.exits }
       const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
       const opencodeTuiInstances = { ...state.opencodeTuiInstances }
-      delete statuses[id]
-      delete exits[id]
+      Object.keys(statuses).filter((runtimeId) => belongsToSession(runtimeId, id)).forEach((runtimeId) => delete statuses[runtimeId])
+      Object.keys(terminalDirectories).filter((runtimeId) => belongsToSession(runtimeId, id)).forEach((runtimeId) => delete terminalDirectories[runtimeId])
+      Object.keys(exits).filter((runtimeId) => belongsToSession(runtimeId, id)).forEach((runtimeId) => delete exits[runtimeId])
       delete opencodeTuiStatuses[id]
       delete opencodeTuiInstances[id]
       return {
         sessions: state.sessions.filter((session) => session.id !== id),
         selectedSessionId: state.selectedSessionId === id ? null : state.selectedSessionId,
         statuses,
+        terminalDirectories,
         exits,
         opencodeTuiStatuses,
         opencodeTuiInstances
@@ -274,12 +325,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   noteExit: (info) =>
     set((state) => {
-      // Split-created PTYs share a workspace session as their launch source,
-      // but must not mark that session's primary shell as exited.
-      if (info.terminalId !== info.sessionId) return state
       return {
-        statuses: { ...state.statuses, [info.sessionId]: 'exited' },
-        exits: { ...state.exits, [info.sessionId]: info }
+        statuses: { ...state.statuses, [info.terminalId]: 'exited' },
+        exits: { ...state.exits, [info.terminalId]: info }
       }
     }),
 

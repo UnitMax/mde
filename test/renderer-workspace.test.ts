@@ -30,6 +30,12 @@ describe('renderer workspace event bridge', () => {
       })),
       reorder: vi.fn()
     },
+    tabs: {
+      create: vi.fn(),
+      select: vi.fn(),
+      update: vi.fn(),
+      remove: vi.fn()
+    },
     pty: {
       statuses: vi.fn(async () => ({})),
       directories: vi.fn(async () => ({})),
@@ -105,12 +111,16 @@ describe('renderer workspace event bridge', () => {
     api.sessions.duplicate.mockReset()
     api.sessions.update.mockClear()
     api.sessions.reorder.mockReset()
+    api.tabs.create.mockReset()
+    api.tabs.select.mockReset()
+    api.tabs.update.mockReset()
+    api.tabs.remove.mockReset()
     api.opencodeTui.onStatus.mockClear()
     api.opencodeTui.onInstances.mockClear()
     api.opencodeTui.setInstanceLabelMode.mockClear()
   })
 
-  it('does not mark the source session exited when a split pane exits', () => {
+  it('tracks exits by runtime terminal ID, including split panes', () => {
     useWorkspace.setState({ statuses: {}, exits: {} })
 
     useWorkspace.getState().noteExit({
@@ -118,8 +128,8 @@ describe('renderer workspace event bridge', () => {
       terminalId: 'session-1:split:1',
       exitCode: 0
     })
-    expect(useWorkspace.getState().statuses).toEqual({})
-    expect(useWorkspace.getState().exits).toEqual({})
+    expect(useWorkspace.getState().statuses).toEqual({ 'session-1:split:1': 'exited' })
+    expect(useWorkspace.getState().exits['session-1:split:1']).toMatchObject({ exitCode: 0 })
 
     useWorkspace.getState().noteExit({ sessionId: 'session-1', terminalId: 'session-1', exitCode: 1 })
     expect(useWorkspace.getState().statuses['session-1']).toBe('exited')
@@ -262,6 +272,45 @@ describe('renderer workspace event bridge', () => {
     expect(result).toEqual(duplicate)
     expect(useWorkspace.getState().sessions).toEqual([source, duplicate])
     expect(useWorkspace.getState().selectedSessionId).toBe(duplicate.id)
+  })
+
+  it('creates and selects a tab returned by the main process', async () => {
+    const firstTab = {
+      id: 'tab-1',
+      name: 'Tab 1',
+      layout: {
+        layout: 'single' as const,
+        panes: [{ id: 'primary', primary: true }],
+        sizes: { columnRatio: 0.5, rowRatio: 0.5 }
+      }
+    }
+    const secondTab = { ...firstTab, id: 'tab-2', name: 'Tab 2' }
+    const session: Session = {
+      id: 'session-1',
+      projectId: 'project-1',
+      name: 'App',
+      kind: 'native',
+      path: '/workspace/app',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      tabs: [firstTab],
+      activeTabId: firstTab.id
+    }
+    const withSecondTab = { ...session, tabs: [firstTab, secondTab], activeTabId: secondTab.id }
+    useWorkspace.setState({ sessions: [session] })
+    api.tabs.create.mockResolvedValue(withSecondTab)
+
+    const created = await useWorkspace.getState().addTab(session.id)
+
+    expect(api.tabs.create).toHaveBeenCalledWith({ sessionId: session.id })
+    expect(created).toEqual(withSecondTab)
+    expect(useWorkspace.getState().sessions[0]).toEqual(withSecondTab)
+
+    const selected = { ...withSecondTab, activeTabId: firstTab.id }
+    api.tabs.select.mockResolvedValue(selected)
+    await useWorkspace.getState().selectTab(session.id, firstTab.id)
+
+    expect(api.tabs.select).toHaveBeenCalledWith({ sessionId: session.id, tabId: firstTab.id })
+    expect(useWorkspace.getState().sessions[0]?.activeTabId).toBe(firstTab.id)
   })
 
   it('persists and updates a session color', async () => {

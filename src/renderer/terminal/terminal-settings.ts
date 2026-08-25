@@ -6,6 +6,10 @@ export interface TerminalSettings {
   /** xterm line-height multiplier relative to the selected font size. */
   lineHeight: number
   theme: ApplicationThemeId
+  /** Whether individual non-OpenCode terminal panes appear in the sidebar. */
+  showTerminalInstances: boolean
+  /** Whether individual OpenCode instances appear in the sidebar. */
+  showOpenCodeInstances: boolean
 }
 
 export interface TerminalFontOption {
@@ -17,6 +21,7 @@ export const TERMINAL_FONT_SIZES = [11, 12, 13, 14, 16, 18] as const
 export const TERMINAL_LINE_HEIGHTS = [1, 1.1, 1.2, 1.3, 1.4, 1.5] as const
 export const TERMINAL_SETTINGS_STORAGE_KEY = 'mde.terminal-settings'
 export const LEGACY_TERMINAL_FONT_STORAGE_KEY = 'mde.terminal-font-settings'
+export const TERMINAL_SETTINGS_CHANGE_EVENT = 'mde:terminal-settings-changed'
 
 const CURATED_FONT_OPTIONS: readonly TerminalFontOption[] = [
   { family: 'Cascadia Mono', label: 'Cascadia Mono' },
@@ -49,7 +54,9 @@ export function defaultTerminalSettings(
     family: availableFonts[0]?.family ?? 'monospace',
     size: 13,
     lineHeight: 1,
-    theme: 'slate'
+    theme: 'slate',
+    showTerminalInstances: false,
+    showOpenCodeInstances: true
   }
 }
 
@@ -80,7 +87,15 @@ export function resolveTerminalSettings(
     family: availableFonts.some((option) => option.family === family) ? family : fallback.family,
     size,
     lineHeight,
-    theme
+    theme,
+    showTerminalInstances:
+      typeof record.showTerminalInstances === 'boolean'
+        ? record.showTerminalInstances
+        : fallback.showTerminalInstances,
+    showOpenCodeInstances:
+      typeof record.showOpenCodeInstances === 'boolean'
+        ? record.showOpenCodeInstances
+        : fallback.showOpenCodeInstances
   }
 }
 
@@ -104,6 +119,13 @@ export function saveTerminalSettings(settings: TerminalSettings): void {
   } catch {
     // A restricted storage environment should not prevent terminal use.
   }
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(TERMINAL_SETTINGS_CHANGE_EVENT))
+}
+
+export function subscribeTerminalSettings(listener: () => void): () => void {
+  if (typeof window === 'undefined') return () => undefined
+  window.addEventListener(TERMINAL_SETTINGS_CHANGE_EVENT, listener)
+  return () => window.removeEventListener(TERMINAL_SETTINGS_CHANGE_EVENT, listener)
 }
 
 export function xtermFontFamily(family: string): string {

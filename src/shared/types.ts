@@ -33,6 +33,31 @@ export interface Project {
   createdAt: string
 }
 
+export type TerminalLayout = 'single' | 'columns' | 'three' | 'quadrant'
+
+export interface TerminalLayoutSizes {
+  columnRatio: number
+  rowRatio: number
+}
+
+export interface PersistedTerminalPane {
+  /** Stable logical pane identity; runtime PTY IDs are derived from it. */
+  id: string
+  primary: boolean
+}
+
+export interface PersistedTerminalLayout {
+  layout: TerminalLayout
+  panes: PersistedTerminalPane[]
+  sizes: TerminalLayoutSizes
+}
+
+export interface SessionTab {
+  id: string
+  name: string
+  layout: PersistedTerminalLayout
+}
+
 export interface Session {
   id: string
   projectId: string
@@ -54,10 +79,14 @@ export interface Session {
   /** Optional shell override; default is resolved per platform. */
   shell?: string
   createdAt: string
+  /** Persisted terminal tabs; absent only for legacy/test-shaped session values. */
+  tabs?: SessionTab[]
+  /** The tab to restore when this session is selected. */
+  activeTabId?: string
 }
 
 export type NewProject = Omit<Project, 'id' | 'createdAt'>
-export type NewSession = Omit<Session, 'id' | 'createdAt' | 'color' | 'icon'>
+export type NewSession = Omit<Session, 'id' | 'createdAt' | 'color' | 'icon' | 'tabs' | 'activeTabId'>
 
 export interface Distro {
   name: string

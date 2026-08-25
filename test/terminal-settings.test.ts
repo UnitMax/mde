@@ -6,6 +6,7 @@ import {
   listTerminalFonts,
   resolveTerminalSettings,
   saveTerminalSettings,
+  subscribeTerminalSettings,
   TERMINAL_FONT_SIZES,
   TERMINAL_SETTINGS_STORAGE_KEY,
   TERMINAL_LINE_HEIGHTS,
@@ -46,14 +47,23 @@ describe('terminal settings', () => {
       family: 'JetBrains Mono',
       size: 13,
       lineHeight: 1,
-      theme: 'slate'
+      theme: 'slate',
+      showTerminalInstances: false,
+      showOpenCodeInstances: true
     })
   })
 
   it('rejects unavailable families, unsupported sizes, and unsupported line heights', () => {
     expect(
       resolveTerminalSettings({ family: 'Missing Font', size: 99, lineHeight: 2, theme: 'missing' }, available)
-    ).toEqual({ family: 'JetBrains Mono', size: 13, lineHeight: 1, theme: 'slate' })
+    ).toEqual({
+      family: 'JetBrains Mono',
+      size: 13,
+      lineHeight: 1,
+      theme: 'slate',
+      showTerminalInstances: false,
+      showOpenCodeInstances: true
+    })
     expect(
       resolveTerminalSettings(
         {
@@ -64,7 +74,20 @@ describe('terminal settings', () => {
         },
         available
       )
-    ).toEqual({ family: 'monospace', size: 14, lineHeight: 1.4, theme: 'frost' })
+    ).toEqual({
+      family: 'monospace',
+      size: 14,
+      lineHeight: 1.4,
+      theme: 'frost',
+      showTerminalInstances: false,
+      showOpenCodeInstances: true
+    })
+    expect(
+      resolveTerminalSettings(
+        { showTerminalInstances: 'yes', showOpenCodeInstances: null },
+        available
+      )
+    ).toMatchObject({ showTerminalInstances: false, showOpenCodeInstances: true })
   })
 
   it('loads legacy font settings and supplies the line-height default', () => {
@@ -75,17 +98,58 @@ describe('terminal settings', () => {
       })
     )
 
-    expect(getTerminalSettings()).toEqual({ family: 'monospace', size: 14, lineHeight: 1, theme: 'slate' })
+    expect(getTerminalSettings()).toEqual({
+      family: 'monospace',
+      size: 14,
+      lineHeight: 1,
+      theme: 'slate',
+      showTerminalInstances: false,
+      showOpenCodeInstances: true
+    })
   })
 
   it('saves complete settings under the new storage key', () => {
     const storage = createStorage()
     vi.stubGlobal('localStorage', storage)
-    const settings = { family: 'monospace', size: 14, lineHeight: 1.4, theme: 'ember' as const }
+    const settings = {
+      family: 'monospace',
+      size: 14,
+      lineHeight: 1.4,
+      theme: 'ember' as const,
+      showTerminalInstances: true,
+      showOpenCodeInstances: false
+    }
 
     saveTerminalSettings(settings)
 
     expect(storage.getItem(TERMINAL_SETTINGS_STORAGE_KEY)).toBe(JSON.stringify(settings))
+  })
+
+  it('notifies subscribers when settings are saved', () => {
+    const listeners = new Set<EventListenerOrEventListenerObject>()
+    const fakeWindow = {
+      addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => listeners.add(listener),
+      removeEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => listeners.delete(listener),
+      dispatchEvent: (event: Event) => {
+        listeners.forEach((listener) => {
+          if (typeof listener === 'function') listener(event)
+          else listener.handleEvent(event)
+        })
+        return true
+      }
+    }
+    vi.stubGlobal('window', fakeWindow)
+    vi.stubGlobal('localStorage', createStorage())
+    const listener = vi.fn()
+    const unsubscribe = subscribeTerminalSettings(listener)
+
+    saveTerminalSettings({
+      ...defaultTerminalSettings(available),
+      showTerminalInstances: true
+    })
+
+    expect(listener).toHaveBeenCalledTimes(1)
+    unsubscribe()
   })
 
   it('defines complete xterm palettes for every built-in theme', () => {

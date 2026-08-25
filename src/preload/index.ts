@@ -40,6 +40,12 @@ const api: RendererApi = {
     reorder: (req) => ipcRenderer.invoke(IpcChannels.sessionsReorder, req),
     remove: (id) => ipcRenderer.invoke(IpcChannels.sessionsRemove, id)
   },
+  tabs: {
+    create: (req) => ipcRenderer.invoke(IpcChannels.tabsCreate, req),
+    select: (req) => ipcRenderer.invoke(IpcChannels.tabsSelect, req),
+    update: (req) => ipcRenderer.invoke(IpcChannels.tabsUpdate, req),
+    remove: (req) => ipcRenderer.invoke(IpcChannels.tabsRemove, req)
+  },
   pty: {
     ensure: (req) => ipcRenderer.invoke(IpcChannels.ptyEnsure, req),
     write: (req) => ipcRenderer.invoke(IpcChannels.ptyWrite, req),

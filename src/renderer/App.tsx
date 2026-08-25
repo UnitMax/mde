@@ -11,7 +11,13 @@ import { isSessionSwitcherShortcut } from '@/lib/session-switcher'
 import { useWorkspace } from '@/store/workspace'
 import { disposeSession, getSession } from '@/terminal/sessions'
 import {
-  createSessionTerminalLayout,
+  activeSessionTab,
+  createRuntimeLayout,
+  persistRuntimeLayout,
+  sessionTabs,
+  terminalIdForPane
+} from '@/terminal/tabs'
+import {
   defaultTerminalLayoutSizes,
   layoutForCount,
   orderTerminalPanes,
@@ -20,6 +26,9 @@ import {
   type TerminalLayout,
   type TerminalResizeAxis
 } from '@/terminal/layout'
+import type { PersistedTerminalLayout, Session } from '@shared/types'
+
+type RuntimeLayouts = Record<string, Record<string, SessionTerminalLayout>>
 
 function EmptyState({ onNewSession }: { onNewSession: () => void }): JSX.Element {
   return (
@@ -45,25 +54,186 @@ export function App(): JSX.Element {
   const sessions = useWorkspace((state) => state.sessions)
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
   const selectSession = useWorkspace((state) => state.selectSession)
+  const addTabAction = useWorkspace((state) => state.addTab)
+  const selectTabAction = useWorkspace((state) => state.selectTab)
+  const renameTabAction = useWorkspace((state) => state.renameTab)
+  const updateTabLayoutAction = useWorkspace((state) => state.updateTabLayout)
+  const removeTabAction = useWorkspace((state) => state.removeTab)
   const [newSessionOpen, setNewSessionOpen] = useState(false)
   const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [gitSessionId, setGitSessionId] = useState<string | null>(null)
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false)
   const [defaultProjectId, setDefaultProjectId] = useState<string | undefined>(undefined)
-  const [terminalLayouts, setTerminalLayouts] = useState<Record<string, SessionTerminalLayout>>({})
+  const [terminalLayouts, setTerminalLayouts] = useState<RuntimeLayouts>({})
   const [pendingTerminalFocus, setPendingTerminalFocus] = useState<{
     sessionId: string
+    tabId: string
     terminalId: string
   } | null>(null)
-  const terminalIdCounter = useRef(0)
-  const terminalLayoutsRef = useRef(terminalLayouts)
+  const terminalPaneCounter = useRef(0)
+  const terminalFocusRequestId = useRef(0)
+  const terminalLayoutsRef = useRef<RuntimeLayouts>({})
+  const sessionsRef = useRef(sessions)
+  const pendingLayoutPersistence = useRef<Record<string, PersistedTerminalLayout>>({})
+  const layoutPersistenceTimers = useRef<Record<string, number>>({})
 
   useEffect(() => {
     terminalLayoutsRef.current = terminalLayouts
   }, [terminalLayouts])
 
   useEffect(() => {
-    if (!pendingTerminalFocus || selectedSessionId !== pendingTerminalFocus.sessionId) return
+    sessionsRef.current = sessions
+  }, [sessions])
+
+  useEffect(() => {
+    void init()
+  }, [init])
+
+  const flushLayoutPersistence = (key: string): void => {
+    const layout = pendingLayoutPersistence.current[key]
+    if (!layout) return
+    delete pendingLayoutPersistence.current[key]
+    const timer = layoutPersistenceTimers.current[key]
+    if (timer !== undefined) {
+      window.clearTimeout(timer)
+      delete layoutPersistenceTimers.current[key]
+    }
+    const separator = key.indexOf('|')
+    if (separator < 0) return
+    const sessionId = key.slice(0, separator)
+    const tabId = key.slice(separator + 1)
+    void updateTabLayoutAction(sessionId, tabId, layout)
+  }
+
+  const queueLayoutPersistence = (
+    sessionId: string,
+    tabId: string,
+    layout: SessionTerminalLayout,
+    immediate = false
+  ): void => {
+    const key = `${sessionId}|${tabId}`
+    pendingLayoutPersistence.current[key] = persistRuntimeLayout(layout)
+    if (immediate) {
+      flushLayoutPersistence(key)
+      return
+    }
+
+    const currentTimer = layoutPersistenceTimers.current[key]
+    if (currentTimer !== undefined) window.clearTimeout(currentTimer)
+    layoutPersistenceTimers.current[key] = window.setTimeout(() => {
+      flushLayoutPersistence(key)
+    }, 180)
+  }
+
+  useEffect(() => {
+    return () => {
+      Object.keys(pendingLayoutPersistence.current).forEach(flushLayoutPersistence)
+    }
+  }, [])
+
+  const disposeRuntimeTerminal = (terminalId: string): void => {
+    disposeSession(terminalId)
+    void window.api.pty.dispose(terminalId)
+  }
+
+  const setRuntimeLayout = (
+    sessionId: string,
+    tabId: string,
+    layout: SessionTerminalLayout
+  ): void => {
+    const next: RuntimeLayouts = {
+      ...terminalLayoutsRef.current,
+      [sessionId]: {
+        ...(terminalLayoutsRef.current[sessionId] ?? {}),
+        [tabId]: layout
+      }
+    }
+    terminalLayoutsRef.current = next
+    setTerminalLayouts(next)
+  }
+
+  const layoutForTab = (session: Session, tabId: string): SessionTerminalLayout => {
+    const tab = sessionTabs(session).find((candidate) => candidate.id === tabId) ?? activeSessionTab(session)
+    return terminalLayoutsRef.current[session.id]?.[tabId] ?? createRuntimeLayout(session.id, tab)
+  }
+
+  useEffect(() => {
+    const activeSessionIds = new Set(sessions.map((session) => session.id))
+    const next: RuntimeLayouts = {}
+
+    Object.entries(terminalLayoutsRef.current).forEach(([sessionId, layouts]) => {
+      if (activeSessionIds.has(sessionId)) return
+      Object.values(layouts).forEach((layout) => {
+        layout.panes.forEach((pane) => disposeRuntimeTerminal(pane.terminalId))
+      })
+    })
+
+    sessions.forEach((session) => {
+      const existing = terminalLayoutsRef.current[session.id] ?? {}
+      const validTabIds = new Set(sessionTabs(session).map((tab) => tab.id))
+      Object.entries(existing).forEach(([tabId, layout]) => {
+        if (!validTabIds.has(tabId)) {
+          layout.panes.forEach((pane) => disposeRuntimeTerminal(pane.terminalId))
+        }
+      })
+      next[session.id] = {}
+      sessionTabs(session).forEach((tab) => {
+        next[session.id]![tab.id] = existing[tab.id] ?? createRuntimeLayout(session.id, tab)
+      })
+    })
+
+    terminalLayoutsRef.current = next
+    setTerminalLayouts(next)
+  }, [sessions])
+
+  useEffect(() => {
+    const unsubscribe = window.api.pty.onExit((info) => {
+      const session = sessionsRef.current.find((candidate) => candidate.id === info.sessionId)
+      if (!session) return
+      const layouts = terminalLayoutsRef.current[session.id]
+      const tabId = Object.entries(layouts ?? {}).find(([, layout]) =>
+        layout.panes.some((pane) => pane.terminalId === info.terminalId)
+      )?.[0]
+      if (!tabId) return
+      const layout = layouts?.[tabId]
+      if (!layout) return
+      const pane = layout.panes.find((candidate) => candidate.terminalId === info.terminalId)
+      if (!pane) return
+
+      if (layout.panes.length === 1) {
+        setRuntimeLayout(session.id, tabId, {
+          ...layout,
+          panes: layout.panes.map((candidate) =>
+            candidate.terminalId === info.terminalId ? { ...candidate, exited: true } : candidate
+          )
+        })
+        return
+      }
+
+      disposeRuntimeTerminal(info.terminalId)
+      const panes = layout.panes.filter((candidate) => candidate.terminalId !== info.terminalId)
+      const next = {
+        layout: layoutForCount(panes.length),
+        panes,
+        sizes: defaultTerminalLayoutSizes()
+      }
+      setRuntimeLayout(session.id, tabId, next)
+      queueLayoutPersistence(session.id, tabId, next, true)
+    })
+    return unsubscribe
+  }, [])
+
+  useEffect(() => {
+    if (!pendingTerminalFocus) return
+    const selected = sessionsRef.current.find((session) => session.id === pendingTerminalFocus.sessionId)
+    if (
+      !selected ||
+      selectedSessionId !== pendingTerminalFocus.sessionId ||
+      activeSessionTab(selected).id !== pendingTerminalFocus.tabId
+    ) {
+      return
+    }
+
     let frame: number | undefined
     let attempts = 0
     const focus = (): void => {
@@ -74,18 +244,14 @@ export function App(): JSX.Element {
         return
       }
       attempts += 1
-      if (attempts < 5) frame = window.requestAnimationFrame(focus)
+      if (attempts < 8) frame = window.requestAnimationFrame(focus)
       else setPendingTerminalFocus(null)
     }
     frame = window.requestAnimationFrame(focus)
     return () => {
       if (frame !== undefined) window.cancelAnimationFrame(frame)
     }
-  }, [pendingTerminalFocus, selectedSessionId])
-
-  useEffect(() => {
-    void init()
-  }, [init])
+  }, [pendingTerminalFocus, selectedSessionId, sessions])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -107,50 +273,8 @@ export function App(): JSX.Element {
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [newProjectOpen, newSessionOpen, sessionSwitcherOpen])
 
-  useEffect(() => {
-    const unsubscribe = window.api.pty.onExit((info) => {
-      const layout = terminalLayoutsRef.current[info.sessionId]
-      const pane = layout?.panes.find((candidate) => candidate.terminalId === info.terminalId)
-      if (!layout || !pane) return
-
-      if (layout.panes.length === 1) {
-        setTerminalLayouts((current) => {
-          const existing = current[info.sessionId]
-          if (!existing) return current
-          return {
-            ...current,
-            [info.sessionId]: {
-              ...existing,
-              layout: 'single',
-              panes: existing.panes.map((candidate) =>
-                candidate.terminalId === info.terminalId ? { ...candidate, exited: true } : candidate
-              )
-            }
-          }
-        })
-        return
-      }
-
-      disposeSession(info.terminalId)
-      void window.api.pty.dispose(info.terminalId)
-      setTerminalLayouts((current) => {
-        const existing = current[info.sessionId]
-        if (!existing) return current
-        const panes = existing.panes.filter((candidate) => candidate.terminalId !== info.terminalId)
-        return {
-          ...current,
-          [info.sessionId]: {
-            layout: layoutForCount(panes.length),
-            panes,
-            sizes: defaultTerminalLayoutSizes()
-          }
-        }
-      })
-    })
-    return unsubscribe
-  }, [])
-
   const selected = sessions.find((session) => session.id === selectedSessionId) ?? null
+  const activeTab = selected ? activeSessionTab(selected) : null
   const gitSession = sessions.find((session) => session.id === gitSessionId) ?? null
 
   const openNewSession = (projectId?: string): void => {
@@ -158,162 +282,212 @@ export function App(): JSX.Element {
     setNewSessionOpen(true)
   }
 
-  const focusTerminal = (sessionId: string, terminalId: string): void => {
+  const cancelTerminalFocus = (): void => {
+    terminalFocusRequestId.current += 1
+    setPendingTerminalFocus(null)
+  }
+
+  const focusTerminal = (sessionId: string, tabId: string, terminalId: string): void => {
+    terminalFocusRequestId.current += 1
     selectSession(sessionId)
-    setPendingTerminalFocus({ sessionId, terminalId })
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (session && activeSessionTab(session).id !== tabId) void selectTabAction(sessionId, tabId)
+    setPendingTerminalFocus({ sessionId, tabId, terminalId })
   }
 
-  const disposeRuntimeTerminal = (terminalId: string): void => {
-    disposeSession(terminalId)
-    void window.api.pty.dispose(terminalId)
-  }
-
-  useEffect(() => {
-    const activeSessionIds = new Set(sessions.map((session) => session.id))
-    const removedLayouts = Object.entries(terminalLayoutsRef.current).filter(
-      ([sessionId]) => !activeSessionIds.has(sessionId)
-    )
-    if (removedLayouts.length === 0) return
-
-    removedLayouts.forEach(([, layout]) => {
-      layout.panes.forEach((pane) => disposeRuntimeTerminal(pane.terminalId))
-    })
-    setTerminalLayouts((current) => {
-      const next = { ...current }
-      removedLayouts.forEach(([sessionId]) => delete next[sessionId])
-      return next
-    })
-  }, [sessions])
-
-  const changeTerminalLayout = (sessionId: string, layout: TerminalLayout): void => {
-    setTerminalLayouts((current) => {
-      const existing = current[sessionId] ?? createSessionTerminalLayout(sessionId)
-      const targetCount = terminalCount(layout)
-      if (targetCount <= existing.panes.length) {
-        if (targetCount === existing.panes.length) {
-          return {
-            ...current,
-            [sessionId]: { ...existing, layout, sizes: defaultTerminalLayoutSizes() }
-          }
-        }
-        return current
-      }
-
-      const panes = [...existing.panes]
-      while (panes.length < targetCount) {
-        terminalIdCounter.current += 1
-        panes.push({
-          terminalId: `${sessionId}:split:${terminalIdCounter.current}`,
-          primary: false
+  const selectTab = (sessionId: string, tabId: string): void => {
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (!session || !sessionTabs(session).some((tab) => tab.id === tabId)) return
+    const focusRequestId = ++terminalFocusRequestId.current
+    void selectTabAction(sessionId, tabId).then((updated) => {
+      if (!updated || terminalFocusRequestId.current !== focusRequestId) return
+      const tab = activeSessionTab(updated)
+      const primary = tab.layout.panes.find((pane) => pane.primary) ?? tab.layout.panes[0]
+      if (primary) {
+        setPendingTerminalFocus({
+          sessionId,
+          tabId: tab.id,
+          terminalId: terminalIdForPane(sessionId, tab.id, primary.id)
         })
       }
-      return {
-        ...current,
-        [sessionId]: { layout, panes, sizes: defaultTerminalLayoutSizes() }
+    })
+  }
+
+  const addTab = (sessionId: string): void => {
+    const focusRequestId = ++terminalFocusRequestId.current
+    void addTabAction(sessionId).then((updated) => {
+      if (!updated || terminalFocusRequestId.current !== focusRequestId) return
+      const tab = activeSessionTab(updated)
+      const primary = tab.layout.panes.find((pane) => pane.primary) ?? tab.layout.panes[0]
+      if (primary) {
+        setPendingTerminalFocus({
+          sessionId,
+          tabId: tab.id,
+          terminalId: terminalIdForPane(sessionId, tab.id, primary.id)
+        })
       }
     })
+  }
+
+  const renameTab = (sessionId: string, tabId: string, name: string): void => {
+    void renameTabAction(sessionId, tabId, name)
+  }
+
+  const closeTab = (sessionId: string, tabId: string): void => {
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (!session || sessionTabs(session).length <= 1) return
+    const focusRequestId = ++terminalFocusRequestId.current
+    void removeTabAction(sessionId, tabId).then((updated) => {
+      if (!updated) return
+      terminalLayoutsRef.current[sessionId]?.[tabId]?.panes.forEach((pane) => {
+        disposeRuntimeTerminal(pane.terminalId)
+      })
+      if (
+        updated.id === selectedSessionId &&
+        terminalFocusRequestId.current === focusRequestId
+      ) {
+        const tab = activeSessionTab(updated)
+        const primary = tab.layout.panes.find((pane) => pane.primary) ?? tab.layout.panes[0]
+        if (primary) {
+          setPendingTerminalFocus({
+            sessionId,
+            tabId: tab.id,
+            terminalId: terminalIdForPane(sessionId, tab.id, primary.id)
+          })
+        }
+      }
+    })
+  }
+
+  const changeTerminalLayout = (sessionId: string, tabId: string, layout: TerminalLayout): void => {
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (!session) return
+    const existing = layoutForTab(session, tabId)
+    const targetCount = terminalCount(layout)
+    if (targetCount <= existing.panes.length) {
+      if (targetCount === existing.panes.length) {
+        const next = { ...existing, layout, sizes: defaultTerminalLayoutSizes() }
+        setRuntimeLayout(sessionId, tabId, next)
+        queueLayoutPersistence(sessionId, tabId, next, true)
+      }
+      return
+    }
+
+    const panes = [...existing.panes]
+    while (panes.length < targetCount) {
+      terminalPaneCounter.current += 1
+      const paneId = `pane-${terminalPaneCounter.current}`
+      panes.push({
+        terminalId: terminalIdForPane(sessionId, tabId, paneId),
+        paneId,
+        primary: false
+      })
+    }
+    const next = { layout, panes, sizes: defaultTerminalLayoutSizes() }
+    setRuntimeLayout(sessionId, tabId, next)
+    queueLayoutPersistence(sessionId, tabId, next, true)
   }
 
   const reduceTerminalLayout = (
     sessionId: string,
+    tabId: string,
     layout: TerminalLayout,
     paneIds: string[]
   ): void => {
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (!session) return
+    const existing = layoutForTab(session, tabId)
     paneIds.forEach(disposeRuntimeTerminal)
-    setTerminalLayouts((current) => {
-      const existing = current[sessionId] ?? createSessionTerminalLayout(sessionId)
-      const panes = existing.panes.filter((pane) => !paneIds.includes(pane.terminalId))
-      return {
-        ...current,
-        [sessionId]: { layout, panes, sizes: defaultTerminalLayoutSizes() }
-      }
-    })
+    const next = {
+      layout,
+      panes: existing.panes.filter((pane) => !paneIds.includes(pane.terminalId)),
+      sizes: defaultTerminalLayoutSizes()
+    }
+    setRuntimeLayout(sessionId, tabId, next)
+    queueLayoutPersistence(sessionId, tabId, next, true)
   }
 
-  const closeTerminalPane = (sessionId: string, terminalId: string): void => {
-    const existing = terminalLayoutsRef.current[sessionId]
-    if (!existing) return
+  const closeTerminalPane = (sessionId: string, tabId: string, terminalId: string): void => {
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (!session) return
+    const existing = layoutForTab(session, tabId)
     const pane = existing.panes.find((candidate) => candidate.terminalId === terminalId)
     if (!pane || pane.primary || existing.panes.length <= 1) return
     disposeRuntimeTerminal(terminalId)
-    setTerminalLayouts((current) => {
-      const layout = current[sessionId]
-      if (!layout) return current
-      const panes = layout.panes.filter((candidate) => candidate.terminalId !== terminalId)
-      return {
-        ...current,
-        [sessionId]: {
-          layout: layoutForCount(panes.length),
-          panes,
-          sizes: defaultTerminalLayoutSizes()
-        }
-      }
-    })
+    const panes = existing.panes.filter((candidate) => candidate.terminalId !== terminalId)
+    const next = {
+      layout: layoutForCount(panes.length),
+      panes,
+      sizes: defaultTerminalLayoutSizes()
+    }
+    setRuntimeLayout(sessionId, tabId, next)
+    queueLayoutPersistence(sessionId, tabId, next, true)
   }
 
   const resizeTerminalLayout = (
     sessionId: string,
+    tabId: string,
     axis: TerminalResizeAxis,
     ratio: number
   ): void => {
-    setTerminalLayouts((current) => {
-      const existing = current[sessionId]
-      if (!existing) return current
-      const sizes = axis === 'column'
-        ? { ...existing.sizes, columnRatio: ratio }
-        : { ...existing.sizes, rowRatio: ratio }
-      return { ...current, [sessionId]: { ...existing, sizes } }
-    })
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (!session) return
+    const existing = layoutForTab(session, tabId)
+    const sizes = axis === 'column'
+      ? { ...existing.sizes, columnRatio: ratio }
+      : { ...existing.sizes, rowRatio: ratio }
+    const next = { ...existing, sizes }
+    setRuntimeLayout(sessionId, tabId, next)
+    queueLayoutPersistence(sessionId, tabId, next)
   }
 
-  const reorderTerminalPanes = (sessionId: string, terminalIds: readonly string[]): void => {
-    setTerminalLayouts((current) => {
-      const existing = current[sessionId]
-      if (!existing) return current
-
-      const panes = orderTerminalPanes(existing.panes, terminalIds)
-      if (!panes) return current
-
-      return { ...current, [sessionId]: { ...existing, panes } }
-    })
+  const reorderTerminalPanes = (sessionId: string, tabId: string, terminalIds: readonly string[]): void => {
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (!session) return
+    const existing = layoutForTab(session, tabId)
+    const panes = orderTerminalPanes(existing.panes, terminalIds)
+    if (!panes) return
+    const next = { ...existing, panes }
+    setRuntimeLayout(sessionId, tabId, next)
+    queueLayoutPersistence(sessionId, tabId, next, true)
   }
 
-  const restartPrimary = (sessionId: string): void => {
-    const existing = terminalLayoutsRef.current[sessionId] ?? createSessionTerminalLayout(sessionId)
+  const restartPrimary = (sessionId: string, tabId: string): void => {
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (!session) return
+    const existing = layoutForTab(session, tabId)
     const primary = existing.panes.find((pane) => pane.primary)
     if (primary) {
-      setTerminalLayouts((current) => {
-        const layout = current[sessionId] ?? existing
-        return {
-          ...current,
-          [sessionId]: {
-            ...layout,
-            panes: layout.panes.map((pane) =>
-              pane.primary ? { ...pane, exited: false } : pane
-            )
-          }
-        }
-      })
+      const next = {
+        ...existing,
+        panes: existing.panes.map((pane) => pane.primary ? { ...pane, exited: false } : pane)
+      }
+      setRuntimeLayout(sessionId, tabId, next)
       return
     }
 
     const removable = [...existing.panes].reverse().find((pane) => !pane.primary)
     if (existing.panes.length >= 4 && removable) disposeRuntimeTerminal(removable.terminalId)
     const panes = existing.panes.filter((pane) => pane.terminalId !== removable?.terminalId)
-    panes.push({ terminalId: sessionId, primary: true })
-    setTerminalLayouts((current) => ({
-      ...current,
-      [sessionId]: {
-        layout: layoutForCount(panes.length),
-        panes,
-        sizes: defaultTerminalLayoutSizes()
-      }
-    }))
+    const paneId = 'primary'
+    panes.push({
+      terminalId: terminalIdForPane(sessionId, tabId, paneId),
+      paneId,
+      primary: true
+    })
+    const next = {
+      layout: layoutForCount(panes.length),
+      panes,
+      sizes: defaultTerminalLayoutSizes()
+    }
+    setRuntimeLayout(sessionId, tabId, next)
+    queueLayoutPersistence(sessionId, tabId, next, true)
   }
 
-  const layoutForSession = selected
-    ? terminalLayouts[selected.id] ?? createSessionTerminalLayout(selected.id)
+  const layoutForSession = selected && activeTab
+    ? layoutForTab(selected, activeTab.id)
     : undefined
+  const terminalLayoutsForSidebar = terminalLayouts
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-bg">
@@ -321,24 +495,28 @@ export function App(): JSX.Element {
         onNewProject={() => setNewProjectOpen(true)}
         onNewSession={openNewSession}
         onOpenGit={setGitSessionId}
-        terminalLayouts={terminalLayouts}
+        terminalLayouts={terminalLayoutsForSidebar}
         onFocusTerminal={focusTerminal}
       />
 
       <main className="h-full min-w-0 flex-1">
-        {!ready ? null : selected ? (
-          // Keyed so switching sessions mounts a fresh view; the xterm instance
-          // behind it is kept alive by the session registry, not by React.
+        {!ready ? null : selected && activeTab && layoutForSession ? (
           <TerminalView
             key={selected.id}
             session={selected}
-            terminalLayout={layoutForSession!}
-            onLayoutChange={(layout) => changeTerminalLayout(selected.id, layout)}
-            onLayoutResize={(axis, ratio) => resizeTerminalLayout(selected.id, axis, ratio)}
-            onPaneOrderChange={(terminalIds) => reorderTerminalPanes(selected.id, terminalIds)}
-            onReduceLayout={(layout, paneIds) => reduceTerminalLayout(selected.id, layout, paneIds)}
-            onClosePane={(terminalId) => closeTerminalPane(selected.id, terminalId)}
-            onRestartPrimary={() => restartPrimary(selected.id)}
+            activeTab={activeTab}
+            terminalLayout={layoutForSession}
+            onSelectTab={(tabId) => selectTab(selected.id, tabId)}
+            onAddTab={() => addTab(selected.id)}
+            onTabRenameStart={cancelTerminalFocus}
+            onRenameTab={(tabId, name) => renameTab(selected.id, tabId, name)}
+            onCloseTab={(tabId) => closeTab(selected.id, tabId)}
+            onLayoutChange={(layout) => changeTerminalLayout(selected.id, activeTab.id, layout)}
+            onLayoutResize={(axis, ratio) => resizeTerminalLayout(selected.id, activeTab.id, axis, ratio)}
+            onPaneOrderChange={(terminalIds) => reorderTerminalPanes(selected.id, activeTab.id, terminalIds)}
+            onReduceLayout={(layout, paneIds) => reduceTerminalLayout(selected.id, activeTab.id, layout, paneIds)}
+            onClosePane={(terminalId) => closeTerminalPane(selected.id, activeTab.id, terminalId)}
+            onRestartPrimary={() => restartPrimary(selected.id, activeTab.id)}
           />
         ) : (
           <EmptyState onNewSession={() => openNewSession()} />

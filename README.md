@@ -80,16 +80,21 @@ src/
 ### Projects and terminal sessions
 
 Projects are label-only groups. Sessions own the name, path, platform, distro and optional shell
-override. `src/renderer/terminal/sessions.ts` keeps one `xterm` instance per session id in a
-plain Map, outside React. Selecting a different session re-parents that terminal's container
-element rather than disposing it, so the process, its scrollback and its cursor position all
-survive. The PTY itself lives in the main process and is never touched by a session switch —
-only by removing the session/project, restarting explicitly, or quitting.
+override. Each session persists an ordered set of terminal tabs. Every tab owns an independent
+one-to-four-pane layout, and new tabs start with one fresh terminal. The renderer keeps one
+`xterm` instance per runtime terminal identity in a plain Map outside React. Switching sessions
+or tabs re-parents terminal containers rather than disposing them, so each process, its scrollback
+and its cursor position survive. Unvisited persisted tabs create their PTYs lazily; the PTYs
+themselves do not survive application restart.
 
 The workspace is stored as `workspace.json` with separate `projects` and `sessions` arrays. Session
-array order is the persistent sidebar order within each project. This early POC intentionally
-starts with an empty workspace if only the previous flat project store is present; no migration is
-attempted.
+array order is the persistent sidebar order within each project; tab names, order, active tab, pane
+order, layouts and resize ratios are stored inside each session. Legacy sessions without tab data
+are normalized to a single `Tab 1` on load.
+
+The Settings dialog's Sidebar section controls the individual entries shown beneath each session.
+Ordinary terminal instances are hidden by default, while OpenCode instances are shown by default;
+these visibility preferences are global and stored with the local terminal settings.
 
 Terminal clipboard shortcuts use the host Windows clipboard, including for WSL sessions. `Ctrl+C`
 copies selected terminal text and remains the normal interrupt when there is no selection;
@@ -120,7 +125,8 @@ is enabled.
   writes only a short runtime snapshot under `/tmp`, and does not modify project files or
   OpenCode configuration. MDE reads that snapshot through the distro's `\\wsl.localhost\\...`
   path and falls back to normal shell status when it is absent. Each terminal pane with a live
-  OpenCode TUI appears in a collapsible sidebar list beneath its MDE session. Instance labels can
+  OpenCode TUI appears in the OpenCode instance list beneath its MDE session when that sidebar
+  preference is enabled. Instance labels can
   use privacy-safe numbering or the current top-level OpenCode session title; prompts, messages,
   tool data, credentials, and filesystem contents are never included in the snapshot.
 - OpenCode TUI token-rate display is a separate plugin from status reporting. On Linux it can be

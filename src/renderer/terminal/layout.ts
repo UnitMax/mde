@@ -1,4 +1,6 @@
-export type TerminalLayout = 'single' | 'columns' | 'three' | 'quadrant'
+import type { TerminalLayout, TerminalLayoutSizes } from '@shared/types'
+
+export type { TerminalLayout, TerminalLayoutSizes } from '@shared/types'
 
 export type TerminalResizeAxis = 'column' | 'row'
 
@@ -7,13 +9,9 @@ export type TerminalResizeScope = 'full' | 'top'
 export interface TerminalPaneState {
   terminalId: string
   primary: boolean
+  /** Stable persisted pane key when the layout belongs to a session tab. */
+  paneId?: string
   exited?: boolean
-}
-
-/** Ratios describe the first track on each axis; the second track gets the remainder. */
-export interface TerminalLayoutSizes {
-  columnRatio: number
-  rowRatio: number
 }
 
 export interface SessionTerminalLayout {

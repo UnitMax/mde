@@ -10,6 +10,7 @@ import type {
   Project,
   ProjectKind,
   Session,
+  SessionTab,
   OpenCodeTuiSetEnabledRequest,
   OpenCodeTuiSetInstanceLabelModeRequest,
   OpenCodeTuiSettings,
@@ -49,6 +50,11 @@ export const IpcChannels = {
   sessionsMove: 'sessions:move',
   sessionsReorder: 'sessions:reorder',
   sessionsRemove: 'sessions:remove',
+
+  tabsCreate: 'tabs:create',
+  tabsSelect: 'tabs:select',
+  tabsUpdate: 'tabs:update',
+  tabsRemove: 'tabs:remove',
 
   ptyEnsure: 'pty:ensure',
   ptyWrite: 'pty:write',
@@ -186,6 +192,26 @@ export interface ReorderSessionRequest {
   beforeId: string | null
 }
 
+export interface CreateSessionTabRequest {
+  sessionId: string
+}
+
+export interface SelectSessionTabRequest {
+  sessionId: string
+  tabId: string
+}
+
+export interface UpdateSessionTabRequest {
+  sessionId: string
+  tabId: string
+  patch: Partial<Pick<SessionTab, 'name' | 'layout'>>
+}
+
+export interface RemoveSessionTabRequest {
+  sessionId: string
+  tabId: string
+}
+
 /**
  * The complete surface exposed over `contextBridge`. Implemented in preload,
  * consumed in the renderer, and mirrored by the main-process handlers.
@@ -215,6 +241,12 @@ export interface RendererApi {
     move(req: MoveSessionRequest): Promise<Session | null>
     reorder(req: ReorderSessionRequest): Promise<Session[] | null>
     remove(id: string): Promise<void>
+  }
+  tabs: {
+    create(req: CreateSessionTabRequest): Promise<Session | null>
+    select(req: SelectSessionTabRequest): Promise<Session | null>
+    update(req: UpdateSessionTabRequest): Promise<Session | null>
+    remove(req: RemoveSessionTabRequest): Promise<Session | null>
   }
   pty: {
     ensure(req: EnsurePtyRequest): Promise<PtyStatus>
