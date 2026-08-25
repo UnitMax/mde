@@ -31,7 +31,7 @@ profile paths. A nonzero exit code means the artifacts must not be published.
 
 ## Verify Windows behavior
 
-Run `C:\dev\mde-winbuild\dist\mde-<version>-portable.exe` on Windows. Open both
+Run `<build-directory>\dist\mde-<version>-portable.exe` on Windows. Open both
 a PowerShell and WSL terminal, type a command, resize the window, and close each
 terminal. This exercises the unpacked `node-pty` native module and bundled
 ConPTY files.
@@ -39,7 +39,7 @@ ConPTY files.
 Optionally verify the executable's signature in PowerShell:
 
 ```powershell
-Get-AuthenticodeSignature C:\dev\mde-winbuild\dist\mde-<version>-portable.exe
+Get-AuthenticodeSignature '<build-directory>\dist\mde-<version>-portable.exe'
 ```
 
 Unsigned builds work but commonly trigger Microsoft Defender SmartScreen.
