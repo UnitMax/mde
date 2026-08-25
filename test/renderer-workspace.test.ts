@@ -126,6 +126,18 @@ describe('renderer workspace event bridge', () => {
     expect(useWorkspace.getState().exits['session-1']).toMatchObject({ exitCode: 1 })
   })
 
+  it('keeps split terminal statuses addressable by runtime terminal ID', () => {
+    useWorkspace.setState({ statuses: {} })
+
+    useWorkspace.getState().setStatus('session-1', 'running')
+    useWorkspace.getState().setStatus('session-1:split:1', 'running')
+
+    expect(useWorkspace.getState().statuses).toEqual({
+      'session-1': 'running',
+      'session-1:split:1': 'running'
+    })
+  })
+
   it('tracks TUI completion as unread until the session is selected', () => {
     useWorkspace.setState({ selectedSessionId: 'other-session', opencodeTuiStatuses: {} })
 

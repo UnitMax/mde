@@ -136,7 +136,7 @@ function TerminalSurface({ session: sourceSession, pane }: TerminalSurfaceProps)
           palette: getTerminalPalette(terminal.themeId)
         }).then((status) => {
           if (cancelled) return
-          if (pane.primary) setStatus(sourceSession.id, status)
+          setStatus(pane.terminalId, status)
           terminal.term.focus()
         }).catch((error: unknown) => {
           console.warn('[terminal] PTY ensure failed:', error)
@@ -211,7 +211,7 @@ function TerminalPane({
       size,
       palette: getTerminalPalette(terminal?.themeId ?? getTerminalSettings().theme)
     })
-    if (pane.primary) setStatus(session.id, status)
+    setStatus(pane.terminalId, status)
   }
 
   const borderClass = reorderState === 'active'

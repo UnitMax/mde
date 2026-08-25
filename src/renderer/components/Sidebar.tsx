@@ -75,6 +75,11 @@ import {
   openCodeTuiInstanceLabel,
   orderOpenCodeTuiInstances
 } from '@/lib/opencode-tui-instances'
+import {
+  terminalDirectoryLabel,
+  terminalPaneLabel,
+  terminalPanesForSidebar
+} from '@/lib/terminal-instances'
 
 const STATUS_STYLE: Record<PtyStatus, { dot: string; label: string }> = {
   none: { dot: 'bg-fg-subtle', label: 'No shell running' },
@@ -280,9 +285,82 @@ function OpenCodeInstances({
   )
 }
 
+function TerminalInstances({
+  layout,
+  statuses,
+  directories,
+  openCodeTerminalIds,
+  onFocus
+}: {
+  layout?: SessionTerminalLayout
+  statuses: Record<string, PtyStatus>
+  directories: Record<string, string>
+  openCodeTerminalIds: ReadonlySet<string>
+  onFocus: (terminalId: string) => void
+}): JSX.Element | null {
+  const [expanded, setExpanded] = useState(true)
+  if (!layout || layout.panes.length <= 1) return null
+
+  const panes = terminalPanesForSidebar(layout, openCodeTerminalIds)
+  if (panes.length === 0) return null
+
+  const summary = `${panes.length} terminal${panes.length === 1 ? '' : 's'}`
+
+  return (
+    <div className="mb-0.5 ml-10 mr-2 mt-0.5" data-testid="terminal-instances">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((value) => !value)}
+        className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-left text-[11px] text-fg-subtle hover:bg-hover hover:text-fg-muted"
+      >
+        {expanded ? (
+          <ChevronDown className="h-3 w-3 shrink-0" />
+        ) : (
+          <ChevronRight className="h-3 w-3 shrink-0" />
+        )}
+        <span>{summary}</span>
+      </button>
+      {expanded && (
+        <div className="mt-0.5 space-y-0.5">
+          {panes.map((pane) => {
+            const status = statuses[pane.terminalId] ?? (pane.exited ? 'exited' : 'none')
+            const indicator: SessionIndicator = { status, ...STATUS_STYLE[status] }
+            const label = terminalPaneLabel(pane, layout)
+            const directory = directories[pane.terminalId]
+            const directoryLabel = terminalDirectoryLabel(directory)
+            return (
+              <button
+                key={pane.terminalId}
+                type="button"
+                title={`${label} · ${directory ?? 'Directory unavailable'} · ${indicator.label}`}
+                onClick={() => onFocus(pane.terminalId)}
+                className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[12px] text-fg-muted hover:bg-hover hover:text-fg"
+              >
+                <StatusDot indicator={indicator} testId="terminal-instance-status" />
+                <span className="min-w-0 flex-1 truncate">{label}</span>
+                {directoryLabel && (
+                  <span
+                    className="min-w-0 max-w-[45%] shrink text-[10px] text-fg-subtle"
+                    title={directory}
+                  >
+                    {directoryLabel}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 interface SessionRowProps {
   session: Session
   status: PtyStatus
+  terminalStatuses: Record<string, PtyStatus>
+  terminalDirectories: Record<string, string>
   tuiStatus?: OpenCodeTuiStatusState
   tuiInstances?: OpenCodeTuiInstanceStatus[]
   terminalLayout?: SessionTerminalLayout
@@ -303,6 +381,8 @@ interface SessionRowProps {
 function SessionRow({
   session,
   status,
+  terminalStatuses,
+  terminalDirectories,
   tuiStatus,
   tuiInstances = [],
   terminalLayout,
@@ -562,6 +642,14 @@ function SessionRow({
         onFocus={onFocusTerminal}
       />
 
+      <TerminalInstances
+        layout={terminalLayout}
+        statuses={terminalStatuses}
+        directories={terminalDirectories}
+        openCodeTerminalIds={new Set(tuiInstances.map((instance) => instance.terminalId))}
+        onFocus={onFocusTerminal}
+      />
+
       <Dialog open={moving} onOpenChange={setMoving}>
         <DialogContent>
           <DialogHeader>
@@ -622,6 +710,7 @@ interface ProjectGroupProps {
   project: Project
   sessions: Session[]
   statuses: Record<string, PtyStatus>
+  terminalDirectories: Record<string, string>
   opencodeTuiStatuses: Record<string, OpenCodeTuiStatusState>
   opencodeTuiInstances: Record<string, OpenCodeTuiInstanceStatus[]>
   terminalLayouts: Record<string, SessionTerminalLayout>
@@ -637,6 +726,7 @@ function ProjectGroup({
   project,
   sessions,
   statuses,
+  terminalDirectories,
   opencodeTuiStatuses,
   opencodeTuiInstances,
   terminalLayouts,
@@ -822,6 +912,8 @@ function ProjectGroup({
             key={session.id}
             session={session}
             status={statuses[session.id] ?? 'none'}
+            terminalStatuses={statuses}
+            terminalDirectories={terminalDirectories}
             tuiStatus={opencodeTuiStatuses[session.id]}
             tuiInstances={opencodeTuiInstances[session.id]}
             terminalLayout={terminalLayouts[session.id]}
@@ -879,6 +971,7 @@ export function Sidebar({
   const projects = useWorkspace((state) => state.projects)
   const sessions = useWorkspace((state) => state.sessions)
   const statuses = useWorkspace((state) => state.statuses)
+  const terminalDirectories = useWorkspace((state) => state.terminalDirectories)
   const opencodeTuiStatuses = useWorkspace((state) => state.opencodeTuiStatuses)
   const opencodeTuiInstances = useWorkspace((state) => state.opencodeTuiInstances)
   const instanceLabelMode = useWorkspace((state) => state.opencodeTuiInstanceLabelMode)
@@ -1042,6 +1135,7 @@ export function Sidebar({
               project={project}
               sessions={sessions.filter((session) => session.projectId === project.id)}
               statuses={statuses}
+              terminalDirectories={terminalDirectories}
               opencodeTuiStatuses={opencodeTuiStatuses}
               opencodeTuiInstances={opencodeTuiInstances}
               terminalLayouts={terminalLayouts}
