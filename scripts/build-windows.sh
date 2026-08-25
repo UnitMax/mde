@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Syncs this repo to a Windows-side directory and runs the portable Windows
-# build there using native Windows npm/node, so node-pty gets rebuilt against
-# the Windows toolchain when its dependencies change. Run from WSL:
+# build there using native Windows npm/node. Run from WSL:
 # npm run build:win:remote
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WIN_DIR="/mnt/c/dev/mde-winbuild"
-WIN_DIR_NATIVE='C:\dev\mde-winbuild'
+WINDOWS_TEMP_NATIVE="$(cd /mnt/c && cmd.exe /d /c 'echo %TEMP%' | tr -d '\r' | tail -n 1)"
+WIN_DIR_NATIVE="${MDE_WINDOWS_BUILD_DIR:-${WINDOWS_TEMP_NATIVE}\\mde-winbuild}"
+WIN_DIR="$(wslpath -u "$WIN_DIR_NATIVE")"
 REMOTE_DEPS_COMMAND='node scripts/ensure-windows-dependencies.mjs'
 
 case "${1:-}" in
