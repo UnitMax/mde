@@ -1,6 +1,6 @@
 import { open, readdir, rm, stat } from 'node:fs/promises'
 import { homedir, userInfo } from 'node:os'
-import { dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -10,6 +10,20 @@ const chunkSize = 1024 * 1024
 // packaging run. They record absolute paths from the build machine, so they must
 // never travel with the artifacts they sit next to.
 export const buildMetadataFiles = ['builder-debug.yml', 'builder-effective-config.yaml']
+
+// Unsigned Windows executables MDE deliberately does not ship. `elevate.exe` is
+// electron-builder's elevation helper, which only an NSIS target pulls in; the
+// Windows release is a plain ZIP, so seeing it means such a target came back
+// without `nsis.packElevateHelper: false`. The two winpty files are node-pty's
+// pre-ConPTY backend, kept out by exclusions in `win.files`; seeing them means one
+// of those was dropped. Neither reappearance is visible without looking, so name
+// them here. Compared case-insensitively.
+export const forbiddenPackagedFiles = ['elevate.exe', 'winpty-agent.exe', 'winpty.dll']
+
+export function isForbiddenPackagedFile(filePath) {
+  const name = basename(filePath).toLowerCase()
+  return forbiddenPackagedFiles.some((forbidden) => forbidden.toLowerCase() === name)
+}
 
 function usableNeedle(value) {
   return typeof value === 'string' && value.length >= 4 && value !== '/'
@@ -155,23 +169,25 @@ export async function auditPackagedOutput({
     // A commit-time run usually has nothing packaged yet; a run that names its
     // own directory asked for that directory and should fail when it is absent.
     if (!allowMissing) throw new Error(`Packaged output directory does not exist: ${directory}`)
-    return { directory, missing: true, removed: [], scannedFiles: 0, findings: [] }
+    return { directory, missing: true, removed: [], scannedFiles: 0, findings: [], forbidden: [] }
   }
 
   const removed = await removeBuildMetadata(directory)
   const matchers = needleMatchers(privatePathNeedles(needleOptions))
   const findings = []
+  const forbidden = []
   let scannedFiles = 0
 
   for await (const filePath of walkFiles(directory)) {
     scannedFiles += 1
+    if (isForbiddenPackagedFile(filePath)) forbidden.push(relative(directory, filePath))
     const fileFindings = await scanFileForNeedles(filePath, matchers)
     for (const finding of fileFindings) {
       findings.push({ ...finding, file: relative(directory, filePath) })
     }
   }
 
-  return { directory, missing: false, removed, scannedFiles, findings }
+  return { directory, missing: false, removed, scannedFiles, findings, forbidden }
 }
 
 function readDirectoryArgument(argv) {
@@ -185,7 +201,7 @@ function readDirectoryArgument(argv) {
 const invokedPath = process.argv[1] ? resolve(process.argv[1]) : null
 if (invokedPath === fileURLToPath(import.meta.url)) {
   const outputDirectory = readDirectoryArgument(process.argv.slice(2))
-  const { directory, missing, removed, scannedFiles, findings } = await auditPackagedOutput(
+  const { directory, missing, removed, scannedFiles, findings, forbidden } = await auditPackagedOutput(
     outputDirectory ? { outputDirectory } : { allowMissing: true },
   )
 
@@ -196,6 +212,17 @@ if (invokedPath === fileURLToPath(import.meta.url)) {
 
   if (removed.length > 0) {
     console.log(`Removed build metadata dumps: ${removed.join(', ')}`)
+  }
+
+  if (forbidden.length > 0) {
+    console.error(`Excluded binaries present in packaged output under ${directory}:`)
+    for (const file of forbidden) {
+      console.error(`  ${file}`)
+    }
+    console.error(
+      'Check win.target and the win.files exclusions in electron-builder.yml, then rebuild.',
+    )
+    process.exitCode = 1
   }
 
   if (findings.length === 0) {

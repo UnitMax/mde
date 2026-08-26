@@ -31,9 +31,13 @@ export interface AuditPackagedOutputResult {
   removed: string[]
   scannedFiles: number
   findings: PrivatePathFinding[]
+  forbidden: string[]
 }
 
 export const buildMetadataFiles: string[]
+export const forbiddenPackagedFiles: string[]
+
+export function isForbiddenPackagedFile(filePath: string): boolean
 
 export function privatePathNeedles(options?: PrivatePathNeedleOptions): PrivatePathNeedle[]
 export function needleMatchers(needles: PrivatePathNeedle[]): NeedleMatcher[]

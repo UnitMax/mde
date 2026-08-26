@@ -4,6 +4,19 @@ directories:
   output: dist
   buildResources: build
 npmRebuild: false
+# Electron's shipped fuse defaults leave the packaged binary usable as a
+# general-purpose Node interpreter and leave app.asar unvalidated. MDE never
+# re-executes itself as Node, so all of this is dead weight that only makes the
+# build look like a living-off-the-land tool to endpoint protection.
+# `grantFileProtocolExtraPrivileges` stays enabled: the renderer is loaded with
+# `loadFile`, so it is a file:// page and still needs those privileges.
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableCookieEncryption: true
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
 files:
   - out/**
   - package.json
@@ -33,24 +46,24 @@ win:
     - '!node_modules/node-pty/prebuilds/darwin-*/**'
     - '!node_modules/node-pty/prebuilds/win32-arm64/**'
     - '!node_modules/node-pty/prebuilds/win32-x64/*.pdb'
+    # node-pty only reaches for winpty below Windows build 18309, and its agent
+    # works by scraping a hidden console's screen buffer, which is hard to tell
+    # apart from console hijacking. MDE requires the ConPTY path, whose helper
+    # binaries are Microsoft-signed, so ship neither the winpty binding nor its
+    # runtime. This drops support for Windows 10 releases before 1903.
+    - '!node_modules/node-pty/prebuilds/win32-x64/pty.node'
+    - '!node_modules/node-pty/prebuilds/win32-x64/winpty.dll'
+    - '!node_modules/node-pty/prebuilds/win32-x64/winpty-agent.exe'
   # Native modules and their companion executables cannot run from inside asar.
   asarUnpack:
     - '**/node_modules/node-pty/prebuilds/win32-x64/**'
+  # A ZIP is the whole Windows release. An NSIS portable build re-extracts ~90 MB
+  # into %TEMP% and executes from there on every launch, which is the generic
+  # shape behavioral heuristics are written against, and an installer buys back
+  # little of that while MDE has no code-signing certificate.
   target:
-    - target: nsis
+    - target: zip
       arch: [x64]
-    - target: portable
-      arch: [x64]
-nsis:
-  artifactName: ${productName}-${version}-setup.${ext}
-  oneClick: false
-  perMachine: false
-  allowToChangeInstallationDirectory: true
-  createDesktopShortcut: true
-  createStartMenuShortcut: true
-  shortcutName: mde
-portable:
-  artifactName: ${productName}-${version}-portable.${ext}
 linux:
   icon: build/icon.png
   target:

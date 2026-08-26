@@ -14,6 +14,8 @@ MDE stores workspace metadata in a local `workspace.json` file under Electron's 
 
 MDE does not make automatic network requests. It reads local files and, on Windows, invokes local WSL and operating-system commands to support terminal sessions and file actions.
 
+MDE also disables Chromium's DNS-over-HTTPS upgrade at startup, with `app.configureHostResolver({ secureDnsMode: 'off' })`. Chromium's default mode would otherwise route name resolution through a DoH provider whenever the system resolver is a recognized one, without any application code asking it to. Because MDE resolves no hostnames of its own, the result is no DNS traffic rather than a fallback to plaintext DNS, and the statement above holds regardless of how the user's machine is configured to resolve names.
+
 ## User-initiated external actions
 
 MDE may open an external link in the system browser when the user explicitly activates a terminal link. The browser then makes any resulting network connection. MDE does not automatically load those links.

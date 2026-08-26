@@ -10,7 +10,9 @@ the terminal experience.
 ## Requirements
 
 - Node 20+
-- Windows 10/11, or Linux (X11 or Wayland)
+- Windows 11, or Windows 10 version 1903 (build 18362) or newer, or Linux (X11 or Wayland)
+  - Packaged Windows builds ship only `node-pty`'s ConPTY backend; the winpty fallback
+    older releases would need is deliberately excluded.
 - A C/C++ toolchain, because `node-pty` is a native module and is rebuilt against the
   Electron ABI by `@electron/rebuild` from `postinstall`:
   - Windows: Visual Studio Build Tools with the "Desktop development with C++" workload
@@ -35,17 +37,17 @@ npm run typecheck
 
 ```sh
 npm run build             # typecheck, bundle, then package for the current platform
-npm run build:win         # NSIS installer + portable exe -> dist/mde-<version>-setup.exe, dist/mde-<version>-portable.exe
-npm run build:win:portable  # portable exe only
+npm run build:win         # Windows ZIP    -> dist/mde-<version>-win.zip
 npm run build:linux       # AppImage + deb  -> dist/mde-<version>.AppImage, .deb
 ```
 
 Cross-building for Windows from Linux is not supported here; build it on Windows. If you develop
 in WSL, `npm run build:win:remote` automates this: it rsyncs the repo to a staging directory under
-the Windows temporary directory and runs the portable build using native Windows npm/node with
+the Windows temporary directory and runs the ZIP build using native Windows npm/node with
 `node-pty`'s Windows x64 prebuilt runtime. Set `MDE_WINDOWS_BUILD_DIR` to a Windows-format path to
-override the staging directory. The first build runs `npm ci`; later builds reuse the
-Windows `node_modules` directory until the dependency or native build inputs change. To force a
+override the staging directory. The staging `dist` is emptied before each run, so it only ever
+holds the artifacts of the build you just made. The first build runs `npm ci`; later builds reuse
+the Windows `node_modules` directory until the dependency or native build inputs change. To force a
 clean dependency install, run `npm run build:win:remote -- --force-deps`. Requires Node.js and
 Visual Studio Build Tools ("Desktop development with C++") installed on Windows first (see
 Requirements above).
@@ -64,7 +66,7 @@ npm run licenses
 npm run licenses:check
 ```
 
-Packaged installers include MDE's MIT license and third-party notices alongside Electron's
+Packaged builds include MDE's MIT license and third-party notices alongside Electron's
 and Chromium's generated legal files. OpenCode is an external executable and is not
 bundled or relicensed by MDE.
 

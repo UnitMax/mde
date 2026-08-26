@@ -109,6 +109,12 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   void app.whenReady().then(async () => {
+    // Chromium's default resolver mode silently upgrades name resolution to
+    // DNS-over-HTTPS whenever the system resolver is a recognized provider. MDE
+    // resolves no hostnames of its own, so turning it off removes the last path
+    // by which this process could open a connection rather than falling back to
+    // plaintext DNS. Electron requires this call after `ready`.
+    app.configureHostResolver({ secureDnsMode: 'off' })
     initWorkspaceStore(app.getPath('userData'))
     await opencodeTuiStatusManager.configure(app.getPath('userData'))
     await opencodeAlertManager.configure(app.getPath('userData'))
