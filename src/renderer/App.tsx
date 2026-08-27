@@ -13,6 +13,7 @@ import { disposeSession, getSession } from '@/terminal/sessions'
 import {
   activeSessionTab,
   createRuntimeLayout,
+  nextPaneId,
   persistRuntimeLayout,
   sessionTabs,
   terminalIdForPane
@@ -73,7 +74,6 @@ export function App(): JSX.Element {
     tabId: string
     terminalId: string
   } | null>(null)
-  const terminalPaneCounter = useRef(0)
   const terminalFocusRequestId = useRef(0)
   const terminalLayoutsRef = useRef<RuntimeLayouts>({})
   const sessionsRef = useRef(sessions)
@@ -384,8 +384,7 @@ export function App(): JSX.Element {
 
     const panes = [...existing.panes]
     while (panes.length < targetCount) {
-      terminalPaneCounter.current += 1
-      const paneId = `pane-${terminalPaneCounter.current}`
+      const paneId = nextPaneId(panes)
       panes.push({
         terminalId: terminalIdForPane(sessionId, tabId, paneId),
         paneId,

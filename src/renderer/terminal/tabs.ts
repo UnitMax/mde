@@ -34,6 +34,18 @@ export function terminalIdForPane(sessionId: string, tabId: string, paneId: stri
   return `${sessionId}:tab:${tabId}:pane:${paneId}`
 }
 
+/** Returns the first split-pane key not already used by a runtime layout. */
+export function nextPaneId(panes: readonly TerminalPaneState[]): string {
+  const used = new Set(
+    panes
+      .map((pane) => pane.paneId)
+      .filter((paneId): paneId is string => paneId !== undefined)
+  )
+  let index = 1
+  while (used.has(`pane-${index}`)) index += 1
+  return `pane-${index}`
+}
+
 export function createRuntimeLayout(sessionId: string, tab: SessionTab): SessionTerminalLayout {
   return {
     layout: tab.layout.layout,

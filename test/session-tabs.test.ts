@@ -3,6 +3,7 @@ import type { Session } from '../src/shared/types'
 import {
   activeSessionTab,
   createRuntimeLayout,
+  nextPaneId,
   persistRuntimeLayout,
   sessionTabs,
   tabCloseSelection,
@@ -56,6 +57,12 @@ describe('session tab runtime helpers', () => {
       primary: true
     })
     expect(persistRuntimeLayout(layout)).toEqual(session.tabs![0]!.layout)
+  })
+
+  it('skips persisted split-pane keys when allocating a new runtime pane', () => {
+    const layout = createRuntimeLayout(session.id, session.tabs![0]!)
+
+    expect(nextPaneId(layout.panes)).toBe('pane-2')
   })
 
   it('falls back to a default tab and restores the persisted active tab', () => {
