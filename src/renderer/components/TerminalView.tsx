@@ -11,6 +11,8 @@ import {
   Code,
   CircleX,
   FolderOpen,
+  Maximize2,
+  Minimize2,
   Plus,
   RotateCw,
   Settings2,
@@ -53,6 +55,7 @@ import {
   getTerminalSettings,
   listTerminalFonts,
   saveTerminalSettings,
+  subscribeTerminalSettings,
   TERMINAL_LINE_HEIGHTS,
   TERMINAL_FONT_SIZES,
   type TerminalSettings
@@ -82,6 +85,11 @@ import {
   type TerminalResizeAxis,
   type TerminalResizeScope
 } from '@/terminal/layout'
+import {
+  isTerminalFullscreenShortcut,
+  shouldExitTerminalFullscreen,
+  terminalFullscreenPane
+} from '@/terminal/fullscreen'
 import { sessionTabs } from '@/terminal/tabs'
 
 const FALLBACK_SIZE: PtySize = { cols: 80, rows: 24 }
@@ -114,9 +122,10 @@ interface TerminalViewProps {
 interface TerminalSurfaceProps {
   session: Session
   pane: TerminalPaneState
+  onFocus: () => void
 }
 
-function TerminalSurface({ session: sourceSession, pane }: TerminalSurfaceProps): JSX.Element {
+function TerminalSurface({ session: sourceSession, pane, onFocus }: TerminalSurfaceProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
   const setStatus = useWorkspace((state) => state.setStatus)
 
@@ -200,18 +209,24 @@ function TerminalSurface({ session: sourceSession, pane }: TerminalSurfaceProps)
     }
   }, [pane.primary, pane.terminalId, setStatus, sourceSession.id])
 
-  return <div ref={hostRef} className="terminal-host relative min-h-0 flex-1 overflow-hidden" />
+  return <div ref={hostRef} className="terminal-host relative min-h-0 flex-1 overflow-hidden" onFocus={onFocus} />
 }
 
 function TerminalPane({
   session,
   pane,
   onClose,
+  onFocus,
+  isFullscreen,
+  onToggleFullscreen,
   reorderState = 'none'
 }: {
   session: Session
   pane: TerminalPaneState
   onClose: () => void
+  onFocus: () => void
+  isFullscreen: boolean
+  onToggleFullscreen: () => void
   reorderState?: 'none' | 'candidate' | 'active'
 }): JSX.Element {
   const clearExit = useWorkspace((state) => state.clearExit)
@@ -242,7 +257,7 @@ function TerminalPane({
 
   return (
     <div className={`relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden border ${borderClass} bg-bg`}>
-      <TerminalSurface session={session} pane={pane} />
+      <TerminalSurface session={session} pane={pane} onFocus={onFocus} />
       <div className="absolute right-2 top-2 z-10 flex gap-1 opacity-0 transition-opacity hover:opacity-100 focus-within:opacity-100">
         {platform?.isWindows === true &&
           wslAvailable &&
@@ -271,6 +286,21 @@ function TerminalPane({
               </Button>
             </>
           )}
+        <Button
+          variant="secondary"
+          size="icon-sm"
+          aria-label={isFullscreen ? 'Exit terminal fullscreen' : 'Enter terminal fullscreen'}
+          aria-pressed={isFullscreen}
+          data-testid={`terminal-fullscreen-toggle-${pane.terminalId}`}
+          title={isFullscreen
+            ? 'Exit terminal fullscreen (Ctrl+Shift+F)'
+            : 'Enter terminal fullscreen (Ctrl+Shift+F)'}
+          onClick={onToggleFullscreen}
+        >
+          {isFullscreen
+            ? <Minimize2 className="h-3.5 w-3.5" />
+            : <Maximize2 className="h-3.5 w-3.5" />}
+        </Button>
         <Button
           variant="secondary"
           size="icon-sm"
@@ -553,10 +583,11 @@ function tokenRatePluginStatusLabel(state: OpenCodeTokenRatePluginState | undefi
   return 'Not installed'
 }
 
-type SettingsSection = 'appearance' | 'sidebar' | 'opencode' | 'about'
+type SettingsSection = 'appearance' | 'terminal' | 'sidebar' | 'opencode' | 'about'
 
 const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: 'appearance', label: 'Appearance' },
+  { id: 'terminal', label: 'Terminal' },
   { id: 'sidebar', label: 'Sidebar' },
   { id: 'opencode', label: 'OpenCode' },
   { id: 'about', label: 'About' }
@@ -1022,6 +1053,26 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
               </section>
             )}
 
+            {activeSection === 'terminal' && (
+              <section className="space-y-3" aria-labelledby="terminal-settings">
+                <div>
+                  <h3 id="terminal-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
+                    Terminal
+                  </h3>
+                  <p className="mt-1 text-xs text-fg-subtle">
+                    Configure terminal behavior and keyboard shortcuts.
+                  </p>
+                </div>
+                <SettingsToggle
+                  checked={settings.escapeExitsFullscreen}
+                  label="Exit fullscreen with Escape"
+                  description="Press Escape to leave the temporary fullscreen terminal view."
+                  testId="terminal-escape-fullscreen"
+                  onClick={() => updateSettings({ escapeExitsFullscreen: !settings.escapeExitsFullscreen })}
+                />
+              </section>
+            )}
+
             {activeSection === 'sidebar' && (
               <section className="space-y-3" aria-labelledby="sidebar-settings">
                 <div>
@@ -1453,8 +1504,20 @@ export function TerminalView({
   const [hoveredPaneId, setHoveredPaneId] = useState<string | null>(null)
   const [reorderSourceId, setReorderSourceId] = useState<string | null>(null)
   const [reorderPreviewPanes, setReorderPreviewPanes] = useState<TerminalPaneState[] | null>(null)
+  const [fullscreenTerminalId, setFullscreenTerminalId] = useState<string | null>(null)
+  const [terminalSettings, setTerminalSettings] = useState<TerminalSettings>(() => getTerminalSettings())
   const gridRef = useRef<HTMLDivElement>(null)
   const reorderDragRef = useRef<TerminalReorderDragState | null>(null)
+  const focusedTerminalIdRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    return subscribeTerminalSettings(() => setTerminalSettings(getTerminalSettings()))
+  }, [])
+
+  useEffect(() => {
+    focusedTerminalIdRef.current = null
+    setFullscreenTerminalId(null)
+  }, [activeTab.id, selectedSession.id])
 
   const restart = useCallback(async () => {
     onRestartPrimary()
@@ -1478,6 +1541,7 @@ export function TerminalView({
   const requestLayout = useCallback((layout: TerminalLayout): void => {
     const targetCount = terminalCount(layout)
     if (targetCount >= terminalLayout.panes.length) {
+      setFullscreenTerminalId(null)
       onLayoutChange(layout)
       return
     }
@@ -1498,6 +1562,7 @@ export function TerminalView({
       })
       return
     }
+    setFullscreenTerminalId(null)
     onClosePane(terminalId)
   }
 
@@ -1708,8 +1773,78 @@ export function TerminalView({
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [requestLayout])
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const target = event.target
+      const inDialog = target instanceof Element && target.closest('[role="dialog"]') !== null
+      if (!shouldExitTerminalFullscreen({
+        key: event.key,
+        escapeExitsFullscreen: terminalSettings.escapeExitsFullscreen,
+        fullscreenTerminalId,
+        inDialog
+      })) {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+      setFullscreenTerminalId(null)
+    }
+
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [fullscreenTerminalId, terminalSettings.escapeExitsFullscreen])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const target = event.target
+      if (target instanceof Element && target.closest('[role="dialog"]')) return
+
+      if (!isTerminalFullscreenShortcut({
+        type: event.type,
+        key: event.key,
+        code: event.code,
+        control: event.ctrlKey,
+        meta: event.metaKey,
+        alt: event.altKey,
+        shift: event.shiftKey
+      })) {
+        return
+      }
+
+      const focusedPane = terminalFullscreenPane(
+        terminalLayout.panes,
+        focusedTerminalIdRef.current
+      )
+      if (!focusedPane) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      setFullscreenTerminalId((current) =>
+        current === focusedPane.terminalId ? null : focusedPane.terminalId
+      )
+    }
+
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [terminalLayout.panes])
+
+  useEffect(() => {
+    if (
+      fullscreenTerminalId &&
+      !terminalLayout.panes.some((pane) => pane.terminalId === fullscreenTerminalId)
+    ) {
+      setFullscreenTerminalId(null)
+    }
+  }, [fullscreenTerminalId, terminalLayout.panes])
+
+  const toggleFullscreen = (terminalId: string): void => {
+    setFullscreenTerminalId((current) => current === terminalId ? null : terminalId)
+  }
+
   const confirmReduceLayout = (): void => {
     if (!pendingReduction) return
+    setFullscreenTerminalId(null)
     onReduceLayout(pendingReduction.layout, pendingReduction.paneIds)
     setPendingReduction(null)
   }
@@ -1718,9 +1853,14 @@ export function TerminalView({
     selectedSession.kind === 'wsl'
       ? `${selectedSession.distro ?? 'WSL'} · ${selectedSession.path}`
       : selectedSession.path
-  const gridTemplates = terminalGridTemplates(terminalLayout.layout, terminalLayout.sizes)
-  const resizeHandles = terminalResizeHandles(terminalLayout.layout)
   const renderedPanes = reorderPreviewPanes ?? terminalLayout.panes
+  const fullscreenPane = terminalFullscreenPane(renderedPanes, fullscreenTerminalId)
+  const isFullscreen = fullscreenPane !== null
+  const visiblePanes = fullscreenPane ? [fullscreenPane] : renderedPanes
+  const gridTemplates = isFullscreen
+    ? { columns: 'minmax(0, 1fr)', rows: 'minmax(0, 1fr)' }
+    : terminalGridTemplates(terminalLayout.layout, terminalLayout.sizes)
+  const resizeHandles = isFullscreen ? [] : terminalResizeHandles(terminalLayout.layout)
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-bg">
@@ -1815,16 +1955,21 @@ export function TerminalView({
             if (!reorderDragRef.current) setHoveredPaneId(null)
           }}
         >
-          {renderedPanes.map((pane, index) => (
+          {visiblePanes.map((pane, index) => (
             <div
               key={pane.terminalId}
               data-terminal-pane-slot={index}
-              className={`h-full min-h-0 min-w-0 ${paneClass(terminalLayout.layout, index)}`}
+              className={`h-full min-h-0 min-w-0 ${isFullscreen ? '' : paneClass(terminalLayout.layout, index)}`}
               onPointerDownCapture={(event) => beginReorder(event, pane.terminalId)}
             >
               <TerminalPane
                 session={selectedSession}
                 pane={pane}
+                onFocus={() => {
+                  focusedTerminalIdRef.current = pane.terminalId
+                }}
+                isFullscreen={isFullscreen}
+                onToggleFullscreen={() => toggleFullscreen(pane.terminalId)}
                 reorderState={
                   reorderSourceId === pane.terminalId
                     ? 'active'

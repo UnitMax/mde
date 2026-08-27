@@ -48,6 +48,7 @@ describe('terminal settings', () => {
       size: 13,
       lineHeight: 1,
       theme: 'slate',
+      escapeExitsFullscreen: true,
       showTerminalInstances: false,
       showOpenCodeInstances: true
     })
@@ -61,6 +62,7 @@ describe('terminal settings', () => {
       size: 13,
       lineHeight: 1,
       theme: 'slate',
+      escapeExitsFullscreen: true,
       showTerminalInstances: false,
       showOpenCodeInstances: true
     })
@@ -70,7 +72,8 @@ describe('terminal settings', () => {
           family: 'monospace',
           size: TERMINAL_FONT_SIZES[3],
           lineHeight: TERMINAL_LINE_HEIGHTS[4],
-          theme: 'frost'
+          theme: 'frost',
+          escapeExitsFullscreen: false
         },
         available
       )
@@ -79,15 +82,20 @@ describe('terminal settings', () => {
       size: 14,
       lineHeight: 1.4,
       theme: 'frost',
+      escapeExitsFullscreen: false,
       showTerminalInstances: false,
       showOpenCodeInstances: true
     })
     expect(
       resolveTerminalSettings(
-        { showTerminalInstances: 'yes', showOpenCodeInstances: null },
+        { escapeExitsFullscreen: 'yes', showTerminalInstances: 'yes', showOpenCodeInstances: null },
         available
       )
-    ).toMatchObject({ showTerminalInstances: false, showOpenCodeInstances: true })
+    ).toMatchObject({
+      escapeExitsFullscreen: true,
+      showTerminalInstances: false,
+      showOpenCodeInstances: true
+    })
   })
 
   it('loads legacy font settings and supplies the line-height default', () => {
@@ -103,6 +111,7 @@ describe('terminal settings', () => {
       size: 14,
       lineHeight: 1,
       theme: 'slate',
+      escapeExitsFullscreen: true,
       showTerminalInstances: false,
       showOpenCodeInstances: true
     })
@@ -116,6 +125,7 @@ describe('terminal settings', () => {
       size: 14,
       lineHeight: 1.4,
       theme: 'ember' as const,
+      escapeExitsFullscreen: false,
       showTerminalInstances: true,
       showOpenCodeInstances: false
     }

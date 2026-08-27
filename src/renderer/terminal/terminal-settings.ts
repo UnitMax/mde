@@ -6,6 +6,8 @@ export interface TerminalSettings {
   /** xterm line-height multiplier relative to the selected font size. */
   lineHeight: number
   theme: ApplicationThemeId
+  /** Whether Escape exits the temporary fullscreen terminal view. */
+  escapeExitsFullscreen: boolean
   /** Whether individual non-OpenCode terminal panes appear in the sidebar. */
   showTerminalInstances: boolean
   /** Whether individual OpenCode instances appear in the sidebar. */
@@ -55,6 +57,7 @@ export function defaultTerminalSettings(
     size: 13,
     lineHeight: 1,
     theme: 'slate',
+    escapeExitsFullscreen: true,
     showTerminalInstances: false,
     showOpenCodeInstances: true
   }
@@ -88,6 +91,10 @@ export function resolveTerminalSettings(
     size,
     lineHeight,
     theme,
+    escapeExitsFullscreen:
+      typeof record.escapeExitsFullscreen === 'boolean'
+        ? record.escapeExitsFullscreen
+        : fallback.escapeExitsFullscreen,
     showTerminalInstances:
       typeof record.showTerminalInstances === 'boolean'
         ? record.showTerminalInstances
