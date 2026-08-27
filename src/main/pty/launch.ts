@@ -53,6 +53,75 @@ function fishStartupCommand(): string {
   ].join('; ')
 }
 
+/**
+ * xterm.js emits these modified-arrow sequences, while zsh does not bind them
+ * by default. Keep the fix in ZLE so foreground terminal applications still
+ * receive the original bytes unchanged.
+ */
+function zshKeyBindingCommand(): string {
+  return String.raw`function __mde_bind_ctrl_word_keys() {
+  local ctrl_left=$'\e[1;5D'
+  local ctrl_right=$'\e[1;5C'
+  if [[ "$(bindkey -M main "$ctrl_left")" == *undefined-key* ]]; then
+    bindkey -M main "$ctrl_left" backward-word
+  fi
+  if [[ "$(bindkey -M main "$ctrl_right")" == *undefined-key* ]]; then
+    bindkey -M main "$ctrl_right" forward-word
+  fi
+}
+__mde_bind_ctrl_word_keys
+unfunction __mde_bind_ctrl_word_keys`
+}
+
+function zshConfigurationCommand(reportDirectory: boolean): string {
+  const directoryReporter = reportDirectory
+    ? `
+autoload -Uz add-zsh-hook
+function __mde_report_cwd() {
+  printf '\\033]7;file://localhost%s\\033\\\\' "$PWD"
+}
+add-zsh-hook precmd __mde_report_cwd`
+    : ''
+  return `
+    export MDE_ORIGINAL_ZDOTDIR="\${ZDOTDIR:-$HOME}"
+    export MDE_ZDOTDIR="$mde_zdotdir"
+    export ZDOTDIR="$mde_zdotdir"
+    cat > "$mde_zdotdir/.zshenv" <<'MDE_ZSHENV'
+export ZDOTDIR="$MDE_ORIGINAL_ZDOTDIR"
+[[ -r "$ZDOTDIR/.zshenv" ]] && source "$ZDOTDIR/.zshenv"
+export MDE_ORIGINAL_ZDOTDIR="\${ZDOTDIR:-$HOME}"
+export ZDOTDIR="$MDE_ZDOTDIR"
+MDE_ZSHENV
+    cat > "$mde_zdotdir/.zprofile" <<'MDE_ZPROFILE'
+export ZDOTDIR="$MDE_ORIGINAL_ZDOTDIR"
+[[ -r "$ZDOTDIR/.zprofile" ]] && source "$ZDOTDIR/.zprofile"
+export MDE_ORIGINAL_ZDOTDIR="\${ZDOTDIR:-$HOME}"
+export ZDOTDIR="$MDE_ZDOTDIR"
+MDE_ZPROFILE
+    cat > "$mde_zdotdir/.zshrc" <<'MDE_ZSHRC'
+export ZDOTDIR="$MDE_ORIGINAL_ZDOTDIR"
+[[ -r "$ZDOTDIR/.zshrc" ]] && source "$ZDOTDIR/.zshrc"
+export MDE_ORIGINAL_ZDOTDIR="\${ZDOTDIR:-$HOME}"
+${zshKeyBindingCommand()}
+${directoryReporter}
+export ZDOTDIR="$MDE_ORIGINAL_ZDOTDIR"
+MDE_ZSHRC`.trim()
+}
+
+function zshCleanupTrapCommand(): string {
+  return `
+mde_cleanup_zdotdir() {
+  status=$?
+  trap - 0 HUP INT TERM
+  rm -rf -- "$mde_zdotdir"
+  exit "$status"
+}
+trap mde_cleanup_zdotdir 0
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM`.trim()
+}
+
 function wslShellCommand(): string {
   return `
 if [ "$#" -gt 0 ]; then
@@ -77,36 +146,10 @@ case "\${shell##*/}" in
     ;;
   zsh)
     mde_zdotdir=$(mktemp -d "\${TMPDIR:-/tmp}/mde-zsh.XXXXXX") || exec "$shell" -l -i
-    export MDE_ORIGINAL_ZDOTDIR="\${ZDOTDIR:-$HOME}"
-    export MDE_ZDOTDIR="$mde_zdotdir"
-    export ZDOTDIR="$mde_zdotdir"
-    cat > "$mde_zdotdir/.zshenv" <<'MDE_ZSHENV'
-export ZDOTDIR="$MDE_ORIGINAL_ZDOTDIR"
-[[ -r "$ZDOTDIR/.zshenv" ]] && source "$ZDOTDIR/.zshenv"
-export MDE_ORIGINAL_ZDOTDIR="\${ZDOTDIR:-$HOME}"
-export ZDOTDIR="$MDE_ZDOTDIR"
-MDE_ZSHENV
-    cat > "$mde_zdotdir/.zprofile" <<'MDE_ZPROFILE'
-export ZDOTDIR="$MDE_ORIGINAL_ZDOTDIR"
-[[ -r "$ZDOTDIR/.zprofile" ]] && source "$ZDOTDIR/.zprofile"
-export MDE_ORIGINAL_ZDOTDIR="\${ZDOTDIR:-$HOME}"
-export ZDOTDIR="$MDE_ZDOTDIR"
-MDE_ZPROFILE
-    cat > "$mde_zdotdir/.zshrc" <<'MDE_ZSHRC'
-export ZDOTDIR="$MDE_ORIGINAL_ZDOTDIR"
-[[ -r "$ZDOTDIR/.zshrc" ]] && source "$ZDOTDIR/.zshrc"
-export MDE_ORIGINAL_ZDOTDIR="\${ZDOTDIR:-$HOME}"
-autoload -Uz add-zsh-hook
-function __mde_report_cwd() {
-  printf '\\033]7;file://localhost%s\\033\\\\' "$PWD"
-}
-add-zsh-hook precmd __mde_report_cwd
-export ZDOTDIR="$MDE_ORIGINAL_ZDOTDIR"
-MDE_ZSHRC
+${zshCleanupTrapCommand()}
+${zshConfigurationCommand(true)}
     "$shell" -l -i
-    status=$?
-    rm -rf -- "$mde_zdotdir"
-    exit "$status"
+    exit $?
     ;;
   fish)
     exec "$shell" -l -i -C ${shellQuote(fishStartupCommand())}
@@ -115,6 +158,22 @@ MDE_ZSHRC
     exec "$shell" -l
     ;;
 esac
+`.trim()
+}
+
+function shellBasename(shell: string): string {
+  const normalised = shell.replaceAll('\\', '/')
+  return normalised.slice(normalised.lastIndexOf('/') + 1).toLowerCase()
+}
+
+function nativeZshShellCommand(): string {
+  return `
+shell=$1
+mde_zdotdir=$(mktemp -d "\${TMPDIR:-/tmp}/mde-zsh.XXXXXX") || exec "$shell" -l -i
+${zshCleanupTrapCommand()}
+${zshConfigurationCommand(false)}
+"$shell" -l -i
+exit $?
 `.trim()
 }
 
@@ -179,9 +238,14 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
     }
   }
 
-  return {
-    file: session.shell ?? context.defaultShell ?? DEFAULT_POSIX_SHELL,
-    args: ['-l'],
-    cwd: session.path
+  const shell = session.shell ?? context.defaultShell ?? DEFAULT_POSIX_SHELL
+  if (shellBasename(shell) === 'zsh') {
+    return {
+      file: '/bin/sh',
+      args: ['-c', nativeZshShellCommand(), 'mde-shell', shell],
+      cwd: session.path
+    }
   }
+
+  return { file: shell, args: ['-l'], cwd: session.path }
 }

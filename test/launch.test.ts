@@ -1,5 +1,12 @@
-import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { spawn, spawnSync } from 'node:child_process'
+import {
+  chmodSync,
+  mkdtempSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -15,6 +22,14 @@ function session(overrides: Partial<Session> = {}): Session {
     path: '/home/me/src/app',
     createdAt: '2026-01-01T00:00:00.000Z',
     ...overrides
+  }
+}
+
+async function waitFor(condition: () => boolean, timeout = 2_000): Promise<void> {
+  const deadline = Date.now() + timeout
+  while (!condition()) {
+    if (Date.now() >= deadline) throw new Error('Timed out waiting for condition')
+    await new Promise((resolve) => setTimeout(resolve, 10))
   }
 }
 
@@ -67,6 +82,18 @@ describe('buildLaunchSpec', () => {
     expect(result.stderr).toBe('')
   })
 
+  it('cleans up temporary WSL Zsh configuration on shell signals', () => {
+    const spec = buildLaunchSpec(
+      session({ kind: 'wsl', distro: 'Ubuntu-24.04', shell: '/usr/bin/zsh' }),
+      { platform: 'win32' }
+    )
+    const command = spec.args[10] ?? ''
+
+    expect(command).toContain('trap mde_cleanup_zdotdir 0')
+    expect(command).toContain("trap 'exit 129' HUP")
+    expect(command).toContain('rm -rf -- "$mde_zdotdir"')
+  })
+
   it('honours a shell override for WSL projects', () => {
     const spec = buildLaunchSpec(
       session({ kind: 'wsl', distro: 'Ubuntu-24.04', shell: 'zsh' }),
@@ -109,15 +136,56 @@ describe('buildLaunchSpec', () => {
         )
         const result = spawnSync('/bin/sh', ['-c', spec.args[10] ?? '', 'mde-shell', '/usr/bin/zsh'], {
           encoding: 'utf8',
-          env: { ...process.env, HOME: home, ZDOTDIR: home },
-          input: 'exit\n',
+          env: { ...process.env, HOME: home, ZDOTDIR: home, EDITOR: 'emacs' },
+          input: "bindkey -M main $'\\e[1;5C'\nbindkey -M main $'\\e[1;5D'\nexit\n",
           timeout: 5_000
         })
 
         expect(result.status).toBe(0)
         expect(result.stdout).toContain('\u001b]7;file://localhost')
+        expect(result.stdout).toContain('forward-word')
+        expect(result.stdout).toContain('backward-word')
       } finally {
         rmSync(home, { recursive: true, force: true })
+      }
+    }
+  )
+
+  it.skipIf(process.platform === 'win32')(
+    'removes native Zsh configuration when the wrapper receives SIGHUP',
+    async () => {
+      const root = mkdtempSync(join(tmpdir(), 'mde-zsh-cleanup-'))
+      const home = join(root, 'home')
+      const bin = join(root, 'bin')
+      const fakeZsh = join(bin, 'zsh')
+      mkdirSync(home)
+      mkdirSync(bin)
+      writeFileSync(fakeZsh, '#!/bin/sh\n: > "$TMPDIR/fake-zsh-started"\nsleep 1\n')
+      chmodSync(fakeZsh, 0o755)
+
+      try {
+        const spec = buildLaunchSpec(
+          session({ shell: fakeZsh, path: home }),
+          { platform: process.platform }
+        )
+        const child = spawn(spec.file, spec.args, {
+          cwd: spec.cwd,
+          env: { ...process.env, HOME: home, TMPDIR: root },
+          stdio: 'ignore'
+        })
+
+        await waitFor(() => readdirSync(root).includes('fake-zsh-started'))
+        expect(readdirSync(root).some((entry) => entry.startsWith('mde-zsh.'))).toBe(true)
+        const exited = new Promise<void>((resolve, reject) => {
+          child.once('exit', () => resolve())
+          child.once('error', reject)
+        })
+        child.kill('SIGHUP')
+        await exited
+
+        expect(readdirSync(root).filter((entry) => entry.startsWith('mde-zsh.'))).toEqual([])
+      } finally {
+        rmSync(root, { recursive: true, force: true })
       }
     }
   )
@@ -186,6 +254,80 @@ describe('buildLaunchSpec', () => {
       platform: 'linux',
       defaultShell: '/bin/bash'
     })
-    expect(spec.file).toBe('/bin/zsh')
+    expect(spec.file).toBe('/bin/sh')
+    expect(spec.args[0]).toBe('-c')
+    expect(spec.args.at(-2)).toBe('mde-shell')
+    expect(spec.args.at(-1)).toBe('/bin/zsh')
+    expect(spec.args[1]).toContain('bindkey -M main')
+    expect(spec.args[1]).not.toContain('__mde_report_cwd')
+    expect(spec.cwd).toBe('/home/me/src/app')
+  })
+
+  it.skipIf(spawnSync('zsh', ['--version']).status !== 0)(
+    'loads native Zsh configuration and preserves existing bindings',
+    () => {
+      const home = mkdtempSync(join(tmpdir(), 'mde-native-zsh-home-'))
+      try {
+        writeFileSync(
+          join(home, '.zshrc'),
+          [
+            'bindkey -e',
+            "bindkey -M main $'\\e[1;5C' self-insert",
+            "print -r -- 'user-zshrc-loaded'"
+          ].join('\n')
+        )
+        const spec = buildLaunchSpec(
+          session({ shell: '/usr/bin/zsh', path: home }),
+          { platform: 'linux', defaultShell: '/bin/bash' }
+        )
+        const result = spawnSync(spec.file, spec.args, {
+          encoding: 'utf8',
+          env: { ...process.env, HOME: home, ZDOTDIR: home, EDITOR: 'emacs' },
+          input: "bindkey -M main $'\\e[1;5C'\nbindkey -M main $'\\e[1;5D'\nexit\n",
+          timeout: 5_000
+        })
+
+        expect(result.status).toBe(0)
+        expect(result.stdout).toContain('user-zshrc-loaded')
+        expect(result.stdout).toContain('self-insert')
+        expect(result.stdout).toContain('backward-word')
+      } finally {
+        rmSync(home, { recursive: true, force: true })
+      }
+    }
+  )
+
+  it.skipIf(spawnSync('zsh', ['--version']).status !== 0)(
+    'binds the active Zsh insert map without changing vi command mode',
+    () => {
+      const home = mkdtempSync(join(tmpdir(), 'mde-vi-zsh-home-'))
+      try {
+        writeFileSync(join(home, '.zshrc'), 'bindkey -v\n')
+        const spec = buildLaunchSpec(
+          session({ shell: '/usr/bin/zsh', path: home }),
+          { platform: 'linux' }
+        )
+        const result = spawnSync(spec.file, spec.args, {
+          encoding: 'utf8',
+          env: { ...process.env, HOME: home, ZDOTDIR: home },
+          input: "bindkey -M main $'\\e[1;5C'\nbindkey -M main $'\\e[1;5D'\nbindkey -M vicmd $'\\e[1;5C'\nexit\n",
+          timeout: 5_000
+        })
+
+        expect(result.status).toBe(0)
+        expect(result.stdout).toContain('forward-word')
+        expect(result.stdout).toContain('backward-word')
+        expect(result.stdout).toContain('undefined-key')
+      } finally {
+        rmSync(home, { recursive: true, force: true })
+      }
+    }
+  )
+
+  it('leaves native Windows shell launch behavior unchanged', () => {
+    const spec = buildLaunchSpec(session({ shell: 'zsh.exe', path: 'C:\\src\\app' }), {
+      platform: 'win32'
+    })
+    expect(spec).toEqual({ file: 'zsh.exe', args: [], cwd: 'C:\\src\\app' })
   })
 })
