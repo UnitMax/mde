@@ -16,6 +16,13 @@ import type {
 } from '@shared/types'
 import { uncPathFor } from '../wsl/paths'
 import { runWsl } from '../wsl/distros'
+import {
+  assertWslLinuxPath,
+  describeWslOutput,
+  extractWslShellValue,
+  readWslShellValue,
+  wslShellValueScript
+} from '../wsl/shell-value'
 import type { PtyLaunchIntegration } from '../pty/manager'
 
 export const TUI_STATUS_PROTOCOL = 1 as const
@@ -390,6 +397,32 @@ function assertDistro(distro: string): string {
   return value
 }
 
+/**
+ * The account database, read without sourcing a single rc file. This is the
+ * last resort for a distro whose login shell is broken enough that it cannot
+ * report `$HOME`, and it mirrors the shell lookup in ../pty/launch.ts.
+ */
+const WSL_PASSWD_HOME_SCRIPT = wslShellValueScript(
+  '"$(getent passwd "$(id -u)" 2>/dev/null | cut -d: -f6)"'
+)
+
+/**
+ * Resolves a distro's home directory. Asking the login shell keeps MDE in step
+ * with whatever the user's own terminal sees; the passwd fallback keeps the
+ * plugin manageable when that shell cannot answer.
+ */
+async function resolveWslHome(distro: string): Promise<string> {
+  const shellValue = await readWslShellValue(distro, '"$HOME"')
+  if (shellValue.value !== null) return assertWslLinuxPath(shellValue.value, 'home directory')
+
+  const passwd = await runWsl(['-d', distro, '-e', '/bin/sh', '-c', WSL_PASSWD_HOME_SCRIPT])
+  const home = extractWslShellValue(passwd.stdout)
+  if (home !== null && home.trim().length > 0) return assertWslLinuxPath(home, 'home directory')
+
+  const detail = shellValue.detail === 'no output' ? describeWslOutput(passwd) : shellValue.detail
+  throw new Error(`Could not read the home directory from "${distro}". WSL returned: ${detail}`)
+}
+
 export function parseTuiPluginVersion(source: string): string | null {
   const prefix = `// ${TUI_STATUS_PLUGIN_VERSION_MARKER}`
   const line = source.split(/\r?\n/).find((value) => value.startsWith(prefix))
@@ -572,12 +605,7 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
   private async pluginPath(distro: string): Promise<string> {
     let home = this.homeDirectories.get(distro)
     if (!home) {
-      const result = await runWsl(['-d', distro, '--', 'bash', '-lic', 'printf %s "$HOME"'])
-      if (result.code !== 0) throw new Error(`Could not resolve the WSL home directory for "${distro}".`)
-      home = result.stdout.trim()
-      if (!/^\/[A-Za-z0-9._-][A-Za-z0-9._/-]*$/.test(home)) {
-        throw new Error(`WSL returned an invalid home directory for "${distro}".`)
-      }
+      home = await resolveWslHome(distro)
       this.homeDirectories.set(distro, home)
     }
     return uncPathFor(distro, `${home}/.config/opencode/plugins/mde-status.js`)

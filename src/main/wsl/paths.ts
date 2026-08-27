@@ -64,12 +64,15 @@ const CANONICALIZE_WSL_PATH_SCRIPT = [
  * Resolves WSL shorthand and existing symlinks without interpreting the path
  * through a shell. The path is passed as a positional argument to bash, so
  * spaces and shell metacharacters remain ordinary path text.
+ *
+ * -e (--exec), never --: wsl.exe hands everything after `--` to the distro's
+ * default shell, which re-parses it and eats the script's `;;` and quoting.
  */
 export async function canonicalizeWslPath(distro: string, rawPath: string): Promise<string | null> {
   const result = await runWsl([
     '-d',
     distro,
-    '--',
+    '-e',
     'bash',
     '-lc',
     CANONICALIZE_WSL_PATH_SCRIPT,

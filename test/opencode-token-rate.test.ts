@@ -43,7 +43,7 @@ describe('OpenCode token-rate TUI plugin', () => {
     expect(wslOpenCodeVersionArgs('Ubuntu-24.04')).toEqual([
       '-d',
       'Ubuntu-24.04',
-      '--',
+      '-e',
       'bash',
       '-lic',
       'exec opencode --version'

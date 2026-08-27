@@ -42,6 +42,7 @@ import {
 import { AboutSettingsPanel } from '@/components/AboutSettingsPanel'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ipcErrorMessage } from '@/lib/ipc-error'
 import { useWorkspace } from '@/store/workspace'
 import {
   applyTerminalSettings,
@@ -751,7 +752,7 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
           if (result.status === 'fulfilled') {
             nextStates[result.value.distro] = result.value
           } else {
-            failures.push(result.reason instanceof Error ? result.reason.message : String(result.reason))
+            failures.push(ipcErrorMessage(result.reason, 'Could not inspect this WSL distro.'))
           }
         })
         setTuiSettings(nextSettings)
@@ -760,7 +761,7 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setTuiError(error instanceof Error ? error.message : String(error))
+          setTuiError(ipcErrorMessage(error, 'Could not update the OpenCode status plugin.'))
         }
       })
       .finally(() => {
@@ -793,7 +794,7 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
           if (result.status === 'fulfilled') {
             nextStates[tokenRateTargetKey(result.value.target)] = result.value
           } else {
-            failures.push(result.reason instanceof Error ? result.reason.message : String(result.reason))
+            failures.push(ipcErrorMessage(result.reason, 'Could not inspect the token-rate plugin.'))
           }
         })
         setTokenRateStates(nextStates)
@@ -818,7 +819,7 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
         if (!cancelled) setAlertSettings(next)
       })
       .catch((error: unknown) => {
-        if (!cancelled) setAlertError(error instanceof Error ? error.message : String(error))
+        if (!cancelled) setAlertError(ipcErrorMessage(error, 'Could not update OpenCode alerts.'))
       })
       .finally(() => {
         if (!cancelled) setAlertLoading(false)
@@ -834,7 +835,7 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
       const next = await window.api.opencodeTui.setEnabled({ enabled: !tuiSettings.enabled })
       setTuiSettings(next)
     } catch (error) {
-      setTuiError(error instanceof Error ? error.message : String(error))
+      setTuiError(ipcErrorMessage(error, 'Could not update the OpenCode status plugin.'))
     }
   }
 
@@ -846,7 +847,7 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
       await setOpenCodeTuiInstanceLabelMode(mode)
       setTuiSettings((current) => ({ ...current, instanceLabelMode: mode }))
     } catch (error) {
-      setTuiError(error instanceof Error ? error.message : String(error))
+      setTuiError(ipcErrorMessage(error, 'Could not update the OpenCode status plugin.'))
     }
   }
 
@@ -857,7 +858,7 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
       const next = await window.api.opencodeAlerts.setEnabled({ enabled: !alertSettings.enabled })
       setAlertSettings(next)
     } catch (error) {
-      setAlertError(error instanceof Error ? error.message : String(error))
+      setAlertError(ipcErrorMessage(error, 'Could not update OpenCode alerts.'))
     } finally {
       setAlertLoading(false)
     }
@@ -873,7 +874,7 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
           : await window.api.opencodeTui.remove({ distro })
       setPluginStates((current) => ({ ...current, [distro]: state }))
     } catch (error) {
-      setTuiError(error instanceof Error ? error.message : String(error))
+      setTuiError(ipcErrorMessage(error, 'Could not update the OpenCode status plugin.'))
     } finally {
       setTuiBusyDistro(null)
     }
@@ -890,7 +891,7 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
           : await window.api.opencodeTokenRate.remove({ target })
       setTokenRateStates((current) => ({ ...current, [key]: state }))
     } catch (error) {
-      setTokenRateError(error instanceof Error ? error.message : String(error))
+      setTokenRateError(ipcErrorMessage(error, 'Could not update the token-rate plugin.'))
     } finally {
       setTokenRateBusyTarget(null)
     }

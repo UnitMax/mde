@@ -1,11 +1,21 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../src/main/wsl/distros', async () => ({
   ...(await vi.importActual<typeof import('../src/main/wsl/distros')>('../src/main/wsl/distros')),
   runWsl: vi.fn()
 }))
 
+import { spawnSync } from 'node:child_process'
+
 import { decodeWslOutput, parseDistroList, runWsl } from '../src/main/wsl/distros'
+import {
+  assertWslLinuxPath,
+  extractWslShellValue,
+  readWslShellValue,
+  wslShellValueScript,
+  WSL_VALUE_BEGIN,
+  WSL_VALUE_END
+} from '../src/main/wsl/shell-value'
 import {
   canonicalizeWslPath,
   isWindowsDrivePath,
@@ -148,6 +158,10 @@ describe('path classification', () => {
   })
 })
 
+beforeEach(() => {
+  vi.mocked(runWsl).mockReset()
+})
+
 describe('WSL path resolution', () => {
   it('expands home shorthand and stores the canonical directory', async () => {
     vi.mocked(runWsl).mockResolvedValue({
@@ -162,5 +176,96 @@ describe('WSL path resolution', () => {
     await expect(resolveForTarget('wsl', 'Ubuntu-24.04', '~/dev/testmde')).resolves.toEqual({
       path: '/home/me/dev/testmde'
     })
+  })
+
+  it('execs the script instead of letting the default shell re-parse it', async () => {
+    vi.mocked(runWsl).mockResolvedValue({ stdout: '/home/me\n', stderr: '', code: 0 })
+
+    await canonicalizeWslPath('Ubuntu-24.04', '~')
+
+    expect(vi.mocked(runWsl).mock.calls[0]?.[0]?.slice(0, 4)).toEqual([
+      '-d',
+      'Ubuntu-24.04',
+      '-e',
+      'bash'
+    ])
+  })
+})
+
+describe('WSL shell value probes', () => {
+  const wrap = (value: string): string => `${WSL_VALUE_BEGIN}${value}${WSL_VALUE_END}`
+
+  it('generates a syntactically valid script', () => {
+    const script = wslShellValueScript('"$HOME"')
+    const check = spawnSync('bash', ['-n', '-c', script], { encoding: 'utf8' })
+    expect(check.status, check.stderr).toBe(0)
+  })
+
+  it('ignores whatever the login shell printed around the value', () => {
+    const noisy = [
+      '  /\\_/\\  fastfetch says hello',
+      'nvm: using v22.11.0',
+      wrap('/home/me'),
+      'direnv: unloading'
+    ].join('\n')
+
+    expect(extractWslShellValue(noisy)).toBe('/home/me')
+  })
+
+  it('survives CRLF endings and a UTF-8 BOM', () => {
+    expect(extractWslShellValue(`﻿banner\r\n${wrap('/home/me')}\r\n`)).toBe('/home/me')
+  })
+
+  it('takes the last marker pair so an echoed command line cannot win', () => {
+    const echoed = [wrap('$mde_value'), wrap('/home/me')].join('\n')
+    expect(extractWslShellValue(echoed)).toBe('/home/me')
+  })
+
+  it('reports nothing when the markers never arrived', () => {
+    expect(extractWslShellValue('')).toBeNull()
+    expect(extractWslShellValue('command not found: bash')).toBeNull()
+    expect(extractWslShellValue(WSL_VALUE_BEGIN + '/home/me')).toBeNull()
+  })
+
+  it('retries non-interactively when the interactive shell yields nothing', async () => {
+    vi.mocked(runWsl)
+      .mockResolvedValueOnce({ stdout: 'rc file exploded', stderr: '', code: 1 })
+      .mockResolvedValueOnce({ stdout: wrap('/home/me'), stderr: '', code: 0 })
+
+    await expect(readWslShellValue('Ubuntu-24.04', '"$HOME"')).resolves.toMatchObject({
+      value: '/home/me'
+    })
+    expect(vi.mocked(runWsl).mock.calls[0]?.[0]?.[3]).toBe('bash')
+    expect(vi.mocked(runWsl).mock.calls[0]?.[0]?.[4]).toBe('-lic')
+    expect(vi.mocked(runWsl).mock.calls[1]?.[0]?.[4]).toBe('-lc')
+  })
+
+  it('summarises the output when both attempts fail', async () => {
+    vi.mocked(runWsl).mockResolvedValue({ stdout: '', stderr: 'no distro\n', code: 1 })
+
+    await expect(readWslShellValue('Ubuntu-24.04', '"$HOME"')).resolves.toEqual({
+      value: null,
+      detail: 'no distro'
+    })
+  })
+})
+
+describe('assertWslLinuxPath', () => {
+  it('accepts absolute paths that ordinary regexes reject', () => {
+    expect(assertWslLinuxPath('/home/me', 'home directory')).toBe('/home/me')
+    expect(assertWslLinuxPath('  /home/my user/.config  ', 'home directory')).toBe(
+      '/home/my user/.config'
+    )
+    expect(assertWslLinuxPath('/home/私/.config', 'home directory')).toBe('/home/私/.config')
+    expect(assertWslLinuxPath('/home/me/', 'home directory')).toBe('/home/me')
+    expect(assertWslLinuxPath('/', 'home directory')).toBe('/')
+  })
+
+  it('rejects values that mean the probe failed', () => {
+    expect(() => assertWslLinuxPath('', 'home directory')).toThrow(/invalid home directory/)
+    expect(() => assertWslLinuxPath('home/me', 'home directory')).toThrow(/invalid home directory/)
+    expect(() => assertWslLinuxPath('/home/me\nbanner', 'home directory')).toThrow(
+      /invalid home directory/
+    )
   })
 })

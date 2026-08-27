@@ -11,6 +11,7 @@ import type {
 } from '@shared/types'
 import { uncPathFor } from '../wsl/paths'
 import { runWsl } from '../wsl/distros'
+import { assertWslLinuxPath, readWslShellValue } from '../wsl/shell-value'
 import type { PtyLaunchIntegration } from '../pty/manager'
 
 export const TOKEN_RATE_PLUGIN_MARKER = 'mde-opencode-token-rate-plugin-v1'
@@ -134,8 +135,8 @@ export const TOKEN_RATE_PLUGIN_SOURCE = [
 ].join('\n')
 
 const CONFIG_FILENAMES = ['tui.json', 'tui.jsonc'] as const
-const WSL_CONFIG_DIRECTORY_SCRIPT =
-  'printf "%s" "$' + '{OPENCODE_CONFIG_DIR:-$' + '{XDG_CONFIG_HOME:-$HOME/.config}/opencode}"'
+const WSL_CONFIG_DIRECTORY_EXPRESSION =
+  '"$' + '{OPENCODE_CONFIG_DIR:-$' + '{XDG_CONFIG_HOME:-$HOME/.config}/opencode}"'
 
 interface TargetPaths {
   target: OpenCodePluginTarget
@@ -184,18 +185,14 @@ function nativeConfigDirectory(): string {
   return join(base, 'opencode')
 }
 
-function assertLinuxPath(value: string): string {
-  const path = value.trim()
-  if (!path.startsWith('/') || path.includes('\n') || path.includes('\r')) {
-    throw new Error('WSL returned an invalid OpenCode config directory.')
-  }
-  return path.replace(/\/+$/, '') || '/'
-}
-
 async function wslConfigDirectory(distro: string): Promise<string> {
-  const result = await runWsl(['-d', distro, '--', 'bash', '-lic', WSL_CONFIG_DIRECTORY_SCRIPT])
-  if (result.code !== 0) throw new Error('Could not resolve the OpenCode config directory for "' + distro + '".')
-  return assertLinuxPath(result.stdout)
+  const result = await readWslShellValue(distro, WSL_CONFIG_DIRECTORY_EXPRESSION)
+  if (result.value === null) {
+    throw new Error(
+      'Could not read the OpenCode config directory from "' + distro + '". WSL returned: ' + result.detail
+    )
+  }
+  return assertWslLinuxPath(result.value, 'OpenCode config directory')
 }
 
 function fileUrl(path: string): string {
@@ -523,7 +520,7 @@ function nativeOpenCodeVersion(): Promise<string | null> {
 }
 
 export function wslOpenCodeVersionArgs(distro: string): string[] {
-  return ['-d', distro, '--', 'bash', '-lic', 'exec opencode --version']
+  return ['-d', distro, '-e', 'bash', '-lic', 'exec opencode --version']
 }
 
 async function targetOpenCodeVersion(target: OpenCodePluginTarget): Promise<string | null> {
