@@ -1,4 +1,58 @@
+import type { HostPlatform, ProjectKind } from '@shared/types'
+
 export type TerminalClipboardAction = 'copy' | 'native-paste'
+
+export type TerminalPrimarySelectionMode = 'native' | 'local' | 'none'
+
+export type TerminalMouseTrackingMode = 'none' | 'x10' | 'vt200' | 'drag' | 'any'
+
+export type TerminalMouseClipboardAction = 'copy' | 'local-paste'
+
+export interface TerminalPrimarySelectionStore {
+  get(): string | null
+  set(ownerTerminalId: string, text: string): void
+  clear(ownerTerminalId: string): void
+}
+
+export function terminalPrimarySelectionMode(
+  platform: HostPlatform,
+  sessionKind: ProjectKind
+): TerminalPrimarySelectionMode {
+  if (platform === 'linux') return 'native'
+  if (platform === 'win32' && sessionKind === 'wsl') return 'local'
+  return 'none'
+}
+
+export function terminalRightClickAction(
+  hasSelection: boolean,
+  mouseTrackingMode: TerminalMouseTrackingMode
+): TerminalMouseClipboardAction | null {
+  return hasSelection && mouseTrackingMode === 'none' ? 'copy' : null
+}
+
+export function terminalMiddleClickAction(
+  selectionMode: TerminalPrimarySelectionMode,
+  hasPrimarySelection: boolean,
+  mouseTrackingMode: TerminalMouseTrackingMode
+): TerminalMouseClipboardAction | null {
+  return selectionMode === 'local' && hasPrimarySelection && mouseTrackingMode === 'none'
+    ? 'local-paste'
+    : null
+}
+
+export function createTerminalPrimarySelectionStore(): TerminalPrimarySelectionStore {
+  let selection: { ownerTerminalId: string; text: string } | null = null
+
+  return {
+    get: () => selection?.text ?? null,
+    set: (ownerTerminalId, text) => {
+      if (text.length > 0) selection = { ownerTerminalId, text }
+    },
+    clear: (ownerTerminalId) => {
+      if (selection?.ownerTerminalId === ownerTerminalId) selection = null
+    }
+  }
+}
 
 export interface TerminalClipboardKeyInput {
   key: string

@@ -2,7 +2,14 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import type { PtySize } from '@shared/types'
-import { decodeOsc52Clipboard, terminalClipboardAction } from './clipboard'
+import {
+  createTerminalPrimarySelectionStore,
+  decodeOsc52Clipboard,
+  terminalClipboardAction,
+  terminalMiddleClickAction,
+  terminalRightClickAction,
+  type TerminalPrimarySelectionMode
+} from './clipboard'
 import {
   getTerminalSettings,
   xtermFontFamily,
@@ -32,6 +39,7 @@ export interface TerminalSession {
 
 /** One live xterm per runtime terminal id, independent of React rendering. */
 const sessions = new Map<string, TerminalSession>()
+const localPrimarySelection = createTerminalPrimarySelectionStore()
 
 let bridgeReady = false
 
@@ -48,7 +56,11 @@ export function getSession(terminalId: string): TerminalSession | undefined {
   return sessions.get(terminalId)
 }
 
-function createSession(terminalId: string, host: HTMLElement): TerminalSession {
+function createSession(
+  terminalId: string,
+  host: HTMLElement,
+  primarySelectionMode: TerminalPrimarySelectionMode
+): TerminalSession {
   const container = document.createElement('div')
   container.className = 'h-full w-full'
   host.appendChild(container)
@@ -61,7 +73,8 @@ function createSession(terminalId: string, host: HTMLElement): TerminalSession {
     fontSize: settings.size,
     lineHeight: settings.lineHeight,
     scrollback: 10_000,
-    theme: getTerminalTheme(settings.theme)
+    theme: getTerminalTheme(settings.theme),
+    rightClickSelectsWord: false
   })
 
   const fit = new FitAddon()
@@ -97,6 +110,45 @@ function createSession(terminalId: string, host: HTMLElement): TerminalSession {
     // xterm's native paste event inserts the clipboard exactly once.
     return false
   })
+
+  const onContextMenu = (event: MouseEvent): void => {
+    const action = terminalRightClickAction(
+      term.hasSelection(),
+      term.modes.mouseTrackingMode
+    )
+    if (action !== 'copy') return
+
+    event.preventDefault()
+    event.stopPropagation()
+    void window.api.clipboard.writeText(term.getSelection()).catch((error: unknown) => {
+      console.warn('[terminal] right-click clipboard copy failed:', error)
+    })
+  }
+  container.addEventListener('contextmenu', onContextMenu)
+
+  const onAuxClick = (event: MouseEvent): void => {
+    if (event.button !== 1) return
+
+    const selection = localPrimarySelection.get()
+    const action = terminalMiddleClickAction(
+      primarySelectionMode,
+      selection !== null,
+      term.modes.mouseTrackingMode
+    )
+    if (action !== 'local-paste' || selection === null) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    term.focus()
+    term.paste(selection)
+  }
+  container.addEventListener('auxclick', onAuxClick)
+
+  const localSelectionDisposable = primarySelectionMode === 'local'
+    ? term.onSelectionChange(() => {
+      if (term.hasSelection()) localPrimarySelection.set(terminalId, term.getSelection())
+    })
+    : undefined
 
   const osc52Disposable = term.parser.registerOscHandler(52, (data) => {
     const text = decodeOsc52Clipboard(data)
@@ -144,7 +196,11 @@ function createSession(terminalId: string, host: HTMLElement): TerminalSession {
     renderer,
     themeId: settings.theme,
     disposeClipboardHandlers: () => {
+      container.removeEventListener('contextmenu', onContextMenu)
+      container.removeEventListener('auxclick', onAuxClick)
       container.removeEventListener('copy', onCopy, true)
+      localSelectionDisposable?.dispose()
+      localPrimarySelection.clear(terminalId)
       osc52Disposable.dispose()
     }
   }
@@ -180,9 +236,13 @@ export function applyTerminalTheme(themeId: ApplicationThemeId): void {
 }
 
 /** Creates the session on first view, or re-parents the existing one. */
-export function attachSession(terminalId: string, host: HTMLElement): TerminalSession {
+export function attachSession(
+  terminalId: string,
+  host: HTMLElement,
+  options: { primarySelectionMode?: TerminalPrimarySelectionMode } = {}
+): TerminalSession {
   const existing = sessions.get(terminalId)
-  if (!existing) return createSession(terminalId, host)
+  if (!existing) return createSession(terminalId, host, options.primarySelectionMode ?? 'none')
   if (existing.container.parentElement !== host) host.appendChild(existing.container)
   return existing
 }

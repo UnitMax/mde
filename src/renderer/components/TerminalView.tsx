@@ -93,6 +93,7 @@ import {
   terminalFullscreenPane
 } from '@/terminal/fullscreen'
 import { fileDropUris, isFileDrop, terminalDropMode, terminalDropNotice } from '@/terminal/drop'
+import { terminalPrimarySelectionMode } from '@/terminal/clipboard'
 import { sessionTabs } from '@/terminal/tabs'
 
 const FALLBACK_SIZE: PtySize = { cols: 80, rows: 24 }
@@ -136,6 +137,11 @@ function TerminalSurface({ session: sourceSession, pane, onFocus }: TerminalSurf
   const [fileDragOver, setFileDragOver] = useState(false)
   const [dropNotice, setDropNotice] = useState<string | null>(null)
   const setStatus = useWorkspace((state) => state.setStatus)
+  const platform = useWorkspace((state) => state.platform)
+  const primarySelectionMode = terminalPrimarySelectionMode(
+    platform?.platform ?? 'other',
+    sourceSession.kind
+  )
 
   const announceDrop = (message: string): void => {
     setDropNotice(message)
@@ -218,7 +224,7 @@ function TerminalSurface({ session: sourceSession, pane, onFocus }: TerminalSurf
     if (!host) return
 
     // Re-parents the existing terminal, or builds it on first view of this session.
-    const terminal = attachSession(pane.terminalId, host)
+    const terminal = attachSession(pane.terminalId, host, { primarySelectionMode })
     let cancelled = false
     let ensured = false
     let previousSize: PtySize | null = null
@@ -291,7 +297,7 @@ function TerminalSurface({ session: sourceSession, pane, onFocus }: TerminalSurf
       // Detach only: the process, its scrollback and its cursor all stay alive.
       detachSession(pane.terminalId)
     }
-  }, [pane.primary, pane.terminalId, setStatus, sourceSession.id])
+  }, [pane.primary, pane.terminalId, primarySelectionMode, setStatus, sourceSession.id])
 
   return (
     <div

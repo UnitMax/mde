@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { decodeOsc52Clipboard, terminalClipboardAction } from '../src/renderer/terminal/clipboard'
+import {
+  createTerminalPrimarySelectionStore,
+  decodeOsc52Clipboard,
+  terminalClipboardAction,
+  terminalMiddleClickAction,
+  terminalPrimarySelectionMode,
+  terminalRightClickAction
+} from '../src/renderer/terminal/clipboard'
 
 const key = (overrides: Partial<Parameters<typeof terminalClipboardAction>[0]> = {}) => ({
   key: '',
@@ -32,6 +39,45 @@ describe('terminal clipboard shortcuts', () => {
     expect(terminalClipboardAction(key({ key: 'c', code: 'KeyC', meta: true }), true, true)).toBe('copy')
     expect(terminalClipboardAction(key({ key: 'v', code: 'KeyV', meta: true }), false, true)).toBe('native-paste')
     expect(terminalClipboardAction(key({ key: 'c', code: 'KeyC', control: true, alt: true }), true, false)).toBeNull()
+  })
+})
+
+describe('terminal mouse clipboard behavior', () => {
+  it('selects native or local primary-selection behavior by host and session', () => {
+    expect(terminalPrimarySelectionMode('linux', 'native')).toBe('native')
+    expect(terminalPrimarySelectionMode('linux', 'wsl')).toBe('native')
+    expect(terminalPrimarySelectionMode('win32', 'wsl')).toBe('local')
+    expect(terminalPrimarySelectionMode('win32', 'native')).toBe('none')
+    expect(terminalPrimarySelectionMode('darwin', 'native')).toBe('none')
+  })
+
+  it('copies only selected text on right click outside mouse-tracked TUIs', () => {
+    expect(terminalRightClickAction(true, 'none')).toBe('copy')
+    expect(terminalRightClickAction(false, 'none')).toBeNull()
+    expect(terminalRightClickAction(true, 'vt200')).toBeNull()
+  })
+
+  it('pastes local primary selection only in normal WSL terminal mode', () => {
+    expect(terminalMiddleClickAction('local', true, 'none')).toBe('local-paste')
+    expect(terminalMiddleClickAction('local', false, 'none')).toBeNull()
+    expect(terminalMiddleClickAction('native', true, 'none')).toBeNull()
+    expect(terminalMiddleClickAction('local', true, 'any')).toBeNull()
+  })
+
+  it('shares the latest non-empty local selection and clears it with its owner', () => {
+    const store = createTerminalPrimarySelectionStore()
+    store.set('pane-1', 'first')
+    expect(store.get()).toBe('first')
+
+    store.set('pane-2', 'second')
+    expect(store.get()).toBe('second')
+
+    store.set('pane-2', '')
+    expect(store.get()).toBe('second')
+    store.clear('pane-1')
+    expect(store.get()).toBe('second')
+    store.clear('pane-2')
+    expect(store.get()).toBeNull()
   })
 })
 

@@ -106,12 +106,15 @@ entries shown beneath each session. Ordinary terminal instances are hidden by de
 OpenCode instances are shown by default; these preferences are global and stored with the local
 terminal settings.
 
-Terminal clipboard shortcuts use the host Windows clipboard, including for WSL sessions. `Ctrl+C`
-copies selected terminal text and remains the normal interrupt when there is no selection;
+Terminal clipboard shortcuts use the normal system clipboard, including for WSL sessions on Windows.
+`Ctrl+C` copies selected terminal text and remains the normal interrupt when there is no selection;
 `Ctrl+Shift+C`, `Ctrl+Insert`, `Ctrl+V`, `Ctrl+Shift+V`, and `Shift+Insert` are also supported.
 On macOS, use the corresponding `Command` shortcuts. OSC 52 clipboard sequences are accepted, so
 copying a selection from the OpenCode TUI updates the system clipboard even while its mouse mode
-is enabled.
+is enabled. Right-clicking highlighted terminal text copies it to the normal system clipboard.
+On Linux, left-dragged text also becomes the desktop's separate PRIMARY selection, which middle-click
+pastes without changing the normal clipboard. WSL terminals on Windows provide the same middle-click
+workflow within MDE using an in-app transient selection; native Windows terminals do not.
 
 Files can be dragged from Finder, Explorer, or another file manager into any terminal pane. In a
 normal shell MDE inserts target-shell-escaped paths without submitting them. In an alternate-screen
