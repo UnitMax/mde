@@ -24,8 +24,8 @@ const session: Session = {
       layout: {
         layout: 'columns',
         panes: [
-          { id: 'primary', primary: true },
-          { id: 'pane-1', primary: false }
+          { id: 'pane-1' },
+          { id: 'pane-2' }
         ],
         sizes: { columnRatio: 0.35, rowRatio: 0.5 }
       }
@@ -35,7 +35,7 @@ const session: Session = {
       name: 'Tab 2',
       layout: {
         layout: 'single',
-        panes: [{ id: 'primary', primary: true }],
+        panes: [{ id: 'pane-1' }],
         sizes: { columnRatio: 0.5, rowRatio: 0.5 }
       }
     }
@@ -45,16 +45,15 @@ const session: Session = {
 
 describe('session tab runtime helpers', () => {
   it('uses stable tab and pane identities without sharing terminal IDs', () => {
-    expect(terminalIdForPane(session.id, 'tab-1', 'primary')).toBe('session-1:tab:tab-1:pane:primary')
-    expect(terminalIdForPane(session.id, 'tab-1', 'primary')).not.toBe(
-      terminalIdForPane(session.id, 'tab-2', 'primary')
+    expect(terminalIdForPane(session.id, 'tab-1', 'pane-1')).toBe('session-1:tab:tab-1:pane:pane-1')
+    expect(terminalIdForPane(session.id, 'tab-1', 'pane-1')).not.toBe(
+      terminalIdForPane(session.id, 'tab-2', 'pane-1')
     )
 
     const layout = createRuntimeLayout(session.id, session.tabs![0]!)
     expect(layout.panes[0]).toMatchObject({
-      terminalId: 'session-1:tab:tab-1:pane:primary',
-      paneId: 'primary',
-      primary: true
+      terminalId: 'session-1:tab:tab-1:pane:pane-1',
+      paneId: 'pane-1'
     })
     expect(persistRuntimeLayout(layout)).toEqual(session.tabs![0]!.layout)
   })
@@ -65,8 +64,8 @@ describe('session tab runtime helpers', () => {
       layout: {
         ...session.tabs![0]!.layout,
         panes: [
-          { id: 'primary', primary: true, title: 'Shell' },
-          { id: 'pane-1', primary: false }
+          { id: 'pane-1', title: 'Shell' },
+          { id: 'pane-2' }
         ]
       }
     }
@@ -80,7 +79,7 @@ describe('session tab runtime helpers', () => {
   it('skips persisted split-pane keys when allocating a new runtime pane', () => {
     const layout = createRuntimeLayout(session.id, session.tabs![0]!)
 
-    expect(nextPaneId(layout.panes)).toBe('pane-2')
+    expect(nextPaneId(layout.panes)).toBe('pane-3')
   })
 
   it('falls back to a default tab and restores the persisted active tab', () => {
@@ -96,12 +95,12 @@ describe('session tab runtime helpers', () => {
 
   it('keeps six-pane tab layouts and both column boundaries stable at runtime', () => {
     const panes = [
-      { id: 'primary', primary: true },
-      { id: 'pane-1', primary: false },
-      { id: 'pane-2', primary: false },
-      { id: 'pane-3', primary: false },
-      { id: 'pane-4', primary: false },
-      { id: 'pane-5', primary: false }
+      { id: 'pane-1' },
+      { id: 'pane-2' },
+      { id: 'pane-3' },
+      { id: 'pane-4' },
+      { id: 'pane-5' },
+      { id: 'pane-6' }
     ]
     const sixTab = {
       id: 'tab-six',
@@ -116,7 +115,7 @@ describe('session tab runtime helpers', () => {
     const runtime = createRuntimeLayout(sixSession.id, sixTab)
 
     expect(runtime.panes).toHaveLength(6)
-    expect(runtime.panes[5]?.terminalId).toBe('session-1:tab:tab-six:pane:pane-5')
+    expect(runtime.panes[5]?.terminalId).toBe('session-1:tab:tab-six:pane:pane-6')
     expect(persistRuntimeLayout(runtime)).toEqual(sixTab.layout)
   })
 })

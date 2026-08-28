@@ -55,8 +55,8 @@ describe('workspace session tabs', () => {
         layout: {
           layout: 'columns',
           panes: [
-            { id: 'primary', primary: true },
-            { id: 'pane-1', primary: false, title: '  API  ' }
+            { id: 'pane-1' },
+            { id: 'pane-2', title: '  API  ' }
           ],
           sizes: { columnRatio: 0.4, rowRatio: 0.5 }
         }
@@ -77,8 +77,8 @@ describe('workspace session tabs', () => {
         layout: {
           layout: 'columns',
           panes: [
-            { id: 'primary', primary: true },
-            { id: 'pane-1', primary: false, title: '   ' }
+            { id: 'pane-1' },
+            { id: 'pane-2', title: '   ' }
           ],
           sizes: { columnRatio: 0.4, rowRatio: 0.5 }
         }
@@ -115,12 +115,12 @@ describe('workspace session tabs', () => {
       path: '/workspace/app'
     })
     const panes = [
-      { id: 'primary', primary: true },
-      { id: 'pane-1', primary: false },
-      { id: 'pane-2', primary: false },
-      { id: 'pane-3', primary: false },
-      { id: 'pane-4', primary: false },
-      { id: 'pane-5', primary: false }
+      { id: 'pane-1' },
+      { id: 'pane-2' },
+      { id: 'pane-3' },
+      { id: 'pane-4' },
+      { id: 'pane-5' },
+      { id: 'pane-6' }
     ]
     const updated = await updateSessionTab({
       sessionId: session.id,

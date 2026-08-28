@@ -3,6 +3,7 @@ import {
   createSessionTerminalLayout,
   defaultTerminalLayoutSizes,
   getTerminalLayoutShortcut,
+  isTerminalPaneClosable,
   layoutClass,
   layoutForCount,
   orderTerminalPanes,
@@ -149,66 +150,75 @@ describe('terminal layouts', () => {
     expect(terminalSplitRatio(0, 100)).toBe(0.5)
   })
 
-  it('keeps the primary pane and trims newest split panes first', () => {
+  it('trims newest panes without protecting a specific terminal', () => {
     const panes = [
-      { terminalId: 'primary', primary: true },
-      { terminalId: 'split-1', primary: false },
-      { terminalId: 'split-2', primary: false },
-      { terminalId: 'split-3', primary: false }
+      { terminalId: 'pane-1' },
+      { terminalId: 'pane-2' },
+      { terminalId: 'pane-3' },
+      { terminalId: 'pane-4' }
     ]
 
-    expect(panesToTrim(panes, 2)).toEqual(['split-3', 'split-2'])
-    expect(panesToTrim(panes, 1)).toEqual(['split-3', 'split-2', 'split-1'])
-    expect(panesToTrim(panes, 2, 'split-1')).toEqual(['split-1', 'split-3'])
+    expect(panesToTrim(panes, 2)).toEqual(['pane-4', 'pane-3'])
+    expect(panesToTrim(panes, 1)).toEqual(['pane-4', 'pane-3', 'pane-2'])
+    expect(panesToTrim(panes, 2, 'pane-1')).toEqual(['pane-1', 'pane-4'])
 
     const sixPanes = [
-      { terminalId: 'primary', primary: true },
-      { terminalId: 'split-1', primary: false },
-      { terminalId: 'split-2', primary: false },
-      { terminalId: 'split-3', primary: false },
-      { terminalId: 'split-4', primary: false },
-      { terminalId: 'split-5', primary: false }
+      { terminalId: 'pane-1' },
+      { terminalId: 'pane-2' },
+      { terminalId: 'pane-3' },
+      { terminalId: 'pane-4' },
+      { terminalId: 'pane-5' },
+      { terminalId: 'pane-6' }
     ]
-    expect(panesToTrim(sixPanes, 4, 'split-2')).toEqual(['split-2', 'split-5'])
+    expect(panesToTrim(sixPanes, 4, 'pane-3')).toEqual(['pane-3', 'pane-6'])
+  })
+
+  it('allows any existing pane to close while another pane remains', () => {
+    const panes = [{ terminalId: 'pane-1' }, { terminalId: 'pane-2' }]
+
+    expect(isTerminalPaneClosable(panes, 'pane-1')).toBe(true)
+    expect(isTerminalPaneClosable(panes, 'pane-2')).toBe(true)
+    expect(isTerminalPaneClosable(panes.slice(0, 1), 'pane-1')).toBe(false)
+    expect(isTerminalPaneClosable(panes, 'missing')).toBe(false)
   })
 
   it('swaps pane positions while preserving pane metadata', () => {
     const panes = [
-      { terminalId: 'primary', primary: true, exited: true },
-      { terminalId: 'split-1', primary: false },
-      { terminalId: 'split-2', primary: false, exited: true }
+      { terminalId: 'pane-1', exited: true },
+      { terminalId: 'pane-2' },
+      { terminalId: 'pane-3', exited: true }
     ]
 
-    expect(swapTerminalPanes(panes, 'primary', 'split-2')).toEqual([
+    expect(swapTerminalPanes(panes, 'pane-1', 'pane-3')).toEqual([
       panes[2],
       panes[1],
       panes[0]
     ])
     expect(panes).toEqual([
-      { terminalId: 'primary', primary: true, exited: true },
-      { terminalId: 'split-1', primary: false },
-      { terminalId: 'split-2', primary: false, exited: true }
+      { terminalId: 'pane-1', exited: true },
+      { terminalId: 'pane-2' },
+      { terminalId: 'pane-3', exited: true }
     ])
-    expect(swapTerminalPanes(panes, 'primary', 'primary')).toEqual(panes)
-    expect(swapTerminalPanes(panes, 'missing', 'split-1')).toEqual(panes)
+    expect(swapTerminalPanes(panes, 'pane-1', 'pane-1')).toEqual(panes)
+    expect(swapTerminalPanes(panes, 'missing', 'pane-2')).toEqual(panes)
   })
 
   it('accepts only complete pane-order permutations', () => {
     const panes = [
-      { terminalId: 'primary', primary: true },
-      { terminalId: 'split-1', primary: false }
+      { terminalId: 'pane-1' },
+      { terminalId: 'pane-2' }
     ]
 
-    expect(orderTerminalPanes(panes, ['split-1', 'primary'])).toEqual([panes[1], panes[0]])
-    expect(orderTerminalPanes(panes, ['primary'])).toBeNull()
-    expect(orderTerminalPanes(panes, ['primary', 'primary'])).toBeNull()
-    expect(orderTerminalPanes(panes, ['primary', 'missing'])).toBeNull()
+    expect(orderTerminalPanes(panes, ['pane-2', 'pane-1'])).toEqual([panes[1], panes[0]])
+    expect(orderTerminalPanes(panes, ['pane-1'])).toBeNull()
+    expect(orderTerminalPanes(panes, ['pane-1', 'pane-1'])).toBeNull()
+    expect(orderTerminalPanes(panes, ['pane-1', 'missing'])).toBeNull()
   })
 
-  it('starts every workspace session with one primary pane', () => {
+  it('starts every workspace session with one neutral pane', () => {
     expect(createSessionTerminalLayout('session-1')).toEqual({
       layout: 'single',
-      panes: [{ terminalId: 'session-1', primary: true }],
+      panes: [{ terminalId: 'session-1' }],
       sizes: defaultTerminalLayoutSizes()
     })
   })

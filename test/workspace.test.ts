@@ -30,7 +30,7 @@ const defaultTab = {
   name: 'Tab 1',
   layout: {
     layout: 'single',
-    panes: [{ id: 'primary', primary: true }],
+    panes: [{ id: 'pane-1' }],
     sizes: { columnRatio: 0.5, rowRatio: 0.5 }
   }
 }
@@ -77,8 +77,8 @@ describe('workspace validation', () => {
           layout: {
             layout: 'columns',
             panes: [
-              { id: 'primary', primary: true },
-              { id: 'pane-1', primary: false }
+              { id: 'pane-1' },
+              { id: 'pane-2' }
             ],
             sizes: { columnRatio: 2, rowRatio: -1 }
           }
@@ -101,12 +101,12 @@ describe('workspace validation', () => {
   it('validates three-column and six-pane layouts with independent column ratios', () => {
     const projectIds = new Set([project.id])
     const panes = [
-      { id: 'primary', primary: true },
-      { id: 'pane-1', primary: false },
-      { id: 'pane-2', primary: false },
-      { id: 'pane-3', primary: false },
-      { id: 'pane-4', primary: false },
-      { id: 'pane-5', primary: false }
+      { id: 'pane-1' },
+      { id: 'pane-2' },
+      { id: 'pane-3' },
+      { id: 'pane-4' },
+      { id: 'pane-5' },
+      { id: 'pane-6' }
     ]
     const six = validateSession({
       ...session,

@@ -280,7 +280,7 @@ describe('renderer workspace event bridge', () => {
       name: 'Tab 1',
       layout: {
         layout: 'single' as const,
-        panes: [{ id: 'primary', primary: true }],
+        panes: [{ id: 'pane-1' }],
         sizes: { columnRatio: 0.5, rowRatio: 0.5 }
       }
     }

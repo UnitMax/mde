@@ -6,8 +6,8 @@ import {
 } from '../src/renderer/terminal/fullscreen'
 
 const panes = [
-  { terminalId: 'primary', primary: true },
-  { terminalId: 'split-1', primary: false }
+  { terminalId: 'pane-1' },
+  { terminalId: 'pane-2' }
 ]
 
 describe('terminal fullscreen behavior', () => {
@@ -33,7 +33,7 @@ describe('terminal fullscreen behavior', () => {
   })
 
   it('selects the requested pane and safely falls back when it is gone', () => {
-    expect(terminalFullscreenPane(panes, 'split-1')).toEqual(panes[1])
+    expect(terminalFullscreenPane(panes, 'pane-2')).toEqual(panes[1])
     expect(terminalFullscreenPane(panes, 'missing')).toBeNull()
     expect(terminalFullscreenPane(panes, null)).toBeNull()
   })

@@ -15,7 +15,7 @@ export function defaultSessionTab(sessionId: string): SessionTab {
     name: 'Tab 1',
     layout: {
       layout: 'single',
-      panes: [{ id: 'primary', primary: true }],
+      panes: [{ id: 'pane-1' }],
       sizes: defaultTerminalLayoutSizes()
     }
   }
@@ -52,7 +52,6 @@ export function createRuntimeLayout(sessionId: string, tab: SessionTab): Session
     panes: tab.layout.panes.map((pane) => ({
       terminalId: terminalIdForPane(sessionId, tab.id, pane.id),
       paneId: pane.id,
-      primary: pane.primary,
       ...(pane.title?.trim() ? { title: pane.title.trim() } : {})
     })),
     sizes: { ...tab.layout.sizes }
@@ -75,7 +74,6 @@ export function persistRuntimeLayout(layout: SessionTerminalLayout): PersistedTe
     layout: layout.layout,
     panes: layout.panes.map((pane) => ({
       id: pane.paneId ?? pane.terminalId,
-      primary: pane.primary,
       ...(pane.title?.trim() ? { title: pane.title.trim() } : {})
     })),
     sizes: { ...layout.sizes }

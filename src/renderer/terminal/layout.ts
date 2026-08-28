@@ -9,7 +9,6 @@ export type TerminalColumnIndex = 0 | 1
 
 export interface TerminalPaneState {
   terminalId: string
-  primary: boolean
   /** Stable persisted pane key when the layout belongs to a session tab. */
   paneId?: string
   /** Optional user-defined title for this pane. */
@@ -206,7 +205,7 @@ export function paneClass(layout: TerminalLayout, index: number): string {
 export function createSessionTerminalLayout(sessionId: string): SessionTerminalLayout {
   return {
     layout: 'single',
-    panes: [{ terminalId: sessionId, primary: true }],
+    panes: [{ terminalId: sessionId }],
     sizes: defaultTerminalLayoutSizes()
   }
 }
@@ -218,13 +217,18 @@ export function panesToTrim(
   requestedTerminalId?: string
 ): string[] {
   const excess = Math.max(0, panes.length - targetCount)
-  const newest = [...panes]
-    .reverse()
-    .filter((pane) => !pane.primary)
-    .map((pane) => pane.terminalId)
+  const newest = [...panes].reverse().map((pane) => pane.terminalId)
   if (!requestedTerminalId || !newest.includes(requestedTerminalId)) return newest.slice(0, excess)
   return [requestedTerminalId, ...newest.filter((terminalId) => terminalId !== requestedTerminalId)]
     .slice(0, excess)
+}
+
+/** A terminal pane can close only while another pane can remain visible. */
+export function isTerminalPaneClosable(
+  panes: readonly TerminalPaneState[],
+  terminalId: string
+): boolean {
+  return panes.length > 1 && panes.some((pane) => pane.terminalId === terminalId)
 }
 
 /** Swaps two panes by terminal ID without changing either pane's metadata. */

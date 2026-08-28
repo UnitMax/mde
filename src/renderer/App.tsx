@@ -19,8 +19,8 @@ import {
   terminalIdForPane
 } from '@/terminal/tabs'
 import {
-  MAX_TERMINAL_COUNT,
   defaultTerminalLayoutSizes,
+  isTerminalPaneClosable,
   layoutForCount,
   orderTerminalPanes,
   panesToTrim,
@@ -63,6 +63,7 @@ export function App(): JSX.Element {
   const renameTabAction = useWorkspace((state) => state.renameTab)
   const updateTabLayoutAction = useWorkspace((state) => state.updateTabLayout)
   const removeTabAction = useWorkspace((state) => state.removeTab)
+  const clearExit = useWorkspace((state) => state.clearExit)
   const [newSessionOpen, setNewSessionOpen] = useState(false)
   const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [gitSessionId, setGitSessionId] = useState<string | null>(null)
@@ -135,6 +136,7 @@ export function App(): JSX.Element {
   }, [])
 
   const disposeRuntimeTerminal = (terminalId: string): void => {
+    clearExit(terminalId)
     disposeSession(terminalId)
     void window.api.pty.dispose(terminalId)
   }
@@ -311,12 +313,12 @@ export function App(): JSX.Element {
     void selectTabAction(sessionId, tabId).then((updated) => {
       if (!updated || terminalFocusRequestId.current !== focusRequestId) return
       const tab = activeSessionTab(updated)
-      const primary = tab.layout.panes.find((pane) => pane.primary) ?? tab.layout.panes[0]
-      if (primary) {
+      const pane = tab.layout.panes[0]
+      if (pane) {
         setPendingTerminalFocus({
           sessionId,
           tabId: tab.id,
-          terminalId: terminalIdForPane(sessionId, tab.id, primary.id)
+          terminalId: terminalIdForPane(sessionId, tab.id, pane.id)
         })
       }
     })
@@ -327,12 +329,12 @@ export function App(): JSX.Element {
     void addTabAction(sessionId).then((updated) => {
       if (!updated || terminalFocusRequestId.current !== focusRequestId) return
       const tab = activeSessionTab(updated)
-      const primary = tab.layout.panes.find((pane) => pane.primary) ?? tab.layout.panes[0]
-      if (primary) {
+      const pane = tab.layout.panes[0]
+      if (pane) {
         setPendingTerminalFocus({
           sessionId,
           tabId: tab.id,
-          terminalId: terminalIdForPane(sessionId, tab.id, primary.id)
+          terminalId: terminalIdForPane(sessionId, tab.id, pane.id)
         })
       }
     })
@@ -388,12 +390,12 @@ export function App(): JSX.Element {
         terminalFocusRequestId.current === focusRequestId
       ) {
         const tab = activeSessionTab(updated)
-        const primary = tab.layout.panes.find((pane) => pane.primary) ?? tab.layout.panes[0]
-        if (primary) {
+        const pane = tab.layout.panes[0]
+        if (pane) {
           setPendingTerminalFocus({
             sessionId,
             tabId: tab.id,
-            terminalId: terminalIdForPane(sessionId, tab.id, primary.id)
+            terminalId: terminalIdForPane(sessionId, tab.id, pane.id)
           })
         }
       }
@@ -419,8 +421,7 @@ export function App(): JSX.Element {
       const paneId = nextPaneId(panes)
       panes.push({
         terminalId: terminalIdForPane(sessionId, tabId, paneId),
-        paneId,
-        primary: false
+        paneId
       })
     }
     const next = { layout, panes, sizes: defaultTerminalLayoutSizes(layout) }
@@ -451,8 +452,7 @@ export function App(): JSX.Element {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!session) return
     const existing = layoutForTab(session, tabId)
-    const pane = existing.panes.find((candidate) => candidate.terminalId === terminalId)
-    if (!pane || pane.primary || existing.panes.length <= 1) return
+    if (!isTerminalPaneClosable(existing.panes, terminalId)) return
     const paneIds = existing.layout === 'sixGrid'
       ? panesToTrim(existing.panes, 4, terminalId)
       : [terminalId]
@@ -499,38 +499,6 @@ export function App(): JSX.Element {
     queueLayoutPersistence(sessionId, tabId, next, true)
   }
 
-  const restartPrimary = (sessionId: string, tabId: string): void => {
-    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
-    if (!session) return
-    const existing = layoutForTab(session, tabId)
-    const primary = existing.panes.find((pane) => pane.primary)
-    if (primary) {
-      const next = {
-        ...existing,
-        panes: existing.panes.map((pane) => pane.primary ? { ...pane, exited: false } : pane)
-      }
-      setRuntimeLayout(sessionId, tabId, next)
-      return
-    }
-
-    const removable = [...existing.panes].reverse().find((pane) => !pane.primary)
-    if (existing.panes.length >= MAX_TERMINAL_COUNT && removable) disposeRuntimeTerminal(removable.terminalId)
-    const panes = existing.panes.filter((pane) => pane.terminalId !== removable?.terminalId)
-    const paneId = 'primary'
-    panes.push({
-      terminalId: terminalIdForPane(sessionId, tabId, paneId),
-      paneId,
-      primary: true
-    })
-    const next = {
-      layout: layoutForCount(panes.length),
-      panes,
-      sizes: defaultTerminalLayoutSizes(layoutForCount(panes.length))
-    }
-    setRuntimeLayout(sessionId, tabId, next)
-    queueLayoutPersistence(sessionId, tabId, next, true)
-  }
-
   const layoutForSession = selected && activeTab
     ? layoutForTab(selected, activeTab.id)
     : undefined
@@ -566,7 +534,6 @@ export function App(): JSX.Element {
             onPaneTitleChange={(terminalId, title) =>
               renameTerminalPane(selected.id, activeTab.id, terminalId, title)
             }
-            onRestartPrimary={() => restartPrimary(selected.id, activeTab.id)}
           />
         ) : (
           <EmptyState onNewSession={() => openNewSession()} />

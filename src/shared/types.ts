@@ -51,7 +51,6 @@ export interface TerminalLayoutSizes {
 export interface PersistedTerminalPane {
   /** Stable logical pane identity; runtime PTY IDs are derived from it. */
   id: string
-  primary: boolean
   /** Optional user-defined title for this pane. */
   title?: string
 }
@@ -220,7 +219,7 @@ export interface PtySize {
 
 export interface PtyExitInfo {
   sessionId: string
-  /** Runtime terminal identity; the primary terminal uses the session id. */
+  /** Runtime terminal identity for the pane that exited. */
   terminalId: string
   exitCode: number
   signal?: number

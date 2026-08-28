@@ -10,9 +10,9 @@ import type { SessionTerminalLayout } from '../src/renderer/terminal/layout'
 const layout: SessionTerminalLayout = {
   layout: 'three',
   panes: [
-    { terminalId: 'session-1:split:2', primary: false },
-    { terminalId: 'session-1', primary: true },
-    { terminalId: 'session-1:split:1', primary: false }
+    { terminalId: 'session-1:split:2' },
+    { terminalId: 'session-1' },
+    { terminalId: 'session-1:split:1' }
   ],
   sizes: { columnRatio: 0.5, rowRatio: 0.5 }
 }

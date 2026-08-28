@@ -72,6 +72,7 @@ import {
   terminalGridTemplates,
   terminalColumnRatios,
   terminalColumnSplitRatio,
+  isTerminalPaneClosable,
   layoutClass,
   paneClass,
   panesToTrim,
@@ -124,7 +125,6 @@ interface TerminalViewProps {
   onReduceLayout: (layout: TerminalLayout, paneIds: string[]) => void
   onClosePane: (terminalId: string) => void
   onPaneTitleChange: (terminalId: string, title: string | null) => void
-  onRestartPrimary: () => void
 }
 
 interface TerminalSurfaceProps {
@@ -301,7 +301,7 @@ function TerminalSurface({ session: sourceSession, pane, onFocus }: TerminalSurf
       // Detach only: the process, its scrollback and its cursor all stay alive.
       detachSession(pane.terminalId)
     }
-  }, [pane.primary, pane.terminalId, primarySelectionMode, setStatus, sourceSession.id])
+  }, [pane.terminalId, primarySelectionMode, setStatus, sourceSession.id])
 
   return (
     <div
@@ -384,6 +384,7 @@ function TerminalPane({
 }): JSX.Element {
   const clearExit = useWorkspace((state) => state.clearExit)
   const setStatus = useWorkspace((state) => state.setStatus)
+  const exit = useWorkspace((state) => state.exits[pane.terminalId])
   const platform = useWorkspace((state) => state.platform)
   const wslAvailable = useWorkspace((state) => state.wslAvailable)
   const currentDirectory = useWorkspace((state) => state.terminalDirectories[pane.terminalId])
@@ -406,7 +407,7 @@ function TerminalPane({
     const terminal = getSession(pane.terminalId)
     terminal?.term.reset()
     const size = (terminal && fitSession(terminal)) || FALLBACK_SIZE
-    if (pane.primary) clearExit(pane.terminalId)
+    clearExit(pane.terminalId)
     const status = await window.api.pty.restart({
       terminalId: pane.terminalId,
       sessionId: session.id,
@@ -549,7 +550,7 @@ function TerminalPane({
           >
             <RotateCw className="h-3.5 w-3.5" />
           </Button>
-          {!pane.primary && (
+          {isTerminalPaneClosable(terminalLayout.panes, pane.terminalId) && (
             <Button
               variant="ghost"
               size="icon-sm"
@@ -563,6 +564,20 @@ function TerminalPane({
           )}
         </div>
       </header>
+      {exit && (
+        <div
+          className="flex shrink-0 items-center gap-3 border-b border-danger/30 bg-danger/10 px-3 py-1.5"
+          data-testid="terminal-pane-exit"
+        >
+          <span className="text-xs text-danger">
+            Process exited (code {exit.exitCode}
+            {exit.signal ? `, signal ${exit.signal}` : ''})
+          </span>
+          <Button variant="secondary" size="sm" className="ml-auto" onClick={requestRestart}>
+            Restart
+          </Button>
+        </div>
+      )}
       <TerminalSurface session={session} pane={pane} onFocus={onFocus} />
       <RestartConfirmDialog
         open={restartConfirmationOpen}
@@ -1736,16 +1751,11 @@ export function TerminalView({
   onPaneOrderChange,
   onReduceLayout,
   onClosePane,
-  onPaneTitleChange,
-  onRestartPrimary
+  onPaneTitleChange
 }: TerminalViewProps): JSX.Element {
-  const clearExit = useWorkspace((state) => state.clearExit)
-  const setStatus = useWorkspace((state) => state.setStatus)
   const opencodeTuiInstances = useWorkspace(
     (state) => state.opencodeTuiInstances[selectedSession.id]
   )
-  const primaryPane = terminalLayout.panes.find((pane) => pane.primary)
-  const exit = useWorkspace((state) => primaryPane ? state.exits[primaryPane.terminalId] : undefined)
   const [pendingReduction, setPendingReduction] = useState<{
     layout: TerminalLayout
     paneIds: string[]
@@ -1756,7 +1766,6 @@ export function TerminalView({
   const [reorderSourceId, setReorderSourceId] = useState<string | null>(null)
   const [reorderPreviewPanes, setReorderPreviewPanes] = useState<TerminalPaneState[] | null>(null)
   const [fullscreenTerminalId, setFullscreenTerminalId] = useState<string | null>(null)
-  const [restartConfirmationOpen, setRestartConfirmationOpen] = useState(false)
   const [terminalSettings, setTerminalSettings] = useState<TerminalSettings>(() => getTerminalSettings())
   const gridRef = useRef<HTMLDivElement>(null)
   const reorderDragRef = useRef<TerminalReorderDragState | null>(null)
@@ -1770,25 +1779,6 @@ export function TerminalView({
     focusedTerminalIdRef.current = null
     setFullscreenTerminalId(null)
   }, [activeTab.id, selectedSession.id])
-
-  const restart = useCallback(async () => {
-    onRestartPrimary()
-    const primary = terminalLayout.panes.find((pane) => pane.primary)
-    if (!primary) return
-    const session = getSession(primary.terminalId)
-    if (!session) return
-    session?.term.reset()
-    const size = (session && fitSession(session)) || FALLBACK_SIZE
-    clearExit(primary.terminalId)
-    const status = await window.api.pty.restart({
-      terminalId: primary.terminalId,
-      sessionId: selectedSession.id,
-      size,
-      palette: getTerminalPalette(session?.themeId ?? getTerminalSettings().theme)
-    })
-    setStatus(primary.terminalId, status)
-    session?.term.focus()
-  }, [clearExit, onRestartPrimary, selectedSession.id, setStatus, terminalLayout.panes])
 
   const requestLayout = useCallback((layout: TerminalLayout): void => {
     const targetCount = terminalCount(layout)
@@ -1805,6 +1795,7 @@ export function TerminalView({
   }, [onLayoutChange, terminalLayout.panes.length])
 
   const requestClosePane = (terminalId: string): void => {
+    if (!isTerminalPaneClosable(terminalLayout.panes, terminalId)) return
     if (terminalLayout.layout === 'sixGrid') {
       const targetLayout: TerminalLayout = 'quadrant'
       setPendingReduction({
@@ -2170,18 +2161,6 @@ export function TerminalView({
 
       </header>
 
-      {exit && (
-        <div className="flex shrink-0 items-center gap-3 border-b border-danger/30 bg-danger/10 px-3 py-1.5">
-          <span className="text-xs text-danger">
-            Process exited (code {exit.exitCode}
-            {exit.signal ? `, signal ${exit.signal}` : ''})
-          </span>
-          <Button variant="secondary" size="sm" className="ml-auto" onClick={() => setRestartConfirmationOpen(true)}>
-            Restart
-          </Button>
-        </div>
-      )}
-
       <div
           ref={gridRef}
           className={`relative grid h-full min-h-0 flex-1 gap-px bg-line ${layoutClass(terminalLayout.layout)}`}
@@ -2245,15 +2224,6 @@ export function TerminalView({
           ))}
       </div>
 
-      <RestartConfirmDialog
-        open={restartConfirmationOpen}
-        onOpenChange={setRestartConfirmationOpen}
-        onConfirm={() => {
-          setRestartConfirmationOpen(false)
-          void restart()
-        }}
-      />
-
       <AlertDialog
         open={pendingReduction !== null}
         onOpenChange={(open) => {
@@ -2264,8 +2234,8 @@ export function TerminalView({
           <AlertDialogTitle>Close extra terminals?</AlertDialogTitle>
           <AlertDialogDescription>
             {pendingReduction?.closingPane
-              ? 'Closing a terminal from the six-terminal layout will switch to four terminals and close one additional split terminal.'
-              : `Changing to ${pendingReduction ? TERMINAL_LAYOUTS.find((candidate) => candidate.value === pendingReduction.layout)?.label.toLowerCase() : 'a smaller layout'} will close the extra split terminals.`}
+              ? 'Closing a terminal from the six-terminal layout will switch to four terminals and close one additional terminal.'
+              : `Changing to ${pendingReduction ? TERMINAL_LAYOUTS.find((candidate) => candidate.value === pendingReduction.layout)?.label.toLowerCase() : 'a smaller layout'} will close the extra terminals.`}
           </AlertDialogDescription>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep current layout</AlertDialogCancel>

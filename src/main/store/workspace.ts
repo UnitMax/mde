@@ -90,7 +90,7 @@ function defaultTab(sessionId: string): SessionTab {
     name: 'Tab 1',
     layout: {
       layout: 'single',
-      panes: [{ id: 'primary', primary: true }],
+      panes: [{ id: 'pane-1' }],
       sizes: { columnRatio: 0.5, rowRatio: 0.5 }
     }
   }
@@ -104,16 +104,14 @@ function validateTerminalLayout(raw: unknown): PersistedTerminalLayout | null {
   const expectedCount = TERMINAL_LAYOUT_COUNTS[record.layout]
   const panes = record.panes
     .filter((pane): pane is Record<string, unknown> => typeof pane === 'object' && pane !== null)
-    .filter((pane) => isNonEmptyString(pane.id) && typeof pane.primary === 'boolean')
+    .filter((pane) => isNonEmptyString(pane.id))
     .map((pane) => ({
       id: pane.id as string,
-      primary: pane.primary as boolean,
       ...(isNonEmptyString(pane.title) ? { title: pane.title.trim() } : {})
     }))
   if (panes.length !== expectedCount || new Set(panes.map((pane) => pane.id)).size !== panes.length) {
     return null
   }
-  if (panes.filter((pane) => pane.primary).length > 1) return null
 
   const sizes = typeof record.sizes === 'object' && record.sizes !== null
     ? record.sizes as Record<string, unknown>
