@@ -105,7 +105,11 @@ function validateTerminalLayout(raw: unknown): PersistedTerminalLayout | null {
   const panes = record.panes
     .filter((pane): pane is Record<string, unknown> => typeof pane === 'object' && pane !== null)
     .filter((pane) => isNonEmptyString(pane.id) && typeof pane.primary === 'boolean')
-    .map((pane) => ({ id: pane.id as string, primary: pane.primary as boolean }))
+    .map((pane) => ({
+      id: pane.id as string,
+      primary: pane.primary as boolean,
+      ...(isNonEmptyString(pane.title) ? { title: pane.title.trim() } : {})
+    }))
   if (panes.length !== expectedCount || new Set(panes.map((pane) => pane.id)).size !== panes.length) {
     return null
   }

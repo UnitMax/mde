@@ -15,6 +15,10 @@ import {
   TUI_STATUS_PROTOCOL,
   TUI_STATUS_TITLE_MAX_LENGTH
 } from '../src/main/opencode/tui-status'
+import {
+  openCodeStatusLabel,
+  openCodeStatusShortLabel
+} from '../src/renderer/lib/opencode-tui-status'
 
 describe('OpenCode TUI status protocol', () => {
   it('accepts fresh privacy-safe snapshots', () => {
@@ -171,5 +175,22 @@ describe('OpenCode TUI status protocol', () => {
     } finally {
       await fs.rm(directory, { recursive: true, force: true })
     }
+  })
+
+  it('provides the accessible status description for each state', () => {
+    expect(openCodeStatusLabel('idle')).toBe('OpenCode idle')
+    expect(openCodeStatusLabel('working')).toBe('OpenCode is working')
+    expect(openCodeStatusLabel('attention', 'permission')).toBe('OpenCode is waiting for permission')
+    expect(openCodeStatusLabel('attention', 'question')).toBe('OpenCode is asking a question')
+    expect(openCodeStatusLabel('completed')).toBe('OpenCode finished')
+    expect(openCodeStatusLabel('error')).toBe('OpenCode request failed')
+  })
+
+  it('provides the compact status label used by the sidebar', () => {
+    expect(openCodeStatusShortLabel('idle')).toBe('idle')
+    expect(openCodeStatusShortLabel('working')).toBe('working')
+    expect(openCodeStatusShortLabel('attention')).toBe('needs input')
+    expect(openCodeStatusShortLabel('completed')).toBe('done')
+    expect(openCodeStatusShortLabel('error')).toBe('failed')
   })
 })

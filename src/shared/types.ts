@@ -52,6 +52,8 @@ export interface PersistedTerminalPane {
   /** Stable logical pane identity; runtime PTY IDs are derived from it. */
   id: string
   primary: boolean
+  /** Optional user-defined title for this pane. */
+  title?: string
 }
 
 export interface PersistedTerminalLayout {

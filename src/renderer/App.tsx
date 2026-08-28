@@ -342,6 +342,38 @@ export function App(): JSX.Element {
     void renameTabAction(sessionId, tabId, name)
   }
 
+  const renameTerminalPane = (
+    sessionId: string,
+    tabId: string,
+    terminalId: string,
+    title: string | null
+  ): void => {
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (!session) return
+
+    const existing = layoutForTab(session, tabId)
+    if (!existing.panes.some((pane) => pane.terminalId === terminalId)) return
+
+    const normalizedTitle = title?.trim()
+    const next = {
+      ...existing,
+      panes: existing.panes.map((pane) => {
+        if (pane.terminalId !== terminalId) return pane
+
+        const updatedPane = { ...pane }
+        if (normalizedTitle) {
+          updatedPane.title = normalizedTitle
+        } else {
+          delete updatedPane.title
+        }
+        return updatedPane
+      })
+    }
+
+    setRuntimeLayout(sessionId, tabId, next)
+    queueLayoutPersistence(sessionId, tabId, next, true)
+  }
+
   const closeTab = (sessionId: string, tabId: string): void => {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!session || sessionTabs(session).length <= 1) return
@@ -531,6 +563,9 @@ export function App(): JSX.Element {
             onPaneOrderChange={(terminalIds) => reorderTerminalPanes(selected.id, activeTab.id, terminalIds)}
             onReduceLayout={(layout, paneIds) => reduceTerminalLayout(selected.id, activeTab.id, layout, paneIds)}
             onClosePane={(terminalId) => closeTerminalPane(selected.id, activeTab.id, terminalId)}
+            onPaneTitleChange={(terminalId, title) =>
+              renameTerminalPane(selected.id, activeTab.id, terminalId, title)
+            }
             onRestartPrimary={() => restartPrimary(selected.id, activeTab.id)}
           />
         ) : (

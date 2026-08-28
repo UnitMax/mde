@@ -59,6 +59,24 @@ describe('session tab runtime helpers', () => {
     expect(persistRuntimeLayout(layout)).toEqual(session.tabs![0]!.layout)
   })
 
+  it('preserves custom pane titles through runtime conversion', () => {
+    const titledTab = {
+      ...session.tabs![0]!,
+      layout: {
+        ...session.tabs![0]!.layout,
+        panes: [
+          { id: 'primary', primary: true, title: 'Shell' },
+          { id: 'pane-1', primary: false }
+        ]
+      }
+    }
+
+    const runtimeLayout = createRuntimeLayout(session.id, titledTab)
+
+    expect(runtimeLayout.panes[0]).toMatchObject({ title: 'Shell' })
+    expect(persistRuntimeLayout(runtimeLayout)).toEqual(titledTab.layout)
+  })
+
   it('skips persisted split-pane keys when allocating a new runtime pane', () => {
     const layout = createRuntimeLayout(session.id, session.tabs![0]!)
 

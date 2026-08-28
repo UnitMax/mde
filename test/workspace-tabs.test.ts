@@ -56,17 +56,35 @@ describe('workspace session tabs', () => {
           layout: 'columns',
           panes: [
             { id: 'primary', primary: true },
-            { id: 'pane-1', primary: false }
+            { id: 'pane-1', primary: false, title: '  API  ' }
           ],
           sizes: { columnRatio: 0.4, rowRatio: 0.5 }
         }
       }
     })
     expect(updated?.tabs?.[0]).toMatchObject({ name: 'Shell', layout: { layout: 'columns' } })
+    expect(updated?.tabs?.[0]?.layout.panes[1]).toMatchObject({ title: 'API' })
 
     const reloaded = await loadWorkspace()
     expect(reloaded.sessions[0]?.tabs?.[0]).toMatchObject({ name: 'Shell', layout: { layout: 'columns' } })
+    expect(reloaded.sessions[0]?.tabs?.[0]?.layout.panes[1]).toMatchObject({ title: 'API' })
     expect(reloaded.sessions[0]?.activeTabId).toBe(firstTab.id)
+
+    const cleared = await updateSessionTab({
+      sessionId: session.id,
+      tabId: firstTab.id,
+      patch: {
+        layout: {
+          layout: 'columns',
+          panes: [
+            { id: 'primary', primary: true },
+            { id: 'pane-1', primary: false, title: '   ' }
+          ],
+          sizes: { columnRatio: 0.4, rowRatio: 0.5 }
+        }
+      }
+    })
+    expect(cleared?.tabs?.[0]?.layout.panes[1]).not.toHaveProperty('title')
   })
 
   it('selects the neighboring tab when removing the active tab and protects the final tab', async () => {

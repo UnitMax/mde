@@ -12,6 +12,8 @@ export interface TerminalPaneState {
   primary: boolean
   /** Stable persisted pane key when the layout belongs to a session tab. */
   paneId?: string
+  /** Optional user-defined title for this pane. */
+  title?: string
   exited?: boolean
 }
 

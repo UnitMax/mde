@@ -22,6 +22,7 @@ import {
 import type {
   OpenCodeTuiPluginState,
   OpenCodeTuiInstanceLabelMode,
+  OpenCodeTuiInstanceStatus,
   OpenCodeTuiSettings,
   OpenCodePluginTarget,
   OpenCodeTokenRatePluginState,
@@ -95,6 +96,8 @@ import {
 import { fileDropUris, isFileDrop, terminalDropMode, terminalDropNotice } from '@/terminal/drop'
 import { terminalPrimarySelectionMode } from '@/terminal/clipboard'
 import { sessionTabs } from '@/terminal/tabs'
+import { OpenCodeStatusIcon } from '@/components/OpenCodeStatusIcon'
+import { terminalPaneTitle } from '@/lib/opencode-tui-instances'
 
 const FALLBACK_SIZE: PtySize = { cols: 80, rows: 24 }
 const RESIZE_DEBOUNCE_MS = 100
@@ -120,6 +123,7 @@ interface TerminalViewProps {
   onPaneOrderChange: (terminalIds: readonly string[]) => void
   onReduceLayout: (layout: TerminalLayout, paneIds: string[]) => void
   onClosePane: (terminalId: string) => void
+  onPaneTitleChange: (terminalId: string, title: string | null) => void
   onRestartPrimary: () => void
 }
 
@@ -330,21 +334,52 @@ function TerminalSurface({ session: sourceSession, pane, onFocus }: TerminalSurf
   )
 }
 
+function RestartConfirmDialog({
+  open,
+  onOpenChange,
+  onConfirm
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onConfirm: () => void
+}): JSX.Element {
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent data-testid="restart-terminal-confirmation">
+        <AlertDialogTitle>Restart terminal?</AlertDialogTitle>
+        <AlertDialogDescription>
+          Restarting this terminal will interrupt any running command or OpenCode task. This cannot be undone.
+        </AlertDialogDescription>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={onConfirm}>Restart terminal</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}
+
 function TerminalPane({
   session,
   pane,
+  terminalLayout,
+  openCodeInstance,
   onClose,
   onFocus,
   isFullscreen,
   onToggleFullscreen,
+  onTitleChange,
   reorderState = 'none'
 }: {
   session: Session
   pane: TerminalPaneState
+  terminalLayout: SessionTerminalLayout
+  openCodeInstance?: OpenCodeTuiInstanceStatus
   onClose: () => void
   onFocus: () => void
   isFullscreen: boolean
   onToggleFullscreen: () => void
+  onTitleChange: (title: string | null) => void
   reorderState?: 'none' | 'candidate' | 'active'
 }): JSX.Element {
   const clearExit = useWorkspace((state) => state.clearExit)
@@ -352,6 +387,20 @@ function TerminalPane({
   const platform = useWorkspace((state) => state.platform)
   const wslAvailable = useWorkspace((state) => state.wslAvailable)
   const currentDirectory = useWorkspace((state) => state.terminalDirectories[pane.terminalId])
+  const [restartConfirmationOpen, setRestartConfirmationOpen] = useState(false)
+  const [renamingTitle, setRenamingTitle] = useState(false)
+  const [draftTitle, setDraftTitle] = useState('')
+  const titleInputRef = useRef<HTMLInputElement>(null)
+  const title = terminalPaneTitle(openCodeInstance, terminalLayout, pane.title)
+
+  useEffect(() => {
+    if (!renamingTitle) return
+    const frame = window.requestAnimationFrame(() => {
+      titleInputRef.current?.focus()
+      titleInputRef.current?.select()
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [renamingTitle])
 
   const restart = async (): Promise<void> => {
     const terminal = getSession(pane.terminalId)
@@ -367,6 +416,31 @@ function TerminalPane({
     setStatus(pane.terminalId, status)
   }
 
+  const requestRestart = (): void => {
+    setRestartConfirmationOpen(true)
+  }
+
+  const confirmRestart = (): void => {
+    setRestartConfirmationOpen(false)
+    void restart()
+  }
+
+  const beginTitleRename = (): void => {
+    setDraftTitle(title)
+    setRenamingTitle(true)
+  }
+
+  const cancelTitleRename = (): void => {
+    setRenamingTitle(false)
+  }
+
+  const commitTitleRename = (): void => {
+    if (!renamingTitle) return
+    const normalizedTitle = draftTitle.trim()
+    onTitleChange(normalizedTitle || null)
+    setRenamingTitle(false)
+  }
+
   const borderClass = reorderState === 'active'
     ? 'border-accent'
     : reorderState === 'candidate'
@@ -375,71 +449,126 @@ function TerminalPane({
 
   return (
     <div className={`relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden border ${borderClass} bg-bg`}>
-      <TerminalSurface session={session} pane={pane} onFocus={onFocus} />
-      <div className="absolute right-2 top-2 z-10 flex gap-1 opacity-0 transition-opacity hover:opacity-100 focus-within:opacity-100">
-        {platform?.isWindows === true &&
-          wslAvailable &&
-          session.kind === 'wsl' &&
-          Boolean(session.distro) && (
-            <>
-              <Button
-                variant="secondary"
-                size="icon-sm"
-                aria-label="Open terminal directory in VS Code"
-                title={currentDirectory ? 'Open current directory in VS Code' : 'Waiting for terminal directory'}
-                disabled={!currentDirectory}
-                onClick={() => void window.api.paths.openTerminalInVsCode(pane.terminalId)}
-              >
-                <Code className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                variant="secondary"
-                size="icon-sm"
-                aria-label="Open terminal directory in File Explorer"
-                title={currentDirectory ? 'Open current directory in File Explorer' : 'Waiting for terminal directory'}
-                disabled={!currentDirectory}
-                onClick={() => void window.api.paths.revealTerminal(pane.terminalId)}
-              >
-                <FolderOpen className="h-3.5 w-3.5" />
-              </Button>
-            </>
+      <header
+        aria-label={title}
+        className="flex h-6 shrink-0 items-center gap-1 border-b border-line bg-panel/50 px-1"
+        data-testid="terminal-pane-title-bar"
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          {openCodeInstance && (
+            <OpenCodeStatusIcon
+              status={openCodeInstance.status}
+              attentionReason={openCodeInstance.attentionReason}
+              testId="terminal-opencode-status"
+            />
           )}
-        <Button
-          variant="secondary"
-          size="icon-sm"
-          aria-label={isFullscreen ? 'Exit terminal fullscreen' : 'Enter terminal fullscreen'}
-          aria-pressed={isFullscreen}
-          data-testid={`terminal-fullscreen-toggle-${pane.terminalId}`}
-          title={isFullscreen
-            ? 'Exit terminal fullscreen (Ctrl+Shift+F)'
-            : 'Enter terminal fullscreen (Ctrl+Shift+F)'}
-          onClick={onToggleFullscreen}
-        >
-          {isFullscreen
-            ? <Minimize2 className="h-3.5 w-3.5" />
-            : <Maximize2 className="h-3.5 w-3.5" />}
-        </Button>
-        <Button
-          variant="secondary"
-          size="icon-sm"
-          aria-label="Restart terminal"
-          title="Restart terminal"
-          onClick={() => void restart()}
-        >
-          <RotateCw className="h-3.5 w-3.5" />
-        </Button>
-        {!pane.primary && (
+          {renamingTitle ? (
+            <input
+              ref={titleInputRef}
+              value={draftTitle}
+              onChange={(event) => setDraftTitle(event.target.value)}
+              onBlur={commitTitleRename}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') commitTitleRename()
+                if (event.key === 'Escape') cancelTitleRename()
+                event.stopPropagation()
+              }}
+              onClick={(event) => event.stopPropagation()}
+              className="h-5 min-w-0 flex-1 rounded-sm border border-accent bg-bg px-1 text-[11px] text-fg outline-none"
+              data-testid="terminal-pane-title-input"
+              aria-label="Terminal title"
+            />
+          ) : (
+            <span
+              className="min-w-0 truncate text-[11px] font-medium text-fg-muted"
+              data-testid="terminal-pane-title"
+              title={`${title} · Double-click to rename`}
+              onDoubleClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                beginTitleRename()
+              }}
+            >
+              {title}
+            </span>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {platform?.isWindows === true &&
+            wslAvailable &&
+            session.kind === 'wsl' &&
+            Boolean(session.distro) && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-fg-subtle hover:bg-hover hover:text-fg active:bg-active"
+                  aria-label="Open terminal directory in VS Code"
+                  title={currentDirectory ? 'Open current directory in VS Code' : 'Waiting for terminal directory'}
+                  disabled={!currentDirectory}
+                  onClick={() => void window.api.paths.openTerminalInVsCode(pane.terminalId)}
+                >
+                  <Code className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-fg-subtle hover:bg-hover hover:text-fg active:bg-active"
+                  aria-label="Open terminal directory in File Explorer"
+                  title={currentDirectory ? 'Open current directory in File Explorer' : 'Waiting for terminal directory'}
+                  disabled={!currentDirectory}
+                  onClick={() => void window.api.paths.revealTerminal(pane.terminalId)}
+                >
+                  <FolderOpen className="h-3.5 w-3.5" />
+                </Button>
+              </>
+            )}
           <Button
-            variant="secondary"
+            variant="ghost"
             size="icon-sm"
-            aria-label="Close terminal"
-            title="Close terminal"
-            onClick={onClose}
+            className="text-fg-subtle hover:bg-hover hover:text-fg active:bg-active"
+            aria-label={isFullscreen ? 'Exit terminal fullscreen' : 'Enter terminal fullscreen'}
+            aria-pressed={isFullscreen}
+            data-testid={`terminal-fullscreen-toggle-${pane.terminalId}`}
+            title={isFullscreen
+              ? 'Exit terminal fullscreen (Ctrl+Shift+F)'
+              : 'Enter terminal fullscreen (Ctrl+Shift+F)'}
+            onClick={onToggleFullscreen}
           >
-            <CircleX className="h-3.5 w-3.5" />
+            {isFullscreen
+              ? <Minimize2 className="h-3.5 w-3.5" />
+              : <Maximize2 className="h-3.5 w-3.5" />}
           </Button>
-        )}
-      </div>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="text-fg-subtle hover:bg-hover hover:text-fg active:bg-active"
+            aria-label="Restart terminal"
+            title="Restart terminal"
+            onClick={requestRestart}
+          >
+            <RotateCw className="h-3.5 w-3.5" />
+          </Button>
+          {!pane.primary && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-fg-subtle hover:bg-hover hover:text-fg active:bg-active"
+              aria-label="Close terminal"
+              title="Close terminal"
+              onClick={onClose}
+            >
+              <CircleX className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+      </header>
+      <TerminalSurface session={session} pane={pane} onFocus={onFocus} />
+      <RestartConfirmDialog
+        open={restartConfirmationOpen}
+        onOpenChange={setRestartConfirmationOpen}
+        onConfirm={confirmRestart}
+      />
     </div>
   )
 }
@@ -1607,10 +1736,14 @@ export function TerminalView({
   onPaneOrderChange,
   onReduceLayout,
   onClosePane,
+  onPaneTitleChange,
   onRestartPrimary
 }: TerminalViewProps): JSX.Element {
   const clearExit = useWorkspace((state) => state.clearExit)
   const setStatus = useWorkspace((state) => state.setStatus)
+  const opencodeTuiInstances = useWorkspace(
+    (state) => state.opencodeTuiInstances[selectedSession.id]
+  )
   const primaryPane = terminalLayout.panes.find((pane) => pane.primary)
   const exit = useWorkspace((state) => primaryPane ? state.exits[primaryPane.terminalId] : undefined)
   const [pendingReduction, setPendingReduction] = useState<{
@@ -1623,6 +1756,7 @@ export function TerminalView({
   const [reorderSourceId, setReorderSourceId] = useState<string | null>(null)
   const [reorderPreviewPanes, setReorderPreviewPanes] = useState<TerminalPaneState[] | null>(null)
   const [fullscreenTerminalId, setFullscreenTerminalId] = useState<string | null>(null)
+  const [restartConfirmationOpen, setRestartConfirmationOpen] = useState(false)
   const [terminalSettings, setTerminalSettings] = useState<TerminalSettings>(() => getTerminalSettings())
   const gridRef = useRef<HTMLDivElement>(null)
   const reorderDragRef = useRef<TerminalReorderDragState | null>(null)
@@ -2034,16 +2168,6 @@ export function TerminalView({
         </div>
         <SettingsControl terminalIds={terminalLayout.panes.map((pane) => pane.terminalId)} />
 
-        <Button
-          variant="ghost"
-          size="sm"
-          className="ml-auto shrink-0"
-          onClick={() => void restart()}
-          title="Restart the shell for this session"
-        >
-          <RotateCw className="h-3.5 w-3.5" />
-          Restart
-        </Button>
       </header>
 
       {exit && (
@@ -2052,7 +2176,7 @@ export function TerminalView({
             Process exited (code {exit.exitCode}
             {exit.signal ? `, signal ${exit.signal}` : ''})
           </span>
-          <Button variant="secondary" size="sm" className="ml-auto" onClick={() => void restart()}>
+          <Button variant="secondary" size="sm" className="ml-auto" onClick={() => setRestartConfirmationOpen(true)}>
             Restart
           </Button>
         </div>
@@ -2083,9 +2207,14 @@ export function TerminalView({
               <TerminalPane
                 session={selectedSession}
                 pane={pane}
+                terminalLayout={terminalLayout}
+                openCodeInstance={opencodeTuiInstances?.find(
+                  (instance) => instance.terminalId === pane.terminalId
+                )}
                 onFocus={() => {
                   focusedTerminalIdRef.current = pane.terminalId
                 }}
+                onTitleChange={(title) => onPaneTitleChange(pane.terminalId, title)}
                 isFullscreen={isFullscreen}
                 onToggleFullscreen={() => toggleFullscreen(pane.terminalId)}
                 reorderState={
@@ -2115,6 +2244,15 @@ export function TerminalView({
             />
           ))}
       </div>
+
+      <RestartConfirmDialog
+        open={restartConfirmationOpen}
+        onOpenChange={setRestartConfirmationOpen}
+        onConfirm={() => {
+          setRestartConfirmationOpen(false)
+          void restart()
+        }}
+      />
 
       <AlertDialog
         open={pendingReduction !== null}

@@ -29,3 +29,14 @@ export function openCodeTuiInstanceLabel(
   const fallback = `OpenCode ${paneIndex >= 0 ? paneIndex + 1 : orderedIndex + 1}`
   return mode === 'title' && instance.title?.trim() ? instance.title.trim() : fallback
 }
+
+export function terminalPaneTitle(
+  instance: OpenCodeTuiInstanceStatus | undefined,
+  layout: SessionTerminalLayout,
+  customTitle?: string
+): string {
+  const trimmedCustomTitle = customTitle?.trim()
+  if (trimmedCustomTitle) return trimmedCustomTitle
+  if (!instance) return 'terminal'
+  return openCodeTuiInstanceLabel(instance, 0, 'title', layout)
+}

@@ -52,7 +52,8 @@ export function createRuntimeLayout(sessionId: string, tab: SessionTab): Session
     panes: tab.layout.panes.map((pane) => ({
       terminalId: terminalIdForPane(sessionId, tab.id, pane.id),
       paneId: pane.id,
-      primary: pane.primary
+      primary: pane.primary,
+      ...(pane.title?.trim() ? { title: pane.title.trim() } : {})
     })),
     sizes: { ...tab.layout.sizes }
   }
@@ -74,7 +75,8 @@ export function persistRuntimeLayout(layout: SessionTerminalLayout): PersistedTe
     layout: layout.layout,
     panes: layout.panes.map((pane) => ({
       id: pane.paneId ?? pane.terminalId,
-      primary: pane.primary
+      primary: pane.primary,
+      ...(pane.title?.trim() ? { title: pane.title.trim() } : {})
     })),
     sizes: { ...layout.sizes }
   }

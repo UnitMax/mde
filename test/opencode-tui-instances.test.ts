@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { OpenCodeTuiInstanceStatus } from '../src/shared/types'
 import {
   openCodeTuiInstanceLabel,
-  orderOpenCodeTuiInstances
+  orderOpenCodeTuiInstances,
+  terminalPaneTitle
 } from '../src/renderer/lib/opencode-tui-instances'
 import type { SessionTerminalLayout } from '../src/renderer/terminal/layout'
 
@@ -45,5 +46,14 @@ describe('OpenCode TUI instance sidebar helpers', () => {
 
   it('falls back to active-list order without layout metadata', () => {
     expect(openCodeTuiInstanceLabel(instances[0]!, 0, 'numbered')).toBe('OpenCode 1')
+  })
+
+  it('uses terminal for ordinary panes and prefers conversation titles for OpenCode panes', () => {
+    expect(terminalPaneTitle(undefined, layout)).toBe('terminal')
+    expect(terminalPaneTitle(instances[1], layout)).toBe('Validate tax rules')
+    expect(terminalPaneTitle(instances[0], layout)).toBe('OpenCode 2')
+    expect(terminalPaneTitle(undefined, layout, 'API')).toBe('API')
+    expect(terminalPaneTitle(instances[1], layout, 'Agent task')).toBe('Agent task')
+    expect(terminalPaneTitle(instances[1], layout, '   ')).toBe('Validate tax rules')
   })
 })

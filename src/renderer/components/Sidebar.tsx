@@ -66,6 +66,8 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { useWorkspace, type OpenCodeTuiStatusState } from '@/store/workspace'
+import { OpenCodeStatusIcon } from '@/components/OpenCodeStatusIcon'
+import { openCodeStatusShortLabel } from '@/lib/opencode-tui-status'
 import {
   DEFAULT_SESSION_COLOR,
   SESSION_COLORS,
@@ -216,14 +218,6 @@ function StatusDot({
   )
 }
 
-const OPENCODE_INSTANCE_STATUS_LABEL: Record<OpenCodeIndicatorStatus, string> = {
-  idle: 'idle',
-  working: 'working',
-  attention: 'needs input',
-  completed: 'done',
-  error: 'failed'
-}
-
 function openCodeInstanceIndicator(instance: OpenCodeTuiInstanceStatus): SessionIndicator {
   if (instance.status === 'attention') {
     return attentionIndicator(instance.attentionReason ?? 'permission')
@@ -267,7 +261,7 @@ function OpenCodeInstances({
         {entries.map(({ tab, layout, instance, index }) => {
           const indicator = openCodeInstanceIndicator(instance)
           const label = openCodeTuiInstanceLabel(instance, index, labelMode, layout)
-          const statusLabel = OPENCODE_INSTANCE_STATUS_LABEL[instance.status]
+          const statusLabel = openCodeStatusShortLabel(instance.status)
           return (
             <button
               key={instance.terminalId}
@@ -279,7 +273,11 @@ function OpenCodeInstances({
                 indicator.row
               )}
             >
-              <StatusDot indicator={indicator} testId="opencode-instance-status" />
+              <OpenCodeStatusIcon
+                status={instance.status}
+                attentionReason={instance.attentionReason}
+                testId="opencode-instance-status"
+              />
               <span className="min-w-0 flex-1 truncate">{label}</span>
               <span className="max-w-[35%] shrink truncate text-[10px] text-fg-subtle">{tab.name}</span>
               <span className="shrink-0 text-[10px] text-fg-subtle">{statusLabel}</span>
