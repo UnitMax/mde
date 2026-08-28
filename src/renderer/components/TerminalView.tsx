@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type DragEvent as ReactDragEvent,
   type PointerEvent as ReactPointerEvent,
   type RefObject
 } from 'react'
@@ -91,6 +92,7 @@ import {
   shouldExitTerminalFullscreen,
   terminalFullscreenPane
 } from '@/terminal/fullscreen'
+import { fileDropUris, isFileDrop, terminalDropMode, terminalDropNotice } from '@/terminal/drop'
 import { sessionTabs } from '@/terminal/tabs'
 
 const FALLBACK_SIZE: PtySize = { cols: 80, rows: 24 }
@@ -128,7 +130,88 @@ interface TerminalSurfaceProps {
 
 function TerminalSurface({ session: sourceSession, pane, onFocus }: TerminalSurfaceProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
+  const dragDepthRef = useRef(0)
+  const dropQueueRef = useRef(Promise.resolve())
+  const dropNoticeTimerRef = useRef<number | undefined>(undefined)
+  const [fileDragOver, setFileDragOver] = useState(false)
+  const [dropNotice, setDropNotice] = useState<string | null>(null)
   const setStatus = useWorkspace((state) => state.setStatus)
+
+  const announceDrop = (message: string): void => {
+    setDropNotice(message)
+    window.clearTimeout(dropNoticeTimerRef.current)
+    dropNoticeTimerRef.current = window.setTimeout(() => {
+      setDropNotice(null)
+      dropNoticeTimerRef.current = undefined
+    }, 3500)
+  }
+
+  const enqueueFileDrop = (files: File[], uriList: string[], mode: 'shell' | 'tui'): void => {
+    const task = async (): Promise<void> => {
+      try {
+        const result = await window.api.pty.dropFiles({
+          terminalId: pane.terminalId,
+          files,
+          uriList,
+          mode
+        })
+        const terminal = getSession(pane.terminalId)
+        if (result.insertions.length > 0 && terminal) {
+          terminal.term.focus()
+          for (const insertion of result.insertions) terminal.term.paste(insertion)
+        }
+
+        if (result.rejections.length > 0) announceDrop(terminalDropNotice(result.rejections))
+      } catch (error) {
+        console.warn('[terminal] file drop failed:', error)
+        announceDrop('Could not add the dropped files to this terminal.')
+      }
+    }
+
+    dropQueueRef.current = dropQueueRef.current.then(task, task)
+  }
+
+  const handleDragEnter = (event: ReactDragEvent<HTMLDivElement>): void => {
+    if (!isFileDrop(event.dataTransfer)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+    dragDepthRef.current += 1
+    setFileDragOver(true)
+  }
+
+  const handleDragOver = (event: ReactDragEvent<HTMLDivElement>): void => {
+    if (!isFileDrop(event.dataTransfer)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+    setFileDragOver(true)
+  }
+
+  const handleDragLeave = (event: ReactDragEvent<HTMLDivElement>): void => {
+    if (!isFileDrop(event.dataTransfer)) return
+    event.preventDefault()
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+    if (dragDepthRef.current === 0) setFileDragOver(false)
+  }
+
+  const handleDrop = (event: ReactDragEvent<HTMLDivElement>): void => {
+    if (!isFileDrop(event.dataTransfer)) return
+    event.preventDefault()
+    event.stopPropagation()
+    dragDepthRef.current = 0
+    setFileDragOver(false)
+
+    const files = Array.from(event.dataTransfer.files)
+    if (files.length > 0) {
+      const terminal = getSession(pane.terminalId)
+      const mode = terminalDropMode(terminal?.term.buffer.active.type ?? 'normal')
+      const uriList = fileDropUris(event.dataTransfer.getData('text/uri-list'))
+      enqueueFileDrop(files, uriList, mode)
+    }
+  }
+
+  useEffect(() => {
+    return () => window.clearTimeout(dropNoticeTimerRef.current)
+  }, [])
 
   useEffect(() => {
     const host = hostRef.current
@@ -210,7 +293,35 @@ function TerminalSurface({ session: sourceSession, pane, onFocus }: TerminalSurf
     }
   }, [pane.primary, pane.terminalId, setStatus, sourceSession.id])
 
-  return <div ref={hostRef} className="terminal-host relative min-h-0 flex-1 overflow-hidden" onFocus={onFocus} />
+  return (
+    <div
+      ref={hostRef}
+      className="terminal-host relative min-h-0 flex-1 overflow-hidden"
+      onFocus={onFocus}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {fileDragOver && (
+        <div
+          className="pointer-events-none absolute inset-2 z-30 flex items-center justify-center rounded-md border border-dashed border-accent bg-bg/80 text-sm font-medium text-fg"
+          data-testid="terminal-file-drop-overlay"
+        >
+          Drop files to attach or insert paths
+        </div>
+      )}
+      {dropNotice && (
+        <div
+          className="pointer-events-none absolute bottom-3 left-3 z-30 max-w-[calc(100%-1.5rem)] rounded-md border border-border bg-panel/95 px-3 py-2 text-xs text-muted-fg shadow-lg"
+          role="status"
+          aria-live="polite"
+        >
+          {dropNotice}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function TerminalPane({

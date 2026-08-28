@@ -64,6 +64,7 @@ export const IpcChannels = {
   ptyDispose: 'pty:dispose',
   ptyStatuses: 'pty:statuses',
   ptyDirectories: 'pty:directories',
+  ptyDropFiles: 'pty:drop-files',
 
   clipboardWriteText: 'clipboard:write-text',
 
@@ -164,6 +165,54 @@ export interface WritePtyRequest {
   data: string
 }
 
+export type TerminalDropMode = 'shell' | 'tui'
+
+export type TerminalDropRejectionCode =
+  | 'path-unresolved'
+  | 'invalid-path'
+  | 'wrong-distro'
+  | 'translation-failed'
+  | 'inaccessible'
+  | 'wsl-unavailable'
+  | 'terminal-unavailable'
+
+/** A file descriptor safe to send from preload to the main process. */
+export interface DropPtyFile {
+  name: string
+  nativePath?: string
+  fileUri?: string
+}
+
+/** Files resolved by preload from a renderer file drop. */
+export interface DropPtyFilesRequest {
+  terminalId: string
+  files: DropPtyFile[]
+  mode: TerminalDropMode
+}
+
+export interface PtyDropRejection {
+  name: string
+  code: TerminalDropRejectionCode
+  distro?: string
+}
+
+/** Result returned after the main process validates and formats a file drop. */
+export interface PtyDropResult {
+  /** One insertion per agent-TUI file, or one combined shell insertion. */
+  insertions: string[]
+  acceptedCount: number
+  rejections: PtyDropRejection[]
+}
+
+/** Renderer-facing request; raw File objects never cross into the main process. */
+export interface RendererDropPtyFilesRequest {
+  terminalId: string
+  files: File[]
+  /** File URLs supplied by the browser when Electron cannot resolve a File path. */
+  uriList?: string[]
+  mode: TerminalDropMode
+}
+
 export interface UpdatePtyPaletteRequest {
   terminalId: string
   palette: TerminalPalette
@@ -257,6 +306,7 @@ export interface RendererApi {
     dispose(terminalId: string): Promise<void>
     statuses(): Promise<Record<string, PtyStatus>>
     directories(): Promise<Record<string, string>>
+    dropFiles(req: RendererDropPtyFilesRequest): Promise<PtyDropResult>
     onData(listener: (chunk: PtyDataChunk) => void): () => void
     onDirectory(listener: (update: PtyDirectoryUpdate) => void): () => void
     onExit(listener: (info: PtyExitInfo) => void): () => void

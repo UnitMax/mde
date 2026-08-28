@@ -3,6 +3,8 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import {
   type AppInfo,
   type CreateSessionTabRequest,
+  type DropPtyFile,
+  type DropPtyFilesRequest,
   type GitDiffRequest,
   type GitInfoRequest,
   IpcChannels,
@@ -14,6 +16,9 @@ import {
   type ResizePtyRequest,
   type ResolvePathRequest,
   type TerminalPalette,
+  type PtyDropResult,
+  type PtyDropRejection,
+  type TerminalDropMode,
   type UpdatePtyPaletteRequest,
   type UpdateProjectRequest,
   type UpdateSessionRequest,
@@ -45,6 +50,7 @@ import type {
   PtyStatus
 } from '@shared/types'
 import type { PtyManager } from './pty/manager'
+import { resolveTerminalDrop } from './pty/drop'
 import type { OpenCodeTuiStatusManager } from './opencode/tui-status'
 import type { OpenCodeTokenRatePluginManager } from './opencode/token-rate'
 import type { OpenCodeAlertManager } from './opencode/alerts'
@@ -89,6 +95,28 @@ function validateTerminalPalette(palette: TerminalPalette): TerminalPalette {
     throw new Error('Invalid terminal palette.')
   }
   return palette
+}
+
+function terminalDropUnavailable(files: readonly DropPtyFile[]): PtyDropResult {
+  const rejections: PtyDropRejection[] = files.map((file) => ({
+    name: file.name || 'Dropped file',
+    code: 'terminal-unavailable'
+  }))
+  return { insertions: [], acceptedCount: 0, rejections }
+}
+
+function isTerminalDropMode(value: unknown): value is TerminalDropMode {
+  return value === 'shell' || value === 'tui'
+}
+
+function isDropPtyFile(value: unknown): value is DropPtyFile {
+  if (!value || typeof value !== 'object') return false
+  const file = value as Record<string, unknown>
+  return (
+    typeof file.name === 'string' &&
+    (file.nativePath === undefined || typeof file.nativePath === 'string') &&
+    (file.fileUri === undefined || typeof file.fileUri === 'string')
+  )
 }
 
 async function validatePath(req: ValidatePathRequest): Promise<PathCheckResult> {
@@ -299,6 +327,27 @@ export function registerIpcHandlers(
   })
   handle<void, Record<string, PtyStatus>>(IpcChannels.ptyStatuses, () => ptyManager.statuses())
   handle<void, Record<string, string>>(IpcChannels.ptyDirectories, () => ptyManager.directories())
+  handle<DropPtyFilesRequest, PtyDropResult>(IpcChannels.ptyDropFiles, async (req) => {
+    if (
+      !req ||
+      typeof req.terminalId !== 'string' ||
+      !Array.isArray(req.files) ||
+      !req.files.every(isDropPtyFile) ||
+      !isTerminalDropMode(req.mode)
+    ) {
+      throw new Error('Invalid terminal file drop.')
+    }
+
+    const terminal = ptyManager.terminalInfo(req.terminalId)
+    if (!terminal || ptyManager.status(req.terminalId) !== 'running') {
+      return terminalDropUnavailable(req.files)
+    }
+
+    const session = await getSession(terminal.sessionId)
+    if (!session) return terminalDropUnavailable(req.files)
+
+    return resolveTerminalDrop(session, process.platform, req.files, req.mode)
+  })
 
   handle<void, boolean>(IpcChannels.wslAvailable, () => isWslAvailable())
   handle<void, Distro[]>(IpcChannels.wslDistros, () => listDistros())

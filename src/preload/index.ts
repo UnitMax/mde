@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IpcChannels, IpcEvents, type RendererApi } from '@shared/ipc'
 import type {
   OpenCodeTuiInstancesUpdate,
@@ -55,6 +55,33 @@ const api: RendererApi = {
     dispose: (sessionId) => ipcRenderer.invoke(IpcChannels.ptyDispose, sessionId),
     statuses: () => ipcRenderer.invoke(IpcChannels.ptyStatuses),
     directories: () => ipcRenderer.invoke(IpcChannels.ptyDirectories),
+    dropFiles: ({ terminalId, files, uriList, mode }) => {
+      const hasMatchingUriList = uriList !== undefined && uriList.length === files.length
+      const descriptors = files.map((file, index) => {
+        let nativePath: string | undefined
+        try {
+          const path = webUtils.getPathForFile(file)
+          if (path) nativePath = path
+        } catch {
+          // The URI fallback below handles file-manager drops on Electron builds
+          // that do not expose a native path for a disk-backed File.
+        }
+
+        return {
+          name: file.name || `Dropped file ${index + 1}`,
+          ...(nativePath ? { nativePath } : {}),
+          ...(!nativePath && hasMatchingUriList && uriList[index]
+            ? { fileUri: uriList[index] }
+            : {})
+        }
+      })
+
+      return ipcRenderer.invoke(IpcChannels.ptyDropFiles, {
+        terminalId,
+        files: descriptors,
+        mode
+      })
+    },
     onData: (listener) => subscribe<PtyDataChunk>(IpcEvents.ptyData, listener),
     onDirectory: (listener) => subscribe<PtyDirectoryUpdate>(IpcEvents.ptyDirectory, listener),
     onExit: (listener) => subscribe<PtyExitInfo>(IpcEvents.ptyExit, listener)

@@ -22,6 +22,8 @@ import {
   isWslMountedWindowsPath,
   parseWslUncPath,
   resolveForTarget,
+  toWindows,
+  toWsl,
   uncPathFor
 } from '../src/main/wsl/paths'
 
@@ -188,6 +190,38 @@ describe('WSL path resolution', () => {
       'Ubuntu-24.04',
       '-e',
       'bash'
+    ])
+  })
+
+  it('executes wslpath directly so Windows backslashes survive zsh', async () => {
+    vi.mocked(runWsl).mockResolvedValue({ stdout: '/mnt/c/Users/TestUser/My Image.png\n', stderr: '', code: 0 })
+
+    await expect(
+      toWsl('Ubuntu-24.04', String.raw`C:\Users\TestUser\My Image.png`)
+    ).resolves.toBe('/mnt/c/Users/TestUser/My Image.png')
+    expect(vi.mocked(runWsl).mock.calls[0]?.[0]).toEqual([
+      '-d',
+      'Ubuntu-24.04',
+      '-e',
+      'wslpath',
+      '-u',
+      String.raw`C:\Users\TestUser\My Image.png`
+    ])
+  })
+
+  it('executes reverse wslpath conversion directly too', async () => {
+    vi.mocked(runWsl).mockResolvedValue({ stdout: 'C:\\Users\\TestUser\\My Image.png\n', stderr: '', code: 0 })
+
+    await expect(toWindows('Ubuntu-24.04', '/mnt/c/Users/TestUser/My Image.png')).resolves.toBe(
+      'C:\\Users\\TestUser\\My Image.png'
+    )
+    expect(vi.mocked(runWsl).mock.calls[0]?.[0]).toEqual([
+      '-d',
+      'Ubuntu-24.04',
+      '-e',
+      'wslpath',
+      '-w',
+      '/mnt/c/Users/TestUser/My Image.png'
     ])
   })
 })

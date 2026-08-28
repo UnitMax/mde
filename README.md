@@ -113,6 +113,13 @@ On macOS, use the corresponding `Command` shortcuts. OSC 52 clipboard sequences 
 copying a selection from the OpenCode TUI updates the system clipboard even while its mouse mode
 is enabled.
 
+Files can be dragged from Finder, Explorer, or another file manager into any terminal pane. In a
+normal shell MDE inserts target-shell-escaped paths without submitting them. In an alternate-screen
+terminal agent, MDE pastes each target-side path separately so agents that support image paths can
+create their native attachments immediately. Native sessions accept files from their host filesystem;
+Windows WSL sessions translate accessible host paths into the active distro and explain why paths
+cannot be reached there. File drops do not copy file contents or stage clipboard image bytes.
+
 ### WSL
 
 - Short-lived `wsl.exe` queries and path conversions go through `runWsl()` in
@@ -145,7 +152,7 @@ is enabled.
   prompt. Restart OpenCode after installing, updating, or removing it. MDE does not emit a
   token-rate fallback when the target OpenCode version does not support TUI plugins.
 - Session paths are stored in the target's own format. `wslpath` is used only at the UI
-  boundary — when the Windows folder picker returns a `\\wsl$\` / `\\wsl.localhost\` UNC path
-  or a drive path, and when revealing a folder in Explorer.
+  boundary — when the Windows folder picker returns a `\\wsl$\` / `\\wsl.localhost\` UNC path,
+  when translating a dropped file, and when revealing a folder in Explorer.
 - A session whose files sit under `/mnt/c` gets an inline warning about 9p performance. It is
   a warning, not a block.

@@ -87,9 +87,16 @@ export async function canonicalizeWslPath(distro: string, rawPath: string): Prom
   return path.length > 0 ? path : null
 }
 
-/** `wsl.exe -d <distro> wslpath -u <windowsPath>` */
+/** `wsl.exe -d <distro> -e wslpath -u <windowsPath>` */
 export async function toWsl(distro: string, windowsPath: string): Promise<string | null> {
-  const result = await runWsl(['-d', distro, 'wslpath', '-u', stripTrailingSeparators(windowsPath)])
+  const result = await runWsl([
+    '-d',
+    distro,
+    '-e',
+    'wslpath',
+    '-u',
+    stripTrailingSeparators(windowsPath)
+  ])
   if (result.code !== 0) {
     console.warn(`[wsl] wslpath -u failed for ${windowsPath}: ${result.stderr.trim()}`)
     return null
@@ -98,9 +105,9 @@ export async function toWsl(distro: string, windowsPath: string): Promise<string
   return out.length > 0 ? out : null
 }
 
-/** `wsl.exe -d <distro> wslpath -w <linuxPath>` */
+/** `wsl.exe -d <distro> -e wslpath -w <linuxPath>` */
 export async function toWindows(distro: string, linuxPath: string): Promise<string | null> {
-  const result = await runWsl(['-d', distro, 'wslpath', '-w', linuxPath])
+  const result = await runWsl(['-d', distro, '-e', 'wslpath', '-w', linuxPath])
   if (result.code !== 0) {
     console.warn(`[wsl] wslpath -w failed for ${linuxPath}: ${result.stderr.trim()}`)
     return null
