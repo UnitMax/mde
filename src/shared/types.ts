@@ -38,6 +38,7 @@ export type TerminalLayout =
   | 'columns'
   | 'three'
   | 'quadrant'
+  | 'fiveGrid'
   | 'threeColumns'
   | 'sixGrid'
 

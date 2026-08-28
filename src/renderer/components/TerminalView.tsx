@@ -73,6 +73,7 @@ import {
   terminalColumnRatios,
   terminalColumnSplitRatio,
   isTerminalPaneClosable,
+  isThreeColumnLayout,
   layoutClass,
   paneClass,
   panesToTrim,
@@ -637,9 +638,11 @@ function LayoutGlyph({ layout }: { layout: TerminalLayout }): JSX.Element {
   const count = terminalCount(layout)
   const columns = layout === 'single'
     ? 'grid-cols-1'
-    : layout === 'threeColumns' || layout === 'sixGrid'
-      ? 'grid-cols-3'
-      : 'grid-cols-2'
+    : layout === 'fiveGrid'
+      ? 'grid-cols-6'
+      : isThreeColumnLayout(layout)
+        ? 'grid-cols-3'
+        : 'grid-cols-2'
   const rows = layout === 'single' || layout === 'columns' || layout === 'threeColumns'
     ? 'grid-rows-1'
     : 'grid-rows-2'
@@ -648,7 +651,11 @@ function LayoutGlyph({ layout }: { layout: TerminalLayout }): JSX.Element {
       {Array.from({ length: count }, (_, index) => (
         <span
           key={index}
-          className={`rounded-[1px] bg-current ${layout === 'three' && index === 2 ? 'col-span-2' : ''}`}
+          className={`rounded-[1px] bg-current ${layout === 'three' && index === 2
+            ? 'col-span-2'
+            : layout === 'fiveGrid'
+              ? index < 3 ? 'col-span-2' : 'col-span-3'
+              : ''}`}
         />
       ))}
     </span>
@@ -689,7 +696,7 @@ function terminalResizeHandleStyle(
     const dividerIndex = columnIndex ?? 0
     const [firstColumnRatio, secondColumnRatio] = terminalColumnRatios(sizes)
     const ratio = dividerIndex === 0 ? firstColumnRatio : secondColumnRatio
-    const gapCount = layout === 'threeColumns' || layout === 'sixGrid' ? 2 : 1
+    const gapCount = isThreeColumnLayout(layout) ? 2 : 1
     return {
       left: splitLinePosition(ratio, gapCount, dividerIndex),
       top: 0,
@@ -773,7 +780,7 @@ function TerminalResizeHandle({
       : event.clientY - bounds.top
     const trackSize = axis === 'column' ? bounds.width : bounds.height
     drag.pendingRatio = axis === 'column' &&
-      (layout === 'threeColumns' || layout === 'sixGrid') &&
+      isThreeColumnLayout(layout) &&
       columnIndex !== undefined
       ? terminalColumnSplitRatio(pointerPosition, trackSize, columnIndex, sizes)
       : terminalSplitRatio(pointerPosition, trackSize)
@@ -1759,7 +1766,6 @@ export function TerminalView({
   const [pendingReduction, setPendingReduction] = useState<{
     layout: TerminalLayout
     paneIds: string[]
-    closingPane: boolean
   } | null>(null)
   const [reorderModifierHeld, setReorderModifierHeld] = useState(false)
   const [hoveredPaneId, setHoveredPaneId] = useState<string | null>(null)
@@ -1789,22 +1795,12 @@ export function TerminalView({
     }
     setPendingReduction({
       layout,
-      paneIds: panesToTrim(terminalLayout.panes, targetCount),
-      closingPane: false
+      paneIds: panesToTrim(terminalLayout.panes, targetCount)
     })
   }, [onLayoutChange, terminalLayout.panes.length])
 
   const requestClosePane = (terminalId: string): void => {
     if (!isTerminalPaneClosable(terminalLayout.panes, terminalId)) return
-    if (terminalLayout.layout === 'sixGrid') {
-      const targetLayout: TerminalLayout = 'quadrant'
-      setPendingReduction({
-        layout: targetLayout,
-        paneIds: panesToTrim(terminalLayout.panes, terminalCount(targetLayout), terminalId),
-        closingPane: true
-      })
-      return
-    }
     setFullscreenTerminalId(null)
     onClosePane(terminalId)
   }
@@ -2103,7 +2099,40 @@ export function TerminalView({
   const gridTemplates = isFullscreen
     ? { columns: 'minmax(0, 1fr)', rows: 'minmax(0, 1fr)' }
     : terminalGridTemplates(terminalLayout.layout, terminalLayout.sizes)
+  const fiveTopGridTemplates = terminalGridTemplates('threeColumns', terminalLayout.sizes)
   const resizeHandles = isFullscreen ? [] : terminalResizeHandles(terminalLayout.layout)
+
+  const renderPane = (pane: TerminalPaneState, index: number): JSX.Element => (
+    <div
+      key={pane.terminalId}
+      data-terminal-pane-slot={index}
+      className={`h-full min-h-0 min-w-0 ${isFullscreen ? '' : paneClass(terminalLayout.layout, index)}`}
+      onPointerDownCapture={(event) => beginReorder(event, pane.terminalId)}
+    >
+      <TerminalPane
+        session={selectedSession}
+        pane={pane}
+        terminalLayout={terminalLayout}
+        openCodeInstance={opencodeTuiInstances?.find(
+          (instance) => instance.terminalId === pane.terminalId
+        )}
+        onFocus={() => {
+          focusedTerminalIdRef.current = pane.terminalId
+        }}
+        onTitleChange={(title) => onPaneTitleChange(pane.terminalId, title)}
+        isFullscreen={isFullscreen}
+        onToggleFullscreen={() => toggleFullscreen(pane.terminalId)}
+        reorderState={
+          reorderSourceId === pane.terminalId
+            ? 'active'
+            : reorderModifierHeld && hoveredPaneId === pane.terminalId
+              ? 'candidate'
+              : 'none'
+        }
+        onClose={() => requestClosePane(pane.terminalId)}
+      />
+    </div>
+  )
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-bg">
@@ -2176,37 +2205,25 @@ export function TerminalView({
             if (!reorderDragRef.current) setHoveredPaneId(null)
           }}
         >
-          {visiblePanes.map((pane, index) => (
-            <div
-              key={pane.terminalId}
-              data-terminal-pane-slot={index}
-              className={`h-full min-h-0 min-w-0 ${isFullscreen ? '' : paneClass(terminalLayout.layout, index)}`}
-              onPointerDownCapture={(event) => beginReorder(event, pane.terminalId)}
-            >
-              <TerminalPane
-                session={selectedSession}
-                pane={pane}
-                terminalLayout={terminalLayout}
-                openCodeInstance={opencodeTuiInstances?.find(
-                  (instance) => instance.terminalId === pane.terminalId
-                )}
-                onFocus={() => {
-                  focusedTerminalIdRef.current = pane.terminalId
+          {terminalLayout.layout === 'fiveGrid' && !isFullscreen ? (
+            <>
+              <div
+                className="grid min-h-0 min-w-0 gap-px"
+                style={{
+                  gridTemplateColumns: fiveTopGridTemplates.columns,
+                  gridTemplateRows: fiveTopGridTemplates.rows
                 }}
-                onTitleChange={(title) => onPaneTitleChange(pane.terminalId, title)}
-                isFullscreen={isFullscreen}
-                onToggleFullscreen={() => toggleFullscreen(pane.terminalId)}
-                reorderState={
-                  reorderSourceId === pane.terminalId
-                    ? 'active'
-                    : reorderModifierHeld && hoveredPaneId === pane.terminalId
-                      ? 'candidate'
-                      : 'none'
-                }
-                onClose={() => requestClosePane(pane.terminalId)}
-              />
-            </div>
-          ))}
+              >
+                {visiblePanes.slice(0, 3).map(renderPane)}
+              </div>
+              <div
+                className="grid min-h-0 min-w-0 grid-cols-2 gap-px"
+                style={{ gridTemplateRows: 'minmax(0, 1fr)' }}
+              >
+                {visiblePanes.slice(3).map((pane, index) => renderPane(pane, index + 3))}
+              </div>
+            </>
+          ) : visiblePanes.map(renderPane)}
           {resizeHandles.map(({ axis, scope, columnIndex }) => (
             <TerminalResizeHandle
               key={`${axis}-${scope}-${columnIndex ?? 0}`}
@@ -2233,9 +2250,7 @@ export function TerminalView({
         <AlertDialogContent>
           <AlertDialogTitle>Close extra terminals?</AlertDialogTitle>
           <AlertDialogDescription>
-            {pendingReduction?.closingPane
-              ? 'Closing a terminal from the six-terminal layout will switch to four terminals and close one additional terminal.'
-              : `Changing to ${pendingReduction ? TERMINAL_LAYOUTS.find((candidate) => candidate.value === pendingReduction.layout)?.label.toLowerCase() : 'a smaller layout'} will close the extra terminals.`}
+            {`Changing to ${pendingReduction ? TERMINAL_LAYOUTS.find((candidate) => candidate.value === pendingReduction.layout)?.label.toLowerCase() : 'a smaller layout'} will close the extra terminals.`}
           </AlertDialogDescription>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep current layout</AlertDialogCancel>

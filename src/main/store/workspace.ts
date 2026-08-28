@@ -61,13 +61,14 @@ const TERMINAL_LAYOUT_COUNTS: Record<TerminalLayout, number> = {
   columns: 2,
   three: 3,
   quadrant: 4,
+  fiveGrid: 5,
   threeColumns: 3,
   sixGrid: 6
 }
 
 function isTerminalLayout(value: unknown): value is TerminalLayout {
   return value === 'single' || value === 'columns' || value === 'three' || value === 'quadrant' ||
-    value === 'threeColumns' || value === 'sixGrid'
+    value === 'fiveGrid' || value === 'threeColumns' || value === 'sixGrid'
 }
 
 function ratio(value: unknown): number {
@@ -81,7 +82,7 @@ function validRatio(value: unknown): value is number {
 }
 
 function isThreeColumnLayout(layout: TerminalLayout): boolean {
-  return layout === 'threeColumns' || layout === 'sixGrid'
+  return layout === 'threeColumns' || layout === 'fiveGrid' || layout === 'sixGrid'
 }
 
 function defaultTab(sessionId: string): SessionTab {

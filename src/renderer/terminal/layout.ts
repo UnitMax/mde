@@ -41,14 +41,15 @@ export const TERMINAL_LAYOUTS: readonly {
   { value: 'columns', label: 'Two terminals side by side', count: 2, shortcut: 2 },
   { value: 'three', label: 'Three terminals', count: 3, shortcut: 3 },
   { value: 'quadrant', label: 'Four terminals in a quadrant', count: 4, shortcut: 4 },
-  { value: 'threeColumns', label: 'Three terminals side by side', count: 3, shortcut: 5 },
-  { value: 'sixGrid', label: 'Six terminals in a 3 × 2 grid', count: 6, shortcut: 6 }
+  { value: 'fiveGrid', label: 'Five terminals in a 3 × 2 grid', count: 5, shortcut: 5 },
+  { value: 'sixGrid', label: 'Six terminals in a 3 × 2 grid', count: 6, shortcut: 6 },
+  { value: 'threeColumns', label: 'Three terminals side by side', count: 3, shortcut: 7 }
 ]
 
 export const MAX_TERMINAL_COUNT = Math.max(...TERMINAL_LAYOUTS.map((candidate) => candidate.count))
 
 export function isThreeColumnLayout(layout: TerminalLayout): boolean {
-  return layout === 'threeColumns' || layout === 'sixGrid'
+  return layout === 'threeColumns' || layout === 'fiveGrid' || layout === 'sixGrid'
 }
 
 export function terminalCount(layout: TerminalLayout): number {
@@ -84,6 +85,13 @@ export function terminalResizeHandles(layout: TerminalLayout): readonly Terminal
     return [
       { axis: 'column', scope: 'full', columnIndex: 0 },
       { axis: 'column', scope: 'full', columnIndex: 1 }
+    ]
+  }
+  if (layout === 'fiveGrid') {
+    return [
+      { axis: 'column', scope: 'top', columnIndex: 0 },
+      { axis: 'column', scope: 'top', columnIndex: 1 },
+      { axis: 'row', scope: 'full' }
     ]
   }
   if (layout === 'sixGrid') {
@@ -159,9 +167,11 @@ export function terminalGridTemplates(
   const [firstColumnRatio, secondColumnRatio] = terminalColumnRatios(sizes)
   const columns = layout === 'single'
     ? 'minmax(0, 1fr)'
-    : isThreeColumnLayout(layout)
-      ? `minmax(0, ${firstColumnRatio}fr) minmax(0, ${secondColumnRatio - firstColumnRatio}fr) minmax(0, ${1 - secondColumnRatio}fr)`
-      : `minmax(0, ${sizes.columnRatio}fr) minmax(0, ${1 - sizes.columnRatio}fr)`
+    : layout === 'fiveGrid'
+      ? 'minmax(0, 1fr)'
+      : isThreeColumnLayout(layout)
+        ? `minmax(0, ${firstColumnRatio}fr) minmax(0, ${secondColumnRatio - firstColumnRatio}fr) minmax(0, ${1 - secondColumnRatio}fr)`
+        : `minmax(0, ${sizes.columnRatio}fr) minmax(0, ${1 - sizes.columnRatio}fr)`
   const rows = layout === 'single' || layout === 'columns' || layout === 'threeColumns'
     ? 'minmax(0, 1fr)'
     : `minmax(0, ${sizes.rowRatio}fr) minmax(0, ${1 - sizes.rowRatio}fr)`
@@ -181,9 +191,9 @@ export interface TerminalLayoutShortcutInput {
 export function getTerminalLayoutShortcut(input: TerminalLayoutShortcutInput): TerminalLayout | null {
   if (input.type !== 'keydown' || !input.control || input.meta || input.alt || input.shift) return null
 
-  const digit = /^[1-6]$/.test(input.key)
+  const digit = /^[1-7]$/.test(input.key)
     ? input.key
-    : input.code?.match(/^(?:Digit|Numpad)([1-6])$/)?.[1]
+    : input.code?.match(/^(?:Digit|Numpad)([1-7])$/)?.[1]
   if (!digit) return null
 
   return TERMINAL_LAYOUTS.find((candidate) => candidate.shortcut === Number(digit))?.value ?? null
@@ -192,6 +202,7 @@ export function getTerminalLayoutShortcut(input: TerminalLayoutShortcutInput): T
 export function layoutClass(layout: TerminalLayout): string {
   if (layout === 'single') return 'grid-cols-1 grid-rows-1'
   if (layout === 'threeColumns') return 'grid-cols-3 grid-rows-1'
+  if (layout === 'fiveGrid') return 'grid-cols-1 grid-rows-2'
   if (layout === 'sixGrid') return 'grid-cols-3 grid-rows-2'
   return layout === 'three' || layout === 'quadrant'
     ? 'grid-cols-2 grid-rows-2'
@@ -210,17 +221,14 @@ export function createSessionTerminalLayout(sessionId: string): SessionTerminalL
   }
 }
 
-/** Returns the newest removable panes needed to reach the requested count. */
+/** Returns the newest panes needed to reach the requested count. */
 export function panesToTrim(
   panes: readonly TerminalPaneState[],
-  targetCount: number,
-  requestedTerminalId?: string
+  targetCount: number
 ): string[] {
   const excess = Math.max(0, panes.length - targetCount)
   const newest = [...panes].reverse().map((pane) => pane.terminalId)
-  if (!requestedTerminalId || !newest.includes(requestedTerminalId)) return newest.slice(0, excess)
-  return [requestedTerminalId, ...newest.filter((terminalId) => terminalId !== requestedTerminalId)]
-    .slice(0, excess)
+  return newest.slice(0, excess)
 }
 
 /** A terminal pane can close only while another pane can remain visible. */
@@ -229,6 +237,20 @@ export function isTerminalPaneClosable(
   terminalId: string
 ): boolean {
   return panes.length > 1 && panes.some((pane) => pane.terminalId === terminalId)
+}
+
+export function removeTerminalPane(
+  layout: SessionTerminalLayout,
+  terminalId: string
+): SessionTerminalLayout | null {
+  if (!isTerminalPaneClosable(layout.panes, terminalId)) return null
+  const panes = layout.panes.filter((pane) => pane.terminalId !== terminalId)
+  const nextLayout = layoutForCount(panes.length)
+  return {
+    layout: nextLayout,
+    panes,
+    sizes: defaultTerminalLayoutSizes(nextLayout)
+  }
 }
 
 /** Swaps two panes by terminal ID without changing either pane's metadata. */

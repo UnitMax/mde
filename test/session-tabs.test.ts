@@ -118,4 +118,28 @@ describe('session tab runtime helpers', () => {
     expect(runtime.panes[5]?.terminalId).toBe('session-1:tab:tab-six:pane:pane-6')
     expect(persistRuntimeLayout(runtime)).toEqual(sixTab.layout)
   })
+
+  it('restores a five-pane layout with stable runtime identities', () => {
+    const fiveTab = {
+      id: 'tab-five',
+      name: 'Five',
+      layout: {
+        layout: 'fiveGrid' as const,
+        panes: [
+          { id: 'pane-1' },
+          { id: 'pane-2' },
+          { id: 'pane-3' },
+          { id: 'pane-4' },
+          { id: 'pane-5' }
+        ],
+        sizes: { columnRatio: 0.3, secondColumnRatio: 0.7, rowRatio: 0.4 }
+      }
+    }
+    const runtime = createRuntimeLayout(session.id, fiveTab)
+
+    expect(runtime.layout).toBe('fiveGrid')
+    expect(runtime.panes).toHaveLength(5)
+    expect(runtime.panes[4]?.terminalId).toBe('session-1:tab:tab-five:pane:pane-5')
+    expect(persistRuntimeLayout(runtime)).toEqual(fiveTab.layout)
+  })
 })

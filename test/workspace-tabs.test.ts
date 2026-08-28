@@ -143,4 +143,41 @@ describe('workspace session tabs', () => {
       sessions: [{ tabs: [{ layout: { layout: 'sixGrid' } }] }]
     })
   })
+
+  it('persists a five-pane 3-by-2 layout', async () => {
+    const project = await createProject({ name: 'Work' })
+    const session = await createSession({
+      projectId: project.id,
+      name: 'App',
+      kind: 'native',
+      path: '/workspace/app'
+    })
+    const panes = [
+      { id: 'pane-1' },
+      { id: 'pane-2' },
+      { id: 'pane-3' },
+      { id: 'pane-4' },
+      { id: 'pane-5' }
+    ]
+    const updated = await updateSessionTab({
+      sessionId: session.id,
+      tabId: session.tabs?.[0]?.id ?? '',
+      patch: {
+        layout: {
+          layout: 'fiveGrid',
+          panes,
+          sizes: { columnRatio: 0.3, secondColumnRatio: 0.7, rowRatio: 0.4 }
+        }
+      }
+    })
+
+    expect(updated?.tabs?.[0]?.layout).toEqual({
+      layout: 'fiveGrid',
+      panes,
+      sizes: { columnRatio: 0.3, secondColumnRatio: 0.7, rowRatio: 0.4 }
+    })
+    await expect(loadWorkspace()).resolves.toMatchObject({
+      sessions: [{ tabs: [{ layout: { layout: 'fiveGrid', panes } }] }]
+    })
+  })
 })

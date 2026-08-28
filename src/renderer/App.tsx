@@ -20,10 +20,8 @@ import {
 } from '@/terminal/tabs'
 import {
   defaultTerminalLayoutSizes,
-  isTerminalPaneClosable,
-  layoutForCount,
   orderTerminalPanes,
-  panesToTrim,
+  removeTerminalPane,
   terminalCount,
   type SessionTerminalLayout,
   type TerminalLayout,
@@ -215,19 +213,9 @@ export function App(): JSX.Element {
         return
       }
 
+      const next = removeTerminalPane(layout, info.terminalId)
+      if (!next) return
       disposeRuntimeTerminal(info.terminalId)
-      let panes = layout.panes.filter((candidate) => candidate.terminalId !== info.terminalId)
-      if (panes.length === 5) {
-        const extraPaneIds = panesToTrim(panes, 4)
-        extraPaneIds.forEach(disposeRuntimeTerminal)
-        panes = panes.filter((candidate) => !extraPaneIds.includes(candidate.terminalId))
-      }
-      const nextLayout = layoutForCount(panes.length)
-      const next = {
-        layout: nextLayout,
-        panes,
-        sizes: defaultTerminalLayoutSizes(nextLayout)
-      }
       setRuntimeLayout(session.id, tabId, next)
       queueLayoutPersistence(session.id, tabId, next, true)
     })
@@ -452,18 +440,9 @@ export function App(): JSX.Element {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!session) return
     const existing = layoutForTab(session, tabId)
-    if (!isTerminalPaneClosable(existing.panes, terminalId)) return
-    const paneIds = existing.layout === 'sixGrid'
-      ? panesToTrim(existing.panes, 4, terminalId)
-      : [terminalId]
-    paneIds.forEach(disposeRuntimeTerminal)
-    const panes = existing.panes.filter((candidate) => !paneIds.includes(candidate.terminalId))
-    const nextLayout = layoutForCount(panes.length)
-    const next = {
-      layout: nextLayout,
-      panes,
-      sizes: defaultTerminalLayoutSizes(nextLayout)
-    }
+    const next = removeTerminalPane(existing, terminalId)
+    if (!next) return
+    disposeRuntimeTerminal(terminalId)
     setRuntimeLayout(sessionId, tabId, next)
     queueLayoutPersistence(sessionId, tabId, next, true)
   }

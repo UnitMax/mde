@@ -98,7 +98,7 @@ describe('workspace validation', () => {
     })
   })
 
-  it('validates three-column and six-pane layouts with independent column ratios', () => {
+  it('validates three-column, five-pane, and six-pane layouts with independent column ratios', () => {
     const projectIds = new Set([project.id])
     const panes = [
       { id: 'pane-1' },
@@ -124,6 +124,25 @@ describe('workspace validation', () => {
     expect(six?.tabs?.[0]?.layout).toEqual({
       layout: 'sixGrid',
       panes,
+      sizes: { columnRatio: 0.3, secondColumnRatio: 0.7, rowRatio: 0.4 }
+    })
+
+    const five = validateSession({
+      ...session,
+      tabs: [{
+        id: 'tab-five',
+        name: 'Five',
+        layout: {
+          layout: 'fiveGrid',
+          panes: panes.slice(0, 5),
+          sizes: { columnRatio: 0.3, secondColumnRatio: 0.7, rowRatio: 0.4 }
+        }
+      }]
+    }, projectIds)
+
+    expect(five?.tabs?.[0]?.layout).toEqual({
+      layout: 'fiveGrid',
+      panes: panes.slice(0, 5),
       sizes: { columnRatio: 0.3, secondColumnRatio: 0.7, rowRatio: 0.4 }
     })
 

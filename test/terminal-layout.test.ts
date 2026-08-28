@@ -9,6 +9,7 @@ import {
   orderTerminalPanes,
   panesToTrim,
   paneClass,
+  removeTerminalPane,
   swapTerminalPanes,
   terminalCount,
   terminalColumnRatios,
@@ -19,7 +20,7 @@ import {
 } from '../src/renderer/terminal/layout'
 
 describe('terminal layouts', () => {
-  it('maps Ctrl+1 through Ctrl+6 to the supported layouts', () => {
+  it('maps Ctrl+1 through Ctrl+7 to the supported layouts', () => {
     const input = (key: string, overrides: Partial<{ code: string; control: boolean; meta: boolean; alt: boolean; shift: boolean; type: string }> = {}) => ({
       type: 'keydown',
       key,
@@ -35,8 +36,9 @@ describe('terminal layouts', () => {
     expect(getTerminalLayoutShortcut(input('2'))).toBe('columns')
     expect(getTerminalLayoutShortcut(input('3'))).toBe('three')
     expect(getTerminalLayoutShortcut(input('4'))).toBe('quadrant')
-    expect(getTerminalLayoutShortcut(input('5'))).toBe('threeColumns')
+    expect(getTerminalLayoutShortcut(input('5'))).toBe('fiveGrid')
     expect(getTerminalLayoutShortcut(input('6'))).toBe('sixGrid')
+    expect(getTerminalLayoutShortcut(input('7'))).toBe('threeColumns')
   })
 
   it('ignores layout shortcuts without plain Ctrl modifier state', () => {
@@ -56,7 +58,7 @@ describe('terminal layouts', () => {
     expect(getTerminalLayoutShortcut(input({ alt: true }))).toBeNull()
     expect(getTerminalLayoutShortcut(input({ shift: true }))).toBeNull()
     expect(getTerminalLayoutShortcut(input({ type: 'keyup' }))).toBeNull()
-    expect(getTerminalLayoutShortcut(input({ key: '7', code: 'Digit7' }))).toBeNull()
+    expect(getTerminalLayoutShortcut(input({ key: '8', code: 'Digit8' }))).toBeNull()
   })
 
   it('maps each supported layout to its pane count', () => {
@@ -64,12 +66,14 @@ describe('terminal layouts', () => {
     expect(terminalCount('columns')).toBe(2)
     expect(terminalCount('three')).toBe(3)
     expect(terminalCount('quadrant')).toBe(4)
+    expect(terminalCount('fiveGrid')).toBe(5)
     expect(terminalCount('threeColumns')).toBe(3)
     expect(terminalCount('sixGrid')).toBe(6)
     expect(layoutForCount(1)).toBe('single')
     expect(layoutForCount(2)).toBe('columns')
     expect(layoutForCount(3)).toBe('three')
     expect(layoutForCount(4)).toBe('quadrant')
+    expect(layoutForCount(5)).toBe('fiveGrid')
     expect(layoutForCount(6)).toBe('sixGrid')
   })
 
@@ -77,10 +81,12 @@ describe('terminal layouts', () => {
     expect(layoutClass('single')).toContain('grid-cols-1')
     expect(layoutClass('columns')).toContain('grid-rows-1')
     expect(layoutClass('three')).toContain('grid-rows-2')
+    expect(layoutClass('fiveGrid')).toEqual('grid-cols-1 grid-rows-2')
     expect(layoutClass('threeColumns')).toEqual('grid-cols-3 grid-rows-1')
     expect(layoutClass('sixGrid')).toEqual('grid-cols-3 grid-rows-2')
     expect(paneClass('three', 2)).toBe('col-span-2')
     expect(paneClass('quadrant', 2)).toBe('')
+    expect(paneClass('fiveGrid', 4)).toBe('')
     expect(paneClass('sixGrid', 2)).toBe('')
   })
 
@@ -98,6 +104,11 @@ describe('terminal layouts', () => {
     expect(terminalResizeHandles('threeColumns')).toEqual([
       { axis: 'column', scope: 'full', columnIndex: 0 },
       { axis: 'column', scope: 'full', columnIndex: 1 }
+    ])
+    expect(terminalResizeHandles('fiveGrid')).toEqual([
+      { axis: 'column', scope: 'top', columnIndex: 0 },
+      { axis: 'column', scope: 'top', columnIndex: 1 },
+      { axis: 'row', scope: 'full' }
     ])
     expect(terminalResizeHandles('sixGrid')).toEqual([
       { axis: 'column', scope: 'full', columnIndex: 0 },
@@ -131,6 +142,14 @@ describe('terminal layouts', () => {
       columns: 'minmax(0, 0.3333333333333333fr) minmax(0, 0.3333333333333333fr) minmax(0, 0.33333333333333337fr)',
       rows: 'minmax(0, 0.75fr) minmax(0, 0.25fr)'
     })
+    expect(terminalGridTemplates('fiveGrid', {
+      columnRatio: 1 / 3,
+      secondColumnRatio: 2 / 3,
+      rowRatio: 0.5
+    })).toEqual({
+      columns: 'minmax(0, 1fr)',
+      rows: 'minmax(0, 0.5fr) minmax(0, 0.5fr)'
+    })
   })
 
   it('normalizes invalid three-column ratios and constrains both dividers', () => {
@@ -160,17 +179,43 @@ describe('terminal layouts', () => {
 
     expect(panesToTrim(panes, 2)).toEqual(['pane-4', 'pane-3'])
     expect(panesToTrim(panes, 1)).toEqual(['pane-4', 'pane-3', 'pane-2'])
-    expect(panesToTrim(panes, 2, 'pane-1')).toEqual(['pane-1', 'pane-4'])
+  })
 
-    const sixPanes = [
-      { terminalId: 'pane-1' },
-      { terminalId: 'pane-2' },
-      { terminalId: 'pane-3' },
-      { terminalId: 'pane-4' },
-      { terminalId: 'pane-5' },
-      { terminalId: 'pane-6' }
-    ]
-    expect(panesToTrim(sixPanes, 4, 'pane-3')).toEqual(['pane-3', 'pane-6'])
+  it('removes one pane and selects the layout for the remaining count', () => {
+    const sixLayout = {
+      layout: 'sixGrid' as const,
+      panes: [
+        { terminalId: 'pane-1' },
+        { terminalId: 'pane-2' },
+        { terminalId: 'pane-3' },
+        { terminalId: 'pane-4' },
+        { terminalId: 'pane-5' },
+        { terminalId: 'pane-6' }
+      ],
+      sizes: { columnRatio: 1 / 3, secondColumnRatio: 2 / 3, rowRatio: 0.5 }
+    }
+    const fiveLayout = removeTerminalPane(sixLayout, 'pane-3')
+
+    expect(fiveLayout?.layout).toBe('fiveGrid')
+    expect(fiveLayout?.panes.map((pane) => pane.terminalId)).toEqual([
+      'pane-1',
+      'pane-2',
+      'pane-4',
+      'pane-5',
+      'pane-6'
+    ])
+
+    const fourLayout = removeTerminalPane(fiveLayout!, 'pane-5')
+    expect(fourLayout?.layout).toBe('quadrant')
+    expect(fourLayout?.panes).toHaveLength(4)
+    expect(removeTerminalPane(fourLayout!, 'pane-1')?.panes).toHaveLength(3)
+
+    const singleLayout = {
+      layout: 'single' as const,
+      panes: [{ terminalId: 'pane-1' }],
+      sizes: defaultTerminalLayoutSizes()
+    }
+    expect(removeTerminalPane(singleLayout, 'pane-1')).toBeNull()
   })
 
   it('allows any existing pane to close while another pane remains', () => {
