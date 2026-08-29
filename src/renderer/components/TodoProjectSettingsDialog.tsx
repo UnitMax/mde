@@ -26,7 +26,7 @@ export function TodoProjectSettingsDialog({
 }: TodoProjectSettingsDialogProps): JSX.Element {
   const updateTodoProject = useWorkspace((state) => state.updateTodoProject)
   const [name, setName] = useState(project.name)
-  const [shorthand, setShorthand] = useState(project.shorthand ?? '')
+  const [shorthand, setShorthand] = useState(project.shorthand)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const validShorthand = /^[A-Z][A-Z0-9]{1,9}$/.test(shorthand)
@@ -34,7 +34,7 @@ export function TodoProjectSettingsDialog({
   useEffect(() => {
     if (!open) return
     setName(project.name)
-    setShorthand(project.shorthand ?? '')
+    setShorthand(project.shorthand)
     setSaving(false)
     setError(null)
   }, [open, project.id, project.name, project.shorthand])

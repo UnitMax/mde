@@ -65,7 +65,7 @@ export function normalizeTodoShorthand(value: string): string {
 }
 
 export function isTodoShorthand(value: string): boolean {
-  return TODO_SHORTHAND_PATTERN.test(normalizeTodoShorthand(value))
+  return TODO_SHORTHAND_PATTERN.test(value)
 }
 
 function defaultTodoColumns(): TodoColumn[] {
@@ -214,33 +214,37 @@ export function validateProjectList(raw: unknown): Project[] {
 export function validateTodoProject(raw: unknown): TodoProject | null {
   if (typeof raw !== 'object' || raw === null) return null
   const r = raw as Record<string, unknown>
-  if (!isNonEmptyString(r.id) || !isNonEmptyString(r.name)) return null
+  if (
+    !isNonEmptyString(r.id) ||
+    !isNonEmptyString(r.name) ||
+    typeof r.shorthand !== 'string' ||
+    !isTodoShorthand(r.shorthand) ||
+    typeof r.nextTaskNumber !== 'number' ||
+    !Number.isInteger(r.nextTaskNumber) ||
+    r.nextTaskNumber <= 0 ||
+    !Array.isArray(r.columns) ||
+    !isNonEmptyString(r.createdAt)
+  ) return null
 
-  const columns = Array.isArray(r.columns)
-    ? uniqueEntries(
-        r.columns
-          .filter((column): column is Record<string, unknown> =>
-            typeof column === 'object' && column !== null
-          )
-          .filter((column) => isNonEmptyString(column.id) && isNonEmptyString(column.name))
-          .map((column) => ({ id: column.id as string, name: (column.name as string).trim() })),
-        'to-do column'
-      )
-    : []
-  const shorthand = isNonEmptyString(r.shorthand) && isTodoShorthand(r.shorthand)
-    ? normalizeTodoShorthand(r.shorthand)
-    : null
+  const columns = r.columns
+    .filter((column): column is Record<string, unknown> =>
+      typeof column === 'object' && column !== null
+    )
+    .filter((column) => isNonEmptyString(column.id) && isNonEmptyString(column.name))
+    .map((column) => ({ id: column.id as string, name: (column.name as string).trim() }))
+  if (
+    columns.length !== r.columns.length ||
+    columns.length === 0 ||
+    new Set(columns.map((column) => column.id)).size !== columns.length
+  ) return null
 
   return {
     id: r.id,
     name: r.name.trim(),
-    shorthand,
-    nextTaskNumber:
-      typeof r.nextTaskNumber === 'number' && Number.isInteger(r.nextTaskNumber) && r.nextTaskNumber > 0
-        ? r.nextTaskNumber
-        : 1,
-    columns: columns.length > 0 ? columns : defaultTodoColumns(),
-    createdAt: isNonEmptyString(r.createdAt) ? r.createdAt : new Date(0).toISOString()
+    shorthand: r.shorthand,
+    nextTaskNumber: r.nextTaskNumber,
+    columns,
+    createdAt: r.createdAt
   }
 }
 
@@ -253,13 +257,13 @@ export function validateTodoProjectList(raw: unknown): TodoProject[] {
     'to-do project'
   )
   const shorthands = new Set<string>()
-  return projects.map((project) => {
-    if (!project.shorthand || !shorthands.has(project.shorthand)) {
-      if (project.shorthand) shorthands.add(project.shorthand)
-      return project
+  return projects.filter((project) => {
+    if (shorthands.has(project.shorthand)) {
+      console.warn(`[workspace] dropping duplicate to-do shorthand ${project.shorthand}`)
+      return false
     }
-    console.warn(`[workspace] clearing duplicate to-do shorthand ${project.shorthand}`)
-    return { ...project, shorthand: null }
+    shorthands.add(project.shorthand)
+    return true
   })
 }
 
@@ -283,7 +287,7 @@ export function validateTodoTask(
   }
   const project = projects.get(r.todoProjectId)
   if (!project?.columns.some((column) => column.id === r.columnId)) return null
-  const createdAt = isNonEmptyString(r.createdAt) ? r.createdAt : new Date(0).toISOString()
+  if (!isNonEmptyString(r.createdAt) || !isNonEmptyString(r.updatedAt)) return null
   return {
     id: r.id,
     todoProjectId: r.todoProjectId,
@@ -291,8 +295,8 @@ export function validateTodoTask(
     number: r.number,
     title: r.title.trim(),
     description: r.description.trim(),
-    createdAt,
-    updatedAt: isNonEmptyString(r.updatedAt) ? r.updatedAt : createdAt
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt
   }
 }
 
@@ -367,17 +371,9 @@ export function validateWorkspace(raw: unknown): WorkspaceData {
   }
   const record = raw as Record<string, unknown>
   const projects = validateProjectList(record.projects)
-  let todoProjects = validateTodoProjectList(record.todoProjects)
+  const todoProjects = validateTodoProjectList(record.todoProjects)
   const todoProjectMap = new Map(todoProjects.map((project) => [project.id, project]))
   const todoTasks = validateTodoTaskList(record.todoTasks, todoProjectMap)
-  todoProjects = todoProjects.map((project) => {
-    const highestNumber = todoTasks
-      .filter((task) => task.todoProjectId === project.id)
-      .reduce((highest, task) => Math.max(highest, task.number), 0)
-    return project.nextTaskNumber > highestNumber
-      ? project
-      : { ...project, nextTaskNumber: highestNumber + 1 }
-  })
   const projectIds = new Set(projects.map((project) => project.id))
   const sessions = validateSessionList(record.sessions, projectIds)
   return { projects, todoProjects, todoTasks, sessions }
@@ -554,7 +550,6 @@ export async function createTodoTask(input: NewTodoTask): Promise<TodoTask> {
   )
   const project = workspace.todoProjects[projectIndex]
   if (!project) throw new Error('Cannot create a task without a valid To Do project')
-  if (!project.shorthand) throw new Error('Configure a project shorthand before creating tasks')
   if (!project.columns.some((column) => column.id === input.columnId)) {
     throw new Error('Cannot create a task in an invalid column')
   }

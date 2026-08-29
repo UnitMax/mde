@@ -36,8 +36,7 @@ export interface Project {
 export interface TodoProject {
   id: string
   name: string
-  /** Null while a legacy or conflicted project still requires configuration. */
-  shorthand: string | null
+  shorthand: string
   nextTaskNumber: number
   columns: TodoColumn[]
   createdAt: string

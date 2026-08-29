@@ -152,9 +152,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       window.api.opencodeTui.settings()
     ])
 
-    const { projects, sessions } = workspace as WorkspaceData
-    const todoProjects = workspace.todoProjects ?? []
-    const todoTasks = workspace.todoTasks ?? []
+    const { projects, todoProjects, todoTasks, sessions } = workspace as WorkspaceData
     set({
       platform,
       projects,

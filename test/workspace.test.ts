@@ -79,18 +79,24 @@ describe('workspace validation', () => {
     ])
   })
 
-  it('normalizes legacy To Do projects and validates tasks against arbitrary columns', () => {
-    const legacy = validateTodoProject({
+  it('accepts only complete current To Do projects', () => {
+    expect(validateTodoProject({
       id: 'legacy',
       name: 'Legacy',
       createdAt: '2026-01-01T00:00:00.000Z'
-    })
-    expect(legacy).toMatchObject({ shorthand: null, nextTaskNumber: 1 })
-    expect(legacy?.columns.map((column) => column.name)).toEqual([
-      'To Do',
-      'In Progress',
-      'Done'
-    ])
+    })).toBeNull()
+    expect(validateTodoProject({ ...todoProject, shorthand: 'eng' })).toBeNull()
+    expect(validateTodoProject({ ...todoProject, columns: undefined })).toBeNull()
+    expect(validateTodoProject({ ...todoProject, nextTaskNumber: undefined })).toBeNull()
+
+    expect(validateTodoProjectList([
+      todoProject,
+      { ...todoProject, id: 'duplicate-key' },
+      { id: 'legacy', name: 'Legacy' }
+    ])).toEqual([todoProject])
+  })
+
+  it('validates tasks against arbitrary current columns', () => {
 
     const projects = new Map([[todoProject.id, todoProject]])
     const task = {
@@ -106,15 +112,8 @@ describe('workspace validation', () => {
     expect(validateTodoTask(task, projects)).toEqual(task)
     expect(validateTodoTask({ ...task, columnId: 'missing' }, projects)).toBeNull()
     expect(validateTodoTaskList([task, task], projects)).toEqual([task])
-
-    const recovered = validateWorkspace({
-      projects: [],
-      todoProjects: [{ ...todoProject, nextTaskNumber: 1 }],
-      todoTasks: [task],
-      sessions: []
-    })
-    expect(recovered.todoProjects[0]?.nextTaskNumber).toBe(5)
-    expect(recovered.todoTasks).toEqual([task])
+    expect(validateTodoTask({ ...task, createdAt: undefined }, projects)).toBeNull()
+    expect(validateTodoTask({ ...task, updatedAt: undefined }, projects)).toBeNull()
   })
 
   it('requires sessions to reference a project and retain their own path', () => {

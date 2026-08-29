@@ -182,7 +182,7 @@ export function GitDialog({ open, session, onOpenChange }: GitDialogProps): JSX.
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent animated={false} className="flex max-h-[90vh] max-w-6xl flex-col overflow-x-hidden overflow-y-auto">
+      <DialogContent className="flex max-h-[90vh] max-w-6xl flex-col overflow-x-hidden overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Git history</DialogTitle>
           <DialogDescription>

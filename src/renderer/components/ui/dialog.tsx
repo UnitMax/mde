@@ -14,24 +14,20 @@ const contentClass =
   'fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 ' +
   'rounded-lg border border-line-strong bg-elevated p-5 shadow-2xl shadow-black/60'
 
-const overlayAnimationClass = '[animation:mde-overlay-in_120ms_ease-out]'
-const contentAnimationClass = '[animation:mde-content-in_140ms_ease-out]'
-
 interface DialogContentProps
   extends React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {
-  animated?: boolean
   showCloseButton?: boolean
 }
 
 export const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   DialogContentProps
->(({ className, children, animated = true, showCloseButton = true, ...props }, ref) => (
+>(({ className, children, showCloseButton = true, ...props }, ref) => (
   <DialogPrimitive.Portal>
-    <DialogPrimitive.Overlay className={cn(overlayClass, animated && overlayAnimationClass)} />
+    <DialogPrimitive.Overlay className={overlayClass} />
     <DialogPrimitive.Content
       ref={ref}
-      className={cn(contentClass, animated && contentAnimationClass, className)}
+      className={cn(contentClass, className)}
       {...props}
     >
       {children}

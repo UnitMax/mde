@@ -1179,7 +1179,7 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
         Settings
       </button>
 
-      <DialogContent animated={false} className="flex h-[min(42rem,85vh)] max-w-3xl flex-col">
+      <DialogContent className="flex h-[min(42rem,85vh)] max-w-3xl flex-col">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>

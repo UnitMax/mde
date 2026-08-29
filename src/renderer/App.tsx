@@ -313,10 +313,6 @@ export function App(): JSX.Element {
 
   const openNewTodoTask = (columnId?: string): void => {
     if (!selectedTodoProject) return
-    if (!selectedTodoProject.shorthand) {
-      setTodoProjectSettingsOpen(true)
-      return
-    }
     const defaultColumnId = columnId ?? selectedTodoProject.columns[0]?.id
     if (!defaultColumnId) return
     setTodoTaskDialogTaskId(null)
@@ -329,12 +325,6 @@ export function App(): JSX.Element {
     setTodoTaskDialogColumnId(task.columnId)
     setTodoTaskDialogOpen(true)
   }
-
-  useEffect(() => {
-    if (activeWorkspaceView === 'todo' && selectedTodoProject && !selectedTodoProject.shorthand) {
-      setTodoProjectSettingsOpen(true)
-    }
-  }, [activeWorkspaceView, selectedTodoProject?.id, selectedTodoProject?.shorthand])
 
   useEffect(() => {
     setTodoTaskDialogOpen(false)

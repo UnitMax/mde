@@ -141,7 +141,6 @@ export function SessionSwitcher({ open, onOpenChange }: SessionSwitcherProps): J
     <Dialog open={open} onOpenChange={close}>
       <DialogContent
         className="max-w-xl p-3"
-        animated={false}
         showCloseButton={false}
         onOpenAutoFocus={(event) => {
           event.preventDefault()

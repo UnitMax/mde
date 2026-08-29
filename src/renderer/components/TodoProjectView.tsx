@@ -65,11 +65,9 @@ export function TodoProjectView({
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line px-5">
         <h1 className="min-w-0 flex-1 truncate text-[13px] font-medium text-fg">{project.name}</h1>
-        {project.shorthand && (
-          <span className="rounded border border-line-strong px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle">
-            {project.shorthand}
-          </span>
-        )}
+        <span className="rounded border border-line-strong px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle">
+          {project.shorthand}
+        </span>
         <Button
           variant="ghost"
           size="icon-sm"
@@ -80,17 +78,6 @@ export function TodoProjectView({
           <Settings2 className="h-3.5 w-3.5" />
         </Button>
       </header>
-
-      {!project.shorthand && (
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line bg-warn/10 px-5 py-2">
-          <p className="text-xs text-fg-muted">
-            Choose a unique shorthand before adding tasks to this project.
-          </p>
-          <Button variant="secondary" size="sm" onClick={onOpenSettings}>
-            Set shorthand
-          </Button>
-        </div>
-      )}
 
       <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden p-4">
         <div className="flex h-full min-w-full gap-3">
@@ -137,7 +124,6 @@ export function TodoProjectView({
                     variant="ghost"
                     size="icon-sm"
                     className="ml-auto"
-                    disabled={!project.shorthand}
                     onClick={() => onNewTask(column.id)}
                     title={`New task in ${column.name}`}
                     aria-label={`New task in ${column.name}`}
