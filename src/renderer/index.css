@@ -224,6 +224,13 @@
     background-color: var(--color-panel);
     font-weight: 600;
   }
+
+  .todo-task-drop-preview {
+    min-height: 4rem;
+    border: 1px dashed var(--color-accent);
+    border-radius: 0.5rem;
+    background-color: transparent;
+  }
 }
 
 @keyframes mde-menu-in {
