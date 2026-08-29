@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Plus, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AddSessionDialog } from '@/components/AddProjectDialog'
@@ -11,6 +11,10 @@ import { TerminalView } from '@/components/TerminalView'
 import { TodoProjectView } from '@/components/TodoProjectView'
 import { TodoProjectSettingsDialog } from '@/components/TodoProjectSettingsDialog'
 import { TodoTaskDialog } from '@/components/TodoTaskDialog'
+import {
+  TerminalTaskLinkDialog,
+  type TerminalTaskLinkTarget
+} from '@/components/TerminalTaskLinkDialog'
 import { isSessionSwitcherShortcut } from '@/lib/session-switcher'
 import { useWorkspace } from '@/store/workspace'
 import { disposeSession, getSession } from '@/terminal/sessions'
@@ -33,6 +37,10 @@ import {
   type TerminalResizeAxis
 } from '@/terminal/layout'
 import type { PersistedTerminalLayout, Session, TodoTask } from '@shared/types'
+import {
+  liveTerminalDescriptors,
+  type LiveTerminalDescriptor
+} from '@/lib/terminal-task-links'
 
 type RuntimeLayouts = Record<string, Record<string, SessionTerminalLayout>>
 
@@ -60,6 +68,8 @@ export function App(): JSX.Element {
   const sessions = useWorkspace((state) => state.sessions)
   const todoProjects = useWorkspace((state) => state.todoProjects)
   const todoTasks = useWorkspace((state) => state.todoTasks)
+  const terminalStatuses = useWorkspace((state) => state.statuses)
+  const opencodeTuiInstances = useWorkspace((state) => state.opencodeTuiInstances)
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
   const selectedTodoProjectId = useWorkspace((state) => state.selectedTodoProjectId)
   const activeWorkspaceView = useWorkspace((state) => state.activeWorkspaceView)
@@ -70,6 +80,8 @@ export function App(): JSX.Element {
   const updateTabLayoutAction = useWorkspace((state) => state.updateTabLayout)
   const removeTabAction = useWorkspace((state) => state.removeTab)
   const clearExit = useWorkspace((state) => state.clearExit)
+  const setStatus = useWorkspace((state) => state.setStatus)
+  const unlinkTerminalTask = useWorkspace((state) => state.unlinkTerminalTask)
   const [newSessionOpen, setNewSessionOpen] = useState(false)
   const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [newTodoProjectOpen, setNewTodoProjectOpen] = useState(false)
@@ -79,6 +91,7 @@ export function App(): JSX.Element {
   const [todoTaskDialogColumnId, setTodoTaskDialogColumnId] = useState<string | null>(null)
   const [gitSessionId, setGitSessionId] = useState<string | null>(null)
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false)
+  const [terminalTaskLinkTarget, setTerminalTaskLinkTarget] = useState<TerminalTaskLinkTarget | null>(null)
   const [defaultProjectId, setDefaultProjectId] = useState<string | undefined>(undefined)
   const [terminalLayouts, setTerminalLayouts] = useState<RuntimeLayouts>({})
   const [pendingTerminalFocus, setPendingTerminalFocus] = useState<{
@@ -91,6 +104,16 @@ export function App(): JSX.Element {
   const sessionsRef = useRef(sessions)
   const pendingLayoutPersistence = useRef<Record<string, PersistedTerminalLayout>>({})
   const layoutPersistenceTimers = useRef<Record<string, number>>({})
+
+  const liveTerminals = useMemo<LiveTerminalDescriptor[]>(
+    () => liveTerminalDescriptors({
+      sessions,
+      terminalLayouts,
+      statuses: terminalStatuses,
+      opencodeTuiInstances
+    }),
+    [opencodeTuiInstances, sessions, terminalLayouts, terminalStatuses]
+  )
 
   useEffect(() => {
     terminalLayoutsRef.current = terminalLayouts
@@ -148,6 +171,8 @@ export function App(): JSX.Element {
 
   const disposeRuntimeTerminal = (terminalId: string): void => {
     clearExit(terminalId)
+    setStatus(terminalId, 'none')
+    unlinkTerminalTask(terminalId)
     disposeSession(terminalId)
     void window.api.pty.dispose(terminalId)
   }
@@ -343,6 +368,10 @@ export function App(): JSX.Element {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (session && activeSessionTab(session).id !== tabId) void selectTabAction(sessionId, tabId)
     setPendingTerminalFocus({ sessionId, tabId, terminalId })
+  }
+
+  const focusLiveTerminal = (terminal: LiveTerminalDescriptor): void => {
+    focusTerminal(terminal.sessionId, terminal.tabId, terminal.terminalId)
   }
 
   const selectTab = (sessionId: string, tabId: string): void => {
@@ -551,8 +580,10 @@ export function App(): JSX.Element {
           <TodoProjectView
             project={selectedTodoProject}
             tasks={selectedTodoTasks}
+            terminalCatalog={liveTerminals}
             onNewTask={openNewTodoTask}
             onEditTask={openTodoTask}
+            onFocusTerminal={focusLiveTerminal}
             onOpenSettings={() => setTodoProjectSettingsOpen(true)}
           />
         ) : selected && activeTab && layoutForSession ? (
@@ -574,6 +605,7 @@ export function App(): JSX.Element {
             onPaneTitleChange={(terminalId, title) =>
               renameTerminalPane(selected.id, activeTab.id, terminalId, title)
             }
+            onLinkTask={(terminalId) => setTerminalTaskLinkTarget({ type: 'terminal', terminalId })}
           />
         ) : (
           <EmptyState onNewSession={() => openNewSession()} />
@@ -600,11 +632,13 @@ export function App(): JSX.Element {
           <TodoTaskDialog
             project={selectedTodoProject}
             task={selectedTodoTask}
+            terminalCatalog={liveTerminals}
             defaultColumnId={
               todoTaskDialogColumnId ?? selectedTodoProject.columns[0]?.id ?? 'todo'
             }
             open={todoTaskDialogOpen}
             onOpenChange={setTodoTaskDialogOpen}
+            onManageTerminalLink={(taskId) => setTerminalTaskLinkTarget({ type: 'task', taskId })}
           />
         </>
       )}
@@ -616,6 +650,13 @@ export function App(): JSX.Element {
         }}
       />
       <SessionSwitcher open={sessionSwitcherOpen} onOpenChange={setSessionSwitcherOpen} />
+      <TerminalTaskLinkDialog
+        target={terminalTaskLinkTarget}
+        terminals={liveTerminals}
+        onOpenChange={(open) => {
+          if (!open) setTerminalTaskLinkTarget(null)
+        }}
+      />
     </div>
   )
 }

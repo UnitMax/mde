@@ -3,14 +3,21 @@ import { Circle, ListTodo, Plus, Settings2 } from 'lucide-react'
 import type { TodoProject, TodoTask } from '@shared/types'
 import { todoTaskIdentifier } from '@shared/todo'
 import { Button } from '@/components/ui/button'
+import { TaskTerminalBadge } from '@/components/TaskTerminalBadge'
 import { cn } from '@/lib/utils'
+import {
+  terminalIdForTask,
+  type LiveTerminalDescriptor
+} from '@/lib/terminal-task-links'
 import { useWorkspace } from '@/store/workspace'
 
 interface TodoProjectViewProps {
   project: TodoProject | null
   tasks: TodoTask[]
+  terminalCatalog: readonly LiveTerminalDescriptor[]
   onNewTask: (columnId: string) => void
   onEditTask: (task: TodoTask) => void
+  onFocusTerminal: (terminal: LiveTerminalDescriptor) => void
   onOpenSettings: () => void
 }
 
@@ -28,11 +35,15 @@ function todoTaskDescriptionPreview(description: string): string {
 export function TodoProjectView({
   project,
   tasks,
+  terminalCatalog,
   onNewTask,
   onEditTask,
+  onFocusTerminal,
   onOpenSettings
 }: TodoProjectViewProps): JSX.Element {
   const moveTodoTask = useWorkspace((state) => state.moveTodoTask)
+  const terminalTaskLinks = useWorkspace((state) => state.terminalTaskLinks)
+  const terminalsById = new Map(terminalCatalog.map((terminal) => [terminal.terminalId, terminal]))
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null)
   const [draggedTaskHeight, setDraggedTaskHeight] = useState<number | null>(null)
   const [dropTarget, setDropTarget] = useState<TodoTaskDropTarget | null>(null)
@@ -69,7 +80,7 @@ export function TodoProjectView({
   }
 
   const handleTaskDragOver = (
-    event: ReactDragEvent<HTMLButtonElement>,
+    event: ReactDragEvent<HTMLDivElement>,
     target: TodoTask,
     columnTasks: TodoTask[]
   ): void => {
@@ -116,7 +127,7 @@ export function TodoProjectView({
   }
 
   const handleTaskDrop = (
-    event: ReactDragEvent<HTMLButtonElement>,
+    event: ReactDragEvent<HTMLDivElement>,
     target: TodoTask,
     columnTasks: TodoTask[]
   ): void => {
@@ -259,11 +270,19 @@ export function TodoProjectView({
                   {columnTasks.map((task, taskIndex) => (
                     <Fragment key={task.id}>
                       {previewIndex === taskIndex && dropPreview}
-                      <button
-                        type="button"
+                      <div
+                        role="button"
+                        tabIndex={0}
                         draggable
                         data-todo-task-id={task.id}
                         onClick={() => onEditTask(task)}
+                        onKeyDown={(event) => {
+                          if (event.target !== event.currentTarget) return
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            onEditTask(task)
+                          }
+                        }}
                         onDragStart={(event) => {
                           setDraggingTaskId(task.id)
                           setDraggedTaskHeight(
@@ -281,9 +300,21 @@ export function TodoProjectView({
                           draggingTaskId === task.id && 'opacity-45'
                         )}
                       >
-                        <span className="font-mono text-[10px] text-fg-subtle">
-                          {todoTaskIdentifier(project, task)}
-                        </span>
+                        <div className="flex min-w-0 items-start justify-between gap-2">
+                          <span className="font-mono text-[10px] text-fg-subtle">
+                            {todoTaskIdentifier(project, task)}
+                          </span>
+                          {(() => {
+                            const terminalId = terminalIdForTask(terminalTaskLinks, task.id)
+                            const terminal = terminalId ? terminalsById.get(terminalId) : undefined
+                            return terminal ? (
+                              <TaskTerminalBadge
+                                terminal={terminal}
+                                onClick={() => onFocusTerminal(terminal)}
+                              />
+                            ) : null
+                          })()}
+                        </div>
                         <span className="mt-1 block text-[13px] font-medium leading-5 text-fg">
                           {task.title}
                         </span>
@@ -292,7 +323,7 @@ export function TodoProjectView({
                             {todoTaskDescriptionPreview(task.description)}
                           </span>
                         )}
-                      </button>
+                      </div>
                     </Fragment>
                   ))}
                   {previewIndex === columnTasks.length && dropPreview}

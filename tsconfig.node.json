@@ -22,6 +22,7 @@
     "src/renderer/lib/opencode-tui-instances.ts",
     "src/renderer/lib/opencode-tui-status.ts",
     "src/renderer/lib/terminal-instances.ts",
+    "src/renderer/lib/terminal-task-links.ts",
     "src/shared/**/*",
     "test/**/*"
   ],

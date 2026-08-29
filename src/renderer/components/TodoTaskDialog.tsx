@@ -22,33 +22,45 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { MarkdownEditor, type MarkdownEditorHandle } from '@/components/MarkdownEditor'
+import { TaskTerminalBadge } from '@/components/TaskTerminalBadge'
+import { terminalIdForTask, type LiveTerminalDescriptor } from '@/lib/terminal-task-links'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useWorkspace } from '@/store/workspace'
 
 interface TodoTaskDialogProps {
   project: TodoProject
   task: TodoTask | null
+  terminalCatalog: readonly LiveTerminalDescriptor[]
   defaultColumnId: string
   open: boolean
   onOpenChange: (open: boolean) => void
+  onManageTerminalLink: (taskId: string) => void
 }
 
 export function TodoTaskDialog({
   project,
   task,
+  terminalCatalog,
   defaultColumnId,
   open,
-  onOpenChange
+  onOpenChange,
+  onManageTerminalLink
 }: TodoTaskDialogProps): JSX.Element {
   const addTodoTask = useWorkspace((state) => state.addTodoTask)
   const updateTodoTask = useWorkspace((state) => state.updateTodoTask)
   const removeTodoTask = useWorkspace((state) => state.removeTodoTask)
+  const unlinkTodoTask = useWorkspace((state) => state.unlinkTodoTask)
+  const terminalTaskLinks = useWorkspace((state) => state.terminalTaskLinks)
   const [title, setTitle] = useState('')
   const [columnId, setColumnId] = useState(defaultColumnId)
   const [saving, setSaving] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const descriptionEditorRef = useRef<MarkdownEditorHandle>(null)
+  const linkedTerminalId = task ? terminalIdForTask(terminalTaskLinks, task.id) : null
+  const linkedTerminal = linkedTerminalId
+    ? terminalCatalog.find((terminal) => terminal.terminalId === linkedTerminalId)
+    : undefined
 
   useEffect(() => {
     if (!open) return
@@ -139,6 +151,41 @@ export function TodoTaskDialog({
                 </SelectContent>
               </Select>
             </div>
+            {task && (
+              <div className="space-y-1.5">
+                <Label>Terminal</Label>
+                <div className="flex min-w-0 items-center gap-2">
+                  {linkedTerminal ? (
+                    <TaskTerminalBadge
+                      terminal={linkedTerminal}
+                      onClick={() => onManageTerminalLink(task.id)}
+                      className="max-w-[65%]"
+                    />
+                  ) : (
+                    <span className="min-w-0 flex-1 text-xs text-fg-subtle">
+                      No running terminal linked
+                    </span>
+                  )}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="ml-auto"
+                    onClick={() => onManageTerminalLink(task.id)}
+                  >
+                    {linkedTerminal ? 'Change' : 'Link terminal'}
+                  </Button>
+                  {linkedTerminal && (
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={() => unlinkTodoTask(task.id)}
+                    >
+                      Unlink
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {error && <p className="mt-3 text-xs text-danger">{error}</p>}

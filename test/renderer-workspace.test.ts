@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   OpenCodeTuiInstancesUpdate,
   OpenCodeTuiStatusUpdate,
-  Session
+  Session,
+  TodoTask
 } from '../src/shared/types'
 
 vi.mock('../src/renderer/terminal/sessions', () => ({ disposeSession: vi.fn() }))
@@ -119,6 +120,7 @@ describe('renderer workspace event bridge', () => {
       sessions: [],
       todoProjects: [],
       todoTasks: [],
+      terminalTaskLinks: {},
       selectedSessionId: null,
       selectedTodoProjectId: null,
       activeWorkspaceView: 'projects'
@@ -158,6 +160,51 @@ describe('renderer workspace event bridge', () => {
     useWorkspace.getState().noteExit({ sessionId: 'session-1', terminalId: 'session-1', exitCode: 1 })
     expect(useWorkspace.getState().statuses['session-1']).toBe('exited')
     expect(useWorkspace.getState().exits['session-1']).toMatchObject({ exitCode: 1 })
+  })
+
+  it('enforces one-to-one task and terminal links', () => {
+    const tasks: TodoTask[] = [
+      {
+        id: 'task-1',
+        todoProjectId: 'todo-1',
+        columnId: 'todo',
+        number: 1,
+        title: 'First',
+        description: '',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z'
+      },
+      {
+        id: 'task-2',
+        todoProjectId: 'todo-1',
+        columnId: 'todo',
+        number: 2,
+        title: 'Second',
+        description: '',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z'
+      }
+    ]
+    useWorkspace.setState({
+      todoTasks: tasks,
+      terminalTaskLinks: { 'terminal-1': 'task-1', 'terminal-2': 'task-2' }
+    })
+
+    useWorkspace.getState().linkTerminalToTodoTask('terminal-1', 'task-2')
+
+    expect(useWorkspace.getState().terminalTaskLinks).toEqual({ 'terminal-1': 'task-2' })
+  })
+
+  it('removes a task link when its terminal exits', () => {
+    useWorkspace.setState({ terminalTaskLinks: { 'terminal-1': 'task-1' } })
+
+    useWorkspace.getState().noteExit({
+      sessionId: 'session-1',
+      terminalId: 'terminal-1',
+      exitCode: 0
+    })
+
+    expect(useWorkspace.getState().terminalTaskLinks).toEqual({})
   })
 
   it('keeps split terminal statuses addressable by runtime terminal ID', () => {
@@ -382,9 +429,11 @@ describe('renderer workspace event bridge', () => {
     expect(await useWorkspace.getState().moveTodoTask(task.id, 'done', null)).toBe(true)
     expect(useWorkspace.getState().todoTasks).toEqual(moved)
 
+    useWorkspace.setState({ terminalTaskLinks: { 'terminal-1': task.id } })
     api.todoTasks.remove.mockResolvedValue(undefined)
     await useWorkspace.getState().removeTodoTask(task.id)
     expect(useWorkspace.getState().todoTasks).toEqual([])
+    expect(useWorkspace.getState().terminalTaskLinks).toEqual({})
   })
 
   it('appends and selects a duplicated session returned by the main process', async () => {

@@ -12,6 +12,7 @@ import {
   Code,
   CircleX,
   FolderOpen,
+  ListTodo,
   Maximize2,
   Minimize2,
   Plus,
@@ -126,6 +127,7 @@ interface TerminalViewProps {
   onReduceLayout: (layout: TerminalLayout, paneIds: string[]) => void
   onClosePane: (terminalId: string) => void
   onPaneTitleChange: (terminalId: string, title: string | null) => void
+  onLinkTask: (terminalId: string) => void
 }
 
 interface TerminalSurfaceProps {
@@ -370,6 +372,7 @@ function TerminalPane({
   isFullscreen,
   onToggleFullscreen,
   onTitleChange,
+  onLinkTask,
   reorderState = 'none'
 }: {
   session: Session
@@ -381,6 +384,7 @@ function TerminalPane({
   isFullscreen: boolean
   onToggleFullscreen: () => void
   onTitleChange: (title: string | null) => void
+  onLinkTask: (terminalId: string) => void
   reorderState?: 'none' | 'candidate' | 'active'
 }): JSX.Element {
   const clearExit = useWorkspace((state) => state.clearExit)
@@ -389,6 +393,9 @@ function TerminalPane({
   const platform = useWorkspace((state) => state.platform)
   const wslAvailable = useWorkspace((state) => state.wslAvailable)
   const currentDirectory = useWorkspace((state) => state.terminalDirectories[pane.terminalId])
+  const terminalStatus = useWorkspace((state) => state.statuses[pane.terminalId] ?? (pane.exited ? 'exited' : 'none'))
+  const linkedTaskId = useWorkspace((state) => state.terminalTaskLinks[pane.terminalId])
+  const unlinkTerminalTask = useWorkspace((state) => state.unlinkTerminalTask)
   const [restartConfirmationOpen, setRestartConfirmationOpen] = useState(false)
   const [renamingTitle, setRenamingTitle] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
@@ -408,6 +415,7 @@ function TerminalPane({
     const terminal = getSession(pane.terminalId)
     terminal?.term.reset()
     const size = (terminal && fitSession(terminal)) || FALLBACK_SIZE
+    unlinkTerminalTask(pane.terminalId)
     clearExit(pane.terminalId)
     const status = await window.api.pty.restart({
       terminalId: pane.terminalId,
@@ -496,6 +504,19 @@ function TerminalPane({
           )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          {terminalStatus === 'running' && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-fg-subtle hover:bg-hover hover:text-fg active:bg-active"
+              aria-label={linkedTaskId ? 'Change linked To Do task' : 'Link terminal to a To Do task'}
+              title={linkedTaskId ? 'Change linked To Do task' : 'Link terminal to a To Do task'}
+              data-testid={`terminal-task-link-${pane.terminalId}`}
+              onClick={() => onLinkTask(pane.terminalId)}
+            >
+              <ListTodo className="h-3.5 w-3.5" />
+            </Button>
+          )}
           {platform?.isWindows === true &&
             wslAvailable &&
             session.kind === 'wsl' &&
@@ -1758,7 +1779,8 @@ export function TerminalView({
   onPaneOrderChange,
   onReduceLayout,
   onClosePane,
-  onPaneTitleChange
+  onPaneTitleChange,
+  onLinkTask
 }: TerminalViewProps): JSX.Element {
   const opencodeTuiInstances = useWorkspace(
     (state) => state.opencodeTuiInstances[selectedSession.id]
@@ -2120,6 +2142,7 @@ export function TerminalView({
           focusedTerminalIdRef.current = pane.terminalId
         }}
         onTitleChange={(title) => onPaneTitleChange(pane.terminalId, title)}
+        onLinkTask={() => onLinkTask(pane.terminalId)}
         isFullscreen={isFullscreen}
         onToggleFullscreen={() => toggleFullscreen(pane.terminalId)}
         reorderState={
