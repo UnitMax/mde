@@ -8,6 +8,7 @@ import { OpenCodeTokenRatePluginManager } from './opencode/token-rate'
 import { PtyManager } from './pty/manager'
 import { initWorkspaceStore } from './store/workspace'
 import { adjustZoomFactor, DEFAULT_ZOOM_FACTOR, getZoomAction } from './zoom'
+import { handleWindowOpen } from './external-links'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -76,10 +77,11 @@ function createWindow(): void {
   })
 
   // Nothing in this app should ever navigate away or open a second window.
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url)
-    return { action: 'deny' }
-  })
+  mainWindow.webContents.setWindowOpenHandler(({ url }) =>
+    handleWindowOpen(url, (safeUrl) => {
+      void shell.openExternal(safeUrl)
+    })
+  )
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault())
   mainWindow.webContents.on('before-input-event', (event, input) => {
     const action = getZoomAction(input)

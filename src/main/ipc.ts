@@ -66,6 +66,7 @@ import { createAppInfo } from '@shared/app-info'
 import { isWslAvailable, listDistros, runWsl } from './wsl/distros'
 import { canonicalizeWslPath, resolveForTarget, toWindows, uncPathFor } from './wsl/paths'
 import { buildVsCodeRemoteUri } from './vscode'
+import { safeVsCodeRemoteUrl } from './external-links'
 import { readGitDiff, readGitInfo } from './git'
 import {
   createProject,
@@ -416,7 +417,9 @@ export function registerIpcHandlers(
     if (!session || process.platform !== 'win32' || session.kind !== 'wsl' || !session.distro) return
 
     try {
-      await shell.openExternal(buildVsCodeRemoteUri(session, process.platform))
+      const url = safeVsCodeRemoteUrl(buildVsCodeRemoteUri(session, process.platform))
+      if (!url) throw new Error('Refusing to open an unexpected VS Code URL.')
+      await shell.openExternal(url)
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
       dialog.showErrorBox(
@@ -433,7 +436,11 @@ export function registerIpcHandlers(
     if (!session || process.platform !== 'win32' || session.kind !== 'wsl' || !session.distro) return
 
     try {
-      await shell.openExternal(buildVsCodeRemoteUri(session, process.platform, terminal.directory))
+      const url = safeVsCodeRemoteUrl(
+        buildVsCodeRemoteUri(session, process.platform, terminal.directory)
+      )
+      if (!url) throw new Error('Refusing to open an unexpected VS Code URL.')
+      await shell.openExternal(url)
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
       dialog.showErrorBox(

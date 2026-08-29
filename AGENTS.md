@@ -21,6 +21,7 @@ Run `npm install` after checkout to rebuild native `node-pty`.
 - `npm run typecheck` — run strict Node/web TypeScript checks.
 - `npm run compile` — bundle the Electron application without packaging.
 - `npm run build` — validate notices, typecheck, bundle, and package for the current platform.
+- `npm run audit:deps` — run the full npm vulnerability audit against the committed lockfile.
 - `npm run licenses:check` — verify `THIRD_PARTY_NOTICES.md` matches the lockfile.
 
 ## Coding Style & Naming Conventions
@@ -37,6 +38,8 @@ Recent commits use short, imperative, sentence-style subjects (for example, `Pre
 
 Run `npm run audit:package` before every commit. It deletes the electron-builder debug dumps that record absolute build-machine paths (`dist/builder-debug.yml`, `dist/builder-effective-config.yaml`) and fails when a home directory, project root, or user profile path leaked into the packaged output, in either UTF-8 or UTF-16. It audits whatever `dist/` currently holds and reports that there is nothing to audit when the directory is absent, so it is safe to run on a working tree that has never been packaged. The same audit runs automatically at the end of every `npm run build*` script.
 
+When `package.json` or `package-lock.json` changes, run `npm run audit:deps` before submitting the change and before a release. This is the manual dependency-security gate because the repository does not currently have CI. `npm run audit:package` is a separate packaged-output path audit; it does not replace `npm run audit:deps`. Keep all direct dependency specifications exact and update the lockfile in the same change. The Windows dependency helper uses `npm ci --no-audit` for its offline-friendly install; that install is not an audit result.
+
 ## Versioning
 
 The application version is authoritative in `package.json` and must stay synchronized with `package-lock.json`. The initial version is `0.0.1`. Increase the patch version by `0.0.1` once when preparing each commit unless the user explicitly says otherwise; do not increase it merely because a task changes files, and do not increase it again when committing a version that was already bumped for that commit. The About dialog must display this same package version.
@@ -44,3 +47,5 @@ The application version is authoritative in `package.json` and must stay synchro
 ## Security & Configuration Tips
 
 Keep `contextIsolation` and renderer sandboxing intact. Validate WSL/process arguments and never log credentials or session data. Do not commit workspace state, build artifacts, or secrets.
+
+Keep renderer rich-text raw HTML disabled unless the feature explicitly requires it. Render external links into a new window with `noopener`/`noreferrer`, but treat the main-process URL scheme validator as the authoritative security boundary before calling `shell.openExternal`.
