@@ -107,6 +107,19 @@ describe('PtyManager runtime terminal identities', () => {
     })
   })
 
+  it('synchronizes an existing PTY size when the renderer reattaches', () => {
+    const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() })
+    const source = sourceSession()
+
+    manager.ensure('pane-a', source, { cols: 80, rows: 24 }, palette)
+    const child = ptyMock.children.get('pane-1')
+    manager.ensure('pane-a', source, { cols: 140, rows: 42 }, palette)
+
+    expect(ptyMock.spawn).toHaveBeenCalledOnce()
+    expect(child?.resize).toHaveBeenCalledOnce()
+    expect(child?.resize).toHaveBeenCalledWith(140, 42)
+  })
+
   it('applies launch integration environment to native shells and disposes it', () => {
     const integration = {
       prepare: vi.fn(() => ({ MDE_OPENCODE_TOKEN_RATE: '1' })),

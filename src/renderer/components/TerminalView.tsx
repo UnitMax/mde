@@ -134,10 +134,18 @@ interface TerminalSurfaceProps {
   session: Session
   pane: TerminalPaneState
   onFocus: () => void
+  isFullscreen: boolean
 }
 
-function TerminalSurface({ session: sourceSession, pane, onFocus }: TerminalSurfaceProps): JSX.Element {
+function TerminalSurface({
+  session: sourceSession,
+  pane,
+  onFocus,
+  isFullscreen
+}: TerminalSurfaceProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
+  const scheduleSizeSyncRef = useRef<((forceResize?: boolean) => void) | null>(null)
+  const previousFullscreenRef = useRef<boolean | null>(null)
   const dragDepthRef = useRef(0)
   const dropQueueRef = useRef(Promise.resolve())
   const dropNoticeTimerRef = useRef<number | undefined>(undefined)
@@ -237,11 +245,13 @@ function TerminalSurface({ session: sourceSession, pane, onFocus }: TerminalSurf
     let previousSize: PtySize | null = null
     let ensurePromise: Promise<void> | null = null
     let retry: number | undefined
+    let debounce: number | undefined
+    let forceResize = false
 
     const syncSize = (): void => {
       if (cancelled) return
 
-      const action = terminalSizeAction(fitSession(terminal), ensured, previousSize)
+      const action = terminalSizeAction(fitSession(terminal), ensured, previousSize, forceResize)
       if (action.type === 'wait') {
         if (!ensured && retry === undefined) {
           retry = window.setTimeout(() => {
@@ -280,31 +290,54 @@ function TerminalSurface({ session: sourceSession, pane, onFocus }: TerminalSurf
       }
 
       previousSize = action.size
+      forceResize = false
       void window.api.pty.resize({ terminalId: pane.terminalId, size: action.size })
     }
 
-    let debounce: number | undefined
-    const observer = new ResizeObserver(() => {
+    const scheduleSizeSync = (requestForceResize = false): void => {
+      forceResize ||= requestForceResize
       window.clearTimeout(debounce)
-      // Resizing on every observer callback would flood the PTY with SIGWINCH
-      // and leave TUIs redrawing against a stale geometry.
       debounce = window.setTimeout(() => {
+        debounce = undefined
         syncSize()
       }, RESIZE_DEBOUNCE_MS)
+    }
+
+    const observer = new ResizeObserver(() => {
+      // Resizing on every observer callback would flood the PTY with SIGWINCH
+      // and leave TUIs redrawing against a stale geometry.
+      scheduleSizeSync()
     })
+    const onWindowResize = (): void => scheduleSizeSync()
+
+    scheduleSizeSyncRef.current = scheduleSizeSync
     observer.observe(host)
+    window.addEventListener('resize', onWindowResize)
     const frame = requestAnimationFrame(syncSize)
 
     return () => {
       cancelled = true
+      if (scheduleSizeSyncRef.current === scheduleSizeSync) scheduleSizeSyncRef.current = null
       cancelAnimationFrame(frame)
       window.clearTimeout(debounce)
       window.clearTimeout(retry)
       observer.disconnect()
+      window.removeEventListener('resize', onWindowResize)
       // Detach only: the process, its scrollback and its cursor all stay alive.
       detachSession(pane.terminalId)
     }
   }, [pane.terminalId, primarySelectionMode, setStatus, sourceSession.id])
+
+  useEffect(() => {
+    const previousFullscreen = previousFullscreenRef.current
+    previousFullscreenRef.current = isFullscreen
+    if (previousFullscreen === null || previousFullscreen === isFullscreen) return
+
+    const frame = window.requestAnimationFrame(() => {
+      scheduleSizeSyncRef.current?.(true)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [isFullscreen])
 
   return (
     <div
@@ -600,7 +633,12 @@ function TerminalPane({
           </Button>
         </div>
       )}
-      <TerminalSurface session={session} pane={pane} onFocus={onFocus} />
+      <TerminalSurface
+        session={session}
+        pane={pane}
+        onFocus={onFocus}
+        isFullscreen={isFullscreen}
+      />
       <RestartConfirmDialog
         open={restartConfirmationOpen}
         onOpenChange={setRestartConfirmationOpen}

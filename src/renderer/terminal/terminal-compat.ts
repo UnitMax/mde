@@ -8,10 +8,12 @@ export type TerminalSizeAction =
 export function terminalSizeAction(
   measuredSize: PtySize | null,
   ensured: boolean,
-  previousSize: PtySize | null
+  previousSize: PtySize | null,
+  forceResize = false
 ): TerminalSizeAction {
   if (!measuredSize) return { type: 'wait' }
   if (!ensured) return { type: 'ensure', size: measuredSize }
+  if (forceResize) return { type: 'resize', size: measuredSize }
   if (previousSize?.cols === measuredSize.cols && previousSize.rows === measuredSize.rows) {
     return { type: 'wait' }
   }

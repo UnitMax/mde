@@ -18,4 +18,12 @@ describe('terminal compatibility', () => {
       size: { cols: 141, rows: 42 }
     })
   })
+
+  it('can force a resize after a layout change', () => {
+    const size = { cols: 140, rows: 42 }
+    expect(terminalSizeAction(size, true, size, true)).toEqual({
+      type: 'resize',
+      size
+    })
+  })
 })

@@ -158,9 +158,9 @@ export class PtyManager {
   }
 
   /**
-   * Creates the PTY on first view of a terminal. Idempotent, and deliberately
-   * never respawns: an exited shell stays exited until the user asks for a
-   * restart, so switching back to the session does not silently revive it.
+   * Creates the PTY on first view of a terminal. Reattaching synchronizes the
+   * existing PTY to the renderer's measured size but deliberately never
+   * respawns it: an exited shell stays exited until the user asks for a restart.
    */
   ensure(
     terminalId: string,
@@ -171,6 +171,7 @@ export class PtyManager {
     const existing = this.sessions.get(terminalId)
     if (existing) {
       existing.queryResponder.setPalette(palette)
+      this.resize(terminalId, size)
       return existing.status
     }
 
