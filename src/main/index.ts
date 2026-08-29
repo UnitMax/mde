@@ -98,6 +98,12 @@ function createWindow(): void {
   }
 }
 
+// Chromium force-loses the oldest WebGL context once a renderer process holds more
+// than sixteen (kMaxActiveWebGLContexts), which garbles whichever terminal it picks.
+// Terminals hold the GPU renderer only while their pane is on screen, so this is just
+// headroom for the overshoot while a layout change swaps panes.
+app.commandLine.appendSwitch('max-active-webgl-contexts', '32')
+
 // Two instances would race each other writing workspace.json.
 if (!app.requestSingleInstanceLock()) {
   app.quit()

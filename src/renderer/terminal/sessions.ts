@@ -10,6 +10,7 @@ import {
   terminalRightClickAction,
   type TerminalPrimarySelectionMode
 } from './clipboard'
+import { createRendererLease } from './renderer-lease'
 import {
   getTerminalSettings,
   xtermFontFamily,
@@ -32,6 +33,8 @@ export interface TerminalSession {
    * destroyed, which is what makes a session survive switching sessions.
    */
   container: HTMLDivElement
+  /** The GPU renderer, held only while the terminal is on screen. */
+  webgl?: WebglAddon
   renderer: RendererKind
   themeId: ApplicationThemeId
   disposeClipboardHandlers: () => void
@@ -40,6 +43,64 @@ export interface TerminalSession {
 /** One live xterm per runtime terminal id, independent of React rendering. */
 const sessions = new Map<string, TerminalSession>()
 const localPrimarySelection = createTerminalPrimarySelectionStore()
+
+// Chromium force-loses the oldest WebGL context once a renderer process holds more
+// than sixteen, and terminals outlive the panes that show them. Keeping the GPU
+// renderer on visible panes only bounds the live count by the layout, not by how
+// many sessions and tabs have been opened.
+const rendererLease = createRendererLease(
+  (terminalId) => {
+    const session = sessions.get(terminalId)
+    if (session) disableWebgl(session)
+  },
+  {
+    schedule: (run, delayMs) => window.setTimeout(run, delayMs),
+    cancel: (handle) => window.clearTimeout(handle)
+  }
+)
+
+/**
+ * WebglAddon.dispose() leaves the WebGL2 context alive until it is garbage collected,
+ * so Chromium keeps counting it and force-loses somebody else's live context. Reach
+ * for the context by hand until the addon releases it on its own.
+ * https://github.com/xtermjs/xterm.js/issues/6068
+ */
+function webglContext(addon: WebglAddon): WebGL2RenderingContext | undefined {
+  return (addon as unknown as { _renderer?: { _gl?: WebGL2RenderingContext } })._renderer?._gl
+}
+
+/** Gives a visible terminal the GPU renderer. */
+function enableWebgl(session: TerminalSession): void {
+  if (session.webgl) return
+
+  try {
+    const webgl = new WebglAddon()
+    // Some Linux VM / software-GL setups lose the context after creation.
+    webgl.onContextLoss(() => {
+      console.warn('[terminal] WebGL context lost; falling back to the DOM renderer')
+      disableWebgl(session)
+    })
+    session.term.loadAddon(webgl)
+    session.webgl = webgl
+    session.renderer = 'webgl'
+  } catch (error) {
+    console.warn('[terminal] WebGL renderer unavailable, using the DOM renderer:', error)
+  }
+}
+
+/** Hands the GPU renderer back; xterm reinstates its DOM renderer on dispose. */
+function disableWebgl(session: TerminalSession): void {
+  const webgl = session.webgl
+  if (!webgl) return
+
+  session.webgl = undefined
+  session.renderer = 'dom'
+  const gl = webglContext(webgl)
+  // Disposing first deregisters the context-loss listener, so losing the context
+  // below cannot re-enter this function.
+  webgl.dispose()
+  gl?.getExtension('WEBGL_lose_context')?.loseContext()
+}
 
 let bridgeReady = false
 
@@ -170,20 +231,6 @@ function createSession(
   }
   container.addEventListener('copy', onCopy, true)
 
-  let renderer: RendererKind = 'dom'
-  try {
-    const webgl = new WebglAddon()
-    // Some Linux VM / software-GL setups lose the context after creation.
-    webgl.onContextLoss(() => {
-      console.warn('[terminal] WebGL context lost; falling back to the DOM renderer')
-      webgl.dispose()
-    })
-    term.loadAddon(webgl)
-    renderer = 'webgl'
-  } catch (error) {
-    console.warn('[terminal] WebGL renderer unavailable, using the DOM renderer:', error)
-  }
-
   term.onData((data) => {
     void window.api.pty.write({ terminalId, data })
   })
@@ -193,7 +240,7 @@ function createSession(
     term,
     fit,
     container,
-    renderer,
+    renderer: 'dom',
     themeId: settings.theme,
     disposeClipboardHandlers: () => {
       container.removeEventListener('contextmenu', onContextMenu)
@@ -205,6 +252,7 @@ function createSession(
     }
   }
   sessions.set(terminalId, session)
+  enableWebgl(session)
   return session
 }
 
@@ -242,19 +290,27 @@ export function attachSession(
   options: { primarySelectionMode?: TerminalPrimarySelectionMode } = {}
 ): TerminalSession {
   const existing = sessions.get(terminalId)
+  rendererLease.acquire(terminalId)
   if (!existing) return createSession(terminalId, host, options.primarySelectionMode ?? 'none')
   if (existing.container.parentElement !== host) host.appendChild(existing.container)
+  // Re-parenting has to come first: the addon reads whether the screen element is
+  // connected while it activates.
+  enableWebgl(existing)
   return existing
 }
 
 /** Takes the terminal out of the DOM without destroying it. */
 export function detachSession(terminalId: string): void {
-  sessions.get(terminalId)?.container.remove()
+  const session = sessions.get(terminalId)
+  if (!session) return
+  session.container.remove()
+  rendererLease.scheduleRelease(terminalId)
 }
 
 export function disposeSession(terminalId: string): void {
   const session = sessions.get(terminalId)
   if (!session) return
+  rendererLease.releaseNow(terminalId)
   sessions.delete(terminalId)
   session.container.remove()
   session.disposeClipboardHandlers()
