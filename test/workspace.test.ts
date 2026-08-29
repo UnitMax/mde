@@ -4,6 +4,8 @@ import {
   validateProjectList,
   validateTodoProject,
   validateTodoProjectList,
+  validateTodoTask,
+  validateTodoTaskList,
   reorderSessionList,
   validateSession,
   validateSessionList,
@@ -30,6 +32,14 @@ const session = {
 const todoProject = {
   id: 'todo-project-1',
   name: 'Release plan',
+  shorthand: 'ENG',
+  nextTaskNumber: 1,
+  columns: [
+    { id: 'todo', name: 'To Do' },
+    { id: 'in-progress', name: 'In Progress' },
+    { id: 'done', name: 'Done' },
+    { id: 'review', name: 'Review' }
+  ],
   createdAt: '2026-01-02T00:00:00.000Z'
 }
 
@@ -67,6 +77,44 @@ describe('workspace validation', () => {
     expect(validateTodoProjectList([todoProject, todoProject, { nope: true }])).toEqual([
       todoProject
     ])
+  })
+
+  it('normalizes legacy To Do projects and validates tasks against arbitrary columns', () => {
+    const legacy = validateTodoProject({
+      id: 'legacy',
+      name: 'Legacy',
+      createdAt: '2026-01-01T00:00:00.000Z'
+    })
+    expect(legacy).toMatchObject({ shorthand: null, nextTaskNumber: 1 })
+    expect(legacy?.columns.map((column) => column.name)).toEqual([
+      'To Do',
+      'In Progress',
+      'Done'
+    ])
+
+    const projects = new Map([[todoProject.id, todoProject]])
+    const task = {
+      id: 'task-1',
+      todoProjectId: todoProject.id,
+      columnId: 'review',
+      number: 4,
+      title: 'Review release',
+      description: 'Check all changes',
+      createdAt: '2026-01-03T00:00:00.000Z',
+      updatedAt: '2026-01-03T00:00:00.000Z'
+    }
+    expect(validateTodoTask(task, projects)).toEqual(task)
+    expect(validateTodoTask({ ...task, columnId: 'missing' }, projects)).toBeNull()
+    expect(validateTodoTaskList([task, task], projects)).toEqual([task])
+
+    const recovered = validateWorkspace({
+      projects: [],
+      todoProjects: [{ ...todoProject, nextTaskNumber: 1 }],
+      todoTasks: [task],
+      sessions: []
+    })
+    expect(recovered.todoProjects[0]?.nextTaskNumber).toBe(5)
+    expect(recovered.todoTasks).toEqual([task])
   })
 
   it('requires sessions to reference a project and retain their own path', () => {
@@ -203,12 +251,18 @@ describe('workspace validation', () => {
     })).toEqual({
       projects: [project],
       todoProjects: [todoProject],
+      todoTasks: [],
       sessions: [normalizedSession]
     })
   })
 
   it('starts empty for the old flat project shape', () => {
-    expect(validateWorkspace([session])).toEqual({ projects: [], todoProjects: [], sessions: [] })
+    expect(validateWorkspace([session])).toEqual({
+      projects: [],
+      todoProjects: [],
+      todoTasks: [],
+      sessions: []
+    })
   })
 })
 

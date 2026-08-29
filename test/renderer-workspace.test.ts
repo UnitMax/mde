@@ -15,10 +15,18 @@ describe('renderer workspace event bridge', () => {
   const directoryListeners: Array<(update: { terminalId: string; directory: string | null }) => void> = []
   const api = {
     platform: { info: vi.fn(async () => ({ platform: 'linux', arch: 'x64' })) },
-    workspace: { list: vi.fn(async () => ({ projects: [], todoProjects: [], sessions: [] })) },
+    workspace: {
+      list: vi.fn(async () => ({ projects: [], todoProjects: [], todoTasks: [], sessions: [] }))
+    },
     todoProjects: {
       create: vi.fn(),
       update: vi.fn(),
+      remove: vi.fn()
+    },
+    todoTasks: {
+      create: vi.fn(),
+      update: vi.fn(),
+      move: vi.fn(),
       remove: vi.fn()
     },
     sessions: {
@@ -110,6 +118,7 @@ describe('renderer workspace event bridge', () => {
       opencodeTuiInstanceLabelMode: 'numbered',
       sessions: [],
       todoProjects: [],
+      todoTasks: [],
       selectedSessionId: null,
       selectedTodoProjectId: null,
       activeWorkspaceView: 'projects'
@@ -122,6 +131,10 @@ describe('renderer workspace event bridge', () => {
     api.todoProjects.create.mockReset()
     api.todoProjects.update.mockReset()
     api.todoProjects.remove.mockReset()
+    api.todoTasks.create.mockReset()
+    api.todoTasks.update.mockReset()
+    api.todoTasks.move.mockReset()
+    api.todoTasks.remove.mockReset()
     api.tabs.create.mockReset()
     api.tabs.select.mockReset()
     api.tabs.update.mockReset()
@@ -261,11 +274,25 @@ describe('renderer workspace event bridge', () => {
     const first = {
       id: 'todo-1',
       name: 'Release plan',
+      shorthand: 'REL',
+      nextTaskNumber: 1,
+      columns: [
+        { id: 'todo', name: 'To Do' },
+        { id: 'in-progress', name: 'In Progress' },
+        { id: 'done', name: 'Done' }
+      ],
       createdAt: '2026-01-01T00:00:00.000Z'
     }
     const second = {
       id: 'todo-2',
       name: 'Roadmap',
+      shorthand: 'ROAD',
+      nextTaskNumber: 1,
+      columns: [
+        { id: 'todo', name: 'To Do' },
+        { id: 'in-progress', name: 'In Progress' },
+        { id: 'done', name: 'Done' }
+      ],
       createdAt: '2026-01-02T00:00:00.000Z'
     }
     useWorkspace.setState({
@@ -275,7 +302,7 @@ describe('renderer workspace event bridge', () => {
     })
     api.todoProjects.create.mockResolvedValue(second)
 
-    await useWorkspace.getState().addTodoProject({ name: second.name })
+    await useWorkspace.getState().addTodoProject({ name: second.name, shorthand: second.shorthand })
 
     expect(useWorkspace.getState()).toMatchObject({
       todoProjects: [first, second],
@@ -299,6 +326,13 @@ describe('renderer workspace event bridge', () => {
       todoProjects: [{
         id: 'todo-1',
         name: 'Release plan',
+        shorthand: 'REL',
+        nextTaskNumber: 1,
+        columns: [
+          { id: 'todo', name: 'To Do' },
+          { id: 'in-progress', name: 'In Progress' },
+          { id: 'done', name: 'Done' }
+        ],
         createdAt: '2026-01-01T00:00:00.000Z'
       }],
       selectedTodoProjectId: 'todo-1',
@@ -315,6 +349,42 @@ describe('renderer workspace event bridge', () => {
 
     useWorkspace.getState().selectSession('session-1')
     expect(useWorkspace.getState().activeWorkspaceView).toBe('projects')
+  })
+
+  it('creates, updates, moves, and removes To Do tasks', async () => {
+    const task = {
+      id: 'task-1',
+      todoProjectId: 'todo-1',
+      columnId: 'todo',
+      number: 1,
+      title: 'Ship board',
+      description: 'Implement cards',
+      createdAt: '2026-01-03T00:00:00.000Z',
+      updatedAt: '2026-01-03T00:00:00.000Z'
+    }
+    api.todoTasks.create.mockResolvedValue(task)
+
+    await useWorkspace.getState().addTodoTask({
+      todoProjectId: task.todoProjectId,
+      columnId: task.columnId,
+      title: task.title,
+      description: task.description
+    })
+    expect(useWorkspace.getState().todoTasks).toEqual([task])
+
+    const updated = { ...task, title: 'Ship Kanban' }
+    api.todoTasks.update.mockResolvedValue(updated)
+    await useWorkspace.getState().updateTodoTask(task.id, { title: updated.title })
+    expect(useWorkspace.getState().todoTasks).toEqual([updated])
+
+    const moved = [{ ...updated, columnId: 'done' }]
+    api.todoTasks.move.mockResolvedValue(moved)
+    expect(await useWorkspace.getState().moveTodoTask(task.id, 'done', null)).toBe(true)
+    expect(useWorkspace.getState().todoTasks).toEqual(moved)
+
+    api.todoTasks.remove.mockResolvedValue(undefined)
+    await useWorkspace.getState().removeTodoTask(task.id)
+    expect(useWorkspace.getState().todoTasks).toEqual([])
   })
 
   it('appends and selects a duplicated session returned by the main process', async () => {

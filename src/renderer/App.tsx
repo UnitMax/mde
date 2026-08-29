@@ -9,6 +9,8 @@ import { Sidebar } from '@/components/Sidebar'
 import { SessionSwitcher } from '@/components/SessionSwitcher'
 import { TerminalView } from '@/components/TerminalView'
 import { TodoProjectView } from '@/components/TodoProjectView'
+import { TodoProjectSettingsDialog } from '@/components/TodoProjectSettingsDialog'
+import { TodoTaskDialog } from '@/components/TodoTaskDialog'
 import { isSessionSwitcherShortcut } from '@/lib/session-switcher'
 import { useWorkspace } from '@/store/workspace'
 import { disposeSession, getSession } from '@/terminal/sessions'
@@ -30,7 +32,7 @@ import {
   type TerminalColumnIndex,
   type TerminalResizeAxis
 } from '@/terminal/layout'
-import type { PersistedTerminalLayout, Session } from '@shared/types'
+import type { PersistedTerminalLayout, Session, TodoTask } from '@shared/types'
 
 type RuntimeLayouts = Record<string, Record<string, SessionTerminalLayout>>
 
@@ -57,6 +59,7 @@ export function App(): JSX.Element {
   const ready = useWorkspace((state) => state.ready)
   const sessions = useWorkspace((state) => state.sessions)
   const todoProjects = useWorkspace((state) => state.todoProjects)
+  const todoTasks = useWorkspace((state) => state.todoTasks)
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
   const selectedTodoProjectId = useWorkspace((state) => state.selectedTodoProjectId)
   const activeWorkspaceView = useWorkspace((state) => state.activeWorkspaceView)
@@ -70,6 +73,10 @@ export function App(): JSX.Element {
   const [newSessionOpen, setNewSessionOpen] = useState(false)
   const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [newTodoProjectOpen, setNewTodoProjectOpen] = useState(false)
+  const [todoProjectSettingsOpen, setTodoProjectSettingsOpen] = useState(false)
+  const [todoTaskDialogOpen, setTodoTaskDialogOpen] = useState(false)
+  const [todoTaskDialogTaskId, setTodoTaskDialogTaskId] = useState<string | null>(null)
+  const [todoTaskDialogColumnId, setTodoTaskDialogColumnId] = useState<string | null>(null)
   const [gitSessionId, setGitSessionId] = useState<string | null>(null)
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false)
   const [defaultProjectId, setDefaultProjectId] = useState<string | undefined>(undefined)
@@ -265,7 +272,9 @@ export function App(): JSX.Element {
         sessionSwitcherOpen ||
         newSessionOpen ||
         newProjectOpen ||
-        newTodoProjectOpen
+        newTodoProjectOpen ||
+        todoProjectSettingsOpen ||
+        todoTaskDialogOpen
       ) {
         return
       }
@@ -277,11 +286,23 @@ export function App(): JSX.Element {
 
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [newProjectOpen, newSessionOpen, newTodoProjectOpen, sessionSwitcherOpen])
+  }, [
+    newProjectOpen,
+    newSessionOpen,
+    newTodoProjectOpen,
+    sessionSwitcherOpen,
+    todoProjectSettingsOpen,
+    todoTaskDialogOpen
+  ])
 
   const selected = sessions.find((session) => session.id === selectedSessionId) ?? null
   const selectedTodoProject =
     todoProjects.find((project) => project.id === selectedTodoProjectId) ?? null
+  const selectedTodoTasks = selectedTodoProject
+    ? todoTasks.filter((task) => task.todoProjectId === selectedTodoProject.id)
+    : []
+  const selectedTodoTask =
+    todoTasks.find((task) => task.id === todoTaskDialogTaskId) ?? null
   const activeTab = selected ? activeSessionTab(selected) : null
   const gitSession = sessions.find((session) => session.id === gitSessionId) ?? null
 
@@ -289,6 +310,37 @@ export function App(): JSX.Element {
     setDefaultProjectId(projectId)
     setNewSessionOpen(true)
   }
+
+  const openNewTodoTask = (columnId?: string): void => {
+    if (!selectedTodoProject) return
+    if (!selectedTodoProject.shorthand) {
+      setTodoProjectSettingsOpen(true)
+      return
+    }
+    const defaultColumnId = columnId ?? selectedTodoProject.columns[0]?.id
+    if (!defaultColumnId) return
+    setTodoTaskDialogTaskId(null)
+    setTodoTaskDialogColumnId(defaultColumnId)
+    setTodoTaskDialogOpen(true)
+  }
+
+  const openTodoTask = (task: TodoTask): void => {
+    setTodoTaskDialogTaskId(task.id)
+    setTodoTaskDialogColumnId(task.columnId)
+    setTodoTaskDialogOpen(true)
+  }
+
+  useEffect(() => {
+    if (activeWorkspaceView === 'todo' && selectedTodoProject && !selectedTodoProject.shorthand) {
+      setTodoProjectSettingsOpen(true)
+    }
+  }, [activeWorkspaceView, selectedTodoProject?.id, selectedTodoProject?.shorthand])
+
+  useEffect(() => {
+    setTodoTaskDialogOpen(false)
+    setTodoTaskDialogTaskId(null)
+    setTodoTaskDialogColumnId(null)
+  }, [selectedTodoProjectId])
 
   const cancelTerminalFocus = (): void => {
     terminalFocusRequestId.current += 1
@@ -497,6 +549,7 @@ export function App(): JSX.Element {
       <Sidebar
         onNewProject={() => setNewProjectOpen(true)}
         onNewTodoProject={() => setNewTodoProjectOpen(true)}
+        onNewTodoTask={() => openNewTodoTask()}
         onNewSession={openNewSession}
         onOpenGit={setGitSessionId}
         terminalLayouts={terminalLayoutsForSidebar}
@@ -505,7 +558,13 @@ export function App(): JSX.Element {
 
       <main className="h-full min-w-0 flex-1">
         {!ready ? null : activeWorkspaceView === 'todo' ? (
-          <TodoProjectView project={selectedTodoProject} />
+          <TodoProjectView
+            project={selectedTodoProject}
+            tasks={selectedTodoTasks}
+            onNewTask={openNewTodoTask}
+            onEditTask={openTodoTask}
+            onOpenSettings={() => setTodoProjectSettingsOpen(true)}
+          />
         ) : selected && activeTab && layoutForSession ? (
           <TerminalView
             key={selected.id}
@@ -541,6 +600,24 @@ export function App(): JSX.Element {
         open={newTodoProjectOpen}
         onOpenChange={setNewTodoProjectOpen}
       />
+      {selectedTodoProject && (
+        <>
+          <TodoProjectSettingsDialog
+            project={selectedTodoProject}
+            open={todoProjectSettingsOpen}
+            onOpenChange={setTodoProjectSettingsOpen}
+          />
+          <TodoTaskDialog
+            project={selectedTodoProject}
+            task={selectedTodoTask}
+            defaultColumnId={
+              todoTaskDialogColumnId ?? selectedTodoProject.columns[0]?.id ?? 'todo'
+            }
+            open={todoTaskDialogOpen}
+            onOpenChange={setTodoTaskDialogOpen}
+          />
+        </>
+      )}
       <GitDialog
         open={gitSession !== null}
         session={gitSession}

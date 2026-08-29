@@ -5,11 +5,13 @@ import type {
   HostPlatform,
   NewProject,
   NewTodoProject,
+  NewTodoTask,
   NewSession,
   PathCheckResult,
   PathResolution,
   Project,
   TodoProject,
+  TodoTask,
   ProjectKind,
   Session,
   SessionTab,
@@ -34,6 +36,7 @@ import type {
 export interface WorkspaceData {
   projects: Project[]
   todoProjects: TodoProject[]
+  todoTasks: TodoTask[]
   sessions: Session[]
 }
 
@@ -50,6 +53,11 @@ export const IpcChannels = {
   todoProjectsCreate: 'todo-projects:create',
   todoProjectsUpdate: 'todo-projects:update',
   todoProjectsRemove: 'todo-projects:remove',
+
+  todoTasksCreate: 'todo-tasks:create',
+  todoTasksUpdate: 'todo-tasks:update',
+  todoTasksMove: 'todo-tasks:move',
+  todoTasksRemove: 'todo-tasks:remove',
 
   sessionsCreate: 'sessions:create',
   sessionsDuplicate: 'sessions:duplicate',
@@ -232,7 +240,19 @@ export interface UpdateProjectRequest {
 
 export interface UpdateTodoProjectRequest {
   id: string
-  patch: Partial<Pick<TodoProject, 'name'>>
+  patch: Partial<Pick<TodoProject, 'name'>> & { shorthand?: string }
+}
+
+export interface UpdateTodoTaskRequest {
+  id: string
+  patch: Partial<Pick<TodoTask, 'title' | 'description' | 'columnId'>>
+}
+
+export interface MoveTodoTaskRequest {
+  id: string
+  columnId: string
+  /** Task to insert before in the destination column; null appends. */
+  beforeId: string | null
 }
 
 export interface UpdateSessionRequest {
@@ -295,6 +315,12 @@ export interface RendererApi {
   todoProjects: {
     create(input: NewTodoProject): Promise<TodoProject>
     update(req: UpdateTodoProjectRequest): Promise<TodoProject | null>
+    remove(id: string): Promise<void>
+  }
+  todoTasks: {
+    create(input: NewTodoTask): Promise<TodoTask>
+    update(req: UpdateTodoTaskRequest): Promise<TodoTask | null>
+    move(req: MoveTodoTaskRequest): Promise<TodoTask[] | null>
     remove(id: string): Promise<void>
   }
   workspace: {

@@ -10,6 +10,7 @@ import {
   IpcChannels,
   type EnsurePtyRequest,
   type MoveSessionRequest,
+  type MoveTodoTaskRequest,
   type PlatformInfo,
   type ReorderSessionRequest,
   type RemoveSessionTabRequest,
@@ -22,6 +23,7 @@ import {
   type UpdatePtyPaletteRequest,
   type UpdateProjectRequest,
   type UpdateTodoProjectRequest,
+  type UpdateTodoTaskRequest,
   type UpdateSessionRequest,
   type UpdateSessionTabRequest,
   type SelectSessionTabRequest,
@@ -36,11 +38,13 @@ import type {
   GitInfoResponse,
   NewProject,
   NewTodoProject,
+  NewTodoTask,
   NewSession,
   PathCheckResult,
   PathResolution,
   Project,
   TodoProject,
+  TodoTask,
   OpenCodeTuiPluginRequest,
   OpenCodeTuiPluginState,
   OpenCodeTuiSetEnabledRequest,
@@ -66,6 +70,7 @@ import { readGitDiff, readGitInfo } from './git'
 import {
   createProject,
   createTodoProject,
+  createTodoTask,
   createSession,
   duplicateSession,
   getSession,
@@ -73,6 +78,7 @@ import {
   moveSession,
   removeProject,
   removeTodoProject,
+  removeTodoTask,
   removeSession,
   reorderSession,
   createSessionTab,
@@ -80,6 +86,8 @@ import {
   selectSessionTab,
   updateProject,
   updateTodoProject,
+  updateTodoTask,
+  moveTodoTask,
   updateSession,
   updateSessionTab
 } from './store/workspace'
@@ -217,6 +225,15 @@ export function registerIpcHandlers(
     updateTodoProject(req)
   )
   handle<string, void>(IpcChannels.todoProjectsRemove, (id) => removeTodoProject(id))
+
+  handle<NewTodoTask, TodoTask>(IpcChannels.todoTasksCreate, (input) => createTodoTask(input))
+  handle<UpdateTodoTaskRequest, TodoTask | null>(IpcChannels.todoTasksUpdate, (req) =>
+    updateTodoTask(req)
+  )
+  handle<MoveTodoTaskRequest, TodoTask[] | null>(IpcChannels.todoTasksMove, (req) =>
+    moveTodoTask(req)
+  )
+  handle<string, void>(IpcChannels.todoTasksRemove, (id) => removeTodoTask(id))
 
   handle<NewSession, Session>(IpcChannels.sessionsCreate, (input) => createSession(input))
   handle<string, Session | null>(IpcChannels.sessionsDuplicate, (id) => duplicateSession(id))

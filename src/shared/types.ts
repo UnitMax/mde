@@ -36,7 +36,27 @@ export interface Project {
 export interface TodoProject {
   id: string
   name: string
+  /** Null while a legacy or conflicted project still requires configuration. */
+  shorthand: string | null
+  nextTaskNumber: number
+  columns: TodoColumn[]
   createdAt: string
+}
+
+export interface TodoColumn {
+  id: string
+  name: string
+}
+
+export interface TodoTask {
+  id: string
+  todoProjectId: string
+  columnId: string
+  number: number
+  title: string
+  description: string
+  createdAt: string
+  updatedAt: string
 }
 
 export type TerminalLayout =
@@ -102,7 +122,11 @@ export interface Session {
 }
 
 export type NewProject = Omit<Project, 'id' | 'createdAt'>
-export type NewTodoProject = Omit<TodoProject, 'id' | 'createdAt'>
+export interface NewTodoProject {
+  name: string
+  shorthand: string
+}
+export type NewTodoTask = Pick<TodoTask, 'todoProjectId' | 'columnId' | 'title' | 'description'>
 export type NewSession = Omit<Session, 'id' | 'createdAt' | 'color' | 'icon' | 'tabs' | 'activeTabId'>
 
 export interface Distro {

@@ -4,6 +4,7 @@ import type {
   Distro,
   NewProject,
   NewTodoProject,
+  NewTodoTask,
   NewSession,
   OpenCodeTuiAttentionReason,
   OpenCodeTuiInstanceLabelMode,
@@ -13,6 +14,7 @@ import type {
   OpenCodeTuiStatusUpdate,
   Project,
   TodoProject,
+  TodoTask,
   PersistedTerminalLayout,
   PtyDirectoryUpdate,
   PtyExitInfo,
@@ -41,6 +43,7 @@ function belongsToSession(runtimeId: string, sessionId: string): boolean {
 interface WorkspaceState {
   projects: Project[]
   todoProjects: TodoProject[]
+  todoTasks: TodoTask[]
   sessions: Session[]
   selectedSessionId: string | null
   selectedTodoProjectId: string | null
@@ -69,7 +72,19 @@ interface WorkspaceState {
 
   addTodoProject: (input: NewTodoProject) => Promise<TodoProject>
   renameTodoProject: (id: string, name: string) => Promise<void>
+  updateTodoProject: (
+    id: string,
+    patch: Partial<Pick<TodoProject, 'name'>> & { shorthand?: string }
+  ) => Promise<TodoProject | null>
   removeTodoProject: (id: string) => Promise<void>
+
+  addTodoTask: (input: NewTodoTask) => Promise<TodoTask>
+  updateTodoTask: (
+    id: string,
+    patch: Partial<Pick<TodoTask, 'title' | 'description' | 'columnId'>>
+  ) => Promise<TodoTask | null>
+  moveTodoTask: (id: string, columnId: string, beforeId: string | null) => Promise<boolean>
+  removeTodoTask: (id: string) => Promise<void>
 
   addSession: (input: NewSession) => Promise<Session>
   duplicateSession: (id: string) => Promise<Session | null>
@@ -100,6 +115,7 @@ interface WorkspaceState {
 export const useWorkspace = create<WorkspaceState>((set, get) => ({
   projects: [],
   todoProjects: [],
+  todoTasks: [],
   sessions: [],
   selectedSessionId: null,
   selectedTodoProjectId: null,
@@ -138,10 +154,12 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
     const { projects, sessions } = workspace as WorkspaceData
     const todoProjects = workspace.todoProjects ?? []
+    const todoTasks = workspace.todoTasks ?? []
     set({
       platform,
       projects,
       todoProjects,
+      todoTasks,
       sessions,
       statuses,
       // The event bridge may receive a report while these startup requests
@@ -254,11 +272,16 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   },
 
   renameTodoProject: async (id, name) => {
-    const updated = await window.api.todoProjects.update({ id, patch: { name } })
-    if (!updated) return
+    await get().updateTodoProject(id, { name })
+  },
+
+  updateTodoProject: async (id, patch) => {
+    const updated = await window.api.todoProjects.update({ id, patch })
+    if (!updated) return null
     set((state) => ({
       todoProjects: state.todoProjects.map((project) => project.id === id ? updated : project)
     }))
+    return updated
   },
 
   removeTodoProject: async (id) => {
@@ -269,8 +292,51 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const selectedTodoProjectId = state.selectedTodoProjectId === id
         ? todoProjects[Math.min(removedIndex, todoProjects.length - 1)]?.id ?? null
         : state.selectedTodoProjectId
-      return { todoProjects, selectedTodoProjectId }
+      return {
+        todoProjects,
+        todoTasks: state.todoTasks.filter((task) => task.todoProjectId !== id),
+        selectedTodoProjectId
+      }
     })
+  },
+
+  addTodoTask: async (input) => {
+    const task = await window.api.todoTasks.create(input)
+    set((state) => ({
+      todoTasks: [...state.todoTasks, task],
+      todoProjects: state.todoProjects.map((project) =>
+        project.id === task.todoProjectId && project.nextTaskNumber <= task.number
+          ? { ...project, nextTaskNumber: task.number + 1 }
+          : project
+      )
+    }))
+    return task
+  },
+
+  updateTodoTask: async (id, patch) => {
+    const updated = await window.api.todoTasks.update({ id, patch })
+    if (!updated) return null
+    set((state) => {
+      const todoTasks = state.todoTasks.filter((task) => task.id !== id)
+      const existingIndex = state.todoTasks.findIndex((task) => task.id === id)
+      const existing = state.todoTasks[existingIndex]
+      if (existing?.columnId === updated.columnId) todoTasks.splice(existingIndex, 0, updated)
+      else todoTasks.push(updated)
+      return { todoTasks }
+    })
+    return updated
+  },
+
+  moveTodoTask: async (id, columnId, beforeId) => {
+    const todoTasks = await window.api.todoTasks.move({ id, columnId, beforeId })
+    if (!todoTasks) return false
+    set({ todoTasks })
+    return true
+  },
+
+  removeTodoTask: async (id) => {
+    await window.api.todoTasks.remove(id)
+    set((state) => ({ todoTasks: state.todoTasks.filter((task) => task.id !== id) }))
   },
 
   addSession: async (input) => {

@@ -34,6 +34,12 @@ const api: RendererApi = {
     update: (req) => ipcRenderer.invoke(IpcChannels.todoProjectsUpdate, req),
     remove: (id) => ipcRenderer.invoke(IpcChannels.todoProjectsRemove, id)
   },
+  todoTasks: {
+    create: (input) => ipcRenderer.invoke(IpcChannels.todoTasksCreate, input),
+    update: (req) => ipcRenderer.invoke(IpcChannels.todoTasksUpdate, req),
+    move: (req) => ipcRenderer.invoke(IpcChannels.todoTasksMove, req),
+    remove: (id) => ipcRenderer.invoke(IpcChannels.todoTasksRemove, id)
+  },
   workspace: {
     list: () => ipcRenderer.invoke(IpcChannels.workspaceList)
   },

@@ -3,12 +3,14 @@ import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import type {
   MoveSessionRequest,
+  MoveTodoTaskRequest,
   ReorderSessionRequest,
   CreateSessionTabRequest,
   RemoveSessionTabRequest,
   SelectSessionTabRequest,
   UpdateProjectRequest,
   UpdateTodoProjectRequest,
+  UpdateTodoTaskRequest,
   UpdateSessionRequest,
   UpdateSessionTabRequest,
   WorkspaceData
@@ -16,10 +18,13 @@ import type {
 import type {
   NewProject,
   NewTodoProject,
+  NewTodoTask,
   NewSession,
   PersistedTerminalLayout,
   Project,
   TodoProject,
+  TodoColumn,
+  TodoTask,
   Session,
   SessionTab,
   TerminalLayout
@@ -28,6 +33,14 @@ import { isSessionColor } from '@shared/session-colors'
 import { isSessionIcon } from '@shared/session-icons'
 
 const FILE_NAME = 'workspace.json'
+
+export const DEFAULT_TODO_COLUMNS: readonly TodoColumn[] = [
+  { id: 'todo', name: 'To Do' },
+  { id: 'in-progress', name: 'In Progress' },
+  { id: 'done', name: 'Done' }
+]
+
+const TODO_SHORTHAND_PATTERN = /^[A-Z][A-Z0-9]{1,9}$/
 
 let storeDir: string | null = null
 let cache: WorkspaceData | null = null
@@ -45,6 +58,18 @@ function storeFile(): string {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
+}
+
+export function normalizeTodoShorthand(value: string): string {
+  return value.trim().toUpperCase()
+}
+
+export function isTodoShorthand(value: string): boolean {
+  return TODO_SHORTHAND_PATTERN.test(normalizeTodoShorthand(value))
+}
+
+function defaultTodoColumns(): TodoColumn[] {
+  return DEFAULT_TODO_COLUMNS.map((column) => ({ ...column }))
 }
 
 function uniqueEntries<T extends { id: string }>(entries: T[], kind: string): T[] {
@@ -191,20 +216,103 @@ export function validateTodoProject(raw: unknown): TodoProject | null {
   const r = raw as Record<string, unknown>
   if (!isNonEmptyString(r.id) || !isNonEmptyString(r.name)) return null
 
+  const columns = Array.isArray(r.columns)
+    ? uniqueEntries(
+        r.columns
+          .filter((column): column is Record<string, unknown> =>
+            typeof column === 'object' && column !== null
+          )
+          .filter((column) => isNonEmptyString(column.id) && isNonEmptyString(column.name))
+          .map((column) => ({ id: column.id as string, name: (column.name as string).trim() })),
+        'to-do column'
+      )
+    : []
+  const shorthand = isNonEmptyString(r.shorthand) && isTodoShorthand(r.shorthand)
+    ? normalizeTodoShorthand(r.shorthand)
+    : null
+
   return {
     id: r.id,
     name: r.name.trim(),
+    shorthand,
+    nextTaskNumber:
+      typeof r.nextTaskNumber === 'number' && Number.isInteger(r.nextTaskNumber) && r.nextTaskNumber > 0
+        ? r.nextTaskNumber
+        : 1,
+    columns: columns.length > 0 ? columns : defaultTodoColumns(),
     createdAt: isNonEmptyString(r.createdAt) ? r.createdAt : new Date(0).toISOString()
   }
 }
 
 export function validateTodoProjectList(raw: unknown): TodoProject[] {
   if (!Array.isArray(raw)) return []
-  return uniqueEntries(
+  const projects = uniqueEntries(
     raw
       .map(validateTodoProject)
       .filter((project): project is TodoProject => project !== null),
     'to-do project'
+  )
+  const shorthands = new Set<string>()
+  return projects.map((project) => {
+    if (!project.shorthand || !shorthands.has(project.shorthand)) {
+      if (project.shorthand) shorthands.add(project.shorthand)
+      return project
+    }
+    console.warn(`[workspace] clearing duplicate to-do shorthand ${project.shorthand}`)
+    return { ...project, shorthand: null }
+  })
+}
+
+export function validateTodoTask(
+  raw: unknown,
+  projects: ReadonlyMap<string, TodoProject>
+): TodoTask | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const r = raw as Record<string, unknown>
+  if (
+    !isNonEmptyString(r.id) ||
+    !isNonEmptyString(r.todoProjectId) ||
+    !isNonEmptyString(r.columnId) ||
+    typeof r.number !== 'number' ||
+    !Number.isInteger(r.number) ||
+    r.number <= 0 ||
+    !isNonEmptyString(r.title) ||
+    typeof r.description !== 'string'
+  ) {
+    return null
+  }
+  const project = projects.get(r.todoProjectId)
+  if (!project?.columns.some((column) => column.id === r.columnId)) return null
+  const createdAt = isNonEmptyString(r.createdAt) ? r.createdAt : new Date(0).toISOString()
+  return {
+    id: r.id,
+    todoProjectId: r.todoProjectId,
+    columnId: r.columnId,
+    number: r.number,
+    title: r.title.trim(),
+    description: r.description.trim(),
+    createdAt,
+    updatedAt: isNonEmptyString(r.updatedAt) ? r.updatedAt : createdAt
+  }
+}
+
+export function validateTodoTaskList(
+  raw: unknown,
+  projects: ReadonlyMap<string, TodoProject>
+): TodoTask[] {
+  if (!Array.isArray(raw)) return []
+  const seenNumbers = new Set<string>()
+  return uniqueEntries(
+    raw
+      .map((entry) => validateTodoTask(entry, projects))
+      .filter((task): task is TodoTask => task !== null)
+      .filter((task) => {
+        const key = `${task.todoProjectId}:${task.number}`
+        if (seenNumbers.has(key)) return false
+        seenNumbers.add(key)
+        return true
+      }),
+    'to-do task'
   )
 }
 
@@ -255,14 +363,24 @@ export function validateSessionList(raw: unknown, projectIds: Set<string>): Sess
 
 export function validateWorkspace(raw: unknown): WorkspaceData {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    return { projects: [], todoProjects: [], sessions: [] }
+    return { projects: [], todoProjects: [], todoTasks: [], sessions: [] }
   }
   const record = raw as Record<string, unknown>
   const projects = validateProjectList(record.projects)
-  const todoProjects = validateTodoProjectList(record.todoProjects)
+  let todoProjects = validateTodoProjectList(record.todoProjects)
+  const todoProjectMap = new Map(todoProjects.map((project) => [project.id, project]))
+  const todoTasks = validateTodoTaskList(record.todoTasks, todoProjectMap)
+  todoProjects = todoProjects.map((project) => {
+    const highestNumber = todoTasks
+      .filter((task) => task.todoProjectId === project.id)
+      .reduce((highest, task) => Math.max(highest, task.number), 0)
+    return project.nextTaskNumber > highestNumber
+      ? project
+      : { ...project, nextTaskNumber: highestNumber + 1 }
+  })
   const projectIds = new Set(projects.map((project) => project.id))
   const sessions = validateSessionList(record.sessions, projectIds)
-  return { projects, todoProjects, sessions }
+  return { projects, todoProjects, todoTasks, sessions }
 }
 
 export async function loadWorkspace(): Promise<WorkspaceData> {
@@ -276,7 +394,7 @@ export async function loadWorkspace(): Promise<WorkspaceData> {
     if (code !== 'ENOENT') {
       console.warn('[workspace] could not read workspace.json, starting empty:', error)
     }
-    cache = { projects: [], todoProjects: [], sessions: [] }
+    cache = { projects: [], todoProjects: [], todoTasks: [], sessions: [] }
     return cache
   }
 
@@ -285,7 +403,7 @@ export async function loadWorkspace(): Promise<WorkspaceData> {
     parsed = JSON.parse(text)
   } catch (error) {
     console.warn('[workspace] workspace.json is not valid JSON, starting empty:', error)
-    cache = { projects: [], todoProjects: [], sessions: [] }
+    cache = { projects: [], todoProjects: [], todoTasks: [], sessions: [] }
     return cache
   }
 
@@ -365,10 +483,20 @@ export async function createTodoProject(input: NewTodoProject): Promise<TodoProj
   const workspace = await loadWorkspace()
   const name = input.name.trim()
   if (!name) throw new Error('To Do project name cannot be empty')
+  const shorthand = normalizeTodoShorthand(input.shorthand)
+  if (!isTodoShorthand(shorthand)) {
+    throw new Error('To Do project shorthand must be 2-10 letters or numbers and start with a letter')
+  }
+  if (workspace.todoProjects.some((project) => project.shorthand === shorthand)) {
+    throw new Error(`To Do project shorthand ${shorthand} is already in use`)
+  }
 
   const project: TodoProject = {
     id: randomUUID(),
     name,
+    shorthand,
+    nextTaskNumber: 1,
+    columns: defaultTodoColumns(),
     createdAt: new Date().toISOString()
   }
   cache = { ...workspace, todoProjects: [...workspace.todoProjects, project] }
@@ -384,9 +512,24 @@ export async function updateTodoProject(
   const existing = workspace.todoProjects[index]
   if (!existing) return null
 
-  const name = req.patch.name?.trim()
-  if (!name) return existing
-  const updated = { ...existing, name }
+  const updated = { ...existing }
+  if (req.patch.name !== undefined) {
+    const name = req.patch.name.trim()
+    if (!name) throw new Error('To Do project name cannot be empty')
+    updated.name = name
+  }
+  if (req.patch.shorthand !== undefined) {
+    const shorthand = normalizeTodoShorthand(req.patch.shorthand)
+    if (!isTodoShorthand(shorthand)) {
+      throw new Error('To Do project shorthand must be 2-10 letters or numbers and start with a letter')
+    }
+    if (workspace.todoProjects.some(
+      (project) => project.id !== existing.id && project.shorthand === shorthand
+    )) {
+      throw new Error(`To Do project shorthand ${shorthand} is already in use`)
+    }
+    updated.shorthand = shorthand
+  }
   const todoProjects = [...workspace.todoProjects]
   todoProjects[index] = updated
   cache = { ...workspace, todoProjects }
@@ -398,8 +541,104 @@ export async function removeTodoProject(id: string): Promise<void> {
   const workspace = await loadWorkspace()
   cache = {
     ...workspace,
-    todoProjects: workspace.todoProjects.filter((project) => project.id !== id)
+    todoProjects: workspace.todoProjects.filter((project) => project.id !== id),
+    todoTasks: workspace.todoTasks.filter((task) => task.todoProjectId !== id)
   }
+  await enqueueWrite(cache)
+}
+
+export async function createTodoTask(input: NewTodoTask): Promise<TodoTask> {
+  const workspace = await loadWorkspace()
+  const projectIndex = workspace.todoProjects.findIndex(
+    (project) => project.id === input.todoProjectId
+  )
+  const project = workspace.todoProjects[projectIndex]
+  if (!project) throw new Error('Cannot create a task without a valid To Do project')
+  if (!project.shorthand) throw new Error('Configure a project shorthand before creating tasks')
+  if (!project.columns.some((column) => column.id === input.columnId)) {
+    throw new Error('Cannot create a task in an invalid column')
+  }
+  const title = input.title.trim()
+  if (!title) throw new Error('Task title cannot be empty')
+
+  const now = new Date().toISOString()
+  const task: TodoTask = {
+    id: randomUUID(),
+    todoProjectId: project.id,
+    columnId: input.columnId,
+    number: project.nextTaskNumber,
+    title,
+    description: input.description.trim(),
+    createdAt: now,
+    updatedAt: now
+  }
+  const todoProjects = [...workspace.todoProjects]
+  todoProjects[projectIndex] = { ...project, nextTaskNumber: project.nextTaskNumber + 1 }
+  cache = { ...workspace, todoProjects, todoTasks: [...workspace.todoTasks, task] }
+  await enqueueWrite(cache)
+  return task
+}
+
+export async function updateTodoTask(req: UpdateTodoTaskRequest): Promise<TodoTask | null> {
+  const workspace = await loadWorkspace()
+  const index = workspace.todoTasks.findIndex((task) => task.id === req.id)
+  const existing = workspace.todoTasks[index]
+  if (!existing) return null
+  const project = workspace.todoProjects.find((candidate) => candidate.id === existing.todoProjectId)
+  if (!project) return null
+
+  const updated = { ...existing, updatedAt: new Date().toISOString() }
+  if (req.patch.title !== undefined) {
+    const title = req.patch.title.trim()
+    if (!title) throw new Error('Task title cannot be empty')
+    updated.title = title
+  }
+  if (req.patch.description !== undefined) updated.description = req.patch.description.trim()
+  if (req.patch.columnId !== undefined) {
+    if (!project.columns.some((column) => column.id === req.patch.columnId)) {
+      throw new Error('Cannot move a task to an invalid column')
+    }
+    updated.columnId = req.patch.columnId
+  }
+
+  const todoTasks = workspace.todoTasks.filter((task) => task.id !== existing.id)
+  if (updated.columnId === existing.columnId) todoTasks.splice(index, 0, updated)
+  else todoTasks.push(updated)
+  cache = { ...workspace, todoTasks }
+  await enqueueWrite(cache)
+  return updated
+}
+
+export async function moveTodoTask(req: MoveTodoTaskRequest): Promise<TodoTask[] | null> {
+  const workspace = await loadWorkspace()
+  const existing = workspace.todoTasks.find((task) => task.id === req.id)
+  if (!existing) return null
+  const project = workspace.todoProjects.find((candidate) => candidate.id === existing.todoProjectId)
+  if (!project?.columns.some((column) => column.id === req.columnId)) return null
+  const before = req.beforeId === null
+    ? null
+    : workspace.todoTasks.find((task) => task.id === req.beforeId)
+  if (
+    req.beforeId === existing.id ||
+    (req.beforeId !== null && (
+      !before || before.todoProjectId !== existing.todoProjectId || before.columnId !== req.columnId
+    ))
+  ) {
+    return null
+  }
+
+  const moved = { ...existing, columnId: req.columnId, updatedAt: new Date().toISOString() }
+  const todoTasks = workspace.todoTasks.filter((task) => task.id !== existing.id)
+  if (before) todoTasks.splice(todoTasks.findIndex((task) => task.id === before.id), 0, moved)
+  else todoTasks.push(moved)
+  cache = { ...workspace, todoTasks }
+  await enqueueWrite(cache)
+  return todoTasks
+}
+
+export async function removeTodoTask(id: string): Promise<void> {
+  const workspace = await loadWorkspace()
+  cache = { ...workspace, todoTasks: workspace.todoTasks.filter((task) => task.id !== id) }
   await enqueueWrite(cache)
 }
 

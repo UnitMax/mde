@@ -1140,7 +1140,8 @@ function TodoProjectRow({
         <AlertDialogContent>
           <AlertDialogTitle>Remove “{project.name}”?</AlertDialogTitle>
           <AlertDialogDescription>
-            This removes the To Do project. Terminal projects, sessions, and files are unaffected.
+            This removes the To Do project and all of its tasks. Terminal projects, sessions, and
+            files are unaffected.
           </AlertDialogDescription>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -1159,24 +1160,29 @@ interface SidebarCreateActionsProps {
   collapsed: boolean
   onNewProject: () => void
   onNewSession: () => void
+  onNewTodoTask: () => void
+  todoTaskAvailable: boolean
 }
 
 function SidebarCreateActions({
   activeSection,
   collapsed,
   onNewProject,
-  onNewSession
+  onNewSession,
+  onNewTodoTask,
+  todoTaskAvailable
 }: SidebarCreateActionsProps): JSX.Element {
   if (activeSection === 'todo') {
     return (
-      <div title="New task is coming soon">
+      <div title={todoTaskAvailable ? 'New task' : 'Select a To Do project first'}>
         <Button
           variant="secondary"
           size={collapsed ? 'icon' : 'sm'}
           className={cn(!collapsed && 'w-full')}
-          disabled
-          title="New task is coming soon"
-          aria-label="New task is coming soon"
+          disabled={!todoTaskAvailable}
+          onClick={onNewTodoTask}
+          title="New task"
+          aria-label="New task"
         >
           <Plus className="h-3.5 w-3.5" />
           {!collapsed && <span>New task</span>}
@@ -1224,6 +1230,7 @@ function SidebarCreateActions({
 interface SidebarProps {
   onNewProject: () => void
   onNewTodoProject: () => void
+  onNewTodoTask: () => void
   onNewSession: (projectId?: string) => void
   onOpenGit: (sessionId: string) => void
   terminalLayouts: Record<string, Record<string, SessionTerminalLayout>>
@@ -1233,6 +1240,7 @@ interface SidebarProps {
 export function Sidebar({
   onNewProject,
   onNewTodoProject,
+  onNewTodoTask,
   onNewSession,
   onOpenGit,
   terminalLayouts,
@@ -1398,6 +1406,8 @@ export function Sidebar({
             collapsed
             onNewProject={onNewProject}
             onNewSession={() => onNewSession()}
+            onNewTodoTask={onNewTodoTask}
+            todoTaskAvailable={selectedTodoProjectId !== null}
           />
         </div>
       </aside>
@@ -1500,6 +1510,8 @@ export function Sidebar({
           collapsed={false}
           onNewProject={onNewProject}
           onNewSession={() => onNewSession()}
+          onNewTodoTask={onNewTodoTask}
+          todoTaskAvailable={selectedTodoProjectId !== null}
         />
       </div>
     </aside>
