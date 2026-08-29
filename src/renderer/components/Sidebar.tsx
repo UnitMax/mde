@@ -18,6 +18,7 @@ import {
   GitBranch,
   GripVertical,
   LoaderCircle,
+  ListTodo,
   MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
@@ -55,6 +56,12 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger
 } from '@/components/ui/context-menu'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
 import {
   Dialog,
   DialogContent,
@@ -97,6 +104,72 @@ const STATUS_STYLE: Record<PtyStatus, { dot: string; label: string }> = {
 }
 
 type OpenCodeIndicatorStatus = 'idle' | 'working' | 'attention' | 'completed' | 'error'
+
+type SidebarSection = 'projects' | 'todo'
+
+const SIDEBAR_SECTIONS = [
+  { id: 'projects' as const, label: 'Projects', Icon: Folder },
+  { id: 'todo' as const, label: 'To Do', Icon: ListTodo }
+]
+
+interface SidebarSectionNavigationProps {
+  activeSection: SidebarSection
+  collapsed: boolean
+  onSelect: (section: SidebarSection) => void
+}
+
+function SidebarSectionNavigation({
+  activeSection,
+  collapsed,
+  onSelect
+}: SidebarSectionNavigationProps): JSX.Element {
+  return (
+    <div
+      role={collapsed ? 'group' : 'tablist'}
+      aria-label="Workspace sections"
+      className={cn(
+        'flex gap-1',
+        collapsed
+          ? 'flex-col items-center'
+          : 'h-8 min-w-0 flex-1 items-center rounded-lg bg-elevated p-0.5'
+      )}
+    >
+      {SIDEBAR_SECTIONS.map((section) => {
+        const Icon = section.Icon
+        const active = section.id === activeSection
+        return (
+          <button
+            key={section.id}
+            type="button"
+            id={collapsed ? undefined : `sidebar-section-tab-${section.id}`}
+            role={collapsed ? undefined : 'tab'}
+            aria-label={section.label}
+            aria-selected={collapsed ? undefined : active}
+            aria-pressed={collapsed ? active : undefined}
+            aria-controls={collapsed ? undefined : `sidebar-section-${section.id}`}
+            title={section.label}
+            onClick={() => onSelect(section.id)}
+            className={cn(
+              'flex items-center justify-center rounded text-left transition-colors',
+              collapsed
+                ? 'h-7 w-7'
+                : 'h-7 min-w-0 flex-1 border-b-2 px-2 text-[13px]',
+              active
+                ? collapsed
+                  ? 'bg-active text-fg'
+                  : 'border-accent bg-panel text-fg'
+                : collapsed
+                  ? 'text-fg-muted hover:bg-hover hover:text-fg'
+                  : 'border-transparent text-fg-muted hover:bg-hover hover:text-fg'
+            )}
+          >
+            {collapsed ? <Icon className="h-4 w-4 shrink-0" /> : <span>{section.label}</span>}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
 
 interface SessionIndicator {
   status: PtyStatus | OpenCodeIndicatorStatus
@@ -898,12 +971,13 @@ function ProjectGroup({
             <Button
               variant="ghost"
               size="icon-sm"
-              className="ml-auto shrink-0 opacity-0 group-hover:opacity-100"
+              className="ml-auto shrink-0"
               onClick={(event) => {
                 event.stopPropagation()
                 onNewSession(project.id)
               }}
               title="New session in this project"
+              aria-label="New session in this project"
             >
               <Plus className="h-3.5 w-3.5" />
             </Button>
@@ -977,6 +1051,73 @@ function ProjectGroup({
   )
 }
 
+interface SidebarCreateActionsProps {
+  activeSection: SidebarSection
+  collapsed: boolean
+  onNewProject: () => void
+  onNewSession: () => void
+}
+
+function SidebarCreateActions({
+  activeSection,
+  collapsed,
+  onNewProject,
+  onNewSession
+}: SidebarCreateActionsProps): JSX.Element {
+  if (activeSection === 'todo') {
+    return (
+      <div title="New task is coming soon">
+        <Button
+          variant="secondary"
+          size={collapsed ? 'icon' : 'sm'}
+          className={cn(!collapsed && 'w-full')}
+          disabled
+          title="New task is coming soon"
+          aria-label="New task is coming soon"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          {!collapsed && <span>New task</span>}
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className={cn('flex', collapsed ? 'flex-col gap-1' : 'w-full')}>
+      <Button
+        variant="secondary"
+        size={collapsed ? 'icon' : 'sm'}
+        className={cn(!collapsed && 'min-w-0 flex-1 rounded-r-none')}
+        onClick={onNewSession}
+        title="New session"
+        aria-label="New session"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        {!collapsed && <span>New session</span>}
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="secondary"
+            size="icon"
+            className={cn(!collapsed && 'rounded-l-none border-l-0')}
+            title="More creation actions"
+            aria-label="More creation actions"
+          >
+            <ChevronDown className="h-3.5 w-3.5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side={collapsed ? 'right' : 'top'} align="end">
+          <DropdownMenuItem onSelect={() => onNewProject()}>
+            <FolderPlus className="h-3.5 w-3.5" />
+            New project
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  )
+}
+
 interface SidebarProps {
   onNewProject: () => void
   onNewSession: (projectId?: string) => void
@@ -1004,6 +1145,7 @@ export function Sidebar({
   const setSessionIcon = useWorkspace((state) => state.setSessionIcon)
   const collapsed = useWorkspace((state) => state.sidebarCollapsed)
   const toggleSidebar = useWorkspace((state) => state.toggleSidebar)
+  const [activeSection, setActiveSection] = useState<SidebarSection>('projects')
   const [terminalSettings, setTerminalSettings] = useState(() => getTerminalSettings())
 
   useEffect(() => subscribeTerminalSettings(() => setTerminalSettings(getTerminalSettings())), [])
@@ -1014,111 +1156,120 @@ export function Sidebar({
         <Button variant="ghost" size="icon" onClick={toggleSidebar} title="Expand sidebar">
           <PanelLeftOpen className="h-4 w-4" />
         </Button>
-        <div className="mt-2 min-h-0 w-full flex-1 overflow-y-auto">
-          <div className="flex flex-col items-center gap-1">
-            {projects.map((project) => {
-              const projectSessions = sessions.filter((session) => session.projectId === project.id)
-              return projectSessions.length > 0 ? (
-                projectSessions.map((session) => {
-                  const indicator = sessionIndicator(
-                    statuses[session.id] ?? 'none',
-                    opencodeTuiStatuses[session.id]
-                  )
-                  const customColor = customSessionColor(session.color)
-                  return (
-                    <ContextMenu key={session.id}>
-                      <ContextMenuTrigger asChild>
-                        <button
-                          type="button"
-                          onClick={() => selectSession(session.id)}
-                          title={`${project.name} · ${session.name}`}
-                          className={cn(
-                            'relative flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase',
-                            customColor
-                              ? cn(
-                                  'text-fg transition-[filter] hover:brightness-110',
-                                  customSessionStatusRing(indicator.status)
-                                )
-                              : session.id === selectedSessionId
-                                ? cn(
-                                    'bg-active text-fg',
-                                    indicator.status === 'attention' && 'ring-1 ring-accent/60'
-                                  )
-                                : cn('text-fg-muted hover:bg-hover hover:text-fg', indicator.row)
-                          )}
-                          style={sessionBackgroundStyle(session.color, indicator)}
-                        >
-                          <span data-testid="collapsed-session-label">
-                            {sessionIconOption(session.icon)?.emoji ?? session.name.slice(0, 2)}
-                          </span>
-                          <StatusDot
-                            indicator={indicator}
-                            className="absolute -bottom-0.5 right-0.5 ring-2 ring-panel"
-                          />
-                        </button>
-                      </ContextMenuTrigger>
-                      <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
-                        <ContextMenuSub>
-                          <ContextMenuSubTrigger>
-                            <Smile className="h-3.5 w-3.5" />
-                            <span className="flex-1">Change icon</span>
-                            <ChevronRight className="h-3.5 w-3.5 text-fg-subtle" />
-                          </ContextMenuSubTrigger>
-                          <ContextMenuSubContent>
-                            {SESSION_ICONS.map((option) => (
-                              <ContextMenuItem
-                                key={option.id}
-                                onSelect={() => void setSessionIcon(session.id, option.id)}
-                              >
-                                <span
-                                  className="w-5 text-center text-base leading-none"
-                                  role="img"
-                                  aria-label={option.label}
-                                >
-                                  {option.emoji}
-                                </span>
-                                <span className="flex-1">{option.label}</span>
-                                {session.icon === option.id && <Check className="h-3.5 w-3.5" />}
-                              </ContextMenuItem>
-                            ))}
-                            <ContextMenuSeparator />
-                            <ContextMenuItem onSelect={() => void setSessionIcon(session.id, null)}>
-                              <RotateCcw className="h-3.5 w-3.5" />
-                              <span className="flex-1">Use initials</span>
-                              {!session.icon && <Check className="h-3.5 w-3.5" />}
-                            </ContextMenuItem>
-                          </ContextMenuSubContent>
-                        </ContextMenuSub>
-                        <ContextMenuSeparator />
-                        <ContextMenuItem onSelect={() => onOpenGit(session.id)}>
-                          <GitBranch className="h-3.5 w-3.5" />
-                          Git history
-                        </ContextMenuItem>
-                      </ContextMenuContent>
-                    </ContextMenu>
-                  )
-                })
-              ) : (
-                <button
-                  key={project.id}
-                  type="button"
-                  onClick={() => onNewSession(project.id)}
-                  title={`${project.name} · New session`}
-                  className="flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase text-fg-muted hover:bg-hover hover:text-fg"
-                >
-                  {project.name.slice(0, 2)}
-                </button>
-              )
-            })}
-          </div>
+        <div className="mt-2 shrink-0">
+          <SidebarSectionNavigation
+            activeSection={activeSection}
+            collapsed
+            onSelect={setActiveSection}
+          />
         </div>
-        <div className="mt-auto flex shrink-0 flex-col gap-1">
-          <Button variant="ghost" size="icon" onClick={() => onNewSession()} title="New session">
-            <Plus className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon" onClick={onNewProject} title="New project">
-            <FolderPlus className="h-4 w-4" />
-          </Button>
+        <div className="mt-2 min-h-0 w-full flex-1 overflow-y-auto">
+          {activeSection === 'projects' && (
+            <div className="flex flex-col items-center gap-1">
+              {projects.map((project) => {
+                const projectSessions = sessions.filter((session) => session.projectId === project.id)
+                return projectSessions.length > 0 ? (
+                  projectSessions.map((session) => {
+                    const indicator = sessionIndicator(
+                      statuses[session.id] ?? 'none',
+                      opencodeTuiStatuses[session.id]
+                    )
+                    const customColor = customSessionColor(session.color)
+                    return (
+                      <ContextMenu key={session.id}>
+                        <ContextMenuTrigger asChild>
+                          <button
+                            type="button"
+                            onClick={() => selectSession(session.id)}
+                            title={`${project.name} · ${session.name}`}
+                            className={cn(
+                              'relative flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase',
+                              customColor
+                                ? cn(
+                                    'text-fg transition-[filter] hover:brightness-110',
+                                    customSessionStatusRing(indicator.status)
+                                  )
+                                : session.id === selectedSessionId
+                                  ? cn(
+                                      'bg-active text-fg',
+                                      indicator.status === 'attention' && 'ring-1 ring-accent/60'
+                                    )
+                                  : cn('text-fg-muted hover:bg-hover hover:text-fg', indicator.row)
+                            )}
+                            style={sessionBackgroundStyle(session.color, indicator)}
+                          >
+                            <span data-testid="collapsed-session-label">
+                              {sessionIconOption(session.icon)?.emoji ?? session.name.slice(0, 2)}
+                            </span>
+                            <StatusDot
+                              indicator={indicator}
+                              className="absolute -bottom-0.5 right-0.5 ring-2 ring-panel"
+                            />
+                          </button>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
+                          <ContextMenuSub>
+                            <ContextMenuSubTrigger>
+                              <Smile className="h-3.5 w-3.5" />
+                              <span className="flex-1">Change icon</span>
+                              <ChevronRight className="h-3.5 w-3.5 text-fg-subtle" />
+                            </ContextMenuSubTrigger>
+                            <ContextMenuSubContent>
+                              {SESSION_ICONS.map((option) => (
+                                <ContextMenuItem
+                                  key={option.id}
+                                  onSelect={() => void setSessionIcon(session.id, option.id)}
+                                >
+                                  <span
+                                    className="w-5 text-center text-base leading-none"
+                                    role="img"
+                                    aria-label={option.label}
+                                  >
+                                    {option.emoji}
+                                  </span>
+                                  <span className="flex-1">{option.label}</span>
+                                  {session.icon === option.id && <Check className="h-3.5 w-3.5" />}
+                                </ContextMenuItem>
+                              ))}
+                              <ContextMenuSeparator />
+                              <ContextMenuItem onSelect={() => void setSessionIcon(session.id, null)}>
+                                <RotateCcw className="h-3.5 w-3.5" />
+                                <span className="flex-1">Use initials</span>
+                                {!session.icon && <Check className="h-3.5 w-3.5" />}
+                              </ContextMenuItem>
+                            </ContextMenuSubContent>
+                          </ContextMenuSub>
+                          <ContextMenuSeparator />
+                          <ContextMenuItem onSelect={() => onOpenGit(session.id)}>
+                            <GitBranch className="h-3.5 w-3.5" />
+                            Git history
+                          </ContextMenuItem>
+                        </ContextMenuContent>
+                      </ContextMenu>
+                    )
+                  })
+                ) : (
+                  <button
+                    key={project.id}
+                    type="button"
+                    onClick={() => onNewSession(project.id)}
+                    title={`${project.name} · New session`}
+                    className="flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase text-fg-muted hover:bg-hover hover:text-fg"
+                  >
+                    {project.name.slice(0, 2)}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+        <div className="mt-auto shrink-0">
+          <SidebarCreateActions
+            activeSection={activeSection}
+            collapsed
+            onNewProject={onNewProject}
+            onNewSession={() => onNewSession()}
+          />
         </div>
       </aside>
     )
@@ -1126,64 +1277,79 @@ export function Sidebar({
 
   return (
     <aside className="flex w-[260px] shrink-0 flex-col border-r border-line bg-panel">
-      <div className="flex items-center px-3 pb-1 pt-3">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
-          Projects
-        </span>
-        <div className="ml-auto flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={onNewProject}
-            title="New project"
-            aria-label="New project"
-          >
-            <FolderPlus className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={toggleSidebar}
-            title="Collapse sidebar"
-            aria-label="Collapse sidebar"
-          >
-            <PanelLeftClose className="h-3.5 w-3.5" />
-          </Button>
-        </div>
+      <div className="flex items-center gap-2 px-3 pb-2 pt-3">
+        <SidebarSectionNavigation
+          activeSection={activeSection}
+          collapsed={false}
+          onSelect={setActiveSection}
+        />
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="shrink-0"
+          onClick={toggleSidebar}
+          title="Collapse sidebar"
+          aria-label="Collapse sidebar"
+        >
+          <PanelLeftClose className="h-3.5 w-3.5" />
+        </Button>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-        {projects.length === 0 ? (
-          <p className="px-2 py-1 text-xs text-fg-subtle">No projects yet.</p>
-        ) : (
-          projects.map((project) => (
-            <ProjectGroup
-              key={project.id}
-              project={project}
-              sessions={sessions.filter((session) => session.projectId === project.id)}
-              statuses={statuses}
-              terminalDirectories={terminalDirectories}
-              opencodeTuiStatuses={opencodeTuiStatuses}
-              opencodeTuiInstances={opencodeTuiInstances}
-              terminalLayouts={terminalLayouts}
-              showTerminalInstances={terminalSettings.showTerminalInstances}
-              showOpenCodeInstances={terminalSettings.showOpenCodeInstances}
-              instanceLabelMode={instanceLabelMode}
-              selectedSessionId={selectedSessionId}
-              onSelectSession={selectSession}
-              onFocusTerminal={onFocusTerminal}
-              onOpenGit={onOpenGit}
-              onNewSession={(projectId) => onNewSession(projectId)}
-            />
-          ))
-        )}
+        <div
+          id="sidebar-section-projects"
+          role="tabpanel"
+          aria-labelledby="sidebar-section-tab-projects"
+          hidden={activeSection !== 'projects'}
+        >
+          {projects.length === 0 ? (
+            <p className="px-2 py-1 text-xs text-fg-subtle">No projects yet.</p>
+          ) : (
+            projects.map((project) => (
+              <ProjectGroup
+                key={project.id}
+                project={project}
+                sessions={sessions.filter((session) => session.projectId === project.id)}
+                statuses={statuses}
+                terminalDirectories={terminalDirectories}
+                opencodeTuiStatuses={opencodeTuiStatuses}
+                opencodeTuiInstances={opencodeTuiInstances}
+                terminalLayouts={terminalLayouts}
+                showTerminalInstances={terminalSettings.showTerminalInstances}
+                showOpenCodeInstances={terminalSettings.showOpenCodeInstances}
+                instanceLabelMode={instanceLabelMode}
+                selectedSessionId={selectedSessionId}
+                onSelectSession={selectSession}
+                onFocusTerminal={onFocusTerminal}
+                onOpenGit={onOpenGit}
+                onNewSession={(projectId) => onNewSession(projectId)}
+              />
+            ))
+          )}
+        </div>
+
+        <div
+          id="sidebar-section-todo"
+          role="tabpanel"
+          aria-labelledby="sidebar-section-tab-todo"
+          hidden={activeSection !== 'todo'}
+          className="flex min-h-[180px] flex-col items-center justify-center gap-2 px-4 text-center"
+        >
+          <ListTodo className="h-5 w-5 text-fg-subtle" />
+          <div>
+            <p className="text-[13px] text-fg-muted">Track work for this project</p>
+            <p className="mt-1 text-xs text-fg-subtle">Tasks you add here stay with the session.</p>
+          </div>
+        </div>
       </div>
 
       <div className="shrink-0 border-t border-line p-2">
-        <Button variant="secondary" size="sm" className="w-full" onClick={() => onNewSession()}>
-          <Plus className="h-3.5 w-3.5" />
-          New session
-        </Button>
+        <SidebarCreateActions
+          activeSection={activeSection}
+          collapsed={false}
+          onNewProject={onNewProject}
+          onNewSession={() => onNewSession()}
+        />
       </div>
     </aside>
   )
