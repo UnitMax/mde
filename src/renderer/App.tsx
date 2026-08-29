@@ -4,9 +4,11 @@ import { Button } from '@/components/ui/button'
 import { AddSessionDialog } from '@/components/AddProjectDialog'
 import { GitDialog } from '@/components/GitDialog'
 import { NewProjectDialog } from '@/components/NewProjectDialog'
+import { NewTodoProjectDialog } from '@/components/NewTodoProjectDialog'
 import { Sidebar } from '@/components/Sidebar'
 import { SessionSwitcher } from '@/components/SessionSwitcher'
 import { TerminalView } from '@/components/TerminalView'
+import { TodoProjectView } from '@/components/TodoProjectView'
 import { isSessionSwitcherShortcut } from '@/lib/session-switcher'
 import { useWorkspace } from '@/store/workspace'
 import { disposeSession, getSession } from '@/terminal/sessions'
@@ -54,7 +56,10 @@ export function App(): JSX.Element {
   const init = useWorkspace((state) => state.init)
   const ready = useWorkspace((state) => state.ready)
   const sessions = useWorkspace((state) => state.sessions)
+  const todoProjects = useWorkspace((state) => state.todoProjects)
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
+  const selectedTodoProjectId = useWorkspace((state) => state.selectedTodoProjectId)
+  const activeWorkspaceView = useWorkspace((state) => state.activeWorkspaceView)
   const selectSession = useWorkspace((state) => state.selectSession)
   const addTabAction = useWorkspace((state) => state.addTab)
   const selectTabAction = useWorkspace((state) => state.selectTab)
@@ -64,6 +69,7 @@ export function App(): JSX.Element {
   const clearExit = useWorkspace((state) => state.clearExit)
   const [newSessionOpen, setNewSessionOpen] = useState(false)
   const [newProjectOpen, setNewProjectOpen] = useState(false)
+  const [newTodoProjectOpen, setNewTodoProjectOpen] = useState(false)
   const [gitSessionId, setGitSessionId] = useState<string | null>(null)
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false)
   const [defaultProjectId, setDefaultProjectId] = useState<string | undefined>(undefined)
@@ -258,7 +264,8 @@ export function App(): JSX.Element {
         !isSessionSwitcherShortcut(event) ||
         sessionSwitcherOpen ||
         newSessionOpen ||
-        newProjectOpen
+        newProjectOpen ||
+        newTodoProjectOpen
       ) {
         return
       }
@@ -270,9 +277,11 @@ export function App(): JSX.Element {
 
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [newProjectOpen, newSessionOpen, sessionSwitcherOpen])
+  }, [newProjectOpen, newSessionOpen, newTodoProjectOpen, sessionSwitcherOpen])
 
   const selected = sessions.find((session) => session.id === selectedSessionId) ?? null
+  const selectedTodoProject =
+    todoProjects.find((project) => project.id === selectedTodoProjectId) ?? null
   const activeTab = selected ? activeSessionTab(selected) : null
   const gitSession = sessions.find((session) => session.id === gitSessionId) ?? null
 
@@ -487,6 +496,7 @@ export function App(): JSX.Element {
     <div className="flex h-full w-full overflow-hidden bg-bg">
       <Sidebar
         onNewProject={() => setNewProjectOpen(true)}
+        onNewTodoProject={() => setNewTodoProjectOpen(true)}
         onNewSession={openNewSession}
         onOpenGit={setGitSessionId}
         terminalLayouts={terminalLayoutsForSidebar}
@@ -494,7 +504,9 @@ export function App(): JSX.Element {
       />
 
       <main className="h-full min-w-0 flex-1">
-        {!ready ? null : selected && activeTab && layoutForSession ? (
+        {!ready ? null : activeWorkspaceView === 'todo' ? (
+          <TodoProjectView project={selectedTodoProject} />
+        ) : selected && activeTab && layoutForSession ? (
           <TerminalView
             key={selected.id}
             session={selected}
@@ -525,6 +537,10 @@ export function App(): JSX.Element {
         defaultProjectId={defaultProjectId}
       />
       <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
+      <NewTodoProjectDialog
+        open={newTodoProjectOpen}
+        onOpenChange={setNewTodoProjectOpen}
+      />
       <GitDialog
         open={gitSession !== null}
         session={gitSession}

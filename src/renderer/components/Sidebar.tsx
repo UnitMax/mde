@@ -34,7 +34,8 @@ import type {
   Project,
   PtyStatus,
   Session,
-  SessionTab
+  SessionTab,
+  TodoProject
 } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import {
@@ -72,7 +73,11 @@ import {
 } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { useWorkspace, type OpenCodeTuiStatusState } from '@/store/workspace'
+import {
+  useWorkspace,
+  type OpenCodeTuiStatusState,
+  type WorkspaceView
+} from '@/store/workspace'
 import { OpenCodeStatusIcon } from '@/components/OpenCodeStatusIcon'
 import { openCodeStatusShortLabel } from '@/lib/opencode-tui-status'
 import {
@@ -105,17 +110,15 @@ const STATUS_STYLE: Record<PtyStatus, { dot: string; label: string }> = {
 
 type OpenCodeIndicatorStatus = 'idle' | 'working' | 'attention' | 'completed' | 'error'
 
-type SidebarSection = 'projects' | 'todo'
-
 const SIDEBAR_SECTIONS = [
   { id: 'projects' as const, label: 'Projects', Icon: Folder },
   { id: 'todo' as const, label: 'To Do', Icon: ListTodo }
 ]
 
 interface SidebarSectionNavigationProps {
-  activeSection: SidebarSection
+  activeSection: WorkspaceView
   collapsed: boolean
-  onSelect: (section: SidebarSection) => void
+  onSelect: (section: WorkspaceView) => void
 }
 
 function SidebarSectionNavigation({
@@ -1051,8 +1054,108 @@ function ProjectGroup({
   )
 }
 
+function TodoProjectRow({
+  project,
+  selected,
+  onSelect
+}: {
+  project: TodoProject
+  selected: boolean
+  onSelect: () => void
+}): JSX.Element {
+  const renameTodoProject = useWorkspace((state) => state.renameTodoProject)
+  const removeTodoProject = useWorkspace((state) => state.removeTodoProject)
+  const [renaming, setRenaming] = useState(false)
+  const [draftName, setDraftName] = useState(project.name)
+  const [confirmingRemove, setConfirmingRemove] = useState(false)
+
+  useEffect(() => setDraftName(project.name), [project.name])
+
+  const commitRename = (): void => {
+    setRenaming(false)
+    const name = draftName.trim()
+    if (name && name !== project.name) void renameTodoProject(project.id, name)
+    else setDraftName(project.name)
+  }
+
+  return (
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div
+            className={cn(
+              'flex w-full items-center rounded px-2 py-1 text-[13px]',
+              selected
+                ? 'bg-active text-fg'
+                : 'text-fg-muted hover:bg-hover hover:text-fg'
+            )}
+          >
+            {renaming ? (
+              <input
+                autoFocus
+                value={draftName}
+                onChange={(event) => setDraftName(event.target.value)}
+                onBlur={commitRename}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') commitRename()
+                  if (event.key === 'Escape') {
+                    setDraftName(project.name)
+                    setRenaming(false)
+                  }
+                  event.stopPropagation()
+                }}
+                className="h-6 min-w-0 flex-1 rounded-sm border border-accent bg-bg px-1 text-[13px] text-fg outline-none"
+              />
+            ) : (
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                onClick={onSelect}
+              >
+                <ListTodo className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{project.name}</span>
+              </button>
+            )}
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
+          <ContextMenuItem
+            onSelect={() => {
+              setDraftName(project.name)
+              setRenaming(true)
+            }}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Rename project
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem destructive onSelect={() => setConfirmingRemove(true)}>
+            <Trash2 className="h-3.5 w-3.5" />
+            Remove project
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+
+      <AlertDialog open={confirmingRemove} onOpenChange={setConfirmingRemove}>
+        <AlertDialogContent>
+          <AlertDialogTitle>Remove “{project.name}”?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This removes the To Do project. Terminal projects, sessions, and files are unaffected.
+          </AlertDialogDescription>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void removeTodoProject(project.id)}>
+              Remove project
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  )
+}
+
 interface SidebarCreateActionsProps {
-  activeSection: SidebarSection
+  activeSection: WorkspaceView
   collapsed: boolean
   onNewProject: () => void
   onNewSession: () => void
@@ -1120,6 +1223,7 @@ function SidebarCreateActions({
 
 interface SidebarProps {
   onNewProject: () => void
+  onNewTodoProject: () => void
   onNewSession: (projectId?: string) => void
   onOpenGit: (sessionId: string) => void
   terminalLayouts: Record<string, Record<string, SessionTerminalLayout>>
@@ -1128,12 +1232,14 @@ interface SidebarProps {
 
 export function Sidebar({
   onNewProject,
+  onNewTodoProject,
   onNewSession,
   onOpenGit,
   terminalLayouts,
   onFocusTerminal
 }: SidebarProps): JSX.Element {
   const projects = useWorkspace((state) => state.projects)
+  const todoProjects = useWorkspace((state) => state.todoProjects)
   const sessions = useWorkspace((state) => state.sessions)
   const statuses = useWorkspace((state) => state.statuses)
   const terminalDirectories = useWorkspace((state) => state.terminalDirectories)
@@ -1141,11 +1247,14 @@ export function Sidebar({
   const opencodeTuiInstances = useWorkspace((state) => state.opencodeTuiInstances)
   const instanceLabelMode = useWorkspace((state) => state.opencodeTuiInstanceLabelMode)
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
+  const selectedTodoProjectId = useWorkspace((state) => state.selectedTodoProjectId)
   const selectSession = useWorkspace((state) => state.selectSession)
+  const selectTodoProject = useWorkspace((state) => state.selectTodoProject)
   const setSessionIcon = useWorkspace((state) => state.setSessionIcon)
   const collapsed = useWorkspace((state) => state.sidebarCollapsed)
   const toggleSidebar = useWorkspace((state) => state.toggleSidebar)
-  const [activeSection, setActiveSection] = useState<SidebarSection>('projects')
+  const activeSection = useWorkspace((state) => state.activeWorkspaceView)
+  const setActiveSection = useWorkspace((state) => state.setWorkspaceView)
   const [terminalSettings, setTerminalSettings] = useState(() => getTerminalSettings())
 
   useEffect(() => subscribeTerminalSettings(() => setTerminalSettings(getTerminalSettings())), [])
@@ -1262,6 +1371,26 @@ export function Sidebar({
               })}
             </div>
           )}
+          {activeSection === 'todo' && (
+            <div className="flex flex-col items-center gap-1">
+              {todoProjects.map((project) => (
+                <button
+                  key={project.id}
+                  type="button"
+                  onClick={() => selectTodoProject(project.id)}
+                  title={project.name}
+                  className={cn(
+                    'flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase',
+                    project.id === selectedTodoProjectId
+                      ? 'bg-active text-fg'
+                      : 'text-fg-muted hover:bg-hover hover:text-fg'
+                  )}
+                >
+                  {project.name.slice(0, 2)}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="mt-auto shrink-0">
           <SidebarCreateActions
@@ -1333,13 +1462,35 @@ export function Sidebar({
           role="tabpanel"
           aria-labelledby="sidebar-section-tab-todo"
           hidden={activeSection !== 'todo'}
-          className="flex min-h-[180px] flex-col items-center justify-center gap-2 px-4 text-center"
         >
-          <ListTodo className="h-5 w-5 text-fg-subtle" />
-          <div>
-            <p className="text-[13px] text-fg-muted">Track work for this project</p>
-            <p className="mt-1 text-xs text-fg-subtle">Tasks you add here stay with the session.</p>
+          <div className="flex items-center px-2 py-1">
+            <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-fg-muted">
+              To Do projects
+            </span>
+            <span className="mr-1 text-[11px] text-fg-subtle">{todoProjects.length}</span>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="shrink-0"
+              onClick={onNewTodoProject}
+              title="New To Do project"
+              aria-label="New To Do project"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
           </div>
+          {todoProjects.length === 0 ? (
+            <p className="px-2 py-1 text-xs text-fg-subtle">No To Do projects yet.</p>
+          ) : (
+            todoProjects.map((project) => (
+              <TodoProjectRow
+                key={project.id}
+                project={project}
+                selected={project.id === selectedTodoProjectId}
+                onSelect={() => selectTodoProject(project.id)}
+              />
+            ))
+          )}
         </div>
       </div>
 

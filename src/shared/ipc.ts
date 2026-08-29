@@ -4,10 +4,12 @@ import type {
   GitInfoResponse,
   HostPlatform,
   NewProject,
+  NewTodoProject,
   NewSession,
   PathCheckResult,
   PathResolution,
   Project,
+  TodoProject,
   ProjectKind,
   Session,
   SessionTab,
@@ -31,6 +33,7 @@ import type {
 
 export interface WorkspaceData {
   projects: Project[]
+  todoProjects: TodoProject[]
   sessions: Session[]
 }
 
@@ -43,6 +46,10 @@ export const IpcChannels = {
   projectsCreate: 'projects:create',
   projectsUpdate: 'projects:update',
   projectsRemove: 'projects:remove',
+
+  todoProjectsCreate: 'todo-projects:create',
+  todoProjectsUpdate: 'todo-projects:update',
+  todoProjectsRemove: 'todo-projects:remove',
 
   sessionsCreate: 'sessions:create',
   sessionsDuplicate: 'sessions:duplicate',
@@ -223,6 +230,11 @@ export interface UpdateProjectRequest {
   patch: Partial<Pick<Project, 'name'>>
 }
 
+export interface UpdateTodoProjectRequest {
+  id: string
+  patch: Partial<Pick<TodoProject, 'name'>>
+}
+
 export interface UpdateSessionRequest {
   id: string
   patch: Partial<Pick<Session, 'name' | 'path' | 'shell' | 'color'>> & {
@@ -278,6 +290,11 @@ export interface RendererApi {
   projects: {
     create(input: NewProject): Promise<Project>
     update(req: UpdateProjectRequest): Promise<Project | null>
+    remove(id: string): Promise<void>
+  }
+  todoProjects: {
+    create(input: NewTodoProject): Promise<TodoProject>
+    update(req: UpdateTodoProjectRequest): Promise<TodoProject | null>
     remove(id: string): Promise<void>
   }
   workspace: {

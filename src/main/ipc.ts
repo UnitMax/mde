@@ -21,11 +21,13 @@ import {
   type TerminalDropMode,
   type UpdatePtyPaletteRequest,
   type UpdateProjectRequest,
+  type UpdateTodoProjectRequest,
   type UpdateSessionRequest,
   type UpdateSessionTabRequest,
   type SelectSessionTabRequest,
   type ValidatePathRequest,
-  type WritePtyRequest
+  type WritePtyRequest,
+  type WorkspaceData
 } from '@shared/ipc'
 import type {
   Distro,
@@ -33,10 +35,12 @@ import type {
   HostPlatform,
   GitInfoResponse,
   NewProject,
+  NewTodoProject,
   NewSession,
   PathCheckResult,
   PathResolution,
   Project,
+  TodoProject,
   OpenCodeTuiPluginRequest,
   OpenCodeTuiPluginState,
   OpenCodeTuiSetEnabledRequest,
@@ -61,18 +65,21 @@ import { buildVsCodeRemoteUri } from './vscode'
 import { readGitDiff, readGitInfo } from './git'
 import {
   createProject,
+  createTodoProject,
   createSession,
   duplicateSession,
   getSession,
   loadWorkspace,
   moveSession,
   removeProject,
+  removeTodoProject,
   removeSession,
   reorderSession,
   createSessionTab,
   removeSessionTab,
   selectSessionTab,
   updateProject,
+  updateTodoProject,
   updateSession,
   updateSessionTab
 } from './store/workspace'
@@ -187,9 +194,7 @@ export function registerIpcHandlers(
     clipboard.writeText(text)
   })
 
-  handle<void, { projects: Project[]; sessions: Session[] }>(IpcChannels.workspaceList, () =>
-    loadWorkspace()
-  )
+  handle<void, WorkspaceData>(IpcChannels.workspaceList, () => loadWorkspace())
   handle<NewProject, Project>(IpcChannels.projectsCreate, (input) => createProject(input))
   handle<UpdateProjectRequest, Project | null>(IpcChannels.projectsUpdate, (req) =>
     updateProject(req)
@@ -204,6 +209,14 @@ export function registerIpcHandlers(
     }
     await removeProject(id)
   })
+
+  handle<NewTodoProject, TodoProject>(IpcChannels.todoProjectsCreate, (input) =>
+    createTodoProject(input)
+  )
+  handle<UpdateTodoProjectRequest, TodoProject | null>(IpcChannels.todoProjectsUpdate, (req) =>
+    updateTodoProject(req)
+  )
+  handle<string, void>(IpcChannels.todoProjectsRemove, (id) => removeTodoProject(id))
 
   handle<NewSession, Session>(IpcChannels.sessionsCreate, (input) => createSession(input))
   handle<string, Session | null>(IpcChannels.sessionsDuplicate, (id) => duplicateSession(id))

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   validateProject,
   validateProjectList,
+  validateTodoProject,
+  validateTodoProjectList,
   reorderSessionList,
   validateSession,
   validateSessionList,
@@ -23,6 +25,12 @@ const session = {
   distro: 'Ubuntu-24.04',
   path: '/home/me/src/app',
   createdAt: '2026-01-01T00:00:00.000Z'
+}
+
+const todoProject = {
+  id: 'todo-project-1',
+  name: 'Release plan',
+  createdAt: '2026-01-02T00:00:00.000Z'
 }
 
 const defaultTab = {
@@ -51,6 +59,14 @@ describe('workspace validation', () => {
     expect(validateProject(null)).toBeNull()
     expect(validateProject({ ...project, name: '' })).toBeNull()
     expect(validateProjectList([project, project, { nope: true }])).toHaveLength(1)
+  })
+
+  it('validates independent To Do projects', () => {
+    expect(validateTodoProject({ ...todoProject, name: '  Release plan  ' })).toEqual(todoProject)
+    expect(validateTodoProject({ ...todoProject, name: '' })).toBeNull()
+    expect(validateTodoProjectList([todoProject, todoProject, { nope: true }])).toEqual([
+      todoProject
+    ])
   })
 
   it('requires sessions to reference a project and retain their own path', () => {
@@ -180,14 +196,19 @@ describe('workspace validation', () => {
   })
 
   it('loads grouped projects and sessions from the new workspace shape', () => {
-    expect(validateWorkspace({ projects: [project], sessions: [session] })).toEqual({
+    expect(validateWorkspace({
       projects: [project],
+      todoProjects: [todoProject],
+      sessions: [session]
+    })).toEqual({
+      projects: [project],
+      todoProjects: [todoProject],
       sessions: [normalizedSession]
     })
   })
 
   it('starts empty for the old flat project shape', () => {
-    expect(validateWorkspace([session])).toEqual({ projects: [], sessions: [] })
+    expect(validateWorkspace([session])).toEqual({ projects: [], todoProjects: [], sessions: [] })
   })
 })
 

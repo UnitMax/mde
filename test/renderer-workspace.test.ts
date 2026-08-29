@@ -15,7 +15,12 @@ describe('renderer workspace event bridge', () => {
   const directoryListeners: Array<(update: { terminalId: string; directory: string | null }) => void> = []
   const api = {
     platform: { info: vi.fn(async () => ({ platform: 'linux', arch: 'x64' })) },
-    workspace: { list: vi.fn(async () => ({ projects: [], sessions: [] })) },
+    workspace: { list: vi.fn(async () => ({ projects: [], todoProjects: [], sessions: [] })) },
+    todoProjects: {
+      create: vi.fn(),
+      update: vi.fn(),
+      remove: vi.fn()
+    },
     sessions: {
       create: vi.fn(),
       duplicate: vi.fn(),
@@ -104,13 +109,19 @@ describe('renderer workspace event bridge', () => {
       opencodeTuiInstances: {},
       opencodeTuiInstanceLabelMode: 'numbered',
       sessions: [],
-      selectedSessionId: null
+      todoProjects: [],
+      selectedSessionId: null,
+      selectedTodoProjectId: null,
+      activeWorkspaceView: 'projects'
     })
     api.pty.onExit.mockClear()
     api.sessions.create.mockReset()
     api.sessions.duplicate.mockReset()
     api.sessions.update.mockClear()
     api.sessions.reorder.mockReset()
+    api.todoProjects.create.mockReset()
+    api.todoProjects.update.mockReset()
+    api.todoProjects.remove.mockReset()
     api.tabs.create.mockReset()
     api.tabs.select.mockReset()
     api.tabs.update.mockReset()
@@ -243,6 +254,67 @@ describe('renderer workspace event bridge', () => {
     })
     expect(session.id).toBe('terminal-session')
     expect(useWorkspace.getState().selectedSessionId).toBe('terminal-session')
+    expect(useWorkspace.getState().activeWorkspaceView).toBe('projects')
+  })
+
+  it('creates, selects, renames, and removes independent To Do projects', async () => {
+    const first = {
+      id: 'todo-1',
+      name: 'Release plan',
+      createdAt: '2026-01-01T00:00:00.000Z'
+    }
+    const second = {
+      id: 'todo-2',
+      name: 'Roadmap',
+      createdAt: '2026-01-02T00:00:00.000Z'
+    }
+    useWorkspace.setState({
+      todoProjects: [first],
+      selectedTodoProjectId: first.id,
+      activeWorkspaceView: 'todo'
+    })
+    api.todoProjects.create.mockResolvedValue(second)
+
+    await useWorkspace.getState().addTodoProject({ name: second.name })
+
+    expect(useWorkspace.getState()).toMatchObject({
+      todoProjects: [first, second],
+      selectedTodoProjectId: second.id,
+      activeWorkspaceView: 'todo'
+    })
+
+    const renamed = { ...second, name: 'Product roadmap' }
+    api.todoProjects.update.mockResolvedValue(renamed)
+    await useWorkspace.getState().renameTodoProject(second.id, renamed.name)
+    expect(useWorkspace.getState().todoProjects[1]).toEqual(renamed)
+
+    api.todoProjects.remove.mockResolvedValue(undefined)
+    await useWorkspace.getState().removeTodoProject(second.id)
+    expect(useWorkspace.getState().todoProjects).toEqual([first])
+    expect(useWorkspace.getState().selectedTodoProjectId).toBe(first.id)
+  })
+
+  it('preserves selections while switching workspace views', () => {
+    useWorkspace.setState({
+      todoProjects: [{
+        id: 'todo-1',
+        name: 'Release plan',
+        createdAt: '2026-01-01T00:00:00.000Z'
+      }],
+      selectedTodoProjectId: 'todo-1',
+      selectedSessionId: 'session-1',
+      activeWorkspaceView: 'projects'
+    })
+
+    useWorkspace.getState().setWorkspaceView('todo')
+    expect(useWorkspace.getState()).toMatchObject({
+      selectedTodoProjectId: 'todo-1',
+      selectedSessionId: 'session-1',
+      activeWorkspaceView: 'todo'
+    })
+
+    useWorkspace.getState().selectSession('session-1')
+    expect(useWorkspace.getState().activeWorkspaceView).toBe('projects')
   })
 
   it('appends and selects a duplicated session returned by the main process', async () => {

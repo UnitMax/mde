@@ -3,6 +3,7 @@ import type { PlatformInfo, WorkspaceData } from '@shared/ipc'
 import type {
   Distro,
   NewProject,
+  NewTodoProject,
   NewSession,
   OpenCodeTuiAttentionReason,
   OpenCodeTuiInstanceLabelMode,
@@ -11,6 +12,7 @@ import type {
   OpenCodeTuiStatus,
   OpenCodeTuiStatusUpdate,
   Project,
+  TodoProject,
   PersistedTerminalLayout,
   PtyDirectoryUpdate,
   PtyExitInfo,
@@ -30,14 +32,19 @@ export interface OpenCodeTuiStatusState {
 
 let eventBridgeReady = false
 
+export type WorkspaceView = 'projects' | 'todo'
+
 function belongsToSession(runtimeId: string, sessionId: string): boolean {
   return runtimeId === sessionId || runtimeId.startsWith(`${sessionId}:`)
 }
 
 interface WorkspaceState {
   projects: Project[]
+  todoProjects: TodoProject[]
   sessions: Session[]
   selectedSessionId: string | null
+  selectedTodoProjectId: string | null
+  activeWorkspaceView: WorkspaceView
   statuses: Record<string, PtyStatus>
   terminalDirectories: Record<string, string>
   exits: Record<string, PtyExitInfo>
@@ -52,11 +59,17 @@ interface WorkspaceState {
 
   init: () => Promise<void>
   selectSession: (id: string | null) => void
+  setWorkspaceView: (view: WorkspaceView) => void
+  selectTodoProject: (id: string) => void
   toggleSidebar: () => void
 
   addProject: (input: NewProject) => Promise<Project>
   renameProject: (id: string, name: string) => Promise<void>
   removeProject: (id: string) => Promise<void>
+
+  addTodoProject: (input: NewTodoProject) => Promise<TodoProject>
+  renameTodoProject: (id: string, name: string) => Promise<void>
+  removeTodoProject: (id: string) => Promise<void>
 
   addSession: (input: NewSession) => Promise<Session>
   duplicateSession: (id: string) => Promise<Session | null>
@@ -86,8 +99,11 @@ interface WorkspaceState {
 
 export const useWorkspace = create<WorkspaceState>((set, get) => ({
   projects: [],
+  todoProjects: [],
   sessions: [],
   selectedSessionId: null,
+  selectedTodoProjectId: null,
+  activeWorkspaceView: 'projects',
   statuses: {},
   terminalDirectories: {},
   exits: {},
@@ -121,9 +137,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     ])
 
     const { projects, sessions } = workspace as WorkspaceData
+    const todoProjects = workspace.todoProjects ?? []
     set({
       platform,
       projects,
+      todoProjects,
       sessions,
       statuses,
       // The event bridge may receive a report while these startup requests
@@ -133,6 +151,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       opencodeTuiInstanceLabelMode: opencodeTuiSettings.instanceLabelMode,
       wslAvailable,
       selectedSessionId: null,
+      selectedTodoProjectId: todoProjects[0]?.id ?? null,
+      activeWorkspaceView: 'projects',
       ready: true
     })
 
@@ -142,14 +162,37 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   selectSession: (id) =>
     set((state) => {
       const tuiStatus = id ? state.opencodeTuiStatuses[id] : undefined
-      if (!id || !tuiStatus?.unread) return { selectedSessionId: id }
+      if (!id || !tuiStatus?.unread) {
+        return {
+          selectedSessionId: id,
+          ...(id ? { activeWorkspaceView: 'projects' as const } : {})
+        }
+      }
       const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
       opencodeTuiStatuses[id] = { ...tuiStatus, unread: false }
       return {
         selectedSessionId: id,
+        activeWorkspaceView: 'projects',
         opencodeTuiStatuses
       }
     }),
+
+  setWorkspaceView: (view) =>
+    set((state) => ({
+      activeWorkspaceView: view,
+      ...(view === 'todo' && !state.todoProjects.some(
+        (project) => project.id === state.selectedTodoProjectId
+      )
+        ? { selectedTodoProjectId: state.todoProjects[0]?.id ?? null }
+        : {})
+    })),
+
+  selectTodoProject: (id) =>
+    set((state) =>
+      state.todoProjects.some((project) => project.id === id)
+        ? { selectedTodoProjectId: id, activeWorkspaceView: 'todo' }
+        : {}
+    ),
 
   toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
 
@@ -200,16 +243,54 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     })
   },
 
+  addTodoProject: async (input) => {
+    const project = await window.api.todoProjects.create(input)
+    set((state) => ({
+      todoProjects: [...state.todoProjects, project],
+      selectedTodoProjectId: project.id,
+      activeWorkspaceView: 'todo'
+    }))
+    return project
+  },
+
+  renameTodoProject: async (id, name) => {
+    const updated = await window.api.todoProjects.update({ id, patch: { name } })
+    if (!updated) return
+    set((state) => ({
+      todoProjects: state.todoProjects.map((project) => project.id === id ? updated : project)
+    }))
+  },
+
+  removeTodoProject: async (id) => {
+    await window.api.todoProjects.remove(id)
+    set((state) => {
+      const removedIndex = state.todoProjects.findIndex((project) => project.id === id)
+      const todoProjects = state.todoProjects.filter((project) => project.id !== id)
+      const selectedTodoProjectId = state.selectedTodoProjectId === id
+        ? todoProjects[Math.min(removedIndex, todoProjects.length - 1)]?.id ?? null
+        : state.selectedTodoProjectId
+      return { todoProjects, selectedTodoProjectId }
+    })
+  },
+
   addSession: async (input) => {
     const session = await window.api.sessions.create(input)
-    set((state) => ({ sessions: [...state.sessions, session], selectedSessionId: session.id }))
+    set((state) => ({
+      sessions: [...state.sessions, session],
+      selectedSessionId: session.id,
+      activeWorkspaceView: 'projects'
+    }))
     return session
   },
 
   duplicateSession: async (id) => {
     const session = await window.api.sessions.duplicate(id)
     if (!session) return null
-    set((state) => ({ sessions: [...state.sessions, session], selectedSessionId: session.id }))
+    set((state) => ({
+      sessions: [...state.sessions, session],
+      selectedSessionId: session.id,
+      activeWorkspaceView: 'projects'
+    }))
     return session
   },
 

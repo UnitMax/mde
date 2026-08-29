@@ -33,6 +33,12 @@ export interface Project {
   createdAt: string
 }
 
+export interface TodoProject {
+  id: string
+  name: string
+  createdAt: string
+}
+
 export type TerminalLayout =
   | 'single'
   | 'columns'
@@ -96,6 +102,7 @@ export interface Session {
 }
 
 export type NewProject = Omit<Project, 'id' | 'createdAt'>
+export type NewTodoProject = Omit<TodoProject, 'id' | 'createdAt'>
 export type NewSession = Omit<Session, 'id' | 'createdAt' | 'color' | 'icon' | 'tabs' | 'activeTabId'>
 
 export interface Distro {

@@ -8,15 +8,18 @@ import type {
   RemoveSessionTabRequest,
   SelectSessionTabRequest,
   UpdateProjectRequest,
+  UpdateTodoProjectRequest,
   UpdateSessionRequest,
   UpdateSessionTabRequest,
   WorkspaceData
 } from '@shared/ipc'
 import type {
   NewProject,
+  NewTodoProject,
   NewSession,
   PersistedTerminalLayout,
   Project,
+  TodoProject,
   Session,
   SessionTab,
   TerminalLayout
@@ -183,6 +186,28 @@ export function validateProjectList(raw: unknown): Project[] {
   )
 }
 
+export function validateTodoProject(raw: unknown): TodoProject | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const r = raw as Record<string, unknown>
+  if (!isNonEmptyString(r.id) || !isNonEmptyString(r.name)) return null
+
+  return {
+    id: r.id,
+    name: r.name.trim(),
+    createdAt: isNonEmptyString(r.createdAt) ? r.createdAt : new Date(0).toISOString()
+  }
+}
+
+export function validateTodoProjectList(raw: unknown): TodoProject[] {
+  if (!Array.isArray(raw)) return []
+  return uniqueEntries(
+    raw
+      .map(validateTodoProject)
+      .filter((project): project is TodoProject => project !== null),
+    'to-do project'
+  )
+}
+
 export function validateSession(raw: unknown, projectIds: Set<string>): Session | null {
   if (typeof raw !== 'object' || raw === null) return null
   const r = raw as Record<string, unknown>
@@ -230,13 +255,14 @@ export function validateSessionList(raw: unknown, projectIds: Set<string>): Sess
 
 export function validateWorkspace(raw: unknown): WorkspaceData {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    return { projects: [], sessions: [] }
+    return { projects: [], todoProjects: [], sessions: [] }
   }
   const record = raw as Record<string, unknown>
   const projects = validateProjectList(record.projects)
+  const todoProjects = validateTodoProjectList(record.todoProjects)
   const projectIds = new Set(projects.map((project) => project.id))
   const sessions = validateSessionList(record.sessions, projectIds)
-  return { projects, sessions }
+  return { projects, todoProjects, sessions }
 }
 
 export async function loadWorkspace(): Promise<WorkspaceData> {
@@ -250,7 +276,7 @@ export async function loadWorkspace(): Promise<WorkspaceData> {
     if (code !== 'ENOENT') {
       console.warn('[workspace] could not read workspace.json, starting empty:', error)
     }
-    cache = { projects: [], sessions: [] }
+    cache = { projects: [], todoProjects: [], sessions: [] }
     return cache
   }
 
@@ -259,7 +285,7 @@ export async function loadWorkspace(): Promise<WorkspaceData> {
     parsed = JSON.parse(text)
   } catch (error) {
     console.warn('[workspace] workspace.json is not valid JSON, starting empty:', error)
-    cache = { projects: [], sessions: [] }
+    cache = { projects: [], todoProjects: [], sessions: [] }
     return cache
   }
 
@@ -327,11 +353,54 @@ export async function removeProject(id: string): Promise<string[]> {
     .filter((session) => session.projectId === id)
     .map((session) => session.id)
   cache = {
+    ...workspace,
     projects: workspace.projects.filter((project) => project.id !== id),
     sessions: workspace.sessions.filter((session) => session.projectId !== id)
   }
   await enqueueWrite(cache)
   return removedSessionIds
+}
+
+export async function createTodoProject(input: NewTodoProject): Promise<TodoProject> {
+  const workspace = await loadWorkspace()
+  const name = input.name.trim()
+  if (!name) throw new Error('To Do project name cannot be empty')
+
+  const project: TodoProject = {
+    id: randomUUID(),
+    name,
+    createdAt: new Date().toISOString()
+  }
+  cache = { ...workspace, todoProjects: [...workspace.todoProjects, project] }
+  await enqueueWrite(cache)
+  return project
+}
+
+export async function updateTodoProject(
+  req: UpdateTodoProjectRequest
+): Promise<TodoProject | null> {
+  const workspace = await loadWorkspace()
+  const index = workspace.todoProjects.findIndex((project) => project.id === req.id)
+  const existing = workspace.todoProjects[index]
+  if (!existing) return null
+
+  const name = req.patch.name?.trim()
+  if (!name) return existing
+  const updated = { ...existing, name }
+  const todoProjects = [...workspace.todoProjects]
+  todoProjects[index] = updated
+  cache = { ...workspace, todoProjects }
+  await enqueueWrite(cache)
+  return updated
+}
+
+export async function removeTodoProject(id: string): Promise<void> {
+  const workspace = await loadWorkspace()
+  cache = {
+    ...workspace,
+    todoProjects: workspace.todoProjects.filter((project) => project.id !== id)
+  }
+  await enqueueWrite(cache)
 }
 
 export async function createSession(input: NewSession): Promise<Session> {

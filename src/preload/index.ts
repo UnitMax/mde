@@ -29,6 +29,11 @@ const api: RendererApi = {
     update: (req) => ipcRenderer.invoke(IpcChannels.projectsUpdate, req),
     remove: (id) => ipcRenderer.invoke(IpcChannels.projectsRemove, id)
   },
+  todoProjects: {
+    create: (input) => ipcRenderer.invoke(IpcChannels.todoProjectsCreate, input),
+    update: (req) => ipcRenderer.invoke(IpcChannels.todoProjectsUpdate, req),
+    remove: (id) => ipcRenderer.invoke(IpcChannels.todoProjectsRemove, id)
+  },
   workspace: {
     list: () => ipcRenderer.invoke(IpcChannels.workspaceList)
   },
