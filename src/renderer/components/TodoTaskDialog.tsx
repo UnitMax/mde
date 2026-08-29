@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { TodoProject, TodoTask } from '@shared/types'
 import { todoTaskIdentifier } from '@shared/todo'
 import {
@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { MarkdownEditor, type MarkdownEditorHandle } from '@/components/MarkdownEditor'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useWorkspace } from '@/store/workspace'
 
@@ -43,16 +44,15 @@ export function TodoTaskDialog({
   const updateTodoTask = useWorkspace((state) => state.updateTodoTask)
   const removeTodoTask = useWorkspace((state) => state.removeTodoTask)
   const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
   const [columnId, setColumnId] = useState(defaultColumnId)
   const [saving, setSaving] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const descriptionEditorRef = useRef<MarkdownEditorHandle>(null)
 
   useEffect(() => {
     if (!open) return
     setTitle(task?.title ?? '')
-    setDescription(task?.description ?? '')
     setColumnId(task?.columnId ?? defaultColumnId)
     setSaving(false)
     setConfirmingDelete(false)
@@ -60,7 +60,8 @@ export function TodoTaskDialog({
   }, [defaultColumnId, open, task])
 
   const save = async (): Promise<void> => {
-    if (!title.trim() || saving) return
+    if (!title.trim() || saving || !descriptionEditorRef.current) return
+    const description = descriptionEditorRef.current.getMarkdown()
     setSaving(true)
     setError(null)
     try {
@@ -96,7 +97,7 @@ export function TodoTaskDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-h-[90vh] w-[calc(100%-2rem)] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{task ? 'Edit task' : 'New task'}</DialogTitle>
             <DialogDescription>
@@ -117,13 +118,10 @@ export function TodoTaskDialog({
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="todo-task-description">Description</Label>
-              <textarea
-                id="todo-task-description"
-                value={description}
-                placeholder="Add context or acceptance notes…"
-                rows={6}
-                onChange={(event) => setDescription(event.target.value)}
-                className="w-full resize-y rounded border border-line-strong bg-bg px-2.5 py-2 text-[13px] text-fg outline-none placeholder:text-fg-subtle focus:border-accent"
+              <MarkdownEditor
+                key={task?.id ?? 'new'}
+                ref={descriptionEditorRef}
+                defaultValue={task?.description ?? ''}
               />
             </div>
             <div className="space-y-1.5">

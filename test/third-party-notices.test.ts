@@ -10,6 +10,10 @@ describe('third-party notice package selection', () => {
   it('tracks every renderer library that is bundled into shipped assets', () => {
     expect(bundledRendererDependencies).toEqual(expect.arrayContaining([
       '@radix-ui/react-dialog',
+      '@tiptap/extension-table',
+      '@tiptap/markdown',
+      '@tiptap/react',
+      '@tiptap/starter-kit',
       '@xterm/xterm',
       'lucide-react',
       'react',

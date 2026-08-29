@@ -91,6 +91,139 @@
   .terminal-host .xterm-viewport {
     background-color: transparent !important;
   }
+
+  .todo-task-description-editor {
+    width: 100%;
+    height: 16rem;
+    min-height: 9rem;
+    max-height: min(32rem, calc(90vh - 12rem));
+    overflow: hidden;
+    resize: vertical;
+    border: 1px solid var(--color-line-strong);
+    border-radius: 0.25rem;
+    background-color: var(--color-bg);
+  }
+
+  .todo-task-description-editor-content {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .todo-task-description-editor .ProseMirror {
+    height: 100%;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0.5rem 0.625rem;
+    color: var(--color-fg);
+    font-size: 13px;
+    line-height: 1.5;
+    outline: none;
+    user-select: text;
+  }
+
+  .todo-task-description-editor .ProseMirror:focus {
+    box-shadow: inset 0 0 0 1px var(--color-accent);
+  }
+
+  .todo-task-description-editor .ProseMirror p,
+  .todo-task-description-editor .ProseMirror ul,
+  .todo-task-description-editor .ProseMirror ol,
+  .todo-task-description-editor .ProseMirror blockquote,
+  .todo-task-description-editor .ProseMirror pre,
+  .todo-task-description-editor .ProseMirror table {
+    margin: 0.5rem 0;
+  }
+
+  .todo-task-description-editor .ProseMirror > :first-child {
+    margin-top: 0;
+  }
+
+  .todo-task-description-editor .ProseMirror > :last-child {
+    margin-bottom: 0;
+  }
+
+  .todo-task-description-editor .ProseMirror ul,
+  .todo-task-description-editor .ProseMirror ol {
+    padding-left: 1.25rem;
+  }
+
+  .todo-task-description-editor .ProseMirror ul {
+    list-style-type: disc;
+  }
+
+  .todo-task-description-editor .ProseMirror ol {
+    list-style-type: decimal;
+  }
+
+  .todo-task-description-editor .ProseMirror h1,
+  .todo-task-description-editor .ProseMirror h2,
+  .todo-task-description-editor .ProseMirror h3 {
+    margin: 0.75rem 0 0.35rem;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+
+  .todo-task-description-editor .ProseMirror h1 {
+    font-size: 1.25rem;
+  }
+
+  .todo-task-description-editor .ProseMirror h2 {
+    font-size: 1.1rem;
+  }
+
+  .todo-task-description-editor .ProseMirror h3 {
+    font-size: 1rem;
+  }
+
+  .todo-task-description-editor .ProseMirror blockquote {
+    border-left: 3px solid var(--color-accent);
+    color: var(--color-fg-muted);
+    padding-left: 0.75rem;
+  }
+
+  .todo-task-description-editor .ProseMirror code,
+  .todo-task-description-editor .ProseMirror pre {
+    font-family: var(--font-mono);
+  }
+
+  .todo-task-description-editor .ProseMirror code {
+    border-radius: 0.2rem;
+    background-color: var(--color-panel);
+    padding: 0.1rem 0.25rem;
+  }
+
+  .todo-task-description-editor .ProseMirror pre {
+    overflow-x: auto;
+    border: 1px solid var(--color-line);
+    border-radius: 0.25rem;
+    background-color: var(--color-panel);
+    padding: 0.5rem 0.625rem;
+  }
+
+  .todo-task-description-editor .ProseMirror a {
+    color: var(--color-accent);
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  .todo-task-description-editor .ProseMirror table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .todo-task-description-editor .ProseMirror th,
+  .todo-task-description-editor .ProseMirror td {
+    border: 1px solid var(--color-line-strong);
+    padding: 0.3rem 0.5rem;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .todo-task-description-editor .ProseMirror th {
+    background-color: var(--color-panel);
+    font-weight: 600;
+  }
 }
 
 @keyframes mde-menu-in {

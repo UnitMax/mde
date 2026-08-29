@@ -14,6 +14,12 @@ interface TodoProjectViewProps {
   onOpenSettings: () => void
 }
 
+function todoTaskDescriptionPreview(description: string): string {
+  const lines = description.split(/\r\n|\r|\n/)
+  const firstLine = lines[0] ?? ''
+  return lines.length > 1 ? `${firstLine}…` : firstLine
+}
+
 export function TodoProjectView({
   project,
   tasks,
@@ -162,8 +168,8 @@ export function TodoProjectView({
                         {task.title}
                       </span>
                       {task.description && (
-                        <span className="mt-1 block line-clamp-3 whitespace-pre-wrap text-xs leading-4 text-fg-muted">
-                          {task.description}
+                        <span className="mt-1 block truncate text-xs leading-4 text-fg-muted">
+                          {todoTaskDescriptionPreview(task.description)}
                         </span>
                       )}
                     </button>

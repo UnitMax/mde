@@ -14,7 +14,7 @@ The `react-remove-scroll-bar@2.3.8` npm tarball declares MIT but omits its licen
 
 ## Locked package inventory
 
-Generated from `package-lock.json` by `npm run licenses`. 62 shipped package entries are listed, including production dependencies and libraries bundled into renderer assets. Build-time-only dependencies are excluded.
+Generated from `package-lock.json` by `npm run licenses`. 111 shipped package entries are listed, including production dependencies and libraries bundled into renderer assets. Build-time-only dependencies are excluded.
 
 | Package | Version | Direct dependency | Declared license | Source |
 | --- | --- | --- | --- | --- |
@@ -56,6 +56,35 @@ Generated from `package-lock.json` by `npm run licenses`. 62 shipped package ent
 | `@radix-ui/react-use-size` | `1.1.4` | no | MIT | https://registry.npmjs.org/@radix-ui/react-use-size/-/react-use-size-1.1.4.tgz |
 | `@radix-ui/react-visually-hidden` | `1.2.11` | no | MIT | https://registry.npmjs.org/@radix-ui/react-visually-hidden/-/react-visually-hidden-1.2.11.tgz |
 | `@radix-ui/rect` | `1.1.3` | no | MIT | https://registry.npmjs.org/@radix-ui/rect/-/rect-1.1.3.tgz |
+| `@tiptap/core` | `3.30.5` | no | MIT | https://registry.npmjs.org/@tiptap/core/-/core-3.30.5.tgz |
+| `@tiptap/extension-blockquote` | `3.30.5` | no | MIT | https://registry.npmjs.org/@tiptap/extension-blockquote/-/extension-blockquote-3.30.5.tgz |
+| `@tiptap/extension-bold` | `3.30.5` | no | MIT | https://registry.npmjs.org/@tiptap/extension-bold/-/extension-bold-3.30.5.tgz |
+| `@tiptap/extension-bullet-list` | `3.30.5` | no | MIT | https://registry.npmjs.org/@tiptap/extension-bullet-list/-/extension-bullet-list-3.30.5.tgz |
+| `@tiptap/extension-code` | `3.30.5` | no | MIT | https://registry.npmjs.org/@tiptap/extension-code/-/extension-code-3.30.5.tgz |
+| `@tiptap/extension-code-block` | `3.30.5` | no | MIT | https://registry.npmjs.org/@tiptap/extension-code-block/-/extension-code-block-3.30.5.tgz |
+| `@tiptap/extension-document` | `3.30.5` | no | MIT | https://registry.npmjs.org/@tiptap/extension-document/-/extension-document-3.30.5.tgz |
+| `@tiptap/extension-dropcursor` | `3.30.5` | no | MIT | https://registry.npmjs.org/@tiptap/extension-dropcursor/-/extension-dropcursor-3.30.5.tgz |
+| `@tiptap/extension-gapcursor` | `3.30.5` | no | MIT | https://registry.npmjs.org/@tiptap/extension-gapcursor/-/extension-gapcursor-3.30.5.tgz |
+| `@tiptap/extension-hard-break` | `3.30.5` | no | MIT | https://registry.npmjs.org/@tiptap/extension-hard-break/-/extension-hard-break-3.30.5.tgz |
+| `@tiptap/extension-heading` | `3.30.5` | no | MIT | https://registry.npmjs.org/@tiptap/extension-heading/-/extension-heading-3.30.5.tgz |
+| `@tiptap/extension-horizontal-rule` | `3.30.5` | no | MIT | https://registry.npmjs.org/@tiptap/extension-horizontal-rule/-/extension-horizontal-rule-3.30.5.tgz |
+| `@tiptap/extension-italic` | `3.30.5` | no | MIT | https://registry.npmjs.org/@tiptap/extension-italic/-/extension-italic-3.30.5.tgz |
+| `@tiptap/extension-link` | `3.30.5` | no | MIT | https://registry.npmjs.org/@tiptap/extension-link/-/extension-link-3.30.5.tgz |
+| `@tiptap/extension-list` | `3.30.5` | no | MIT | https://registry.npmjs.org/@tiptap/extension-list/-/extension-list-3.30.5.tgz |
+| `@tiptap/extension-list-item` | `3.30.5` | no | MIT | https://registry.npmjs.org/@tiptap/extension-list-item/-/extension-list-item-3.30.5.tgz |
+| `@tiptap/extension-list-keymap` | `3.30.5` | no | MIT | https://registry.npmjs.org/@tiptap/extension-list-keymap/-/extension-list-keymap-3.30.5.tgz |
+| `@tiptap/extension-ordered-list` | `3.30.5` | no | MIT | https://registry.npmjs.org/@tiptap/extension-ordered-list/-/extension-ordered-list-3.30.5.tgz |
+| `@tiptap/extension-paragraph` | `3.30.5` | no | MIT | https://registry.npmjs.org/@tiptap/extension-paragraph/-/extension-paragraph-3.30.5.tgz |
+| `@tiptap/extension-strike` | `3.30.5` | no | MIT | https://registry.npmjs.org/@tiptap/extension-strike/-/extension-strike-3.30.5.tgz |
+| `@tiptap/extension-table` | `3.30.5` | yes | MIT | https://registry.npmjs.org/@tiptap/extension-table/-/extension-table-3.30.5.tgz |
+| `@tiptap/extension-text` | `3.30.5` | no | MIT | https://registry.npmjs.org/@tiptap/extension-text/-/extension-text-3.30.5.tgz |
+| `@tiptap/extension-underline` | `3.30.5` | no | MIT | https://registry.npmjs.org/@tiptap/extension-underline/-/extension-underline-3.30.5.tgz |
+| `@tiptap/extensions` | `3.30.5` | no | MIT | https://registry.npmjs.org/@tiptap/extensions/-/extensions-3.30.5.tgz |
+| `@tiptap/markdown` | `3.30.5` | yes | MIT | https://registry.npmjs.org/@tiptap/markdown/-/markdown-3.30.5.tgz |
+| `@tiptap/pm` | `3.30.5` | no | MIT | https://registry.npmjs.org/@tiptap/pm/-/pm-3.30.5.tgz |
+| `@tiptap/react` | `3.30.5` | yes | MIT | https://registry.npmjs.org/@tiptap/react/-/react-3.30.5.tgz |
+| `@tiptap/starter-kit` | `3.30.5` | yes | MIT | https://registry.npmjs.org/@tiptap/starter-kit/-/starter-kit-3.30.5.tgz |
+| `@types/use-sync-external-store` | `0.0.6` | no | MIT | https://registry.npmjs.org/@types/use-sync-external-store/-/use-sync-external-store-0.0.6.tgz |
 | `@xterm/addon-fit` | `0.11.0` | yes | MIT | https://registry.npmjs.org/@xterm/addon-fit/-/addon-fit-0.11.0.tgz |
 | `@xterm/addon-webgl` | `0.19.0` | yes | MIT | https://registry.npmjs.org/@xterm/addon-webgl/-/addon-webgl-0.19.0.tgz |
 | `@xterm/xterm` | `6.0.0` | yes | MIT | https://registry.npmjs.org/@xterm/xterm/-/xterm-6.0.0.tgz |
@@ -63,22 +92,42 @@ Generated from `package-lock.json` by `npm run licenses`. 62 shipped package ent
 | `class-variance-authority` | `0.7.1` | yes | Apache-2.0 | https://registry.npmjs.org/class-variance-authority/-/class-variance-authority-0.7.1.tgz |
 | `clsx` | `2.1.1` | yes | MIT | https://registry.npmjs.org/clsx/-/clsx-2.1.1.tgz |
 | `detect-node-es` | `1.1.0` | no | MIT | https://registry.npmjs.org/detect-node-es/-/detect-node-es-1.1.0.tgz |
+| `fast-equals` | `5.4.1` | no | MIT | https://registry.npmjs.org/fast-equals/-/fast-equals-5.4.1.tgz |
 | `get-nonce` | `1.0.1` | no | MIT | https://registry.npmjs.org/get-nonce/-/get-nonce-1.0.1.tgz |
 | `js-tokens` | `4.0.0` | no | MIT | https://registry.npmjs.org/js-tokens/-/js-tokens-4.0.0.tgz |
+| `linkifyjs` | `4.3.3` | no | MIT | https://registry.npmjs.org/linkifyjs/-/linkifyjs-4.3.3.tgz |
 | `loose-envify` | `1.4.0` | no | MIT | https://registry.npmjs.org/loose-envify/-/loose-envify-1.4.0.tgz |
 | `lucide-react` | `1.31.0` | yes | ISC | https://registry.npmjs.org/lucide-react/-/lucide-react-1.31.0.tgz |
+| `marked` | `17.0.6` | no | MIT | https://registry.npmjs.org/marked/-/marked-17.0.6.tgz |
 | `node-addon-api` | `7.1.1` | no | MIT | https://registry.npmjs.org/node-addon-api/-/node-addon-api-7.1.1.tgz |
 | `node-pty` | `1.1.0` | yes | MIT | https://registry.npmjs.org/node-pty/-/node-pty-1.1.0.tgz |
+| `orderedmap` | `2.1.1` | no | MIT | https://registry.npmjs.org/orderedmap/-/orderedmap-2.1.1.tgz |
+| `prosemirror-changeset` | `2.4.2` | no | MIT | https://registry.npmjs.org/prosemirror-changeset/-/prosemirror-changeset-2.4.2.tgz |
+| `prosemirror-commands` | `1.7.2` | no | MIT | https://registry.npmjs.org/prosemirror-commands/-/prosemirror-commands-1.7.2.tgz |
+| `prosemirror-dropcursor` | `1.8.3` | no | MIT | https://registry.npmjs.org/prosemirror-dropcursor/-/prosemirror-dropcursor-1.8.3.tgz |
+| `prosemirror-gapcursor` | `1.4.1` | no | MIT | https://registry.npmjs.org/prosemirror-gapcursor/-/prosemirror-gapcursor-1.4.1.tgz |
+| `prosemirror-history` | `1.5.0` | no | MIT | https://registry.npmjs.org/prosemirror-history/-/prosemirror-history-1.5.0.tgz |
+| `prosemirror-inputrules` | `1.5.1` | no | MIT | https://registry.npmjs.org/prosemirror-inputrules/-/prosemirror-inputrules-1.5.1.tgz |
+| `prosemirror-keymap` | `1.2.3` | no | MIT | https://registry.npmjs.org/prosemirror-keymap/-/prosemirror-keymap-1.2.3.tgz |
+| `prosemirror-model` | `1.25.11` | no | MIT | https://registry.npmjs.org/prosemirror-model/-/prosemirror-model-1.25.11.tgz |
+| `prosemirror-schema-list` | `1.5.1` | no | MIT | https://registry.npmjs.org/prosemirror-schema-list/-/prosemirror-schema-list-1.5.1.tgz |
+| `prosemirror-state` | `1.4.4` | no | MIT | https://registry.npmjs.org/prosemirror-state/-/prosemirror-state-1.4.4.tgz |
+| `prosemirror-tables` | `1.8.5` | no | MIT | https://registry.npmjs.org/prosemirror-tables/-/prosemirror-tables-1.8.5.tgz |
+| `prosemirror-transform` | `1.12.0` | no | MIT | https://registry.npmjs.org/prosemirror-transform/-/prosemirror-transform-1.12.0.tgz |
+| `prosemirror-view` | `1.42.3` | no | MIT | https://registry.npmjs.org/prosemirror-view/-/prosemirror-view-1.42.3.tgz |
 | `react` | `18.3.1` | yes | MIT | https://registry.npmjs.org/react/-/react-18.3.1.tgz |
 | `react-dom` | `18.3.1` | yes | MIT | https://registry.npmjs.org/react-dom/-/react-dom-18.3.1.tgz |
 | `react-remove-scroll` | `2.7.2` | no | MIT | https://registry.npmjs.org/react-remove-scroll/-/react-remove-scroll-2.7.2.tgz |
 | `react-remove-scroll-bar` | `2.3.8` | no | MIT | https://registry.npmjs.org/react-remove-scroll-bar/-/react-remove-scroll-bar-2.3.8.tgz |
 | `react-style-singleton` | `2.2.3` | no | MIT | https://registry.npmjs.org/react-style-singleton/-/react-style-singleton-2.2.3.tgz |
+| `rope-sequence` | `1.3.4` | no | MIT | https://registry.npmjs.org/rope-sequence/-/rope-sequence-1.3.4.tgz |
 | `scheduler` | `0.23.2` | no | MIT | https://registry.npmjs.org/scheduler/-/scheduler-0.23.2.tgz |
 | `tailwind-merge` | `3.6.0` | yes | MIT | https://registry.npmjs.org/tailwind-merge/-/tailwind-merge-3.6.0.tgz |
 | `tslib` | `2.8.1` | no | 0BSD | https://registry.npmjs.org/tslib/-/tslib-2.8.1.tgz |
 | `use-callback-ref` | `1.3.3` | no | MIT | https://registry.npmjs.org/use-callback-ref/-/use-callback-ref-1.3.3.tgz |
 | `use-sidecar` | `1.1.3` | no | MIT | https://registry.npmjs.org/use-sidecar/-/use-sidecar-1.1.3.tgz |
+| `use-sync-external-store` | `1.6.0` | no | MIT | https://registry.npmjs.org/use-sync-external-store/-/use-sync-external-store-1.6.0.tgz |
+| `w3c-keyname` | `2.2.8` | no | MIT | https://registry.npmjs.org/w3c-keyname/-/w3c-keyname-2.2.8.tgz |
 | `zustand` | `5.0.15` | yes | MIT | https://registry.npmjs.org/zustand/-/zustand-5.0.15.tgz |
 
 ## Package-provided license and notice text
@@ -186,6 +235,97 @@ SOFTWARE.
 
 ### Notice text 3
 
+Packages: `@tiptap/core@3.30.5`, `@tiptap/extension-blockquote@3.30.5`, `@tiptap/extension-bold@3.30.5`, `@tiptap/extension-bullet-list@3.30.5`, `@tiptap/extension-code@3.30.5`, `@tiptap/extension-code-block@3.30.5`, `@tiptap/extension-document@3.30.5`, `@tiptap/extension-dropcursor@3.30.5`, `@tiptap/extension-gapcursor@3.30.5`, `@tiptap/extension-hard-break@3.30.5`, `@tiptap/extension-heading@3.30.5`, `@tiptap/extension-horizontal-rule@3.30.5`, `@tiptap/extension-italic@3.30.5`, `@tiptap/extension-link@3.30.5`, `@tiptap/extension-list@3.30.5`, `@tiptap/extension-list-item@3.30.5`, `@tiptap/extension-list-keymap@3.30.5`, `@tiptap/extension-ordered-list@3.30.5`, `@tiptap/extension-paragraph@3.30.5`, `@tiptap/extension-strike@3.30.5`, `@tiptap/extension-table@3.30.5`, `@tiptap/extension-text@3.30.5`, `@tiptap/extension-underline@3.30.5`, `@tiptap/extensions@3.30.5`, `@tiptap/markdown@3.30.5`, `@tiptap/pm@3.30.5`, `@tiptap/react@3.30.5`, `@tiptap/starter-kit@3.30.5`
+
+Files:
+
+- `node_modules/@tiptap/core/LICENSE.md`
+- `node_modules/@tiptap/extension-blockquote/LICENSE.md`
+- `node_modules/@tiptap/extension-bold/LICENSE.md`
+- `node_modules/@tiptap/extension-bullet-list/LICENSE.md`
+- `node_modules/@tiptap/extension-code/LICENSE.md`
+- `node_modules/@tiptap/extension-code-block/LICENSE.md`
+- `node_modules/@tiptap/extension-document/LICENSE.md`
+- `node_modules/@tiptap/extension-dropcursor/LICENSE.md`
+- `node_modules/@tiptap/extension-gapcursor/LICENSE.md`
+- `node_modules/@tiptap/extension-hard-break/LICENSE.md`
+- `node_modules/@tiptap/extension-heading/LICENSE.md`
+- `node_modules/@tiptap/extension-horizontal-rule/LICENSE.md`
+- `node_modules/@tiptap/extension-italic/LICENSE.md`
+- `node_modules/@tiptap/extension-link/LICENSE.md`
+- `node_modules/@tiptap/extension-list/LICENSE.md`
+- `node_modules/@tiptap/extension-list-item/LICENSE.md`
+- `node_modules/@tiptap/extension-list-keymap/LICENSE.md`
+- `node_modules/@tiptap/extension-ordered-list/LICENSE.md`
+- `node_modules/@tiptap/extension-paragraph/LICENSE.md`
+- `node_modules/@tiptap/extension-strike/LICENSE.md`
+- `node_modules/@tiptap/extension-table/LICENSE.md`
+- `node_modules/@tiptap/extension-text/LICENSE.md`
+- `node_modules/@tiptap/extension-underline/LICENSE.md`
+- `node_modules/@tiptap/extensions/LICENSE.md`
+- `node_modules/@tiptap/markdown/LICENSE.md`
+- `node_modules/@tiptap/pm/LICENSE`
+- `node_modules/@tiptap/react/LICENSE.md`
+- `node_modules/@tiptap/starter-kit/LICENSE.md`
+
+~~~text
+MIT License
+
+Copyright (c) 2025, Tiptap GmbH
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+~~~
+
+### Notice text 4
+
+Packages: `@types/use-sync-external-store@0.0.6`
+
+Files:
+
+- `node_modules/@types/use-sync-external-store/LICENSE`
+
+~~~text
+MIT License
+
+    Copyright (c) Microsoft Corporation.
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE
+~~~
+
+### Notice text 5
+
 Packages: `@xterm/addon-fit@0.11.0`
 
 Files:
@@ -214,7 +354,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 4
+### Notice text 6
 
 Packages: `@xterm/addon-webgl@0.19.0`
 
@@ -244,7 +384,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 5
+### Notice text 7
 
 Packages: `@xterm/xterm@6.0.0`
 
@@ -276,7 +416,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 6
+### Notice text 8
 
 Packages: `aria-hidden@1.2.6`, `react-remove-scroll@2.7.2`, `react-style-singleton@2.2.3`, `use-callback-ref@1.3.3`, `use-sidecar@1.1.3`
 
@@ -312,7 +452,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 7
+### Notice text 9
 
 Packages: `class-variance-authority@0.7.1`
 
@@ -513,7 +653,7 @@ Apache License
    limitations under the License.
 ~~~
 
-### Notice text 8
+### Notice text 10
 
 Packages: `clsx@2.1.1`
 
@@ -533,7 +673,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ~~~
 
-### Notice text 9
+### Notice text 11
 
 Packages: `detect-node-es@1.1.0`
 
@@ -565,7 +705,39 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 10
+### Notice text 12
+
+Packages: `fast-equals@5.4.1`
+
+Files:
+
+- `node_modules/fast-equals/LICENSE`
+
+~~~text
+MIT License
+
+Copyright (c) 2025 Tony Quetano
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+~~~
+
+### Notice text 13
 
 Packages: `get-nonce@1.0.1`
 
@@ -597,7 +769,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 11
+### Notice text 14
 
 Packages: `js-tokens@4.0.0`
 
@@ -629,7 +801,37 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 12
+### Notice text 15
+
+Packages: `linkifyjs@4.3.3`
+
+Files:
+
+- `node_modules/linkifyjs/LICENSE`
+
+~~~text
+Copyright (c) 2024 Nick Frasser
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+~~~
+
+### Notice text 16
 
 Packages: `loose-envify@1.4.0`
 
@@ -661,7 +863,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 13
+### Notice text 17
 
 Packages: `lucide-react@1.31.0`
 
@@ -715,7 +917,62 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 14
+### Notice text 18
+
+Packages: `marked@17.0.6`
+
+Files:
+
+- `node_modules/marked/LICENSE.md`
+
+~~~text
+# License information
+
+## Contribution License Agreement
+
+If you contribute code to this project, you are implicitly allowing your code
+to be distributed under the MIT license. You are also implicitly verifying that
+all code is your original work. `</legalese>`
+
+## Marked
+
+Copyright (c) 2018+, MarkedJS (https://github.com/markedjs/)
+Copyright (c) 2011-2018, Christopher Jeffrey (https://github.com/chjj/)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+## Markdown
+
+Copyright © 2004, John Gruber
+http://daringfireball.net/
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+* Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+* Neither the name “Markdown” nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+
+This software is provided by the copyright holders and contributors “as is” and any express or implied warranties, including, but not limited to, the implied warranties of merchantability and fitness for a particular purpose are disclaimed. In no event shall the copyright owner or contributors be liable for any direct, indirect, incidental, special, exemplary, or consequential damages (including, but not limited to, procurement of substitute goods or services; loss of use, data, or profits; or business interruption) however caused and on any theory of liability, whether in contract, strict liability, or tort (including negligence or otherwise) arising in any way out of the use of this software, even if advised of the possibility of such damage.
+~~~
+
+### Notice text 19
 
 Packages: `node-addon-api@7.1.1`
 
@@ -735,7 +992,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ~~~
 
-### Notice text 15
+### Notice text 20
 
 Packages: `node-pty@1.1.0`
 
@@ -767,7 +1024,7 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 IN THE SOFTWARE.
 ~~~
 
-### Notice text 16
+### Notice text 21
 
 Packages: `node-pty@1.1.0`
 
@@ -847,7 +1104,138 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 17
+### Notice text 22
+
+Packages: `orderedmap@2.1.1`, `w3c-keyname@2.2.8`
+
+Files:
+
+- `node_modules/orderedmap/LICENSE`
+- `node_modules/w3c-keyname/LICENSE`
+
+~~~text
+Copyright (C) 2016 by Marijn Haverbeke <marijn@haverbeke.berlin> and others
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+~~~
+
+### Notice text 23
+
+Packages: `prosemirror-changeset@2.4.2`
+
+Files:
+
+- `node_modules/prosemirror-changeset/LICENSE`
+
+~~~text
+Copyright (C) 2017 by Marijn Haverbeke <marijn@haverbeke.berlin> and others
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+~~~
+
+### Notice text 24
+
+Packages: `prosemirror-commands@1.7.2`, `prosemirror-dropcursor@1.8.3`, `prosemirror-gapcursor@1.4.1`, `prosemirror-history@1.5.0`, `prosemirror-inputrules@1.5.1`, `prosemirror-keymap@1.2.3`, `prosemirror-model@1.25.11`, `prosemirror-schema-list@1.5.1`, `prosemirror-state@1.4.4`, `prosemirror-transform@1.12.0`, `prosemirror-view@1.42.3`
+
+Files:
+
+- `node_modules/prosemirror-commands/LICENSE`
+- `node_modules/prosemirror-dropcursor/LICENSE`
+- `node_modules/prosemirror-gapcursor/LICENSE`
+- `node_modules/prosemirror-history/LICENSE`
+- `node_modules/prosemirror-inputrules/LICENSE`
+- `node_modules/prosemirror-keymap/LICENSE`
+- `node_modules/prosemirror-model/LICENSE`
+- `node_modules/prosemirror-schema-list/LICENSE`
+- `node_modules/prosemirror-state/LICENSE`
+- `node_modules/prosemirror-transform/LICENSE`
+- `node_modules/prosemirror-view/LICENSE`
+
+~~~text
+Copyright (C) 2015-2017 by Marijn Haverbeke <marijn@haverbeke.berlin> and others
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+~~~
+
+### Notice text 25
+
+Packages: `prosemirror-tables@1.8.5`
+
+Files:
+
+- `node_modules/prosemirror-tables/LICENSE`
+
+~~~text
+Copyright (C) 2015-2016 by Marijn Haverbeke <marijnh@gmail.com> and others
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+~~~
+
+### Notice text 26
 
 Packages: `react-remove-scroll-bar@2.3.8`
 
@@ -877,7 +1265,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 18
+### Notice text 27
 
 Packages: `react@18.3.1`, `react-dom@18.3.1`, `scheduler@0.23.2`
 
@@ -911,7 +1299,37 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 19
+### Notice text 28
+
+Packages: `rope-sequence@1.3.4`
+
+Files:
+
+- `node_modules/rope-sequence/LICENSE`
+
+~~~text
+Copyright (C) 2016 by Marijn Haverbeke <marijn@haverbeke.berlin>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+~~~
+
+### Notice text 29
 
 Packages: `tailwind-merge@3.6.0`
 
@@ -943,7 +1361,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 20
+### Notice text 30
 
 Packages: `tslib@2.8.1`
 
@@ -966,7 +1384,39 @@ OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
 ~~~
 
-### Notice text 21
+### Notice text 31
+
+Packages: `use-sync-external-store@1.6.0`
+
+Files:
+
+- `node_modules/use-sync-external-store/LICENSE`
+
+~~~text
+MIT License
+
+Copyright (c) Meta Platforms, Inc. and affiliates.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+~~~
+
+### Notice text 32
 
 Packages: `zustand@5.0.15`
 
