@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { PlatformInfo, WorkspaceData } from '@shared/ipc'
 import type {
   Distro,
+  GitStatusResponse,
   NewProject,
   NewTodoProject,
   NewTodoTask,
@@ -33,7 +34,15 @@ export interface OpenCodeTuiStatusState {
   unread: boolean
 }
 
+export interface GitSessionStatus {
+  response: GitStatusResponse | null
+  error: string | null
+  loading: boolean
+}
+
 let eventBridgeReady = false
+let gitStatusRefreshPromise: Promise<void> | null = null
+let gitStatusRefreshQueued = false
 
 export type WorkspaceView = 'projects' | 'todo'
 
@@ -53,6 +62,7 @@ interface WorkspaceState {
   terminalDirectories: Record<string, string>
   exits: Record<string, PtyExitInfo>
   terminalTaskLinks: TerminalTaskLinks
+  gitStatuses: Record<string, GitSessionStatus>
   opencodeTuiStatuses: Record<string, OpenCodeTuiStatusState>
   opencodeTuiInstances: Record<string, OpenCodeTuiInstanceStatus[]>
   opencodeTuiInstanceLabelMode: OpenCodeTuiInstanceLabelMode
@@ -103,6 +113,7 @@ interface WorkspaceState {
   removeSession: (id: string) => Promise<void>
   revealSession: (id: string) => Promise<void>
   openSessionInVsCode: (id: string) => Promise<void>
+  refreshGitStatuses: () => Promise<void>
 
   setStatus: (id: string, status: PtyStatus) => void
   linkTerminalToTodoTask: (terminalId: string, taskId: string) => void
@@ -129,6 +140,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   terminalDirectories: {},
   exits: {},
   terminalTaskLinks: {},
+  gitStatuses: {},
   opencodeTuiStatuses: {},
   opencodeTuiInstances: {},
   opencodeTuiInstanceLabelMode: 'numbered',
@@ -169,6 +181,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       // The event bridge may receive a report while these startup requests
       // are in flight. Preserve that newer event over the initial snapshot.
       terminalDirectories: { ...directories, ...get().terminalDirectories },
+      gitStatuses: {},
       opencodeTuiStatuses: {},
       opencodeTuiInstanceLabelMode: opencodeTuiSettings.instanceLabelMode,
       wslAvailable,
@@ -241,6 +254,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const terminalDirectories = { ...state.terminalDirectories }
       const exits = { ...state.exits }
       const terminalTaskLinks = { ...state.terminalTaskLinks }
+      const gitStatuses = { ...state.gitStatuses }
       const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
       const opencodeTuiInstances = { ...state.opencodeTuiInstances }
       childIds.forEach((sessionId) => {
@@ -250,6 +264,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         Object.keys(terminalTaskLinks)
           .filter((id) => belongsToSession(id, sessionId))
           .forEach((id) => delete terminalTaskLinks[id])
+        delete gitStatuses[sessionId]
         delete opencodeTuiStatuses[sessionId]
         delete opencodeTuiInstances[sessionId]
       })
@@ -264,6 +279,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         terminalDirectories,
         exits,
         terminalTaskLinks,
+        gitStatuses,
         opencodeTuiStatuses,
         opencodeTuiInstances
       }
@@ -462,6 +478,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const terminalDirectories = { ...state.terminalDirectories }
       const exits = { ...state.exits }
       const terminalTaskLinks = { ...state.terminalTaskLinks }
+      const gitStatuses = { ...state.gitStatuses }
       const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
       const opencodeTuiInstances = { ...state.opencodeTuiInstances }
       Object.keys(statuses).filter((runtimeId) => belongsToSession(runtimeId, id)).forEach((runtimeId) => delete statuses[runtimeId])
@@ -470,6 +487,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       Object.keys(terminalTaskLinks)
         .filter((runtimeId) => belongsToSession(runtimeId, id))
         .forEach((runtimeId) => delete terminalTaskLinks[runtimeId])
+      delete gitStatuses[id]
       delete opencodeTuiStatuses[id]
       delete opencodeTuiInstances[id]
       return {
@@ -479,6 +497,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         terminalDirectories,
         exits,
         terminalTaskLinks,
+        gitStatuses,
         opencodeTuiStatuses,
         opencodeTuiInstances
       }
@@ -491,6 +510,79 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   openSessionInVsCode: async (id) => {
     await window.api.paths.openInVsCode(id)
+  },
+
+  refreshGitStatuses: async () => {
+    if (gitStatusRefreshPromise) {
+      gitStatusRefreshQueued = true
+      return gitStatusRefreshPromise
+    }
+
+    const sessions = get().sessions
+    if (sessions.length === 0) {
+      set({ gitStatuses: {} })
+      return
+    }
+
+    set((state) => {
+      const gitStatuses = { ...state.gitStatuses }
+      const sessionIds = new Set(sessions.map((session) => session.id))
+      Object.keys(gitStatuses)
+        .filter((sessionId) => !sessionIds.has(sessionId))
+        .forEach((sessionId) => delete gitStatuses[sessionId])
+      sessions.forEach((session) => {
+        const previous = gitStatuses[session.id]
+        gitStatuses[session.id] = {
+          response: previous?.response ?? null,
+          error: null,
+          loading: true
+        }
+      })
+      return { gitStatuses }
+    })
+
+    const refresh = (async (): Promise<void> => {
+      const results = await Promise.all(
+        sessions.map(async (session) => {
+          try {
+            const response = await window.api.git.status({ sessionId: session.id })
+            return {
+              id: session.id,
+              value: { response, error: null, loading: false } satisfies GitSessionStatus
+            }
+          } catch (reason) {
+            return {
+              id: session.id,
+              value: {
+                response: null,
+                error: reason instanceof Error ? reason.message : 'Could not load Git status.',
+                loading: false
+              } satisfies GitSessionStatus
+            }
+          }
+        })
+      )
+
+      set((state) => {
+        const activeIds = new Set(state.sessions.map((session) => session.id))
+        const gitStatuses: Record<string, GitSessionStatus> = {}
+        results.forEach(({ id, value }) => {
+          if (activeIds.has(id)) gitStatuses[id] = value
+        })
+        return { gitStatuses }
+      })
+    })()
+
+    gitStatusRefreshPromise = refresh
+    try {
+      await refresh
+    } finally {
+      if (gitStatusRefreshPromise === refresh) gitStatusRefreshPromise = null
+      if (gitStatusRefreshQueued) {
+        gitStatusRefreshQueued = false
+        void get().refreshGitStatuses()
+      }
+    }
   },
 
   setStatus: (id, status) =>

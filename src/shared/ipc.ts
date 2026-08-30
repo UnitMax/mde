@@ -2,6 +2,7 @@ import type {
   Distro,
   GitDiffResponse,
   GitInfoResponse,
+  GitStatusResponse,
   HostPlatform,
   NewProject,
   NewTodoProject,
@@ -95,6 +96,7 @@ export const IpcChannels = {
   pathOpenTerminalInVsCode: 'path:open-terminal-in-vscode',
 
   gitInfo: 'git:info',
+  gitStatus: 'git:status',
   gitDiff: 'git:diff',
 
   opencodeTuiPluginState: 'opencode-tui:plugin-state',
@@ -148,6 +150,10 @@ export interface ValidatePathRequest {
 }
 
 export interface GitInfoRequest {
+  sessionId: string
+}
+
+export interface GitStatusRequest {
   sessionId: string
 }
 
@@ -369,6 +375,7 @@ export interface RendererApi {
   }
   git: {
     info(req: GitInfoRequest): Promise<GitInfoResponse>
+    status(req: GitStatusRequest): Promise<GitStatusResponse>
     diff(req: GitDiffRequest): Promise<GitDiffResponse>
   }
   opencodeTui: {

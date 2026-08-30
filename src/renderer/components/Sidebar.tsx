@@ -76,10 +76,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { cn } from '@/lib/utils'
 import {
   useWorkspace,
+  type GitSessionStatus,
   type OpenCodeTuiStatusState,
   type WorkspaceView
 } from '@/store/workspace'
 import { OpenCodeStatusIcon } from '@/components/OpenCodeStatusIcon'
+import { SessionGitStatus } from '@/components/SessionGitStatus'
 import { SessionEnvironmentPanel } from '@/components/SessionEnvironmentPanel'
 import {
   OPENCODE_STATUS_ICON_SLOT_CLASS,
@@ -468,6 +470,7 @@ function TerminalInstances({
 
 interface SessionRowProps {
   session: Session
+  gitStatus?: GitSessionStatus
   status: PtyStatus
   terminalStatuses: Record<string, PtyStatus>
   terminalDirectories: Record<string, string>
@@ -491,6 +494,7 @@ interface SessionRowProps {
 
 function SessionRow({
   session,
+  gitStatus,
   status,
   terminalStatuses,
   terminalDirectories,
@@ -572,7 +576,7 @@ function SessionRow({
     <>
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <SessionEnvironmentPanel session={session}>
+          <SessionEnvironmentPanel session={session} gitStatus={gitStatus}>
             <div
               ref={rowRef}
               role="button"
@@ -667,9 +671,13 @@ function SessionRow({
                   </div>
                 )}
                 <div className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight text-fg-subtle">
-                  <span data-testid="session-directory" className="min-w-0 truncate font-mono">
-                    {session.path}
-                  </span>
+                  {gitStatus?.response?.repository || gitStatus?.error ? (
+                    <SessionGitStatus status={gitStatus} className="flex-1" />
+                  ) : (
+                    <span data-testid="session-directory" className="min-w-0 truncate font-mono">
+                      {session.path}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -828,6 +836,7 @@ interface SessionDropTarget {
 interface ProjectGroupProps {
   project: Project
   sessions: Session[]
+  gitStatuses: Record<string, GitSessionStatus>
   statuses: Record<string, PtyStatus>
   terminalDirectories: Record<string, string>
   opencodeTuiStatuses: Record<string, OpenCodeTuiStatusState>
@@ -857,6 +866,7 @@ function sessionTerminalStatus(
 function ProjectGroup({
   project,
   sessions,
+  gitStatuses,
   statuses,
   terminalDirectories,
   opencodeTuiStatuses,
@@ -1044,6 +1054,7 @@ function ProjectGroup({
           <SessionRow
             key={session.id}
             session={session}
+            gitStatus={gitStatuses[session.id]}
             status={sessionTerminalStatus(session, terminalLayouts[session.id], statuses)}
             terminalStatuses={statuses}
             terminalDirectories={terminalDirectories}
@@ -1279,9 +1290,11 @@ export function Sidebar({
   terminalLayouts,
   onFocusTerminal
 }: SidebarProps): JSX.Element {
+  const ready = useWorkspace((state) => state.ready)
   const projects = useWorkspace((state) => state.projects)
   const todoProjects = useWorkspace((state) => state.todoProjects)
   const sessions = useWorkspace((state) => state.sessions)
+  const gitStatuses = useWorkspace((state) => state.gitStatuses)
   const statuses = useWorkspace((state) => state.statuses)
   const terminalDirectories = useWorkspace((state) => state.terminalDirectories)
   const opencodeTuiStatuses = useWorkspace((state) => state.opencodeTuiStatuses)
@@ -1292,17 +1305,34 @@ export function Sidebar({
   const selectSession = useWorkspace((state) => state.selectSession)
   const selectTodoProject = useWorkspace((state) => state.selectTodoProject)
   const setSessionIcon = useWorkspace((state) => state.setSessionIcon)
+  const refreshGitStatuses = useWorkspace((state) => state.refreshGitStatuses)
   const collapsed = useWorkspace((state) => state.sidebarCollapsed)
   const toggleSidebar = useWorkspace((state) => state.toggleSidebar)
   const activeSection = useWorkspace((state) => state.activeWorkspaceView)
   const setActiveSection = useWorkspace((state) => state.setWorkspaceView)
   const [terminalSettings, setTerminalSettings] = useState(() => getTerminalSettings())
   const [agentsCollapsed, setAgentsCollapsed] = useState(false)
+  const gitSessionKey = sessions.map((session) => `${session.id}:${session.path}`).join('\u0000')
   const orderedSessions = projects.flatMap((project) =>
     sessions.filter((session) => session.projectId === project.id)
   )
 
   useEffect(() => subscribeTerminalSettings(() => setTerminalSettings(getTerminalSettings())), [])
+
+  useEffect(() => {
+    if (!ready) return
+
+    void refreshGitStatuses()
+    const interval = window.setInterval(() => void refreshGitStatuses(), 10_000)
+    const refreshOnFocus = (): void => {
+      void refreshGitStatuses()
+    }
+    window.addEventListener('focus', refreshOnFocus)
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', refreshOnFocus)
+    }
+  }, [gitSessionKey, ready, refreshGitStatuses])
 
   const projectSessionList = projects.length === 0 ? (
     <p className="px-2 py-1 text-xs text-fg-subtle">No projects yet.</p>
@@ -1312,6 +1342,7 @@ export function Sidebar({
         key={project.id}
         project={project}
         sessions={sessions.filter((session) => session.projectId === project.id)}
+        gitStatuses={gitStatuses}
         statuses={statuses}
         terminalDirectories={terminalDirectories}
         opencodeTuiStatuses={opencodeTuiStatuses}
@@ -1367,7 +1398,7 @@ export function Sidebar({
                     return (
                       <ContextMenu key={session.id}>
                         <ContextMenuTrigger asChild>
-                          <SessionEnvironmentPanel session={session}>
+                          <SessionEnvironmentPanel session={session} gitStatus={gitStatuses[session.id]}>
                             <button
                               type="button"
                               aria-label={`${project.name}: ${session.name}`}

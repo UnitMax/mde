@@ -2,10 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createGitCommandRunner,
   isBinaryGitDiff,
+  parseGitAheadCount,
+  parseGitNumstat,
   parseGitStatus,
   parseGitLog,
   readGitInfo,
   readGitInfoWithRunner,
+  readGitStatusWithRunner,
   readGitDiffWithRunner,
   type GitCommandResult
 } from '../src/main/git'
@@ -156,6 +159,19 @@ describe('Git history queries', () => {
     ])
   })
 
+  it('parses ahead counts and ignores missing upstream headers', () => {
+    expect(parseGitAheadCount('# branch.head main\u0000# branch.upstream origin/main\u0000# branch.ab +3 -1\u0000')).toBe(3)
+    expect(parseGitAheadCount('# branch.head main\u0000')).toBeNull()
+    expect(parseGitAheadCount('# branch.head (detached)\u0000')).toBeNull()
+  })
+
+  it('aggregates numeric numstat records and skips binary files', () => {
+    expect(parseGitNumstat('12\t3\tsrc/changed.ts\u0000-\t-\timage.png\u00004\t0\tnew name.ts\u0000')).toEqual({
+      additions: 16,
+      deletions: 3
+    })
+  })
+
   it('parses Git status records including renames and untracked files', () => {
     expect(
       parseGitStatus(
@@ -205,6 +221,83 @@ describe('Git history queries', () => {
         unstaged: true
       }
     ])
+  })
+})
+
+describe('Git status summaries', () => {
+  it('reads branch, tracked line changes, and commits ahead of upstream', async () => {
+    const calls: string[][] = []
+    const run = async (args: string[]): Promise<GitCommandResult> => {
+      calls.push(args)
+      if (args.includes('--is-inside-work-tree')) return result('true\n')
+      if (args.includes('branch')) return result('feature/sidebar\n')
+      if (args.includes('--verify')) return result('0123456\n')
+      if (args.includes('status')) {
+        return result('# branch.head feature/sidebar\u0000# branch.upstream origin/feature/sidebar\u0000# branch.ab +2 -1\u0000')
+      }
+      return result('12\t3\tsrc/changed.ts\u0000-\t-\timage.png\u0000')
+    }
+
+    await expect(readGitStatusWithRunner(run)).resolves.toEqual({
+      repository: true,
+      branch: 'feature/sidebar',
+      additions: 12,
+      deletions: 3,
+      commitsAhead: 2
+    })
+    expect(calls).toContainEqual([
+      '--no-pager',
+      'status',
+      '--porcelain=v2',
+      '--branch',
+      '-z',
+      '--untracked-files=no'
+    ])
+    expect(calls).toContainEqual([
+      '--no-pager',
+      'diff',
+      '--numstat',
+      '--no-ext-diff',
+      '--no-color',
+      '--find-renames',
+      '-z',
+      'HEAD',
+      '--'
+    ])
+  })
+
+  it('uses the empty tree for a repository without a HEAD and leaves ahead unset', async () => {
+    const calls: string[][] = []
+    const run = async (args: string[]): Promise<GitCommandResult> => {
+      calls.push(args)
+      if (args.includes('--is-inside-work-tree')) return result('true\n')
+      if (args.includes('branch')) return result('main\n')
+      if (args.includes('--verify')) return result('', 'fatal: Needed a single revision', 128)
+      if (args.includes('status')) return result('# branch.head main\u0000')
+      return result('5\t0\tnew.ts\u0000')
+    }
+
+    await expect(readGitStatusWithRunner(run)).resolves.toMatchObject({
+      repository: true,
+      branch: 'main',
+      additions: 5,
+      deletions: 0,
+      commitsAhead: null
+    })
+    expect(calls.at(-1)).toContain('4b825dc642cb6eb9a060e54bf8d69288fbee4904')
+  })
+
+  it('returns a quiet empty status for non-repositories', async () => {
+    const run = async (): Promise<GitCommandResult> =>
+      result('', 'fatal: not a git repository (or any of the parent directories): .git', 128)
+
+    await expect(readGitStatusWithRunner(run)).resolves.toEqual({
+      repository: false,
+      branch: null,
+      additions: 0,
+      deletions: 0,
+      commitsAhead: null
+    })
   })
 })
 

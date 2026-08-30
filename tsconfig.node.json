@@ -23,6 +23,7 @@
     "src/renderer/lib/opencode-tui-status.ts",
     "src/renderer/lib/terminal-instances.ts",
     "src/renderer/components/SessionEnvironmentPanel.tsx",
+    "src/renderer/components/SessionGitStatus.tsx",
     "src/renderer/lib/terminal-task-links.ts",
     "src/shared/**/*",
     "test/**/*"

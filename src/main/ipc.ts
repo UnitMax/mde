@@ -7,6 +7,7 @@ import {
   type DropPtyFilesRequest,
   type GitDiffRequest,
   type GitInfoRequest,
+  type GitStatusRequest,
   IpcChannels,
   type EnsurePtyRequest,
   type MoveSessionRequest,
@@ -36,6 +37,7 @@ import type {
   GitDiffResponse,
   HostPlatform,
   GitInfoResponse,
+  GitStatusResponse,
   NewProject,
   NewTodoProject,
   NewTodoTask,
@@ -67,7 +69,7 @@ import { isWslAvailable, listDistros, runWsl } from './wsl/distros'
 import { canonicalizeWslPath, resolveForTarget, toWindows, uncPathFor } from './wsl/paths'
 import { buildVsCodeRemoteUri } from './vscode'
 import { safeVsCodeRemoteUrl } from './external-links'
-import { readGitDiff, readGitInfo } from './git'
+import { readGitDiff, readGitInfo, readGitStatus } from './git'
 import {
   createProject,
   createTodoProject,
@@ -464,6 +466,15 @@ export function registerIpcHandlers(
     const session = await getSession(req.sessionId)
     if (!session) throw new Error('Session no longer exists.')
     return readGitInfo(session)
+  })
+
+  handle<GitStatusRequest, GitStatusResponse>(IpcChannels.gitStatus, async (req) => {
+    if (!req || typeof req.sessionId !== 'string' || !req.sessionId) {
+      throw new Error('Invalid Git session request.')
+    }
+    const session = await getSession(req.sessionId)
+    if (!session) throw new Error('Session no longer exists.')
+    return readGitStatus(session)
   })
 
   handle<GitDiffRequest, GitDiffResponse>(IpcChannels.gitDiff, async (req) => {

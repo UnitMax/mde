@@ -4,6 +4,7 @@ import type {
   GitChangeStatus,
   GitDiffResponse,
   GitInfoResponse,
+  GitStatusResponse,
   GitCommit,
   Session
 } from '@shared/types'
@@ -23,6 +24,11 @@ export interface GitCommandResult {
 }
 
 export type GitCommandRunner = (args: string[]) => Promise<GitCommandResult>
+
+export interface GitLineChangeCounts {
+  additions: number
+  deletions: number
+}
 
 function runNativeGit(args: string[], cwd: string): Promise<GitCommandResult> {
   return new Promise((resolve) => {
@@ -94,6 +100,32 @@ export function isBinaryGitDiff(diff: string): boolean {
   return diff.split(/\r?\n/).some((line) =>
     /^Binary files .* differ$/.test(line) || line === 'GIT binary patch'
   )
+}
+
+/** Parses the ahead count from a porcelain-v2 branch header. */
+export function parseGitAheadCount(output: string): number | null {
+  for (const field of output.split('\u0000')) {
+    const match = /^# branch\.ab \+(\d+) -\d+$/.exec(field.trim())
+    if (!match?.[1]) continue
+    const ahead = Number(match[1])
+    if (Number.isSafeInteger(ahead)) return ahead
+  }
+  return null
+}
+
+/** Parses NUL-delimited `git diff --numstat` records, ignoring binary files. */
+export function parseGitNumstat(output: string): GitLineChangeCounts {
+  let additions = 0
+  let deletions = 0
+
+  for (const record of output.split('\u0000')) {
+    const match = /^(\d+|-)\t(\d+|-)\t/.exec(record)
+    if (!match) continue
+    if (match[1] !== '-') additions += Number(match[1])
+    if (match[2] !== '-') deletions += Number(match[2])
+  }
+
+  return { additions, deletions }
 }
 
 function hasGitStatus(code: string | undefined): boolean {
@@ -192,6 +224,15 @@ const gitStatusArgs = [
   '--find-renames'
 ]
 
+const gitStatusSummaryArgs = [
+  '--no-pager',
+  'status',
+  '--porcelain=v2',
+  '--branch',
+  '-z',
+  '--untracked-files=no'
+]
+
 async function ensureRepository(run: GitCommandRunner): Promise<boolean> {
   const repository = await run(['--no-pager', 'rev-parse', '--is-inside-work-tree'])
   if (repository.launchError) throw commandError('repository', repository)
@@ -260,6 +301,56 @@ export async function readGitInfoWithRunner(run: GitCommandRunner): Promise<GitI
 
 export function readGitInfo(session: Session): Promise<GitInfoResponse> {
   return readGitInfoWithRunner(createGitCommandRunner(session))
+}
+
+export async function readGitStatusWithRunner(run: GitCommandRunner): Promise<GitStatusResponse> {
+  const repository = await ensureRepository(run)
+  if (!repository) {
+    return {
+      repository: false,
+      branch: null,
+      additions: 0,
+      deletions: 0,
+      commitsAhead: null
+    }
+  }
+
+  const [branch, head, status] = await Promise.all([
+    run(['--no-pager', 'branch', '--show-current']),
+    run(['--no-pager', 'rev-parse', '--verify', 'HEAD']),
+    run(gitStatusSummaryArgs)
+  ])
+
+  if (branch.code !== 0) throw commandError('branch', branch)
+  if (head.launchError) throw commandError('HEAD', head)
+  if (head.code !== 0 && !isMissingHead(head)) throw commandError('HEAD', head)
+  if (status.code !== 0) throw commandError('status', status)
+
+  const baseline = head.code === 0 ? 'HEAD' : GIT_EMPTY_TREE
+  const diff = await run([
+    '--no-pager',
+    'diff',
+    '--numstat',
+    '--no-ext-diff',
+    '--no-color',
+    '--find-renames',
+    '-z',
+    baseline,
+    '--'
+  ])
+  if (diff.code !== 0) throw commandError('diff', diff)
+
+  const counts = parseGitNumstat(diff.stdout)
+  return {
+    repository: true,
+    branch: branch.stdout.trim() || null,
+    ...counts,
+    commitsAhead: parseGitAheadCount(status.stdout)
+  }
+}
+
+export function readGitStatus(session: Session): Promise<GitStatusResponse> {
+  return readGitStatusWithRunner(createGitCommandRunner(session))
 }
 
 export async function readGitDiffWithRunner(

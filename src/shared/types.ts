@@ -325,6 +325,19 @@ export interface GitInfoResponse {
   changes: GitChange[]
 }
 
+/** Lightweight Git state used by session lists. */
+export interface GitStatusResponse {
+  repository: boolean
+  /** Null when the repository is in a detached HEAD state. */
+  branch: string | null
+  /** Tracked additions relative to HEAD, including staged and unstaged work. */
+  additions: number
+  /** Tracked deletions relative to HEAD, including staged and unstaged work. */
+  deletions: number
+  /** Commits ahead of the configured upstream, or null when no upstream exists. */
+  commitsAhead: number | null
+}
+
 export interface GitDiffResponse {
   path: string
   diff: string
