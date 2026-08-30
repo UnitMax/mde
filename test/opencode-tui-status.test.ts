@@ -16,6 +16,7 @@ import {
   TUI_STATUS_TITLE_MAX_LENGTH
 } from '../src/main/opencode/tui-status'
 import {
+  openCodeOverviewStatusLabel,
   openCodeStatusLabel,
   openCodeStatusShortLabel
 } from '../src/renderer/lib/opencode-tui-status'
@@ -192,5 +193,14 @@ describe('OpenCode TUI status protocol', () => {
     expect(openCodeStatusShortLabel('attention')).toBe('needs input')
     expect(openCodeStatusShortLabel('completed')).toBe('done')
     expect(openCodeStatusShortLabel('error')).toBe('failed')
+  })
+
+  it('provides the readable status labels used by the agent overview', () => {
+    expect(openCodeOverviewStatusLabel('working')).toBe('Working')
+    expect(openCodeOverviewStatusLabel('attention', 'permission')).toBe('Needs input')
+    expect(openCodeOverviewStatusLabel('attention', 'question')).toBe('Waiting for an answer')
+    expect(openCodeOverviewStatusLabel('completed')).toBe('Done')
+    expect(openCodeOverviewStatusLabel('idle')).toBe('Idle')
+    expect(openCodeOverviewStatusLabel('error')).toBe('Failed')
   })
 })

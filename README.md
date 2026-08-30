@@ -101,10 +101,11 @@ are normalized to a single `Tab 1` on load.
 
 The Settings dialog's Terminal section controls terminal behavior, including whether Escape exits
 the temporary fullscreen view; it is enabled by default. Ctrl+Shift+F toggles fullscreen for the
-focused terminal pane. The Sidebar section controls the individual
-entries shown beneath each session. Ordinary terminal instances are hidden by default, while
-OpenCode instances are shown by default; these preferences are global and stored with the local
-terminal settings.
+focused terminal pane. The Sidebar section controls the individual entries shown beneath each
+session. Ordinary terminal instances are hidden by default, while OpenCode instances are shown by
+default; these preferences are global and stored with the local terminal settings. The expanded
+Projects sidebar also includes a collapsible Agents overview below the sessions, combining currently
+reported OpenCode instances from every session with their originating session, tab, and status.
 
 Terminal clipboard shortcuts use the normal system clipboard, including for WSL sessions on Windows.
 `Ctrl+C` copies selected terminal text and remains the normal interrupt when there is no selection;

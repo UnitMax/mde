@@ -6,6 +6,7 @@ import {
   type MouseEvent as ReactMouseEvent
 } from 'react'
 import {
+  Bot,
   ChevronDown,
   ChevronRight,
   Check,
@@ -79,7 +80,11 @@ import {
   type WorkspaceView
 } from '@/store/workspace'
 import { OpenCodeStatusIcon } from '@/components/OpenCodeStatusIcon'
-import { openCodeStatusShortLabel } from '@/lib/opencode-tui-status'
+import {
+  OPENCODE_STATUS_ICON_SLOT_CLASS,
+  openCodeOverviewStatusLabel,
+  openCodeStatusShortLabel
+} from '@/lib/opencode-tui-status'
 import {
   DEFAULT_SESSION_COLOR,
   SESSION_COLORS,
@@ -89,6 +94,7 @@ import { SESSION_ICONS, sessionIconOption } from '@shared/session-icons'
 import type { SessionTerminalLayout } from '@/terminal/layout'
 import { sessionTabs } from '@/terminal/tabs'
 import {
+  collectOpenCodeTuiOverviewEntries,
   openCodeTuiInstanceLabel,
   orderOpenCodeTuiInstances
 } from '@/lib/opencode-tui-instances'
@@ -365,6 +371,107 @@ function OpenCodeInstances({
   )
 }
 
+function OpenCodeAgentsSection({
+  sessions,
+  opencodeTuiInstances,
+  terminalLayouts,
+  labelMode,
+  onFocus,
+  collapsed,
+  onToggle
+}: {
+  sessions: readonly Session[]
+  opencodeTuiInstances: Readonly<Record<string, readonly OpenCodeTuiInstanceStatus[]>>
+  terminalLayouts: Readonly<Record<string, Readonly<Record<string, SessionTerminalLayout>>>>
+  labelMode: OpenCodeTuiInstanceLabelMode
+  onFocus: (sessionId: string, tabId: string, terminalId: string) => void
+  collapsed: boolean
+  onToggle: () => void
+}): JSX.Element {
+  const entries = collectOpenCodeTuiOverviewEntries(
+    sessions,
+    opencodeTuiInstances,
+    terminalLayouts
+  )
+
+  return (
+    <section
+      className="mt-3 shrink-0 border-t border-line pt-2"
+      data-testid="opencode-agents-section"
+      aria-labelledby="sidebar-opencode-agents-heading"
+    >
+      <button
+        id="sidebar-opencode-agents-heading"
+        type="button"
+        aria-expanded={!collapsed}
+        aria-controls="sidebar-opencode-agents-list"
+        data-testid="opencode-agents-toggle"
+        onClick={onToggle}
+        className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-fg-muted hover:bg-hover hover:text-fg"
+        title={collapsed ? 'Expand agents' : 'Collapse agents'}
+      >
+        {collapsed ? (
+          <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+        ) : (
+          <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+        )}
+        <Bot className="h-3.5 w-3.5 shrink-0" />
+        <span className="min-w-0 flex-1 truncate text-[12px] font-medium">Agents</span>
+        <span className="text-[11px] text-fg-subtle">{entries.length}</span>
+      </button>
+
+      {!collapsed && (
+        <div id="sidebar-opencode-agents-list" className="mt-0.5 space-y-0.5">
+          {entries.length === 0 ? (
+            <p className="px-2 py-1 text-xs text-fg-subtle">No OpenCode agents reported.</p>
+          ) : (
+            entries.map((entry) => {
+              const { instance } = entry
+              const indicator = openCodeInstanceIndicator(instance)
+              const label = openCodeTuiInstanceLabel(
+                instance,
+                entry.orderedIndex,
+                labelMode,
+                entry.layout
+              )
+              const statusLabel = openCodeOverviewStatusLabel(
+                instance.status,
+                instance.attentionReason
+              )
+              return (
+                <button
+                  key={`${entry.sessionId}:${instance.terminalId}`}
+                  type="button"
+                  data-testid="opencode-agent-row"
+                  title={`${label} · ${entry.sessionName} · ${entry.tabName} · ${indicator.label}`}
+                  onClick={() => onFocus(entry.sessionId, entry.tabId, instance.terminalId)}
+                  className={cn(
+                    'ml-1 flex w-[calc(100%-0.25rem)] items-center gap-2 rounded py-1.5 pl-4 pr-2 text-left text-[12px] text-fg-muted hover:bg-hover hover:text-fg',
+                    indicator.row
+                  )}
+                >
+                  <OpenCodeStatusIcon
+                    status={instance.status}
+                    attentionReason={instance.attentionReason}
+                    testId="opencode-agent-status"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-fg">{label}</div>
+                    <div className="truncate text-[10px] text-fg-subtle">
+                      {entry.sessionName} · {entry.tabName}
+                    </div>
+                  </div>
+                  <span className="shrink-0 text-[10px] text-fg-subtle">{statusLabel}</span>
+                </button>
+              )
+            })
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+
 function TerminalInstances({
   tabs,
   layouts,
@@ -601,7 +708,9 @@ function SessionRow({
             >
               <GripVertical className="h-3.5 w-3.5" />
             </button>
-            <StatusDot indicator={indicator} />
+            <span className={OPENCODE_STATUS_ICON_SLOT_CLASS}>
+              <StatusDot indicator={indicator} />
+            </span>
 
             <div className="min-w-0 flex-1">
               {renaming ? (
@@ -1273,8 +1382,49 @@ export function Sidebar({
   const activeSection = useWorkspace((state) => state.activeWorkspaceView)
   const setActiveSection = useWorkspace((state) => state.setWorkspaceView)
   const [terminalSettings, setTerminalSettings] = useState(() => getTerminalSettings())
+  const [agentsCollapsed, setAgentsCollapsed] = useState(false)
+  const orderedSessions = projects.flatMap((project) =>
+    sessions.filter((session) => session.projectId === project.id)
+  )
 
   useEffect(() => subscribeTerminalSettings(() => setTerminalSettings(getTerminalSettings())), [])
+
+  const projectSessionList = projects.length === 0 ? (
+    <p className="px-2 py-1 text-xs text-fg-subtle">No projects yet.</p>
+  ) : (
+    projects.map((project) => (
+      <ProjectGroup
+        key={project.id}
+        project={project}
+        sessions={sessions.filter((session) => session.projectId === project.id)}
+        statuses={statuses}
+        terminalDirectories={terminalDirectories}
+        opencodeTuiStatuses={opencodeTuiStatuses}
+        opencodeTuiInstances={opencodeTuiInstances}
+        terminalLayouts={terminalLayouts}
+        showTerminalInstances={terminalSettings.showTerminalInstances}
+        showOpenCodeInstances={terminalSettings.showOpenCodeInstances}
+        instanceLabelMode={instanceLabelMode}
+        selectedSessionId={selectedSessionId}
+        onSelectSession={selectSession}
+        onFocusTerminal={onFocusTerminal}
+        onOpenGit={onOpenGit}
+        onNewSession={(projectId) => onNewSession(projectId)}
+      />
+    ))
+  )
+
+  const agentsSection = (
+    <OpenCodeAgentsSection
+      sessions={orderedSessions}
+      opencodeTuiInstances={opencodeTuiInstances}
+      terminalLayouts={terminalLayouts}
+      labelMode={instanceLabelMode}
+      onFocus={onFocusTerminal}
+      collapsed={agentsCollapsed}
+      onToggle={() => setAgentsCollapsed((value) => !value)}
+    />
+  )
 
   if (collapsed) {
     return (
@@ -1443,36 +1593,30 @@ export function Sidebar({
         </Button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+      <div className="min-h-0 flex-1 px-2 pb-2">
         <div
           id="sidebar-section-projects"
           role="tabpanel"
           aria-labelledby="sidebar-section-tab-projects"
+          className="flex h-full min-h-0 flex-col"
           hidden={activeSection !== 'projects'}
         >
-          {projects.length === 0 ? (
-            <p className="px-2 py-1 text-xs text-fg-subtle">No projects yet.</p>
+          {agentsCollapsed ? (
+            <>
+              <div className="min-h-0 flex-1 overflow-y-auto" data-testid="sidebar-projects-scroll">
+                {projectSessionList}
+              </div>
+              {agentsSection}
+            </>
           ) : (
-            projects.map((project) => (
-              <ProjectGroup
-                key={project.id}
-                project={project}
-                sessions={sessions.filter((session) => session.projectId === project.id)}
-                statuses={statuses}
-                terminalDirectories={terminalDirectories}
-                opencodeTuiStatuses={opencodeTuiStatuses}
-                opencodeTuiInstances={opencodeTuiInstances}
-                terminalLayouts={terminalLayouts}
-                showTerminalInstances={terminalSettings.showTerminalInstances}
-                showOpenCodeInstances={terminalSettings.showOpenCodeInstances}
-                instanceLabelMode={instanceLabelMode}
-                selectedSessionId={selectedSessionId}
-                onSelectSession={selectSession}
-                onFocusTerminal={onFocusTerminal}
-                onOpenGit={onOpenGit}
-                onNewSession={(projectId) => onNewSession(projectId)}
-              />
-            ))
+            <>
+              <div className="min-h-0 flex-1 overflow-y-auto" data-testid="sidebar-projects-scroll">
+                {projectSessionList}
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto" data-testid="sidebar-agents-scroll">
+                {agentsSection}
+              </div>
+            </>
           )}
         </div>
 
@@ -1480,6 +1624,7 @@ export function Sidebar({
           id="sidebar-section-todo"
           role="tabpanel"
           aria-labelledby="sidebar-section-tab-todo"
+          className="h-full min-h-0 overflow-y-auto"
           hidden={activeSection !== 'todo'}
         >
           <div className="flex items-center px-2 py-1">

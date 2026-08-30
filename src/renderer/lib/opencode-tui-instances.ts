@@ -1,8 +1,20 @@
 import type {
   OpenCodeTuiInstanceLabelMode,
-  OpenCodeTuiInstanceStatus
+  OpenCodeTuiInstanceStatus,
+  Session
 } from '@shared/types'
 import type { SessionTerminalLayout } from '@/terminal/layout'
+import { sessionTabs } from '@/terminal/tabs'
+
+export interface OpenCodeTuiOverviewEntry {
+  sessionId: string
+  sessionName: string
+  tabId: string
+  tabName: string
+  instance: OpenCodeTuiInstanceStatus
+  layout: SessionTerminalLayout
+  orderedIndex: number
+}
 
 export function orderOpenCodeTuiInstances(
   instances: readonly OpenCodeTuiInstanceStatus[],
@@ -16,6 +28,33 @@ export function orderOpenCodeTuiInstances(
     const bPosition = positions.get(b.terminalId) ?? Number.MAX_SAFE_INTEGER
     if (aPosition !== bPosition) return aPosition - bPosition
     return a.terminalId.localeCompare(b.terminalId)
+  })
+}
+
+export function collectOpenCodeTuiOverviewEntries(
+  sessions: readonly Session[],
+  instancesBySession: Readonly<Record<string, readonly OpenCodeTuiInstanceStatus[]>>,
+  terminalLayouts: Readonly<Record<string, Readonly<Record<string, SessionTerminalLayout>>>>
+): OpenCodeTuiOverviewEntry[] {
+  return sessions.flatMap((session) => {
+    const instances = instancesBySession[session.id] ?? []
+    return sessionTabs(session).flatMap((tab) => {
+      const layout = terminalLayouts[session.id]?.[tab.id]
+      if (!layout) return []
+
+      const tabInstances = instances.filter((instance) =>
+        layout.panes.some((pane) => pane.terminalId === instance.terminalId)
+      )
+      return orderOpenCodeTuiInstances(tabInstances, layout).map((instance, orderedIndex) => ({
+        sessionId: session.id,
+        sessionName: session.name,
+        tabId: tab.id,
+        tabName: tab.name,
+        instance,
+        layout,
+        orderedIndex
+      }))
+    })
   })
 }
 

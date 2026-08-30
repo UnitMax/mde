@@ -1,7 +1,10 @@
 import { CircleAlert, LoaderCircle } from 'lucide-react'
 import type { OpenCodeTuiAttentionReason, OpenCodeTuiStatus } from '@shared/types'
 import { cn } from '@/lib/utils'
-import { openCodeStatusLabel } from '@/lib/opencode-tui-status'
+import {
+  openCodeStatusIconLayout,
+  openCodeStatusLabel
+} from '@/lib/opencode-tui-status'
 
 const STATUS_DOT_CLASS: Record<OpenCodeTuiStatus, string> = {
   idle: 'bg-fg-subtle',
@@ -23,6 +26,7 @@ export function OpenCodeStatusIcon({
   testId?: string
 }): JSX.Element {
   const label = openCodeStatusLabel(status, attentionReason)
+  const { slotClassName, glyphClassName } = openCodeStatusIconLayout(status)
   const sharedProps = {
     'aria-label': label,
     'data-status': status,
@@ -33,21 +37,26 @@ export function OpenCodeStatusIcon({
   if (status === 'working' || status === 'attention') {
     const Icon = status === 'attention' ? CircleAlert : LoaderCircle
     return (
-      <Icon
-        {...sharedProps}
-        className={cn(
-          'h-2.5 w-2.5 shrink-0 text-accent',
-          status === 'working' && 'animate-spin',
-          className
-        )}
-      />
+      <span className={slotClassName}>
+        <Icon
+          {...sharedProps}
+          className={cn(
+            glyphClassName,
+            'shrink-0 text-accent',
+            status === 'working' && 'animate-spin',
+            className
+          )}
+        />
+      </span>
     )
   }
 
   return (
-    <span
-      {...sharedProps}
-      className={cn('h-1.5 w-1.5 shrink-0 rounded-full', STATUS_DOT_CLASS[status], className)}
-    />
+    <span className={slotClassName}>
+      <span
+        {...sharedProps}
+        className={cn(glyphClassName, 'shrink-0 rounded-full', STATUS_DOT_CLASS[status], className)}
+      />
+    </span>
   )
 }
