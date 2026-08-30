@@ -555,7 +555,7 @@ function SessionRow({
               }
             }}
             className={cn(
-              'group ml-3 flex w-[calc(100%-0.75rem)] cursor-default items-center gap-2 rounded px-2 py-1.5 text-left',
+              'group relative ml-1 flex w-[calc(100%-0.25rem)] cursor-default items-center gap-2 rounded py-1.5 pl-4 pr-2 text-left',
               customColor
                 ? cn('text-fg transition-[filter] hover:brightness-110', customSessionStatusRing(indicator.status))
                 : selected
@@ -588,7 +588,16 @@ function SessionRow({
                 event.stopPropagation()
                 onDragEnd()
               }}
-              className="shrink-0 cursor-grab rounded text-fg-subtle hover:text-fg active:cursor-grabbing disabled:cursor-default disabled:opacity-50"
+              className={cn(
+                'absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded text-fg-subtle opacity-0 transition-opacity',
+                'pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100',
+                'group-focus-within:pointer-events-auto group-focus-within:opacity-100',
+                'focus:pointer-events-auto focus:opacity-100 hover:text-fg',
+                dragging && 'pointer-events-auto opacity-100',
+                dragDisabled
+                  ? 'pointer-events-none cursor-default opacity-50'
+                  : 'cursor-grab active:cursor-grabbing'
+              )}
             >
               <GripVertical className="h-3.5 w-3.5" />
             </button>
