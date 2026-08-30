@@ -101,11 +101,11 @@ are normalized to a single `Tab 1` on load.
 
 The Settings dialog's Terminal section controls terminal behavior, including whether Escape exits
 the temporary fullscreen view; it is enabled by default. Ctrl+Shift+F toggles fullscreen for the
-focused terminal pane. The Sidebar section controls the individual entries shown beneath each
-session. Ordinary terminal instances are hidden by default, while OpenCode instances are shown by
-default; these preferences are global and stored with the local terminal settings. The expanded
-Projects sidebar also includes a collapsible Agents overview below the sessions, combining currently
-reported OpenCode instances from every session with their originating session, tab, and status.
+focused terminal pane. The Sidebar section controls whether ordinary terminal pane entries appear
+beneath each session; this preference is global and stored with the local terminal settings. The
+expanded Projects sidebar also includes a collapsible Agents overview below the sessions, combining
+currently reported OpenCode instances from every session with their originating session, tab, and
+status.
 
 Terminal clipboard shortcuts use the normal system clipboard, including for WSL sessions on Windows.
 `Ctrl+C` copies selected terminal text and remains the normal interrupt when there is no selection;
@@ -146,10 +146,10 @@ cannot be reached there. File drops do not copy file contents or stage clipboard
   writes only a short runtime snapshot under `/tmp`, and does not modify project files or
   OpenCode configuration. MDE reads that snapshot through the distro's `\\wsl.localhost\\...`
   path and falls back to normal shell status when it is absent. Each terminal pane with a live
-  OpenCode TUI appears in the OpenCode instance list beneath its MDE session when that sidebar
-  preference is enabled. Instance labels can
-  use privacy-safe numbering or the current top-level OpenCode session title; prompts, messages,
-  tool data, credentials, and filesystem contents are never included in the snapshot.
+  OpenCode TUI appears in the global Agents overview below the Projects sessions, with its
+  originating session, tab, and current status. Instance labels can use privacy-safe numbering or
+  the current top-level OpenCode session title; prompts, messages, tool data, credentials, and
+  filesystem contents are never included in the snapshot.
 - OpenCode TUI token-rate display is a separate plugin from status reporting. On Linux it can be
   installed for the native OpenCode target; on Windows it can be installed independently for each
   WSL 2 distro. It adds a live estimated rate and a final provider-reported rate beside the TUI

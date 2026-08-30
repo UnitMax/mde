@@ -49,8 +49,7 @@ describe('terminal settings', () => {
       lineHeight: 1,
       theme: 'slate',
       escapeExitsFullscreen: true,
-      showTerminalInstances: false,
-      showOpenCodeInstances: true
+      showTerminalInstances: false
     })
   })
 
@@ -63,8 +62,7 @@ describe('terminal settings', () => {
       lineHeight: 1,
       theme: 'slate',
       escapeExitsFullscreen: true,
-      showTerminalInstances: false,
-      showOpenCodeInstances: true
+      showTerminalInstances: false
     })
     expect(
       resolveTerminalSettings(
@@ -83,19 +81,24 @@ describe('terminal settings', () => {
       lineHeight: 1.4,
       theme: 'frost',
       escapeExitsFullscreen: false,
-      showTerminalInstances: false,
-      showOpenCodeInstances: true
+      showTerminalInstances: false
     })
     expect(
       resolveTerminalSettings(
-        { escapeExitsFullscreen: 'yes', showTerminalInstances: 'yes', showOpenCodeInstances: null },
+        { escapeExitsFullscreen: 'yes', showTerminalInstances: 'yes', showOpenCodeInstances: true },
         available
       )
     ).toMatchObject({
       escapeExitsFullscreen: true,
-      showTerminalInstances: false,
-      showOpenCodeInstances: true
+      showTerminalInstances: false
     })
+  })
+
+  it('ignores the removed per-session OpenCode instance setting', () => {
+    const resolved = resolveTerminalSettings({ showOpenCodeInstances: false }, available)
+
+    expect(resolved).not.toHaveProperty('showOpenCodeInstances')
+    expect(resolved.showTerminalInstances).toBe(false)
   })
 
   it('loads legacy font settings and supplies the line-height default', () => {
@@ -112,8 +115,7 @@ describe('terminal settings', () => {
       lineHeight: 1,
       theme: 'slate',
       escapeExitsFullscreen: true,
-      showTerminalInstances: false,
-      showOpenCodeInstances: true
+      showTerminalInstances: false
     })
   })
 
@@ -126,8 +128,7 @@ describe('terminal settings', () => {
       lineHeight: 1.4,
       theme: 'ember' as const,
       escapeExitsFullscreen: false,
-      showTerminalInstances: true,
-      showOpenCodeInstances: false
+      showTerminalInstances: true
     }
 
     saveTerminalSettings(settings)

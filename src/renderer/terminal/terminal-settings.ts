@@ -10,8 +10,6 @@ export interface TerminalSettings {
   escapeExitsFullscreen: boolean
   /** Whether individual non-OpenCode terminal panes appear in the sidebar. */
   showTerminalInstances: boolean
-  /** Whether individual OpenCode instances appear in the sidebar. */
-  showOpenCodeInstances: boolean
 }
 
 export interface TerminalFontOption {
@@ -58,8 +56,7 @@ export function defaultTerminalSettings(
     lineHeight: 1,
     theme: 'slate',
     escapeExitsFullscreen: true,
-    showTerminalInstances: false,
-    showOpenCodeInstances: true
+    showTerminalInstances: false
   }
 }
 
@@ -98,11 +95,7 @@ export function resolveTerminalSettings(
     showTerminalInstances:
       typeof record.showTerminalInstances === 'boolean'
         ? record.showTerminalInstances
-        : fallback.showTerminalInstances,
-    showOpenCodeInstances:
-      typeof record.showOpenCodeInstances === 'boolean'
-        ? record.showOpenCodeInstances
-        : fallback.showOpenCodeInstances
+        : fallback.showTerminalInstances
   }
 }
 

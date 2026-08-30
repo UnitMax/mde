@@ -1418,13 +1418,6 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
                   testId="sidebar-terminal-instances"
                   onClick={() => updateSettings({ showTerminalInstances: !settings.showTerminalInstances })}
                 />
-                <SettingsToggle
-                  checked={settings.showOpenCodeInstances}
-                  label="Show OpenCode instances"
-                  description="List active OpenCode instances beneath their session."
-                  testId="sidebar-opencode-instances"
-                  onClick={() => updateSettings({ showOpenCodeInstances: !settings.showOpenCodeInstances })}
-                />
               </section>
             )}
 
