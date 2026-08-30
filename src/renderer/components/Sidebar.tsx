@@ -80,6 +80,7 @@ import {
   type WorkspaceView
 } from '@/store/workspace'
 import { OpenCodeStatusIcon } from '@/components/OpenCodeStatusIcon'
+import { SessionEnvironmentPanel } from '@/components/SessionEnvironmentPanel'
 import {
   OPENCODE_STATUS_ICON_SLOT_CLASS,
   openCodeOverviewStatusLabel
@@ -561,7 +562,6 @@ function SessionRow({
     setMoving(false)
   }
 
-  const location = session.kind === 'wsl' ? `${session.distro ?? 'WSL'} · ${session.path}` : session.path
   const indicator = sessionIndicator(status, tuiStatus)
   const sessionColor = session.color ?? DEFAULT_SESSION_COLOR
   const customColor = customSessionColor(session.color)
@@ -572,119 +572,120 @@ function SessionRow({
     <>
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <div
-            ref={rowRef}
-            role="button"
-            tabIndex={0}
-            data-testid="session-row"
-            onClick={onSelect}
-            onDragOver={onDragOver}
-            onDrop={onDrop}
-            onKeyDown={(event) => {
-              if (event.key === 'F2' && event.target === event.currentTarget) {
-                event.preventDefault()
-                startRename()
-                return
-              }
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault()
-                onSelect()
-              }
-            }}
-            className={cn(
-              'group relative ml-1 flex w-[calc(100%-0.25rem)] cursor-default items-center gap-2 rounded py-1.5 pl-4 pr-2 text-left',
-              customColor
-                ? cn('text-fg transition-[filter] hover:brightness-110', customSessionStatusRing(indicator.status))
-                : selected
-                  ? cn(
-                      'bg-active text-fg',
-                      indicator.status === 'attention' && 'ring-1 ring-accent/60'
-                    )
-                  : cn('text-fg-muted hover:bg-hover hover:text-fg', indicator.row),
-              dragging && 'opacity-60',
-              dropPosition === 'before' && 'border-t-2 border-accent',
-              dropPosition === 'after' && 'border-b-2 border-accent'
-            )}
-            style={backgroundStyle}
-          >
-            <button
-              type="button"
-              draggable={!dragDisabled}
-              disabled={dragDisabled}
-              aria-label={`Drag to reorder ${session.name}`}
-              title="Drag to reorder"
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => event.stopPropagation()}
-              onDragStart={(event) => {
-                event.stopPropagation()
-                event.dataTransfer.effectAllowed = 'move'
-                event.dataTransfer.setData('text/plain', session.id)
-                onDragStart()
-              }}
-              onDragEnd={(event) => {
-                event.stopPropagation()
-                onDragEnd()
+          <SessionEnvironmentPanel session={session}>
+            <div
+              ref={rowRef}
+              role="button"
+              tabIndex={0}
+              data-testid="session-row"
+              onClick={onSelect}
+              onDragOver={onDragOver}
+              onDrop={onDrop}
+              onKeyDown={(event) => {
+                if (event.key === 'F2' && event.target === event.currentTarget) {
+                  event.preventDefault()
+                  startRename()
+                  return
+                }
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  onSelect()
+                }
               }}
               className={cn(
-                'absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded text-fg-subtle opacity-0 transition-opacity',
-                'pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100',
-                'group-focus-within:pointer-events-auto group-focus-within:opacity-100',
-                'focus:pointer-events-auto focus:opacity-100 hover:text-fg',
-                dragging && 'pointer-events-auto opacity-100',
-                dragDisabled
-                  ? 'pointer-events-none cursor-default opacity-50'
-                  : 'cursor-grab active:cursor-grabbing'
+                'group relative ml-1 flex w-[calc(100%-0.25rem)] cursor-default items-center gap-2 rounded py-1.5 pl-4 pr-2 text-left',
+                customColor
+                  ? cn('text-fg transition-[filter] hover:brightness-110', customSessionStatusRing(indicator.status))
+                  : selected
+                    ? cn(
+                        'bg-active text-fg',
+                        indicator.status === 'attention' && 'ring-1 ring-accent/60'
+                      )
+                    : cn('text-fg-muted hover:bg-hover hover:text-fg', indicator.row),
+                dragging && 'opacity-60',
+                dropPosition === 'before' && 'border-t-2 border-accent',
+                dropPosition === 'after' && 'border-b-2 border-accent'
               )}
+              style={backgroundStyle}
             >
-              <GripVertical className="h-3.5 w-3.5" />
-            </button>
-            <span className={OPENCODE_STATUS_ICON_SLOT_CLASS}>
-              <StatusDot indicator={indicator} />
-            </span>
-
-            <div className="min-w-0 flex-1">
-              {renaming ? (
-                <input
-                  autoFocus
-                  value={draftName}
-                  onChange={(event) => setDraftName(event.target.value)}
-                  onBlur={commitRename}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') commitRename()
-                    if (event.key === 'Escape') {
-                      setDraftName(session.name)
-                      setRenaming(false)
-                    }
-                    event.stopPropagation()
-                  }}
-                  onClick={(event) => event.stopPropagation()}
-                  className="h-5 w-full rounded-sm border border-accent bg-bg px-1 text-[13px] text-fg outline-none"
-                />
-              ) : (
-                <div data-testid="session-name" className="truncate text-[13px] leading-tight">
-                  {session.name}
-                </div>
-              )}
-              <div
-                className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight text-fg-subtle"
-                title={location}
+              <button
+                type="button"
+                draggable={!dragDisabled}
+                disabled={dragDisabled}
+                aria-label={`Drag to reorder ${session.name}`}
+                title="Drag to reorder"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+                onDragStart={(event) => {
+                  event.stopPropagation()
+                  event.dataTransfer.effectAllowed = 'move'
+                  event.dataTransfer.setData('text/plain', session.id)
+                  onDragStart()
+                }}
+                onDragEnd={(event) => {
+                  event.stopPropagation()
+                  onDragEnd()
+                }}
+                className={cn(
+                  'absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded text-fg-subtle opacity-0 transition-opacity',
+                  'pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100',
+                  'group-focus-within:pointer-events-auto group-focus-within:opacity-100',
+                  'focus:pointer-events-auto focus:opacity-100 hover:text-fg',
+                  dragging && 'pointer-events-auto opacity-100',
+                  dragDisabled
+                    ? 'pointer-events-none cursor-default opacity-50'
+                    : 'cursor-grab active:cursor-grabbing'
+                )}
               >
-                <span className="min-w-0 truncate">{location}</span>
-              </div>
-            </div>
+                <GripVertical className="h-3.5 w-3.5" />
+              </button>
+              <span className={OPENCODE_STATUS_ICON_SLOT_CLASS}>
+                <StatusDot indicator={indicator} />
+              </span>
 
-            <button
-              type="button"
-              onClick={openMenuFromButton}
-              title="Session actions"
-              className={cn(
-                'shrink-0 rounded p-0.5 text-fg-subtle opacity-0 transition-opacity',
-                'hover:bg-elevated hover:text-fg focus:opacity-100 group-hover:opacity-100'
-              )}
-            >
-              <MoreHorizontal className="h-3.5 w-3.5" />
-            </button>
-          </div>
+              <div className="min-w-0 flex-1">
+                {renaming ? (
+                  <input
+                    autoFocus
+                    value={draftName}
+                    onChange={(event) => setDraftName(event.target.value)}
+                    onBlur={commitRename}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') commitRename()
+                      if (event.key === 'Escape') {
+                        setDraftName(session.name)
+                        setRenaming(false)
+                      }
+                      event.stopPropagation()
+                    }}
+                    onClick={(event) => event.stopPropagation()}
+                    className="h-5 w-full rounded-sm border border-accent bg-bg px-1 text-[13px] text-fg outline-none"
+                  />
+                ) : (
+                  <div data-testid="session-name" className="truncate text-[13px] leading-tight">
+                    {session.name}
+                  </div>
+                )}
+                <div className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight text-fg-subtle">
+                  <span data-testid="session-directory" className="min-w-0 truncate font-mono">
+                    {session.path}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={openMenuFromButton}
+                title="Session actions"
+                className={cn(
+                  'shrink-0 rounded p-0.5 text-fg-subtle opacity-0 transition-opacity',
+                  'hover:bg-elevated hover:text-fg focus:opacity-100 group-hover:opacity-100'
+                )}
+              >
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </SessionEnvironmentPanel>
         </ContextMenuTrigger>
 
         <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
@@ -1366,34 +1367,36 @@ export function Sidebar({
                     return (
                       <ContextMenu key={session.id}>
                         <ContextMenuTrigger asChild>
-                          <button
-                            type="button"
-                            onClick={() => selectSession(session.id)}
-                            title={`${project.name} · ${session.name}`}
-                            className={cn(
-                              'relative flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase',
-                              customColor
-                                ? cn(
-                                    'text-fg transition-[filter] hover:brightness-110',
-                                    customSessionStatusRing(indicator.status)
-                                  )
-                                : session.id === selectedSessionId
+                          <SessionEnvironmentPanel session={session}>
+                            <button
+                              type="button"
+                              aria-label={`${project.name}: ${session.name}`}
+                              onClick={() => selectSession(session.id)}
+                              className={cn(
+                                'relative flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase',
+                                customColor
                                   ? cn(
-                                      'bg-active text-fg',
-                                      indicator.status === 'attention' && 'ring-1 ring-accent/60'
+                                      'text-fg transition-[filter] hover:brightness-110',
+                                      customSessionStatusRing(indicator.status)
                                     )
-                                  : cn('text-fg-muted hover:bg-hover hover:text-fg', indicator.row)
-                            )}
-                            style={sessionBackgroundStyle(session.color, indicator)}
-                          >
-                            <span data-testid="collapsed-session-label">
-                              {sessionIconOption(session.icon)?.emoji ?? session.name.slice(0, 2)}
-                            </span>
-                            <StatusDot
-                              indicator={indicator}
-                              className="absolute -bottom-0.5 right-0.5 ring-2 ring-panel"
-                            />
-                          </button>
+                                  : session.id === selectedSessionId
+                                    ? cn(
+                                        'bg-active text-fg',
+                                        indicator.status === 'attention' && 'ring-1 ring-accent/60'
+                                      )
+                                    : cn('text-fg-muted hover:bg-hover hover:text-fg', indicator.row)
+                              )}
+                              style={sessionBackgroundStyle(session.color, indicator)}
+                            >
+                              <span data-testid="collapsed-session-label">
+                                {sessionIconOption(session.icon)?.emoji ?? session.name.slice(0, 2)}
+                              </span>
+                              <StatusDot
+                                indicator={indicator}
+                                className="absolute -bottom-0.5 right-0.5 ring-2 ring-panel"
+                              />
+                            </button>
+                          </SessionEnvironmentPanel>
                         </ContextMenuTrigger>
                         <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
                           <ContextMenuSub>
