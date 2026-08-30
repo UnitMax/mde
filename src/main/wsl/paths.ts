@@ -51,7 +51,7 @@ const CANONICALIZE_WSL_PATH_SCRIPT = [
   'input=$1',
   'case "$input" in',
   '  "~") input=$HOME ;;',
-  '  "~/"*) input="$HOME/${input#~/}" ;;',
+  '  "~/"*) input="$HOME/${input:2}" ;;',
   'esac',
   'if resolved=$(realpath -- "$input" 2>/dev/null); then',
   '  printf "%s\\n" "$resolved"',

@@ -180,6 +180,24 @@ describe('WSL path resolution', () => {
     })
   })
 
+  it('executes home shorthand expansion without retaining a literal tilde', async () => {
+    vi.mocked(runWsl).mockImplementation(async (args) => {
+      const result = spawnSync('bash', ['-lc', args[5] ?? '', 'mde-path', '~/dev/testmde'], {
+        encoding: 'utf8',
+        env: { ...process.env, HOME: '/home/tester' }
+      })
+      return {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        code: result.status ?? 1
+      }
+    })
+
+    await expect(canonicalizeWslPath('Ubuntu-24.04', '~/dev/testmde')).resolves.toBe(
+      '/home/tester/dev/testmde'
+    )
+  })
+
   it('execs the script instead of letting the default shell re-parse it', async () => {
     vi.mocked(runWsl).mockResolvedValue({ stdout: '/home/me\n', stderr: '', code: 0 })
 

@@ -236,7 +236,14 @@ export function registerIpcHandlers(
   )
   handle<string, void>(IpcChannels.todoTasksRemove, (id) => removeTodoTask(id))
 
-  handle<NewSession, Session>(IpcChannels.sessionsCreate, (input) => createSession(input))
+  handle<NewSession, Session>(IpcChannels.sessionsCreate, async (input) => {
+    const resolution = await resolveForTarget(input.kind, input.distro, input.path)
+    return createSession({
+      ...input,
+      path: resolution.path,
+      ...(resolution.distro ? { distro: resolution.distro } : {})
+    })
+  })
   handle<string, Session | null>(IpcChannels.sessionsDuplicate, (id) => duplicateSession(id))
   handle<UpdateSessionRequest, Session | null>(IpcChannels.sessionsUpdate, (req) =>
     updateSession(req)

@@ -96,7 +96,9 @@ describe('terminal Explorer IPC', () => {
   beforeEach(() => {
     electronMock.handlers.clear()
     electronMock.shell.openPath.mockClear()
+    workspaceMock.createSession.mockReset()
     workspaceMock.getSession.mockReset()
+    wslPathsMock.resolveForTarget.mockReset()
     wslPathsMock.toWindows.mockReset()
     wslPathsMock.uncPathFor.mockReset()
   })
@@ -180,5 +182,57 @@ describe('terminal Explorer IPC', () => {
     await handler(IpcChannels.pathRevealTerminal)({}, 'pane-1')
 
     expect(electronMock.shell.openPath).not.toHaveBeenCalled()
+  })
+
+  it('normalizes a raw WSL home path before creating a session', async () => {
+    const created = wslSession({ path: '/home/tester/dev/testmde' })
+    workspaceMock.createSession.mockResolvedValue(created)
+    wslPathsMock.resolveForTarget.mockResolvedValue({ path: '/home/tester/dev/testmde' })
+    registerForTest(vi.fn())
+
+    const input = {
+      projectId: 'project-1',
+      name: 'testmde',
+      kind: 'wsl',
+      distro: 'Ubuntu-24.04',
+      path: '~/dev/testmde'
+    }
+
+    await expect(handler(IpcChannels.sessionsCreate)({}, input)).resolves.toBe(created)
+
+    expect(wslPathsMock.resolveForTarget).toHaveBeenCalledWith(
+      'wsl',
+      'Ubuntu-24.04',
+      '~/dev/testmde'
+    )
+    expect(workspaceMock.createSession).toHaveBeenCalledWith({
+      ...input,
+      path: '/home/tester/dev/testmde'
+    })
+  })
+
+  it('keeps native session paths in the target-native format', async () => {
+    const created = {
+      ...wslSession({ kind: 'native', distro: undefined, path: 'C:\\dev\\testmde' })
+    }
+    workspaceMock.createSession.mockResolvedValue(created)
+    wslPathsMock.resolveForTarget.mockResolvedValue({ path: 'C:\\dev\\testmde' })
+    registerForTest(vi.fn())
+
+    const input = {
+      projectId: 'project-1',
+      name: 'testmde',
+      kind: 'native',
+      path: 'C:\\dev\\testmde'
+    }
+
+    await expect(handler(IpcChannels.sessionsCreate)({}, input)).resolves.toBe(created)
+
+    expect(wslPathsMock.resolveForTarget).toHaveBeenCalledWith(
+      'native',
+      undefined,
+      'C:\\dev\\testmde'
+    )
+    expect(workspaceMock.createSession).toHaveBeenCalledWith(input)
   })
 })
