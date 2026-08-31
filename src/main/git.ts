@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { win32 } from 'node:path'
 import type {
   GitChange,
   GitChangeStatus,
@@ -8,6 +9,7 @@ import type {
   GitCommit,
   Session
 } from '@shared/types'
+import { resolveWindowsGitExecutable } from './git-executable'
 import { runWslCommand } from './wsl/distros'
 
 const GIT_HISTORY_LIMIT = 50
@@ -30,10 +32,10 @@ export interface GitLineChangeCounts {
   deletions: number
 }
 
-function runNativeGit(args: string[], cwd: string): Promise<GitCommandResult> {
+function runNativeGit(file: string, args: string[], cwd: string): Promise<GitCommandResult> {
   return new Promise((resolve) => {
     execFile(
-      'git',
+      file,
       args,
       {
         cwd,
@@ -55,6 +57,19 @@ function runNativeGit(args: string[], cwd: string): Promise<GitCommandResult> {
   })
 }
 
+async function runWindowsGit(args: string[], workspaceDirectory: string): Promise<GitCommandResult> {
+  try {
+    const executable = await resolveWindowsGitExecutable(workspaceDirectory)
+    return runNativeGit(
+      executable,
+      ['-C', workspaceDirectory, ...args],
+      win32.dirname(executable)
+    )
+  } catch {
+    return { stdout: '', stderr: '', code: 1, launchError: true }
+  }
+}
+
 export function createGitCommandRunner(
   session: Session,
   platform: NodeJS.Platform = process.platform
@@ -72,7 +87,8 @@ export function createGitCommandRunner(
     }
   }
 
-  return (args) => runNativeGit(args, session.path)
+  if (platform === 'win32') return (args) => runWindowsGit(args, session.path)
+  return (args) => runNativeGit('git', args, session.path)
 }
 
 function isNotRepository(result: GitCommandResult): boolean {

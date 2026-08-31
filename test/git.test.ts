@@ -16,10 +16,14 @@ import { formatGitTimestamp, parseGitDiff, shortGitHash } from '../src/renderer/
 
 const mocks = vi.hoisted(() => ({
   execFile: vi.fn(),
+  resolveWindowsGitExecutable: vi.fn(),
   runWslCommand: vi.fn()
 }))
 
 vi.mock('node:child_process', () => ({ execFile: mocks.execFile }))
+vi.mock('../src/main/git-executable', () => ({
+  resolveWindowsGitExecutable: mocks.resolveWindowsGitExecutable
+}))
 vi.mock('../src/main/wsl/distros', () => ({ runWslCommand: mocks.runWslCommand }))
 
 function result(stdout = '', stderr = '', code = 0): GitCommandResult {
@@ -45,6 +49,8 @@ const wslSession = {
 
 beforeEach(() => {
   mocks.execFile.mockReset()
+  mocks.resolveWindowsGitExecutable.mockReset()
+  mocks.resolveWindowsGitExecutable.mockResolvedValue('C:\\Program Files\\Git\\cmd\\git.exe')
   mocks.runWslCommand.mockReset()
 })
 
@@ -67,6 +73,47 @@ describe('Git history queries', () => {
 
     expect(calls).toHaveLength(4)
     expect(calls.every((call) => call.file === 'git' && call.cwd === nativeSession.path)).toBe(true)
+  })
+
+  it('uses an absolute trusted Git executable and -C for native Windows sessions', async () => {
+    const session = {
+      ...nativeSession,
+      path: 'C:\\Projects\\hostile'
+    }
+    const calls: Array<{ file: string; args: string[]; cwd?: string }> = []
+    mocks.execFile.mockImplementation(
+      (file: string, args: string[], options: { cwd?: string }, callback: (error: null, stdout: string, stderr: string) => void) => {
+        calls.push({ file, args, cwd: options.cwd })
+        callback(null, args.includes('rev-parse') ? 'true\n' : '', '')
+      }
+    )
+
+    const run = createGitCommandRunner(session, 'win32')
+    await run(['--no-pager', 'status'])
+
+    expect(mocks.resolveWindowsGitExecutable).toHaveBeenCalledWith(session.path)
+    expect(calls).toEqual([{
+      file: 'C:\\Program Files\\Git\\cmd\\git.exe',
+      args: ['-C', session.path, '--no-pager', 'status'],
+      cwd: 'C:\\Program Files\\Git\\cmd'
+    }])
+  })
+
+  it('fails closed when trusted Windows Git resolution fails', async () => {
+    mocks.resolveWindowsGitExecutable.mockRejectedValue(new Error('Only workspace Git was found.'))
+
+    const run = createGitCommandRunner({
+      ...nativeSession,
+      path: 'C:\\Projects\\hostile'
+    }, 'win32')
+
+    await expect(run(['status'])).resolves.toEqual({
+      stdout: '',
+      stderr: '',
+      code: 1,
+      launchError: true
+    })
+    expect(mocks.execFile).not.toHaveBeenCalled()
   })
 
   it('uses the WSL distro and session path for Git commands', async () => {
