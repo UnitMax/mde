@@ -3,7 +3,7 @@ import type { DropPtyFile } from '../src/shared/ipc'
 import type { Session } from '../src/shared/types'
 
 const wslMock = vi.hoisted(() => ({
-  runWsl: vi.fn(),
+  runWslCommand: vi.fn(),
   toWsl: vi.fn()
 }))
 
@@ -11,7 +11,7 @@ vi.mock('../src/main/wsl/distros', async () => {
   const actual = await vi.importActual<typeof import('../src/main/wsl/distros')>(
     '../src/main/wsl/distros'
   )
-  return { ...actual, runWsl: wslMock.runWsl }
+  return { ...actual, runWslCommand: wslMock.runWslCommand }
 })
 
 vi.mock('../src/main/wsl/paths', async () => {
@@ -49,7 +49,7 @@ function droppedFile(nativePath?: string, name = 'image.png'): DropPtyFile {
 
 describe('terminal file drops', () => {
   beforeEach(() => {
-    wslMock.runWsl.mockReset()
+    wslMock.runWslCommand.mockReset()
     wslMock.toWsl.mockReset()
   })
 
@@ -155,7 +155,7 @@ describe('terminal file drops', () => {
 
   it('translates an accessible Windows drop into the active WSL distro', async () => {
     wslMock.toWsl.mockResolvedValue('/mnt/c/Users/me/image.png')
-    wslMock.runWsl.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
+    wslMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
 
     const result = await resolveTerminalDrop(
       session({ kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me' }),
@@ -169,14 +169,10 @@ describe('terminal file drops', () => {
       acceptedCount: 1,
       rejections: []
     })
-    expect(wslMock.runWsl).toHaveBeenCalledWith([
-      '-d',
+    expect(wslMock.runWslCommand).toHaveBeenCalledWith(
       'Ubuntu-24.04',
-      '-e',
-      'test',
-      '-e',
-      '/mnt/c/Users/me/image.png'
-    ])
+      ['test', '-e', '/mnt/c/Users/me/image.png']
+    )
   })
 
   it('rejects drops from a different WSL distro', async () => {
@@ -192,7 +188,7 @@ describe('terminal file drops', () => {
       acceptedCount: 0,
       rejections: [{ name: 'image.png', code: 'wrong-distro', distro: 'Ubuntu-24.04' }]
     })
-    expect(wslMock.runWsl).not.toHaveBeenCalled()
+    expect(wslMock.runWslCommand).not.toHaveBeenCalled()
   })
 
   it('reports a WSL translation failure separately from an inaccessible file', async () => {
@@ -210,12 +206,12 @@ describe('terminal file drops', () => {
       acceptedCount: 0,
       rejections: [{ name: 'image.png', code: 'translation-failed', distro: 'Ubuntu-24.04' }]
     })
-    expect(wslMock.runWsl).not.toHaveBeenCalled()
+    expect(wslMock.runWslCommand).not.toHaveBeenCalled()
   })
 
   it('reports a file that WSL cannot see as inaccessible', async () => {
     wslMock.toWsl.mockResolvedValue('/mnt/c/Users/me/missing.png')
-    wslMock.runWsl.mockResolvedValue({ stdout: '', stderr: '', code: 1 })
+    wslMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 1 })
 
     await expect(
       resolveTerminalDrop(

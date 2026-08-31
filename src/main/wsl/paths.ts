@@ -1,5 +1,5 @@
 import type { PathResolution } from '@shared/types'
-import { runWsl } from './distros'
+import { runWslCommand } from './distros'
 
 /** e.g. \\wsl$\Ubuntu-24.04\home\me\src or \\wsl.localhost\Ubuntu-24.04\home\me\src */
 const WSL_UNC = /^\\\\wsl(?:\$|\.localhost)\\([^\\/]+)((?:[\\/].*)?)$/i
@@ -69,10 +69,7 @@ const CANONICALIZE_WSL_PATH_SCRIPT = [
  * default shell, which re-parses it and eats the script's `;;` and quoting.
  */
 export async function canonicalizeWslPath(distro: string, rawPath: string): Promise<string | null> {
-  const result = await runWsl([
-    '-d',
-    distro,
-    '-e',
+  const result = await runWslCommand(distro, [
     'bash',
     '-lc',
     CANONICALIZE_WSL_PATH_SCRIPT,
@@ -89,10 +86,7 @@ export async function canonicalizeWslPath(distro: string, rawPath: string): Prom
 
 /** `wsl.exe -d <distro> -e wslpath -u <windowsPath>` */
 export async function toWsl(distro: string, windowsPath: string): Promise<string | null> {
-  const result = await runWsl([
-    '-d',
-    distro,
-    '-e',
+  const result = await runWslCommand(distro, [
     'wslpath',
     '-u',
     stripTrailingSeparators(windowsPath)
@@ -107,7 +101,7 @@ export async function toWsl(distro: string, windowsPath: string): Promise<string
 
 /** `wsl.exe -d <distro> -e wslpath -w <linuxPath>` */
 export async function toWindows(distro: string, linuxPath: string): Promise<string | null> {
-  const result = await runWsl(['-d', distro, '-e', 'wslpath', '-w', linuxPath])
+  const result = await runWslCommand(distro, ['wslpath', '-w', linuxPath])
   if (result.code !== 0) {
     console.warn(`[wsl] wslpath -w failed for ${linuxPath}: ${result.stderr.trim()}`)
     return null

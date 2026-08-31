@@ -15,8 +15,38 @@ export interface WslResult {
   code: number
 }
 
-/** Runs wsl.exe and resolves with the exit code instead of throwing on non-zero. */
-export function runWsl(args: string[], timeoutMs = 15_000): Promise<WslResult> {
+export interface WslCommandOptions {
+  /** Working directory inside the selected distro. */
+  cwd?: string
+  timeoutMs?: number
+}
+
+/** Builds a direct-exec distro command. Data arguments are never shell-reparsed by WSL. */
+export function buildWslExecArgs(
+  distro: string,
+  command: readonly string[],
+  cwd?: string
+): string[] {
+  return [
+    '-d',
+    distro,
+    ...(cwd === undefined ? [] : ['--cd', cwd]),
+    '-e',
+    ...command
+  ]
+}
+
+/** Runs a command directly inside a distro and resolves on non-zero exit codes. */
+export function runWslCommand(
+  distro: string,
+  command: readonly string[],
+  options: WslCommandOptions = {}
+): Promise<WslResult> {
+  return runWslClient(buildWslExecArgs(distro, command, options.cwd), options.timeoutMs)
+}
+
+/** Low-level launcher reserved for wsl.exe client operations such as --status and --list. */
+function runWslClient(args: readonly string[], timeoutMs = 15_000): Promise<WslResult> {
   return new Promise((resolve) => {
     execFile(
       'wsl.exe',
@@ -118,7 +148,7 @@ let availability: Promise<boolean> | null = null
 export function isWslAvailable(): Promise<boolean> {
   if (process.platform !== 'win32') return Promise.resolve(false)
   if (!availability) {
-    availability = runWsl(['--status'])
+    availability = runWslClient(['--status'])
       .then((result) => result.code === 0)
       .catch(() => false)
   }
@@ -129,7 +159,7 @@ export function isWslAvailable(): Promise<boolean> {
 export async function listDistros(): Promise<Distro[]> {
   if (!(await isWslAvailable())) return []
 
-  const result = await runWsl(['--list', '--verbose'])
+  const result = await runWslClient(['--list', '--verbose'])
   if (result.code !== 0) {
     console.warn(`[wsl] --list --verbose exited ${result.code}: ${result.stderr.trim()}`)
     return []

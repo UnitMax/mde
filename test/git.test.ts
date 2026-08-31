@@ -16,11 +16,11 @@ import { formatGitTimestamp, parseGitDiff, shortGitHash } from '../src/renderer/
 
 const mocks = vi.hoisted(() => ({
   execFile: vi.fn(),
-  runWsl: vi.fn()
+  runWslCommand: vi.fn()
 }))
 
 vi.mock('node:child_process', () => ({ execFile: mocks.execFile }))
-vi.mock('../src/main/wsl/distros', () => ({ runWsl: mocks.runWsl }))
+vi.mock('../src/main/wsl/distros', () => ({ runWslCommand: mocks.runWslCommand }))
 
 function result(stdout = '', stderr = '', code = 0): GitCommandResult {
   return { stdout, stderr, code }
@@ -45,7 +45,7 @@ const wslSession = {
 
 beforeEach(() => {
   mocks.execFile.mockReset()
-  mocks.runWsl.mockReset()
+  mocks.runWslCommand.mockReset()
 })
 
 describe('Git history queries', () => {
@@ -70,12 +70,16 @@ describe('Git history queries', () => {
   })
 
   it('uses the WSL distro and session path for Git commands', async () => {
-    const calls: string[][] = []
-    mocks.runWsl.mockImplementation(async (args: string[]) => {
-      calls.push(args)
-      const stdout = args.includes('rev-parse')
+    const calls: Array<{ distro: string; command: readonly string[]; cwd?: string }> = []
+    mocks.runWslCommand.mockImplementation(async (
+      distro: string,
+      command: readonly string[],
+      options: { cwd?: string } = {}
+    ) => {
+      calls.push({ distro, command, cwd: options.cwd })
+      const stdout = command.includes('rev-parse')
         ? 'true\n'
-        : args.includes('branch')
+        : command.includes('branch')
           ? 'main\n'
           : ''
       return { stdout, stderr: '', code: 0 }
@@ -84,10 +88,23 @@ describe('Git history queries', () => {
     await readGitInfoWithRunner(createGitCommandRunner(wslSession, 'win32'))
 
     expect(calls).toHaveLength(4)
-    expect(calls.every((args) =>
-      args.slice(0, 5).every((value, index) => value === ['-d', 'Ubuntu-24.04', '--cd', '/home/me/src/app', '--'][index])
-    )).toBe(true)
-    expect(calls.every((args) => args.includes('git'))).toBe(true)
+    expect(calls.every((call) => call.distro === 'Ubuntu-24.04')).toBe(true)
+    expect(calls.every((call) => call.cwd === '/home/me/src/app')).toBe(true)
+    expect(calls.every((call) => call.command[0] === 'git')).toBe(true)
+  })
+
+  it('preserves Git separators and hostile filenames as direct arguments', async () => {
+    const filename = "change 'single' \"double\"; $(touch sentinel) `touch sentinel`\nline.ts"
+    mocks.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
+
+    const run = createGitCommandRunner(wslSession, 'win32')
+    await run(['--no-pager', 'diff', 'HEAD', '--', filename])
+
+    expect(mocks.runWslCommand).toHaveBeenCalledWith(
+      'Ubuntu-24.04',
+      ['git', '--no-pager', 'diff', 'HEAD', '--', filename],
+      { cwd: '/home/me/src/app' }
+    )
   })
 
   it('reads the branch and newest commits through one runner', async () => {

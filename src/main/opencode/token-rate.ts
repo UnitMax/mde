@@ -10,7 +10,7 @@ import type {
   Session
 } from '@shared/types'
 import { uncPathFor } from '../wsl/paths'
-import { runWsl } from '../wsl/distros'
+import { buildWslExecArgs, runWslCommand } from '../wsl/distros'
 import { assertWslLinuxPath, readWslShellValue } from '../wsl/shell-value'
 import type { PtyLaunchIntegration } from '../pty/manager'
 
@@ -520,12 +520,12 @@ function nativeOpenCodeVersion(): Promise<string | null> {
 }
 
 export function wslOpenCodeVersionArgs(distro: string): string[] {
-  return ['-d', distro, '-e', 'bash', '-lic', 'exec opencode --version']
+  return buildWslExecArgs(distro, ['bash', '-lic', 'exec opencode --version'])
 }
 
 async function targetOpenCodeVersion(target: OpenCodePluginTarget): Promise<string | null> {
   if (target.kind === 'native') return nativeOpenCodeVersion()
-  const result = await runWsl(wslOpenCodeVersionArgs(target.distro))
+  const result = await runWslCommand(target.distro, ['bash', '-lic', 'exec opencode --version'])
   return result.code === 0 ? normalizedVersion(result.stdout) : null
 }
 

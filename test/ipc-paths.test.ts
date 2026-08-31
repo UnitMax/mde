@@ -52,14 +52,16 @@ const wslPathsMock = vi.hoisted(() => ({
   uncPathFor: vi.fn()
 }))
 
+const wslDistrosMock = vi.hoisted(() => ({
+  isWslAvailable: vi.fn(),
+  listDistros: vi.fn(),
+  runWslCommand: vi.fn()
+}))
+
 vi.mock('electron', () => electronMock)
 vi.mock('../src/main/store/workspace', () => workspaceMock)
 vi.mock('../src/main/wsl/paths', () => wslPathsMock)
-vi.mock('../src/main/wsl/distros', () => ({
-  isWslAvailable: vi.fn(),
-  listDistros: vi.fn(),
-  runWsl: vi.fn()
-}))
+vi.mock('../src/main/wsl/distros', () => wslDistrosMock)
 
 import { IpcChannels } from '../src/shared/ipc'
 import { registerIpcHandlers } from '../src/main/ipc'
@@ -98,9 +100,13 @@ describe('terminal Explorer IPC', () => {
     electronMock.shell.openPath.mockClear()
     workspaceMock.createSession.mockReset()
     workspaceMock.getSession.mockReset()
+    wslPathsMock.canonicalizeWslPath.mockReset()
     wslPathsMock.resolveForTarget.mockReset()
     wslPathsMock.toWindows.mockReset()
     wslPathsMock.uncPathFor.mockReset()
+    wslDistrosMock.isWslAvailable.mockReset()
+    wslDistrosMock.listDistros.mockReset()
+    wslDistrosMock.runWslCommand.mockReset()
   })
 
   afterEach(() => {
@@ -209,6 +215,27 @@ describe('terminal Explorer IPC', () => {
       ...input,
       path: '/home/tester/dev/testmde'
     })
+  })
+
+  it('validates hostile WSL directory names through direct execution', async () => {
+    const path = "/tmp/project 'single' \"double\"; $(touch sentinel) `touch sentinel`\nline"
+    wslDistrosMock.isWslAvailable.mockResolvedValue(true)
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue(path)
+    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
+    registerForTest(vi.fn())
+
+    await expect(
+      handler(IpcChannels.pathValidate)({}, {
+        kind: 'wsl',
+        distro: 'Ubuntu-24.04',
+        path
+      })
+    ).resolves.toEqual({ exists: true })
+
+    expect(wslDistrosMock.runWslCommand).toHaveBeenCalledWith(
+      'Ubuntu-24.04',
+      ['test', '-d', path]
+    )
   })
 
   it('keeps native session paths in the target-native format', async () => {

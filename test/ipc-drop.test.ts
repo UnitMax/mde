@@ -64,7 +64,7 @@ vi.mock('../src/main/wsl/paths', () => ({
 vi.mock('../src/main/wsl/distros', () => ({
   isWslAvailable: vi.fn(),
   listDistros: vi.fn(),
-  runWsl: vi.fn()
+  runWslCommand: vi.fn()
 }))
 
 import { IpcChannels, type DropPtyFilesRequest } from '../src/shared/ipc'

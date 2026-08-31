@@ -1,4 +1,4 @@
-import { runWsl, type WslResult } from './distros'
+import { runWslCommand, type WslResult } from './distros'
 
 /**
  * Reading a single value out of a distro is deceptively hard. A login shell is
@@ -74,7 +74,7 @@ function describeValue(value: string): string {
  * Reads one shell value from a distro. Tries an interactive login shell first
  * so variables the user only exports from `.bashrc` are honored, then retries
  * non-interactively when that produces nothing usable — an rc file that fails,
- * or hangs until runWsl's timeout, should not make the value unreadable.
+ * or hangs until the WSL command timeout, should not make the value unreadable.
  *
  * -e (--exec), never --: wsl.exe hands everything after `--` to the distro's
  * default shell, which re-parses it and eats the script's quoting.
@@ -87,7 +87,7 @@ export async function readWslShellValue(
   let last: WslResult | null = null
 
   for (const shellArgs of ['-lic', '-lc']) {
-    const result = await runWsl(['-d', distro, '-e', 'bash', shellArgs, script])
+    const result = await runWslCommand(distro, ['bash', shellArgs, script])
     last = result
     const value = extractWslShellValue(result.stdout)
     if (value !== null && value.trim().length > 0) return { value, detail: describeWslOutput(result) }

@@ -8,7 +8,7 @@ import type {
   TerminalDropRejectionCode
 } from '@shared/ipc'
 import type { Session } from '@shared/types'
-import { runWsl } from '../wsl/distros'
+import { runWslCommand } from '../wsl/distros'
 import { isWindowsDrivePath, parseWslUncPath, toWsl } from '../wsl/paths'
 
 export type TerminalDropShell = 'posix' | 'powershell' | 'cmd'
@@ -121,7 +121,7 @@ interface WslPathCheck {
 }
 
 async function wslPathExists(distro: string, path: string): Promise<WslPathCheck> {
-  const result = await runWsl(['-d', distro, '-e', 'test', '-e', path])
+  const result = await runWslCommand(distro, ['test', '-e', path])
   return {
     exists: result.code === 0,
     unavailable: result.code !== 0 && result.stderr.trim().length > 0

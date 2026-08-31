@@ -2,12 +2,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../src/main/wsl/distros', async () => ({
   ...(await vi.importActual<typeof import('../src/main/wsl/distros')>('../src/main/wsl/distros')),
-  runWsl: vi.fn()
+  runWslCommand: vi.fn()
 }))
 
 import { spawnSync } from 'node:child_process'
 
-import { decodeWslOutput, parseDistroList, runWsl } from '../src/main/wsl/distros'
+import {
+  buildWslExecArgs,
+  decodeWslOutput,
+  parseDistroList,
+  runWslCommand
+} from '../src/main/wsl/distros'
 import {
   assertWslLinuxPath,
   extractWslShellValue,
@@ -110,6 +115,44 @@ describe('decodeWslOutput', () => {
   })
 })
 
+describe('WSL direct execution', () => {
+  it('keeps shell metacharacters in one direct-exec argument', () => {
+    const path = "/tmp/project 'single' \"double\"; $(touch sentinel) `touch sentinel`\nline"
+
+    expect(buildWslExecArgs('Ubuntu-24.04', ['test', '-d', path])).toEqual([
+      '-d',
+      'Ubuntu-24.04',
+      '-e',
+      'test',
+      '-d',
+      path
+    ])
+  })
+
+  it('places the WSL working directory before direct Git execution', () => {
+    const filename = "change 'single' \"double\"; $(touch sentinel) `touch sentinel`\nline.ts"
+
+    expect(
+      buildWslExecArgs(
+        'Ubuntu-24.04',
+        ['git', 'diff', 'HEAD', '--', filename],
+        '/home/me/src/app'
+      )
+    ).toEqual([
+      '-d',
+      'Ubuntu-24.04',
+      '--cd',
+      '/home/me/src/app',
+      '-e',
+      'git',
+      'diff',
+      'HEAD',
+      '--',
+      filename
+    ])
+  })
+})
+
 describe('parseWslUncPath', () => {
   it('parses \\\\wsl$ paths', () => {
     expect(parseWslUncPath('\\\\wsl$\\Ubuntu-24.04\\home\\me\\src\\app')).toEqual({
@@ -161,12 +204,12 @@ describe('path classification', () => {
 })
 
 beforeEach(() => {
-  vi.mocked(runWsl).mockReset()
+  vi.mocked(runWslCommand).mockReset()
 })
 
 describe('WSL path resolution', () => {
   it('expands home shorthand and stores the canonical directory', async () => {
-    vi.mocked(runWsl).mockResolvedValue({
+    vi.mocked(runWslCommand).mockResolvedValue({
       stdout: '/home/me/dev/testmde\n',
       stderr: '',
       code: 0
@@ -181,8 +224,13 @@ describe('WSL path resolution', () => {
   })
 
   it('executes home shorthand expansion without retaining a literal tilde', async () => {
-    vi.mocked(runWsl).mockImplementation(async (args) => {
-      const result = spawnSync('bash', ['-lc', args[5] ?? '', 'mde-path', '~/dev/testmde'], {
+    vi.mocked(runWslCommand).mockImplementation(async (_distro, command) => {
+      const result = spawnSync('bash', [
+        '-lc',
+        command[2] ?? '',
+        command[3] ?? '',
+        command[4] ?? ''
+      ], {
         encoding: 'utf8',
         env: { ...process.env, HOME: '/home/tester' }
       })
@@ -199,47 +247,37 @@ describe('WSL path resolution', () => {
   })
 
   it('execs the script instead of letting the default shell re-parse it', async () => {
-    vi.mocked(runWsl).mockResolvedValue({ stdout: '/home/me\n', stderr: '', code: 0 })
+    vi.mocked(runWslCommand).mockResolvedValue({ stdout: '/home/me\n', stderr: '', code: 0 })
 
     await canonicalizeWslPath('Ubuntu-24.04', '~')
 
-    expect(vi.mocked(runWsl).mock.calls[0]?.[0]?.slice(0, 4)).toEqual([
-      '-d',
+    expect(vi.mocked(runWslCommand).mock.calls[0]?.slice(0, 2)).toEqual([
       'Ubuntu-24.04',
-      '-e',
-      'bash'
+      ['bash', '-lc', expect.any(String), 'mde-path', '~']
     ])
   })
 
   it('executes wslpath directly so Windows backslashes survive zsh', async () => {
-    vi.mocked(runWsl).mockResolvedValue({ stdout: '/mnt/c/Users/TestUser/My Image.png\n', stderr: '', code: 0 })
+    vi.mocked(runWslCommand).mockResolvedValue({ stdout: '/mnt/c/Users/TestUser/My Image.png\n', stderr: '', code: 0 })
 
     await expect(
       toWsl('Ubuntu-24.04', String.raw`C:\Users\TestUser\My Image.png`)
     ).resolves.toBe('/mnt/c/Users/TestUser/My Image.png')
-    expect(vi.mocked(runWsl).mock.calls[0]?.[0]).toEqual([
-      '-d',
+    expect(vi.mocked(runWslCommand).mock.calls[0]?.slice(0, 2)).toEqual([
       'Ubuntu-24.04',
-      '-e',
-      'wslpath',
-      '-u',
-      String.raw`C:\Users\TestUser\My Image.png`
+      ['wslpath', '-u', String.raw`C:\Users\TestUser\My Image.png`]
     ])
   })
 
   it('executes reverse wslpath conversion directly too', async () => {
-    vi.mocked(runWsl).mockResolvedValue({ stdout: 'C:\\Users\\TestUser\\My Image.png\n', stderr: '', code: 0 })
+    vi.mocked(runWslCommand).mockResolvedValue({ stdout: 'C:\\Users\\TestUser\\My Image.png\n', stderr: '', code: 0 })
 
     await expect(toWindows('Ubuntu-24.04', '/mnt/c/Users/TestUser/My Image.png')).resolves.toBe(
       'C:\\Users\\TestUser\\My Image.png'
     )
-    expect(vi.mocked(runWsl).mock.calls[0]?.[0]).toEqual([
-      '-d',
+    expect(vi.mocked(runWslCommand).mock.calls[0]?.slice(0, 2)).toEqual([
       'Ubuntu-24.04',
-      '-e',
-      'wslpath',
-      '-w',
-      '/mnt/c/Users/TestUser/My Image.png'
+      ['wslpath', '-w', '/mnt/c/Users/TestUser/My Image.png']
     ])
   })
 })
@@ -280,20 +318,20 @@ describe('WSL shell value probes', () => {
   })
 
   it('retries non-interactively when the interactive shell yields nothing', async () => {
-    vi.mocked(runWsl)
+    vi.mocked(runWslCommand)
       .mockResolvedValueOnce({ stdout: 'rc file exploded', stderr: '', code: 1 })
       .mockResolvedValueOnce({ stdout: wrap('/home/me'), stderr: '', code: 0 })
 
     await expect(readWslShellValue('Ubuntu-24.04', '"$HOME"')).resolves.toMatchObject({
       value: '/home/me'
     })
-    expect(vi.mocked(runWsl).mock.calls[0]?.[0]?.[3]).toBe('bash')
-    expect(vi.mocked(runWsl).mock.calls[0]?.[0]?.[4]).toBe('-lic')
-    expect(vi.mocked(runWsl).mock.calls[1]?.[0]?.[4]).toBe('-lc')
+    expect(vi.mocked(runWslCommand).mock.calls[0]?.[1]?.[0]).toBe('bash')
+    expect(vi.mocked(runWslCommand).mock.calls[0]?.[1]?.[1]).toBe('-lic')
+    expect(vi.mocked(runWslCommand).mock.calls[1]?.[1]?.[1]).toBe('-lc')
   })
 
   it('summarises the output when both attempts fail', async () => {
-    vi.mocked(runWsl).mockResolvedValue({ stdout: '', stderr: 'no distro\n', code: 1 })
+    vi.mocked(runWslCommand).mockResolvedValue({ stdout: '', stderr: 'no distro\n', code: 1 })
 
     await expect(readWslShellValue('Ubuntu-24.04', '"$HOME"')).resolves.toEqual({
       value: null,

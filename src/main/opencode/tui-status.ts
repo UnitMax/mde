@@ -15,7 +15,7 @@ import type {
   Session,
 } from '@shared/types'
 import { uncPathFor } from '../wsl/paths'
-import { runWsl } from '../wsl/distros'
+import { runWslCommand } from '../wsl/distros'
 import {
   assertWslLinuxPath,
   describeWslOutput,
@@ -415,7 +415,7 @@ async function resolveWslHome(distro: string): Promise<string> {
   const shellValue = await readWslShellValue(distro, '"$HOME"')
   if (shellValue.value !== null) return assertWslLinuxPath(shellValue.value, 'home directory')
 
-  const passwd = await runWsl(['-d', distro, '-e', '/bin/sh', '-c', WSL_PASSWD_HOME_SCRIPT])
+  const passwd = await runWslCommand(distro, ['/bin/sh', '-c', WSL_PASSWD_HOME_SCRIPT])
   const home = extractWslShellValue(passwd.stdout)
   if (home !== null && home.trim().length > 0) return assertWslLinuxPath(home, 'home directory')
 

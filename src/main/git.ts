@@ -8,7 +8,7 @@ import type {
   GitCommit,
   Session
 } from '@shared/types'
-import { runWsl } from './wsl/distros'
+import { runWslCommand } from './wsl/distros'
 
 const GIT_HISTORY_LIMIT = 50
 const GIT_COMMAND_TIMEOUT_MS = 10_000
@@ -67,15 +67,7 @@ export function createGitCommandRunner(
 
     const distro = session.distro
     return async (args) => {
-      const result = await runWsl([
-        '-d',
-        distro,
-        '--cd',
-        session.path,
-        '--',
-        'git',
-        ...args
-      ])
+      const result = await runWslCommand(distro, ['git', ...args], { cwd: session.path })
       return { stdout: result.stdout, stderr: result.stderr, code: result.code }
     }
   }
