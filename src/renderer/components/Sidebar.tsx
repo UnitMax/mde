@@ -81,6 +81,7 @@ import {
   type WorkspaceView
 } from '@/store/workspace'
 import { OpenCodeStatusIcon } from '@/components/OpenCodeStatusIcon'
+import { OpenCodeNotificationBadge } from '@/components/OpenCodeNotificationBadge'
 import { SessionGitStatus } from '@/components/SessionGitStatus'
 import { SessionEnvironmentPanel } from '@/components/SessionEnvironmentPanel'
 import {
@@ -99,6 +100,7 @@ import {
   collectOpenCodeTuiOverviewEntries,
   openCodeTuiInstanceLabel
 } from '@/lib/opencode-tui-instances'
+import { countOpenCodeTuiNotifications } from '@/lib/opencode-tui-notifications'
 import {
   terminalDirectoryLabel,
   terminalPaneLabel,
@@ -241,11 +243,11 @@ function sessionStatusTint(status: SessionIndicator['status']): string | undefin
 function customSessionStatusRing(status: SessionIndicator['status']): string | undefined {
   switch (status) {
     case 'attention':
-      return 'ring-1 ring-accent/70'
+      return 'ring-1 ring-inset ring-accent/70'
     case 'completed':
-      return 'ring-1 ring-ok/70'
+      return 'ring-1 ring-inset ring-ok/70'
     case 'error':
-      return 'ring-1 ring-danger/70'
+      return 'ring-1 ring-inset ring-danger/70'
     default:
       return undefined
   }
@@ -476,6 +478,7 @@ interface SessionRowProps {
   terminalDirectories: Record<string, string>
   tuiStatus?: OpenCodeTuiStatusState
   tuiInstances?: OpenCodeTuiInstanceStatus[]
+  opencodeNotificationCount: number
   terminalTabs: readonly SessionTab[]
   terminalLayouts: Record<string, SessionTerminalLayout>
   showTerminalInstances: boolean
@@ -500,6 +503,7 @@ function SessionRow({
   terminalDirectories,
   tuiStatus,
   tuiInstances = [],
+  opencodeNotificationCount,
   terminalTabs,
   terminalLayouts,
   showTerminalInstances,
@@ -603,7 +607,7 @@ function SessionRow({
                   : selected
                     ? cn(
                         'bg-active text-fg',
-                        indicator.status === 'attention' && 'ring-1 ring-accent/60'
+                        indicator.status === 'attention' && 'ring-1 ring-inset ring-accent/60'
                       )
                     : cn('text-fg-muted hover:bg-hover hover:text-fg', indicator.row),
                 dragging && 'opacity-60',
@@ -681,6 +685,7 @@ function SessionRow({
                 </div>
               </div>
 
+              <OpenCodeNotificationBadge count={opencodeNotificationCount} />
               <button
                 type="button"
                 onClick={openMenuFromButton}
@@ -841,6 +846,7 @@ interface ProjectGroupProps {
   terminalDirectories: Record<string, string>
   opencodeTuiStatuses: Record<string, OpenCodeTuiStatusState>
   opencodeTuiInstances: Record<string, OpenCodeTuiInstanceStatus[]>
+  opencodeTuiReadRevisions: Readonly<Record<string, number>>
   terminalLayouts: Record<string, Record<string, SessionTerminalLayout>>
   showTerminalInstances: boolean
   selectedSessionId: string | null
@@ -871,6 +877,7 @@ function ProjectGroup({
   terminalDirectories,
   opencodeTuiStatuses,
   opencodeTuiInstances,
+  opencodeTuiReadRevisions,
   terminalLayouts,
   showTerminalInstances,
   selectedSessionId,
@@ -1060,6 +1067,10 @@ function ProjectGroup({
             terminalDirectories={terminalDirectories}
             tuiStatus={opencodeTuiStatuses[session.id]}
             tuiInstances={opencodeTuiInstances[session.id]}
+            opencodeNotificationCount={countOpenCodeTuiNotifications(
+              opencodeTuiInstances[session.id] ?? [],
+              opencodeTuiReadRevisions
+            )}
             terminalTabs={sessionTabs(session)}
             terminalLayouts={terminalLayouts[session.id] ?? {}}
             showTerminalInstances={showTerminalInstances}
@@ -1299,6 +1310,7 @@ export function Sidebar({
   const terminalDirectories = useWorkspace((state) => state.terminalDirectories)
   const opencodeTuiStatuses = useWorkspace((state) => state.opencodeTuiStatuses)
   const opencodeTuiInstances = useWorkspace((state) => state.opencodeTuiInstances)
+  const opencodeTuiReadRevisions = useWorkspace((state) => state.opencodeTuiReadRevisions)
   const instanceLabelMode = useWorkspace((state) => state.opencodeTuiInstanceLabelMode)
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
   const selectedTodoProjectId = useWorkspace((state) => state.selectedTodoProjectId)
@@ -1347,6 +1359,7 @@ export function Sidebar({
         terminalDirectories={terminalDirectories}
         opencodeTuiStatuses={opencodeTuiStatuses}
         opencodeTuiInstances={opencodeTuiInstances}
+        opencodeTuiReadRevisions={opencodeTuiReadRevisions}
         terminalLayouts={terminalLayouts}
         showTerminalInstances={terminalSettings.showTerminalInstances}
         selectedSessionId={selectedSessionId}
@@ -1395,6 +1408,10 @@ export function Sidebar({
                       opencodeTuiStatuses[session.id]
                     )
                     const customColor = customSessionColor(session.color)
+                    const opencodeNotificationCount = countOpenCodeTuiNotifications(
+                      opencodeTuiInstances[session.id] ?? [],
+                      opencodeTuiReadRevisions
+                    )
                     return (
                       <ContextMenu key={session.id}>
                         <ContextMenuTrigger asChild>
@@ -1413,7 +1430,7 @@ export function Sidebar({
                                   : session.id === selectedSessionId
                                     ? cn(
                                         'bg-active text-fg',
-                                        indicator.status === 'attention' && 'ring-1 ring-accent/60'
+                                        indicator.status === 'attention' && 'ring-1 ring-inset ring-accent/60'
                                       )
                                     : cn('text-fg-muted hover:bg-hover hover:text-fg', indicator.row)
                               )}
@@ -1422,6 +1439,10 @@ export function Sidebar({
                               <span data-testid="collapsed-session-label">
                                 {sessionIconOption(session.icon)?.emoji ?? session.name.slice(0, 2)}
                               </span>
+                              <OpenCodeNotificationBadge
+                                count={opencodeNotificationCount}
+                                className="absolute -right-1 -top-1 h-3.5 min-w-3.5 px-0 text-[9px] ring-2 ring-panel"
+                              />
                               <StatusDot
                                 indicator={indicator}
                                 className="absolute -bottom-0.5 right-0.5 ring-2 ring-panel"

@@ -9,6 +9,7 @@ import type {
 vi.mock('../src/renderer/terminal/sessions', () => ({ disposeSession: vi.fn() }))
 
 import { useWorkspace } from '../src/renderer/store/workspace'
+import { countOpenCodeTuiNotifications } from '../src/renderer/lib/opencode-tui-notifications'
 
 describe('renderer workspace event bridge', () => {
   const tuiStatusListeners: Array<(update: OpenCodeTuiStatusUpdate) => void> = []
@@ -116,6 +117,7 @@ describe('renderer workspace event bridge', () => {
     useWorkspace.setState({
       opencodeTuiStatuses: {},
       opencodeTuiInstances: {},
+      opencodeTuiReadRevisions: {},
       opencodeTuiInstanceLabelMode: 'numbered',
       sessions: [],
       todoProjects: [],
@@ -280,6 +282,77 @@ describe('renderer workspace event bridge', () => {
       instances: []
     })
     expect(useWorkspace.getState().opencodeTuiInstances['session-1']).toBeUndefined()
+  })
+
+  it('tracks completed agents as read independently while retaining attention agents', () => {
+    const completedOne = {
+      terminalId: 'session-1:split:1',
+      status: 'completed' as const,
+      revision: 3
+    }
+    const completedTwo = {
+      terminalId: 'session-1:split:2',
+      status: 'completed' as const,
+      revision: 5
+    }
+    const attention = {
+      terminalId: 'session-1:split:3',
+      status: 'attention' as const,
+      attentionReason: 'question' as const,
+      revision: 2
+    }
+    useWorkspace.setState({
+      selectedSessionId: 'other-session',
+      opencodeTuiStatuses: {
+        'session-1': { status: 'working', revision: 7, unread: false }
+      }
+    })
+    useWorkspace.getState().appendOpenCodeTuiInstances({
+      sessionId: 'session-1',
+      instances: [completedOne, completedTwo, attention]
+    })
+
+    const count = (): number => {
+      const state = useWorkspace.getState()
+      return countOpenCodeTuiNotifications(
+        state.opencodeTuiInstances['session-1'] ?? [],
+        state.opencodeTuiReadRevisions
+      )
+    }
+    expect(count()).toBe(3)
+
+    useWorkspace.getState().selectSession('session-1')
+    expect(count()).toBe(1)
+    expect(useWorkspace.getState().opencodeTuiReadRevisions).toMatchObject({
+      'session-1:split:1': 3,
+      'session-1:split:2': 5
+    })
+
+    useWorkspace.getState().appendOpenCodeTuiInstances({
+      sessionId: 'session-1',
+      instances: [
+        { ...completedOne, revision: 4 },
+        completedTwo,
+        attention
+      ]
+    })
+    expect(count()).toBe(1)
+
+    useWorkspace.getState().selectSession('other-session')
+    expect(count()).toBe(1)
+
+    useWorkspace.getState().appendOpenCodeTuiInstances({
+      sessionId: 'session-1',
+      instances: [
+        { ...completedOne, revision: 5 },
+        completedTwo,
+        attention
+      ]
+    })
+    expect(count()).toBe(2)
+
+    useWorkspace.getState().appendOpenCodeTuiInstances({ sessionId: 'session-1', instances: [] })
+    expect(useWorkspace.getState().opencodeTuiReadRevisions).not.toHaveProperty('session-1:split:1')
   })
 
   it('persists the global OpenCode TUI instance label mode', async () => {

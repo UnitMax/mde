@@ -150,6 +150,9 @@ cannot be reached there. File drops do not copy file contents or stage clipboard
   originating session, tab, and current status. Instance labels can use privacy-safe numbering or
   the current top-level OpenCode session title; prompts, messages, tool data, credentials, and
   filesystem contents are never included in the snapshot.
+- Session rows and the Ctrl+O session switcher show a notification count for OpenCode agents that
+  finished with unread results or are waiting for a question or permission response; selecting the
+  session clears its completed-result count while unresolved requests remain visible.
 - OpenCode TUI token-rate display is a separate plugin from status reporting. On Linux it can be
   installed for the native OpenCode target; on Windows it can be installed independently for each
   WSL 2 distro. It adds a live estimated rate and a final provider-reported rate beside the TUI
