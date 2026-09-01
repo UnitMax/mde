@@ -21,6 +21,7 @@ import {
   getTerminalTheme,
   type ApplicationThemeId
 } from '@/theme/themes'
+import { terminalKeyboardAction } from './keyboard'
 
 export type RendererKind = 'webgl' | 'dom'
 
@@ -144,6 +145,25 @@ function createSession(
 
   const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
   term.attachCustomKeyEventHandler((event) => {
+    const compatibilityInput = terminalKeyboardAction(
+      {
+        type: event.type,
+        key: event.key,
+        code: event.code,
+        control: event.ctrlKey,
+        meta: event.metaKey,
+        alt: event.altKey,
+        shift: event.shiftKey
+      },
+      term.buffer.active.type === 'alternate'
+    )
+    if (compatibilityInput) {
+      event.preventDefault()
+      event.stopPropagation()
+      term.input(compatibilityInput)
+      return false
+    }
+
     const action = terminalClipboardAction(
       {
         key: event.key,

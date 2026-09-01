@@ -12,6 +12,7 @@
     "src/renderer/components/SessionSwitcher.tsx",
     "src/renderer/components/OpenCodeStatusIcon.tsx",
     "src/renderer/terminal/terminal-compat.ts",
+    "src/renderer/terminal/keyboard.ts",
     "src/renderer/terminal/layout.ts",
     "src/renderer/terminal/fullscreen.ts",
     "src/renderer/terminal/tabs.ts",
