@@ -102,7 +102,13 @@ import {
   shouldExitTerminalFullscreen,
   terminalFullscreenPane
 } from '@/terminal/fullscreen'
-import { fileDropUris, isFileDrop, terminalDropMode, terminalDropNotice } from '@/terminal/drop'
+import {
+  fileDropUris,
+  isFileDrop,
+  terminalDropMode,
+  terminalDropNotice,
+  terminalDropQuotingNotice
+} from '@/terminal/drop'
 import { terminalPrimarySelectionMode } from '@/terminal/clipboard'
 import { sessionTabs } from '@/terminal/tabs'
 import { OpenCodeStatusIcon } from '@/components/OpenCodeStatusIcon'
@@ -247,6 +253,7 @@ function TerminalSurface({
         }
 
         if (result.rejections.length > 0) announceDrop(terminalDropNotice(result.rejections))
+        else if (result.quotedForSafety) announceDrop(terminalDropQuotingNotice(result.quotedForSafety))
       } catch (error) {
         console.warn('[terminal] file drop failed:', error)
         announceDrop('Could not add the dropped files to this terminal.')

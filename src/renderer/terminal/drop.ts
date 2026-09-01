@@ -22,8 +22,24 @@ export function fileDropUris(uriList: string): string[] {
     .filter((line) => line.toLowerCase().startsWith('file:'))
 }
 
+/**
+ * Chooses how dropped paths are laid out: one insertion per file for an agent
+ * TUI, or a single quoted argument list for a shell.
+ *
+ * This is a formatting hint and must never gate shell safety. Terminal output
+ * controls alternate-screen state, so a program can enter it and never restore
+ * it, leaving a real shell prompt drawing in the alternate buffer. The main
+ * process quotes any path a shell would act on regardless of the mode it is
+ * handed — see `isShellInertPath` in `src/main/pty/drop.ts`.
+ */
 export function terminalDropMode(bufferType: 'normal' | 'alternate'): TerminalDropMode {
   return bufferType === 'alternate' ? 'tui' : 'shell'
+}
+
+/** Explains a quoted insertion in a pane the drop treated as an agent TUI. */
+export function terminalDropQuotingNotice(count: number): string {
+  const subject = count === 1 ? 'One path was' : `${count} paths were`
+  return `${subject} quoted because the name contains characters a shell would run. Remove the quotes if the pane is an agent prompt.`
 }
 
 function rejectionName(rejection: PtyDropRejection): string {

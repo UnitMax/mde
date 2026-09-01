@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DropPtyFile } from '../src/shared/ipc'
 import type { Session } from '../src/shared/types'
@@ -26,10 +29,17 @@ import {
   formatAgentDrop,
   formatTerminalDrop,
   isSafeDroppedPath,
+  isShellInertPath,
   resolveTerminalDrop,
   terminalDropShell
 } from '../src/main/pty/drop'
-import { fileDropUris, isFileDrop, terminalDropMode, terminalDropNotice } from '../src/renderer/terminal/drop'
+import {
+  fileDropUris,
+  isFileDrop,
+  terminalDropMode,
+  terminalDropNotice,
+  terminalDropQuotingNotice
+} from '../src/renderer/terminal/drop'
 
 function session(overrides: Partial<Session> = {}): Session {
   return {
@@ -69,10 +79,52 @@ describe('terminal file drops', () => {
   })
 
   it('keeps agent-TUI paths separate', () => {
-    expect(formatAgentDrop(['/mnt/c/Users/TestUser/My Image.png', '/tmp/other.png'])).toEqual([
-      '/mnt/c/Users/TestUser/My Image.png ',
-      '/tmp/other.png '
-    ])
+    expect(
+      formatAgentDrop(['/mnt/c/Users/TestUser/My Image.png', '/tmp/other.png'], 'posix')
+    ).toEqual({
+      insertions: ['/mnt/c/Users/TestUser/My Image.png ', '/tmp/other.png '],
+      quotedForSafety: 0
+    })
+  })
+
+  it('classifies which paths a shell would act on', () => {
+    expect(isShellInertPath('/tmp/My Screenshot.png', 'posix')).toBe(true)
+    // Ordinary non-ASCII names must not be dragged into the quoted path.
+    expect(isShellInertPath('/tmp/Berichte/Übersicht 2026.pdf', 'posix')).toBe(true)
+    expect(isShellInertPath('/tmp/写真.png', 'posix')).toBe(true)
+
+    for (const hostile of [
+      '/tmp/a$(touch sentinel).png',
+      '/tmp/a`touch sentinel`.png',
+      '/tmp/a;touch sentinel.png',
+      '/tmp/a|touch sentinel.png',
+      '/tmp/a&touch sentinel.png',
+      '/tmp/a>sentinel.png',
+      "/tmp/it's.png",
+      '/tmp/a\\b.png'
+    ]) {
+      expect(isShellInertPath(hostile, 'posix')).toBe(false)
+    }
+
+    // Shell-specific expansions.
+    expect(isShellInertPath('C:\\Users\\Me\\%PATH%.png', 'cmd')).toBe(false)
+    expect(isShellInertPath('C:\\Users\\Me\\a^b.png', 'cmd')).toBe(false)
+    expect(isShellInertPath('C:\\Users\\Me\\a@b.png', 'powershell')).toBe(false)
+    expect(isShellInertPath('C:\\Users\\Me\\a,b.png', 'powershell')).toBe(false)
+    // A backslash is a path separator on Windows, not an escape.
+    expect(isShellInertPath('C:\\Users\\Me\\image.png', 'powershell')).toBe(true)
+    expect(isShellInertPath('C:\\Users\\Me\\image.png', 'cmd')).toBe(true)
+  })
+
+  it('quotes an agent-TUI drop the shell would act on, and only that one', () => {
+    // The pane says TUI, but terminal output controls that state, so the
+    // hostile name still has to land inert.
+    expect(
+      formatAgentDrop(['/tmp/plain.png', '/tmp/a$(touch sentinel).png'], 'posix')
+    ).toEqual({
+      insertions: ["/tmp/plain.png ", "'/tmp/a$(touch sentinel).png' "],
+      quotedForSafety: 1
+    })
   })
 
   it('selects shell rules for native and WSL terminals', () => {
@@ -115,6 +167,11 @@ describe('terminal file drops', () => {
     expect(terminalDropMode('normal')).toBe('shell')
   })
 
+  it('explains why a path was quoted in an agent pane', () => {
+    expect(terminalDropQuotingNotice(1)).toContain('One path was quoted')
+    expect(terminalDropQuotingNotice(3)).toContain('3 paths were quoted')
+  })
+
   it('explains drop rejection causes without exposing paths', () => {
     expect(
       terminalDropNotice([
@@ -151,6 +208,58 @@ describe('terminal file drops', () => {
       acceptedCount: 1,
       rejections: []
     })
+  })
+
+  it('does not paste a live command when a spoofed pane claims to be a TUI', async () => {
+    // Terminal output can enter the alternate screen and never leave it, so a
+    // real shell prompt can be drawing in a pane mde classifies as a TUI. A
+    // dropped filename from a cloned repository must stay inert there.
+    const directory = await mkdtemp(join(tmpdir(), 'mde-drop-'))
+    const hostile = join(directory, 'a$(touch sentinel).png')
+    const plain = join(directory, 'plain.png')
+    await writeFile(hostile, '')
+    await writeFile(plain, '')
+
+    try {
+      await expect(
+        resolveTerminalDrop(
+          session({ path: directory }),
+          'linux',
+          [droppedFile(plain, 'plain.png'), droppedFile(hostile, 'a$(touch sentinel).png')],
+          'tui'
+        )
+      ).resolves.toEqual({
+        insertions: [`${plain} `, `'${hostile}' `],
+        acceptedCount: 2,
+        rejections: [],
+        quotedForSafety: 1
+      })
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('leaves an ordinary agent-TUI drop unquoted', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'mde-drop-'))
+    const plain = join(directory, 'My Screenshot.png')
+    await writeFile(plain, '')
+
+    try {
+      await expect(
+        resolveTerminalDrop(
+          session({ path: directory }),
+          'linux',
+          [droppedFile(plain, 'My Screenshot.png')],
+          'tui'
+        )
+      ).resolves.toEqual({
+        insertions: [`${plain} `],
+        acceptedCount: 1,
+        rejections: []
+      })
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
   })
 
   it('translates an accessible Windows drop into the active WSL distro', async () => {

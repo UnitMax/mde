@@ -223,6 +223,11 @@ export interface PtyDropResult {
   insertions: string[]
   acceptedCount: number
   rejections: PtyDropRejection[]
+  /**
+   * How many paths were inserted shell-quoted despite TUI mode, because raw
+   * text would have been live if a shell was what read it.
+   */
+  quotedForSafety?: number
 }
 
 /** Renderer-facing request; raw File objects never cross into the main process. */

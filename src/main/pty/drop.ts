@@ -58,13 +58,61 @@ export function formatTerminalDrop(paths: readonly string[], shell: TerminalDrop
   return `${paths.map((path) => quoteDroppedPath(path, shell)).join(' ')} `
 }
 
-/** Formats each path separately so an agent TUI can detect spaces as one path. */
-export function formatAgentDrop(paths: readonly string[]): string[] {
-  return paths.map((path) => `${path} `)
+export interface AgentDropInsertions {
+  insertions: string[]
+  /** How many paths had to be quoted despite TUI mode. */
+  quotedForSafety: number
+}
+
+/**
+ * Formats each path separately so an agent TUI can detect spaces as one path.
+ *
+ * A path the target shell would act on is quoted even here. Nothing at this
+ * layer can tell an agent TUI apart from a shell prompt drawing in the
+ * alternate buffer, so the text has to be inert either way. The quotes are
+ * visible inside a TUI, which is a cosmetic cost paid only by the hostile
+ * filenames that make it necessary.
+ */
+export function formatAgentDrop(
+  paths: readonly string[],
+  shell: TerminalDropShell
+): AgentDropInsertions {
+  let quotedForSafety = 0
+  const insertions = paths.map((path) => {
+    if (isShellInertPath(path, shell)) return `${path} `
+    quotedForSafety += 1
+    return `${quoteDroppedPath(path, shell)} `
+  })
+  return { insertions, quotedForSafety }
 }
 
 export function isSafeDroppedPath(path: string): boolean {
   return path.length > 0 && !unsafePathCharacters.test(path)
+}
+
+/**
+ * Characters each shell acts on rather than treating as ordinary path text.
+ *
+ * A space is deliberately absent: it cannot inject anything, and passing spaces
+ * through unquoted is the entire reason `formatAgentDrop` exists. Word-splitting
+ * is a correctness concern for the shell branch, which quotes everything anyway.
+ */
+const shellActiveCharacters: Record<TerminalDropShell, RegExp> = {
+  posix: /[`$();&|<>'"\\*?[\]{}~!#\n\r]/,
+  powershell: /[`$();&|<>'"{}[\]@,#\n\r]/,
+  cmd: /[%!^&|<>();'"\n\r]/
+}
+
+/**
+ * True when a path would mean nothing but itself to the target shell.
+ *
+ * Whether a pane is "really" a TUI cannot be known from here — terminal output
+ * controls alternate-screen state, so a program can leave a real shell prompt
+ * drawing in the alternate buffer. Classifying the *path* instead of the pane
+ * removes the need to know: inert text is inert wherever it lands.
+ */
+export function isShellInertPath(path: string, shell: TerminalDropShell): boolean {
+  return isSafeDroppedPath(path) && !shellActiveCharacters[shell].test(path)
 }
 
 /** Converts a browser file URL into a host-native path without accepting other URL schemes. */
@@ -219,13 +267,20 @@ export async function resolveTerminalDrop(
     else rejections.push(rejectionFor(file, resolution))
   })
 
+  const shell = terminalDropShell(session, platform)
+
+  if (mode === 'tui') {
+    const agent = formatAgentDrop(acceptedPaths, shell)
+    return {
+      insertions: agent.insertions,
+      acceptedCount: acceptedPaths.length,
+      rejections,
+      ...(agent.quotedForSafety > 0 ? { quotedForSafety: agent.quotedForSafety } : {})
+    }
+  }
+
   return {
-    insertions:
-      mode === 'tui'
-        ? formatAgentDrop(acceptedPaths)
-        : acceptedPaths.length > 0
-          ? [formatTerminalDrop(acceptedPaths, terminalDropShell(session, platform))]
-          : [],
+    insertions: acceptedPaths.length > 0 ? [formatTerminalDrop(acceptedPaths, shell)] : [],
     acceptedCount: acceptedPaths.length,
     rejections
   }
