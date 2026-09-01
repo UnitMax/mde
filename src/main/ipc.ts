@@ -66,7 +66,13 @@ import type { OpenCodeTokenRatePluginManager } from './opencode/token-rate'
 import type { OpenCodeAlertManager } from './opencode/alerts'
 import { createAppInfo } from '@shared/app-info'
 import { isWslAvailable, listDistros, runWslCommand } from './wsl/distros'
-import { canonicalizeWslPath, resolveForTarget, toWindows, uncPathFor } from './wsl/paths'
+import {
+  canonicalizeWslPath,
+  isPlainAbsolutePath,
+  resolveForTarget,
+  toWindows,
+  uncPathFor
+} from './wsl/paths'
 import { buildVsCodeRemoteUri } from './vscode'
 import { safeVsCodeRemoteUrl } from './external-links'
 import { readGitDiff, readGitInfo, readGitStatus } from './git'
@@ -148,7 +154,7 @@ async function validatePath(req: ValidatePathRequest): Promise<PathCheckResult> 
     // Validated inside the distro, not through the Windows filesystem: a path
     // like /home/me/src does not exist on Windows at all.
     const canonical = await canonicalizeWslPath(req.distro, path)
-    const result = await runWslCommand(req.distro, ['test', '-d', canonical ?? path])
+    const result = await runWslCommand(req.distro, ['test', '-d', '--', canonical ?? path])
     if (result.code === 0) return { exists: true }
 
     const stderr = result.stderr.trim()
@@ -161,6 +167,44 @@ async function validatePath(req: ValidatePathRequest): Promise<PathCheckResult> 
   } catch {
     return { exists: false }
   }
+}
+
+/**
+ * Resolves a path that came from terminal output into one this process is
+ * willing to hand to the desktop.
+ *
+ * A pane's current directory is reported by the shell over OSC 7, and any
+ * process writing to that terminal can emit the same sequence. `shell.openPath`
+ * opens whatever it is given by file association, so a spoofed report naming an
+ * executable would turn "open this directory" into "run this program". The
+ * shape checks reject anything that is not a plain absolute path, and the
+ * on-disk check — repeated here rather than trusted from report time, since the
+ * path may have been replaced since — confirms it is still a directory.
+ */
+async function verifiedDirectory(session: Session, directory: string): Promise<string | null> {
+  const path = directory.trim()
+  if (!path) return null
+
+  if (session.kind === 'native') {
+    // A native path is checked by the filesystem itself; there is no path
+    // format shared with the WSL side to validate first.
+    try {
+      const stat = await fs.stat(path)
+      return stat.isDirectory() ? path : null
+    } catch {
+      return null
+    }
+  }
+
+  const distro = session.distro
+  if (!distro) return null
+  if (!isPlainAbsolutePath(path)) return null
+  // `realpath` output is distro-side data, so it is re-checked like any other.
+  const canonical = (await canonicalizeWslPath(distro, path)) ?? path
+  if (!isPlainAbsolutePath(canonical)) return null
+
+  const result = await runWslCommand(distro, ['test', '-d', '--', canonical])
+  return result.code === 0 ? canonical : null
 }
 
 async function revealDirectory(session: Session, directory: string): Promise<void> {
@@ -419,7 +463,10 @@ export function registerIpcHandlers(
     const session = await getSession(terminal.sessionId)
     if (!session || process.platform !== 'win32' || session.kind !== 'wsl' || !session.distro) return
 
-    await revealDirectory(session, terminal.directory)
+    const directory = await verifiedDirectory(session, terminal.directory)
+    if (!directory) return
+
+    await revealDirectory(session, directory)
   })
   handle<string, void>(IpcChannels.pathOpenInVsCode, async (sessionId) => {
     const session = await getSession(sessionId)
@@ -444,10 +491,11 @@ export function registerIpcHandlers(
     const session = await getSession(terminal.sessionId)
     if (!session || process.platform !== 'win32' || session.kind !== 'wsl' || !session.distro) return
 
+    const directory = await verifiedDirectory(session, terminal.directory)
+    if (!directory) return
+
     try {
-      const url = safeVsCodeRemoteUrl(
-        buildVsCodeRemoteUri(session, process.platform, terminal.directory)
-      )
+      const url = safeVsCodeRemoteUrl(buildVsCodeRemoteUri(session, process.platform, directory))
       if (!url) throw new Error('Refusing to open an unexpected VS Code URL.')
       await shell.openExternal(url)
     } catch (error) {

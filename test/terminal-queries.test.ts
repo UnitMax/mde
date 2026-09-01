@@ -1,3 +1,4 @@
+import { hostname } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import { TerminalQueryResponder } from '../src/main/pty/terminal-queries'
 
@@ -89,6 +90,63 @@ describe('terminal query responder', () => {
     expect(responder.process('\u001b]7;file://localhost/not%ZZvalid\u0007')).toEqual({
       data: '',
       responses: []
+    })
+  })
+
+  it('rejects OSC 7 reports that do not name a plain local directory', () => {
+    // Any process that can write to the terminal can emit OSC 7, and the
+    // reported path later reaches shell.openPath, which opens a file by its
+    // desktop association rather than guaranteeing a directory reveal.
+    const responder = new TerminalQueryResponder(ember)
+    const hostile = [
+      // Not this machine.
+      'file://evil.example.com/etc/passwd',
+      'file://192.0.2.10/etc/passwd',
+      'file://user:pw@localhost/home/me',
+      'file://localhost:8080/home/me',
+      // Data the path does not account for.
+      'file://localhost/home/me?open=/home/me/payload.exe',
+      'file://localhost/home/me#/home/me/payload.exe',
+      // Separators and controls smuggled through percent-encoding.
+      'file://localhost/home/me%2F..%2F..%2Fpayload.exe',
+      'file://localhost/home/me%00/payload.exe',
+      'file://localhost/home/me%0asomething',
+      'file://localhost/home/me%1b]7;file://localhost/tmp',
+      'file://localhost/home/%5Cme',
+      // Not an absolute local path at all.
+      'http://localhost/home/me',
+      `file://localhost/${'a'.repeat(5000)}`
+    ]
+
+    for (const value of hostile) {
+      expect(responder.process(`\u001b]7;${value}\u0007`)).toEqual({ data: '', responses: [] })
+    }
+  })
+
+  it('normalizes accepted directory reports', () => {
+    const responder = new TerminalQueryResponder(ember)
+
+    expect(responder.process('\u001b]7;file://localhost/home/me/project/\u0007')).toEqual({
+      data: '',
+      responses: [],
+      directory: '/home/me/project'
+    })
+    expect(responder.process('\u001b]7;file://localhost//home//me///project\u0007')).toEqual({
+      data: '',
+      responses: [],
+      directory: '/home/me/project'
+    })
+    // Traversal is resolved away rather than smuggled through, encoded or not.
+    expect(responder.process('\u001b]7;file://localhost/home/%2e%2e/%2e%2e/etc\u0007')).toEqual({
+      data: '',
+      responses: [],
+      directory: '/etc'
+    })
+    // A hostname of this machine is how several shells report a local path.
+    expect(responder.process(`\u001b]7;file://${hostname()}/tmp/work\u0007`)).toEqual({
+      data: '',
+      responses: [],
+      directory: '/tmp/work'
     })
   })
 

@@ -60,7 +60,13 @@ const wslDistrosMock = vi.hoisted(() => ({
 
 vi.mock('electron', () => electronMock)
 vi.mock('../src/main/store/workspace', () => workspaceMock)
-vi.mock('../src/main/wsl/paths', () => wslPathsMock)
+vi.mock('../src/main/wsl/paths', async () => {
+  // The path shape check is a pure security predicate; exercise the real one.
+  const actual = await vi.importActual<typeof import('../src/main/wsl/paths')>(
+    '../src/main/wsl/paths'
+  )
+  return { ...wslPathsMock, isPlainAbsolutePath: actual.isPlainAbsolutePath }
+})
 vi.mock('../src/main/wsl/distros', () => wslDistrosMock)
 
 import { IpcChannels } from '../src/shared/ipc'
@@ -98,6 +104,7 @@ describe('terminal Explorer IPC', () => {
   beforeEach(() => {
     electronMock.handlers.clear()
     electronMock.shell.openPath.mockClear()
+    electronMock.shell.openExternal.mockClear()
     workspaceMock.createSession.mockReset()
     workspaceMock.getSession.mockReset()
     wslPathsMock.canonicalizeWslPath.mockReset()
@@ -120,12 +127,20 @@ describe('terminal Explorer IPC', () => {
       directory: '/home/me/current folder'
     }))
     workspaceMock.getSession.mockResolvedValue(wslSession())
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/current folder')
+    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
     wslPathsMock.toWindows.mockResolvedValue('\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\current folder')
     registerForTest(terminalInfo)
 
     await handler(IpcChannels.pathRevealTerminal)({}, 'pane-1')
 
     expect(terminalInfo).toHaveBeenCalledWith('pane-1')
+    expect(wslDistrosMock.runWslCommand).toHaveBeenCalledWith('Ubuntu-24.04', [
+      'test',
+      '-d',
+      '--',
+      '/home/me/current folder'
+    ])
     expect(wslPathsMock.toWindows).toHaveBeenCalledWith('Ubuntu-24.04', '/home/me/current folder')
     expect(electronMock.shell.openPath).toHaveBeenCalledWith(
       '\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\current folder'
@@ -139,6 +154,8 @@ describe('terminal Explorer IPC', () => {
       directory: '/home/me/current'
     }))
     workspaceMock.getSession.mockResolvedValue(wslSession())
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/current')
+    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
     wslPathsMock.toWindows.mockResolvedValue(null)
     wslPathsMock.uncPathFor.mockReturnValue('\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\current')
     registerForTest(terminalInfo)
@@ -149,6 +166,81 @@ describe('terminal Explorer IPC', () => {
     expect(electronMock.shell.openPath).toHaveBeenCalledWith(
       '\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\current'
     )
+  })
+
+  it('refuses to open a spoofed OSC 7 directory that is really a file', async () => {
+    // Any process writing to the terminal can emit OSC 7. Pointing it at an
+    // executable would otherwise make the folder button launch that file.
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const terminalInfo = vi.fn(() => ({
+      sessionId: 'session-1',
+      directory: '/home/me/Update.exe'
+    }))
+    workspaceMock.getSession.mockResolvedValue(wslSession())
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/Update.exe')
+    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 1 })
+    registerForTest(terminalInfo)
+
+    await handler(IpcChannels.pathRevealTerminal)({}, 'pane-1')
+
+    expect(wslPathsMock.toWindows).not.toHaveBeenCalled()
+    expect(electronMock.shell.openPath).not.toHaveBeenCalled()
+  })
+
+  it('rejects malformed terminal directories before touching the distro', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const terminalInfo = vi.fn<() => TerminalInfo>(() => ({
+      sessionId: 'session-1',
+      directory: '/home/me/x\\..\\..\\Windows\\System32\\calc.exe'
+    }))
+    workspaceMock.getSession.mockResolvedValue(wslSession())
+    registerForTest(terminalInfo)
+
+    await handler(IpcChannels.pathRevealTerminal)({}, 'pane-1')
+
+    terminalInfo.mockReturnValue({ sessionId: 'session-1', directory: '/home/me/../../etc' })
+    await handler(IpcChannels.pathRevealTerminal)({}, 'pane-1')
+
+    terminalInfo.mockReturnValue({ sessionId: 'session-1', directory: 'home/me/relative' })
+    await handler(IpcChannels.pathRevealTerminal)({}, 'pane-1')
+
+    expect(wslPathsMock.canonicalizeWslPath).not.toHaveBeenCalled()
+    expect(wslDistrosMock.runWslCommand).not.toHaveBeenCalled()
+    expect(electronMock.shell.openPath).not.toHaveBeenCalled()
+  })
+
+  it('reveals the canonical directory rather than the reported one', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const terminalInfo = vi.fn(() => ({ sessionId: 'session-1', directory: '/home/me/link' }))
+    workspaceMock.getSession.mockResolvedValue(wslSession())
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/real')
+    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
+    wslPathsMock.toWindows.mockResolvedValue('\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\real')
+    registerForTest(terminalInfo)
+
+    await handler(IpcChannels.pathRevealTerminal)({}, 'pane-1')
+
+    expect(wslPathsMock.toWindows).toHaveBeenCalledWith('Ubuntu-24.04', '/home/me/real')
+    expect(electronMock.shell.openPath).toHaveBeenCalledWith(
+      '\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\real'
+    )
+  })
+
+  it('refuses to hand a spoofed terminal directory to VS Code', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const terminalInfo = vi.fn(() => ({
+      sessionId: 'session-1',
+      directory: '/home/me/Update.exe'
+    }))
+    workspaceMock.getSession.mockResolvedValue(wslSession())
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/Update.exe')
+    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 1 })
+    registerForTest(terminalInfo)
+
+    await handler(IpcChannels.pathOpenTerminalInVsCode)({}, 'pane-1')
+
+    expect(electronMock.shell.openExternal).not.toHaveBeenCalled()
+    expect(electronMock.dialog.showErrorBox).not.toHaveBeenCalled()
   })
 
   it('does nothing for unavailable or unsupported terminals', async () => {
@@ -234,7 +326,7 @@ describe('terminal Explorer IPC', () => {
 
     expect(wslDistrosMock.runWslCommand).toHaveBeenCalledWith(
       'Ubuntu-24.04',
-      ['test', '-d', path]
+      ['test', '-d', '--', path]
     )
   })
 

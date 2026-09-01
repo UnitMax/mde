@@ -1,3 +1,4 @@
+import { hostname as osHostname } from 'node:os'
 import type { TerminalPalette } from '@shared/ipc'
 
 type PaletteSlot = 10 | 11
@@ -10,6 +11,16 @@ type PaletteSlot = 10 | 11
  * ordinary output.
  */
 const MAX_PENDING_LENGTH = 4096
+
+/**
+ * Upper bound on an OSC 7 payload. Real directory reports are far shorter, and
+ * the value is attacker-controlled: any process that can write to the terminal
+ * can emit one.
+ */
+const MAX_OSC7_LENGTH = 4096
+
+/** C0 and C1 controls, including DEL. */
+const OSC7_CONTROL = /[\u0000-\u001f\u007f-\u009f]/
 
 export interface TerminalQueryResult {
   data: string
@@ -111,18 +122,46 @@ function oscTerminator(data: string, start: number): { index: number; end: numbe
 }
 
 function parseOsc7Directory(value: string): string | null {
-  if (!value.startsWith('file://')) return null
+  if (value.length === 0 || value.length > MAX_OSC7_LENGTH) return null
 
-  const slash = value.indexOf('/', 'file://'.length)
-  if (slash < 0) return null
-
-  let directory: string
+  let url: URL
   try {
-    directory = decodeURIComponent(value.slice(slash))
+    url = new URL(value)
   } catch {
     return null
   }
 
-  if (!directory.startsWith('/') || directory.includes('\u0000')) return null
-  return directory
+  // Only a plain local `file://` URL describes a directory on this machine.
+  // A host, port, credentials, query, or fragment means the report is either
+  // not local or is carrying data the path does not account for.
+  if (url.protocol !== 'file:') return null
+  if (url.search || url.hash || url.username || url.password || url.port) return null
+  if (!isLocalOsc7Host(url.hostname)) return null
+
+  // Decoded per segment, never as a whole: `%2F` in a segment would otherwise
+  // become a separator and turn one name into a path the emitter never named.
+  const segments: string[] = []
+  for (const segment of url.pathname.split('/')) {
+    let decoded: string
+    try {
+      decoded = decodeURIComponent(segment)
+    } catch {
+      return null
+    }
+    if (decoded.includes('/') || decoded.includes('\\')) return null
+    if (OSC7_CONTROL.test(decoded)) return null
+    // `URL` already resolves literal dot segments, so one here was encoded to
+    // survive that resolution.
+    if (decoded === '..') return null
+    if (decoded === '.' || decoded === '') continue
+    segments.push(decoded)
+  }
+
+  return segments.length > 0 ? `/${segments.join('/')}` : '/'
+}
+
+function isLocalOsc7Host(hostname: string): boolean {
+  if (hostname === '' || hostname === 'localhost') return true
+  const local = osHostname().toLowerCase()
+  return hostname === local || hostname === local.split('.')[0]
 }

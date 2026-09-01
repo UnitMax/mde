@@ -4,6 +4,9 @@ import { runWslCommand } from './distros'
 /** e.g. \\wsl$\Ubuntu-24.04\home\me\src or \\wsl.localhost\Ubuntu-24.04\home\me\src */
 const WSL_UNC = /^\\\\wsl(?:\$|\.localhost)\\([^\\/]+)((?:[\\/].*)?)$/i
 
+/** C0 and C1 controls, including DEL. */
+const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/
+
 /** e.g. C:\src\app or C:/src/app */
 const WINDOWS_DRIVE = /^[A-Za-z]:[\\/]/
 
@@ -110,7 +113,24 @@ export async function toWindows(distro: string, linuxPath: string): Promise<stri
   return out.length > 0 ? out : null
 }
 
-/** Fallback used when wslpath cannot run (distro stopped, wsl.exe missing). */
+/**
+ * True for an ordinary absolute Linux path: no controls, no backslash, and no
+ * relative segment. Paths that reach the Windows side are pasted into UNC and
+ * URI strings where a backslash is a separator and `..` climbs, so a name
+ * containing either has to be rejected before that translation, not after.
+ */
+export function isPlainAbsolutePath(input: string): boolean {
+  if (!input.startsWith('/')) return false
+  if (input.includes('\\') || CONTROL_CHARS.test(input)) return false
+  return !input.split('/').some((segment) => segment === '.' || segment === '..')
+}
+
+/**
+ * Fallback used when wslpath cannot run (distro stopped, wsl.exe missing).
+ * Callers translating a path that came from terminal output must check it with
+ * `isPlainAbsolutePath` first: a backslash or `..` in a Linux name becomes a
+ * separator here.
+ */
 export function uncPathFor(distro: string, linuxPath: string): string {
   const windowsTail = linuxPath.replace(/\//g, '\\')
   return `\\\\wsl.localhost\\${distro}${windowsTail.startsWith('\\') ? '' : '\\'}${windowsTail}`
