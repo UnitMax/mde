@@ -61,11 +61,16 @@ const wslDistrosMock = vi.hoisted(() => ({
 vi.mock('electron', () => electronMock)
 vi.mock('../src/main/store/workspace', () => workspaceMock)
 vi.mock('../src/main/wsl/paths', async () => {
-  // The path shape check is a pure security predicate; exercise the real one.
+  // The shape check and the argv builder are pure and are themselves part of
+  // what these tests assert, so the real ones are used; only the functions that
+  // shell out to wsl.exe are replaced.
   const actual = await vi.importActual<typeof import('../src/main/wsl/paths')>(
     '../src/main/wsl/paths'
   )
-  return { ...wslPathsMock, isPlainAbsolutePath: actual.isPlainAbsolutePath }
+  return {
+    ...actual,
+    ...wslPathsMock
+  }
 })
 vi.mock('../src/main/wsl/distros', () => wslDistrosMock)
 
@@ -135,10 +140,11 @@ describe('terminal Explorer IPC', () => {
     await handler(IpcChannels.pathRevealTerminal)({}, 'pane-1')
 
     expect(terminalInfo).toHaveBeenCalledWith('pane-1')
+    // `test` is not getopt-based: a `--` terminator here would be a third
+    // operand and every reveal would fail.
     expect(wslDistrosMock.runWslCommand).toHaveBeenCalledWith('Ubuntu-24.04', [
       'test',
       '-d',
-      '--',
       '/home/me/current folder'
     ])
     expect(wslPathsMock.toWindows).toHaveBeenCalledWith('Ubuntu-24.04', '/home/me/current folder')
@@ -326,7 +332,7 @@ describe('terminal Explorer IPC', () => {
 
     expect(wslDistrosMock.runWslCommand).toHaveBeenCalledWith(
       'Ubuntu-24.04',
-      ['test', '-d', '--', path]
+      ['test', '-d', path]
     )
   })
 

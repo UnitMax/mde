@@ -126,6 +126,19 @@ export function isPlainAbsolutePath(input: string): boolean {
 }
 
 /**
+ * argv for an in-distro "is this still a directory" check.
+ *
+ * Exactly two operands. `test` is not getopt-based, so a `--` terminator would
+ * be a third operand and the expression would fail for every path; two operands
+ * always parse as a unary operator applied to the path, which makes a leading
+ * dash in a directory name unambiguous. Nothing quotes or splits these — they
+ * are passed through `wsl.exe -e`, which does not involve a shell.
+ */
+export function directoryCheckArgs(path: string): string[] {
+  return ['test', '-d', path]
+}
+
+/**
  * Fallback used when wslpath cannot run (distro stopped, wsl.exe missing).
  * Callers translating a path that came from terminal output must check it with
  * `isPlainAbsolutePath` first: a backslash or `..` in a Linux name becomes a

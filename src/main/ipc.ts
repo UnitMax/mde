@@ -68,6 +68,7 @@ import { createAppInfo } from '@shared/app-info'
 import { isWslAvailable, listDistros, runWslCommand } from './wsl/distros'
 import {
   canonicalizeWslPath,
+  directoryCheckArgs,
   isPlainAbsolutePath,
   resolveForTarget,
   toWindows,
@@ -154,7 +155,7 @@ async function validatePath(req: ValidatePathRequest): Promise<PathCheckResult> 
     // Validated inside the distro, not through the Windows filesystem: a path
     // like /home/me/src does not exist on Windows at all.
     const canonical = await canonicalizeWslPath(req.distro, path)
-    const result = await runWslCommand(req.distro, ['test', '-d', '--', canonical ?? path])
+    const result = await runWslCommand(req.distro, directoryCheckArgs(canonical ?? path))
     if (result.code === 0) return { exists: true }
 
     const stderr = result.stderr.trim()
@@ -198,13 +199,21 @@ async function verifiedDirectory(session: Session, directory: string): Promise<s
 
   const distro = session.distro
   if (!distro) return null
-  if (!isPlainAbsolutePath(path)) return null
+
+  // Rejections are logged: this path fails closed, so a silent return here is
+  // indistinguishable from a dead button.
+  const reject = (reason: string): null => {
+    console.warn(`[reveal] not opening ${JSON.stringify(directory)}: ${reason}`)
+    return null
+  }
+
+  if (!isPlainAbsolutePath(path)) return reject('not a plain absolute path')
   // `realpath` output is distro-side data, so it is re-checked like any other.
   const canonical = (await canonicalizeWslPath(distro, path)) ?? path
-  if (!isPlainAbsolutePath(canonical)) return null
+  if (!isPlainAbsolutePath(canonical)) return reject(`canonicalized to ${canonical}`)
 
-  const result = await runWslCommand(distro, ['test', '-d', '--', canonical])
-  return result.code === 0 ? canonical : null
+  const result = await runWslCommand(distro, directoryCheckArgs(canonical))
+  return result.code === 0 ? canonical : reject(`not a directory in ${distro}`)
 }
 
 async function revealDirectory(session: Session, directory: string): Promise<void> {
