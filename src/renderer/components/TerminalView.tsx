@@ -54,6 +54,12 @@ import {
   fitSession,
   getSession
 } from '@/terminal/sessions'
+import { isOsc52Policy, OSC52_POLICIES, type Osc52Policy } from '@/terminal/osc52'
+import {
+  subscribeOsc52,
+  type Osc52Notice,
+  type Osc52Prompt
+} from '@/terminal/osc52-notices'
 import { terminalSizeAction } from '@/terminal/terminal-compat'
 import {
   getTerminalSettings,
@@ -137,6 +143,29 @@ interface TerminalSurfaceProps {
   isFullscreen: boolean
 }
 
+const OSC52_POLICY_LABELS: Record<Osc52Policy, string> = {
+  notify: 'Allow and notify me',
+  ask: 'Ask the first time in each terminal',
+  never: 'Never allow'
+}
+
+function osc52NoticeMessage(notice: Osc52Notice): string {
+  if (notice.kind === 'too-large') {
+    return 'Ignored a clipboard write from this terminal: the payload was too large.'
+  }
+
+  const characters = `${notice.preview.length} ${notice.preview.length === 1 ? 'character' : 'characters'}`
+  if (notice.kind === 'written') return `A program set the clipboard (${characters}).`
+
+  if (notice.reason === 'deny-policy') {
+    return 'Blocked a clipboard write from this terminal. Change this in Settings, under Terminal.'
+  }
+  if (notice.reason === 'deny-stale') {
+    return 'Blocked a clipboard write from this terminal: it did not follow anything you typed.'
+  }
+  return 'Blocked a clipboard write from a terminal that was not in the foreground.'
+}
+
 function TerminalSurface({
   session: sourceSession,
   pane,
@@ -149,8 +178,11 @@ function TerminalSurface({
   const dragDepthRef = useRef(0)
   const dropQueueRef = useRef(Promise.resolve())
   const dropNoticeTimerRef = useRef<number | undefined>(undefined)
+  const clipboardNoticeTimerRef = useRef<number | undefined>(undefined)
   const [fileDragOver, setFileDragOver] = useState(false)
   const [dropNotice, setDropNotice] = useState<string | null>(null)
+  const [clipboardNotice, setClipboardNotice] = useState<string | null>(null)
+  const [osc52Prompt, setOsc52Prompt] = useState<Osc52Prompt | null>(null)
   const setStatus = useWorkspace((state) => state.setStatus)
   const platform = useWorkspace((state) => state.platform)
   const primarySelectionMode = terminalPrimarySelectionMode(
@@ -166,6 +198,38 @@ function TerminalSurface({
       dropNoticeTimerRef.current = undefined
     }, 3500)
   }
+
+  // Clipboard activity driven by terminal output is always announced in the
+  // pane that caused it, so a write can never happen entirely unseen.
+  useEffect(() => {
+    const announceClipboard = (message: string): void => {
+      setClipboardNotice(message)
+      window.clearTimeout(clipboardNoticeTimerRef.current)
+      clipboardNoticeTimerRef.current = window.setTimeout(() => {
+        setClipboardNotice(null)
+        clipboardNoticeTimerRef.current = undefined
+      }, 5000)
+    }
+
+    const unsubscribe = subscribeOsc52(pane.terminalId, (event) => {
+      if (event.kind === 'prompt') {
+        setOsc52Prompt(event.prompt)
+        return
+      }
+      if (event.kind === 'prompt-cleared') {
+        setOsc52Prompt(null)
+        return
+      }
+      announceClipboard(osc52NoticeMessage(event.notice))
+    })
+
+    return () => {
+      unsubscribe()
+      window.clearTimeout(clipboardNoticeTimerRef.current)
+      setOsc52Prompt(null)
+      setClipboardNotice(null)
+    }
+  }, [pane.terminalId])
 
   const enqueueFileDrop = (files: File[], uriList: string[], mode: 'shell' | 'tui'): void => {
     const task = async (): Promise<void> => {
@@ -361,13 +425,61 @@ function TerminalSurface({
           Drop files to attach or insert paths
         </div>
       )}
-      {dropNotice && (
-        <div
-          className="pointer-events-none absolute bottom-3 left-3 z-30 max-w-[calc(100%-1.5rem)] rounded-md border border-border bg-panel/95 px-3 py-2 text-xs text-muted-fg shadow-lg"
-          role="status"
-          aria-live="polite"
-        >
-          {dropNotice}
+      {(dropNotice || clipboardNotice || osc52Prompt) && (
+        <div className="pointer-events-none absolute bottom-3 left-3 z-30 flex max-w-[calc(100%-1.5rem)] flex-col gap-2">
+          {dropNotice && (
+            <div
+              className="rounded-md border border-border bg-panel/95 px-3 py-2 text-xs text-muted-fg shadow-lg"
+              role="status"
+              aria-live="polite"
+            >
+              {dropNotice}
+            </div>
+          )}
+          {clipboardNotice && (
+            <div
+              className="rounded-md border border-border bg-panel/95 px-3 py-2 text-xs text-muted-fg shadow-lg"
+              role="status"
+              aria-live="polite"
+              data-testid="terminal-osc52-notice"
+            >
+              {clipboardNotice}
+            </div>
+          )}
+          {osc52Prompt && (
+            <div
+              className="pointer-events-auto rounded-md border border-line-strong bg-panel px-3 py-2 text-xs text-fg-muted shadow-lg"
+              role="alertdialog"
+              aria-label="Clipboard write requested by a terminal program"
+              data-testid="terminal-osc52-prompt"
+            >
+              <p className="font-medium text-fg">A program wants to set the clipboard</p>
+              <p className="mt-1 break-all font-mono text-fg-subtle">
+                {osc52Prompt.preview.preview}
+                {osc52Prompt.preview.truncated ? '…' : ''}
+              </p>
+              <p className="mt-1 text-fg-subtle">
+                {osc52Prompt.preview.length}
+                {osc52Prompt.preview.length === 1 ? ' character' : ' characters'}
+              </p>
+              {osc52Prompt.preview.endsWithNewline && (
+                <p className="mt-1 font-medium text-danger">
+                  Ends with a newline: pasting this into a shell runs it immediately.
+                </p>
+              )}
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button size="sm" variant="secondary" onClick={() => osc52Prompt.approve('once')}>
+                  Allow once
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => osc52Prompt.approve('terminal')}>
+                  Allow in this terminal
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => osc52Prompt.deny()}>
+                  Block
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1407,6 +1519,32 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
                   testId="terminal-escape-fullscreen"
                   onClick={() => updateSettings({ escapeExitsFullscreen: !settings.escapeExitsFullscreen })}
                 />
+
+                <label className="block text-xs font-medium text-fg-muted">
+                  Clipboard access from terminal programs
+                  <Select
+                    value={settings.osc52Policy}
+                    onValueChange={(value) => {
+                      if (isOsc52Policy(value)) updateSettings({ osc52Policy: value })
+                    }}
+                  >
+                    <SelectTrigger className="mt-1" data-testid="terminal-osc52-policy">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {OSC52_POLICIES.map((policy) => (
+                        <SelectItem key={policy} value={policy}>
+                          {OSC52_POLICY_LABELS[policy]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <span className="mt-1 block font-normal text-fg-subtle">
+                    Programs can ask to set the clipboard with an escape sequence, which editors
+                    use for yank over SSH. Whatever you choose here, a terminal that is hidden,
+                    unfocused, or that you have not just typed in is always refused.
+                  </span>
+                </label>
               </section>
             )}
 

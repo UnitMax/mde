@@ -49,7 +49,8 @@ describe('terminal settings', () => {
       lineHeight: 1,
       theme: 'slate',
       escapeExitsFullscreen: true,
-      showTerminalInstances: false
+      showTerminalInstances: false,
+      osc52Policy: 'notify'
     })
   })
 
@@ -62,7 +63,8 @@ describe('terminal settings', () => {
       lineHeight: 1,
       theme: 'slate',
       escapeExitsFullscreen: true,
-      showTerminalInstances: false
+      showTerminalInstances: false,
+      osc52Policy: 'notify'
     })
     expect(
       resolveTerminalSettings(
@@ -81,7 +83,8 @@ describe('terminal settings', () => {
       lineHeight: 1.4,
       theme: 'frost',
       escapeExitsFullscreen: false,
-      showTerminalInstances: false
+      showTerminalInstances: false,
+      osc52Policy: 'notify'
     })
     expect(
       resolveTerminalSettings(
@@ -90,7 +93,8 @@ describe('terminal settings', () => {
       )
     ).toMatchObject({
       escapeExitsFullscreen: true,
-      showTerminalInstances: false
+      showTerminalInstances: false,
+      osc52Policy: 'notify'
     })
   })
 
@@ -115,7 +119,8 @@ describe('terminal settings', () => {
       lineHeight: 1,
       theme: 'slate',
       escapeExitsFullscreen: true,
-      showTerminalInstances: false
+      showTerminalInstances: false,
+      osc52Policy: 'notify'
     })
   })
 
@@ -128,7 +133,8 @@ describe('terminal settings', () => {
       lineHeight: 1.4,
       theme: 'ember' as const,
       escapeExitsFullscreen: false,
-      showTerminalInstances: true
+      showTerminalInstances: true,
+      osc52Policy: 'ask' as const
     }
 
     saveTerminalSettings(settings)

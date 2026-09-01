@@ -93,24 +93,42 @@ export function terminalClipboardAction(
   return null
 }
 
-const maxOsc52Base64Length = 10 * 1024 * 1024
+/**
+ * Encoded-length ceiling for an OSC 52 payload. A real editor yank is a few
+ * kilobytes at most; the previous 10 MiB allowance only ever helped an attacker
+ * force a large allocation from terminal output alone.
+ */
+export const OSC52_MAX_BASE64_LENGTH = 256 * 1024
+
 const base64Pattern = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 
+export type Osc52DecodeResult =
+  /** Not a clipboard-set payload: a query, another selection, or malformed data. */
+  | { kind: 'ignored' }
+  /** Well-formed but over `OSC52_MAX_BASE64_LENGTH`. */
+  | { kind: 'too-large' }
+  | { kind: 'text'; text: string }
+
+const ignored: Osc52DecodeResult = { kind: 'ignored' }
+
 /** Decodes an OSC 52 clipboard payload after xterm has removed its terminator. */
-export function decodeOsc52Clipboard(data: string): string | null {
+export function decodeOsc52Clipboard(data: string): Osc52DecodeResult {
   const separator = data.indexOf(';')
-  if (separator < 0 || data.slice(0, separator) !== 'c') return null
+  if (separator < 0 || data.slice(0, separator) !== 'c') return ignored
 
   const encoded = data.slice(separator + 1).replace(/\s/g, '')
-  if (encoded === '?' || encoded.length > maxOsc52Base64Length || !base64Pattern.test(encoded)) {
-    return null
-  }
+  // A query asks MDE to report the clipboard back to the program. Never answer
+  // it: that would turn the terminal into a clipboard read channel.
+  if (encoded === '?') return ignored
+  // Checked before atob so an oversized payload is never allocated.
+  if (encoded.length > OSC52_MAX_BASE64_LENGTH) return { kind: 'too-large' }
+  if (!base64Pattern.test(encoded)) return ignored
 
   try {
     const binary = atob(encoded)
     const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0))
-    return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+    return { kind: 'text', text: new TextDecoder('utf-8', { fatal: true }).decode(bytes) }
   } catch {
-    return null
+    return ignored
   }
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   createTerminalPrimarySelectionStore,
   decodeOsc52Clipboard,
+  OSC52_MAX_BASE64_LENGTH,
   terminalClipboardAction,
   terminalMiddleClickAction,
   terminalPrimarySelectionMode,
@@ -84,13 +85,28 @@ describe('terminal mouse clipboard behavior', () => {
 describe('OSC 52 clipboard payloads', () => {
   it('decodes UTF-8 text, including non-ASCII characters', () => {
     const payload = Buffer.from('Hello, 你好 🙂', 'utf8').toString('base64')
-    expect(decodeOsc52Clipboard(`c;${payload}`)).toBe('Hello, 你好 🙂')
+    expect(decodeOsc52Clipboard(`c;${payload}`)).toEqual({ kind: 'text', text: 'Hello, 你好 🙂' })
   })
 
-  it('rejects queries, other selections, malformed base64, and invalid UTF-8', () => {
-    expect(decodeOsc52Clipboard('c;?')).toBeNull()
-    expect(decodeOsc52Clipboard('p;SGVsbG8=')).toBeNull()
-    expect(decodeOsc52Clipboard('c;not-base64')).toBeNull()
-    expect(decodeOsc52Clipboard('c;//8=')).toBeNull()
+  it('ignores queries, other selections, malformed base64, and invalid UTF-8', () => {
+    // A query would report the host clipboard back to the program, turning the
+    // terminal into a clipboard read channel.
+    expect(decodeOsc52Clipboard('c;?')).toEqual({ kind: 'ignored' })
+    expect(decodeOsc52Clipboard('p;SGVsbG8=')).toEqual({ kind: 'ignored' })
+    expect(decodeOsc52Clipboard('c;not-base64')).toEqual({ kind: 'ignored' })
+    expect(decodeOsc52Clipboard('c;//8=')).toEqual({ kind: 'ignored' })
+    expect(decodeOsc52Clipboard('no-separator')).toEqual({ kind: 'ignored' })
+  })
+
+  it('reports an oversized payload rather than decoding it', () => {
+    const atCap = 'A'.repeat(OSC52_MAX_BASE64_LENGTH)
+    const overCap = 'A'.repeat(OSC52_MAX_BASE64_LENGTH + 4)
+
+    expect(decodeOsc52Clipboard(`c;${atCap}`).kind).toBe('text')
+    expect(decodeOsc52Clipboard(`c;${overCap}`)).toEqual({ kind: 'too-large' })
+  })
+
+  it('caps payloads far below the size that could stall the renderer', () => {
+    expect(OSC52_MAX_BASE64_LENGTH).toBeLessThanOrEqual(256 * 1024)
   })
 })

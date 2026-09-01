@@ -1,4 +1,5 @@
 import { isApplicationThemeId, type ApplicationThemeId } from '@/theme/themes'
+import { isOsc52Policy, type Osc52Policy } from './osc52'
 
 export interface TerminalSettings {
   family: string
@@ -10,6 +11,11 @@ export interface TerminalSettings {
   escapeExitsFullscreen: boolean
   /** Whether individual non-OpenCode terminal panes appear in the sidebar. */
   showTerminalInstances: boolean
+  /**
+   * How much confirmation a program needs before OSC 52 may set the host
+   * clipboard. Hidden, unfocused and idle panes are refused under every value.
+   */
+  osc52Policy: Osc52Policy
 }
 
 export interface TerminalFontOption {
@@ -56,7 +62,8 @@ export function defaultTerminalSettings(
     lineHeight: 1,
     theme: 'slate',
     escapeExitsFullscreen: true,
-    showTerminalInstances: false
+    showTerminalInstances: false,
+    osc52Policy: 'notify'
   }
 }
 
@@ -95,7 +102,8 @@ export function resolveTerminalSettings(
     showTerminalInstances:
       typeof record.showTerminalInstances === 'boolean'
         ? record.showTerminalInstances
-        : fallback.showTerminalInstances
+        : fallback.showTerminalInstances,
+    osc52Policy: isOsc52Policy(record.osc52Policy) ? record.osc52Policy : fallback.osc52Policy
   }
 }
 

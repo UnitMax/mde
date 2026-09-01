@@ -17,6 +17,8 @@
     "src/renderer/terminal/fullscreen.ts",
     "src/renderer/terminal/tabs.ts",
     "src/renderer/terminal/clipboard.ts",
+    "src/renderer/terminal/osc52.ts",
+    "src/renderer/terminal/osc52-notices.ts",
     "src/renderer/terminal/drop.ts",
     "src/renderer/terminal/renderer-lease.ts",
     "src/renderer/terminal/sessions.ts",

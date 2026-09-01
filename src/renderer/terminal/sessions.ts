@@ -10,6 +10,12 @@ import {
   terminalRightClickAction,
   type TerminalPrimarySelectionMode
 } from './clipboard'
+import {
+  osc52ClipboardDecision,
+  osc52Preview,
+  OSC52_PROMPT_TIMEOUT_MS
+} from './osc52'
+import { emitOsc52, type Osc52GrantScope } from './osc52-notices'
 import { createRendererLease } from './renderer-lease'
 import {
   getTerminalSettings,
@@ -143,8 +149,119 @@ function createSession(
   term.loadAddon(fit)
   term.open(container)
 
+  // --- OSC 52 clipboard gate ---------------------------------------------
+  // Terminal output must never be able to reach the host clipboard on its own.
+  // See `./osc52` for the policy these values feed.
+  let osc52Granted = false
+  let osc52LastUserInputAt = Number.NEGATIVE_INFINITY
+  let osc52Pending: { text: string; token: number } | null = null
+  let osc52PromptTimer: number | undefined
+  let osc52Token = 0
+
+  /**
+   * Stamped from DOM events only. xterm answers device-status queries through
+   * `term.onData`, so treating that stream as user input would let a program
+   * forge the "the user just typed here" signal this gate depends on.
+   */
+  const noteUserInput = (): void => {
+    osc52LastUserInputAt = Date.now()
+  }
+  // Both ends of a click: a TUI that copies a mouse selection emits OSC 52 after
+  // the release, and a slow drag can leave the press further back than the
+  // recency window allows.
+  container.addEventListener('pointerdown', noteUserInput, true)
+  container.addEventListener('pointerup', noteUserInput, true)
+
+  const writeOsc52Clipboard = (text: string): void => {
+    void window.api.clipboard.writeText(text).catch((error: unknown) => {
+      console.warn('[terminal] OSC 52 clipboard write failed:', error)
+    })
+    emitOsc52(terminalId, {
+      kind: 'notice',
+      notice: { kind: 'written', preview: osc52Preview(text) }
+    })
+  }
+
+  /**
+   * Applies the answer to a pending prompt. The token makes a superseded or
+   * expired prompt inert, so its buttons can never authorise a later payload.
+   */
+  const resolveOsc52Prompt = (token: number, scope: Osc52GrantScope | null): void => {
+    const pending = osc52Pending
+    if (!pending || pending.token !== token) return
+
+    osc52Pending = null
+    window.clearTimeout(osc52PromptTimer)
+    osc52PromptTimer = undefined
+    emitOsc52(terminalId, { kind: 'prompt-cleared' })
+    if (scope === null) return
+
+    // The click is itself the authorisation, so the focus and recency gates are
+    // not re-applied here: answering the prompt necessarily takes time.
+    if (scope === 'terminal') osc52Granted = true
+    writeOsc52Clipboard(pending.text)
+  }
+
+  const handleOsc52 = (data: string): void => {
+    const decoded = decodeOsc52Clipboard(data)
+    if (decoded.kind === 'ignored') return
+    if (decoded.kind === 'too-large') {
+      if (container.isConnected) {
+        emitOsc52(terminalId, { kind: 'notice', notice: { kind: 'too-large' } })
+      }
+      return
+    }
+
+    const active = document.activeElement
+    const decision = osc52ClipboardDecision({
+      policy: getTerminalSettings().osc52Policy,
+      granted: osc52Granted,
+      attached: container.isConnected,
+      windowFocused: document.hasFocus(),
+      terminalFocused: active !== null && container.contains(active),
+      msSinceUserInput: Date.now() - osc52LastUserInputAt
+    })
+
+    if (decision === 'allow') {
+      writeOsc52Clipboard(decoded.text)
+      return
+    }
+
+    if (decision === 'ask') {
+      // One slot per terminal: a flood of requests replaces the prompt instead
+      // of queueing prompts the user would have to dismiss one by one.
+      const token = ++osc52Token
+      osc52Pending = { text: decoded.text, token }
+      window.clearTimeout(osc52PromptTimer)
+      osc52PromptTimer = window.setTimeout(
+        () => resolveOsc52Prompt(token, null),
+        OSC52_PROMPT_TIMEOUT_MS
+      )
+      emitOsc52(terminalId, {
+        kind: 'prompt',
+        prompt: {
+          preview: osc52Preview(decoded.text),
+          approve: (scope) => resolveOsc52Prompt(token, scope),
+          deny: () => resolveOsc52Prompt(token, null)
+        }
+      })
+      return
+    }
+
+    // Announcing a refusal on a pane the user cannot see is noise.
+    if (container.isConnected) {
+      emitOsc52(terminalId, {
+        kind: 'notice',
+        notice: { kind: 'blocked', reason: decision, preview: osc52Preview(decoded.text) }
+      })
+    } else {
+      console.debug('[terminal] refused an OSC 52 clipboard write from a background terminal')
+    }
+  }
+
   const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
   term.attachCustomKeyEventHandler((event) => {
+    noteUserInput()
     const compatibilityInput = terminalKeyboardAction(
       {
         type: event.type,
@@ -193,6 +310,7 @@ function createSession(
   })
 
   const onContextMenu = (event: MouseEvent): void => {
+    noteUserInput()
     const action = terminalRightClickAction(
       term.hasSelection(),
       term.modes.mouseTrackingMode
@@ -208,6 +326,7 @@ function createSession(
   container.addEventListener('contextmenu', onContextMenu)
 
   const onAuxClick = (event: MouseEvent): void => {
+    noteUserInput()
     if (event.button !== 1) return
 
     const selection = localPrimarySelection.get()
@@ -232,16 +351,14 @@ function createSession(
     : undefined
 
   const osc52Disposable = term.parser.registerOscHandler(52, (data) => {
-    const text = decodeOsc52Clipboard(data)
-    if (text !== null) {
-      void window.api.clipboard.writeText(text).catch((error: unknown) => {
-        console.warn('[terminal] OSC 52 clipboard write failed:', error)
-      })
-    }
+    handleOsc52(data)
+    // Claim the sequence whatever the outcome, so a refused payload is
+    // swallowed rather than printed to the screen as garbage.
     return true
   })
 
   const onCopy = (event: ClipboardEvent): void => {
+    noteUserInput()
     if (!term.hasSelection()) return
     event.preventDefault()
     event.stopPropagation()
@@ -265,7 +382,10 @@ function createSession(
     disposeClipboardHandlers: () => {
       container.removeEventListener('contextmenu', onContextMenu)
       container.removeEventListener('auxclick', onAuxClick)
+      container.removeEventListener('pointerdown', noteUserInput, true)
+      container.removeEventListener('pointerup', noteUserInput, true)
       container.removeEventListener('copy', onCopy, true)
+      resolveOsc52Prompt(osc52Token, null)
       localSelectionDisposable?.dispose()
       localPrimarySelection.clear(terminalId)
       osc52Disposable.dispose()
