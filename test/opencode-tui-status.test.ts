@@ -7,19 +7,51 @@ import {
   classifyTuiPluginSource,
   collectTuiInstanceStatuses,
   OpenCodeTuiStatusManager,
+  parseLinuxProcessStartTicks,
   parseTuiPluginVersion,
   parseTuiStatusSnapshot,
+  TUI_STATUS_HEARTBEAT_MS,
+  TUI_STATUS_LIVENESS_PROBE_MS,
   TUI_STATUS_PLUGIN_MARKER,
   TUI_STATUS_PLUGIN_SOURCE,
   TUI_STATUS_PLUGIN_VERSION,
+  TUI_STATUS_POLL_MS,
   TUI_STATUS_PROTOCOL,
-  TUI_STATUS_TITLE_MAX_LENGTH
+  TUI_STATUS_STALE_MS,
+  TUI_STATUS_TITLE_MAX_LENGTH,
+  tuiProcessProbeCommand
 } from '../src/main/opencode/tui-status'
 import {
   openCodeOverviewStatusLabel,
   openCodeStatusLabel,
   openCodeStatusShortLabel
 } from '../src/renderer/lib/opencode-tui-status'
+
+function managerInternals(manager: OpenCodeTuiStatusManager): {
+  runtimes: Map<string, Record<string, unknown>>
+  poll(terminalId: string): Promise<void>
+} {
+  return manager as unknown as {
+    runtimes: Map<string, Record<string, unknown>>
+    poll(terminalId: string): Promise<void>
+  }
+}
+
+function installRuntime(manager: OpenCodeTuiStatusManager): void {
+  managerInternals(manager).runtimes.set('terminal-1', {
+    sessionId: 'session-1',
+    terminalId: 'terminal-1',
+    distro: 'Ubuntu',
+    wslPath: '/tmp/mde-opencode/status.json',
+    windowsPath: '\\\\wsl.localhost\\Ubuntu\\tmp\\mde-opencode\\status.json',
+    timer: undefined,
+    snapshot: null,
+    lastHeartbeatAt: null,
+    lastProbeAt: null,
+    pollInFlight: false,
+    probeInFlight: false
+  })
+}
 
 describe('OpenCode TUI status protocol', () => {
   it('accepts fresh privacy-safe snapshots', () => {
@@ -65,7 +97,7 @@ describe('OpenCode TUI status protocol', () => {
     expect(
       parseTuiStatusSnapshot(
         { protocol: 1, status: 'working', revision: 1, updatedAt: 1_000 },
-        10_000
+        1_000 + TUI_STATUS_STALE_MS + 1
       )
     ).toBeNull()
     expect(parseTuiStatusSnapshot({ protocol: 1, status: 'attention', revision: 1, updatedAt: 10_000 }, 10_000)).toBeNull()
@@ -152,6 +184,245 @@ describe('OpenCode TUI status protocol', () => {
     expect(classifyTuiPluginSource('export const SomeoneElsesPlugin = async () => ({})')).toBe('conflict')
     expect(classifyTuiPluginSource(`// ${TUI_STATUS_PLUGIN_MARKER}`)).toBe('outdated')
     expect(classifyTuiPluginSource(TUI_STATUS_PLUGIN_SOURCE)).toBe('installed')
+  })
+
+  it('ships a lower-rate heartbeat with explicit process lifecycle metadata', () => {
+    expect(TUI_STATUS_HEARTBEAT_MS).toBe(5_000)
+    expect(TUI_STATUS_POLL_MS).toBe(1_000)
+    expect(TUI_STATUS_STALE_MS).toBe(20_000)
+    expect(TUI_STATUS_LIVENESS_PROBE_MS).toBe(10_000)
+    expect(TUI_STATUS_PLUGIN_SOURCE).toContain('processStartTicks')
+    expect(TUI_STATUS_PLUGIN_SOURCE).toContain('dispose: async')
+    expect(TUI_STATUS_PLUGIN_SOURCE).toContain('await write(true)')
+  })
+
+  it('accepts an explicit close record even after its heartbeat has expired', () => {
+    expect(
+      parseTuiStatusSnapshot(
+        {
+          protocol: 1,
+          status: 'completed',
+          revision: 3,
+          updatedAt: 1_000,
+          processId: 42,
+          processStartTicks: 88,
+          closed: true
+        },
+        1_000 + TUI_STATUS_STALE_MS + 1
+      )
+    ).toMatchObject({ closed: true, processId: 42, processStartTicks: 88 })
+  })
+
+  it('parses the Linux process start tick without trusting the process name', () => {
+    expect(
+      parseLinuxProcessStartTicks('42 (opencode worker) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 12345')
+    ).toBe(12345)
+    expect(parseLinuxProcessStartTicks('42 (broken')).toBeNull()
+  })
+
+  it('builds a process probe with a validated direct argument', () => {
+    expect(tuiProcessProbeCommand(42)).toEqual([
+      '/bin/sh',
+      '-c',
+      expect.stringContaining('/proc/$1/stat'),
+      'mde-opencode-tui',
+      '42'
+    ])
+    expect(tuiProcessProbeCommand(0)).toBeNull()
+    expect(tuiProcessProbeCommand(Number.NaN)).toBeNull()
+  })
+
+  it('keeps a working agent visible through multi-minute heartbeat-only periods', async () => {
+    let now = 100_000
+    const onInstances = vi.fn()
+    const onStatus = vi.fn()
+    const readStatusFile = vi.fn(async () => JSON.stringify({
+      protocol: 1,
+      status: 'working',
+      revision: 1,
+      updatedAt: now,
+      processId: 42,
+      processStartTicks: 88
+    }))
+    const probeProcess = vi.fn(async () => 'alive' as const)
+    const manager = new OpenCodeTuiStatusManager(
+      { onInstances, onStatus },
+      {
+        now: () => now,
+        readStatusFile,
+        probeProcess,
+        unlinkStatusFile: vi.fn(async () => {})
+      }
+    )
+    installRuntime(manager)
+
+    await managerInternals(manager).poll('terminal-1')
+    for (let index = 0; index < 60; index += 1) {
+      now += TUI_STATUS_HEARTBEAT_MS
+      await managerInternals(manager).poll('terminal-1')
+    }
+
+    expect(onInstances).toHaveBeenCalledTimes(1)
+    expect(onInstances).toHaveBeenLastCalledWith({
+      sessionId: 'session-1',
+      instances: [{ terminalId: 'terminal-1', status: 'working', revision: 1 }]
+    })
+    expect(probeProcess).not.toHaveBeenCalled()
+  })
+
+  it('retains a working agent when the status read fails or the process probe confirms it is alive', async () => {
+    let now = 100_000
+    let failRead = false
+    const onInstances = vi.fn()
+    const probeProcess = vi.fn(async () => 'alive' as const)
+    const manager = new OpenCodeTuiStatusManager(
+      { onInstances, onStatus: vi.fn() },
+      {
+        now: () => now,
+        readStatusFile: async () => {
+          if (failRead) throw new Error('UNC bridge unavailable')
+          return JSON.stringify({
+            protocol: 1,
+            status: 'working',
+            revision: 1,
+            updatedAt: 100_000,
+            processId: 42,
+            processStartTicks: 88
+          })
+        },
+        probeProcess,
+        unlinkStatusFile: vi.fn(async () => {})
+      }
+    )
+    installRuntime(manager)
+
+    await managerInternals(manager).poll('terminal-1')
+    failRead = true
+    now += TUI_STATUS_STALE_MS
+    await managerInternals(manager).poll('terminal-1')
+
+    expect(onInstances).toHaveBeenCalledTimes(1)
+    expect(probeProcess).toHaveBeenCalledWith('Ubuntu', 42, 88)
+  })
+
+  it('serializes polling while a UNC read is still pending', async () => {
+    let now = 100_000
+    let resolveRead: ((value: string) => void) | undefined
+    const readStatusFile = vi.fn(() => new Promise<string>((resolve) => {
+      resolveRead = resolve
+    }))
+    const manager = new OpenCodeTuiStatusManager(
+      { onInstances: vi.fn(), onStatus: vi.fn() },
+      {
+        now: () => now,
+        readStatusFile,
+        probeProcess: vi.fn(async () => 'alive' as const),
+        unlinkStatusFile: vi.fn(async () => {})
+      }
+    )
+    installRuntime(manager)
+
+    const first = managerInternals(manager).poll('terminal-1')
+    await Promise.resolve()
+    const second = managerInternals(manager).poll('terminal-1')
+    expect(readStatusFile).toHaveBeenCalledTimes(1)
+
+    resolveRead?.(JSON.stringify({
+      protocol: 1,
+      status: 'working',
+      revision: 1,
+      updatedAt: now,
+      processId: 42,
+      processStartTicks: 88
+    }))
+    await Promise.all([first, second])
+  })
+
+  it('removes a crashed process but keeps legacy snapshots conservatively', async () => {
+    let now = 100_000
+    let heartbeat = true
+    const onInstances = vi.fn()
+    const probeProcess = vi.fn(async () => 'absent' as const)
+    const manager = new OpenCodeTuiStatusManager(
+      { onInstances, onStatus: vi.fn() },
+      {
+        now: () => now,
+        readStatusFile: async () => JSON.stringify({
+          protocol: 1,
+          status: 'working',
+          revision: 1,
+          updatedAt: heartbeat ? now : 100_000,
+          processId: 42,
+          processStartTicks: 88
+        }),
+        probeProcess,
+        unlinkStatusFile: vi.fn(async () => {})
+      }
+    )
+    installRuntime(manager)
+
+    await managerInternals(manager).poll('terminal-1')
+    heartbeat = false
+    now += TUI_STATUS_STALE_MS
+    await managerInternals(manager).poll('terminal-1')
+    expect(onInstances).toHaveBeenLastCalledWith({ sessionId: 'session-1', instances: [] })
+
+    const legacyInstances = vi.fn()
+    const legacyManager = new OpenCodeTuiStatusManager(
+      { onInstances: legacyInstances, onStatus: vi.fn() },
+      {
+        now: () => now,
+        readStatusFile: async () => JSON.stringify({
+          protocol: 1,
+          status: 'working',
+          revision: 1,
+          updatedAt: heartbeat ? now : 100_000
+        }),
+        probeProcess,
+        unlinkStatusFile: vi.fn(async () => {})
+      }
+    )
+    installRuntime(legacyManager)
+    heartbeat = true
+    await managerInternals(legacyManager).poll('terminal-1')
+    heartbeat = false
+    now += TUI_STATUS_STALE_MS
+    await managerInternals(legacyManager).poll('terminal-1')
+    expect(probeProcess).toHaveBeenCalledTimes(1)
+    expect(legacyInstances).toHaveBeenCalledTimes(1)
+  })
+
+  it('removes an explicit close record without waiting for a process probe', async () => {
+    let now = 100_000
+    let closed = false
+    const onInstances = vi.fn()
+    const probeProcess = vi.fn(async () => 'alive' as const)
+    const manager = new OpenCodeTuiStatusManager(
+      { onInstances, onStatus: vi.fn() },
+      {
+        now: () => now,
+        readStatusFile: async () => JSON.stringify({
+          protocol: 1,
+          status: 'completed',
+          revision: 2,
+          updatedAt: closed ? now - TUI_STATUS_STALE_MS - 1 : now,
+          processId: 42,
+          processStartTicks: 88,
+          ...(closed ? { closed: true } : {})
+        }),
+        probeProcess,
+        unlinkStatusFile: vi.fn(async () => {})
+      }
+    )
+    installRuntime(manager)
+
+    await managerInternals(manager).poll('terminal-1')
+    closed = true
+    now += TUI_STATUS_POLL_MS
+    await managerInternals(manager).poll('terminal-1')
+
+    expect(onInstances).toHaveBeenLastCalledWith({ sessionId: 'session-1', instances: [] })
+    expect(probeProcess).not.toHaveBeenCalled()
   })
 
   it('defaults global reporting off and persists the enable choice', async () => {

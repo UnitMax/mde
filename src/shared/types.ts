@@ -151,6 +151,12 @@ export interface OpenCodeTuiStatusSnapshot {
   title?: string
   revision: number
   updatedAt: number
+  /** Linux process identity used only by the main-process liveness check. */
+  processId?: number
+  /** Linux /proc start-time tick, paired with processId to reject PID reuse. */
+  processStartTicks?: number
+  /** Explicit plugin shutdown marker; distinct from a completed task. */
+  closed?: true
 }
 
 /** Main-process status transition for one MDE workspace session. */

@@ -27,10 +27,14 @@ import type { PtyLaunchIntegration } from '../pty/manager'
 
 export const TUI_STATUS_PROTOCOL = 1 as const
 export const TUI_STATUS_ROOT = '/tmp/mde-opencode'
-export const TUI_STATUS_POLL_MS = 500
-export const TUI_STATUS_STALE_MS = 8_000
+export const TUI_STATUS_POLL_MS = 1_000
+export const TUI_STATUS_HEARTBEAT_MS = 5_000
+export const TUI_STATUS_STALE_MS = 20_000
+export const TUI_STATUS_LIVENESS_PROBE_MS = 10_000
+export const TUI_STATUS_LIVENESS_TIMEOUT_MS = 3_000
+export const TUI_STATUS_ARTIFACT_MAX_AGE_MINUTES = 24 * 60
 export const TUI_STATUS_PLUGIN_MARKER = 'mde-opencode-tui-status-plugin-v1'
-export const TUI_STATUS_PLUGIN_VERSION = '1.1.0'
+export const TUI_STATUS_PLUGIN_VERSION = '1.2.0'
 export const TUI_STATUS_PLUGIN_VERSION_MARKER = 'mde-opencode-tui-status-plugin-version:'
 export const TUI_STATUS_TITLE_MAX_LENGTH = 160
 const TUI_STATUS_SETTINGS_FILE = 'opencode-tui.json'
@@ -54,26 +58,50 @@ export const MdeTuiStatus = async () => {
   const permissions = new Map()
   const questions = new Map()
   let currentRootSessionId
-  let writeChain = Promise.resolve()
+  let processStartTicks
+  try {
+    const fs = await import('node:fs/promises')
+    const stat = await fs.readFile('/proc/self/stat', 'utf8')
+    const afterName = stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\\s+/)
+    const value = Number(afterName[19])
+    if (Number.isSafeInteger(value) && value >= 0) processStartTicks = value
+  } catch {}
 
-  const write = () => {
-    const snapshot = {
-      protocol: 1,
-      status,
-      ...(attentionReason ? { attentionReason } : {}),
-      ...(title ? { title } : {}),
-      revision,
-      updatedAt: Date.now(),
-    }
-    writeChain = writeChain.then(async () => {
-      try {
-        const fs = await import('node:fs/promises')
-        await fs.mkdir((await import('node:path')).dirname(file), { recursive: true })
-        const temporary = file + '.tmp-' + process.pid
-        await fs.writeFile(temporary, JSON.stringify(snapshot), 'utf8')
-        await fs.rename(temporary, file)
-      } catch {}
-    })
+  let writePending = false
+  let writeRunning = false
+  let closing = false
+  let writePromise = Promise.resolve()
+
+  const write = (closed = false) => {
+    if (closed) closing = true
+    writePending = true
+    if (writeRunning) return writePromise
+
+    writeRunning = true
+    writePromise = (async () => {
+      while (writePending) {
+        writePending = false
+        const snapshot = {
+          protocol: 1,
+          status,
+          ...(attentionReason ? { attentionReason } : {}),
+          ...(title ? { title } : {}),
+          revision,
+          ...(processStartTicks === undefined ? {} : { processId: process.pid, processStartTicks }),
+          ...(closing ? { closed: true } : {}),
+          updatedAt: Date.now(),
+        }
+        try {
+          const fs = await import('node:fs/promises')
+          await fs.mkdir((await import('node:path')).dirname(file), { recursive: true })
+          const temporary = file + '.tmp-' + process.pid
+          await fs.writeFile(temporary, JSON.stringify(snapshot), 'utf8')
+          await fs.rename(temporary, file)
+        } catch {}
+      }
+      writeRunning = false
+    })()
+    return writePromise
   }
 
   const publish = (nextStatus, nextReason) => {
@@ -157,7 +185,7 @@ export const MdeTuiStatus = async () => {
   }
 
   publish('idle')
-  const heartbeat = setInterval(write, 2_000)
+  const heartbeat = setInterval(write, ${TUI_STATUS_HEARTBEAT_MS})
   heartbeat.unref?.()
 
   return {
@@ -246,6 +274,10 @@ export const MdeTuiStatus = async () => {
         }
       } catch {}
     },
+    dispose: async () => {
+      clearInterval(heartbeat)
+      await write(true)
+    },
   }
 }
 `
@@ -263,6 +295,10 @@ interface Runtime {
   windowsPath: string
   timer: ReturnType<typeof setInterval>
   snapshot: OpenCodeTuiStatusSnapshot | null
+  lastHeartbeatAt: number | null
+  lastProbeAt: number | null
+  pollInFlight: boolean
+  probeInFlight: boolean
 }
 
 interface EffectiveStatus {
@@ -308,7 +344,7 @@ function statusPriority(status: OpenCodeTuiStatus): number {
   }
 }
 
-export function parseTuiStatusSnapshot(value: unknown, now = Date.now()): OpenCodeTuiStatusSnapshot | null {
+function decodeTuiStatusSnapshot(value: unknown, now = Date.now()): OpenCodeTuiStatusSnapshot | null {
   if (typeof value !== 'object' || value === null) return null
   const record = value as Record<string, unknown>
   if (record.protocol !== TUI_STATUS_PROTOCOL) return null
@@ -319,9 +355,8 @@ export function parseTuiStatusSnapshot(value: unknown, now = Date.now()): OpenCo
     record.status !== 'completed' &&
     record.status !== 'error'
   ) return null
-  if (!Number.isInteger(record.revision) || typeof record.updatedAt !== 'number') return null
+  if (!Number.isInteger(record.revision) || (record.revision as number) < 0 || typeof record.updatedAt !== 'number') return null
   if (!Number.isFinite(record.updatedAt) || record.updatedAt > now + 5_000) return null
-  if (now - record.updatedAt > TUI_STATUS_STALE_MS) return null
 
   const attentionReason = record.attentionReason
   const parsedAttentionReason =
@@ -334,6 +369,15 @@ export function parseTuiStatusSnapshot(value: unknown, now = Date.now()): OpenCo
   const revision = record.revision
   const updatedAt = record.updatedAt
   if (typeof revision !== 'number' || typeof updatedAt !== 'number') return null
+  if (record.closed !== undefined && record.closed !== true) return null
+  const hasProcessId = record.processId !== undefined
+  const hasProcessStartTicks = record.processStartTicks !== undefined
+  if (hasProcessId !== hasProcessStartTicks) return null
+  if (
+    hasProcessId &&
+    (!Number.isSafeInteger(record.processId) || (record.processId as number) <= 0 ||
+      !Number.isSafeInteger(record.processStartTicks) || (record.processStartTicks as number) < 0)
+  ) return null
   if (record.title !== undefined && typeof record.title !== 'string') return null
   const title = record.title
     ?.replace(/\s+/g, ' ')
@@ -346,8 +390,90 @@ export function parseTuiStatusSnapshot(value: unknown, now = Date.now()): OpenCo
     ...(record.status === 'attention' ? { attentionReason: parsedAttentionReason } : {}),
     ...(title ? { title } : {}),
     revision,
-    updatedAt
+    updatedAt,
+    ...(hasProcessId
+      ? {
+          processId: record.processId as number,
+          processStartTicks: record.processStartTicks as number
+        }
+      : {}),
+    ...(record.closed === true ? { closed: true } : {})
   }
+}
+
+function isTuiSnapshotFresh(snapshot: OpenCodeTuiStatusSnapshot, now = Date.now()): boolean {
+  return now - snapshot.updatedAt < TUI_STATUS_STALE_MS
+}
+
+export function parseTuiStatusSnapshot(value: unknown, now = Date.now()): OpenCodeTuiStatusSnapshot | null {
+  const snapshot = decodeTuiStatusSnapshot(value, now)
+  if (snapshot === null) return null
+  if (!snapshot.closed && !isTuiSnapshotFresh(snapshot, now)) return null
+  return snapshot
+}
+
+function hasTuiProcessIdentity(
+  snapshot: OpenCodeTuiStatusSnapshot
+): snapshot is OpenCodeTuiStatusSnapshot & { processId: number; processStartTicks: number } {
+  return snapshot.processId !== undefined && snapshot.processStartTicks !== undefined
+}
+
+function sameTuiProcess(
+  a: OpenCodeTuiStatusSnapshot | null,
+  b: OpenCodeTuiStatusSnapshot
+): boolean {
+  return a !== null &&
+    a.processId === b.processId &&
+    a.processStartTicks === b.processStartTicks
+}
+
+export function parseLinuxProcessStartTicks(stat: string): number | null {
+  const close = stat.lastIndexOf(')')
+  if (close < 0) return null
+  const fields = stat.slice(close + 1).trim().split(/\s+/)
+  const startTicks = Number(fields[19])
+  return Number.isSafeInteger(startTicks) && startTicks >= 0 ? startTicks : null
+}
+
+export type TuiProcessLiveness = 'alive' | 'absent' | 'unknown'
+
+const WSL_PROCESS_STAT_SCRIPT = [
+  'if [ -r "/proc/$1/stat" ]; then',
+  '  cat "/proc/$1/stat"',
+  'else',
+  "  printf 'absent\\n'",
+  'fi'
+].join('\n')
+
+export function tuiProcessProbeCommand(processId: number): readonly string[] | null {
+  if (!Number.isSafeInteger(processId) || processId <= 0) return null
+  return ['/bin/sh', '-c', WSL_PROCESS_STAT_SCRIPT, 'mde-opencode-tui', String(processId)]
+}
+
+export async function probeTuiProcess(
+  distro: string,
+  processId: number,
+  processStartTicks: number
+): Promise<TuiProcessLiveness> {
+  if (
+    !Number.isSafeInteger(processId) || processId <= 0 ||
+    !Number.isSafeInteger(processStartTicks) || processStartTicks < 0
+  ) return 'unknown'
+
+  const command = tuiProcessProbeCommand(processId)
+  if (command === null) return 'unknown'
+
+  const result = await runWslCommand(
+    distro,
+    command,
+    { timeoutMs: TUI_STATUS_LIVENESS_TIMEOUT_MS }
+  )
+  if (result.code !== 0) return 'unknown'
+  if (result.stdout.trim() === 'absent') return 'absent'
+
+  const observedStartTicks = parseLinuxProcessStartTicks(result.stdout)
+  if (observedStartTicks === null) return 'unknown'
+  return observedStartTicks === processStartTicks ? 'alive' : 'absent'
 }
 
 export function aggregateTuiStatuses(snapshots: OpenCodeTuiStatusSnapshot[]): EffectiveStatus {
@@ -436,16 +562,38 @@ export function classifyTuiPluginSource(source: string | null): OpenCodeTuiPlugi
   return parseTuiPluginVersion(source) === TUI_STATUS_PLUGIN_VERSION ? 'installed' : 'outdated'
 }
 
+interface TuiStatusManagerDependencies {
+  now(): number
+  readStatusFile(path: string): Promise<string>
+  probeProcess(distro: string, processId: number, processStartTicks: number): Promise<TuiProcessLiveness>
+  unlinkStatusFile(path: string): Promise<void>
+}
+
+const defaultTuiStatusManagerDependencies: TuiStatusManagerDependencies = {
+  now: () => Date.now(),
+  readStatusFile: (path) => fs.readFile(path, 'utf8'),
+  probeProcess: probeTuiProcess,
+  unlinkStatusFile: (path) => fs.unlink(path)
+}
+
 export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
   private readonly runtimes = new Map<string, Runtime>()
   private readonly sessionStatuses = new Map<string, EffectiveStatus>()
   private readonly sessionInstances = new Map<string, OpenCodeTuiInstanceStatus[]>()
   private readonly homeDirectories = new Map<string, string>()
+  private readonly cleanedArtifactDistros = new Set<string>()
   private settingsDirectory: string | null = null
   private enabled = false
   private instanceLabelMode: OpenCodeTuiInstanceLabelMode = 'numbered'
 
-  constructor(private readonly events: OpenCodeTuiStatusEvents) {}
+  private readonly dependencies: TuiStatusManagerDependencies
+
+  constructor(
+    private readonly events: OpenCodeTuiStatusEvents,
+    dependencies: Partial<TuiStatusManagerDependencies> = {}
+  ) {
+    this.dependencies = { ...defaultTuiStatusManagerDependencies, ...dependencies }
+  }
 
   async configure(settingsDirectory: string): Promise<void> {
     this.settingsDirectory = settingsDirectory
@@ -516,10 +664,15 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
       wslPath,
       windowsPath: uncPathFor(session.distro, wslPath),
       timer: setInterval(() => void this.poll(terminalId), TUI_STATUS_POLL_MS),
-      snapshot: null
+      snapshot: null,
+      lastHeartbeatAt: null,
+      lastProbeAt: null,
+      pollInFlight: false,
+      probeInFlight: false
     }
     runtime.timer.unref?.()
     this.runtimes.set(terminalId, runtime)
+    this.cleanupExpiredArtifacts(session.distro)
     void this.poll(terminalId)
 
     return {
@@ -533,6 +686,7 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
     if (!runtime) return
     clearInterval(runtime.timer)
     this.runtimes.delete(terminalId)
+    void this.unlinkStatusFile(runtime.windowsPath)
     this.emitSessionInstances(runtime.sessionId)
     this.emitSessionStatus(runtime.sessionId)
   }
@@ -611,27 +765,127 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
     return uncPathFor(distro, `${home}/.config/opencode/plugins/mde-status.js`)
   }
 
+  private cleanupExpiredArtifacts(distro: string): void {
+    if (this.cleanedArtifactDistros.has(distro)) return
+    this.cleanedArtifactDistros.add(distro)
+    void runWslCommand(
+      distro,
+      [
+        'find',
+        TUI_STATUS_ROOT,
+        '-mindepth',
+        '1',
+        '-maxdepth',
+        '1',
+        '-type',
+        'f',
+        '-mmin',
+        `+${TUI_STATUS_ARTIFACT_MAX_AGE_MINUTES}`,
+        '-delete'
+      ],
+      { timeoutMs: TUI_STATUS_LIVENESS_TIMEOUT_MS }
+    ).catch(() => {})
+  }
+
+  private async unlinkStatusFile(path: string): Promise<void> {
+    try {
+      await this.dependencies.unlinkStatusFile(path)
+    } catch {}
+  }
+
   private async poll(terminalId: string): Promise<void> {
     const runtime = this.runtimes.get(terminalId)
-    if (!runtime) return
+    if (!runtime || runtime.pollInFlight) return
+    runtime.pollInFlight = true
 
-    let snapshot: OpenCodeTuiStatusSnapshot | null = null
     try {
-      const text = await fs.readFile(runtime.windowsPath, 'utf8')
-      snapshot = parseTuiStatusSnapshot(JSON.parse(text))
-    } catch {
-      snapshot = null
+      let snapshot: OpenCodeTuiStatusSnapshot | null = null
+      try {
+        const text = await this.dependencies.readStatusFile(runtime.windowsPath)
+        snapshot = decodeTuiStatusSnapshot(JSON.parse(text), this.dependencies.now())
+      } catch {}
+
+      if (this.runtimes.get(terminalId) !== runtime) return
+      const now = this.dependencies.now()
+      if (snapshot?.closed) {
+        if (runtime.snapshot !== null && !sameTuiProcess(runtime.snapshot, snapshot)) return
+        this.clearRuntimeSnapshot(runtime)
+        void this.unlinkStatusFile(runtime.windowsPath)
+        return
+      }
+
+      if (snapshot !== null && isTuiSnapshotFresh(snapshot, now)) {
+        this.acceptFreshSnapshot(runtime, snapshot, now)
+        return
+      }
+
+      await this.probeRuntime(runtime, now)
+    } finally {
+      runtime.pollInFlight = false
+    }
+  }
+
+  private acceptFreshSnapshot(
+    runtime: Runtime,
+    snapshot: OpenCodeTuiStatusSnapshot,
+    now: number
+  ): void {
+    const previous = runtime.snapshot
+    const processChanged = previous !== null && !sameTuiProcess(previous, snapshot)
+    if (!processChanged && previous !== null && snapshot.revision < previous.revision) {
+      runtime.lastHeartbeatAt = now
+      return
     }
 
+    runtime.lastHeartbeatAt = now
+    runtime.lastProbeAt = null
     if (
-      runtime.snapshot?.revision === snapshot?.revision &&
-      runtime.snapshot?.status === snapshot?.status &&
-      runtime.snapshot?.attentionReason === snapshot?.attentionReason &&
-      runtime.snapshot?.title === snapshot?.title
+      previous?.revision === snapshot.revision &&
+      previous.status === snapshot.status &&
+      previous.attentionReason === snapshot.attentionReason &&
+      previous.title === snapshot.title &&
+      sameTuiProcess(previous, snapshot)
     ) {
+      runtime.snapshot = snapshot
       return
     }
     runtime.snapshot = snapshot
+    this.emitSessionInstances(runtime.sessionId)
+    this.emitSessionStatus(runtime.sessionId)
+  }
+
+  private async probeRuntime(runtime: Runtime, now: number): Promise<void> {
+    const snapshot = runtime.snapshot
+    if (
+      snapshot === null ||
+      runtime.lastHeartbeatAt === null ||
+      now - runtime.lastHeartbeatAt < TUI_STATUS_STALE_MS ||
+      !hasTuiProcessIdentity(snapshot) ||
+      runtime.probeInFlight ||
+      (runtime.lastProbeAt !== null && now - runtime.lastProbeAt < TUI_STATUS_LIVENESS_PROBE_MS)
+    ) return
+
+    runtime.lastProbeAt = now
+    runtime.probeInFlight = true
+    try {
+      const result = await this.dependencies.probeProcess(
+        runtime.distro,
+        snapshot.processId,
+        snapshot.processStartTicks
+      )
+      if (this.runtimes.get(runtime.terminalId) !== runtime || result !== 'absent') return
+      this.clearRuntimeSnapshot(runtime)
+      void this.unlinkStatusFile(runtime.windowsPath)
+    } finally {
+      runtime.probeInFlight = false
+    }
+  }
+
+  private clearRuntimeSnapshot(runtime: Runtime): void {
+    if (runtime.snapshot === null) return
+    runtime.snapshot = null
+    runtime.lastHeartbeatAt = null
+    runtime.lastProbeAt = null
     this.emitSessionInstances(runtime.sessionId)
     this.emitSessionStatus(runtime.sessionId)
   }
