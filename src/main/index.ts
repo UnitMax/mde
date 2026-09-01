@@ -65,7 +65,10 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: true,
+      // MDE does not provide spell checking, so do not initialize Chromium's
+      // OS spelling services for ordinary text fields.
+      spellcheck: false,
     }
   })
 
