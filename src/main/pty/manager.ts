@@ -65,15 +65,6 @@ function ptyEnv(additional?: Record<string, string>): Record<string, string> {
   return env
 }
 
-function isBundledConptyError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error)
-  return [
-    'conpty.dll',
-    'Cannot launch conpty',
-    'Failed to load conpty',
-  ].some((fragment) => message.includes(fragment))
-}
-
 function spawnPty(
   file: string,
   args: string[],
@@ -82,23 +73,16 @@ function spawnPty(
 ): IPty {
   if (platform !== 'win32') return nodePty.spawn(file, args, options)
 
-  try {
-    // The bundled backend passes terminal-owned queries through to MDE. The
-    // inbox ConPTY consumes OSC 10/11 without replying on affected systems.
-    return nodePty.spawn(file, args, {
-      ...options,
-      useConpty: true,
-      useConptyDll: true,
-    })
-  } catch (error) {
-    if (!isBundledConptyError(error)) throw error
-    console.warn('[pty] bundled ConPTY unavailable; falling back to inbox ConPTY:', error)
-    return nodePty.spawn(file, args, {
-      ...options,
-      useConpty: true,
-      useConptyDll: false,
-    })
-  }
+  // The bundled backend passes terminal-owned queries through to MDE. The
+  // inbox ConPTY consumes OSC 10/11 without replying on affected systems.
+  // Do not retry with the inbox backend: a damaged or unavailable bundled
+  // component must leave the terminal unavailable rather than changing its
+  // security and behavior profile at runtime.
+  return nodePty.spawn(file, args, {
+    ...options,
+    useConpty: true,
+    useConptyDll: true,
+  })
 }
 
 /**

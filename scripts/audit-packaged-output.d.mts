@@ -36,8 +36,10 @@ export interface AuditPackagedOutputResult {
 
 export const buildMetadataFiles: string[]
 export const forbiddenPackagedFiles: string[]
+export const allowedUnpackedNodePtyFiles: string[]
 
 export function isForbiddenPackagedFile(filePath: string): boolean
+export function isUnexpectedUnpackedNodePtyFile(filePath: string): boolean
 
 export function privatePathNeedles(options?: PrivatePathNeedleOptions): PrivatePathNeedle[]
 export function needleMatchers(needles: PrivatePathNeedle[]): NeedleMatcher[]

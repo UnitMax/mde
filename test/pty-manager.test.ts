@@ -285,26 +285,22 @@ describe('PtyManager runtime terminal identities', () => {
     expect(ptyMock.spawn.mock.calls[0]?.[2]).not.toHaveProperty('useConptyDll')
   })
 
-  it('falls back to inbox ConPTY when the bundled backend cannot initialize', () => {
+  it('fails closed when the bundled ConPTY backend cannot initialize', () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     ptyMock.spawn
       .mockImplementationOnce(() => {
         throw new Error('Cannot find conpty.dll at expected path')
       })
-      .mockImplementationOnce(() => createFakeChild())
     const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() })
 
-    manager.ensure('pane-a', sourceSession(), { cols: 80, rows: 24 }, palette)
+    expect(() => (
+      manager.ensure('pane-a', sourceSession(), { cols: 80, rows: 24 }, palette)
+    )).toThrow('Cannot find conpty.dll at expected path')
 
-    expect(ptyMock.spawn).toHaveBeenCalledTimes(2)
+    expect(ptyMock.spawn).toHaveBeenCalledOnce()
     expect(ptyMock.spawn.mock.calls[0]?.[2]).toMatchObject({
       useConptyDll: true,
     })
-    expect(ptyMock.spawn.mock.calls[1]?.[2]).toMatchObject({
-      useConptyDll: false,
-    })
-    expect(warning).toHaveBeenCalledOnce()
   })
 
   it('does not mask unrelated Windows launch failures with a retry', () => {

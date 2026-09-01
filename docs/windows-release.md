@@ -30,9 +30,11 @@ nothing from an earlier build survives to be mistaken for this one. The command
 runs the license and type checks again, packages the application, deletes
 electron-builder metadata dumps containing absolute paths, scans every remaining
 artifact for the build user's Linux, WSL, and Windows profile paths, and fails if
-an unsigned binary the package is not meant to ship is present:
+an unpacked file the package is not meant to ship is present:
 electron-builder's `elevate.exe`, or `node-pty`'s `winpty-agent.exe` and
-`winpty.dll`. A nonzero exit code means the artifacts must not be published.
+`winpty.dll`. The only unpacked `node-pty` files allowed are `conpty.node`,
+`conpty.dll`, and `OpenConsole.exe`; its JavaScript stays in integrity-checked
+`app.asar`. A nonzero exit code means the artifacts must not be published.
 
 There is deliberately no installer and no portable executable. A portable NSIS
 build re-extracts the whole application into `%TEMP%` and runs it from there on
@@ -51,6 +53,10 @@ Open both a PowerShell and WSL terminal, type a command, resize the window, and
 close each terminal. This exercises the unpacked `node-pty` native module and the
 bundled ConPTY files. Packaged builds carry no winpty fallback, so a terminal that
 opens here proves the ConPTY path works on its own.
+
+MDE does not fall back to Windows' inbox ConPTY when the bundled component cannot
+start. A damaged or incomplete release therefore leaves its terminal unavailable;
+re-extract a fresh release rather than attempting to bypass that protection.
 
 Confirm the packaged binary was hardened, from the build directory:
 

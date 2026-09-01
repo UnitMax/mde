@@ -20,9 +20,28 @@ export const buildMetadataFiles = ['builder-debug.yml', 'builder-effective-confi
 // them here. Compared case-insensitively.
 export const forbiddenPackagedFiles = ['elevate.exe', 'winpty-agent.exe', 'winpty.dll']
 
+// node-pty's JavaScript must stay in app.asar, where Electron validates it with
+// MDE's enabled ASAR-integrity fuse. These are the only native companion files
+// that the strict bundled-ConPTY backend needs outside the archive.
+export const allowedUnpackedNodePtyFiles = [
+  'prebuilds/win32-x64/conpty.node',
+  'prebuilds/win32-x64/conpty/conpty.dll',
+  'prebuilds/win32-x64/conpty/OpenConsole.exe',
+]
+
+const unpackedNodePtyMarker = '/resources/app.asar.unpacked/node_modules/node-pty/'
+
 export function isForbiddenPackagedFile(filePath) {
   const name = basename(filePath).toLowerCase()
   return forbiddenPackagedFiles.some((forbidden) => forbidden.toLowerCase() === name)
+}
+
+export function isUnexpectedUnpackedNodePtyFile(filePath) {
+  const normalised = filePath.replaceAll('\\', '/').toLowerCase()
+  const markerIndex = normalised.indexOf(unpackedNodePtyMarker)
+  if (markerIndex === -1) return false
+  const relativePath = normalised.slice(markerIndex + unpackedNodePtyMarker.length)
+  return !allowedUnpackedNodePtyFiles.some((allowed) => allowed.toLowerCase() === relativePath)
 }
 
 function usableNeedle(value) {
@@ -180,7 +199,9 @@ export async function auditPackagedOutput({
 
   for await (const filePath of walkFiles(directory)) {
     scannedFiles += 1
-    if (isForbiddenPackagedFile(filePath)) forbidden.push(relative(directory, filePath))
+    if (isForbiddenPackagedFile(filePath) || isUnexpectedUnpackedNodePtyFile(filePath)) {
+      forbidden.push(relative(directory, filePath))
+    }
     const fileFindings = await scanFileForNeedles(filePath, matchers)
     for (const finding of fileFindings) {
       findings.push({ ...finding, file: relative(directory, filePath) })
@@ -215,12 +236,12 @@ if (invokedPath === fileURLToPath(import.meta.url)) {
   }
 
   if (forbidden.length > 0) {
-    console.error(`Excluded binaries present in packaged output under ${directory}:`)
+    console.error(`Disallowed package files present under ${directory}:`)
     for (const file of forbidden) {
       console.error(`  ${file}`)
     }
     console.error(
-      'Check win.target and the win.files exclusions in electron-builder.yml, then rebuild.',
+      'Check win.asar, win.asarUnpack, and win.files exclusions in electron-builder.yml, then rebuild.',
     )
     process.exitCode = 1
   }

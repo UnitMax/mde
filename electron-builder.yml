@@ -28,6 +28,11 @@ extraResources:
     to: THIRD_PARTY_NOTICES.md
 win:
   icon: build/icon.ico
+  # node-pty contains native files, so electron-builder would otherwise unpack
+  # its whole module. Keep its JavaScript in the integrity-checked app.asar and
+  # unpack only the three Windows ConPTY assets listed below.
+  asar:
+    smartUnpack: false
   files:
     - out/**
     - package.json
@@ -54,6 +59,10 @@ win:
     - '!node_modules/node-pty/prebuilds/win32-x64/pty.node'
     - '!node_modules/node-pty/prebuilds/win32-x64/winpty.dll'
     - '!node_modules/node-pty/prebuilds/win32-x64/winpty-agent.exe'
+    # MDE fails closed if its bundled ConPTY cannot start, so node-pty's
+    # inbox-ConPTY process-list helper is unreachable and is not shipped.
+    - '!node_modules/node-pty/prebuilds/win32-x64/conpty_console_list.node'
+    - '!node_modules/node-pty/lib/conpty_console_list_agent.js'
   # Native modules and their companion executables cannot run from inside asar.
   asarUnpack:
     - '**/node_modules/node-pty/prebuilds/win32-x64/**'

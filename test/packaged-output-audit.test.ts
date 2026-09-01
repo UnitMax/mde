@@ -4,9 +4,11 @@ import { basename, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   auditPackagedOutput,
+  allowedUnpackedNodePtyFiles,
   buildMetadataFiles,
   forbiddenPackagedFiles,
   isForbiddenPackagedFile,
+  isUnexpectedUnpackedNodePtyFile,
   needleMatchers,
   privatePathNeedles,
   removeBuildMetadata,
@@ -163,6 +165,15 @@ describe('excluded packaged binaries', () => {
     expect(isForbiddenPackagedFile(join('win-unpacked', 'mde.exe'))).toBe(false)
     expect(isForbiddenPackagedFile('elevate.exe.map')).toBe(false)
   })
+
+  it('allows only the required ConPTY assets outside app.asar', () => {
+    const nodePty = join('win-unpacked', 'resources', 'app.asar.unpacked', 'node_modules', 'node-pty')
+    allowedUnpackedNodePtyFiles.forEach((file) => {
+      expect(isUnexpectedUnpackedNodePtyFile(join(nodePty, file))).toBe(false)
+    })
+    expect(isUnexpectedUnpackedNodePtyFile(join(nodePty, 'lib', 'windowsPtyAgent.js'))).toBe(true)
+    expect(isUnexpectedUnpackedNodePtyFile(join(nodePty, 'prebuilds', 'win32-x64', 'conpty_console_list.node'))).toBe(true)
+  })
 })
 
 describe('auditing a packaged output directory', () => {
@@ -211,17 +222,30 @@ describe('auditing a packaged output directory', () => {
     expect(result.findings).toEqual([])
   })
 
-  it('reports winpty binaries a dropped file exclusion would let back in', async () => {
+  it('reports unwanted node-pty files outside app.asar', async () => {
     const directory = await temporaryDirectory()
-    const prebuilds = join(directory, 'win-unpacked', 'resources', 'app.asar.unpacked', 'win32-x64')
+    const nodePty = join(
+      directory,
+      'win-unpacked',
+      'resources',
+      'app.asar.unpacked',
+      'node_modules',
+      'node-pty'
+    )
+    const prebuilds = join(nodePty, 'prebuilds', 'win32-x64')
     await mkdir(prebuilds, { recursive: true })
     await writeFile(join(prebuilds, 'winpty-agent.exe'), 'MZ')
     await writeFile(join(prebuilds, 'winpty.dll'), 'MZ')
+    await writeFile(join(prebuilds, 'conpty_console_list.node'), 'MZ')
+    await mkdir(join(nodePty, 'lib'), { recursive: true })
+    await writeFile(join(nodePty, 'lib', 'windowsPtyAgent.js'), 'module.exports = {}')
     await writeFile(join(prebuilds, 'conpty.node'), 'MZ')
 
     const result = await auditPackagedOutput({ outputDirectory: directory, ...buildMachine })
 
     expect(result.forbidden.map((file) => basename(file)).sort()).toEqual([
+      'conpty_console_list.node',
+      'windowsPtyAgent.js',
       'winpty-agent.exe',
       'winpty.dll',
     ])

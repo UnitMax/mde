@@ -247,9 +247,10 @@ function TerminalSurface({
     let retry: number | undefined
     let debounce: number | undefined
     let forceResize = false
+    let launchFailed = false
 
     const syncSize = (): void => {
-      if (cancelled) return
+      if (cancelled || launchFailed) return
 
       const action = terminalSizeAction(fitSession(terminal), ensured, previousSize, forceResize)
       if (action.type === 'wait') {
@@ -275,12 +276,15 @@ function TerminalSurface({
           setStatus(pane.terminalId, status)
           if (!textInputHasFocus()) terminal.term.focus()
         }).catch((error: unknown) => {
-          console.warn('[terminal] PTY ensure failed:', error)
+          console.error('[terminal] PTY ensure failed:', error)
           ensured = false
           previousSize = null
+          launchFailed = true
+          window.clearTimeout(retry)
+          retry = undefined
         }).finally(() => {
           ensurePromise = null
-          if (!cancelled) syncSize()
+          if (!cancelled && !launchFailed) syncSize()
         })
         return
       }
@@ -450,13 +454,18 @@ function TerminalPane({
     const size = (terminal && fitSession(terminal)) || FALLBACK_SIZE
     unlinkTerminalTask(pane.terminalId)
     clearExit(pane.terminalId)
-    const status = await window.api.pty.restart({
-      terminalId: pane.terminalId,
-      sessionId: session.id,
-      size,
-      palette: getTerminalPalette(terminal?.themeId ?? getTerminalSettings().theme)
-    })
-    setStatus(pane.terminalId, status)
+    try {
+      const status = await window.api.pty.restart({
+        terminalId: pane.terminalId,
+        sessionId: session.id,
+        size,
+        palette: getTerminalPalette(terminal?.themeId ?? getTerminalSettings().theme)
+      })
+      setStatus(pane.terminalId, status)
+    } catch (error) {
+      console.error('[terminal] PTY restart failed:', error)
+      setStatus(pane.terminalId, 'none')
+    }
   }
 
   const requestRestart = (): void => {
