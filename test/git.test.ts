@@ -30,6 +30,31 @@ function result(stdout = '', stderr = '', code = 0): GitCommandResult {
   return { stdout, stderr, code }
 }
 
+/**
+ * Repeated rather than imported: the hardening SEC-008 relies on must not be
+ * able to change without a deliberate test update.
+ */
+const safetyArgs = [
+  '--attr-source=4b825dc642cb6eb9a060e54bf8d69288fbee4904',
+  '--no-optional-locks',
+  '-c',
+  'core.fsmonitor=false',
+  '-c',
+  'core.hooksPath=/nonexistent/mde-disabled-git-hooks',
+  '-c',
+  'core.askpass=',
+  '-c',
+  'core.sshCommand=false',
+  '-c',
+  'credential.helper=',
+  '-c',
+  'protocol.ext.allow=never'
+]
+
+function hardened(...args: string[]): string[] {
+  return [...safetyArgs, ...args]
+}
+
 const nativeSession = {
   id: 'native-1',
   projectId: 'project-1',
@@ -94,7 +119,7 @@ describe('Git history queries', () => {
     expect(mocks.resolveWindowsGitExecutable).toHaveBeenCalledWith(session.path)
     expect(calls).toEqual([{
       file: 'C:\\Program Files\\Git\\cmd\\git.exe',
-      args: ['-C', session.path, '--no-pager', 'status'],
+      args: ['-C', session.path, ...hardened('--no-pager', 'status')],
       cwd: 'C:\\Program Files\\Git\\cmd'
     }])
   })
@@ -149,7 +174,7 @@ describe('Git history queries', () => {
 
     expect(mocks.runWslCommand).toHaveBeenCalledWith(
       'Ubuntu-24.04',
-      ['git', '--no-pager', 'diff', 'HEAD', '--', filename],
+      ['git', ...hardened('--no-pager', 'diff', 'HEAD', '--', filename)],
       { cwd: '/home/me/src/app' }
     )
   })
@@ -322,6 +347,7 @@ describe('Git status summaries', () => {
       'diff',
       '--numstat',
       '--no-ext-diff',
+      '--no-textconv',
       '--no-color',
       '--find-renames',
       '-z',
@@ -384,6 +410,7 @@ describe('Git diff queries', () => {
       '--no-pager',
       'diff',
       '--no-ext-diff',
+      '--no-textconv',
       '--no-color',
       '--find-renames',
       '--find-copies',
@@ -412,6 +439,7 @@ describe('Git diff queries', () => {
       'diff',
       '--no-index',
       '--no-ext-diff',
+      '--no-textconv',
       '--no-color',
       '--unified=80',
       '--',
@@ -474,5 +502,103 @@ describe('Git history display helpers', () => {
         'diff --git a/src/main/git.ts b/src/main/git.ts\n@@ -1 +1 @@\n+const text = "Binary files .* differ"\n+const patch = "GIT binary patch"\n'
       )
     ).toBe(false)
+  })
+})
+
+describe('Git command hardening (SEC-008)', () => {
+  it('prefixes every native Git call with the safety options', async () => {
+    const calls: string[][] = []
+    mocks.execFile.mockImplementation(
+      (_file: string, args: string[], _options: unknown, callback: (error: null, stdout: string, stderr: string) => void) => {
+        calls.push(args)
+        callback(null, args.includes('rev-parse') ? 'true\n' : '', '')
+      }
+    )
+
+    await readGitInfo(nativeSession)
+
+    expect(calls).not.toHaveLength(0)
+    for (const args of calls) {
+      expect(args.slice(0, safetyArgs.length)).toEqual(safetyArgs)
+      expect(args.indexOf('--no-pager')).toBe(safetyArgs.length)
+    }
+  })
+
+  it('runs native Git with locks, prompts, and askpass disabled in the environment', async () => {
+    let environment: NodeJS.ProcessEnv | undefined
+    mocks.execFile.mockImplementation(
+      (
+        _file: string,
+        _args: string[],
+        options: { env?: NodeJS.ProcessEnv },
+        callback: (error: null, stdout: string, stderr: string) => void
+      ) => {
+        environment = options.env
+        callback(null, 'true\n', '')
+      }
+    )
+
+    await createGitCommandRunner(nativeSession, 'linux')(['--no-pager', 'status'])
+
+    expect(environment).toMatchObject({
+      GIT_OPTIONAL_LOCKS: '0',
+      GIT_TERMINAL_PROMPT: '0',
+      GIT_ASKPASS: ''
+    })
+  })
+
+  it('prefixes WSL Git calls with the same safety options', async () => {
+    mocks.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
+
+    await createGitCommandRunner(wslSession, 'win32')(['--no-pager', 'status'])
+
+    expect(mocks.runWslCommand).toHaveBeenCalledWith(
+      'Ubuntu-24.04',
+      ['git', ...hardened('--no-pager', 'status')],
+      { cwd: '/home/me/src/app' }
+    )
+  })
+
+  it('retries without attr-source when Git rejects it, then remembers that repository', async () => {
+    const calls: string[][] = []
+    mocks.execFile.mockImplementation(
+      (_file: string, args: string[], _options: unknown, callback: (error: Error | null, stdout: string, stderr: string) => void) => {
+        calls.push(args)
+        if (args.includes(safetyArgs[0] as string)) {
+          const failure = Object.assign(new Error('git failed'), { code: 128 })
+          callback(failure, '', 'fatal: bad --attr-source or GIT_ATTR_SOURCE\n')
+          return
+        }
+        callback(null, 'true\n', '')
+      }
+    )
+
+    const legacySession = { ...nativeSession, path: '/workspace/legacy-git' }
+    const run = createGitCommandRunner(legacySession, 'linux')
+
+    await expect(run(['--no-pager', 'status'])).resolves.toMatchObject({ code: 0 })
+    await expect(run(['--no-pager', 'status'])).resolves.toMatchObject({ code: 0 })
+
+    expect(calls).toHaveLength(3)
+    expect(calls[1]).toEqual(hardened('--no-pager', 'status').slice(1))
+    expect(calls[2]).toEqual(hardened('--no-pager', 'status').slice(1))
+  })
+
+  it('does not drop attr-source when a command fails for an unrelated reason', async () => {
+    const calls: string[][] = []
+    mocks.execFile.mockImplementation(
+      (_file: string, args: string[], _options: unknown, callback: (error: Error | null, stdout: string, stderr: string) => void) => {
+        calls.push(args)
+        const failure = Object.assign(new Error('git failed'), { code: 128 })
+        callback(failure, '', 'fatal: not a git repository (or any of the parent directories): .git\n')
+      }
+    )
+
+    const run = createGitCommandRunner({ ...nativeSession, path: '/workspace/plain' }, 'linux')
+    await run(['--no-pager', 'status'])
+    await run(['--no-pager', 'status'])
+
+    expect(calls).toHaveLength(2)
+    expect(calls.every((args) => args[0] === safetyArgs[0])).toBe(true)
   })
 })

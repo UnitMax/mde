@@ -18,6 +18,46 @@ const GIT_DIFF_CONTEXT_LINES = 80
 const GIT_MAX_BUFFER = 8 * 1024 * 1024
 const GIT_EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 
+/**
+ * A complete working tree carries its own `.git/config`, `.git/hooks`, and
+ * `.gitattributes`, and several of those settings name programs Git runs by
+ * itself. MDE polls Git automatically, so the user never chose to run them.
+ * `core.hooksPath` must be an absolute path that cannot exist: an empty value
+ * would make Git look for hooks relative to the untrusted working directory.
+ */
+const GIT_DISABLED_HOOKS_PATH = '/nonexistent/mde-disabled-git-hooks'
+
+const gitSafetyArgs = [
+  '--no-optional-locks',
+  '-c',
+  'core.fsmonitor=false',
+  '-c',
+  `core.hooksPath=${GIT_DISABLED_HOOKS_PATH}`,
+  '-c',
+  'core.askpass=',
+  '-c',
+  'core.sshCommand=false',
+  '-c',
+  'credential.helper=',
+  '-c',
+  'protocol.ext.allow=never'
+]
+
+/**
+ * Reading attributes from the empty tree instead of the working tree stops an
+ * in-tree `.gitattributes` from selecting a `filter`, `textconv`, or diff
+ * driver, which Git would otherwise run while diffing. The option needs Git
+ * 2.40 and a matching object format, so a repository that rejects it falls
+ * back to plain hardening.
+ */
+const gitAttrSourceArg = `--attr-source=${GIT_EMPTY_TREE}`
+
+const gitEnvironment: NodeJS.ProcessEnv = {
+  GIT_OPTIONAL_LOCKS: '0',
+  GIT_TERMINAL_PROMPT: '0',
+  GIT_ASKPASS: ''
+}
+
 export interface GitCommandResult {
   stdout: string
   stderr: string
@@ -39,6 +79,7 @@ function runNativeGit(file: string, args: string[], cwd: string): Promise<GitCom
       args,
       {
         cwd,
+        env: { ...process.env, ...gitEnvironment },
         encoding: 'utf8',
         timeout: GIT_COMMAND_TIMEOUT_MS,
         maxBuffer: GIT_MAX_BUFFER,
@@ -70,9 +111,9 @@ async function runWindowsGit(args: string[], workspaceDirectory: string): Promis
   }
 }
 
-export function createGitCommandRunner(
+function createTransportRunner(
   session: Session,
-  platform: NodeJS.Platform = process.platform
+  platform: NodeJS.Platform
 ): GitCommandRunner {
   if (session.kind === 'wsl') {
     if (platform !== 'win32') {
@@ -89,6 +130,43 @@ export function createGitCommandRunner(
 
   if (platform === 'win32') return (args) => runWindowsGit(args, session.path)
   return (args) => runNativeGit('git', args, session.path)
+}
+
+/**
+ * Git installations older than 2.40, and repositories whose object format the
+ * hardcoded empty tree does not match, reject `--attr-source`.
+ */
+function rejectsAttrSource(result: GitCommandResult): boolean {
+  return result.code !== 0 && !result.launchError && /attr-source/i.test(result.stderr)
+}
+
+const attrSourceUnsupported = new Set<string>()
+
+function attrSourceKey(session: Session): string {
+  return `${session.kind}:${session.distro ?? ''}:${session.path}`
+}
+
+/**
+ * Wraps a transport so every Git call carries the safety options. Hardening
+ * lives here rather than at the call sites so no query can omit it.
+ */
+export function createGitCommandRunner(
+  session: Session,
+  platform: NodeJS.Platform = process.platform
+): GitCommandRunner {
+  const run = createTransportRunner(session, platform)
+  const key = attrSourceKey(session)
+
+  return async (args) => {
+    const hardened = [...gitSafetyArgs, ...args]
+    if (attrSourceUnsupported.has(key)) return run(hardened)
+
+    const result = await run([gitAttrSourceArg, ...hardened])
+    if (!rejectsAttrSource(result)) return result
+
+    attrSourceUnsupported.add(key)
+    return run(hardened)
+  }
 }
 
 function isNotRepository(result: GitCommandResult): boolean {
@@ -340,6 +418,7 @@ export async function readGitStatusWithRunner(run: GitCommandRunner): Promise<Gi
     'diff',
     '--numstat',
     '--no-ext-diff',
+    '--no-textconv',
     '--no-color',
     '--find-renames',
     '-z',
@@ -385,6 +464,7 @@ export async function readGitDiffWithRunner(
         'diff',
         '--no-index',
         '--no-ext-diff',
+        '--no-textconv',
         '--no-color',
         `--unified=${GIT_DIFF_CONTEXT_LINES}`,
         '--',
@@ -395,6 +475,7 @@ export async function readGitDiffWithRunner(
         '--no-pager',
         'diff',
         '--no-ext-diff',
+        '--no-textconv',
         '--no-color',
         '--find-renames',
         '--find-copies',

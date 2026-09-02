@@ -124,6 +124,20 @@ create their native attachments immediately. Native sessions accept files from t
 Windows WSL sessions translate accessible host paths into the active distro and explain why paths
 cannot be reached there. File drops do not copy file contents or stage clipboard image bytes.
 
+### Git
+
+Sessions whose folder is a repository show their branch, line change counts and commits ahead in
+the sidebar. MDE polls that automatically through `src/main/git.ts`, which runs read-only Git
+commands over the native, Windows and WSL transports.
+
+Because those queries run without you asking for them, MDE treats the folder as untrusted input. A
+complete working tree — one that arrives as an archive or copy with its own `.git` directory, rather
+than a fresh `git clone` — can carry configuration that names programs Git would otherwise run
+during a plain `status` or `diff`, so every Git call disables hooks, `core.fsmonitor`, external
+diff and textconv helpers, credential helpers and in-tree attributes. Opening a terminal in such a
+folder and running its commands yourself remains ordinary code execution: the hardening covers only
+MDE's own automatic queries.
+
 ### WSL
 
 - Short-lived `wsl.exe` queries and path conversions go through `runWsl()` in
