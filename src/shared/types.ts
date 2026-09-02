@@ -342,6 +342,41 @@ export interface GitStatusResponse {
   deletions: number
   /** Commits ahead of the configured upstream, or null when no upstream exists. */
   commitsAhead: number | null
+  /** Commits behind the configured upstream, or null when no upstream exists. */
+  commitsBehind: number | null
+}
+
+/** A manually saved repository target in the independent Git manager. */
+export interface GitRepository {
+  id: string
+  /** WSL-only for the first Git manager implementation. */
+  kind: 'wsl'
+  distro: string
+  /** Absolute path inside the selected WSL distro. */
+  path: string
+  createdAt: string
+}
+
+/** One worktree discovered from `git worktree list`. */
+export interface GitWorktreeSnapshot {
+  path: string
+  branch: string | null
+  head: string | null
+  primary: boolean
+  prunable: boolean
+  status: GitStatusResponse | null
+  error: string | null
+}
+
+/** Renderable Git repository state, including all discovered worktrees. */
+export interface GitRepositorySnapshot {
+  id: string
+  name: string
+  /** The primary worktree path used for the repository label and tooltip. */
+  rootPath: string
+  distro: string
+  worktrees: GitWorktreeSnapshot[]
+  error: string | null
 }
 
 export interface GitDiffResponse {

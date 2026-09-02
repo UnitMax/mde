@@ -126,7 +126,8 @@ describe('SessionEnvironmentPanel', () => {
         branch: 'feature/sidebar',
         additions: 12,
         deletions: 3,
-        commitsAhead: 2
+        commitsAhead: 2,
+        commitsBehind: null
       },
       error: null,
       loading: false

@@ -7,6 +7,8 @@ import {
   type DropPtyFilesRequest,
   type GitDiffRequest,
   type GitInfoRequest,
+  type GitRepositoryInput,
+  type GitRepositoryRemoveRequest,
   type GitStatusRequest,
   IpcChannels,
   type EnsurePtyRequest,
@@ -35,6 +37,8 @@ import {
 import type {
   Distro,
   GitDiffResponse,
+  GitRepository,
+  GitRepositorySnapshot,
   HostPlatform,
   GitInfoResponse,
   GitStatusResponse,
@@ -76,7 +80,18 @@ import {
 } from './wsl/paths'
 import { buildVsCodeRemoteUri } from './vscode'
 import { safeVsCodeRemoteUrl } from './external-links'
-import { readGitDiff, readGitInfo, readGitStatus } from './git'
+import {
+  listGitRepositorySnapshots,
+  readGitDiff,
+  readGitInfo,
+  readGitRepositorySnapshot,
+  readGitStatus
+} from './git'
+import {
+  addGitRepository as addStoredGitRepository,
+  loadGitRepositories,
+  removeGitRepository as removeStoredGitRepository
+} from './store/git-repositories'
 import {
   createProject,
   createTodoProject,
@@ -541,5 +556,61 @@ export function registerIpcHandlers(
     const session = await getSession(req.sessionId)
     if (!session) throw new Error('Session no longer exists.')
     return readGitDiff(session, req.path)
+  })
+
+  handle<void, GitRepositorySnapshot[]>(IpcChannels.gitRepositoriesList, async () => {
+    const repositories = await loadGitRepositories()
+    return listGitRepositorySnapshots(repositories)
+  })
+
+  handle<GitRepositoryInput, GitRepositorySnapshot>(IpcChannels.gitRepositoriesAdd, async (input) => {
+    if (
+      !input ||
+      input.kind !== 'wsl' ||
+      typeof input.distro !== 'string' ||
+      !input.distro.trim() ||
+      typeof input.path !== 'string' ||
+      !input.path.trim()
+    ) {
+      throw new Error('Invalid WSL Git repository.')
+    }
+    if (process.platform !== 'win32') {
+      throw new Error('WSL Git repositories are only available on Windows.')
+    }
+
+    const distro = input.distro.trim()
+    const resolution = await resolveForTarget('wsl', distro, input.path)
+    const path = resolution.path.trim()
+    if (!isPlainAbsolutePath(path)) throw new Error('Repository path must be an absolute WSL path.')
+    const check = await validatePath({ kind: 'wsl', distro, path })
+    if (!check.exists) throw new Error(check.error ?? 'That WSL folder does not exist.')
+
+    const repositories = await loadGitRepositories()
+    if (repositories.some((repository) => repository.distro === distro && repository.path === path)) {
+      throw new Error('This Git repository is already in the catalog.')
+    }
+
+    const candidate: GitRepository = {
+      id: 'candidate',
+      kind: 'wsl',
+      distro,
+      path,
+      createdAt: new Date(0).toISOString()
+    }
+    const discovered = await readGitRepositorySnapshot(candidate)
+    const duplicate = repositories.some(
+      (repository) => repository.distro === distro && repository.path === discovered.rootPath
+    )
+    if (duplicate) throw new Error('This Git repository is already in the catalog.')
+
+    const saved = await addStoredGitRepository({ kind: 'wsl', distro, path: discovered.rootPath })
+    return readGitRepositorySnapshot(saved)
+  })
+
+  handle<GitRepositoryRemoveRequest, void>(IpcChannels.gitRepositoriesRemove, async (req) => {
+    if (!req || typeof req.id !== 'string' || !req.id) {
+      throw new Error('Invalid Git repository request.')
+    }
+    await removeStoredGitRepository(req.id)
   })
 }

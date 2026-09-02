@@ -84,6 +84,8 @@ import { OpenCodeStatusIcon } from '@/components/OpenCodeStatusIcon'
 import { OpenCodeNotificationBadge } from '@/components/OpenCodeNotificationBadge'
 import { SessionGitStatus } from '@/components/SessionGitStatus'
 import { SessionEnvironmentPanel } from '@/components/SessionEnvironmentPanel'
+import { AddGitRepositoryDialog } from '@/components/AddGitRepositoryDialog'
+import { GitRepositorySidebar } from '@/components/GitRepositorySidebar'
 import {
   OPENCODE_STATUS_ICON_SLOT_CLASS,
   openCodeOverviewStatusLabel
@@ -121,7 +123,8 @@ type OpenCodeIndicatorStatus = 'idle' | 'working' | 'attention' | 'completed' | 
 
 const SIDEBAR_SECTIONS = [
   { id: 'projects' as const, label: 'Projects', Icon: Folder },
-  { id: 'todo' as const, label: 'To Do', Icon: ListTodo }
+  { id: 'todo' as const, label: 'To Do', Icon: ListTodo },
+  { id: 'git' as const, label: 'Git', Icon: GitBranch }
 ]
 
 interface SidebarSectionNavigationProps {
@@ -1216,6 +1219,7 @@ interface SidebarCreateActionsProps {
   onNewProject: () => void
   onNewSession: () => void
   onNewTodoTask: () => void
+  onAddGitRepository: () => void
   todoTaskAvailable: boolean
 }
 
@@ -1225,6 +1229,7 @@ function SidebarCreateActions({
   onNewProject,
   onNewSession,
   onNewTodoTask,
+  onAddGitRepository,
   todoTaskAvailable
 }: SidebarCreateActionsProps): JSX.Element {
   if (activeSection === 'todo') {
@@ -1243,6 +1248,22 @@ function SidebarCreateActions({
           {!collapsed && <span>New task</span>}
         </Button>
       </div>
+    )
+  }
+
+  if (activeSection === 'git') {
+    return (
+      <Button
+        variant="secondary"
+        size={collapsed ? 'icon' : 'sm'}
+        className={cn(!collapsed && 'w-full')}
+        onClick={onAddGitRepository}
+        title="Add repository"
+        aria-label="Add repository"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        {!collapsed && <span>Add repository</span>}
+      </Button>
     )
   }
 
@@ -1324,6 +1345,7 @@ export function Sidebar({
   const setActiveSection = useWorkspace((state) => state.setWorkspaceView)
   const [terminalSettings, setTerminalSettings] = useState(() => getTerminalSettings())
   const [agentsCollapsed, setAgentsCollapsed] = useState(false)
+  const [gitRepositoryDialogOpen, setGitRepositoryDialogOpen] = useState(false)
   const gitSessionKey = sessions.map((session) => `${session.id}:${session.path}`).join('\u0000')
   const orderedSessions = projects.flatMap((project) =>
     sessions.filter((session) => session.projectId === project.id)
@@ -1525,6 +1547,12 @@ export function Sidebar({
               ))}
             </div>
           )}
+          {activeSection === 'git' && (
+            <GitRepositorySidebar
+              active
+              collapsed
+            />
+          )}
         </div>
         <div className="mt-auto shrink-0">
           <SidebarCreateActions
@@ -1533,9 +1561,14 @@ export function Sidebar({
             onNewProject={onNewProject}
             onNewSession={() => onNewSession()}
             onNewTodoTask={onNewTodoTask}
+            onAddGitRepository={() => setGitRepositoryDialogOpen(true)}
             todoTaskAvailable={selectedTodoProjectId !== null}
           />
         </div>
+        <AddGitRepositoryDialog
+          open={gitRepositoryDialogOpen}
+          onOpenChange={setGitRepositoryDialogOpen}
+        />
       </aside>
     )
   }
@@ -1623,6 +1656,19 @@ export function Sidebar({
             ))
           )}
         </div>
+
+        <div
+          id="sidebar-section-git"
+          role="tabpanel"
+          aria-labelledby="sidebar-section-tab-git"
+          className="h-full min-h-0"
+          hidden={activeSection !== 'git'}
+        >
+          <GitRepositorySidebar
+            active={activeSection === 'git'}
+            collapsed={false}
+          />
+        </div>
       </div>
 
       <div className="shrink-0 border-t border-line p-2">
@@ -1632,9 +1678,14 @@ export function Sidebar({
           onNewProject={onNewProject}
           onNewSession={() => onNewSession()}
           onNewTodoTask={onNewTodoTask}
+          onAddGitRepository={() => setGitRepositoryDialogOpen(true)}
           todoTaskAvailable={selectedTodoProjectId !== null}
         />
       </div>
+      <AddGitRepositoryDialog
+        open={gitRepositoryDialogOpen}
+        onOpenChange={setGitRepositoryDialogOpen}
+      />
     </aside>
   )
 }

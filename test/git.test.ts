@@ -3,9 +3,11 @@ import {
   createGitCommandRunner,
   isBinaryGitDiff,
   parseGitAheadCount,
+  parseGitBehindCount,
   parseGitNumstat,
   parseGitStatus,
   parseGitLog,
+  parseGitWorktreeList,
   readGitInfo,
   readGitInfoWithRunner,
   readGitStatusWithRunner,
@@ -332,7 +334,8 @@ describe('Git status summaries', () => {
       branch: 'feature/sidebar',
       additions: 12,
       deletions: 3,
-      commitsAhead: 2
+      commitsAhead: 2,
+      commitsBehind: 1
     })
     expect(calls).toContainEqual([
       '--no-pager',
@@ -372,7 +375,8 @@ describe('Git status summaries', () => {
       branch: 'main',
       additions: 5,
       deletions: 0,
-      commitsAhead: null
+      commitsAhead: null,
+      commitsBehind: null
     })
     expect(calls.at(-1)).toContain('4b825dc642cb6eb9a060e54bf8d69288fbee4904')
   })
@@ -386,8 +390,59 @@ describe('Git status summaries', () => {
       branch: null,
       additions: 0,
       deletions: 0,
-      commitsAhead: null
+      commitsAhead: null,
+      commitsBehind: null
     })
+  })
+})
+
+describe('Git worktree summaries', () => {
+  it('parses the primary, detached, and prunable worktrees from porcelain output', () => {
+    const output = [
+      'worktree /home/me/src/app',
+      'HEAD 1111111111111111111111111111111111111111',
+      'branch refs/heads/main',
+      '',
+      'worktree /home/me/src/app-feature',
+      'HEAD 2222222222222222222222222222222222222222',
+      'branch refs/heads/feature/sidebar',
+      '',
+      'worktree /home/me/src/app-old',
+      'HEAD 3333333333333333333333333333333333333333',
+      'prunable gitdir file points to non-existent location',
+      '',
+      ''
+    ].join('\u0000')
+
+    expect(parseGitWorktreeList(output)).toEqual([
+      {
+        path: '/home/me/src/app',
+        branch: 'main',
+        head: '1111111111111111111111111111111111111111',
+        primary: true,
+        prunable: false
+      },
+      {
+        path: '/home/me/src/app-feature',
+        branch: 'feature/sidebar',
+        head: '2222222222222222222222222222222222222222',
+        primary: false,
+        prunable: false
+      },
+      {
+        path: '/home/me/src/app-old',
+        branch: null,
+        head: '3333333333333333333333333333333333333333',
+        primary: false,
+        prunable: true
+      }
+    ])
+  })
+
+  it('parses both sides of an upstream divergence', () => {
+    expect(parseGitAheadCount('# branch.ab +4 -2\u0000')).toBe(4)
+    expect(parseGitBehindCount('# branch.ab +4 -2\u0000')).toBe(2)
+    expect(parseGitBehindCount('# branch.head main\u0000')).toBeNull()
   })
 })
 

@@ -7,6 +7,7 @@ import { OpenCodeTuiStatusManager } from './opencode/tui-status'
 import { OpenCodeTokenRatePluginManager } from './opencode/token-rate'
 import { PtyManager } from './pty/manager'
 import { initWorkspaceStore } from './store/workspace'
+import { initGitRepositoryStore } from './store/git-repositories'
 import { adjustZoomFactor, DEFAULT_ZOOM_FACTOR, getZoomAction } from './zoom'
 import { handleWindowOpen } from './external-links'
 
@@ -127,6 +128,7 @@ if (!app.requestSingleInstanceLock()) {
     // plaintext DNS. Electron requires this call after `ready`.
     app.configureHostResolver({ secureDnsMode: 'off' })
     initWorkspaceStore(app.getPath('userData'))
+    initGitRepositoryStore(app.getPath('userData'))
     await opencodeTuiStatusManager.configure(app.getPath('userData'))
     await opencodeAlertManager.configure(app.getPath('userData'))
     registerIpcHandlers(

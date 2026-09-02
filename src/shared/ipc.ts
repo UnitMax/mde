@@ -1,6 +1,7 @@
 import type {
   Distro,
   GitDiffResponse,
+  GitRepositorySnapshot,
   GitInfoResponse,
   GitStatusResponse,
   HostPlatform,
@@ -98,6 +99,9 @@ export const IpcChannels = {
   gitInfo: 'git:info',
   gitStatus: 'git:status',
   gitDiff: 'git:diff',
+  gitRepositoriesList: 'git:repositories:list',
+  gitRepositoriesAdd: 'git:repositories:add',
+  gitRepositoriesRemove: 'git:repositories:remove',
 
   opencodeTuiPluginState: 'opencode-tui:plugin-state',
   opencodeTuiPluginInstall: 'opencode-tui:plugin-install',
@@ -160,6 +164,16 @@ export interface GitStatusRequest {
 export interface GitDiffRequest {
   sessionId: string
   path: string
+}
+
+export interface GitRepositoryInput {
+  kind: 'wsl'
+  distro: string
+  path: string
+}
+
+export interface GitRepositoryRemoveRequest {
+  id: string
 }
 
 export interface EnsurePtyRequest {
@@ -382,6 +396,11 @@ export interface RendererApi {
     info(req: GitInfoRequest): Promise<GitInfoResponse>
     status(req: GitStatusRequest): Promise<GitStatusResponse>
     diff(req: GitDiffRequest): Promise<GitDiffResponse>
+    repositories: {
+      list(): Promise<GitRepositorySnapshot[]>
+      add(input: GitRepositoryInput): Promise<GitRepositorySnapshot>
+      remove(req: GitRepositoryRemoveRequest): Promise<void>
+    }
   }
   opencodeTui: {
     settings(): Promise<OpenCodeTuiSettings>

@@ -115,7 +115,12 @@ const api: RendererApi = {
   git: {
     info: (req) => ipcRenderer.invoke(IpcChannels.gitInfo, req),
     status: (req) => ipcRenderer.invoke(IpcChannels.gitStatus, req),
-    diff: (req) => ipcRenderer.invoke(IpcChannels.gitDiff, req)
+    diff: (req) => ipcRenderer.invoke(IpcChannels.gitDiff, req),
+    repositories: {
+      list: () => ipcRenderer.invoke(IpcChannels.gitRepositoriesList),
+      add: (input) => ipcRenderer.invoke(IpcChannels.gitRepositoriesAdd, input),
+      remove: (req) => ipcRenderer.invoke(IpcChannels.gitRepositoriesRemove, req)
+    }
   },
   opencodeTui: {
     settings: () => ipcRenderer.invoke(IpcChannels.opencodeTuiSettings),

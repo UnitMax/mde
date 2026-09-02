@@ -39,6 +39,17 @@ export function gitStatusChangesLabel(status: GitStatusResponse): string {
   return `+${status.additions} −${status.deletions}`
 }
 
+export function gitStatusSyncLabel(status: GitStatusResponse): string | null {
+  const sync = []
+  if (status.commitsAhead !== null && status.commitsAhead > 0) {
+    sync.push(`↑${status.commitsAhead}`)
+  }
+  if (status.commitsBehind !== null && status.commitsBehind > 0) {
+    sync.push(`↓${status.commitsBehind}`)
+  }
+  return sync.length > 0 ? sync.join(' ') : null
+}
+
 export function gitStatusAccessibleLabel(status: GitStatusResponse): string {
   const details = [`Branch ${gitStatusBranchLabel(status)}`]
   if (status.additions > 0 || status.deletions > 0) {

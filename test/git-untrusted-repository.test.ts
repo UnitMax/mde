@@ -124,7 +124,8 @@ describeUntrustedRepository('Automatic Git queries against an untrusted working 
       branch: 'main',
       additions: 1,
       deletions: 0,
-      commitsAhead: null
+      commitsAhead: null,
+      commitsBehind: null
     })
 
     expect(await firedSentinels()).toEqual([])

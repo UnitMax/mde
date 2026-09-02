@@ -22,6 +22,7 @@ function response(overrides: Partial<GitStatusResponse> = {}): GitStatusResponse
     additions: 12,
     deletions: 3,
     commitsAhead: 2,
+    commitsBehind: null,
     ...overrides
   }
 }

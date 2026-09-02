@@ -1,8 +1,9 @@
 import { create } from 'zustand'
-import type { PlatformInfo, WorkspaceData } from '@shared/ipc'
+import type { GitRepositoryInput, PlatformInfo, WorkspaceData } from '@shared/ipc'
 import type {
   Distro,
   GitStatusResponse,
+  GitRepositorySnapshot,
   NewProject,
   NewTodoProject,
   NewTodoTask,
@@ -44,8 +45,10 @@ export interface GitSessionStatus {
 let eventBridgeReady = false
 let gitStatusRefreshPromise: Promise<void> | null = null
 let gitStatusRefreshQueued = false
+let gitRepositoryRefreshPromise: Promise<void> | null = null
+let gitRepositoryRefreshQueued = false
 
-export type WorkspaceView = 'projects' | 'todo'
+export type WorkspaceView = 'projects' | 'todo' | 'git'
 
 function belongsToSession(runtimeId: string, sessionId: string): boolean {
   return runtimeId === sessionId || runtimeId.startsWith(`${sessionId}:`)
@@ -87,6 +90,9 @@ interface WorkspaceState {
   exits: Record<string, PtyExitInfo>
   terminalTaskLinks: TerminalTaskLinks
   gitStatuses: Record<string, GitSessionStatus>
+  gitRepositories: GitRepositorySnapshot[]
+  gitRepositoriesLoading: boolean
+  gitRepositoriesError: string | null
   opencodeTuiStatuses: Record<string, OpenCodeTuiStatusState>
   opencodeTuiInstances: Record<string, OpenCodeTuiInstanceStatus[]>
   opencodeTuiReadRevisions: OpenCodeTuiReadRevisions
@@ -139,6 +145,9 @@ interface WorkspaceState {
   revealSession: (id: string) => Promise<void>
   openSessionInVsCode: (id: string) => Promise<void>
   refreshGitStatuses: () => Promise<void>
+  refreshGitRepositories: () => Promise<void>
+  addGitRepository: (input: GitRepositoryInput) => Promise<GitRepositorySnapshot>
+  removeGitRepository: (id: string) => Promise<void>
 
   setStatus: (id: string, status: PtyStatus) => void
   linkTerminalToTodoTask: (terminalId: string, taskId: string) => void
@@ -166,6 +175,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   exits: {},
   terminalTaskLinks: {},
   gitStatuses: {},
+  gitRepositories: [],
+  gitRepositoriesLoading: false,
+  gitRepositoriesError: null,
   opencodeTuiStatuses: {},
   opencodeTuiInstances: {},
   opencodeTuiReadRevisions: {},
@@ -219,6 +231,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     })
 
     if (wslAvailable) void get().refreshDistros()
+    void get().refreshGitRepositories()
   },
 
   selectSession: (id) =>
@@ -632,6 +645,85 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         gitStatusRefreshQueued = false
         void get().refreshGitStatuses()
       }
+    }
+  },
+
+  refreshGitRepositories: async () => {
+    if (gitRepositoryRefreshPromise) {
+      gitRepositoryRefreshQueued = true
+      return gitRepositoryRefreshPromise
+    }
+
+    set({ gitRepositoriesLoading: true, gitRepositoriesError: null })
+
+    const refresh = (async (): Promise<void> => {
+      try {
+        const repositories = await window.api.git.repositories.list()
+        set({
+          gitRepositories: repositories,
+          gitRepositoriesError: null
+        })
+      } catch (reason) {
+        set({
+          gitRepositoriesError:
+            reason instanceof Error ? reason.message : 'Could not load Git repositories.'
+        })
+      } finally {
+        set({ gitRepositoriesLoading: false })
+      }
+    })()
+
+    gitRepositoryRefreshPromise = refresh
+    try {
+      await refresh
+    } finally {
+      if (gitRepositoryRefreshPromise === refresh) gitRepositoryRefreshPromise = null
+      if (gitRepositoryRefreshQueued) {
+        gitRepositoryRefreshQueued = false
+        void get().refreshGitRepositories()
+      }
+    }
+  },
+
+  addGitRepository: async (input) => {
+    set({ gitRepositoriesLoading: true, gitRepositoriesError: null })
+    try {
+      const repository = await window.api.git.repositories.add(input)
+      set((state) => ({
+        gitRepositories: [
+          ...state.gitRepositories.filter((candidate) => candidate.id !== repository.id),
+          repository
+        ],
+        gitRepositoriesError: null
+      }))
+      return repository
+    } catch (reason) {
+      set({
+        gitRepositoriesError:
+          reason instanceof Error ? reason.message : 'Could not add Git repository.'
+      })
+      throw reason
+    } finally {
+      set({ gitRepositoriesLoading: false })
+    }
+  },
+
+  removeGitRepository: async (id) => {
+    set({ gitRepositoriesLoading: true, gitRepositoriesError: null })
+    try {
+      await window.api.git.repositories.remove({ id })
+      set((state) => ({
+        gitRepositories: state.gitRepositories.filter((repository) => repository.id !== id),
+        gitRepositoriesError: null
+      }))
+    } catch (reason) {
+      set({
+        gitRepositoriesError:
+          reason instanceof Error ? reason.message : 'Could not remove Git repository.'
+      })
+      throw reason
+    } finally {
+      set({ gitRepositoriesLoading: false })
     }
   },
 

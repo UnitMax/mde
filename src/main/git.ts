@@ -1,12 +1,15 @@
 import { execFile } from 'node:child_process'
-import { win32 } from 'node:path'
+import { posix as posixPath, win32 } from 'node:path'
 import type {
   GitChange,
   GitChangeStatus,
   GitDiffResponse,
   GitInfoResponse,
+  GitRepository,
+  GitRepositorySnapshot,
   GitStatusResponse,
   GitCommit,
+  GitWorktreeSnapshot,
   Session
 } from '@shared/types'
 import { resolveWindowsGitExecutable } from './git-executable'
@@ -67,6 +70,8 @@ export interface GitCommandResult {
 
 export type GitCommandRunner = (args: string[]) => Promise<GitCommandResult>
 
+export type GitTarget = Pick<Session, 'kind' | 'distro' | 'path'>
+
 export interface GitLineChangeCounts {
   additions: number
   deletions: number
@@ -112,24 +117,24 @@ async function runWindowsGit(args: string[], workspaceDirectory: string): Promis
 }
 
 function createTransportRunner(
-  session: Session,
+  target: GitTarget,
   platform: NodeJS.Platform
 ): GitCommandRunner {
-  if (session.kind === 'wsl') {
+  if (target.kind === 'wsl') {
     if (platform !== 'win32') {
       throw new Error('WSL sessions can only query Git on Windows.')
     }
-    if (!session.distro) throw new Error('This WSL session has no distro configured.')
+    if (!target.distro) throw new Error('This WSL Git target has no distro configured.')
 
-    const distro = session.distro
+    const distro = target.distro
     return async (args) => {
-      const result = await runWslCommand(distro, ['git', ...args], { cwd: session.path })
+      const result = await runWslCommand(distro, ['git', ...args], { cwd: target.path })
       return { stdout: result.stdout, stderr: result.stderr, code: result.code }
     }
   }
 
-  if (platform === 'win32') return (args) => runWindowsGit(args, session.path)
-  return (args) => runNativeGit('git', args, session.path)
+  if (platform === 'win32') return (args) => runWindowsGit(args, target.path)
+  return (args) => runNativeGit('git', args, target.path)
 }
 
 /**
@@ -142,8 +147,8 @@ function rejectsAttrSource(result: GitCommandResult): boolean {
 
 const attrSourceUnsupported = new Set<string>()
 
-function attrSourceKey(session: Session): string {
-  return `${session.kind}:${session.distro ?? ''}:${session.path}`
+function attrSourceKey(target: GitTarget): string {
+  return `${target.kind}:${target.distro ?? ''}:${target.path}`
 }
 
 /**
@@ -151,11 +156,11 @@ function attrSourceKey(session: Session): string {
  * lives here rather than at the call sites so no query can omit it.
  */
 export function createGitCommandRunner(
-  session: Session,
+  target: GitTarget,
   platform: NodeJS.Platform = process.platform
 ): GitCommandRunner {
-  const run = createTransportRunner(session, platform)
-  const key = attrSourceKey(session)
+  const run = createTransportRunner(target, platform)
+  const key = attrSourceKey(target)
 
   return async (args) => {
     const hardened = [...gitSafetyArgs, ...args]
@@ -190,11 +195,20 @@ export function isBinaryGitDiff(diff: string): boolean {
 
 /** Parses the ahead count from a porcelain-v2 branch header. */
 export function parseGitAheadCount(output: string): number | null {
+  return parseGitAheadBehind(output)?.ahead ?? null
+}
+
+export function parseGitBehindCount(output: string): number | null {
+  return parseGitAheadBehind(output)?.behind ?? null
+}
+
+function parseGitAheadBehind(output: string): { ahead: number; behind: number } | null {
   for (const field of output.split('\u0000')) {
-    const match = /^# branch\.ab \+(\d+) -\d+$/.exec(field.trim())
-    if (!match?.[1]) continue
+    const match = /^# branch\.ab \+(\d+) -(\d+)$/.exec(field.trim())
+    if (!match?.[1] || !match[2]) continue
     const ahead = Number(match[1])
-    if (Number.isSafeInteger(ahead)) return ahead
+    const behind = Number(match[2])
+    if (Number.isSafeInteger(ahead) && Number.isSafeInteger(behind)) return { ahead, behind }
   }
   return null
 }
@@ -319,6 +333,138 @@ const gitStatusSummaryArgs = [
   '--untracked-files=no'
 ]
 
+const gitWorktreeListArgs = [
+  '--no-pager',
+  'worktree',
+  'list',
+  '--porcelain',
+  '-z'
+]
+
+export interface GitWorktreeEntry {
+  path: string
+  branch: string | null
+  head: string | null
+  primary: boolean
+  prunable: boolean
+}
+
+/** Parses NUL-delimited `git worktree list --porcelain` records. */
+export function parseGitWorktreeList(output: string): GitWorktreeEntry[] {
+  const entries: Array<Omit<GitWorktreeEntry, 'primary'>> = []
+  let current: Omit<GitWorktreeEntry, 'primary'> | null = null
+
+  const finishCurrent = (): void => {
+    if (current?.path) entries.push(current)
+    current = null
+  }
+
+  for (const field of output.split('\u0000')) {
+    // With `-z`, every porcelain field is NUL terminated and an additional
+    // empty field separates worktrees. A new worktree also safely closes a
+    // malformed record that omitted that separator.
+    if (!field) {
+      finishCurrent()
+      continue
+    }
+    if (field.startsWith('worktree ')) {
+      finishCurrent()
+      const path = field.slice('worktree '.length)
+      if (path) current = { path, branch: null, head: null, prunable: false }
+      continue
+    }
+    if (!current) continue
+    if (field.startsWith('HEAD ')) {
+      current.head = field.slice('HEAD '.length) || null
+    } else if (field.startsWith('branch ')) {
+      current.branch = field.slice('branch '.length).replace(/^refs\/heads\//, '') || null
+    } else if (field.startsWith('prunable')) {
+      current.prunable = true
+    }
+  }
+  finishCurrent()
+
+  return entries.map((entry, index) => ({ ...entry, primary: index === 0 }))
+}
+
+export async function readGitWorktreesWithRunner(run: GitCommandRunner): Promise<GitWorktreeEntry[]> {
+  const result = await run(gitWorktreeListArgs)
+  if (result.code !== 0) throw commandError('worktrees', result)
+  const entries = parseGitWorktreeList(result.stdout)
+  if (entries.length === 0) throw new Error('Git repository has no working trees.')
+  return entries
+}
+
+function wslPathBasename(path: string): string {
+  const value = path.replace(/\/+$/, '')
+  return posixPath.basename(value) || value || 'Repository'
+}
+
+function failedRepositorySnapshot(repository: GitRepository, error: unknown): GitRepositorySnapshot {
+  return {
+    id: repository.id,
+    name: wslPathBasename(repository.path),
+    rootPath: repository.path,
+    distro: repository.distro,
+    worktrees: [],
+    error: error instanceof Error ? error.message : 'Could not inspect this Git repository.'
+  }
+}
+
+export async function readGitRepositorySnapshot(
+  repository: GitRepository,
+  platform: NodeJS.Platform = process.platform
+): Promise<GitRepositorySnapshot> {
+  const target = repository
+  const entries = await readGitWorktreesWithRunner(createGitCommandRunner(target, platform))
+  const primary = entries.find((entry) => entry.primary) ?? entries[0]
+  if (!primary) throw new Error('Git repository has no working trees.')
+
+  const worktrees = await Promise.all(entries.map(async (entry): Promise<GitWorktreeSnapshot> => {
+    if (entry.prunable) {
+      return { ...entry, status: null, error: 'Worktree is prunable.' }
+    }
+
+    try {
+      const status = await readGitStatusWithRunner(
+        createGitCommandRunner({ ...target, path: entry.path }, platform)
+      )
+      if (!status.repository) {
+        return { ...entry, status: null, error: 'This worktree is no longer a Git repository.' }
+      }
+      return { ...entry, status, error: null }
+    } catch (error) {
+      return {
+        ...entry,
+        status: null,
+        error: error instanceof Error ? error.message : 'Could not read worktree status.'
+      }
+    }
+  }))
+
+  return {
+    id: repository.id,
+    name: wslPathBasename(primary.path),
+    rootPath: primary.path,
+    distro: repository.distro,
+    worktrees,
+    error: null
+  }
+}
+
+export async function listGitRepositorySnapshots(
+  repositories: readonly GitRepository[],
+  platform: NodeJS.Platform = process.platform
+): Promise<GitRepositorySnapshot[]> {
+  return Promise.all(repositories.map(async (repository) => {
+    try {
+      return await readGitRepositorySnapshot(repository, platform)
+    } catch (error) {
+      return failedRepositorySnapshot(repository, error)
+    }
+  }))
+}
+
 async function ensureRepository(run: GitCommandRunner): Promise<boolean> {
   const repository = await run(['--no-pager', 'rev-parse', '--is-inside-work-tree'])
   if (repository.launchError) throw commandError('repository', repository)
@@ -397,7 +543,8 @@ export async function readGitStatusWithRunner(run: GitCommandRunner): Promise<Gi
       branch: null,
       additions: 0,
       deletions: 0,
-      commitsAhead: null
+      commitsAhead: null,
+      commitsBehind: null
     }
   }
 
@@ -432,7 +579,8 @@ export async function readGitStatusWithRunner(run: GitCommandRunner): Promise<Gi
     repository: true,
     branch: branch.stdout.trim() || null,
     ...counts,
-    commitsAhead: parseGitAheadCount(status.stdout)
+    commitsAhead: parseGitAheadCount(status.stdout),
+    commitsBehind: parseGitBehindCount(status.stdout)
   }
 }
 
