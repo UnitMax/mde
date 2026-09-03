@@ -3,7 +3,7 @@ import { Plus, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AddSessionDialog } from '@/components/AddProjectDialog'
 import { GitDialog } from '@/components/GitDialog'
-import { GitLaneView } from '@/components/GitLaneView'
+import { GitLaneView, type GitSessionDefaults } from '@/components/GitLaneView'
 import { NewProjectDialog } from '@/components/NewProjectDialog'
 import { NewTodoProjectDialog } from '@/components/NewTodoProjectDialog'
 import { Sidebar } from '@/components/Sidebar'
@@ -94,6 +94,7 @@ export function App(): JSX.Element {
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false)
   const [terminalTaskLinkTarget, setTerminalTaskLinkTarget] = useState<TerminalTaskLinkTarget | null>(null)
   const [defaultProjectId, setDefaultProjectId] = useState<string | undefined>(undefined)
+  const [gitSessionDefaults, setGitSessionDefaults] = useState<GitSessionDefaults | null>(null)
   const [terminalLayouts, setTerminalLayouts] = useState<RuntimeLayouts>({})
   const [pendingTerminalFocus, setPendingTerminalFocus] = useState<{
     sessionId: string
@@ -334,7 +335,19 @@ export function App(): JSX.Element {
 
   const openNewSession = (projectId?: string): void => {
     setDefaultProjectId(projectId)
+    setGitSessionDefaults(null)
     setNewSessionOpen(true)
+  }
+
+  const openGitSession = (defaults: GitSessionDefaults): void => {
+    setDefaultProjectId(defaults.projectId)
+    setGitSessionDefaults(defaults)
+    setNewSessionOpen(true)
+  }
+
+  const closeNewSession = (open: boolean): void => {
+    setNewSessionOpen(open)
+    if (!open) setGitSessionDefaults(null)
   }
 
   const openNewTodoTask = (columnId?: string): void => {
@@ -588,7 +601,7 @@ export function App(): JSX.Element {
             onOpenSettings={() => setTodoProjectSettingsOpen(true)}
           />
         ) : activeWorkspaceView === 'git' ? (
-          <GitLaneView />
+          <GitLaneView onCreateSession={openGitSession} />
         ) : selected && activeTab && layoutForSession ? (
           <TerminalView
             key={selected.id}
@@ -617,8 +630,9 @@ export function App(): JSX.Element {
 
       <AddSessionDialog
         open={newSessionOpen}
-        onOpenChange={setNewSessionOpen}
+        onOpenChange={closeNewSession}
         defaultProjectId={defaultProjectId}
+        initialValues={gitSessionDefaults ?? undefined}
       />
       <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
       <NewTodoProjectDialog

@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
 
-import { act, createElement } from 'react'
+import { act, createElement, type ComponentType } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GitRepositorySnapshot, GitWorktreeSnapshot } from '../src/shared/types'
-import { GitLaneView } from '../src/renderer/components/GitLaneView'
+import { GitLaneView, type GitSessionDefaults } from '../src/renderer/components/GitLaneView'
 import { useWorkspace } from '../src/renderer/store/workspace'
 
 const roots: Root[] = []
@@ -79,13 +79,16 @@ const repositoryWithManyWorktrees: GitRepositorySnapshot = {
   ]
 }
 
-function renderView(): HTMLElement {
+function renderView(onCreateSession?: (defaults: GitSessionDefaults) => void): HTMLElement {
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
   roots.push(root)
   containers.push(container)
-  act(() => root.render(createElement(GitLaneView)))
+  act(() => root.render(createElement(
+    GitLaneView as ComponentType<{ onCreateSession?: (defaults: GitSessionDefaults) => void }>,
+    { onCreateSession }
+  )))
   return container
 }
 
@@ -93,6 +96,8 @@ describe('Git lane view', () => {
   beforeEach(() => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     useWorkspace.setState({
+      projects: [],
+      sessions: [],
       gitRepositories: [repository],
       gitRepositoriesLoading: false,
       gitRepositoriesError: null,
@@ -128,10 +133,13 @@ describe('Git lane view', () => {
     expect(container.textContent).toContain('REMOTE · ORIGIN · no local branch yet1')
 
     const buttons = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-    expect(buttons).toHaveLength(8)
-    expect(buttons.every((button) => button.disabled)).toBe(true)
+    expect(buttons).toHaveLength(10)
     expect(buttons.filter((button) => button.textContent === 'Check out here')).toHaveLength(4)
     expect(buttons.filter((button) => button.textContent === '+ Worktree')).toHaveLength(4)
+    expect(buttons.filter((button) => button.textContent === 'Session')).toHaveLength(1)
+    expect(buttons.filter((button) => button.textContent === 'Pull')).toHaveLength(1)
+    expect(buttons.filter((button) => button.textContent === 'Pull').every((button) => button.disabled)).toBe(true)
+    expect(buttons.filter((button) => button.textContent === 'Session').every((button) => !button.disabled)).toBe(true)
   })
 
   it('falls back to an empty first lane when no repository is available', () => {
@@ -164,7 +172,8 @@ describe('Git lane view', () => {
       container.querySelectorAll<HTMLButtonElement>('[data-testid="git-worktree-lane"] button')
     )
     expect(buttons).toHaveLength(4)
-    expect(buttons.every((button) => button.disabled)).toBe(true)
+    expect(buttons.filter((button) => button.textContent === 'Pull').every((button) => button.disabled)).toBe(true)
+    expect(buttons.filter((button) => button.textContent === 'Session').every((button) => !button.disabled)).toBe(true)
     expect(buttons.filter((button) => button.textContent === 'Session')).toHaveLength(2)
     expect(buttons.filter((button) => button.textContent === 'Pull')).toHaveLength(2)
   })
@@ -183,5 +192,26 @@ describe('Git lane view', () => {
     const grid = container.querySelector<HTMLElement>('[data-testid="git-lane-grid"]')
     expect(grid?.style.gridTemplateColumns).toContain('repeat(5')
     expect(grid?.style.minWidth).toContain('max(100%')
+  })
+
+  it('passes primary worktree defaults to the session creation callback', () => {
+    const onCreateSession = vi.fn()
+    useWorkspace.setState({
+      projects: [{ id: 'project-1', name: 'Workspace', createdAt: '2026-01-01T00:00:00.000Z' }]
+    })
+
+    const container = renderView(onCreateSession)
+    const sessionButton = container.querySelector<HTMLButtonElement>(
+      '[data-testid="git-lane-1"] [data-testid="git-session-control"]'
+    )
+    act(() => sessionButton?.click())
+
+    expect(onCreateSession).toHaveBeenCalledWith({
+      projectId: 'project-1',
+      kind: 'wsl',
+      distro: repository.distro,
+      path: repository.worktrees[0]!.path,
+      name: 'master'
+    })
   })
 })

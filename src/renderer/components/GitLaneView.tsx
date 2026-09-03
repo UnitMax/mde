@@ -11,6 +11,18 @@ import { useWorkspace } from '@/store/workspace'
 
 const GIT_LANE_COUNT = 4
 
+export interface GitSessionDefaults {
+  projectId?: string
+  kind: 'wsl'
+  distro: string
+  path: string
+  name: string
+}
+
+export interface GitLaneViewProps {
+  onCreateSession?: (defaults: GitSessionDefaults) => void
+}
+
 function displayGitPath(path: string): string {
   const homePath = /^\/home\/[^/]+(\/.*)?$/.exec(path)
   return homePath ? `~${homePath[1] ?? ''}` : path
@@ -46,15 +58,42 @@ function BranchActionButtons({ branch }: { branch: string }): JSX.Element {
   )
 }
 
-function WorktreeActionButtons({ branch }: { branch: string }): JSX.Element {
+function worktreeSessionName(worktree: GitWorktreeSnapshot): string {
+  if (worktree.branch ?? worktree.status?.branch) return primaryBranch(worktree)
+  const pathParts = worktree.path.split(/[\\/]+/).filter(Boolean)
+  return pathParts[pathParts.length - 1] ?? 'New session'
+}
+
+function WorktreeActionButtons({
+  repository,
+  worktree,
+  defaultProjectId,
+  onCreateSession
+}: {
+  repository: GitRepositorySnapshot
+  worktree: GitWorktreeSnapshot
+  defaultProjectId?: string
+  onCreateSession: (defaults: GitSessionDefaults) => void
+}): JSX.Element {
+  const branch = primaryBranch(worktree)
+
   return (
     <div className="mt-3 flex flex-wrap gap-2">
       <Button
         type="button"
         variant="secondary"
         size="sm"
-        disabled
-        aria-label={`Open a session for ${branch}`}
+        aria-label={`Create a session for ${branch}`}
+        data-testid="git-session-control"
+        onClick={() => {
+          onCreateSession({
+            projectId: defaultProjectId,
+            kind: 'wsl',
+            distro: repository.distro,
+            path: worktree.path,
+            name: worktreeSessionName(worktree)
+          })
+        }}
       >
         Session
       </Button>
@@ -64,6 +103,7 @@ function WorktreeActionButtons({ branch }: { branch: string }): JSX.Element {
         size="sm"
         disabled
         aria-label={`Pull ${branch}`}
+        data-testid="git-pull-control"
       >
         Pull
       </Button>
@@ -71,7 +111,17 @@ function WorktreeActionButtons({ branch }: { branch: string }): JSX.Element {
   )
 }
 
-function PrimaryBranch({ worktree }: { worktree: GitWorktreeSnapshot }): JSX.Element {
+function PrimaryBranch({
+  repository,
+  worktree,
+  defaultProjectId,
+  onCreateSession
+}: {
+  repository: GitRepositorySnapshot
+  worktree: GitWorktreeSnapshot
+  defaultProjectId?: string
+  onCreateSession: (defaults: GitSessionDefaults) => void
+}): JSX.Element {
   const branch = primaryBranch(worktree)
   return (
     <div
@@ -92,11 +142,27 @@ function PrimaryBranch({ worktree }: { worktree: GitWorktreeSnapshot }): JSX.Ele
       >
         {displayGitPath(worktree.path)}
       </div>
+      <WorktreeActionButtons
+        repository={repository}
+        worktree={worktree}
+        defaultProjectId={defaultProjectId}
+        onCreateSession={onCreateSession}
+      />
     </div>
   )
 }
 
-function WorktreeLane({ worktree }: { worktree: GitWorktreeSnapshot }): JSX.Element {
+function WorktreeLane({
+  repository,
+  worktree,
+  defaultProjectId,
+  onCreateSession
+}: {
+  repository: GitRepositorySnapshot
+  worktree: GitWorktreeSnapshot
+  defaultProjectId?: string
+  onCreateSession: (defaults: GitSessionDefaults) => void
+}): JSX.Element {
   const branch = primaryBranch(worktree)
 
   return (
@@ -123,7 +189,12 @@ function WorktreeLane({ worktree }: { worktree: GitWorktreeSnapshot }): JSX.Elem
         >
           {displayGitPath(worktree.path)}
         </div>
-        <WorktreeActionButtons branch={branch} />
+        <WorktreeActionButtons
+          repository={repository}
+          worktree={worktree}
+          defaultProjectId={defaultProjectId}
+          onCreateSession={onCreateSession}
+        />
         {worktree.error && (
           <p className="mt-3 truncate text-xs text-danger" title={worktree.error}>
             {worktree.error}
@@ -232,7 +303,15 @@ function RemoteBranchGroup({
   )
 }
 
-function GitBranchLane({ repository }: { repository: GitRepositorySnapshot }): JSX.Element {
+function GitBranchLane({
+  repository,
+  defaultProjectId,
+  onCreateSession
+}: {
+  repository: GitRepositorySnapshot
+  defaultProjectId?: string
+  onCreateSession: (defaults: GitSessionDefaults) => void
+}): JSX.Element {
   const primary = repository.worktrees.find((worktree) => worktree.primary)
   const worktreeBranchKinds = new Map<string, 'PRIMARY' | 'WORKTREE'>()
   repository.worktrees.forEach((worktree) => {
@@ -281,7 +360,12 @@ function GitBranchLane({ repository }: { repository: GitRepositorySnapshot }): J
       data-testid="git-lane-1"
       aria-label="Git lane 1"
     >
-      <PrimaryBranch worktree={primary} />
+      <PrimaryBranch
+        repository={repository}
+        worktree={primary}
+        defaultProjectId={defaultProjectId}
+        onCreateSession={onCreateSession}
+      />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
         <section data-testid="git-branches">
           <div className="flex items-center gap-3">
@@ -352,13 +436,18 @@ function PlaceholderLane({ index }: { index: number }): JSX.Element {
   )
 }
 
-export function GitLaneView(): JSX.Element {
+export function GitLaneView({ onCreateSession = () => undefined }: GitLaneViewProps = {}): JSX.Element {
   const repositories = useWorkspace((state) => state.gitRepositories)
+  const projects = useWorkspace((state) => state.projects)
+  const sessions = useWorkspace((state) => state.sessions)
+  const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
   const selectedRepositoryId = useWorkspace((state) => state.selectedGitRepositoryId)
   const loading = useWorkspace((state) => state.gitRepositoriesLoading)
   const selectedRepository = repositories.find(
     (repository) => repository.id === selectedRepositoryId
   ) ?? repositories[0]
+  const selectedSession = sessions.find((session) => session.id === selectedSessionId)
+  const defaultProjectId = selectedSession?.projectId ?? projects[0]?.id
   const primaryWorktree = selectedRepository?.worktrees.find((worktree) => worktree.primary)
   const additionalWorktrees = selectedRepository?.worktrees.filter(
     (worktree) => worktree !== primaryWorktree
@@ -380,12 +469,22 @@ export function GitLaneView(): JSX.Element {
         }}
       >
         {selectedRepository ? (
-          <GitBranchLane repository={selectedRepository} />
+          <GitBranchLane
+            repository={selectedRepository}
+            defaultProjectId={defaultProjectId}
+            onCreateSession={onCreateSession}
+          />
         ) : (
           <EmptyGitLane loading={loading} />
         )}
         {additionalWorktrees.map((worktree) => (
-          <WorktreeLane key={worktree.path} worktree={worktree} />
+          <WorktreeLane
+            key={worktree.path}
+            repository={selectedRepository!}
+            worktree={worktree}
+            defaultProjectId={defaultProjectId}
+            onCreateSession={onCreateSession}
+          />
         ))}
         {Array.from({ length: laneCount - additionalWorktrees.length - 1 }, (_, index) => (
           <PlaceholderLane key={`placeholder-${index}`} index={additionalWorktrees.length + index + 2} />

@@ -18,7 +18,12 @@ describe('renderer workspace event bridge', () => {
   const api = {
     platform: { info: vi.fn(async () => ({ platform: 'linux', arch: 'x64' })) },
     workspace: {
-      list: vi.fn(async () => ({ projects: [], todoProjects: [], todoTasks: [], sessions: [] }))
+      list: vi.fn(async () => ({
+        projects: [],
+        todoProjects: [],
+        todoTasks: [],
+        sessions: []
+      }))
     },
     todoProjects: {
       create: vi.fn(),

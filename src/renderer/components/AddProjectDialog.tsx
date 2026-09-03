@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Check, FolderSearch, LoaderCircle, TriangleAlert } from 'lucide-react'
-import type { ProjectKind } from '@shared/types'
+import type { NewSession, ProjectKind } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -36,12 +36,14 @@ interface AddSessionDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   defaultProjectId?: string
+  initialValues?: Pick<NewSession, 'kind' | 'distro' | 'path'> & { name?: string }
 }
 
 export function AddSessionDialog({
   open,
   onOpenChange,
-  defaultProjectId
+  defaultProjectId,
+  initialValues
 }: AddSessionDialogProps): JSX.Element {
   const platform = useWorkspace((state) => state.platform)
   const projects = useWorkspace((state) => state.projects)
@@ -68,25 +70,27 @@ export function AddSessionDialog({
 
   useEffect(() => {
     if (!open) return
-    setName('')
+    setName(initialValues?.name ?? '')
     setNameTouched(false)
     setProjectId(
       defaultProjectId && projects.some((project) => project.id === defaultProjectId)
         ? defaultProjectId
         : (projects[0]?.id ?? '')
     )
-    setKind('native')
-    setPath('')
+    setKind(initialValues?.kind ?? 'native')
+    setPath(initialValues?.path ?? '')
     setWarning(undefined)
     setValidation('idle')
     setValidationError(undefined)
     setCreating(false)
-    setDistro(wslAvailable ? (distros.find((d) => d.isDefault)?.name ?? '') : '')
+    setDistro(
+      initialValues?.distro ?? (wslAvailable ? (distros.find((d) => d.isDefault)?.name ?? '') : '')
+    )
     if (wslAvailable) void refreshDistros()
     // This resets the form once per open. A distro refresh must not clear fields
     // the user has already entered.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, defaultProjectId, projects, wslAvailable, refreshDistros])
+  }, [open, defaultProjectId, initialValues, projects, wslAvailable, refreshDistros])
 
   useEffect(() => {
     if (!distro && distros.length > 0) {
