@@ -3,7 +3,7 @@
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { GitRepositorySnapshot } from '../src/shared/types'
+import type { GitRepositorySnapshot, GitWorktreeSnapshot } from '../src/shared/types'
 import { GitLaneView } from '../src/renderer/components/GitLaneView'
 import { useWorkspace } from '../src/renderer/store/workspace'
 
@@ -39,6 +39,43 @@ const repository: GitRepositorySnapshot = {
       },
       error: null
     }
+  ]
+}
+
+function linkedWorktree(path: string, branch: string): GitWorktreeSnapshot {
+  return {
+    path,
+    branch,
+    head: '2222222',
+    primary: false,
+    prunable: false,
+    status: {
+      repository: true,
+      branch,
+      additions: 204,
+      deletions: 39,
+      commitsAhead: 2,
+      commitsBehind: 3
+    },
+    error: null
+  }
+}
+
+const repositoryWithWorktrees: GitRepositorySnapshot = {
+  ...repository,
+  worktrees: [
+    ...repository.worktrees,
+    linkedWorktree('/home/me/dev/mde-feature', 'feature/sidebar'),
+    linkedWorktree('/home/me/dev/mde-fix', 'fix/session')
+  ]
+}
+
+const repositoryWithManyWorktrees: GitRepositorySnapshot = {
+  ...repositoryWithWorktrees,
+  worktrees: [
+    ...repositoryWithWorktrees.worktrees,
+    linkedWorktree('/home/me/dev/mde-docs', 'docs/readme'),
+    linkedWorktree('/home/me/dev/mde-test', 'test/lane')
   ]
 }
 
@@ -104,5 +141,47 @@ describe('Git lane view', () => {
     expect(container.querySelector('[data-testid="git-lane-1"]')?.textContent)
       .toContain('Add a Git repository from the sidebar.')
     expect(container.querySelectorAll('[data-testid="git-lane-placeholder"]')).toHaveLength(3)
+  })
+
+  it('renders linked worktrees as cards without change, sync, or size metadata', () => {
+    useWorkspace.setState({ gitRepositories: [repositoryWithWorktrees] })
+    const container = renderView()
+
+    const worktreeLanes = container.querySelectorAll('[data-testid="git-worktree-lane"]')
+    expect(worktreeLanes).toHaveLength(2)
+    expect(container.querySelectorAll('[data-testid="git-lane-placeholder"]')).toHaveLength(1)
+    expect(container.textContent).toContain('feature/sidebar')
+    expect(container.textContent).toContain('fix/session')
+    expect(container.textContent).toContain('~/dev/mde-feature')
+    expect(container.textContent).toContain('~/dev/mde-fix')
+    expect(container.textContent).toContain('Session')
+    expect(container.textContent).toContain('Pull')
+    expect(container.textContent).not.toContain('↑2 ↓3')
+    expect(container.textContent).not.toContain('204')
+    expect(container.textContent).not.toContain('39')
+
+    const buttons = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('[data-testid="git-worktree-lane"] button')
+    )
+    expect(buttons).toHaveLength(4)
+    expect(buttons.every((button) => button.disabled)).toBe(true)
+    expect(buttons.filter((button) => button.textContent === 'Session')).toHaveLength(2)
+    expect(buttons.filter((button) => button.textContent === 'Pull')).toHaveLength(2)
+  })
+
+  it('renders all linked worktrees in additional horizontally scrollable lanes', () => {
+    useWorkspace.setState({ gitRepositories: [repositoryWithManyWorktrees] })
+    const container = renderView()
+
+    expect(container.querySelectorAll('[data-testid="git-worktree-lane"]')).toHaveLength(4)
+    expect(container.querySelectorAll('[data-testid="git-lane-placeholder"]')).toHaveLength(0)
+    expect(container.textContent).toContain('feature/sidebar')
+    expect(container.textContent).toContain('fix/session')
+    expect(container.textContent).toContain('docs/readme')
+    expect(container.textContent).toContain('test/lane')
+
+    const grid = container.querySelector<HTMLElement>('[data-testid="git-lane-grid"]')
+    expect(grid?.style.gridTemplateColumns).toContain('repeat(5')
+    expect(grid?.style.minWidth).toContain('max(100%')
   })
 })

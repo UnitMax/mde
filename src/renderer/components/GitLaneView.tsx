@@ -46,6 +46,31 @@ function BranchActionButtons({ branch }: { branch: string }): JSX.Element {
   )
 }
 
+function WorktreeActionButtons({ branch }: { branch: string }): JSX.Element {
+  return (
+    <div className="mt-3 flex flex-wrap gap-2">
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        disabled
+        aria-label={`Open a session for ${branch}`}
+      >
+        Session
+      </Button>
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        disabled
+        aria-label={`Pull ${branch}`}
+      >
+        Pull
+      </Button>
+    </div>
+  )
+}
+
 function PrimaryBranch({ worktree }: { worktree: GitWorktreeSnapshot }): JSX.Element {
   const branch = primaryBranch(worktree)
   return (
@@ -68,6 +93,45 @@ function PrimaryBranch({ worktree }: { worktree: GitWorktreeSnapshot }): JSX.Ele
         {displayGitPath(worktree.path)}
       </div>
     </div>
+  )
+}
+
+function WorktreeLane({ worktree }: { worktree: GitWorktreeSnapshot }): JSX.Element {
+  const branch = primaryBranch(worktree)
+
+  return (
+    <section
+      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-line-strong bg-panel"
+      data-testid="git-worktree-lane"
+      aria-label={`Git worktree ${branch}`}
+    >
+      <div className="shrink-0 border-b border-line px-5 py-5">
+        <div className="flex min-w-0 items-center gap-3">
+          <span
+            className={cn(
+              'h-3 w-3 shrink-0 rounded-full',
+              worktree.error ? 'bg-danger' : worktree.primary ? 'bg-ok' : 'bg-warn'
+            )}
+            aria-hidden="true"
+          />
+          <span className="min-w-0 truncate text-lg font-semibold text-fg">{branch}</span>
+        </div>
+        <div
+          className="mt-3 truncate font-mono text-sm text-fg-muted"
+          title={worktree.path}
+          data-testid="git-worktree-path"
+        >
+          {displayGitPath(worktree.path)}
+        </div>
+        <WorktreeActionButtons branch={branch} />
+        {worktree.error && (
+          <p className="mt-3 truncate text-xs text-danger" title={worktree.error}>
+            {worktree.error}
+          </p>
+        )}
+      </div>
+      <div className="min-h-0 flex-1" />
+    </section>
   )
 }
 
@@ -295,17 +359,36 @@ export function GitLaneView(): JSX.Element {
   const selectedRepository = repositories.find(
     (repository) => repository.id === selectedRepositoryId
   ) ?? repositories[0]
+  const primaryWorktree = selectedRepository?.worktrees.find((worktree) => worktree.primary)
+  const additionalWorktrees = selectedRepository?.worktrees.filter(
+    (worktree) => worktree !== primaryWorktree
+  ) ?? []
+  const laneCount = Math.max(GIT_LANE_COUNT, additionalWorktrees.length + 1)
+  const minimumLaneWidth = 280
+  const laneGap = 20
 
   return (
-    <div className="h-full min-h-0 min-w-0 overflow-hidden p-3" data-testid="git-lane-view">
-      <div className="grid h-full min-h-0 min-w-0 grid-cols-4 gap-5">
+    <div className="h-full min-h-0 min-w-0 overflow-x-auto overflow-y-hidden p-3" data-testid="git-lane-view">
+      <div
+        className="grid h-full min-h-0 min-w-full gap-5"
+        data-testid="git-lane-grid"
+        style={{
+          gridTemplateColumns: `repeat(${laneCount}, minmax(0, 1fr))`,
+          ...(laneCount > GIT_LANE_COUNT
+            ? { minWidth: `max(100%, ${laneCount * minimumLaneWidth + (laneCount - 1) * laneGap}px)` }
+            : {})
+        }}
+      >
         {selectedRepository ? (
           <GitBranchLane repository={selectedRepository} />
         ) : (
           <EmptyGitLane loading={loading} />
         )}
-        {Array.from({ length: GIT_LANE_COUNT - 1 }, (_, index) => (
-          <PlaceholderLane key={index} index={index + 2} />
+        {additionalWorktrees.map((worktree) => (
+          <WorktreeLane key={worktree.path} worktree={worktree} />
+        ))}
+        {Array.from({ length: laneCount - additionalWorktrees.length - 1 }, (_, index) => (
+          <PlaceholderLane key={`placeholder-${index}`} index={additionalWorktrees.length + index + 2} />
         ))}
       </div>
     </div>
