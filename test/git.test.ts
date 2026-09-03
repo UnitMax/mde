@@ -4,6 +4,8 @@ import {
   isBinaryGitDiff,
   parseGitAheadCount,
   parseGitBehindCount,
+  parseGitBranches,
+  parseGitBranchRefs,
   parseGitNumstat,
   parseGitStatus,
   parseGitLog,
@@ -12,6 +14,7 @@ import {
   readGitInfoWithRunner,
   readGitStatusWithRunner,
   readGitDiffWithRunner,
+  readGitBranchesWithRunner,
   type GitCommandResult
 } from '../src/main/git'
 import { formatGitTimestamp, parseGitDiff, shortGitHash } from '../src/renderer/lib/git'
@@ -443,6 +446,74 @@ describe('Git worktree summaries', () => {
     expect(parseGitAheadCount('# branch.ab +4 -2\u0000')).toBe(4)
     expect(parseGitBehindCount('# branch.ab +4 -2\u0000')).toBe(2)
     expect(parseGitBehindCount('# branch.head main\u0000')).toBeNull()
+  })
+})
+
+describe('Git branch summaries', () => {
+  it('parses local and remote refs with their upstream and symbolic-ref fields', () => {
+    expect(parseGitBranchRefs(
+      [
+        'refs/heads/feature/sidebar\u0000origin/feature/sidebar\u0000',
+        'refs/remotes/origin/HEAD\u0000\u0000refs/remotes/origin/main\u0000'
+      ].join('\n')
+    )).toEqual([
+      {
+        ref: 'refs/heads/feature/sidebar',
+        upstream: 'origin/feature/sidebar',
+        symref: null
+      },
+      {
+        ref: 'refs/remotes/origin/HEAD',
+        upstream: null,
+        symref: 'refs/remotes/origin/main'
+      }
+    ])
+  })
+
+  it('includes checked-out locals while excluding symbolic remote HEAD and local remotes', () => {
+    const output = [
+      'refs/heads/feature/sidebar\u0000origin/feature/sidebar\u0000',
+      'refs/heads/local-only\u0000\u0000',
+      'refs/heads/main\u0000origin/main\u0000',
+      'refs/remotes/origin/HEAD\u0000\u0000refs/remotes/origin/main\u0000',
+      'refs/remotes/origin/feature/sidebar\u0000\u0000',
+      'refs/remotes/origin/local-only\u0000\u0000',
+      'refs/remotes/origin/remote-only\u0000\u0000',
+      'refs/remotes/upstream/new-only\u0000\u0000'
+    ].join('\n')
+
+    expect(parseGitBranches(output)).toEqual({
+      localBranches: [
+        { name: 'feature/sidebar', upstream: 'origin/feature/sidebar' },
+        { name: 'local-only', upstream: null },
+        { name: 'main', upstream: 'origin/main' }
+      ],
+      remoteBranches: [
+        { remote: 'origin', name: 'origin/remote-only' },
+        { remote: 'upstream', name: 'upstream/new-only' }
+      ]
+    })
+  })
+
+  it('reads branch refs through the hardened Git command runner', async () => {
+    const calls: string[][] = []
+    const run = async (args: string[]): Promise<GitCommandResult> => {
+      calls.push(args)
+      return result('refs/heads/local\u0000\u0000\n')
+    }
+
+    await expect(readGitBranchesWithRunner(run)).resolves.toEqual({
+      localBranches: [{ name: 'local', upstream: null }],
+      remoteBranches: []
+    })
+    expect(calls).toEqual([[
+      '--no-pager',
+      'for-each-ref',
+      '--sort=refname',
+      '--format=%(refname)%00%(upstream:short)%00%(symref)',
+      'refs/heads',
+      'refs/remotes'
+    ]])
   })
 })
 

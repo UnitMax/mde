@@ -84,6 +84,7 @@ interface WorkspaceState {
   sessions: Session[]
   selectedSessionId: string | null
   selectedTodoProjectId: string | null
+  selectedGitRepositoryId: string | null
   activeWorkspaceView: WorkspaceView
   statuses: Record<string, PtyStatus>
   terminalDirectories: Record<string, string>
@@ -105,6 +106,7 @@ interface WorkspaceState {
 
   init: () => Promise<void>
   selectSession: (id: string | null) => void
+  selectGitRepository: (id: string) => void
   setWorkspaceView: (view: WorkspaceView) => void
   selectTodoProject: (id: string) => void
   toggleSidebar: () => void
@@ -169,6 +171,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   sessions: [],
   selectedSessionId: null,
   selectedTodoProjectId: null,
+  selectedGitRepositoryId: null,
   activeWorkspaceView: 'projects',
   statuses: {},
   terminalDirectories: {},
@@ -226,6 +229,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       wslAvailable,
       selectedSessionId: null,
       selectedTodoProjectId: todoProjects[0]?.id ?? null,
+      selectedGitRepositoryId: null,
       activeWorkspaceView: 'projects',
       ready: true
     })
@@ -260,6 +264,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         opencodeTuiReadRevisions
       }
     }),
+
+  selectGitRepository: (id) =>
+    set((state) =>
+      state.gitRepositories.some((repository) => repository.id === id)
+        ? { selectedGitRepositoryId: id }
+        : {}
+    ),
 
   setWorkspaceView: (view) =>
     set((state) => ({
@@ -659,10 +670,16 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     const refresh = (async (): Promise<void> => {
       try {
         const repositories = await window.api.git.repositories.list()
-        set({
+        set((state) => ({
           gitRepositories: repositories,
-          gitRepositoriesError: null
-        })
+          gitRepositoriesError: null,
+          selectedGitRepositoryId:
+            state.selectedGitRepositoryId && repositories.some(
+              (repository) => repository.id === state.selectedGitRepositoryId
+            )
+              ? state.selectedGitRepositoryId
+              : repositories[0]?.id ?? null
+        }))
       } catch (reason) {
         set({
           gitRepositoriesError:
@@ -694,6 +711,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
           ...state.gitRepositories.filter((candidate) => candidate.id !== repository.id),
           repository
         ],
+        selectedGitRepositoryId: repository.id,
         gitRepositoriesError: null
       }))
       return repository
@@ -714,6 +732,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       await window.api.git.repositories.remove({ id })
       set((state) => ({
         gitRepositories: state.gitRepositories.filter((repository) => repository.id !== id),
+        selectedGitRepositoryId:
+          state.selectedGitRepositoryId === id
+            ? state.gitRepositories.find((repository) => repository.id !== id)?.id ?? null
+            : state.selectedGitRepositoryId,
         gitRepositoriesError: null
       }))
     } catch (reason) {

@@ -65,7 +65,15 @@ function worktreeStatus(worktree: GitWorktreeSnapshot): string {
   return [gitStatusChangesLabel(worktree.status), sync].filter(Boolean).join(' · ')
 }
 
-function WorktreeRow({ worktree }: { worktree: GitWorktreeSnapshot }): JSX.Element {
+function WorktreeRow({
+  worktree,
+  selected,
+  onSelect
+}: {
+  worktree: GitWorktreeSnapshot
+  selected: boolean
+  onSelect: () => void
+}): JSX.Element {
   const branch = worktree.branch ?? 'Detached HEAD'
   const statusClass = worktree.error
     ? 'text-danger'
@@ -74,36 +82,41 @@ function WorktreeRow({ worktree }: { worktree: GitWorktreeSnapshot }): JSX.Eleme
       : 'text-fg-subtle'
 
   return (
-    <div
-      role="listitem"
-      className={cn(
-        'rounded px-2 py-1.5',
-        worktree.primary ? 'bg-active/70' : 'hover:bg-hover'
-      )}
-      title={worktree.path}
-      data-testid="git-worktree-row"
-    >
-      <div className="flex min-w-0 items-center gap-2">
-        <span
-          className={cn(
-            'h-1.5 w-1.5 shrink-0 rounded-full',
-            worktree.error ? 'bg-danger' : worktree.primary ? 'bg-ok' : 'bg-warn'
-          )}
-          aria-hidden="true"
-        />
-        <span className="min-w-0 flex-1 truncate text-[13px] text-fg">{branch}</span>
-        <span
-          className={cn(
-            'shrink-0 rounded border border-line-strong px-1 text-[10px] uppercase tracking-wide',
-            worktree.primary ? 'text-accent' : 'text-fg-muted'
-          )}
-        >
-          {worktree.primary ? 'Primary' : 'Worktree'}
-        </span>
-      </div>
-      <div className="mt-0.5 truncate pl-3.5 font-mono text-[11px] text-fg-subtle">
-        {worktree.path} · <span className={statusClass}>{worktreeStatus(worktree)}</span>
-      </div>
+    <div role="listitem">
+      <button
+        type="button"
+        className={cn(
+          'block w-full rounded px-2 py-1.5 text-left',
+          worktree.primary ? 'bg-active/70' : 'hover:bg-hover',
+          selected && 'ring-1 ring-inset ring-accent/40'
+        )}
+        onClick={onSelect}
+        aria-pressed={selected}
+        title={worktree.path}
+        data-testid="git-worktree-row"
+      >
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            className={cn(
+              'h-1.5 w-1.5 shrink-0 rounded-full',
+              worktree.error ? 'bg-danger' : worktree.primary ? 'bg-ok' : 'bg-warn'
+            )}
+            aria-hidden="true"
+          />
+          <span className="min-w-0 flex-1 truncate text-[13px] text-fg">{branch}</span>
+          <span
+            className={cn(
+              'shrink-0 rounded border border-line-strong px-1 text-[10px] uppercase tracking-wide',
+              worktree.primary ? 'text-accent' : 'text-fg-muted'
+            )}
+          >
+            {worktree.primary ? 'Primary' : 'Worktree'}
+          </span>
+        </div>
+        <div className="mt-0.5 truncate pl-3.5 font-mono text-[11px] text-fg-subtle">
+          {worktree.path} · <span className={statusClass}>{worktreeStatus(worktree)}</span>
+        </div>
+      </button>
     </div>
   )
 }
@@ -111,11 +124,15 @@ function WorktreeRow({ worktree }: { worktree: GitWorktreeSnapshot }): JSX.Eleme
 function RepositoryGroup({
   repository,
   query,
-  onRemove
+  onRemove,
+  selected,
+  onSelect
 }: {
   repository: GitRepositorySnapshot
   query: string
   onRemove: () => void
+  selected: boolean
+  onSelect: () => void
 }): JSX.Element {
   const [expanded, setExpanded] = useState(true)
   const worktrees = useMemo(() => visibleWorktrees(repository, query), [query, repository])
@@ -126,16 +143,29 @@ function RepositoryGroup({
       <div className="flex min-w-0 items-center gap-1 px-1">
         <button
           type="button"
-          className="flex min-w-0 flex-1 items-center gap-1.5 rounded px-1 py-1 text-left hover:bg-hover"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-fg-subtle hover:bg-hover hover:text-fg"
           onClick={() => setExpanded((value) => !value)}
           aria-expanded={expanded}
-          title={`${repository.distro}: ${repository.rootPath}`}
+          aria-label={`${expanded ? 'Collapse' : 'Expand'} ${repository.name}`}
+          data-testid="git-repository-toggle"
         >
           {expanded ? (
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-fg-subtle" />
+            <ChevronDown className="h-3.5 w-3.5" />
           ) : (
-            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-fg-subtle" />
+            <ChevronRight className="h-3.5 w-3.5" />
           )}
+        </button>
+        <button
+          type="button"
+          className={cn(
+            'flex min-w-0 flex-1 items-center gap-1.5 rounded px-1 py-1 text-left hover:bg-hover',
+            selected && 'bg-active text-fg'
+          )}
+          onClick={onSelect}
+          aria-pressed={selected}
+          title={`${repository.distro}: ${repository.rootPath}`}
+          data-testid="git-repository-select"
+        >
           <span className="min-w-0 truncate text-[13px] font-semibold text-fg">{repository.name}</span>
           <span className="shrink-0 text-[11px] text-fg-subtle">{countLabel}</span>
         </button>
@@ -170,7 +200,14 @@ function RepositoryGroup({
       {expanded && (
         <div className="mt-0.5 space-y-0.5 pl-2" role="list">
           {worktrees.length > 0 ? (
-            worktrees.map((worktree) => <WorktreeRow key={worktree.path} worktree={worktree} />)
+            worktrees.map((worktree) => (
+              <WorktreeRow
+                key={worktree.path}
+                worktree={worktree}
+                selected={selected}
+                onSelect={onSelect}
+              />
+            ))
           ) : (
             <p className="px-2 py-1 text-xs text-fg-subtle">
               {query ? 'No matching worktrees.' : 'No worktrees found.'}
@@ -191,7 +228,9 @@ export function GitRepositorySidebar({
   const repositories = useWorkspace((state) => state.gitRepositories)
   const loading = useWorkspace((state) => state.gitRepositoriesLoading)
   const error = useWorkspace((state) => state.gitRepositoriesError)
+  const selectedRepositoryId = useWorkspace((state) => state.selectedGitRepositoryId)
   const refresh = useWorkspace((state) => state.refreshGitRepositories)
+  const selectRepository = useWorkspace((state) => state.selectGitRepository)
   const remove = useWorkspace((state) => state.removeGitRepository)
   const [query, setQuery] = useState('')
   const [removing, setRemoving] = useState<GitRepositorySnapshot | null>(null)
@@ -218,13 +257,20 @@ export function GitRepositorySidebar({
     return (
       <div className="flex flex-col items-center gap-1" data-testid="git-repository-sidebar-collapsed">
         {repositories.map((repository) => (
-          <div
+          <button
+            type="button"
             key={repository.id}
-            className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-hover hover:text-fg"
+            className={cn(
+              'flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-hover hover:text-fg',
+              selectedRepositoryId === repository.id && 'bg-active text-fg'
+            )}
+            onClick={() => selectRepository(repository.id)}
+            aria-pressed={selectedRepositoryId === repository.id}
+            aria-label={`Select ${repository.name}`}
             title={`${repository.name} · ${repository.worktrees.length} worktrees`}
           >
             <GitBranch className="h-3.5 w-3.5" />
-          </div>
+          </button>
         ))}
         {repositories.length === 0 && (
           <GitBranch className="mt-1 h-4 w-4 text-fg-subtle" aria-label="No Git repositories" />
@@ -281,6 +327,8 @@ export function GitRepositorySidebar({
               key={repository.id}
               repository={repository}
               query={normalizedQuery}
+              selected={repository.id === selectedRepositoryId}
+              onSelect={() => selectRepository(repository.id)}
               onRemove={() => setRemoving(repository)}
             />
           ))

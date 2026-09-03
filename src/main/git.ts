@@ -5,8 +5,10 @@ import type {
   GitChangeStatus,
   GitDiffResponse,
   GitInfoResponse,
+  GitLocalBranchSnapshot,
   GitRepository,
   GitRepositorySnapshot,
+  GitRemoteBranchSnapshot,
   GitStatusResponse,
   GitCommit,
   GitWorktreeSnapshot,
@@ -341,6 +343,15 @@ const gitWorktreeListArgs = [
   '-z'
 ]
 
+const gitBranchListArgs = [
+  '--no-pager',
+  'for-each-ref',
+  '--sort=refname',
+  '--format=%(refname)%00%(upstream:short)%00%(symref)',
+  'refs/heads',
+  'refs/remotes'
+]
+
 export interface GitWorktreeEntry {
   path: string
   branch: string | null
@@ -395,6 +406,74 @@ export async function readGitWorktreesWithRunner(run: GitCommandRunner): Promise
   return entries
 }
 
+export interface GitBranchRef {
+  ref: string
+  upstream: string | null
+  symref: string | null
+}
+
+/** Parses newline-delimited records containing NUL-separated branch fields. */
+export function parseGitBranchRefs(output: string): GitBranchRef[] {
+  return output
+    .replaceAll('\r\n', '\n')
+    .split('\n')
+    .filter(Boolean)
+    .map((record) => {
+      const fields = record.split('\u0000')
+      if (fields.length < 3 || !fields[0]) {
+        throw new Error('Git returned malformed branch data.')
+      }
+      return {
+        ref: fields[0],
+        upstream: fields[1] || null,
+        symref: fields[2] || null
+      }
+    })
+}
+
+export function parseGitBranches(output: string): {
+  localBranches: GitLocalBranchSnapshot[]
+  remoteBranches: GitRemoteBranchSnapshot[]
+} {
+  const refs = parseGitBranchRefs(output)
+  const localRefs = refs.filter((entry) => entry.ref.startsWith('refs/heads/'))
+  const localNames = new Set(
+    localRefs.map((entry) => entry.ref.slice('refs/heads/'.length))
+  )
+  const localBranches = localRefs
+    .map((entry) => ({
+      name: entry.ref.slice('refs/heads/'.length),
+      upstream: entry.upstream
+    }))
+    .filter((branch) => branch.name)
+
+  const remoteBranches = refs
+    .filter((entry) => entry.ref.startsWith('refs/remotes/') && !entry.symref)
+    .map((entry): GitRemoteBranchSnapshot | null => {
+      const name = entry.ref.slice('refs/remotes/'.length)
+      const separator = name.indexOf('/')
+      if (separator <= 0 || separator === name.length - 1) return null
+      const remote = name.slice(0, separator)
+      const branchName = name.slice(separator + 1)
+      if (localNames.has(branchName)) return null
+      return { remote, name }
+    })
+    .filter((branch): branch is GitRemoteBranchSnapshot => branch !== null)
+
+  return { localBranches, remoteBranches }
+}
+
+export async function readGitBranchesWithRunner(
+  run: GitCommandRunner
+): Promise<{
+  localBranches: GitLocalBranchSnapshot[]
+  remoteBranches: GitRemoteBranchSnapshot[]
+}> {
+  const result = await run(gitBranchListArgs)
+  if (result.code !== 0) throw commandError('branches', result)
+  return parseGitBranches(result.stdout)
+}
+
 function wslPathBasename(path: string): string {
   const value = path.replace(/\/+$/, '')
   return posixPath.basename(value) || value || 'Repository'
@@ -407,6 +486,8 @@ function failedRepositorySnapshot(repository: GitRepository, error: unknown): Gi
     rootPath: repository.path,
     distro: repository.distro,
     worktrees: [],
+    localBranches: [],
+    remoteBranches: [],
     error: error instanceof Error ? error.message : 'Could not inspect this Git repository.'
   }
 }
@@ -419,6 +500,7 @@ export async function readGitRepositorySnapshot(
   const entries = await readGitWorktreesWithRunner(createGitCommandRunner(target, platform))
   const primary = entries.find((entry) => entry.primary) ?? entries[0]
   if (!primary) throw new Error('Git repository has no working trees.')
+  const branches = await readGitBranchesWithRunner(createGitCommandRunner(target, platform))
 
   const worktrees = await Promise.all(entries.map(async (entry): Promise<GitWorktreeSnapshot> => {
     if (entry.prunable) {
@@ -448,6 +530,7 @@ export async function readGitRepositorySnapshot(
     rootPath: primary.path,
     distro: repository.distro,
     worktrees,
+    ...branches,
     error: null
   }
 }

@@ -44,6 +44,8 @@ When `package.json` or `package-lock.json` changes, run `npm run audit:deps` bef
 
 The application version is authoritative in `package.json` and must stay synchronized with `package-lock.json`. The initial version is `0.0.1`. Increase the patch version by `0.0.1` once when preparing each commit unless the user explicitly says otherwise; do not increase it merely because a task changes files, and do not increase it again when committing a version that was already bumped for that commit. The About dialog must display this same package version.
 
+On branches other than `master`, do not automatically increase the application version. Only bump it there when the user explicitly requests it or the change is specifically preparing a release.
+
 ## Security & Configuration Tips
 
 Keep `contextIsolation` and renderer sandboxing intact. Validate WSL/process arguments and never log credentials or session data. Do not commit workspace state, build artifacts, or secrets.

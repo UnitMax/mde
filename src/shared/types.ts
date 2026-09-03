@@ -368,6 +368,21 @@ export interface GitWorktreeSnapshot {
   error: string | null
 }
 
+/** A local branch discovered in the repository. */
+export interface GitLocalBranchSnapshot {
+  name: string
+  /** Full short upstream ref, such as `origin/feature/sidebar`. */
+  upstream: string | null
+}
+
+/** A remote branch that has no matching local branch. */
+export interface GitRemoteBranchSnapshot {
+  /** Remote name used to group rows in the renderer, such as `origin`. */
+  remote: string
+  /** Full short ref, such as `origin/feature/sidebar`. */
+  name: string
+}
+
 /** Renderable Git repository state, including all discovered worktrees. */
 export interface GitRepositorySnapshot {
   id: string
@@ -376,6 +391,8 @@ export interface GitRepositorySnapshot {
   rootPath: string
   distro: string
   worktrees: GitWorktreeSnapshot[]
+  localBranches: GitLocalBranchSnapshot[]
+  remoteBranches: GitRemoteBranchSnapshot[]
   error: string | null
 }
 

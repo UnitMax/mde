@@ -11,6 +11,7 @@
     "src/renderer/components/Sidebar.tsx",
     "src/renderer/components/AddGitRepositoryDialog.tsx",
     "src/renderer/components/GitRepositorySidebar.tsx",
+    "src/renderer/components/GitLaneView.tsx",
     "src/renderer/components/SessionSwitcher.tsx",
     "src/renderer/components/OpenCodeStatusIcon.tsx",
     "src/renderer/terminal/terminal-compat.ts",

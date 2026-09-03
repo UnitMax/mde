@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { GitBranch, Plus, Terminal } from 'lucide-react'
+import { Plus, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AddSessionDialog } from '@/components/AddProjectDialog'
 import { GitDialog } from '@/components/GitDialog'
+import { GitLaneView } from '@/components/GitLaneView'
 import { NewProjectDialog } from '@/components/NewProjectDialog'
 import { NewTodoProjectDialog } from '@/components/NewTodoProjectDialog'
 import { Sidebar } from '@/components/Sidebar'
@@ -58,20 +59,6 @@ function EmptyState({ onNewSession }: { onNewSession: () => void }): JSX.Element
         <Plus className="h-3.5 w-3.5" />
         New session
       </Button>
-    </div>
-  )
-}
-
-function GitPlaceholder(): JSX.Element {
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-      <GitBranch className="h-6 w-6 text-fg-subtle" />
-      <div>
-        <p className="text-[13px] text-fg-muted">Git repository manager</p>
-        <p className="mt-1 text-xs text-fg-subtle">
-          Git details will be added here later.
-        </p>
-      </div>
     </div>
   )
 }
@@ -601,7 +588,7 @@ export function App(): JSX.Element {
             onOpenSettings={() => setTodoProjectSettingsOpen(true)}
           />
         ) : activeWorkspaceView === 'git' ? (
-          <GitPlaceholder />
+          <GitLaneView />
         ) : selected && activeTab && layoutForSession ? (
           <TerminalView
             key={selected.id}

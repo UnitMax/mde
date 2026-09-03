@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 
-import { act, createElement } from 'react'
+import { act, createElement, Fragment } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GitRepositorySnapshot } from '../src/shared/types'
+import { GitLaneView } from '../src/renderer/components/GitLaneView'
 import { Sidebar } from '../src/renderer/components/Sidebar'
 import { useWorkspace } from '../src/renderer/store/workspace'
 
@@ -16,6 +17,8 @@ const repository: GitRepositorySnapshot = {
   rootPath: '/home/me/src/mde',
   distro: 'Ubuntu-24.04',
   error: null,
+  localBranches: [],
+  remoteBranches: [],
   worktrees: [
     {
       path: '/home/me/src/mde',
@@ -52,10 +55,38 @@ const repository: GitRepositorySnapshot = {
   ]
 }
 
+const secondRepository: GitRepositorySnapshot = {
+  id: 'repo-2',
+  name: 'api',
+  rootPath: '/home/me/src/api',
+  distro: 'Ubuntu-24.04',
+  error: null,
+  localBranches: [{ name: 'develop', upstream: null }],
+  remoteBranches: [],
+  worktrees: [
+    {
+      path: '/home/me/src/api',
+      branch: 'develop',
+      head: '3333333',
+      primary: true,
+      prunable: false,
+      status: {
+        repository: true,
+        branch: 'develop',
+        additions: 0,
+        deletions: 0,
+        commitsAhead: null,
+        commitsBehind: null
+      },
+      error: null
+    }
+  ]
+}
+
 const api = {
   git: {
     repositories: {
-      list: vi.fn(async () => [repository]),
+      list: vi.fn(async () => [repository, secondRepository]),
       add: vi.fn(),
       remove: vi.fn()
     }
@@ -70,6 +101,7 @@ function resetWorkspace(): void {
     sessions: [],
     selectedSessionId: null,
     selectedTodoProjectId: null,
+    selectedGitRepositoryId: null,
     activeWorkspaceView: 'projects',
     gitStatuses: {},
     gitRepositories: [],
@@ -90,22 +122,27 @@ function resetWorkspace(): void {
   })
 }
 
-function renderSidebar(): HTMLElement {
+function renderSidebar(withLane = false): HTMLElement {
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
   roots.push(root)
   containers.push(container)
   act(() => {
-    root.render(createElement(Sidebar, {
-      onNewProject: vi.fn(),
-      onNewTodoProject: vi.fn(),
-      onNewTodoTask: vi.fn(),
-      onNewSession: vi.fn(),
-      onOpenGit: vi.fn(),
-      terminalLayouts: {},
-      onFocusTerminal: vi.fn()
-    }))
+    root.render(createElement(
+      Fragment,
+      null,
+      createElement(Sidebar, {
+        onNewProject: vi.fn(),
+        onNewTodoProject: vi.fn(),
+        onNewTodoTask: vi.fn(),
+        onNewSession: vi.fn(),
+        onOpenGit: vi.fn(),
+        terminalLayouts: {},
+        onFocusTerminal: vi.fn()
+      }),
+      withLane ? createElement(GitLaneView) : null
+    ))
   })
   return container
 }
@@ -144,5 +181,57 @@ describe('Git repository sidebar', () => {
     expect(container.textContent).toContain('feature/sidebar')
     expect(container.textContent).toContain('Worktree')
     expect(container.textContent).toContain('↑1 ↓2')
+    expect(useWorkspace.getState().selectedGitRepositoryId).toBe('repo-1')
+
+    const repositoryHeader = container.querySelector<HTMLElement>(
+      '[data-testid="git-repository-select"]'
+    )
+    await act(async () => {
+      repositoryHeader?.click()
+      await Promise.resolve()
+    })
+    expect(useWorkspace.getState().selectedGitRepositoryId).toBe('repo-1')
+  })
+
+  it('selects another repository from its header or worktree row and updates lane one', async () => {
+    const container = renderSidebar(true)
+    const gitTab = container.querySelector<HTMLButtonElement>('#sidebar-section-tab-git')
+
+    await act(async () => {
+      gitTab?.click()
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[data-testid="git-primary-branch"]')?.textContent)
+      .toContain('main')
+
+    const repositoryHeaders = container.querySelectorAll<HTMLElement>(
+      '[data-testid="git-repository-select"]'
+    )
+    await act(async () => {
+      repositoryHeaders[1]?.click()
+      await Promise.resolve()
+    })
+
+    expect(useWorkspace.getState().selectedGitRepositoryId).toBe('repo-2')
+    expect(container.querySelector('[data-testid="git-primary-branch"]')?.textContent)
+      .toContain('develop')
+    expect(container.querySelector('[data-testid="git-local-branch-row"]')?.textContent)
+      .toContain('PRIMARY')
+
+    const repositoryGroups = container.querySelectorAll<HTMLElement>(
+      '[data-testid="git-repository-group"]'
+    )
+    const firstRepositoryWorktree = repositoryGroups[0]?.querySelector<HTMLElement>(
+      '[data-testid="git-worktree-row"]'
+    )
+    await act(async () => {
+      firstRepositoryWorktree?.click()
+      await Promise.resolve()
+    })
+
+    expect(useWorkspace.getState().selectedGitRepositoryId).toBe('repo-1')
+    expect(container.querySelector('[data-testid="git-primary-branch"]')?.textContent)
+      .toContain('main')
   })
 })
