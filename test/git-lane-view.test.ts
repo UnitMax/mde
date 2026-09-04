@@ -63,6 +63,11 @@ function linkedWorktree(path: string, branch: string): GitWorktreeSnapshot {
 
 const repositoryWithWorktrees: GitRepositorySnapshot = {
   ...repository,
+  localBranches: [
+    ...repository.localBranches,
+    { name: 'feature/sidebar', upstream: 'origin/feature/sidebar' },
+    { name: 'fix/session', upstream: null }
+  ],
   worktrees: [
     ...repository.worktrees,
     linkedWorktree('/home/me/dev/mde-feature', 'feature/sidebar'),
@@ -90,6 +95,32 @@ function renderView(onCreateSession?: (defaults: GitSessionDefaults) => void): H
     { onCreateSession }
   )))
   return container
+}
+
+function setScrollGeometry(
+  element: HTMLElement,
+  geometry: { clientHeight?: number; clientWidth?: number; scrollHeight?: number; scrollWidth?: number }
+): void {
+  Object.entries(geometry).forEach(([property, value]) => {
+    Object.defineProperty(element, property, { configurable: true, value })
+  })
+}
+
+function dispatchWheel(
+  target: EventTarget,
+  options: { ctrlKey?: boolean; deltaX?: number; deltaY?: number }
+): WheelEvent {
+  const event = new WheelEvent('wheel', {
+    bubbles: true,
+    cancelable: true,
+    deltaX: options.deltaX ?? 0,
+    deltaY: options.deltaY ?? 0
+  })
+  if (options.ctrlKey) {
+    Object.defineProperty(event, 'ctrlKey', { configurable: true, value: true })
+  }
+  act(() => target.dispatchEvent(event))
+  return event
 }
 
 describe('Git lane view', () => {
@@ -168,6 +199,27 @@ describe('Git lane view', () => {
     expect(container.textContent).not.toContain('204')
     expect(container.textContent).not.toContain('39')
 
+    const localRows = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-testid="git-local-branch-row"]')
+    )
+    const featureRow = localRows.find((row) => row.textContent?.includes('feature/sidebar'))
+    const fixRow = localRows.find((row) => row.textContent?.includes('fix/session'))
+    const localOnlyRow = localRows.find((row) => row.textContent?.includes('feat/todo-panel'))
+    const primaryRow = localRows.find((row) => row.textContent?.includes('master'))
+    const featurePath = featureRow?.querySelector<HTMLElement>('[data-testid="git-local-branch-path"]')
+    const featureHeader = featureRow?.querySelector('[data-testid="git-local-branch-header"]')
+
+    expect(featurePath?.textContent)
+      .toBe('~/dev/mde-feature')
+    expect(featurePath?.title)
+      .toBe('/home/me/dev/mde-feature')
+    expect(featurePath?.parentElement).toBe(featureRow)
+    expect(featurePath?.parentElement).not.toBe(featureHeader)
+    expect(fixRow?.querySelector('[data-testid="git-local-branch-path"]')?.textContent)
+      .toBe('~/dev/mde-fix')
+    expect(localOnlyRow?.querySelector('[data-testid="git-local-branch-path"]')).toBeNull()
+    expect(primaryRow?.querySelector('[data-testid="git-local-branch-path"]')).toBeNull()
+
     const buttons = Array.from(
       container.querySelectorAll<HTMLButtonElement>('[data-testid="git-worktree-lane"] button')
     )
@@ -190,8 +242,69 @@ describe('Git lane view', () => {
     expect(container.textContent).toContain('test/lane')
 
     const grid = container.querySelector<HTMLElement>('[data-testid="git-lane-grid"]')
-    expect(grid?.style.gridTemplateColumns).toContain('repeat(5')
-    expect(grid?.style.minWidth).toContain('max(100%')
+    expect(grid?.style.gridTemplateColumns).toBe('repeat(5, 360px)')
+    expect(grid?.style.width).toBe('1880px')
+    expect(container.querySelector<HTMLElement>('[data-testid="git-lane-view"]')?.className)
+      .toContain('overflow-x-auto')
+  })
+
+  it('maps wheel input to horizontal scrolling outside vertical scroll areas', () => {
+    useWorkspace.setState({ gitRepositories: [repositoryWithManyWorktrees] })
+    const container = renderView()
+    const laneView = container.querySelector<HTMLElement>('[data-testid="git-lane-view"]')!
+    setScrollGeometry(laneView, { clientWidth: 500, scrollWidth: 1880 })
+
+    const mouseWheel = dispatchWheel(laneView, { deltaY: 120 })
+    expect(laneView.scrollLeft).toBe(120)
+    expect(mouseWheel.defaultPrevented).toBe(true)
+
+    const trackpadWheel = dispatchWheel(laneView, { deltaX: 40, deltaY: 120 })
+    expect(laneView.scrollLeft).toBe(160)
+    expect(trackpadWheel.defaultPrevented).toBe(true)
+
+    const zoomWheel = dispatchWheel(laneView, { ctrlKey: true, deltaY: 120 })
+    expect(laneView.scrollLeft).toBe(160)
+    expect(zoomWheel.defaultPrevented).toBe(false)
+  })
+
+  it('leaves wheel input inside an overflowing vertical branch area native', () => {
+    useWorkspace.setState({ gitRepositories: [repositoryWithManyWorktrees] })
+    const container = renderView()
+    const laneView = container.querySelector<HTMLElement>('[data-testid="git-lane-view"]')!
+    const branchScroll = container.querySelector<HTMLElement>('[data-testid="git-branches-scroll"]')!
+    const branchContent = container.querySelector<HTMLElement>('[data-testid="git-branches"]')!
+    setScrollGeometry(laneView, { clientWidth: 500, scrollWidth: 1880 })
+    setScrollGeometry(branchScroll, { clientHeight: 400, scrollHeight: 800 })
+    branchScroll.style.overflowY = 'auto'
+
+    const event = dispatchWheel(branchContent, { deltaY: 120 })
+    expect(laneView.scrollLeft).toBe(0)
+    expect(event.defaultPrevented).toBe(false)
+  })
+
+  it('falls back to horizontal scrolling when a vertical area has no overflow', () => {
+    useWorkspace.setState({ gitRepositories: [repositoryWithManyWorktrees] })
+    const container = renderView()
+    const laneView = container.querySelector<HTMLElement>('[data-testid="git-lane-view"]')!
+    const branchScroll = container.querySelector<HTMLElement>('[data-testid="git-branches-scroll"]')!
+    const branchContent = container.querySelector<HTMLElement>('[data-testid="git-branches"]')!
+    setScrollGeometry(laneView, { clientWidth: 500, scrollWidth: 1880 })
+    setScrollGeometry(branchScroll, { clientHeight: 800, scrollHeight: 800 })
+    branchScroll.style.overflowY = 'auto'
+
+    const event = dispatchWheel(branchContent, { deltaY: 120 })
+    expect(laneView.scrollLeft).toBe(120)
+    expect(event.defaultPrevented).toBe(true)
+  })
+
+  it('does not cancel wheel input when the lane strip has no horizontal overflow', () => {
+    const container = renderView()
+    const laneView = container.querySelector<HTMLElement>('[data-testid="git-lane-view"]')!
+    setScrollGeometry(laneView, { clientWidth: 1880, scrollWidth: 1880 })
+
+    const event = dispatchWheel(laneView, { deltaY: 120 })
+    expect(laneView.scrollLeft).toBe(0)
+    expect(event.defaultPrevented).toBe(false)
   })
 
   it('passes primary worktree defaults to the session creation callback', () => {

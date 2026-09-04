@@ -1,4 +1,5 @@
 import { AlertCircle, ArrowLeftRight, GitBranch, LoaderCircle } from 'lucide-react'
+import type { WheelEvent as ReactWheelEvent } from 'react'
 import type {
   GitLocalBranchSnapshot,
   GitRemoteBranchSnapshot,
@@ -10,6 +11,8 @@ import { cn } from '@/lib/utils'
 import { useWorkspace } from '@/store/workspace'
 
 const GIT_LANE_COUNT = 4
+const GIT_LANE_WIDTH = 360
+const GIT_LANE_GAP = 20
 
 export interface GitSessionDefaults {
   projectId?: string
@@ -30,6 +33,39 @@ function displayGitPath(path: string): string {
 
 function primaryBranch(worktree: GitWorktreeSnapshot): string {
   return worktree.branch ?? worktree.status?.branch ?? 'Detached HEAD'
+}
+
+function isVerticallyScrollable(element: HTMLElement): boolean {
+  const overflowY = window.getComputedStyle(element).overflowY
+  return (
+    (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') &&
+    element.scrollHeight > element.clientHeight
+  )
+}
+
+function isInsideVerticalScrollArea(
+  target: EventTarget | null,
+  laneView: HTMLElement
+): boolean {
+  let element = target instanceof Element ? target : null
+  while (element && element !== laneView) {
+    if (element instanceof HTMLElement && isVerticallyScrollable(element)) return true
+    element = element.parentElement
+  }
+  return false
+}
+
+function handleGitLaneWheel(event: ReactWheelEvent<HTMLDivElement>): void {
+  if (event.ctrlKey) return
+
+  const laneView = event.currentTarget
+  if (isInsideVerticalScrollArea(event.target, laneView)) return
+
+  const delta = event.deltaX !== 0 ? event.deltaX : event.deltaY
+  if (delta === 0 || laneView.scrollWidth <= laneView.clientWidth) return
+
+  laneView.scrollLeft += delta
+  event.preventDefault()
 }
 
 function BranchActionButtons({ branch }: { branch: string }): JSX.Element {
@@ -228,17 +264,22 @@ function BranchSectionHeading({
 
 function LocalBranchRow({
   branch,
-  checkedOutAs
+  checkedOutAs,
+  worktreePath
 }: {
   branch: GitLocalBranchSnapshot
   checkedOutAs: 'PRIMARY' | 'WORKTREE' | undefined
+  worktreePath?: string
 }): JSX.Element {
   return (
     <article
       className="rounded-lg bg-elevated/40 px-4 py-3"
       data-testid="git-local-branch-row"
     >
-      <div className="flex min-w-0 items-center gap-3">
+      <div
+        className="flex min-w-0 items-center gap-3"
+        data-testid="git-local-branch-header"
+      >
         <span className="shrink-0 text-fg-subtle" aria-hidden="true">•</span>
         <span className="min-w-0 flex-1 truncate text-sm text-fg">{branch.name}</span>
         {checkedOutAs && (
@@ -252,6 +293,16 @@ function LocalBranchRow({
           </span>
         )}
       </div>
+      {worktreePath && (
+        <div
+          className="mt-2 min-w-0 truncate pl-4 font-mono text-xs text-fg-muted"
+          title={worktreePath}
+          aria-label={`Worktree directory ${worktreePath}`}
+          data-testid="git-local-branch-path"
+        >
+          {displayGitPath(worktreePath)}
+        </div>
+      )}
       {branch.upstream ? (
         <div className="mt-2 flex min-w-0 items-center gap-2 pl-4 font-mono text-xs text-fg-subtle">
           <ArrowLeftRight className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
@@ -314,9 +365,11 @@ function GitBranchLane({
 }): JSX.Element {
   const primary = repository.worktrees.find((worktree) => worktree.primary)
   const worktreeBranchKinds = new Map<string, 'PRIMARY' | 'WORKTREE'>()
+  const linkedWorktreePaths = new Map<string, string>()
   repository.worktrees.forEach((worktree) => {
     if (worktree.branch) {
       worktreeBranchKinds.set(worktree.branch, worktree.primary ? 'PRIMARY' : 'WORKTREE')
+      if (!worktree.primary) linkedWorktreePaths.set(worktree.branch, worktree.path)
     }
   })
   const remoteGroups = new Map<string, GitRemoteBranchSnapshot[]>()
@@ -366,7 +419,10 @@ function GitBranchLane({
         defaultProjectId={defaultProjectId}
         onCreateSession={onCreateSession}
       />
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+      <div
+        className="min-h-0 flex-1 overflow-y-auto px-5 py-5"
+        data-testid="git-branches-scroll"
+      >
         <section data-testid="git-branches">
           <div className="flex items-center gap-3">
             <h2 className="min-w-0 flex-1 text-xs uppercase tracking-[0.2em] text-fg-muted">
@@ -388,6 +444,7 @@ function GitBranchLane({
                     key={branch.name}
                     branch={branch}
                     checkedOutAs={worktreeBranchKinds.get(branch.name)}
+                    worktreePath={linkedWorktreePaths.get(branch.name)}
                   />
                 ))}
               </div>
@@ -453,19 +510,20 @@ export function GitLaneView({ onCreateSession = () => undefined }: GitLaneViewPr
     (worktree) => worktree !== primaryWorktree
   ) ?? []
   const laneCount = Math.max(GIT_LANE_COUNT, additionalWorktrees.length + 1)
-  const minimumLaneWidth = 280
-  const laneGap = 20
+  const laneStripWidth = laneCount * GIT_LANE_WIDTH + (laneCount - 1) * GIT_LANE_GAP
 
   return (
-    <div className="h-full min-h-0 min-w-0 overflow-x-auto overflow-y-hidden p-3" data-testid="git-lane-view">
+    <div
+      className="h-full min-h-0 min-w-0 overflow-x-auto overflow-y-hidden p-3"
+      data-testid="git-lane-view"
+      onWheel={handleGitLaneWheel}
+    >
       <div
-        className="grid h-full min-h-0 min-w-full gap-5"
+        className="grid h-full min-h-0 gap-5"
         data-testid="git-lane-grid"
         style={{
-          gridTemplateColumns: `repeat(${laneCount}, minmax(0, 1fr))`,
-          ...(laneCount > GIT_LANE_COUNT
-            ? { minWidth: `max(100%, ${laneCount * minimumLaneWidth + (laneCount - 1) * laneGap}px)` }
-            : {})
+          gridTemplateColumns: `repeat(${laneCount}, ${GIT_LANE_WIDTH}px)`,
+          width: `${laneStripWidth}px`
         }}
       >
         {selectedRepository ? (
