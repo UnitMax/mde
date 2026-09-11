@@ -46,7 +46,10 @@ function paletteResponse(slot: PaletteSlot, palette: TerminalPalette): string {
 export class TerminalQueryResponder {
   private pending = ''
 
-  constructor(private palette: TerminalPalette) {}
+  constructor(
+    private palette: TerminalPalette,
+    private readonly platform: NodeJS.Platform = process.platform
+  ) {}
 
   setPalette(palette: TerminalPalette): void {
     this.palette = palette
@@ -95,7 +98,7 @@ export class TerminalQueryResponder {
       if (paletteSlot) {
         responses.push(paletteResponse(paletteSlot, this.palette))
       } else if (payload.startsWith('7;')) {
-        const reported = parseOsc7Directory(payload.slice(2))
+        const reported = parseOsc7Directory(payload.slice(2), this.platform)
         if (reported) directory = reported
       } else {
         visible += raw
@@ -121,7 +124,7 @@ function oscTerminator(data: string, start: number): { index: number; end: numbe
   return { index: st, end: st + 2 }
 }
 
-function parseOsc7Directory(value: string): string | null {
+function parseOsc7Directory(value: string, platform: NodeJS.Platform): string | null {
   if (value.length === 0 || value.length > MAX_OSC7_LENGTH) return null
 
   let url: URL
@@ -157,7 +160,17 @@ function parseOsc7Directory(value: string): string | null {
     segments.push(decoded)
   }
 
-  return segments.length > 0 ? `/${segments.join('/')}` : '/'
+  if (segments.length === 0) return '/'
+
+  const path = `/${segments.join('/')}`
+  // PowerShell reports native Windows locations as file:///C:/... while
+  // WSL reports its own paths as file://localhost/home/.... Keep the drive
+  // path in a form that native Git and fs APIs can consume.
+  if (platform === 'win32' && /^\/[A-Za-z]:($|\/)/.test(path)) {
+    return path.slice(1)
+  }
+
+  return path
 }
 
 function isLocalOsc7Host(hostname: string): boolean {

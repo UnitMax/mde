@@ -32,6 +32,7 @@
     "src/renderer/components/SessionEnvironmentPanel.tsx",
     "src/renderer/components/OpenCodeNotificationBadge.tsx",
     "src/renderer/components/SessionGitStatus.tsx",
+    "src/renderer/components/TerminalGitInfo.tsx",
     "src/renderer/components/ui/alert-dialog.tsx",
     "src/renderer/components/ui/button.tsx",
     "src/renderer/components/ui/context-menu.tsx",

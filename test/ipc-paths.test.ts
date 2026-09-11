@@ -361,3 +361,54 @@ describe('terminal Explorer IPC', () => {
     expect(workspaceMock.createSession).toHaveBeenCalledWith(input)
   })
 })
+
+describe('terminal Git IPC', () => {
+  beforeEach(() => {
+    electronMock.handlers.clear()
+    workspaceMock.getSession.mockReset()
+    wslPathsMock.canonicalizeWslPath.mockReset()
+    wslDistrosMock.runWslCommand.mockReset()
+  })
+
+  it('queries Git in the live terminal directory', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const terminalInfo = vi.fn(() => ({
+      sessionId: 'session-1',
+      directory: '/home/me/current'
+    }))
+    workspaceMock.getSession.mockResolvedValue(wslSession())
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/current')
+    wslDistrosMock.runWslCommand.mockImplementation(async (
+      _distro: string,
+      command: readonly string[],
+      _options: { cwd?: string } = {}
+    ) => {
+      if (command[0] === 'test') return { stdout: '', stderr: '', code: 0 }
+      if (command.includes('--is-inside-work-tree')) return { stdout: 'true\n', stderr: '', code: 0 }
+      if (command.includes('branch')) return { stdout: 'feature/live\n', stderr: '', code: 0 }
+      return { stdout: '/home/me/repo\n', stderr: '', code: 0 }
+    })
+    registerForTest(terminalInfo)
+
+    await expect(handler(IpcChannels.gitTerminalInfo)({}, { terminalId: 'pane-1' })).resolves.toEqual({
+      repository: true,
+      branch: 'feature/live',
+      worktree: '/home/me/repo'
+    })
+
+    expect(terminalInfo).toHaveBeenCalledWith('pane-1')
+    const gitCalls = wslDistrosMock.runWslCommand.mock.calls.filter(
+      ([, command]) => command[0] === 'git'
+    )
+    expect(gitCalls).toHaveLength(3)
+    expect(gitCalls.every(([, , options]) => options.cwd === '/home/me/current')).toBe(true)
+  })
+
+  it('returns no terminal Git metadata when the PTY is unavailable', async () => {
+    const terminalInfo = vi.fn(() => null)
+    registerForTest(terminalInfo)
+
+    await expect(handler(IpcChannels.gitTerminalInfo)({}, { terminalId: 'missing' })).resolves.toBeNull()
+    expect(wslDistrosMock.runWslCommand).not.toHaveBeenCalled()
+  })
+})

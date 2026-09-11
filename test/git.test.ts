@@ -8,6 +8,8 @@ import {
   parseGitLog,
   readGitInfo,
   readGitInfoWithRunner,
+  readGitTerminalInfo,
+  readGitTerminalInfoWithRunner,
   readGitStatusWithRunner,
   readGitDiffWithRunner,
   type GitCommandResult
@@ -388,6 +390,102 @@ describe('Git status summaries', () => {
       deletions: 0,
       commitsAhead: null
     })
+  })
+})
+
+describe('terminal Git identity queries', () => {
+  it('uses the native terminal directory for every Git command', async () => {
+    const calls: Array<{ args: string[]; cwd?: string }> = []
+    mocks.execFile.mockImplementation(
+      (_file: string, args: string[], options: { cwd?: string }, callback: (error: null, stdout: string, stderr: string) => void) => {
+        calls.push({ args, cwd: options.cwd })
+        const stdout = args.includes('--is-inside-work-tree')
+          ? 'true\n'
+          : args.includes('branch')
+            ? 'feature/native\n'
+            : '/workspace/other-repo\n'
+        callback(null, stdout, '')
+      }
+    )
+
+    await expect(readGitTerminalInfo(nativeSession, '/workspace/other-repo')).resolves.toEqual({
+      repository: true,
+      branch: 'feature/native',
+      worktree: '/workspace/other-repo'
+    })
+    expect(calls).toHaveLength(3)
+    expect(calls.every((call) => call.cwd === '/workspace/other-repo')).toBe(true)
+  })
+
+  it('reads the branch and worktree from the terminal directory', async () => {
+    const calls: string[][] = []
+    const run = async (args: string[]): Promise<GitCommandResult> => {
+      calls.push(args)
+      if (args.includes('--is-inside-work-tree')) return result('true\n')
+      if (args.includes('branch')) return result('feature/terminal\n')
+      if (args.includes('--show-toplevel')) return result('/workspace/other-repo\n')
+      return result('')
+    }
+
+    await expect(readGitTerminalInfoWithRunner(run)).resolves.toEqual({
+      repository: true,
+      branch: 'feature/terminal',
+      worktree: '/workspace/other-repo'
+    })
+    expect(calls).toContainEqual(['--no-pager', 'branch', '--show-current'])
+    expect(calls).toContainEqual(['--no-pager', 'rev-parse', '--show-toplevel'])
+  })
+
+  it('keeps the worktree when HEAD is detached', async () => {
+    const run = async (args: string[]): Promise<GitCommandResult> => {
+      if (args.includes('--is-inside-work-tree')) return result('true\n')
+      if (args.includes('branch')) return result('\n')
+      return result('/workspace/repo\n')
+    }
+
+    await expect(readGitTerminalInfoWithRunner(run)).resolves.toEqual({
+      repository: true,
+      branch: null,
+      worktree: '/workspace/repo'
+    })
+  })
+
+  it('returns a quiet empty result outside a repository', async () => {
+    const run = async (): Promise<GitCommandResult> =>
+      result('', 'fatal: not a git repository (or any of the parent directories): .git', 128)
+
+    await expect(readGitTerminalInfoWithRunner(run)).resolves.toEqual({
+      repository: false,
+      branch: null,
+      worktree: null
+    })
+  })
+
+  it('uses the live WSL terminal directory instead of the configured session path', async () => {
+    const calls: Array<{ cwd?: string; command: readonly string[] }> = []
+    mocks.runWslCommand.mockImplementation(async (
+      _distro: string,
+      command: readonly string[],
+      options: { cwd?: string } = {}
+    ) => {
+      calls.push({ cwd: options.cwd, command })
+      if (command.includes('--is-inside-work-tree')) return { stdout: 'true\n', stderr: '', code: 0 }
+      if (command.includes('branch')) return { stdout: 'feature/live\n', stderr: '', code: 0 }
+      return { stdout: '/home/me/other-repo\n', stderr: '', code: 0 }
+    })
+
+    await expect(
+      readGitTerminalInfoWithRunner(
+        createGitCommandRunner(wslSession, 'win32', '/home/me/other-repo')
+      )
+    ).resolves.toEqual({
+      repository: true,
+      branch: 'feature/live',
+      worktree: '/home/me/other-repo'
+    })
+
+    expect(calls).toHaveLength(3)
+    expect(calls.every((call) => call.cwd === '/home/me/other-repo')).toBe(true)
   })
 })
 

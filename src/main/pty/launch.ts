@@ -45,6 +45,17 @@ function bashStartupCommand(): string {
   ].join('; ')
 }
 
+function nativeBashShellCommand(): string {
+  const reporter = String.raw`printf '\033]7;file://localhost%s\033\\' "$PWD"`
+  const existingPromptCommand = '${PROMPT_COMMAND:+$PROMPT_COMMAND;}'
+  return [
+    'shell=$1',
+    `MDE_CWD_PROMPT_COMMAND=${shellQuote(reporter)}`,
+    'export MDE_CWD_PROMPT_COMMAND',
+    `exec "$shell" --rcfile <(printf '%s\\n' '[ -r ~/.bashrc ] && . ~/.bashrc' 'PROMPT_COMMAND="${existingPromptCommand}$MDE_CWD_PROMPT_COMMAND"; export PROMPT_COMMAND') -i`
+  ].join('; ')
+}
+
 function fishStartupCommand(): string {
   const reporter = String.raw`printf '\033]7;file://localhost%s\033\\' "$PWD"`
   return [
@@ -166,12 +177,21 @@ function shellBasename(shell: string): string {
   return normalised.slice(normalised.lastIndexOf('/') + 1).toLowerCase()
 }
 
+function powershellStartupCommand(): string {
+  return String.raw`$mdeOriginalPrompt = $function:prompt
+function global:prompt {
+  $mdePath = (Get-Location).Path.Replace('\', '/')
+  [Console]::Write(([char]27 + "]7;file://localhost/" + $mdePath + [char]27 + '\'))
+  if ($null -ne $mdeOriginalPrompt) { & $mdeOriginalPrompt } else { "PS $((Get-Location).Path)> " }
+}`
+}
+
 function nativeZshShellCommand(): string {
   return `
 shell=$1
 mde_zdotdir=$(mktemp -d "\${TMPDIR:-/tmp}/mde-zsh.XXXXXX") || exec "$shell" -l -i
 ${zshCleanupTrapCommand()}
-${zshConfigurationCommand(false)}
+${zshConfigurationCommand(true)}
 "$shell" -l -i
 exit $?
 `.trim()
@@ -231,14 +251,39 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
   }
 
   if (context.platform === 'win32') {
+    const shell = session.shell ?? DEFAULT_WINDOWS_SHELL
+    if (['powershell', 'powershell.exe', 'pwsh', 'pwsh.exe'].includes(shellBasename(shell))) {
+      return {
+        file: shell,
+        args: ['-NoExit', '-Command', powershellStartupCommand()],
+        cwd: session.path
+      }
+    }
+
     return {
-      file: session.shell ?? DEFAULT_WINDOWS_SHELL,
+      file: shell,
       args: [],
       cwd: session.path
     }
   }
 
   const shell = session.shell ?? context.defaultShell ?? DEFAULT_POSIX_SHELL
+  if (shellBasename(shell) === 'bash') {
+    return {
+      file: '/bin/bash',
+      args: ['-c', nativeBashShellCommand(), 'mde-shell', shell],
+      cwd: session.path
+    }
+  }
+
+  if (shellBasename(shell) === 'fish') {
+    return {
+      file: shell,
+      args: ['-l', '-i', '-C', fishStartupCommand()],
+      cwd: session.path
+    }
+  }
+
   if (shellBasename(shell) === 'zsh') {
     return {
       file: '/bin/sh',

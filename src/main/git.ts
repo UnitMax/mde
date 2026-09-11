@@ -6,6 +6,7 @@ import type {
   GitDiffResponse,
   GitInfoResponse,
   GitStatusResponse,
+  GitTerminalInfoResponse,
   GitCommit,
   Session
 } from '@shared/types'
@@ -113,6 +114,7 @@ async function runWindowsGit(args: string[], workspaceDirectory: string): Promis
 
 function createTransportRunner(
   session: Session,
+  workspaceDirectory: string,
   platform: NodeJS.Platform
 ): GitCommandRunner {
   if (session.kind === 'wsl') {
@@ -123,13 +125,13 @@ function createTransportRunner(
 
     const distro = session.distro
     return async (args) => {
-      const result = await runWslCommand(distro, ['git', ...args], { cwd: session.path })
+      const result = await runWslCommand(distro, ['git', ...args], { cwd: workspaceDirectory })
       return { stdout: result.stdout, stderr: result.stderr, code: result.code }
     }
   }
 
-  if (platform === 'win32') return (args) => runWindowsGit(args, session.path)
-  return (args) => runNativeGit('git', args, session.path)
+  if (platform === 'win32') return (args) => runWindowsGit(args, workspaceDirectory)
+  return (args) => runNativeGit('git', args, workspaceDirectory)
 }
 
 /**
@@ -142,8 +144,8 @@ function rejectsAttrSource(result: GitCommandResult): boolean {
 
 const attrSourceUnsupported = new Set<string>()
 
-function attrSourceKey(session: Session): string {
-  return `${session.kind}:${session.distro ?? ''}:${session.path}`
+function attrSourceKey(session: Session, workspaceDirectory: string): string {
+  return `${session.kind}:${session.distro ?? ''}:${workspaceDirectory}`
 }
 
 /**
@@ -152,10 +154,11 @@ function attrSourceKey(session: Session): string {
  */
 export function createGitCommandRunner(
   session: Session,
-  platform: NodeJS.Platform = process.platform
+  platform: NodeJS.Platform = process.platform,
+  workspaceDirectory = session.path
 ): GitCommandRunner {
-  const run = createTransportRunner(session, platform)
-  const key = attrSourceKey(session)
+  const run = createTransportRunner(session, workspaceDirectory, platform)
+  const key = attrSourceKey(session, workspaceDirectory)
 
   return async (args) => {
     const hardened = [...gitSafetyArgs, ...args]
@@ -387,6 +390,38 @@ export async function readGitInfoWithRunner(run: GitCommandRunner): Promise<GitI
 
 export function readGitInfo(session: Session): Promise<GitInfoResponse> {
   return readGitInfoWithRunner(createGitCommandRunner(session))
+}
+
+export async function readGitTerminalInfoWithRunner(
+  run: GitCommandRunner
+): Promise<GitTerminalInfoResponse> {
+  const repository = await ensureRepository(run)
+  if (!repository) {
+    return { repository: false, branch: null, worktree: null }
+  }
+
+  const [branch, worktree] = await Promise.all([
+    run(['--no-pager', 'branch', '--show-current']),
+    run(['--no-pager', 'rev-parse', '--show-toplevel'])
+  ])
+
+  if (branch.launchError || branch.code !== 0) throw commandError('branch', branch)
+  if (worktree.launchError || worktree.code !== 0) throw commandError('worktree', worktree)
+
+  return {
+    repository: true,
+    branch: branch.stdout.trim() || null,
+    worktree: worktree.stdout.trim() || null
+  }
+}
+
+export function readGitTerminalInfo(
+  session: Session,
+  directory: string
+): Promise<GitTerminalInfoResponse> {
+  return readGitTerminalInfoWithRunner(
+    createGitCommandRunner(session, process.platform, directory)
+  )
 }
 
 export async function readGitStatusWithRunner(run: GitCommandRunner): Promise<GitStatusResponse> {

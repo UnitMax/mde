@@ -112,6 +112,7 @@ import {
 import { terminalPrimarySelectionMode } from '@/terminal/clipboard'
 import { sessionTabs } from '@/terminal/tabs'
 import { OpenCodeStatusIcon } from '@/components/OpenCodeStatusIcon'
+import { TerminalGitInfo } from '@/components/TerminalGitInfo'
 import { terminalPaneTitle } from '@/lib/opencode-tui-instances'
 
 const FALLBACK_SIZE: PtySize = { cols: 80, rows: 24 }
@@ -663,6 +664,7 @@ function TerminalPane({
               {title}
             </span>
           )}
+          <TerminalGitInfo terminalId={pane.terminalId} />
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {terminalStatus === 'running' && (

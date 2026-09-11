@@ -236,17 +236,30 @@ describe('buildLaunchSpec', () => {
     const spec = buildLaunchSpec(session({ kind: 'native', path: 'C:\\src\\app' }), {
       platform: 'win32'
     })
-    expect(spec).toEqual({ file: 'powershell.exe', args: [], cwd: 'C:\\src\\app' })
+    expect(spec.file).toBe('powershell.exe')
+    expect(spec.args.slice(0, 2)).toEqual(['-NoExit', '-Command'])
+    expect(spec.args[2]).toContain('function global:prompt')
+    expect(spec.cwd).toBe('C:\\src\\app')
   })
 
-  it('spawns a login shell in the project directory on Linux', () => {
+  it('spawns a directory-reporting Fish shell in the project directory on Linux', () => {
     const spec = buildLaunchSpec(session(), { platform: 'linux', defaultShell: '/usr/bin/fish' })
-    expect(spec).toEqual({ file: '/usr/bin/fish', args: ['-l'], cwd: '/home/me/src/app' })
+    expect(spec.file).toBe('/usr/bin/fish')
+    expect(spec.args.slice(0, 3)).toEqual(['-l', '-i', '-C'])
+    expect(spec.args[3]).toContain('fish_prompt')
+    expect(spec.cwd).toBe('/home/me/src/app')
   })
 
-  it('falls back to /bin/bash when SHELL is unset', () => {
+  it('wraps the default Bash shell to report its directory', () => {
     const spec = buildLaunchSpec(session(), { platform: 'linux' })
     expect(spec.file).toBe('/bin/bash')
+    expect(spec.args[0]).toBe('-c')
+    expect(spec.args[1]).toContain('MDE_CWD_PROMPT_COMMAND=')
+    expect(spec.args.at(-1)).toBe('/bin/bash')
+
+    const result = spawnSync('bash', ['-n', '-c', spec.args[1] ?? ''], { encoding: 'utf8' })
+    expect(result.status).toBe(0)
+    expect(result.stderr).toBe('')
   })
 
   it('prefers the project shell override over SHELL on Linux', () => {
@@ -259,7 +272,7 @@ describe('buildLaunchSpec', () => {
     expect(spec.args.at(-2)).toBe('mde-shell')
     expect(spec.args.at(-1)).toBe('/bin/zsh')
     expect(spec.args[1]).toContain('bindkey -M main')
-    expect(spec.args[1]).not.toContain('__mde_report_cwd')
+    expect(spec.args[1]).toContain('__mde_report_cwd')
     expect(spec.cwd).toBe('/home/me/src/app')
   })
 

@@ -344,6 +344,15 @@ export interface GitStatusResponse {
   commitsAhead: number | null
 }
 
+/** Lightweight Git identity for one live terminal working directory. */
+export interface GitTerminalInfoResponse {
+  repository: boolean
+  /** Null when the repository is in a detached HEAD state. */
+  branch: string | null
+  /** Absolute root of the Git worktree containing the terminal directory. */
+  worktree: string | null
+}
+
 export interface GitDiffResponse {
   path: string
   diff: string

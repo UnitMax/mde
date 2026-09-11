@@ -8,6 +8,7 @@ import {
   type GitDiffRequest,
   type GitInfoRequest,
   type GitStatusRequest,
+  type GitTerminalInfoRequest,
   IpcChannels,
   type EnsurePtyRequest,
   type MoveSessionRequest,
@@ -38,6 +39,7 @@ import type {
   HostPlatform,
   GitInfoResponse,
   GitStatusResponse,
+  GitTerminalInfoResponse,
   NewProject,
   NewTodoProject,
   NewTodoTask,
@@ -76,7 +78,7 @@ import {
 } from './wsl/paths'
 import { buildVsCodeRemoteUri } from './vscode'
 import { safeVsCodeRemoteUrl } from './external-links'
-import { readGitDiff, readGitInfo, readGitStatus } from './git'
+import { readGitDiff, readGitInfo, readGitStatus, readGitTerminalInfo } from './git'
 import {
   createProject,
   createTodoProject,
@@ -533,6 +535,33 @@ export function registerIpcHandlers(
     if (!session) throw new Error('Session no longer exists.')
     return readGitStatus(session)
   })
+
+  handle<GitTerminalInfoRequest, GitTerminalInfoResponse | null>(
+    IpcChannels.gitTerminalInfo,
+    async (req) => {
+      if (!req || typeof req.terminalId !== 'string' || !req.terminalId) {
+        throw new Error('Invalid terminal Git request.')
+      }
+
+      const terminal = ptyManager.terminalInfo(req.terminalId)
+      if (!terminal) return null
+
+      const session = await getSession(terminal.sessionId)
+      if (!session) return null
+
+      const candidateDirectory = terminal.directory ?? session.path
+      const directory = await verifiedDirectory(session, candidateDirectory)
+      if (!directory) return null
+
+      try {
+        return await readGitTerminalInfo(session, directory)
+      } catch {
+        // Terminal metadata is intentionally best-effort. The header should
+        // disappear when Git cannot read the current directory.
+        return null
+      }
+    }
+  )
 
   handle<GitDiffRequest, GitDiffResponse>(IpcChannels.gitDiff, async (req) => {
     if (!req || typeof req.sessionId !== 'string' || !req.sessionId || typeof req.path !== 'string' || !req.path) {

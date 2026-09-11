@@ -127,8 +127,9 @@ cannot be reached there. File drops do not copy file contents or stage clipboard
 ### Git
 
 Sessions whose folder is a repository show their branch, line change counts and commits ahead in
-the sidebar. MDE polls that automatically through `src/main/git.ts`, which runs read-only Git
-commands over the native, Windows and WSL transports.
+the sidebar. Each terminal header also shows the branch and worktree root for that terminal's
+current directory when Git can read them. MDE polls that automatically through `src/main/git.ts`,
+which runs read-only Git commands over the native, Windows and WSL transports.
 
 Because those queries run without you asking for them, MDE treats the folder as untrusted input. A
 complete working tree — one that arrives as an archive or copy with its own `.git` directory, rather

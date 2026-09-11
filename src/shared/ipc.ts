@@ -3,6 +3,7 @@ import type {
   GitDiffResponse,
   GitInfoResponse,
   GitStatusResponse,
+  GitTerminalInfoResponse,
   HostPlatform,
   NewProject,
   NewTodoProject,
@@ -97,6 +98,7 @@ export const IpcChannels = {
 
   gitInfo: 'git:info',
   gitStatus: 'git:status',
+  gitTerminalInfo: 'git:terminal-info',
   gitDiff: 'git:diff',
 
   opencodeTuiPluginState: 'opencode-tui:plugin-state',
@@ -155,6 +157,10 @@ export interface GitInfoRequest {
 
 export interface GitStatusRequest {
   sessionId: string
+}
+
+export interface GitTerminalInfoRequest {
+  terminalId: string
 }
 
 export interface GitDiffRequest {
@@ -381,6 +387,7 @@ export interface RendererApi {
   git: {
     info(req: GitInfoRequest): Promise<GitInfoResponse>
     status(req: GitStatusRequest): Promise<GitStatusResponse>
+    terminalInfo(req: GitTerminalInfoRequest): Promise<GitTerminalInfoResponse | null>
     diff(req: GitDiffRequest): Promise<GitDiffResponse>
   }
   opencodeTui: {

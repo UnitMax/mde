@@ -150,6 +150,16 @@ describe('terminal query responder', () => {
     })
   })
 
+  it('normalizes native Windows drive paths reported through OSC 7', () => {
+    const responder = new TerminalQueryResponder(ember, 'win32')
+
+    expect(responder.process('\u001b]7;file://localhost/C:/Users/Me/project\u0007')).toEqual({
+      data: '',
+      responses: [],
+      directory: 'C:/Users/Me/project'
+    })
+  })
+
   it('flushes an incomplete non-query sequence on shutdown', () => {
     const responder = new TerminalQueryResponder(ember)
     expect(responder.process('text\u001b')).toEqual({ data: 'text', responses: [] })
