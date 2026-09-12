@@ -30,6 +30,7 @@ import {
   Trash2
 } from 'lucide-react'
 import type {
+  CodexTuiInstanceStatus,
   OpenCodeTuiInstanceLabelMode,
   OpenCodeTuiInstanceStatus,
   Project,
@@ -76,6 +77,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { cn } from '@/lib/utils'
 import {
   useWorkspace,
+  type CodexTuiStatusState,
   type GitSessionStatus,
   type OpenCodeTuiStatusState,
   type WorkspaceView
@@ -85,8 +87,7 @@ import { OpenCodeNotificationBadge } from '@/components/OpenCodeNotificationBadg
 import { SessionGitStatus } from '@/components/SessionGitStatus'
 import { SessionEnvironmentPanel } from '@/components/SessionEnvironmentPanel'
 import {
-  OPENCODE_STATUS_ICON_SLOT_CLASS,
-  openCodeOverviewStatusLabel
+  OPENCODE_STATUS_ICON_SLOT_CLASS
 } from '@/lib/opencode-tui-status'
 import {
   DEFAULT_SESSION_COLOR,
@@ -97,10 +98,16 @@ import { SESSION_ICONS, sessionIconOption } from '@shared/session-icons'
 import type { SessionTerminalLayout } from '@/terminal/layout'
 import { sessionTabs } from '@/terminal/tabs'
 import {
-  collectOpenCodeTuiOverviewEntries,
-  openCodeTuiInstanceLabel
-} from '@/lib/opencode-tui-instances'
-import { countOpenCodeTuiNotifications } from '@/lib/opencode-tui-notifications'
+  agentTerminalIds,
+  agentTuiInstanceLabel,
+  agentTuiOverviewStatusLabel,
+  agentTuiStatusLabel,
+  agentTuiVisualStatus,
+  combinedAgentTuiStatus,
+  collectAgentTuiOverviewEntries,
+  countAgentTuiNotifications,
+  type AgentTuiInstanceStatus
+} from '@/lib/agent-tui'
 import {
   terminalDirectoryLabel,
   terminalPaneLabel,
@@ -198,27 +205,44 @@ const OPENCODE_STATUS_STYLE: Record<OpenCodeIndicatorStatus, Omit<SessionIndicat
   error: { dot: 'bg-danger', label: 'OpenCode request failed', row: 'bg-danger/10' }
 }
 
-function attentionIndicator(reason: 'permission' | 'question'): SessionIndicator {
+function attentionIndicator(
+  reason: 'permission' | 'question',
+  provider: 'opencode' | 'codex' = 'opencode'
+): SessionIndicator {
   return {
     status: 'attention',
     dot: 'text-accent',
-    label: reason === 'question' ? 'OpenCode is asking a question' : 'OpenCode is waiting for permission',
+    label: agentTuiStatusLabel(provider, 'attention', reason),
     row: 'bg-accent/10'
   }
 }
 
 function sessionIndicator(
   status: PtyStatus,
-  tuiStatus?: OpenCodeTuiStatusState
+  tuiStatus?: OpenCodeTuiStatusState,
+  codexStatus?: CodexTuiStatusState
 ): SessionIndicator {
-  if (tuiStatus) {
-    if ((tuiStatus.status === 'completed' || tuiStatus.status === 'error') && !tuiStatus.unread) {
-      return { status: 'idle', ...OPENCODE_STATUS_STYLE.idle }
+  const agentStatus = combinedAgentTuiStatus(
+    tuiStatus ? { provider: 'opencode', ...tuiStatus } : undefined,
+    codexStatus ? { provider: 'codex', ...codexStatus } : undefined
+  )
+  if (agentStatus) {
+    const visualStatus = agentTuiVisualStatus(agentStatus.provider, agentStatus.status)
+    if (visualStatus === 'attention') {
+      return attentionIndicator(
+        agentStatus.attentionReason ?? 'permission',
+        agentStatus.provider
+      )
     }
-    if (tuiStatus.status === 'attention') {
-      return attentionIndicator(tuiStatus.attentionReason ?? 'permission')
+    return {
+      status: visualStatus,
+      ...OPENCODE_STATUS_STYLE[visualStatus],
+      label: agentTuiStatusLabel(
+        agentStatus.provider,
+        agentStatus.status,
+        agentStatus.attentionReason
+      )
     }
-    return { status: tuiStatus.status, ...OPENCODE_STATUS_STYLE[tuiStatus.status] }
   }
   return { status, ...STATUS_STYLE[status] }
 }
@@ -303,16 +327,22 @@ function StatusDot({
   )
 }
 
-function openCodeInstanceIndicator(instance: OpenCodeTuiInstanceStatus): SessionIndicator {
-  if (instance.status === 'attention') {
-    return attentionIndicator(instance.attentionReason ?? 'permission')
+function openCodeInstanceIndicator(instance: AgentTuiInstanceStatus): SessionIndicator {
+  const visualStatus = agentTuiVisualStatus(instance.provider, instance.status)
+  if (visualStatus === 'attention') {
+    return attentionIndicator(instance.attentionReason ?? 'permission', instance.provider)
   }
-  return { status: instance.status, ...OPENCODE_STATUS_STYLE[instance.status] }
+  return {
+    status: visualStatus,
+    ...OPENCODE_STATUS_STYLE[visualStatus],
+    label: agentTuiStatusLabel(instance.provider, instance.status, instance.attentionReason)
+  }
 }
 
 function OpenCodeAgentsSection({
   sessions,
   opencodeTuiInstances,
+  codexTuiInstances,
   terminalLayouts,
   labelMode,
   onFocus,
@@ -321,15 +351,17 @@ function OpenCodeAgentsSection({
 }: {
   sessions: readonly Session[]
   opencodeTuiInstances: Readonly<Record<string, readonly OpenCodeTuiInstanceStatus[]>>
+  codexTuiInstances: Readonly<Record<string, readonly CodexTuiInstanceStatus[]>>
   terminalLayouts: Readonly<Record<string, Readonly<Record<string, SessionTerminalLayout>>>>
   labelMode: OpenCodeTuiInstanceLabelMode
   onFocus: (sessionId: string, tabId: string, terminalId: string) => void
   collapsed: boolean
   onToggle: () => void
 }): JSX.Element {
-  const entries = collectOpenCodeTuiOverviewEntries(
+  const entries = collectAgentTuiOverviewEntries(
     sessions,
     opencodeTuiInstances,
+    codexTuiInstances,
     terminalLayouts
   )
 
@@ -362,18 +394,18 @@ function OpenCodeAgentsSection({
       {!collapsed && (
         <div id="sidebar-opencode-agents-list" className="mt-0.5 space-y-0.5">
           {entries.length === 0 ? (
-            <p className="px-2 py-1 text-xs text-fg-subtle">No OpenCode agents reported.</p>
+            <p className="px-2 py-1 text-xs text-fg-subtle">No agents reported.</p>
           ) : (
             entries.map((entry) => {
               const { instance } = entry
               const indicator = openCodeInstanceIndicator(instance)
-              const label = openCodeTuiInstanceLabel(
+              const label = agentTuiInstanceLabel(
                 instance,
                 entry.orderedIndex,
                 labelMode,
                 entry.layout
               )
-              const statusLabel = openCodeOverviewStatusLabel(
+              const statusLabel = agentTuiOverviewStatusLabel(
                 instance.status,
                 instance.attentionReason
               )
@@ -390,8 +422,10 @@ function OpenCodeAgentsSection({
                   )}
                 >
                   <OpenCodeStatusIcon
-                    status={instance.status}
+                    status={agentTuiVisualStatus(instance.provider, instance.status)}
                     attentionReason={instance.attentionReason}
+                    provider={instance.provider}
+                    statusLabel={agentTuiStatusLabel(instance.provider, instance.status, instance.attentionReason)}
                     testId="opencode-agent-status"
                   />
                   <div className="min-w-0 flex-1">
@@ -477,7 +511,9 @@ interface SessionRowProps {
   terminalStatuses: Record<string, PtyStatus>
   terminalDirectories: Record<string, string>
   tuiStatus?: OpenCodeTuiStatusState
+  codexStatus?: CodexTuiStatusState
   tuiInstances?: OpenCodeTuiInstanceStatus[]
+  codexInstances?: CodexTuiInstanceStatus[]
   opencodeNotificationCount: number
   terminalTabs: readonly SessionTab[]
   terminalLayouts: Record<string, SessionTerminalLayout>
@@ -502,7 +538,9 @@ function SessionRow({
   terminalStatuses,
   terminalDirectories,
   tuiStatus,
+  codexStatus,
   tuiInstances = [],
+  codexInstances = [],
   opencodeNotificationCount,
   terminalTabs,
   terminalLayouts,
@@ -570,7 +608,7 @@ function SessionRow({
     setMoving(false)
   }
 
-  const indicator = sessionIndicator(status, tuiStatus)
+  const indicator = sessionIndicator(status, tuiStatus, codexStatus)
   const sessionColor = session.color ?? DEFAULT_SESSION_COLOR
   const customColor = customSessionColor(session.color)
   const backgroundStyle = sessionBackgroundStyle(session.color, indicator)
@@ -685,7 +723,10 @@ function SessionRow({
                 </div>
               </div>
 
-              <OpenCodeNotificationBadge count={opencodeNotificationCount} />
+              <OpenCodeNotificationBadge
+                count={opencodeNotificationCount}
+                providerLabel={codexInstances.length > 0 ? 'Agent' : undefined}
+              />
               <button
                 type="button"
                 onClick={openMenuFromButton}
@@ -777,7 +818,7 @@ function SessionRow({
           layouts={terminalLayouts}
           statuses={terminalStatuses}
           directories={terminalDirectories}
-          openCodeTerminalIds={new Set(tuiInstances.map((instance) => instance.terminalId))}
+          openCodeTerminalIds={agentTerminalIds(tuiInstances, codexInstances)}
           onFocus={onFocusTerminal}
         />
       )}
@@ -847,6 +888,9 @@ interface ProjectGroupProps {
   opencodeTuiStatuses: Record<string, OpenCodeTuiStatusState>
   opencodeTuiInstances: Record<string, OpenCodeTuiInstanceStatus[]>
   opencodeTuiReadRevisions: Readonly<Record<string, number>>
+  codexTuiStatuses: Record<string, CodexTuiStatusState>
+  codexTuiInstances: Record<string, CodexTuiInstanceStatus[]>
+  codexTuiReadRevisions: Readonly<Record<string, number>>
   terminalLayouts: Record<string, Record<string, SessionTerminalLayout>>
   showTerminalInstances: boolean
   selectedSessionId: string | null
@@ -878,6 +922,9 @@ function ProjectGroup({
   opencodeTuiStatuses,
   opencodeTuiInstances,
   opencodeTuiReadRevisions,
+  codexTuiStatuses,
+  codexTuiInstances,
+  codexTuiReadRevisions,
   terminalLayouts,
   showTerminalInstances,
   selectedSessionId,
@@ -1066,10 +1113,14 @@ function ProjectGroup({
             terminalStatuses={statuses}
             terminalDirectories={terminalDirectories}
             tuiStatus={opencodeTuiStatuses[session.id]}
+            codexStatus={codexTuiStatuses[session.id]}
             tuiInstances={opencodeTuiInstances[session.id]}
-            opencodeNotificationCount={countOpenCodeTuiNotifications(
+            codexInstances={codexTuiInstances[session.id]}
+            opencodeNotificationCount={countAgentTuiNotifications(
               opencodeTuiInstances[session.id] ?? [],
-              opencodeTuiReadRevisions
+              codexTuiInstances[session.id] ?? [],
+              opencodeTuiReadRevisions,
+              codexTuiReadRevisions
             )}
             terminalTabs={sessionTabs(session)}
             terminalLayouts={terminalLayouts[session.id] ?? {}}
@@ -1311,6 +1362,9 @@ export function Sidebar({
   const opencodeTuiStatuses = useWorkspace((state) => state.opencodeTuiStatuses)
   const opencodeTuiInstances = useWorkspace((state) => state.opencodeTuiInstances)
   const opencodeTuiReadRevisions = useWorkspace((state) => state.opencodeTuiReadRevisions)
+  const codexTuiStatuses = useWorkspace((state) => state.codexTuiStatuses)
+  const codexTuiInstances = useWorkspace((state) => state.codexTuiInstances)
+  const codexTuiReadRevisions = useWorkspace((state) => state.codexTuiReadRevisions)
   const instanceLabelMode = useWorkspace((state) => state.opencodeTuiInstanceLabelMode)
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
   const selectedTodoProjectId = useWorkspace((state) => state.selectedTodoProjectId)
@@ -1360,6 +1414,9 @@ export function Sidebar({
         opencodeTuiStatuses={opencodeTuiStatuses}
         opencodeTuiInstances={opencodeTuiInstances}
         opencodeTuiReadRevisions={opencodeTuiReadRevisions}
+        codexTuiStatuses={codexTuiStatuses}
+        codexTuiInstances={codexTuiInstances}
+        codexTuiReadRevisions={codexTuiReadRevisions}
         terminalLayouts={terminalLayouts}
         showTerminalInstances={terminalSettings.showTerminalInstances}
         selectedSessionId={selectedSessionId}
@@ -1375,6 +1432,7 @@ export function Sidebar({
     <OpenCodeAgentsSection
       sessions={orderedSessions}
       opencodeTuiInstances={opencodeTuiInstances}
+      codexTuiInstances={codexTuiInstances}
       terminalLayouts={terminalLayouts}
       labelMode={instanceLabelMode}
       onFocus={onFocusTerminal}
@@ -1405,12 +1463,15 @@ export function Sidebar({
                   projectSessions.map((session) => {
                     const indicator = sessionIndicator(
                       statuses[session.id] ?? 'none',
-                      opencodeTuiStatuses[session.id]
+                      opencodeTuiStatuses[session.id],
+                      codexTuiStatuses[session.id]
                     )
                     const customColor = customSessionColor(session.color)
-                    const opencodeNotificationCount = countOpenCodeTuiNotifications(
+                    const opencodeNotificationCount = countAgentTuiNotifications(
                       opencodeTuiInstances[session.id] ?? [],
-                      opencodeTuiReadRevisions
+                      codexTuiInstances[session.id] ?? [],
+                      opencodeTuiReadRevisions,
+                      codexTuiReadRevisions
                     )
                     return (
                       <ContextMenu key={session.id}>
@@ -1441,6 +1502,7 @@ export function Sidebar({
                               </span>
                               <OpenCodeNotificationBadge
                                 count={opencodeNotificationCount}
+                                providerLabel={codexTuiInstances[session.id]?.length ? 'Agent' : undefined}
                                 className="absolute -right-1 -top-1 h-3.5 min-w-3.5 px-0 text-[9px] ring-2 ring-panel"
                               />
                               <StatusDot

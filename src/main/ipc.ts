@@ -59,6 +59,10 @@ import type {
   OpenCodeTokenRatePluginState,
   OpenCodeAlertSetEnabledRequest,
   OpenCodeAlertSettings,
+  CodexHookRequest,
+  CodexHookState,
+  CodexStatusSetEnabledRequest,
+  CodexStatusSettings,
   Session,
   PtyStatus,
   AgentCommand,
@@ -69,6 +73,7 @@ import { resolveTerminalDrop } from './pty/drop'
 import type { OpenCodeTuiStatusManager } from './opencode/tui-status'
 import type { OpenCodeTokenRatePluginManager } from './opencode/token-rate'
 import type { OpenCodeAlertManager } from './opencode/alerts'
+import type { CodexStatusManager } from './codex/status'
 import { createAppInfo } from '@shared/app-info'
 import { isWslAvailable, listDistros, runWslCommand } from './wsl/distros'
 import {
@@ -295,7 +300,8 @@ export function registerIpcHandlers(
   ptyManager: PtyManager,
   opencodeTuiStatusManager: OpenCodeTuiStatusManager,
   opencodeTokenRatePluginManager: OpenCodeTokenRatePluginManager,
-  opencodeAlertManager: OpenCodeAlertManager
+  opencodeAlertManager: OpenCodeAlertManager,
+  codexStatusManager?: CodexStatusManager
 ): void {
   const handle = <Req, Res>(
     channel: string,
@@ -417,6 +423,39 @@ export function registerIpcHandlers(
       return opencodeTuiStatusManager.setInstanceLabelMode(req.mode)
     }
   )
+
+  if (codexStatusManager) {
+    const codexDistro = (req: CodexHookRequest): string => {
+      if (!req || typeof req.distro !== 'string' || !req.distro.trim()) {
+        throw new Error('Invalid Codex WSL distro request.')
+      }
+      return req.distro
+    }
+    handle<CodexHookRequest, CodexHookState>(
+      IpcChannels.codexStatusHookState,
+      (req) => codexStatusManager.hookState(codexDistro(req))
+    )
+    handle<CodexHookRequest, CodexHookState>(
+      IpcChannels.codexStatusHookInstall,
+      (req) => codexStatusManager.installHook(codexDistro(req))
+    )
+    handle<CodexHookRequest, CodexHookState>(
+      IpcChannels.codexStatusHookRemove,
+      (req) => codexStatusManager.removeHook(codexDistro(req))
+    )
+    handle<void, CodexStatusSettings>(IpcChannels.codexStatusSettings, () =>
+      codexStatusManager.settings()
+    )
+    handle<CodexStatusSetEnabledRequest, CodexStatusSettings>(
+      IpcChannels.codexStatusSetEnabled,
+      (req) => {
+        if (typeof req?.enabled !== 'boolean') {
+          throw new Error('Invalid Codex status enabled setting.')
+        }
+        return codexStatusManager.setEnabled(req.enabled)
+      }
+    )
+  }
 
   handle<OpenCodeTokenRatePluginRequest, OpenCodeTokenRatePluginState>(
     IpcChannels.opencodeTokenRatePluginState,

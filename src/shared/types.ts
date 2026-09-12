@@ -190,6 +190,59 @@ export interface OpenCodeTuiInstancesUpdate {
   instances: OpenCodeTuiInstanceStatus[]
 }
 
+/** Lifecycle states emitted by the Codex Hooks API. */
+export type CodexTuiStatus =
+  | 'idle'
+  | 'working'
+  | 'permission'
+  | 'completed'
+  | 'interrupted'
+  | 'closed'
+
+export interface CodexTuiStatusUpdate {
+  sessionId: string
+  status: CodexTuiStatus | null
+  revision: number
+}
+
+/** Status of one Codex TUI process, identified by its owning terminal pane. */
+export interface CodexTuiInstanceStatus {
+  terminalId: string
+  status: CodexTuiStatus
+  revision: number
+}
+
+export interface CodexTuiInstancesUpdate {
+  sessionId: string
+  instances: CodexTuiInstanceStatus[]
+}
+
+export type CodexHookInstallStatus =
+  | 'not-installed'
+  | 'installed'
+  | 'outdated'
+  | 'conflict'
+
+export interface CodexStatusSettings {
+  enabled: boolean
+  currentHookVersion: string
+}
+
+export interface CodexStatusSetEnabledRequest {
+  enabled: boolean
+}
+
+export interface CodexHookRequest {
+  distro: string
+}
+
+export interface CodexHookState {
+  distro: string
+  status: CodexHookInstallStatus
+  installedVersion: string | null
+  currentVersion: string
+}
+
 export type OpenCodeTuiPluginInstallStatus =
   | 'not-installed'
   | 'installed'

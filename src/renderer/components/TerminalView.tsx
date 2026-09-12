@@ -21,9 +21,10 @@ import {
   X
 } from 'lucide-react'
 import type {
+  CodexHookState,
+  CodexStatusSettings,
   OpenCodeTuiPluginState,
   OpenCodeTuiInstanceLabelMode,
-  OpenCodeTuiInstanceStatus,
   OpenCodeTuiSettings,
   OpenCodePluginTarget,
   OpenCodeTokenRatePluginState,
@@ -118,7 +119,12 @@ import { OpenCodeStatusIcon } from '@/components/OpenCodeStatusIcon'
 import { TerminalGitInfo } from '@/components/TerminalGitInfo'
 import { TerminalLauncher } from '@/components/TerminalLauncher'
 import { AGENT_COMMAND_OPTIONS, agentCommandSettingError } from '@/lib/agent-commands'
-import { terminalPaneTitle } from '@/lib/opencode-tui-instances'
+import {
+  agentTuiInstanceLabel,
+  agentTuiStatusLabel,
+  agentTuiVisualStatus,
+  type AgentTuiInstanceStatus
+} from '@/lib/agent-tui'
 import { isTerminalLauncherShortcut } from '@/lib/terminal-launcher'
 
 const FALLBACK_SIZE: PtySize = { cols: 80, rows: 24 }
@@ -543,7 +549,7 @@ function TerminalPane({
   session: Session
   pane: TerminalPaneState
   terminalLayout: SessionTerminalLayout
-  openCodeInstance?: OpenCodeTuiInstanceStatus
+  openCodeInstance?: AgentTuiInstanceStatus
   onClose: () => void
   onFocus: () => void
   isFullscreen: boolean
@@ -565,7 +571,11 @@ function TerminalPane({
   const [renamingTitle, setRenamingTitle] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
   const titleInputRef = useRef<HTMLInputElement>(null)
-  const title = terminalPaneTitle(openCodeInstance, terminalLayout, pane.title)
+  const title = pane.title?.trim() || (
+    openCodeInstance
+      ? agentTuiInstanceLabel(openCodeInstance, 0, 'title', terminalLayout)
+      : 'terminal'
+  )
 
   useEffect(() => {
     if (!renamingTitle) return
@@ -637,8 +647,14 @@ function TerminalPane({
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           {openCodeInstance && (
             <OpenCodeStatusIcon
-              status={openCodeInstance.status}
+              status={agentTuiVisualStatus(openCodeInstance.provider, openCodeInstance.status)}
               attentionReason={openCodeInstance.attentionReason}
+              provider={openCodeInstance.provider}
+              statusLabel={agentTuiStatusLabel(
+                openCodeInstance.provider,
+                openCodeInstance.status,
+                openCodeInstance.attentionReason
+              )}
               testId="terminal-opencode-status"
             />
           )}
@@ -1025,6 +1041,16 @@ function pluginStatusLabel(state: OpenCodeTuiPluginState | undefined): string {
   return 'Not installed'
 }
 
+function codexHookStatusLabel(state: CodexHookState | undefined): string {
+  if (!state) return 'Checking…'
+  if (state.status === 'installed') return `Installed · v${state.installedVersion ?? state.currentVersion}`
+  if (state.status === 'outdated') {
+    return `Update available · v${state.installedVersion ?? 'unknown'} → v${state.currentVersion}`
+  }
+  if (state.status === 'conflict') return 'Another hook owns this registration'
+  return 'Not installed'
+}
+
 function tokenRateTargetKey(target: OpenCodePluginTarget): string {
   return target.kind === 'native' ? 'native' : 'wsl:' + target.distro
 }
@@ -1124,6 +1150,14 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
   const [tuiLoading, setTuiLoading] = useState(false)
   const [tuiBusyDistro, setTuiBusyDistro] = useState<string | null>(null)
   const [tuiError, setTuiError] = useState<string | null>(null)
+  const [codexStatusSettings, setCodexStatusSettings] = useState<CodexStatusSettings>({
+    enabled: false,
+    currentHookVersion: ''
+  })
+  const [codexHookStates, setCodexHookStates] = useState<Record<string, CodexHookState>>({})
+  const [codexLoading, setCodexLoading] = useState(false)
+  const [codexBusyDistro, setCodexBusyDistro] = useState<string | null>(null)
+  const [codexError, setCodexError] = useState<string | null>(null)
   const [tokenRateStates, setTokenRateStates] = useState<Record<string, OpenCodeTokenRatePluginState>>({})
   const [tokenRateLoading, setTokenRateLoading] = useState(false)
   const [tokenRateBusyTarget, setTokenRateBusyTarget] = useState<string | null>(null)
@@ -1133,6 +1167,7 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
   const [alertError, setAlertError] = useState<string | null>(null)
 
   const canManageTui = platform?.isWindows === true && wslAvailable
+  const canManageCodex = canManageTui
   const canManageTokenRate =
     platform?.platform === 'linux' || (platform?.isWindows === true && wslAvailable)
   const tokenRateTargets: OpenCodePluginTarget[] =
@@ -1251,6 +1286,45 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
   }, [canManageTui, distros, open])
 
   useEffect(() => {
+    if (!open || !canManageCodex) return
+    let cancelled = false
+    setCodexLoading(true)
+    setCodexError(null)
+    void Promise.all([
+      window.api.codexStatus.settings(),
+      Promise.allSettled(
+        distros.map((distro) => window.api.codexStatus.hookState({ distro: distro.name }))
+      )
+    ])
+      .then(([nextSettings, stateResults]) => {
+        if (cancelled) return
+        const nextStates: Record<string, CodexHookState> = {}
+        const failures: string[] = []
+        stateResults.forEach((result) => {
+          if (result.status === 'fulfilled') {
+            nextStates[result.value.distro] = result.value
+          } else {
+            failures.push(ipcErrorMessage(result.reason, 'Could not inspect this WSL distro.'))
+          }
+        })
+        setCodexStatusSettings(nextSettings)
+        setCodexHookStates(nextStates)
+        if (failures.length > 0) setCodexError(failures[0] ?? 'Could not inspect one or more WSL distros.')
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setCodexError(ipcErrorMessage(error, 'Could not update Codex status reporting.'))
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setCodexLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [canManageCodex, distros, open])
+
+  useEffect(() => {
     if (!open || !canManageTokenRate) return
     let cancelled = false
     const targets: OpenCodePluginTarget[] =
@@ -1317,6 +1391,16 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
     }
   }
 
+  const setCodexEnabled = async (): Promise<void> => {
+    setCodexError(null)
+    try {
+      const next = await window.api.codexStatus.setEnabled({ enabled: !codexStatusSettings.enabled })
+      setCodexStatusSettings(next)
+    } catch (error) {
+      setCodexError(ipcErrorMessage(error, 'Could not update Codex status reporting.'))
+    }
+  }
+
   const changeTuiInstanceLabelMode = async (
     mode: OpenCodeTuiInstanceLabelMode
   ): Promise<void> => {
@@ -1355,6 +1439,22 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
       setTuiError(ipcErrorMessage(error, 'Could not update the OpenCode status plugin.'))
     } finally {
       setTuiBusyDistro(null)
+    }
+  }
+
+  const changeCodexHook = async (distro: string, action: 'install' | 'remove'): Promise<void> => {
+    setCodexBusyDistro(distro)
+    setCodexError(null)
+    try {
+      const state =
+        action === 'install'
+          ? await window.api.codexStatus.install({ distro })
+          : await window.api.codexStatus.remove({ distro })
+      setCodexHookStates((current) => ({ ...current, [distro]: state }))
+    } catch (error) {
+      setCodexError(ipcErrorMessage(error, 'Could not update Codex status reporting.'))
+    } finally {
+      setCodexBusyDistro(null)
     }
   }
 
@@ -1707,6 +1807,103 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
 
                 <section
                   className="space-y-3 border-t border-line pt-5"
+                  aria-labelledby="codex-status-settings"
+                >
+                  <div>
+                    <h4 id="codex-status-settings" className="text-xs font-medium text-fg">
+                      Codex session status
+                    </h4>
+                    <p className="mt-1 text-xs text-fg-subtle">
+                      Use Codex user-level hooks to show working, permission, and completion state in the same Agents UI.
+                    </p>
+                  </div>
+
+                  {!canManageCodex ? (
+                    <p className="rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
+                      This integration is available only on Windows with WSL 2.
+                    </p>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={codexStatusSettings.enabled}
+                        data-testid="codex-status-enabled"
+                        disabled={codexLoading || !codexStatusSettings.currentHookVersion}
+                        onClick={() => void setCodexEnabled()}
+                        className="flex w-full items-center justify-between rounded border border-line bg-panel px-3 py-2 text-left text-xs text-fg-muted hover:bg-hover disabled:pointer-events-none disabled:opacity-50"
+                      >
+                        <span>
+                          <span className="block font-medium text-fg">Enable status reporting</span>
+                          <span className="mt-0.5 block text-fg-subtle">
+                            {codexStatusSettings.enabled
+                              ? 'New and restarted Codex terminals will report status.'
+                              : 'Status reporting is disabled until you enable it.'}
+                          </span>
+                        </span>
+                        <span
+                          className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+                            codexStatusSettings.enabled ? 'bg-accent' : 'bg-line-strong'
+                          }`}
+                        >
+                          <span
+                            className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+                              codexStatusSettings.enabled ? 'translate-x-4' : 'translate-x-0.5'
+                            }`}
+                          />
+                        </span>
+                      </button>
+
+                      <div className="space-y-2">
+                        {distros.length === 0 ? (
+                          <p className="text-xs text-fg-subtle">No WSL 2 distros found.</p>
+                        ) : (
+                          distros.map((distro) => {
+                            const state = codexHookStates[distro.name]
+                            const busy = codexBusyDistro === distro.name
+                            const action = state?.status === 'installed' ? 'remove' : 'install'
+                            const actionLabel =
+                              state?.status === 'outdated'
+                                ? 'Replace'
+                                : state?.status === 'installed'
+                                  ? 'Uninstall'
+                                  : state?.status === 'conflict'
+                                    ? 'Unavailable'
+                                    : 'Install'
+                            return (
+                              <div
+                                key={distro.name}
+                                className="flex items-center gap-3 rounded border border-line bg-panel px-3 py-2"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate text-xs font-medium text-fg">{distro.name}</div>
+                                  <div className="truncate text-[11px] text-fg-subtle">
+                                    {distro.state} · {codexHookStatusLabel(state)}
+                                  </div>
+                                </div>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  disabled={busy || codexLoading || state?.status === 'conflict' || !state}
+                                  onClick={() => void changeCodexHook(distro.name, action)}
+                                >
+                                  {busy ? 'Working…' : actionLabel}
+                                </Button>
+                              </div>
+                            )
+                          })
+                        )}
+                      </div>
+                      <p className="text-[11px] text-fg-subtle">
+                        Codex may ask you to review and approve user-level hooks in <code>~/.codex/hooks</code>. Hook changes apply to new and restarted Codex terminals. Current hook version: v{codexStatusSettings.currentHookVersion || '…'}.
+                      </p>
+                    </>
+                  )}
+                  {codexError && <p className="text-xs text-danger">{codexError}</p>}
+                </section>
+
+                <section
+                  className="space-y-3 border-t border-line pt-5"
                   aria-labelledby="opencode-tui-settings"
                 >
                   <div>
@@ -2049,6 +2246,9 @@ export function TerminalView({
 }: TerminalViewProps): JSX.Element {
   const opencodeTuiInstances = useWorkspace(
     (state) => state.opencodeTuiInstances[selectedSession.id]
+  )
+  const codexTuiInstances = useWorkspace(
+    (state) => state.codexTuiInstances[selectedSession.id]
   )
   const terminalDirectories = useWorkspace((state) => state.terminalDirectories)
   const [pendingReduction, setPendingReduction] = useState<{
@@ -2426,9 +2626,16 @@ export function TerminalView({
         session={selectedSession}
         pane={pane}
         terminalLayout={terminalLayout}
-        openCodeInstance={opencodeTuiInstances?.find(
-          (instance) => instance.terminalId === pane.terminalId
-        )}
+        openCodeInstance={(() => {
+          const opencodeInstance = opencodeTuiInstances?.find(
+            (instance) => instance.terminalId === pane.terminalId
+          )
+          if (opencodeInstance) return { provider: 'opencode' as const, ...opencodeInstance }
+          const codexInstance = codexTuiInstances?.find(
+            (instance) => instance.terminalId === pane.terminalId
+          )
+          return codexInstance ? { provider: 'codex' as const, ...codexInstance } : undefined
+        })()}
         onFocus={() => {
           focusedTerminalIdRef.current = pane.terminalId
         }}

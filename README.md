@@ -4,8 +4,8 @@ Cross-platform desktop shell for an agentic dev environment: grouped projects co
 persistent terminal sessions, with first-class WSL support on Windows.
 
 This is v1 — a desktop shell focused on persistent terminal workflows. Optional OpenCode TUI
-plugins provide status, alerts, instance labels, and token-rate information without replacing
-the terminal experience.
+plugins and Codex Hooks provide agent status, alerts, instance labels, and token-rate information
+without replacing the terminal experience.
 
 ## Requirements
 
@@ -104,8 +104,8 @@ the temporary fullscreen view; it is enabled by default. Ctrl+Shift+F toggles fu
 focused terminal pane. The Sidebar section controls whether ordinary terminal pane entries appear
 beneath each session; this preference is global and stored with the local terminal settings. The
 expanded Projects sidebar also includes a collapsible Agents overview below the sessions, combining
-currently reported OpenCode instances from every session with their originating session, tab, and
-status.
+currently reported OpenCode and Codex instances from every session with their originating session,
+tab, and status.
 
 In a focused WSL terminal, Ctrl+N or Cmd+N opens a launcher for a new shell, OpenCode, Codex, or
 Claude pane in that terminal's current directory. The launcher is WSL-only, keeps at most six panes
@@ -173,9 +173,15 @@ MDE's own automatic queries.
   originating session, tab, and current status. Instance labels can use privacy-safe numbering or
   the current top-level OpenCode session title; prompts, messages, tool data, credentials, and
   filesystem contents are never included in the snapshot.
-- Session rows and the Ctrl+O session switcher show a notification count for OpenCode agents that
-  finished with unread results or are waiting for a question or permission response; selecting the
-  session clears its completed-result count while unresolved requests remain visible.
+- Codex status reporting is optional and disabled by default. It uses Codex's user-level
+  `~/.codex/hooks.json` configuration and a small MDE-owned shell hook under `~/.codex/hooks/`;
+  enable it and install the hook per WSL distro from Terminal settings, then review/trust the hook
+  from Codex's `/hooks` command. New and restarted Codex terminals report idle, working, permission,
+  completed, interrupted, and closed lifecycle states. The hook writes only a short runtime snapshot
+  under `/tmp`; prompts, messages, tool data, credentials, and filesystem contents are not recorded.
+- Session rows and the Ctrl+O session switcher show a notification count for OpenCode and Codex
+  agents that finished or were interrupted with unread results, or are waiting for permission;
+  selecting the session clears completed-result counts while unresolved requests remain visible.
 - OpenCode TUI token-rate display is a separate plugin from status reporting. On Linux it can be
   installed for the native OpenCode target; on Windows it can be installed independently for each
   WSL 2 distro. It adds a live estimated rate and a final provider-reported rate beside the TUI

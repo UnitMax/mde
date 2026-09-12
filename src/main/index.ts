@@ -5,6 +5,7 @@ import { registerIpcHandlers } from './ipc'
 import { OpenCodeAlertManager } from './opencode/alerts'
 import { OpenCodeTuiStatusManager } from './opencode/tui-status'
 import { OpenCodeTokenRatePluginManager } from './opencode/token-rate'
+import { CodexStatusManager } from './codex/status'
 import { PtyManager } from './pty/manager'
 import { initWorkspaceStore } from './store/workspace'
 import { adjustZoomFactor, DEFAULT_ZOOM_FACTOR, getZoomAction } from './zoom'
@@ -34,6 +35,22 @@ const opencodeTuiStatusManager = new OpenCodeTuiStatusManager({
 })
 const opencodeTokenRatePluginManager = new OpenCodeTokenRatePluginManager()
 
+const codexStatusManager = new CodexStatusManager({
+  onStatus: (update) => {
+    if (update.status === 'permission' || update.status === 'completed' || update.status === 'interrupted') {
+      opencodeAlertManager.alert()
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(IpcEvents.codexStatus, update)
+    }
+  },
+  onInstances: (update) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(IpcEvents.codexInstances, update)
+    }
+  }
+})
+
 const ptyManager = new PtyManager({
   onData: (chunk) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -50,7 +67,7 @@ const ptyManager = new PtyManager({
       mainWindow.webContents.send(IpcEvents.ptyExit, info)
     }
   }
-}, [opencodeTuiStatusManager, opencodeTokenRatePluginManager])
+}, [opencodeTuiStatusManager, opencodeTokenRatePluginManager, codexStatusManager])
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -128,12 +145,14 @@ if (!app.requestSingleInstanceLock()) {
     app.configureHostResolver({ secureDnsMode: 'off' })
     initWorkspaceStore(app.getPath('userData'))
     await opencodeTuiStatusManager.configure(app.getPath('userData'))
+    await codexStatusManager.configure(app.getPath('userData'))
     await opencodeAlertManager.configure(app.getPath('userData'))
     registerIpcHandlers(
       ptyManager,
       opencodeTuiStatusManager,
       opencodeTokenRatePluginManager,
-      opencodeAlertManager
+      opencodeAlertManager,
+      codexStatusManager
     )
     createWindow()
 
@@ -150,5 +169,6 @@ if (!app.requestSingleInstanceLock()) {
     opencodeAlertManager.dispose()
     ptyManager.disposeAll()
     opencodeTuiStatusManager.disposeAll()
+    codexStatusManager.disposeAll()
   })
 }

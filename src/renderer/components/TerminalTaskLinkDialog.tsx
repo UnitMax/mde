@@ -25,7 +25,7 @@ import {
   taskIdForTerminal,
   type LiveTerminalDescriptor
 } from '@/lib/terminal-task-links'
-import { openCodeStatusShortLabel } from '@/lib/opencode-tui-status'
+import { agentTuiStatusShortLabel } from '@/lib/agent-tui'
 import { useWorkspace } from '@/store/workspace'
 
 export type TerminalTaskLinkTarget =
@@ -43,8 +43,13 @@ function taskLabel(task: TodoTask, projects: readonly TodoProject[]): string {
 }
 
 function terminalOptionLabel(terminal: LiveTerminalDescriptor): string {
-  const status = terminal.openCodeInstance
-    ? ` · ${openCodeStatusShortLabel(terminal.openCodeInstance.status)}`
+  const instance = terminal.agentInstance ?? (
+    terminal.openCodeInstance
+      ? { status: terminal.openCodeInstance.status }
+      : undefined
+  )
+  const status = instance
+    ? ` · ${agentTuiStatusShortLabel(instance.status)}`
     : ''
   return `${terminal.sessionName} · ${terminal.tabName} · ${terminal.label}${status}`
 }

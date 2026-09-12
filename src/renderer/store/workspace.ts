@@ -2,6 +2,10 @@ import { create } from 'zustand'
 import type { PlatformInfo, WorkspaceData } from '@shared/ipc'
 import type {
   Distro,
+  CodexTuiInstancesUpdate,
+  CodexTuiStatus,
+  CodexTuiStatusUpdate,
+  CodexTuiInstanceStatus,
   GitStatusResponse,
   NewProject,
   NewTodoProject,
@@ -35,6 +39,12 @@ export interface OpenCodeTuiStatusState {
   unread: boolean
 }
 
+export interface CodexTuiStatusState {
+  status: CodexTuiStatus
+  revision: number
+  unread: boolean
+}
+
 export interface GitSessionStatus {
   response: GitStatusResponse | null
   error: string | null
@@ -53,17 +63,19 @@ function belongsToSession(runtimeId: string, sessionId: string): boolean {
 
 function markCompletedOpenCodeTuiInstancesRead(
   readRevisions: Record<string, number>,
-  instances: readonly OpenCodeTuiInstanceStatus[]
+  instances: readonly { terminalId: string; status: string; revision: number }[]
 ): void {
   instances.forEach((instance) => {
-    if (instance.status === 'completed') readRevisions[instance.terminalId] = instance.revision
+    if (instance.status === 'completed' || instance.status === 'interrupted') {
+      readRevisions[instance.terminalId] = instance.revision
+    }
   })
 }
 
 function clearOpenCodeTuiReadRevisions(
   readRevisions: Record<string, number>,
   sessionId: string,
-  instances: readonly OpenCodeTuiInstanceStatus[] = []
+  instances: readonly { terminalId: string }[] = []
 ): void {
   const instanceTerminalIds = new Set(instances.map((instance) => instance.terminalId))
   Object.keys(readRevisions)
@@ -90,6 +102,9 @@ interface WorkspaceState {
   opencodeTuiStatuses: Record<string, OpenCodeTuiStatusState>
   opencodeTuiInstances: Record<string, OpenCodeTuiInstanceStatus[]>
   opencodeTuiReadRevisions: OpenCodeTuiReadRevisions
+  codexTuiStatuses: Record<string, CodexTuiStatusState>
+  codexTuiInstances: Record<string, CodexTuiInstanceStatus[]>
+  codexTuiReadRevisions: OpenCodeTuiReadRevisions
   opencodeTuiInstanceLabelMode: OpenCodeTuiInstanceLabelMode
   platform: PlatformInfo | null
   wslAvailable: boolean
@@ -149,6 +164,8 @@ interface WorkspaceState {
   clearExit: (id: string) => void
   appendOpenCodeTuiStatus: (update: OpenCodeTuiStatusUpdate) => void
   appendOpenCodeTuiInstances: (update: OpenCodeTuiInstancesUpdate) => void
+  appendCodexTuiStatus: (update: CodexTuiStatusUpdate) => void
+  appendCodexTuiInstances: (update: CodexTuiInstancesUpdate) => void
   setOpenCodeTuiInstanceLabelMode: (mode: OpenCodeTuiInstanceLabelMode) => Promise<void>
   refreshDistros: () => Promise<void>
 }
@@ -169,6 +186,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   opencodeTuiStatuses: {},
   opencodeTuiInstances: {},
   opencodeTuiReadRevisions: {},
+  codexTuiStatuses: {},
+  codexTuiInstances: {},
+  codexTuiReadRevisions: {},
   opencodeTuiInstanceLabelMode: 'numbered',
   platform: null,
   wslAvailable: false,
@@ -185,6 +205,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       window.api.pty.onDirectory((update) => get().setTerminalDirectory(update))
       window.api.opencodeTui.onStatus((update) => get().appendOpenCodeTuiStatus(update))
       window.api.opencodeTui.onInstances((update) => get().appendOpenCodeTuiInstances(update))
+      window.api.codexStatus.onStatus((update) => get().appendCodexTuiStatus(update))
+      window.api.codexStatus.onInstances((update) => get().appendCodexTuiInstances(update))
     }
 
     const [platform, workspace, statuses, directories, wslAvailable, opencodeTuiSettings] = await Promise.all([
@@ -210,6 +232,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       gitStatuses: {},
       opencodeTuiStatuses: {},
       opencodeTuiReadRevisions: {},
+      codexTuiStatuses: {},
+      codexTuiInstances: {},
+      codexTuiReadRevisions: {},
       opencodeTuiInstanceLabelMode: opencodeTuiSettings.instanceLabelMode,
       wslAvailable,
       selectedSessionId: null,
@@ -224,27 +249,28 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   selectSession: (id) =>
     set((state) => {
       const tuiStatus = id ? state.opencodeTuiStatuses[id] : undefined
+      const codexStatus = id ? state.codexTuiStatuses[id] : undefined
       const opencodeTuiReadRevisions = { ...state.opencodeTuiReadRevisions }
+      const codexTuiReadRevisions = { ...state.codexTuiReadRevisions }
+      const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
+      const codexTuiStatuses = { ...state.codexTuiStatuses }
       if (id) {
         markCompletedOpenCodeTuiInstancesRead(
           opencodeTuiReadRevisions,
           state.opencodeTuiInstances[id] ?? []
         )
+        markCompletedOpenCodeTuiInstancesRead(
+          codexTuiReadRevisions,
+          state.codexTuiInstances[id] ?? []
+        )
+        if (tuiStatus?.unread) opencodeTuiStatuses[id] = { ...tuiStatus, unread: false }
+        if (codexStatus?.unread) codexTuiStatuses[id] = { ...codexStatus, unread: false }
       }
-      if (!id || !tuiStatus?.unread) {
-        return {
-          selectedSessionId: id,
-          ...(id ? { opencodeTuiReadRevisions } : {}),
-          ...(id ? { activeWorkspaceView: 'projects' as const } : {})
-        }
-      }
-      const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
-      opencodeTuiStatuses[id] = { ...tuiStatus, unread: false }
       return {
         selectedSessionId: id,
-        activeWorkspaceView: 'projects',
-        opencodeTuiStatuses,
-        opencodeTuiReadRevisions
+        ...(id ? { activeWorkspaceView: 'projects' as const } : {}),
+        ...(id ? { opencodeTuiStatuses, opencodeTuiReadRevisions } : {}),
+        ...(id ? { codexTuiStatuses, codexTuiReadRevisions } : {})
       }
     }),
 
@@ -294,6 +320,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
       const opencodeTuiInstances = { ...state.opencodeTuiInstances }
       const opencodeTuiReadRevisions = { ...state.opencodeTuiReadRevisions }
+      const codexTuiStatuses = { ...state.codexTuiStatuses }
+      const codexTuiInstances = { ...state.codexTuiInstances }
+      const codexTuiReadRevisions = { ...state.codexTuiReadRevisions }
       childIds.forEach((sessionId) => {
         Object.keys(statuses).filter((id) => belongsToSession(id, sessionId)).forEach((id) => delete statuses[id])
         Object.keys(terminalDirectories).filter((id) => belongsToSession(id, sessionId)).forEach((id) => delete terminalDirectories[id])
@@ -309,6 +338,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         )
         delete opencodeTuiStatuses[sessionId]
         delete opencodeTuiInstances[sessionId]
+        clearOpenCodeTuiReadRevisions(
+          codexTuiReadRevisions,
+          sessionId,
+          codexTuiInstances[sessionId] ?? []
+        )
+        delete codexTuiStatuses[sessionId]
+        delete codexTuiInstances[sessionId]
       })
       return {
         projects: state.projects.filter((project) => project.id !== id),
@@ -324,7 +360,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         gitStatuses,
         opencodeTuiStatuses,
         opencodeTuiInstances,
-        opencodeTuiReadRevisions
+        opencodeTuiReadRevisions,
+        codexTuiStatuses,
+        codexTuiInstances,
+        codexTuiReadRevisions
       }
     })
   },
@@ -525,6 +564,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
       const opencodeTuiInstances = { ...state.opencodeTuiInstances }
       const opencodeTuiReadRevisions = { ...state.opencodeTuiReadRevisions }
+      const codexTuiStatuses = { ...state.codexTuiStatuses }
+      const codexTuiInstances = { ...state.codexTuiInstances }
+      const codexTuiReadRevisions = { ...state.codexTuiReadRevisions }
       Object.keys(statuses).filter((runtimeId) => belongsToSession(runtimeId, id)).forEach((runtimeId) => delete statuses[runtimeId])
       Object.keys(terminalDirectories).filter((runtimeId) => belongsToSession(runtimeId, id)).forEach((runtimeId) => delete terminalDirectories[runtimeId])
       Object.keys(exits).filter((runtimeId) => belongsToSession(runtimeId, id)).forEach((runtimeId) => delete exits[runtimeId])
@@ -539,6 +581,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       )
       delete opencodeTuiStatuses[id]
       delete opencodeTuiInstances[id]
+      clearOpenCodeTuiReadRevisions(codexTuiReadRevisions, id, codexTuiInstances[id] ?? [])
+      delete codexTuiStatuses[id]
+      delete codexTuiInstances[id]
       return {
         sessions: state.sessions.filter((session) => session.id !== id),
         selectedSessionId: state.selectedSessionId === id ? null : state.selectedSessionId,
@@ -549,7 +594,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         gitStatuses,
         opencodeTuiStatuses,
         opencodeTuiInstances,
-        opencodeTuiReadRevisions
+        opencodeTuiReadRevisions,
+        codexTuiStatuses,
+        codexTuiInstances,
+        codexTuiReadRevisions
       }
     })
   },
@@ -768,6 +816,76 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
           [sessionId]: instances
         },
         opencodeTuiReadRevisions
+      }
+    }),
+
+  appendCodexTuiStatus: ({ sessionId, status, revision }) =>
+    set((state) => {
+      if (status === null) {
+        if (!state.codexTuiStatuses[sessionId]) return state
+        const codexTuiStatuses = { ...state.codexTuiStatuses }
+        delete codexTuiStatuses[sessionId]
+        return { codexTuiStatuses }
+      }
+
+      const previous = state.codexTuiStatuses[sessionId]
+      if (previous?.revision === revision && previous.status === status) {
+        return state
+      }
+      return {
+        codexTuiStatuses: {
+          ...state.codexTuiStatuses,
+          [sessionId]: {
+            status,
+            revision,
+            unread:
+              status === 'completed' || status === 'interrupted'
+                ? state.selectedSessionId !== sessionId
+                : previous?.unread ?? false
+          }
+        }
+      }
+    }),
+
+  appendCodexTuiInstances: ({ sessionId, instances }) =>
+    set((state) => {
+      const previous = state.codexTuiInstances[sessionId]
+      const codexTuiReadRevisions = { ...state.codexTuiReadRevisions }
+      const currentTerminalIds = new Set(instances.map((instance) => instance.terminalId))
+      const previousTerminalIds = new Set(
+        (previous ?? []).map((instance) => instance.terminalId)
+      )
+      Object.keys(codexTuiReadRevisions)
+        .filter((terminalId) =>
+          (belongsToSession(terminalId, sessionId) || previousTerminalIds.has(terminalId)) &&
+          !currentTerminalIds.has(terminalId)
+        )
+        .forEach((terminalId) => delete codexTuiReadRevisions[terminalId])
+      instances.forEach((instance) => {
+        if (instance.status !== 'completed' && instance.status !== 'interrupted') {
+          delete codexTuiReadRevisions[instance.terminalId]
+        } else if (state.selectedSessionId === sessionId) {
+          codexTuiReadRevisions[instance.terminalId] = instance.revision
+        }
+      })
+      if (instances.length === 0) {
+        if (
+          !previous &&
+          Object.keys(codexTuiReadRevisions).length ===
+            Object.keys(state.codexTuiReadRevisions).length
+        ) {
+          return state
+        }
+        const codexTuiInstances = { ...state.codexTuiInstances }
+        delete codexTuiInstances[sessionId]
+        return { codexTuiInstances, codexTuiReadRevisions }
+      }
+      return {
+        codexTuiInstances: {
+          ...state.codexTuiInstances,
+          [sessionId]: instances
+        },
+        codexTuiReadRevisions
       }
     }),
 

@@ -26,6 +26,7 @@
     "src/renderer/lib/git.ts",
     "src/renderer/lib/session-switcher.ts",
     "src/renderer/lib/agent-commands.ts",
+    "src/renderer/lib/agent-tui.ts",
     "src/renderer/lib/terminal-launcher.ts",
     "src/renderer/lib/opencode-tui-instances.ts",
     "src/renderer/lib/opencode-tui-notifications.ts",

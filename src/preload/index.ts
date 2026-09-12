@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IpcChannels, IpcEvents, type RendererApi } from '@shared/ipc'
 import type {
+  CodexTuiInstancesUpdate,
+  CodexTuiStatusUpdate,
   OpenCodeTuiInstancesUpdate,
   OpenCodeTuiStatusUpdate,
   PtyDataChunk,
@@ -129,6 +131,16 @@ const api: RendererApi = {
     onStatus: (listener) => subscribe<OpenCodeTuiStatusUpdate>(IpcEvents.opencodeTuiStatus, listener),
     onInstances: (listener) =>
       subscribe<OpenCodeTuiInstancesUpdate>(IpcEvents.opencodeTuiInstances, listener)
+  },
+  codexStatus: {
+    settings: () => ipcRenderer.invoke(IpcChannels.codexStatusSettings),
+    setEnabled: (req) => ipcRenderer.invoke(IpcChannels.codexStatusSetEnabled, req),
+    hookState: (req) => ipcRenderer.invoke(IpcChannels.codexStatusHookState, req),
+    install: (req) => ipcRenderer.invoke(IpcChannels.codexStatusHookInstall, req),
+    remove: (req) => ipcRenderer.invoke(IpcChannels.codexStatusHookRemove, req),
+    onStatus: (listener) => subscribe<CodexTuiStatusUpdate>(IpcEvents.codexStatus, listener),
+    onInstances: (listener) =>
+      subscribe<CodexTuiInstancesUpdate>(IpcEvents.codexInstances, listener)
   },
   opencodeTokenRate: {
     pluginState: (req) => ipcRenderer.invoke(IpcChannels.opencodeTokenRatePluginState, req),

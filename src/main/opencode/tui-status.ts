@@ -344,7 +344,7 @@ function statusPriority(status: OpenCodeTuiStatus): number {
   }
 }
 
-function decodeTuiStatusSnapshot(value: unknown, now = Date.now()): OpenCodeTuiStatusSnapshot | null {
+export function decodeTuiStatusSnapshot(value: unknown, now = Date.now()): OpenCodeTuiStatusSnapshot | null {
   if (typeof value !== 'object' || value === null) return null
   const record = value as Record<string, unknown>
   if (record.protocol !== TUI_STATUS_PROTOCOL) return null

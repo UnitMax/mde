@@ -72,6 +72,7 @@ export function App(): JSX.Element {
   const todoTasks = useWorkspace((state) => state.todoTasks)
   const terminalStatuses = useWorkspace((state) => state.statuses)
   const opencodeTuiInstances = useWorkspace((state) => state.opencodeTuiInstances)
+  const codexTuiInstances = useWorkspace((state) => state.codexTuiInstances)
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
   const selectedTodoProjectId = useWorkspace((state) => state.selectedTodoProjectId)
   const activeWorkspaceView = useWorkspace((state) => state.activeWorkspaceView)
@@ -112,9 +113,10 @@ export function App(): JSX.Element {
       sessions,
       terminalLayouts,
       statuses: terminalStatuses,
-      opencodeTuiInstances
+      opencodeTuiInstances,
+      codexTuiInstances
     }),
-    [opencodeTuiInstances, sessions, terminalLayouts, terminalStatuses]
+    [codexTuiInstances, opencodeTuiInstances, sessions, terminalLayouts, terminalStatuses]
   )
 
   useEffect(() => {

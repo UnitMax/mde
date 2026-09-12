@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
+  CodexTuiInstancesUpdate,
+  CodexTuiStatusUpdate,
   OpenCodeTuiInstancesUpdate,
   OpenCodeTuiStatusUpdate,
   Session,
@@ -14,6 +16,8 @@ import { countOpenCodeTuiNotifications } from '../src/renderer/lib/opencode-tui-
 describe('renderer workspace event bridge', () => {
   const tuiStatusListeners: Array<(update: OpenCodeTuiStatusUpdate) => void> = []
   const tuiInstanceListeners: Array<(update: OpenCodeTuiInstancesUpdate) => void> = []
+  const codexStatusListeners: Array<(update: CodexTuiStatusUpdate) => void> = []
+  const codexInstanceListeners: Array<(update: CodexTuiInstancesUpdate) => void> = []
   const directoryListeners: Array<(update: { terminalId: string; directory: string | null }) => void> = []
   const api = {
     platform: { info: vi.fn(async () => ({ platform: 'linux', arch: 'x64' })) },
@@ -107,17 +111,58 @@ describe('renderer workspace event bridge', () => {
         return vi.fn()
       })
     },
+    codexStatus: {
+      settings: vi.fn(async () => ({
+        enabled: false,
+        currentHookVersion: '1.0.0'
+      })),
+      setEnabled: vi.fn(async ({ enabled }: { enabled: boolean }) => ({
+        enabled,
+        currentHookVersion: '1.0.0'
+      })),
+      hookState: vi.fn(async ({ distro }: { distro: string }) => ({
+        distro,
+        status: 'not-installed' as const,
+        installedVersion: null,
+        currentVersion: '1.0.0'
+      })),
+      install: vi.fn(async ({ distro }: { distro: string }) => ({
+        distro,
+        status: 'installed' as const,
+        installedVersion: '1.0.0',
+        currentVersion: '1.0.0'
+      })),
+      remove: vi.fn(async ({ distro }: { distro: string }) => ({
+        distro,
+        status: 'not-installed' as const,
+        installedVersion: null,
+        currentVersion: '1.0.0'
+      })),
+      onStatus: vi.fn((listener: (update: CodexTuiStatusUpdate) => void) => {
+        codexStatusListeners.push(listener)
+        return vi.fn()
+      }),
+      onInstances: vi.fn((listener: (update: CodexTuiInstancesUpdate) => void) => {
+        codexInstanceListeners.push(listener)
+        return vi.fn()
+      })
+    },
   }
 
   beforeEach(() => {
     tuiStatusListeners.length = 0
     tuiInstanceListeners.length = 0
+    codexStatusListeners.length = 0
+    codexInstanceListeners.length = 0
     directoryListeners.length = 0
     vi.stubGlobal('window', { api })
     useWorkspace.setState({
       opencodeTuiStatuses: {},
       opencodeTuiInstances: {},
       opencodeTuiReadRevisions: {},
+      codexTuiStatuses: {},
+      codexTuiInstances: {},
+      codexTuiReadRevisions: {},
       opencodeTuiInstanceLabelMode: 'numbered',
       sessions: [],
       todoProjects: [],
@@ -146,6 +191,8 @@ describe('renderer workspace event bridge', () => {
     api.opencodeTui.onStatus.mockClear()
     api.opencodeTui.onInstances.mockClear()
     api.opencodeTui.setInstanceLabelMode.mockClear()
+    api.codexStatus.onStatus.mockClear()
+    api.codexStatus.onInstances.mockClear()
   })
 
   it('tracks exits by runtime terminal ID, including split panes', () => {
@@ -691,6 +738,31 @@ describe('renderer workspace event bridge', () => {
     })
   })
 
+  it('retains Codex permission and interruption states without OpenCode-only fields', () => {
+    useWorkspace.setState({ selectedSessionId: 'other-session' })
+
+    useWorkspace.getState().appendCodexTuiStatus({
+      sessionId: 'session-1',
+      status: 'permission',
+      revision: 1
+    })
+    expect(useWorkspace.getState().codexTuiStatuses['session-1']).toEqual({
+      status: 'permission',
+      revision: 1,
+      unread: false
+    })
+
+    useWorkspace.getState().appendCodexTuiInstances({
+      sessionId: 'session-1',
+      instances: [
+        { terminalId: 'session-1', status: 'interrupted', revision: 2 }
+      ]
+    })
+    expect(useWorkspace.getState().codexTuiInstances['session-1']).toEqual([
+      { terminalId: 'session-1', status: 'interrupted', revision: 2 }
+    ])
+  })
+
   it('registers process-lifetime push listeners only once', async () => {
     api.pty.directories.mockResolvedValueOnce({
       'session-1:snapshot': '/home/me/snapshot'
@@ -701,6 +773,8 @@ describe('renderer workspace event bridge', () => {
     expect(api.pty.onDirectory).toHaveBeenCalledTimes(1)
     expect(api.opencodeTui.onStatus).toHaveBeenCalledTimes(1)
     expect(api.opencodeTui.onInstances).toHaveBeenCalledTimes(1)
+    expect(api.codexStatus.onStatus).toHaveBeenCalledTimes(1)
+    expect(api.codexStatus.onInstances).toHaveBeenCalledTimes(1)
     expect(useWorkspace.getState().terminalDirectories).toEqual({
       'session-1:snapshot': '/home/me/snapshot'
     })
