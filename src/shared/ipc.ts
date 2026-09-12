@@ -40,7 +40,8 @@ import type {
   PtySize,
   PtyStatus,
   AgentCommand,
-  CodingAgent
+  CodingAgent,
+  TerminalLaunchDirectory
 } from './types'
 
 export interface WorkspaceData {
@@ -195,8 +196,10 @@ export interface EnsurePtyRequest {
 }
 
 export interface PtyLaunchRequest {
-  /** Existing running terminal whose validated current directory is reused. */
+  /** Existing terminal in the current session that initiated the launch. */
   sourceTerminalId: string
+  /** Directory from which the new terminal should start. */
+  directory: TerminalLaunchDirectory
   agent?: {
     kind: CodingAgent
     command: AgentCommand

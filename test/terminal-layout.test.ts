@@ -272,6 +272,7 @@ describe('terminal layouts', () => {
   it('appends a runtime pane and strips its launch metadata when persisted', () => {
     const launch = {
       sourceTerminalId: 'session-1:tab:default:pane:pane-1',
+      directory: 'terminal' as const,
       agent: {
         kind: 'codex' as const,
         command: { executable: 'codex', args: ['--model', 'gpt-5'] }
@@ -311,7 +312,8 @@ describe('terminal layouts', () => {
     }
 
     expect(appendRuntimePane('session-1', 'tab-1', layout, {
-      sourceTerminalId: 'pane-1'
+      sourceTerminalId: 'pane-1',
+      directory: 'terminal'
     })).toBeNull()
   })
 })

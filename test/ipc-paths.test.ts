@@ -96,9 +96,12 @@ function handler(channel: string): Handler {
   return registered
 }
 
-function registerForTest(terminalInfo: ReturnType<typeof vi.fn>): void {
+function registerForTest(
+  terminalInfo: ReturnType<typeof vi.fn>,
+  ensure: ReturnType<typeof vi.fn> = vi.fn(() => 'running')
+): void {
   registerIpcHandlers(
-    { terminalInfo } as never,
+    { terminalInfo, ensure } as never,
     {} as never,
     {} as never,
     {} as never
@@ -286,6 +289,160 @@ describe('terminal Explorer IPC', () => {
     await handler(IpcChannels.pathRevealTerminal)({}, 'pane-1')
 
     expect(electronMock.shell.openPath).not.toHaveBeenCalled()
+  })
+
+  it('launches from the session directory without a live terminal directory', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const terminalInfo = vi.fn(() => ({ sessionId: 'session-1', directory: null }))
+    const ensure = vi.fn(() => 'running')
+    const session = wslSession({ path: '/home/me/session' })
+    workspaceMock.getSession.mockResolvedValue(session)
+    wslPathsMock.resolveForTarget.mockResolvedValue({ path: '/home/me/session' })
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/session')
+    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
+    registerForTest(terminalInfo, ensure)
+
+    const request = {
+      terminalId: 'child-pane',
+      sessionId: session.id,
+      size: { cols: 80, rows: 24 },
+      palette: { foreground: '#d8dee9', background: '#0b0e13' },
+      launch: { sourceTerminalId: 'source-pane', directory: 'session' }
+    }
+
+    await expect(handler(IpcChannels.ptyEnsure)({}, request)).resolves.toBe('running')
+
+    expect(terminalInfo).toHaveBeenCalledWith('source-pane')
+    expect(wslPathsMock.canonicalizeWslPath).toHaveBeenCalledWith('Ubuntu-24.04', '/home/me/session')
+    expect(wslDistrosMock.runWslCommand).toHaveBeenCalledWith('Ubuntu-24.04', [
+      'test',
+      '-d',
+      '/home/me/session'
+    ])
+    expect(ensure).toHaveBeenCalledWith(
+      'child-pane',
+      session,
+      request.size,
+      request.palette,
+      { directory: '/home/me/session' }
+    )
+  })
+
+  it('normalizes a legacy session path before launching', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const terminalInfo = vi.fn(() => ({ sessionId: 'session-1', directory: '/home/me/live' }))
+    const ensure = vi.fn(() => 'running')
+    const session = wslSession({ path: '~/session' })
+    workspaceMock.getSession.mockResolvedValue(session)
+    wslPathsMock.resolveForTarget.mockResolvedValue({ path: '/home/me/session' })
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/session')
+    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
+    registerForTest(terminalInfo, ensure)
+
+    const request = {
+      terminalId: 'child-pane',
+      sessionId: session.id,
+      size: { cols: 80, rows: 24 },
+      palette: { foreground: '#d8dee9', background: '#0b0e13' },
+      launch: { sourceTerminalId: 'source-pane', directory: 'session' }
+    }
+
+    await expect(handler(IpcChannels.ptyEnsure)({}, request)).resolves.toBe('running')
+
+    expect(wslPathsMock.resolveForTarget).toHaveBeenCalledWith(
+      'wsl',
+      'Ubuntu-24.04',
+      '~/session'
+    )
+    expect(wslPathsMock.canonicalizeWslPath).toHaveBeenCalledWith(
+      'Ubuntu-24.04',
+      '/home/me/session'
+    )
+    expect(ensure).toHaveBeenCalledWith(
+      'child-pane',
+      session,
+      request.size,
+      request.palette,
+      { directory: '/home/me/session' }
+    )
+  })
+
+  it('rejects an unavailable session directory before spawning a pane', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const terminalInfo = vi.fn(() => ({ sessionId: 'session-1', directory: '/home/me/live' }))
+    const ensure = vi.fn(() => 'running')
+    const session = wslSession({ path: '/home/me/missing' })
+    workspaceMock.getSession.mockResolvedValue(session)
+    wslPathsMock.resolveForTarget.mockResolvedValue({ path: '/home/me/missing' })
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/missing')
+    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 1 })
+    registerForTest(terminalInfo, ensure)
+
+    await expect(
+      handler(IpcChannels.ptyEnsure)({}, {
+        terminalId: 'child-pane',
+        sessionId: session.id,
+        size: { cols: 80, rows: 24 },
+        palette: { foreground: '#d8dee9', background: '#0b0e13' },
+        launch: { sourceTerminalId: 'source-pane', directory: 'session' }
+      })
+    ).rejects.toThrow('The selected launch directory is not available')
+
+    expect(ensure).not.toHaveBeenCalled()
+  })
+
+  it('launches from the source terminal directory when requested', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const terminalInfo = vi.fn(() => ({
+      sessionId: 'session-1',
+      directory: '/home/me/live'
+    }))
+    const ensure = vi.fn(() => 'running')
+    const session = wslSession({ path: '/home/me/session' })
+    workspaceMock.getSession.mockResolvedValue(session)
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/live')
+    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
+    registerForTest(terminalInfo, ensure)
+
+    const request = {
+      terminalId: 'child-pane',
+      sessionId: session.id,
+      size: { cols: 100, rows: 30 },
+      palette: { foreground: '#d8dee9', background: '#0b0e13' },
+      launch: { sourceTerminalId: 'source-pane', directory: 'terminal' }
+    }
+
+    await expect(handler(IpcChannels.ptyEnsure)({}, request)).resolves.toBe('running')
+
+    expect(wslPathsMock.canonicalizeWslPath).toHaveBeenCalledWith('Ubuntu-24.04', '/home/me/live')
+    expect(ensure).toHaveBeenCalledWith(
+      'child-pane',
+      session,
+      request.size,
+      request.palette,
+      { directory: '/home/me/live' }
+    )
+  })
+
+  it('rejects an unknown launch directory before spawning a pane', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const terminalInfo = vi.fn(() => ({ sessionId: 'session-1', directory: '/home/me/live' }))
+    const ensure = vi.fn(() => 'running')
+    workspaceMock.getSession.mockResolvedValue(wslSession())
+    registerForTest(terminalInfo, ensure)
+
+    await expect(
+      handler(IpcChannels.ptyEnsure)({}, {
+        terminalId: 'child-pane',
+        sessionId: 'session-1',
+        size: { cols: 80, rows: 24 },
+        palette: { foreground: '#d8dee9', background: '#0b0e13' },
+        launch: { sourceTerminalId: 'source-pane', directory: 'other' }
+      })
+    ).rejects.toThrow('Invalid terminal launch directory')
+
+    expect(terminalInfo).not.toHaveBeenCalled()
+    expect(ensure).not.toHaveBeenCalled()
   })
 
   it('normalizes a raw WSL home path before creating a session', async () => {

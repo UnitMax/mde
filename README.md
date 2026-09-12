@@ -108,12 +108,14 @@ currently reported OpenCode and Codex instances from every session with their or
 tab, and status.
 
 In a focused WSL terminal, Ctrl+N or Cmd+N opens a launcher for a new shell, OpenCode, Codex, or
-Claude pane in that terminal's current directory. The launcher is WSL-only, keeps at most six panes
-per tab, and leaves its agent command choices disabled until the directory is available. Configure
-each executable and its shell-style arguments in the Settings dialog's Agents section. Arguments
-are passed as literal argv values; shell expansion and command chaining are not supported. Agent
-launch identity is runtime-only, so reopening the app restores ordinary shells rather than relaunching
-an agent.
+Claude pane. It defaults to that terminal's current directory and can switch to the session
+directory with Tab; the two directory choices are also clickable. If the terminal has not reported
+its current directory yet, the session directory remains available. The session choice is disabled
+when both paths are identical. The launcher is WSL-only and keeps at most six panes per tab.
+Configure each executable and its shell-style arguments in the
+Settings dialog's Agents section. Arguments are passed as literal argv values; shell expansion and
+command chaining are not supported. Agent launch identity is runtime-only, so reopening the app
+restores ordinary shells rather than relaunching an agent.
 
 Terminal clipboard shortcuts use the normal system clipboard, including for WSL sessions on Windows.
 `Ctrl+C` copies selected terminal text and remains the normal interrupt when there is no selection;

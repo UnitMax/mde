@@ -66,7 +66,8 @@ import type {
   Session,
   PtyStatus,
   AgentCommand,
-  CodingAgent
+  CodingAgent,
+  TerminalLaunchDirectory
 } from '@shared/types'
 import type { PtyLaunchOptions, PtyManager } from './pty/manager'
 import { resolveTerminalDrop } from './pty/drop'
@@ -181,8 +182,8 @@ async function validatePath(req: ValidatePathRequest): Promise<PathCheckResult> 
 }
 
 /**
- * Resolves a path that came from terminal output into one this process is
- * willing to hand to the desktop.
+ * Resolves a path selected by a terminal or persisted session into one this
+ * process is willing to hand to the desktop or a new PTY.
  *
  * A pane's current directory is reported by the shell over OSC 7, and any
  * process writing to that terminal can emit the same sequence. `shell.openPath`
@@ -213,7 +214,7 @@ async function verifiedDirectory(session: Session, directory: string): Promise<s
   // Rejections are logged: this path fails closed, so a silent return here is
   // indistinguishable from a dead button.
   const reject = (reason: string): null => {
-    console.warn(`[reveal] not opening ${JSON.stringify(directory)}: ${reason}`)
+    console.warn(`[path] not opening ${JSON.stringify(directory)}: ${reason}`)
     return null
   }
 
@@ -230,6 +231,10 @@ function isCodingAgent(value: unknown): value is CodingAgent {
   return value === 'opencode' || value === 'codex' || value === 'claude'
 }
 
+function isTerminalLaunchDirectory(value: unknown): value is TerminalLaunchDirectory {
+  return value === 'terminal' || value === 'session'
+}
+
 function isSafeLaunchArgument(value: unknown): value is string {
   return typeof value === 'string' && !/[\u0000-\u001f\u007f]/.test(value)
 }
@@ -237,6 +242,9 @@ function isSafeLaunchArgument(value: unknown): value is string {
 function validatePtyLaunchRequest(launch: PtyLaunchRequest): void {
   if (!launch || typeof launch.sourceTerminalId !== 'string' || !launch.sourceTerminalId.trim()) {
     throw new Error('Invalid terminal launch source.')
+  }
+  if (!isTerminalLaunchDirectory(launch.directory)) {
+    throw new Error('Invalid terminal launch directory.')
   }
   if (launch.agent === undefined) return
   if (!launch.agent || typeof launch.agent !== 'object' || !isCodingAgent(launch.agent.kind)) {
@@ -267,11 +275,28 @@ async function resolvePtyLaunchOptions(
   }
 
   const source = ptyManager.terminalInfo(launch.sourceTerminalId)
-  if (!source || source.sessionId !== session.id || !source.directory) {
-    throw new Error('The source terminal directory is not available.')
+  if (!source || source.sessionId !== session.id) {
+    throw new Error('The source terminal is not available.')
   }
-  const directory = await verifiedDirectory(session, source.directory)
-  if (!directory) throw new Error('The source terminal directory is not available.')
+
+  const requestedDirectory = launch.directory === 'session' ? session.path : source.directory
+  if (!requestedDirectory) {
+    throw new Error(
+      launch.directory === 'session'
+        ? 'The session directory is not available.'
+        : 'The source terminal directory is not available.'
+    )
+  }
+
+  // Session paths are persisted configuration rather than OSC 7 output. Older
+  // sessions can still contain a target-native shorthand such as `~`, or a
+  // path copied from the Windows folder picker. Normalize those forms before
+  // applying the strict WSL validation used for terminal-reported paths.
+  const launchDirectory = launch.directory === 'session' && !isPlainAbsolutePath(requestedDirectory)
+    ? (await resolveForTarget('wsl', session.distro, requestedDirectory)).path
+    : requestedDirectory
+  const directory = await verifiedDirectory(session, launchDirectory)
+  if (!directory) throw new Error('The selected launch directory is not available.')
 
   return {
     directory,

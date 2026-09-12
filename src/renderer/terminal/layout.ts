@@ -1,6 +1,7 @@
 import type {
   AgentCommand,
   CodingAgent,
+  TerminalLaunchDirectory,
   TerminalLayout,
   TerminalLayoutSizes
 } from '@shared/types'
@@ -25,6 +26,7 @@ export interface TerminalPaneState {
 
 export interface RuntimeTerminalLaunch {
   sourceTerminalId: string
+  directory: TerminalLaunchDirectory
   agent?: {
     kind: CodingAgent
     command: AgentCommand

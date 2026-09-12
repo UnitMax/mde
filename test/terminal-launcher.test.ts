@@ -4,7 +4,13 @@ import {
   parseAgentArguments,
   resolveAgentCommand
 } from '../src/renderer/lib/agent-commands'
-import { isTerminalLauncherShortcut } from '../src/renderer/lib/terminal-launcher'
+import {
+  defaultTerminalLaunchDirectory,
+  isTerminalLauncherShortcut,
+  terminalLaunchDirectoryDisabled,
+  terminalLaunchDirectoryPath,
+  toggleTerminalLaunchDirectory
+} from '../src/renderer/lib/terminal-launcher'
 
 describe('agent command settings', () => {
   it('parses shell-style arguments into literal argv without expansion', () => {
@@ -56,5 +62,29 @@ describe('terminal launcher shortcut', () => {
     expect(isTerminalLauncherShortcut({ ...base, ctrlKey: true, altKey: true })).toBe(false)
     expect(isTerminalLauncherShortcut({ ...base, ctrlKey: true, type: 'keyup' })).toBe(false)
     expect(isTerminalLauncherShortcut({ ...base, ctrlKey: true, isComposing: true })).toBe(false)
+  })
+})
+
+describe('terminal launcher directories', () => {
+  const sessionDirectory = '/home/me/app'
+  const terminalDirectory = '/home/me/feature'
+
+  it('defaults to the live terminal directory when available', () => {
+    expect(defaultTerminalLaunchDirectory(terminalDirectory)).toBe('terminal')
+    expect(defaultTerminalLaunchDirectory(undefined)).toBe('session')
+  })
+
+  it('uses the selected directory path and disables only exact duplicates', () => {
+    expect(terminalLaunchDirectoryPath('terminal', terminalDirectory, sessionDirectory)).toBe(terminalDirectory)
+    expect(terminalLaunchDirectoryPath('session', terminalDirectory, sessionDirectory)).toBe(sessionDirectory)
+    expect(terminalLaunchDirectoryDisabled('session', sessionDirectory, sessionDirectory)).toBe(true)
+    expect(terminalLaunchDirectoryDisabled('session', sessionDirectory + '/', sessionDirectory)).toBe(false)
+  })
+
+  it('toggles between available directories and keeps a disabled choice selected', () => {
+    expect(toggleTerminalLaunchDirectory('terminal', terminalDirectory, sessionDirectory)).toBe('session')
+    expect(toggleTerminalLaunchDirectory('session', terminalDirectory, sessionDirectory)).toBe('terminal')
+    expect(toggleTerminalLaunchDirectory('terminal', sessionDirectory, sessionDirectory)).toBe('terminal')
+    expect(toggleTerminalLaunchDirectory('terminal', undefined, sessionDirectory)).toBe('session')
   })
 })

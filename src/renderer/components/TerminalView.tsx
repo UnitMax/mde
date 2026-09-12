@@ -203,6 +203,8 @@ function TerminalSurface({
   const [dropNotice, setDropNotice] = useState<string | null>(null)
   const [clipboardNotice, setClipboardNotice] = useState<string | null>(null)
   const [osc52Prompt, setOsc52Prompt] = useState<Osc52Prompt | null>(null)
+  const [launchError, setLaunchError] = useState<string | null>(null)
+  const [launchAttempt, setLaunchAttempt] = useState(0)
   const setStatus = useWorkspace((state) => state.setStatus)
   const platform = useWorkspace((state) => state.platform)
   const primarySelectionMode = terminalPrimarySelectionMode(
@@ -322,6 +324,7 @@ function TerminalSurface({
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
+    setLaunchError(null)
 
     // Re-parents the existing terminal, or builds it on first view of this session.
     const terminal = attachSession(pane.terminalId, host, { primarySelectionMode })
@@ -359,10 +362,14 @@ function TerminalSurface({
           launch: pane.launch
         }).then((status) => {
           if (cancelled) return
+          setLaunchError(null)
           setStatus(pane.terminalId, status)
           if (!textInputHasFocus()) terminal.term.focus()
         }).catch((error: unknown) => {
           console.error('[terminal] PTY ensure failed:', error)
+          if (!cancelled) {
+            setLaunchError(ipcErrorMessage(error, 'Could not start this terminal.'))
+          }
           ensured = false
           previousSize = null
           launchFailed = true
@@ -416,7 +423,7 @@ function TerminalSurface({
       // Detach only: the process, its scrollback and its cursor all stay alive.
       detachSession(pane.terminalId)
     }
-  }, [pane.terminalId, primarySelectionMode, setStatus, sourceSession.id])
+  }, [launchAttempt, pane.terminalId, primarySelectionMode, setStatus, sourceSession.id])
 
   useEffect(() => {
     const previousFullscreen = previousFullscreenRef.current
@@ -439,6 +446,30 @@ function TerminalSurface({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {launchError && (
+        <div
+          className="pointer-events-auto absolute inset-x-3 top-3 z-20 rounded-md border border-danger/40 bg-panel/95 p-3 text-xs text-danger shadow-lg"
+          data-testid="terminal-launch-error"
+          role="alert"
+        >
+          <p>{launchError}</p>
+          <p className="mt-1 text-fg-subtle">
+            Check that the selected directory is available, then try again.
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="mt-2"
+            onClick={() => {
+              setLaunchError(null)
+              setLaunchAttempt((attempt) => attempt + 1)
+            }}
+          >
+            Retry
+          </Button>
+        </div>
+      )}
       {fileDragOver && (
         <div
           className="pointer-events-none absolute inset-2 z-30 flex items-center justify-center rounded-md border border-dashed border-accent bg-bg/80 text-sm font-medium text-fg"
