@@ -1,5 +1,13 @@
 import { isApplicationThemeId, type ApplicationThemeId } from '@/theme/themes'
 import { isOsc52Policy, type Osc52Policy } from './osc52'
+import type { CodingAgent } from '@shared/types'
+
+export interface AgentCommandSetting {
+  executable: string
+  args: string
+}
+
+export type AgentCommandSettings = Record<CodingAgent, AgentCommandSetting>
 
 export interface TerminalSettings {
   family: string
@@ -16,6 +24,7 @@ export interface TerminalSettings {
    * clipboard. Hidden, unfocused and idle panes are refused under every value.
    */
   osc52Policy: Osc52Policy
+  agents: AgentCommandSettings
 }
 
 export interface TerminalFontOption {
@@ -38,6 +47,12 @@ const CURATED_FONT_OPTIONS: readonly TerminalFontOption[] = [
   { family: 'Consolas', label: 'Consolas' },
   { family: 'monospace', label: 'System monospace' }
 ]
+
+const DEFAULT_AGENT_SETTINGS: AgentCommandSettings = {
+  opencode: { executable: 'opencode', args: '' },
+  codex: { executable: 'codex', args: '' },
+  claude: { executable: 'claude', args: '' }
+}
 
 export function listTerminalFonts(
   isInstalled: (family: string) => boolean = isSystemFontInstalled
@@ -63,7 +78,12 @@ export function defaultTerminalSettings(
     theme: 'slate',
     escapeExitsFullscreen: true,
     showTerminalInstances: false,
-    osc52Policy: 'notify'
+    osc52Policy: 'notify',
+    agents: {
+      opencode: { ...DEFAULT_AGENT_SETTINGS.opencode },
+      codex: { ...DEFAULT_AGENT_SETTINGS.codex },
+      claude: { ...DEFAULT_AGENT_SETTINGS.claude }
+    }
   }
 }
 
@@ -90,6 +110,25 @@ export function resolveTerminalSettings(
   const size = isTerminalFontSize(record.size) ? record.size : fallback.size
   const lineHeight = isTerminalLineHeight(record.lineHeight) ? record.lineHeight : fallback.lineHeight
   const theme = isApplicationThemeId(record.theme) ? record.theme : fallback.theme
+  const storedAgents = typeof record.agents === 'object' && record.agents !== null
+    ? record.agents as Record<string, unknown>
+    : {}
+  const agents = (Object.keys(DEFAULT_AGENT_SETTINGS) as CodingAgent[]).reduce(
+    (result, kind) => {
+      const stored = storedAgents[kind]
+      const value = typeof stored === 'object' && stored !== null
+        ? stored as Record<string, unknown>
+        : {}
+      result[kind] = {
+        executable: typeof value.executable === 'string'
+          ? value.executable
+          : fallback.agents[kind].executable,
+        args: typeof value.args === 'string' ? value.args : fallback.agents[kind].args
+      }
+      return result
+    },
+    {} as AgentCommandSettings
+  )
   return {
     family: availableFonts.some((option) => option.family === family) ? family : fallback.family,
     size,
@@ -103,7 +142,8 @@ export function resolveTerminalSettings(
       typeof record.showTerminalInstances === 'boolean'
         ? record.showTerminalInstances
         : fallback.showTerminalInstances,
-    osc52Policy: isOsc52Policy(record.osc52Policy) ? record.osc52Policy : fallback.osc52Policy
+    osc52Policy: isOsc52Policy(record.osc52Policy) ? record.osc52Policy : fallback.osc52Policy,
+    agents
   }
 }
 

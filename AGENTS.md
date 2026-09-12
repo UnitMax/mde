@@ -46,6 +46,6 @@ The application version is authoritative in `package.json` and must stay synchro
 
 ## Security & Configuration Tips
 
-Keep `contextIsolation` and renderer sandboxing intact. Validate WSL/process arguments and never log credentials or session data. Do not commit workspace state, build artifacts, or secrets.
+Keep `contextIsolation` and renderer sandboxing intact. Validate WSL/process arguments and never log credentials or session data. Do not commit workspace state, build artifacts, or secrets. Never commit a real home directory, username, hostname, or other account-specific path; use neutral placeholders such as `/home/me`, `C:\Users\Me`, or `TestUser` in tests, fixtures, and documentation. `npm run audit:package` checks only the packaged output, so this one is on review.
 
 Keep renderer rich-text raw HTML disabled unless the feature explicitly requires it. Render external links into a new window with `noopener`/`noreferrer`, but treat the main-process URL scheme validator as the authoritative security boundary before calling `shell.openExternal`.

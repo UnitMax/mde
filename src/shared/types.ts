@@ -1,5 +1,13 @@
 export type ProjectKind = 'native' | 'wsl'
 
+export type CodingAgent = 'opencode' | 'codex' | 'claude'
+
+/** Parsed argv for a coding-agent command; no shell syntax is represented. */
+export interface AgentCommand {
+  executable: string
+  args: string[]
+}
+
 export type SessionIcon =
   | 'computer'
   | 'robot'

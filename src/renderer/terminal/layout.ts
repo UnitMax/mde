@@ -1,4 +1,9 @@
-import type { TerminalLayout, TerminalLayoutSizes } from '@shared/types'
+import type {
+  AgentCommand,
+  CodingAgent,
+  TerminalLayout,
+  TerminalLayoutSizes
+} from '@shared/types'
 
 export type { TerminalLayout, TerminalLayoutSizes } from '@shared/types'
 
@@ -14,6 +19,16 @@ export interface TerminalPaneState {
   /** Optional user-defined title for this pane. */
   title?: string
   exited?: boolean
+  /** Runtime-only launch metadata; deliberately omitted from persisted tabs. */
+  launch?: RuntimeTerminalLaunch
+}
+
+export interface RuntimeTerminalLaunch {
+  sourceTerminalId: string
+  agent?: {
+    kind: CodingAgent
+    command: AgentCommand
+  }
 }
 
 export interface SessionTerminalLayout {

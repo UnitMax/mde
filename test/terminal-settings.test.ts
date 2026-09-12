@@ -50,7 +50,12 @@ describe('terminal settings', () => {
       theme: 'slate',
       escapeExitsFullscreen: true,
       showTerminalInstances: false,
-      osc52Policy: 'notify'
+      osc52Policy: 'notify',
+      agents: {
+        opencode: { executable: 'opencode', args: '' },
+        codex: { executable: 'codex', args: '' },
+        claude: { executable: 'claude', args: '' }
+      }
     })
   })
 
@@ -64,7 +69,12 @@ describe('terminal settings', () => {
       theme: 'slate',
       escapeExitsFullscreen: true,
       showTerminalInstances: false,
-      osc52Policy: 'notify'
+      osc52Policy: 'notify',
+      agents: {
+        opencode: { executable: 'opencode', args: '' },
+        codex: { executable: 'codex', args: '' },
+        claude: { executable: 'claude', args: '' }
+      }
     })
     expect(
       resolveTerminalSettings(
@@ -84,7 +94,12 @@ describe('terminal settings', () => {
       theme: 'frost',
       escapeExitsFullscreen: false,
       showTerminalInstances: false,
-      osc52Policy: 'notify'
+      osc52Policy: 'notify',
+      agents: {
+        opencode: { executable: 'opencode', args: '' },
+        codex: { executable: 'codex', args: '' },
+        claude: { executable: 'claude', args: '' }
+      }
     })
     expect(
       resolveTerminalSettings(
@@ -94,7 +109,12 @@ describe('terminal settings', () => {
     ).toMatchObject({
       escapeExitsFullscreen: true,
       showTerminalInstances: false,
-      osc52Policy: 'notify'
+      osc52Policy: 'notify',
+      agents: {
+        opencode: { executable: 'opencode', args: '' },
+        codex: { executable: 'codex', args: '' },
+        claude: { executable: 'claude', args: '' }
+      }
     })
   })
 
@@ -120,7 +140,12 @@ describe('terminal settings', () => {
       theme: 'slate',
       escapeExitsFullscreen: true,
       showTerminalInstances: false,
-      osc52Policy: 'notify'
+      osc52Policy: 'notify',
+      agents: {
+        opencode: { executable: 'opencode', args: '' },
+        codex: { executable: 'codex', args: '' },
+        claude: { executable: 'claude', args: '' }
+      }
     })
   })
 
@@ -134,7 +159,12 @@ describe('terminal settings', () => {
       theme: 'ember' as const,
       escapeExitsFullscreen: false,
       showTerminalInstances: true,
-      osc52Policy: 'ask' as const
+      osc52Policy: 'ask' as const,
+      agents: {
+        opencode: { executable: 'opencode', args: '' },
+        codex: { executable: 'codex', args: '' },
+        claude: { executable: 'claude', args: '' }
+      }
     }
 
     saveTerminalSettings(settings)

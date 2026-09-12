@@ -1,4 +1,4 @@
-import type { Session } from '@shared/types'
+import type { AgentCommand, Session } from '@shared/types'
 
 export interface LaunchSpec {
   file: string
@@ -19,10 +19,15 @@ export interface LaunchContext {
   environment?: Record<string, string>
   /** Environment variables that should be inherited by commands inside WSL. */
   wslEnvironment?: Record<string, string>
+  /** Validated runtime directory override, used by a pane cloned from another terminal. */
+  workingDirectory?: string
+  /** Direct command to run after the target shell has loaded its login environment. */
+  agent?: AgentCommand
 }
 
 const DEFAULT_WINDOWS_SHELL = 'powershell.exe'
 const DEFAULT_POSIX_SHELL = '/bin/bash'
+const WSL_DEFAULT_SHELL_MARKER = '__mde_default_shell__'
 const WSL_TERMINAL_ENVIRONMENT = {
   TERM: 'xterm-256color',
   COLORTERM: 'truecolor'
@@ -172,6 +177,37 @@ esac
 `.trim()
 }
 
+function wslAgentShellCommand(): string {
+  return `
+if [ "$#" -lt 2 ]; then exit 2; fi
+shell=$1
+agent=$2
+shift 2
+if [ "$shell" = '${WSL_DEFAULT_SHELL_MARKER}' ]; then
+  account=$(getent passwd "$(id -u)" 2>/dev/null || true)
+  shell=\${account##*:}
+fi
+if [ -z "$shell" ]; then shell=\${SHELL:-/bin/bash}; fi
+case "$shell" in
+  /*) ;;
+  *) shell=$(command -v "$shell" 2>/dev/null || true) ;;
+esac
+if [ -z "$shell" ] || [ ! -x "$shell" ]; then
+  printf 'mde: configured login shell is unavailable; falling back to /bin/bash\\n' >&2
+  shell=/bin/bash
+fi
+export SHELL="$shell"
+case "\${shell##*/}" in
+  fish)
+    exec "$shell" -l -i -c 'exec $argv' -- "$agent" "$@"
+    ;;
+  *)
+    exec "$shell" -lic 'exec "$@"' mde-agent "$agent" "$@"
+    ;;
+esac
+`.trim()
+}
+
 function shellBasename(shell: string): string {
   const normalised = shell.replaceAll('\\', '/')
   return normalised.slice(normalised.lastIndexOf('/') + 1).toLowerCase()
@@ -219,6 +255,8 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
       throw new Error(`WSL session "${session.name}" has no distro`)
     }
 
+    const workingDirectory = context.workingDirectory ?? session.path
+
     const environment = wslEnvironmentArgs({
       ...context.environment,
       ...context.wslEnvironment,
@@ -230,7 +268,7 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
         '-d',
         session.distro,
         '--cd',
-        session.path,
+        workingDirectory,
         // -e (--exec), never --: wsl.exe hands everything after `--` to the
         // distro's default shell, which re-parses it. That extra pass splits
         // the command below on its `;` and eats its quoting, which silently
@@ -240,14 +278,22 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
         ...(environment.length > 0 ? ['env', ...environment] : []),
         '/bin/sh',
         '-c',
-        wslShellCommand(),
-        'mde-shell',
-        ...(session.shell ? [session.shell] : [])
+        context.agent ? wslAgentShellCommand() : wslShellCommand(),
+        context.agent ? 'mde-agent' : 'mde-shell',
+        ...(context.agent
+          ? [session.shell ?? WSL_DEFAULT_SHELL_MARKER, context.agent.executable, ...context.agent.args]
+          : session.shell
+            ? [session.shell]
+            : [])
       ]
       // cwd is deliberately absent: --cd sets the working directory inside the
       // distro, and the Windows-side cwd is irrelevant (and must be a valid
       // Windows path, which session.path is not).
     }
+  }
+
+  if (context.agent) {
+    throw new Error('Coding agents can only be launched in WSL sessions on Windows')
   }
 
   if (context.platform === 'win32') {
@@ -263,7 +309,7 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
     return {
       file: shell,
       args: [],
-      cwd: session.path
+      cwd: context.workingDirectory ?? session.path
     }
   }
 
@@ -272,7 +318,7 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
     return {
       file: '/bin/bash',
       args: ['-c', nativeBashShellCommand(), 'mde-shell', shell],
-      cwd: session.path
+      cwd: context.workingDirectory ?? session.path
     }
   }
 
@@ -280,7 +326,7 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
     return {
       file: shell,
       args: ['-l', '-i', '-C', fishStartupCommand()],
-      cwd: session.path
+      cwd: context.workingDirectory ?? session.path
     }
   }
 
@@ -288,9 +334,9 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
     return {
       file: '/bin/sh',
       args: ['-c', nativeZshShellCommand(), 'mde-shell', shell],
-      cwd: session.path
+      cwd: context.workingDirectory ?? session.path
     }
   }
 
-  return { file: shell, args: ['-l'], cwd: session.path }
+  return { file: shell, args: ['-l'], cwd: context.workingDirectory ?? session.path }
 }

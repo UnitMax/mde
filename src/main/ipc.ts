@@ -11,6 +11,7 @@ import {
   type GitTerminalInfoRequest,
   IpcChannels,
   type EnsurePtyRequest,
+  type PtyLaunchRequest,
   type MoveSessionRequest,
   type MoveTodoTaskRequest,
   type PlatformInfo,
@@ -59,9 +60,11 @@ import type {
   OpenCodeAlertSetEnabledRequest,
   OpenCodeAlertSettings,
   Session,
-  PtyStatus
+  PtyStatus,
+  AgentCommand,
+  CodingAgent
 } from '@shared/types'
-import type { PtyManager } from './pty/manager'
+import type { PtyLaunchOptions, PtyManager } from './pty/manager'
 import { resolveTerminalDrop } from './pty/drop'
 import type { OpenCodeTuiStatusManager } from './opencode/tui-status'
 import type { OpenCodeTokenRatePluginManager } from './opencode/token-rate'
@@ -216,6 +219,59 @@ async function verifiedDirectory(session: Session, directory: string): Promise<s
 
   const result = await runWslCommand(distro, directoryCheckArgs(canonical))
   return result.code === 0 ? canonical : reject(`not a directory in ${distro}`)
+}
+
+function isCodingAgent(value: unknown): value is CodingAgent {
+  return value === 'opencode' || value === 'codex' || value === 'claude'
+}
+
+function isSafeLaunchArgument(value: unknown): value is string {
+  return typeof value === 'string' && !/[\u0000-\u001f\u007f]/.test(value)
+}
+
+function validatePtyLaunchRequest(launch: PtyLaunchRequest): void {
+  if (!launch || typeof launch.sourceTerminalId !== 'string' || !launch.sourceTerminalId.trim()) {
+    throw new Error('Invalid terminal launch source.')
+  }
+  if (launch.agent === undefined) return
+  if (!launch.agent || typeof launch.agent !== 'object' || !isCodingAgent(launch.agent.kind)) {
+    throw new Error('Invalid coding agent.')
+  }
+
+  const command = launch.agent.command as AgentCommand | undefined
+  if (
+    !command ||
+    !isSafeLaunchArgument(command.executable) ||
+    !command.executable.trim() ||
+    !Array.isArray(command.args) ||
+    !command.args.every(isSafeLaunchArgument)
+  ) {
+    throw new Error('Invalid coding-agent command.')
+  }
+}
+
+async function resolvePtyLaunchOptions(
+  ptyManager: PtyManager,
+  session: Session,
+  launch: PtyLaunchRequest | undefined
+): Promise<PtyLaunchOptions | undefined> {
+  if (!launch) return undefined
+  validatePtyLaunchRequest(launch)
+  if (process.platform !== 'win32' || session.kind !== 'wsl') {
+    throw new Error('New terminal launches are only available for WSL sessions on Windows.')
+  }
+
+  const source = ptyManager.terminalInfo(launch.sourceTerminalId)
+  if (!source || source.sessionId !== session.id || !source.directory) {
+    throw new Error('The source terminal directory is not available.')
+  }
+  const directory = await verifiedDirectory(session, source.directory)
+  if (!directory) throw new Error('The source terminal directory is not available.')
+
+  return {
+    directory,
+    ...(launch.agent ? { agent: launch.agent.command } : {})
+  }
 }
 
 async function revealDirectory(session: Session, directory: string): Promise<void> {
@@ -391,11 +447,13 @@ export function registerIpcHandlers(
   handle<EnsurePtyRequest, PtyStatus>(IpcChannels.ptyEnsure, async (req) => {
     const session = await getSession(req.sessionId)
     if (!session) return 'none'
+    const launch = await resolvePtyLaunchOptions(ptyManager, session, req.launch)
     return ptyManager.ensure(
       req.terminalId,
       session,
       req.size,
-      validateTerminalPalette(req.palette)
+      validateTerminalPalette(req.palette),
+      launch
     )
   })
   handle<EnsurePtyRequest, PtyStatus>(IpcChannels.ptyRestart, async (req) => {

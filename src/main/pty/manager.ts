@@ -3,6 +3,7 @@ import * as nodePty from 'node-pty'
 import type { IPty, IWindowsPtyForkOptions } from 'node-pty'
 import type { TerminalPalette } from '@shared/ipc'
 import type {
+  AgentCommand,
   PtyDataChunk,
   PtyDirectoryUpdate,
   PtyExitInfo,
@@ -31,6 +32,11 @@ export interface PtyEvents {
 export interface PtyTerminalInfo {
   sessionId: string
   directory: string | null
+}
+
+export interface PtyLaunchOptions {
+  directory?: string
+  agent?: AgentCommand
 }
 
 export interface PtyLaunchIntegration {
@@ -151,6 +157,7 @@ export class PtyManager {
     session: Session,
     size: PtySize,
     palette: TerminalPalette,
+    options?: PtyLaunchOptions,
   ): PtyStatus {
     const existing = this.sessions.get(terminalId)
     if (existing) {
@@ -163,7 +170,9 @@ export class PtyManager {
     const spec = buildLaunchSpec(session, {
       ...launchContext(),
       environment,
-      wslEnvironment: environment
+      wslEnvironment: environment,
+      workingDirectory: options?.directory,
+      agent: options?.agent
     })
     const { cols, rows } = clampSize(size)
 
@@ -185,7 +194,7 @@ export class PtyManager {
     // WSL's --cd gives us a reliable initial directory even before the shell has
     // displayed its first prompt. OSC 7 then keeps this value current after
     // every directory change.
-    let currentDirectory: string | null = session.kind === 'wsl' ? session.path : null
+    let currentDirectory: string | null = options?.directory ?? (session.kind === 'wsl' ? session.path : null)
     // Answer palette probes beside the PTY so latency-sensitive TUIs do not
     // have to wait for a main -> renderer -> main IPC round trip.
     const dataListener = child.onData((data) => {

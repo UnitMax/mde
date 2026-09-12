@@ -20,6 +20,7 @@ import { useWorkspace } from '@/store/workspace'
 import { disposeSession, getSession } from '@/terminal/sessions'
 import {
   activeSessionTab,
+  appendRuntimePane,
   createRuntimeLayout,
   nextPaneId,
   persistRuntimeLayout,
@@ -33,6 +34,7 @@ import {
   terminalCount,
   type SessionTerminalLayout,
   type TerminalLayout,
+  type RuntimeTerminalLaunch,
   type TerminalColumnIndex,
   type TerminalResizeAxis
 } from '@/terminal/layout'
@@ -497,6 +499,31 @@ export function App(): JSX.Element {
     queueLayoutPersistence(sessionId, tabId, next, true)
   }
 
+  const addTerminalPane = (
+    sessionId: string,
+    tabId: string,
+    sourceTerminalId: string,
+    launch: RuntimeTerminalLaunch
+  ): void => {
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (!session) return
+    const existing = layoutForTab(session, tabId)
+    if (!existing.panes.some((pane) => pane.terminalId === sourceTerminalId)) return
+
+    const next = appendRuntimePane(sessionId, tabId, existing, launch)
+    if (!next) return
+    setRuntimeLayout(sessionId, tabId, next)
+    queueLayoutPersistence(sessionId, tabId, next, true)
+    const pane = next.panes[next.panes.length - 1]
+    if (pane) {
+      setPendingTerminalFocus({
+        sessionId,
+        tabId,
+        terminalId: pane.terminalId
+      })
+    }
+  }
+
   const reduceTerminalLayout = (
     sessionId: string,
     tabId: string,
@@ -601,6 +628,9 @@ export function App(): JSX.Element {
             onLayoutResize={(axis, ratio, columnIndex) => resizeTerminalLayout(selected.id, activeTab.id, axis, ratio, columnIndex)}
             onPaneOrderChange={(terminalIds) => reorderTerminalPanes(selected.id, activeTab.id, terminalIds)}
             onReduceLayout={(layout, paneIds) => reduceTerminalLayout(selected.id, activeTab.id, layout, paneIds)}
+            onAddPane={(sourceTerminalId, launch) =>
+              addTerminalPane(selected.id, activeTab.id, sourceTerminalId, launch)
+            }
             onClosePane={(terminalId) => closeTerminalPane(selected.id, activeTab.id, terminalId)}
             onPaneTitleChange={(terminalId, title) =>
               renameTerminalPane(selected.id, activeTab.id, terminalId, title)

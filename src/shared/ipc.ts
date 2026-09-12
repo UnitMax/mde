@@ -32,7 +32,9 @@ import type {
   PtyDirectoryUpdate,
   PtyExitInfo,
   PtySize,
-  PtyStatus
+  PtyStatus,
+  AgentCommand,
+  CodingAgent
 } from './types'
 
 export interface WorkspaceData {
@@ -175,6 +177,17 @@ export interface EnsurePtyRequest {
   sessionId: string
   size: PtySize
   palette: TerminalPalette
+  /** Optional runtime-only launch override for a new WSL terminal pane. */
+  launch?: PtyLaunchRequest
+}
+
+export interface PtyLaunchRequest {
+  /** Existing running terminal whose validated current directory is reused. */
+  sourceTerminalId: string
+  agent?: {
+    kind: CodingAgent
+    command: AgentCommand
+  }
 }
 
 export interface TerminalPalette {

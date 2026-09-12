@@ -107,6 +107,14 @@ expanded Projects sidebar also includes a collapsible Agents overview below the 
 currently reported OpenCode instances from every session with their originating session, tab, and
 status.
 
+In a focused WSL terminal, Ctrl+N or Cmd+N opens a launcher for a new shell, OpenCode, Codex, or
+Claude pane in that terminal's current directory. The launcher is WSL-only, keeps at most six panes
+per tab, and leaves its agent command choices disabled until the directory is available. Configure
+each executable and its shell-style arguments in the Settings dialog's Agents section. Arguments
+are passed as literal argv values; shell expansion and command chaining are not supported. Agent
+launch identity is runtime-only, so reopening the app restores ordinary shells rather than relaunching
+an agent.
+
 Terminal clipboard shortcuts use the normal system clipboard, including for WSL sessions on Windows.
 `Ctrl+C` copies selected terminal text and remains the normal interrupt when there is no selection;
 `Ctrl+Shift+C`, `Ctrl+Insert`, `Ctrl+V`, `Ctrl+Shift+V`, and `Shift+Insert` are also supported.

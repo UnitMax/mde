@@ -18,6 +18,7 @@ import {
   terminalResizeHandles,
   terminalSplitRatio
 } from '../src/renderer/terminal/layout'
+import { appendRuntimePane, persistRuntimeLayout } from '../src/renderer/terminal/tabs'
 
 describe('terminal layouts', () => {
   it('maps Ctrl+1 through Ctrl+7 to the supported layouts', () => {
@@ -266,5 +267,51 @@ describe('terminal layouts', () => {
       panes: [{ terminalId: 'session-1' }],
       sizes: defaultTerminalLayoutSizes()
     })
+  })
+
+  it('appends a runtime pane and strips its launch metadata when persisted', () => {
+    const launch = {
+      sourceTerminalId: 'session-1:tab:default:pane:pane-1',
+      agent: {
+        kind: 'codex' as const,
+        command: { executable: 'codex', args: ['--model', 'gpt-5'] }
+      }
+    }
+    const layout = {
+      layout: 'single' as const,
+      panes: [{ terminalId: 'session-1:tab:default:pane:pane-1', paneId: 'pane-1' }],
+      sizes: defaultTerminalLayoutSizes()
+    }
+
+    const next = appendRuntimePane('session-1', 'tab-1', layout, launch)
+
+    expect(next?.layout).toBe('columns')
+    expect(next?.panes[1]).toMatchObject({
+      paneId: 'pane-2',
+      launch
+    })
+    expect(persistRuntimeLayout(next!)).toEqual({
+      layout: 'columns',
+      panes: [
+        { id: 'pane-1' },
+        { id: 'pane-2' }
+      ],
+      sizes: defaultTerminalLayoutSizes('columns')
+    })
+  })
+
+  it('does not append beyond the six-pane limit', () => {
+    const layout = {
+      layout: 'sixGrid' as const,
+      panes: Array.from({ length: 6 }, (_, index) => ({
+        terminalId: `pane-${index + 1}`,
+        paneId: `pane-${index + 1}`
+      })),
+      sizes: defaultTerminalLayoutSizes('sixGrid')
+    }
+
+    expect(appendRuntimePane('session-1', 'tab-1', layout, {
+      sourceTerminalId: 'pane-1'
+    })).toBeNull()
   })
 })

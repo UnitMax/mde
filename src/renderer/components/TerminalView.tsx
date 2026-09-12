@@ -28,11 +28,13 @@ import type {
   OpenCodePluginTarget,
   OpenCodeTokenRatePluginState,
   OpenCodeAlertSettings,
+  CodingAgent,
   PtySize,
   Session,
   SessionTab
 } from '@shared/types'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -93,6 +95,7 @@ import {
   type SessionTerminalLayout,
   type TerminalLayout,
   type TerminalPaneState,
+  type RuntimeTerminalLaunch,
   type TerminalColumnIndex,
   type TerminalResizeAxis,
   type TerminalResizeScope
@@ -113,7 +116,10 @@ import { terminalPrimarySelectionMode } from '@/terminal/clipboard'
 import { sessionTabs } from '@/terminal/tabs'
 import { OpenCodeStatusIcon } from '@/components/OpenCodeStatusIcon'
 import { TerminalGitInfo } from '@/components/TerminalGitInfo'
+import { TerminalLauncher } from '@/components/TerminalLauncher'
+import { AGENT_COMMAND_OPTIONS, agentCommandSettingError } from '@/lib/agent-commands'
 import { terminalPaneTitle } from '@/lib/opencode-tui-instances'
+import { isTerminalLauncherShortcut } from '@/lib/terminal-launcher'
 
 const FALLBACK_SIZE: PtySize = { cols: 80, rows: 24 }
 const RESIZE_DEBOUNCE_MS = 100
@@ -138,6 +144,7 @@ interface TerminalViewProps {
   onLayoutResize: (axis: TerminalResizeAxis, ratio: number, columnIndex?: TerminalColumnIndex) => void
   onPaneOrderChange: (terminalIds: readonly string[]) => void
   onReduceLayout: (layout: TerminalLayout, paneIds: string[]) => void
+  onAddPane: (sourceTerminalId: string, launch: RuntimeTerminalLaunch) => void
   onClosePane: (terminalId: string) => void
   onPaneTitleChange: (terminalId: string, title: string | null) => void
   onLinkTask: (terminalId: string) => void
@@ -342,7 +349,8 @@ function TerminalSurface({
           terminalId: pane.terminalId,
           sessionId: sourceSession.id,
           size: action.size,
-          palette: getTerminalPalette(terminal.themeId)
+          palette: getTerminalPalette(terminal.themeId),
+          launch: pane.launch
         }).then((status) => {
           if (cancelled) return
           setStatus(pane.terminalId, status)
@@ -1041,11 +1049,12 @@ function tokenRatePluginStatusLabel(state: OpenCodeTokenRatePluginState | undefi
   return 'Not installed'
 }
 
-type SettingsSection = 'appearance' | 'terminal' | 'sidebar' | 'opencode' | 'about'
+type SettingsSection = 'appearance' | 'terminal' | 'agents' | 'sidebar' | 'opencode' | 'about'
 
 const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: 'appearance', label: 'Appearance' },
   { id: 'terminal', label: 'Terminal' },
+  { id: 'agents', label: 'Agents' },
   { id: 'sidebar', label: 'Sidebar' },
   { id: 'opencode', label: 'OpenCode' },
   { id: 'about', label: 'About' }
@@ -1187,6 +1196,18 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
       const terminal = getSession(terminalId)
       const size = terminal ? fitSession(terminal) : null
       if (size) void window.api.pty.resize({ terminalId, size })
+    })
+  }
+
+  const updateAgentSetting = (
+    kind: CodingAgent,
+    patch: Partial<TerminalSettings['agents'][CodingAgent]>
+  ): void => {
+    updateSettings({
+      agents: {
+        ...settings.agents,
+        [kind]: { ...settings.agents[kind], ...patch }
+      }
     })
   }
 
@@ -1554,6 +1575,62 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
                     unfocused, or that you have not just typed in is always refused.
                   </span>
                 </label>
+              </section>
+            )}
+
+            {activeSection === 'agents' && (
+              <section className="space-y-4" aria-labelledby="agent-settings">
+                <div>
+                  <h3 id="agent-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
+                    Agents
+                  </h3>
+                  <p className="mt-1 text-xs text-fg-subtle">
+                    Configure the commands available from Ctrl+N and Cmd+N. These commands run directly in WSL from the focused terminal directory.
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  {AGENT_COMMAND_OPTIONS.map((option) => {
+                    const setting = settings.agents[option.kind]
+                    const error = agentCommandSettingError(setting)
+                    return (
+                      <div key={option.kind} className="space-y-2 rounded border border-line bg-panel p-3">
+                        <div>
+                          <h4 className="text-xs font-medium text-fg">{option.label}</h4>
+                          <p className="mt-0.5 text-[11px] text-fg-subtle">{option.description}</p>
+                        </div>
+                        <label className="block text-xs font-medium text-fg-muted">
+                          Executable
+                          <Input
+                            value={setting.executable}
+                            onChange={(event) => updateAgentSetting(option.kind, { executable: event.target.value })}
+                            className="mt-1"
+                            data-testid={`agent-${option.kind}-executable`}
+                            spellCheck={false}
+                          />
+                        </label>
+                        <label className="block text-xs font-medium text-fg-muted">
+                          Arguments
+                          <Input
+                            value={setting.args}
+                            onChange={(event) => updateAgentSetting(option.kind, { args: event.target.value })}
+                            className="mt-1"
+                            placeholder="Optional shell-style arguments"
+                            data-testid={`agent-${option.kind}-args`}
+                            spellCheck={false}
+                          />
+                        </label>
+                        {error ? (
+                          <p className="text-[11px] text-danger">{error} This option will be disabled in the launcher.</p>
+                        ) : (
+                          <p className="text-[11px] text-fg-subtle">
+                            The executable is checked when the command starts; a missing CLI will show its normal shell error.
+                          </p>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
               </section>
             )}
 
@@ -1965,6 +2042,7 @@ export function TerminalView({
   onLayoutResize,
   onPaneOrderChange,
   onReduceLayout,
+  onAddPane,
   onClosePane,
   onPaneTitleChange,
   onLinkTask
@@ -1972,6 +2050,7 @@ export function TerminalView({
   const opencodeTuiInstances = useWorkspace(
     (state) => state.opencodeTuiInstances[selectedSession.id]
   )
+  const terminalDirectories = useWorkspace((state) => state.terminalDirectories)
   const [pendingReduction, setPendingReduction] = useState<{
     layout: TerminalLayout
     paneIds: string[]
@@ -1981,6 +2060,8 @@ export function TerminalView({
   const [reorderSourceId, setReorderSourceId] = useState<string | null>(null)
   const [reorderPreviewPanes, setReorderPreviewPanes] = useState<TerminalPaneState[] | null>(null)
   const [fullscreenTerminalId, setFullscreenTerminalId] = useState<string | null>(null)
+  const [terminalLauncherOpen, setTerminalLauncherOpen] = useState(false)
+  const [terminalLauncherSourceId, setTerminalLauncherSourceId] = useState<string | null>(null)
   const [terminalSettings, setTerminalSettings] = useState<TerminalSettings>(() => getTerminalSettings())
   const gridRef = useRef<HTMLDivElement>(null)
   const reorderDragRef = useRef<TerminalReorderDragState | null>(null)
@@ -1991,8 +2072,31 @@ export function TerminalView({
   }, [])
 
   useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const target = event.target
+      if (target instanceof Element && target.closest('[role="dialog"]')) return
+      if (!isTerminalLauncherShortcut(event)) return
+      if (selectedSession.kind !== 'wsl') return
+      if (!(target instanceof Element) || !target.closest('.terminal-host')) return
+
+      const sourceTerminalId = focusedTerminalIdRef.current
+      if (!sourceTerminalId || !terminalLayout.panes.some((pane) => pane.terminalId === sourceTerminalId)) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      setTerminalLauncherSourceId(sourceTerminalId)
+      setTerminalLauncherOpen(true)
+    }
+
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [selectedSession.kind, terminalLayout.panes])
+
+  useEffect(() => {
     focusedTerminalIdRef.current = null
     setFullscreenTerminalId(null)
+    setTerminalLauncherOpen(false)
+    setTerminalLauncherSourceId(null)
   }, [activeTab.id, selectedSession.id])
 
   const requestLayout = useCallback((layout: TerminalLayout): void => {
@@ -2450,6 +2554,25 @@ export function TerminalView({
             />
           ))}
       </div>
+
+      <TerminalLauncher
+        open={terminalLauncherOpen}
+        onOpenChange={(open) => {
+          setTerminalLauncherOpen(open)
+          if (!open) setTerminalLauncherSourceId(null)
+        }}
+        session={selectedSession}
+        sourceTerminalId={terminalLauncherSourceId ?? ''}
+        directory={terminalLauncherSourceId
+          ? terminalDirectories[terminalLauncherSourceId]
+          : undefined}
+        paneCount={terminalLayout.panes.length}
+        onSelect={(launch) => {
+          onAddPane(launch.sourceTerminalId, launch)
+          setTerminalLauncherOpen(false)
+          setTerminalLauncherSourceId(null)
+        }}
+      />
 
       <AlertDialog
         open={pendingReduction !== null}

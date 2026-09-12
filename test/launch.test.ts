@@ -103,6 +103,84 @@ describe('buildLaunchSpec', () => {
     expect(spec.args[10]).toContain('add-zsh-hook precmd __mde_report_cwd')
   })
 
+  it('launches a configured WSL agent directly with literal argv', () => {
+    const spec = buildLaunchSpec(
+      session({ kind: 'wsl', distro: 'Ubuntu-24.04', shell: '/bin/bash' }),
+      {
+        platform: 'win32',
+        workingDirectory: '/home/me/src/feature',
+        agent: { executable: 'codex', args: ['--model', 'gpt 5'] }
+      }
+    )
+
+    expect(spec.args.slice(0, 5)).toEqual([
+      '-d',
+      'Ubuntu-24.04',
+      '--cd',
+      '/home/me/src/feature',
+      '-e'
+    ])
+    expect(spec.args[10]).toContain("exec \"$@\"")
+    expect(spec.args.slice(-5)).toEqual(['mde-agent', '/bin/bash', 'codex', '--model', 'gpt 5'])
+    expect(spec.args[10]).not.toContain('codex --model')
+
+    const syntax = spawnSync('bash', ['-n', '-c', spec.args[10] ?? ''], { encoding: 'utf8' })
+    expect(syntax.status).toBe(0)
+    expect(syntax.stderr).toBe('')
+  })
+
+  it('resolves the default WSL shell without an empty positional argument', () => {
+    const spec = buildLaunchSpec(
+      session({ kind: 'wsl', distro: 'Ubuntu-24.04' }),
+      {
+        platform: 'win32',
+        workingDirectory: '/home/me/src/feature',
+        agent: { executable: '/bin/printf', args: ['%s', 'hello world'] }
+      }
+    )
+
+    expect(spec.args.slice(-5)).toEqual([
+      'mde-agent',
+      '__mde_default_shell__',
+      '/bin/printf',
+      '%s',
+      'hello world'
+    ])
+
+    const result = spawnSync(
+      '/bin/sh',
+      ['-c', spec.args[10] ?? '', ...spec.args.slice(11)],
+      { encoding: 'utf8', env: { ...process.env, HOME: '/tmp' } }
+    )
+    expect(result.status).toBe(0)
+    expect(result.stdout).toBe('hello world')
+  })
+
+  it.each([undefined, '/bin/bash'])('runs an agent with no extra arguments using shell %s', (shell) => {
+    const spec = buildLaunchSpec(
+      session({ kind: 'wsl', distro: 'Ubuntu-24.04', shell }),
+      { platform: 'win32', agent: { executable: '/bin/pwd', args: [] } }
+    )
+    const result = spawnSync(
+      '/bin/sh',
+      ['-c', spec.args[10] ?? '', ...spec.args.slice(11)],
+      { encoding: 'utf8', cwd: '/tmp', env: { ...process.env, HOME: '/tmp' } }
+    )
+
+    expect(result.status).toBe(0)
+    // Login startup files may print a banner before the command's output.
+    expect(result.stdout.trim().split('\n').at(-1)).toBe('/tmp')
+  })
+
+  it('uses a validated WSL directory override for a normal shell', () => {
+    const spec = buildLaunchSpec(
+      session({ kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/src/app' }),
+      { platform: 'win32', workingDirectory: '/home/me/src/other' }
+    )
+
+    expect(spec.args.slice(0, 4)).toEqual(['-d', 'Ubuntu-24.04', '--cd', '/home/me/src/other'])
+  })
+
   it('passes shell overrides as an argument instead of shell source', () => {
     const override = "zsh; printf 'unexpected'"
     const spec = buildLaunchSpec(

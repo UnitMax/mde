@@ -5,8 +5,11 @@ import type {
 } from '@shared/types'
 import {
   defaultTerminalLayoutSizes,
+  layoutForCount,
+  MAX_TERMINAL_COUNT,
   type SessionTerminalLayout,
-  type TerminalPaneState
+  type TerminalPaneState,
+  type RuntimeTerminalLaunch
 } from './layout'
 
 export function defaultSessionTab(sessionId: string): SessionTab {
@@ -44,6 +47,31 @@ export function nextPaneId(panes: readonly TerminalPaneState[]): string {
   let index = 1
   while (used.has(`pane-${index}`)) index += 1
   return `pane-${index}`
+}
+
+export function appendRuntimePane(
+  sessionId: string,
+  tabId: string,
+  layout: SessionTerminalLayout,
+  launch: RuntimeTerminalLaunch
+): SessionTerminalLayout | null {
+  const nextCount = layout.panes.length + 1
+  if (nextCount > MAX_TERMINAL_COUNT) return null
+
+  const paneId = nextPaneId(layout.panes)
+  const nextLayout = layoutForCount(nextCount)
+  return {
+    layout: nextLayout,
+    panes: [
+      ...layout.panes,
+      {
+        terminalId: terminalIdForPane(sessionId, tabId, paneId),
+        paneId,
+        launch
+      }
+    ],
+    sizes: defaultTerminalLayoutSizes(nextLayout)
+  }
 }
 
 export function createRuntimeLayout(sessionId: string, tab: SessionTab): SessionTerminalLayout {
