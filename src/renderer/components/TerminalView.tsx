@@ -117,6 +117,7 @@ import { terminalPrimarySelectionMode } from '@/terminal/clipboard'
 import { sessionTabs } from '@/terminal/tabs'
 import { OpenCodeStatusIcon } from '@/components/OpenCodeStatusIcon'
 import { TerminalGitInfo } from '@/components/TerminalGitInfo'
+import { TerminalFullscreenIndicator } from '@/components/TerminalFullscreenIndicator'
 import { TerminalLauncher } from '@/components/TerminalLauncher'
 import { AGENT_COMMAND_OPTIONS, agentCommandSettingError } from '@/lib/agent-commands'
 import {
@@ -720,6 +721,7 @@ function TerminalPane({
             </span>
           )}
           <TerminalGitInfo terminalId={pane.terminalId} />
+          <TerminalFullscreenIndicator isFullscreen={isFullscreen} />
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {terminalStatus === 'running' && (
