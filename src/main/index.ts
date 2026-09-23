@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, session, shell } from 'electron'
 import { IpcEvents } from '@shared/ipc'
 import { registerIpcHandlers } from './ipc'
 import { OpenCodeAlertManager } from './opencode/alerts'
@@ -10,6 +10,7 @@ import { PtyManager } from './pty/manager'
 import { initWorkspaceStore } from './store/workspace'
 import { adjustZoomFactor, DEFAULT_ZOOM_FACTOR, getZoomAction } from './zoom'
 import { handleWindowOpen } from './external-links'
+import { installPermissionPolicy } from './permissions'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -143,6 +144,9 @@ if (!app.requestSingleInstanceLock()) {
     // by which this process could open a connection rather than falling back to
     // plaintext DNS. Electron requires this call after `ready`.
     app.configureHostResolver({ secureDnsMode: 'off' })
+    // The window uses the default session in development and production alike,
+    // so installing here, before any renderer loads, covers both.
+    installPermissionPolicy(session.defaultSession)
     initWorkspaceStore(app.getPath('userData'))
     await opencodeTuiStatusManager.configure(app.getPath('userData'))
     await codexStatusManager.configure(app.getPath('userData'))
