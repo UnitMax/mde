@@ -46,6 +46,7 @@ import {
   AlertDialogTitle
 } from '@/components/ui/alert-dialog'
 import { AboutSettingsPanel } from '@/components/AboutSettingsPanel'
+import { KeyboardShortcutsSettings } from '@/components/KeyboardShortcutsSettings'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ipcErrorMessage } from '@/lib/ipc-error'
@@ -1108,11 +1109,12 @@ function tokenRatePluginStatusLabel(state: OpenCodeTokenRatePluginState | undefi
   return 'Not installed'
 }
 
-type SettingsSection = 'appearance' | 'terminal' | 'agents' | 'sidebar' | 'opencode' | 'about'
+type SettingsSection = 'appearance' | 'terminal' | 'shortcuts' | 'agents' | 'sidebar' | 'opencode' | 'about'
 
 const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: 'appearance', label: 'Appearance' },
   { id: 'terminal', label: 'Terminal' },
+  { id: 'shortcuts', label: 'Shortcuts' },
   { id: 'agents', label: 'Agents' },
   { id: 'sidebar', label: 'Sidebar' },
   { id: 'opencode', label: 'OpenCode' },
@@ -1709,6 +1711,13 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
                   </span>
                 </label>
               </section>
+            )}
+
+            {activeSection === 'shortcuts' && (
+              <KeyboardShortcutsSettings
+                platform={platform?.platform ?? 'other'}
+                escapeExitsFullscreen={settings.escapeExitsFullscreen}
+              />
             )}
 
             {activeSection === 'agents' && (

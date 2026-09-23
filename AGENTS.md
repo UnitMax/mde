@@ -32,6 +32,8 @@ Use two-space indentation, single quotes, no semicolons, and trailing commas for
 
 Vitest runs Node-environment tests matched by `test/**/*.test.ts`. Name tests after the behavior or module under test (for example, `wsl.test.ts`). Add focused regression coverage for launch, path, parsing, validation, IPC, and workspace changes; run `npm test` and `npm run typecheck` before submitting.
 
+Keep `src/renderer/terminal/keyboard-shortcuts.ts` in sync whenever a keyboard shortcut is added or changed.
+
 ## Commit & Pull Request Guidelines
 
 Recent commits use short, imperative, sentence-style subjects (for example, `Preserve ANSI terminal colors`). Keep commits focused. Pull requests should explain the user-visible change, implementation impact, and verification commands; include screenshots for UI changes and note Windows/WSL testing. Update documentation or third-party notices when affected.
