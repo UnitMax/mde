@@ -44,7 +44,7 @@ describe('KeyboardShortcutsSettings', () => {
     const section = container.querySelector<HTMLElement>('[data-testid="keyboard-shortcuts-settings"]')
 
     expect(section).not.toBeNull()
-    expect(section?.querySelectorAll('[data-testid^="keyboard-shortcut-row-"]')).toHaveLength(19)
+    expect(section?.querySelectorAll('[data-testid^="keyboard-shortcut-row-"]')).toHaveLength(21)
     expect(section?.querySelectorAll('button')).toHaveLength(0)
     const rows = Array.from(section?.querySelectorAll<HTMLElement>('[data-testid^="keyboard-shortcut-row-"]') ?? [])
     expect(rows.every((row) => row.classList.contains('grid-cols-[12rem_minmax(0,1fr)]'))).toBe(true)
@@ -53,6 +53,7 @@ describe('KeyboardShortcutsSettings', () => {
     expect(section?.textContent).toContain('Ctrl+N')
     expect(section?.textContent).toContain('Ctrl+1–7')
     expect(section?.textContent).toContain('Ctrl+Shift+F')
+    expect(section?.textContent).toContain('Ctrl+Shift+1–6')
     expect(section?.textContent).toContain('Ctrl+Insert')
     expect(section?.textContent).toContain('Ctrl+Enter')
     expect(section?.textContent).toContain('Tab')

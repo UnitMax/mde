@@ -59,6 +59,17 @@ export function getKeyboardShortcutGroups(
           description: 'Toggle terminal fullscreen.'
         },
         {
+          id: 'terminal-pane-overlay',
+          keys: ['Ctrl+Shift'],
+          description: 'Hold to number the terminals and highlight the focused one.'
+        },
+        {
+          id: 'terminal-pane-switch',
+          keys: ['Ctrl+Shift+1–6'],
+          description: 'Focus a terminal by its number.',
+          note: 'Numpad digits also work. Ignored while a terminal is fullscreen.'
+        },
+        {
           id: 'terminal-fullscreen-escape',
           keys: ['Escape'],
           description: 'Exit fullscreen.',

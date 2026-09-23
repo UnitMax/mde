@@ -108,6 +108,11 @@ import {
   terminalFullscreenPane
 } from '@/terminal/fullscreen'
 import {
+  getTerminalPaneSwitchIndex,
+  PANE_OVERLAY_DELAY_MS,
+  terminalPaneSwitchTarget
+} from '@/terminal/pane-switch'
+import {
   fileDropUris,
   isFileDrop,
   terminalDropMode,
@@ -119,6 +124,7 @@ import { sessionTabs } from '@/terminal/tabs'
 import { OpenCodeStatusIcon } from '@/components/OpenCodeStatusIcon'
 import { TerminalGitInfo } from '@/components/TerminalGitInfo'
 import { TerminalFullscreenIndicator } from '@/components/TerminalFullscreenIndicator'
+import { TerminalPaneOverlay } from '@/components/TerminalPaneOverlay'
 import { TerminalLauncher } from '@/components/TerminalLauncher'
 import { AGENT_COMMAND_OPTIONS, agentCommandSettingError } from '@/lib/agent-commands'
 import {
@@ -577,7 +583,10 @@ function TerminalPane({
   onToggleFullscreen,
   onTitleChange,
   onLinkTask,
-  reorderState = 'none'
+  reorderState = 'none',
+  paneOverlayVisible = false,
+  paneOverlayNumber = null,
+  paneOverlayActive = false
 }: {
   session: Session
   pane: TerminalPaneState
@@ -590,6 +599,9 @@ function TerminalPane({
   onTitleChange: (title: string | null) => void
   onLinkTask: (terminalId: string) => void
   reorderState?: 'none' | 'candidate' | 'active'
+  paneOverlayVisible?: boolean
+  paneOverlayNumber?: number | null
+  paneOverlayActive?: boolean
 }): JSX.Element {
   const clearExit = useWorkspace((state) => state.clearExit)
   const setStatus = useWorkspace((state) => state.setStatus)
@@ -668,7 +680,9 @@ function TerminalPane({
     ? 'border-accent'
     : reorderState === 'candidate'
       ? 'border-accent/70'
-      : 'border-line'
+      : paneOverlayVisible && paneOverlayActive
+        ? 'border-accent'
+        : 'border-line'
 
   return (
     <div className={`relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden border ${borderClass} bg-bg`}>
@@ -825,6 +839,12 @@ function TerminalPane({
         session={session}
         pane={pane}
         onFocus={onFocus}
+        isFullscreen={isFullscreen}
+      />
+      <TerminalPaneOverlay
+        visible={paneOverlayVisible}
+        number={paneOverlayNumber}
+        active={paneOverlayActive}
         isFullscreen={isFullscreen}
       />
       <RestartConfirmDialog
@@ -2308,6 +2328,19 @@ export function TerminalView({
   const gridRef = useRef<HTMLDivElement>(null)
   const reorderDragRef = useRef<TerminalReorderDragState | null>(null)
   const focusedTerminalIdRef = useRef<string | null>(null)
+  const [focusedTerminalId, setFocusedTerminalId] = useState<string | null>(null)
+  const [paneOverlayVisible, setPaneOverlayVisible] = useState(false)
+  const paneOverlayTimerRef = useRef<number | undefined>(undefined)
+
+  const cancelPaneOverlayTimer = useCallback((): void => {
+    window.clearTimeout(paneOverlayTimerRef.current)
+    paneOverlayTimerRef.current = undefined
+  }, [])
+
+  const hidePaneOverlay = useCallback((): void => {
+    cancelPaneOverlayTimer()
+    setPaneOverlayVisible(false)
+  }, [cancelPaneOverlayTimer])
 
   useEffect(() => {
     return subscribeTerminalSettings(() => setTerminalSettings(getTerminalSettings()))
@@ -2336,6 +2369,7 @@ export function TerminalView({
 
   useEffect(() => {
     focusedTerminalIdRef.current = null
+    setFocusedTerminalId(null)
     setFullscreenTerminalId(null)
     setTerminalLauncherOpen(false)
     setTerminalLauncherSourceId(null)
@@ -2423,6 +2457,7 @@ export function TerminalView({
 
     event.preventDefault()
     event.stopPropagation()
+    hidePaneOverlay()
     const drag: TerminalReorderDragState = {
       pointerId: event.pointerId,
       sourceTerminalId: terminalId,
@@ -2496,15 +2531,44 @@ export function TerminalView({
         cancelReorder()
         return
       }
-      setReorderModifierHeld(terminalReorderModifierActive(event))
+      const held = terminalReorderModifierActive(event)
+      setReorderModifierHeld(held)
+
+      const target = event.target
+      const inDialog = target instanceof Element && target.closest('[role="dialog"]') !== null
+      if (!held || inDialog) {
+        hidePaneOverlay()
+      } else if (event.key === 'Control' || event.key === 'Shift') {
+        if (paneOverlayTimerRef.current === undefined && !reorderDragRef.current) {
+          paneOverlayTimerRef.current = window.setTimeout(() => {
+            paneOverlayTimerRef.current = undefined
+            setPaneOverlayVisible(true)
+          }, PANE_OVERLAY_DELAY_MS)
+        }
+      } else if (getTerminalPaneSwitchIndex({
+        type: event.type,
+        key: event.key,
+        code: event.code,
+        control: event.ctrlKey,
+        meta: event.metaKey,
+        alt: event.altKey,
+        shift: event.shiftKey
+      }) !== null) {
+        // Keep the overlay up so the user can hop between panes while still holding Ctrl+Shift.
+        cancelPaneOverlayTimer()
+      } else {
+        hidePaneOverlay()
+      }
     }
     const onKeyUp = (event: KeyboardEvent): void => {
       const active = terminalReorderModifierActive(event)
       setReorderModifierHeld(active)
+      if (!active) hidePaneOverlay()
       if (!active && reorderDragRef.current) cancelReorder()
     }
     const onBlur = (): void => {
       setReorderModifierHeld(false)
+      hidePaneOverlay()
       if (reorderDragRef.current) cancelReorder()
     }
 
@@ -2515,8 +2579,9 @@ export function TerminalView({
       window.removeEventListener('keydown', onKeyDown, true)
       window.removeEventListener('keyup', onKeyUp, true)
       window.removeEventListener('blur', onBlur)
+      cancelPaneOverlayTimer()
     }
-  }, [cancelReorder])
+  }, [cancelPaneOverlayTimer, cancelReorder, hidePaneOverlay])
 
   useEffect(() => {
     const drag = reorderDragRef.current
@@ -2624,6 +2689,32 @@ export function TerminalView({
   }, [terminalLayout.panes])
 
   useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const target = event.target
+      if (target instanceof Element && target.closest('[role="dialog"]')) return
+
+      const index = getTerminalPaneSwitchIndex({
+        type: event.type,
+        key: event.key,
+        code: event.code,
+        control: event.ctrlKey,
+        meta: event.metaKey,
+        alt: event.altKey,
+        shift: event.shiftKey
+      })
+      if (index === null || fullscreenTerminalId) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      const targetPane = terminalPaneSwitchTarget(terminalLayout.panes, index)
+      if (targetPane) getSession(targetPane.terminalId)?.term.focus()
+    }
+
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [fullscreenTerminalId, terminalLayout.panes])
+
+  useEffect(() => {
     if (
       fullscreenTerminalId &&
       !terminalLayout.panes.some((pane) => pane.terminalId === fullscreenTerminalId)
@@ -2680,6 +2771,7 @@ export function TerminalView({
         })()}
         onFocus={() => {
           focusedTerminalIdRef.current = pane.terminalId
+          setFocusedTerminalId(pane.terminalId)
         }}
         onTitleChange={(title) => onPaneTitleChange(pane.terminalId, title)}
         onLinkTask={() => onLinkTask(pane.terminalId)}
@@ -2692,6 +2784,9 @@ export function TerminalView({
               ? 'candidate'
               : 'none'
         }
+        paneOverlayVisible={paneOverlayVisible}
+        paneOverlayNumber={isFullscreen ? null : index + 1}
+        paneOverlayActive={pane.terminalId === focusedTerminalId}
         onClose={() => requestClosePane(pane.terminalId)}
       />
     </div>
