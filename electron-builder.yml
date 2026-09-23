@@ -8,8 +8,8 @@ npmRebuild: false
 # general-purpose Node interpreter and leave app.asar unvalidated. MDE never
 # re-executes itself as Node, so all of this is dead weight that only makes the
 # build look like a living-off-the-land tool to endpoint protection.
-# `grantFileProtocolExtraPrivileges` stays enabled: the renderer is loaded with
-# `loadFile`, so it is a file:// page and still needs those privileges.
+# The renderer is served from the custom `app://mde` origin, not file://, so
+# file pages need none of Chromium's extra local-file privileges.
 electronFuses:
   runAsNode: false
   enableNodeOptionsEnvironmentVariable: false
@@ -17,6 +17,7 @@ electronFuses:
   enableCookieEncryption: true
   enableEmbeddedAsarIntegrityValidation: true
   onlyLoadAppFromAsar: true
+  grantFileProtocolExtraPrivileges: false
 files:
   - out/**
   - package.json

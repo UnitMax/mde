@@ -11,6 +11,7 @@ import { initWorkspaceStore } from './store/workspace'
 import { adjustZoomFactor, DEFAULT_ZOOM_FACTOR, getZoomAction } from './zoom'
 import { handleWindowOpen } from './external-links'
 import { installPermissionPolicy } from './permissions'
+import { installRendererProtocol, registerRendererScheme, RENDERER_ENTRY_URL } from './renderer-protocol'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -117,7 +118,7 @@ function createWindow(): void {
   if (!app.isPackaged && devServerUrl) {
     void mainWindow.loadURL(devServerUrl)
   } else {
-    void mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    void mainWindow.loadURL(RENDERER_ENTRY_URL)
   }
 }
 
@@ -126,6 +127,8 @@ function createWindow(): void {
 // Terminals hold the GPU renderer only while their pane is on screen, so this is just
 // headroom for the overshoot while a layout change swaps panes.
 app.commandLine.appendSwitch('max-active-webgl-contexts', '32')
+
+registerRendererScheme()
 
 // Two instances would race each other writing workspace.json.
 if (!app.requestSingleInstanceLock()) {
@@ -147,6 +150,7 @@ if (!app.requestSingleInstanceLock()) {
     // The window uses the default session in development and production alike,
     // so installing here, before any renderer loads, covers both.
     installPermissionPolicy(session.defaultSession)
+    installRendererProtocol(session.defaultSession, join(__dirname, '../renderer'))
     initWorkspaceStore(app.getPath('userData'))
     await opencodeTuiStatusManager.configure(app.getPath('userData'))
     await codexStatusManager.configure(app.getPath('userData'))
