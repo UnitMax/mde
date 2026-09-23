@@ -76,7 +76,7 @@ export function defaultTerminalSettings(
     size: 13,
     lineHeight: 1,
     theme: 'slate',
-    escapeExitsFullscreen: true,
+    escapeExitsFullscreen: false,
     showTerminalInstances: false,
     osc52Policy: 'notify',
     agents: {

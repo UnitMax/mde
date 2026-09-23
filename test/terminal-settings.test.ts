@@ -48,7 +48,7 @@ describe('terminal settings', () => {
       size: 13,
       lineHeight: 1,
       theme: 'slate',
-      escapeExitsFullscreen: true,
+      escapeExitsFullscreen: false,
       showTerminalInstances: false,
       osc52Policy: 'notify',
       agents: {
@@ -67,7 +67,7 @@ describe('terminal settings', () => {
       size: 13,
       lineHeight: 1,
       theme: 'slate',
-      escapeExitsFullscreen: true,
+      escapeExitsFullscreen: false,
       showTerminalInstances: false,
       osc52Policy: 'notify',
       agents: {
@@ -107,7 +107,7 @@ describe('terminal settings', () => {
         available
       )
     ).toMatchObject({
-      escapeExitsFullscreen: true,
+      escapeExitsFullscreen: false,
       showTerminalInstances: false,
       osc52Policy: 'notify',
       agents: {
@@ -138,7 +138,7 @@ describe('terminal settings', () => {
       size: 14,
       lineHeight: 1,
       theme: 'slate',
-      escapeExitsFullscreen: true,
+      escapeExitsFullscreen: false,
       showTerminalInstances: false,
       osc52Policy: 'notify',
       agents: {
