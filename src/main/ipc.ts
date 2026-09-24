@@ -12,6 +12,7 @@ import {
   IpcChannels,
   type EnsurePtyRequest,
   type FilesListRequest,
+  type FilesReadRequest,
   type PtyLaunchRequest,
   type MoveSessionRequest,
   type MoveTodoTaskRequest,
@@ -37,6 +38,7 @@ import {
 } from '@shared/ipc'
 import type {
   Distro,
+  FileReadResponse,
   FileTreeListResponse,
   GitDiffResponse,
   HostPlatform,
@@ -90,7 +92,7 @@ import {
 import { buildVsCodeRemoteUri } from './vscode'
 import { safeVsCodeRemoteUrl } from './external-links'
 import { readGitDiff, readGitInfo, readGitStatus, readGitTerminalInfo } from './git'
-import { listSessionDirectory } from './files/tree'
+import { listSessionDirectory, readSessionFile } from './files/tree'
 import {
   createProject,
   createTodoProject,
@@ -717,5 +719,14 @@ export function registerIpcHandlers(
     const session = await getSession(req.sessionId)
     if (!session) throw new Error('Session no longer exists.')
     return listSessionDirectory(session, req.path)
+  })
+
+  handle<FilesReadRequest, FileReadResponse>(IpcChannels.filesRead, async (req) => {
+    if (!req || typeof req.sessionId !== 'string' || !req.sessionId || typeof req.path !== 'string') {
+      throw new Error('Invalid file read request.')
+    }
+    const session = await getSession(req.sessionId)
+    if (!session) throw new Error('Session no longer exists.')
+    return readSessionFile(session, req.path)
   })
 }

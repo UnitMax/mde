@@ -267,13 +267,16 @@ describe('terminal settings', () => {
     expect(root.dataset.theme).toBe('ember')
     expect(values.get('--color-bg')).toBe('#1a1110')
     expect(values.get('--color-accent')).toBe('#ff9f43')
-    expect(values.size).toBe(17)
+    expect(values.get('--color-syntax-keyword')).toBe('#e29bf2')
+    expect(values.get('--color-syntax-string')).toBe('#b5e890')
+    expect(values.size).toBe(23)
 
     applyApplicationTheme('frost', root)
     expect(root.dataset.theme).toBe('frost')
     expect(values.get('--color-bg')).toBe('#101923')
     expect(values.get('--color-accent')).toBe('#67d5ff')
-    expect(values.size).toBe(17)
+    expect(values.get('--color-syntax-keyword')).toBe('#dfc8ff')
+    expect(values.size).toBe(23)
   })
 
   it('builds an xterm family with a monospace fallback', () => {

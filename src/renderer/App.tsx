@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { AddSessionDialog } from '@/components/AddProjectDialog'
 import { GitDialog } from '@/components/GitDialog'
 import { FileTreePanel } from '@/components/FileTreePanel'
+import { FileViewer } from '@/components/FileViewer'
 import { NewProjectDialog } from '@/components/NewProjectDialog'
 import { NewTodoProjectDialog } from '@/components/NewTodoProjectDialog'
 import { Sidebar } from '@/components/Sidebar'
@@ -76,6 +77,9 @@ export function App(): JSX.Element {
   const opencodeTuiInstances = useWorkspace((state) => state.opencodeTuiInstances)
   const codexTuiInstances = useWorkspace((state) => state.codexTuiInstances)
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
+  const openFiles = useWorkspace((state) => state.openFiles)
+  const openFileAction = useWorkspace((state) => state.openFile)
+  const closeFileAction = useWorkspace((state) => state.closeFile)
   const selectedTodoProjectId = useWorkspace((state) => state.selectedTodoProjectId)
   const activeWorkspaceView = useWorkspace((state) => state.activeWorkspaceView)
   const selectSession = useWorkspace((state) => state.selectSession)
@@ -623,6 +627,23 @@ export function App(): JSX.Element {
     queueLayoutPersistence(sessionId, tabId, next, true)
   }
 
+  const openFilePath = selected ? openFiles[selected.id] : undefined
+
+  const closeOpenFile = (sessionId: string): void => {
+    closeFileAction(sessionId)
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (!session) return
+    // Hand focus back to the terminal the viewer covered.
+    const tabId = activeSessionTab(session).id
+    const { panes } = layoutForTab(session, tabId)
+    const terminalId = panes.some((pane) => pane.terminalId === focusedTerminalIdRef.current)
+      ? focusedTerminalIdRef.current
+      : panes[0]?.terminalId
+    if (!terminalId) return
+    terminalFocusRequestId.current += 1
+    setPendingTerminalFocus({ sessionId, tabId, terminalId })
+  }
+
   const layoutForSession = selected && activeTab
     ? layoutForTab(selected, activeTab.id)
     : undefined
@@ -640,7 +661,7 @@ export function App(): JSX.Element {
         onFocusTerminal={focusTerminal}
       />
 
-      <main className="h-full min-w-0 flex-1">
+      <main className="relative h-full min-w-0 flex-1">
         {!ready ? null : activeWorkspaceView === 'todo' ? (
           <TodoProjectView
             project={selectedTodoProject}
@@ -652,32 +673,44 @@ export function App(): JSX.Element {
             onOpenSettings={() => setTodoProjectSettingsOpen(true)}
           />
         ) : selected && activeTab && layoutForSession ? (
-          <TerminalView
-            key={selected.id}
-            session={selected}
-            activeTab={activeTab}
-            terminalLayout={layoutForSession}
-            onSelectTab={(tabId) => selectTab(selected.id, tabId)}
-            onAddTab={() => addTab(selected.id)}
-            onTabRenameStart={cancelTerminalFocus}
-            onRenameTab={(tabId, name) => renameTab(selected.id, tabId, name)}
-            onCloseTab={(tabId) => closeTab(selected.id, tabId)}
-            onLayoutChange={(layout) => changeTerminalLayout(selected.id, activeTab.id, layout)}
-            onLayoutResize={(axis, ratio, columnIndex) => resizeTerminalLayout(selected.id, activeTab.id, axis, ratio, columnIndex)}
-            onPaneOrderChange={(terminalIds) => reorderTerminalPanes(selected.id, activeTab.id, terminalIds)}
-            onReduceLayout={(layout, paneIds) => reduceTerminalLayout(selected.id, activeTab.id, layout, paneIds)}
-            onAddPane={(sourceTerminalId, launch) =>
-              addTerminalPane(selected.id, activeTab.id, sourceTerminalId, launch)
-            }
-            onClosePane={(terminalId) => closeTerminalPane(selected.id, activeTab.id, terminalId)}
-            onPaneFocus={(terminalId) => {
-              focusedTerminalIdRef.current = terminalId
-            }}
-            onPaneTitleChange={(terminalId, title) =>
-              renameTerminalPane(selected.id, activeTab.id, terminalId, title)
-            }
-            onLinkTask={(terminalId) => setTerminalTaskLinkTarget({ type: 'terminal', terminalId })}
-          />
+          <>
+            <TerminalView
+              key={selected.id}
+              session={selected}
+              activeTab={activeTab}
+              terminalLayout={layoutForSession}
+              onSelectTab={(tabId) => selectTab(selected.id, tabId)}
+              onAddTab={() => addTab(selected.id)}
+              onTabRenameStart={cancelTerminalFocus}
+              onRenameTab={(tabId, name) => renameTab(selected.id, tabId, name)}
+              onCloseTab={(tabId) => closeTab(selected.id, tabId)}
+              onLayoutChange={(layout) => changeTerminalLayout(selected.id, activeTab.id, layout)}
+              onLayoutResize={(axis, ratio, columnIndex) => resizeTerminalLayout(selected.id, activeTab.id, axis, ratio, columnIndex)}
+              onPaneOrderChange={(terminalIds) => reorderTerminalPanes(selected.id, activeTab.id, terminalIds)}
+              onReduceLayout={(layout, paneIds) => reduceTerminalLayout(selected.id, activeTab.id, layout, paneIds)}
+              onAddPane={(sourceTerminalId, launch) =>
+                addTerminalPane(selected.id, activeTab.id, sourceTerminalId, launch)
+              }
+              onClosePane={(terminalId) => closeTerminalPane(selected.id, activeTab.id, terminalId)}
+              onPaneFocus={(terminalId) => {
+                focusedTerminalIdRef.current = terminalId
+              }}
+              onPaneTitleChange={(terminalId, title) =>
+                renameTerminalPane(selected.id, activeTab.id, terminalId, title)
+              }
+              onLinkTask={(terminalId) => setTerminalTaskLinkTarget({ type: 'terminal', terminalId })}
+            />
+            {openFilePath !== undefined && (
+              // Layered over the terminals so they stay mounted at their size.
+              <FileViewer
+                key={selected.id}
+                session={selected}
+                path={openFilePath}
+                onOpenFile={(path) => openFileAction(selected.id, path)}
+                onClose={() => closeOpenFile(selected.id)}
+              />
+            )}
+          </>
         ) : (
           <EmptyState onNewSession={() => openNewSession()} />
         )}

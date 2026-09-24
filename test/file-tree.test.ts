@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -5,8 +6,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { FileTreeEntry, Session } from '../src/shared/types'
 import {
   MAX_FILE_TREE_ENTRIES,
+  MAX_FILE_VIEW_BYTES,
+  READ_WSL_FILE_SCRIPT,
   isSafeRelativePath,
   listSessionDirectory,
+  readSessionFile,
   parseFindOutput,
   sortFileTreeEntries,
   type FileTreeDependencies
@@ -34,6 +38,7 @@ function deps(overrides: Partial<FileTreeDependencies> = {}): FileTreeDependenci
   return {
     readNativeDirectory: vi.fn(async () => []),
     runWsl: vi.fn(async () => ({ stdout: '', stderr: '', code: 0 })),
+    runWslBuffer: vi.fn(async () => ({ stdout: Buffer.alloc(0), stderr: '', code: 0 })),
     resolveWslPath: vi.fn(async (_distro: string, path: string) => path),
     ...overrides
   }
@@ -248,5 +253,139 @@ describe('renderer file tree rows', () => {
     expect(visibleFileTreeRows(new Map([['', { status: 'error', error: 'Nope' }]]), new Set())).toEqual([
       { type: 'error', path: '', depth: 0, message: 'Nope' }
     ])
+  })
+})
+
+describe('native file reads', () => {
+  let root = ''
+  let outside = ''
+
+  afterEach(async () => {
+    for (const directory of [root, outside]) {
+      if (directory) await rm(directory, { recursive: true, force: true })
+    }
+    root = ''
+    outside = ''
+  })
+
+  async function fixture(): Promise<Session> {
+    root = await mkdtemp(join(tmpdir(), 'mde-file-read-'))
+    outside = await mkdtemp(join(tmpdir(), 'mde-file-outside-'))
+    await mkdir(join(root, 'src'))
+    await writeFile(join(root, 'src', 'index.ts'), 'export const x = 1\n')
+    await writeFile(join(root, 'bom.md'), Buffer.from([0xef, 0xbb, 0xbf, ...Buffer.from('# Title\n')]))
+    await writeFile(join(root, 'image.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]))
+    await writeFile(join(root, 'big.log'), Buffer.alloc(MAX_FILE_VIEW_BYTES + 1, 0x61))
+    await writeFile(join(outside, 'secret.txt'), 'secret')
+    await symlink(join(outside, 'secret.txt'), join(root, 'escape.txt'))
+    await symlink(join(root, 'src', 'index.ts'), join(root, 'inside.ts'))
+    return session({ path: root })
+  }
+
+  it('reads text, strips a UTF-8 BOM, and follows symlinks that stay inside the session', async () => {
+    const target = await fixture()
+    await expect(readSessionFile(target, 'src/index.ts')).resolves.toEqual({
+      path: 'src/index.ts',
+      content: 'export const x = 1\n',
+      size: 19,
+      binary: false,
+      tooLarge: false
+    })
+    expect((await readSessionFile(target, 'bom.md')).content).toBe('# Title\n')
+    expect((await readSessionFile(target, 'inside.ts')).content).toBe('export const x = 1\n')
+  })
+
+  it('reports binary and oversized files without content', async () => {
+    const target = await fixture()
+    expect(await readSessionFile(target, 'image.png')).toMatchObject({ content: null, binary: true })
+    expect(await readSessionFile(target, 'big.log')).toMatchObject({
+      content: null,
+      tooLarge: true,
+      size: MAX_FILE_VIEW_BYTES + 1
+    })
+  })
+
+  it('refuses symlinks out of the session, folders, missing files, and unsafe paths', async () => {
+    const target = await fixture()
+    await expect(readSessionFile(target, 'escape.txt')).rejects.toThrow('File is outside the session folder.')
+    await expect(readSessionFile(target, 'src')).rejects.toThrow('Not a file.')
+    await expect(readSessionFile(target, 'missing.txt')).rejects.toThrow('File not found.')
+    await expect(readSessionFile(target, '')).rejects.toThrow('Invalid file path.')
+    await expect(readSessionFile(target, '../secret.txt')).rejects.toThrow('Invalid file path.')
+  })
+})
+
+describe('WSL file reads', () => {
+  const wsl = session({ kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/app' })
+
+  it('reads through one direct-exec script call and splits size from content', async () => {
+    const runWslBuffer = vi.fn(async (_distro: string, _command: readonly string[]) => ({
+      stdout: Buffer.from('6\nhello\n'),
+      stderr: '',
+      code: 0
+    }))
+
+    const result = await readSessionFile(wsl, 'docs/read me.md', 'win32', deps({ runWslBuffer }))
+
+    expect(runWslBuffer).toHaveBeenCalledWith('Ubuntu-24.04', [
+      'bash',
+      '-c',
+      READ_WSL_FILE_SCRIPT,
+      'mde-read',
+      '/home/me/app',
+      '/home/me/app/docs/read me.md',
+      String(MAX_FILE_VIEW_BYTES)
+    ])
+    expect(result).toEqual({ path: 'docs/read me.md', content: 'hello\n', size: 6, binary: false, tooLarge: false })
+  })
+
+  it('maps script exit codes to readable errors and reports oversized files', async () => {
+    const failing = (code: number) => deps({ runWslBuffer: vi.fn(async () => ({ stdout: Buffer.alloc(0), stderr: '', code })) })
+    await expect(readSessionFile(wsl, 'a', 'win32', failing(11))).rejects.toThrow('File not found.')
+    await expect(readSessionFile(wsl, 'a', 'win32', failing(12))).rejects.toThrow('File is outside the session folder.')
+    await expect(readSessionFile(wsl, 'a', 'win32', failing(13))).rejects.toThrow('Not a file.')
+    await expect(readSessionFile(wsl, 'a', 'win32', failing(1))).rejects.toThrow('Could not read file.')
+
+    const large = deps({
+      runWslBuffer: vi.fn(async () => ({ stdout: Buffer.from(`${MAX_FILE_VIEW_BYTES + 10}\n`), stderr: '', code: 0 }))
+    })
+    expect(await readSessionFile(wsl, 'a', 'win32', large)).toMatchObject({ tooLarge: true, content: null })
+  })
+})
+
+/**
+ * The read script runs inside the distro through `wsl.exe -e bash -c`, with
+ * no shell parsing its arguments. Running it here with the local bash checks
+ * the script itself rather than a mock of it.
+ */
+describe.skipIf(process.platform === 'win32')('WSL read script under bash', () => {
+  let base = ''
+
+  afterEach(async () => {
+    if (base) await rm(base, { recursive: true, force: true })
+    base = ''
+  })
+
+  function runScript(root: string, target: string, limit: number): { code: number | null; stdout: string } {
+    const result = spawnSync('bash', ['-c', READ_WSL_FILE_SCRIPT, 'mde-read', root, target, String(limit)])
+    return { code: result.status, stdout: result.stdout.toString() }
+  }
+
+  it('prints the size then the content, and enforces the session boundary', async () => {
+    base = await mkdtemp(join(tmpdir(), 'mde-read-script-'))
+    const root = join(base, 'root')
+    await mkdir(join(root, 'sub dir'), { recursive: true })
+    await mkdir(join(base, 'root-sibling'))
+    await writeFile(join(root, 'sub dir', '-a $b.txt'), 'hello\n')
+    await writeFile(join(base, 'root-sibling', 'secret'), 'secret')
+    await symlink(join(base, 'root-sibling', 'secret'), join(root, 'escape'))
+    await writeFile(join(root, 'big'), 'x'.repeat(50))
+
+    expect(runScript(root, join(root, 'sub dir', '-a $b.txt'), 100)).toEqual({ code: 0, stdout: '6\nhello\n' })
+    // A sibling whose name extends the root's must not count as inside it.
+    expect(runScript(root, join(root, 'escape'), 100).code).toBe(12)
+    expect(runScript(root, join(root, 'missing'), 100).code).toBe(11)
+    expect(runScript(root, join(root, 'sub dir'), 100).code).toBe(13)
+    expect(runScript(root, join(root, 'big'), 10)).toEqual({ code: 0, stdout: '50\n' })
   })
 })

@@ -111,6 +111,8 @@ interface WorkspaceState {
   distros: Distro[]
   sidebarCollapsed: boolean
   fileTreeCollapsed: boolean
+  /** File open in the viewer per session, relative to the session root. */
+  openFiles: Record<string, string>
   ready: boolean
 
   init: () => Promise<void>
@@ -119,6 +121,8 @@ interface WorkspaceState {
   selectTodoProject: (id: string) => void
   toggleSidebar: () => void
   toggleFileTree: () => void
+  openFile: (sessionId: string, path: string) => void
+  closeFile: (sessionId: string) => void
 
   addProject: (input: NewProject) => Promise<Project>
   renameProject: (id: string, name: string) => Promise<void>
@@ -197,6 +201,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   distros: [],
   sidebarCollapsed: false,
   fileTreeCollapsed: false,
+  openFiles: {},
   ready: false,
 
   init: async () => {
@@ -296,6 +301,15 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
   toggleFileTree: () => set((state) => ({ fileTreeCollapsed: !state.fileTreeCollapsed })),
+  openFile: (sessionId, path) =>
+    set((state) => ({ openFiles: { ...state.openFiles, [sessionId]: path } })),
+  closeFile: (sessionId) =>
+    set((state) => {
+      if (!(sessionId in state.openFiles)) return {}
+      const openFiles = { ...state.openFiles }
+      delete openFiles[sessionId]
+      return { openFiles }
+    }),
 
   addProject: async (input) => {
     const project = await window.api.projects.create(input)
@@ -588,7 +602,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       clearOpenCodeTuiReadRevisions(codexTuiReadRevisions, id, codexTuiInstances[id] ?? [])
       delete codexTuiStatuses[id]
       delete codexTuiInstances[id]
+      const openFiles = { ...state.openFiles }
+      delete openFiles[id]
       return {
+        openFiles,
         sessions: state.sessions.filter((session) => session.id !== id),
         selectedSessionId: state.selectedSessionId === id ? null : state.selectedSessionId,
         statuses,

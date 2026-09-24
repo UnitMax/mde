@@ -104,12 +104,15 @@ describe('FileTreePanel', () => {
     expect(container.querySelector('[data-path="src/index.ts"]')).toBeNull()
   })
 
-  it('does nothing when a file is clicked', async () => {
+  it('opens a clicked file in the viewer and marks its row', async () => {
+    useWorkspace.setState({ openFiles: {} })
     const container = await renderPanel()
     await act(async () => {
       treeItem(container, 'README.md').click()
     })
     expect(list).toHaveBeenCalledTimes(1)
+    expect(useWorkspace.getState().openFiles).toEqual({ 'session-1': 'README.md' })
+    expect(treeItem(container, 'README.md').getAttribute('aria-selected')).toBe('true')
   })
 
   it('shows listing errors without the IPC prefix', async () => {

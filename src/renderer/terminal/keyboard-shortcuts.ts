@@ -133,6 +133,33 @@ export function getKeyboardShortcutGroups(
       ]
     },
     {
+      id: 'files',
+      label: 'Files',
+      shortcuts: [
+        {
+          id: 'file-tree-move',
+          keys: ['↑', '↓', '←', '→'],
+          description: 'Move through the file tree; ← and → collapse and expand folders.'
+        },
+        {
+          id: 'file-tree-open',
+          keys: ['Enter', 'Space'],
+          description: 'Open the focused file, or toggle the focused folder.'
+        },
+        {
+          id: 'file-viewer-search',
+          keys: [`${primaryModifier}+F`],
+          description: 'Search in the open code file.',
+          note: 'Available while the code viewer is focused. Esc closes the search bar.'
+        },
+        {
+          id: 'file-viewer-search-next',
+          keys: ['F3', 'Shift+F3'],
+          description: 'Jump to the next or previous search match.'
+        }
+      ]
+    },
+    {
       id: 'dialogs',
       label: 'Dialogs',
       shortcuts: [

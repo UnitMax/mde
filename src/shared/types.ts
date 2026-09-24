@@ -437,3 +437,13 @@ export interface FileTreeListResponse {
   /** True when the directory held more entries than the listing returns. */
   truncated: boolean
 }
+
+/** One file read for the viewer. Content is omitted for binary or oversized files. */
+export interface FileReadResponse {
+  /** File path relative to the session root. */
+  path: string
+  content: string | null
+  size: number
+  binary: boolean
+  tooLarge: boolean
+}

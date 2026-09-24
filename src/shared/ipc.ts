@@ -30,6 +30,7 @@ import type {
   CodexStatusSettings,
   CodexTuiInstancesUpdate,
   CodexTuiStatusUpdate,
+  FileReadResponse,
   FileTreeListResponse,
   OpenCodeTokenRatePluginRequest,
   OpenCodeTokenRatePluginState,
@@ -112,6 +113,7 @@ export const IpcChannels = {
   gitDiff: 'git:diff',
 
   filesList: 'files:list',
+  filesRead: 'files:read',
 
   opencodeTuiPluginState: 'opencode-tui:plugin-state',
   opencodeTuiPluginInstall: 'opencode-tui:plugin-install',
@@ -190,6 +192,12 @@ export interface GitDiffRequest {
 export interface FilesListRequest {
   sessionId: string
   /** Directory relative to the session root, '/'-separated; '' lists the root. */
+  path: string
+}
+
+export interface FilesReadRequest {
+  sessionId: string
+  /** File relative to the session root, '/'-separated. */
   path: string
 }
 
@@ -430,6 +438,7 @@ export interface RendererApi {
   }
   files: {
     list(req: FilesListRequest): Promise<FileTreeListResponse>
+    read(req: FilesReadRequest): Promise<FileReadResponse>
   }
   opencodeTui: {
     settings(): Promise<OpenCodeTuiSettings>

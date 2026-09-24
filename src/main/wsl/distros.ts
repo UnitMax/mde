@@ -45,21 +45,60 @@ export function runWslCommand(
   return runWslClient(buildWslExecArgs(distro, command, options.cwd), options.timeoutMs)
 }
 
-/** Low-level launcher reserved for wsl.exe client operations such as --status and --list. */
-function runWslClient(args: readonly string[], timeoutMs = 15_000): Promise<WslResult> {
+export interface WslBufferResult {
+  /** Raw stdout bytes; file contents must not pass through the UTF-16 detection. */
+  stdout: Buffer
+  stderr: string
+  code: number
+}
+
+export interface WslBufferCommandOptions extends WslCommandOptions {
+  maxBuffer?: number
+}
+
+/** Like `runWslCommand`, but returns stdout untouched for binary-safe reads. */
+export function runWslCommandBuffer(
+  distro: string,
+  command: readonly string[],
+  options: WslBufferCommandOptions = {}
+): Promise<WslBufferResult> {
+  return runWslClientRaw(
+    buildWslExecArgs(distro, command, options.cwd),
+    options.timeoutMs,
+    options.maxBuffer
+  ).then(({ stdout, stderr, code }) => ({ stdout, stderr: decodeWslOutput(stderr), code }))
+}
+
+function runWslClientRaw(
+  args: readonly string[],
+  timeoutMs = 15_000,
+  maxBuffer?: number
+): Promise<{ stdout: Buffer; stderr: Buffer; code: number }> {
   return new Promise((resolve) => {
     execFile(
       'wsl.exe',
       args,
-      { env: wslEnv(), encoding: 'buffer', timeout: timeoutMs, windowsHide: true },
+      {
+        env: wslEnv(),
+        encoding: 'buffer',
+        timeout: timeoutMs,
+        windowsHide: true,
+        ...(maxBuffer === undefined ? {} : { maxBuffer })
+      },
       (error, stdout, stderr) => {
         const err = error as (NodeJS.ErrnoException & { code?: number | string }) | null
         let code = 0
         if (err) code = typeof err.code === 'number' ? err.code : 1
-        resolve({ stdout: decodeWslOutput(stdout), stderr: decodeWslOutput(stderr), code })
+        resolve({ stdout, stderr, code })
       }
     )
   })
+}
+
+/** Low-level launcher reserved for wsl.exe client operations such as --status and --list. */
+async function runWslClient(args: readonly string[], timeoutMs = 15_000): Promise<WslResult> {
+  const { stdout, stderr, code } = await runWslClientRaw(args, timeoutMs)
+  return { stdout: decodeWslOutput(stdout), stderr: decodeWslOutput(stderr), code }
 }
 
 /** Detects the alternating zero-byte pattern produced by UTF-16LE ASCII output. */

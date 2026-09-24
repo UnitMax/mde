@@ -44,7 +44,7 @@ describe('KeyboardShortcutsSettings', () => {
     const section = container.querySelector<HTMLElement>('[data-testid="keyboard-shortcuts-settings"]')
 
     expect(section).not.toBeNull()
-    expect(section?.querySelectorAll('[data-testid^="keyboard-shortcut-row-"]')).toHaveLength(21)
+    expect(section?.querySelectorAll('[data-testid^="keyboard-shortcut-row-"]')).toHaveLength(25)
     expect(section?.querySelectorAll('button')).toHaveLength(0)
     const rows = Array.from(section?.querySelectorAll<HTMLElement>('[data-testid^="keyboard-shortcut-row-"]') ?? [])
     expect(rows.every((row) => row.classList.contains('grid-cols-[12rem_minmax(0,1fr)]'))).toBe(true)
@@ -58,6 +58,8 @@ describe('KeyboardShortcutsSettings', () => {
     expect(section?.textContent).toContain('Ctrl+Enter')
     expect(section?.textContent).toContain('Tab')
     expect(section?.textContent).toContain('Home')
+    expect(section?.textContent).toContain('Search in the open code file.')
+    expect(section?.textContent).toContain('Shift+F3')
     expect(section?.textContent).toContain('Exit fullscreen with Escape” in Terminal settings')
   })
 

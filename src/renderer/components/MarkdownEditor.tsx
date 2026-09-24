@@ -1,22 +1,6 @@
 import { forwardRef, useImperativeHandle } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
-import StarterKit from '@tiptap/starter-kit'
-import { Markdown } from '@tiptap/markdown'
-import { TableKit } from '@tiptap/extension-table'
-
-const markdownEditorExtensions = [
-  StarterKit.configure({
-    link: {
-      openOnClick: false,
-    },
-  }),
-  TableKit,
-  Markdown.configure({
-    markedOptions: {
-      gfm: true,
-    },
-  }),
-]
+import { markdownExtensions } from '@/lib/markdown-extensions'
 
 export interface MarkdownEditorHandle {
   getMarkdown: () => string
@@ -31,7 +15,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     // Keep the editor instance in this child so modal state updates do not recreate it.
     const editor = useEditor(
       {
-        extensions: markdownEditorExtensions,
+        extensions: markdownExtensions,
         content: defaultValue,
         contentType: 'markdown',
         injectCSS: false,
@@ -39,6 +23,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
           attributes: {
             id: 'todo-task-description',
             'aria-label': 'Description',
+            class: 'markdown-prose',
           },
         },
         immediatelyRender: true,

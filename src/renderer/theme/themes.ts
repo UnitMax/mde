@@ -247,6 +247,19 @@ const APPLICATION_PALETTE_VARIABLES: Record<keyof ApplicationPalette, `--color-$
   scrollbarHover: '--color-scrollbar-hover'
 }
 
+/**
+ * Code viewer syntax colors come from each theme's bright ANSI colors, so the
+ * viewer matches the terminals without a second palette per theme.
+ */
+const SYNTAX_COLOR_VARIABLES = {
+  '--color-syntax-keyword': 'brightMagenta',
+  '--color-syntax-string': 'brightGreen',
+  '--color-syntax-number': 'brightYellow',
+  '--color-syntax-function': 'brightBlue',
+  '--color-syntax-type': 'brightCyan',
+  '--color-syntax-property': 'cyan'
+} as const satisfies Record<string, keyof ITheme>
+
 interface ThemeRoot {
   dataset: DOMStringMap
   style: Pick<CSSStyleDeclaration, 'setProperty'>
@@ -277,5 +290,8 @@ export function applyApplicationTheme(
   root.dataset.theme = theme.id
   for (const [key, variable] of Object.entries(APPLICATION_PALETTE_VARIABLES)) {
     root.style.setProperty(variable, theme.application[key as keyof ApplicationPalette])
+  }
+  for (const [variable, key] of Object.entries(SYNTAX_COLOR_VARIABLES)) {
+    root.style.setProperty(variable, theme.terminal[key] ?? theme.application.fg)
   }
 }

@@ -55,7 +55,8 @@ const wslPathsMock = vi.hoisted(() => ({
 const wslDistrosMock = vi.hoisted(() => ({
   isWslAvailable: vi.fn(),
   listDistros: vi.fn(),
-  runWslCommand: vi.fn()
+  runWslCommand: vi.fn(),
+  runWslCommandBuffer: vi.fn()
 }))
 
 vi.mock('electron', () => electronMock)
@@ -624,6 +625,7 @@ describe('file tree IPC', () => {
     workspaceMock.getSession.mockReset()
     wslPathsMock.resolveForTarget.mockReset()
     wslDistrosMock.runWslCommand.mockReset()
+    wslDistrosMock.runWslCommandBuffer.mockReset()
   })
 
   afterEach(() => {
@@ -666,5 +668,31 @@ describe('file tree IPC', () => {
       'Ubuntu-24.04',
       expect.arrayContaining(['find', '-H', '/home/me/configured/src'])
     )
+  })
+
+  it('validates file read requests before reaching the distro', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    registerForTest(vi.fn())
+    const read = handler(IpcChannels.filesRead)
+
+    await expect(read({}, { sessionId: 'session-1' })).rejects.toThrow('Invalid file read request.')
+    workspaceMock.getSession.mockResolvedValue(undefined)
+    await expect(read({}, { sessionId: 'missing', path: 'a.md' })).rejects.toThrow('Session no longer exists.')
+
+    workspaceMock.getSession.mockResolvedValue(wslSession())
+    await expect(read({}, { sessionId: 'session-1', path: '../../etc/passwd' })).rejects.toThrow('Invalid file path.')
+    expect(wslDistrosMock.runWslCommandBuffer).not.toHaveBeenCalled()
+  })
+
+  it('reads a WSL session file through the binary-safe runner', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    registerForTest(vi.fn())
+    workspaceMock.getSession.mockResolvedValue(wslSession())
+    wslDistrosMock.runWslCommandBuffer.mockResolvedValue({ stdout: Buffer.from('3\nhi\n'), stderr: '', code: 0 })
+
+    await expect(
+      handler(IpcChannels.filesRead)({}, { sessionId: 'session-1', path: 'README.md' })
+    ).resolves.toEqual({ path: 'README.md', content: 'hi\n', size: 3, binary: false, tooLarge: false })
+    expect(wslDistrosMock.runWslCommandBuffer.mock.calls[0]?.[1]).toContain('/home/me/configured/README.md')
   })
 })

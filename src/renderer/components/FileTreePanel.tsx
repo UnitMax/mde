@@ -56,6 +56,8 @@ function FileTree({ session, onCollapse }: { session: Session; onCollapse: () =>
   const expandedRef = useRef(expanded)
   expandedRef.current = expanded
   const treeRef = useRef<HTMLDivElement>(null)
+  const openFilePath = useWorkspace((state) => state.openFiles[session.id])
+  const openFile = useWorkspace((state) => state.openFile)
   const revealSession = useWorkspace((state) => state.revealSession)
   const openSessionInVsCode = useWorkspace((state) => state.openSessionInVsCode)
   const isWindows = useWorkspace((state) => state.platform?.isWindows === true)
@@ -148,6 +150,7 @@ function FileTree({ session, onCollapse }: { session: Session; onCollapse: () =>
       }
     } else if (event.key === 'Enter' || event.key === ' ') {
       if (isDirectory) setDirectoryExpanded(row.path, !row.expanded)
+      else openFile(session.id, row.path)
     } else {
       handled = false
     }
@@ -236,6 +239,7 @@ function FileTree({ session, onCollapse }: { session: Session; onCollapse: () =>
           }
 
           const isDirectory = row.kind === 'directory'
+          const isOpen = !isDirectory && row.path === openFilePath
           return (
             <div
               key={row.path}
@@ -243,13 +247,18 @@ function FileTree({ session, onCollapse }: { session: Session; onCollapse: () =>
               data-path={row.path}
               aria-level={row.depth + 1}
               aria-expanded={isDirectory ? row.expanded : undefined}
+              aria-selected={isDirectory ? undefined : isOpen}
               tabIndex={row.path === tabStopPath ? 0 : -1}
-              className="flex cursor-default items-center gap-1 rounded py-[3px] pr-2 text-fg-muted hover:bg-hover hover:text-fg focus:bg-active focus:text-fg focus:outline-none"
+              className={cn(
+                'flex cursor-default items-center gap-1 rounded py-[3px] pr-2 text-fg-muted hover:bg-hover hover:text-fg focus:bg-active focus:text-fg focus:outline-none',
+                isOpen && 'bg-active text-fg'
+              )}
               style={{ paddingLeft: rowPadding(row.depth) }}
               title={row.path}
               onFocus={() => setFocusedPath(row.path)}
               onClick={() => {
                 if (isDirectory) setDirectoryExpanded(row.path, !row.expanded)
+                else openFile(session.id, row.path)
               }}
               onKeyDown={(event) => onRowKeyDown(event, row)}
             >
