@@ -599,7 +599,7 @@ function TerminalPane({
   onToggleFullscreen: () => void
   onTitleChange: (title: string | null) => void
   onLinkTask: (terminalId: string) => void
-  reorderState?: 'none' | 'candidate' | 'active'
+  reorderState?: 'none' | 'candidate' | 'active' | 'target'
   paneOverlayVisible?: boolean
   paneOverlayNumber?: number | null
   paneOverlayActive?: boolean
@@ -679,14 +679,18 @@ function TerminalPane({
 
   const borderClass = reorderState === 'active'
     ? 'border-accent'
-    : reorderState === 'candidate'
+    : reorderState === 'candidate' || reorderState === 'target'
       ? 'border-accent/70'
       : paneOverlayVisible && paneOverlayActive
         ? 'border-accent'
         : 'border-line'
 
   return (
-    <div className={`relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden border ${borderClass} bg-bg`}>
+    <div
+      className={`relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden border ${borderClass} bg-bg ${
+        reorderState === 'active' ? 'opacity-45' : ''
+      }`}
+    >
       <header
         aria-label={title}
         className="flex h-6 shrink-0 items-center gap-1 border-b border-line bg-panel/50 px-1"
@@ -848,6 +852,13 @@ function TerminalPane({
         active={paneOverlayActive}
         isFullscreen={isFullscreen}
       />
+      {reorderState === 'target' && (
+        <div
+          aria-hidden="true"
+          className="terminal-pane-drop-preview pointer-events-none absolute inset-1 z-40"
+          data-testid="terminal-pane-drop-preview"
+        />
+      )}
       <RestartConfirmDialog
         open={restartConfirmationOpen}
         onOpenChange={setRestartConfirmationOpen}
@@ -866,7 +877,7 @@ interface TerminalReorderDragState {
   pointerId: number
   sourceTerminalId: string
   originalPanes: TerminalPaneState[]
-  previewPanes: TerminalPaneState[]
+  targetTerminalId: string | null
   pendingPoint?: TerminalReorderPoint
   frame?: number
   previousCursor: string
@@ -2322,7 +2333,7 @@ export function TerminalView({
   const [reorderModifierHeld, setReorderModifierHeld] = useState(false)
   const [hoveredPaneId, setHoveredPaneId] = useState<string | null>(null)
   const [reorderSourceId, setReorderSourceId] = useState<string | null>(null)
-  const [reorderPreviewPanes, setReorderPreviewPanes] = useState<TerminalPaneState[] | null>(null)
+  const [reorderTargetId, setReorderTargetId] = useState<string | null>(null)
   const [fullscreenTerminalId, setFullscreenTerminalId] = useState<string | null>(null)
   const [terminalLauncherOpen, setTerminalLauncherOpen] = useState(false)
   const [terminalLauncherSourceId, setTerminalLauncherSourceId] = useState<string | null>(null)
@@ -2400,7 +2411,7 @@ export function TerminalView({
     const drag = reorderDragRef.current
     if (!drag) {
       setReorderSourceId(null)
-      setReorderPreviewPanes(null)
+      setReorderTargetId(null)
       return
     }
 
@@ -2408,7 +2419,7 @@ export function TerminalView({
     const grid = gridRef.current
     reorderDragRef.current = null
     setReorderSourceId(null)
-    setReorderPreviewPanes(null)
+    setReorderTargetId(null)
     restoreTerminalReorderStyles(drag)
 
     if (grid?.hasPointerCapture(drag.pointerId)) {
@@ -2416,23 +2427,18 @@ export function TerminalView({
     }
   }, [])
 
-  const updateReorderPreview = (drag: TerminalReorderDragState, point: TerminalReorderPoint): boolean => {
+  // Panes stay in place while dragging; only the dashed target preview follows the pointer.
+  const updateReorderTarget = (drag: TerminalReorderDragState, point: TerminalReorderPoint): void => {
     const grid = gridRef.current
-    if (!grid) return false
+    const targetSlot = grid ? terminalPaneSlotAtPoint(grid, point.clientX, point.clientY) : null
+    const targetPane = targetSlot === null ? undefined : drag.originalPanes[targetSlot]
+    const targetTerminalId = targetPane && targetPane.terminalId !== drag.sourceTerminalId
+      ? targetPane.terminalId
+      : null
 
-    const targetSlot = terminalPaneSlotAtPoint(grid, point.clientX, point.clientY)
-    if (targetSlot === null) return false
-
-    const targetPane = drag.previewPanes[targetSlot]
-    if (!targetPane || targetPane.terminalId === drag.sourceTerminalId) return true
-
-    drag.previewPanes = swapTerminalPanes(
-      drag.previewPanes,
-      drag.sourceTerminalId,
-      targetPane.terminalId
-    )
-    setReorderPreviewPanes(drag.previewPanes)
-    return true
+    if (targetTerminalId === drag.targetTerminalId) return
+    drag.targetTerminalId = targetTerminalId
+    setReorderTargetId(targetTerminalId)
   }
 
   const beginReorder = (event: ReactPointerEvent<HTMLDivElement>, terminalId: string): void => {
@@ -2464,13 +2470,13 @@ export function TerminalView({
       pointerId: event.pointerId,
       sourceTerminalId: terminalId,
       originalPanes: [...terminalLayout.panes],
-      previewPanes: [...terminalLayout.panes],
+      targetTerminalId: null,
       previousCursor: document.body.style.cursor,
       previousUserSelect: document.body.style.userSelect
     }
     reorderDragRef.current = drag
     setReorderSourceId(terminalId)
-    setReorderPreviewPanes(drag.previewPanes)
+    setReorderTargetId(null)
     document.body.style.cursor = 'grabbing'
     document.body.style.userSelect = 'none'
     grid.setPointerCapture(event.pointerId)
@@ -2497,7 +2503,7 @@ export function TerminalView({
       const current = reorderDragRef.current
       if (!current) return
       current.frame = undefined
-      if (current.pendingPoint) updateReorderPreview(current, current.pendingPoint)
+      if (current.pendingPoint) updateReorderTarget(current, current.pendingPoint)
     })
   }
 
@@ -2508,21 +2514,26 @@ export function TerminalView({
     event.preventDefault()
     if (drag.frame !== undefined) cancelAnimationFrame(drag.frame)
     drag.frame = undefined
-    const validTarget = updateReorderPreview(drag, {
+    updateReorderTarget(drag, {
       clientX: event.clientX,
       clientY: event.clientY
     })
-    const finalOrder = drag.previewPanes.map((pane) => pane.terminalId)
+    const { targetTerminalId } = drag
     const grid = gridRef.current
     reorderDragRef.current = null
     setReorderSourceId(null)
-    setReorderPreviewPanes(null)
+    setReorderTargetId(null)
     restoreTerminalReorderStyles(drag)
 
     if (grid?.hasPointerCapture(drag.pointerId)) {
       grid.releasePointerCapture(drag.pointerId)
     }
-    if (validTarget) onPaneOrderChange(finalOrder)
+    if (targetTerminalId) {
+      onPaneOrderChange(
+        swapTerminalPanes(drag.originalPanes, drag.sourceTerminalId, targetTerminalId)
+          .map((pane) => pane.terminalId)
+      )
+    }
   }
 
   useEffect(() => {
@@ -2740,7 +2751,7 @@ export function TerminalView({
     selectedSession.kind === 'wsl'
       ? `${selectedSession.distro ?? 'WSL'} · ${selectedSession.path}`
       : selectedSession.path
-  const renderedPanes = reorderPreviewPanes ?? terminalLayout.panes
+  const renderedPanes = terminalLayout.panes
   const fullscreenPane = terminalFullscreenPane(renderedPanes, fullscreenTerminalId)
   const isFullscreen = fullscreenPane !== null
   const visiblePanes = fullscreenPane ? [fullscreenPane] : renderedPanes
@@ -2783,9 +2794,11 @@ export function TerminalView({
         reorderState={
           reorderSourceId === pane.terminalId
             ? 'active'
-            : reorderModifierHeld && hoveredPaneId === pane.terminalId
-              ? 'candidate'
-              : 'none'
+            : reorderTargetId === pane.terminalId
+              ? 'target'
+              : reorderModifierHeld && hoveredPaneId === pane.terminalId
+                ? 'candidate'
+                : 'none'
         }
         paneOverlayVisible={paneOverlayVisible}
         paneOverlayNumber={isFullscreen ? null : index + 1}

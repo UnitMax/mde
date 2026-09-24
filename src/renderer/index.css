@@ -231,6 +231,12 @@
     border-radius: 0.5rem;
     background-color: transparent;
   }
+
+  .terminal-pane-drop-preview {
+    border: 1px dashed var(--color-accent);
+    border-radius: 0.5rem;
+    background-color: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  }
 }
 
 @keyframes mde-menu-in {
