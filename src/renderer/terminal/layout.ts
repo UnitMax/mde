@@ -270,6 +270,38 @@ export function removeTerminalPane(
   }
 }
 
+/** Selects a surviving terminal to focus after one or more panes are removed. */
+export function terminalFocusTargetAfterRemoval(
+  panes: readonly TerminalPaneState[],
+  removedTerminalIds: readonly string[],
+  focusedTerminalId: string | null
+): string | null {
+  const removed = new Set(removedTerminalIds)
+  const remaining = panes.filter((pane) => !removed.has(pane.terminalId))
+  if (remaining.length === 0) return null
+
+  const focusedIndex = focusedTerminalId !== null
+    ? panes.findIndex((pane) => pane.terminalId === focusedTerminalId)
+    : -1
+
+  if (focusedIndex < 0) return remaining[0]!.terminalId
+  if (focusedTerminalId !== null && !removed.has(focusedTerminalId)) {
+    return focusedTerminalId
+  }
+
+  for (let index = focusedIndex - 1; index >= 0; index -= 1) {
+    const pane = panes[index]
+    if (pane && !removed.has(pane.terminalId)) return pane.terminalId
+  }
+
+  for (let index = focusedIndex + 1; index < panes.length; index += 1) {
+    const pane = panes[index]
+    if (pane && !removed.has(pane.terminalId)) return pane.terminalId
+  }
+
+  return remaining[0]!.terminalId
+}
+
 /** Swaps two panes by terminal ID without changing either pane's metadata. */
 export function swapTerminalPanes(
   panes: readonly TerminalPaneState[],

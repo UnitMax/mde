@@ -160,6 +160,7 @@ interface TerminalViewProps {
   onReduceLayout: (layout: TerminalLayout, paneIds: string[]) => void
   onAddPane: (sourceTerminalId: string, launch: RuntimeTerminalLaunch) => void
   onClosePane: (terminalId: string) => void
+  onPaneFocus: (terminalId: string) => void
   onPaneTitleChange: (terminalId: string, title: string | null) => void
   onLinkTask: (terminalId: string) => void
 }
@@ -2303,6 +2304,7 @@ export function TerminalView({
   onReduceLayout,
   onAddPane,
   onClosePane,
+  onPaneFocus,
   onPaneTitleChange,
   onLinkTask
 }: TerminalViewProps): JSX.Element {
@@ -2772,6 +2774,7 @@ export function TerminalView({
         onFocus={() => {
           focusedTerminalIdRef.current = pane.terminalId
           setFocusedTerminalId(pane.terminalId)
+          onPaneFocus(pane.terminalId)
         }}
         onTitleChange={(title) => onPaneTitleChange(pane.terminalId, title)}
         onLinkTask={() => onLinkTask(pane.terminalId)}

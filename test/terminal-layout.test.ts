@@ -15,6 +15,7 @@ import {
   terminalColumnRatios,
   terminalColumnSplitRatio,
   terminalGridTemplates,
+  terminalFocusTargetAfterRemoval,
   terminalResizeHandles,
   terminalSplitRatio
 } from '../src/renderer/terminal/layout'
@@ -226,6 +227,52 @@ describe('terminal layouts', () => {
     expect(isTerminalPaneClosable(panes, 'pane-2')).toBe(true)
     expect(isTerminalPaneClosable(panes.slice(0, 1), 'pane-1')).toBe(false)
     expect(isTerminalPaneClosable(panes, 'missing')).toBe(false)
+  })
+
+  it('keeps focus on a surviving pane when a different pane is removed', () => {
+    const panes = [
+      { terminalId: 'pane-1' },
+      { terminalId: 'pane-2' },
+      { terminalId: 'pane-3' }
+    ]
+
+    expect(terminalFocusTargetAfterRemoval(panes, ['pane-1'], 'pane-3')).toBe('pane-3')
+  })
+
+  it('selects the preceding pane, or the next pane when the first is removed', () => {
+    const panes = [
+      { terminalId: 'pane-1' },
+      { terminalId: 'pane-2' },
+      { terminalId: 'pane-3' }
+    ]
+
+    expect(terminalFocusTargetAfterRemoval(panes, ['pane-3'], 'pane-3')).toBe('pane-2')
+    expect(terminalFocusTargetAfterRemoval(panes, ['pane-1'], 'pane-1')).toBe('pane-2')
+  })
+
+  it('selects the nearest preceding survivor after a focused pane is removed with others', () => {
+    const panes = [
+      { terminalId: 'pane-1' },
+      { terminalId: 'pane-2' },
+      { terminalId: 'pane-3' },
+      { terminalId: 'pane-4' },
+      { terminalId: 'pane-5' }
+    ]
+
+    expect(
+      terminalFocusTargetAfterRemoval(panes, ['pane-1', 'pane-3', 'pane-4'], 'pane-4')
+    ).toBe('pane-2')
+  })
+
+  it('uses the first remaining pane when the focused pane is unknown', () => {
+    const panes = [
+      { terminalId: 'pane-1' },
+      { terminalId: 'pane-2' },
+      { terminalId: 'pane-3' }
+    ]
+
+    expect(terminalFocusTargetAfterRemoval(panes, ['pane-1'], null)).toBe('pane-2')
+    expect(terminalFocusTargetAfterRemoval(panes, ['pane-1'], 'missing')).toBe('pane-2')
   })
 
   it('swaps pane positions while preserving pane metadata', () => {
