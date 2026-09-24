@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import {
   ChevronRight,
+  Code,
   File,
   FileSymlink,
   Folder,
@@ -55,6 +56,12 @@ function FileTree({ session, onCollapse }: { session: Session; onCollapse: () =>
   const expandedRef = useRef(expanded)
   expandedRef.current = expanded
   const treeRef = useRef<HTMLDivElement>(null)
+  const revealSession = useWorkspace((state) => state.revealSession)
+  const openSessionInVsCode = useWorkspace((state) => state.openSessionInVsCode)
+  const isWindows = useWorkspace((state) => state.platform?.isWindows === true)
+  const wslAvailable = useWorkspace((state) => state.wslAvailable)
+  // Main only hands WSL folders to VS Code, matching the terminal header button.
+  const canOpenInVsCode = isWindows && wslAvailable && session.kind === 'wsl' && Boolean(session.distro)
 
   const load = useCallback(
     async (path: string): Promise<void> => {
@@ -158,8 +165,30 @@ function FileTree({ session, onCollapse }: { session: Session; onCollapse: () =>
     >
       <div className="flex items-center gap-1 px-3 pb-2 pt-3">
         <span className="min-w-0 flex-1 truncate text-[11px] font-medium uppercase tracking-wide text-fg-muted" title={session.path}>
-          {session.name}
+          Files
         </span>
+        {canOpenInVsCode && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="shrink-0"
+            onClick={() => void openSessionInVsCode(session.id)}
+            title="Open folder in VS Code"
+            aria-label="Open folder in VS Code"
+          >
+            <Code className="h-3.5 w-3.5" />
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="shrink-0"
+          onClick={() => void revealSession(session.id)}
+          title="Open folder in File Explorer"
+          aria-label="Open folder in File Explorer"
+        >
+          <FolderOpen className="h-3.5 w-3.5" />
+        </Button>
         <Button
           variant="ghost"
           size="icon-sm"

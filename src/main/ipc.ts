@@ -230,6 +230,20 @@ async function verifiedDirectory(session: Session, directory: string): Promise<s
   return result.code === 0 ? canonical : reject(`not a directory in ${distro}`)
 }
 
+/**
+ * The session's own folder, verified like a terminal-reported directory.
+ * Sessions saved by older versions can still hold a target-native shorthand
+ * such as `~`, or a path copied from the Windows folder picker; those are
+ * normalized first, since neither wslpath nor a VS Code URI understands them.
+ */
+async function verifiedSessionDirectory(session: Session): Promise<string | null> {
+  if (session.kind === 'wsl' && session.distro && !isPlainAbsolutePath(session.path)) {
+    const resolved = await resolveForTarget('wsl', session.distro, session.path)
+    return verifiedDirectory(session, resolved.path)
+  }
+  return verifiedDirectory(session, session.path)
+}
+
 function isCodingAgent(value: unknown): value is CodingAgent {
   return value === 'opencode' || value === 'codex' || value === 'claude'
 }
@@ -291,14 +305,9 @@ async function resolvePtyLaunchOptions(
     )
   }
 
-  // Session paths are persisted configuration rather than OSC 7 output. Older
-  // sessions can still contain a target-native shorthand such as `~`, or a
-  // path copied from the Windows folder picker. Normalize those forms before
-  // applying the strict WSL validation used for terminal-reported paths.
-  const launchDirectory = launch.directory === 'session' && !isPlainAbsolutePath(requestedDirectory)
-    ? (await resolveForTarget('wsl', session.distro, requestedDirectory)).path
-    : requestedDirectory
-  const directory = await verifiedDirectory(session, launchDirectory)
+  const directory = launch.directory === 'session'
+    ? await verifiedSessionDirectory(session)
+    : await verifiedDirectory(session, requestedDirectory)
   if (!directory) throw new Error('The selected launch directory is not available.')
 
   return {
@@ -321,7 +330,8 @@ async function revealDirectory(session: Session, directory: string): Promise<voi
 }
 
 async function revealSession(session: Session): Promise<void> {
-  await revealDirectory(session, session.path)
+  const directory = await verifiedSessionDirectory(session)
+  if (directory) await revealDirectory(session, directory)
 }
 
 export function registerIpcHandlers(
@@ -608,8 +618,11 @@ export function registerIpcHandlers(
     const session = await getSession(sessionId)
     if (!session || process.platform !== 'win32' || session.kind !== 'wsl' || !session.distro) return
 
+    const directory = await verifiedSessionDirectory(session)
+    if (!directory) return
+
     try {
-      const url = safeVsCodeRemoteUrl(buildVsCodeRemoteUri(session, process.platform))
+      const url = safeVsCodeRemoteUrl(buildVsCodeRemoteUri(session, process.platform, directory))
       if (!url) throw new Error('Refusing to open an unexpected VS Code URL.')
       await shell.openExternal(url)
     } catch (error) {

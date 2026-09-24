@@ -328,6 +328,54 @@ describe('terminal Explorer IPC', () => {
     )
   })
 
+  it('reveals a legacy shorthand session path through its resolved directory', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    workspaceMock.getSession.mockResolvedValue(wslSession({ path: '~/dev/mde' }))
+    wslPathsMock.resolveForTarget.mockResolvedValue({ path: '/home/me/dev/mde' })
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/dev/mde')
+    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
+    wslPathsMock.toWindows.mockResolvedValue('\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\dev\\mde')
+    registerForTest(vi.fn())
+
+    await handler(IpcChannels.pathReveal)({}, 'session-1')
+
+    expect(wslPathsMock.resolveForTarget).toHaveBeenCalledWith('wsl', 'Ubuntu-24.04', '~/dev/mde')
+    expect(wslPathsMock.toWindows).toHaveBeenCalledWith('Ubuntu-24.04', '/home/me/dev/mde')
+    expect(electronMock.shell.openPath).toHaveBeenCalledWith(
+      '\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\dev\\mde'
+    )
+  })
+
+  it('opens a legacy shorthand session path in VS Code as an absolute folder', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    workspaceMock.getSession.mockResolvedValue(wslSession({ path: '~/dev/mde' }))
+    wslPathsMock.resolveForTarget.mockResolvedValue({ path: '/home/me/dev/mde' })
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/dev/mde')
+    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
+    registerForTest(vi.fn())
+
+    await handler(IpcChannels.pathOpenInVsCode)({}, 'session-1')
+
+    expect(electronMock.shell.openExternal).toHaveBeenCalledWith(
+      'vscode://vscode-remote/wsl+Ubuntu-24.04/home/me/dev/mde/'
+    )
+  })
+
+  it('does not reveal or open a session folder that no longer exists', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    workspaceMock.getSession.mockResolvedValue(wslSession())
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/configured')
+    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 1 })
+    registerForTest(vi.fn())
+
+    await handler(IpcChannels.pathReveal)({}, 'session-1')
+    await handler(IpcChannels.pathOpenInVsCode)({}, 'session-1')
+
+    expect(electronMock.shell.openPath).not.toHaveBeenCalled()
+    expect(electronMock.shell.openExternal).not.toHaveBeenCalled()
+  })
+
   it('normalizes a legacy session path before launching', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     const terminalInfo = vi.fn(() => ({ sessionId: 'session-1', directory: '/home/me/live' }))

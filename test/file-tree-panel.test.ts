@@ -11,6 +11,8 @@ const roots: Root[] = []
 const containers: HTMLDivElement[] = []
 
 const list = vi.fn()
+const reveal = vi.fn(async () => undefined)
+const openInVsCode = vi.fn(async () => undefined)
 
 const session: Session = {
   id: 'session-1',
@@ -21,7 +23,7 @@ const session: Session = {
   createdAt: '2026-01-01T00:00:00.000Z'
 }
 
-async function renderPanel(): Promise<HTMLElement> {
+async function renderPanel(target: Session = session): Promise<HTMLElement> {
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
@@ -29,7 +31,7 @@ async function renderPanel(): Promise<HTMLElement> {
   containers.push(container)
 
   await act(async () => {
-    root.render(createElement(FileTreePanel, { session }))
+    root.render(createElement(FileTreePanel, { session: target }))
   })
 
   return container
@@ -46,9 +48,11 @@ describe('FileTreePanel', () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     Object.defineProperty(window, 'api', {
       configurable: true,
-      value: { files: { list } }
+      value: { files: { list }, paths: { reveal, openInVsCode } }
     })
     list.mockReset()
+    reveal.mockClear()
+    openInVsCode.mockClear()
     list.mockImplementation(async ({ path }: { path: string }) => {
       if (path === '') {
         return {
@@ -65,7 +69,7 @@ describe('FileTreePanel', () => {
       }
       throw new Error("Error invoking remote method 'files:list': Error: Folder not found.")
     })
-    useWorkspace.setState({ fileTreeCollapsed: false })
+    useWorkspace.setState({ fileTreeCollapsed: false, platform: null, wslAvailable: false })
   })
 
   afterEach(() => {
@@ -128,5 +132,26 @@ describe('FileTreePanel', () => {
       container.querySelector<HTMLButtonElement>('[aria-label="Expand files"]')?.click()
     })
     expect(container.querySelector('[role="tree"]')).not.toBeNull()
+  })
+
+  it('labels the panel Files and opens the root in File Explorer', async () => {
+    const container = await renderPanel()
+    expect(container.querySelector('[data-testid="file-tree-panel"]')?.textContent).toContain('Files')
+    expect(container.querySelector('[aria-label="Open folder in VS Code"]')).toBeNull()
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Open folder in File Explorer"]')?.click()
+    })
+    expect(reveal).toHaveBeenCalledWith('session-1')
+  })
+
+  it('opens a WSL session root in VS Code on Windows', async () => {
+    useWorkspace.setState({ platform: { platform: 'win32', isWindows: true }, wslAvailable: true })
+    const container = await renderPanel({ ...session, kind: 'wsl', distro: 'Ubuntu-24.04' })
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Open folder in VS Code"]')?.click()
+    })
+    expect(openInVsCode).toHaveBeenCalledWith('session-1')
   })
 })
