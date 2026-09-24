@@ -30,6 +30,7 @@ import type {
   CodexStatusSettings,
   CodexTuiInstancesUpdate,
   CodexTuiStatusUpdate,
+  FileTreeListResponse,
   OpenCodeTokenRatePluginRequest,
   OpenCodeTokenRatePluginState,
   OpenCodeAlertSetEnabledRequest,
@@ -110,6 +111,8 @@ export const IpcChannels = {
   gitTerminalInfo: 'git:terminal-info',
   gitDiff: 'git:diff',
 
+  filesList: 'files:list',
+
   opencodeTuiPluginState: 'opencode-tui:plugin-state',
   opencodeTuiPluginInstall: 'opencode-tui:plugin-install',
   opencodeTuiPluginRemove: 'opencode-tui:plugin-remove',
@@ -181,6 +184,12 @@ export interface GitTerminalInfoRequest {
 
 export interface GitDiffRequest {
   sessionId: string
+  path: string
+}
+
+export interface FilesListRequest {
+  sessionId: string
+  /** Directory relative to the session root, '/'-separated; '' lists the root. */
   path: string
 }
 
@@ -418,6 +427,9 @@ export interface RendererApi {
     status(req: GitStatusRequest): Promise<GitStatusResponse>
     terminalInfo(req: GitTerminalInfoRequest): Promise<GitTerminalInfoResponse | null>
     diff(req: GitDiffRequest): Promise<GitDiffResponse>
+  }
+  files: {
+    list(req: FilesListRequest): Promise<FileTreeListResponse>
   }
   opencodeTui: {
     settings(): Promise<OpenCodeTuiSettings>

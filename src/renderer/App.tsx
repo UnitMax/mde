@@ -3,6 +3,7 @@ import { Plus, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AddSessionDialog } from '@/components/AddProjectDialog'
 import { GitDialog } from '@/components/GitDialog'
+import { FileTreePanel } from '@/components/FileTreePanel'
 import { NewProjectDialog } from '@/components/NewProjectDialog'
 import { NewTodoProjectDialog } from '@/components/NewTodoProjectDialog'
 import { Sidebar } from '@/components/Sidebar'
@@ -681,6 +682,8 @@ export function App(): JSX.Element {
           <EmptyState onNewSession={() => openNewSession()} />
         )}
       </main>
+
+      {ready && activeWorkspaceView !== 'todo' && selected && <FileTreePanel session={selected} />}
 
       <AddSessionDialog
         open={newSessionOpen}

@@ -120,6 +120,9 @@ const api: RendererApi = {
     terminalInfo: (req) => ipcRenderer.invoke(IpcChannels.gitTerminalInfo, req),
     diff: (req) => ipcRenderer.invoke(IpcChannels.gitDiff, req)
   },
+  files: {
+    list: (req) => ipcRenderer.invoke(IpcChannels.filesList, req)
+  },
   opencodeTui: {
     settings: () => ipcRenderer.invoke(IpcChannels.opencodeTuiSettings),
     setEnabled: (req) => ipcRenderer.invoke(IpcChannels.opencodeTuiSetEnabled, req),

@@ -569,3 +569,54 @@ describe('terminal Git IPC', () => {
     expect(wslDistrosMock.runWslCommand).not.toHaveBeenCalled()
   })
 })
+
+describe('file tree IPC', () => {
+  beforeEach(() => {
+    electronMock.handlers.clear()
+    workspaceMock.getSession.mockReset()
+    wslPathsMock.resolveForTarget.mockReset()
+    wslDistrosMock.runWslCommand.mockReset()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('rejects malformed requests and unknown sessions', async () => {
+    registerForTest(vi.fn())
+    const list = handler(IpcChannels.filesList)
+
+    await expect(list({}, null)).rejects.toThrow('Invalid file tree request.')
+    await expect(list({}, { sessionId: 'session-1' })).rejects.toThrow('Invalid file tree request.')
+    await expect(list({}, { sessionId: '', path: '' })).rejects.toThrow('Invalid file tree request.')
+
+    workspaceMock.getSession.mockResolvedValue(undefined)
+    await expect(list({}, { sessionId: 'missing', path: '' })).rejects.toThrow('Session no longer exists.')
+  })
+
+  it('refuses paths outside the session root before reaching the distro', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    registerForTest(vi.fn())
+    workspaceMock.getSession.mockResolvedValue(wslSession())
+
+    await expect(
+      handler(IpcChannels.filesList)({}, { sessionId: 'session-1', path: '../../etc' })
+    ).rejects.toThrow('Invalid folder path.')
+    expect(wslDistrosMock.runWslCommand).not.toHaveBeenCalled()
+  })
+
+  it('lists a WSL session directory inside the configured distro', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    registerForTest(vi.fn())
+    workspaceMock.getSession.mockResolvedValue(wslSession())
+    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: 'f\tmain.ts\n', stderr: '', code: 0 })
+
+    await expect(
+      handler(IpcChannels.filesList)({}, { sessionId: 'session-1', path: 'src' })
+    ).resolves.toEqual({ path: 'src', entries: [{ name: 'main.ts', kind: 'file' }], truncated: false })
+    expect(wslDistrosMock.runWslCommand).toHaveBeenCalledWith(
+      'Ubuntu-24.04',
+      expect.arrayContaining(['find', '-H', '/home/me/configured/src'])
+    )
+  })
+})

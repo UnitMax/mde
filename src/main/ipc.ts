@@ -11,6 +11,7 @@ import {
   type GitTerminalInfoRequest,
   IpcChannels,
   type EnsurePtyRequest,
+  type FilesListRequest,
   type PtyLaunchRequest,
   type MoveSessionRequest,
   type MoveTodoTaskRequest,
@@ -36,6 +37,7 @@ import {
 } from '@shared/ipc'
 import type {
   Distro,
+  FileTreeListResponse,
   GitDiffResponse,
   HostPlatform,
   GitInfoResponse,
@@ -88,6 +90,7 @@ import {
 import { buildVsCodeRemoteUri } from './vscode'
 import { safeVsCodeRemoteUrl } from './external-links'
 import { readGitDiff, readGitInfo, readGitStatus, readGitTerminalInfo } from './git'
+import { listSessionDirectory } from './files/tree'
 import {
   createProject,
   createTodoProject,
@@ -692,5 +695,14 @@ export function registerIpcHandlers(
     const session = await getSession(req.sessionId)
     if (!session) throw new Error('Session no longer exists.')
     return readGitDiff(session, req.path)
+  })
+
+  handle<FilesListRequest, FileTreeListResponse>(IpcChannels.filesList, async (req) => {
+    if (!req || typeof req.sessionId !== 'string' || !req.sessionId || typeof req.path !== 'string') {
+      throw new Error('Invalid file tree request.')
+    }
+    const session = await getSession(req.sessionId)
+    if (!session) throw new Error('Session no longer exists.')
+    return listSessionDirectory(session, req.path)
   })
 }

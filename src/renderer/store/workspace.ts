@@ -110,6 +110,7 @@ interface WorkspaceState {
   wslAvailable: boolean
   distros: Distro[]
   sidebarCollapsed: boolean
+  fileTreeCollapsed: boolean
   ready: boolean
 
   init: () => Promise<void>
@@ -117,6 +118,7 @@ interface WorkspaceState {
   setWorkspaceView: (view: WorkspaceView) => void
   selectTodoProject: (id: string) => void
   toggleSidebar: () => void
+  toggleFileTree: () => void
 
   addProject: (input: NewProject) => Promise<Project>
   renameProject: (id: string, name: string) => Promise<void>
@@ -194,6 +196,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   wslAvailable: false,
   distros: [],
   sidebarCollapsed: false,
+  fileTreeCollapsed: false,
   ready: false,
 
   init: async () => {
@@ -292,6 +295,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     ),
 
   toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+  toggleFileTree: () => set((state) => ({ fileTreeCollapsed: !state.fileTreeCollapsed })),
 
   addProject: async (input) => {
     const project = await window.api.projects.create(input)

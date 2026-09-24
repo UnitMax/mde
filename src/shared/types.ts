@@ -421,3 +421,19 @@ export interface GitDiffResponse {
   diff: string
   binary: boolean
 }
+
+export type FileTreeEntryKind = 'directory' | 'file' | 'symlink' | 'other'
+
+/** One child of a listed session directory. Symlinks are reported, never followed. */
+export interface FileTreeEntry {
+  name: string
+  kind: FileTreeEntryKind
+}
+
+export interface FileTreeListResponse {
+  /** Directory path relative to the session root; '' is the root itself. */
+  path: string
+  entries: FileTreeEntry[]
+  /** True when the directory held more entries than the listing returns. */
+  truncated: boolean
+}
