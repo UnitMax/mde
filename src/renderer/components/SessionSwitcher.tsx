@@ -3,6 +3,7 @@ import { Search } from 'lucide-react'
 import type { PtyStatus } from '@shared/types'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { HighlightedText } from '@/components/HighlightedText'
 import { OpenCodeNotificationBadge } from '@/components/OpenCodeNotificationBadge'
 import { cn } from '@/lib/utils'
 import { searchSessions, type SessionSearchMatch } from '@/lib/session-switcher'
@@ -12,19 +13,6 @@ import { useWorkspace } from '@/store/workspace'
 interface SessionSwitcherProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-}
-
-function HighlightedText({ value, positions }: { value: string; positions?: number[] }): JSX.Element {
-  const matched = new Set(positions ?? [])
-  return (
-    <>
-      {value.split('').map((character, index) => (
-        <span key={`${character}-${index}`} className={matched.has(index) ? 'text-accent' : undefined}>
-          {character}
-        </span>
-      ))}
-    </>
-  )
 }
 
 function SessionStatus({ status }: { status: PtyStatus }): JSX.Element {

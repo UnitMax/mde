@@ -11,6 +11,7 @@ import { Sidebar } from '@/components/Sidebar'
 import { SessionSwitcher } from '@/components/SessionSwitcher'
 import { TerminalView } from '@/components/TerminalView'
 import { TodoProjectView } from '@/components/TodoProjectView'
+import { TodoSearch } from '@/components/TodoSearch'
 import { TodoProjectSettingsDialog } from '@/components/TodoProjectSettingsDialog'
 import { TodoTaskDialog } from '@/components/TodoTaskDialog'
 import {
@@ -18,6 +19,7 @@ import {
   type TerminalTaskLinkTarget
 } from '@/components/TerminalTaskLinkDialog'
 import { isSessionSwitcherShortcut } from '@/lib/session-switcher'
+import { isTodoSearchShortcut } from '@/lib/todo-search'
 import { useWorkspace } from '@/store/workspace'
 import { disposeSession, getSession } from '@/terminal/sessions'
 import {
@@ -100,6 +102,7 @@ export function App(): JSX.Element {
   const [todoTaskDialogColumnId, setTodoTaskDialogColumnId] = useState<string | null>(null)
   const [gitSessionId, setGitSessionId] = useState<string | null>(null)
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false)
+  const [todoSearchOpen, setTodoSearchOpen] = useState(false)
   const [terminalTaskLinkTarget, setTerminalTaskLinkTarget] = useState<TerminalTaskLinkTarget | null>(null)
   const [defaultProjectId, setDefaultProjectId] = useState<string | undefined>(undefined)
   const [terminalLayouts, setTerminalLayouts] = useState<RuntimeLayouts>({})
@@ -337,6 +340,7 @@ export function App(): JSX.Element {
       if (
         !isSessionSwitcherShortcut(event) ||
         sessionSwitcherOpen ||
+        todoSearchOpen ||
         newSessionOpen ||
         newProjectOpen ||
         newTodoProjectOpen ||
@@ -359,6 +363,44 @@ export function App(): JSX.Element {
     newTodoProjectOpen,
     sessionSwitcherOpen,
     todoProjectSettingsOpen,
+    todoSearchOpen,
+    todoTaskDialogOpen
+  ])
+
+  const todoSearchAvailable = activeWorkspaceView === 'todo' && selectedTodoProjectId !== null
+  useEffect(() => {
+    if (!todoSearchAvailable) return
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (
+        !isTodoSearchShortcut(event) ||
+        todoSearchOpen ||
+        sessionSwitcherOpen ||
+        newSessionOpen ||
+        newProjectOpen ||
+        newTodoProjectOpen ||
+        todoProjectSettingsOpen ||
+        todoTaskDialogOpen ||
+        terminalTaskLinkTarget !== null
+      ) {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+      setTodoSearchOpen(true)
+    }
+
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [
+    newProjectOpen,
+    newSessionOpen,
+    newTodoProjectOpen,
+    sessionSwitcherOpen,
+    terminalTaskLinkTarget,
+    todoProjectSettingsOpen,
+    todoSearchAvailable,
+    todoSearchOpen,
     todoTaskDialogOpen
   ])
 
@@ -394,6 +436,7 @@ export function App(): JSX.Element {
   }
 
   useEffect(() => {
+    setTodoSearchOpen(false)
     setTodoTaskDialogOpen(false)
     setTodoTaskDialogTaskId(null)
     setTodoTaskDialogColumnId(null)
@@ -745,6 +788,13 @@ export function App(): JSX.Element {
             open={todoTaskDialogOpen}
             onOpenChange={setTodoTaskDialogOpen}
             onManageTerminalLink={(taskId) => setTerminalTaskLinkTarget({ type: 'task', taskId })}
+          />
+          <TodoSearch
+            open={todoSearchOpen && activeWorkspaceView === 'todo'}
+            onOpenChange={setTodoSearchOpen}
+            project={selectedTodoProject}
+            tasks={selectedTodoTasks}
+            onSelectTask={openTodoTask}
           />
         </>
       )}

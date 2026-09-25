@@ -36,6 +36,12 @@ export function getKeyboardShortcutGroups(
           description: 'Open the session switcher.'
         },
         {
+          id: 'todo-search-open',
+          keys: [`${primaryModifier}+F`],
+          description: 'Search tasks in the open To Do project.',
+          note: 'Available in the To Do view.'
+        },
+        {
           id: 'terminal-launcher-open',
           keys: [`${primaryModifier}+N`],
           description: 'Open the terminal launcher.',
@@ -177,6 +183,21 @@ export function getKeyboardShortcutGroups(
           id: 'session-switcher-close',
           keys: ['Esc'],
           description: 'Close the session switcher.'
+        },
+        {
+          id: 'todo-search-move',
+          keys: ['↑', '↓'],
+          description: 'Move through matching tasks in the To Do search.'
+        },
+        {
+          id: 'todo-search-select',
+          keys: ['Enter'],
+          description: 'Open the selected task.'
+        },
+        {
+          id: 'todo-search-close',
+          keys: ['Esc'],
+          description: 'Close the To Do search.'
         },
         {
           id: 'terminal-launcher-source',

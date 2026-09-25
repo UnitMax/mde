@@ -43,6 +43,7 @@ export function TodoProjectView({
 }: TodoProjectViewProps): JSX.Element {
   const moveTodoTask = useWorkspace((state) => state.moveTodoTask)
   const terminalTaskLinks = useWorkspace((state) => state.terminalTaskLinks)
+  const searchShortcut = useWorkspace((state) => state.platform?.platform) === 'darwin' ? 'Cmd+F' : 'Ctrl+F'
   const terminalsById = new Map(terminalCatalog.map((terminal) => [terminal.terminalId, terminal]))
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null)
   const [draggedTaskHeight, setDraggedTaskHeight] = useState<number | null>(null)
@@ -177,6 +178,12 @@ export function TodoProjectView({
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line px-5">
         <h1 className="min-w-0 flex-1 truncate text-[13px] font-medium text-fg">{project.name}</h1>
+        <span className="shrink-0 text-[11px] text-fg-subtle" data-testid="todo-search-hint">
+          <kbd className="rounded border border-line-strong px-1.5 font-sans text-[10px] leading-4">
+            {searchShortcut}
+          </kbd>{' '}
+          to search
+        </span>
         <span className="rounded border border-line-strong px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle">
           {project.shorthand}
         </span>
