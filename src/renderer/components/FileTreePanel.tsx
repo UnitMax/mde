@@ -10,6 +10,7 @@ import {
   PanelRightOpen,
   RefreshCw
 } from 'lucide-react'
+import { FILE_TREE_DROP_TYPE } from '@/terminal/drop'
 import type { Session } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { useWorkspace } from '@/store/workspace'
@@ -52,6 +53,8 @@ function FileTree({ session, onCollapse }: { session: Session; onCollapse: () =>
   const [cache, setCache] = useState<Map<string, FileTreeDirectoryState>>(() => new Map())
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   const [focusedPath, setFocusedPath] = useState<string | null>(null)
+  const [draggedPath, setDraggedPath] = useState<string | null>(null)
+  const dragPreviewRef = useRef<HTMLElement | null>(null)
   const generation = useRef(0)
   const expandedRef = useRef(expanded)
   expandedRef.current = expanded
@@ -95,6 +98,16 @@ function FileTree({ session, onCollapse }: { session: Session; onCollapse: () =>
       generation.current += 1
     }
   }, [load])
+
+  const endDrag = (): void => {
+    dragPreviewRef.current?.remove()
+    dragPreviewRef.current = null
+    setDraggedPath(null)
+  }
+
+  useEffect(() => {
+    return () => { dragPreviewRef.current?.remove() }
+  }, [])
 
   const rows = useMemo(() => visibleFileTreeRows(cache, expanded), [cache, expanded])
   const entryRows = useMemo(
@@ -245,16 +258,41 @@ function FileTree({ session, onCollapse }: { session: Session; onCollapse: () =>
               key={row.path}
               role="treeitem"
               data-path={row.path}
+              draggable
               aria-level={row.depth + 1}
               aria-expanded={isDirectory ? row.expanded : undefined}
               aria-selected={isDirectory ? undefined : isOpen}
               tabIndex={row.path === tabStopPath ? 0 : -1}
               className={cn(
                 'flex cursor-default items-center gap-1 rounded py-[3px] pr-2 text-fg-muted hover:bg-hover hover:text-fg focus:bg-active focus:text-fg focus:outline-none',
-                isOpen && 'bg-active text-fg'
+                isOpen && 'bg-active text-fg',
+                draggedPath === row.path && 'opacity-40'
               )}
               style={{ paddingLeft: rowPadding(row.depth) }}
               title={row.path}
+              onDragStart={(event) => {
+                event.dataTransfer.effectAllowed = 'copy'
+                event.dataTransfer.setData(FILE_TREE_DROP_TYPE, JSON.stringify({
+                  sessionId: session.id,
+                  path: row.path,
+                }))
+                const preview = document.createElement('div')
+                preview.className = 'file-tree-drag-preview'
+                preview.style.left = `${event.clientX}px`
+                preview.style.top = `${event.clientY}px`
+                const icon = event.currentTarget.querySelectorAll('svg')[1]?.cloneNode(true)
+                if (icon) preview.append(icon)
+                const label = document.createElement('span')
+                label.textContent = row.name
+                preview.append(label)
+                document.body.append(preview)
+                dragPreviewRef.current = preview
+                event.dataTransfer.setDragImage(preview, 18, 18)
+                // Chromium captures the drag image after this event finishes.
+                window.setTimeout(() => preview.remove(), 0)
+                setDraggedPath(row.path)
+              }}
+              onDragEnd={endDrag}
               onFocus={() => setFocusedPath(row.path)}
               onClick={() => {
                 if (isDirectory) setDirectoryExpanded(row.path, !row.expanded)

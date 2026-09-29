@@ -49,6 +49,7 @@ const workspaceMock = vi.hoisted(() => ({
 }))
 
 const dropMock = vi.hoisted(() => ({
+  fileTreeDropFile: vi.fn(),
   resolveTerminalDrop: vi.fn()
 }))
 
@@ -96,6 +97,7 @@ describe('terminal file-drop IPC', () => {
     electronMock.handlers.clear()
     workspaceMock.getSession.mockReset()
     dropMock.resolveTerminalDrop.mockReset()
+    dropMock.fileTreeDropFile.mockReset()
   })
 
   it('resolves a running terminal drop against its source session', async () => {
@@ -147,6 +149,40 @@ describe('terminal file-drop IPC', () => {
     expect(workspaceMock.getSession).not.toHaveBeenCalled()
     expect(dropMock.resolveTerminalDrop).not.toHaveBeenCalled()
   })
+
+  it('resolves a tree entry using its saved source session and the receiving terminal', async () => {
+    const target = nativeSession()
+    const source = { ...target, id: 'source', path: '/tmp/another-project' }
+    workspaceMock.getSession.mockImplementation(async (id) => id === 'source' ? source : target)
+    const descriptor = { name: 'src', nativePath: '/tmp/another-project/src' }
+    dropMock.fileTreeDropFile.mockResolvedValue(descriptor)
+    dropMock.resolveTerminalDrop.mockResolvedValue({ insertions: [], acceptedCount: 0, rejections: [] })
+    registerForTest({ terminalInfo: vi.fn(() => ({ sessionId: target.id })), status: vi.fn(() => 'running') })
+    await handler(IpcChannels.ptyDropFiles)({}, {
+      terminalId: 'pane-1', files: [], mode: 'shell', treeEntry: { sessionId: 'source', path: 'src' },
+    })
+    expect(dropMock.fileTreeDropFile).toHaveBeenCalledWith(source, 'src', process.platform)
+    expect(dropMock.resolveTerminalDrop).toHaveBeenCalledWith(target, process.platform, [descriptor], 'shell')
+  })
+
+  it('reports a tree drop onto a stopped terminal', async () => {
+    registerForTest({ terminalInfo: vi.fn(() => null), status: vi.fn(() => 'exited') })
+    await expect(handler(IpcChannels.ptyDropFiles)({}, {
+      terminalId: 'pane-1', files: [], mode: 'shell', treeEntry: { sessionId: 'source', path: 'src' },
+    })).resolves.toEqual({
+      insertions: [], acceptedCount: 0, rejections: [{ name: 'src', code: 'terminal-unavailable' }],
+    })
+  })
+
+  it.each([{ sessionId: 'source', path: '../outside' }, { sessionId: 7, path: 'src' }, null])(
+    'validates the tree entry before loading sessions', async (treeEntry) => {
+      registerForTest({ terminalInfo: vi.fn(), status: vi.fn() })
+      await expect(handler(IpcChannels.ptyDropFiles)({}, {
+        terminalId: 'pane-1', files: [], mode: 'shell', treeEntry,
+      })).rejects.toThrow('Invalid terminal file drop.')
+      expect(workspaceMock.getSession).not.toHaveBeenCalled()
+    }
+  )
 
   it('validates the preload payload before resolving paths', async () => {
     const terminalInfo = vi.fn(() => ({ sessionId: 'session-1', directory: '/tmp' }))

@@ -20,6 +20,7 @@ import {
   Settings2,
   X
 } from 'lucide-react'
+import type { FileTreeDropEntry } from '@shared/ipc'
 import type {
   CodexHookState,
   CodexStatusSettings,
@@ -114,6 +115,7 @@ import {
 } from '@/terminal/pane-switch'
 import {
   fileDropUris,
+  readFileTreeDrop,
   isFileDrop,
   terminalDropMode,
   terminalDropNotice,
@@ -262,13 +264,19 @@ function TerminalSurface({
     }
   }, [pane.terminalId])
 
-  const enqueueFileDrop = (files: File[], uriList: string[], mode: 'shell' | 'tui'): void => {
+  const enqueueFileDrop = (
+    files: File[],
+    uriList: string[],
+    mode: 'shell' | 'tui',
+    treeEntry?: FileTreeDropEntry,
+  ): void => {
     const task = async (): Promise<void> => {
       try {
         const result = await window.api.pty.dropFiles({
           terminalId: pane.terminalId,
           files,
           uriList,
+          treeEntry,
           mode
         })
         const terminal = getSession(pane.terminalId)
@@ -318,16 +326,30 @@ function TerminalSurface({
     setFileDragOver(false)
 
     const files = Array.from(event.dataTransfer.files)
-    if (files.length > 0) {
+    const treeEntry = readFileTreeDrop(event.dataTransfer)
+    if (files.length > 0 || treeEntry) {
+      onFocus()
       const terminal = getSession(pane.terminalId)
       const mode = terminalDropMode(terminal?.term.buffer.active.type ?? 'normal')
       const uriList = fileDropUris(event.dataTransfer.getData('text/uri-list'))
-      enqueueFileDrop(files, uriList, mode)
+      enqueueFileDrop(files, uriList, mode, treeEntry ?? undefined)
     }
   }
 
   useEffect(() => {
-    return () => window.clearTimeout(dropNoticeTimerRef.current)
+    const resetDrag = (): void => {
+      dragDepthRef.current = 0
+      setFileDragOver(false)
+    }
+    window.addEventListener('dragend', resetDrag)
+    window.addEventListener('drop', resetDrag)
+    window.addEventListener('blur', resetDrag)
+    return () => {
+      window.clearTimeout(dropNoticeTimerRef.current)
+      window.removeEventListener('dragend', resetDrag)
+      window.removeEventListener('drop', resetDrag)
+      window.removeEventListener('blur', resetDrag)
+    }
   }, [])
 
   useEffect(() => {
@@ -481,10 +503,14 @@ function TerminalSurface({
       )}
       {fileDragOver && (
         <div
-          className="pointer-events-none absolute inset-2 z-30 flex items-center justify-center rounded-md border border-dashed border-accent bg-bg/80 text-sm font-medium text-fg"
+          className="terminal-file-drop-preview pointer-events-none absolute inset-2 z-30 flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-accent bg-bg/80 text-sm font-medium text-fg"
           data-testid="terminal-file-drop-overlay"
         >
-          Drop files to attach or insert paths
+          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/15 text-accent">
+            <FolderOpen className="h-6 w-6" />
+          </span>
+          <span>Drop file or folder to insert its path</span>
+          <span className="text-xs font-normal text-fg-muted">Paste into this terminal</span>
         </div>
       )}
       {(dropNotice || clipboardNotice || osc52Prompt) && (

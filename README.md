@@ -127,7 +127,11 @@ On Linux, left-dragged text also becomes the desktop's separate PRIMARY selectio
 pastes without changing the normal clipboard. WSL terminals on Windows provide the same middle-click
 workflow within MDE using an in-app transient selection; native Windows terminals do not.
 
-Files can be dragged from Finder, Explorer, or another file manager into any terminal pane. In a
+Drag a file or folder from the Files tree on the right into any terminal to paste its full path.
+A floating preview follows the drag, and the receiving terminal highlights where the path will land.
+Paths use the source session's folder even when the terminal is in a different working directory.
+
+Files can also be dragged from Finder, Explorer, or another file manager into any terminal pane. In a
 normal shell MDE inserts target-shell-escaped paths without submitting them. In an alternate-screen
 terminal agent, MDE pastes each target-side path separately so agents that support image paths can
 create their native attachments immediately. Native sessions accept files from their host filesystem;

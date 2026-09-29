@@ -1,4 +1,5 @@
 import { stat } from 'node:fs/promises'
+import { posix, win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type {
   DropPtyFile,
@@ -8,13 +9,42 @@ import type {
   TerminalDropRejectionCode
 } from '@shared/ipc'
 import type { Session } from '@shared/types'
+import { isSafeRelativePath } from '../files/tree'
 import { runWslCommand } from '../wsl/distros'
-import { isWindowsDrivePath, parseWslUncPath, toWsl } from '../wsl/paths'
+import {
+  isPlainAbsolutePath,
+  isWindowsDrivePath,
+  parseWslUncPath,
+  resolveForTarget,
+  toWsl,
+} from '../wsl/paths'
 
 export type TerminalDropShell = 'posix' | 'powershell' | 'cmd'
 export type TerminalDropResult = PtyDropResult
 
 const unsafePathCharacters = /[\u0000-\u001f\u007f]/
+
+/** Resolves tree entries in main, using the saved session rather than a supplied root. */
+export async function fileTreeDropFile(
+  source: Session,
+  relativePath: string,
+  platform: NodeJS.Platform
+): Promise<DropPtyFile> {
+  if (!relativePath || !isSafeRelativePath(relativePath)) throw new Error('Invalid tree entry path.')
+  const name = relativePath.split('/').pop()!
+  if (source.kind === 'native') {
+    const paths = platform === 'win32' ? win32 : posix
+    if (!paths.isAbsolute(source.path)) throw new Error('Invalid session folder.')
+    return { name, nativePath: paths.join(source.path, ...relativePath.split('/')) }
+  }
+  if (platform !== 'win32' || !source.distro) throw new Error('WSL is unavailable.')
+  const root = isPlainAbsolutePath(source.path)
+    ? source.path
+    : (await resolveForTarget('wsl', source.distro, source.path)).path
+  if (!isPlainAbsolutePath(root)) throw new Error('Invalid session folder.')
+  const path = posix.join(root, relativePath)
+  return { name, nativePath: `\\\\wsl.localhost\\${source.distro}${path.replaceAll('/', '\\')}` }
+}
 
 function shellBasename(shell: string): string {
   const normalised = shell.replaceAll('\\', '/')

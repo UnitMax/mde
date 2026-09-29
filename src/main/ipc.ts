@@ -74,7 +74,7 @@ import type {
   TerminalLaunchDirectory
 } from '@shared/types'
 import type { PtyLaunchOptions, PtyManager } from './pty/manager'
-import { resolveTerminalDrop } from './pty/drop'
+import { fileTreeDropFile, resolveTerminalDrop } from './pty/drop'
 import type { OpenCodeTuiStatusManager } from './opencode/tui-status'
 import type { OpenCodeTokenRatePluginManager } from './opencode/token-rate'
 import type { OpenCodeAlertManager } from './opencode/alerts'
@@ -92,7 +92,7 @@ import {
 import { buildVsCodeRemoteUri } from './vscode'
 import { safeVsCodeRemoteUrl } from './external-links'
 import { readGitDiff, readGitInfo, readGitStatus, readGitTerminalInfo } from './git'
-import { listSessionDirectory, readSessionFile } from './files/tree'
+import { isSafeRelativePath, listSessionDirectory, readSessionFile } from './files/tree'
 import {
   createProject,
   createTodoProject,
@@ -565,20 +565,37 @@ export function registerIpcHandlers(
       typeof req.terminalId !== 'string' ||
       !Array.isArray(req.files) ||
       !req.files.every(isDropPtyFile) ||
+      (req.treeEntry !== undefined && (
+        !req.treeEntry ||
+        typeof req.treeEntry.sessionId !== 'string' ||
+        req.treeEntry.sessionId.length === 0 ||
+        typeof req.treeEntry.path !== 'string' ||
+        req.treeEntry.path.length === 0 ||
+        !isSafeRelativePath(req.treeEntry.path)
+      )) ||
       !isTerminalDropMode(req.mode)
     ) {
       throw new Error('Invalid terminal file drop.')
     }
 
+    const droppedFiles = req.treeEntry
+      ? [...req.files, { name: req.treeEntry.path.split('/').pop()! }]
+      : req.files
     const terminal = ptyManager.terminalInfo(req.terminalId)
     if (!terminal || ptyManager.status(req.terminalId) !== 'running') {
-      return terminalDropUnavailable(req.files)
+      return terminalDropUnavailable(droppedFiles)
     }
 
     const session = await getSession(terminal.sessionId)
-    if (!session) return terminalDropUnavailable(req.files)
+    if (!session) return terminalDropUnavailable(droppedFiles)
 
-    return resolveTerminalDrop(session, process.platform, req.files, req.mode)
+    const files = [...req.files]
+    if (req.treeEntry) {
+      const source = await getSession(req.treeEntry.sessionId)
+      if (!source) throw new Error('The source session is no longer available.')
+      files.push(await fileTreeDropFile(source, req.treeEntry.path, process.platform))
+    }
+    return resolveTerminalDrop(session, process.platform, files, req.mode)
   })
 
   handle<void, boolean>(IpcChannels.wslAvailable, () => isWslAvailable())

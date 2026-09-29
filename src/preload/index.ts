@@ -68,7 +68,7 @@ const api: RendererApi = {
     dispose: (sessionId) => ipcRenderer.invoke(IpcChannels.ptyDispose, sessionId),
     statuses: () => ipcRenderer.invoke(IpcChannels.ptyStatuses),
     directories: () => ipcRenderer.invoke(IpcChannels.ptyDirectories),
-    dropFiles: ({ terminalId, files, uriList, mode }) => {
+    dropFiles: ({ terminalId, files, uriList, treeEntry, mode }) => {
       const hasMatchingUriList = uriList !== undefined && uriList.length === files.length
       const descriptors = files.map((file, index) => {
         let nativePath: string | undefined
@@ -92,6 +92,7 @@ const api: RendererApi = {
       return ipcRenderer.invoke(IpcChannels.ptyDropFiles, {
         terminalId,
         files: descriptors,
+        treeEntry,
         mode
       })
     },

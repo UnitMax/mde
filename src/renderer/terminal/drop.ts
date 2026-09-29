@@ -1,11 +1,26 @@
-import type { PtyDropRejection, TerminalDropMode } from '@shared/ipc'
+import type { FileTreeDropEntry, PtyDropRejection, TerminalDropMode } from '@shared/ipc'
 
-/** Identifies native file drags without claiming text or internal UI drags. */
+export const FILE_TREE_DROP_TYPE = 'application/x-mde-file-tree-entry'
+
+export function readFileTreeDrop(dataTransfer: Pick<DataTransfer, 'getData'>): FileTreeDropEntry | null {
+  try {
+    const entry: unknown = JSON.parse(dataTransfer.getData(FILE_TREE_DROP_TYPE))
+    if (!entry || typeof entry !== 'object') return null
+    const { sessionId, path } = entry as Record<string, unknown>
+    return typeof sessionId === 'string' && sessionId.length > 0 &&
+      typeof path === 'string' && path.length > 0 ? { sessionId, path } : null
+  } catch {
+    return null
+  }
+}
+
+
+/** Identifies file-manager and file-tree drags without claiming other UI drags. */
 export function isFileDrop(
   dataTransfer: Pick<DataTransfer, 'types' | 'items'> | null
 ): boolean {
   if (!dataTransfer) return false
-  if (Array.from(dataTransfer.types).includes('Files')) return true
+  if (Array.from(dataTransfer.types).some((type) => type === 'Files' || type === FILE_TREE_DROP_TYPE)) return true
 
   for (let index = 0; index < dataTransfer.items.length; index += 1) {
     if (dataTransfer.items[index]?.kind === 'file') return true

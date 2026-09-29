@@ -256,10 +256,17 @@ export interface DropPtyFile {
   fileUri?: string
 }
 
+/** A tree entry relative to its owning session root. */
+export interface FileTreeDropEntry {
+  sessionId: string
+  path: string
+}
+
 /** Files resolved by preload from a renderer file drop. */
 export interface DropPtyFilesRequest {
   terminalId: string
   files: DropPtyFile[]
+  treeEntry?: FileTreeDropEntry
   mode: TerminalDropMode
 }
 
@@ -286,6 +293,7 @@ export interface PtyDropResult {
 export interface RendererDropPtyFilesRequest {
   terminalId: string
   files: File[]
+  treeEntry?: FileTreeDropEntry
   /** File URLs supplied by the browser when Electron cannot resolve a File path. */
   uriList?: string[]
   mode: TerminalDropMode

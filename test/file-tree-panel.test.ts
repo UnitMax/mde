@@ -4,6 +4,7 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Session } from '../src/shared/types'
+import { FILE_TREE_DROP_TYPE, readFileTreeDrop } from '../src/renderer/terminal/drop'
 import { FileTreePanel } from '../src/renderer/components/FileTreePanel'
 import { useWorkspace } from '../src/renderer/store/workspace'
 
@@ -69,7 +70,7 @@ describe('FileTreePanel', () => {
       }
       throw new Error("Error invoking remote method 'files:list': Error: Folder not found.")
     })
-    useWorkspace.setState({ fileTreeCollapsed: false, platform: null, wslAvailable: false })
+    useWorkspace.setState({ openFiles: {}, fileTreeCollapsed: false, platform: null, wslAvailable: false })
   })
 
   afterEach(() => {
@@ -113,6 +114,36 @@ describe('FileTreePanel', () => {
     expect(list).toHaveBeenCalledTimes(1)
     expect(useWorkspace.getState().openFiles).toEqual({ 'session-1': 'README.md' })
     expect(treeItem(container, 'README.md').getAttribute('aria-selected')).toBe('true')
+  })
+
+  it.each(['src', 'README.md'])('drags %s with its source session and a preview', async (path) => {
+    const container = await renderPanel()
+    const item = treeItem(container, path)
+    const data = new Map<string, string>()
+    const transfer = {
+      effectAllowed: 'none',
+      setData: (type: string, value: string) => data.set(type, value),
+      getData: (type: string) => data.get(type) ?? '',
+      setDragImage: vi.fn(),
+    }
+    const event = new Event('dragstart', { bubbles: true })
+    Object.defineProperty(event, 'dataTransfer', { value: transfer })
+    await act(async () => { item.dispatchEvent(event) })
+
+    expect(item.getAttribute('draggable')).toBe('true')
+    expect(transfer.effectAllowed).toBe('copy')
+    expect(data.has(FILE_TREE_DROP_TYPE)).toBe(true)
+    expect(readFileTreeDrop(transfer)).toEqual({ sessionId: session.id, path })
+    const preview = transfer.setDragImage.mock.calls[0]?.[0] as HTMLElement
+    expect(preview.textContent).toBe(path)
+    expect(preview.querySelector('svg')).not.toBeNull()
+    expect(item.className).toContain('opacity-40')
+    expect(useWorkspace.getState().openFiles).toEqual({})
+    expect(list).toHaveBeenCalledTimes(1)
+
+    await act(async () => { item.dispatchEvent(new Event('dragend', { bubbles: true })) })
+    expect(document.querySelector('.file-tree-drag-preview')).toBeNull()
+    expect(item.className).not.toContain('opacity-40')
   })
 
   it('shows listing errors without the IPC prefix', async () => {

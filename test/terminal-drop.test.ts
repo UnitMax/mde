@@ -1,6 +1,6 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DropPtyFile } from '../src/shared/ipc'
 import type { Session } from '../src/shared/types'
@@ -26,6 +26,7 @@ vi.mock('../src/main/wsl/paths', async () => {
 
 import {
   fileUriToNativePath,
+  fileTreeDropFile,
   formatAgentDrop,
   formatTerminalDrop,
   isSafeDroppedPath,
@@ -34,6 +35,8 @@ import {
   terminalDropShell
 } from '../src/main/pty/drop'
 import {
+  FILE_TREE_DROP_TYPE,
+  readFileTreeDrop,
   fileDropUris,
   isFileDrop,
   terminalDropMode,
@@ -153,7 +156,57 @@ describe('terminal file drops', () => {
 
     expect(isFileDrop(makeTransfer(['text/plain']))).toBe(false)
     expect(isFileDrop(makeTransfer(['Files']))).toBe(true)
+    expect(isFileDrop(makeTransfer([FILE_TREE_DROP_TYPE]))).toBe(true)
     expect(isFileDrop(makeTransfer(['text/plain'], ['file']))).toBe(true)
+  })
+
+  it('reads tree drops and ignores malformed payloads', () => {
+    const transfer = (value: string) => ({ getData: () => value })
+    expect(readFileTreeDrop(transfer('invalid'))).toBeNull()
+    expect(readFileTreeDrop(transfer('null'))).toBeNull()
+    expect(readFileTreeDrop(transfer('{"sessionId":1,"path":"src"}'))).toBeNull()
+    expect(readFileTreeDrop(transfer('{"sessionId":"source","path":""}'))).toBeNull()
+    expect(readFileTreeDrop(transfer('{"sessionId":"source","path":"src/My File.ts"}')))
+      .toEqual({ sessionId: 'source', path: 'src/My File.ts' })
+  })
+
+  it('resolves tree paths from their source root on native hosts', async () => {
+    await expect(fileTreeDropFile(session({ path: '/tmp/project' }), 'src/My File.ts', 'linux'))
+      .resolves.toEqual({ name: 'My File.ts', nativePath: '/tmp/project/src/My File.ts' })
+    await expect(fileTreeDropFile(session({ path: 'C:\\Projects\\App' }), 'src/My File.ts', 'win32'))
+      .resolves.toEqual({ name: 'My File.ts', nativePath: 'C:\\Projects\\App\\src\\My File.ts' })
+  })
+
+  it.each(['../outside', '/tmp/outside', 'src/../../outside', 'src\\file', 'src/line\nfeed', '']) (
+    'rejects invalid tree path %j', async (path) => {
+      await expect(fileTreeDropFile(session(), path, 'linux')).rejects.toThrow('Invalid tree entry path.')
+    }
+  )
+
+  it('pastes a tree folder into a terminal with a different root', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'mde-tree-drop-'))
+    try {
+      const descriptor = await fileTreeDropFile(session({ path: tmpdir() }), basename(directory), process.platform)
+      await expect(resolveTerminalDrop(session({ path: '/different/root' }), process.platform, [descriptor], 'shell'))
+        .resolves.toEqual({ insertions: [`'${directory}' `], acceptedCount: 1, rejections: [] })
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps WSL tree origins for same-distro conversion and cross-distro rejection', async () => {
+    const source = session({ kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/app' })
+    const descriptor = await fileTreeDropFile(source, 'src/My Folder', 'win32')
+    expect(descriptor.nativePath).toBe('\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\app\\src\\My Folder')
+    wslMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
+    await expect(resolveTerminalDrop(source, 'win32', [descriptor], 'shell')).resolves.toEqual({
+      insertions: ["'/home/me/app/src/My Folder' "], acceptedCount: 1, rejections: [],
+    })
+    await expect(resolveTerminalDrop({ ...source, distro: 'Debian' }, 'win32', [descriptor], 'shell'))
+      .resolves.toEqual({
+        insertions: [], acceptedCount: 0,
+        rejections: [{ name: 'My Folder', code: 'wrong-distro', distro: 'Debian' }],
+      })
   })
 
   it('extracts only file URLs from a URI-list payload', () => {
