@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { buildLaunchSpec } from '../src/main/pty/launch'
+import { runLaunchProcess } from './helpers/launch-process'
 import type { Session } from '@shared/types'
 
 function session(overrides: Partial<Session> = {}): Session {
@@ -22,6 +23,22 @@ function session(overrides: Partial<Session> = {}): Session {
     path: '/home/me/src/app',
     createdAt: '2026-01-01T00:00:00.000Z',
     ...overrides
+  }
+}
+
+async function runIsolatedAgent(
+  file: string,
+  args: string[],
+  options: { cwd?: string },
+): ReturnType<typeof runLaunchProcess> {
+  const home = mkdtempSync(join(tmpdir(), 'mde-agent-home-'))
+  try {
+    return await runLaunchProcess(file, args, {
+      ...options,
+      env: { ...process.env, HOME: home, ZDOTDIR: home },
+    })
+  } finally {
+    rmSync(home, { recursive: true, force: true })
   }
 }
 
@@ -77,7 +94,7 @@ describe('buildLaunchSpec', () => {
     const command = spec.args[10]
     expect(command).toBeDefined()
 
-    const result = spawnSync('bash', ['-n', '-c', command ?? ''], { encoding: 'utf8' })
+    const result = spawnSync('bash', ['-n', '-c', command ?? ''], { encoding: 'utf8', timeout: 3_000, killSignal: 'SIGKILL' })
     expect(result.status).toBe(0)
     expect(result.stderr).toBe('')
   })
@@ -124,12 +141,12 @@ describe('buildLaunchSpec', () => {
     expect(spec.args.slice(-5)).toEqual(['mde-agent', '/bin/bash', 'codex', '--model', 'gpt 5'])
     expect(spec.args[10]).not.toContain('codex --model')
 
-    const syntax = spawnSync('bash', ['-n', '-c', spec.args[10] ?? ''], { encoding: 'utf8' })
+    const syntax = spawnSync('bash', ['-n', '-c', spec.args[10] ?? ''], { encoding: 'utf8', timeout: 3_000, killSignal: 'SIGKILL' })
     expect(syntax.status).toBe(0)
     expect(syntax.stderr).toBe('')
   })
 
-  it('resolves the default WSL shell without an empty positional argument', () => {
+  it('resolves the default WSL shell without an empty positional argument', async () => {
     const spec = buildLaunchSpec(
       session({ kind: 'wsl', distro: 'Ubuntu-24.04' }),
       {
@@ -147,24 +164,24 @@ describe('buildLaunchSpec', () => {
       'hello world'
     ])
 
-    const result = spawnSync(
+    const result = await runIsolatedAgent(
       '/bin/sh',
       ['-c', spec.args[10] ?? '', ...spec.args.slice(11)],
-      { encoding: 'utf8', env: { ...process.env, HOME: '/tmp' } }
+      {}
     )
     expect(result.status).toBe(0)
     expect(result.stdout).toBe('hello world')
   })
 
-  it.each([undefined, '/bin/bash'])('runs an agent with no extra arguments using shell %s', (shell) => {
+  it.each([undefined, '/bin/bash'])('runs an agent with no extra arguments using shell %s', async (shell) => {
     const spec = buildLaunchSpec(
       session({ kind: 'wsl', distro: 'Ubuntu-24.04', shell }),
       { platform: 'win32', agent: { executable: '/bin/pwd', args: [] } }
     )
-    const result = spawnSync(
+    const result = await runIsolatedAgent(
       '/bin/sh',
       ['-c', spec.args[10] ?? '', ...spec.args.slice(11)],
-      { encoding: 'utf8', cwd: '/tmp', env: { ...process.env, HOME: '/tmp' } }
+      { cwd: '/tmp' }
     )
 
     expect(result.status).toBe(0)
@@ -203,20 +220,18 @@ describe('buildLaunchSpec', () => {
     expect(command).toContain('functions --copy fish_prompt __mde_original_fish_prompt')
   })
 
-  it.skipIf(spawnSync('zsh', ['--version']).status !== 0)(
+  it.skipIf(spawnSync('zsh', ['--version'], { timeout: 3_000, killSignal: 'SIGKILL' }).status !== 0)(
     'loads the user Zsh configuration and reports the current directory',
-    () => {
+    async () => {
       const home = mkdtempSync(join(tmpdir(), 'mde-zsh-home-'))
       try {
         const spec = buildLaunchSpec(
           session({ kind: 'wsl', distro: 'Ubuntu-24.04', shell: '/usr/bin/zsh' }),
           { platform: 'win32' }
         )
-        const result = spawnSync('/bin/sh', ['-c', spec.args[10] ?? '', 'mde-shell', '/usr/bin/zsh'], {
-          encoding: 'utf8',
+        const result = await runLaunchProcess('/bin/sh', ['-c', spec.args[10] ?? '', 'mde-shell', '/usr/bin/zsh'], {
           env: { ...process.env, HOME: home, ZDOTDIR: home, EDITOR: 'emacs' },
           input: "bindkey -M main $'\\e[1;5C'\nbindkey -M main $'\\e[1;5D'\nexit\n",
-          timeout: 5_000
         })
 
         expect(result.status).toBe(0)
@@ -335,7 +350,7 @@ describe('buildLaunchSpec', () => {
     expect(spec.args[1]).toContain('MDE_CWD_PROMPT_COMMAND=')
     expect(spec.args.at(-1)).toBe('/bin/bash')
 
-    const result = spawnSync('bash', ['-n', '-c', spec.args[1] ?? ''], { encoding: 'utf8' })
+    const result = spawnSync('bash', ['-n', '-c', spec.args[1] ?? ''], { encoding: 'utf8', timeout: 3_000, killSignal: 'SIGKILL' })
     expect(result.status).toBe(0)
     expect(result.stderr).toBe('')
   })
@@ -354,9 +369,9 @@ describe('buildLaunchSpec', () => {
     expect(spec.cwd).toBe('/home/me/src/app')
   })
 
-  it.skipIf(spawnSync('zsh', ['--version']).status !== 0)(
+  it.skipIf(spawnSync('zsh', ['--version'], { timeout: 3_000, killSignal: 'SIGKILL' }).status !== 0)(
     'loads native Zsh configuration and preserves existing bindings',
-    () => {
+    async () => {
       const home = mkdtempSync(join(tmpdir(), 'mde-native-zsh-home-'))
       try {
         writeFileSync(
@@ -371,11 +386,9 @@ describe('buildLaunchSpec', () => {
           session({ shell: '/usr/bin/zsh', path: home }),
           { platform: 'linux', defaultShell: '/bin/bash' }
         )
-        const result = spawnSync(spec.file, spec.args, {
-          encoding: 'utf8',
+        const result = await runLaunchProcess(spec.file, spec.args, {
           env: { ...process.env, HOME: home, ZDOTDIR: home, EDITOR: 'emacs' },
           input: "bindkey -M main $'\\e[1;5C'\nbindkey -M main $'\\e[1;5D'\nexit\n",
-          timeout: 5_000
         })
 
         expect(result.status).toBe(0)
@@ -388,9 +401,9 @@ describe('buildLaunchSpec', () => {
     }
   )
 
-  it.skipIf(spawnSync('zsh', ['--version']).status !== 0)(
+  it.skipIf(spawnSync('zsh', ['--version'], { timeout: 3_000, killSignal: 'SIGKILL' }).status !== 0)(
     'binds the active Zsh insert map without changing vi command mode',
-    () => {
+    async () => {
       const home = mkdtempSync(join(tmpdir(), 'mde-vi-zsh-home-'))
       try {
         writeFileSync(join(home, '.zshrc'), 'bindkey -v\n')
@@ -398,11 +411,9 @@ describe('buildLaunchSpec', () => {
           session({ shell: '/usr/bin/zsh', path: home }),
           { platform: 'linux' }
         )
-        const result = spawnSync(spec.file, spec.args, {
-          encoding: 'utf8',
+        const result = await runLaunchProcess(spec.file, spec.args, {
           env: { ...process.env, HOME: home, ZDOTDIR: home },
           input: "bindkey -M main $'\\e[1;5C'\nbindkey -M main $'\\e[1;5D'\nbindkey -M vicmd $'\\e[1;5C'\nexit\n",
-          timeout: 5_000
         })
 
         expect(result.status).toBe(0)
