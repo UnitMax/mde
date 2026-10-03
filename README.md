@@ -144,6 +144,12 @@ Drag a file or folder from the Files tree on the right into any terminal to past
 A floating preview follows the drag, and the receiving terminal highlights where the path will land.
 Paths use the source session's folder even when the terminal is in a different working directory.
 
+Open a Markdown file from the Files tree to preview it, or switch to Source to read its code.
+Fenced `mermaid` blocks render with selectable text and follow the application's color theme.
+Wide diagrams scroll horizontally to keep their labels readable. Diagram HTML labels, interactive links,
+configuration directives, and frontmatter are disabled. Diagrams are limited to 16,000 characters
+and 200 edges; invalid or oversized diagrams show their source instead.
+
 Files can also be dragged from Finder, Explorer, or another file manager into any terminal pane. In a
 normal shell MDE inserts target-shell-escaped paths without submitting them. In an alternate-screen
 terminal agent, MDE pastes each target-side path separately so agents that support image paths can

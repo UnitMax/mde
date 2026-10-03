@@ -2,14 +2,11 @@ import StarterKit from '@tiptap/starter-kit'
 import { Markdown } from '@tiptap/markdown'
 import { TableKit } from '@tiptap/extension-table'
 import { TaskItem, TaskList } from '@tiptap/extension-list'
+import { MermaidCodeBlock } from '@/lib/mermaid-code-block'
 
-/** Extensions shared by the To Do description editor and the Markdown preview. */
-export const markdownExtensions = [
-  StarterKit.configure({
-    link: {
-      openOnClick: false,
-    },
-  }),
+const starterKitOptions = { link: { openOnClick: false } }
+
+const sharedMarkdownExtensions = [
   TableKit,
   Markdown.configure({
     markedOptions: {
@@ -18,9 +15,17 @@ export const markdownExtensions = [
   }),
 ]
 
-/** The preview also renders GitHub task lists (`- [ ] item`). */
+/** Extensions shared by the To Do description editor and the Markdown preview. */
+export const markdownExtensions = [
+  StarterKit.configure(starterKitOptions),
+  ...sharedMarkdownExtensions,
+]
+
+/** The preview also renders Mermaid diagrams and GitHub task lists. */
 export const markdownPreviewExtensions = [
-  ...markdownExtensions,
+  StarterKit.configure({ ...starterKitOptions, codeBlock: false }),
+  ...sharedMarkdownExtensions,
+  MermaidCodeBlock,
   TaskList,
   TaskItem.configure({ nested: true }),
 ]

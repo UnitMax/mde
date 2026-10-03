@@ -273,6 +273,21 @@
     min-width: 0;
   }
 
+  .markdown-preview .mermaid-diagram {
+    margin-block: 1rem;
+    padding: 1rem;
+    border: 1px solid var(--color-line);
+    border-radius: 0.375rem;
+    background-color: var(--color-bg);
+    overflow-x: auto;
+    contain: layout paint;
+    user-select: text;
+  }
+
+  .markdown-preview .mermaid-svg {
+    min-width: min-content;
+  }
+
   .markdown-preview .ProseMirror {
     max-width: 56rem;
     margin: 0 auto;
