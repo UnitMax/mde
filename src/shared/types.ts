@@ -10,6 +10,59 @@ export interface AgentCommand {
   args: string[]
 }
 
+/** Metadata only: conversation contents and credentials never cross this API. */
+export interface OpenCodeSessionSummary {
+  id: string
+  title: string
+  directory: string
+  createdAt: number
+  updatedAt: number
+  parentId?: string
+  archivedAt?: number
+  agent?: string
+  model?: {
+    id: string
+    providerId: string
+    variant?: string
+  }
+  changes?: {
+    files?: number
+    additions?: number
+    deletions?: number
+  }
+  cost?: number
+  tokens?: {
+    input?: number
+    output?: number
+    reasoning?: number
+    cacheRead?: number
+    cacheWrite?: number
+  }
+}
+
+export interface OpenCodeSessionsRequest {
+  sessionId: string
+  sourceTerminalId: string
+  executable: string
+}
+
+export interface OpenCodeResumeLaunch {
+  sourceTerminalId: string
+  opencodeSessionId: string
+  executable: string
+}
+
+export interface TerminalCommandLaunch {
+  sourceTerminalId: string
+  directory: TerminalLaunchDirectory
+  agent?: {
+    kind: CodingAgent
+    command: AgentCommand
+  }
+}
+
+export type TerminalLaunch = TerminalCommandLaunch | OpenCodeResumeLaunch
+
 export type SessionIcon =
   | 'computer'
   | 'robot'

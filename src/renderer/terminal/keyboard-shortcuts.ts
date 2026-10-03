@@ -46,6 +46,12 @@ export function getKeyboardShortcutGroups(
           keys: [`${primaryModifier}+N`],
           description: 'Open the terminal launcher.',
           note: 'Available from a focused WSL terminal.'
+        },
+        {
+          id: 'opencode-sessions-open',
+          keys: ['Ctrl+Shift+O'],
+          description: 'Browse OpenCode sessions from every directory in the current WSL distro.',
+          note: 'Available from a focused Windows/WSL terminal.'
         }
       ]
     },
@@ -183,6 +189,21 @@ export function getKeyboardShortcutGroups(
           id: 'session-switcher-close',
           keys: ['Esc'],
           description: 'Close the session switcher.'
+        },
+        {
+          id: 'opencode-sessions-move',
+          keys: ['↑', '↓'],
+          description: 'Move through OpenCode sessions across directory groups.'
+        },
+        {
+          id: 'opencode-sessions-select',
+          keys: ['Enter'],
+          description: 'Resume the selected OpenCode session in a new terminal.'
+        },
+        {
+          id: 'opencode-sessions-close',
+          keys: ['Esc'],
+          description: 'Close the OpenCode session picker.'
         },
         {
           id: 'todo-search-move',

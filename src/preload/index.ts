@@ -125,6 +125,9 @@ const api: RendererApi = {
     list: (req) => ipcRenderer.invoke(IpcChannels.filesList, req),
     read: (req) => ipcRenderer.invoke(IpcChannels.filesRead, req)
   },
+  opencodeSessions: {
+    list: (req) => ipcRenderer.invoke(IpcChannels.opencodeSessionsList, req)
+  },
   opencodeTui: {
     settings: () => ipcRenderer.invoke(IpcChannels.opencodeTuiSettings),
     setEnabled: (req) => ipcRenderer.invoke(IpcChannels.opencodeTuiSetEnabled, req),

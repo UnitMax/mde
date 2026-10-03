@@ -30,6 +30,12 @@ const requiredPackagePaths = [
   'node_modules/electron/package.json',
   'node_modules/electron-vite/package.json',
   'node_modules/node-pty/package.json',
+  // A matching fingerprint does not guarantee that cached package files still
+  // exist. Vite loads its client entry even for production builds.
+  'node_modules/vite/package.json',
+  'node_modules/vite/dist/node/index.js',
+  'node_modules/vite/dist/client/client.mjs',
+  'node_modules/vite/dist/client/env.mjs',
 ]
 
 function normalizedPackageJson(packageJson) {

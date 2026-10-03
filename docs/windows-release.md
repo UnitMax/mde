@@ -24,6 +24,11 @@ packaged application contains the correct Windows `node-pty` prebuilds.
    npm run build:win:remote
    ```
 
+The remote build reuses Windows dependencies when their fingerprint matches and
+the required package files are present. It reinstalls them if Vite's build or
+client entries are missing. To repair other damage to the cached installation,
+run `npm run build:win:remote -- --force-deps` to force a clean `npm ci`.
+
 The build produces exactly one artifact, `dist/mde-<version>-win.zip`, from the
 `dist/win-unpacked` tree beside it. The staging `dist` is emptied first, so
 nothing from an earlier build survives to be mistaken for this one. The command

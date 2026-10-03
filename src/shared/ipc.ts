@@ -41,9 +41,9 @@ import type {
   PtyExitInfo,
   PtySize,
   PtyStatus,
-  AgentCommand,
-  CodingAgent,
-  TerminalLaunchDirectory
+  TerminalLaunch,
+  OpenCodeSessionsRequest,
+  OpenCodeSessionSummary
 } from './types'
 
 export interface WorkspaceData {
@@ -114,6 +114,8 @@ export const IpcChannels = {
 
   filesList: 'files:list',
   filesRead: 'files:read',
+
+  opencodeSessionsList: 'opencode-sessions:list',
 
   opencodeTuiPluginState: 'opencode-tui:plugin-state',
   opencodeTuiPluginInstall: 'opencode-tui:plugin-install',
@@ -212,16 +214,7 @@ export interface EnsurePtyRequest {
   launch?: PtyLaunchRequest
 }
 
-export interface PtyLaunchRequest {
-  /** Existing terminal in the current session that initiated the launch. */
-  sourceTerminalId: string
-  /** Directory from which the new terminal should start. */
-  directory: TerminalLaunchDirectory
-  agent?: {
-    kind: CodingAgent
-    command: AgentCommand
-  }
-}
+export type PtyLaunchRequest = TerminalLaunch
 
 export interface TerminalPalette {
   foreground: string
@@ -447,6 +440,9 @@ export interface RendererApi {
   files: {
     list(req: FilesListRequest): Promise<FileTreeListResponse>
     read(req: FilesReadRequest): Promise<FileReadResponse>
+  }
+  opencodeSessions: {
+    list(req: OpenCodeSessionsRequest): Promise<OpenCodeSessionSummary[]>
   }
   opencodeTui: {
     settings(): Promise<OpenCodeTuiSettings>

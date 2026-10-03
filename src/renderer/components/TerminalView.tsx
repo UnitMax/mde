@@ -12,6 +12,7 @@ import {
   Code,
   CircleX,
   FolderOpen,
+  History,
   ListTodo,
   Maximize2,
   Minimize2,
@@ -128,6 +129,8 @@ import { TerminalGitInfo } from '@/components/TerminalGitInfo'
 import { TerminalFullscreenIndicator } from '@/components/TerminalFullscreenIndicator'
 import { TerminalPaneOverlay } from '@/components/TerminalPaneOverlay'
 import { TerminalLauncher } from '@/components/TerminalLauncher'
+import { OpenCodeSessionsDialog } from '@/components/OpenCodeSessionsDialog'
+import { isOpenCodeSessionsShortcut } from '@/lib/opencode-sessions'
 import { AGENT_COMMAND_OPTIONS, agentCommandSettingError } from '@/lib/agent-commands'
 import {
   agentTuiInstanceLabel,
@@ -610,6 +613,7 @@ function TerminalPane({
   onToggleFullscreen,
   onTitleChange,
   onLinkTask,
+  onOpenCodeSessions,
   reorderState = 'none',
   paneOverlayVisible = false,
   paneOverlayNumber = null,
@@ -625,6 +629,7 @@ function TerminalPane({
   onToggleFullscreen: () => void
   onTitleChange: (title: string | null) => void
   onLinkTask: (terminalId: string) => void
+  onOpenCodeSessions: () => void
   reorderState?: 'none' | 'candidate' | 'active' | 'target'
   paneOverlayVisible?: boolean
   paneOverlayNumber?: number | null
@@ -788,6 +793,17 @@ function TerminalPane({
             session.kind === 'wsl' &&
             Boolean(session.distro) && (
               <>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-fg-subtle hover:bg-hover hover:text-fg active:bg-active"
+                  aria-label="Open OpenCode sessions"
+                  title="OpenCode sessions (Ctrl+Shift+O)"
+                  data-testid={`terminal-opencode-sessions-${pane.terminalId}`}
+                  onClick={onOpenCodeSessions}
+                >
+                  <History className="h-3.5 w-3.5" />
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -2345,6 +2361,8 @@ export function TerminalView({
   onPaneTitleChange,
   onLinkTask
 }: TerminalViewProps): JSX.Element {
+  const platform = useWorkspace((state) => state.platform)
+  const wslAvailable = useWorkspace((state) => state.wslAvailable)
   const opencodeTuiInstances = useWorkspace(
     (state) => state.opencodeTuiInstances[selectedSession.id]
   )
@@ -2363,6 +2381,8 @@ export function TerminalView({
   const [fullscreenTerminalId, setFullscreenTerminalId] = useState<string | null>(null)
   const [terminalLauncherOpen, setTerminalLauncherOpen] = useState(false)
   const [terminalLauncherSourceId, setTerminalLauncherSourceId] = useState<string | null>(null)
+  const [openCodeSessionsOpen, setOpenCodeSessionsOpen] = useState(false)
+  const [openCodeSessionsSourceId, setOpenCodeSessionsSourceId] = useState<string | null>(null)
   const [terminalSettings, setTerminalSettings] = useState<TerminalSettings>(() => getTerminalSettings())
   const gridRef = useRef<HTMLDivElement>(null)
   const reorderDragRef = useRef<TerminalReorderDragState | null>(null)
@@ -2389,8 +2409,10 @@ export function TerminalView({
     const onKeyDown = (event: KeyboardEvent): void => {
       const target = event.target
       if (target instanceof Element && target.closest('[role="dialog"]')) return
-      if (!isTerminalLauncherShortcut(event)) return
+      const openHistory = isOpenCodeSessionsShortcut(event)
+      if (!openHistory && !isTerminalLauncherShortcut(event)) return
       if (selectedSession.kind !== 'wsl') return
+      if (openHistory && (!platform?.isWindows || !wslAvailable)) return
       if (!(target instanceof Element) || !target.closest('.terminal-host')) return
 
       const sourceTerminalId = focusedTerminalIdRef.current
@@ -2398,13 +2420,19 @@ export function TerminalView({
 
       event.preventDefault()
       event.stopPropagation()
-      setTerminalLauncherSourceId(sourceTerminalId)
-      setTerminalLauncherOpen(true)
+      hidePaneOverlay()
+      if (openHistory) {
+        setOpenCodeSessionsSourceId(sourceTerminalId)
+        setOpenCodeSessionsOpen(true)
+      } else {
+        setTerminalLauncherSourceId(sourceTerminalId)
+        setTerminalLauncherOpen(true)
+      }
     }
 
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [selectedSession.kind, terminalLayout.panes])
+  }, [selectedSession.kind, terminalLayout.panes, platform?.isWindows, wslAvailable, hidePaneOverlay])
 
   useEffect(() => {
     focusedTerminalIdRef.current = null
@@ -2412,6 +2440,8 @@ export function TerminalView({
     setFullscreenTerminalId(null)
     setTerminalLauncherOpen(false)
     setTerminalLauncherSourceId(null)
+    setOpenCodeSessionsOpen(false)
+    setOpenCodeSessionsSourceId(null)
   }, [activeTab.id, selectedSession.id])
 
   const requestLayout = useCallback((layout: TerminalLayout): void => {
@@ -2815,6 +2845,11 @@ export function TerminalView({
         }}
         onTitleChange={(title) => onPaneTitleChange(pane.terminalId, title)}
         onLinkTask={() => onLinkTask(pane.terminalId)}
+        onOpenCodeSessions={() => {
+          hidePaneOverlay()
+          setOpenCodeSessionsSourceId(pane.terminalId)
+          setOpenCodeSessionsOpen(true)
+        }}
         isFullscreen={isFullscreen}
         onToggleFullscreen={() => toggleFullscreen(pane.terminalId)}
         reorderState={
@@ -2940,6 +2975,23 @@ export function TerminalView({
             />
           ))}
       </div>
+
+      <OpenCodeSessionsDialog
+        open={openCodeSessionsOpen}
+        onOpenChange={setOpenCodeSessionsOpen}
+        session={selectedSession}
+        sourceTerminalId={openCodeSessionsSourceId ?? ''}
+        currentDirectory={openCodeSessionsSourceId ? terminalDirectories[openCodeSessionsSourceId] : undefined}
+        paneCount={terminalLayout.panes.length}
+        onRestoreFocus={() => {
+          if (openCodeSessionsSourceId) getSession(openCodeSessionsSourceId)?.term.focus()
+        }}
+        onSelect={(launch) => {
+          setFullscreenTerminalId(null)
+          onAddPane(launch.sourceTerminalId, launch)
+          setOpenCodeSessionsOpen(false)
+        }}
+      />
 
       <TerminalLauncher
         open={terminalLauncherOpen}

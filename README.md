@@ -117,6 +117,19 @@ Settings dialog's Agents section. Arguments are passed as literal argv values; s
 command chaining are not supported. Agent launch identity is runtime-only, so reopening the app
 restores ordinary shells rather than relaunching an agent.
 
+The history button beside VS Code and Explorer above each Windows/WSL terminal, or Ctrl+Shift+O
+in a focused terminal, opens the OpenCode session picker. It shows the current distro's complete
+history across all directories in compact rows grouped by folder. The terminal's current directory
+comes first, with sessions ordered by most recent activity within each folder.
+Search by title, directory, session ID, model, or agent. Archived sessions and subagent conversations
+are included and labelled; the selected session's details show full dates, file changes, token usage,
+and reported cost when available.
+Click a session or use the arrow keys and Enter to resume it in a new pane in its saved directory.
+Escape closes the picker. At six panes the picker reports that the tab is full and disables opening.
+History uses the configured OpenCode executable and its database command; resuming uses the saved
+session settings. Both require a version supporting `opencode db <query> --format json`. If optional
+metadata is unavailable it is omitted. The selected history and resume command remain runtime-only.
+
 Terminal clipboard shortcuts use the normal system clipboard, including for WSL sessions on Windows.
 `Ctrl+C` copies selected terminal text and remains the normal interrupt when there is no selection;
 `Ctrl+Shift+C`, `Ctrl+Insert`, `Ctrl+V`, `Ctrl+Shift+V`, and `Shift+Insert` are also supported.

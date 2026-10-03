@@ -63,6 +63,8 @@ import type {
   OpenCodeTokenRatePluginState,
   OpenCodeAlertSetEnabledRequest,
   OpenCodeAlertSettings,
+  OpenCodeSessionsRequest,
+  OpenCodeSessionSummary,
   CodexHookRequest,
   CodexHookState,
   CodexStatusSetEnabledRequest,
@@ -91,6 +93,12 @@ import {
 } from './wsl/paths'
 import { buildVsCodeRemoteUri } from './vscode'
 import { safeVsCodeRemoteUrl } from './external-links'
+import {
+  listOpenCodeSessions,
+  readOpenCodeSession,
+  validateOpenCodeExecutable,
+  validateOpenCodeSessionId
+} from './opencode/sessions'
 import { readGitDiff, readGitInfo, readGitStatus, readGitTerminalInfo } from './git'
 import { isSafeRelativePath, listSessionDirectory, readSessionFile } from './files/tree'
 import {
@@ -262,6 +270,11 @@ function validatePtyLaunchRequest(launch: PtyLaunchRequest): void {
   if (!launch || typeof launch.sourceTerminalId !== 'string' || !launch.sourceTerminalId.trim()) {
     throw new Error('Invalid terminal launch source.')
   }
+  if ('opencodeSessionId' in launch) {
+    validateOpenCodeSessionId(launch.opencodeSessionId)
+    validateOpenCodeExecutable(launch.executable)
+    return
+  }
   if (!isTerminalLaunchDirectory(launch.directory)) {
     throw new Error('Invalid terminal launch directory.')
   }
@@ -296,6 +309,19 @@ async function resolvePtyLaunchOptions(
   const source = ptyManager.terminalInfo(launch.sourceTerminalId)
   if (!source || source.sessionId !== session.id) {
     throw new Error('The source terminal is not available.')
+  }
+
+  if ('opencodeSessionId' in launch) {
+    const saved = await readOpenCodeSession(session, launch.executable, launch.opencodeSessionId)
+    const directory = await verifiedDirectory(session, saved.directory)
+    if (!directory) throw new Error('The saved OpenCode session directory is not available.')
+    if (ptyManager.terminalInfo(launch.sourceTerminalId)?.sessionId !== session.id) {
+      throw new Error('The source terminal is not available.')
+    }
+    return {
+      directory,
+      agent: { executable: launch.executable, args: ['--session', saved.id] }
+    }
   }
 
   const requestedDirectory = launch.directory === 'session' ? session.path : source.directory
@@ -343,6 +369,7 @@ export function registerIpcHandlers(
   opencodeAlertManager: OpenCodeAlertManager,
   codexStatusManager?: CodexStatusManager
 ): void {
+  const pendingEnsures = new Map<string, symbol>()
   const handle = <Req, Res>(
     channel: string,
     handler: (req: Req, event: Electron.IpcMainInvokeEvent) => Promise<Res> | Res
@@ -523,19 +550,46 @@ export function registerIpcHandlers(
     }
   )
 
-  handle<EnsurePtyRequest, PtyStatus>(IpcChannels.ptyEnsure, async (req) => {
+  handle<OpenCodeSessionsRequest, OpenCodeSessionSummary[]>(IpcChannels.opencodeSessionsList, async (req) => {
+    if (!req || typeof req.sessionId !== 'string' || typeof req.sourceTerminalId !== 'string') {
+      throw new Error('Invalid OpenCode session history request.')
+    }
+    validateOpenCodeExecutable(req.executable)
     const session = await getSession(req.sessionId)
-    if (!session) return 'none'
-    const launch = await resolvePtyLaunchOptions(ptyManager, session, req.launch)
-    return ptyManager.ensure(
-      req.terminalId,
-      session,
-      req.size,
-      validateTerminalPalette(req.palette),
-      launch
-    )
+    if (process.platform !== 'win32' || !session || session.kind !== 'wsl' || !session.distro) {
+      throw new Error('Session history requires a Windows/WSL terminal.')
+    }
+    const source = ptyManager.terminalInfo(req.sourceTerminalId)
+    if (!source || source.sessionId !== session.id) throw new Error('The source terminal is not available.')
+    return listOpenCodeSessions(session, req.executable)
+  })
+
+  handle<EnsurePtyRequest, PtyStatus>(IpcChannels.ptyEnsure, async (req) => {
+    const pending = Symbol()
+    pendingEnsures.set(req.terminalId, pending)
+    try {
+      const session = await getSession(req.sessionId)
+      if (!session) return 'none'
+      if (req.launch !== undefined) validatePtyLaunchRequest(req.launch)
+      // Reattaching an existing resumed TUI must not depend on its saved record
+      // still existing, or on the terminal that originally opened the picker.
+      const reattaching = req.launch && 'opencodeSessionId' in req.launch &&
+        ptyManager.terminalInfo(req.terminalId)?.sessionId === session.id
+      const launch = reattaching ? undefined : await resolvePtyLaunchOptions(ptyManager, session, req.launch)
+      if (pendingEnsures.get(req.terminalId) !== pending) return 'none'
+      return ptyManager.ensure(
+        req.terminalId,
+        session,
+        req.size,
+        validateTerminalPalette(req.palette),
+        launch
+      )
+    } finally {
+      if (pendingEnsures.get(req.terminalId) === pending) pendingEnsures.delete(req.terminalId)
+    }
   })
   handle<EnsurePtyRequest, PtyStatus>(IpcChannels.ptyRestart, async (req) => {
+    pendingEnsures.delete(req.terminalId)
     const session = await getSession(req.sessionId)
     if (!session) return 'none'
     return ptyManager.restart(
@@ -555,6 +609,7 @@ export function registerIpcHandlers(
     ptyManager.setPalette(req.terminalId, validateTerminalPalette(req.palette))
   })
   handle<string, void>(IpcChannels.ptyDispose, (sessionId) => {
+    pendingEnsures.delete(sessionId)
     ptyManager.dispose(sessionId)
   })
   handle<void, Record<string, PtyStatus>>(IpcChannels.ptyStatuses, () => ptyManager.statuses())

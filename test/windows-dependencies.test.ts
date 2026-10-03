@@ -11,6 +11,24 @@ import {
 
 const temporaryDirectories: string[] = []
 
+const requiredPackagePaths = [
+  'node_modules/electron/package.json',
+  'node_modules/electron-vite/package.json',
+  'node_modules/node-pty/package.json',
+  'node_modules/vite/package.json',
+  'node_modules/vite/dist/node/index.js',
+  'node_modules/vite/dist/client/client.mjs',
+  'node_modules/vite/dist/client/env.mjs',
+]
+
+async function writeInstalledPackages(rootDirectory: string): Promise<void> {
+  for (const path of requiredPackagePaths) {
+    const filePath = join(rootDirectory, path)
+    await mkdir(join(filePath, '..'), { recursive: true })
+    await writeFile(filePath, '{}')
+  }
+}
+
 async function temporaryDirectory(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), 'mde-windows-deps-'))
   temporaryDirectories.push(directory)
@@ -106,14 +124,20 @@ describe('Windows dependency fingerprinting', () => {
     await writeFile(join(rootDirectory, dependencyFingerprintFile), `${fingerprint}\n`)
     expect(dependenciesNeedInstall({ rootDirectory, fingerprint })).toBe(true)
 
-    await mkdir(join(rootDirectory, 'node_modules', 'electron'), { recursive: true })
-    await mkdir(join(rootDirectory, 'node_modules', 'electron-vite'), { recursive: true })
-    await mkdir(join(rootDirectory, 'node_modules', 'node-pty'), { recursive: true })
-    await writeFile(join(rootDirectory, 'node_modules', 'electron', 'package.json'), '{}')
-    await writeFile(join(rootDirectory, 'node_modules', 'electron-vite', 'package.json'), '{}')
-    await writeFile(join(rootDirectory, 'node_modules', 'node-pty', 'package.json'), '{}')
+    await writeInstalledPackages(rootDirectory)
 
     expect(dependenciesNeedInstall({ rootDirectory, fingerprint })).toBe(false)
+  })
+
+  it('reinstalls when Vite client files disappear from an otherwise matching cache', async () => {
+    const rootDirectory = await temporaryDirectory()
+    const fingerprint = 'fingerprint'
+    await writeFile(join(rootDirectory, dependencyFingerprintFile), `${fingerprint}\n`)
+    await writeInstalledPackages(rootDirectory)
+
+    await rm(join(rootDirectory, 'node_modules/vite/dist/client/client.mjs'))
+
+    expect(dependenciesNeedInstall({ rootDirectory, fingerprint })).toBe(true)
   })
 
   it('installs and records the fingerprint only when dependencies are stale', async () => {
@@ -130,12 +154,7 @@ describe('Windows dependency fingerprinting', () => {
     })).toBe(true)
     expect(install).toHaveBeenCalledOnce()
 
-    await mkdir(join(rootDirectory, 'node_modules', 'electron'), { recursive: true })
-    await mkdir(join(rootDirectory, 'node_modules', 'electron-vite'), { recursive: true })
-    await mkdir(join(rootDirectory, 'node_modules', 'node-pty'), { recursive: true })
-    await writeFile(join(rootDirectory, 'node_modules', 'electron', 'package.json'), '{}')
-    await writeFile(join(rootDirectory, 'node_modules', 'electron-vite', 'package.json'), '{}')
-    await writeFile(join(rootDirectory, 'node_modules', 'node-pty', 'package.json'), '{}')
+    await writeInstalledPackages(rootDirectory)
 
     expect(ensureWindowsDependencies({
       rootDirectory,

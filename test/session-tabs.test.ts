@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Session } from '../src/shared/types'
 import {
   activeSessionTab,
+  appendRuntimePane,
   createRuntimeLayout,
   nextPaneId,
   persistRuntimeLayout,
@@ -44,6 +45,15 @@ const session: Session = {
 }
 
 describe('session tab runtime helpers', () => {
+  it('keeps OpenCode resume metadata runtime-only when adding a pane', () => {
+    const layout = createRuntimeLayout(session.id, session.tabs![0]!)
+    const launch = { sourceTerminalId: layout.panes[0]!.terminalId, opencodeSessionId: 'ses_saved', executable: 'opencode' }
+    const next = appendRuntimePane(session.id, 'tab-1', layout, launch)!
+    expect(next.panes.at(-1)?.launch).toEqual(launch)
+    expect(persistRuntimeLayout(next).panes).toHaveLength(3)
+    expect(JSON.stringify(persistRuntimeLayout(next))).not.toContain('ses_saved')
+    expect(JSON.stringify(persistRuntimeLayout(next))).not.toContain('opencode')
+  })
   it('uses stable tab and pane identities without sharing terminal IDs', () => {
     expect(terminalIdForPane(session.id, 'tab-1', 'pane-1')).toBe('session-1:tab:tab-1:pane:pane-1')
     expect(terminalIdForPane(session.id, 'tab-1', 'pane-1')).not.toBe(
