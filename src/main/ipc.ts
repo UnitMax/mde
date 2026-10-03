@@ -75,6 +75,8 @@ import type {
   CodingAgent,
   TerminalLaunchDirectory
 } from '@shared/types'
+import { assertIpcSender, type IpcSecurityContext } from './ipc-security'
+import { assertIpcPayload, type IpcChannel } from './ipc-validation'
 import type { PtyLaunchOptions, PtyManager } from './pty/manager'
 import { fileTreeDropFile, resolveTerminalDrop } from './pty/drop'
 import type { OpenCodeTuiStatusManager } from './opencode/tui-status'
@@ -363,6 +365,7 @@ async function revealSession(session: Session): Promise<void> {
 }
 
 export function registerIpcHandlers(
+  security: IpcSecurityContext,
   ptyManager: PtyManager,
   opencodeTuiStatusManager: OpenCodeTuiStatusManager,
   opencodeTokenRatePluginManager: OpenCodeTokenRatePluginManager,
@@ -371,10 +374,15 @@ export function registerIpcHandlers(
 ): void {
   const pendingEnsures = new Map<string, symbol>()
   const handle = <Req, Res>(
-    channel: string,
+    channel: IpcChannel,
     handler: (req: Req, event: Electron.IpcMainInvokeEvent) => Promise<Res> | Res
   ): void => {
-    ipcMain.handle(channel, (event, req: Req) => handler(req, event))
+    ipcMain.handle(channel, async (event, req: unknown, ...extra: unknown[]) => {
+      assertIpcSender(event, security)
+      if (extra.length > 0) throw new Error(`Invalid IPC argument count for ${channel}.`)
+      assertIpcPayload(channel, req)
+      return handler(req as Req, event)
+    })
   }
 
   handle<void, AppInfo>(IpcChannels.appInfo, () => createAppInfo(app.getVersion()))

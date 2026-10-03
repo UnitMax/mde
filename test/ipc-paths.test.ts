@@ -1,3 +1,4 @@
+import { trustedIpcSender } from './helpers/ipc-sender'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Session } from '../src/shared/types'
 
@@ -78,6 +79,8 @@ vi.mock('../src/main/wsl/distros', () => wslDistrosMock)
 import { IpcChannels } from '../src/shared/ipc'
 import { registerIpcHandlers } from '../src/main/ipc'
 
+const { security, event: trustedEvent } = trustedIpcSender()
+
 function wslSession(overrides: Partial<Session> = {}): Session {
   return {
     id: 'session-1',
@@ -102,6 +105,7 @@ function registerForTest(
   ensure: ReturnType<typeof vi.fn> = vi.fn(() => 'running')
 ): void {
   registerIpcHandlers(
+    security,
     { terminalInfo, ensure } as never,
     {} as never,
     {} as never,
@@ -141,7 +145,7 @@ describe('terminal Explorer IPC', () => {
     wslPathsMock.toWindows.mockResolvedValue('\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\current folder')
     registerForTest(terminalInfo)
 
-    await handler(IpcChannels.pathRevealTerminal)({}, 'pane-1')
+    await handler(IpcChannels.pathRevealTerminal)(trustedEvent, 'pane-1')
 
     expect(terminalInfo).toHaveBeenCalledWith('pane-1')
     // `test` is not getopt-based: a `--` terminator here would be a third
@@ -170,7 +174,7 @@ describe('terminal Explorer IPC', () => {
     wslPathsMock.uncPathFor.mockReturnValue('\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\current')
     registerForTest(terminalInfo)
 
-    await handler(IpcChannels.pathRevealTerminal)({}, 'pane-1')
+    await handler(IpcChannels.pathRevealTerminal)(trustedEvent, 'pane-1')
 
     expect(wslPathsMock.uncPathFor).toHaveBeenCalledWith('Ubuntu-24.04', '/home/me/current')
     expect(electronMock.shell.openPath).toHaveBeenCalledWith(
@@ -191,7 +195,7 @@ describe('terminal Explorer IPC', () => {
     wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 1 })
     registerForTest(terminalInfo)
 
-    await handler(IpcChannels.pathRevealTerminal)({}, 'pane-1')
+    await handler(IpcChannels.pathRevealTerminal)(trustedEvent, 'pane-1')
 
     expect(wslPathsMock.toWindows).not.toHaveBeenCalled()
     expect(electronMock.shell.openPath).not.toHaveBeenCalled()
@@ -206,13 +210,13 @@ describe('terminal Explorer IPC', () => {
     workspaceMock.getSession.mockResolvedValue(wslSession())
     registerForTest(terminalInfo)
 
-    await handler(IpcChannels.pathRevealTerminal)({}, 'pane-1')
+    await handler(IpcChannels.pathRevealTerminal)(trustedEvent, 'pane-1')
 
     terminalInfo.mockReturnValue({ sessionId: 'session-1', directory: '/home/me/../../etc' })
-    await handler(IpcChannels.pathRevealTerminal)({}, 'pane-1')
+    await handler(IpcChannels.pathRevealTerminal)(trustedEvent, 'pane-1')
 
     terminalInfo.mockReturnValue({ sessionId: 'session-1', directory: 'home/me/relative' })
-    await handler(IpcChannels.pathRevealTerminal)({}, 'pane-1')
+    await handler(IpcChannels.pathRevealTerminal)(trustedEvent, 'pane-1')
 
     expect(wslPathsMock.canonicalizeWslPath).not.toHaveBeenCalled()
     expect(wslDistrosMock.runWslCommand).not.toHaveBeenCalled()
@@ -228,7 +232,7 @@ describe('terminal Explorer IPC', () => {
     wslPathsMock.toWindows.mockResolvedValue('\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\real')
     registerForTest(terminalInfo)
 
-    await handler(IpcChannels.pathRevealTerminal)({}, 'pane-1')
+    await handler(IpcChannels.pathRevealTerminal)(trustedEvent, 'pane-1')
 
     expect(wslPathsMock.toWindows).toHaveBeenCalledWith('Ubuntu-24.04', '/home/me/real')
     expect(electronMock.shell.openPath).toHaveBeenCalledWith(
@@ -247,7 +251,7 @@ describe('terminal Explorer IPC', () => {
     wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 1 })
     registerForTest(terminalInfo)
 
-    await handler(IpcChannels.pathOpenTerminalInVsCode)({}, 'pane-1')
+    await handler(IpcChannels.pathOpenTerminalInVsCode)(trustedEvent, 'pane-1')
 
     expect(electronMock.shell.openExternal).not.toHaveBeenCalled()
     expect(electronMock.dialog.showErrorBox).not.toHaveBeenCalled()
@@ -257,7 +261,7 @@ describe('terminal Explorer IPC', () => {
     const terminalInfo = vi.fn<() => TerminalInfo | null>(() => null)
     registerForTest(terminalInfo)
 
-    await handler(IpcChannels.pathRevealTerminal)({}, 'missing')
+    await handler(IpcChannels.pathRevealTerminal)(trustedEvent, 'missing')
 
     expect(workspaceMock.getSession).not.toHaveBeenCalled()
     expect(electronMock.shell.openPath).not.toHaveBeenCalled()
@@ -266,7 +270,7 @@ describe('terminal Explorer IPC', () => {
     terminalInfo.mockReturnValue({ sessionId: 'session-1', directory: '/home/me/current' })
     workspaceMock.getSession.mockResolvedValue(wslSession())
 
-    await handler(IpcChannels.pathRevealTerminal)({}, 'pane-1')
+    await handler(IpcChannels.pathRevealTerminal)(trustedEvent, 'pane-1')
 
     expect(electronMock.shell.openPath).not.toHaveBeenCalled()
   })
@@ -279,7 +283,7 @@ describe('terminal Explorer IPC', () => {
     }))
     registerForTest(terminalInfo)
 
-    await handler(IpcChannels.pathRevealTerminal)({}, 'pane-1')
+    await handler(IpcChannels.pathRevealTerminal)(trustedEvent, 'pane-1')
 
     expect(workspaceMock.getSession).not.toHaveBeenCalled()
     expect(electronMock.shell.openPath).not.toHaveBeenCalled()
@@ -287,7 +291,7 @@ describe('terminal Explorer IPC', () => {
     terminalInfo.mockReturnValue({ sessionId: 'session-1', directory: '/tmp/current' })
     workspaceMock.getSession.mockResolvedValue(wslSession({ kind: 'native', distro: undefined }))
 
-    await handler(IpcChannels.pathRevealTerminal)({}, 'pane-1')
+    await handler(IpcChannels.pathRevealTerminal)(trustedEvent, 'pane-1')
 
     expect(electronMock.shell.openPath).not.toHaveBeenCalled()
   })
@@ -311,7 +315,7 @@ describe('terminal Explorer IPC', () => {
       launch: { sourceTerminalId: 'source-pane', directory: 'session' }
     }
 
-    await expect(handler(IpcChannels.ptyEnsure)({}, request)).resolves.toBe('running')
+    await expect(handler(IpcChannels.ptyEnsure)(trustedEvent, request)).resolves.toBe('running')
 
     expect(terminalInfo).toHaveBeenCalledWith('source-pane')
     expect(wslPathsMock.canonicalizeWslPath).toHaveBeenCalledWith('Ubuntu-24.04', '/home/me/session')
@@ -338,7 +342,7 @@ describe('terminal Explorer IPC', () => {
     wslPathsMock.toWindows.mockResolvedValue('\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\dev\\mde')
     registerForTest(vi.fn())
 
-    await handler(IpcChannels.pathReveal)({}, 'session-1')
+    await handler(IpcChannels.pathReveal)(trustedEvent, 'session-1')
 
     expect(wslPathsMock.resolveForTarget).toHaveBeenCalledWith('wsl', 'Ubuntu-24.04', '~/dev/mde')
     expect(wslPathsMock.toWindows).toHaveBeenCalledWith('Ubuntu-24.04', '/home/me/dev/mde')
@@ -355,7 +359,7 @@ describe('terminal Explorer IPC', () => {
     wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
     registerForTest(vi.fn())
 
-    await handler(IpcChannels.pathOpenInVsCode)({}, 'session-1')
+    await handler(IpcChannels.pathOpenInVsCode)(trustedEvent, 'session-1')
 
     expect(electronMock.shell.openExternal).toHaveBeenCalledWith(
       'vscode://vscode-remote/wsl+Ubuntu-24.04/home/me/dev/mde/'
@@ -370,8 +374,8 @@ describe('terminal Explorer IPC', () => {
     wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 1 })
     registerForTest(vi.fn())
 
-    await handler(IpcChannels.pathReveal)({}, 'session-1')
-    await handler(IpcChannels.pathOpenInVsCode)({}, 'session-1')
+    await handler(IpcChannels.pathReveal)(trustedEvent, 'session-1')
+    await handler(IpcChannels.pathOpenInVsCode)(trustedEvent, 'session-1')
 
     expect(electronMock.shell.openPath).not.toHaveBeenCalled()
     expect(electronMock.shell.openExternal).not.toHaveBeenCalled()
@@ -396,7 +400,7 @@ describe('terminal Explorer IPC', () => {
       launch: { sourceTerminalId: 'source-pane', directory: 'session' }
     }
 
-    await expect(handler(IpcChannels.ptyEnsure)({}, request)).resolves.toBe('running')
+    await expect(handler(IpcChannels.ptyEnsure)(trustedEvent, request)).resolves.toBe('running')
 
     expect(wslPathsMock.resolveForTarget).toHaveBeenCalledWith(
       'wsl',
@@ -428,7 +432,7 @@ describe('terminal Explorer IPC', () => {
     registerForTest(terminalInfo, ensure)
 
     await expect(
-      handler(IpcChannels.ptyEnsure)({}, {
+      handler(IpcChannels.ptyEnsure)(trustedEvent, {
         terminalId: 'child-pane',
         sessionId: session.id,
         size: { cols: 80, rows: 24 },
@@ -461,7 +465,7 @@ describe('terminal Explorer IPC', () => {
       launch: { sourceTerminalId: 'source-pane', directory: 'terminal' }
     }
 
-    await expect(handler(IpcChannels.ptyEnsure)({}, request)).resolves.toBe('running')
+    await expect(handler(IpcChannels.ptyEnsure)(trustedEvent, request)).resolves.toBe('running')
 
     expect(wslPathsMock.canonicalizeWslPath).toHaveBeenCalledWith('Ubuntu-24.04', '/home/me/live')
     expect(ensure).toHaveBeenCalledWith(
@@ -481,14 +485,14 @@ describe('terminal Explorer IPC', () => {
     registerForTest(terminalInfo, ensure)
 
     await expect(
-      handler(IpcChannels.ptyEnsure)({}, {
+      handler(IpcChannels.ptyEnsure)(trustedEvent, {
         terminalId: 'child-pane',
         sessionId: 'session-1',
         size: { cols: 80, rows: 24 },
         palette: { foreground: '#d8dee9', background: '#0b0e13' },
         launch: { sourceTerminalId: 'source-pane', directory: 'other' }
       })
-    ).rejects.toThrow('Invalid terminal launch directory')
+    ).rejects.toThrow('Invalid IPC payload for pty:ensure.')
 
     expect(terminalInfo).not.toHaveBeenCalled()
     expect(ensure).not.toHaveBeenCalled()
@@ -508,7 +512,7 @@ describe('terminal Explorer IPC', () => {
       path: '~/dev/testmde'
     }
 
-    await expect(handler(IpcChannels.sessionsCreate)({}, input)).resolves.toBe(created)
+    await expect(handler(IpcChannels.sessionsCreate)(trustedEvent, input)).resolves.toBe(created)
 
     expect(wslPathsMock.resolveForTarget).toHaveBeenCalledWith(
       'wsl',
@@ -522,14 +526,14 @@ describe('terminal Explorer IPC', () => {
   })
 
   it('validates hostile WSL directory names through direct execution', async () => {
-    const path = "/tmp/project 'single' \"double\"; $(touch sentinel) `touch sentinel`\nline"
+    const path = "/tmp/project 'single' \"double\"; $(touch sentinel) `touch sentinel`"
     wslDistrosMock.isWslAvailable.mockResolvedValue(true)
     wslPathsMock.canonicalizeWslPath.mockResolvedValue(path)
     wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
     registerForTest(vi.fn())
 
     await expect(
-      handler(IpcChannels.pathValidate)({}, {
+      handler(IpcChannels.pathValidate)(trustedEvent, {
         kind: 'wsl',
         distro: 'Ubuntu-24.04',
         path
@@ -540,6 +544,15 @@ describe('terminal Explorer IPC', () => {
       'Ubuntu-24.04',
       ['test', '-d', path]
     )
+  })
+
+  it('rejects control characters in WSL paths before launching a process', async () => {
+    registerForTest(vi.fn())
+    await expect(handler(IpcChannels.pathValidate)(trustedEvent, {
+      kind: 'wsl', distro: 'Ubuntu-24.04', path: '/tmp/project\nline',
+    })).rejects.toThrow('Invalid IPC payload for path:validate.')
+    expect(wslPathsMock.canonicalizeWslPath).not.toHaveBeenCalled()
+    expect(wslDistrosMock.runWslCommand).not.toHaveBeenCalled()
   })
 
   it('keeps native session paths in the target-native format', async () => {
@@ -557,7 +570,7 @@ describe('terminal Explorer IPC', () => {
       path: 'C:\\dev\\testmde'
     }
 
-    await expect(handler(IpcChannels.sessionsCreate)({}, input)).resolves.toBe(created)
+    await expect(handler(IpcChannels.sessionsCreate)(trustedEvent, input)).resolves.toBe(created)
 
     expect(wslPathsMock.resolveForTarget).toHaveBeenCalledWith(
       'native',
@@ -596,7 +609,7 @@ describe('terminal Git IPC', () => {
     })
     registerForTest(terminalInfo)
 
-    await expect(handler(IpcChannels.gitTerminalInfo)({}, { terminalId: 'pane-1' })).resolves.toEqual({
+    await expect(handler(IpcChannels.gitTerminalInfo)(trustedEvent, { terminalId: 'pane-1' })).resolves.toEqual({
       repository: true,
       branch: 'feature/live',
       worktree: '/home/me/repo'
@@ -614,7 +627,7 @@ describe('terminal Git IPC', () => {
     const terminalInfo = vi.fn(() => null)
     registerForTest(terminalInfo)
 
-    await expect(handler(IpcChannels.gitTerminalInfo)({}, { terminalId: 'missing' })).resolves.toBeNull()
+    await expect(handler(IpcChannels.gitTerminalInfo)(trustedEvent, { terminalId: 'missing' })).resolves.toBeNull()
     expect(wslDistrosMock.runWslCommand).not.toHaveBeenCalled()
   })
 })
@@ -636,12 +649,12 @@ describe('file tree IPC', () => {
     registerForTest(vi.fn())
     const list = handler(IpcChannels.filesList)
 
-    await expect(list({}, null)).rejects.toThrow('Invalid file tree request.')
-    await expect(list({}, { sessionId: 'session-1' })).rejects.toThrow('Invalid file tree request.')
-    await expect(list({}, { sessionId: '', path: '' })).rejects.toThrow('Invalid file tree request.')
+    await expect(list(trustedEvent, null)).rejects.toThrow('Invalid IPC payload for files:list.')
+    await expect(list(trustedEvent, { sessionId: 'session-1' })).rejects.toThrow('Invalid IPC payload for files:list.')
+    await expect(list(trustedEvent, { sessionId: '', path: '' })).rejects.toThrow('Invalid IPC payload for files:list.')
 
     workspaceMock.getSession.mockResolvedValue(undefined)
-    await expect(list({}, { sessionId: 'missing', path: '' })).rejects.toThrow('Session no longer exists.')
+    await expect(list(trustedEvent, { sessionId: 'missing', path: '' })).rejects.toThrow('Session no longer exists.')
   })
 
   it('refuses paths outside the session root before reaching the distro', async () => {
@@ -650,8 +663,8 @@ describe('file tree IPC', () => {
     workspaceMock.getSession.mockResolvedValue(wslSession())
 
     await expect(
-      handler(IpcChannels.filesList)({}, { sessionId: 'session-1', path: '../../etc' })
-    ).rejects.toThrow('Invalid folder path.')
+      handler(IpcChannels.filesList)(trustedEvent, { sessionId: 'session-1', path: '../../etc' })
+    ).rejects.toThrow('Invalid IPC payload for files:list.')
     expect(wslDistrosMock.runWslCommand).not.toHaveBeenCalled()
   })
 
@@ -662,7 +675,7 @@ describe('file tree IPC', () => {
     wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: 'f\tmain.ts\n', stderr: '', code: 0 })
 
     await expect(
-      handler(IpcChannels.filesList)({}, { sessionId: 'session-1', path: 'src' })
+      handler(IpcChannels.filesList)(trustedEvent, { sessionId: 'session-1', path: 'src' })
     ).resolves.toEqual({ path: 'src', entries: [{ name: 'main.ts', kind: 'file' }], truncated: false })
     expect(wslDistrosMock.runWslCommand).toHaveBeenCalledWith(
       'Ubuntu-24.04',
@@ -675,12 +688,12 @@ describe('file tree IPC', () => {
     registerForTest(vi.fn())
     const read = handler(IpcChannels.filesRead)
 
-    await expect(read({}, { sessionId: 'session-1' })).rejects.toThrow('Invalid file read request.')
+    await expect(read(trustedEvent, { sessionId: 'session-1' })).rejects.toThrow('Invalid IPC payload for files:read.')
     workspaceMock.getSession.mockResolvedValue(undefined)
-    await expect(read({}, { sessionId: 'missing', path: 'a.md' })).rejects.toThrow('Session no longer exists.')
+    await expect(read(trustedEvent, { sessionId: 'missing', path: 'a.md' })).rejects.toThrow('Session no longer exists.')
 
     workspaceMock.getSession.mockResolvedValue(wslSession())
-    await expect(read({}, { sessionId: 'session-1', path: '../../etc/passwd' })).rejects.toThrow('Invalid file path.')
+    await expect(read(trustedEvent, { sessionId: 'session-1', path: '../../etc/passwd' })).rejects.toThrow('Invalid IPC payload for files:read.')
     expect(wslDistrosMock.runWslCommandBuffer).not.toHaveBeenCalled()
   })
 
@@ -691,7 +704,7 @@ describe('file tree IPC', () => {
     wslDistrosMock.runWslCommandBuffer.mockResolvedValue({ stdout: Buffer.from('3\nhi\n'), stderr: '', code: 0 })
 
     await expect(
-      handler(IpcChannels.filesRead)({}, { sessionId: 'session-1', path: 'README.md' })
+      handler(IpcChannels.filesRead)(trustedEvent, { sessionId: 'session-1', path: 'README.md' })
     ).resolves.toEqual({ path: 'README.md', content: 'hi\n', size: 3, binary: false, tooLarge: false })
     expect(wslDistrosMock.runWslCommandBuffer.mock.calls[0]?.[1]).toContain('/home/me/configured/README.md')
   })

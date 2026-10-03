@@ -1,3 +1,4 @@
+import { trustedIpcSender } from './helpers/ipc-sender'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OpenCodeSessionSummary, Session } from '../src/shared/types'
 import { IpcChannels } from '../src/shared/ipc'
@@ -35,6 +36,8 @@ vi.mock('../src/main/wsl/distros', async () => ({
 }))
 import { registerIpcHandlers } from '../src/main/ipc'
 
+const { security, event: trustedEvent } = trustedIpcSender()
+
 const session: Session = {
   id: 'workspace-1', projectId: 'project-1', name: 'App', kind: 'wsl',
   distro: 'Ubuntu-24.04', path: '/workspace/current', createdAt: '2026-01-01T00:00:00Z'
@@ -54,7 +57,7 @@ const ensure = vi.fn(() => 'running')
 const dispose = vi.fn()
 
 function invoke(channel: string, request: unknown): Promise<unknown> {
-  return Promise.resolve(mocks.handlers.get(channel)!({}, request))
+  return Promise.resolve(mocks.handlers.get(channel)!(trustedEvent, request))
 }
 
 beforeEach(() => {
@@ -68,7 +71,7 @@ beforeEach(() => {
   terminalInfo.mockReset().mockImplementation((id) => id === 'source-pane' ? { sessionId: session.id, directory: session.path } : null)
   ensure.mockClear()
   dispose.mockClear()
-  registerIpcHandlers({ terminalInfo, ensure, dispose } as never, {} as never, {} as never, {} as never)
+  registerIpcHandlers(security, { terminalInfo, ensure, dispose } as never, {} as never, {} as never, {} as never)
 })
 afterEach(() => vi.restoreAllMocks())
 
@@ -83,7 +86,7 @@ describe('OpenCode history IPC and resume', () => {
     await expect(invoke(IpcChannels.opencodeSessionsList, request)).rejects.toThrow('source terminal')
     terminalInfo.mockReturnValue(null)
     await expect(invoke(IpcChannels.opencodeSessionsList, request)).rejects.toThrow('source terminal')
-    await expect(invoke(IpcChannels.opencodeSessionsList, { ...request, executable: 'opencode\nunsafe' })).rejects.toThrow('Invalid OpenCode executable')
+    await expect(invoke(IpcChannels.opencodeSessionsList, { ...request, executable: 'opencode\nunsafe' })).rejects.toThrow('Invalid IPC payload for opencode-sessions:list.')
     expect(mocks.list).not.toHaveBeenCalled()
   })
 
@@ -115,10 +118,10 @@ describe('OpenCode history IPC and resume', () => {
 
   it('rejects spoofed IDs and unsafe database directories', async () => {
     await expect(invoke(IpcChannels.ptyEnsure, { ...ensureRequest, launch: 'invalid' }))
-      .rejects.toThrow('Invalid terminal launch source')
+      .rejects.toThrow('Invalid IPC payload for pty:ensure.')
     await expect(invoke(IpcChannels.ptyEnsure, {
       ...ensureRequest, launch: { ...ensureRequest.launch, opencodeSessionId: "ses_x' OR 1=1" }
-    })).rejects.toThrow('Invalid OpenCode session ID')
+    })).rejects.toThrow('Invalid IPC payload for pty:ensure.')
     expect(mocks.read).not.toHaveBeenCalled()
     mocks.read.mockResolvedValue({ ...saved, directory: '/workspace/../../etc' })
     await expect(invoke(IpcChannels.ptyEnsure, ensureRequest)).rejects.toThrow('saved OpenCode session directory')

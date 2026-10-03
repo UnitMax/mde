@@ -1,3 +1,4 @@
+import { trustedIpcSender } from './helpers/ipc-sender'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Session } from '../src/shared/types'
 
@@ -71,6 +72,8 @@ vi.mock('../src/main/wsl/distros', () => ({
 import { IpcChannels, type DropPtyFilesRequest } from '../src/shared/ipc'
 import { registerIpcHandlers } from '../src/main/ipc'
 
+const { security, event: trustedEvent } = trustedIpcSender()
+
 function nativeSession(): Session {
   return {
     id: 'session-1',
@@ -83,7 +86,7 @@ function nativeSession(): Session {
 }
 
 function registerForTest(ptyManager: { terminalInfo: ReturnType<typeof vi.fn>; status: ReturnType<typeof vi.fn> }): void {
-  registerIpcHandlers(ptyManager as never, {} as never, {} as never, {} as never)
+  registerIpcHandlers(security, ptyManager as never, {} as never, {} as never, {} as never)
 }
 
 function handler(channel: string): Handler {
@@ -119,7 +122,7 @@ describe('terminal file-drop IPC', () => {
     dropMock.resolveTerminalDrop.mockResolvedValue(resolved)
     registerForTest(ptyManager)
 
-    await expect(handler(IpcChannels.ptyDropFiles)({}, request)).resolves.toEqual({
+    await expect(handler(IpcChannels.ptyDropFiles)(trustedEvent, request)).resolves.toEqual({
       ...resolved
     })
     expect(dropMock.resolveTerminalDrop).toHaveBeenCalledWith(
@@ -136,7 +139,7 @@ describe('terminal file-drop IPC', () => {
     registerForTest({ terminalInfo, status })
 
     await expect(
-      handler(IpcChannels.ptyDropFiles)({}, {
+      handler(IpcChannels.ptyDropFiles)(trustedEvent, {
         terminalId: 'pane-1',
         files: [{ name: 'image.png', nativePath: '/tmp/image.png' }],
         mode: 'shell'
@@ -158,7 +161,7 @@ describe('terminal file-drop IPC', () => {
     dropMock.fileTreeDropFile.mockResolvedValue(descriptor)
     dropMock.resolveTerminalDrop.mockResolvedValue({ insertions: [], acceptedCount: 0, rejections: [] })
     registerForTest({ terminalInfo: vi.fn(() => ({ sessionId: target.id })), status: vi.fn(() => 'running') })
-    await handler(IpcChannels.ptyDropFiles)({}, {
+    await handler(IpcChannels.ptyDropFiles)(trustedEvent, {
       terminalId: 'pane-1', files: [], mode: 'shell', treeEntry: { sessionId: 'source', path: 'src' },
     })
     expect(dropMock.fileTreeDropFile).toHaveBeenCalledWith(source, 'src', process.platform)
@@ -167,7 +170,7 @@ describe('terminal file-drop IPC', () => {
 
   it('reports a tree drop onto a stopped terminal', async () => {
     registerForTest({ terminalInfo: vi.fn(() => null), status: vi.fn(() => 'exited') })
-    await expect(handler(IpcChannels.ptyDropFiles)({}, {
+    await expect(handler(IpcChannels.ptyDropFiles)(trustedEvent, {
       terminalId: 'pane-1', files: [], mode: 'shell', treeEntry: { sessionId: 'source', path: 'src' },
     })).resolves.toEqual({
       insertions: [], acceptedCount: 0, rejections: [{ name: 'src', code: 'terminal-unavailable' }],
@@ -177,9 +180,9 @@ describe('terminal file-drop IPC', () => {
   it.each([{ sessionId: 'source', path: '../outside' }, { sessionId: 7, path: 'src' }, null])(
     'validates the tree entry before loading sessions', async (treeEntry) => {
       registerForTest({ terminalInfo: vi.fn(), status: vi.fn() })
-      await expect(handler(IpcChannels.ptyDropFiles)({}, {
+      await expect(handler(IpcChannels.ptyDropFiles)(trustedEvent, {
         terminalId: 'pane-1', files: [], mode: 'shell', treeEntry,
-      })).rejects.toThrow('Invalid terminal file drop.')
+      })).rejects.toThrow('Invalid IPC payload for pty:drop-files.')
       expect(workspaceMock.getSession).not.toHaveBeenCalled()
     }
   )
@@ -190,12 +193,12 @@ describe('terminal file-drop IPC', () => {
     registerForTest({ terminalInfo, status })
 
     await expect(
-      handler(IpcChannels.ptyDropFiles)({}, {
+      handler(IpcChannels.ptyDropFiles)(trustedEvent, {
         terminalId: 'pane-1',
         files: [{ name: 'image.png', nativePath: 42 }],
         mode: 'shell'
       })
-    ).rejects.toThrow('Invalid terminal file drop.')
+    ).rejects.toThrow('Invalid IPC payload for pty:drop-files.')
   })
 
   it('validates the drop mode before resolving paths', async () => {
@@ -204,11 +207,53 @@ describe('terminal file-drop IPC', () => {
     registerForTest({ terminalInfo, status })
 
     await expect(
-      handler(IpcChannels.ptyDropFiles)({}, {
+      handler(IpcChannels.ptyDropFiles)(trustedEvent, {
         terminalId: 'pane-1',
         files: [{ name: 'image.png', nativePath: '/tmp/image.png' }],
         mode: 'unknown'
       })
-    ).rejects.toThrow('Invalid terminal file drop.')
+    ).rejects.toThrow('Invalid IPC payload for pty:drop-files.')
+  })
+})
+
+describe('registered IPC security boundary', () => {
+  beforeEach(() => {
+    electronMock.handlers.clear()
+    vi.clearAllMocks()
+    registerIpcHandlers(security, {} as never, {} as never, {} as never, {} as never, {} as never)
+  })
+
+  it('authenticates every channel before inspecting hostile payloads', async () => {
+    expect([...electronMock.handlers.keys()].sort()).toEqual(Object.values(IpcChannels).sort())
+    const hostile = Object.defineProperty({}, 'terminalId', { get: () => { throw new Error('Payload getter executed') } })
+    const other = trustedIpcSender()
+    for (const registered of electronMock.handlers.values()) {
+      await expect(registered(other.event, hostile)).rejects.toThrow('Unauthorized IPC sender.')
+      await expect(registered({ sender: trustedEvent.sender, senderFrame: null }, hostile)).rejects.toThrow('Unauthorized IPC sender.')
+    }
+    expect(workspaceMock.getSession).not.toHaveBeenCalled()
+    expect(workspaceMock.createSession).not.toHaveBeenCalled()
+    expect(workspaceMock.loadWorkspace).not.toHaveBeenCalled()
+    expect(electronMock.clipboard.writeText).not.toHaveBeenCalled()
+    expect(electronMock.shell.openExternal).not.toHaveBeenCalled()
+    expect(electronMock.app.getVersion).not.toHaveBeenCalled()
+  })
+
+  it('validates every channel before privileged handlers can run', async () => {
+    for (const [channel, registered] of electronMock.handlers) {
+      await expect(registered(trustedEvent, null)).rejects.toThrow(`Invalid IPC payload for ${channel}.`)
+    }
+    expect(workspaceMock.getSession).not.toHaveBeenCalled()
+    expect(workspaceMock.createSession).not.toHaveBeenCalled()
+    expect(electronMock.clipboard.writeText).not.toHaveBeenCalled()
+    expect(electronMock.app.getVersion).not.toHaveBeenCalled()
+  })
+
+  it('rejects additional invocation arguments and permits a valid main-frame request', async () => {
+    const invoke = handler(IpcChannels.appInfo) as (...args: unknown[]) => Promise<unknown>
+    await expect(invoke(trustedEvent, undefined, 'unexpected')).rejects.toThrow('Invalid IPC argument count for app:info.')
+    expect(electronMock.app.getVersion).not.toHaveBeenCalled()
+    await expect(invoke(trustedEvent, undefined)).resolves.toMatchObject({ version: '0.0.1' })
+    expect(electronMock.app.getVersion).toHaveBeenCalledOnce()
   })
 })

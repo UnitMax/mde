@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { app, BrowserWindow, session, shell } from 'electron'
 import { IpcEvents } from '@shared/ipc'
 import { registerIpcHandlers } from './ipc'
+import { rendererEntryUrl } from './ipc-security'
 import { OpenCodeAlertManager } from './opencode/alerts'
 import { OpenCodeTuiStatusManager } from './opencode/tui-status'
 import { OpenCodeTokenRatePluginManager } from './opencode/token-rate'
@@ -11,9 +12,10 @@ import { initWorkspaceStore } from './store/workspace'
 import { adjustZoomFactor, DEFAULT_ZOOM_FACTOR, getZoomAction } from './zoom'
 import { handleWindowOpen } from './external-links'
 import { installPermissionPolicy } from './permissions'
-import { installRendererProtocol, registerRendererScheme, RENDERER_ENTRY_URL } from './renderer-protocol'
+import { installRendererProtocol, registerRendererScheme } from './renderer-protocol'
 
 let mainWindow: BrowserWindow | null = null
+const rendererUrl = rendererEntryUrl(app.isPackaged, process.env.ELECTRON_RENDERER_URL)
 
 const opencodeAlertManager = new OpenCodeAlertManager({
   getWindow: () => mainWindow,
@@ -114,12 +116,7 @@ function createWindow(): void {
     mainWindow?.webContents.setZoomFactor(adjustZoomFactor(current, action))
   })
 
-  const devServerUrl = process.env.ELECTRON_RENDERER_URL
-  if (!app.isPackaged && devServerUrl) {
-    void mainWindow.loadURL(devServerUrl)
-  } else {
-    void mainWindow.loadURL(RENDERER_ENTRY_URL)
-  }
+  void mainWindow.loadURL(rendererUrl)
 }
 
 // Chromium force-loses the oldest WebGL context once a renderer process holds more
@@ -156,6 +153,7 @@ if (!app.requestSingleInstanceLock()) {
     await codexStatusManager.configure(app.getPath('userData'))
     await opencodeAlertManager.configure(app.getPath('userData'))
     registerIpcHandlers(
+      { getWebContents: () => mainWindow?.webContents ?? null, rendererUrl },
       ptyManager,
       opencodeTuiStatusManager,
       opencodeTokenRatePluginManager,
