@@ -230,7 +230,7 @@ Generated from `package-lock.json` by `npm run licenses`. 266 shipped package en
 | `internmap` | `1.0.1` | no | ISC | https://registry.npmjs.org/internmap/-/internmap-1.0.1.tgz |
 | `internmap` | `2.0.3` | no | ISC | https://registry.npmjs.org/internmap/-/internmap-2.0.3.tgz |
 | `js-tokens` | `4.0.0` | no | MIT | https://registry.npmjs.org/js-tokens/-/js-tokens-4.0.0.tgz |
-| `katex` | `0.16.47` | no | MIT | https://registry.npmjs.org/katex/-/katex-0.16.47.tgz |
+| `katex` | `0.18.2` | no | MIT | https://registry.npmjs.org/katex/-/katex-0.18.2.tgz |
 | `khroma` | `2.1.0` | no | Not declared | https://registry.npmjs.org/khroma/-/khroma-2.1.0.tgz |
 | `layout-base` | `1.0.2` | no | MIT | https://registry.npmjs.org/layout-base/-/layout-base-1.0.2.tgz |
 | `layout-base` | `2.0.1` | no | MIT | https://registry.npmjs.org/layout-base/-/layout-base-2.0.1.tgz |
@@ -3414,7 +3414,7 @@ THE SOFTWARE.
 
 ### Notice text 64
 
-Packages: `katex@0.16.47`
+Packages: `katex@0.18.2`
 
 Files:
 

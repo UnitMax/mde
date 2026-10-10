@@ -1,6 +1,6 @@
 {
   "name": "mde",
-  "version": "0.0.101",
+  "version": "0.0.102",
   "description": "Agentic dev environment — grouped terminal sessions with first-class WSL support",
   "main": "./out/main/index.js",
   "homepage": "https://github.com/UnitMax/mde",
@@ -98,6 +98,14 @@
     "vite": "7.3.6",
     "vitest": "4.1.11",
     "zustand": "5.0.15"
+  },
+  "overrides": {
+    "mermaid": {
+      "katex": "0.18.2"
+    },
+    "@electron/get": {
+      "global-agent": "4.1.3"
+    }
   },
   "desktopName": "mde.desktop"
 }
