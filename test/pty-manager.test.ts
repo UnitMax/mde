@@ -155,6 +155,25 @@ describe('PtyManager runtime terminal identities', () => {
     expect(manager.status('pane-a')).toBe('running')
   })
 
+  it('restarts a pane into the launch directory and agent it is given', () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() })
+    const source = wslSession()
+    manager.ensure('pane-a', source, { cols: 80, rows: 24 }, palette)
+    const first = ptyMock.children.get('pane-1')
+
+    manager.restart('pane-a', source, { cols: 80, rows: 24 }, palette, {
+      directory: '/home/me/other',
+      agent: { executable: 'opencode', args: ['--session', 'ses_chosen'] }
+    })
+
+    expect(first?.kill).toHaveBeenCalledTimes(1)
+    expect(ptyMock.spawn).toHaveBeenCalledTimes(2)
+    const [file, args] = ptyMock.spawn.mock.calls[1] as [string, string[]]
+    expect(file).toBe('wsl.exe')
+    expect(args).toEqual(expect.arrayContaining(['--cd', '/home/me/other', 'opencode', '--session', 'ses_chosen']))
+  })
+
   it('disposes every runtime terminal belonging to one source session', () => {
     const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() })
     const source = sourceSession()

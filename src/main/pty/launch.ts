@@ -23,6 +23,8 @@ export interface LaunchContext {
   workingDirectory?: string
   /** Direct command to run after the target shell has loaded its login environment. */
   agent?: AgentCommand
+  /** Start the normal shell once the agent exits, instead of ending the terminal with it. */
+  returnToShell?: boolean
 }
 
 const DEFAULT_WINDOWS_SHELL = 'powershell.exe'
@@ -177,7 +179,18 @@ esac
 `.trim()
 }
 
-function wslAgentShellCommand(): string {
+/**
+ * With returnToShell the agent runs as a child instead of replacing the
+ * process, and the normal interactive shell startup takes over once it exits.
+ */
+function wslAgentShellCommand(returnToShell = false): string {
+  const run = returnToShell ? '' : 'exec '
+  // A handler (not '' / ignore) is reset to default in exec'd children, so the
+  // agent still receives SIGINT while this wrapper survives it.
+  const preamble = returnToShell ? 'trap : INT\n' : ''
+  const handOff = returnToShell
+    ? `\nexec /bin/sh -c ${shellQuote(wslShellCommand())} mde-shell "$shell"`
+    : ''
   return `
 if [ "$#" -lt 2 ]; then exit 2; fi
 shell=$1
@@ -197,14 +210,14 @@ if [ -z "$shell" ] || [ ! -x "$shell" ]; then
   shell=/bin/bash
 fi
 export SHELL="$shell"
-case "\${shell##*/}" in
+${preamble}case "\${shell##*/}" in
   fish)
-    exec "$shell" -l -i -c 'exec $argv' -- "$agent" "$@"
+    ${run}"$shell" -l -i -c 'exec $argv' -- "$agent" "$@"
     ;;
   *)
-    exec "$shell" -lic 'exec "$@"' mde-agent "$agent" "$@"
+    ${run}"$shell" -lic 'exec "$@"' mde-agent "$agent" "$@"
     ;;
-esac
+esac${handOff}
 `.trim()
 }
 
@@ -278,7 +291,7 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
         ...(environment.length > 0 ? ['env', ...environment] : []),
         '/bin/sh',
         '-c',
-        context.agent ? wslAgentShellCommand() : wslShellCommand(),
+        context.agent ? wslAgentShellCommand(context.returnToShell) : wslShellCommand(),
         context.agent ? 'mde-agent' : 'mde-shell',
         ...(context.agent
           ? [session.shell ?? WSL_DEFAULT_SHELL_MARKER, context.agent.executable, ...context.agent.args]

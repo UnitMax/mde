@@ -37,6 +37,8 @@ export interface PtyTerminalInfo {
 export interface PtyLaunchOptions {
   directory?: string
   agent?: AgentCommand
+  /** Hand the terminal back to the shell when the agent exits. */
+  returnToShell?: boolean
 }
 
 export interface PtyLaunchIntegration {
@@ -172,7 +174,8 @@ export class PtyManager {
       environment,
       wslEnvironment: environment,
       workingDirectory: options?.directory,
-      agent: options?.agent
+      agent: options?.agent,
+      returnToShell: options?.returnToShell
     })
     const { cols, rows } = clampSize(size)
 
@@ -242,9 +245,10 @@ export class PtyManager {
     session: Session,
     size: PtySize,
     palette: TerminalPalette,
+    options?: PtyLaunchOptions,
   ): PtyStatus {
     this.dispose(terminalId)
-    return this.ensure(terminalId, session, size, palette)
+    return this.ensure(terminalId, session, size, palette, options)
   }
 
   write(terminalId: string, data: string): void {

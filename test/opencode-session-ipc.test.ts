@@ -55,6 +55,7 @@ const ensureRequest = {
 const terminalInfo = vi.fn()
 const ensure = vi.fn(() => 'running')
 const dispose = vi.fn()
+const restart = vi.fn(() => 'running')
 
 function invoke(channel: string, request: unknown): Promise<unknown> {
   return Promise.resolve(mocks.handlers.get(channel)!(trustedEvent, request))
@@ -71,7 +72,8 @@ beforeEach(() => {
   terminalInfo.mockReset().mockImplementation((id) => id === 'source-pane' ? { sessionId: session.id, directory: session.path } : null)
   ensure.mockClear()
   dispose.mockClear()
-  registerIpcHandlers(security, { terminalInfo, ensure, dispose } as never, {} as never, {} as never, {} as never)
+  restart.mockClear()
+  registerIpcHandlers(security, { terminalInfo, ensure, dispose, restart } as never, {} as never, {} as never, {} as never)
 })
 afterEach(() => vi.restoreAllMocks())
 
@@ -150,5 +152,58 @@ describe('OpenCode history IPC and resume', () => {
     terminalInfo.mockReturnValueOnce(null).mockReturnValueOnce({ sessionId: session.id, directory: session.path }).mockReturnValue(null)
     await expect(invoke(IpcChannels.ptyEnsure, ensureRequest)).rejects.toThrow('source terminal')
     expect(ensure).not.toHaveBeenCalled()
+  })
+})
+
+describe('OpenCode session replacement IPC', () => {
+  const replaceRequest = {
+    sessionId: session.id, terminalId: 'source-pane', size: { cols: 80, rows: 24 },
+    palette: ensureRequest.palette,
+    launch: { sourceTerminalId: 'source-pane', executable: 'custom-opencode', opencodeSessionId: saved.id }
+  }
+  const plainRestart = { sessionId: session.id, terminalId: 'source-pane', size: replaceRequest.size, palette: replaceRequest.palette }
+
+  it('restarts the source pane into the verified saved session directory', async () => {
+    expect(await invoke(IpcChannels.ptyRestart, replaceRequest)).toBe('running')
+    expect(mocks.read).toHaveBeenCalledWith(session, 'custom-opencode', saved.id)
+    expect(restart).toHaveBeenCalledWith('source-pane', session, replaceRequest.size, replaceRequest.palette, {
+      directory: saved.directory, agent: { executable: 'custom-opencode', args: ['--session', saved.id] },
+      returnToShell: true
+    })
+  })
+
+  it('restarts without a launch override when none is requested', async () => {
+    expect(await invoke(IpcChannels.ptyRestart, plainRestart)).toBe('running')
+    expect(mocks.read).not.toHaveBeenCalled()
+    expect(restart).toHaveBeenCalledWith('source-pane', session, replaceRequest.size, replaceRequest.palette, undefined)
+  })
+
+  it('rejects a replacement aimed at another pane or a launch that is not an OpenCode resume', async () => {
+    await expect(invoke(IpcChannels.ptyRestart, { ...replaceRequest, terminalId: 'second-pane' }))
+      .rejects.toThrow('Invalid terminal replacement request.')
+    await expect(invoke(IpcChannels.ptyRestart, { ...replaceRequest, launch: { sourceTerminalId: 'source-pane', directory: 'terminal' } }))
+      .rejects.toThrow('Invalid terminal replacement request.')
+    expect(mocks.read).not.toHaveBeenCalled()
+    expect(restart).not.toHaveBeenCalled()
+  })
+
+  it('refuses a replacement with a missing session or directory and leaves the running terminal alone', async () => {
+    mocks.read.mockRejectedValueOnce(new Error('This OpenCode session no longer exists.'))
+    await expect(invoke(IpcChannels.ptyRestart, replaceRequest)).rejects.toThrow('no longer exists')
+    mocks.runWslCommand.mockResolvedValue({ code: 1, stdout: '', stderr: '' })
+    await expect(invoke(IpcChannels.ptyRestart, replaceRequest)).rejects.toThrow('saved OpenCode session directory')
+    expect(restart).not.toHaveBeenCalled()
+    expect(dispose).not.toHaveBeenCalled()
+  })
+
+  it('does not replace a pane closed while its saved session is being resolved', async () => {
+    let resolve!: (value: OpenCodeSessionSummary) => void
+    mocks.read.mockReturnValue(new Promise<OpenCodeSessionSummary>((done) => { resolve = done }))
+    const pending = invoke(IpcChannels.ptyRestart, replaceRequest)
+    await vi.waitFor(() => expect(mocks.read).toHaveBeenCalled())
+    await invoke(IpcChannels.ptyDispose, 'source-pane')
+    resolve(saved)
+    expect(await pending).toBe('none')
+    expect(restart).not.toHaveBeenCalled()
   })
 })

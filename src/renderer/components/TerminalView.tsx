@@ -32,6 +32,7 @@ import type {
   OpenCodeTokenRatePluginState,
   OpenCodeAlertSettings,
   CodingAgent,
+  OpenCodeResumeLaunch,
   PtySize,
   Session,
   SessionTab
@@ -2383,6 +2384,7 @@ export function TerminalView({
   const [terminalLauncherSourceId, setTerminalLauncherSourceId] = useState<string | null>(null)
   const [openCodeSessionsOpen, setOpenCodeSessionsOpen] = useState(false)
   const [openCodeSessionsSourceId, setOpenCodeSessionsSourceId] = useState<string | null>(null)
+  const openCodeSessionsSourceStatus = useWorkspace((state) => state.statuses[openCodeSessionsSourceId ?? ''])
   const [terminalSettings, setTerminalSettings] = useState<TerminalSettings>(() => getTerminalSettings())
   const gridRef = useRef<HTMLDivElement>(null)
   const reorderDragRef = useRef<TerminalReorderDragState | null>(null)
@@ -2443,6 +2445,33 @@ export function TerminalView({
     setOpenCodeSessionsOpen(false)
     setOpenCodeSessionsSourceId(null)
   }, [activeTab.id, selectedSession.id])
+
+  // Replaces the picker's source pane in place: the process restarts there and no pane is added.
+  const replaceOpenCodeSessionProcess = async (launch: OpenCodeResumeLaunch): Promise<void> => {
+    const terminalId = launch.sourceTerminalId
+    const terminal = getSession(terminalId)
+    const size = (terminal && fitSession(terminal)) || FALLBACK_SIZE
+    try {
+      const status = await window.api.pty.restart({
+        terminalId,
+        sessionId: selectedSession.id,
+        size,
+        palette: getTerminalPalette(terminal?.themeId ?? getTerminalSettings().theme),
+        launch
+      })
+      if (status === 'none') throw new Error('This terminal is no longer available.')
+      // The old process's output all arrives before this reply, so clearing here cannot drop new output.
+      getSession(terminalId)?.term.reset()
+      useWorkspace.getState().unlinkTerminalTask(terminalId)
+      useWorkspace.getState().clearExit(terminalId)
+      useWorkspace.getState().setStatus(terminalId, status)
+    } catch (error) {
+      // A failure after the old process was stopped leaves the pane without one; reflect that.
+      const statuses = await window.api.pty.statuses().catch(() => null)
+      if (statuses) useWorkspace.getState().setStatus(terminalId, statuses[terminalId] ?? 'none')
+      throw error
+    }
+  }
 
   const requestLayout = useCallback((layout: TerminalLayout): void => {
     const targetCount = terminalCount(layout)
@@ -2981,6 +3010,7 @@ export function TerminalView({
         onOpenChange={setOpenCodeSessionsOpen}
         session={selectedSession}
         sourceTerminalId={openCodeSessionsSourceId ?? ''}
+        sourceRunning={openCodeSessionsSourceStatus === 'running'}
         currentDirectory={openCodeSessionsSourceId ? terminalDirectories[openCodeSessionsSourceId] : undefined}
         paneCount={terminalLayout.panes.length}
         onRestoreFocus={() => {
@@ -2991,6 +3021,7 @@ export function TerminalView({
           onAddPane(launch.sourceTerminalId, launch)
           setOpenCodeSessionsOpen(false)
         }}
+        onReplace={replaceOpenCodeSessionProcess}
       />
 
       <TerminalLauncher

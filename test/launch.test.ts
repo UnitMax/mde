@@ -189,6 +189,52 @@ describe('buildLaunchSpec', () => {
     expect(result.stdout.trim().split('\n').at(-1)).toBe('/tmp')
   })
 
+  it('keeps the agent argv layout and exec behavior unless asked to return to the shell', () => {
+    const agent = { executable: 'opencode', args: ['--session', 'ses_x'] }
+    const base = session({ kind: 'wsl', distro: 'Ubuntu-24.04', shell: '/bin/bash' })
+    const plain = buildLaunchSpec(base, { platform: 'win32', agent })
+    const returning = buildLaunchSpec(base, { platform: 'win32', agent, returnToShell: true })
+
+    expect(plain.args[10]).not.toContain('trap')
+    expect(plain.args[10]).not.toContain('mde-shell')
+    expect(returning.args.slice(11)).toEqual(plain.args.slice(11))
+    expect(returning.args[10]).toContain('trap : INT')
+    expect(returning.args[10]).toContain('mde-shell "$shell"')
+    expect(plain.args[10]).toContain(`exec "$shell" -lic 'exec "$@"' mde-agent`)
+    expect(returning.args[10]).not.toContain(`exec "$shell" -lic 'exec "$@"' mde-agent`)
+    expect(returning.args[10]).toContain(`"$shell" -lic 'exec "$@"' mde-agent`)
+
+    const syntax = spawnSync('bash', ['-n', '-c', returning.args[10] ?? ''], { encoding: 'utf8', timeout: 3_000, killSignal: 'SIGKILL' })
+    expect(syntax.status).toBe(0)
+    expect(syntax.stderr).toBe('')
+  })
+
+  it('starts the interactive shell after an agent that returns to the shell exits', async () => {
+    const spec = buildLaunchSpec(
+      session({ kind: 'wsl', distro: 'Ubuntu-24.04', shell: '/bin/bash' }),
+      {
+        platform: 'win32',
+        agent: { executable: '/bin/printf', args: ['%s', 'AGENT_DONE '] },
+        returnToShell: true
+      }
+    )
+    const home = mkdtempSync(join(tmpdir(), 'mde-agent-home-'))
+    try {
+      const result = await runLaunchProcess(
+        '/bin/sh',
+        ['-c', spec.args[10] ?? '', ...spec.args.slice(11)],
+        { cwd: '/tmp', env: { ...process.env, HOME: home, ZDOTDIR: home }, input: 'printf SHELL_STARTED_IN_%s "$PWD"\nexit\n' }
+      )
+      expect(result.status).toBe(0)
+      // Login startup files may print banners between the two outputs.
+      const agentAt = result.stdout.indexOf('AGENT_DONE')
+      expect(agentAt).toBeGreaterThanOrEqual(0)
+      expect(result.stdout.indexOf('SHELL_STARTED_IN_/tmp')).toBeGreaterThan(agentAt)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
   it('uses a validated WSL directory override for a normal shell', () => {
     const spec = buildLaunchSpec(
       session({ kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/src/app' }),

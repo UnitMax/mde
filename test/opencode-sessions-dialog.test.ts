@@ -9,16 +9,20 @@ import { TerminalView } from '../src/renderer/components/TerminalView'
 import { useWorkspace } from '../src/renderer/store/workspace'
 
 const terminalFocus = vi.hoisted(() => vi.fn())
+const terminalReset = vi.hoisted(() => vi.fn())
 vi.mock('../src/renderer/terminal/sessions', () => ({
   attachSession: () => ({ term: { focus: terminalFocus } }),
   detachSession: vi.fn(), fitSession: () => null,
-  getSession: () => ({ term: { focus: terminalFocus } }), applyTerminalSettings: vi.fn()
+  getSession: () => ({ term: { focus: terminalFocus, reset: terminalReset } }), applyTerminalSettings: vi.fn()
 }))
 vi.mock('../src/renderer/components/TerminalGitInfo', () => ({ TerminalGitInfo: () => null }))
 
 const roots: Root[] = []
 const list = vi.fn()
 const onSelect = vi.fn()
+const onReplace = vi.fn()
+const ptyRestart = vi.fn()
+const ptyStatuses = vi.fn()
 const onOpenChange = vi.fn()
 const restoreFocus = vi.fn()
 const session: Session = {
@@ -43,8 +47,8 @@ function newRoot(): Root {
 async function renderDialog(overrides: Partial<ComponentProps<typeof OpenCodeSessionsDialog>> = {}) {
   const root = newRoot()
   let props: ComponentProps<typeof OpenCodeSessionsDialog> = {
-    open: true, onOpenChange, session, sourceTerminalId: 'source-pane', paneCount: 1,
-    onSelect, onRestoreFocus: restoreFocus, ...overrides
+    open: true, onOpenChange, session, sourceTerminalId: 'source-pane', sourceRunning: false, paneCount: 1,
+    onSelect, onReplace, onRestoreFocus: restoreFocus, ...overrides
   }
   const update = async (patch: Partial<typeof props> = {}) => {
     props = { ...props, ...patch }
@@ -52,6 +56,12 @@ async function renderDialog(overrides: Partial<ComponentProps<typeof OpenCodeSes
   }
   await update()
   return { update }
+}
+
+function buttonByText(scope: ParentNode, text: string): HTMLButtonElement {
+  const button = Array.from(scope.querySelectorAll<HTMLButtonElement>('button')).find((item) => item.textContent === text)
+  if (!button) throw new Error(`Missing ${text} button`)
+  return button
 }
 
 function input(): HTMLInputElement {
@@ -67,9 +77,16 @@ async function key(target: Element, value: string, modifiers: KeyboardEventInit 
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   localStorage.clear()
-  Object.defineProperty(window, 'api', { configurable: true, value: { opencodeSessions: { list } } })
+  Object.defineProperty(window, 'api', {
+    configurable: true,
+    value: { opencodeSessions: { list }, pty: { restart: ptyRestart, statuses: ptyStatuses } }
+  })
   list.mockReset().mockResolvedValue(sessions)
   onSelect.mockReset()
+  onReplace.mockReset().mockResolvedValue(undefined)
+  ptyRestart.mockReset().mockResolvedValue('running')
+  ptyStatuses.mockReset().mockResolvedValue({})
+  terminalReset.mockReset()
   onOpenChange.mockReset()
   restoreFocus.mockReset()
   terminalFocus.mockReset()
@@ -131,7 +148,7 @@ describe('OpenCode session picker dialog', () => {
   it('opens a clicked row and blocks both mouse and keyboard selection when the tab is full', async () => {
     const { update } = await renderDialog({ paneCount: 6 })
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('This tab is full. No more terminals can be opened.')
-    expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain('Enter to open')
+    expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain('Enter to open in a new terminal')
     await act(async () => document.querySelector<HTMLButtonElement>('[role="option"]')!.click())
     await key(input(), 'Enter')
     expect(onSelect).not.toHaveBeenCalled()
@@ -175,6 +192,55 @@ describe('OpenCode session picker dialog', () => {
     await act(async () => resolve(sessions))
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('No OpenCode sessions yet.')
     expect(document.querySelectorAll('[role="option"]')).toHaveLength(0)
+  })
+
+  it('replaces an exited source terminal from Shift+Enter without asking or adding a pane', async () => {
+    await renderDialog({ sourceRunning: false })
+    await key(input(), 'ArrowDown')
+    await key(input(), 'Enter', { shiftKey: true })
+    expect(onReplace).toHaveBeenCalledWith({ sourceTerminalId: 'source-pane', executable: 'opencode', opencodeSessionId: 'ses_old' })
+    expect(onSelect).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    expect(document.querySelector('[data-testid="replace-terminal-confirmation"]')).toBeNull()
+  })
+
+  it('asks before interrupting a running source terminal and cancelling returns to the picker', async () => {
+    await renderDialog({ sourceRunning: true })
+    await key(input(), 'Enter', { shiftKey: true })
+    const confirmation = document.querySelector<HTMLElement>('[data-testid="replace-terminal-confirmation"]')
+    expect(confirmation?.textContent).toContain('This interrupts any running command or OpenCode task')
+    expect(onReplace).not.toHaveBeenCalled()
+    await act(async () => buttonByText(confirmation!, 'Cancel').click())
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="replace-terminal-confirmation"]')).toBeNull())
+    expect(onReplace).not.toHaveBeenCalled()
+    expect(onOpenChange).not.toHaveBeenCalled()
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+  })
+
+  it('replaces a running source terminal once the replacement is confirmed', async () => {
+    await renderDialog({ sourceRunning: true })
+    await key(input(), 'Enter', { shiftKey: true })
+    await act(async () => buttonByText(document.querySelector<HTMLElement>('[data-testid="replace-terminal-confirmation"]')!, 'Open session').click())
+    expect(onReplace).toHaveBeenCalledWith({ sourceTerminalId: 'source-pane', executable: 'opencode', opencodeSessionId: 'ses_new' })
+    await vi.waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+  })
+
+  it('keeps Shift+Enter available on a full tab while Enter stays blocked', async () => {
+    await renderDialog({ paneCount: 6 })
+    await key(input(), 'Enter')
+    expect(onSelect).not.toHaveBeenCalled()
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Shift+Enter to open in this terminal')
+    await key(input(), 'Enter', { shiftKey: true })
+    expect(onReplace).toHaveBeenCalledWith(expect.objectContaining({ opencodeSessionId: 'ses_new' }))
+  })
+
+  it('keeps the picker open and shows the reason when the replacement fails', async () => {
+    onReplace.mockRejectedValueOnce(new Error('The source terminal is not available.'))
+    await renderDialog()
+    await key(input(), 'Enter', { shiftKey: true })
+    await vi.waitFor(() => expect(document.querySelector('[role="alert"]')?.textContent).toContain('The source terminal is not available.'))
+    expect(onOpenChange).not.toHaveBeenCalled()
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull()
   })
 })
 
@@ -238,5 +304,21 @@ describe('terminal history entry points', () => {
     const event = await key(textarea, 'O', { ctrlKey: true, shiftKey: true })
     expect(event.defaultPrevented).toBe(false)
     expect(list).not.toHaveBeenCalled()
+  })
+
+  it('replaces the source pane from Shift+Enter after confirming, without adding a pane', async () => {
+    const { onAddPane } = await renderTerminal()
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="terminal-opencode-sessions-source-pane"]')!.click())
+    await key(input(), 'Enter', { shiftKey: true })
+    await act(async () => buttonByText(document.querySelector<HTMLElement>('[data-testid="replace-terminal-confirmation"]')!, 'Open session').click())
+    await vi.waitFor(() => expect(ptyRestart).toHaveBeenCalledWith({
+      terminalId: 'source-pane', sessionId: session.id, size: { cols: 80, rows: 24 },
+      palette: expect.any(Object),
+      launch: { sourceTerminalId: 'source-pane', executable: 'opencode', opencodeSessionId: 'ses_new' }
+    }))
+    expect(terminalReset).toHaveBeenCalled()
+    expect(onAddPane).not.toHaveBeenCalled()
+    expect(document.querySelectorAll('.terminal-host')).toHaveLength(2)
+    await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull())
   })
 })

@@ -125,7 +125,10 @@ Search by title, directory, session ID, model, or agent. Archived sessions and s
 are included and labelled; the selected session's details show full dates, file changes, token usage,
 and reported cost when available.
 Click a session or use the arrow keys and Enter to resume it in a new pane in its saved directory.
-Escape closes the picker. At six panes the picker reports that the tab is full and disables opening.
+Shift+Enter resumes it in the terminal the picker was opened from instead. That terminal's running
+command or OpenCode task is interrupted, so the picker asks first unless the terminal has exited.
+Shift+Enter also works on a full tab, because no pane is added.
+Escape closes the picker. At six panes the picker reports that the tab is full and disables Enter.
 History uses the configured OpenCode executable and its database command; resuming uses the saved
 session settings. Both require a version supporting `opencode db <query> --format json`. If optional
 metadata is unavailable it is omitted. The selected history and resume command remain runtime-only.

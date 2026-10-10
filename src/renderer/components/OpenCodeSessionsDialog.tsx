@@ -4,6 +4,15 @@ import type { OpenCodeResumeLaunch, OpenCodeSessionSummary, Session } from '@sha
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogTitle
+} from '@/components/ui/alert-dialog'
 import { groupOpenCodeSessions, isCurrentSessionDirectory, sessionAge, sessionDate } from '@/lib/opencode-sessions'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { agentCommandSettingError } from '@/lib/agent-commands'
@@ -15,9 +24,12 @@ interface OpenCodeSessionsDialogProps {
   onOpenChange: (open: boolean) => void
   session: Session
   sourceTerminalId: string
+  /** Whether the source pane still has a live process that replacing it would interrupt. */
+  sourceRunning: boolean
   currentDirectory?: string
   paneCount: number
   onSelect: (launch: OpenCodeResumeLaunch) => void
+  onReplace: (launch: OpenCodeResumeLaunch) => Promise<void>
   onRestoreFocus: () => void
 }
 
@@ -52,7 +64,7 @@ function MetadataDetails({ session }: { session: OpenCodeSessionSummary }): JSX.
 }
 
 export function OpenCodeSessionsDialog({
-  open, onOpenChange, session, sourceTerminalId, currentDirectory, paneCount, onSelect, onRestoreFocus
+  open, onOpenChange, session, sourceTerminalId, sourceRunning, currentDirectory, paneCount, onSelect, onReplace, onRestoreFocus
 }: OpenCodeSessionsDialogProps): JSX.Element {
   const [settings, setSettings] = useState(() => getTerminalSettings())
   const [sessions, setSessions] = useState<OpenCodeSessionSummary[]>([])
@@ -61,6 +73,9 @@ export function OpenCodeSessionsDialog({
   const [refresh, setRefresh] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [replacing, setReplacing] = useState(false)
+  const [confirmingLaunch, setConfirmingLaunch] = useState<OpenCodeResumeLaunch | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const resultsRef = useRef<HTMLDivElement>(null)
   const restoreFocusRef = useRef(onRestoreFocus)
@@ -73,7 +88,9 @@ export function OpenCodeSessionsDialog({
   const groups = useMemo(() => groupOpenCodeSessions(sessions, query, directory), [sessions, query, directory])
   const results = useMemo(() => groups.flatMap((group) => group.sessions), [groups])
   const selected = results[Math.min(activeIndex, Math.max(0, results.length - 1))]
-  const canSelect = !full && !loading && !error && !settingError
+  const canSelect = !full && !loading && !error && !settingError && !replacing
+  // Replacing reuses the source pane rather than adding one, so a full tab can still use it.
+  const canReplace = !loading && !error && !settingError && !replacing
 
   useEffect(() => subscribeTerminalSettings(() => setSettings(getTerminalSettings())), [])
 
@@ -81,6 +98,8 @@ export function OpenCodeSessionsDialog({
     if (!open) return
     setQuery('')
     setActiveIndex(0)
+    setActionError(null)
+    setConfirmingLaunch(null)
     resumingRef.current = false
   }, [open, session.id, sourceTerminalId])
 
@@ -125,6 +144,34 @@ export function OpenCodeSessionsDialog({
     setActiveIndex((current) => (current + delta + results.length) % results.length)
   }
 
+  const replace = async (launch: OpenCodeResumeLaunch): Promise<void> => {
+    setActionError(null)
+    setReplacing(true)
+    try {
+      await onReplace(launch)
+      onOpenChange(false)
+    } catch (error: unknown) {
+      setActionError(ipcErrorMessage(error, 'Could not open this session in the terminal.'))
+      inputRef.current?.focus()
+    } finally {
+      setReplacing(false)
+    }
+  }
+
+  const requestReplace = (item: OpenCodeSessionSummary | undefined): void => {
+    if (!item || !canReplace) return
+    const launch: OpenCodeResumeLaunch = { sourceTerminalId, opencodeSessionId: item.id, executable }
+    // An exited pane has nothing to interrupt, so it replaces without asking.
+    if (sourceRunning) setConfirmingLaunch(launch)
+    else void replace(launch)
+  }
+
+  const confirmReplace = (): void => {
+    const launch = confirmingLaunch
+    setConfirmingLaunch(null)
+    if (launch) void replace(launch)
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -138,13 +185,15 @@ export function OpenCodeSessionsDialog({
           if (!resumingRef.current) restoreFocusRef.current()
         }}
         onKeyDown={(event) => {
-          if (event.isPropagationStopped() || event.nativeEvent.isComposing) return
+          // Events from the confirmation dialog bubble here through its portal.
+          if (event.isPropagationStopped() || event.nativeEvent.isComposing || confirmingLaunch) return
           if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             event.preventDefault()
             move(event.key === 'ArrowDown' ? 1 : -1)
           } else if (event.key === 'Enter' && event.target === inputRef.current) {
             event.preventDefault()
-            choose(selected)
+            if (event.shiftKey) requestReplace(selected)
+            else choose(selected)
           }
         }}
       >
@@ -178,6 +227,7 @@ export function OpenCodeSessionsDialog({
         </div>
         {full && <p role="status" className="text-xs text-fg-muted">This tab is full. No more terminals can be opened.</p>}
         {error && <p role="alert" className="text-xs text-danger">{error}</p>}
+        {actionError && <p role="alert" className="text-xs text-danger">{actionError}</p>}
         <div className="flex shrink-0 justify-between px-2 text-[10px] text-fg-subtle" aria-hidden="true">
           <span>Sessions <span className="tabular-nums">{results.length}</span></span>
           <span>Updated</span>
@@ -222,8 +272,29 @@ export function OpenCodeSessionsDialog({
         </div>
         {selected && <MetadataDetails session={selected} />}
         <p className="text-[10px] text-fg-subtle">
-          {full ? '↑↓ to browse · Esc to close' : '↑↓ to navigate · Enter to open in a new terminal · Esc to close'}
+          {full
+            ? '↑↓ to browse · Shift+Enter to open in this terminal · Esc to close'
+            : '↑↓ to navigate · Enter to open in a new terminal · Shift+Enter to open in this terminal · Esc to close'}
         </p>
+        <AlertDialog open={confirmingLaunch !== null} onOpenChange={(next) => { if (!next) setConfirmingLaunch(null) }}>
+          <AlertDialogContent
+            data-testid="replace-terminal-confirmation"
+            onCloseAutoFocus={(event) => {
+              // The picker has no trigger to return to, so focus goes back to its search field.
+              event.preventDefault()
+              inputRef.current?.focus()
+            }}
+          >
+            <AlertDialogTitle>Open session in this terminal?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This interrupts any running command or OpenCode task in this terminal. This cannot be undone.
+            </AlertDialogDescription>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmReplace}>Open session</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   )

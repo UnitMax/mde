@@ -210,7 +210,10 @@ export interface EnsurePtyRequest {
   sessionId: string
   size: PtySize
   palette: TerminalPalette
-  /** Optional runtime-only launch override for a new WSL terminal pane. */
+  /**
+   * Optional runtime-only launch override: a new WSL terminal pane, or, for
+   * restart, an OpenCode session that replaces this terminal's process.
+   */
   launch?: PtyLaunchRequest
 }
 

@@ -201,6 +201,12 @@ export function getKeyboardShortcutGroups(
           description: 'Resume the selected OpenCode session in a new terminal.'
         },
         {
+          id: 'opencode-sessions-replace',
+          keys: ['Shift+Enter'],
+          description: 'Resume the selected OpenCode session in the terminal the picker was opened from.',
+          note: 'Asks first when that terminal is running, since it interrupts the current command or task.'
+        },
+        {
           id: 'opencode-sessions-close',
           keys: ['Esc'],
           description: 'Close the OpenCode session picker.'

@@ -346,6 +346,25 @@ async function resolvePtyLaunchOptions(
   }
 }
 
+/**
+ * Replacing a pane's process accepts only an OpenCode resume for that same pane.
+ * It resolves through the new-pane path, so the saved record and directory are
+ * verified before the running process is stopped. Quitting the agent returns
+ * to the pane's shell rather than ending the terminal.
+ */
+async function resolvePtyReplacementOptions(
+  ptyManager: PtyManager,
+  session: Session,
+  req: EnsurePtyRequest
+): Promise<PtyLaunchOptions | undefined> {
+  if (req.launch === undefined) return undefined
+  if (!('opencodeSessionId' in req.launch) || req.launch.sourceTerminalId !== req.terminalId) {
+    throw new Error('Invalid terminal replacement request.')
+  }
+  const options = await resolvePtyLaunchOptions(ptyManager, session, req.launch)
+  return options && { ...options, returnToShell: true }
+}
+
 async function revealDirectory(session: Session, directory: string): Promise<void> {
   if (session.kind === 'native') {
     await shell.openPath(directory)
@@ -597,15 +616,23 @@ export function registerIpcHandlers(
     }
   })
   handle<EnsurePtyRequest, PtyStatus>(IpcChannels.ptyRestart, async (req) => {
-    pendingEnsures.delete(req.terminalId)
-    const session = await getSession(req.sessionId)
-    if (!session) return 'none'
-    return ptyManager.restart(
-      req.terminalId,
-      session,
-      req.size,
-      validateTerminalPalette(req.palette)
-    )
+    const pending = Symbol()
+    pendingEnsures.set(req.terminalId, pending)
+    try {
+      const session = await getSession(req.sessionId)
+      if (!session) return 'none'
+      const launch = await resolvePtyReplacementOptions(ptyManager, session, req)
+      if (pendingEnsures.get(req.terminalId) !== pending) return 'none'
+      return ptyManager.restart(
+        req.terminalId,
+        session,
+        req.size,
+        validateTerminalPalette(req.palette),
+        launch
+      )
+    } finally {
+      if (pendingEnsures.get(req.terminalId) === pending) pendingEnsures.delete(req.terminalId)
+    }
   })
   handle<WritePtyRequest, void>(IpcChannels.ptyWrite, (req) => {
     ptyManager.write(req.terminalId, req.data)
