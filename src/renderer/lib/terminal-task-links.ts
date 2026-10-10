@@ -1,5 +1,4 @@
 import type {
-  CodexTuiInstanceStatus,
   OpenCodeTuiInstanceStatus,
   OpenCodeTuiStatus,
   PtyStatus,
@@ -7,11 +6,9 @@ import type {
 } from '@shared/types'
 import type { SessionTerminalLayout, TerminalPaneState } from '@/terminal/layout'
 import {
-  agentTuiStatusLabel,
-  agentTuiStatusShortLabel,
-  agentTuiVisualStatus,
-  type AgentTuiInstanceStatus
-} from '@/lib/agent-tui'
+  openCodeStatusLabel,
+  openCodeStatusShortLabel
+} from '@/lib/opencode-tui-status'
 import { sessionTabs } from '@/terminal/tabs'
 import { terminalPaneLabel } from '@/lib/terminal-instances'
 
@@ -27,7 +24,6 @@ export interface LiveTerminalDescriptor {
   label: string
   status: 'running'
   openCodeInstance?: OpenCodeTuiInstanceStatus
-  agentInstance?: AgentTuiInstanceStatus
 }
 
 export interface LiveTerminalCatalogInput {
@@ -35,7 +31,6 @@ export interface LiveTerminalCatalogInput {
   terminalLayouts: Record<string, Record<string, SessionTerminalLayout>>
   statuses: Record<string, PtyStatus>
   opencodeTuiInstances: Record<string, readonly OpenCodeTuiInstanceStatus[]>
-  codexTuiInstances?: Record<string, readonly CodexTuiInstanceStatus[]>
 }
 
 export interface TerminalTaskBadgeModel {
@@ -63,8 +58,7 @@ export function liveTerminalDescriptors({
   sessions,
   terminalLayouts,
   statuses,
-  opencodeTuiInstances,
-  codexTuiInstances = {}
+  opencodeTuiInstances
 }: LiveTerminalCatalogInput): LiveTerminalDescriptor[] {
   return sessions.flatMap((session) =>
     sessionTabs(session).flatMap((tab) => {
@@ -76,9 +70,6 @@ export function liveTerminalDescriptors({
         const openCodeInstance = opencodeTuiInstances[session.id]?.find(
           (instance) => instance.terminalId === pane.terminalId
         )
-        const codexInstance = codexTuiInstances[session.id]?.find(
-          (instance) => instance.terminalId === pane.terminalId
-        )
         return [{
           terminalId: pane.terminalId,
           sessionId: session.id,
@@ -88,8 +79,7 @@ export function liveTerminalDescriptors({
           pane,
           label: pane.title?.trim() || terminalPaneLabel(pane, layout),
           status: 'running',
-          ...(openCodeInstance ? { openCodeInstance, agentInstance: { provider: 'opencode' as const, ...openCodeInstance } } : {}),
-          ...(codexInstance ? { agentInstance: { provider: 'codex' as const, ...codexInstance } } : {})
+          ...(openCodeInstance ? { openCodeInstance } : {})
         }]
       })
     })
@@ -99,11 +89,7 @@ export function liveTerminalDescriptors({
 export function terminalTaskBadgeModel(
   terminal: LiveTerminalDescriptor
 ): TerminalTaskBadgeModel {
-  const instance = terminal.agentInstance ?? (
-    terminal.openCodeInstance
-      ? { provider: 'opencode' as const, ...terminal.openCodeInstance }
-      : undefined
-  )
+  const instance = terminal.openCodeInstance
   if (!instance) {
     return {
       label: terminal.label,
@@ -113,9 +99,9 @@ export function terminalTaskBadgeModel(
   }
 
   return {
-    label: agentTuiStatusShortLabel(instance.status),
-    status: agentTuiVisualStatus(instance.provider, instance.status),
-    description: agentTuiStatusLabel(instance.provider, instance.status, instance.attentionReason),
+    label: openCodeStatusShortLabel(instance.status),
+    status: instance.status,
+    description: openCodeStatusLabel(instance.status, instance.attentionReason),
     working: instance.status === 'working'
   }
 }

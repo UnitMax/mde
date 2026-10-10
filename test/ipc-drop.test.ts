@@ -220,7 +220,7 @@ describe('registered IPC security boundary', () => {
   beforeEach(() => {
     electronMock.handlers.clear()
     vi.clearAllMocks()
-    registerIpcHandlers(security, {} as never, {} as never, {} as never, {} as never, {} as never)
+    registerIpcHandlers(security, {} as never, {} as never, {} as never, {} as never)
   })
 
   it('authenticates every channel before inspecting hostile payloads', async () => {

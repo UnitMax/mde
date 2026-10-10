@@ -2,16 +2,14 @@ import { cn } from '@/lib/utils'
 
 export function OpenCodeNotificationBadge({
   count,
-  providerLabel = 'OpenCode',
   className
 }: {
   count: number
-  providerLabel?: string
   className?: string
 }): JSX.Element | null {
   if (count <= 0) return null
 
-  const label = `${count} ${providerLabel} agent${count === 1 ? '' : 's'} finished or need attention`
+  const label = `${count} OpenCode agent${count === 1 ? '' : 's'} finished or need attention`
 
   return (
     <span

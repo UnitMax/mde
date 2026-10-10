@@ -24,12 +24,6 @@ import type {
   OpenCodeTuiPluginState,
   OpenCodeTuiStatusUpdate,
   OpenCodeTuiInstancesUpdate,
-  CodexHookRequest,
-  CodexHookState,
-  CodexStatusSetEnabledRequest,
-  CodexStatusSettings,
-  CodexTuiInstancesUpdate,
-  CodexTuiStatusUpdate,
   FileReadResponse,
   FileTreeListResponse,
   OpenCodeTokenRatePluginRequest,
@@ -123,11 +117,6 @@ export const IpcChannels = {
   opencodeTuiSettings: 'opencode-tui:settings',
   opencodeTuiSetEnabled: 'opencode-tui:set-enabled',
   opencodeTuiSetInstanceLabelMode: 'opencode-tui:set-instance-label-mode',
-  codexStatusHookState: 'codex-status:hook-state',
-  codexStatusHookInstall: 'codex-status:hook-install',
-  codexStatusHookRemove: 'codex-status:hook-remove',
-  codexStatusSettings: 'codex-status:settings',
-  codexStatusSetEnabled: 'codex-status:set-enabled',
   opencodeTokenRatePluginState: 'opencode-token-rate:plugin-state',
   opencodeTokenRatePluginInstall: 'opencode-token-rate:plugin-install',
   opencodeTokenRatePluginRemove: 'opencode-token-rate:plugin-remove',
@@ -146,8 +135,6 @@ export const IpcEvents = {
   ptyDirectory: 'pty:directory',
   opencodeTuiStatus: 'opencode-tui:status',
   opencodeTuiInstances: 'opencode-tui:instances',
-  codexStatus: 'codex:status',
-  codexInstances: 'codex:instances'
 } as const
 
 export interface PlatformInfo {
@@ -456,15 +443,6 @@ export interface RendererApi {
     remove(req: OpenCodeTuiPluginRequest): Promise<OpenCodeTuiPluginState>
     onStatus(listener: (update: OpenCodeTuiStatusUpdate) => void): () => void
     onInstances(listener: (update: OpenCodeTuiInstancesUpdate) => void): () => void
-  }
-  codexStatus: {
-    settings(): Promise<CodexStatusSettings>
-    setEnabled(req: CodexStatusSetEnabledRequest): Promise<CodexStatusSettings>
-    hookState(req: CodexHookRequest): Promise<CodexHookState>
-    install(req: CodexHookRequest): Promise<CodexHookState>
-    remove(req: CodexHookRequest): Promise<CodexHookState>
-    onStatus(listener: (update: CodexTuiStatusUpdate) => void): () => void
-    onInstances(listener: (update: CodexTuiInstancesUpdate) => void): () => void
   }
   opencodeTokenRate: {
     pluginState(req: OpenCodeTokenRatePluginRequest): Promise<OpenCodeTokenRatePluginState>

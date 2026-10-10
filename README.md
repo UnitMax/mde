@@ -4,7 +4,7 @@ Cross-platform desktop shell for an agentic dev environment: grouped projects co
 persistent terminal sessions, with first-class WSL support on Windows.
 
 This is v1 — a desktop shell focused on persistent terminal workflows. Optional OpenCode TUI
-plugins and Codex Hooks provide agent status, alerts, instance labels, and token-rate information
+plugins provide agent status, alerts, instance labels, and token-rate information
 without replacing the terminal experience.
 
 ## Requirements
@@ -104,7 +104,7 @@ the temporary fullscreen view; it is enabled by default. Ctrl+Shift+F toggles fu
 focused terminal pane. The Sidebar section controls whether ordinary terminal pane entries appear
 beneath each session; this preference is global and stored with the local terminal settings. The
 expanded Projects sidebar also includes a collapsible Agents overview below the sessions, combining
-currently reported OpenCode and Codex instances from every session with their originating session,
+currently reported OpenCode instances from every session with their originating session,
 tab, and status.
 
 In a focused WSL terminal, Ctrl+N or Cmd+N opens a launcher for a new shell, OpenCode, Codex, or
@@ -201,14 +201,8 @@ MDE's own automatic queries.
   originating session, tab, and current status. Instance labels can use privacy-safe numbering or
   the current top-level OpenCode session title; prompts, messages, tool data, credentials, and
   filesystem contents are never included in the snapshot.
-- Codex status reporting is optional and disabled by default. It uses Codex's user-level
-  `~/.codex/hooks.json` configuration and a small MDE-owned shell hook under `~/.codex/hooks/`;
-  enable it and install the hook per WSL distro from Terminal settings, then review/trust the hook
-  from Codex's `/hooks` command. New and restarted Codex terminals report idle, working, permission,
-  completed, interrupted, and closed lifecycle states. The hook writes only a short runtime snapshot
-  under `/tmp`; prompts, messages, tool data, credentials, and filesystem contents are not recorded.
-- Session rows and the Ctrl+O session switcher show a notification count for OpenCode and Codex
-  agents that finished or were interrupted with unread results, or are waiting for permission;
+- Session rows and the Ctrl+O session switcher show a notification count for OpenCode
+  agents that finished with unread results, or are waiting for permission or an answer;
   selecting the session clears completed-result counts while unresolved requests remain visible.
 - OpenCode TUI token-rate display is a separate plugin from status reporting. On Linux it can be
   installed for the native OpenCode target; on Windows it can be installed independently for each
@@ -220,3 +214,28 @@ MDE's own automatic queries.
   when translating a dropped file, and when revealing a folder in Explorer.
 - A session whose files sit under `/mnt/c` gets an inline warning about 9p performance. It is
   a warning, not a block.
+
+### Removing previously installed Codex hooks
+
+Codex hook reporting has been removed. The Codex launcher and its command settings remain
+available, but status, Agents overview entries, notifications, and desktop alerts are provided
+only by OpenCode. Existing workspace and launcher settings remain compatible.
+
+Previously installed hooks are not removed automatically. Restart MDE after upgrading; new
+terminals no longer receive the `MDE_CODEX_STATUS_*` environment variables, so the old MDE hook
+does not report status. To remove the unused hooks, repeat these steps in each WSL distro where
+you installed them:
+
+1. Close MDE and the Codex terminals that were launched before the upgrade.
+2. Locate the Codex configuration directory: use the configured `$CODEX_HOME` if set, otherwise
+   `~/.codex`. Back up its `hooks.json` before editing it.
+3. In `hooks.json`, remove only command handlers whose `command` contains
+   `mde-codex-status-hook-v1`. Preserve unrelated handlers, event groups, and configuration.
+   A group containing both MDE and other handlers must retain the other handlers; remove a group
+   only if removing the MDE handlers leaves it empty.
+4. Check that `hooks/mde-status.sh` in the same directory contains the
+   `mde-codex-status-hook-v1` marker, then delete that MDE-owned script.
+
+The old `codex-status.json` in MDE's user-data directory is ignored and can optionally be
+deleted. After closing the old terminals, the unused `/tmp/mde-codex` runtime snapshots in the
+affected distro can also be deleted. Codex itself and unrelated Codex configuration remain intact.

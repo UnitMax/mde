@@ -7,7 +7,7 @@ import { HighlightedText } from '@/components/HighlightedText'
 import { OpenCodeNotificationBadge } from '@/components/OpenCodeNotificationBadge'
 import { cn } from '@/lib/utils'
 import { searchSessions, type SessionSearchMatch } from '@/lib/session-switcher'
-import { countAgentTuiNotifications } from '@/lib/agent-tui'
+import { countOpenCodeTuiNotifications } from '@/lib/opencode-tui-notifications'
 import { useWorkspace } from '@/store/workspace'
 
 interface SessionSwitcherProps {
@@ -37,7 +37,6 @@ function SessionResult({
   active,
   status,
   opencodeNotificationCount,
-  notificationLabel,
   id,
   onSelect,
   onHover
@@ -46,7 +45,6 @@ function SessionResult({
   active: boolean
   status: PtyStatus
   opencodeNotificationCount: number
-  notificationLabel?: string
   id: string
   onSelect: () => void
   onHover: () => void
@@ -81,10 +79,7 @@ function SessionResult({
           />
         </span>
       </span>
-      <OpenCodeNotificationBadge
-        count={opencodeNotificationCount}
-        providerLabel={notificationLabel}
-      />
+      <OpenCodeNotificationBadge count={opencodeNotificationCount} />
     </button>
   )
 }
@@ -94,9 +89,7 @@ export function SessionSwitcher({ open, onOpenChange }: SessionSwitcherProps): J
   const sessions = useWorkspace((state) => state.sessions)
   const statuses = useWorkspace((state) => state.statuses)
   const opencodeTuiInstances = useWorkspace((state) => state.opencodeTuiInstances)
-  const codexTuiInstances = useWorkspace((state) => state.codexTuiInstances)
   const opencodeTuiReadRevisions = useWorkspace((state) => state.opencodeTuiReadRevisions)
-  const codexTuiReadRevisions = useWorkspace((state) => state.codexTuiReadRevisions)
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
   const selectSession = useWorkspace((state) => state.selectSession)
   const [query, setQuery] = useState('')
@@ -207,13 +200,10 @@ export function SessionSwitcher({ open, onOpenChange }: SessionSwitcherProps): J
                   result={result}
                   active={index === activeIndex}
                   status={statuses[result.item.session.id] ?? 'none'}
-                  opencodeNotificationCount={countAgentTuiNotifications(
+                  opencodeNotificationCount={countOpenCodeTuiNotifications(
                     opencodeTuiInstances[result.item.session.id] ?? [],
-                    codexTuiInstances[result.item.session.id] ?? [],
                     opencodeTuiReadRevisions,
-                    codexTuiReadRevisions
                   )}
-                  notificationLabel={codexTuiInstances[result.item.session.id]?.length ? 'Agent' : undefined}
                   id={`session-switcher-${result.item.session.id}`}
                   onSelect={() => choose(result)}
                   onHover={() => setActiveIndex(index)}

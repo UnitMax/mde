@@ -5,7 +5,6 @@ import {
   openCodeStatusIconLayout,
   openCodeStatusLabel
 } from '@/lib/opencode-tui-status'
-import { agentTuiStatusLabel, type AgentProvider } from '@/lib/agent-tui'
 
 const STATUS_DOT_CLASS: Record<OpenCodeTuiStatus, string> = {
   idle: 'bg-fg-subtle',
@@ -18,21 +17,15 @@ const STATUS_DOT_CLASS: Record<OpenCodeTuiStatus, string> = {
 export function OpenCodeStatusIcon({
   status,
   attentionReason,
-  provider = 'opencode',
-  statusLabel,
   className,
   testId = 'opencode-status'
 }: {
   status: OpenCodeTuiStatus
   attentionReason?: OpenCodeTuiAttentionReason
-  provider?: AgentProvider
-  statusLabel?: string
   className?: string
   testId?: string
 }): JSX.Element {
-  const label = statusLabel ?? (provider === 'opencode'
-    ? openCodeStatusLabel(status, attentionReason)
-    : agentTuiStatusLabel(provider, status, attentionReason))
+  const label = openCodeStatusLabel(status, attentionReason)
   const { slotClassName, glyphClassName } = openCodeStatusIconLayout(status)
   const sharedProps = {
     'aria-label': label,

@@ -77,7 +77,6 @@ export function App(): JSX.Element {
   const todoTasks = useWorkspace((state) => state.todoTasks)
   const terminalStatuses = useWorkspace((state) => state.statuses)
   const opencodeTuiInstances = useWorkspace((state) => state.opencodeTuiInstances)
-  const codexTuiInstances = useWorkspace((state) => state.codexTuiInstances)
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
   const openFiles = useWorkspace((state) => state.openFiles)
   const openFileAction = useWorkspace((state) => state.openFile)
@@ -124,9 +123,8 @@ export function App(): JSX.Element {
       terminalLayouts,
       statuses: terminalStatuses,
       opencodeTuiInstances,
-      codexTuiInstances
     }),
-    [codexTuiInstances, opencodeTuiInstances, sessions, terminalLayouts, terminalStatuses]
+    [opencodeTuiInstances, sessions, terminalLayouts, terminalStatuses]
   )
 
   useEffect(() => {
