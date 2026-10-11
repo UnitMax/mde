@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const execFileMock = vi.hoisted(() => vi.fn())
-vi.mock('node:child_process', () => ({ execFile: execFileMock }))
+vi.mock('../src/main/exec-host', () => ({ execFile: execFileMock }))
 
 import { runWslCommandBuffer } from '../src/main/wsl/distros'
 

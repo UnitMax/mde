@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFile } from './exec-host'
 import { win32 } from 'node:path'
 import type {
   GitChange,
@@ -11,6 +11,7 @@ import type {
   Session
 } from '@shared/types'
 import { resolveWindowsGitExecutable } from './git-executable'
+import { createSpawnLimiter, type SpawnPriority } from './spawn-limiter'
 import { runWslCommand } from './wsl/distros'
 
 const GIT_HISTORY_LIMIT = 50
@@ -18,6 +19,15 @@ const GIT_COMMAND_TIMEOUT_MS = 10_000
 const GIT_DIFF_CONTEXT_LINES = 80
 const GIT_MAX_BUFFER = 8 * 1024 * 1024
 const GIT_EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+
+/**
+ * Git processes allowed at once, across every session and terminal. The sidebar refreshes all
+ * sessions together every ten seconds and each refresh starts several processes, one `wsl.exe`
+ * apiece for a WSL session. A few slots keep that burst from crowding out requests the user made
+ * themselves, and a whole refresh still finishes in about a second.
+ */
+const GIT_SPAWN_LIMIT = 3
+const gitSpawns = createSpawnLimiter(GIT_SPAWN_LIMIT)
 
 /**
  * A complete working tree carries its own `.git/config`, `.git/hooks`, and
@@ -150,14 +160,18 @@ function attrSourceKey(session: Session, workspaceDirectory: string): string {
 
 /**
  * Wraps a transport so every Git call carries the safety options. Hardening
- * lives here rather than at the call sites so no query can omit it.
+ * lives here rather than at the call sites so no query can omit it. Calls share
+ * one bounded pool of process slots; `background` polling yields to `interactive`
+ * requests such as opening the Git dialog.
  */
 export function createGitCommandRunner(
   session: Session,
   platform: NodeJS.Platform = process.platform,
-  workspaceDirectory = session.path
+  workspaceDirectory = session.path,
+  priority: SpawnPriority = 'interactive'
 ): GitCommandRunner {
-  const run = createTransportRunner(session, workspaceDirectory, platform)
+  const transport = createTransportRunner(session, workspaceDirectory, platform)
+  const run: GitCommandRunner = (args) => gitSpawns.run(priority, () => transport(args))
   const key = attrSourceKey(session, workspaceDirectory)
 
   return async (args) => {
@@ -420,7 +434,7 @@ export function readGitTerminalInfo(
   directory: string
 ): Promise<GitTerminalInfoResponse> {
   return readGitTerminalInfoWithRunner(
-    createGitCommandRunner(session, process.platform, directory)
+    createGitCommandRunner(session, process.platform, directory, 'background')
   )
 }
 
@@ -472,7 +486,9 @@ export async function readGitStatusWithRunner(run: GitCommandRunner): Promise<Gi
 }
 
 export function readGitStatus(session: Session): Promise<GitStatusResponse> {
-  return readGitStatusWithRunner(createGitCommandRunner(session))
+  return readGitStatusWithRunner(
+    createGitCommandRunner(session, process.platform, session.path, 'background')
+  )
 }
 
 export async function readGitDiffWithRunner(

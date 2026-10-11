@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFile } from '../exec-host'
 import type { Distro } from '@shared/types'
 
 /**

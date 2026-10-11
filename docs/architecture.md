@@ -173,6 +173,21 @@ the sidebar. Each terminal header also shows the branch and worktree root for th
 current directory when Git can read them. MDE polls that automatically through `src/main/git.ts`,
 which runs read-only Git commands over the native, Windows and WSL transports.
 
+Every Git process goes through one shared pool of three slots (`src/main/spawn-limiter.ts`), and the
+polled readers queue behind requests you make yourself, such as opening the Git dialog. The sidebar
+refreshes every session at once, and each refresh starts several processes (one `wsl.exe` each for
+WSL sessions).
+
+Git and `wsl.exe` processes are started on a worker thread (`src/main/exec-host.ts`), not on the main
+thread. Starting a process is a blocking call, and on Windows it occasionally takes over 100 ms (about
+one launch in eight on the machine this was measured on, whatever the executable, options or console).
+The main thread also runs the window-drag loop and relays terminal input and output, so each slow
+launch used to freeze dragging and terminal output; with a refresh every few seconds that was a
+stall roughly every five seconds. A CPU profile of the main process showed every one of those stalls
+was a single `spawn` call. On the worker, the same 120 launches caused no main-thread stall over
+40 ms. The launcher has the same callback shape as `child_process.execFile`; other callers still use
+that directly, because they run rarely.
+
 Because those queries run without you asking for them, MDE treats the folder as untrusted input. A
 complete working tree — one that arrives as an archive or copy with its own `.git` directory, rather
 than a fresh `git clone` — can carry configuration that names programs Git would otherwise run

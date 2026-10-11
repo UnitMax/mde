@@ -8,6 +8,7 @@ import {
   parseGitLog,
   readGitInfo,
   readGitInfoWithRunner,
+  readGitStatus,
   readGitTerminalInfo,
   readGitTerminalInfoWithRunner,
   readGitStatusWithRunner,
@@ -22,7 +23,7 @@ const mocks = vi.hoisted(() => ({
   runWslCommand: vi.fn()
 }))
 
-vi.mock('node:child_process', () => ({ execFile: mocks.execFile }))
+vi.mock('../src/main/exec-host', () => ({ execFile: mocks.execFile }))
 vi.mock('../src/main/git-executable', () => ({
   resolveWindowsGitExecutable: mocks.resolveWindowsGitExecutable
 }))
@@ -79,6 +80,90 @@ beforeEach(() => {
   mocks.resolveWindowsGitExecutable.mockReset()
   mocks.resolveWindowsGitExecutable.mockResolvedValue('C:\\Program Files\\Git\\cmd\\git.exe')
   mocks.runWslCommand.mockReset()
+})
+
+describe('Git process concurrency', () => {
+  /** Holds every spawned process until the test releases it, recording how many overlap. */
+  function holdProcesses() {
+    const held: Array<() => void> = []
+    const order: string[] = []
+    const cwds: string[] = []
+    const state = { running: 0, peak: 0 }
+    mocks.execFile.mockImplementation(
+      (_file: string, args: string[], options: { cwd?: string }, callback: (error: null, stdout: string, stderr: string) => void) => {
+        state.running += 1
+        state.peak = Math.max(state.peak, state.running)
+        order.push(args.at(-1) ?? '')
+        cwds.push(options.cwd ?? '')
+        held.push(() => {
+          state.running -= 1
+          callback(null, 'true\n', '')
+        })
+      }
+    )
+    const releaseAll = async (): Promise<void> => {
+      for (let guard = 0; guard < 200; guard += 1) {
+        const release = held.shift()
+        if (release) release()
+        else if (state.running === 0) return
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      }
+    }
+    return { state, order, cwds, releaseAll }
+  }
+
+  it('starts at most three Git processes at once, however many sessions refresh together', async () => {
+    const processes = holdProcesses()
+    const pending = Array.from({ length: 10 }, (_, index) =>
+      createGitCommandRunner({ ...nativeSession, id: `session-${index}` }, 'linux', nativeSession.path, 'background')(['--no-pager', 'status'])
+    )
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(processes.state.running).toBe(3)
+
+    await processes.releaseAll()
+    await Promise.all(pending)
+    expect(processes.state.peak).toBe(3)
+  })
+
+  it('lets a request the user made overtake queued background polling', async () => {
+    const processes = holdProcesses()
+    const background = createGitCommandRunner(nativeSession, 'linux', nativeSession.path, 'background')
+    const interactive = createGitCommandRunner(nativeSession, 'linux', nativeSession.path, 'interactive')
+
+    const polls = ['poll-1', 'poll-2', 'poll-3', 'poll-4', 'poll-5'].map((name) => background([name]))
+    const dialog = interactive(['dialog'])
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await processes.releaseAll()
+    await Promise.all([...polls, dialog])
+
+    // Three polls took the free slots; the dialog's command was then next, ahead of poll-4 and poll-5.
+    expect(processes.order.slice(0, 4)).toEqual(['poll-1', 'poll-2', 'poll-3', 'dialog'])
+  })
+
+  it('treats the polled readers as background work and the dialog readers as interactive', async () => {
+    const processes = holdProcesses()
+    const blockers = [1, 2, 3].map((n) =>
+      createGitCommandRunner({ ...nativeSession, path: `/workspace/blocker-${n}` }, 'linux', `/workspace/blocker-${n}`)(['blocker'])
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // Queued behind the blockers in this order: two pollers, then the dialog's reader.
+    const queued = [
+      readGitStatus({ ...nativeSession, path: '/workspace/status-poll' }),
+      readGitTerminalInfo(nativeSession, '/workspace/terminal-poll'),
+      readGitInfo({ ...nativeSession, path: '/workspace/dialog' })
+    ]
+    queued.forEach((promise) => promise.catch(() => undefined))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await processes.releaseAll()
+    await Promise.all(blockers)
+
+    const afterBlockers = processes.cwds.slice(3)
+    expect(afterBlockers[0]).toBe('/workspace/dialog')
+    expect(afterBlockers.slice(1, 3).sort()).toEqual(['/workspace/status-poll', '/workspace/terminal-poll'])
+    expect(processes.state.peak).toBe(3)
+  })
 })
 
 describe('Git history queries', () => {
