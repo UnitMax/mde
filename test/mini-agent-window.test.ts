@@ -157,6 +157,20 @@ describe('MiniAgentWindow', () => {
     expect(onFocusAgent).toHaveBeenCalledWith('s1', 's1-tab', 's1:split:1')
   })
 
+  it('shares one title bar between the title, the count and the restore button', () => {
+    const container = renderWindow()
+    const bar = container.querySelector('[data-testid="title-bar"]')
+
+    expect(container.querySelectorAll('[data-testid="title-bar"]')).toHaveLength(1)
+    expect(text(bar)).toContain('Agents')
+    expect(bar?.querySelector('[data-testid="mini-agent-count"]')?.textContent).toBe('3')
+    expect(bar?.querySelector('[data-testid="mini-agent-restore"]')).not.toBeNull()
+    expect(bar?.querySelector('[data-testid="mini-agent-restore"]')?.className).toContain('app-no-drag')
+    // The status chips sit under the bar, not in it.
+    expect(bar?.querySelector('[data-testid="mini-agent-summary"]')).toBeNull()
+    expect(container.querySelector('[data-testid="mini-agent-summary"]')).not.toBeNull()
+  })
+
   it('offers a restore button that names the shortcut', () => {
     const onRestore = vi.fn()
     const container = renderWindow({ onRestore })

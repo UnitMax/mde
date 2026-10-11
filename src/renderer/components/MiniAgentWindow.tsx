@@ -7,6 +7,7 @@ import type {
 } from '@shared/types'
 import { sessionColorHex } from '@shared/session-colors'
 import { OpenCodeStatusIcon } from '@/components/OpenCodeStatusIcon'
+import { TitleBar, TitleBarButton } from '@/components/TitleBar'
 import { cn } from '@/lib/utils'
 import {
   collectOpenCodeTuiOverviewEntries,
@@ -57,42 +58,46 @@ export function MiniAgentWindow({
       data-testid="mini-agent-window"
       className="flex h-full w-full flex-col overflow-hidden bg-bg text-fg"
     >
-      <header className="shrink-0 border-b border-line px-3 py-2">
-        <div className="flex items-center gap-2">
-          <Bot className="h-3.5 w-3.5 shrink-0 text-fg-muted" />
-          <h1 className="min-w-0 flex-1 truncate text-[12px] font-medium">Agents</h1>
-          <span className="text-[11px] text-fg-subtle" data-testid="mini-agent-count">
-            {entries.length}
-          </span>
-          <button
-            type="button"
-            data-testid="mini-agent-restore"
-            onClick={onRestore}
-            title="Restore the full window (F12)"
-            aria-label="Restore the full window"
-            className="flex shrink-0 items-center gap-1 rounded px-1.5 py-1 text-fg-muted hover:bg-hover hover:text-fg"
-          >
-            <Maximize2 className="h-3 w-3" />
-            <span className="text-[10px] leading-none">F12</span>
-          </button>
+      <TitleBar
+        icon={<Bot className="h-3.5 w-3.5 shrink-0 text-fg-muted" />}
+        title={
+          <>
+            <h1 className="text-[12px] font-medium">Agents</h1>
+            <span className="text-[11px] font-normal text-fg-subtle" data-testid="mini-agent-count">
+              {entries.length}
+            </span>
+          </>
+        }
+      >
+        <TitleBarButton
+          data-testid="mini-agent-restore"
+          onClick={onRestore}
+          title="Restore the full window (F12)"
+          aria-label="Restore the full window"
+        >
+          <Maximize2 className="h-3 w-3" />
+          <span className="text-[10px] leading-none">F12</span>
+        </TitleBarButton>
+      </TitleBar>
+      {chips.length > 0 && (
+        <div
+          className="flex shrink-0 flex-wrap gap-1 border-b border-line px-3 py-1.5"
+          data-testid="mini-agent-summary"
+        >
+          {chips.map((chip) => (
+            <span
+              key={chip.key}
+              data-testid={`mini-agent-chip-${chip.key}`}
+              className={cn(
+                'rounded-full px-2 py-0.5 text-[10px] font-medium leading-none',
+                CHIP_TONE[chip.tone]
+              )}
+            >
+              {chip.label}
+            </span>
+          ))}
         </div>
-        {chips.length > 0 && (
-          <div className="mt-1.5 flex flex-wrap gap-1" data-testid="mini-agent-summary">
-            {chips.map((chip) => (
-              <span
-                key={chip.key}
-                data-testid={`mini-agent-chip-${chip.key}`}
-                className={cn(
-                  'rounded-full px-2 py-0.5 text-[10px] font-medium leading-none',
-                  CHIP_TONE[chip.tone]
-                )}
-              >
-                {chip.label}
-              </span>
-            ))}
-          </div>
-        )}
-      </header>
+      )}
 
       <div className="min-h-0 flex-1 overflow-y-auto py-1">
         {groups.length === 0 ? (

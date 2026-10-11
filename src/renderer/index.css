@@ -90,6 +90,25 @@
 }
 
 @layer components {
+  /* The OS title bar is hidden, so the custom bar is what the window is dragged by. */
+  .app-drag {
+    -webkit-app-region: drag;
+  }
+
+  /* Interactive controls inside a drag region must opt out or they never get clicks. */
+  .app-no-drag {
+    -webkit-app-region: no-drag;
+  }
+
+  /*
+   * Confines the title bar's content to the area the OS leaves free next to its window buttons
+   * (Window Controls Overlay). Without an overlay the fallbacks make it the full bar.
+   */
+  .title-bar-content {
+    margin-left: env(titlebar-area-x, 0px);
+    width: env(titlebar-area-width, 100%);
+  }
+
   /* xterm paints its own background; keep the viewport flush with the panel. */
   .terminal-host .xterm {
     height: 100%;

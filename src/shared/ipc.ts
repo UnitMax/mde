@@ -127,6 +127,7 @@ export const IpcChannels = {
 
   windowModeGet: 'window-mode:get',
   windowModeSet: 'window-mode:set',
+  windowChromeSet: 'window-chrome:set',
 
   appInfo: 'app:info',
   platformInfo: 'platform:info'
@@ -294,6 +295,12 @@ export interface UpdatePtyPaletteRequest {
 
 export interface SetWindowModeRequest {
   mode: WindowMode
+}
+
+/** Hex colors for the native window buttons, so they blend into the custom title bar. */
+export interface WindowChromeColors {
+  color: string
+  symbolColor: string
 }
 
 export interface UpdateProjectRequest {
@@ -466,5 +473,8 @@ export interface RendererApi {
     get(): Promise<WindowMode>
     set(req: SetWindowModeRequest): Promise<WindowMode>
     onChanged(listener: (mode: WindowMode) => void): () => void
+  }
+  windowChrome: {
+    set(req: WindowChromeColors): Promise<void>
   }
 }

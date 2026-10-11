@@ -77,6 +77,7 @@ const validPayloads = {
   [IpcChannels.opencodeAlertsSetEnabled]: enabled,
   [IpcChannels.windowModeGet]: undefined,
   [IpcChannels.windowModeSet]: { mode: 'mini' },
+  [IpcChannels.windowChromeSet]: { color: '#10141b', symbolColor: '#7b8698' },
 } satisfies Record<IpcChannel, unknown>
 
 const channels = Object.values(IpcChannels)
@@ -140,6 +141,12 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.opencodeTuiSetInstanceLabelMode, { mode: 'unknown' })
     rejects(IpcChannels.windowModeSet, { mode: 'fullscreen' })
     rejects(IpcChannels.windowModeSet, { mode: undefined })
+    for (const color of ['red', 'rgb(0,0,0)', 'url(x)', '#12', '#12345', '#1234567', '#gggggg', '10141b', '#10141b;', ' #10141b', '']) {
+      rejects(IpcChannels.windowChromeSet, { color, symbolColor: '#ffffff' })
+      rejects(IpcChannels.windowChromeSet, { color: '#ffffff', symbolColor: color })
+    }
+    rejects(IpcChannels.windowChromeSet, { color: '#ffffff' })
+    expect(() => assertIpcPayload(IpcChannels.windowChromeSet, { color: '#FFF', symbolColor: '#aBc123' })).not.toThrow()
     for (const distro of ['../other', 'Ubuntu\n', ' '.repeat(129) + 'Ubuntu']) {
       rejects(IpcChannels.opencodeTuiPluginInstall, { distro })
     }

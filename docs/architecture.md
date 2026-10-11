@@ -50,6 +50,24 @@ The expanded Projects sidebar includes a collapsible Agents overview below the s
 currently reported OpenCode instances from every session with their originating session, tab, and
 status.
 
+### Window chrome
+
+The OS title bar is hidden (`titleBarStyle: 'hidden'`) and the renderer draws its own bar,
+`TitleBar`, across the top of the window in both the full and the mini view. It is the window's drag
+handle (`-webkit-app-region: drag`; buttons inside it opt out with `app-no-drag`) and hosts the
+button that opens the mini window. On Windows and Linux the OS still draws the minimize, maximize
+and close buttons over the right edge (Electron's Window Controls Overlay), so snap layouts and
+resize borders keep working; the bar's content is confined to the area left of them with
+`env(titlebar-area-x)` and `env(titlebar-area-width)`. macOS keeps its traffic lights and the bar
+leaves room for them.
+
+`src/main/window-chrome.ts` keeps those native buttons matching the app. The renderer sends the
+current theme's panel and muted-text colors over `window-chrome:set` at startup and whenever the
+theme changes, and the main process re-applies them with `setTitleBarOverlay`. Zoom scales the
+page but not the native buttons, so the main process also sizes the overlay to 32 px times the zoom
+factor, which keeps it aligned with the 32 px bar. The bar height is defined in both
+`TITLE_BAR_HEIGHT` and the `h-8` class of `TitleBar`; change them together.
+
 ### Mini agents window
 
 F12 shrinks the main window into a small always-on-top list of the same OpenCode agents, grouped by
@@ -62,8 +80,10 @@ memory, lowers the minimum size, and sets always-on-top. It then tells the rende
 over `window-mode:changed`, and `App` renders `MiniAgentWindow` instead of the sidebar and
 terminals. Unmounting the terminals also stops their resize observers, so shrinking the window
 never reflows a running TUI; they reattach and refit on restore. Clicking an agent restores the
-full window and focuses that terminal. The mini window position is remembered only until MDE quits
-and nothing about it is written to disk.
+full window and focuses that terminal. The mini window uses the same title bar as the full window,
+with its title, agent count and restore button in it, and is not maximizable on Windows and macOS
+(Linux has no such control). Its position is remembered only until MDE quits and nothing about it is
+written to disk.
 
 ### To Do projects
 

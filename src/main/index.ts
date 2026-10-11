@@ -5,6 +5,7 @@ import { registerIpcHandlers } from './ipc'
 import { rendererEntryUrl } from './ipc-security'
 import { OpenCodeAlertManager } from './opencode/alerts'
 import { getMiniWindowAction, MiniWindowController } from './mini-window'
+import { TitleBarController } from './window-chrome'
 import { OpenCodeTuiStatusManager } from './opencode/tui-status'
 import { OpenCodeTokenRatePluginManager } from './opencode/token-rate'
 import { PtyManager } from './pty/manager'
@@ -27,6 +28,11 @@ const miniWindow = new MiniWindowController({
       mainWindow.webContents.send(IpcEvents.windowModeChanged, mode)
     }
   }
+})
+
+const titleBar = new TitleBarController({
+  platform: process.platform,
+  getWindow: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null)
 })
 
 const opencodeAlertManager = new OpenCodeAlertManager({
@@ -78,6 +84,8 @@ function createWindow(): void {
     backgroundColor: '#0b0d10',
     autoHideMenuBar: true,
     title: 'mde',
+    // The renderer draws its own title bar; the OS keeps only the window buttons.
+    ...titleBar.windowOptions(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -119,7 +127,10 @@ function createWindow(): void {
 
     event.preventDefault()
     const current = mainWindow?.webContents.getZoomFactor() ?? DEFAULT_ZOOM_FACTOR
-    mainWindow?.webContents.setZoomFactor(adjustZoomFactor(current, action))
+    const next = adjustZoomFactor(current, action)
+    mainWindow?.webContents.setZoomFactor(next)
+    // The native window buttons ignore page zoom, so resize them to keep the bar aligned.
+    titleBar.setZoom(next)
   })
 
   void mainWindow.loadURL(rendererUrl)
@@ -163,7 +174,8 @@ if (!app.requestSingleInstanceLock()) {
       opencodeTuiStatusManager,
       opencodeTokenRatePluginManager,
       opencodeAlertManager,
-      miniWindow
+      miniWindow,
+      titleBar
     )
     createWindow()
 

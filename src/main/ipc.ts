@@ -22,6 +22,7 @@ import {
   type ResizePtyRequest,
   type ResolvePathRequest,
   type SetWindowModeRequest,
+  type WindowChromeColors,
   type TerminalPalette,
   type PtyDropResult,
   type PtyDropRejection,
@@ -81,6 +82,7 @@ import type { OpenCodeTuiStatusManager } from './opencode/tui-status'
 import type { OpenCodeTokenRatePluginManager } from './opencode/token-rate'
 import type { OpenCodeAlertManager } from './opencode/alerts'
 import type { MiniWindowController } from './mini-window'
+import type { TitleBarController } from './window-chrome'
 import { createAppInfo } from '@shared/app-info'
 import { isWslAvailable, listDistros, runWslCommand } from './wsl/distros'
 import {
@@ -387,7 +389,8 @@ export function registerIpcHandlers(
   opencodeTuiStatusManager: OpenCodeTuiStatusManager,
   opencodeTokenRatePluginManager: OpenCodeTokenRatePluginManager,
   opencodeAlertManager: OpenCodeAlertManager,
-  miniWindow: MiniWindowController
+  miniWindow: MiniWindowController,
+  titleBar: TitleBarController
 ): void {
   const pendingEnsures = new Map<string, symbol>()
   const handle = <Req, Res>(
@@ -547,6 +550,8 @@ export function registerIpcHandlers(
     miniWindow.set(req.mode)
     return miniWindow.mode
   })
+
+  handle<WindowChromeColors, void>(IpcChannels.windowChromeSet, (req) => titleBar.setColors(req))
 
   handle<OpenCodeSessionsRequest, OpenCodeSessionSummary[]>(IpcChannels.opencodeSessionsList, async (req) => {
     if (!req || typeof req.sessionId !== 'string' || typeof req.sourceTerminalId !== 'string') {

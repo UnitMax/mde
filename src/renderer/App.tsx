@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Plus, Terminal } from 'lucide-react'
+import { PictureInPicture2, Plus, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AddSessionDialog } from '@/components/AddProjectDialog'
 import { GitDialog } from '@/components/GitDialog'
@@ -11,6 +11,7 @@ import { NewTodoProjectDialog } from '@/components/NewTodoProjectDialog'
 import { Sidebar } from '@/components/Sidebar'
 import { SessionSwitcher } from '@/components/SessionSwitcher'
 import { TerminalView } from '@/components/TerminalView'
+import { TitleBar, TitleBarButton } from '@/components/TitleBar'
 import { TodoProjectView } from '@/components/TodoProjectView'
 import { TodoSearch } from '@/components/TodoSearch'
 import { TodoProjectSettingsDialog } from '@/components/TodoProjectSettingsDialog'
@@ -712,126 +713,141 @@ export function App(): JSX.Element {
   }
 
   return (
-    <div className="flex h-full w-full overflow-hidden bg-bg">
-      <Sidebar
-        onNewProject={() => setNewProjectOpen(true)}
-        onNewTodoProject={() => setNewTodoProjectOpen(true)}
-        onNewTodoTask={() => openNewTodoTask()}
-        onNewSession={openNewSession}
-        onOpenGit={setGitSessionId}
-        terminalLayouts={terminalLayoutsForSidebar}
-        onFocusTerminal={focusTerminal}
-      />
+    <div className="flex h-full w-full flex-col overflow-hidden bg-bg">
+      <TitleBar
+        icon={<Terminal className="h-3.5 w-3.5 shrink-0 text-accent" />}
+        title="mde"
+      >
+        <TitleBarButton
+          data-testid="mini-window-open"
+          onClick={() => void setWindowMode('mini')}
+          title="Mini agents window (F12)"
+          aria-label="Open the mini agents window"
+        >
+          <PictureInPicture2 className="h-3.5 w-3.5" />
+        </TitleBarButton>
+      </TitleBar>
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <Sidebar
+          onNewProject={() => setNewProjectOpen(true)}
+          onNewTodoProject={() => setNewTodoProjectOpen(true)}
+          onNewTodoTask={() => openNewTodoTask()}
+          onNewSession={openNewSession}
+          onOpenGit={setGitSessionId}
+          terminalLayouts={terminalLayoutsForSidebar}
+          onFocusTerminal={focusTerminal}
+        />
 
-      <main className="relative h-full min-w-0 flex-1">
-        {!ready ? null : activeWorkspaceView === 'todo' ? (
-          <TodoProjectView
-            project={selectedTodoProject}
-            tasks={selectedTodoTasks}
-            terminalCatalog={liveTerminals}
-            onNewTask={openNewTodoTask}
-            onEditTask={openTodoTask}
-            onFocusTerminal={focusLiveTerminal}
-            onOpenSettings={() => setTodoProjectSettingsOpen(true)}
-          />
-        ) : selected && activeTab && layoutForSession ? (
-          <>
-            <TerminalView
-              key={selected.id}
-              session={selected}
-              activeTab={activeTab}
-              terminalLayout={layoutForSession}
-              onSelectTab={(tabId) => selectTab(selected.id, tabId)}
-              onAddTab={() => addTab(selected.id)}
-              onTabRenameStart={cancelTerminalFocus}
-              onRenameTab={(tabId, name) => renameTab(selected.id, tabId, name)}
-              onCloseTab={(tabId) => closeTab(selected.id, tabId)}
-              onLayoutChange={(layout) => changeTerminalLayout(selected.id, activeTab.id, layout)}
-              onLayoutResize={(axis, ratio, columnIndex) => resizeTerminalLayout(selected.id, activeTab.id, axis, ratio, columnIndex)}
-              onPaneOrderChange={(terminalIds) => reorderTerminalPanes(selected.id, activeTab.id, terminalIds)}
-              onReduceLayout={(layout, paneIds) => reduceTerminalLayout(selected.id, activeTab.id, layout, paneIds)}
-              onAddPane={(sourceTerminalId, launch) =>
-                addTerminalPane(selected.id, activeTab.id, sourceTerminalId, launch)
-              }
-              onClosePane={(terminalId) => closeTerminalPane(selected.id, activeTab.id, terminalId)}
-              onPaneFocus={(terminalId) => {
-                focusedTerminalIdRef.current = terminalId
-              }}
-              onPaneTitleChange={(terminalId, title) =>
-                renameTerminalPane(selected.id, activeTab.id, terminalId, title)
-              }
-              onLinkTask={(terminalId) => setTerminalTaskLinkTarget({ type: 'terminal', terminalId })}
+        <main className="relative h-full min-w-0 flex-1">
+          {!ready ? null : activeWorkspaceView === 'todo' ? (
+            <TodoProjectView
+              project={selectedTodoProject}
+              tasks={selectedTodoTasks}
+              terminalCatalog={liveTerminals}
+              onNewTask={openNewTodoTask}
+              onEditTask={openTodoTask}
+              onFocusTerminal={focusLiveTerminal}
+              onOpenSettings={() => setTodoProjectSettingsOpen(true)}
             />
-            {openFilePath !== undefined && (
-              // Layered over the terminals so they stay mounted at their size.
-              <FileViewer
+          ) : selected && activeTab && layoutForSession ? (
+            <>
+              <TerminalView
                 key={selected.id}
                 session={selected}
-                path={openFilePath}
-                onOpenFile={(path) => openFileAction(selected.id, path)}
-                onClose={() => closeOpenFile(selected.id)}
+                activeTab={activeTab}
+                terminalLayout={layoutForSession}
+                onSelectTab={(tabId) => selectTab(selected.id, tabId)}
+                onAddTab={() => addTab(selected.id)}
+                onTabRenameStart={cancelTerminalFocus}
+                onRenameTab={(tabId, name) => renameTab(selected.id, tabId, name)}
+                onCloseTab={(tabId) => closeTab(selected.id, tabId)}
+                onLayoutChange={(layout) => changeTerminalLayout(selected.id, activeTab.id, layout)}
+                onLayoutResize={(axis, ratio, columnIndex) => resizeTerminalLayout(selected.id, activeTab.id, axis, ratio, columnIndex)}
+                onPaneOrderChange={(terminalIds) => reorderTerminalPanes(selected.id, activeTab.id, terminalIds)}
+                onReduceLayout={(layout, paneIds) => reduceTerminalLayout(selected.id, activeTab.id, layout, paneIds)}
+                onAddPane={(sourceTerminalId, launch) =>
+                  addTerminalPane(selected.id, activeTab.id, sourceTerminalId, launch)
+                }
+                onClosePane={(terminalId) => closeTerminalPane(selected.id, activeTab.id, terminalId)}
+                onPaneFocus={(terminalId) => {
+                  focusedTerminalIdRef.current = terminalId
+                }}
+                onPaneTitleChange={(terminalId, title) =>
+                  renameTerminalPane(selected.id, activeTab.id, terminalId, title)
+                }
+                onLinkTask={(terminalId) => setTerminalTaskLinkTarget({ type: 'terminal', terminalId })}
               />
-            )}
+              {openFilePath !== undefined && (
+                // Layered over the terminals so they stay mounted at their size.
+                <FileViewer
+                  key={selected.id}
+                  session={selected}
+                  path={openFilePath}
+                  onOpenFile={(path) => openFileAction(selected.id, path)}
+                  onClose={() => closeOpenFile(selected.id)}
+                />
+              )}
+            </>
+          ) : (
+            <EmptyState onNewSession={() => openNewSession()} />
+          )}
+        </main>
+
+        {ready && activeWorkspaceView !== 'todo' && selected && <FileTreePanel session={selected} />}
+
+        <AddSessionDialog
+          open={newSessionOpen}
+          onOpenChange={setNewSessionOpen}
+          defaultProjectId={defaultProjectId}
+        />
+        <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
+        <NewTodoProjectDialog
+          open={newTodoProjectOpen}
+          onOpenChange={setNewTodoProjectOpen}
+        />
+        {selectedTodoProject && (
+          <>
+            <TodoProjectSettingsDialog
+              project={selectedTodoProject}
+              open={todoProjectSettingsOpen}
+              onOpenChange={setTodoProjectSettingsOpen}
+            />
+            <TodoTaskDialog
+              project={selectedTodoProject}
+              task={selectedTodoTask}
+              terminalCatalog={liveTerminals}
+              defaultColumnId={
+                todoTaskDialogColumnId ?? selectedTodoProject.columns[0]?.id ?? 'todo'
+              }
+              open={todoTaskDialogOpen}
+              onOpenChange={setTodoTaskDialogOpen}
+              onManageTerminalLink={(taskId) => setTerminalTaskLinkTarget({ type: 'task', taskId })}
+            />
+            <TodoSearch
+              open={todoSearchOpen && activeWorkspaceView === 'todo'}
+              onOpenChange={setTodoSearchOpen}
+              project={selectedTodoProject}
+              tasks={selectedTodoTasks}
+              onSelectTask={openTodoTask}
+            />
           </>
-        ) : (
-          <EmptyState onNewSession={() => openNewSession()} />
         )}
-      </main>
-
-      {ready && activeWorkspaceView !== 'todo' && selected && <FileTreePanel session={selected} />}
-
-      <AddSessionDialog
-        open={newSessionOpen}
-        onOpenChange={setNewSessionOpen}
-        defaultProjectId={defaultProjectId}
-      />
-      <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
-      <NewTodoProjectDialog
-        open={newTodoProjectOpen}
-        onOpenChange={setNewTodoProjectOpen}
-      />
-      {selectedTodoProject && (
-        <>
-          <TodoProjectSettingsDialog
-            project={selectedTodoProject}
-            open={todoProjectSettingsOpen}
-            onOpenChange={setTodoProjectSettingsOpen}
-          />
-          <TodoTaskDialog
-            project={selectedTodoProject}
-            task={selectedTodoTask}
-            terminalCatalog={liveTerminals}
-            defaultColumnId={
-              todoTaskDialogColumnId ?? selectedTodoProject.columns[0]?.id ?? 'todo'
-            }
-            open={todoTaskDialogOpen}
-            onOpenChange={setTodoTaskDialogOpen}
-            onManageTerminalLink={(taskId) => setTerminalTaskLinkTarget({ type: 'task', taskId })}
-          />
-          <TodoSearch
-            open={todoSearchOpen && activeWorkspaceView === 'todo'}
-            onOpenChange={setTodoSearchOpen}
-            project={selectedTodoProject}
-            tasks={selectedTodoTasks}
-            onSelectTask={openTodoTask}
-          />
-        </>
-      )}
-      <GitDialog
-        open={gitSession !== null}
-        session={gitSession}
-        onOpenChange={(open) => {
-          if (!open) setGitSessionId(null)
-        }}
-      />
-      <SessionSwitcher open={sessionSwitcherOpen} onOpenChange={setSessionSwitcherOpen} />
-      <TerminalTaskLinkDialog
-        target={terminalTaskLinkTarget}
-        terminals={liveTerminals}
-        onOpenChange={(open) => {
-          if (!open) setTerminalTaskLinkTarget(null)
-        }}
-      />
+        <GitDialog
+          open={gitSession !== null}
+          session={gitSession}
+          onOpenChange={(open) => {
+            if (!open) setGitSessionId(null)
+          }}
+        />
+        <SessionSwitcher open={sessionSwitcherOpen} onOpenChange={setSessionSwitcherOpen} />
+        <TerminalTaskLinkDialog
+          target={terminalTaskLinkTarget}
+          terminals={liveTerminals}
+          onOpenChange={(open) => {
+            if (!open) setTerminalTaskLinkTarget(null)
+          }}
+        />
+      </div>
     </div>
   )
 }

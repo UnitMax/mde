@@ -133,6 +133,7 @@ import { OpenCodeSessionsDialog } from '@/components/OpenCodeSessionsDialog'
 import { isOpenCodeSessionsShortcut } from '@/lib/opencode-sessions'
 import { AGENT_COMMAND_OPTIONS, agentCommandSettingError } from '@/lib/agent-commands'
 import { openCodeTuiInstanceLabel } from '@/lib/opencode-tui-instances'
+import { syncWindowChrome } from '@/lib/window-chrome'
 import { isTerminalLauncherShortcut } from '@/lib/terminal-launcher'
 
 const FALLBACK_SIZE: PtySize = { cols: 80, rows: 24 }
@@ -1304,6 +1305,7 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
     setSettings(next)
     saveTerminalSettings(next)
     applyApplicationTheme(next.theme)
+    if (patch.theme) syncWindowChrome(next.theme)
     applyTerminalSettings(next)
 
     terminalIds.forEach((terminalId) => {

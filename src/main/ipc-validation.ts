@@ -31,6 +31,8 @@ const path = string(IPC_LIMITS.path)
 const optionalPath = string(IPC_LIMITS.path, true)
 const text = string(IPC_LIMITS.text, true, true)
 const boolean: Validator = (value) => typeof value === 'boolean'
+/** Only #rgb or #rrggbb: the value reaches a native API, so no other CSS color syntax is accepted. */
+const hexColor: Validator = (value) => typeof value === 'string' && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value)
 const noPayload: Validator = (value) => value === undefined
 const optional = (validate: Validator): Validator => (value) => value === undefined || validate(value)
 const nullable = (validate: Validator): Validator => (value) => value === null || validate(value)
@@ -200,6 +202,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.opencodeAlertsSetEnabled]: enabled,
   [IpcChannels.windowModeGet]: noPayload,
   [IpcChannels.windowModeSet]: object({ mode: oneOf('normal', 'mini') }),
+  [IpcChannels.windowChromeSet]: object({ color: hexColor, symbolColor: hexColor }),
 } satisfies Record<IpcChannel, Validator>
 
 export function assertIpcPayload(channel: IpcChannel, payload: unknown): void {

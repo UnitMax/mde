@@ -152,6 +152,9 @@ const api: RendererApi = {
     get: () => ipcRenderer.invoke(IpcChannels.windowModeGet),
     set: (req) => ipcRenderer.invoke(IpcChannels.windowModeSet, req),
     onChanged: (listener) => subscribe<WindowMode>(IpcEvents.windowModeChanged, listener)
+  },
+  windowChrome: {
+    set: (req) => ipcRenderer.invoke(IpcChannels.windowChromeSet, req)
   }
 }
 

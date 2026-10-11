@@ -83,6 +83,7 @@ export interface MiniWindowTarget {
   getMinimumSize(): number[]
   setMinimumSize(width: number, height: number): void
   setAlwaysOnTop(flag: boolean, level?: 'floating'): void
+  setMaximizable(flag: boolean): void
   focus(): void
   once(event: 'leave-full-screen', listener: () => void): unknown
 }
@@ -162,8 +163,12 @@ export class MiniWindowController {
     }
 
     if (window.isMinimized()) window.restore()
-    this.lastMiniBounds = window.getBounds()
+    // The normal-state bounds, so a mini window the user maximized is remembered at its
+    // list size. Maximizing it is only prevented where the platform supports that.
+    this.lastMiniBounds = window.getNormalBounds()
+    if (window.isMaximized()) window.unmaximize()
     window.setAlwaysOnTop(false)
+    window.setMaximizable(true)
     window.setMinimumSize(saved.minimumSize[0] ?? 0, saved.minimumSize[1] ?? 0)
     window.setBounds(saved.bounds)
     if (saved.maximized) window.maximize()
@@ -190,6 +195,8 @@ export class MiniWindowController {
     }
 
     if (window.isMaximized()) window.unmaximize()
+    // Double-clicking the title bar or pressing its maximize button must not blow the list up.
+    window.setMaximizable(false)
     window.setMinimumSize(MINI_WINDOW_MIN_SIZE.width, MINI_WINDOW_MIN_SIZE.height)
     window.setBounds(
       miniWindowBounds(this.lastMiniBounds, this.deps.workAreaFor(this.lastMiniBounds ?? saved.bounds))

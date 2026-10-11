@@ -125,6 +125,7 @@ function fakeWindow(initial: Partial<FakeState> = {}) {
     getMinimumSize: () => state.minimumSize,
     setMinimumSize: vi.fn((width: number, height: number) => { state.minimumSize = [width, height] }),
     setAlwaysOnTop: vi.fn(),
+    setMaximizable: vi.fn(),
     focus: vi.fn(),
     once: vi.fn((_event: 'leave-full-screen', listener: () => void) => { leaveFullScreen.push(listener) })
   } satisfies MiniWindowTarget
@@ -157,6 +158,17 @@ describe('MiniWindowController', () => {
     expect(fake.target.setAlwaysOnTop).toHaveBeenCalledWith(true, 'floating')
     expect(onChange).toHaveBeenCalledOnce()
     expect(onChange).toHaveBeenCalledWith('mini')
+  })
+
+  it('is not maximizable while mini, so the title bar cannot blow the list up', () => {
+    const fake = fakeWindow()
+    const { controller } = controllerFor(fake.target)
+
+    controller.enter()
+    expect(fake.target.setMaximizable).toHaveBeenLastCalledWith(false)
+
+    controller.exit()
+    expect(fake.target.setMaximizable).toHaveBeenLastCalledWith(true)
   })
 
   it('lowers the minimum size before resizing so the shrink is not clamped', () => {
@@ -266,11 +278,31 @@ describe('MiniWindowController', () => {
     controller.enter()
     const moved = { x: 40, y: 400, width: 360, height: 500 }
     fake.state.bounds = moved
+    fake.state.normalBounds = moved
     controller.exit()
     controller.enter()
 
     expect(workAreaFor).toHaveBeenLastCalledWith(moved)
     expect(fake.target.setBounds).toHaveBeenLastCalledWith(moved)
+  })
+
+  it('restores cleanly from a mini window the user maximized, remembering its list size', () => {
+    const fake = fakeWindow()
+    const { controller } = controllerFor(fake.target)
+    controller.enter()
+    const listBounds = { ...fake.state.normalBounds }
+
+    // Where setMaximizable is unsupported (Linux), double-clicking the bar can maximize it.
+    fake.state.maximized = true
+    fake.state.bounds = workArea
+    controller.exit()
+
+    expect(fake.target.unmaximize).toHaveBeenCalledOnce()
+    expect(fake.state.maximized).toBe(false)
+    expect(fake.state.bounds).toEqual({ x: 100, y: 80, width: 1280, height: 820 })
+
+    controller.enter()
+    expect(fake.target.setBounds).toHaveBeenLastCalledWith(listBounds)
   })
 
   it('is idempotent and toggles between the two modes', () => {
