@@ -21,6 +21,7 @@ import {
   type RemoveSessionTabRequest,
   type ResizePtyRequest,
   type ResolvePathRequest,
+  type SetWindowModeRequest,
   type TerminalPalette,
   type PtyDropResult,
   type PtyDropRejection,
@@ -69,7 +70,8 @@ import type {
   PtyStatus,
   AgentCommand,
   CodingAgent,
-  TerminalLaunchDirectory
+  TerminalLaunchDirectory,
+  WindowMode
 } from '@shared/types'
 import { assertIpcSender, type IpcSecurityContext } from './ipc-security'
 import { assertIpcPayload, type IpcChannel } from './ipc-validation'
@@ -78,6 +80,7 @@ import { fileTreeDropFile, resolveTerminalDrop } from './pty/drop'
 import type { OpenCodeTuiStatusManager } from './opencode/tui-status'
 import type { OpenCodeTokenRatePluginManager } from './opencode/token-rate'
 import type { OpenCodeAlertManager } from './opencode/alerts'
+import type { MiniWindowController } from './mini-window'
 import { createAppInfo } from '@shared/app-info'
 import { isWslAvailable, listDistros, runWslCommand } from './wsl/distros'
 import {
@@ -383,7 +386,8 @@ export function registerIpcHandlers(
   ptyManager: PtyManager,
   opencodeTuiStatusManager: OpenCodeTuiStatusManager,
   opencodeTokenRatePluginManager: OpenCodeTokenRatePluginManager,
-  opencodeAlertManager: OpenCodeAlertManager
+  opencodeAlertManager: OpenCodeAlertManager,
+  miniWindow: MiniWindowController
 ): void {
   const pendingEnsures = new Map<string, symbol>()
   const handle = <Req, Res>(
@@ -537,6 +541,12 @@ export function registerIpcHandlers(
       return opencodeAlertManager.setEnabled(req.enabled)
     }
   )
+
+  handle<void, WindowMode>(IpcChannels.windowModeGet, () => miniWindow.mode)
+  handle<SetWindowModeRequest, WindowMode>(IpcChannels.windowModeSet, (req) => {
+    miniWindow.set(req.mode)
+    return miniWindow.mode
+  })
 
   handle<OpenCodeSessionsRequest, OpenCodeSessionSummary[]>(IpcChannels.opencodeSessionsList, async (req) => {
     if (!req || typeof req.sessionId !== 'string' || typeof req.sourceTerminalId !== 'string') {

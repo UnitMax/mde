@@ -52,6 +52,12 @@ export function getKeyboardShortcutGroups(
           keys: ['Ctrl+Shift+O'],
           description: 'Browse OpenCode sessions from every directory in the current WSL distro.',
           note: 'Available from a focused Windows/WSL terminal.'
+        },
+        {
+          id: 'mini-window-toggle',
+          keys: ['F12'],
+          description: 'Toggle the always-on-top mini window that lists your agents.',
+          note: 'Works while MDE is focused. Clicking an agent restores the full window and focuses its terminal.'
         }
       ]
     },

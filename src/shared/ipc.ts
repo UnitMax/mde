@@ -37,7 +37,8 @@ import type {
   PtyStatus,
   TerminalLaunch,
   OpenCodeSessionsRequest,
-  OpenCodeSessionSummary
+  OpenCodeSessionSummary,
+  WindowMode
 } from './types'
 
 export interface WorkspaceData {
@@ -124,6 +125,9 @@ export const IpcChannels = {
   opencodeAlertsSettings: 'opencode-alerts:settings',
   opencodeAlertsSetEnabled: 'opencode-alerts:set-enabled',
 
+  windowModeGet: 'window-mode:get',
+  windowModeSet: 'window-mode:set',
+
   appInfo: 'app:info',
   platformInfo: 'platform:info'
 } as const
@@ -135,6 +139,7 @@ export const IpcEvents = {
   ptyDirectory: 'pty:directory',
   opencodeTuiStatus: 'opencode-tui:status',
   opencodeTuiInstances: 'opencode-tui:instances',
+  windowModeChanged: 'window-mode:changed',
 } as const
 
 export interface PlatformInfo {
@@ -285,6 +290,10 @@ export interface RendererDropPtyFilesRequest {
 export interface UpdatePtyPaletteRequest {
   terminalId: string
   palette: TerminalPalette
+}
+
+export interface SetWindowModeRequest {
+  mode: WindowMode
 }
 
 export interface UpdateProjectRequest {
@@ -452,5 +461,10 @@ export interface RendererApi {
   opencodeAlerts: {
     settings(): Promise<OpenCodeAlertSettings>
     setEnabled(req: OpenCodeAlertSetEnabledRequest): Promise<OpenCodeAlertSettings>
+  }
+  windowMode: {
+    get(): Promise<WindowMode>
+    set(req: SetWindowModeRequest): Promise<WindowMode>
+    onChanged(listener: (mode: WindowMode) => void): () => void
   }
 }

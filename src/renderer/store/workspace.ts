@@ -22,7 +22,8 @@ import type {
   PtyStatus,
   Session,
   SessionColor,
-  SessionIcon
+  SessionIcon,
+  WindowMode
 } from '@shared/types'
 import { disposeSession } from '@/terminal/sessions'
 import type { TerminalTaskLinks } from '@/lib/terminal-task-links'
@@ -94,6 +95,8 @@ interface WorkspaceState {
   opencodeTuiReadRevisions: OpenCodeTuiReadRevisions
   opencodeTuiInstanceLabelMode: OpenCodeTuiInstanceLabelMode
   platform: PlatformInfo | null
+  /** Owned by the main process, which resizes the window; mirrored here to pick the UI. */
+  windowMode: WindowMode
   wslAvailable: boolean
   distros: Distro[]
   sidebarCollapsed: boolean
@@ -158,6 +161,7 @@ interface WorkspaceState {
   appendOpenCodeTuiStatus: (update: OpenCodeTuiStatusUpdate) => void
   appendOpenCodeTuiInstances: (update: OpenCodeTuiInstancesUpdate) => void
   setOpenCodeTuiInstanceLabelMode: (mode: OpenCodeTuiInstanceLabelMode) => Promise<void>
+  setWindowMode: (mode: WindowMode) => Promise<void>
   refreshDistros: () => Promise<void>
 }
 
@@ -179,6 +183,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   opencodeTuiReadRevisions: {},
   opencodeTuiInstanceLabelMode: 'numbered',
   platform: null,
+  windowMode: 'normal',
   wslAvailable: false,
   distros: [],
   sidebarCollapsed: false,
@@ -195,20 +200,32 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       window.api.pty.onDirectory((update) => get().setTerminalDirectory(update))
       window.api.opencodeTui.onStatus((update) => get().appendOpenCodeTuiStatus(update))
       window.api.opencodeTui.onInstances((update) => get().appendOpenCodeTuiInstances(update))
+      window.api.windowMode.onChanged((windowMode) => set({ windowMode }))
     }
 
-    const [platform, workspace, statuses, directories, wslAvailable, opencodeTuiSettings] = await Promise.all([
+    const [
+      platform,
+      workspace,
+      statuses,
+      directories,
+      wslAvailable,
+      opencodeTuiSettings,
+      windowMode
+    ] = await Promise.all([
       window.api.platform.info(),
       window.api.workspace.list(),
       window.api.pty.statuses(),
       window.api.pty.directories(),
       window.api.wsl.available(),
-      window.api.opencodeTui.settings()
+      window.api.opencodeTui.settings(),
+      // A renderer reload can happen while the window is still in mini mode.
+      window.api.windowMode.get()
     ])
 
     const { projects, todoProjects, todoTasks, sessions } = workspace as WorkspaceData
     set({
       platform,
+      windowMode,
       projects,
       todoProjects,
       todoTasks,
@@ -789,6 +806,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   setOpenCodeTuiInstanceLabelMode: async (mode) => {
     const settings = await window.api.opencodeTui.setInstanceLabelMode({ mode })
     set({ opencodeTuiInstanceLabelMode: settings.instanceLabelMode })
+  },
+
+  setWindowMode: async (mode) => {
+    set({ windowMode: await window.api.windowMode.set({ mode }) })
   },
 
   refreshDistros: async () => {

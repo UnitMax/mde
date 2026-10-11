@@ -3,6 +3,7 @@ import { Plus, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AddSessionDialog } from '@/components/AddProjectDialog'
 import { GitDialog } from '@/components/GitDialog'
+import { MiniAgentWindow } from '@/components/MiniAgentWindow'
 import { FileTreePanel } from '@/components/FileTreePanel'
 import { FileViewer } from '@/components/FileViewer'
 import { NewProjectDialog } from '@/components/NewProjectDialog'
@@ -77,6 +78,9 @@ export function App(): JSX.Element {
   const todoTasks = useWorkspace((state) => state.todoTasks)
   const terminalStatuses = useWorkspace((state) => state.statuses)
   const opencodeTuiInstances = useWorkspace((state) => state.opencodeTuiInstances)
+  const opencodeTuiInstanceLabelMode = useWorkspace((state) => state.opencodeTuiInstanceLabelMode)
+  const windowMode = useWorkspace((state) => state.windowMode)
+  const setWindowMode = useWorkspace((state) => state.setWindowMode)
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
   const openFiles = useWorkspace((state) => state.openFiles)
   const openFileAction = useWorkspace((state) => state.openFile)
@@ -689,6 +693,23 @@ export function App(): JSX.Element {
     ? layoutForTab(selected, activeTab.id)
     : undefined
   const terminalLayoutsForSidebar = terminalLayouts
+
+  // The main process has already shrunk the window. Terminals are not mounted here,
+  // so nothing resizes their PTYs; they stay alive and reattach when restored.
+  if (windowMode === 'mini') {
+    return (
+      <MiniAgentWindow
+        sessions={sessions}
+        opencodeTuiInstances={opencodeTuiInstances}
+        terminalLayouts={terminalLayouts}
+        labelMode={opencodeTuiInstanceLabelMode}
+        onRestore={() => void setWindowMode('normal')}
+        onFocusAgent={(sessionId, tabId, terminalId) => {
+          void setWindowMode('normal').then(() => focusTerminal(sessionId, tabId, terminalId))
+        }}
+      />
+    )
+  }
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-bg">

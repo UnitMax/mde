@@ -15,6 +15,7 @@ describe('renderer workspace event bridge', () => {
   const tuiStatusListeners: Array<(update: OpenCodeTuiStatusUpdate) => void> = []
   const tuiInstanceListeners: Array<(update: OpenCodeTuiInstancesUpdate) => void> = []
   const directoryListeners: Array<(update: { terminalId: string; directory: string | null }) => void> = []
+  const windowModeListeners: Array<(mode: 'normal' | 'mini') => void> = []
   const api = {
     platform: { info: vi.fn(async () => ({ platform: 'linux', arch: 'x64' })) },
     workspace: {
@@ -63,6 +64,14 @@ describe('renderer workspace event bridge', () => {
     wsl: {
       available: vi.fn(async () => false),
       distros: vi.fn(async () => [])
+    },
+    windowMode: {
+      get: vi.fn(async (): Promise<'normal' | 'mini'> => 'normal'),
+      set: vi.fn(async ({ mode }: { mode: 'normal' | 'mini' }) => mode),
+      onChanged: vi.fn((listener: (mode: 'normal' | 'mini') => void) => {
+        windowModeListeners.push(listener)
+        return vi.fn()
+      })
     },
     opencodeTui: {
       settings: vi.fn(async () => ({
@@ -113,6 +122,7 @@ describe('renderer workspace event bridge', () => {
     tuiStatusListeners.length = 0
     tuiInstanceListeners.length = 0
     directoryListeners.length = 0
+    windowModeListeners.length = 0
     vi.stubGlobal('window', { api })
     useWorkspace.setState({
       opencodeTuiStatuses: {},
@@ -125,8 +135,12 @@ describe('renderer workspace event bridge', () => {
       terminalTaskLinks: {},
       selectedSessionId: null,
       selectedTodoProjectId: null,
-      activeWorkspaceView: 'projects'
+      activeWorkspaceView: 'projects',
+      windowMode: 'normal'
     })
+    api.windowMode.get.mockClear()
+    api.windowMode.set.mockClear()
+    api.windowMode.onChanged.mockClear()
     api.pty.onExit.mockClear()
     api.sessions.create.mockReset()
     api.sessions.duplicate.mockReset()
@@ -701,6 +715,11 @@ describe('renderer workspace event bridge', () => {
     expect(api.pty.onDirectory).toHaveBeenCalledTimes(1)
     expect(api.opencodeTui.onStatus).toHaveBeenCalledTimes(1)
     expect(api.opencodeTui.onInstances).toHaveBeenCalledTimes(1)
+    expect(api.windowMode.onChanged).toHaveBeenCalledTimes(1)
+    windowModeListeners[0]?.('mini')
+    expect(useWorkspace.getState().windowMode).toBe('mini')
+    windowModeListeners[0]?.('normal')
+    expect(useWorkspace.getState().windowMode).toBe('normal')
     expect(useWorkspace.getState().terminalDirectories).toEqual({
       'session-1:snapshot': '/home/me/snapshot'
     })
@@ -714,5 +733,21 @@ describe('renderer workspace event bridge', () => {
     expect(useWorkspace.getState().terminalDirectories).toEqual({
       'session-1:snapshot': '/home/me/snapshot'
     })
+  })
+
+  it('adopts a window mode that is already active when the renderer starts', async () => {
+    api.windowMode.get.mockResolvedValueOnce('mini')
+    await useWorkspace.getState().init()
+    expect(useWorkspace.getState().windowMode).toBe('mini')
+  })
+
+  it('requests a window mode from the main process and adopts its answer', async () => {
+    await useWorkspace.getState().setWindowMode('mini')
+    expect(api.windowMode.set).toHaveBeenCalledWith({ mode: 'mini' })
+    expect(useWorkspace.getState().windowMode).toBe('mini')
+
+    api.windowMode.set.mockResolvedValueOnce('mini')
+    await useWorkspace.getState().setWindowMode('normal')
+    expect(useWorkspace.getState().windowMode).toBe('mini')
   })
 })

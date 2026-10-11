@@ -50,6 +50,21 @@ The expanded Projects sidebar includes a collapsible Agents overview below the s
 currently reported OpenCode instances from every session with their originating session, tab, and
 status.
 
+### Mini agents window
+
+F12 shrinks the main window into a small always-on-top list of the same OpenCode agents, grouped by
+session, with a status summary and a restore button; F12 again restores the full window. It is the
+same `BrowserWindow` and renderer, not a second window, so the IPC sender policy is unchanged and
+every terminal keeps running. The main process (`src/main/mini-window.ts`) owns the geometry: it
+catches F12 in `before-input-event` while MDE is focused (there is no global hotkey, and the key
+never reaches the terminal), remembers the previous bounds and maximized or fullscreen state in
+memory, lowers the minimum size, and sets always-on-top. It then tells the renderer the new mode
+over `window-mode:changed`, and `App` renders `MiniAgentWindow` instead of the sidebar and
+terminals. Unmounting the terminals also stops their resize observers, so shrinking the window
+never reflows a running TUI; they reattach and refit on restore. Clicking an agent restores the
+full window and focuses that terminal. The mini window position is remembered only until MDE quits
+and nothing about it is written to disk.
+
 ### To Do projects
 
 A To Do project is a separate kind of project: a board with a name, an uppercase shorthand

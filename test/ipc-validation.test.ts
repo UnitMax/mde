@@ -75,6 +75,8 @@ const validPayloads = {
   [IpcChannels.opencodeTokenRatePluginRemove]: plugin,
   [IpcChannels.opencodeAlertsSettings]: undefined,
   [IpcChannels.opencodeAlertsSetEnabled]: enabled,
+  [IpcChannels.windowModeGet]: undefined,
+  [IpcChannels.windowModeSet]: { mode: 'mini' },
 } satisfies Record<IpcChannel, unknown>
 
 const channels = Object.values(IpcChannels)
@@ -136,6 +138,8 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.sessionsUpdate, { id: 'session', patch: { icon: 'anything' } })
     rejects(IpcChannels.opencodeTuiSetEnabled, { enabled: 'true' })
     rejects(IpcChannels.opencodeTuiSetInstanceLabelMode, { mode: 'unknown' })
+    rejects(IpcChannels.windowModeSet, { mode: 'fullscreen' })
+    rejects(IpcChannels.windowModeSet, { mode: undefined })
     for (const distro of ['../other', 'Ubuntu\n', ' '.repeat(129) + 'Ubuntu']) {
       rejects(IpcChannels.opencodeTuiPluginInstall, { distro })
     }

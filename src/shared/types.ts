@@ -87,6 +87,9 @@ export type SessionColor =
   | 'green'
   | 'teal'
 
+/** The main window is either its normal self or the always-on-top mini agents list. */
+export type WindowMode = 'normal' | 'mini'
+
 /** Narrow platform union so the renderer does not need Node's types. */
 export type HostPlatform = 'win32' | 'linux' | 'darwin' | 'other'
 

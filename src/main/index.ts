@@ -1,9 +1,10 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, session, shell } from 'electron'
+import { app, BrowserWindow, screen, session, shell } from 'electron'
 import { IpcEvents } from '@shared/ipc'
 import { registerIpcHandlers } from './ipc'
 import { rendererEntryUrl } from './ipc-security'
 import { OpenCodeAlertManager } from './opencode/alerts'
+import { getMiniWindowAction, MiniWindowController } from './mini-window'
 import { OpenCodeTuiStatusManager } from './opencode/tui-status'
 import { OpenCodeTokenRatePluginManager } from './opencode/token-rate'
 import { PtyManager } from './pty/manager'
@@ -15,6 +16,18 @@ import { installRendererProtocol, registerRendererScheme } from './renderer-prot
 
 let mainWindow: BrowserWindow | null = null
 const rendererUrl = rendererEntryUrl(app.isPackaged, process.env.ELECTRON_RENDERER_URL)
+
+// Shrinks this window into the always-on-top agents list; the screen module is only
+// touched when F12 is pressed, which is always after `ready`.
+const miniWindow = new MiniWindowController({
+  getWindow: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
+  workAreaFor: (bounds) => screen.getDisplayMatching(bounds).workArea,
+  onChange: (mode) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(IpcEvents.windowModeChanged, mode)
+    }
+  }
+})
 
 const opencodeAlertManager = new OpenCodeAlertManager({
   getWindow: () => mainWindow,
@@ -80,6 +93,7 @@ function createWindow(): void {
   mainWindow.on('focus', () => opencodeAlertManager.clearFlashing())
   mainWindow.on('closed', () => {
     opencodeAlertManager.clearFlashing()
+    miniWindow.reset()
     mainWindow = null
   })
 
@@ -91,6 +105,15 @@ function createWindow(): void {
   )
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault())
   mainWindow.webContents.on('before-input-event', (event, input) => {
+    // Handled here rather than in the renderer so it works from every pane and
+    // dialog, and so the terminal never receives F12's escape sequence.
+    const miniWindowAction = getMiniWindowAction(input)
+    if (miniWindowAction) {
+      event.preventDefault()
+      if (miniWindowAction === 'toggle') miniWindow.toggle()
+      return
+    }
+
     const action = getZoomAction(input)
     if (!action) return
 
@@ -139,7 +162,8 @@ if (!app.requestSingleInstanceLock()) {
       ptyManager,
       opencodeTuiStatusManager,
       opencodeTokenRatePluginManager,
-      opencodeAlertManager
+      opencodeAlertManager,
+      miniWindow
     )
     createWindow()
 

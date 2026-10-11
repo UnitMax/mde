@@ -44,7 +44,7 @@ describe('KeyboardShortcutsSettings', () => {
     const section = container.querySelector<HTMLElement>('[data-testid="keyboard-shortcuts-settings"]')
 
     expect(section).not.toBeNull()
-    expect(section?.querySelectorAll('[data-testid^="keyboard-shortcut-row-"]')).toHaveLength(34)
+    expect(section?.querySelectorAll('[data-testid^="keyboard-shortcut-row-"]')).toHaveLength(35)
     expect(section?.querySelectorAll('button')).toHaveLength(0)
     const rows = Array.from(section?.querySelectorAll<HTMLElement>('[data-testid^="keyboard-shortcut-row-"]') ?? [])
     expect(rows.every((row) => row.classList.contains('grid-cols-[12rem_minmax(0,1fr)]'))).toBe(true)

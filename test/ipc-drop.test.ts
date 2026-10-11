@@ -86,7 +86,7 @@ function nativeSession(): Session {
 }
 
 function registerForTest(ptyManager: { terminalInfo: ReturnType<typeof vi.fn>; status: ReturnType<typeof vi.fn> }): void {
-  registerIpcHandlers(security, ptyManager as never, {} as never, {} as never, {} as never)
+  registerIpcHandlers(security, ptyManager as never, {} as never, {} as never, {} as never, {} as never)
 }
 
 function handler(channel: string): Handler {
@@ -220,7 +220,7 @@ describe('registered IPC security boundary', () => {
   beforeEach(() => {
     electronMock.handlers.clear()
     vi.clearAllMocks()
-    registerIpcHandlers(security, {} as never, {} as never, {} as never, {} as never)
+    registerIpcHandlers(security, {} as never, {} as never, {} as never, {} as never, {} as never)
   })
 
   it('authenticates every channel before inspecting hostile payloads', async () => {

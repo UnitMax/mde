@@ -5,7 +5,8 @@ import type {
   OpenCodeTuiStatusUpdate,
   PtyDataChunk,
   PtyDirectoryUpdate,
-  PtyExitInfo
+  PtyExitInfo,
+  WindowMode
 } from '@shared/types'
 
 function subscribe<T>(channel: string, listener: (payload: T) => void): () => void {
@@ -146,6 +147,11 @@ const api: RendererApi = {
   opencodeAlerts: {
     settings: () => ipcRenderer.invoke(IpcChannels.opencodeAlertsSettings),
     setEnabled: (req) => ipcRenderer.invoke(IpcChannels.opencodeAlertsSetEnabled, req)
+  },
+  windowMode: {
+    get: () => ipcRenderer.invoke(IpcChannels.windowModeGet),
+    set: (req) => ipcRenderer.invoke(IpcChannels.windowModeSet, req),
+    onChanged: (listener) => subscribe<WindowMode>(IpcEvents.windowModeChanged, listener)
   }
 }
 

@@ -109,6 +109,7 @@ function registerForTest(
     { terminalInfo, ensure } as never,
     {} as never,
     {} as never,
+    {} as never,
     {} as never
   )
 }

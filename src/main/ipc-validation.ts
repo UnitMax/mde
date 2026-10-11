@@ -198,6 +198,8 @@ export const ipcPayloadValidators = {
   [IpcChannels.opencodeTokenRatePluginRemove]: pluginRequest,
   [IpcChannels.opencodeAlertsSettings]: noPayload,
   [IpcChannels.opencodeAlertsSetEnabled]: enabled,
+  [IpcChannels.windowModeGet]: noPayload,
+  [IpcChannels.windowModeSet]: object({ mode: oneOf('normal', 'mini') }),
 } satisfies Record<IpcChannel, Validator>
 
 export function assertIpcPayload(channel: IpcChannel, payload: unknown): void {
