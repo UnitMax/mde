@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_TITLE_BAR_COLORS,
+  isDarkColor,
   TITLE_BAR_HEIGHT,
   TitleBarController,
   titleBarOverlayHeight,
@@ -20,7 +21,9 @@ function fakeWindow(destroyed = false) {
 }
 
 function controllerFor(platform: string, window: TitleBarTarget | null) {
-  return new TitleBarController({ platform, getWindow: () => window })
+  const setThemeSource = vi.fn()
+  const controller = new TitleBarController({ platform, getWindow: () => window, setThemeSource })
+  return Object.assign(controller, { setThemeSource })
 }
 
 describe('windowChromeOptions', () => {
@@ -116,5 +119,49 @@ describe('TitleBarController', () => {
     const fake = fakeWindow(true)
     controllerFor('win32', fake.target).setZoom(1.2)
     expect(fake.target.setTitleBarOverlay).not.toHaveBeenCalled()
+  })
+})
+
+describe('isDarkColor', () => {
+  it.each(['#000', '#000000', '#10141b', '#211614', '#131f2b', '#080808', '#333333'])(
+    'treats %s as dark',
+    (color) => expect(isDarkColor(color)).toBe(true)
+  )
+
+  it.each(['#fff', '#ffffff', '#f5f5f5', '#d8dee9', '#ffcc00'])('treats %s as light', (color) => {
+    expect(isDarkColor(color)).toBe(false)
+  })
+
+  it('reads the three-digit form the way CSS does', () => {
+    expect(isDarkColor('#abc')).toBe(isDarkColor('#aabbcc'))
+  })
+})
+
+describe('TitleBarController theme source', () => {
+  it('starts dark, so the first window already gets a light hover wash', () => {
+    const controller = controllerFor('win32', null)
+
+    expect(controller.setThemeSource).toHaveBeenCalledOnce()
+    expect(controller.setThemeSource).toHaveBeenCalledWith('dark')
+  })
+
+  it('follows the bar color rather than the OS setting', () => {
+    const controller = controllerFor('win32', null)
+
+    controller.setColors({ color: '#ffffff', symbolColor: '#000000' })
+    expect(controller.setThemeSource).toHaveBeenLastCalledWith('light')
+
+    controller.setColors(colors)
+    expect(controller.setThemeSource).toHaveBeenLastCalledWith('dark')
+  })
+
+  it('only touches the native theme when the brightness changes', () => {
+    const controller = controllerFor('win32', null)
+
+    controller.setColors(colors)
+    controller.setColors(DEFAULT_TITLE_BAR_COLORS)
+    controller.setZoom(1.2)
+
+    expect(controller.setThemeSource).toHaveBeenCalledOnce()
   })
 })

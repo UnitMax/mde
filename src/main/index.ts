@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, screen, session, shell } from 'electron'
+import { app, BrowserWindow, nativeTheme, screen, session, shell } from 'electron'
 import { IpcEvents } from '@shared/ipc'
 import { registerIpcHandlers } from './ipc'
 import { rendererEntryUrl } from './ipc-security'
@@ -32,7 +32,10 @@ const miniWindow = new MiniWindowController({
 
 const titleBar = new TitleBarController({
   platform: process.platform,
-  getWindow: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null)
+  getWindow: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
+  setThemeSource: (source) => {
+    nativeTheme.themeSource = source
+  }
 })
 
 const opencodeAlertManager = new OpenCodeAlertManager({

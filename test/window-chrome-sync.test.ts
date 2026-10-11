@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { isDarkColor } from '../src/main/window-chrome'
 import { syncWindowChrome, windowChromeColors } from '../src/renderer/lib/window-chrome'
 import { APPLICATION_THEMES, getApplicationTheme } from '../src/renderer/theme/themes'
 
@@ -13,6 +14,13 @@ describe('windowChromeColors', () => {
     expect(colors.color).toMatch(hex)
     expect(colors.symbolColor).toMatch(hex)
   })
+
+  it.each(APPLICATION_THEMES.map((theme) => theme.id))(
+    'keeps the native theme dark for %s, so the button hover wash is visible',
+    (id) => {
+      expect(isDarkColor(windowChromeColors(id).color)).toBe(true)
+    }
+  )
 })
 
 describe('syncWindowChrome', () => {

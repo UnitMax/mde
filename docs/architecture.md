@@ -68,6 +68,12 @@ page but not the native buttons, so the main process also sizes the overlay to 3
 factor, which keeps it aligned with the 32 px bar. The bar height is defined in both
 `TITLE_BAR_HEIGHT` and the `h-8` class of `TitleBar`; change them together.
 
+The hover and pressed backgrounds of the minimize and maximize buttons are a fixed wash of the
+OS's own caption color, not something the app can set, and that color follows the OS light or dark
+setting. On a dark bar under a light OS theme the wash is black and the hover is invisible, so the
+main process sets `nativeTheme.themeSource` to match the brightness of the bar color. The close
+button keeps its fixed red.
+
 ### Mini agents window
 
 F12 shrinks the main window into a small always-on-top list of the same OpenCode agents, grouped by
