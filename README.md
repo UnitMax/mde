@@ -38,6 +38,7 @@ npm run typecheck
 ```sh
 npm run build             # typecheck, bundle, then package for the current platform
 npm run build:win         # Windows ZIP    -> dist/mde-<version>-win.zip
+npm run build:win:dir     # Windows app    -> dist/win-unpacked/mde.exe (no ZIP)
 npm run build:linux       # AppImage + deb  -> dist/mde-<version>.AppImage, .deb
 ```
 
@@ -51,6 +52,17 @@ the Windows `node_modules` directory until the dependency or native build inputs
 clean dependency install, run `npm run build:win:remote -- --force-deps`. Requires Node.js and
 Visual Studio Build Tools ("Desktop development with C++") installed on Windows first (see
 Requirements above).
+
+For faster local Windows testing from WSL, skip ZIP creation:
+
+```sh
+npm run build:win:remote -- --dir
+```
+
+This still runs the license and type checks, bundles and packages the application, and audits
+the output. It prints the Windows path to `dist\win-unpacked\mde.exe` after the audit succeeds.
+Close any packaged MDE instance using that directory before rebuilding. You can combine
+`--dir` with `--force-deps` in either order. Run the default command when you need a release ZIP.
 
 ## Licensing
 

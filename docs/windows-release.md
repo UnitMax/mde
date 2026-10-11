@@ -47,6 +47,24 @@ every launch, which is the generic pattern behavioral heuristics are written
 against, and an unsigned installer buys back little of that. A ZIP has no
 self-extracting stub at all.
 
+## Local testing without a ZIP
+
+For local testing, close every packaged MDE instance using the staging directory,
+then run:
+
+```bash
+npm run build:win:remote -- --dir
+```
+
+This creates only `dist/win-unpacked`, skipping ZIP compression while retaining
+the license checks, type checks, application compilation, and package audit.
+After the audit succeeds, the command prints the Windows path to `mde.exe`.
+The staging `dist` is still emptied first, including any ZIP from an earlier run.
+
+To also reinstall the cached Windows dependencies, add `--force-deps`; the flags
+can appear in either order. On native Windows, use `npm run build:win:dir`.
+For a release, use the default ZIP build and verify the extracted archive below.
+
 ## Verify Windows behavior
 
 Extract `dist\mde-<version>-win.zip` into an empty folder and run `mde.exe` from
@@ -107,6 +125,17 @@ extracting the application. Do not upload `builder-debug.yml`,
 from a build whose package audit failed.
 
 ## Known gaps
+
+Closing MDE with several terminals running can trigger the native
+`remove_pty_baton(baton->id)` assertion in `node-pty` 1.1.0's Windows ConPTY
+cleanup. This strongly matches the upstream terminal-handle race tracked in
+[node-pty issue #921](https://github.com/microsoft/node-pty/issues/921) and fixed
+by [PR #922](https://github.com/microsoft/node-pty/pull/922). The fix is currently
+available in the 1.2 beta releases. Keep the stable dependency for now; update
+`node-pty` once a stable release includes this fix, refresh the lockfile and
+third-party notices, and run the dependency audit. After upgrading, verify
+repeated application shutdown with several PowerShell and WSL terminals running,
+including panes in other tabs and sessions, using the extracted Windows ZIP.
 
 Releases are unsigned, and no checksum file is published alongside them, so a user
 who receives a modified archive has no way to detect it. The `OriginalFilename`
