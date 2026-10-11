@@ -8,8 +8,8 @@ const TRAFFIC_LIGHT_INSET_PX = 78
 /**
  * Replaces the hidden OS title bar and is the window's drag handle. On Windows and Linux the
  * OS still draws the minimize / maximize / close buttons over the right edge, so the content is
- * confined to the overlay-safe rectangle. The height must match `TITLE_BAR_HEIGHT` in
- * `src/main/window-chrome.ts`, which sizes those native buttons.
+ * confined to the overlay-safe rectangle, and its height follows the height the main process
+ * gives those buttons (`TITLE_BAR_HEIGHT` in `src/main/window-chrome.ts`), see `.title-bar`.
  */
 export function TitleBar({
   icon,
@@ -26,7 +26,7 @@ export function TitleBar({
   return (
     <header
       data-testid="title-bar"
-      className="app-drag flex h-8 w-full shrink-0 items-center border-b border-line bg-panel"
+      className="title-bar app-drag flex w-full shrink-0 items-center border-b border-line bg-panel"
     >
       <div
         data-testid="title-bar-content"

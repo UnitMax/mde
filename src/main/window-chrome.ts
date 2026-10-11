@@ -1,4 +1,10 @@
-/** Height of the custom title bar, in CSS pixels at 100% zoom. Keep in sync with `h-8` in TitleBar. */
+/**
+ * Height of the custom title bar, in device-independent pixels. It stays constant at every page
+ * zoom: the renderer sizes its bar from `env(titlebar-area-height)`, which is this value
+ * converted to CSS pixels at the current zoom, so the two always agree. Scaling it by zoom here
+ * instead would break whenever main's idea of the zoom differs from the page's, for instance
+ * when Chromium restores a saved zoom at startup.
+ */
 export const TITLE_BAR_HEIGHT = 32
 
 export interface TitleBarColors {
@@ -28,11 +34,6 @@ export function isDarkColor(hex: string): boolean {
   return (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255 < 0.5
 }
 
-/** The native window buttons are scaled by the OS, so they must follow page zoom by hand. */
-export function titleBarOverlayHeight(zoom: number): number {
-  return Math.max(1, Math.round(TITLE_BAR_HEIGHT * zoom))
-}
-
 /**
  * Hides the OS title bar but keeps its window buttons, drawn in the given colors so they
  * blend into the custom bar. Windows and Linux overlay them; macOS keeps its traffic lights.
@@ -44,7 +45,7 @@ export function windowChromeOptions(
   if (platform === 'win32' || platform === 'linux') {
     return {
       titleBarStyle: 'hidden',
-      titleBarOverlay: { ...colors, height: titleBarOverlayHeight(1) }
+      titleBarOverlay: { ...colors, height: TITLE_BAR_HEIGHT }
     }
   }
   if (platform === 'darwin') {
@@ -74,10 +75,9 @@ export interface TitleBarDependencies {
   setThemeSource(source: ThemeSource): void
 }
 
-/** Keeps the native window buttons matching the theme and the page zoom. */
+/** Keeps the native window buttons matching the theme. */
 export class TitleBarController {
   private colors: TitleBarColors = DEFAULT_TITLE_BAR_COLORS
-  private zoom = 1
   private themeSource: ThemeSource
 
   constructor(private readonly deps: TitleBarDependencies) {
@@ -100,16 +100,11 @@ export class TitleBarController {
     this.apply()
   }
 
-  setZoom(zoom: number): void {
-    this.zoom = zoom
-    this.apply()
-  }
-
   private apply(): void {
     if (this.deps.platform !== 'win32' && this.deps.platform !== 'linux') return
     const window = this.deps.getWindow()
     if (!window || window.isDestroyed()) return
     // Every field is sent each time: a partial update is not guaranteed to keep the rest.
-    window.setTitleBarOverlay({ ...this.colors, height: titleBarOverlayHeight(this.zoom) })
+    window.setTitleBarOverlay({ ...this.colors, height: TITLE_BAR_HEIGHT })
   }
 }

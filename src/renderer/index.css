@@ -101,6 +101,17 @@
   }
 
   /*
+   * The title bar is as tall as the native window buttons the OS draws beside it. Their height is
+   * set in device pixels, so reading it back as a CSS length keeps the two equal at any page
+   * zoom. The floor only keeps the bar from collapsing where the OS reports no height
+   * (fullscreen); it is the smallest real value, 32 device pixels at the 2x zoom limit. The
+   * fallback covers platforms without the overlay.
+   */
+  .title-bar {
+    height: max(env(titlebar-area-height, 2rem), 1rem);
+  }
+
+  /*
    * Confines the title bar's content to the area the OS leaves free next to its window buttons
    * (Window Controls Overlay). Without an overlay the fallbacks make it the full bar.
    */

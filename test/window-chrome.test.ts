@@ -4,7 +4,6 @@ import {
   isDarkColor,
   TITLE_BAR_HEIGHT,
   TitleBarController,
-  titleBarOverlayHeight,
   windowChromeOptions,
   type TitleBarTarget
 } from '../src/main/window-chrome'
@@ -50,19 +49,6 @@ describe('windowChromeOptions', () => {
   })
 })
 
-describe('titleBarOverlayHeight', () => {
-  it.each([
-    [1, 32],
-    [1.5, 48],
-    [0.5, 16],
-    [1.1, 35],
-    [0.9, 29],
-    [0, 1]
-  ])('scales the native buttons with zoom %s', (zoom, expected) => {
-    expect(titleBarOverlayHeight(zoom)).toBe(expected)
-  })
-})
-
 describe('TitleBarController', () => {
   it('re-themes the native buttons, always sending every field', () => {
     const fake = fakeWindow()
@@ -72,14 +58,17 @@ describe('TitleBarController', () => {
     expect(fake.target.setTitleBarOverlay).toHaveBeenCalledWith({ ...colors, height: 32 })
   })
 
-  it('rescales the buttons with zoom without losing the chosen colors', () => {
+  it('keeps the buttons a constant height; the page derives its bar from it at any zoom', () => {
     const fake = fakeWindow()
     const controller = controllerFor('linux', fake.target)
 
     controller.setColors(colors)
-    controller.setZoom(1.2)
+    controller.setColors({ color: '#131f2b', symbolColor: '#93a8bc' })
 
-    expect(fake.target.setTitleBarOverlay).toHaveBeenLastCalledWith({ ...colors, height: 38 })
+    for (const call of fake.target.setTitleBarOverlay.mock.calls) {
+      expect(call[0].height).toBe(TITLE_BAR_HEIGHT)
+    }
+    expect(controller.windowOptions().titleBarOverlay?.height).toBe(TITLE_BAR_HEIGHT)
   })
 
   it('keeps the latest colors for windows created later', () => {
@@ -97,9 +86,10 @@ describe('TitleBarController', () => {
 
     controller.setColors(mutable)
     mutable.color = '#000000'
-    controller.setZoom(1)
+    controller.setColors(colors)
 
     expect(fake.target.setTitleBarOverlay).toHaveBeenLastCalledWith({ ...colors, height: 32 })
+    expect(fake.target.setTitleBarOverlay.mock.calls[0]?.[0].color).toBe(colors.color)
   })
 
   it('does nothing on macOS, where there is no overlay', () => {
@@ -107,7 +97,6 @@ describe('TitleBarController', () => {
     const controller = controllerFor('darwin', fake.target)
 
     controller.setColors(colors)
-    controller.setZoom(1.5)
 
     expect(fake.target.setTitleBarOverlay).not.toHaveBeenCalled()
   })
@@ -117,7 +106,7 @@ describe('TitleBarController', () => {
     expect(() => missing.setColors(colors)).not.toThrow()
 
     const fake = fakeWindow(true)
-    controllerFor('win32', fake.target).setZoom(1.2)
+    controllerFor('win32', fake.target).setColors(colors)
     expect(fake.target.setTitleBarOverlay).not.toHaveBeenCalled()
   })
 })
@@ -160,7 +149,6 @@ describe('TitleBarController theme source', () => {
 
     controller.setColors(colors)
     controller.setColors(DEFAULT_TITLE_BAR_COLORS)
-    controller.setZoom(1.2)
 
     expect(controller.setThemeSource).toHaveBeenCalledOnce()
   })

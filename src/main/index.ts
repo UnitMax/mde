@@ -130,10 +130,7 @@ function createWindow(): void {
 
     event.preventDefault()
     const current = mainWindow?.webContents.getZoomFactor() ?? DEFAULT_ZOOM_FACTOR
-    const next = adjustZoomFactor(current, action)
-    mainWindow?.webContents.setZoomFactor(next)
-    // The native window buttons ignore page zoom, so resize them to keep the bar aligned.
-    titleBar.setZoom(next)
+    mainWindow?.webContents.setZoomFactor(adjustZoomFactor(current, action))
   })
 
   void mainWindow.loadURL(rendererUrl)

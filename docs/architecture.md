@@ -63,10 +63,13 @@ leaves room for them.
 
 `src/main/window-chrome.ts` keeps those native buttons matching the app. The renderer sends the
 current theme's panel and muted-text colors over `window-chrome:set` at startup and whenever the
-theme changes, and the main process re-applies them with `setTitleBarOverlay`. Zoom scales the
-page but not the native buttons, so the main process also sizes the overlay to 32 px times the zoom
-factor, which keeps it aligned with the 32 px bar. The bar height is defined in both
-`TITLE_BAR_HEIGHT` and the `h-8` class of `TitleBar`; change them together.
+theme changes, and the main process re-applies them with `setTitleBarOverlay`. The buttons are a
+constant 32 device pixels tall. The bar does not hard-code a height: `.title-bar` reads it back
+from `env(titlebar-area-height)`, which is that height as a CSS length at the current page zoom, so
+the bar and the buttons stay level at any zoom. This also covers a zoom Chromium restores at
+startup or that changes by mouse wheel, which the main process never sees. Do not scale the overlay
+height by zoom in the main process: if its idea of the zoom differs from the page's, the buttons
+overhang the bar and the bar's bottom line no longer meets them.
 
 The hover and pressed backgrounds of the minimize and maximize buttons are a fixed wash of the
 OS's own caption color, not something the app can set, and that color follows the OS light or dark

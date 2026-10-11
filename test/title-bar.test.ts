@@ -48,8 +48,10 @@ describe('TitleBar', () => {
 
     expect(bar?.tagName).toBe('HEADER')
     expect(bar?.className).toContain('app-drag')
-    // 2rem = 32px, which must equal TITLE_BAR_HEIGHT in src/main/window-chrome.ts.
-    expect(bar?.className).toContain('h-8')
+    // Its height comes from env(titlebar-area-height) in index.css under this class, so it
+    // matches the native buttons at any zoom. A fixed height class would drift from them.
+    expect(bar?.className).toContain('title-bar')
+    expect(bar?.className).not.toMatch(/(^|\s)h-\d+/)
     expect(bar?.className).toContain('bg-panel')
   })
 
