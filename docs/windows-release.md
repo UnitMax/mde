@@ -1,21 +1,36 @@
 # Windows release checklist
 
 MDE's Windows release is built from WSL with native Windows Node.js so the
-packaged application contains the correct Windows `node-pty` prebuilds.
+packaged application contains the correct Windows `node-pty` prebuilds. Cross-building
+from Linux is not supported; on native Windows, run `npm run build:win` directly.
+
+## Build prerequisites
+
+Node.js and Visual Studio Build Tools ("Desktop development with C++") must be installed on
+Windows first (see Requirements in the README).
+
+`npm run build:win:remote` rsyncs the repository to a staging directory under the Windows
+temporary directory and runs the build there using native Windows npm/node with `node-pty`'s
+Windows x64 prebuilt runtime. Set `MDE_WINDOWS_BUILD_DIR` to a Windows-format path to override
+the staging directory. The staging `dist` is emptied before each run, so it only ever holds the
+artifacts of the build you just made. The first build runs `npm ci`; later builds reuse the
+Windows `node_modules` directory until the dependency or native build inputs change.
 
 ## Prepare the release
 
 1. Close every running packaged MDE instance. Windows keeps Electron DLLs open
    and electron-builder cannot replace `dist/win-unpacked` while they are in use.
 2. Update `package.json` and `package-lock.json` to the same release version.
-3. Refresh and review the generated notices:
+3. Run `npm run audit:deps` against the full lockfile and resolve or document any
+   advisories (see [`security.md`](security.md)).
+4. Refresh and review the generated notices:
 
    ```bash
    npm run licenses
    git diff -- THIRD_PARTY_NOTICES.md
    ```
 
-4. Run the release checks and build:
+5. Run the release checks and build:
 
    ```bash
    npm test

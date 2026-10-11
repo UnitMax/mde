@@ -8,11 +8,29 @@ MDE is local-only for its own application traffic. The released application cont
 
 ## What MDE stores locally
 
-MDE stores workspace metadata in a local `workspace.json` file under Electron's user-data directory. This includes project labels, terminal session paths, platform details, appearance settings, and terminal layout.
+MDE stores data only on the local machine:
+
+- `workspace.json` under Electron's user-data directory: project labels, terminal session names,
+  paths, platform and distro details, shell overrides, tab and terminal layout, and To Do projects
+  with their task titles and descriptions.
+- The renderer's local storage (`mde.terminal-settings`): appearance and terminal preferences,
+  including the executable and argument strings configured for the shell, OpenCode, Codex and
+  Claude launchers. Any secret typed into an argument string is stored there in plain text.
+- Small preference files in the user-data directory for the OpenCode status integration and
+  notifications.
+- If you enable the optional OpenCode integrations, a short status snapshot under
+  `/tmp/mde-opencode` in the WSL distro (state and, if selected, the session title; never prompts,
+  messages or tool data), plus the plugin files MDE installs into that distro's OpenCode
+  configuration directory. The token-rate plugin also registers itself in OpenCode's `tui.json`.
+  Disabling an integration does not uninstall its plugin.
+
+MDE does not copy file contents or terminal output into any of these. Terminal scrollback is held
+in memory only. The OpenCode session picker reads the OpenCode history database on demand (session
+titles, directories, models, token usage and cost) and keeps the result in memory only. The query output passes through a private temporary file in the distro, which is deleted when the query ends.
 
 ## Network behavior in the released application
 
-MDE does not make automatic network requests. It reads local files and, on Windows, invokes local WSL and operating-system commands to support terminal sessions and file actions.
+MDE does not make automatic network requests. It reads local files and invokes local commands to support terminal sessions and file actions: Git for repository status, `wsl.exe` on Windows, and the configured OpenCode executable for the session picker.
 
 MDE also disables Chromium's DNS-over-HTTPS upgrade at startup, with `app.configureHostResolver({ secureDnsMode: 'off' })`. Chromium's default mode would otherwise route name resolution through a DoH provider whenever the system resolver is a recognized one, without any application code asking it to. Because MDE resolves no hostnames of its own, the result is no DNS traffic rather than a fallback to plaintext DNS, and the statement above holds regardless of how the user's machine is configured to resolve names.
 
