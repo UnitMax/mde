@@ -22,6 +22,11 @@ vi.mock('node-pty', () => ({ spawn: ptyMock.spawn }))
 
 import { PtyManager } from '../src/main/pty/manager'
 
+import * as hostExecutables from '../src/main/windows-executable'
+
+const wslExecutable = { file: 'D:\\Windows\\System32\\wsl.exe', cwd: 'D:\\Windows\\System32' }
+const powershell = 'D:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'
+
 const palette = { foreground: '#d8dee9', background: '#0b0e13' }
 
 function createFakeChild(): FakeChild {
@@ -63,6 +68,8 @@ function wslSession(): Session {
 
 describe('PtyManager runtime terminal identities', () => {
   beforeEach(() => {
+    vi.spyOn(hostExecutables, 'resolveWslExecutable').mockReturnValue(wslExecutable)
+    vi.spyOn(hostExecutables, 'resolveWindowsShell').mockReturnValue(powershell)
     ptyMock.children.clear()
     ptyMock.spawn.mockReset()
     ptyMock.spawn.mockImplementation((file: string, args: string[], options: unknown) => {
@@ -170,7 +177,8 @@ describe('PtyManager runtime terminal identities', () => {
     expect(first?.kill).toHaveBeenCalledTimes(1)
     expect(ptyMock.spawn).toHaveBeenCalledTimes(2)
     const [file, args] = ptyMock.spawn.mock.calls[1] as [string, string[]]
-    expect(file).toBe('wsl.exe')
+    expect(file).toBe(wslExecutable.file)
+    expect(ptyMock.spawn.mock.calls[1]?.[2]).toMatchObject({ cwd: wslExecutable.cwd })
     expect(args).toEqual(expect.arrayContaining(['--cd', '/home/me/other', 'opencode', '--session', 'ses_chosen']))
   })
 
@@ -289,10 +297,23 @@ describe('PtyManager runtime terminal identities', () => {
     manager.ensure('pane-a', sourceSession(), { cols: 80, rows: 24 }, palette)
 
     expect(ptyMock.spawn).toHaveBeenCalledOnce()
+    expect(ptyMock.spawn.mock.calls[0]?.[0]).toBe(powershell)
     expect(ptyMock.spawn.mock.calls[0]?.[2]).toMatchObject({
       useConpty: true,
       useConptyDll: true,
     })
+  })
+
+  it('rejects unavailable host executables before creating PTYs or integration timers', () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    vi.mocked(hostExecutables.resolveWslExecutable).mockImplementation(() => {
+      throw new Error('Windows WSL executable is unavailable')
+    })
+    const integration = { prepare: vi.fn(), dispose: vi.fn() }
+    const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() }, integration)
+    expect(() => manager.ensure('pane-a', wslSession(), { cols: 80, rows: 24 }, palette)).toThrow('WSL executable is unavailable')
+    expect(ptyMock.spawn).not.toHaveBeenCalled()
+    expect(integration.prepare).not.toHaveBeenCalled()
   })
 
   it('does not request a Windows backend on non-Windows platforms', () => {

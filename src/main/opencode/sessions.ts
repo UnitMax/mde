@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process'
 import type { OpenCodeSessionSummary, Session } from '@shared/types'
 import { buildLaunchSpec, type LaunchSpec } from '../pty/launch'
 import { decodeWslOutput, wslEnv } from '../wsl/distros'
+import { resolveWslExecutable, type HostExecutable } from '../windows-executable'
 
 const REQUIRED_COLUMNS = ['id', 'title', 'directory', 'time_created', 'time_updated']
 const OPTIONAL_COLUMNS = [
@@ -50,7 +51,8 @@ export function metadataQueryLaunch(
   session: Session,
   executable: string,
   query: string,
-  marker: string
+  marker: string,
+  hostExecutable: HostExecutable,
 ): {
   spec: LaunchSpec
   begin: string
@@ -78,6 +80,7 @@ export function metadataQueryLaunch(
   ].join('\n')
   const spec = buildLaunchSpec(session, {
     platform: 'win32',
+    windowsExecutable: hostExecutable,
     workingDirectory: '/',
     agent: { executable: '/bin/sh', args: ['-c', script, 'mde-opencode-query', executable, query, begin, end] },
   })
@@ -85,10 +88,11 @@ export function metadataQueryLaunch(
 }
 
 const runMetadataQuery: OpenCodeMetadataQuery = (session, executable, query) => {
-  const { spec, begin, end } = metadataQueryLaunch(session, executable, query, randomUUID())
+  const { spec, begin, end } = metadataQueryLaunch(session, executable, query, randomUUID(), resolveWslExecutable('win32'))
   return new Promise((resolve, reject) => {
     execFile(spec.file, spec.args, {
       env: wslEnv(),
+      cwd: spec.cwd,
       encoding: 'buffer',
       timeout: 15_000,
       maxBuffer: MAX_QUERY_BYTES,

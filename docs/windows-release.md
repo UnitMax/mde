@@ -96,6 +96,24 @@ MDE does not fall back to Windows' inbox ConPTY when the bundled component canno
 start. A damaged or incomplete release therefore leaves its terminal unavailable;
 re-extract a fresh release rather than attempting to bypass that protection.
 
+Run the executable-lookup regression from the native Windows build directory
+with a WSL distro installed:
+
+```powershell
+$env:MDE_WINDOWS_EXECUTABLE_INTEGRATION = '1'
+npx vitest run test/windows-executable.integration.test.ts
+Remove-Item Env:MDE_WINDOWS_EXECUTABLE_INTEGRATION
+```
+
+Optionally set `MDE_WSL_DISTRO` to select a particular installed distro. The
+check compiles harmless sentinel executables in a fresh temporary directory,
+puts that directory in both cwd and `PATH`, and verifies real WSL queries,
+history transport, PowerShell and native/WSL ConPTY do not select the sentinels.
+It restores cwd/environment and removes its fixtures. It does not access the
+user's OpenCode database or type commands into the user's existing terminals.
+Also start the extracted app from that fixture-style directory and verify
+default PowerShell, custom full-path shells and WSL terminals work there.
+
 Confirm the packaged binary was hardened, from the build directory:
 
 ```powershell

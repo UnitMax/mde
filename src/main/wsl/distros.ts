@@ -1,5 +1,6 @@
 import { execFile } from '../exec-host'
 import type { Distro } from '@shared/types'
+import { resolveWslExecutable } from '../windows-executable'
 
 /**
  * Short-lived `wsl.exe` queries emit UTF-16LE unless WSL_UTF8 is set in their
@@ -69,20 +70,22 @@ export function runWslCommandBuffer(
   ).then(({ stdout, stderr, code }) => ({ stdout, stderr: decodeWslOutput(stderr), code }))
 }
 
-function runWslClientRaw(
+async function runWslClientRaw(
   args: readonly string[],
   timeoutMs = 15_000,
   maxBuffer?: number
 ): Promise<{ stdout: Buffer; stderr: Buffer; code: number }> {
+  const executable = resolveWslExecutable()
   return new Promise((resolve) => {
     execFile(
-      'wsl.exe',
+      executable.file,
       args,
       {
         env: wslEnv(),
         encoding: 'buffer',
         timeout: timeoutMs,
         windowsHide: true,
+        ...(executable.cwd ? { cwd: executable.cwd } : {}),
         ...(maxBuffer === undefined ? {} : { maxBuffer })
       },
       (error, stdout, stderr) => {
@@ -187,7 +190,7 @@ let availability: Promise<boolean> | null = null
 export function isWslAvailable(): Promise<boolean> {
   if (process.platform !== 'win32') return Promise.resolve(false)
   if (!availability) {
-    availability = runWslClient(['--status'])
+    availability = Promise.resolve().then(() => runWslClient(['--status']))
       .then((result) => result.code === 0)
       .catch(() => false)
   }

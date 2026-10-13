@@ -34,7 +34,7 @@ describe.skipIf(process.platform === 'win32')('OpenCode metadata shell transport
         `exit ${status}`,
       ].join('\n'))
       await chmod(executable, 0o700)
-      const { spec, begin, end } = metadataQueryLaunch(session, executable, 'SELECT synthetic', 'test')
+      const { spec, begin, end } = metadataQueryLaunch(session, executable, 'SELECT synthetic', 'test', { file: 'D:\\Windows\\System32\\wsl.exe', cwd: 'D:\\Windows\\System32' })
       const script = spec.args.at(-6)!
       const result = await new Promise<{ status: string | number; stdout: string }>((resolve, reject) => {
         execFile('/bin/sh', ['-c', script, 'mde-opencode-query', executable, 'SELECT synthetic', begin, end], {

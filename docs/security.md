@@ -81,6 +81,43 @@ untouched. This was an unpackaged Linux check, not Windows/WSL verification.
 
 The sender policy follows [Electron's IPC sender validation guidance](https://www.electronjs.org/docs/latest/tutorial/security#17-validate-the-sender-of-all-ipc-messages).
 
+## Windows executable selection
+
+`src/main/windows-executable.ts` resolves Windows host programs before launch.
+WSL commands, WSL PTYs and OpenCode history queries use the canonical absolute
+`SystemRoot\System32\wsl.exe` path and an explicit host working directory.
+Native Windows sessions use the system PowerShell by default; `powershell` /
+`powershell.exe` and `cmd` / `cmd.exe` overrides map to their system locations.
+Other native Windows shell overrides require a full drive-qualified `.exe` or
+`.com` path, including PowerShell 7 (`pwsh.exe`). Bare names, drive-relative
+paths, UNC/device paths, dot segments, controls and alternate streams are
+rejected instead of searching the application's startup directory or `PATH`.
+
+The resolver reads `SystemRoot` case-insensitively, canonicalizes paths, checks
+regular-file type and rejects system programs redirected outside the Windows
+installation tree. It resolves only the program being used and caches successful
+results, so missing WSL does not disable native shells. Missing/invalid paths
+fail without a bare-name fallback. Native PTYs retain their project working
+directory; WSL `--cd` still selects the Linux working directory separately.
+Launch-spec construction receives resolved host paths and remains free of
+filesystem lookup. These changes add no renderer or preload capabilities.
+
+The inherited Windows installation location and explicitly configured custom
+shell remain trusted account configuration. This does not verify publisher
+signatures or protect against an attacker who already controls the OS, the
+launch environment or the selected executable. Shell/agent command lookup
+inside a Linux distro follows that user's shell configuration. The Linux WSL
+interop path retained for opt-in integration tests is separate from Windows
+host executable lookup.
+
+`test/windows-executable.test.ts` covers path policy and lazy resolution;
+launch, PTY, WSL buffer and OpenCode transport tests cover consumers and failed
+resolution before side effects. The opt-in native Windows integration test
+plants runnable harmless executables in both cwd and `PATH`, verifies the
+sentinel itself works, and exercises real distro queries, history transport,
+PowerShell and native/WSL ConPTY. See the Windows release checklist for running
+it. It uses scratch data rather than a user's OpenCode database.
+
 ## Dependency security maintenance
 
 Run `npm run audit:deps` against the full lockfile after dependency changes and

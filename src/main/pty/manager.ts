@@ -13,6 +13,7 @@ import type {
 } from '@shared/types'
 import { buildLaunchSpec, type LaunchContext } from './launch'
 import { TerminalQueryResponder } from './terminal-queries'
+import { resolveWindowsShell, resolveWslExecutable } from '../windows-executable'
 
 interface PtySession {
   pty: IPty
@@ -53,8 +54,13 @@ function clampSize(size: PtySize): PtySize {
   }
 }
 
-function launchContext(): LaunchContext {
+function launchContext(session: Session): LaunchContext {
   const context: LaunchContext = { platform: process.platform }
+  if (process.platform === 'win32') {
+    context.windowsExecutable = session.kind === 'wsl'
+      ? resolveWslExecutable()
+      : { file: resolveWindowsShell(session.shell) }
+  }
   if (process.env.SHELL) context.defaultShell = process.env.SHELL
   return context
 }
@@ -168,9 +174,11 @@ export class PtyManager {
       return existing.status
     }
 
+    // Resolve before preparing integrations, which can start status timers.
+    const context = launchContext(session)
     const environment = this.prepareIntegrations(terminalId, session)
     const spec = buildLaunchSpec(session, {
-      ...launchContext(),
+      ...context,
       environment,
       wslEnvironment: environment,
       workingDirectory: options?.directory,

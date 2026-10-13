@@ -14,6 +14,8 @@ import { buildLaunchSpec } from '../src/main/pty/launch'
 import { runLaunchProcess } from './helpers/launch-process'
 import type { Session } from '@shared/types'
 
+const wslExecutable = { file: 'D:\\Windows\\System32\\wsl.exe', cwd: 'D:\\Windows\\System32' }
+
 function session(overrides: Partial<Session> = {}): Session {
   return {
     id: 'p1',
@@ -54,10 +56,10 @@ describe('buildLaunchSpec', () => {
   it('launches a WSL project inside the distro with a login+interactive shell', () => {
     const spec = buildLaunchSpec(
       session({ kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/src/app' }),
-      { platform: 'win32' }
+      { platform: 'win32', windowsExecutable: wslExecutable }
     )
 
-    expect(spec.file).toBe('wsl.exe')
+    expect(spec.file).toBe(wslExecutable.file)
     // -e, not --: `--` hands the rest of the line to the distro's default
     // shell, which re-parses the OSC 7 setup into separate commands.
     expect(spec.args.slice(0, 9)).toEqual([
@@ -75,13 +77,13 @@ describe('buildLaunchSpec', () => {
     expect(spec.args[10]).toContain('getent passwd "$(id -u)"')
     expect(spec.args[10]).toContain('exec "$shell" -lic')
     expect(spec.args[11]).toBe('mde-shell')
-    // --cd sets the directory inside the distro; a Windows-side cwd would be wrong.
-    expect(spec.cwd).toBeUndefined()
+    // --cd selects Linux cwd; the host cwd stays in the Windows system directory.
+    expect(spec.cwd).toBe(wslExecutable.cwd)
   })
 
   it('starts the configured WSL login shell as login and interactive', () => {
     const spec = buildLaunchSpec(session({ kind: 'wsl', distro: 'Ubuntu-24.04' }), {
-      platform: 'win32'
+      platform: 'win32', windowsExecutable: wslExecutable
     })
     expect(spec.args[10]).toContain('exec "$shell" -lic')
     expect(spec.args[10]).toContain('"$shell" -l -i')
@@ -89,7 +91,7 @@ describe('buildLaunchSpec', () => {
 
   it('builds a syntactically valid WSL shell bootstrap', () => {
     const spec = buildLaunchSpec(session({ kind: 'wsl', distro: 'Ubuntu-24.04' }), {
-      platform: 'win32'
+      platform: 'win32', windowsExecutable: wslExecutable
     })
     const command = spec.args[10]
     expect(command).toBeDefined()
@@ -102,7 +104,7 @@ describe('buildLaunchSpec', () => {
   it('cleans up temporary WSL Zsh configuration on shell signals', () => {
     const spec = buildLaunchSpec(
       session({ kind: 'wsl', distro: 'Ubuntu-24.04', shell: '/usr/bin/zsh' }),
-      { platform: 'win32' }
+      { platform: 'win32', windowsExecutable: wslExecutable }
     )
     const command = spec.args[10] ?? ''
 
@@ -114,7 +116,7 @@ describe('buildLaunchSpec', () => {
   it('honours a shell override for WSL projects', () => {
     const spec = buildLaunchSpec(
       session({ kind: 'wsl', distro: 'Ubuntu-24.04', shell: 'zsh' }),
-      { platform: 'win32' }
+      { platform: 'win32', windowsExecutable: wslExecutable }
     )
     expect(spec.args.slice(-2)).toEqual(['mde-shell', 'zsh'])
     expect(spec.args[10]).toContain('add-zsh-hook precmd __mde_report_cwd')
@@ -124,7 +126,7 @@ describe('buildLaunchSpec', () => {
     const spec = buildLaunchSpec(
       session({ kind: 'wsl', distro: 'Ubuntu-24.04', shell: '/bin/bash' }),
       {
-        platform: 'win32',
+        platform: 'win32', windowsExecutable: wslExecutable,
         workingDirectory: '/home/me/src/feature',
         agent: { executable: 'codex', args: ['--model', 'gpt 5'] }
       }
@@ -150,7 +152,7 @@ describe('buildLaunchSpec', () => {
     const spec = buildLaunchSpec(
       session({ kind: 'wsl', distro: 'Ubuntu-24.04' }),
       {
-        platform: 'win32',
+        platform: 'win32', windowsExecutable: wslExecutable,
         workingDirectory: '/home/me/src/feature',
         agent: { executable: '/bin/printf', args: ['%s', 'hello world'] }
       }
@@ -176,7 +178,7 @@ describe('buildLaunchSpec', () => {
   it.each([undefined, '/bin/bash'])('runs an agent with no extra arguments using shell %s', async (shell) => {
     const spec = buildLaunchSpec(
       session({ kind: 'wsl', distro: 'Ubuntu-24.04', shell }),
-      { platform: 'win32', agent: { executable: '/bin/pwd', args: [] } }
+      { platform: 'win32', windowsExecutable: wslExecutable, agent: { executable: '/bin/pwd', args: [] } }
     )
     const result = await runIsolatedAgent(
       '/bin/sh',
@@ -192,8 +194,8 @@ describe('buildLaunchSpec', () => {
   it('keeps the agent argv layout and exec behavior unless asked to return to the shell', () => {
     const agent = { executable: 'opencode', args: ['--session', 'ses_x'] }
     const base = session({ kind: 'wsl', distro: 'Ubuntu-24.04', shell: '/bin/bash' })
-    const plain = buildLaunchSpec(base, { platform: 'win32', agent })
-    const returning = buildLaunchSpec(base, { platform: 'win32', agent, returnToShell: true })
+    const plain = buildLaunchSpec(base, { platform: 'win32', windowsExecutable: wslExecutable, agent })
+    const returning = buildLaunchSpec(base, { platform: 'win32', windowsExecutable: wslExecutable, agent, returnToShell: true })
 
     expect(plain.args[10]).not.toContain('trap')
     expect(plain.args[10]).not.toContain('mde-shell')
@@ -213,7 +215,7 @@ describe('buildLaunchSpec', () => {
     const spec = buildLaunchSpec(
       session({ kind: 'wsl', distro: 'Ubuntu-24.04', shell: '/bin/bash' }),
       {
-        platform: 'win32',
+        platform: 'win32', windowsExecutable: wslExecutable,
         agent: { executable: '/bin/printf', args: ['%s', 'AGENT_DONE '] },
         returnToShell: true
       }
@@ -238,7 +240,7 @@ describe('buildLaunchSpec', () => {
   it('uses a validated WSL directory override for a normal shell', () => {
     const spec = buildLaunchSpec(
       session({ kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/src/app' }),
-      { platform: 'win32', workingDirectory: '/home/me/src/other' }
+      { platform: 'win32', windowsExecutable: wslExecutable, workingDirectory: '/home/me/src/other' }
     )
 
     expect(spec.args.slice(0, 4)).toEqual(['-d', 'Ubuntu-24.04', '--cd', '/home/me/src/other'])
@@ -248,7 +250,7 @@ describe('buildLaunchSpec', () => {
     const override = "zsh; printf 'unexpected'"
     const spec = buildLaunchSpec(
       session({ kind: 'wsl', distro: 'Ubuntu-24.04', shell: override }),
-      { platform: 'win32' }
+      { platform: 'win32', windowsExecutable: wslExecutable }
     )
 
     expect(spec.args.at(-1)).toBe(override)
@@ -257,7 +259,7 @@ describe('buildLaunchSpec', () => {
 
   it('installs process-local directory reporters for common WSL shells', () => {
     const spec = buildLaunchSpec(session({ kind: 'wsl', distro: 'Ubuntu-24.04' }), {
-      platform: 'win32'
+      platform: 'win32', windowsExecutable: wslExecutable
     })
     const command = spec.args[10] ?? ''
 
@@ -273,7 +275,7 @@ describe('buildLaunchSpec', () => {
       try {
         const spec = buildLaunchSpec(
           session({ kind: 'wsl', distro: 'Ubuntu-24.04', shell: '/usr/bin/zsh' }),
-          { platform: 'win32' }
+          { platform: 'win32', windowsExecutable: wslExecutable }
         )
         const result = await runLaunchProcess('/bin/sh', ['-c', spec.args[10] ?? '', 'mde-shell', '/usr/bin/zsh'], {
           env: { ...process.env, HOME: home, ZDOTDIR: home, EDITOR: 'emacs' },
@@ -333,7 +335,7 @@ describe('buildLaunchSpec', () => {
     const spec = buildLaunchSpec(
       session({ kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/src/app' }),
       {
-        platform: 'win32',
+        platform: 'win32', windowsExecutable: wslExecutable,
         wslEnvironment: {
           MDE_OPENCODE_STATUS_FILE: "/tmp/mde-opencode/status's file.json",
           MDE_OPENCODE_STATUS_PROTOCOL: '1'
@@ -366,16 +368,16 @@ describe('buildLaunchSpec', () => {
   })
 
   it('refuses a WSL project with no distro', () => {
-    expect(() => buildLaunchSpec(session({ kind: 'wsl' }), { platform: 'win32' })).toThrow(
+    expect(() => buildLaunchSpec(session({ kind: 'wsl' }), { platform: 'win32', windowsExecutable: wslExecutable })).toThrow(
       /no distro/
     )
   })
 
   it('spawns powershell in the project directory for native Windows projects', () => {
     const spec = buildLaunchSpec(session({ kind: 'native', path: 'C:\\src\\app' }), {
-      platform: 'win32'
+      platform: 'win32', windowsExecutable: { file: 'D:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' }
     })
-    expect(spec.file).toBe('powershell.exe')
+    expect(spec.file).toBe('D:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe')
     expect(spec.args.slice(0, 2)).toEqual(['-NoExit', '-Command'])
     expect(spec.args[2]).toContain('function global:prompt')
     expect(spec.cwd).toBe('C:\\src\\app')
@@ -472,10 +474,20 @@ describe('buildLaunchSpec', () => {
     }
   )
 
-  it('leaves native Windows shell launch behavior unchanged', () => {
-    const spec = buildLaunchSpec(session({ shell: 'zsh.exe', path: 'C:\\src\\app' }), {
-      platform: 'win32'
+  it('uses a resolved custom Windows executable while preserving the project directory', () => {
+    const spec = buildLaunchSpec(session({ shell: 'D:\\Tools\\zsh.exe', path: 'C:\\src\\app' }), {
+      platform: 'win32', windowsExecutable: { file: 'D:\\Tools\\zsh.exe' }
     })
-    expect(spec).toEqual({ file: 'zsh.exe', args: [], cwd: 'C:\\src\\app' })
+    expect(spec).toEqual({ file: 'D:\\Tools\\zsh.exe', args: [], cwd: 'C:\\src\\app' })
+  })
+
+  it('refuses Windows launches without resolved absolute host executables', () => {
+    expect(() => buildLaunchSpec(session({ path: 'C:\\src\\app' }), { platform: 'win32' }))
+      .toThrow('resolved Windows shell')
+    expect(() => buildLaunchSpec(session({ kind: 'wsl', distro: 'Ubuntu-24.04' }), { platform: 'win32' }))
+      .toThrow('resolved Windows WSL')
+    expect(() => buildLaunchSpec(session({ path: 'C:\\src\\app' }), {
+      platform: 'win32', windowsExecutable: { file: 'powershell.exe' }
+    })).toThrow('full Windows drive path')
   })
 })

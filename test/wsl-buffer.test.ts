@@ -3,11 +3,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 const execFileMock = vi.hoisted(() => vi.fn())
 vi.mock('../src/main/exec-host', () => ({ execFile: execFileMock }))
 
-import { runWslCommandBuffer } from '../src/main/wsl/distros'
+import { isWslAvailable, runWslCommandBuffer } from '../src/main/wsl/distros'
+import * as hostExecutables from '../src/main/windows-executable'
 
 describe('runWslCommandBuffer', () => {
   afterEach(() => {
     execFileMock.mockReset()
+    vi.restoreAllMocks()
   })
 
   it('returns stdout bytes untouched, even when they look like UTF-16', async () => {
@@ -35,5 +37,27 @@ describe('runWslCommandBuffer', () => {
       callback(Object.assign(new Error('failed'), { code: 12 }), Buffer.alloc(0), Buffer.alloc(0))
     })
     await expect(runWslCommandBuffer('Ubuntu-24.04', ['false'])).resolves.toMatchObject({ code: 12 })
+  })
+
+  it('uses the pinned Windows executable and host cwd for binary queries', async () => {
+    const executable = { file: 'D:\\Windows\\System32\\wsl.exe', cwd: 'D:\\Windows\\System32' }
+    vi.spyOn(hostExecutables, 'resolveWslExecutable').mockReturnValue(executable)
+    execFileMock.mockImplementation((_file, _args, _options, callback) => callback(null, Buffer.from('ok'), Buffer.alloc(0)))
+    await runWslCommandBuffer('Ubuntu-24.04', ['cat', '/tmp/x'])
+    expect(execFileMock).toHaveBeenCalledWith(executable.file, expect.any(Array),
+      expect.objectContaining({ cwd: executable.cwd }), expect.any(Function))
+  })
+
+  it('does not launch anything when trusted WSL resolution fails', async () => {
+    vi.spyOn(hostExecutables, 'resolveWslExecutable').mockImplementation(() => { throw new Error('WSL unavailable') })
+    await expect(runWslCommandBuffer('Ubuntu-24.04', ['true'])).rejects.toThrow('WSL unavailable')
+    expect(execFileMock).not.toHaveBeenCalled()
+  })
+
+  it('reports unavailable WSL without rejecting the application availability check', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    vi.spyOn(hostExecutables, 'resolveWslExecutable').mockImplementation(() => { throw new Error('WSL unavailable') })
+    await expect(isWslAvailable()).resolves.toBe(false)
+    expect(execFileMock).not.toHaveBeenCalled()
   })
 })

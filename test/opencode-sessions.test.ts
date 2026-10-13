@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Session } from '../src/shared/types'
 import {
   listOpenCodeSessions,
@@ -10,6 +10,13 @@ import {
 
 const execFile = vi.hoisted(() => vi.fn())
 vi.mock('node:child_process', () => ({ execFile }))
+
+import * as hostExecutables from '../src/main/windows-executable'
+
+const wslExecutable = { file: 'D:\\Windows\\System32\\wsl.exe', cwd: 'D:\\Windows\\System32' }
+beforeEach(() => {
+  vi.spyOn(hostExecutables, 'resolveWslExecutable').mockReturnValue(wslExecutable)
+})
 
 const session: Session = {
   id: 'workspace-1', projectId: 'project-1', name: 'App', kind: 'wsl',
@@ -26,7 +33,10 @@ const row = {
 }
 const schema = Object.keys(row).map((name) => ({ name }))
 
-afterEach(() => execFile.mockReset())
+afterEach(() => {
+  execFile.mockReset()
+  vi.restoreAllMocks()
+})
 
 describe('OpenCode global session metadata', () => {
   it('reads every directory and more than 100 sessions, including archived and child sessions', async () => {
@@ -87,11 +97,18 @@ describe('OpenCode global session metadata', () => {
 })
 
 describe('OpenCode query transport', () => {
+  it('does not run the CLI or create output files when trusted host resolution fails', async () => {
+    vi.mocked(hostExecutables.resolveWslExecutable).mockImplementation(() => { throw new Error('Windows WSL executable is unavailable') })
+    await expect(listOpenCodeSessions(session, 'opencode')).rejects.toThrow('Windows WSL executable is unavailable')
+    expect(execFile).not.toHaveBeenCalled()
+  })
+
   it('preserves executable and query as literal arguments through the configured login shell', () => {
     const executable = "/home/me/agent's tools/opencode;literal"
     const query = 'SELECT title FROM session'
-    const { spec, begin, end } = metadataQueryLaunch({ ...session, shell: '/bin/fish' }, executable, query, 'test')
-    expect(spec.file).toBe('wsl.exe')
+    const { spec, begin, end } = metadataQueryLaunch({ ...session, shell: '/bin/fish' }, executable, query, 'test', wslExecutable)
+    expect(spec.file).toBe(wslExecutable.file)
+    expect(spec.cwd).toBe(wslExecutable.cwd)
     expect(spec.args.slice(0, 5)).toEqual(['-d', 'Ubuntu-24.04', '--cd', '/', '-e'])
     expect(spec.args).toContain('/bin/sh')
     expect(spec.args).toContain('/bin/fish')
@@ -107,7 +124,9 @@ describe('OpenCode query transport', () => {
   })
 
   it('handles framed output with the normal executable and bounded execution options', async () => {
-    execFile.mockImplementation((_file, args, options, callback) => {
+    execFile.mockImplementation((file, args, options, callback) => {
+      expect(file).toBe(wslExecutable.file)
+      expect(options.cwd).toBe(wslExecutable.cwd)
       expect(options).toMatchObject({ timeout: 15_000, maxBuffer: 32 * 1024 * 1024, windowsHide: true })
       const data = execFile.mock.calls.length === 1 ? schema : [row]
       callback(null, Buffer.from(`banner\n${args.at(-2)}\n${JSON.stringify(data)}\n${args.at(-1)}`), Buffer.alloc(0))

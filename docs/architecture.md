@@ -202,7 +202,12 @@ MDE's own automatic queries.
 
 ## WSL
 
-- Short-lived `wsl.exe` queries and path conversions go through `runWsl()` in
+- On Windows, `src/main/windows-executable.ts` resolves WSL to the canonical
+  absolute executable under the Windows installation directory. Short-lived
+  queries, PTYs and history queries share this resolver and an explicit host
+  working directory; WSL's `--cd` selects the Linux working directory separately.
+  Lookup is lazy and missing WSL never prevents native terminals from opening.
+- Short-lived `wsl.exe` queries and path conversions go through `runWslCommand()` in
   `src/main/wsl/distros.ts`, which sets `WSL_UTF8=1`.
 - WSL sessions launch the distro user's configured login shell, with an optional per-session
   override. MDE uses `wsl.exe -e` and a non-interactive `/bin/sh` bootstrap to preserve exact
@@ -220,6 +225,13 @@ MDE's own automatic queries.
   when translating a dropped file, and when revealing a folder in Explorer.
 - A session whose files sit under `/mnt/c` gets an inline warning about 9p performance. It is
   a warning, not a block.
+
+Native Windows shells also resolve before PTY creation: the default PowerShell
+and built-in PowerShell/cmd aliases use system locations. Custom Windows shells,
+including PowerShell 7, need a full drive-qualified `.exe`/`.com` path; ambiguous
+bare names fail with a configuration error. Native shells still start in the
+project directory. Linux shell overrides and agent commands inside WSL retain
+their existing target-shell behavior.
 
 ## OpenCode integration
 

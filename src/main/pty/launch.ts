@@ -1,4 +1,5 @@
 import type { AgentCommand, Session } from '@shared/types'
+import { assertWindowsExecutablePath, type HostExecutable } from '../windows-executable'
 
 export interface LaunchSpec {
   file: string
@@ -13,6 +14,8 @@ export interface LaunchSpec {
  */
 export interface LaunchContext {
   platform: NodeJS.Platform
+  /** Host executable resolved/validated in main before constructing Windows argv. */
+  windowsExecutable?: HostExecutable
   /** process.env.SHELL on the host, if set. */
   defaultShell?: string
   /** Environment variables that should be inherited by native target shells. */
@@ -27,7 +30,6 @@ export interface LaunchContext {
   returnToShell?: boolean
 }
 
-const DEFAULT_WINDOWS_SHELL = 'powershell.exe'
 const DEFAULT_POSIX_SHELL = '/bin/bash'
 const WSL_DEFAULT_SHELL_MARKER = '__mde_default_shell__'
 const WSL_TERMINAL_ENVIRONMENT = {
@@ -269,6 +271,8 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
     }
 
     const workingDirectory = context.workingDirectory ?? session.path
+    const executable = context.windowsExecutable
+    if (!executable?.cwd) throw new Error('A resolved Windows WSL executable and host directory are required.')
 
     const environment = wslEnvironmentArgs({
       ...context.environment,
@@ -276,7 +280,8 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
       ...WSL_TERMINAL_ENVIRONMENT
     })
     return {
-      file: 'wsl.exe',
+      file: assertWindowsExecutablePath(executable.file),
+      cwd: assertWindowsExecutablePath(executable.cwd, 'Windows host directory'),
       args: [
         '-d',
         session.distro,
@@ -299,9 +304,7 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
             ? [session.shell]
             : [])
       ]
-      // cwd is deliberately absent: --cd sets the working directory inside the
-      // distro, and the Windows-side cwd is irrelevant (and must be a valid
-      // Windows path, which session.path is not).
+      // --cd sets the distro directory; cwd is the trusted Windows-side folder.
     }
   }
 
@@ -310,12 +313,13 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
   }
 
   if (context.platform === 'win32') {
-    const shell = session.shell ?? DEFAULT_WINDOWS_SHELL
+    if (!context.windowsExecutable) throw new Error('A resolved Windows shell executable is required.')
+    const shell = assertWindowsExecutablePath(context.windowsExecutable.file)
     if (['powershell', 'powershell.exe', 'pwsh', 'pwsh.exe'].includes(shellBasename(shell))) {
       return {
         file: shell,
         args: ['-NoExit', '-Command', powershellStartupCommand()],
-        cwd: session.path
+        cwd: context.workingDirectory ?? session.path
       }
     }
 
