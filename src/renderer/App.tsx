@@ -798,9 +798,11 @@ export function App(): JSX.Element {
                 onLinkTask={(terminalId) => setTerminalTaskLinkTarget({ type: 'terminal', terminalId })}
               />
               {openFilePath !== undefined && (
-                // Layered over the terminals so they stay mounted at their size.
+                // Layered over the terminals so they stay mounted at their size. Its key must differ
+                // from the terminal view's: siblings that share one leave the previous session's
+                // terminals mounted after a switch.
                 <FileViewer
-                  key={selected.id}
+                  key={`viewer:${selected.id}`}
                   session={selected}
                   path={openFilePath}
                   onOpenFile={(path) => openFileAction(selected.id, path)}
