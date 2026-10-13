@@ -2700,7 +2700,7 @@ export function TerminalView({
   )
 
   return (
-    <div className="flex h-full min-w-0 flex-col bg-bg">
+    <div className="relative z-0 isolate flex h-full min-w-0 flex-col bg-bg">
       <SessionTabStrip
         session={selectedSession}
         activeTab={activeTab}
