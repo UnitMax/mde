@@ -89,7 +89,10 @@ never reaches the terminal), remembers the previous bounds and maximized or full
 memory, lowers the minimum size, and sets always-on-top. It then tells the renderer the new mode
 over `window-mode:changed`, and `App` renders `MiniAgentWindow` instead of the sidebar and
 terminals. Unmounting the terminals also stops their resize observers, so shrinking the window
-never reflows a running TUI; they reattach and refit on restore. Clicking an agent restores the
+never reflows a running TUI; they reattach and refit on restore. The mode event can reach the
+renderer before the window has finished growing, so terminals hold off measuring until the
+viewport has been quiet for 150 ms (`src/renderer/terminal/viewport-settle.ts`); otherwise a
+live TUI would be shrunk to a few columns and straight back, leaving it half repainted. Clicking an agent restores the
 full window, focuses that terminal, and plays the pane highlight on it (described under
 Notifications) so you can see which one you picked. The mini window uses the same title bar as the full window,
 with its title, agent count and restore button in it, and is not maximizable on Windows and macOS

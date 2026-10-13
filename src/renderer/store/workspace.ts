@@ -26,6 +26,7 @@ import type {
   WindowMode
 } from '@shared/types'
 import { disposeSession } from '@/terminal/sessions'
+import { viewportSettle } from '@/terminal/viewport-settle'
 import type { TerminalTaskLinks } from '@/lib/terminal-task-links'
 import type { OpenCodeTuiReadRevisions } from '@/lib/opencode-tui-notifications'
 import {
@@ -865,3 +866,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     set({ distros })
   }
 }))
+
+// The terminals are mounted as soon as the mode flips, which can be before the window has
+// finished growing back. Their sizing waits for the viewport to stop changing.
+useWorkspace.subscribe((state, previous) => {
+  if (previous.windowMode === 'mini' && state.windowMode === 'normal') viewportSettle.begin()
+})

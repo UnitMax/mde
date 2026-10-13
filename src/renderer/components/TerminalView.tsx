@@ -67,6 +67,7 @@ import {
   type Osc52Prompt
 } from '@/terminal/osc52-notices'
 import { terminalSizeAction } from '@/terminal/terminal-compat'
+import { viewportSettle } from '@/terminal/viewport-settle'
 import {
   getTerminalSettings,
   listTerminalFonts,
@@ -380,6 +381,9 @@ function TerminalSurface({
 
     const syncSize = (): void => {
       if (cancelled || launchFailed) return
+      // Measured before the window has settled, the host can be a sliver, and fitting it would
+      // shrink the live PTY and its TUI to a few columns and straight back.
+      if (!viewportSettle.isSettled()) return
 
       const action = terminalSizeAction(fitSession(terminal), ensured, previousSize, forceResize)
       if (action.type === 'wait') {
@@ -451,6 +455,7 @@ function TerminalSurface({
     scheduleSizeSyncRef.current = scheduleSizeSync
     observer.observe(host)
     window.addEventListener('resize', onWindowResize)
+    const stopWaitingForViewport = viewportSettle.onSettled(() => scheduleSizeSync())
     const frame = requestAnimationFrame(syncSize)
 
     return () => {
@@ -461,6 +466,7 @@ function TerminalSurface({
       window.clearTimeout(retry)
       observer.disconnect()
       window.removeEventListener('resize', onWindowResize)
+      stopWaitingForViewport()
       // Detach only: the process, its scrollback and its cursor all stay alive.
       detachSession(pane.terminalId)
     }
