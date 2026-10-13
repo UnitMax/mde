@@ -89,7 +89,8 @@ memory, lowers the minimum size, and sets always-on-top. It then tells the rende
 over `window-mode:changed`, and `App` renders `MiniAgentWindow` instead of the sidebar and
 terminals. Unmounting the terminals also stops their resize observers, so shrinking the window
 never reflows a running TUI; they reattach and refit on restore. Clicking an agent restores the
-full window and focuses that terminal. The mini window uses the same title bar as the full window,
+full window, focuses that terminal, and plays the pane highlight on it (described under
+Notifications) so you can see which one you picked. The mini window uses the same title bar as the full window,
 with its title, agent count and restore button in it, and is not maximizable on Windows and macOS
 (Linux has no such control). Its position is remembered only until MDE quits and nothing about it is
 written to disk.
@@ -234,6 +235,12 @@ All integrations are optional and read-only with respect to prompts and project 
 - **Notifications**: session rows and the Ctrl+O session switcher show a count for OpenCode
   agents that finished with unread results, or are waiting for permission or an answer;
   selecting the session clears completed-result counts while unresolved requests remain visible.
+  The terminal pane itself also plays a one-shot highlight, about 1.5 seconds long, when its agent
+  starts waiting for permission or an answer (accent color), finishes (green), or fails (red): a
+  bright streak travels once around the pane's border while a soft inner glow fades in and out. It
+  is triggered by a changed per-pane status revision, so title updates and the first report after
+  launch stay quiet, and it is drawn from the theme colors. Under the OS reduced-motion setting
+  the streak is replaced by a still fade. The state is renderer-only and is never persisted.
 - **Token rate** is a separate plugin from status reporting. On Linux it can be installed for the
   native OpenCode target; on Windows it can be installed independently for each WSL 2 distro. It
   adds a live estimated rate and a final provider-reported rate beside the TUI prompt. Unlike the

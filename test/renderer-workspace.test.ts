@@ -129,6 +129,7 @@ describe('renderer workspace event bridge', () => {
       opencodeTuiInstances: {},
       opencodeTuiReadRevisions: {},
       opencodeTuiInstanceLabelMode: 'numbered',
+      terminalHighlights: {},
       sessions: [],
       todoProjects: [],
       todoTasks: [],
@@ -367,6 +368,72 @@ describe('renderer workspace event bridge', () => {
 
     useWorkspace.getState().appendOpenCodeTuiInstances({ sessionId: 'session-1', instances: [] })
     expect(useWorkspace.getState().opencodeTuiReadRevisions).not.toHaveProperty('session-1:split:1')
+  })
+
+  it('flashes a pane when its OpenCode agent starts waiting, finishes, or fails', () => {
+    const working = { terminalId: 'session-1', status: 'working' as const, revision: 1 }
+    const append = (instances: OpenCodeTuiInstancesUpdate['instances']): void =>
+      useWorkspace.getState().appendOpenCodeTuiInstances({ sessionId: 'session-1', instances })
+    const highlights = (): ReturnType<typeof useWorkspace.getState>['terminalHighlights'] =>
+      useWorkspace.getState().terminalHighlights
+
+    append([working])
+    expect(highlights()).toEqual({})
+
+    append([{ ...working, status: 'attention', attentionReason: 'permission', revision: 2 }])
+    expect(highlights()['session-1']).toMatchObject({ tone: 'attention', token: 1 })
+
+    append([{ ...working, status: 'working', revision: 3 }])
+    expect(highlights()['session-1']).toMatchObject({ tone: 'attention', token: 1 })
+
+    append([{ ...working, status: 'completed', revision: 4 }])
+    expect(highlights()['session-1']).toMatchObject({ tone: 'done', token: 2 })
+
+    append([{ ...working, status: 'error', revision: 5 }])
+    expect(highlights()['session-1']).toMatchObject({ tone: 'error', token: 3 })
+  })
+
+  it('does not flash for a title-only update or an agent seen for the first time', () => {
+    const completed = { terminalId: 'session-1', status: 'completed' as const, revision: 4 }
+    const append = (instances: OpenCodeTuiInstancesUpdate['instances']): void =>
+      useWorkspace.getState().appendOpenCodeTuiInstances({ sessionId: 'session-1', instances })
+
+    append([completed])
+    append([{ ...completed, title: 'Checkout flow' }])
+    append([completed, { terminalId: 'session-1:split:1', status: 'attention', revision: 1 }])
+
+    expect(useWorkspace.getState().terminalHighlights).toEqual({})
+  })
+
+  it('flashes a focused terminal in the color of its current agent status', () => {
+    useWorkspace.getState().appendOpenCodeTuiInstances({
+      sessionId: 'session-1',
+      instances: [
+        { terminalId: 'session-1', status: 'completed', revision: 2 },
+        { terminalId: 'session-1:split:1', status: 'working', revision: 1 }
+      ]
+    })
+
+    useWorkspace.getState().flashTerminal('session-1')
+    useWorkspace.getState().flashTerminal('session-1:split:1')
+    useWorkspace.getState().flashTerminal('session-2', 'error')
+
+    const highlights = useWorkspace.getState().terminalHighlights
+    expect(highlights['session-1']).toMatchObject({ tone: 'done', token: 1 })
+    expect(highlights['session-1:split:1']).toMatchObject({ tone: 'attention', token: 1 })
+    expect(highlights['session-2']).toMatchObject({ tone: 'error', token: 1 })
+  })
+
+  it('restarts a repeated flash and ignores a stale clear of an earlier one', () => {
+    useWorkspace.getState().flashTerminal('session-1', 'done')
+    useWorkspace.getState().flashTerminal('session-1', 'done')
+    expect(useWorkspace.getState().terminalHighlights['session-1']?.token).toBe(2)
+
+    useWorkspace.getState().clearTerminalHighlight('session-1', 1)
+    expect(useWorkspace.getState().terminalHighlights['session-1']?.token).toBe(2)
+
+    useWorkspace.getState().clearTerminalHighlight('session-1', 2)
+    expect(useWorkspace.getState().terminalHighlights).toEqual({})
   })
 
   it('persists the global OpenCode TUI instance label mode', async () => {

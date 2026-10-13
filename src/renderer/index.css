@@ -408,3 +408,99 @@
 @media (prefers-reduced-motion: reduce) {
   .terminal-file-drop-preview { animation: none; }
 }
+
+/* One-shot pane highlight (TerminalPaneHighlight): a comet travels once around the border while
+   an inset glow fades in and out. The streak is a rotating conic gradient cut down to a 2px ring. */
+@property --mde-pane-sweep {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.terminal-pane-highlight {
+  --mde-pane-hl: var(--color-accent);
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+}
+
+.terminal-pane-highlight[data-tone='done'] { --mde-pane-hl: var(--color-ok); }
+.terminal-pane-highlight[data-tone='error'] { --mde-pane-hl: var(--color-danger); }
+
+.terminal-pane-highlight::before,
+.terminal-pane-highlight::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+.terminal-pane-highlight::before {
+  padding: 3px;
+  background: conic-gradient(
+    from var(--mde-pane-sweep),
+    transparent 0deg,
+    transparent 190deg,
+    color-mix(in srgb, var(--mde-pane-hl) 18%, transparent) 240deg,
+    color-mix(in srgb, var(--mde-pane-hl) 55%, transparent) 310deg,
+    var(--mde-pane-hl) 352deg,
+    color-mix(in srgb, var(--mde-pane-hl) 50%, white) 360deg
+  );
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: mde-pane-sweep 1200ms cubic-bezier(0.4, 0.1, 0.3, 1) both;
+}
+
+.terminal-pane-highlight::after {
+  box-shadow: inset 0 0 22px color-mix(in srgb, var(--mde-pane-hl) 38%, transparent);
+  animation: mde-pane-glow 1500ms ease-out both;
+}
+
+@keyframes mde-pane-sweep {
+  0% {
+    --mde-pane-sweep: 0deg;
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  65% {
+    opacity: 1;
+  }
+  100% {
+    --mde-pane-sweep: 360deg;
+    opacity: 0;
+  }
+}
+
+@keyframes mde-pane-glow {
+  0% {
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes mde-pane-fade {
+  0% {
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* The cue stays, the movement goes: a still ring fades in and out instead of sweeping. */
+@media (prefers-reduced-motion: reduce) {
+  .terminal-pane-highlight::before {
+    background: var(--mde-pane-hl);
+    animation: mde-pane-fade 1200ms ease-out both;
+  }
+}

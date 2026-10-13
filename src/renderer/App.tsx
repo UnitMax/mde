@@ -114,6 +114,8 @@ export function App(): JSX.Element {
     sessionId: string
     tabId: string
     terminalId: string
+    /** Play the pane highlight once the terminal is focused. */
+    highlight?: boolean
   } | null>(null)
   const terminalFocusRequestId = useRef(0)
   const focusedTerminalIdRef = useRef<string | null>(null)
@@ -325,6 +327,9 @@ export function App(): JSX.Element {
       const terminal = getSession(pendingTerminalFocus.terminalId)
       if (terminal?.container.isConnected) {
         terminal.term.focus()
+        if (pendingTerminalFocus.highlight) {
+          useWorkspace.getState().flashTerminal(pendingTerminalFocus.terminalId)
+        }
         setPendingTerminalFocus(null)
         return
       }
@@ -450,12 +455,22 @@ export function App(): JSX.Element {
     setPendingTerminalFocus(null)
   }
 
-  const focusTerminal = (sessionId: string, tabId: string, terminalId: string): void => {
+  const focusTerminal = (
+    sessionId: string,
+    tabId: string,
+    terminalId: string,
+    options?: { highlight?: boolean }
+  ): void => {
     terminalFocusRequestId.current += 1
     selectSession(sessionId)
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (session && activeSessionTab(session).id !== tabId) void selectTabAction(sessionId, tabId)
-    setPendingTerminalFocus({ sessionId, tabId, terminalId })
+    setPendingTerminalFocus({
+      sessionId,
+      tabId,
+      terminalId,
+      ...(options?.highlight ? { highlight: true } : {})
+    })
   }
 
   const focusLiveTerminal = (terminal: LiveTerminalDescriptor): void => {
@@ -706,7 +721,9 @@ export function App(): JSX.Element {
         labelMode={opencodeTuiInstanceLabelMode}
         onRestore={() => void setWindowMode('normal')}
         onFocusAgent={(sessionId, tabId, terminalId) => {
-          void setWindowMode('normal').then(() => focusTerminal(sessionId, tabId, terminalId))
+          void setWindowMode('normal').then(() =>
+            focusTerminal(sessionId, tabId, terminalId, { highlight: true })
+          )
         }}
       />
     )

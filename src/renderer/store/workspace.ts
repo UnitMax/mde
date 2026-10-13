@@ -28,6 +28,12 @@ import type {
 import { disposeSession } from '@/terminal/sessions'
 import type { TerminalTaskLinks } from '@/lib/terminal-task-links'
 import type { OpenCodeTuiReadRevisions } from '@/lib/opencode-tui-notifications'
+import {
+  detectInstanceHighlights,
+  highlightToneForStatus,
+  type TerminalHighlight,
+  type TerminalHighlightTone
+} from '@/lib/terminal-highlight'
 
 export interface OpenCodeTuiStatusState {
   status: OpenCodeTuiStatus
@@ -63,6 +69,18 @@ function markCompletedOpenCodeTuiInstancesRead(
   })
 }
 
+function withTerminalHighlights(
+  current: Record<string, TerminalHighlight>,
+  flashes: readonly { terminalId: string; tone: TerminalHighlightTone }[]
+): Record<string, TerminalHighlight> {
+  const next = { ...current }
+  const at = Date.now()
+  flashes.forEach(({ terminalId, tone }) => {
+    next[terminalId] = { tone, token: (current[terminalId]?.token ?? 0) + 1, at }
+  })
+  return next
+}
+
 function clearOpenCodeTuiReadRevisions(
   readRevisions: Record<string, number>,
   sessionId: string,
@@ -94,6 +112,8 @@ interface WorkspaceState {
   opencodeTuiInstances: Record<string, OpenCodeTuiInstanceStatus[]>
   opencodeTuiReadRevisions: OpenCodeTuiReadRevisions
   opencodeTuiInstanceLabelMode: OpenCodeTuiInstanceLabelMode
+  /** One-shot pane highlights by terminal id; kept here because TerminalView remounts. */
+  terminalHighlights: Record<string, TerminalHighlight>
   platform: PlatformInfo | null
   /** Owned by the main process, which resizes the window; mirrored here to pick the UI. */
   windowMode: WindowMode
@@ -160,6 +180,9 @@ interface WorkspaceState {
   clearExit: (id: string) => void
   appendOpenCodeTuiStatus: (update: OpenCodeTuiStatusUpdate) => void
   appendOpenCodeTuiInstances: (update: OpenCodeTuiInstancesUpdate) => void
+  /** Plays the pane highlight; without a tone it follows the terminal's current agent status. */
+  flashTerminal: (terminalId: string, tone?: TerminalHighlightTone) => void
+  clearTerminalHighlight: (terminalId: string, token: number) => void
   setOpenCodeTuiInstanceLabelMode: (mode: OpenCodeTuiInstanceLabelMode) => Promise<void>
   setWindowMode: (mode: WindowMode) => Promise<void>
   refreshDistros: () => Promise<void>
@@ -182,6 +205,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   opencodeTuiInstances: {},
   opencodeTuiReadRevisions: {},
   opencodeTuiInstanceLabelMode: 'numbered',
+  terminalHighlights: {},
   platform: null,
   windowMode: 'normal',
   wslAvailable: false,
@@ -794,13 +818,37 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         delete opencodeTuiInstances[sessionId]
         return { opencodeTuiInstances, opencodeTuiReadRevisions }
       }
+      const highlights = detectInstanceHighlights(previous, instances)
       return {
         opencodeTuiInstances: {
           ...state.opencodeTuiInstances,
           [sessionId]: instances
         },
-        opencodeTuiReadRevisions
+        opencodeTuiReadRevisions,
+        ...(highlights.length > 0
+          ? { terminalHighlights: withTerminalHighlights(state.terminalHighlights, highlights) }
+          : {})
       }
+    }),
+
+  flashTerminal: (terminalId, tone) =>
+    set((state) => {
+      const instance = Object.values(state.opencodeTuiInstances)
+        .flat()
+        .find((candidate) => candidate.terminalId === terminalId)
+      return {
+        terminalHighlights: withTerminalHighlights(state.terminalHighlights, [
+          { terminalId, tone: tone ?? highlightToneForStatus(instance?.status) }
+        ])
+      }
+    }),
+
+  clearTerminalHighlight: (terminalId, token) =>
+    set((state) => {
+      if (state.terminalHighlights[terminalId]?.token !== token) return state
+      const terminalHighlights = { ...state.terminalHighlights }
+      delete terminalHighlights[terminalId]
+      return { terminalHighlights }
     }),
 
   setOpenCodeTuiInstanceLabelMode: async (mode) => {
