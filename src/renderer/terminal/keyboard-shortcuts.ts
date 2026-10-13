@@ -67,9 +67,9 @@ export function getKeyboardShortcutGroups(
       shortcuts: [
         {
           id: 'terminal-layout',
-          keys: ['Ctrl+1–7'],
+          keys: ['Ctrl+1–9'],
           description: 'Choose a terminal layout.',
-          note: '1 pane, 2 columns, 3 terminals, 4 quadrant, 5 grid, 6 grid, 7 columns. Numpad digits also work.'
+          note: '1 pane, 2 columns, 3 terminals, 4 quadrant, 5 grid, 6 grid, 7 columns, 8 and 9 grids. The seven-terminal grid has no shortcut. Numpad digits also work.'
         },
         {
           id: 'terminal-fullscreen',
@@ -83,7 +83,7 @@ export function getKeyboardShortcutGroups(
         },
         {
           id: 'terminal-pane-switch',
-          keys: ['Ctrl+Shift+1–6'],
+          keys: ['Ctrl+Shift+1–9'],
           description: 'Focus a terminal by its number.',
           note: 'Numpad digits also work. Ignored while a terminal is fullscreen.'
         },

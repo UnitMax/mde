@@ -94,19 +94,34 @@ const layoutCounts: Record<TerminalLayout, number> = {
   fiveGrid: 5,
   threeColumns: 3,
   sixGrid: 6,
+  sevenGrid: 7,
+  eightGrid: 8,
+  nineGrid: 9,
 }
+const threeRowLayouts: readonly TerminalLayout[] = ['sevenGrid', 'eightGrid', 'nineGrid']
 const layoutShape = object({
   layout: (value) => typeof value === 'string' && Object.hasOwn(layoutCounts, value),
-  panes: array(pane, 6),
-  sizes: object({ columnRatio: ratio, rowRatio: ratio, secondColumnRatio: optional(ratio) }),
+  panes: array(pane, Math.max(...Object.values(layoutCounts))),
+  sizes: object({
+    columnRatio: ratio,
+    rowRatio: ratio,
+    secondColumnRatio: optional(ratio),
+    secondRowRatio: optional(ratio),
+  }),
 })
 const layout: Validator = (value) => {
   if (!layoutShape(value)) return false
-  const entry = value as { layout: TerminalLayout; panes: { id: string }[]; sizes: { columnRatio: number; secondColumnRatio?: number } }
-  const threeColumns = ['threeColumns', 'fiveGrid', 'sixGrid'].includes(entry.layout)
+  const entry = value as {
+    layout: TerminalLayout
+    panes: { id: string }[]
+    sizes: { columnRatio: number; rowRatio: number; secondColumnRatio?: number; secondRowRatio?: number }
+  }
+  const threeRows = threeRowLayouts.includes(entry.layout)
+  const threeColumns = threeRows || ['threeColumns', 'fiveGrid', 'sixGrid'].includes(entry.layout)
   return entry.panes.length === layoutCounts[entry.layout] &&
     new Set(entry.panes.map((pane) => pane.id)).size === entry.panes.length &&
-    (!threeColumns || (entry.sizes.secondColumnRatio !== undefined && entry.sizes.columnRatio < entry.sizes.secondColumnRatio))
+    (!threeColumns || (entry.sizes.secondColumnRatio !== undefined && entry.sizes.columnRatio < entry.sizes.secondColumnRatio)) &&
+    (!threeRows || (entry.sizes.secondRowRatio !== undefined && entry.sizes.rowRatio < entry.sizes.secondRowRatio))
 }
 const tab = object({ sessionId: id, tabId: id })
 const argsShape = array(string(IPC_LIMITS.path, true), IPC_LIMITS.arguments)

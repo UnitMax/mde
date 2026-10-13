@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
+import { IpcChannels } from '../src/shared/ipc'
+import { assertIpcPayload } from '../src/main/ipc-validation'
+import { validateSession } from '../src/main/store/workspace'
 import {
+  MAX_TERMINAL_COUNT,
+  TERMINAL_LAYOUTS,
   createSessionTerminalLayout,
   defaultTerminalLayoutSizes,
   getTerminalLayoutShortcut,
@@ -17,12 +22,16 @@ import {
   terminalGridTemplates,
   terminalFocusTargetAfterRemoval,
   terminalResizeHandles,
+  terminalRowColumns,
+  terminalRowGroups,
+  terminalRowRatios,
+  terminalRowSplitRatio,
   terminalSplitRatio
 } from '../src/renderer/terminal/layout'
 import { appendRuntimePane, persistRuntimeLayout } from '../src/renderer/terminal/tabs'
 
 describe('terminal layouts', () => {
-  it('maps Ctrl+1 through Ctrl+7 to the supported layouts', () => {
+  it('maps Ctrl+1 through Ctrl+9 to the supported layouts', () => {
     const input = (key: string, overrides: Partial<{ code: string; control: boolean; meta: boolean; alt: boolean; shift: boolean; type: string }> = {}) => ({
       type: 'keydown',
       key,
@@ -41,6 +50,17 @@ describe('terminal layouts', () => {
     expect(getTerminalLayoutShortcut(input('5'))).toBe('fiveGrid')
     expect(getTerminalLayoutShortcut(input('6'))).toBe('sixGrid')
     expect(getTerminalLayoutShortcut(input('7'))).toBe('threeColumns')
+    expect(getTerminalLayoutShortcut(input('8'))).toBe('eightGrid')
+    expect(getTerminalLayoutShortcut(input('9'))).toBe('nineGrid')
+    expect(getTerminalLayoutShortcut(input('Dead', { code: 'Numpad9' }))).toBe('nineGrid')
+  })
+
+  it('gives each shortcut digit to one layout and leaves Ctrl+0 for zoom', () => {
+    const digits = TERMINAL_LAYOUTS.flatMap((candidate) => candidate.shortcut ?? [])
+
+    expect(new Set(digits).size).toBe(digits.length)
+    expect(digits.sort()).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9])
+    expect(TERMINAL_LAYOUTS.find((candidate) => candidate.value === 'sevenGrid')?.shortcut).toBeUndefined()
   })
 
   it('ignores layout shortcuts without plain Ctrl modifier state', () => {
@@ -60,7 +80,7 @@ describe('terminal layouts', () => {
     expect(getTerminalLayoutShortcut(input({ alt: true }))).toBeNull()
     expect(getTerminalLayoutShortcut(input({ shift: true }))).toBeNull()
     expect(getTerminalLayoutShortcut(input({ type: 'keyup' }))).toBeNull()
-    expect(getTerminalLayoutShortcut(input({ key: '8', code: 'Digit8' }))).toBeNull()
+    expect(getTerminalLayoutShortcut(input({ key: '0', code: 'Digit0' }))).toBeNull()
   })
 
   it('maps each supported layout to its pane count', () => {
@@ -77,6 +97,19 @@ describe('terminal layouts', () => {
     expect(layoutForCount(4)).toBe('quadrant')
     expect(layoutForCount(5)).toBe('fiveGrid')
     expect(layoutForCount(6)).toBe('sixGrid')
+    expect(terminalCount('sevenGrid')).toBe(7)
+    expect(terminalCount('eightGrid')).toBe(8)
+    expect(terminalCount('nineGrid')).toBe(9)
+    expect(layoutForCount(7)).toBe('sevenGrid')
+    expect(layoutForCount(8)).toBe('eightGrid')
+    expect(layoutForCount(9)).toBe('nineGrid')
+  })
+
+  it('has a layout for every pane count up to the maximum', () => {
+    expect(MAX_TERMINAL_COUNT).toBe(9)
+    for (let count = 1; count <= MAX_TERMINAL_COUNT; count += 1) {
+      expect(terminalCount(layoutForCount(count))).toBe(count)
+    }
   })
 
   it('describes the requested grid geometry', () => {
@@ -90,6 +123,29 @@ describe('terminal layouts', () => {
     expect(paneClass('quadrant', 2)).toBe('')
     expect(paneClass('fiveGrid', 4)).toBe('')
     expect(paneClass('sixGrid', 2)).toBe('')
+    for (const layout of ['sevenGrid', 'eightGrid', 'nineGrid'] as const) {
+      expect(layoutClass(layout)).toEqual('grid-cols-1 grid-rows-3')
+    }
+  })
+
+  it('stacks the rows of the five- to nine-pane layouts and covers every pane', () => {
+    expect(terminalRowGroups('single')).toBeNull()
+    expect(terminalRowGroups('sixGrid')).toBeNull()
+    expect(terminalRowGroups('fiveGrid')).toEqual([3, 2])
+    expect(terminalRowGroups('sevenGrid')).toEqual([3, 3, 1])
+    expect(terminalRowGroups('eightGrid')).toEqual([3, 3, 2])
+    expect(terminalRowGroups('nineGrid')).toEqual([3, 3, 3])
+    for (const layout of ['fiveGrid', 'sevenGrid', 'eightGrid', 'nineGrid'] as const) {
+      expect(terminalRowGroups(layout)!.reduce((sum, count) => sum + count, 0)).toBe(terminalCount(layout))
+    }
+  })
+
+  it('shares the column ratios across full rows and splits a short row evenly', () => {
+    const sizes = { columnRatio: 0.25, secondColumnRatio: 0.6, rowRatio: 0.5 }
+
+    expect(terminalRowColumns(3, sizes)).toBe('minmax(0, 0.25fr) minmax(0, 0.35fr) minmax(0, 0.4fr)')
+    expect(terminalRowColumns(2, sizes)).toBe('repeat(2, minmax(0, 1fr))')
+    expect(terminalRowColumns(1, sizes)).toBe('repeat(1, minmax(0, 1fr))')
   })
 
   it('defines shared resize tracks for each multi-pane layout', () => {
@@ -117,6 +173,23 @@ describe('terminal layouts', () => {
       { axis: 'column', scope: 'full', columnIndex: 1 },
       { axis: 'row', scope: 'full' }
     ])
+    expect(terminalResizeHandles('nineGrid')).toEqual([
+      { axis: 'column', scope: 'full', columnIndex: 0 },
+      { axis: 'column', scope: 'full', columnIndex: 1 },
+      { axis: 'row', scope: 'full', rowIndex: 0 },
+      { axis: 'row', scope: 'full', rowIndex: 1 }
+    ])
+  })
+
+  it('stops the shared column dividers above a short last row', () => {
+    for (const layout of ['sevenGrid', 'eightGrid'] as const) {
+      expect(terminalResizeHandles(layout)).toEqual([
+        { axis: 'column', scope: 'upper', columnIndex: 0 },
+        { axis: 'column', scope: 'upper', columnIndex: 1 },
+        { axis: 'row', scope: 'full', rowIndex: 0 },
+        { axis: 'row', scope: 'full', rowIndex: 1 }
+      ])
+    }
   })
 
   it('builds grid tracks from the first column and row ratios', () => {
@@ -152,6 +225,40 @@ describe('terminal layouts', () => {
       columns: 'minmax(0, 1fr)',
       rows: 'minmax(0, 0.5fr) minmax(0, 0.5fr)'
     })
+    for (const layout of ['sevenGrid', 'eightGrid', 'nineGrid'] as const) {
+      expect(terminalGridTemplates(layout, {
+        columnRatio: 1 / 3,
+        secondColumnRatio: 2 / 3,
+        rowRatio: 0.25,
+        secondRowRatio: 0.5
+      })).toEqual({
+        columns: 'minmax(0, 1fr)',
+        rows: 'minmax(0, 0.25fr) minmax(0, 0.25fr) minmax(0, 0.5fr)'
+      })
+    }
+  })
+
+  it('starts the three-row layouts with even rows and columns', () => {
+    for (const layout of ['sevenGrid', 'eightGrid', 'nineGrid'] as const) {
+      expect(defaultTerminalLayoutSizes(layout)).toEqual({
+        columnRatio: 1 / 3,
+        secondColumnRatio: 2 / 3,
+        rowRatio: 1 / 3,
+        secondRowRatio: 2 / 3
+      })
+    }
+  })
+
+  it('normalizes invalid three-row ratios and constrains both row dividers', () => {
+    const even = { columnRatio: 1 / 3, secondColumnRatio: 2 / 3, rowRatio: 1 / 3, secondRowRatio: 2 / 3 }
+
+    expect(terminalRowRatios({ ...even, rowRatio: 0.8, secondRowRatio: 0.2 })).toEqual([1 / 3, 2 / 3])
+    expect(terminalRowRatios({ columnRatio: 0.5, rowRatio: 0.5 })).toEqual([0.5, 2 / 3])
+    expect(terminalRowSplitRatio(0, 1000, 0, even)).toBeCloseTo(120 / 998)
+    expect(terminalRowSplitRatio(1000, 1000, 1, even)).toBeCloseTo(878 / 998)
+    expect(terminalRowSplitRatio(0, 100, 1, even)).toBeCloseTo(2 / 3)
+    // The first divider cannot be dragged into the second.
+    expect(terminalRowSplitRatio(990, 1000, 0, even)).toBeCloseTo(2 / 3 - 120 / 998)
   })
 
   it('normalizes invalid three-column ratios and constrains both dividers', () => {
@@ -348,19 +455,74 @@ describe('terminal layouts', () => {
     })
   })
 
-  it('does not append beyond the six-pane limit', () => {
+  it('does not append beyond the nine-pane limit', () => {
     const layout = {
-      layout: 'sixGrid' as const,
-      panes: Array.from({ length: 6 }, (_, index) => ({
+      layout: 'nineGrid' as const,
+      panes: Array.from({ length: 9 }, (_, index) => ({
         terminalId: `pane-${index + 1}`,
         paneId: `pane-${index + 1}`
       })),
-      sizes: defaultTerminalLayoutSizes('sixGrid')
+      sizes: defaultTerminalLayoutSizes('nineGrid')
     }
 
     expect(appendRuntimePane('session-1', 'tab-1', layout, {
       sourceTerminalId: 'pane-1',
       directory: 'terminal'
     })).toBeNull()
+  })
+
+  it('grows one pane at a time from six to nine and shrinks back down', () => {
+    const launch = { sourceTerminalId: 'pane-1', directory: 'terminal' as const }
+    let layout = {
+      layout: 'sixGrid' as const,
+      panes: Array.from({ length: 6 }, (_, index) => ({
+        terminalId: `pane-${index + 1}`,
+        paneId: `pane-${index + 1}`
+      })),
+      sizes: defaultTerminalLayoutSizes('sixGrid')
+    } as ReturnType<typeof createSessionTerminalLayout>
+
+    for (const expected of ['sevenGrid', 'eightGrid', 'nineGrid'] as const) {
+      layout = appendRuntimePane('session-1', 'tab-1', layout, launch)!
+      expect(layout.layout).toBe(expected)
+      expect(layout.panes).toHaveLength(terminalCount(expected))
+      expect(layout.sizes).toEqual(defaultTerminalLayoutSizes(expected))
+    }
+
+    for (const expected of ['eightGrid', 'sevenGrid', 'sixGrid'] as const) {
+      layout = removeTerminalPane(layout, layout.panes[0]!.terminalId)!
+      expect(layout.layout).toBe(expected)
+      expect(layout.panes).toHaveLength(terminalCount(expected))
+    }
+  })
+
+  it('persists every layout at its pane count through both main-process validators', () => {
+    const projectIds = new Set(['project-1'])
+    const session = {
+      id: 'session-1',
+      projectId: 'project-1',
+      name: 'App',
+      kind: 'wsl',
+      distro: 'Ubuntu-24.04',
+      path: '/home/me/src/app',
+      createdAt: '2026-01-01T00:00:00.000Z'
+    }
+
+    for (const candidate of TERMINAL_LAYOUTS) {
+      const layout = {
+        layout: candidate.value,
+        panes: Array.from({ length: candidate.count }, (_, index) => ({ id: `pane-${index + 1}` })),
+        sizes: defaultTerminalLayoutSizes(candidate.value)
+      }
+
+      expect(() => assertIpcPayload(
+        IpcChannels.tabsUpdate,
+        { sessionId: 'session-1', tabId: 'tab-1', patch: { layout } }
+      ), candidate.value).not.toThrow()
+      expect(
+        validateSession({ ...session, tabs: [{ id: 'tab-1', name: 'Tab', layout }] }, projectIds)?.tabs?.[0]?.layout,
+        candidate.value
+      ).toEqual(layout)
+    }
   })
 })

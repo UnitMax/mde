@@ -91,12 +91,14 @@ const TERMINAL_LAYOUT_COUNTS: Record<TerminalLayout, number> = {
   quadrant: 4,
   fiveGrid: 5,
   threeColumns: 3,
-  sixGrid: 6
+  sixGrid: 6,
+  sevenGrid: 7,
+  eightGrid: 8,
+  nineGrid: 9
 }
 
 function isTerminalLayout(value: unknown): value is TerminalLayout {
-  return value === 'single' || value === 'columns' || value === 'three' || value === 'quadrant' ||
-    value === 'fiveGrid' || value === 'threeColumns' || value === 'sixGrid'
+  return typeof value === 'string' && Object.hasOwn(TERMINAL_LAYOUT_COUNTS, value)
 }
 
 function ratio(value: unknown): number {
@@ -109,8 +111,21 @@ function validRatio(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 1
 }
 
+function isThreeRowLayout(layout: TerminalLayout): boolean {
+  return layout === 'sevenGrid' || layout === 'eightGrid' || layout === 'nineGrid'
+}
+
 function isThreeColumnLayout(layout: TerminalLayout): boolean {
-  return layout === 'threeColumns' || layout === 'fiveGrid' || layout === 'sixGrid'
+  return layout === 'threeColumns' || layout === 'fiveGrid' || layout === 'sixGrid' ||
+    isThreeRowLayout(layout)
+}
+
+function threeRowRatios(sizes: Record<string, unknown>): { rowRatio: number; secondRowRatio: number } {
+  const rowRatio = validRatio(sizes.rowRatio) ? sizes.rowRatio : 1 / 3
+  const secondRowRatio = validRatio(sizes.secondRowRatio) ? sizes.secondRowRatio : 2 / 3
+  return rowRatio < secondRowRatio
+    ? { rowRatio, secondRowRatio }
+    : { rowRatio: 1 / 3, secondRowRatio: 2 / 3 }
 }
 
 function defaultTab(sessionId: string): SessionTab {
@@ -159,7 +174,9 @@ function validateTerminalLayout(raw: unknown): PersistedTerminalLayout | null {
     panes,
     sizes: {
       ...normalizedColumnRatios,
-      rowRatio: ratio(sizes.rowRatio)
+      ...(isThreeRowLayout(record.layout)
+        ? threeRowRatios(sizes)
+        : { rowRatio: ratio(sizes.rowRatio) })
     }
   }
 }

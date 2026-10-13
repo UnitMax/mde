@@ -132,12 +132,18 @@ export type TerminalLayout =
   | 'fiveGrid'
   | 'threeColumns'
   | 'sixGrid'
+  | 'sevenGrid'
+  | 'eightGrid'
+  | 'nineGrid'
 
 export interface TerminalLayoutSizes {
   columnRatio: number
+  /** First horizontal divider ratio; the only one for layouts with at most two rows. */
   rowRatio: number
   /** Second vertical divider ratio for three-column layouts. */
   secondColumnRatio?: number
+  /** Second horizontal divider ratio for three-row layouts. */
+  secondRowRatio?: number
 }
 
 export interface PersistedTerminalPane {

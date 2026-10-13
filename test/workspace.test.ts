@@ -242,6 +242,41 @@ describe('workspace validation', () => {
     expect(invalidPaneCount?.tabs?.[0]?.name).toBe('Tab 1')
   })
 
+  it('validates the seven- to nine-pane layouts with independent row and column ratios', () => {
+    const projectIds = new Set([project.id])
+    const panes = Array.from({ length: 10 }, (_, index) => ({ id: `pane-${index + 1}` }))
+    const tabFor = (layout: string, count: number, sizes: Record<string, number>) => validateSession({
+      ...session,
+      tabs: [{ id: 'tab-grid', name: 'Grid', layout: { layout, panes: panes.slice(0, count), sizes } }]
+    }, projectIds)?.tabs?.[0]
+
+    const custom = { columnRatio: 0.3, secondColumnRatio: 0.7, rowRatio: 0.2, secondRowRatio: 0.5 }
+    for (const [layout, count] of [['sevenGrid', 7], ['eightGrid', 8], ['nineGrid', 9]] as const) {
+      expect(tabFor(layout, count, custom)?.layout).toEqual({
+        layout,
+        panes: panes.slice(0, count),
+        sizes: custom
+      })
+    }
+
+    const even = { columnRatio: 1 / 3, secondColumnRatio: 2 / 3, rowRatio: 1 / 3, secondRowRatio: 2 / 3 }
+    // Out-of-order, missing or out-of-range row ratios fall back to even rows.
+    expect(tabFor('nineGrid', 9, { ...custom, rowRatio: 0.8, secondRowRatio: 0.2 })?.layout.sizes).toEqual({
+      ...custom,
+      ...{ rowRatio: 1 / 3, secondRowRatio: 2 / 3 }
+    })
+    expect(tabFor('nineGrid', 9, { columnRatio: 1 / 3, secondColumnRatio: 2 / 3, rowRatio: 0.5 })?.layout.sizes).toEqual({
+      ...even,
+      rowRatio: 0.5
+    })
+    expect(tabFor('nineGrid', 9, { columnRatio: 1 / 3, secondColumnRatio: 2 / 3, rowRatio: 2 })?.layout.sizes).toEqual(even)
+    // A layout that does not use a second row divider never stores one.
+    expect(tabFor('sixGrid', 6, custom)?.layout.sizes).not.toHaveProperty('secondRowRatio')
+    // The pane count must match the layout exactly.
+    expect(tabFor('nineGrid', 8, custom)?.name).toBe('Tab 1')
+    expect(tabFor('eightGrid', 9, custom)?.name).toBe('Tab 1')
+  })
+
   it('loads grouped projects and sessions from the new workspace shape', () => {
     expect(validateWorkspace({
       projects: [project],

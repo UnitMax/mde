@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OpenCodeSessionSummary, Session } from '../src/shared/types'
 import { OpenCodeSessionsDialog } from '../src/renderer/components/OpenCodeSessionsDialog'
 import { TerminalView } from '../src/renderer/components/TerminalView'
+import { MAX_TERMINAL_COUNT } from '../src/renderer/terminal/layout'
 import { useWorkspace } from '../src/renderer/store/workspace'
 
 const terminalFocus = vi.hoisted(() => vi.fn())
@@ -146,13 +147,13 @@ describe('OpenCode session picker dialog', () => {
   })
 
   it('opens a clicked row and blocks both mouse and keyboard selection when the tab is full', async () => {
-    const { update } = await renderDialog({ paneCount: 6 })
+    const { update } = await renderDialog({ paneCount: MAX_TERMINAL_COUNT })
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('This tab is full. No more terminals can be opened.')
     expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain('Enter to open in a new terminal')
     await act(async () => document.querySelector<HTMLButtonElement>('[role="option"]')!.click())
     await key(input(), 'Enter')
     expect(onSelect).not.toHaveBeenCalled()
-    await update({ paneCount: 5 })
+    await update({ paneCount: MAX_TERMINAL_COUNT - 1 })
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Enter to open')
     await act(async () => document.querySelector<HTMLButtonElement>('[data-session-id="ses_old"]')!.click())
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ opencodeSessionId: 'ses_old' }))
@@ -226,7 +227,7 @@ describe('OpenCode session picker dialog', () => {
   })
 
   it('keeps Shift+Enter available on a full tab while Enter stays blocked', async () => {
-    await renderDialog({ paneCount: 6 })
+    await renderDialog({ paneCount: MAX_TERMINAL_COUNT })
     await key(input(), 'Enter')
     expect(onSelect).not.toHaveBeenCalled()
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Shift+Enter to open in this terminal')

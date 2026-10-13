@@ -85,8 +85,13 @@ import {
   terminalGridTemplates,
   terminalColumnRatios,
   terminalColumnSplitRatio,
+  terminalRowColumns,
+  terminalRowGroups,
+  terminalRowRatios,
+  terminalRowSplitRatio,
   isTerminalPaneClosable,
   isThreeColumnLayout,
+  isThreeRowLayout,
   layoutClass,
   paneClass,
   panesToTrim,
@@ -102,7 +107,8 @@ import {
   type RuntimeTerminalLaunch,
   type TerminalColumnIndex,
   type TerminalResizeAxis,
-  type TerminalResizeScope
+  type TerminalResizeScope,
+  type TerminalRowIndex
 } from '@/terminal/layout'
 import {
   isTerminalFullscreenShortcut,
@@ -157,7 +163,11 @@ interface TerminalViewProps {
   onRenameTab: (tabId: string, name: string) => void
   onCloseTab: (tabId: string) => void
   onLayoutChange: (layout: TerminalLayout) => void
-  onLayoutResize: (axis: TerminalResizeAxis, ratio: number, columnIndex?: TerminalColumnIndex) => void
+  onLayoutResize: (
+    axis: TerminalResizeAxis,
+    ratio: number,
+    index?: TerminalColumnIndex | TerminalRowIndex
+  ) => void
   onPaneOrderChange: (terminalIds: readonly string[]) => void
   onReduceLayout: (layout: TerminalLayout, paneIds: string[]) => void
   onAddPane: (sourceTerminalId: string, launch: RuntimeTerminalLaunch) => void
@@ -951,14 +961,16 @@ function LayoutGlyph({ layout }: { layout: TerminalLayout }): JSX.Element {
   const count = terminalCount(layout)
   const columns = layout === 'single'
     ? 'grid-cols-1'
-    : layout === 'fiveGrid'
+    : layout === 'fiveGrid' || layout === 'eightGrid'
       ? 'grid-cols-6'
       : isThreeColumnLayout(layout)
         ? 'grid-cols-3'
         : 'grid-cols-2'
   const rows = layout === 'single' || layout === 'columns' || layout === 'threeColumns'
     ? 'grid-rows-1'
-    : 'grid-rows-2'
+    : isThreeRowLayout(layout)
+      ? 'grid-rows-3'
+      : 'grid-rows-2'
   return (
     <span className={`grid h-3.5 w-4 gap-px ${columns} ${rows}`} aria-hidden="true">
       {Array.from({ length: count }, (_, index) => (
@@ -968,7 +980,11 @@ function LayoutGlyph({ layout }: { layout: TerminalLayout }): JSX.Element {
             ? 'col-span-2'
             : layout === 'fiveGrid'
               ? index < 3 ? 'col-span-2' : 'col-span-3'
-              : ''}`}
+              : layout === 'eightGrid'
+                ? index < 6 ? 'col-span-2' : 'col-span-3'
+                : layout === 'sevenGrid' && index === 6
+                  ? 'col-span-3'
+                  : ''}`}
         />
       ))}
     </span>
@@ -980,6 +996,7 @@ interface TerminalResizeHandleProps {
   axis: TerminalResizeAxis
   scope: TerminalResizeScope
   columnIndex?: TerminalColumnIndex
+  rowIndex?: TerminalRowIndex
   ratio: number
   sizes: SessionTerminalLayout['sizes']
   containerRef: RefObject<HTMLDivElement>
@@ -1003,7 +1020,8 @@ function terminalResizeHandleStyle(
   axis: TerminalResizeAxis,
   scope: TerminalResizeScope,
   sizes: SessionTerminalLayout['sizes'],
-  columnIndex: TerminalColumnIndex | undefined
+  columnIndex: TerminalColumnIndex | undefined,
+  rowIndex: TerminalRowIndex | undefined
 ): CSSProperties {
   if (axis === 'column') {
     const dividerIndex = columnIndex ?? 0
@@ -1013,13 +1031,20 @@ function terminalResizeHandleStyle(
     return {
       left: splitLinePosition(ratio, gapCount, dividerIndex),
       top: 0,
-      height: scope === 'top' ? splitLinePosition(sizes.rowRatio) : '100%'
+      height: scope === 'top'
+        ? splitLinePosition(sizes.rowRatio)
+        : scope === 'upper'
+          ? splitLinePosition(terminalRowRatios(sizes)[1], 2, 1)
+          : '100%'
     }
   }
 
+  const dividerIndex = rowIndex ?? 0
   return {
     left: 0,
-    top: splitLinePosition(sizes.rowRatio),
+    top: isThreeRowLayout(layout)
+      ? splitLinePosition(terminalRowRatios(sizes)[dividerIndex], 2, dividerIndex)
+      : splitLinePosition(sizes.rowRatio),
     width: '100%'
   }
 }
@@ -1029,6 +1054,7 @@ function TerminalResizeHandle({
   axis,
   scope,
   columnIndex,
+  rowIndex,
   ratio,
   sizes,
   containerRef,
@@ -1096,7 +1122,9 @@ function TerminalResizeHandle({
       isThreeColumnLayout(layout) &&
       columnIndex !== undefined
       ? terminalColumnSplitRatio(pointerPosition, trackSize, columnIndex, sizes)
-      : terminalSplitRatio(pointerPosition, trackSize)
+      : axis === 'row' && isThreeRowLayout(layout) && rowIndex !== undefined
+        ? terminalRowSplitRatio(pointerPosition, trackSize, rowIndex, sizes)
+        : terminalSplitRatio(pointerPosition, trackSize)
 
     if (drag.frame !== undefined) return
     drag.frame = requestAnimationFrame(() => {
@@ -1117,9 +1145,9 @@ function TerminalResizeHandle({
       role="separator"
       aria-label={axis === 'column' ? 'Resize terminal columns' : 'Resize terminal rows'}
       aria-orientation={axis === 'column' ? 'vertical' : 'horizontal'}
-      data-testid={`terminal-resize-${axis}-${scope}${columnIndex === undefined || columnIndex === 0 ? '' : '-1'}`}
+      data-testid={`terminal-resize-${axis}-${scope}${(axis === 'column' ? columnIndex : rowIndex) === 1 ? '-1' : ''}`}
       className={`group absolute z-20 flex touch-none items-center justify-center ${handleClass}`}
-      style={terminalResizeHandleStyle(layout, axis, scope, sizes, columnIndex)}
+      style={terminalResizeHandleStyle(layout, axis, scope, sizes, columnIndex, rowIndex)}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={finishDrag}
@@ -2651,7 +2679,7 @@ export function TerminalView({
   const gridTemplates = isFullscreen
     ? { columns: 'minmax(0, 1fr)', rows: 'minmax(0, 1fr)' }
     : terminalGridTemplates(terminalLayout.layout, terminalLayout.sizes)
-  const fiveTopGridTemplates = terminalGridTemplates('threeColumns', terminalLayout.sizes)
+  const rowGroups = isFullscreen ? null : terminalRowGroups(terminalLayout.layout)
   const resizeHandles = isFullscreen ? [] : terminalResizeHandles(terminalLayout.layout)
 
   const renderPane = (pane: TerminalPaneState, index: number): JSX.Element => (
@@ -2739,7 +2767,9 @@ export function TerminalView({
               aria-label={candidate.label}
               aria-pressed={terminalLayout.layout === candidate.value}
               data-testid={`terminal-layout-${candidate.value}`}
-              title={`${candidate.label} (Ctrl+${candidate.shortcut})`}
+              title={candidate.shortcut === undefined
+                ? candidate.label
+                : `${candidate.label} (Ctrl+${candidate.shortcut})`}
               onClick={() => requestLayout(candidate.value)}
               className={
                 terminalLayout.layout === candidate.value
@@ -2770,38 +2800,41 @@ export function TerminalView({
             if (!reorderDragRef.current) setHoveredPaneId(null)
           }}
         >
-          {terminalLayout.layout === 'fiveGrid' && !isFullscreen ? (
-            <>
-              <div
-                className="grid min-h-0 min-w-0 gap-px"
-                style={{
-                  gridTemplateColumns: fiveTopGridTemplates.columns,
-                  gridTemplateRows: fiveTopGridTemplates.rows
-                }}
-              >
-                {visiblePanes.slice(0, 3).map(renderPane)}
-              </div>
-              <div
-                className="grid min-h-0 min-w-0 grid-cols-2 gap-px"
-                style={{ gridTemplateRows: 'minmax(0, 1fr)' }}
-              >
-                {visiblePanes.slice(3).map((pane, index) => renderPane(pane, index + 3))}
-              </div>
-            </>
-          ) : visiblePanes.map(renderPane)}
-          {resizeHandles.map(({ axis, scope, columnIndex }) => (
+          {rowGroups
+            ? rowGroups.map((paneCount, groupIndex) => {
+                const start = rowGroups.slice(0, groupIndex).reduce((sum, count) => sum + count, 0)
+                return (
+                  <div
+                    key={groupIndex}
+                    className="grid min-h-0 min-w-0 gap-px"
+                    style={{
+                      gridTemplateColumns: terminalRowColumns(paneCount, terminalLayout.sizes),
+                      gridTemplateRows: 'minmax(0, 1fr)'
+                    }}
+                  >
+                    {visiblePanes
+                      .slice(start, start + paneCount)
+                      .map((pane, index) => renderPane(pane, start + index))}
+                  </div>
+                )
+              })
+            : visiblePanes.map(renderPane)}
+          {resizeHandles.map(({ axis, scope, columnIndex, rowIndex }) => (
             <TerminalResizeHandle
-              key={`${axis}-${scope}-${columnIndex ?? 0}`}
+              key={`${axis}-${scope}-${columnIndex ?? rowIndex ?? 0}`}
               layout={terminalLayout.layout}
               axis={axis}
               scope={scope}
               columnIndex={columnIndex}
+              rowIndex={rowIndex}
               ratio={axis === 'column'
                 ? terminalColumnRatios(terminalLayout.sizes)[columnIndex ?? 0]
-                : terminalLayout.sizes.rowRatio}
+                : isThreeRowLayout(terminalLayout.layout)
+                  ? terminalRowRatios(terminalLayout.sizes)[rowIndex ?? 0]
+                  : terminalLayout.sizes.rowRatio}
               sizes={terminalLayout.sizes}
               containerRef={gridRef}
-              onResize={(ratio) => onLayoutResize(axis, ratio, columnIndex)}
+              onResize={(ratio) => onLayoutResize(axis, ratio, axis === 'column' ? columnIndex : rowIndex)}
             />
           ))}
       </div>

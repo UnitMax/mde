@@ -20,8 +20,9 @@ Every renderer-to-main call is authenticated and validated centrally; see
 
 Projects are groups that contain sessions. Sessions own the name, path, platform, distro and
 optional shell override. Each session persists an ordered set of terminal tabs. Every tab owns an
-independent layout of one to six panes, chosen from seven arrangements (Ctrl+1–7), including three
-terminals side by side and a six-terminal 3 × 2 grid; new tabs start with one fresh terminal. The
+independent layout of one to nine panes, chosen from ten arrangements (Ctrl+1–9; the seven-terminal
+grid has no shortcut), including three terminals side by side, a six-terminal 3 × 2 grid and a
+nine-terminal 3 × 3 grid; new tabs start with one fresh terminal. The
 renderer keeps one `xterm` instance per runtime terminal identity in a plain Map outside React.
 Switching sessions or tabs re-parents terminal containers rather than disposing them, so each
 process, its scrollback and its cursor position survive. Unvisited persisted tabs create their PTYs
@@ -110,7 +111,7 @@ In a focused WSL terminal, Ctrl+N or Cmd+N opens a launcher for a new shell, Ope
 Claude pane. It defaults to that terminal's current directory and can switch to the session
 directory with Tab; the two directory choices are also clickable. If the terminal has not reported
 its current directory yet, the session directory remains available. The session choice is disabled
-when both paths are identical. The launcher is WSL-only and keeps at most six panes per tab.
+when both paths are identical. The launcher is WSL-only and keeps at most nine panes per tab.
 Configure each executable and its shell-style arguments in the Settings dialog's Agents section.
 Arguments are passed as literal argv values; shell expansion and command chaining are not supported.
 Agent launch identity is runtime-only, so reopening the app restores ordinary shells rather than
@@ -129,7 +130,7 @@ and reported cost when available.
 Click a session or use the arrow keys and Enter to resume it in a new pane in its saved directory.
 Shift+Enter resumes it in the terminal the picker was opened from instead. That terminal's running
 command or OpenCode task is interrupted, so the picker asks first unless the terminal has exited.
-Shift+Enter also works on a full tab, because no pane is added. Escape closes the picker. At six
+Shift+Enter also works on a full tab, because no pane is added. Escape closes the picker. At nine
 panes the picker reports that the tab is full and disables Enter.
 
 History uses the configured OpenCode executable and its database command; resuming uses the saved

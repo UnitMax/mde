@@ -196,4 +196,24 @@ describe('IPC payload boundary', () => {
       { ...layout, layout: 'threeColumns', panes: [{ id: 'a' }, { id: 'b' }, { id: 'c' }], sizes: { columnRatio: 0.8, secondColumnRatio: 0.2, rowRatio: 0.5 } },
     ]) rejects(IpcChannels.tabsUpdate, update(value))
   })
+
+  it('accepts nine-pane layouts and rejects broken row dividers or a tenth pane', () => {
+    const panes = (count: number) => Array.from({ length: count }, (_, index) => ({ id: `pane-${index + 1}` }))
+    const nine = {
+      layout: 'nineGrid',
+      panes: panes(9),
+      sizes: { columnRatio: 1 / 3, secondColumnRatio: 2 / 3, rowRatio: 1 / 3, secondRowRatio: 2 / 3 }
+    }
+    const update = (value: unknown): unknown => ({ ...tab, patch: { layout: value } })
+
+    expect(() => assertIpcPayload(IpcChannels.tabsUpdate, update(nine))).not.toThrow()
+    for (const value of [
+      { ...nine, sizes: { ...nine.sizes, secondRowRatio: undefined } },
+      { ...nine, sizes: { ...nine.sizes, rowRatio: 0.8, secondRowRatio: 0.2 } },
+      { ...nine, sizes: { ...nine.sizes, secondRowRatio: 1 } },
+      { ...nine, layout: 'eightGrid' },
+      { ...nine, panes: panes(10) },
+      { ...nine, layout: 'sevenGrid', panes: panes(7), sizes: { columnRatio: 1 / 3, secondColumnRatio: 2 / 3, rowRatio: 0.5 } },
+    ]) rejects(IpcChannels.tabsUpdate, update(value))
+  })
 })

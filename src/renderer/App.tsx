@@ -43,6 +43,7 @@ import {
   type TerminalLayout,
   type RuntimeTerminalLaunch,
   type TerminalColumnIndex,
+  type TerminalRowIndex,
   type TerminalResizeAxis
 } from '@/terminal/layout'
 import type { PersistedTerminalLayout, Session, TodoTask } from '@shared/types'
@@ -662,16 +663,18 @@ export function App(): JSX.Element {
     tabId: string,
     axis: TerminalResizeAxis,
     ratio: number,
-    columnIndex?: TerminalColumnIndex
+    index?: TerminalColumnIndex | TerminalRowIndex
   ): void => {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!session) return
     const existing = layoutForTab(session, tabId)
     const sizes = axis === 'column'
-      ? columnIndex === 1
+      ? index === 1
         ? { ...existing.sizes, secondColumnRatio: ratio }
         : { ...existing.sizes, columnRatio: ratio }
-      : { ...existing.sizes, rowRatio: ratio }
+      : index === 1
+        ? { ...existing.sizes, secondRowRatio: ratio }
+        : { ...existing.sizes, rowRatio: ratio }
     const next = { ...existing, sizes }
     setRuntimeLayout(sessionId, tabId, next)
     queueLayoutPersistence(sessionId, tabId, next)
@@ -779,7 +782,7 @@ export function App(): JSX.Element {
                 onRenameTab={(tabId, name) => renameTab(selected.id, tabId, name)}
                 onCloseTab={(tabId) => closeTab(selected.id, tabId)}
                 onLayoutChange={(layout) => changeTerminalLayout(selected.id, activeTab.id, layout)}
-                onLayoutResize={(axis, ratio, columnIndex) => resizeTerminalLayout(selected.id, activeTab.id, axis, ratio, columnIndex)}
+                onLayoutResize={(axis, ratio, index) => resizeTerminalLayout(selected.id, activeTab.id, axis, ratio, index)}
                 onPaneOrderChange={(terminalIds) => reorderTerminalPanes(selected.id, activeTab.id, terminalIds)}
                 onReduceLayout={(layout, paneIds) => reduceTerminalLayout(selected.id, activeTab.id, layout, paneIds)}
                 onAddPane={(sourceTerminalId, launch) =>
