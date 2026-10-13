@@ -329,6 +329,11 @@
     user-select: text;
   }
 
+  /* The same padding stays in both modes, so text never touches the edge. */
+  .markdown-preview[data-width='full'] .ProseMirror {
+    max-width: none;
+  }
+
   .markdown-preview .ProseMirror h1 {
     padding-bottom: 0.3rem;
     border-bottom: 1px solid var(--color-line);

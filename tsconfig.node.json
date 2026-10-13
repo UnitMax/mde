@@ -63,6 +63,7 @@
     "src/renderer/lib/file-viewer.ts",
     "src/renderer/lib/code-languages.ts",
     "src/renderer/lib/markdown-extensions.ts",
+    "src/renderer/lib/markdown-preview-width.ts",
     "src/renderer/lib/mermaid-code-block.ts",
     "src/renderer/lib/mermaid-preview.ts",
     "src/renderer/lib/mermaid-svg.ts",

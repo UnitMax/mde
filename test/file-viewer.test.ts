@@ -12,6 +12,11 @@ import {
   isMarkdownPath,
   resolveRelativeLink
 } from '../src/renderer/lib/file-viewer'
+import {
+  getMarkdownPreviewWidth,
+  MARKDOWN_PREVIEW_WIDTH_STORAGE_KEY,
+  saveMarkdownPreviewWidth
+} from '../src/renderer/lib/markdown-preview-width'
 
 const roots: Root[] = []
 const containers: HTMLDivElement[] = []
@@ -85,6 +90,29 @@ describe('file viewer helpers', () => {
     expect(formatFileSize(2.5 * 1024 * 1024)).toBe('2.5 MB')
   })
 
+  it('remembers the Markdown preview width and falls back to centered', () => {
+    expect(getMarkdownPreviewWidth()).toBe('centered')
+
+    saveMarkdownPreviewWidth('full')
+    expect(localStorage.getItem(MARKDOWN_PREVIEW_WIDTH_STORAGE_KEY)).toBe('full')
+    expect(getMarkdownPreviewWidth()).toBe('full')
+
+    localStorage.setItem(MARKDOWN_PREVIEW_WIDTH_STORAGE_KEY, 'wide')
+    expect(getMarkdownPreviewWidth()).toBe('centered')
+  })
+
+  it('treats unavailable storage as the centered default without throwing', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('storage blocked')
+    })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('storage blocked')
+    })
+
+    expect(getMarkdownPreviewWidth()).toBe('centered')
+    expect(() => saveMarkdownPreviewWidth('full')).not.toThrow()
+  })
+
   it('maps file names to syntaxes and falls back to plain text', () => {
     expect(languageForPath('src/App.tsx')?.name).toBe('TSX')
     expect(languageForPath('scripts/build.MJS')?.name).toBe('JavaScript')
@@ -103,6 +131,7 @@ describe('FileViewer', () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     Object.defineProperty(window, 'api', { configurable: true, value: { files: { read } } })
     read.mockReset()
+    localStorage.clear()
   })
 
   afterEach(() => {
@@ -136,6 +165,75 @@ describe('FileViewer', () => {
     await act(async () => {})
     expect(container.querySelector('.markdown-preview')).toBeNull()
     expect(container.querySelector('[data-testid="code-viewer"] .cm-content')?.textContent).toContain('# Title')
+  })
+
+  it('switches the Markdown preview between a centered column and the full page', async () => {
+    const markdown = '# Title\n\nSome text\n'
+    read.mockResolvedValue(file({ content: markdown, size: markdown.length }))
+    const button = (container: HTMLElement, label: string): HTMLButtonElement | undefined =>
+      Array.from(container.querySelectorAll('button')).find(
+        (candidate) => candidate.getAttribute('aria-label') === label
+      )
+
+    let container = await renderViewer('docs/README.md')
+    expect(container.querySelector('.markdown-preview')?.getAttribute('data-width')).toBe('centered')
+    expect(button(container, 'Centered')?.getAttribute('aria-pressed')).toBe('true')
+    expect(button(container, 'Full width')?.getAttribute('aria-pressed')).toBe('false')
+
+    await act(async () => {
+      button(container, 'Full width')?.click()
+    })
+    expect(container.querySelector('.markdown-preview')?.getAttribute('data-width')).toBe('full')
+    expect(button(container, 'Full width')?.getAttribute('aria-pressed')).toBe('true')
+    expect(button(container, 'Centered')?.getAttribute('aria-pressed')).toBe('false')
+    expect(localStorage.getItem(MARKDOWN_PREVIEW_WIDTH_STORAGE_KEY)).toBe('full')
+    // Switching the width must not rebuild the document.
+    expect(container.querySelector('.markdown-preview h1')?.textContent).toBe('Title')
+
+    // A fresh viewer, even for another file, starts in the remembered width.
+    container = await renderViewer('docs/other.md')
+    expect(container.querySelector('.markdown-preview')?.getAttribute('data-width')).toBe('full')
+
+    await act(async () => {
+      button(container, 'Centered')?.click()
+    })
+    expect(container.querySelector('.markdown-preview')?.getAttribute('data-width')).toBe('centered')
+    expect(localStorage.getItem(MARKDOWN_PREVIEW_WIDTH_STORAGE_KEY)).toBe('centered')
+  })
+
+  it('offers the width control only while previewing Markdown', async () => {
+    const markdown = '# Title\n'
+    read.mockResolvedValue(file({ content: markdown, size: markdown.length }))
+    const hasWidthControl = (container: HTMLElement): boolean =>
+      container.querySelector('[aria-label="Markdown preview width"]') !== null
+
+    const container = await renderViewer('README.md')
+    expect(hasWidthControl(container)).toBe(true)
+
+    const source = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Source')
+    await act(async () => {
+      source?.click()
+    })
+    await act(async () => {})
+    expect(hasWidthControl(container)).toBe(false)
+
+    const preview = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Preview')
+    await act(async () => {
+      preview?.click()
+    })
+    expect(hasWidthControl(container)).toBe(true)
+
+    read.mockResolvedValue(file({ path: 'src/index.ts', content: 'const a = 1\n', size: 12 }))
+    expect(hasWidthControl(await renderViewer('src/index.ts'))).toBe(false)
+  })
+
+  it('starts centered when the stored width is not recognised', async () => {
+    localStorage.setItem(MARKDOWN_PREVIEW_WIDTH_STORAGE_KEY, 'huge')
+    read.mockResolvedValue(file({ content: '# Title\n', size: 8 }))
+
+    const container = await renderViewer('README.md')
+
+    expect(container.querySelector('.markdown-preview')?.getAttribute('data-width')).toBe('centered')
   })
 
   it('shows code read-only with line numbers', async () => {

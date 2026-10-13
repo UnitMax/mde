@@ -166,6 +166,8 @@ Windows WSL sessions translate accessible host paths into the active distro and 
 cannot be reached there. File drops do not copy file contents or stage clipboard image bytes.
 
 Open a Markdown file from the Files tree to preview it, or switch to Source to read its code.
+The preview is a centered column by default; the width control beside Preview and Source makes it fill the
+whole page instead, and the choice is remembered for every file.
 The file viewer covers the terminal view while terminals stay mounted at their existing size.
 The terminal view has its own stacking context so resize handles and pane overlays stay beneath the viewer.
 Fenced `mermaid` blocks render with selectable text and follow the application's color theme.

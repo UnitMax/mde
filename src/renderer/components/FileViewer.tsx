@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AlertCircle, Code, Eye, FileText, RefreshCw, X } from 'lucide-react'
+import {
+  AlertCircle,
+  Code,
+  Eye,
+  FileText,
+  FoldHorizontal,
+  RefreshCw,
+  UnfoldHorizontal,
+  X
+} from 'lucide-react'
 import type { FileReadResponse, Session } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { CodeViewer } from '@/components/CodeViewer'
@@ -7,6 +16,11 @@ import { MarkdownPreview } from '@/components/MarkdownPreview'
 import { cn } from '@/lib/utils'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { MAX_FILE_VIEW_LABEL, formatFileSize, isMarkdownPath } from '@/lib/file-viewer'
+import {
+  getMarkdownPreviewWidth,
+  saveMarkdownPreviewWidth,
+  type MarkdownPreviewWidth
+} from '@/lib/markdown-preview-width'
 
 type LoadState =
   | { status: 'loading' }
@@ -38,6 +52,7 @@ function Message({ children, tone = 'muted' }: { children: string; tone?: 'muted
 export function FileViewer({ session, path, onOpenFile, onClose }: FileViewerProps): JSX.Element {
   const [state, setState] = useState<LoadState>({ status: 'loading' })
   const [showSource, setShowSource] = useState(false)
+  const [previewWidth, setPreviewWidth] = useState<MarkdownPreviewWidth>(getMarkdownPreviewWidth)
   const requestSequence = useRef(0)
   const rootRef = useRef<HTMLDivElement>(null)
   const markdown = isMarkdownPath(path)
@@ -68,6 +83,11 @@ export function FileViewer({ session, path, onOpenFile, onClose }: FileViewerPro
     rootRef.current?.focus()
   }, [path])
 
+  const choosePreviewWidth = (width: MarkdownPreviewWidth): void => {
+    setPreviewWidth(width)
+    saveMarkdownPreviewWidth(width)
+  }
+
   const segments = path.split('/')
 
   let body: JSX.Element
@@ -84,7 +104,14 @@ export function FileViewer({ session, path, onOpenFile, onClose }: FileViewerPro
   } else if (state.file.binary || state.file.content === null) {
     body = <Message>Binary file — preview not available.</Message>
   } else if (markdown && !showSource) {
-    body = <MarkdownPreview path={path} content={state.file.content} onOpenFile={onOpenFile} />
+    body = (
+      <MarkdownPreview
+        path={path}
+        content={state.file.content}
+        width={previewWidth}
+        onOpenFile={onOpenFile}
+      />
+    )
   } else {
     body = <CodeViewer path={path} content={state.file.content} />
   }
@@ -113,6 +140,36 @@ export function FileViewer({ session, path, onOpenFile, onClose }: FileViewerPro
             </span>
           ))}
         </div>
+        {markdown && !showSource && (
+          <div
+            className="flex shrink-0 items-center rounded border border-line p-0.5"
+            role="group"
+            aria-label="Markdown preview width"
+          >
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className={cn(previewWidth === 'centered' && 'bg-active text-fg')}
+              aria-pressed={previewWidth === 'centered'}
+              aria-label="Centered"
+              title="Centered column"
+              onClick={() => choosePreviewWidth('centered')}
+            >
+              <FoldHorizontal className="h-3 w-3" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className={cn(previewWidth === 'full' && 'bg-active text-fg')}
+              aria-pressed={previewWidth === 'full'}
+              aria-label="Full width"
+              title="Fill the whole page"
+              onClick={() => choosePreviewWidth('full')}
+            >
+              <UnfoldHorizontal className="h-3 w-3" />
+            </Button>
+          </div>
+        )}
         {markdown && (
           <div className="flex shrink-0 items-center rounded border border-line p-0.5" role="group" aria-label="Markdown view">
             <Button

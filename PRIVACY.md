@@ -16,6 +16,8 @@ MDE stores data only on the local machine:
 - The renderer's local storage (`mde.terminal-settings`): appearance and terminal preferences,
   including the executable and argument strings configured for the shell, OpenCode, Codex and
   Claude launchers. Any secret typed into an argument string is stored there in plain text.
+- The renderer's local storage (`mde.markdown-preview-width`): whether the Markdown preview is a
+  centered column or fills the page (the word `centered` or `full`).
 - Small preference files in the user-data directory for the OpenCode status integration and
   notifications.
 - If you enable the optional OpenCode integrations, a short status snapshot under

@@ -2,15 +2,18 @@ import { useEffect, type MouseEvent } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { markdownPreviewExtensions } from '@/lib/markdown-extensions'
 import { externalLinkUrl, resolveRelativeLink } from '@/lib/file-viewer'
+import type { MarkdownPreviewWidth } from '@/lib/markdown-preview-width'
 
 interface MarkdownPreviewProps {
   /** File path relative to the session root, used to resolve relative links. */
   path: string
   content: string
+  /** Whether the document is a centered column or fills the whole page. */
+  width: MarkdownPreviewWidth
   onOpenFile: (path: string) => void
 }
 
-export function MarkdownPreview({ path, content, onOpenFile }: MarkdownPreviewProps): JSX.Element {
+export function MarkdownPreview({ path, content, width, onOpenFile }: MarkdownPreviewProps): JSX.Element {
   const editor = useEditor(
     {
       extensions: markdownPreviewExtensions,
@@ -53,7 +56,11 @@ export function MarkdownPreview({ path, content, onOpenFile }: MarkdownPreviewPr
   }
 
   return (
-    <div className="markdown-preview h-full min-h-0 overflow-y-auto" onClick={onClick}>
+    <div
+      className="markdown-preview h-full min-h-0 overflow-y-auto"
+      data-width={width}
+      onClick={onClick}
+    >
       <EditorContent editor={editor} />
     </div>
   )
