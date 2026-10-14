@@ -2,6 +2,9 @@ import { trustedIpcSender } from './helpers/ipc-sender'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OpenCodeSessionSummary, Session } from '../src/shared/types'
 import { IpcChannels } from '../src/shared/ipc'
+import { promises as fs } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 type Handler = (event: unknown, request: unknown) => Promise<unknown> | unknown
 const mocks = vi.hoisted(() => ({
@@ -78,6 +81,29 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks())
 
 describe('OpenCode history IPC and resume', () => {
+  it('lists and resumes native Mac sessions only after verifying the saved directory and source owner', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    const temporary = await fs.mkdtemp(join(tmpdir(), 'mde-mac-resume-'))
+    try {
+      const directory = await fs.realpath(temporary)
+      const nativeSession = { ...session, kind: 'native', distro: undefined, path: directory }
+      mocks.getSession.mockResolvedValue(nativeSession)
+      mocks.read.mockResolvedValue({ ...saved, directory })
+      expect(await invoke(IpcChannels.opencodeSessionsList, request)).toEqual([saved])
+      expect(await invoke(IpcChannels.ptyEnsure, ensureRequest)).toBe('running')
+      expect(ensure).toHaveBeenCalledWith('new-pane', nativeSession, expect.any(Object), expect.any(Object), {
+        directory, agent: { executable: 'custom-opencode', args: ['--session', saved.id] }
+      })
+      terminalInfo.mockReturnValue({ sessionId: 'foreign' })
+      await expect(invoke(IpcChannels.ptyEnsure, ensureRequest)).rejects.toThrow('source terminal')
+      terminalInfo.mockImplementation((id) => id === 'source-pane' ? { sessionId: session.id, directory } : null)
+      mocks.read.mockResolvedValue({ ...saved, directory: join(directory, 'missing') })
+      await expect(invoke(IpcChannels.ptyEnsure, ensureRequest)).rejects.toThrow('directory is not available')
+    } finally {
+      await fs.rm(temporary, { recursive: true, force: true })
+    }
+  })
+
   it('derives the distro from the owning workspace session', async () => {
     expect(await invoke(IpcChannels.opencodeSessionsList, request)).toEqual([saved])
     expect(mocks.list).toHaveBeenCalledWith(session, 'custom-opencode')

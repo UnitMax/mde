@@ -110,11 +110,11 @@ runtime-only and are not saved to `workspace.json`.
 
 ### Terminal launcher
 
-In a focused WSL terminal, Ctrl+N or Cmd+N opens a launcher for a new shell, OpenCode, Codex, or
+In a focused Mac or Windows/WSL terminal, Ctrl+N or Cmd+N opens a launcher for a new shell, OpenCode, Codex, or
 Claude pane. It defaults to that terminal's current directory and can switch to the session
 directory with Tab; the two directory choices are also clickable. If the terminal has not reported
 its current directory yet, the session directory remains available. The session choice is disabled
-when both paths are identical. The launcher is WSL-only and keeps at most nine panes per tab.
+when both paths are identical. The launcher keeps at most nine panes per tab.
 Configure each executable and its shell-style arguments in the Settings dialog's Agents section.
 Arguments are passed as literal argv values; shell expansion and command chaining are not supported.
 Agent launch identity is runtime-only, so reopening the app restores ordinary shells rather than
@@ -122,8 +122,8 @@ relaunching an agent.
 
 ### OpenCode session picker
 
-The history button beside VS Code and Explorer above each Windows/WSL terminal, or Ctrl+Shift+O
-in a focused terminal, opens the OpenCode session picker. It shows the current distro's complete
+The history button above each Mac or Windows/WSL terminal, or Ctrl+Shift+O
+in a focused terminal, opens the OpenCode session picker. It shows the native Mac account's or current distro's complete
 history across all directories in compact rows grouped by folder. The terminal's current directory
 comes first, with sessions ordered by most recent activity within each folder.
 Search by title, directory, session ID, model, or agent. Archived sessions and subagent conversations
@@ -139,6 +139,10 @@ panes the picker reports that the tab is full and disables Enter.
 History uses the configured OpenCode executable and its database command; resuming uses the saved
 session settings. Both require a version supporting `opencode db <query> --format json`. If optional
 metadata is unavailable it is omitted. The selected history and resume command remain runtime-only.
+On Mac, agent and metadata commands run through the selected login shell with literal arguments.
+Plugin management reads PATH, `OPENCODE_CONFIG_DIR`, and `XDG_CONFIG_HOME` from the native login
+shell so Finder launches resolve the same global configuration as terminal launches. The default
+config directory is `~/.config/opencode`. These operations have bounded timeouts and output sizes.
 
 ### Clipboard
 
@@ -242,16 +246,23 @@ their existing target-shell behavior.
 
 All integrations are optional and read-only with respect to prompts and project files.
 
-- **TUI status** is disabled by default for WSL terminal sessions. Open Terminal settings, enable
-  global status reporting, and install MDE's small plugin in each WSL distro where it is needed;
+- **TUI status** is disabled by default for Mac and WSL terminal sessions. Open Settings → OpenCode, enable
+  global status reporting, and install MDE's small plugin for the native Mac target or each WSL distro;
   restart OpenCode after installing or updating it. The plugin is inert outside MDE terminals,
-  writes only a short runtime snapshot under `/tmp/mde-opencode`, and does not modify project files
-  or OpenCode configuration. MDE reads that snapshot through the distro's `\\wsl.localhost\...`
+  writes only a short runtime snapshot under `/tmp/mde-opencode` in WSL or a private `mde-opencode`
+  directory beneath the macOS user temporary directory, and does not modify project files
+  or OpenCode configuration. MDE reads that snapshot locally on Mac or through the distro's `\\wsl.localhost\...`
   path and falls back to normal shell status when it is absent. Each terminal pane with a live
   OpenCode TUI appears in the global Agents overview below the Projects sessions, with its
   originating session, tab, and current status. Instance labels can use privacy-safe numbering or
   the current top-level OpenCode session title; prompts, messages, tool data, credentials, and
   filesystem contents are never included in the snapshot.
+  Snapshots carry a PID and process start identity: Linux `/proc` start ticks for WSL, or
+  `/bin/ps` start time with a fixed locale on Mac. After missed heartbeats, MDE checks this identity
+  before clearing an exited instance; an inconclusive probe preserves the last status. Mac status
+  directories have mode 0700 and snapshots mode 0600. Disposal removes a pane's snapshot;
+  startup removes matching artifacts older than 24 hours. Plugin protocol 1 remains compatible
+  with older snapshots, while plugin version 1.3.0 adds Mac support.
 - **Notifications**: session rows and the Ctrl+O session switcher show a count for OpenCode
   agents that finished with unread results, or are waiting for permission or an answer;
   selecting the session clears completed-result counts while unresolved requests remain visible.
@@ -261,7 +272,10 @@ All integrations are optional and read-only with respect to prompts and project 
   is triggered by a changed per-pane status revision, so title updates and the first report after
   launch stay quiet, and it is drawn from the theme colors. Under the OS reduced-motion setting
   the streak is replaced by a still fade. The state is renderer-only and is never persisted.
-- **Token rate** is a separate plugin from status reporting. On Linux it can be installed for the
+- **Desktop alerts** request Dock attention on macOS or flash the taskbar on Windows, and play
+  the system sound when an agent completes, needs input, or fails while MDE is unfocused.
+  Focusing MDE or disabling alerts clears attention. Native notification banners are not used.
+- **Token rate** is a separate plugin from status reporting. On Mac and Linux it can be installed for the
   native OpenCode target; on Windows it can be installed independently for each WSL 2 distro. It
   adds a live estimated rate and a final provider-reported rate beside the TUI prompt. Unlike the
   status plugin, it also registers itself in OpenCode's `tui.json`. Restart OpenCode after

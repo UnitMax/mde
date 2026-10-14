@@ -358,7 +358,7 @@ describe('WSL file reads', () => {
  * no shell parsing its arguments. Running it here with the local bash checks
  * the script itself rather than a mock of it.
  */
-describe.skipIf(process.platform === 'win32')('WSL read script under bash', () => {
+describe.skipIf(process.platform !== 'linux')('WSL read script under bash', () => {
   let base = ''
 
   afterEach(async () => {

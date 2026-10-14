@@ -30,6 +30,8 @@ export const allowedUnpackedNodePtyFiles = [
 ]
 
 const unpackedNodePtyMarker = '/resources/app.asar.unpacked/node_modules/node-pty/'
+const macUnpackedNodePtyMarker = '.app/contents/resources/app.asar.unpacked/node_modules/node-pty/'
+const allowedMacUnpackedNodePtyFiles = ['build/Release/pty.node', 'build/Release/spawn-helper']
 
 export function isForbiddenPackagedFile(filePath) {
   const name = basename(filePath).toLowerCase()
@@ -38,6 +40,11 @@ export function isForbiddenPackagedFile(filePath) {
 
 export function isUnexpectedUnpackedNodePtyFile(filePath) {
   const normalised = filePath.replaceAll('\\', '/').toLowerCase()
+  const macMarkerIndex = normalised.indexOf(macUnpackedNodePtyMarker)
+  if (macMarkerIndex !== -1) {
+    const relativePath = normalised.slice(macMarkerIndex + macUnpackedNodePtyMarker.length)
+    return !allowedMacUnpackedNodePtyFiles.some((allowed) => allowed.toLowerCase() === relativePath)
+  }
   const markerIndex = normalised.indexOf(unpackedNodePtyMarker)
   if (markerIndex === -1) return false
   const relativePath = normalised.slice(markerIndex + unpackedNodePtyMarker.length)
@@ -241,7 +248,7 @@ if (invokedPath === fileURLToPath(import.meta.url)) {
       console.error(`  ${file}`)
     }
     console.error(
-      'Check win.asar, win.asarUnpack, and win.files exclusions in electron-builder.yml, then rebuild.',
+      'Check platform asar, asarUnpack, and files exclusions in electron-builder.yml, then rebuild.',
     )
     process.exitCode = 1
   }

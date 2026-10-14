@@ -309,6 +309,14 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
   }
 
   if (context.agent) {
+    if (context.platform === 'darwin') {
+      return {
+        file: '/bin/sh',
+        args: ['-c', wslAgentShellCommand(context.returnToShell), 'mde-agent',
+          session.shell ?? context.defaultShell ?? '/bin/zsh', context.agent.executable, ...context.agent.args],
+        cwd: context.workingDirectory ?? session.path
+      }
+    }
     throw new Error('Coding agents can only be launched in WSL sessions on Windows')
   }
 

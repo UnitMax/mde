@@ -307,6 +307,24 @@ describe('terminal history entry points', () => {
     expect(list).not.toHaveBeenCalled()
   })
 
+  it('opens history and the launcher from a native Mac terminal', async () => {
+    useWorkspace.setState({ platform: { platform: 'darwin', isWindows: false }, wslAvailable: false })
+    await renderTerminal({ ...session, kind: 'native', distro: undefined })
+    expect(document.querySelector('[aria-label="Open OpenCode sessions"]')).not.toBeNull()
+    const textarea = document.createElement('textarea')
+    document.querySelector('.terminal-host')!.append(textarea)
+    await act(async () => textarea.focus())
+    const launcherEvent = await key(textarea, 'n', { metaKey: true })
+    expect(launcherEvent.defaultPrevented).toBe(true)
+    expect(document.querySelector<HTMLButtonElement>('[data-testid="terminal-launcher-opencode"]')?.disabled).toBe(false)
+    await key(document.querySelector('[role="dialog"]')!, 'Escape')
+    await act(async () => textarea.focus())
+    const historyEvent = await key(textarea, 'O', { ctrlKey: true, shiftKey: true })
+    expect(historyEvent.defaultPrevented).toBe(true)
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({ sourceTerminalId: 'source-pane' }))
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('this Mac')
+  })
+
   it('replaces the source pane from Shift+Enter after confirming, without adding a pane', async () => {
     const { onAddPane } = await renderTerminal()
     await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="terminal-opencode-sessions-source-pane"]')!.click())

@@ -4,6 +4,7 @@ directories:
   output: dist
   buildResources: build
 npmRebuild: false
+afterPack: scripts/strip-mac-native.cjs
 # Electron's shipped fuse defaults leave the packaged binary usable as a
 # general-purpose Node interpreter and leave app.asar unvalidated. MDE never
 # re-executes itself as Node, so all of this is dead weight that only makes the
@@ -74,6 +75,36 @@ win:
   target:
     - target: zip
       arch: [x64]
+mac:
+  icon: build/icon.png
+  category: public.app-category.developer-tools
+  # Local builds need a valid ad-hoc signature after packaging and fuse changes.
+  identity: '-'
+  asar:
+    smartUnpack: false
+  files:
+    - out/**
+    - package.json
+    - '!**/*.{ts,map,md}'
+    - '!node_modules/node-addon-api/**'
+    - '!node_modules/node-pty/bin/**'
+    - '!node_modules/node-pty/build/!(Release){,/**}'
+    - '!node_modules/node-pty/build/Release/!(pty.node|spawn-helper){,/**}'
+    - '!node_modules/node-pty/deps/**'
+    - '!node_modules/node-pty/lib/**/*.test.js'
+    - '!node_modules/node-pty/lib/testUtils.test.js'
+    - '!node_modules/node-pty/scripts/**'
+    - '!node_modules/node-pty/src/**'
+    - '!node_modules/node-pty/third_party/**'
+    - '!node_modules/node-pty/prebuilds/**'
+  asarUnpack:
+    - '**/node_modules/node-pty/build/Release/pty.node'
+    - '**/node_modules/node-pty/build/Release/spawn-helper'
+  target:
+    - target: dmg
+      arch: [arm64]
+    - target: zip
+      arch: [arm64]
 linux:
   icon: build/icon.png
   target:

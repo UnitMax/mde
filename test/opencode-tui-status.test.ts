@@ -41,9 +41,8 @@ function installRuntime(manager: OpenCodeTuiStatusManager): void {
   managerInternals(manager).runtimes.set('terminal-1', {
     sessionId: 'session-1',
     terminalId: 'terminal-1',
-    distro: 'Ubuntu',
-    wslPath: '/tmp/mde-opencode/status.json',
-    windowsPath: '\\\\wsl.localhost\\Ubuntu\\tmp\\mde-opencode\\status.json',
+    target: { kind: 'wsl', distro: 'Ubuntu' },
+    hostPath: '\\\\wsl.localhost\\Ubuntu\\tmp\\mde-opencode\\status.json',
     timer: undefined,
     snapshot: null,
     lastHeartbeatAt: null,
@@ -168,7 +167,7 @@ describe('OpenCode TUI status protocol', () => {
     expect(TUI_STATUS_PLUGIN_SOURCE).toContain(
       `mde-opencode-tui-status-plugin-version: ${TUI_STATUS_PLUGIN_VERSION}`
     )
-    expect(TUI_STATUS_PLUGIN_SOURCE).toContain("!file.startsWith('/tmp/mde-opencode/')")
+    expect(TUI_STATUS_PLUGIN_SOURCE).toContain('path.dirname(file) !== root')
     expect(TUI_STATUS_PLUGIN_SOURCE).toContain("event?.type === 'permission.asked'")
     expect(TUI_STATUS_PLUGIN_SOURCE).toContain("event?.type === 'question.asked'")
     expect(TUI_STATUS_PLUGIN_SOURCE).toContain("event?.type === 'session.created'")

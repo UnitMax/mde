@@ -45,13 +45,13 @@ export function getKeyboardShortcutGroups(
           id: 'terminal-launcher-open',
           keys: [`${primaryModifier}+N`],
           description: 'Open the terminal launcher.',
-          note: 'Available from a focused WSL terminal.'
+          note: 'Available from a focused Mac or Windows/WSL terminal.'
         },
         {
           id: 'opencode-sessions-open',
           keys: ['Ctrl+Shift+O'],
-          description: 'Browse OpenCode sessions from every directory in the current WSL distro.',
-          note: 'Available from a focused Windows/WSL terminal.'
+          description: 'Browse OpenCode sessions from every directory on this Mac or in the current WSL distro.',
+          note: 'Available from a focused Mac or Windows/WSL terminal.'
         },
         {
           id: 'mini-window-toggle',

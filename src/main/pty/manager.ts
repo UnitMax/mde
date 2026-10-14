@@ -1,4 +1,5 @@
 import { homedir } from 'node:os'
+import { nativeLoginShell } from '../native-environment'
 import * as nodePty from 'node-pty'
 import type { IPty, IWindowsPtyForkOptions } from 'node-pty'
 import type { TerminalPalette } from '@shared/ipc'
@@ -61,7 +62,8 @@ function launchContext(session: Session): LaunchContext {
       ? resolveWslExecutable()
       : { file: resolveWindowsShell(session.shell) }
   }
-  if (process.env.SHELL) context.defaultShell = process.env.SHELL
+  if (process.platform === 'darwin') context.defaultShell = nativeLoginShell()
+  else if (process.env.SHELL) context.defaultShell = process.env.SHELL
   return context
 }
 

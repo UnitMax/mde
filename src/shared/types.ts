@@ -214,7 +214,7 @@ export type OpenCodeTuiStatus = 'idle' | 'working' | 'attention' | 'completed' |
 
 export type OpenCodeTuiAttentionReason = 'permission' | 'question'
 
-/** A privacy-safe status snapshot written by the optional WSL TUI plugin. */
+/** A local status snapshot written by the optional OpenCode plugin. */
 export interface OpenCodeTuiStatusSnapshot {
   protocol: 1
   status: OpenCodeTuiStatus
@@ -223,10 +223,12 @@ export interface OpenCodeTuiStatusSnapshot {
   title?: string
   revision: number
   updatedAt: number
-  /** Linux process identity used only by the main-process liveness check. */
+  /** Process identity used only by the main-process liveness check. */
   processId?: number
   /** Linux /proc start-time tick, paired with processId to reject PID reuse. */
   processStartTicks?: number
+  /** macOS process start time from ps, paired with processId. */
+  processStartedAt?: string
   /** Explicit plugin shutdown marker; distinct from a completed task. */
   closed?: true
 }
@@ -277,11 +279,11 @@ export interface OpenCodeTuiSetInstanceLabelModeRequest {
 }
 
 export interface OpenCodeTuiPluginRequest {
-  distro: string
+  target: OpenCodePluginTarget
 }
 
 export interface OpenCodeTuiPluginState {
-  distro: string
+  target: OpenCodePluginTarget
   status: OpenCodeTuiPluginInstallStatus
   installedVersion: string | null
   currentVersion: string

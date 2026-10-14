@@ -24,7 +24,7 @@ async function checkDirectory(path: string): Promise<number> {
   }
 }
 
-describe.skipIf(process.platform === 'win32')('in-distro directory check argv', () => {
+describe.skipIf(process.platform !== 'linux')('in-distro directory check argv', () => {
   let directory = ''
 
   beforeAll(async () => {

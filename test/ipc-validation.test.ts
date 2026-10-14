@@ -6,7 +6,6 @@ const palette = { foreground: '#ffffff', background: '#000000' }
 const size = { cols: 80, rows: 24 }
 const ensure = { terminalId: 'pane', sessionId: 'session', palette, size }
 const layout = { layout: 'single', panes: [{ id: 'pane' }], sizes: { columnRatio: 0.5, rowRatio: 0.5 } }
-const distro = { distro: 'Ubuntu-24.04' }
 const enabled = { enabled: true }
 const sessionId = { sessionId: 'session' }
 const terminalId = { terminalId: 'pane' }
@@ -64,9 +63,9 @@ const validPayloads = {
   [IpcChannels.filesList]: { sessionId: 'session', path: '' },
   [IpcChannels.filesRead]: { sessionId: 'session', path: 'src/file.ts' },
   [IpcChannels.opencodeSessionsList]: { sessionId: 'session', sourceTerminalId: 'pane', executable: '/usr/bin/opencode' },
-  [IpcChannels.opencodeTuiPluginState]: distro,
-  [IpcChannels.opencodeTuiPluginInstall]: distro,
-  [IpcChannels.opencodeTuiPluginRemove]: distro,
+  [IpcChannels.opencodeTuiPluginState]: plugin,
+  [IpcChannels.opencodeTuiPluginInstall]: plugin,
+  [IpcChannels.opencodeTuiPluginRemove]: plugin,
   [IpcChannels.opencodeTuiSettings]: undefined,
   [IpcChannels.opencodeTuiSetEnabled]: enabled,
   [IpcChannels.opencodeTuiSetInstanceLabelMode]: { mode: 'numbered' },
@@ -148,7 +147,7 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.windowChromeSet, { color: '#ffffff' })
     expect(() => assertIpcPayload(IpcChannels.windowChromeSet, { color: '#FFF', symbolColor: '#aBc123' })).not.toThrow()
     for (const distro of ['../other', 'Ubuntu\n', ' '.repeat(129) + 'Ubuntu']) {
-      rejects(IpcChannels.opencodeTuiPluginInstall, { distro })
+      rejects(IpcChannels.opencodeTuiPluginInstall, { target: { kind: 'wsl', distro } })
     }
     rejects(IpcChannels.opencodeTokenRatePluginInstall, { target: { kind: 'native', distro: 'Ubuntu' } })
     rejects(IpcChannels.opencodeSessionsList, { ...validPayloads[IpcChannels.opencodeSessionsList], executable: 'opencode\nunsafe' })

@@ -75,7 +75,6 @@ const distro: Validator = (value) => typeof value === 'string' && value.length <
 const kind = oneOf('native', 'wsl')
 const sessionId = object({ sessionId: id })
 const terminalId = object({ terminalId: id })
-const distroRequest = object({ distro })
 const enabled = object({ enabled: boolean })
 const palette = object({
   foreground: (value) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value),
@@ -204,9 +203,9 @@ export const ipcPayloadValidators = {
   [IpcChannels.filesList]: object({ sessionId: id, path: listPath }),
   [IpcChannels.filesRead]: object({ sessionId: id, path: relativePath }),
   [IpcChannels.opencodeSessionsList]: object({ sessionId: id, sourceTerminalId: id, executable: path }),
-  [IpcChannels.opencodeTuiPluginState]: distroRequest,
-  [IpcChannels.opencodeTuiPluginInstall]: distroRequest,
-  [IpcChannels.opencodeTuiPluginRemove]: distroRequest,
+  [IpcChannels.opencodeTuiPluginState]: pluginRequest,
+  [IpcChannels.opencodeTuiPluginInstall]: pluginRequest,
+  [IpcChannels.opencodeTuiPluginRemove]: pluginRequest,
   [IpcChannels.opencodeTuiSettings]: noPayload,
   [IpcChannels.opencodeTuiSetEnabled]: enabled,
   [IpcChannels.opencodeTuiSetInstanceLabelMode]: object({ mode: oneOf('numbered', 'title') }),

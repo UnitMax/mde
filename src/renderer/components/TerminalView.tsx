@@ -1,3 +1,4 @@
+import { supportsAgentIntegration } from '@shared/agent-support'
 import {
   useCallback,
   useEffect,
@@ -795,22 +796,24 @@ function TerminalPane({
               <ListTodo className="h-3.5 w-3.5" />
             </Button>
           )}
+          {supportsAgentIntegration(platform?.platform, session) && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-fg-subtle hover:bg-hover hover:text-fg active:bg-active"
+              aria-label="Open OpenCode sessions"
+              title="OpenCode sessions (Ctrl+Shift+O)"
+              data-testid={`terminal-opencode-sessions-${pane.terminalId}`}
+              onClick={onOpenCodeSessions}
+            >
+              <History className="h-3.5 w-3.5" />
+            </Button>
+          )}
           {platform?.isWindows === true &&
             wslAvailable &&
             session.kind === 'wsl' &&
             Boolean(session.distro) && (
               <>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="text-fg-subtle hover:bg-hover hover:text-fg active:bg-active"
-                  aria-label="Open OpenCode sessions"
-                  title="OpenCode sessions (Ctrl+Shift+O)"
-                  data-testid={`terminal-opencode-sessions-${pane.terminalId}`}
-                  onClick={onOpenCodeSessions}
-                >
-                  <History className="h-3.5 w-3.5" />
-                </Button>
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -1179,8 +1182,8 @@ function tokenRateTargetKey(target: OpenCodePluginTarget): string {
   return target.kind === 'native' ? 'native' : 'wsl:' + target.distro
 }
 
-function tokenRateTargetLabel(target: OpenCodePluginTarget): string {
-  return target.kind === 'native' ? 'Native Linux' : target.distro + ' (WSL 2)'
+function tokenRateTargetLabel(target: OpenCodePluginTarget, platform?: string): string {
+  return target.kind === 'native' ? (platform === 'darwin' ? 'This Mac' : 'Native Linux') : target.distro + ' (WSL 2)'
 }
 
 function tokenRatePluginStatusLabel(state: OpenCodeTokenRatePluginState | undefined): string {
@@ -1283,11 +1286,11 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
   const [alertLoading, setAlertLoading] = useState(false)
   const [alertError, setAlertError] = useState<string | null>(null)
 
-  const canManageTui = platform?.isWindows === true && wslAvailable
+  const canManageTui = platform?.platform === 'darwin' || (platform?.isWindows === true && wslAvailable)
   const canManageTokenRate =
-    platform?.platform === 'linux' || (platform?.isWindows === true && wslAvailable)
+    platform?.platform === 'linux' || platform?.platform === 'darwin' || (platform?.isWindows === true && wslAvailable)
   const tokenRateTargets: OpenCodePluginTarget[] =
-    platform?.platform === 'linux'
+    (platform?.platform === 'linux' || platform?.platform === 'darwin')
       ? [{ kind: 'native' }]
       : distros.map((distro) => ({ kind: 'wsl', distro: distro.name }))
 
@@ -1333,8 +1336,8 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
   }
 
   useEffect(() => {
-    if (open && canManageTui) void refreshDistros()
-  }, [canManageTui, open, refreshDistros])
+    if (open && platform?.isWindows && wslAvailable) void refreshDistros()
+  }, [platform?.isWindows, wslAvailable, open, refreshDistros])
 
   const updateSettings = (patch: Partial<TerminalSettings>): void => {
     const next = { ...settings, ...patch }
@@ -1368,10 +1371,13 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
     let cancelled = false
     setTuiLoading(true)
     setTuiError(null)
+    const targets: OpenCodePluginTarget[] = platform?.platform === 'darwin'
+      ? [{ kind: 'native' }]
+      : distros.map((distro) => ({ kind: 'wsl', distro: distro.name }))
     void Promise.all([
       window.api.opencodeTui.settings(),
       Promise.allSettled(
-        distros.map((distro) => window.api.opencodeTui.pluginState({ distro: distro.name }))
+        targets.map((target) => window.api.opencodeTui.pluginState({ target }))
       )
     ])
       .then(([nextSettings, stateResults]) => {
@@ -1380,14 +1386,14 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
         const failures: string[] = []
         stateResults.forEach((result) => {
           if (result.status === 'fulfilled') {
-            nextStates[result.value.distro] = result.value
+            nextStates[tokenRateTargetKey(result.value.target)] = result.value
           } else {
-            failures.push(ipcErrorMessage(result.reason, 'Could not inspect this WSL distro.'))
+            failures.push(ipcErrorMessage(result.reason, 'Could not inspect this OpenCode target.'))
           }
         })
         setTuiSettings(nextSettings)
         setPluginStates(nextStates)
-        if (failures.length > 0) setTuiError(failures[0] ?? 'Could not inspect one or more WSL distros.')
+        if (failures.length > 0) setTuiError(failures[0] ?? 'Could not inspect one or more OpenCode targets.')
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -1400,13 +1406,13 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
     return () => {
       cancelled = true
     }
-  }, [canManageTui, distros, open])
+  }, [canManageTui, distros, open, platform?.platform])
 
   useEffect(() => {
     if (!open || !canManageTokenRate) return
     let cancelled = false
     const targets: OpenCodePluginTarget[] =
-      platform?.platform === 'linux'
+      (platform?.platform === 'linux' || platform?.platform === 'darwin')
         ? [{ kind: 'native' }]
         : distros.map((distro) => ({ kind: 'wsl', distro: distro.name }))
     setTokenRateLoading(true)
@@ -1494,15 +1500,15 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
     }
   }
 
-  const changePlugin = async (distro: string, action: 'install' | 'remove'): Promise<void> => {
-    setTuiBusyDistro(distro)
+  const changePlugin = async (target: OpenCodePluginTarget, action: 'install' | 'remove'): Promise<void> => {
+    setTuiBusyDistro(tokenRateTargetKey(target))
     setTuiError(null)
     try {
       const state =
         action === 'install'
-          ? await window.api.opencodeTui.install({ distro })
-          : await window.api.opencodeTui.remove({ distro })
-      setPluginStates((current) => ({ ...current, [distro]: state }))
+          ? await window.api.opencodeTui.install({ target })
+          : await window.api.opencodeTui.remove({ target })
+      setPluginStates((current) => ({ ...current, [tokenRateTargetKey(target)]: state }))
     } catch (error) {
       setTuiError(ipcErrorMessage(error, 'Could not update the OpenCode status plugin.'))
     } finally {
@@ -1830,7 +1836,7 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
                       Alerts
                     </h4>
                     <p className="mt-1 text-xs text-fg-subtle">
-                      Flash the taskbar and play a sound when OpenCode finishes, needs input, or encounters an error while MDE is unfocused.
+                      {platform?.platform === 'darwin' ? 'Request Dock attention' : 'Flash the taskbar'} and play a sound when OpenCode finishes, needs input, or encounters an error while MDE is unfocused.
                     </p>
                   </div>
 
@@ -1873,13 +1879,13 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
                       Session status
                     </h4>
                     <p className="mt-1 text-xs text-fg-subtle">
-                      Install the status plugin per WSL distro and control reporting across new sessions.
+                      Install the status plugin for this Mac or a WSL distro and control reporting across new sessions.
                     </p>
                   </div>
 
                   {!canManageTui ? (
                     <p className="rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
-                      This integration is available only on Windows with WSL 2.
+                      This integration is available on macOS and Windows with WSL 2.
                     </p>
                   ) : (
                     <>
@@ -1937,12 +1943,13 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
                       </label>
 
                       <div className="space-y-2">
-                        {distros.length === 0 ? (
+                        {tokenRateTargets.length === 0 ? (
                           <p className="text-xs text-fg-subtle">No WSL 2 distros found.</p>
                         ) : (
-                          distros.map((distro) => {
-                            const state = pluginStates[distro.name]
-                            const busy = tuiBusyDistro === distro.name
+                          tokenRateTargets.map((target) => {
+                            const key = tokenRateTargetKey(target)
+                            const state = pluginStates[key]
+                            const busy = tuiBusyDistro === key
                             const action = state?.status === 'installed' ? 'remove' : 'install'
                             const actionLabel =
                               state?.status === 'outdated'
@@ -1954,20 +1961,20 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
                                     : 'Install'
                             return (
                               <div
-                                key={distro.name}
+                                key={key}
                                 className="flex items-center gap-3 rounded border border-line bg-panel px-3 py-2"
                               >
                                 <div className="min-w-0 flex-1">
-                                  <div className="truncate text-xs font-medium text-fg">{distro.name}</div>
+                                  <div className="truncate text-xs font-medium text-fg">{tokenRateTargetLabel(target, platform?.platform)}</div>
                                   <div className="truncate text-[11px] text-fg-subtle">
-                                    {distro.state} · {pluginStatusLabel(state)}
+                                    {pluginStatusLabel(state)}
                                   </div>
                                 </div>
                                 <Button
                                   variant="secondary"
                                   size="sm"
                                   disabled={busy || state?.status === 'conflict' || !state}
-                                  onClick={() => void changePlugin(distro.name, action)}
+                                  onClick={() => void changePlugin(target, action)}
                                 >
                                   {busy ? 'Working…' : actionLabel}
                                 </Button>
@@ -2001,7 +2008,7 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
 
                   {!canManageTokenRate ? (
                     <p className="rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
-                      This integration is available on Linux and on Windows WSL 2 targets.
+                      This integration is available on macOS, Linux, and Windows WSL 2 targets.
                     </p>
                   ) : tokenRateTargets.length === 0 ? (
                     <p className="text-xs text-fg-subtle">No WSL 2 distros found.</p>
@@ -2028,7 +2035,7 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
                         return (
                           <div key={key} className="flex items-center gap-3 rounded border border-line bg-panel px-3 py-2">
                             <div className="min-w-0 flex-1">
-                              <div className="truncate text-xs font-medium text-fg">{tokenRateTargetLabel(target)}</div>
+                              <div className="truncate text-xs font-medium text-fg">{tokenRateTargetLabel(target, platform?.platform)}</div>
                               <div className="truncate text-[11px] text-fg-subtle">
                                 {tokenRatePluginStatusLabel(state)}
                               </div>
@@ -2255,8 +2262,8 @@ export function TerminalView({
       if (target instanceof Element && target.closest('[role="dialog"]')) return
       const openHistory = isOpenCodeSessionsShortcut(event)
       if (!openHistory && !isTerminalLauncherShortcut(event)) return
-      if (selectedSession.kind !== 'wsl') return
-      if (openHistory && (!platform?.isWindows || !wslAvailable)) return
+      if (!supportsAgentIntegration(platform?.platform, selectedSession)) return
+      if (openHistory && platform?.isWindows && !wslAvailable) return
       if (!(target instanceof Element) || !target.closest('.terminal-host')) return
 
       const sourceTerminalId = focusedTerminalIdRef.current
@@ -2276,7 +2283,7 @@ export function TerminalView({
 
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [selectedSession.kind, terminalLayout.panes, platform?.isWindows, wslAvailable, hidePaneOverlay])
+  }, [selectedSession.kind, terminalLayout.panes, platform?.platform, platform?.isWindows, wslAvailable, selectedSession.distro, hidePaneOverlay])
 
   useEffect(() => {
     focusedTerminalIdRef.current = null

@@ -143,6 +143,16 @@ describe('scanning packaged files', () => {
 })
 
 describe('excluded packaged binaries', () => {
+  it('allows only the rebuilt Mac PTY and spawn helper inside a Mac app bundle', () => {
+    const nodePty = join('mac-arm64', 'mde.app', 'Contents', 'Resources', 'app.asar.unpacked', 'node_modules', 'node-pty')
+    expect(isUnexpectedUnpackedNodePtyFile(join(nodePty, 'build', 'Release', 'pty.node'))).toBe(false)
+    expect(isUnexpectedUnpackedNodePtyFile(join(nodePty, 'build', 'Release', 'spawn-helper'))).toBe(false)
+    expect(isUnexpectedUnpackedNodePtyFile(join(nodePty, 'lib', 'unixTerminal.js'))).toBe(true)
+    expect(isUnexpectedUnpackedNodePtyFile(join(nodePty, 'prebuilds', 'darwin-x64', 'pty.node'))).toBe(true)
+    expect(isUnexpectedUnpackedNodePtyFile(join(nodePty, 'prebuilds', 'win32-x64', 'conpty.node'))).toBe(true)
+    expect(isUnexpectedUnpackedNodePtyFile(join('win-unpacked', 'resources', 'app.asar.unpacked', 'node_modules', 'node-pty', 'build', 'Release', 'pty.node'))).toBe(true)
+  })
+
   it('names the unsigned executables the build configuration keeps out', () => {
     expect(forbiddenPackagedFiles).toContain('elevate.exe')
     expect(forbiddenPackagedFiles).toContain('winpty-agent.exe')

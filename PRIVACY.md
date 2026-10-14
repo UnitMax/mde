@@ -21,20 +21,28 @@ MDE stores data only on the local machine:
 - Small preference files in the user-data directory for the OpenCode status integration and
   notifications.
 - If you enable the optional OpenCode integrations, a short status snapshot under
-  `/tmp/mde-opencode` in the WSL distro (state and, if selected, the session title; never prompts,
-  messages or tool data), plus the plugin files MDE installs into that distro's OpenCode
+  `/tmp/mde-opencode` in the WSL distro, or a private `mde-opencode` directory under the
+  macOS user temporary directory (state, current session title, timestamps, and a process ID
+  with its start identity; never prompts, messages or tool data), plus the plugin files MDE installs into the target's OpenCode
   configuration directory. The token-rate plugin also registers itself in OpenCode's `tui.json`.
   Disabling an integration does not uninstall its plugin.
+  On Mac the snapshot directory is accessible only by the current user (0700), with files
+  restricted to that user (0600). MDE removes snapshots when terminals close and matching
+  artifacts older than 24 hours on startup. Abrupt termination may leave these temporary files.
 
 MDE does not copy file contents or terminal output into any of these. Terminal scrollback is held
 in memory only. The OpenCode session picker reads the OpenCode history database on demand (session
-titles, directories, models, token usage and cost) and keeps the result in memory only. The query output passes through a private temporary file in the distro, which is deleted when the query ends.
+titles, directories, models, token usage and cost) and keeps the result in memory only. The query output passes through a private temporary file on the native Mac host or in the distro, which is deleted when the query ends.
 
 ## Network behavior in the released application
 
 MDE does not make automatic network requests. It reads local files and invokes local commands to support terminal sessions and file actions: Git for repository status, `wsl.exe` on Windows, and the configured OpenCode executable for the session picker.
 
 MDE also disables Chromium's DNS-over-HTTPS upgrade at startup, with `app.configureHostResolver({ secureDnsMode: 'off' })`. Chromium's default mode would otherwise route name resolution through a DoH provider whenever the system resolver is a recognized one, without any application code asking it to. Because MDE resolves no hostnames of its own, the result is no DNS traffic rather than a fallback to plaintext DNS, and the statement above holds regardless of how the user's machine is configured to resolve names.
+
+On Mac MDE also reads integration-related environment values through the user's login shell and
+uses `/bin/ps` to check OpenCode process liveness. Shell startup configuration can execute
+user-configured commands, as it does in normal terminal sessions.
 
 ## User-initiated external actions
 

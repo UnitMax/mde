@@ -148,7 +148,7 @@ describe('buildLaunchSpec', () => {
     expect(syntax.stderr).toBe('')
   })
 
-  it('resolves the default WSL shell without an empty positional argument', async () => {
+  it.skipIf(process.platform !== 'linux')('resolves the default WSL shell without an empty positional argument', async () => {
     const spec = buildLaunchSpec(
       session({ kind: 'wsl', distro: 'Ubuntu-24.04' }),
       {
@@ -175,7 +175,7 @@ describe('buildLaunchSpec', () => {
     expect(result.stdout).toBe('hello world')
   })
 
-  it.each([undefined, '/bin/bash'])('runs an agent with no extra arguments using shell %s', async (shell) => {
+  it.skipIf(process.platform !== 'linux').each([undefined, '/bin/bash'])('runs an agent with no extra arguments using shell %s', async (shell) => {
     const spec = buildLaunchSpec(
       session({ kind: 'wsl', distro: 'Ubuntu-24.04', shell }),
       { platform: 'win32', windowsExecutable: wslExecutable, agent: { executable: '/bin/pwd', args: [] } }
@@ -211,7 +211,7 @@ describe('buildLaunchSpec', () => {
     expect(syntax.stderr).toBe('')
   })
 
-  it('starts the interactive shell after an agent that returns to the shell exits', async () => {
+  it.skipIf(process.platform !== 'linux')('starts the interactive shell after an agent that returns to the shell exits', async () => {
     const spec = buildLaunchSpec(
       session({ kind: 'wsl', distro: 'Ubuntu-24.04', shell: '/bin/bash' }),
       {
@@ -268,7 +268,7 @@ describe('buildLaunchSpec', () => {
     expect(command).toContain('functions --copy fish_prompt __mde_original_fish_prompt')
   })
 
-  it.skipIf(spawnSync('zsh', ['--version'], { timeout: 3_000, killSignal: 'SIGKILL' }).status !== 0)(
+  it.skipIf(process.platform !== 'linux' || spawnSync('zsh', ['--version'], { timeout: 3_000, killSignal: 'SIGKILL' }).status !== 0)(
     'loads the user Zsh configuration and reports the current directory',
     async () => {
       const home = mkdtempSync(join(tmpdir(), 'mde-zsh-home-'))
@@ -431,7 +431,7 @@ describe('buildLaunchSpec', () => {
           ].join('\n')
         )
         const spec = buildLaunchSpec(
-          session({ shell: '/usr/bin/zsh', path: home }),
+          session({ shell: process.platform === 'darwin' ? '/bin/zsh' : '/usr/bin/zsh', path: home }),
           { platform: 'linux', defaultShell: '/bin/bash' }
         )
         const result = await runLaunchProcess(spec.file, spec.args, {
@@ -456,7 +456,7 @@ describe('buildLaunchSpec', () => {
       try {
         writeFileSync(join(home, '.zshrc'), 'bindkey -v\n')
         const spec = buildLaunchSpec(
-          session({ shell: '/usr/bin/zsh', path: home }),
+          session({ shell: process.platform === 'darwin' ? '/bin/zsh' : '/usr/bin/zsh', path: home }),
           { platform: 'linux' }
         )
         const result = await runLaunchProcess(spec.file, spec.args, {

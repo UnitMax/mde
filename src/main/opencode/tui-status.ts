@@ -1,6 +1,9 @@
 import { promises as fs } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { execFile } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import { nativeOpenCodeConfigDirectory } from '../native-environment'
 import type {
   OpenCodeTuiAttentionReason,
   OpenCodeTuiInstanceLabelMode,
@@ -12,6 +15,7 @@ import type {
   OpenCodeTuiStatus,
   OpenCodeTuiStatusSnapshot,
   OpenCodeTuiStatusUpdate,
+  OpenCodePluginTarget,
   Session,
 } from '@shared/types'
 import { uncPathFor } from '../wsl/paths'
@@ -34,19 +38,21 @@ export const TUI_STATUS_LIVENESS_PROBE_MS = 10_000
 export const TUI_STATUS_LIVENESS_TIMEOUT_MS = 3_000
 export const TUI_STATUS_ARTIFACT_MAX_AGE_MINUTES = 24 * 60
 export const TUI_STATUS_PLUGIN_MARKER = 'mde-opencode-tui-status-plugin-v1'
-export const TUI_STATUS_PLUGIN_VERSION = '1.2.0'
+export const TUI_STATUS_PLUGIN_VERSION = '1.3.0'
 export const TUI_STATUS_PLUGIN_VERSION_MARKER = 'mde-opencode-tui-status-plugin-version:'
 export const TUI_STATUS_TITLE_MAX_LENGTH = 160
 const TUI_STATUS_SETTINGS_FILE = 'opencode-tui.json'
 
-/** Plain JavaScript loaded by OpenCode inside the WSL distro. */
+/** Plain JavaScript loaded by OpenCode in an MDE terminal. */
 export const TUI_STATUS_PLUGIN_SOURCE = `// ${TUI_STATUS_PLUGIN_MARKER}
 // ${TUI_STATUS_PLUGIN_VERSION_MARKER} ${TUI_STATUS_PLUGIN_VERSION}
 const file = process.env.MDE_OPENCODE_STATUS_FILE
 const protocol = process.env.MDE_OPENCODE_STATUS_PROTOCOL
 
 export const MdeTuiStatus = async () => {
-  if (!file || protocol !== '1' || !file.startsWith('/tmp/mde-opencode/')) return {}
+  const path = await import('node:path')
+  const root = process.env.MDE_OPENCODE_STATUS_ROOT || '/tmp/mde-opencode'
+  if (!file || protocol !== '1' || !path.isAbsolute(root) || path.dirname(file) !== root) return {}
 
   let revision = 0
   let status = 'idle'
@@ -59,12 +65,21 @@ export const MdeTuiStatus = async () => {
   const questions = new Map()
   let currentRootSessionId
   let processStartTicks
+  let processStartedAt
   try {
-    const fs = await import('node:fs/promises')
-    const stat = await fs.readFile('/proc/self/stat', 'utf8')
-    const afterName = stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\\s+/)
-    const value = Number(afterName[19])
-    if (Number.isSafeInteger(value) && value >= 0) processStartTicks = value
+    if (process.platform === 'darwin') {
+      const { execFileSync } = await import('node:child_process')
+      const value = execFileSync('/bin/ps', ['-p', String(process.pid), '-o', 'lstart='], {
+        encoding: 'utf8', timeout: 3000, env: { ...process.env, LC_ALL: 'C' },
+      }).trim().replace(/\\s+/g, ' ')
+      if (value) processStartedAt = value
+    } else {
+      const fs = await import('node:fs/promises')
+      const stat = await fs.readFile('/proc/self/stat', 'utf8')
+      const afterName = stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\\s+/)
+      const value = Number(afterName[19])
+      if (Number.isSafeInteger(value) && value >= 0) processStartTicks = value
+    }
   } catch {}
 
   let writePending = false
@@ -88,6 +103,7 @@ export const MdeTuiStatus = async () => {
           ...(title ? { title } : {}),
           revision,
           ...(processStartTicks === undefined ? {} : { processId: process.pid, processStartTicks }),
+          ...(processStartedAt === undefined ? {} : { processId: process.pid, processStartedAt }),
           ...(closing ? { closed: true } : {}),
           updatedAt: Date.now(),
         }
@@ -95,7 +111,7 @@ export const MdeTuiStatus = async () => {
           const fs = await import('node:fs/promises')
           await fs.mkdir((await import('node:path')).dirname(file), { recursive: true })
           const temporary = file + '.tmp-' + process.pid
-          await fs.writeFile(temporary, JSON.stringify(snapshot), 'utf8')
+          await fs.writeFile(temporary, JSON.stringify(snapshot), { encoding: 'utf8', mode: 0o600 })
           await fs.rename(temporary, file)
         } catch {}
       }
@@ -290,9 +306,8 @@ export interface OpenCodeTuiStatusEvents {
 interface Runtime {
   sessionId: string
   terminalId: string
-  distro: string
-  wslPath: string
-  windowsPath: string
+  target: OpenCodePluginTarget
+  hostPath: string
   timer: ReturnType<typeof setInterval>
   snapshot: OpenCodeTuiStatusSnapshot | null
   lastHeartbeatAt: number | null
@@ -372,12 +387,13 @@ export function decodeTuiStatusSnapshot(value: unknown, now = Date.now()): OpenC
   if (record.closed !== undefined && record.closed !== true) return null
   const hasProcessId = record.processId !== undefined
   const hasProcessStartTicks = record.processStartTicks !== undefined
-  if (hasProcessId !== hasProcessStartTicks) return null
-  if (
-    hasProcessId &&
-    (!Number.isSafeInteger(record.processId) || (record.processId as number) <= 0 ||
-      !Number.isSafeInteger(record.processStartTicks) || (record.processStartTicks as number) < 0)
-  ) return null
+  const hasProcessStartedAt = record.processStartedAt !== undefined
+  if (hasProcessId !== (hasProcessStartTicks || hasProcessStartedAt)) return null
+  if (hasProcessStartTicks && hasProcessStartedAt) return null
+  if (hasProcessId && (!Number.isSafeInteger(record.processId) || (record.processId as number) <= 0)) return null
+  if (hasProcessStartTicks && (!Number.isSafeInteger(record.processStartTicks) || (record.processStartTicks as number) < 0)) return null
+  if (hasProcessStartedAt && (typeof record.processStartedAt !== 'string' ||
+    !/^[A-Za-z]{3} [A-Za-z]{3} \d{1,2} \d{2}:\d{2}:\d{2} \d{4}$/.test(record.processStartedAt))) return null
   if (record.title !== undefined && typeof record.title !== 'string') return null
   const title = record.title
     ?.replace(/\s+/g, ' ')
@@ -394,7 +410,8 @@ export function decodeTuiStatusSnapshot(value: unknown, now = Date.now()): OpenC
     ...(hasProcessId
       ? {
           processId: record.processId as number,
-          processStartTicks: record.processStartTicks as number
+          ...(hasProcessStartTicks ? { processStartTicks: record.processStartTicks as number } : {}),
+          ...(hasProcessStartedAt ? { processStartedAt: record.processStartedAt as string } : {})
         }
       : {}),
     ...(record.closed === true ? { closed: true } : {})
@@ -414,8 +431,8 @@ export function parseTuiStatusSnapshot(value: unknown, now = Date.now()): OpenCo
 
 function hasTuiProcessIdentity(
   snapshot: OpenCodeTuiStatusSnapshot
-): snapshot is OpenCodeTuiStatusSnapshot & { processId: number; processStartTicks: number } {
-  return snapshot.processId !== undefined && snapshot.processStartTicks !== undefined
+): snapshot is OpenCodeTuiStatusSnapshot & { processId: number } {
+  return snapshot.processId !== undefined && (snapshot.processStartTicks !== undefined || snapshot.processStartedAt !== undefined)
 }
 
 function sameTuiProcess(
@@ -424,7 +441,7 @@ function sameTuiProcess(
 ): boolean {
   return a !== null &&
     a.processId === b.processId &&
-    a.processStartTicks === b.processStartTicks
+    a.processStartTicks === b.processStartTicks && a.processStartedAt === b.processStartedAt
 }
 
 export function parseLinuxProcessStartTicks(stat: string): number | null {
@@ -436,6 +453,19 @@ export function parseLinuxProcessStartTicks(stat: string): number | null {
 }
 
 export type TuiProcessLiveness = 'alive' | 'absent' | 'unknown'
+
+export function probeMacTuiProcess(processId: number, startedAt: string): Promise<TuiProcessLiveness> {
+  if (!Number.isSafeInteger(processId) || processId <= 0) return Promise.resolve('unknown')
+  return new Promise((resolve) => {
+    execFile('/bin/ps', ['-p', String(processId), '-o', 'lstart='], {
+      encoding: 'utf8', timeout: TUI_STATUS_LIVENESS_TIMEOUT_MS, env: { ...process.env, LC_ALL: 'C' }
+    }, (error, stdout) => {
+      const observed = stdout.trim().replace(/\s+/g, ' ')
+      if (error) return resolve(error.code === 1 && !observed ? 'absent' : 'unknown')
+      resolve(observed ? (observed === startedAt ? 'alive' : 'absent') : 'unknown')
+    })
+  })
+}
 
 const WSL_PROCESS_STAT_SCRIPT = [
   'if [ -r "/proc/$1/stat" ]; then',
@@ -563,16 +593,22 @@ export function classifyTuiPluginSource(source: string | null): OpenCodeTuiPlugi
 }
 
 interface TuiStatusManagerDependencies {
+  platform: NodeJS.Platform
+  nativeConfigDirectory(): Promise<string>
   now(): number
   readStatusFile(path: string): Promise<string>
   probeProcess(distro: string, processId: number, processStartTicks: number): Promise<TuiProcessLiveness>
+  probeNativeProcess(processId: number, startedAt: string): Promise<TuiProcessLiveness>
   unlinkStatusFile(path: string): Promise<void>
 }
 
 const defaultTuiStatusManagerDependencies: TuiStatusManagerDependencies = {
+  platform: process.platform,
+  nativeConfigDirectory: nativeOpenCodeConfigDirectory,
   now: () => Date.now(),
   readStatusFile: (path) => fs.readFile(path, 'utf8'),
   probeProcess: probeTuiProcess,
+  probeNativeProcess: probeMacTuiProcess,
   unlinkStatusFile: (path) => fs.unlink(path)
 }
 
@@ -583,6 +619,7 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
   private readonly homeDirectories = new Map<string, string>()
   private readonly cleanedArtifactDistros = new Set<string>()
   private settingsDirectory: string | null = null
+  private nativeStatusRoot: string | null = null
   private enabled = false
   private instanceLabelMode: OpenCodeTuiInstanceLabelMode = 'numbered'
 
@@ -597,6 +634,24 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
 
   async configure(settingsDirectory: string): Promise<void> {
     this.settingsDirectory = settingsDirectory
+    if (this.dependencies.platform === 'darwin') {
+      const root = join(tmpdir(), 'mde-opencode')
+      await fs.mkdir(root, { recursive: true, mode: 0o700 })
+      const stat = await fs.lstat(root)
+      if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== process.getuid?.()) {
+        throw new Error('The OpenCode status directory is not a private directory owned by this user.')
+      }
+      await fs.chmod(root, 0o700)
+      this.nativeStatusRoot = root
+      const cutoff = this.dependencies.now() - TUI_STATUS_ARTIFACT_MAX_AGE_MINUTES * 60_000
+      for (const name of await fs.readdir(root)) {
+        if (!/^[a-f0-9-]+\.json(?:\.tmp-\d+)?$/.test(name)) continue
+        const path = join(root, name)
+        try {
+          if ((await fs.lstat(path)).mtimeMs < cutoff) await fs.unlink(path)
+        } catch {}
+      }
+    }
     try {
       const source = await fs.readFile(join(settingsDirectory, TUI_STATUS_SETTINGS_FILE), 'utf8')
       const parsed: unknown = JSON.parse(source)
@@ -651,18 +706,20 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
   }
 
   prepare(terminalId: string, session: Session): Record<string, string> | undefined {
-    if (!this.enabled || process.platform !== 'win32' || session.kind !== 'wsl' || !session.distro) {
+    const native = this.dependencies.platform === 'darwin' && session.kind === 'native'
+    const wsl = this.dependencies.platform === 'win32' && session.kind === 'wsl' && session.distro
+    if (!this.enabled || (!native && !wsl) || (native && !this.nativeStatusRoot)) {
       return undefined
     }
 
     const token = randomUUID()
-    const wslPath = `${TUI_STATUS_ROOT}/${token}.json`
+    const root = native ? this.nativeStatusRoot! : TUI_STATUS_ROOT
+    const targetPath = `${root}/${token}.json`
     const runtime: Runtime = {
       sessionId: session.id,
       terminalId,
-      distro: session.distro,
-      wslPath,
-      windowsPath: uncPathFor(session.distro, wslPath),
+      target: native ? { kind: 'native' } : { kind: 'wsl', distro: session.distro! },
+      hostPath: native ? targetPath : uncPathFor(session.distro!, targetPath),
       timer: setInterval(() => void this.poll(terminalId), TUI_STATUS_POLL_MS),
       snapshot: null,
       lastHeartbeatAt: null,
@@ -672,11 +729,12 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
     }
     runtime.timer.unref?.()
     this.runtimes.set(terminalId, runtime)
-    this.cleanupExpiredArtifacts(session.distro)
+    if (!native) this.cleanupExpiredArtifacts(session.distro!)
     void this.poll(terminalId)
 
     return {
-      MDE_OPENCODE_STATUS_FILE: wslPath,
+      MDE_OPENCODE_STATUS_FILE: targetPath,
+      ...(native ? { MDE_OPENCODE_STATUS_ROOT: root } : {}),
       MDE_OPENCODE_STATUS_PROTOCOL: String(TUI_STATUS_PROTOCOL)
     }
   }
@@ -686,7 +744,7 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
     if (!runtime) return
     clearInterval(runtime.timer)
     this.runtimes.delete(terminalId)
-    void this.unlinkStatusFile(runtime.windowsPath)
+    void this.unlinkStatusFile(runtime.hostPath)
     this.emitSessionInstances(runtime.sessionId)
     this.emitSessionStatus(runtime.sessionId)
   }
@@ -695,22 +753,20 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
     for (const terminalId of [...this.runtimes.keys()]) this.dispose(terminalId)
   }
 
-  async pluginState(distro: string): Promise<OpenCodeTuiPluginState> {
-    const name = assertDistro(distro)
-    const pluginPath = await this.pluginPath(name)
+  async pluginState(target: OpenCodePluginTarget): Promise<OpenCodeTuiPluginState> {
+    const pluginPath = await this.targetPluginPath(target)
     const source = await this.readPlugin(pluginPath)
     const installedVersion = source ? parseTuiPluginVersion(source) : null
     return {
-      distro: name,
+      target,
       status: classifyTuiPluginSource(source),
       installedVersion,
       currentVersion: TUI_STATUS_PLUGIN_VERSION
     }
   }
 
-  async installPlugin(distro: string): Promise<OpenCodeTuiPluginState> {
-    const name = assertDistro(distro)
-    const pluginPath = await this.pluginPath(name)
+  async installPlugin(target: OpenCodePluginTarget): Promise<OpenCodeTuiPluginState> {
+    const pluginPath = await this.targetPluginPath(target)
     const existing = await this.readPlugin(pluginPath)
     if (existing !== null && !existing.includes(TUI_STATUS_PLUGIN_MARKER)) {
       throw new Error(`Refusing to overwrite an existing OpenCode plugin at ${pluginPath}.`)
@@ -720,19 +776,18 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
     const temporary = `${pluginPath}.tmp-${randomUUID()}`
     await fs.writeFile(temporary, TUI_STATUS_PLUGIN_SOURCE, 'utf8')
     await fs.rename(temporary, pluginPath)
-    return this.pluginState(name)
+    return this.pluginState(target)
   }
 
-  async removePlugin(distro: string): Promise<OpenCodeTuiPluginState> {
-    const name = assertDistro(distro)
-    const pluginPath = await this.pluginPath(name)
+  async removePlugin(target: OpenCodePluginTarget): Promise<OpenCodeTuiPluginState> {
+    const pluginPath = await this.targetPluginPath(target)
     const existing = await this.readPlugin(pluginPath)
-    if (existing === null) return this.pluginState(name)
+    if (existing === null) return this.pluginState(target)
     if (!existing.includes(TUI_STATUS_PLUGIN_MARKER)) {
       throw new Error(`Refusing to remove a non-MDE OpenCode plugin at ${pluginPath}.`)
     }
     await fs.unlink(pluginPath)
-    return this.pluginState(name)
+    return this.pluginState(target)
   }
 
   private async persistSettings(): Promise<void> {
@@ -756,7 +811,12 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
     }
   }
 
-  private async pluginPath(distro: string): Promise<string> {
+  private async targetPluginPath(target: OpenCodePluginTarget): Promise<string> {
+    if (target.kind === 'native') {
+      if (this.dependencies.platform !== 'darwin') throw new Error('Native status integration requires macOS.')
+      return join(await this.dependencies.nativeConfigDirectory(), 'plugins', 'mde-status.js')
+    }
+    const distro = assertDistro(target.distro)
     let home = this.homeDirectories.get(distro)
     if (!home) {
       home = await resolveWslHome(distro)
@@ -801,7 +861,7 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
     try {
       let snapshot: OpenCodeTuiStatusSnapshot | null = null
       try {
-        const text = await this.dependencies.readStatusFile(runtime.windowsPath)
+        const text = await this.dependencies.readStatusFile(runtime.hostPath)
         snapshot = decodeTuiStatusSnapshot(JSON.parse(text), this.dependencies.now())
       } catch {}
 
@@ -810,7 +870,7 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
       if (snapshot?.closed) {
         if (runtime.snapshot !== null && !sameTuiProcess(runtime.snapshot, snapshot)) return
         this.clearRuntimeSnapshot(runtime)
-        void this.unlinkStatusFile(runtime.windowsPath)
+        void this.unlinkStatusFile(runtime.hostPath)
         return
       }
 
@@ -868,14 +928,12 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
     runtime.lastProbeAt = now
     runtime.probeInFlight = true
     try {
-      const result = await this.dependencies.probeProcess(
-        runtime.distro,
-        snapshot.processId,
-        snapshot.processStartTicks
-      )
+      const result = runtime.target.kind === 'native'
+        ? snapshot.processStartedAt === undefined ? 'unknown' : await this.dependencies.probeNativeProcess(snapshot.processId, snapshot.processStartedAt)
+        : snapshot.processStartTicks === undefined ? 'unknown' : await this.dependencies.probeProcess(runtime.target.distro, snapshot.processId, snapshot.processStartTicks)
       if (this.runtimes.get(runtime.terminalId) !== runtime || result !== 'absent') return
       this.clearRuntimeSnapshot(runtime)
-      void this.unlinkStatusFile(runtime.windowsPath)
+      void this.unlinkStatusFile(runtime.hostPath)
     } finally {
       runtime.probeInFlight = false
     }

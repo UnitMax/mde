@@ -4,6 +4,7 @@ import type { OpenCodeSessionSummary, Session } from '@shared/types'
 import { buildLaunchSpec, type LaunchSpec } from '../pty/launch'
 import { decodeWslOutput, wslEnv } from '../wsl/distros'
 import { resolveWslExecutable, type HostExecutable } from '../windows-executable'
+import { nativeLoginShell } from '../native-environment'
 
 const REQUIRED_COLUMNS = ['id', 'title', 'directory', 'time_created', 'time_updated']
 const OPTIONAL_COLUMNS = [
@@ -52,14 +53,15 @@ export function metadataQueryLaunch(
   executable: string,
   query: string,
   marker: string,
-  hostExecutable: HostExecutable,
+  hostExecutable?: HostExecutable,
 ): {
   spec: LaunchSpec
   begin: string
   end: string
 } {
   validateOpenCodeExecutable(executable)
-  if (session.kind !== 'wsl' || !session.distro) throw new Error('Session history requires a WSL terminal.')
+  const native = session.kind === 'native'
+  if (!native && !session.distro) throw new Error('Session history requires a configured WSL distro.')
   const begin = `__MDE_OPENCODE_BEGIN_${marker}__`
   const end = `__MDE_OPENCODE_END_${marker}__`
   const script = [
@@ -79,8 +81,9 @@ export function metadataQueryLaunch(
     'exit "$mde_query_status"',
   ].join('\n')
   const spec = buildLaunchSpec(session, {
-    platform: 'win32',
+    platform: native ? 'darwin' : 'win32',
     windowsExecutable: hostExecutable,
+    defaultShell: native ? nativeLoginShell() : undefined,
     workingDirectory: '/',
     agent: { executable: '/bin/sh', args: ['-c', script, 'mde-opencode-query', executable, query, begin, end] },
   })
@@ -88,18 +91,19 @@ export function metadataQueryLaunch(
 }
 
 const runMetadataQuery: OpenCodeMetadataQuery = (session, executable, query) => {
-  const { spec, begin, end } = metadataQueryLaunch(session, executable, query, randomUUID(), resolveWslExecutable('win32'))
+  const native = session.kind === 'native'
+  const { spec, begin, end } = metadataQueryLaunch(session, executable, query, randomUUID(), native ? undefined : resolveWslExecutable('win32'))
   return new Promise((resolve, reject) => {
     execFile(spec.file, spec.args, {
-      env: wslEnv(),
+      env: native ? process.env : wslEnv(),
       cwd: spec.cwd,
       encoding: 'buffer',
       timeout: 15_000,
       maxBuffer: MAX_QUERY_BYTES,
       windowsHide: true,
     }, (error, rawStdout, rawStderr) => {
-      const stdout = decodeWslOutput(rawStdout)
-      const stderr = decodeWslOutput(rawStderr)
+      const stdout = native ? rawStdout.toString('utf8') : decodeWslOutput(rawStdout)
+      const stderr = native ? rawStderr.toString('utf8') : decodeWslOutput(rawStderr)
       if (error) {
         if (error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
           reject(new Error('OpenCode session history exceeded the output size limit.'))
@@ -108,7 +112,7 @@ const runMetadataQuery: OpenCodeMetadataQuery = (session, executable, query) => 
         } else if (/unknown (command|argument)|no such (table|column)/i.test(stderr + stdout)) {
           reject(new Error(UNSUPPORTED))
         } else {
-          reject(new Error('Could not read OpenCode session history. Check the configured executable and WSL login environment.'))
+          reject(new Error('Could not read OpenCode session history. Check the configured executable and login environment.'))
         }
         return
       }

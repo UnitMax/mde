@@ -1,3 +1,4 @@
+import { supportsAgentIntegration } from '@shared/agent-support'
 import { useEffect, useRef, useState } from 'react'
 import { Bot, Code2, Terminal as TerminalIcon } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -88,7 +89,7 @@ export function TerminalLauncher({
   )
   const available = Boolean(selectedDirectory?.trim())
   const capacityAvailable = paneCount < MAX_TERMINAL_COUNT
-  const wslOnly = platform?.isWindows === true && session.kind === 'wsl'
+  const supported = supportsAgentIntegration(platform?.platform, session)
 
   useEffect(() => subscribeTerminalSettings(() => setSettings(getTerminalSettings())), [])
 
@@ -104,7 +105,7 @@ export function TerminalLauncher({
     terminalLaunchDirectoryPath(option, directory, sessionDirectory)
 
   const itemDisabled = (item: LauncherItem): boolean => {
-    if (!wslOnly || !available || !capacityAvailable) return true
+    if (!supported || !available || !capacityAvailable) return true
     if (!item.kind) return false
     return agentCommandSettingError(settings.agents[item.kind]) !== null
   }
@@ -116,7 +117,7 @@ export function TerminalLauncher({
   useEffect(() => {
     if (!open) return
     setActiveIndex(enabledIndexes[0] ?? 0)
-  }, [open, settings, available, capacityAvailable, wslOnly])
+  }, [open, settings, available, capacityAvailable, supported])
 
   const selectItem = (item: LauncherItem): void => {
     if (itemDisabled(item)) return
@@ -144,8 +145,8 @@ export function TerminalLauncher({
     setActiveIndex(enabledIndexes[nextPosition] ?? 0)
   }
 
-  const statusMessage = !wslOnly
-    ? 'This launcher is available only for WSL sessions on Windows.'
+  const statusMessage = !supported
+    ? 'This launcher is available on macOS and Windows/WSL sessions.'
     : !available
       ? 'The selected directory is not available.'
       : !capacityAvailable

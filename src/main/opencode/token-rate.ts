@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs'
 import { execFile } from 'node:child_process'
-import { homedir } from 'node:os'
+import { nativeLoginEnvironment, nativeOpenCodeConfigDirectory } from '../native-environment'
 import { dirname, join, posix as posixPath, win32 as win32Path } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type {
@@ -160,8 +160,8 @@ function assertTarget(target: OpenCodePluginTarget): OpenCodePluginTarget {
   if (!target || (target.kind !== 'native' && target.kind !== 'wsl')) {
     throw new Error('Invalid OpenCode token-rate plugin target.')
   }
-  if (target.kind === 'native' && process.platform !== 'linux') {
-    throw new Error('Native OpenCode token-rate integration requires Linux.')
+  if (target.kind === 'native' && process.platform !== 'linux' && process.platform !== 'darwin') {
+    throw new Error('Native OpenCode token-rate integration requires Linux or macOS.')
   }
   if (target.kind === 'wsl') {
     const distro = target.distro.trim()
@@ -172,17 +172,6 @@ function assertTarget(target: OpenCodePluginTarget): OpenCodePluginTarget {
     return { kind: 'wsl', distro }
   }
   return { kind: 'native' }
-}
-
-function nativeConfigDirectory(): string {
-  const configured = process.env.OPENCODE_CONFIG_DIR?.trim()
-  if (configured) {
-    if (!configured.startsWith('/')) throw new Error('OPENCODE_CONFIG_DIR must be an absolute Linux path.')
-    return configured.replace(/\/+$/, '') || '/'
-  }
-  const xdg = process.env.XDG_CONFIG_HOME?.trim()
-  const base = xdg && xdg.startsWith('/') ? xdg : join(homedir(), '.config')
-  return join(base, 'opencode')
 }
 
 async function wslConfigDirectory(distro: string): Promise<string> {
@@ -223,7 +212,7 @@ async function findConfigFile(directory: string): Promise<string | null> {
 async function resolveTargetPaths(input: OpenCodePluginTarget): Promise<TargetPaths> {
   const target = assertTarget(input)
   if (target.kind === 'native') {
-    const directory = nativeConfigDirectory()
+    const directory = await nativeOpenCodeConfigDirectory()
     const pluginPath = join(directory, 'plugins', TOKEN_RATE_PLUGIN_FILENAME)
     return {
       target,
@@ -511,9 +500,10 @@ function normalizedVersion(value: string | null): string | null {
   return parsed ? parsed.join('.') : null
 }
 
-function nativeOpenCodeVersion(): Promise<string | null> {
+async function nativeOpenCodeVersion(): Promise<string | null> {
+  const env = process.platform === 'darwin' ? await nativeLoginEnvironment() : process.env
   return new Promise((resolve) => {
-    execFile('opencode', ['--version'], { timeout: 5_000 }, (error, stdout) => {
+    execFile('opencode', ['--version'], { timeout: 5_000, env }, (error, stdout) => {
       resolve(error ? null : normalizedVersion(String(stdout)))
     })
   })
@@ -547,7 +537,7 @@ async function atomicWrite(path: string, contents: string): Promise<void> {
 
 export class OpenCodeTokenRatePluginManager implements PtyLaunchIntegration {
   prepare(_terminalId: string, session: Session): Record<string, string> | undefined {
-    if (process.platform === 'linux' && session.kind === 'native') return { [TOKEN_RATE_PLUGIN_ENV]: '1' }
+    if ((process.platform === 'linux' || process.platform === 'darwin') && session.kind === 'native') return { [TOKEN_RATE_PLUGIN_ENV]: '1' }
     if (process.platform === 'win32' && session.kind === 'wsl' && session.distro) return { [TOKEN_RATE_PLUGIN_ENV]: '1' }
     return undefined
   }

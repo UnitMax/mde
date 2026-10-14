@@ -199,7 +199,7 @@ export function OpenCodeSessionsDialog({
       >
         <DialogHeader className="mb-0 shrink-0">
           <DialogTitle className="flex items-center gap-2"><History className="h-4 w-4" />OpenCode sessions</DialogTitle>
-          <DialogDescription>All directories in {session.distro} · Ctrl+Shift+O</DialogDescription>
+          <DialogDescription>All directories in {session.kind === 'native' ? 'this Mac' : session.distro} · Ctrl+Shift+O</DialogDescription>
         </DialogHeader>
         <div className="flex shrink-0 items-center gap-2">
           <div className="relative flex-1">

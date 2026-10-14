@@ -1,4 +1,5 @@
 import { promises as fs } from 'node:fs'
+import { supportsAgentIntegration } from '@shared/agent-support'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import {
   type AppInfo,
@@ -213,6 +214,7 @@ async function verifiedDirectory(session: Session, directory: string): Promise<s
   if (!path) return null
 
   if (session.kind === 'native') {
+    if (process.platform === 'darwin' && !isPlainAbsolutePath(path)) return null
     // A native path is checked by the filesystem itself; there is no path
     // format shared with the WSL side to validate first.
     try {
@@ -304,8 +306,8 @@ async function resolvePtyLaunchOptions(
 ): Promise<PtyLaunchOptions | undefined> {
   if (!launch) return undefined
   validatePtyLaunchRequest(launch)
-  if (process.platform !== 'win32' || session.kind !== 'wsl') {
-    throw new Error('New terminal launches are only available for WSL sessions on Windows.')
+  if (!supportsAgentIntegration(process.platform, session)) {
+    throw new Error('New terminal launches require macOS or a Windows/WSL session.')
   }
 
   const source = ptyManager.terminalInfo(launch.sourceTerminalId)
@@ -486,16 +488,16 @@ export function registerIpcHandlers(
   handle<OpenCodeTuiPluginRequest, OpenCodeTuiPluginState>(
     IpcChannels.opencodeTuiPluginState,
     async (req) => {
-      return opencodeTuiStatusManager.pluginState(req.distro)
+      return opencodeTuiStatusManager.pluginState(req.target)
     }
   )
   handle<OpenCodeTuiPluginRequest, OpenCodeTuiPluginState>(
     IpcChannels.opencodeTuiPluginInstall,
-    (req) => opencodeTuiStatusManager.installPlugin(req.distro)
+    (req) => opencodeTuiStatusManager.installPlugin(req.target)
   )
   handle<OpenCodeTuiPluginRequest, OpenCodeTuiPluginState>(
     IpcChannels.opencodeTuiPluginRemove,
-    (req) => opencodeTuiStatusManager.removePlugin(req.distro)
+    (req) => opencodeTuiStatusManager.removePlugin(req.target)
   )
   handle<void, OpenCodeTuiSettings>(IpcChannels.opencodeTuiSettings, () =>
     opencodeTuiStatusManager.settings()
@@ -559,8 +561,8 @@ export function registerIpcHandlers(
     }
     validateOpenCodeExecutable(req.executable)
     const session = await getSession(req.sessionId)
-    if (process.platform !== 'win32' || !session || session.kind !== 'wsl' || !session.distro) {
-      throw new Error('Session history requires a Windows/WSL terminal.')
+    if (!session || !supportsAgentIntegration(process.platform, session)) {
+      throw new Error('Session history requires macOS or a Windows/WSL terminal.')
     }
     const source = ptyManager.terminalInfo(req.sourceTerminalId)
     if (!source || source.sessionId !== session.id) throw new Error('The source terminal is not available.')
