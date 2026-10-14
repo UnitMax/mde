@@ -1,0 +1,102 @@
+name: Build macOS DMG
+
+on:
+  push:
+    tags:
+      - '[0-9]*'
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing version tag to build (for example, 0.0.117)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-macos-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - name: Check out the version tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.21.0'
+          architecture: arm64
+          package-manager-cache: false
+
+      - name: Validate version and runner
+        id: release
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs'
+
+          if (process.platform !== 'darwin' || process.arch !== 'arm64') {
+            throw new Error('The macOS build requires an ARM64 Mac runner')
+          }
+
+          const manifest = JSON.parse(readFileSync('package.json', 'utf8'))
+          const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'))
+          const versions = [manifest.version, lock.version, lock.packages?.['']?.version]
+          const tag = process.env.RELEASE_TAG
+          const version = tag?.replace(/^v/, '')
+          if (!/^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/.test(version ?? '') ||
+              versions.some((expected) => version !== expected)) {
+            throw new Error('The tag must match the version in package.json and package-lock.json (including its root package), with an optional v prefix')
+          }
+
+          appendFileSync(process.env.GITHUB_OUTPUT, `version=${manifest.version}\n`)
+          NODE
+
+      - name: Install dependencies and rebuild node-pty
+        run: npm ci --no-audit
+
+      - name: Run tests
+        run: npm test
+
+      - name: Audit dependencies
+        run: npm run audit:deps
+
+      - name: Build and audit the DMG
+        run: npm run build:mac
+
+      - name: Verify the app and create its checksum
+        env:
+          DMG_NAME: mde-${{ steps.release.outputs.version }}-arm64.dmg
+        run: |
+          test "$(lipo -archs dist/mac-arm64/mde.app/Contents/MacOS/mde)" = arm64
+          codesign --verify --deep --strict --verbose=2 dist/mac-arm64/mde.app
+          hdiutil verify "dist/$DMG_NAME"
+          cd dist
+          shasum -a 256 "$DMG_NAME" > "$DMG_NAME.sha256"
+          shasum -a 256 -c "$DMG_NAME.sha256"
+
+      - name: Upload the DMG and checksum
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mde-${{ steps.release.outputs.version }}-macos-arm64
+          path: |
+            dist/mde-${{ steps.release.outputs.version }}-arm64.dmg
+            dist/mde-${{ steps.release.outputs.version }}-arm64.dmg.sha256
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0

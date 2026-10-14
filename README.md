@@ -45,6 +45,7 @@ Contributor rules (code style, versioning, commit checks) are in [`AGENTS.md`](A
 npm run build             # license check, typecheck, bundle, package, then audit the output
 npm run build:win         # Windows ZIP    -> dist/mde-<version>-win.zip
 npm run build:win:dir     # Windows app    -> dist/win-unpacked/mde.exe (no ZIP)
+npm run build:mac         # macOS ARM64 DMG -> dist/mde-<version>-arm64.dmg (never publishes)
 npm run build:linux       # AppImage + deb  -> dist/mde-<version>.AppImage, .deb
 # On macOS, npm run build produces a local ARM64 app, DMG + ZIP.
 ```
@@ -66,6 +67,53 @@ Cross-building for Windows from Linux is not supported; build on Windows, or fro
 `npm run build:win:remote` (add `-- --dir` to skip the ZIP while testing locally). Release steps,
 the Windows staging details and verification are in
 [`docs/windows-release.md`](docs/windows-release.md).
+
+### macOS builds with GitHub Actions
+
+The [Build macOS DMG workflow](.github/workflows/build-macos.yml) runs when a version
+tag such as `0.0.117` is pushed; `v`-prefixed tags are also accepted. It uses the
+standard ARM64 `macos-15` runner and Node 24.21.0, installs the locked dependencies
+with `npm ci` (including the native PTY rebuild),
+and runs the full test suite and dependency audit. `npm run build:mac` then checks
+licenses, typechecks, compiles, packages an ARM64 DMG, and audits the output. The
+workflow verifies the app's signature, architecture, and disk image before
+uploading the DMG and a `.dmg.sha256` checksum. A failed check prevents upload.
+
+For each release:
+
+1. Prepare and commit the release version in `package.json` and both version
+   fields in `package-lock.json`, then push the commit. The workflow must already
+   be on the default branch to support manual runs.
+2. Push the matching version tag from that commit. For example:
+
+   ```sh
+   version=$(node -p "require('./package.json').version")
+   git tag -a "$version" -m "$version"
+   git push origin "refs/tags/$version"
+   ```
+
+3. Open **Actions → Build macOS DMG**, select the successful run, and download
+   `mde-<version>-macos-arm64` from **Artifacts** within three days. Extract the
+   download archive to get the DMG and checksum. In that directory, verify with
+   `shasum -a 256 -c mde-<version>-arm64.dmg.sha256` (replace `<version>`).
+4. Manually create a GitHub Release using that existing tag and attach the DMG
+   and checksum. Only the DMG is needed to install: mount it and drag MDE into
+   Applications. A separate app ZIP offers the same app and is unnecessary here.
+
+The tag, with an optional `v` prefix removed, must exactly match all three manifest
+version fields; mismatches fail before dependency installation. Ordinary branch
+pushes do not build. To rebuild an existing tag, use **Run workflow** with the
+required `tag` input on the default branch, or rerun its previous job if the
+artifact has expired. The tag
+must contain the `build:mac` command. Runs for the same tag share a concurrency
+group, and each build has a 30-minute timeout.
+
+The workflow has read-only repository permissions and pinned GitHub actions. It
+never bumps versions or creates, publishes, or changes a GitHub Release; packaging
+explicitly disables publishing. It needs no signing secrets and uses the existing
+ad-hoc app signature, without Developer ID signing or notarization. Tests use
+fixtures and do not submit OpenCode prompts or invoke models. Local
+`npm run build` still produces both DMG and ZIP.
 
 ## Licensing
 

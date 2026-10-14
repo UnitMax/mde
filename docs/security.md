@@ -125,6 +125,13 @@ before releases. Renderer libraries such as Mermaid are bundled into the app
 even though they are declared as development dependencies, so a production-only
 audit does not cover all shipped code.
 
+The macOS tag workflow also runs the full dependency audit, tests, license check,
+typecheck, and packaged-output audit before uploading its DMG and checksum. It
+uses pinned official actions, read-only repository permissions, no signing
+secrets, and packaging with `--publish never`. Artifacts expire after three days;
+release publication remains manual. Ordinary branch pushes do not run this gate,
+so contributors must still run the local checks above.
+
 The lockfile includes patched `http-cache-semantics` 4.3.0 and `source-map-js`
 1.2.2. These updates remain within their parents' existing dependency ranges.
 
