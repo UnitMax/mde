@@ -41,6 +41,7 @@ export const TERMINAL_SETTINGS_CHANGE_EVENT = 'mde:terminal-settings-changed'
 const CURATED_FONT_OPTIONS: readonly TerminalFontOption[] = [
   { family: 'Cascadia Mono', label: 'Cascadia Mono' },
   { family: 'JetBrains Mono', label: 'JetBrains Mono' },
+  { family: 'Iosevka Term', label: 'Iosevka Term' },
   { family: 'Fira Code', label: 'Fira Code' },
   { family: 'DejaVu Sans Mono', label: 'DejaVu Sans Mono' },
   { family: 'Menlo', label: 'Menlo' },

@@ -32,7 +32,7 @@
   --color-syntax-property: #06989a;
 
   --font-mono:
-    'Cascadia Mono', 'JetBrains Mono', 'Fira Code', 'DejaVu Sans Mono', Menlo, Consolas, monospace;
+    'Cascadia Mono', 'JetBrains Mono', 'Iosevka Term', 'Fira Code', 'DejaVu Sans Mono', Menlo, Consolas, monospace;
   --font-sans:
     'Segoe UI', Inter, ui-sans-serif, system-ui, 'Helvetica Neue', Arial, sans-serif;
 }
