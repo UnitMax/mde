@@ -1,0 +1,258 @@
+name: Build release draft
+
+on:
+  push:
+    tags:
+      - '[0-9]*'
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing version tag to build (for example, 0.0.117)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  macos:
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - name: Check out the version tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.21.0'
+          architecture: arm64
+          package-manager-cache: false
+
+      - name: Validate version and runner
+        id: release
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs'
+
+          if (process.platform !== 'darwin' || process.arch !== 'arm64') {
+            throw new Error('The macOS build requires an ARM64 Mac runner')
+          }
+
+          const manifest = JSON.parse(readFileSync('package.json', 'utf8'))
+          const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'))
+          const versions = [manifest.version, lock.version, lock.packages?.['']?.version]
+          const tag = process.env.RELEASE_TAG
+          const version = tag?.replace(/^v/, '')
+          if (!/^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/.test(version ?? '') ||
+              versions.some((expected) => version !== expected)) {
+            throw new Error('The tag must match the version in package.json and package-lock.json (including its root package), with an optional v prefix')
+          }
+
+          appendFileSync(process.env.GITHUB_OUTPUT, `version=${manifest.version}\n`)
+          NODE
+
+      - name: Install dependencies and rebuild node-pty
+        run: npm ci --no-audit
+
+      - name: Run tests
+        run: npm test
+
+      - name: Audit dependencies
+        run: npm run audit:deps
+
+      - name: Build and audit the DMG
+        run: npm run build:mac
+
+      - name: Verify the app and create its checksum
+        env:
+          DMG_NAME: mde-${{ steps.release.outputs.version }}-arm64.dmg
+        run: |
+          test "$(lipo -archs dist/mac-arm64/mde.app/Contents/MacOS/mde)" = arm64
+          codesign --verify --deep --strict --verbose=2 dist/mac-arm64/mde.app
+          hdiutil verify "dist/$DMG_NAME"
+          cd dist
+          shasum -a 256 "$DMG_NAME" > "$DMG_NAME.sha256"
+          shasum -a 256 -c "$DMG_NAME.sha256"
+
+      - name: Upload the DMG and checksum
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mde-${{ steps.release.outputs.version }}-macos-arm64
+          path: |
+            dist/mde-${{ steps.release.outputs.version }}-arm64.dmg
+            dist/mde-${{ steps.release.outputs.version }}-arm64.dmg.sha256
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - name: Check out the version tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.21.0'
+          architecture: x64
+          package-manager-cache: false
+
+      - name: Validate version and runner
+        id: release
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs'
+
+          if (process.platform !== 'win32' || process.arch !== 'x64') {
+            throw new Error('The Windows build requires a native x64 Windows runner')
+          }
+
+          const manifest = JSON.parse(readFileSync('package.json', 'utf8'))
+          const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'))
+          const versions = [manifest.version, lock.version, lock.packages?.['']?.version]
+          const version = process.env.RELEASE_TAG?.replace(/^v/, '')
+          if (!/^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/.test(version ?? '') ||
+              versions.some((expected) => version !== expected)) {
+            throw new Error('The tag must match the version in package.json and package-lock.json (including its root package), with an optional v prefix')
+          }
+
+          appendFileSync(process.env.GITHUB_OUTPUT, `version=${manifest.version}\n`)
+          NODE
+
+      - name: Install dependencies with Windows node-pty prebuilds
+        run: npm ci --no-audit
+
+      - name: Run tests
+        run: npm test
+
+      - name: Audit dependencies
+        run: npm run audit:deps
+
+      - name: Build and audit the ZIP without publishing
+        run: |
+          npm run licenses:check
+          npm run typecheck
+          npm run compile
+          npx --no-install electron-builder --win zip --x64 --publish never
+          npm run audit:package
+
+      - name: Verify the extracted ZIP and create its checksum
+        shell: pwsh
+        env:
+          ZIP_NAME: mde-${{ steps.release.outputs.version }}-win.zip
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Join-Path $PWD "dist/$env:ZIP_NAME"
+          $extracted = Join-Path $env:RUNNER_TEMP 'mde-zip-verification'
+          Expand-Archive -LiteralPath $zip -DestinationPath $extracted
+          $required = @(
+            'mde.exe', 'resources/app.asar', 'resources/LICENSE', 'resources/THIRD_PARTY_NOTICES.md',
+            'resources/app.asar.unpacked/node_modules/node-pty/prebuilds/win32-x64/conpty.node',
+            'resources/app.asar.unpacked/node_modules/node-pty/prebuilds/win32-x64/conpty/conpty.dll',
+            'resources/app.asar.unpacked/node_modules/node-pty/prebuilds/win32-x64/conpty/OpenConsole.exe'
+          )
+          foreach ($file in $required) {
+            if (!(Test-Path -LiteralPath (Join-Path $extracted $file) -PathType Leaf)) {
+              throw "Missing release file: $file"
+            }
+          }
+          $unpacked = Join-Path $PWD 'dist/win-unpacked'
+          $expected = @(Get-ChildItem -LiteralPath $unpacked -Recurse -File)
+          $actual = @(Get-ChildItem -LiteralPath $extracted -Recurse -File)
+          if ($expected.Count -ne $actual.Count) { throw 'ZIP file count differs from the audited package' }
+          foreach ($file in $expected) {
+            $relative = [IO.Path]::GetRelativePath($unpacked, $file.FullName)
+            $copy = Join-Path $extracted $relative
+            if ((Get-FileHash -LiteralPath $file.FullName).Hash -ne (Get-FileHash -LiteralPath $copy).Hash) {
+              throw "ZIP content differs from the audited package: $relative"
+            }
+          }
+          $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath "$zip.sha256" -Value "$hash  $env:ZIP_NAME" -Encoding utf8NoBOM
+
+      - name: Upload the ZIP and checksum
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mde-${{ steps.release.outputs.version }}-windows-x64
+          path: |
+            dist/mde-${{ steps.release.outputs.version }}-win.zip
+            dist/mde-${{ steps.release.outputs.version }}-win.zip.sha256
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+
+  draft-release:
+    needs: [macos, windows]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      VERSION: ${{ needs.macos.outputs.version }}
+      WINDOWS_VERSION: ${{ needs.windows.outputs.version }}
+    steps:
+      - name: Check out the version tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.21.0'
+          package-manager-cache: false
+
+      - name: Download and verify both build artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$VERSION" = "$WINDOWS_VERSION"
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "mde-$VERSION-macos-arm64" --dir release-assets
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "mde-$VERSION-windows-x64" --dir release-assets
+          cd release-assets
+          sha256sum -c "mde-$VERSION-arm64.dmg.sha256"
+          sha256sum -c "mde-$VERSION-win.zip.sha256"
+
+      - name: Create or update the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/draft-release.mjs "$RELEASE_TAG" \
+            "release-assets/mde-$VERSION-win.zip" \
+            "release-assets/mde-$VERSION-win.zip.sha256" \
+            "release-assets/mde-$VERSION-arm64.dmg" \
+            "release-assets/mde-$VERSION-arm64.dmg.sha256" \
+            LICENSE THIRD_PARTY_NOTICES.md

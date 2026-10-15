@@ -1,8 +1,31 @@
 # Windows release checklist
 
-MDE's Windows release is built from WSL with native Windows Node.js so the
-packaged application contains the correct Windows `node-pty` prebuilds. Cross-building
-from Linux is not supported; on native Windows, run `npm run build:win` directly.
+MDE's Windows release is built on native Windows, either in GitHub Actions or from
+WSL using Windows Node.js, so the packaged application contains the correct Windows
+`node-pty` prebuilds. Cross-building from Linux is not supported; on native Windows,
+run `npm run build:win` directly.
+
+## Automated tag builds
+
+The [Build release draft workflow](../.github/workflows/build-release.yml) builds
+Windows x64 natively on `windows-2025` alongside the macOS ARM64 DMG when a version
+tag is pushed. Plain and `v`-prefixed version tags are accepted and must match
+`package.json` and both root version fields in `package-lock.json`.
+
+Both platform jobs run tests, the dependency audit, license checks, typechecking,
+and the package audit with publishing explicitly disabled. The Windows job extracts
+the ZIP and checks all files against the audited `win-unpacked` tree, including
+required ConPTY files. After both builds succeed, a final job verifies their
+checksums and attaches the ZIP, DMG, SHA-256 checksum files, `LICENSE`, and
+`THIRD_PARTY_NOTICES.md` to one draft GitHub Release for that tag. It never publishes
+it. Review the draft and complete the Windows behavior checks below before manually
+publishing. See the [README](../README.md#release-builds-with-github-actions) for tag
+and manual-run instructions.
+
+Reruns replace matching assets in the existing draft while preserving its notes.
+If the release is already published, the upload job fails without modifying it.
+Actions artifacts are also available for three days; release attachments remain
+with the draft beyond that artifact retention period.
 
 ## Build prerequisites
 
@@ -138,7 +161,9 @@ but commonly trigger Microsoft Defender SmartScreen.
 
 ## Publish
 
-Upload these three files to the matching GitHub release:
+For automated builds, review the draft release created by the workflow, including
+both platform packages and their checksum files. For a manual Windows build, upload
+these three files to the matching GitHub release:
 
 - `mde-<version>-win.zip`
 - the repository `LICENSE`
@@ -170,8 +195,8 @@ third-party notices, and run the dependency audit. After upgrading, verify
 repeated application shutdown with several PowerShell and WSL terminals running,
 including panes in other tabs and sessions, using the extracted Windows ZIP.
 
-Releases are unsigned, and no checksum file is published alongside them, so a user
-who receives a modified archive has no way to detect it. The `OriginalFilename`
-field of `mde.exe`'s version resource is also empty; electron-builder writes it
+Windows releases are unsigned. Automated tag builds attach a SHA-256 checksum
+alongside the ZIP; this detects corruption but does not provide a code signature.
+The `OriginalFilename` field of `mde.exe`'s version resource is also empty; electron-builder writes it
 that way and setting it would mean rewriting the binary after its fuses and asar
 integrity resource are already stamped. Both are accepted for now.

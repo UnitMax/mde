@@ -68,16 +68,20 @@ Cross-building for Windows from Linux is not supported; build on Windows, or fro
 the Windows staging details and verification are in
 [`docs/windows-release.md`](docs/windows-release.md).
 
-### macOS builds with GitHub Actions
+### Release builds with GitHub Actions
 
-The [Build macOS DMG workflow](.github/workflows/build-macos.yml) runs when a version
-tag such as `0.0.117` is pushed; `v`-prefixed tags are also accepted. It uses the
-standard ARM64 `macos-15` runner and Node 24.21.0, installs the locked dependencies
-with `npm ci` (including the native PTY rebuild),
-and runs the full test suite and dependency audit. `npm run build:mac` then checks
-licenses, typechecks, compiles, packages an ARM64 DMG, and audits the output. The
-workflow verifies the app's signature, architecture, and disk image before
-uploading the DMG and a `.dmg.sha256` checksum. A failed check prevents upload.
+The [Build release draft workflow](.github/workflows/build-release.yml) runs when a
+version tag such as `0.0.119` is pushed; `v`-prefixed tags are also accepted. It builds
+Windows x64 on `windows-2025` and macOS ARM64 on `macos-15` in parallel, using Node
+24.21.0 and locked dependencies. Both jobs run the full test suite, dependency audit,
+license checks, typechecking, compilation, packaging, and packaged-output audit.
+Windows uses the existing `node-pty` prebuilds; macOS rebuilds the native module.
+Packaging explicitly disables publishing.
+
+The macOS job verifies the app signature, architecture, and disk image. The Windows
+job extracts the ZIP, checks its required runtime files, and compares every file
+against the audited unpacked package. Both produce SHA-256 checksums and upload
+Actions artifacts retained for three days. A failed check prevents that job's upload.
 
 For each release:
 
@@ -92,28 +96,33 @@ For each release:
    git push origin "refs/tags/$version"
    ```
 
-3. Open **Actions → Build macOS DMG**, select the successful run, and download
-   `mde-<version>-macos-arm64` from **Artifacts** within three days. Extract the
-   download archive to get the DMG and checksum. In that directory, verify with
-   `shasum -a 256 -c mde-<version>-arm64.dmg.sha256` (replace `<version>`).
-4. Manually create a GitHub Release using that existing tag and attach the DMG
-   and checksum. Only the DMG is needed to install: mount it and drag MDE into
-   Applications. A separate app ZIP offers the same app and is unnecessary here.
+3. Open **Actions → Build release draft** and check that both builds and the
+   draft-release job succeed. After both builds pass, the final job verifies the
+   downloaded checksums and creates a draft GitHub Release for the existing tag,
+   attaching the Windows ZIP, macOS DMG, both checksums, `LICENSE`, and
+   `THIRD_PARTY_NOTICES.md`.
+4. Open the draft under **Releases**, review the files and release notes, and test
+   the extracted Windows ZIP as described in [`docs/windows-release.md`](docs/windows-release.md).
+   Publish the release manually when ready. For Windows, extract the entire ZIP
+   into its own folder and run `mde.exe`. For macOS, mount the DMG and drag MDE into
+   Applications.
 
 The tag, with an optional `v` prefix removed, must exactly match all three manifest
 version fields; mismatches fail before dependency installation. Ordinary branch
 pushes do not build. To rebuild an existing tag, use **Run workflow** with the
-required `tag` input on the default branch, or rerun its previous job if the
-artifact has expired. The tag
-must contain the `build:mac` command. Runs for the same tag share a concurrency
-group, and each build has a 30-minute timeout.
+required `tag` input on the default branch, or rerun its previous job. The tagged
+commit must contain the workflow's build commands and release helper. Runs for the
+same tag share a concurrency group; each platform build has a 30-minute timeout.
+Reruns reuse an existing draft and replace matching assets, preserving its release
+notes. An already published release is never modified: the upload job fails instead.
 
-The workflow has read-only repository permissions and pinned GitHub actions. It
-never bumps versions or creates, publishes, or changes a GitHub Release; packaging
-explicitly disables publishing. It needs no signing secrets and uses the existing
-ad-hoc app signature, without Developer ID signing or notarization. Tests use
-fixtures and do not submit OpenCode prompts or invoke models. Local
-`npm run build` still produces both DMG and ZIP.
+The workflow uses pinned GitHub actions and read-only repository permissions for
+builds. Only the final draft-release job receives `contents: write` and `actions: read`,
+using the built-in `GITHUB_TOKEN`; no additional secret is needed. It never bumps
+versions or publishes a release. Builds need no signing secrets: Windows remains
+unsigned and macOS uses the existing ad-hoc signature without Developer ID signing
+or notarization. Tests use fixtures and do not submit OpenCode prompts or invoke
+models. Local `npm run build` on macOS still produces both DMG and ZIP.
 
 ## Licensing
 
