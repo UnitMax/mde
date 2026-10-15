@@ -85,7 +85,12 @@ describe('OpenCode history IPC and resume', () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
     const temporary = await fs.mkdtemp(join(tmpdir(), 'mde-mac-resume-'))
     try {
-      const directory = await fs.realpath(temporary)
+      // The session models macOS, even when the fixture filesystem is Windows.
+      const directory = '/tmp/mde-mac-resume-fixture'
+      const metadata = await fs.stat(temporary)
+      vi.spyOn(fs, 'stat')
+        .mockRejectedValue(new Error('ENOENT'))
+        .mockResolvedValueOnce(metadata)
       const nativeSession = { ...session, kind: 'native', distro: undefined, path: directory }
       mocks.getSession.mockResolvedValue(nativeSession)
       mocks.read.mockResolvedValue({ ...saved, directory })

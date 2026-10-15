@@ -1,6 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DropPtyFile } from '../src/shared/ipc'
 import type { Session } from '../src/shared/types'
@@ -249,18 +250,23 @@ describe('terminal file drops', () => {
   })
 
   it('resolves a file URL when Electron did not expose a native path', async () => {
-    await expect(
-      resolveTerminalDrop(
-        session(),
-        'linux',
-        [{ name: 'tmp', fileUri: 'file:///tmp' }],
-        'shell'
-      )
-    ).resolves.toEqual({
-      insertions: ["'/tmp' "],
-      acceptedCount: 1,
-      rejections: []
-    })
+    const directory = await mkdtemp(join(tmpdir(), 'mde-drop-url-'))
+    try {
+      await expect(
+        resolveTerminalDrop(
+          session({ path: directory }),
+          process.platform,
+          [{ name: 'folder', fileUri: pathToFileURL(directory).toString() }],
+          'shell'
+        )
+      ).resolves.toEqual({
+        insertions: [`'${directory}' `],
+        acceptedCount: 1,
+        rejections: []
+      })
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
   })
 
   it('does not paste a live command when a spoofed pane claims to be a TUI', async () => {
@@ -277,7 +283,7 @@ describe('terminal file drops', () => {
       await expect(
         resolveTerminalDrop(
           session({ path: directory }),
-          'linux',
+          process.platform,
           [droppedFile(plain, 'plain.png'), droppedFile(hostile, 'a$(touch sentinel).png')],
           'tui'
         )
@@ -301,7 +307,7 @@ describe('terminal file drops', () => {
       await expect(
         resolveTerminalDrop(
           session({ path: directory }),
-          'linux',
+          process.platform,
           [droppedFile(plain, 'My Screenshot.png')],
           'tui'
         )

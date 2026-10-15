@@ -1,4 +1,5 @@
-import { posix, win32 } from 'node:path'
+import { join, posix, resolve, win32 } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const electronMock = vi.hoisted(() => ({
@@ -109,14 +110,15 @@ describe('renderer protocol', () => {
     const served = new Response('ok')
     electronMock.net.fetch.mockResolvedValue(served)
 
-    installRendererProtocol(session, POSIX_ROOT)
+    const root = resolve('renderer-fixture')
+    installRendererProtocol(session, root)
     expect(handlers).toHaveLength(1)
     const handler = handlers[0]!
 
     const request = (url: string, method = 'GET') => ({ url, method }) as Request
     await expect(handler(request('app://mde/index.html'))).resolves.toBe(served)
     expect(electronMock.net.fetch).toHaveBeenCalledExactlyOnceWith(
-      `file://${POSIX_ROOT}/index.html`
+      pathToFileURL(join(root, 'index.html')).toString()
     )
 
     expect((await handler(request('app://mde/assets%2f..%2f..%2fmain/index.js'))).status).toBe(404)

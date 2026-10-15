@@ -13,6 +13,8 @@ describe('runWslCommandBuffer', () => {
   })
 
   it('returns stdout bytes untouched, even when they look like UTF-16', async () => {
+    const executable = { file: 'D:\\Windows\\System32\\wsl.exe', cwd: 'D:\\Windows\\System32' }
+    vi.spyOn(hostExecutables, 'resolveWslExecutable').mockReturnValue(executable)
     // ASCII with interleaved NULs is what decodeWslOutput treats as UTF-16LE.
     const bytes = Buffer.from('a\u0000b\u0000c\u0000d\u0000e\u0000', 'latin1')
     execFileMock.mockImplementation((_file, _args, _options, callback) => {
@@ -25,9 +27,9 @@ describe('runWslCommandBuffer', () => {
     expect(result.stderr).toBe('warning\n')
     expect(result.code).toBe(0)
     expect(execFileMock).toHaveBeenCalledWith(
-      'wsl.exe',
+      executable.file,
       ['-d', 'Ubuntu-24.04', '-e', 'cat', '/tmp/x'],
-      expect.objectContaining({ encoding: 'buffer', maxBuffer: 1024 }),
+      expect.objectContaining({ cwd: executable.cwd, encoding: 'buffer', maxBuffer: 1024 }),
       expect.any(Function)
     )
   })

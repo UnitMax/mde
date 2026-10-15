@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createGitCommandRunner,
   isBinaryGitDiff,
@@ -75,12 +75,16 @@ const wslSession = {
   path: '/home/me/src/app'
 }
 
+// These unit fixtures model POSIX sessions; Windows transport has explicit cases below.
 beforeEach(() => {
+  vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
   mocks.execFile.mockReset()
   mocks.resolveWindowsGitExecutable.mockReset()
   mocks.resolveWindowsGitExecutable.mockResolvedValue('C:\\Program Files\\Git\\cmd\\git.exe')
   mocks.runWslCommand.mockReset()
 })
+
+afterEach(() => vi.restoreAllMocks())
 
 describe('Git process concurrency', () => {
   /** Holds every spawned process until the test releases it, recording how many overlap. */

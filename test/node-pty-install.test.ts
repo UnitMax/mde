@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { installNodePty } from '../scripts/install-node-pty.mjs'
 
@@ -18,7 +19,7 @@ describe('node-pty installation', () => {
       spawn,
     })).toBe(0)
     expect(spawn).toHaveBeenCalledWith(
-      '/project/node_modules/.bin/electron-rebuild',
+      join('/project', 'node_modules', '.bin', 'electron-rebuild'),
       ['--force', '--only', 'node-pty'],
       { cwd: '/project', stdio: 'inherit' },
     )

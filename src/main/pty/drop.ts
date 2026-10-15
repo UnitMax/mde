@@ -169,7 +169,7 @@ export function fileUriToNativePath(uri: string, platform: NodeJS.Platform): str
     }
 
     if (url.hostname && url.hostname.toLowerCase() !== 'localhost') return null
-    return fileURLToPath(url)
+    return fileURLToPath(url, { windows: false })
   } catch {
     return null
   }

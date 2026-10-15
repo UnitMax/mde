@@ -41,8 +41,8 @@ afterEach(async () => {
 describe('native OpenCode configuration', () => {
   it('respects config overrides, XDG paths, and the default global directory', () => {
     expect(openCodeConfigDirectory({ OPENCODE_CONFIG_DIR: '/tmp/config space/' }, '/home/me')).toBe('/tmp/config space')
-    expect(openCodeConfigDirectory({ XDG_CONFIG_HOME: '/tmp/xdg' }, '/home/me')).toBe('/tmp/xdg/opencode')
-    expect(openCodeConfigDirectory({ XDG_CONFIG_HOME: 'relative' }, '/home/me')).toBe('/home/me/.config/opencode')
+    expect(openCodeConfigDirectory({ XDG_CONFIG_HOME: '/tmp/xdg' }, '/home/me')).toBe(join('/tmp/xdg', 'opencode'))
+    expect(openCodeConfigDirectory({ XDG_CONFIG_HOME: 'relative' }, '/home/me')).toBe(join('/home/me', '.config', 'opencode'))
     expect(() => openCodeConfigDirectory({ OPENCODE_CONFIG_DIR: 'relative' }, '/home/me')).toThrow('absolute')
   })
 

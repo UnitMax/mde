@@ -316,7 +316,8 @@ describe('PtyManager runtime terminal identities', () => {
     expect(integration.prepare).not.toHaveBeenCalled()
   })
 
-  it('does not request a Windows backend on non-Windows platforms', () => {
+  it.each(['linux', 'darwin'] as const)('does not request a Windows backend on %s', (platform) => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
     const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() })
 
     manager.ensure('pane-a', sourceSession(), { cols: 80, rows: 24 }, palette)
