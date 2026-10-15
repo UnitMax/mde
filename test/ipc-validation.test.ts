@@ -69,9 +69,6 @@ const validPayloads = {
   [IpcChannels.opencodeTuiSettings]: undefined,
   [IpcChannels.opencodeTuiSetEnabled]: enabled,
   [IpcChannels.opencodeTuiSetInstanceLabelMode]: { mode: 'numbered' },
-  [IpcChannels.opencodeTokenRatePluginState]: plugin,
-  [IpcChannels.opencodeTokenRatePluginInstall]: plugin,
-  [IpcChannels.opencodeTokenRatePluginRemove]: plugin,
   [IpcChannels.opencodeAlertsSettings]: undefined,
   [IpcChannels.opencodeAlertsSetEnabled]: enabled,
   [IpcChannels.windowModeGet]: undefined,
@@ -149,7 +146,7 @@ describe('IPC payload boundary', () => {
     for (const distro of ['../other', 'Ubuntu\n', ' '.repeat(129) + 'Ubuntu']) {
       rejects(IpcChannels.opencodeTuiPluginInstall, { target: { kind: 'wsl', distro } })
     }
-    rejects(IpcChannels.opencodeTokenRatePluginInstall, { target: { kind: 'native', distro: 'Ubuntu' } })
+    rejects(IpcChannels.opencodeTuiPluginInstall, { target: { kind: 'native', distro: 'Ubuntu' } })
     rejects(IpcChannels.opencodeSessionsList, { ...validPayloads[IpcChannels.opencodeSessionsList], executable: 'opencode\nunsafe' })
     rejects(IpcChannels.pathResolve, { kind: 'native', rawPath: '/tmp/a\0b' })
     rejects(IpcChannels.sessionsRemove, 'session\r')

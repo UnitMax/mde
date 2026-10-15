@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import {
   aggregateTuiStatuses,
-  classifyTuiPluginSource,
+  classifyTuiPluginFiles,
   collectTuiInstanceStatuses,
   OpenCodeTuiStatusManager,
   parseLinuxProcessStartTicks,
@@ -13,12 +13,13 @@ import {
   TUI_STATUS_HEARTBEAT_MS,
   TUI_STATUS_LIVENESS_PROBE_MS,
   TUI_STATUS_PLUGIN_MARKER,
-  TUI_STATUS_PLUGIN_SOURCE,
   TUI_STATUS_PLUGIN_VERSION,
   TUI_STATUS_POLL_MS,
   TUI_STATUS_PROTOCOL,
+  TUI_STATUS_SERVER_SOURCE,
   TUI_STATUS_STALE_MS,
   TUI_STATUS_TITLE_MAX_LENGTH,
+  TUI_STATUS_TUI_SOURCE,
   tuiProcessProbeCommand
 } from '../src/main/opencode/tui-status'
 import {
@@ -162,27 +163,63 @@ describe('OpenCode TUI status protocol', () => {
     ])
   })
 
-  it('ships an inert, dependency-free plugin with the expected event vocabulary', () => {
-    expect(TUI_STATUS_PLUGIN_SOURCE).toContain(TUI_STATUS_PLUGIN_MARKER)
-    expect(TUI_STATUS_PLUGIN_SOURCE).toContain(
-      `mde-opencode-tui-status-plugin-version: ${TUI_STATUS_PLUGIN_VERSION}`
-    )
-    expect(TUI_STATUS_PLUGIN_SOURCE).toContain('path.dirname(file) !== root')
-    expect(TUI_STATUS_PLUGIN_SOURCE).toContain("event?.type === 'permission.asked'")
-    expect(TUI_STATUS_PLUGIN_SOURCE).toContain("event?.type === 'question.asked'")
-    expect(TUI_STATUS_PLUGIN_SOURCE).toContain("event?.type === 'session.created'")
-    expect(TUI_STATUS_PLUGIN_SOURCE).toContain('info.parentID')
-    expect(TUI_STATUS_PLUGIN_SOURCE).toContain('title')
-    expect(TUI_STATUS_PLUGIN_SOURCE).toContain("value.replace(/\\s+/g, ' ')")
-    expect(TUI_STATUS_PLUGIN_SOURCE).not.toContain('prompt')
+  it('ships an inert, dependency-free OpenCode 2 plugin with the expected event vocabulary', () => {
+    for (const source of [TUI_STATUS_TUI_SOURCE, TUI_STATUS_SERVER_SOURCE]) {
+      expect(source).toContain(TUI_STATUS_PLUGIN_MARKER)
+      expect(source).toContain(`mde-opencode-tui-status-plugin-version: ${TUI_STATUS_PLUGIN_VERSION}`)
+      expect(source).toContain('export default {')
+      expect(source).not.toMatch(/^import /m)
+    }
+    expect(TUI_STATUS_SERVER_SOURCE).toContain('setup() {}')
+    expect(TUI_STATUS_TUI_SOURCE).toContain('path.dirname(file) !== root')
+    for (const event of [
+      'session.execution.started',
+      'session.execution.succeeded',
+      'session.execution.interrupted',
+      'session.execution.failed',
+      'session.deleted',
+      'permission.asked',
+      'permission.replied',
+      'form.created',
+      'form.replied',
+      'form.cancelled'
+    ]) {
+      expect(TUI_STATUS_TUI_SOURCE).toContain(`'${event}'`)
+    }
+    // OpenCode 1 vocabulary, which OpenCode 2 no longer sends.
+    for (const legacy of ['session.status', 'session.idle', 'session.error', 'question.asked']) {
+      expect(TUI_STATUS_TUI_SOURCE).not.toContain(`'${legacy}'`)
+    }
+    expect(TUI_STATUS_TUI_SOURCE).not.toContain('properties')
+    expect(TUI_STATUS_TUI_SOURCE).toContain('context.data.session.root')
+    expect(TUI_STATUS_TUI_SOURCE).toContain('context.ui?.router?.current')
+    expect(TUI_STATUS_TUI_SOURCE).not.toContain('tabs.list')
+    expect(TUI_STATUS_TUI_SOURCE).toContain('title')
+    expect(TUI_STATUS_TUI_SOURCE).toContain("value.replace(/\\s+/g, ' ')")
+    expect(TUI_STATUS_TUI_SOURCE).not.toContain('prompt')
   })
 
   it('classifies owned plugin versions without claiming unrelated files', () => {
-    expect(parseTuiPluginVersion(TUI_STATUS_PLUGIN_SOURCE)).toBe(TUI_STATUS_PLUGIN_VERSION)
-    expect(classifyTuiPluginSource(null)).toBe('not-installed')
-    expect(classifyTuiPluginSource('export const SomeoneElsesPlugin = async () => ({})')).toBe('conflict')
-    expect(classifyTuiPluginSource(`// ${TUI_STATUS_PLUGIN_MARKER}`)).toBe('outdated')
-    expect(classifyTuiPluginSource(TUI_STATUS_PLUGIN_SOURCE)).toBe('installed')
+    const current = { tui: TUI_STATUS_TUI_SOURCE, server: TUI_STATUS_SERVER_SOURCE, legacy: null }
+    const old = TUI_STATUS_TUI_SOURCE.replace(`version: ${TUI_STATUS_PLUGIN_VERSION}`, 'version: 0.0.1')
+    const foreign = 'export default { id: "someone.else", setup() {} }'
+    const legacy = `// ${TUI_STATUS_PLUGIN_MARKER}\n// mde-opencode-tui-status-plugin-version: 1.3.0\nexport const MdeTuiStatus = async () => ({})`
+    expect(parseTuiPluginVersion(TUI_STATUS_TUI_SOURCE)).toBe(TUI_STATUS_PLUGIN_VERSION)
+    expect(parseTuiPluginVersion(TUI_STATUS_SERVER_SOURCE)).toBe(TUI_STATUS_PLUGIN_VERSION)
+    expect(parseTuiPluginVersion(foreign)).toBeNull()
+    expect(classifyTuiPluginFiles({ tui: null, server: null, legacy: null })).toBe('not-installed')
+    expect(classifyTuiPluginFiles(current)).toBe('installed')
+    expect(classifyTuiPluginFiles({ ...current, tui: old })).toBe('outdated')
+    expect(classifyTuiPluginFiles({ ...current, server: null })).toBe('outdated')
+    expect(classifyTuiPluginFiles({ ...current, tui: null })).toBe('outdated')
+    expect(classifyTuiPluginFiles({ ...current, tui: `// ${TUI_STATUS_PLUGIN_MARKER}` })).toBe('outdated')
+    expect(classifyTuiPluginFiles({ ...current, tui: foreign })).toBe('conflict')
+    expect(classifyTuiPluginFiles({ ...current, server: foreign })).toBe('conflict')
+    // The OpenCode 1 file fails to load on every OpenCode 2 start, so it needs replacing.
+    expect(classifyTuiPluginFiles({ tui: null, server: null, legacy })).toBe('outdated')
+    expect(classifyTuiPluginFiles({ ...current, legacy })).toBe('outdated')
+    expect(classifyTuiPluginFiles({ tui: null, server: null, legacy: foreign })).toBe('not-installed')
+    expect(classifyTuiPluginFiles({ ...current, legacy: foreign })).toBe('installed')
   })
 
   it('ships a lower-rate heartbeat with explicit process lifecycle metadata', () => {
@@ -190,9 +227,10 @@ describe('OpenCode TUI status protocol', () => {
     expect(TUI_STATUS_POLL_MS).toBe(1_000)
     expect(TUI_STATUS_STALE_MS).toBe(20_000)
     expect(TUI_STATUS_LIVENESS_PROBE_MS).toBe(10_000)
-    expect(TUI_STATUS_PLUGIN_SOURCE).toContain('processStartTicks')
-    expect(TUI_STATUS_PLUGIN_SOURCE).toContain('dispose: async')
-    expect(TUI_STATUS_PLUGIN_SOURCE).toContain('await write(true)')
+    expect(TUI_STATUS_TUI_SOURCE).toContain('processStartTicks')
+    expect(TUI_STATUS_TUI_SOURCE).toContain('return async () => {')
+    expect(TUI_STATUS_TUI_SOURCE).toContain('await write(true)')
+    expect(TUI_STATUS_TUI_SOURCE).toContain("process.once('exit', writeClosedSync)")
   })
 
   it('accepts an explicit close record even after its heartbeat has expired', () => {

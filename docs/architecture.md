@@ -127,7 +127,7 @@ in a focused terminal, opens the OpenCode session picker. It shows the native Ma
 history across all directories in compact rows grouped by folder. The terminal's current directory
 comes first, with sessions ordered by most recent activity within each folder.
 Search by title, directory, session ID, model, or agent. Archived sessions and subagent conversations
-are included and labelled; the selected session's details show full dates, file changes, token usage,
+are included and labelled; the selected session's details show full dates, token usage,
 and reported cost when available.
 
 Click a session or use the arrow keys and Enter to resume it in a new pane in its saved directory.
@@ -136,9 +136,12 @@ command or OpenCode task is interrupted, so the picker asks first unless the ter
 Shift+Enter also works on a full tab, because no pane is added. Escape closes the picker. At nine
 panes the picker reports that the tab is full and disables Enter.
 
-History uses the configured OpenCode executable and its database command; resuming uses the saved
-session settings. Both require a version supporting `opencode db <query> --format json`. If optional
-metadata is unavailable it is omitted. The selected history and resume command remain runtime-only.
+History uses the configured OpenCode executable's `opencode api` command, which answers from
+OpenCode's local background service: `session.list` is read one page of 120 at a time by following
+the opaque cursor (up to 100 pages), and `session.get` re-checks a session before it is resumed
+with `--session`. Only a fixed set of operations and parameters is ever passed, each as its own
+literal argument. Both require OpenCode 2 or newer; an older OpenCode reports that instead. If
+optional metadata is unavailable it is omitted. The selected history and resume command remain runtime-only.
 On Mac, agent and metadata commands run through the selected login shell with literal arguments.
 Plugin management reads PATH, `OPENCODE_CONFIG_DIR`, and `XDG_CONFIG_HOME` from the native login
 shell so Finder launches resolve the same global configuration as terminal launches. The default
@@ -248,7 +251,12 @@ All integrations are optional and read-only with respect to prompts and project 
 
 - **TUI status** is disabled by default for Mac and WSL terminal sessions. Open Settings → OpenCode, enable
   global status reporting, and install MDE's small plugin for the native Mac target or each WSL distro;
-  restart OpenCode after installing or updating it. The plugin is inert outside MDE terminals,
+  restart OpenCode after installing or updating it. It requires OpenCode 2 or newer. The plugin is
+  an OpenCode 2 terminal (CLI) plugin installed as `plugins/mde-status/` in the OpenCode
+  configuration directory, with `tui.js` holding the logic and a no-op `index.js` completing the
+  directory. It is discovered automatically, so no OpenCode configuration file is edited, and it runs
+  inside the terminal's own `opencode` process, which is why it sees the `MDE_OPENCODE_STATUS_*`
+  variables (OpenCode's shared background service does not). It is inert outside MDE terminals,
   writes only a short runtime snapshot under `/tmp/mde-opencode` in WSL or a private `mde-opencode`
   directory beneath the macOS user temporary directory, and does not modify project files
   or OpenCode configuration. MDE reads that snapshot locally on Mac or through the distro's `\\wsl.localhost\...`
@@ -261,8 +269,18 @@ All integrations are optional and read-only with respect to prompts and project 
   `/bin/ps` start time with a fixed locale on Mac. After missed heartbeats, MDE checks this identity
   before clearing an exited instance; an inconclusive probe preserves the last status. Mac status
   directories have mode 0700 and snapshots mode 0600. Disposal removes a pane's snapshot;
-  startup removes matching artifacts older than 24 hours. Plugin protocol 1 remains compatible
-  with older snapshots, while plugin version 1.3.0 adds Mac support.
+  startup removes matching artifacts older than 24 hours. Plugin protocol 1 is unchanged, so older
+  snapshots stay readable; plugin version 2.0.0 is the first for OpenCode 2.
+
+  The plugin subscribes to the terminal's event feed: `session.execution.started` marks work,
+  `succeeded`/`interrupted` marks completion and `failed` marks an error that stays until that session
+  runs again; `permission.asked`/`replied` and `form.created`/`replied`/`cancelled` (OpenCode's
+  question prompts) mark attention. The feed carries every session of the shared background service,
+  including those of other terminals in the same directory, so only sessions this terminal has
+  displayed, and their subagents, count. The session shown in the terminal also supplies the
+  title. The tab list is deliberately not used, because it holds every root session of a directory.
+  Once a second the plugin drops work, permission and question entries that OpenCode's own state no
+  longer shows, so a missed event cannot leave a pane stuck.
 - **Notifications**: session rows and the Ctrl+O session switcher show a count for OpenCode
   agents that finished with unread results, or are waiting for permission or an answer;
   selecting the session clears completed-result counts while unresolved requests remain visible.
@@ -275,14 +293,22 @@ All integrations are optional and read-only with respect to prompts and project 
 - **Desktop alerts** request Dock attention on macOS or flash the taskbar on Windows, and play
   the system sound when an agent completes, needs input, or fails while MDE is unfocused.
   Focusing MDE or disabling alerts clears attention. Native notification banners are not used.
-- **Token rate** is a separate plugin from status reporting. On Mac and Linux it can be installed for the
-  native OpenCode target; on Windows it can be installed independently for each WSL 2 distro. It
-  adds a live estimated rate and a final provider-reported rate beside the TUI prompt. Unlike the
-  status plugin, it also registers itself in OpenCode's `tui.json`. Restart OpenCode after
-  installing, updating, or removing it. It requires an OpenCode version that supports TUI plugins,
-  and MDE does not emit a token-rate fallback when the target version does not.
 
 ## Upgrade notes
+
+### Upgrading to OpenCode 2
+
+MDE supports OpenCode 2 and newer; OpenCode 1 no longer shows status or session history.
+
+- **Status plugin.** OpenCode 2 cannot load the old loose `plugins/mde-status.js` and logs a load
+  error for it on every start. Settings → OpenCode shows "Update available" for it; installing
+  replaces it with `plugins/mde-status/` and removes the old file, but only if it carries MDE's
+  marker. A file of the same name from anyone else is left alone.
+- **Token rate.** The separate token-rate plugin has been removed, because OpenCode 2 shows tokens per
+  second itself. MDE no longer installs, updates, or removes it, and does not clean up after it.
+  If it was installed, delete `plugins/mde-token-rate.tsx` from the OpenCode configuration directory
+  and remove its `file://` entry from the `plugins` list in `cli.json` (and from `plugin` in the old
+  `tui.json`, if you keep OpenCode 1 around). Until then OpenCode 2 reports a plugin that fails to load.
 
 ### Removing previously installed Codex hooks
 

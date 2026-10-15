@@ -110,7 +110,6 @@ function registerForTest(
     {} as never,
     {} as never,
     {} as never,
-    {} as never,
     {} as never
   )
 }

@@ -76,7 +76,7 @@ beforeEach(() => {
   ensure.mockClear()
   dispose.mockClear()
   restart.mockClear()
-  registerIpcHandlers(security, { terminalInfo, ensure, dispose, restart } as never, {} as never, {} as never, {} as never, {} as never, {} as never)
+  registerIpcHandlers(security, { terminalInfo, ensure, dispose, restart } as never, {} as never, {} as never, {} as never, {} as never)
 })
 afterEach(() => vi.restoreAllMocks())
 

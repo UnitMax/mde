@@ -110,7 +110,7 @@ check compiles harmless sentinel executables in a fresh temporary directory,
 puts that directory in both cwd and `PATH`, and verifies real WSL queries,
 history transport, PowerShell and native/WSL ConPTY do not select the sentinels.
 It restores cwd/environment and removes its fixtures. It does not access the
-user's OpenCode database or type commands into the user's existing terminals.
+user's OpenCode sessions or type commands into the user's existing terminals.
 Also start the extracted app from that fixture-style directory and verify
 default PowerShell, custom full-path shells and WSL terminals work there.
 

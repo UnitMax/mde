@@ -7,7 +7,6 @@ import { OpenCodeAlertManager } from './opencode/alerts'
 import { getMiniWindowAction, MiniWindowController } from './mini-window'
 import { TitleBarController } from './window-chrome'
 import { OpenCodeTuiStatusManager } from './opencode/tui-status'
-import { OpenCodeTokenRatePluginManager } from './opencode/token-rate'
 import { PtyManager } from './pty/manager'
 import { initWorkspaceStore } from './store/workspace'
 import { adjustZoomFactor, DEFAULT_ZOOM_FACTOR, getZoomAction } from './zoom'
@@ -58,7 +57,6 @@ const opencodeTuiStatusManager = new OpenCodeTuiStatusManager({
     }
   }
 })
-const opencodeTokenRatePluginManager = new OpenCodeTokenRatePluginManager()
 
 const ptyManager = new PtyManager({
   onData: (chunk) => {
@@ -76,7 +74,7 @@ const ptyManager = new PtyManager({
       mainWindow.webContents.send(IpcEvents.ptyExit, info)
     }
   }
-}, [opencodeTuiStatusManager, opencodeTokenRatePluginManager])
+}, [opencodeTuiStatusManager])
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -172,7 +170,6 @@ if (!app.requestSingleInstanceLock()) {
       { getWebContents: () => mainWindow?.webContents ?? null, rendererUrl },
       ptyManager,
       opencodeTuiStatusManager,
-      opencodeTokenRatePluginManager,
       opencodeAlertManager,
       miniWindow,
       titleBar

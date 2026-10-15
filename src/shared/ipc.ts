@@ -26,8 +26,6 @@ import type {
   OpenCodeTuiInstancesUpdate,
   FileReadResponse,
   FileTreeListResponse,
-  OpenCodeTokenRatePluginRequest,
-  OpenCodeTokenRatePluginState,
   OpenCodeAlertSetEnabledRequest,
   OpenCodeAlertSettings,
   PtyDataChunk,
@@ -118,9 +116,6 @@ export const IpcChannels = {
   opencodeTuiSettings: 'opencode-tui:settings',
   opencodeTuiSetEnabled: 'opencode-tui:set-enabled',
   opencodeTuiSetInstanceLabelMode: 'opencode-tui:set-instance-label-mode',
-  opencodeTokenRatePluginState: 'opencode-token-rate:plugin-state',
-  opencodeTokenRatePluginInstall: 'opencode-token-rate:plugin-install',
-  opencodeTokenRatePluginRemove: 'opencode-token-rate:plugin-remove',
 
   opencodeAlertsSettings: 'opencode-alerts:settings',
   opencodeAlertsSetEnabled: 'opencode-alerts:set-enabled',
@@ -459,11 +454,6 @@ export interface RendererApi {
     remove(req: OpenCodeTuiPluginRequest): Promise<OpenCodeTuiPluginState>
     onStatus(listener: (update: OpenCodeTuiStatusUpdate) => void): () => void
     onInstances(listener: (update: OpenCodeTuiInstancesUpdate) => void): () => void
-  }
-  opencodeTokenRate: {
-    pluginState(req: OpenCodeTokenRatePluginRequest): Promise<OpenCodeTokenRatePluginState>
-    install(req: OpenCodeTokenRatePluginRequest): Promise<OpenCodeTokenRatePluginState>
-    remove(req: OpenCodeTokenRatePluginRequest): Promise<OpenCodeTokenRatePluginState>
   }
   opencodeAlerts: {
     settings(): Promise<OpenCodeAlertSettings>

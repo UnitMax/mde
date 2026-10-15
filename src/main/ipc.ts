@@ -62,8 +62,6 @@ import type {
   OpenCodeTuiSetEnabledRequest,
   OpenCodeTuiSetInstanceLabelModeRequest,
   OpenCodeTuiSettings,
-  OpenCodeTokenRatePluginRequest,
-  OpenCodeTokenRatePluginState,
   OpenCodeAlertSetEnabledRequest,
   OpenCodeAlertSettings,
   OpenCodeSessionsRequest,
@@ -80,7 +78,6 @@ import { assertIpcPayload, type IpcChannel } from './ipc-validation'
 import type { PtyLaunchOptions, PtyManager } from './pty/manager'
 import { fileTreeDropFile, resolveTerminalDrop } from './pty/drop'
 import type { OpenCodeTuiStatusManager } from './opencode/tui-status'
-import type { OpenCodeTokenRatePluginManager } from './opencode/token-rate'
 import type { OpenCodeAlertManager } from './opencode/alerts'
 import type { MiniWindowController } from './mini-window'
 import type { TitleBarController } from './window-chrome'
@@ -389,7 +386,6 @@ export function registerIpcHandlers(
   security: IpcSecurityContext,
   ptyManager: PtyManager,
   opencodeTuiStatusManager: OpenCodeTuiStatusManager,
-  opencodeTokenRatePluginManager: OpenCodeTokenRatePluginManager,
   opencodeAlertManager: OpenCodeAlertManager,
   miniWindow: MiniWindowController,
   titleBar: TitleBarController
@@ -519,19 +515,6 @@ export function registerIpcHandlers(
       }
       return opencodeTuiStatusManager.setInstanceLabelMode(req.mode)
     }
-  )
-
-  handle<OpenCodeTokenRatePluginRequest, OpenCodeTokenRatePluginState>(
-    IpcChannels.opencodeTokenRatePluginState,
-    (req) => opencodeTokenRatePluginManager.pluginState(req.target)
-  )
-  handle<OpenCodeTokenRatePluginRequest, OpenCodeTokenRatePluginState>(
-    IpcChannels.opencodeTokenRatePluginInstall,
-    (req) => opencodeTokenRatePluginManager.installPlugin(req.target)
-  )
-  handle<OpenCodeTokenRatePluginRequest, OpenCodeTokenRatePluginState>(
-    IpcChannels.opencodeTokenRatePluginRemove,
-    (req) => opencodeTokenRatePluginManager.removePlugin(req.target)
   )
 
   handle<void, OpenCodeAlertSettings>(IpcChannels.opencodeAlertsSettings, () =>

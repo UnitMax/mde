@@ -1,5 +1,5 @@
 import { promises as fs } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { tmpdir } from 'node:os'
@@ -28,275 +28,42 @@ import {
   wslShellValueScript
 } from '../wsl/shell-value'
 import type { PtyLaunchIntegration } from '../pty/manager'
+import {
+  TUI_STATUS_HEARTBEAT_MS,
+  TUI_STATUS_LEGACY_FILE,
+  TUI_STATUS_PLUGIN_DIRECTORY,
+  TUI_STATUS_PLUGIN_MARKER,
+  TUI_STATUS_PLUGIN_VERSION,
+  TUI_STATUS_PLUGIN_VERSION_MARKER,
+  TUI_STATUS_SERVER_FILE,
+  TUI_STATUS_SERVER_SOURCE,
+  TUI_STATUS_TITLE_MAX_LENGTH,
+  TUI_STATUS_TUI_FILE,
+  TUI_STATUS_TUI_SOURCE
+} from './tui-status-plugin'
+
+export {
+  TUI_STATUS_HEARTBEAT_MS,
+  TUI_STATUS_LEGACY_FILE,
+  TUI_STATUS_PLUGIN_DIRECTORY,
+  TUI_STATUS_PLUGIN_MARKER,
+  TUI_STATUS_PLUGIN_VERSION,
+  TUI_STATUS_PLUGIN_VERSION_MARKER,
+  TUI_STATUS_SERVER_FILE,
+  TUI_STATUS_SERVER_SOURCE,
+  TUI_STATUS_TITLE_MAX_LENGTH,
+  TUI_STATUS_TUI_FILE,
+  TUI_STATUS_TUI_SOURCE
+}
 
 export const TUI_STATUS_PROTOCOL = 1 as const
 export const TUI_STATUS_ROOT = '/tmp/mde-opencode'
 export const TUI_STATUS_POLL_MS = 1_000
-export const TUI_STATUS_HEARTBEAT_MS = 5_000
 export const TUI_STATUS_STALE_MS = 20_000
 export const TUI_STATUS_LIVENESS_PROBE_MS = 10_000
 export const TUI_STATUS_LIVENESS_TIMEOUT_MS = 3_000
 export const TUI_STATUS_ARTIFACT_MAX_AGE_MINUTES = 24 * 60
-export const TUI_STATUS_PLUGIN_MARKER = 'mde-opencode-tui-status-plugin-v1'
-export const TUI_STATUS_PLUGIN_VERSION = '1.3.0'
-export const TUI_STATUS_PLUGIN_VERSION_MARKER = 'mde-opencode-tui-status-plugin-version:'
-export const TUI_STATUS_TITLE_MAX_LENGTH = 160
 const TUI_STATUS_SETTINGS_FILE = 'opencode-tui.json'
-
-/** Plain JavaScript loaded by OpenCode in an MDE terminal. */
-export const TUI_STATUS_PLUGIN_SOURCE = `// ${TUI_STATUS_PLUGIN_MARKER}
-// ${TUI_STATUS_PLUGIN_VERSION_MARKER} ${TUI_STATUS_PLUGIN_VERSION}
-const file = process.env.MDE_OPENCODE_STATUS_FILE
-const protocol = process.env.MDE_OPENCODE_STATUS_PROTOCOL
-
-export const MdeTuiStatus = async () => {
-  const path = await import('node:path')
-  const root = process.env.MDE_OPENCODE_STATUS_ROOT || '/tmp/mde-opencode'
-  if (!file || protocol !== '1' || !path.isAbsolute(root) || path.dirname(file) !== root) return {}
-
-  let revision = 0
-  let status = 'idle'
-  let attentionReason
-  let title
-  let hadActivity = false
-  const activeSessions = new Set()
-  const sessions = new Map()
-  const permissions = new Map()
-  const questions = new Map()
-  let currentRootSessionId
-  let processStartTicks
-  let processStartedAt
-  try {
-    if (process.platform === 'darwin') {
-      const { execFileSync } = await import('node:child_process')
-      const value = execFileSync('/bin/ps', ['-p', String(process.pid), '-o', 'lstart='], {
-        encoding: 'utf8', timeout: 3000, env: { ...process.env, LC_ALL: 'C' },
-      }).trim().replace(/\\s+/g, ' ')
-      if (value) processStartedAt = value
-    } else {
-      const fs = await import('node:fs/promises')
-      const stat = await fs.readFile('/proc/self/stat', 'utf8')
-      const afterName = stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\\s+/)
-      const value = Number(afterName[19])
-      if (Number.isSafeInteger(value) && value >= 0) processStartTicks = value
-    }
-  } catch {}
-
-  let writePending = false
-  let writeRunning = false
-  let closing = false
-  let writePromise = Promise.resolve()
-
-  const write = (closed = false) => {
-    if (closed) closing = true
-    writePending = true
-    if (writeRunning) return writePromise
-
-    writeRunning = true
-    writePromise = (async () => {
-      while (writePending) {
-        writePending = false
-        const snapshot = {
-          protocol: 1,
-          status,
-          ...(attentionReason ? { attentionReason } : {}),
-          ...(title ? { title } : {}),
-          revision,
-          ...(processStartTicks === undefined ? {} : { processId: process.pid, processStartTicks }),
-          ...(processStartedAt === undefined ? {} : { processId: process.pid, processStartedAt }),
-          ...(closing ? { closed: true } : {}),
-          updatedAt: Date.now(),
-        }
-        try {
-          const fs = await import('node:fs/promises')
-          await fs.mkdir((await import('node:path')).dirname(file), { recursive: true })
-          const temporary = file + '.tmp-' + process.pid
-          await fs.writeFile(temporary, JSON.stringify(snapshot), { encoding: 'utf8', mode: 0o600 })
-          await fs.rename(temporary, file)
-        } catch {}
-      }
-      writeRunning = false
-    })()
-    return writePromise
-  }
-
-  const publish = (nextStatus, nextReason) => {
-    if (status === nextStatus && attentionReason === nextReason) {
-      write()
-      return
-    }
-    status = nextStatus
-    attentionReason = nextReason
-    revision += 1
-    write()
-  }
-
-  const publishDerived = () => {
-    if (permissions.size > 0) return publish('attention', 'permission')
-    if (questions.size > 0) return publish('attention', 'question')
-    if (activeSessions.size > 0) return publish('working')
-    if (status === 'error') return
-    return publish('idle')
-  }
-
-  const sessionIdOf = (properties) =>
-    typeof properties?.sessionID === 'string' ? properties.sessionID : undefined
-  const requestIdOf = (properties) =>
-    typeof properties?.requestID === 'string'
-      ? properties.requestID
-      : typeof properties?.id === 'string'
-        ? properties.id
-        : undefined
-
-  const cleanTitle = (value) => {
-    if (typeof value !== 'string') return undefined
-    const cleaned = value.replace(/\\s+/g, ' ').trim().slice(0, ${TUI_STATUS_TITLE_MAX_LENGTH})
-    return cleaned || undefined
-  }
-
-  const rootSessionIdOf = (sessionId) => {
-    let current = sessionId
-    const visited = new Set()
-    while (current && !visited.has(current)) {
-      visited.add(current)
-      const info = sessions.get(current)
-      if (!info) return undefined
-      const parentId = info.parentID
-      if (!parentId) return current
-      current = parentId
-    }
-    return undefined
-  }
-
-  const selectTitleFor = (sessionId) => {
-    const rootSessionId = rootSessionIdOf(sessionId)
-    if (!rootSessionId) return
-    currentRootSessionId = rootSessionId
-    const nextTitle = sessions.get(rootSessionId)?.title
-    if (title === nextTitle) return
-    title = nextTitle
-    write()
-  }
-
-  const rememberSession = (info) => {
-    if (!info || typeof info.id !== 'string') return
-    const nextTitle = cleanTitle(info.title)
-    sessions.set(info.id, {
-      ...(typeof info.parentID === 'string' ? { parentID: info.parentID } : {}),
-      ...(nextTitle ? { title: nextTitle } : {}),
-    })
-    if (!info.parentID || info.id === currentRootSessionId) selectTitleFor(info.id)
-  }
-
-  const forgetSession = (info) => {
-    if (!info || typeof info.id !== 'string') return
-    sessions.delete(info.id)
-    activeSessions.delete(info.id)
-    for (const [id, owner] of permissions) if (owner === info.id) permissions.delete(id)
-    for (const [id, owner] of questions) if (owner === info.id) questions.delete(id)
-    if (info.id !== currentRootSessionId) return
-    currentRootSessionId = undefined
-    title = undefined
-    write()
-  }
-
-  publish('idle')
-  const heartbeat = setInterval(write, ${TUI_STATUS_HEARTBEAT_MS})
-  heartbeat.unref?.()
-
-  return {
-    event: async ({ event }) => {
-      try {
-        const properties = event?.properties ?? {}
-        const sessionId = sessionIdOf(properties)
-
-        if (event?.type === 'session.created' || event?.type === 'session.updated') {
-          rememberSession(properties.info)
-          return
-        }
-
-        if (event?.type === 'session.deleted') {
-          forgetSession(properties.info)
-          publishDerived()
-          return
-        }
-
-        if (event?.type === 'session.status' || event?.type === 'session.idle') {
-          if (!sessionId) return
-          selectTitleFor(sessionId)
-          const type = event.type === 'session.idle' ? 'idle' : properties.status?.type
-          if (type === 'busy' || type === 'retry') {
-            hadActivity = true
-            activeSessions.add(sessionId)
-            publishDerived()
-          } else if (type === 'idle') {
-            activeSessions.delete(sessionId)
-            if (activeSessions.size === 0 && permissions.size === 0 && questions.size === 0) {
-              publish(hadActivity ? 'completed' : 'idle')
-            } else {
-              publishDerived()
-            }
-          }
-          return
-        }
-
-        if (event?.type === 'session.error') {
-          if (!sessionId) return
-          selectTitleFor(sessionId)
-          hadActivity = true
-          activeSessions.delete(sessionId)
-          for (const [id, owner] of permissions) if (owner === sessionId) permissions.delete(id)
-          for (const [id, owner] of questions) if (owner === sessionId) questions.delete(id)
-          publish('error')
-          return
-        }
-
-        if (event?.type === 'permission.asked') {
-          const requestId = requestIdOf(properties)
-          if (!requestId || !sessionId) return
-          selectTitleFor(sessionId)
-          hadActivity = true
-          permissions.set(requestId, sessionId)
-          publishDerived()
-          return
-        }
-
-        if (event?.type === 'permission.replied') {
-          const requestId = requestIdOf(properties)
-          if (!requestId) return
-          permissions.delete(requestId)
-          publishDerived()
-          return
-        }
-
-        if (event?.type === 'question.asked') {
-          const requestId = requestIdOf(properties)
-          if (!requestId || !sessionId) return
-          selectTitleFor(sessionId)
-          hadActivity = true
-          questions.set(requestId, sessionId)
-          publishDerived()
-          return
-        }
-
-        if (
-          event?.type === 'question.replied' ||
-          event?.type === 'question.rejected'
-        ) {
-          const requestId = requestIdOf(properties)
-          if (!requestId) return
-          questions.delete(requestId)
-          publishDerived()
-        }
-      } catch {}
-    },
-    dispose: async () => {
-      clearInterval(heartbeat)
-      await write(true)
-    },
-  }
-}
-`
 
 export interface OpenCodeTuiStatusEvents {
   onStatus(update: OpenCodeTuiStatusUpdate): void
@@ -586,10 +353,35 @@ export function parseTuiPluginVersion(source: string): string | null {
   return version && /^\d+\.\d+\.\d+$/.test(version) ? version : null
 }
 
-export function classifyTuiPluginSource(source: string | null): OpenCodeTuiPluginInstallStatus {
-  if (source === null) return 'not-installed'
-  if (!source.includes(TUI_STATUS_PLUGIN_MARKER)) return 'conflict'
-  return parseTuiPluginVersion(source) === TUI_STATUS_PLUGIN_VERSION ? 'installed' : 'outdated'
+export interface TuiPluginFiles {
+  tui: string | null
+  server: string | null
+  /** The OpenCode 1 file that OpenCode 2 can no longer load. */
+  legacy: string | null
+}
+
+const isMdePluginSource = (source: string | null): source is string =>
+  source !== null && source.includes(TUI_STATUS_PLUGIN_MARKER)
+
+export function classifyTuiPluginFiles(files: TuiPluginFiles): OpenCodeTuiPluginInstallStatus {
+  // A foreign file in MDE's plugin directory is never overwritten.
+  if ((files.tui !== null && !isMdePluginSource(files.tui)) ||
+      (files.server !== null && !isMdePluginSource(files.server))) return 'conflict'
+  if (files.tui === null && files.server === null) {
+    return isMdePluginSource(files.legacy) ? 'outdated' : 'not-installed'
+  }
+  const current = files.tui !== null && files.server !== null &&
+    parseTuiPluginVersion(files.tui) === TUI_STATUS_PLUGIN_VERSION &&
+    parseTuiPluginVersion(files.server) === TUI_STATUS_PLUGIN_VERSION
+  // The old loose file fails to load on every OpenCode 2 start until removed.
+  return current && !isMdePluginSource(files.legacy) ? 'installed' : 'outdated'
+}
+
+interface TuiPluginPaths {
+  directory: string
+  tui: string
+  server: string
+  legacy: string
 }
 
 interface TuiStatusManagerDependencies {
@@ -754,39 +546,46 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
   }
 
   async pluginState(target: OpenCodePluginTarget): Promise<OpenCodeTuiPluginState> {
-    const pluginPath = await this.targetPluginPath(target)
-    const source = await this.readPlugin(pluginPath)
-    const installedVersion = source ? parseTuiPluginVersion(source) : null
+    const paths = await this.pluginPaths(target)
+    const files = await this.readPluginFiles(paths)
+    const installedSource = files.tui ?? (isMdePluginSource(files.legacy) ? files.legacy : null)
     return {
       target,
-      status: classifyTuiPluginSource(source),
-      installedVersion,
+      status: classifyTuiPluginFiles(files),
+      installedVersion: installedSource ? parseTuiPluginVersion(installedSource) : null,
       currentVersion: TUI_STATUS_PLUGIN_VERSION
     }
   }
 
   async installPlugin(target: OpenCodePluginTarget): Promise<OpenCodeTuiPluginState> {
-    const pluginPath = await this.targetPluginPath(target)
-    const existing = await this.readPlugin(pluginPath)
-    if (existing !== null && !existing.includes(TUI_STATUS_PLUGIN_MARKER)) {
-      throw new Error(`Refusing to overwrite an existing OpenCode plugin at ${pluginPath}.`)
+    const paths = await this.pluginPaths(target)
+    const files = await this.readPluginFiles(paths)
+    for (const [source, path] of [[files.tui, paths.tui], [files.server, paths.server]] as const) {
+      if (source !== null && !isMdePluginSource(source)) {
+        throw new Error(`Refusing to overwrite an existing OpenCode plugin at ${path}.`)
+      }
     }
-    await fs.mkdir(dirname(pluginPath), { recursive: true })
-
-    const temporary = `${pluginPath}.tmp-${randomUUID()}`
-    await fs.writeFile(temporary, TUI_STATUS_PLUGIN_SOURCE, 'utf8')
-    await fs.rename(temporary, pluginPath)
+    await fs.mkdir(paths.directory, { recursive: true })
+    // The terminal half goes last, so OpenCode never sees it without its server half.
+    await this.writePluginFile(paths.server, TUI_STATUS_SERVER_SOURCE)
+    await this.writePluginFile(paths.tui, TUI_STATUS_TUI_SOURCE)
+    if (isMdePluginSource(files.legacy)) await this.unlinkPluginFile(paths.legacy)
     return this.pluginState(target)
   }
 
   async removePlugin(target: OpenCodePluginTarget): Promise<OpenCodeTuiPluginState> {
-    const pluginPath = await this.targetPluginPath(target)
-    const existing = await this.readPlugin(pluginPath)
-    if (existing === null) return this.pluginState(target)
-    if (!existing.includes(TUI_STATUS_PLUGIN_MARKER)) {
-      throw new Error(`Refusing to remove a non-MDE OpenCode plugin at ${pluginPath}.`)
+    const paths = await this.pluginPaths(target)
+    const files = await this.readPluginFiles(paths)
+    for (const [source, path] of [[files.tui, paths.tui], [files.server, paths.server]] as const) {
+      if (source !== null && !isMdePluginSource(source)) {
+        throw new Error(`Refusing to remove a non-MDE OpenCode plugin at ${path}.`)
+      }
     }
-    await fs.unlink(pluginPath)
+    if (files.tui !== null) await this.unlinkPluginFile(paths.tui)
+    if (files.server !== null) await this.unlinkPluginFile(paths.server)
+    // Succeeds only when nothing else lives in the directory.
+    await fs.rmdir(paths.directory).catch(() => {})
+    if (isMdePluginSource(files.legacy)) await this.unlinkPluginFile(paths.legacy)
     return this.pluginState(target)
   }
 
@@ -811,10 +610,40 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
     }
   }
 
-  private async targetPluginPath(target: OpenCodePluginTarget): Promise<string> {
+  private async readPluginFiles(paths: TuiPluginPaths): Promise<TuiPluginFiles> {
+    const [tui, server, legacy] = await Promise.all([
+      this.readPlugin(paths.tui),
+      this.readPlugin(paths.server),
+      this.readPlugin(paths.legacy)
+    ])
+    return { tui, server, legacy }
+  }
+
+  private async writePluginFile(path: string, source: string): Promise<void> {
+    const temporary = `${path}.tmp-${randomUUID()}`
+    await fs.writeFile(temporary, source, 'utf8')
+    await fs.rename(temporary, path)
+  }
+
+  private async unlinkPluginFile(path: string): Promise<void> {
+    try {
+      await fs.unlink(path)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+  }
+
+  private async pluginPaths(target: OpenCodePluginTarget): Promise<TuiPluginPaths> {
     if (target.kind === 'native') {
       if (this.dependencies.platform !== 'darwin') throw new Error('Native status integration requires macOS.')
-      return join(await this.dependencies.nativeConfigDirectory(), 'plugins', 'mde-status.js')
+      const plugins = join(await this.dependencies.nativeConfigDirectory(), 'plugins')
+      const directory = join(plugins, TUI_STATUS_PLUGIN_DIRECTORY)
+      return {
+        directory,
+        tui: join(directory, TUI_STATUS_TUI_FILE),
+        server: join(directory, TUI_STATUS_SERVER_FILE),
+        legacy: join(plugins, TUI_STATUS_LEGACY_FILE)
+      }
     }
     const distro = assertDistro(target.distro)
     let home = this.homeDirectories.get(distro)
@@ -822,7 +651,14 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
       home = await resolveWslHome(distro)
       this.homeDirectories.set(distro, home)
     }
-    return uncPathFor(distro, `${home}/.config/opencode/plugins/mde-status.js`)
+    const plugins = `${home}/.config/opencode/plugins`
+    const directory = `${plugins}/${TUI_STATUS_PLUGIN_DIRECTORY}`
+    return {
+      directory: uncPathFor(distro, directory),
+      tui: uncPathFor(distro, `${directory}/${TUI_STATUS_TUI_FILE}`),
+      server: uncPathFor(distro, `${directory}/${TUI_STATUS_SERVER_FILE}`),
+      legacy: uncPathFor(distro, `${plugins}/${TUI_STATUS_LEGACY_FILE}`)
+    }
   }
 
   private cleanupExpiredArtifacts(distro: string): void {

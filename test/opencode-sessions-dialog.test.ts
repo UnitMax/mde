@@ -33,7 +33,7 @@ const session: Session = {
 const sessions: OpenCodeSessionSummary[] = [
   { id: 'ses_new', title: 'New frontend work', directory: '/workspace/frontend', createdAt: 100, updatedAt: 300,
     model: { id: 'model-1', providerId: 'provider-1' }, agent: 'build', parentId: 'ses_parent', archivedAt: 400,
-    changes: { files: 2, additions: 10, deletions: 3 }, tokens: { input: 100, output: 20 }, cost: 0.12 },
+    tokens: { input: 100, output: 20 }, cost: 0.12 },
   { id: 'ses_old', title: 'Backend work', directory: '/workspace/backend', createdAt: 50, updatedAt: 200 }
 ]
 
@@ -112,7 +112,7 @@ describe('OpenCode session picker dialog', () => {
     expect(document.activeElement).toBe(input())
     expect(document.querySelectorAll('[role="option"]')).toHaveLength(2)
     const text = document.querySelector('[role="dialog"]')?.textContent
-    for (const value of ['/workspace/frontend', '/workspace/backend', 'provider-1/model-1', 'build', '2 files', '+10', '−3', 'Subagent', 'Archived', 'Input: 100', 'Reported cost: $0.12']) {
+    for (const value of ['/workspace/frontend', '/workspace/backend', 'provider-1/model-1', 'build', 'Subagent', 'Archived', 'Input: 100', 'Reported cost: $0.12']) {
       expect(text).toContain(value)
     }
     expect(document.querySelector('[data-testid="opencode-session-details"]')?.textContent).toContain('ses_new')
@@ -135,7 +135,7 @@ describe('OpenCode session picker dialog', () => {
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Current directory')
     await key(input(), 'ArrowDown')
     const details = document.querySelector('[data-testid="opencode-session-details"]')?.textContent
-    for (const value of ['Created', 'Updated', 'provider-1/model-1', '2 files', 'Input: 100', 'Reported cost: $0.12']) {
+    for (const value of ['Created', 'Updated', 'provider-1/model-1', 'Input: 100', 'Reported cost: $0.12']) {
       expect(details).toContain(value)
     }
     expect(document.querySelector('[data-session-id="ses_new"]')?.textContent).not.toContain('Created')

@@ -139,11 +139,6 @@ const api: RendererApi = {
     onInstances: (listener) =>
       subscribe<OpenCodeTuiInstancesUpdate>(IpcEvents.opencodeTuiInstances, listener)
   },
-  opencodeTokenRate: {
-    pluginState: (req) => ipcRenderer.invoke(IpcChannels.opencodeTokenRatePluginState, req),
-    install: (req) => ipcRenderer.invoke(IpcChannels.opencodeTokenRatePluginInstall, req),
-    remove: (req) => ipcRenderer.invoke(IpcChannels.opencodeTokenRatePluginRemove, req)
-  },
   opencodeAlerts: {
     settings: () => ipcRenderer.invoke(IpcChannels.opencodeAlertsSettings),
     setEnabled: (req) => ipcRenderer.invoke(IpcChannels.opencodeAlertsSetEnabled, req)

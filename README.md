@@ -5,8 +5,8 @@ persistent terminal sessions, with first-class WSL support on Windows.
 
 It is a desktop shell focused on persistent terminal workflows: tabbed multi-pane terminals per
 session, Git status in the sidebar, a file tree with Markdown and Mermaid preview, an OpenCode
-session picker, and To Do boards. Optional OpenCode TUI plugins provide agent status, alerts,
-instance labels, and token-rate information without replacing the terminal experience. See
+session picker, and To Do boards. An optional OpenCode 2 terminal plugin provides agent status,
+alerts, and instance labels without replacing the terminal experience. See
 [`docs/architecture.md`](docs/architecture.md) for how each part behaves.
 
 ## Requirements
@@ -57,8 +57,8 @@ and configuration. The Mac
 package includes only the rebuilt PTY binding and spawn helper outside `app.asar`,
 with compiler debug paths stripped before signing. Native Mac terminals support
 the agent launcher, OpenCode history/resume, status reporting, Agents overview,
-Dock attention and sound, and token-rate display. Enable status reporting and
-install the optional plugins under Settings → OpenCode, then restart OpenCode.
+and Dock attention and sound. Enable status reporting and install the optional plugin
+under Settings → OpenCode, then restart OpenCode.
 Mac plugin management resolves the config directory and executable environment
 through the user’s login shell, including when MDE is launched from Finder.
 WSL-specific actions remain Windows-only.

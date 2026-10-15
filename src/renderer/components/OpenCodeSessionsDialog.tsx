@@ -40,11 +40,6 @@ function MetadataDetails({ session }: { session: OpenCodeSessionSummary }): JSX.
       <div className="flex flex-wrap gap-x-3 gap-y-1">
         {session.model && <span>{session.model.providerId}/{session.model.id}{session.model.variant ? ` · ${session.model.variant}` : ''}</span>}
         {session.agent && <span>{session.agent}</span>}
-        {session.changes && <span>{[
-          session.changes.files === undefined ? null : `${session.changes.files} files`,
-          session.changes.additions === undefined ? null : `+${session.changes.additions}`,
-          session.changes.deletions === undefined ? null : `−${session.changes.deletions}`,
-        ].filter(Boolean).join(' · ')}</span>}
         {session.parentId && <span>Subagent</span>}
         {session.archivedAt !== undefined && <span>Archived {sessionDate(session.archivedAt)}</span>}
       </div>

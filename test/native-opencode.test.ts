@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { compileFunction, constants } from 'node:vm'
+import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nativeLoginEnvironment, openCodeConfigDirectory } from '../src/main/native-environment'
 import { buildLaunchSpec } from '../src/main/pty/launch'
@@ -11,9 +11,11 @@ import {
   decodeTuiStatusSnapshot,
   OpenCodeTuiStatusManager,
   probeMacTuiProcess,
-  TUI_STATUS_PLUGIN_SOURCE,
+  TUI_STATUS_PLUGIN_MARKER,
   TUI_STATUS_PLUGIN_VERSION,
+  TUI_STATUS_SERVER_SOURCE,
   TUI_STATUS_STALE_MS,
+  TUI_STATUS_TUI_SOURCE,
 } from '../src/main/opencode/tui-status'
 import { runLaunchProcess } from './helpers/launch-process'
 import type { Session } from '../src/shared/types'
@@ -71,15 +73,20 @@ describe.skipIf(process.platform === 'win32')('native OpenCode command transport
     expect((await runLaunchProcess(missing.file, missing.args)).status).not.toBe(0)
   })
 
-  it('uses the native metadata command and frames JSON after banners', async () => {
+  it('uses the native API command and frames JSON after banners', async () => {
     const directory = await temporaryDirectory()
     const executable = join(directory, 'metadata cli')
-    await fs.writeFile(executable, '#!/bin/sh\nprintf \'[{"id":"ses_test","title":"Saved"}]\\n\'\n', { mode: 0o700 })
-    const { spec, begin, end } = metadataQueryLaunch(native, executable, 'SELECT fixture', 'fixture')
+    await fs.writeFile(executable, [
+      '#!/bin/sh',
+      '[ "$1" = api ] && [ "$2" = session.get ] && [ "$3" = --param ] && [ "$4" = sessionID=ses_test ] || exit 22',
+      'printf \'{"data":{"id":"ses_test","title":"Saved"}}\\n\'',
+    ].join('\n'), { mode: 0o700 })
+    const request = { operation: 'session.get', params: { sessionID: 'ses_test' } } as const
+    const { spec, begin, end } = metadataQueryLaunch(native, executable, request, 'fixture')
     expect(spec.file).toBe('/bin/sh')
     const result = await runLaunchProcess(spec.file, spec.args, { cwd: spec.cwd })
     expect(result.status).toBe(0)
-    expect(parseMetadataOutput(result.stdout, begin, end)).toEqual([{ id: 'ses_test', title: 'Saved' }])
+    expect(parseMetadataOutput(result.stdout, begin, end)).toEqual({ data: { id: 'ses_test', title: 'Saved' } })
     expect(() => parseMetadataOutput(`${begin}\ninvalid\n${end}`, begin, end)).toThrow('invalid')
   })
 
@@ -99,55 +106,187 @@ describe.skipIf(process.platform === 'win32')('native OpenCode command transport
   })
 })
 
+interface PluginHarness {
+  file: string
+  emit(type: string, data: Record<string, unknown>): void
+  read(): Promise<Record<string, unknown>>
+  setRoute(sessionID?: string): void
+  stop(): Promise<void>
+}
+
+/** Runs the real plugin source against a stand-in for OpenCode's terminal plugin context. */
+async function startStatusPlugin(sessions: Record<string, { parentID?: string; title?: string }>): Promise<PluginHarness> {
+  const root = await temporaryDirectory()
+  const file = join(root, 'status.json')
+  const module = join(await temporaryDirectory(), 'tui.mjs')
+  await fs.writeFile(module, TUI_STATUS_TUI_SOURCE)
+  vi.stubEnv('MDE_OPENCODE_STATUS_FILE', file)
+  vi.stubEnv('MDE_OPENCODE_STATUS_ROOT', root)
+  vi.stubEnv('MDE_OPENCODE_STATUS_PROTOCOL', '1')
+  const plugin = (await import(/* @vite-ignore */ pathToFileURL(module).href)).default
+  const handlers = new Map<string, Array<(event: unknown) => void>>()
+  let route: { type: string; sessionID?: string } = { type: 'home' }
+  const rootOf = (id: string): string => {
+    let current = id
+    while (sessions[current]?.parentID) current = sessions[current]!.parentID!
+    return current
+  }
+  const cleanup = await plugin.setup({
+    data: {
+      on: (type: string, handler: (event: unknown) => void) => {
+        handlers.set(type, [...(handlers.get(type) ?? []), handler])
+        return () => handlers.set(type, (handlers.get(type) ?? []).filter((item) => item !== handler))
+      },
+      session: {
+        root: rootOf,
+        get: (id: string) => sessions[id] && { id, ...sessions[id] },
+        status: () => 'running',
+        permission: { list: () => undefined },
+        form: { list: () => undefined },
+      },
+    },
+    // The tab list holds every root session of a directory, so the plugin must not read it.
+    ui: {
+      router: { current: () => route },
+      tabs: { enabled: () => true, list: () => Object.keys(sessions).map((sessionID) => ({ sessionID })) },
+    },
+  })
+  return {
+    file,
+    emit: (type, data) => (handlers.get(type) ?? []).forEach((handler) => handler({ type, data })),
+    read: async () => JSON.parse(await fs.readFile(file, 'utf8')),
+    setRoute: (sessionID) => { route = sessionID ? { type: 'session', sessionID } : { type: 'home' } },
+    stop: async () => { await cleanup() },
+  }
+}
+
 describe('native status plugin management', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
   it.skipIf(process.platform === 'win32')('publishes real plugin events, heartbeat identity, and shutdown without leaking event contents', async () => {
-    const root = await temporaryDirectory()
-    const file = join(root, 'status.json')
-    const factory = compileFunction(TUI_STATUS_PLUGIN_SOURCE.replace('export const MdeTuiStatus =', 'return'), ['process'], {
-      importModuleDynamically: constants.USE_MAIN_CONTEXT_DEFAULT_LOADER,
-    })
-    const plugin = factory({
-      platform: process.platform, pid: process.pid,
-      env: { ...process.env, MDE_OPENCODE_STATUS_FILE: file, MDE_OPENCODE_STATUS_ROOT: root, MDE_OPENCODE_STATUS_PROTOCOL: '1' },
-    })
-    const hooks = await plugin()
-    const read = async () => JSON.parse(await fs.readFile(file, 'utf8'))
+    const plugin = await startStatusPlugin({ ses_root: { title: '  Task\n title ' }, ses_child: { parentID: 'ses_root' } })
+    const { read } = plugin
     try {
       await vi.waitFor(async () => expect(await read()).toMatchObject({ status: 'idle' }))
-      await hooks.event({ event: { type: 'session.created', properties: { info: { id: 'ses_test', title: 'Task title' } } } })
-      await hooks.event({ event: { type: 'session.status', properties: { sessionID: 'ses_test', status: { type: 'busy' }, secret: 'private prompt' } } })
+      plugin.setRoute('ses_root')
+      plugin.emit('session.execution.started', { sessionID: 'ses_root', secret: 'private prompt' })
       await vi.waitFor(async () => expect(await read()).toMatchObject({ status: 'working', title: 'Task title' }))
-      await hooks.event({ event: { type: 'permission.asked', properties: { sessionID: 'ses_test', requestID: 'request' } } })
+      plugin.emit('permission.asked', { id: 'request', sessionID: 'ses_child', metadata: { secret: 'private prompt' } })
       await vi.waitFor(async () => expect(await read()).toMatchObject({ status: 'attention', attentionReason: 'permission' }))
-      await hooks.event({ event: { type: 'permission.replied', properties: { requestID: 'request' } } })
-      await hooks.event({ event: { type: 'session.idle', properties: { sessionID: 'ses_test' } } })
+      plugin.emit('permission.replied', { requestID: 'request', sessionID: 'ses_child' })
+      await vi.waitFor(async () => expect(await read()).toMatchObject({ status: 'working' }))
+      plugin.emit('form.created', { form: { id: 'form', sessionID: 'ses_root', title: 'private prompt' } })
+      await vi.waitFor(async () => expect(await read()).toMatchObject({ status: 'attention', attentionReason: 'question' }))
+      plugin.emit('form.replied', { id: 'form', sessionID: 'ses_root', answer: { value: 'private prompt' } })
+      plugin.emit('session.execution.succeeded', { sessionID: 'ses_root' })
       await vi.waitFor(async () => expect(await read()).toMatchObject({ status: 'completed' }))
-      expect(await fs.readFile(file, 'utf8')).not.toContain('private prompt')
-      expect((await fs.stat(file)).mode & 0o777).toBe(0o600)
+      plugin.emit('session.execution.started', { sessionID: 'ses_root' })
+      plugin.emit('session.execution.failed', { sessionID: 'ses_root', error: { message: 'private prompt' } })
+      await vi.waitFor(async () => expect(await read()).toMatchObject({ status: 'error' }))
+      expect(await fs.readFile(plugin.file, 'utf8')).not.toContain('private prompt')
+      expect((await fs.stat(plugin.file)).mode & 0o777).toBe(0o600)
     } finally {
-      await hooks.dispose()
+      await plugin.stop()
     }
     expect(await read()).toMatchObject({ closed: true })
     if (process.platform === 'darwin') expect((await read()).processStartedAt).toBeTruthy()
   })
 
-  it('installs, updates, and removes only MDE-owned source in the selected config directory', async () => {
+  it.skipIf(process.platform === 'win32')('ignores sessions this terminal never showed, even when the service reports them', async () => {
+    const plugin = await startStatusPlugin({ ses_mine: {}, ses_other: {} })
+    try {
+      await vi.waitFor(async () => expect(await plugin.read()).toMatchObject({ status: 'idle' }))
+      // Another terminal's work reaches every terminal through OpenCode's shared service.
+      plugin.emit('session.execution.started', { sessionID: 'ses_other' })
+      plugin.emit('permission.asked', { id: 'foreign', sessionID: 'ses_other' })
+      plugin.emit('form.created', { form: { id: 'foreign-form', sessionID: 'ses_other' } })
+      await new Promise((resolve) => setTimeout(resolve, 1300))
+      expect(await plugin.read()).toMatchObject({ status: 'idle', revision: 0 })
+      // Showing the session adopts what is already running there.
+      plugin.setRoute('ses_other')
+      await vi.waitFor(async () => expect(await plugin.read()).toMatchObject({ status: 'attention', attentionReason: 'permission' }), { timeout: 3000 })
+      plugin.emit('permission.replied', { requestID: 'foreign' })
+      plugin.emit('form.cancelled', { id: 'foreign-form', sessionID: 'ses_other' })
+      await vi.waitFor(async () => expect(await plugin.read()).toMatchObject({ status: 'working' }))
+      plugin.setRoute('ses_mine')
+      plugin.emit('session.deleted', { sessionID: 'ses_other' })
+      await vi.waitFor(async () => expect(await plugin.read()).toMatchObject({ status: 'completed' }), { timeout: 3000 })
+    } finally {
+      await plugin.stop()
+    }
+  })
+
+  it('stays inert without the MDE environment', async () => {
+    vi.stubEnv('MDE_OPENCODE_STATUS_FILE', '')
+    const module = join(await temporaryDirectory(), 'tui.mjs')
+    await fs.writeFile(module, TUI_STATUS_TUI_SOURCE)
+    const plugin = (await import(/* @vite-ignore */ pathToFileURL(module).href)).default
+    const on = vi.fn()
+    expect(await plugin.setup({ data: { on } })).toBeUndefined()
+    expect(on).not.toHaveBeenCalled()
+  })
+
+  it('installs, updates, and removes only MDE-owned plugin files in the selected config directory', async () => {
     const config = await temporaryDirectory()
     const manager = new OpenCodeTuiStatusManager({ onStatus: vi.fn(), onInstances: vi.fn() }, {
       platform: 'darwin', nativeConfigDirectory: async () => config,
     })
     const target = { kind: 'native' } as const
+    const directory = join(config, 'plugins', 'mde-status')
+    const tui = join(directory, 'tui.js')
     expect((await manager.pluginState(target)).status).toBe('not-installed')
     expect(await manager.installPlugin(target)).toMatchObject({ target, status: 'installed', currentVersion: TUI_STATUS_PLUGIN_VERSION })
-    const file = join(config, 'plugins', 'mde-status.js')
-    await fs.writeFile(file, TUI_STATUS_PLUGIN_SOURCE.replace(`version: ${TUI_STATUS_PLUGIN_VERSION}`, 'version: 0.0.1'))
+    expect(await fs.readFile(tui, 'utf8')).toBe(TUI_STATUS_TUI_SOURCE)
+    expect(await fs.readFile(join(directory, 'index.js'), 'utf8')).toBe(TUI_STATUS_SERVER_SOURCE)
+    await fs.writeFile(tui, TUI_STATUS_TUI_SOURCE.replace(`version: ${TUI_STATUS_PLUGIN_VERSION}`, 'version: 0.0.1'))
+    expect(await manager.pluginState(target)).toMatchObject({ status: 'outdated', installedVersion: '0.0.1' })
+    expect((await manager.installPlugin(target)).status).toBe('installed')
+    await fs.rm(join(directory, 'index.js'))
     expect((await manager.pluginState(target)).status).toBe('outdated')
     expect((await manager.installPlugin(target)).status).toBe('installed')
     expect((await manager.removePlugin(target)).status).toBe('not-installed')
-    await fs.writeFile(file, 'export const Unrelated = () => ({})')
+    await expect(fs.access(directory)).rejects.toThrow()
+
+    await fs.mkdir(directory, { recursive: true })
+    await fs.writeFile(tui, 'export default { id: "unrelated", setup() {} }')
+    expect((await manager.pluginState(target)).status).toBe('conflict')
     await expect(manager.installPlugin(target)).rejects.toThrow('Refusing to overwrite')
     await expect(manager.removePlugin(target)).rejects.toThrow('Refusing to remove')
-    expect(await fs.readFile(file, 'utf8')).toContain('Unrelated')
+    expect(await fs.readFile(tui, 'utf8')).toContain('unrelated')
+    await fs.rm(tui)
+    await fs.writeFile(join(directory, 'notes.txt'), 'mine')
+    await manager.installPlugin(target)
+    await manager.removePlugin(target)
+    expect(await fs.readFile(join(directory, 'notes.txt'), 'utf8')).toBe('mine')
+  })
+
+  it('replaces the OpenCode 1 plugin file that OpenCode 2 cannot load, but never a foreign one', async () => {
+    const config = await temporaryDirectory()
+    const manager = new OpenCodeTuiStatusManager({ onStatus: vi.fn(), onInstances: vi.fn() }, {
+      platform: 'darwin', nativeConfigDirectory: async () => config,
+    })
+    const target = { kind: 'native' } as const
+    const legacy = join(config, 'plugins', 'mde-status.js')
+    await fs.mkdir(join(config, 'plugins'), { recursive: true })
+    await fs.writeFile(legacy, `// ${TUI_STATUS_PLUGIN_MARKER}\n// mde-opencode-tui-status-plugin-version: 1.3.0\nexport const MdeTuiStatus = async () => ({})\n`)
+    expect(await manager.pluginState(target)).toMatchObject({ status: 'outdated', installedVersion: '1.3.0' })
+    expect((await manager.installPlugin(target)).status).toBe('installed')
+    await expect(fs.access(legacy)).rejects.toThrow()
+
+    await manager.removePlugin(target)
+    await fs.writeFile(legacy, 'export const SomeoneElse = async () => ({})')
+    expect((await manager.pluginState(target)).status).toBe('not-installed')
+    expect((await manager.installPlugin(target)).status).toBe('installed')
+    expect(await fs.readFile(legacy, 'utf8')).toContain('SomeoneElse')
+    await manager.removePlugin(target)
+    expect(await fs.readFile(legacy, 'utf8')).toContain('SomeoneElse')
+
+    await fs.rm(legacy)
+    await manager.installPlugin(target)
+    await fs.writeFile(legacy, `// ${TUI_STATUS_PLUGIN_MARKER}\n`)
+    expect((await manager.pluginState(target)).status).toBe('outdated')
+    await manager.removePlugin(target)
+    await expect(fs.access(legacy)).rejects.toThrow()
   })
 
   it.skipIf(process.platform === 'win32')('tracks multiple Mac instances and clears a stale process after PID reuse', async () => {

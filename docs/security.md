@@ -116,7 +116,7 @@ resolution before side effects. The opt-in native Windows integration test
 plants runnable harmless executables in both cwd and `PATH`, verifies the
 sentinel itself works, and exercises real distro queries, history transport,
 PowerShell and native/WSL ConPTY. See the Windows release checklist for running
-it. It uses scratch data rather than a user's OpenCode database.
+it. It uses scratch data rather than a user's OpenCode sessions.
 
 ## Dependency security maintenance
 

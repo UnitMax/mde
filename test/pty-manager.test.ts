@@ -129,7 +129,7 @@ describe('PtyManager runtime terminal identities', () => {
 
   it('applies launch integration environment to native shells and disposes it', () => {
     const integration = {
-      prepare: vi.fn(() => ({ MDE_OPENCODE_TOKEN_RATE: '1' })),
+      prepare: vi.fn(() => ({ MDE_TEST_INTEGRATION: '1' })),
       dispose: vi.fn()
     }
     const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() }, integration)
@@ -137,7 +137,7 @@ describe('PtyManager runtime terminal identities', () => {
     manager.ensure('pane-a', sourceSession(), { cols: 80, rows: 24 }, palette)
 
     expect(ptyMock.spawn.mock.calls[0]?.[2]).toMatchObject({
-      env: expect.objectContaining({ MDE_OPENCODE_TOKEN_RATE: '1' })
+      env: expect.objectContaining({ MDE_TEST_INTEGRATION: '1' })
     })
     manager.dispose('pane-a')
     expect(integration.dispose).toHaveBeenCalledWith('pane-a')

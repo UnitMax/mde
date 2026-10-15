@@ -25,11 +25,6 @@ export interface OpenCodeSessionSummary {
     providerId: string
     variant?: string
   }
-  changes?: {
-    files?: number
-    additions?: number
-    deletions?: number
-  }
   cost?: number
   tokens?: {
     input?: number
@@ -292,28 +287,6 @@ export interface OpenCodeTuiPluginState {
 export type OpenCodePluginTarget =
   | { kind: 'native' }
   | { kind: 'wsl'; distro: string }
-
-export type OpenCodeTokenRatePluginInstallStatus =
-  | 'not-installed'
-  | 'installed'
-  | 'outdated'
-  | 'conflict'
-  | 'unsupported'
-  | 'unavailable'
-  | 'repair-needed'
-
-export interface OpenCodeTokenRatePluginRequest {
-  target: OpenCodePluginTarget
-}
-
-export interface OpenCodeTokenRatePluginState {
-  target: OpenCodePluginTarget
-  status: OpenCodeTokenRatePluginInstallStatus
-  installedVersion: string | null
-  currentVersion: string
-  opencodeVersion: string | null
-  registered: boolean
-}
 
 export interface OpenCodeAlertSettings {
   enabled: boolean

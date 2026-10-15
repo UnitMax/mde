@@ -24,14 +24,16 @@ MDE stores data only on the local machine:
   `/tmp/mde-opencode` in the WSL distro, or a private `mde-opencode` directory under the
   macOS user temporary directory (state, current session title, timestamps, and a process ID
   with its start identity; never prompts, messages or tool data), plus the plugin files MDE installs into the target's OpenCode
-  configuration directory. The token-rate plugin also registers itself in OpenCode's `tui.json`.
-  Disabling an integration does not uninstall its plugin.
+  configuration directory (`plugins/mde-status/`). The plugin runs inside the OpenCode terminal
+  process and edits no OpenCode configuration file. Disabling an integration does not uninstall
+  its plugin.
   On Mac the snapshot directory is accessible only by the current user (0700), with files
   restricted to that user (0600). MDE removes snapshots when terminals close and matching
   artifacts older than 24 hours on startup. Abrupt termination may leave these temporary files.
 
 MDE does not copy file contents or terminal output into any of these. Terminal scrollback is held
-in memory only. The OpenCode session picker reads the OpenCode history database on demand (session
+in memory only. The OpenCode session picker asks the configured OpenCode executable for session metadata on demand
+(`opencode api`, which reads OpenCode's own local background service: session
 titles, directories, models, token usage and cost) and keeps the result in memory only. The query output passes through a private temporary file on the native Mac host or in the distro, which is deleted when the query ends.
 
 ## Network behavior in the released application

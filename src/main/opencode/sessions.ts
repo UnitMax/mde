@@ -6,20 +6,28 @@ import { decodeWslOutput, wslEnv } from '../wsl/distros'
 import { resolveWslExecutable, type HostExecutable } from '../windows-executable'
 import { nativeLoginShell } from '../native-environment'
 
-const REQUIRED_COLUMNS = ['id', 'title', 'directory', 'time_created', 'time_updated']
-const OPTIONAL_COLUMNS = [
-  'parent_id', 'time_archived', 'agent', 'model', 'summary_files',
-  'summary_additions', 'summary_deletions', 'cost', 'tokens_input',
-  'tokens_output', 'tokens_reasoning', 'tokens_cache_read', 'tokens_cache_write',
-]
-const UNSUPPORTED = 'This OpenCode database format is unsupported. Update OpenCode to use session history.'
+const UNSUPPORTED = 'Session history requires OpenCode 2 or newer.'
+const SESSION_GONE = 'This OpenCode session no longer exists. Refresh the session list.'
 const MAX_QUERY_BYTES = 32 * 1024 * 1024
+/** A cold background service has to start before it can answer. */
+const QUERY_TIMEOUT_MS = 30_000
+/** OpenCode never returns more than this many sessions per page. */
+const SESSION_PAGE_SIZE = 120
+const MAX_SESSION_PAGES = 100
+const API_OPERATIONS = ['session.list', 'session.get'] as const
+const API_PARAMETERS = ['limit', 'cursor', 'sessionID'] as const
+const OPAQUE_CURSOR = /^[A-Za-z0-9_=.-]{1,2048}$/
 
-export type OpenCodeMetadataQuery = (
+export interface OpenCodeApiRequest {
+  operation: (typeof API_OPERATIONS)[number]
+  params: Partial<Record<(typeof API_PARAMETERS)[number], string>>
+}
+
+export type OpenCodeApiQuery = (
   session: Session,
   executable: string,
-  query: string
-) => Promise<unknown[]>
+  request: OpenCodeApiRequest
+) => Promise<unknown>
 
 export function validateOpenCodeExecutable(value: unknown): asserts value is string {
   if (typeof value !== 'string' || !value.trim() || /[\u0000-\u001f\u007f-\u009f]/.test(value)) {
@@ -33,25 +41,39 @@ export function validateOpenCodeSessionId(value: unknown): asserts value is stri
   }
 }
 
-export function parseMetadataOutput(stdout: string, begin: string, end: string): unknown[] {
+export function parseMetadataOutput(stdout: string, begin: string, end: string): unknown {
   const start = stdout.indexOf(begin)
   const finish = stdout.indexOf(end, start + begin.length)
-  if (start < 0 || finish < 0) throw new Error('Could not read OpenCode database output.')
-  let result: unknown
+  if (start < 0 || finish < 0) throw new Error('Could not read OpenCode API output.')
   try {
-    result = JSON.parse(stdout.slice(start + begin.length, finish).trim())
+    return JSON.parse(stdout.slice(start + begin.length, finish).trim())
   } catch {
-    throw new Error('OpenCode returned invalid session metadata.')
+    throw new Error(`OpenCode returned invalid session metadata. ${UNSUPPORTED}`)
   }
-  if (!Array.isArray(result)) throw new Error('OpenCode returned invalid session metadata.')
-  return result
+}
+
+/** Only fixed operations and parameters reach the CLI, each as its own literal argument. */
+export function openCodeApiArguments(request: OpenCodeApiRequest): string[] {
+  if (!API_OPERATIONS.includes(request.operation)) throw new Error('Unsupported OpenCode API operation.')
+  const args: string[] = [request.operation]
+  for (const [name, value] of Object.entries(request.params)) {
+    if (!(API_PARAMETERS as readonly string[]).includes(name) || typeof value !== 'string') {
+      throw new Error('Unsupported OpenCode API parameter.')
+    }
+    if (name === 'sessionID') validateOpenCodeSessionId(value)
+    else if (name === 'limit' ? !/^\d{1,4}$/.test(value) : !OPAQUE_CURSOR.test(value)) {
+      throw new Error('Invalid OpenCode API parameter.')
+    }
+    args.push('--param', `${name}=${value}`)
+  }
+  return args
 }
 
 /** A fixed script frames only the CLI output, after the user's login shell has loaded. */
 export function metadataQueryLaunch(
   session: Session,
   executable: string,
-  query: string,
+  request: OpenCodeApiRequest,
   marker: string,
   hostExecutable?: HostExecutable,
 ): {
@@ -60,6 +82,7 @@ export function metadataQueryLaunch(
   end: string
 } {
   validateOpenCodeExecutable(executable)
+  const apiArguments = openCodeApiArguments(request)
   const native = session.kind === 'native'
   if (!native && !session.distro) throw new Error('Session history requires a configured WSL distro.')
   const begin = `__MDE_OPENCODE_BEGIN_${marker}__`
@@ -73,11 +96,15 @@ export function metadataQueryLaunch(
     "trap 'exit 129' HUP",
     "trap 'exit 130' INT",
     "trap 'exit 143' TERM",
-    '"$1" db "$2" --format json > "$mde_query_output"',
+    'mde_executable=$1',
+    'mde_begin=$2',
+    'mde_end=$3',
+    'shift 3',
+    '"$mde_executable" api "$@" > "$mde_query_output"',
     'mde_query_status=$?',
-    'printf "\\n%s\\n" "$3"',
+    'printf "\\n%s\\n" "$mde_begin"',
     'cat -- "$mde_query_output" || exit 1',
-    'printf "\\n%s\\n" "$4"',
+    'printf "\\n%s\\n" "$mde_end"',
     'exit "$mde_query_status"',
   ].join('\n')
   const spec = buildLaunchSpec(session, {
@@ -85,20 +112,23 @@ export function metadataQueryLaunch(
     windowsExecutable: hostExecutable,
     defaultShell: native ? nativeLoginShell() : undefined,
     workingDirectory: '/',
-    agent: { executable: '/bin/sh', args: ['-c', script, 'mde-opencode-query', executable, query, begin, end] },
+    agent: {
+      executable: '/bin/sh',
+      args: ['-c', script, 'mde-opencode-query', executable, begin, end, ...apiArguments]
+    },
   })
   return { spec, begin, end }
 }
 
-const runMetadataQuery: OpenCodeMetadataQuery = (session, executable, query) => {
+const runApiQuery: OpenCodeApiQuery = (session, executable, request) => {
   const native = session.kind === 'native'
-  const { spec, begin, end } = metadataQueryLaunch(session, executable, query, randomUUID(), native ? undefined : resolveWslExecutable('win32'))
+  const { spec, begin, end } = metadataQueryLaunch(session, executable, request, randomUUID(), native ? undefined : resolveWslExecutable('win32'))
   return new Promise((resolve, reject) => {
     execFile(spec.file, spec.args, {
       env: native ? process.env : wslEnv(),
       cwd: spec.cwd,
       encoding: 'buffer',
-      timeout: 15_000,
+      timeout: QUERY_TIMEOUT_MS,
       maxBuffer: MAX_QUERY_BYTES,
       windowsHide: true,
     }, (error, rawStdout, rawStderr) => {
@@ -109,7 +139,9 @@ const runMetadataQuery: OpenCodeMetadataQuery = (session, executable, query) => 
           reject(new Error('OpenCode session history exceeded the output size limit.'))
         } else if (error.killed) {
           reject(new Error('Reading OpenCode session history timed out.'))
-        } else if (/unknown (command|argument)|no such (table|column)/i.test(stderr + stdout)) {
+        } else if (request.operation === 'session.get' && /SessionNotFoundError/.test(stdout)) {
+          reject(new Error(SESSION_GONE))
+        } else if (/unknown (command|argument)|operation not found/i.test(stderr + stdout)) {
           reject(new Error(UNSUPPORTED))
         } else {
           reject(new Error('Could not read OpenCode session history. Check the configured executable and login environment.'))
@@ -140,83 +172,93 @@ function text(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }
 
+function optionalRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+}
+
+/** Maps an OpenCode 2 `Session.Info`, keeping only metadata and ignoring everything else. */
 export function parseOpenCodeSession(value: unknown): OpenCodeSessionSummary {
-  const row = record(value)
-  validateOpenCodeSessionId(row.id)
-  const createdAt = number(row.time_created)
-  const updatedAt = number(row.time_updated)
-  if (typeof row.title !== 'string' || typeof row.directory !== 'string' || createdAt === undefined || updatedAt === undefined) {
+  const info = record(value)
+  validateOpenCodeSessionId(info.id)
+  const time = record(info.time)
+  const directory = record(info.location).directory
+  const createdAt = number(time.created)
+  const updatedAt = number(time.updated)
+  if (typeof directory !== 'string' || createdAt === undefined || updatedAt === undefined) {
     throw new Error('OpenCode returned invalid session metadata.')
   }
   const result: OpenCodeSessionSummary = {
-    id: row.id,
-    title: row.title.trim() || 'Untitled session',
-    directory: row.directory,
+    id: info.id,
+    title: typeof info.title === 'string' && info.title.trim() ? info.title.trim() : 'Untitled session',
+    directory,
     createdAt,
     updatedAt,
-    parentId: text(row.parent_id),
-    archivedAt: number(row.time_archived),
-    agent: text(row.agent),
-    cost: number(row.cost),
+    parentId: text(info.parentID),
+    archivedAt: number(time.archived),
+    agent: text(info.agent),
+    cost: number(info.cost),
   }
-  try {
-    const model = record(typeof row.model === 'string' ? JSON.parse(row.model) : row.model)
-    if (typeof model.id === 'string' && typeof model.providerID === 'string') {
-      result.model = { id: model.id, providerId: model.providerID, variant: text(model.variant) }
+  const model = optionalRecord(info.model)
+  if (model && typeof model.id === 'string' && typeof model.providerID === 'string') {
+    result.model = { id: model.id, providerId: model.providerID, variant: text(model.variant) }
+  }
+  const usage = optionalRecord(info.tokens)
+  if (usage) {
+    const cache = optionalRecord(usage.cache)
+    const tokens = {
+      input: number(usage.input),
+      output: number(usage.output),
+      reasoning: number(usage.reasoning),
+      cacheRead: number(cache?.read),
+      cacheWrite: number(cache?.write),
     }
-  } catch {
-    // Optional model metadata differs across OpenCode versions.
+    if (Object.values(tokens).some((value) => value !== undefined)) result.tokens = tokens
   }
-  const changes = {
-    files: number(row.summary_files),
-    additions: number(row.summary_additions),
-    deletions: number(row.summary_deletions),
-  }
-  if (Object.values(changes).some((value) => value !== undefined)) result.changes = changes
-  const tokens = {
-    input: number(row.tokens_input),
-    output: number(row.tokens_output),
-    reasoning: number(row.tokens_reasoning),
-    cacheRead: number(row.tokens_cache_read),
-    cacheWrite: number(row.tokens_cache_write),
-  }
-  if (Object.values(tokens).some((value) => value !== undefined)) result.tokens = tokens
   return result
 }
 
-async function sessionQuery(
-  session: Session,
-  executable: string,
-  where: string,
-  query: OpenCodeMetadataQuery
-): Promise<OpenCodeSessionSummary[]> {
-  validateOpenCodeExecutable(executable)
-  const schema = await query(session, executable, 'PRAGMA table_info("session")')
-  const columns = new Set(schema.map((value) => record(value).name))
-  if (!REQUIRED_COLUMNS.every((name) => columns.has(name))) throw new Error(UNSUPPORTED)
-  const selected = [...REQUIRED_COLUMNS, ...OPTIONAL_COLUMNS.filter((name) => columns.has(name))]
-  const rows = await query(session, executable,
-    `SELECT ${selected.join(', ')} FROM session${where} ORDER BY time_updated DESC, id DESC`)
-  return rows.map(parseOpenCodeSession)
+function pageCursor(value: unknown): string | undefined {
+  const next = optionalRecord(value)?.next
+  if (next === undefined || next === null) return undefined
+  if (typeof next !== 'string' || !OPAQUE_CURSOR.test(next)) throw new Error('OpenCode returned invalid session metadata.')
+  return next
 }
 
-export function listOpenCodeSessions(
+export async function listOpenCodeSessions(
   session: Session,
   executable: string,
-  query: OpenCodeMetadataQuery = runMetadataQuery
+  query: OpenCodeApiQuery = runApiQuery
 ): Promise<OpenCodeSessionSummary[]> {
-  return sessionQuery(session, executable, '', query)
+  validateOpenCodeExecutable(executable)
+  const sessions = new Map<string, OpenCodeSessionSummary>()
+  let cursor: string | undefined
+  for (let page = 0; page < MAX_SESSION_PAGES; page += 1) {
+    const response = record(await query(session, executable, {
+      operation: 'session.list',
+      params: { limit: String(SESSION_PAGE_SIZE), ...(cursor ? { cursor } : {}) },
+    }))
+    if (!Array.isArray(response.data)) throw new Error('OpenCode returned invalid session metadata.')
+    for (const item of response.data) {
+      const parsed = parseOpenCodeSession(item)
+      sessions.set(parsed.id, parsed)
+    }
+    const next = pageCursor(response.cursor)
+    // A full page may still be the last one, so an empty or short page also ends the walk.
+    if (response.data.length < SESSION_PAGE_SIZE || !next || next === cursor) break
+    cursor = next
+  }
+  return [...sessions.values()].sort((a, b) => b.updatedAt - a.updatedAt || (a.id < b.id ? 1 : -1))
 }
 
 export async function readOpenCodeSession(
   session: Session,
   executable: string,
   id: string,
-  query: OpenCodeMetadataQuery = runMetadataQuery
+  query: OpenCodeApiQuery = runApiQuery
 ): Promise<OpenCodeSessionSummary> {
   validateOpenCodeSessionId(id)
-  // ID validation excludes SQL syntax. The renderer never supplies query text.
-  const rows = await sessionQuery(session, executable, ` WHERE id = '${id}'`, query)
-  if (!rows[0]) throw new Error('This OpenCode session no longer exists. Refresh the session list.')
-  return rows[0]
+  validateOpenCodeExecutable(executable)
+  const response = record(await query(session, executable, { operation: 'session.get', params: { sessionID: id } }))
+  if (!response.data) throw new Error(SESSION_GONE)
+  return parseOpenCodeSession(response.data)
 }
