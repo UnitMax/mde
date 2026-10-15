@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
@@ -72,7 +72,8 @@ describe('third-party notice package selection', () => {
   })
 
   it('accepts CRLF checkouts but rejects changed notice content', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'mde-notices-check-'))
+    // macOS aliases /var to /private/var; match Node's canonical module path.
+    const directory = await realpath(await mkdtemp(join(tmpdir(), 'mde-notices-check-')))
     const run = promisify(execFile)
     try {
       await mkdir(join(directory, 'scripts'))
