@@ -266,7 +266,8 @@ export function generateThirdPartyNotices({ check = false } = {}) {
   const rendered = renderThirdPartyNotices()
   if (check) {
     const current = existsSync(outputPath) ? readFileSync(outputPath, 'utf8') : ''
-    if (current !== rendered) {
+    // Windows checkouts may use CRLF; line endings do not change attribution.
+    if (current.replaceAll('\r\n', '\n') !== rendered) {
       console.error('THIRD_PARTY_NOTICES.md is out of date. Run `npm run licenses` and commit the result.')
       process.exitCode = 1
     }
