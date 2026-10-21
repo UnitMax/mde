@@ -1550,7 +1550,7 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
                   </label>
 
                   <label className="block text-xs font-medium text-fg-muted">
-                    Font family
+                    Terminal font family
                     <Select value={settings.family} onValueChange={(family) => updateSettings({ family })}>
                       <SelectTrigger className="mt-1">
                         <SelectValue />
@@ -1566,7 +1566,7 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
                   </label>
 
                   <label className="block text-xs font-medium text-fg-muted">
-                    Font size
+                    Terminal font size
                     <Select
                       value={String(settings.size)}
                       onValueChange={(value) => {
@@ -1588,7 +1588,7 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
                   </label>
 
                   <label className="block text-xs font-medium text-fg-muted">
-                    Line height
+                    Terminal line height
                     <Select
                       value={String(settings.lineHeight)}
                       onValueChange={(value) => {
@@ -1605,6 +1605,25 @@ function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Elemen
                         {TERMINAL_LINE_HEIGHTS.map((lineHeight) => (
                           <SelectItem key={lineHeight} value={String(lineHeight)}>
                             {lineHeight.toFixed(1)}×
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </label>
+
+                  <label className="block text-xs font-medium text-fg-muted">
+                    Code preview font family
+                    <Select
+                      value={settings.codeFamily}
+                      onValueChange={(codeFamily) => updateSettings({ codeFamily })}
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableFonts.map((font) => (
+                          <SelectItem key={font.family} value={font.family}>
+                            {font.label}
                           </SelectItem>
                         ))}
                       </SelectContent>

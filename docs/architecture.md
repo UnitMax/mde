@@ -45,7 +45,10 @@ the temporary fullscreen view; it is enabled by default. Ctrl+Shift+F toggles fu
 focused terminal pane. The Sidebar section controls whether ordinary terminal pane entries appear
 beneath each session; this preference is global and stored with the local terminal settings. The
 Agents section configures the launcher commands described below. The application theme (Slate,
-Ember, Frost, High contrast) and zoom are also adjustable.
+Ember, Frost, High contrast) and zoom are also adjustable. The Appearance section sets the terminal
+font family, size and line height, and separately the font family of the file viewer's source code
+preview; both families are chosen from the same list of installed monospace fonts and default to
+its first entry.
 
 The expanded Projects sidebar includes a collapsible Agents overview below the sessions, combining
 currently reported OpenCode instances from every session with their originating session, tab, and

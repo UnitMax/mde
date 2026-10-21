@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { defaultKeymap } from '@codemirror/commands'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search'
-import { Compartment, EditorState } from '@codemirror/state'
+import { Compartment, EditorState, type Extension } from '@codemirror/state'
 import {
   EditorView,
   drawSelection,
@@ -13,6 +13,15 @@ import {
 } from '@codemirror/view'
 import { tags } from '@lezer/highlight'
 import { languageForPath } from '@/lib/code-languages'
+import {
+  codeViewerFontFamily,
+  getTerminalSettings,
+  subscribeTerminalSettings
+} from '@/terminal/terminal-settings'
+
+function fontTheme(family: string): Extension {
+  return EditorView.theme({ '.cm-scroller': { fontFamily: codeViewerFontFamily(family) } })
+}
 
 const viewerTheme = EditorView.theme(
   {
@@ -23,7 +32,7 @@ const viewerTheme = EditorView.theme(
       fontSize: '12px'
     },
     '&.cm-focused': { outline: 'none' },
-    '.cm-scroller': { fontFamily: 'var(--font-mono)', lineHeight: '1.55' },
+    '.cm-scroller': { lineHeight: '1.55' },
     '.cm-content': { caretColor: 'var(--color-fg)', padding: '8px 0' },
     '.cm-gutters': {
       backgroundColor: 'var(--color-bg)',
@@ -92,10 +101,12 @@ export function CodeViewer({ path, content }: CodeViewerProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const languageRef = useRef(new Compartment())
+  const fontRef = useRef(new Compartment())
 
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
+    let family = getTerminalSettings().codeFamily
     const view = new EditorView({
       parent: host,
       state: EditorState.create({
@@ -113,13 +124,21 @@ export function CodeViewer({ path, content }: CodeViewerProps): JSX.Element {
           search({ top: true }),
           keymap.of([...searchKeymap, ...defaultKeymap]),
           viewerTheme,
+          fontRef.current.of(fontTheme(family)),
           syntaxHighlighting(viewerHighlight),
           languageRef.current.of([])
         ]
       })
     })
     viewRef.current = view
+    const unsubscribe = subscribeTerminalSettings(() => {
+      const next = getTerminalSettings().codeFamily
+      if (next === family) return
+      family = next
+      view.dispatch({ effects: fontRef.current.reconfigure(fontTheme(next)) })
+    })
     return () => {
+      unsubscribe()
       view.destroy()
       viewRef.current = null
     }

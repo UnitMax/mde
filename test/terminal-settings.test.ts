@@ -10,6 +10,7 @@ import {
   TERMINAL_FONT_SIZES,
   TERMINAL_SETTINGS_STORAGE_KEY,
   TERMINAL_LINE_HEIGHTS,
+  codeViewerFontFamily,
   xtermFontFamily
 } from '../src/renderer/terminal/terminal-settings'
 import {
@@ -45,6 +46,7 @@ describe('terminal settings', () => {
   it('uses the first available font, current size, and current line height as defaults', () => {
     expect(defaultTerminalSettings(available)).toEqual({
       family: 'JetBrains Mono',
+      codeFamily: 'JetBrains Mono',
       size: 13,
       lineHeight: 1,
       theme: 'slate',
@@ -64,6 +66,7 @@ describe('terminal settings', () => {
       resolveTerminalSettings({ family: 'Missing Font', size: 99, lineHeight: 2, theme: 'missing' }, available)
     ).toEqual({
       family: 'JetBrains Mono',
+      codeFamily: 'JetBrains Mono',
       size: 13,
       lineHeight: 1,
       theme: 'slate',
@@ -89,6 +92,7 @@ describe('terminal settings', () => {
       )
     ).toEqual({
       family: 'monospace',
+      codeFamily: 'JetBrains Mono',
       size: 14,
       lineHeight: 1.4,
       theme: 'frost',
@@ -135,6 +139,7 @@ describe('terminal settings', () => {
 
     expect(getTerminalSettings()).toEqual({
       family: 'monospace',
+      codeFamily: 'monospace',
       size: 14,
       lineHeight: 1,
       theme: 'slate',
@@ -154,6 +159,7 @@ describe('terminal settings', () => {
     vi.stubGlobal('localStorage', storage)
     const settings = {
       family: 'monospace',
+      codeFamily: 'monospace',
       size: 14,
       lineHeight: 1.4,
       theme: 'ember' as const,
@@ -282,5 +288,24 @@ describe('terminal settings', () => {
   it('builds an xterm family with a monospace fallback', () => {
     expect(xtermFontFamily('JetBrains Mono')).toBe('"JetBrains Mono", monospace')
     expect(xtermFontFamily('monospace')).toBe('monospace')
+  })
+
+  it('builds a code viewer family with a monospace fallback', () => {
+    expect(codeViewerFontFamily('JetBrains Mono')).toBe('"JetBrains Mono", monospace')
+    expect(codeViewerFontFamily('monospace')).toBe('monospace')
+  })
+
+  it('keeps the code preview font independent of the terminal font', () => {
+    const fonts = listTerminalFonts((family) => family === 'JetBrains Mono' || family === 'Fira Code')
+
+    expect(
+      resolveTerminalSettings({ family: 'Fira Code', codeFamily: 'monospace' }, fonts)
+    ).toMatchObject({ family: 'Fira Code', codeFamily: 'monospace' })
+    expect(resolveTerminalSettings({ family: 'Fira Code' }, fonts)).toMatchObject({
+      family: 'Fira Code',
+      codeFamily: 'JetBrains Mono'
+    })
+    expect(resolveTerminalSettings({ codeFamily: 'Missing Font' }, fonts).codeFamily).toBe('JetBrains Mono')
+    expect(resolveTerminalSettings({ codeFamily: 42 }, fonts).codeFamily).toBe('JetBrains Mono')
   })
 })

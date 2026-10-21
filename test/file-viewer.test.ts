@@ -12,6 +12,7 @@ import {
   isMarkdownPath,
   resolveRelativeLink
 } from '../src/renderer/lib/file-viewer'
+import { saveTerminalSettings, TERMINAL_SETTINGS_STORAGE_KEY } from '../src/renderer/terminal/terminal-settings'
 import {
   getMarkdownPreviewWidth,
   MARKDOWN_PREVIEW_WIDTH_STORAGE_KEY,
@@ -246,6 +247,32 @@ describe('FileViewer', () => {
     expect(viewer?.querySelector('.cm-content')?.getAttribute('contenteditable')).toBe('false')
     expect(viewer?.querySelector('.cm-lineNumbers')).not.toBeNull()
     expect(container.textContent).not.toContain('Preview')
+  })
+
+  it('uses the code preview font setting and follows changes to it', async () => {
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: { check: (query: string) => query.includes('Fira Code') || query.includes('JetBrains Mono') }
+    })
+    try {
+      localStorage.setItem(TERMINAL_SETTINGS_STORAGE_KEY, JSON.stringify({ family: 'JetBrains Mono', codeFamily: 'Fira Code' }))
+      read.mockResolvedValue(file({ path: 'src/index.ts', content: 'const a = 1\n', size: 12 }))
+
+      const container = await renderViewer('src/index.ts')
+      const scroller = container.querySelector('[data-testid="code-viewer"] .cm-scroller')
+      expect(scroller).not.toBeNull()
+      expect(getComputedStyle(scroller!).fontFamily).toContain('Fira Code')
+
+      await act(async () => {
+        saveTerminalSettings({
+          ...JSON.parse(localStorage.getItem(TERMINAL_SETTINGS_STORAGE_KEY)!),
+          codeFamily: 'JetBrains Mono'
+        })
+      })
+      expect(getComputedStyle(scroller!).fontFamily).toContain('JetBrains Mono')
+    } finally {
+      delete (document as { fonts?: unknown }).fonts
+    }
   })
 
   it('explains binary, oversized, and unreadable files', async () => {

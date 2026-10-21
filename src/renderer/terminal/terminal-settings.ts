@@ -11,6 +11,8 @@ export type AgentCommandSettings = Record<CodingAgent, AgentCommandSetting>
 
 export interface TerminalSettings {
   family: string
+  /** Font family of the file viewer's source code preview; chosen from the same list as `family`. */
+  codeFamily: string
   size: number
   /** xterm line-height multiplier relative to the selected font size. */
   lineHeight: number
@@ -74,6 +76,7 @@ export function defaultTerminalSettings(
 ): TerminalSettings {
   return {
     family: availableFonts[0]?.family ?? 'monospace',
+    codeFamily: availableFonts[0]?.family ?? 'monospace',
     size: 13,
     lineHeight: 1,
     theme: 'slate',
@@ -108,6 +111,7 @@ export function resolveTerminalSettings(
 
   const record = value as Record<string, unknown>
   const family = typeof record.family === 'string' ? record.family : fallback.family
+  const codeFamily = typeof record.codeFamily === 'string' ? record.codeFamily : fallback.codeFamily
   const size = isTerminalFontSize(record.size) ? record.size : fallback.size
   const lineHeight = isTerminalLineHeight(record.lineHeight) ? record.lineHeight : fallback.lineHeight
   const theme = isApplicationThemeId(record.theme) ? record.theme : fallback.theme
@@ -132,6 +136,9 @@ export function resolveTerminalSettings(
   )
   return {
     family: availableFonts.some((option) => option.family === family) ? family : fallback.family,
+    codeFamily: availableFonts.some((option) => option.family === codeFamily)
+      ? codeFamily
+      : fallback.codeFamily,
     size,
     lineHeight,
     theme,
@@ -179,4 +186,8 @@ export function subscribeTerminalSettings(listener: () => void): () => void {
 
 export function xtermFontFamily(family: string): string {
   return family === 'monospace' ? family : `"${family}", monospace`
+}
+
+export function codeViewerFontFamily(family: string): string {
+  return xtermFontFamily(family)
 }
