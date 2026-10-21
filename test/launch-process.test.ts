@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { runLaunchProcess } from './helpers/launch-process'
 
 it.skipIf(process.platform === 'win32')('runs an interactive shell without a controlling terminal', async () => {
@@ -26,13 +26,16 @@ it.skipIf(process.platform !== 'linux')('kills descendants when a shell ignores 
     ], { timeout: 500 })).rejects.toThrow('Launch test process exceeded 500 ms')
 
     const pid = readFileSync(pidFile, 'utf8')
-    try {
-      // A killed descendant may briefly remain a zombie until its new parent reaps it.
-      const status = readFileSync(`/proc/${pid}/stat`, 'utf8')
-      expect(status.slice(status.lastIndexOf(')') + 2).split(' ')[0]).toBe('Z')
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-    }
+    // SIGKILL is delivered asynchronously, so the descendant may still be running for a moment.
+    await vi.waitFor(() => {
+      try {
+        // A killed descendant may briefly remain a zombie until its new parent reaps it.
+        const status = readFileSync(`/proc/${pid}/stat`, 'utf8')
+        expect(status.slice(status.lastIndexOf(')') + 2).split(' ')[0]).toBe('Z')
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+    }, { timeout: 2_000 })
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }
