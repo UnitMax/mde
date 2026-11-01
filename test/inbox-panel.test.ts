@@ -40,7 +40,18 @@ async function render(element: Parameters<Root['render']>[0]): Promise<HTMLEleme
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('api', {
-    inbox: { setRead, setArchived: vi.fn(async () => null), remove: vi.fn(async () => undefined) }
+    inbox: { setRead, setArchived: vi.fn(async () => null), remove: vi.fn(async () => undefined) },
+    chat: {
+      subscribe: vi.fn(async () => undefined),
+      unsubscribe: vi.fn(async () => undefined),
+      messages: vi.fn(async () => ({
+        messages: [{ kind: 'user', id: 'msg_1', time: 1, text: 'Please fix the login' }],
+        older: null,
+        running: false
+      })),
+      requests: vi.fn(async () => ({ permissions: [], forms: [] })),
+      options: vi.fn(() => new Promise(() => {}))
+    }
   })
   setRead.mockClear()
   useWorkspace.setState({
@@ -106,7 +117,8 @@ describe('Inbox', () => {
     const main = await render(createElement(InboxThreadView))
     expect(main.textContent).toContain('Fix login')
     expect(main.textContent).toContain('/home/me/app (Ubuntu)')
-    expect(main.textContent).toContain('Conversation view coming soon')
+    await vi.waitFor(() => expect(main.textContent).toContain('Please fix the login'))
+    expect(main.querySelector('[data-testid="chat-composer"]')).not.toBeNull()
   })
 
   it('filters and searches the list', async () => {

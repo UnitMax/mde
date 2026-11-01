@@ -37,10 +37,27 @@ import type {
   OpenCodeSessionsRequest,
   OpenCodeSessionSummary,
   WindowMode,
+  InboxAddFolderRequest,
+  InboxComposerState,
+  InboxFolder,
+  InboxFoldersState,
+  InboxRemoveFolderRequest,
   InboxRemoveRequest,
   InboxSetArchivedRequest,
   InboxSetReadRequest,
-  InboxThread
+  InboxThread,
+  ChatConfigureRequest,
+  ChatCreateRequest,
+  ChatEvent,
+  ChatFormReplyRequest,
+  ChatMessagesPage,
+  ChatMessagesRequest,
+  ChatOptions,
+  ChatOptionsRequest,
+  ChatPermissionReplyRequest,
+  ChatRequests,
+  ChatSendRequest,
+  ChatThreadRequest
 } from './types'
 
 export interface WorkspaceData {
@@ -128,6 +145,22 @@ export const IpcChannels = {
   inboxSetRead: 'inbox:set-read',
   inboxSetArchived: 'inbox:set-archived',
   inboxRemove: 'inbox:remove',
+  inboxFolders: 'inbox:folders',
+  inboxFoldersAdd: 'inbox:folders-add',
+  inboxFoldersRemove: 'inbox:folders-remove',
+  inboxComposerSet: 'inbox:composer-set',
+
+  chatConfigure: 'chat:configure',
+  chatOptions: 'chat:options',
+  chatCreate: 'chat:create',
+  chatMessages: 'chat:messages',
+  chatSend: 'chat:send',
+  chatInterrupt: 'chat:interrupt',
+  chatRequests: 'chat:requests',
+  chatPermissionReply: 'chat:permission-reply',
+  chatFormReply: 'chat:form-reply',
+  chatSubscribe: 'chat:subscribe',
+  chatUnsubscribe: 'chat:unsubscribe',
 
   windowModeGet: 'window-mode:get',
   windowModeSet: 'window-mode:set',
@@ -145,6 +178,7 @@ export const IpcEvents = {
   opencodeTuiStatus: 'opencode-tui:status',
   opencodeTuiInstances: 'opencode-tui:instances',
   inboxChanged: 'inbox:changed',
+  chatEvent: 'chat:event',
   windowModeChanged: 'window-mode:changed',
 } as const
 
@@ -475,6 +509,24 @@ export interface RendererApi {
     setArchived(req: InboxSetArchivedRequest): Promise<InboxThread | null>
     remove(req: InboxRemoveRequest): Promise<void>
     onChanged(listener: (thread: InboxThread) => void): () => void
+    folders(): Promise<InboxFoldersState>
+    addFolder(req: InboxAddFolderRequest): Promise<InboxFolder>
+    removeFolder(req: InboxRemoveFolderRequest): Promise<void>
+    setComposer(req: InboxComposerState): Promise<InboxComposerState>
+  }
+  chat: {
+    configure(req: ChatConfigureRequest): Promise<void>
+    options(req: ChatOptionsRequest): Promise<ChatOptions>
+    create(req: ChatCreateRequest): Promise<InboxThread>
+    messages(req: ChatMessagesRequest): Promise<ChatMessagesPage>
+    send(req: ChatSendRequest): Promise<void>
+    interrupt(req: ChatThreadRequest): Promise<void>
+    requests(req: ChatThreadRequest): Promise<ChatRequests>
+    replyPermission(req: ChatPermissionReplyRequest): Promise<void>
+    replyForm(req: ChatFormReplyRequest): Promise<void>
+    subscribe(req: ChatThreadRequest): Promise<void>
+    unsubscribe(req: ChatThreadRequest): Promise<void>
+    onEvent(listener: (event: ChatEvent) => void): () => void
   }
   windowMode: {
     get(): Promise<WindowMode>

@@ -11,6 +11,9 @@ import { PtyManager } from './pty/manager'
 import { getSession, initWorkspaceStore } from './store/workspace'
 import { InboxStore, INBOX_FILE } from './inbox/store'
 import { InboxRecorder } from './inbox/recorder'
+import { InboxChatService } from './inbox/chat'
+import { OpenCodeServiceClient } from './opencode/service/client'
+import { discoverOpenCodeService } from './opencode/service/discovery'
 import { readGitTerminalInfo } from './git'
 import { adjustZoomFactor, DEFAULT_ZOOM_FACTOR, getZoomAction } from './zoom'
 import { handleWindowOpen } from './external-links'
@@ -20,6 +23,7 @@ import { installRendererProtocol, registerRendererScheme } from './renderer-prot
 let mainWindow: BrowserWindow | null = null
 let inboxStore: InboxStore | null = null
 let inboxRecorder: InboxRecorder | null = null
+let inboxChat: InboxChatService | null = null
 let quitPrepared = false
 const rendererUrl = rendererEntryUrl(app.isPackaged, process.env.ELECTRON_RENDERER_URL)
 
@@ -188,6 +192,23 @@ if (!app.requestSingleInstanceLock()) {
         }
       }
     })
+    const serviceClient = new OpenCodeServiceClient({
+      discover: discoverOpenCodeService,
+      executable: () => inboxChat?.executable() ?? 'opencode'
+    })
+    inboxChat = new InboxChatService({
+      client: serviceClient,
+      store: inboxStore,
+      recorder: inboxRecorder,
+      now: () => Date.now(),
+      enabled: () => opencodeTuiStatusManager.settings().enabled &&
+        (process.platform === 'darwin' || process.platform === 'win32'),
+      send: (event) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(IpcEvents.chatEvent, event)
+        }
+      }
+    })
     registerIpcHandlers(
       { getWebContents: () => mainWindow?.webContents ?? null, rendererUrl },
       ptyManager,
@@ -195,7 +216,7 @@ if (!app.requestSingleInstanceLock()) {
       opencodeAlertManager,
       miniWindow,
       titleBar,
-      inboxRecorder
+      { recorder: inboxRecorder, chat: inboxChat }
     )
     createWindow()
 
@@ -214,6 +235,7 @@ if (!app.requestSingleInstanceLock()) {
     opencodeAlertManager.dispose()
     ptyManager.disposeAll()
     opencodeTuiStatusManager.disposeAll()
+    inboxChat?.stop()
     // Closing the terminals settles their inbox threads; save them before exiting.
     if (inboxStore) {
       const store = inboxStore

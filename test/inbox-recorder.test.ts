@@ -6,7 +6,20 @@ import type {
   Session
 } from '../src/shared/types'
 import { InboxStore } from '../src/main/inbox/store'
-import { InboxRecorder, isInboxThreadUnread } from '../src/main/inbox/recorder'
+import { InboxRecorder, isInboxThreadUnread, serviceEventReport } from '../src/main/inbox/recorder'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { parseServiceEvent, type ServiceEvent } from '../src/main/opencode/service/events'
+
+function fixtureEvents(name: string): ServiceEvent[] {
+  return readFileSync(join(__dirname, 'fixtures/opencode-chat', name), 'utf8')
+    .trim().split('\n').map((line) => parseServiceEvent(line)).filter((event): event is ServiceEvent => event !== null)
+}
+
+const folder = {
+  id: 'fld_app', name: 'app', directory: '/home/me/app',
+  target: { kind: 'wsl' as const, distro: 'Ubuntu-24.04' }, createdAt: 1, lastUsedAt: 1
+}
 
 const session: Session = {
   id: 'session-1', projectId: 'project-1', name: 'App', kind: 'wsl',
@@ -169,4 +182,69 @@ describe('inbox recorder', () => {
     report([{}])
     expect(changed).toHaveLength(1)
   })
+
+  it('records a chat thread as working and read, then follows its service events', async () => {
+    const { recorder, thread, advance, readBranch } = setup()
+    const events = fixtureEvents('run-tools.jsonl')
+    const id = events.find((event) => event.type === 'session.created')!.data.sessionID as string
+    const created = recorder.recordChatThread({ id, title: null, folder, model: { id: 'model-1', providerId: 'provider-1' } })
+    expect(created).toMatchObject({
+      id, title: 'Untitled session', origin: 'chat', folderId: 'fld_app', status: 'working',
+      directory: '/home/me/app', target: { kind: 'wsl', distro: 'Ubuntu-24.04' }
+    })
+    expect(isInboxThreadUnread(created)).toBe(false)
+    // A chat thread has no MDE session, so Git runs through a stand-in for its target.
+    await vi.waitFor(() => expect(readBranch).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/app' }), '/home/me/app'))
+
+    advance(1_000)
+    for (const event of events) recorder.applyServiceEvent(event)
+    expect(thread(id)).toMatchObject({
+      title: 'MDE spike', status: 'completed', lastActivityAt: 2_000,
+      model: { id: 'deepseek-v4.1-flash-free', providerId: 'opencode' }
+    })
+    expect(isInboxThreadUnread(thread(id)!)).toBe(true)
+  })
+
+  it('shows permission requests and questions as needing input until they are answered', () => {
+    const { recorder, thread } = setup()
+    const permission = fixtureEvents('permission.jsonl')
+    const id = permission.find((event) => event.type === 'permission.asked')!.data.sessionID as string
+    recorder.recordChatThread({ id, folder, model: { id: 'm', providerId: 'p' } })
+    const until = (events: ServiceEvent[], type: string) => events.slice(0, events.findIndex((event) => event.type === type) + 1)
+    for (const event of until(permission, 'permission.asked')) recorder.applyServiceEvent(event)
+    expect(thread(id)).toMatchObject({ status: 'attention', attentionReason: 'permission' })
+    for (const event of until(permission, 'permission.replied')) recorder.applyServiceEvent(event)
+    expect(thread(id)?.status).toBe('working')
+
+    const question = fixtureEvents('question.jsonl')
+    const formId = (question.find((event) => event.type === 'form.created')!.data.form as { sessionID: string }).sessionID
+    recorder.recordChatThread({ id: formId, folder, model: { id: 'm', providerId: 'p' } })
+    for (const event of until(question, 'form.created')) recorder.applyServiceEvent(event)
+    expect(thread(formId)).toMatchObject({ status: 'attention', attentionReason: 'question' })
+  })
+
+  it('ignores service events for sessions the inbox never recorded', () => {
+    const { recorder, store } = setup()
+    for (const event of fixtureEvents('run-tools.jsonl')) recorder.applyServiceEvent(event)
+    expect(store.list()).toEqual([])
+  })
+
+  it('does not resume a thread on a reply it was not waiting for', () => {
+    const { recorder, thread } = setup()
+    recorder.recordChatThread({ id: 'ses_one', folder, model: { id: 'm', providerId: 'p' } })
+    recorder.applyServiceEvent({ type: 'session.execution.succeeded', data: { sessionID: 'ses_one' } })
+    recorder.applyServiceEvent({ type: 'permission.replied', data: { sessionID: 'ses_one', requestID: 'per_1' } })
+    expect(thread()?.status).toBe('completed')
+    recorder.applyServiceEvent({ type: 'session.execution.interrupted', data: { sessionID: 'ses_one' } })
+    expect(thread()?.status).toBe('idle')
+  })
+
+  it('reads only valid titles and models from events', () => {
+    expect(serviceEventReport({ type: 'session.renamed', data: { title: 'bad\u0007' } })).toBeNull()
+    expect(serviceEventReport({ type: 'session.renamed', data: { title: ' Fix ' } })).toEqual({ title: 'Fix' })
+    expect(serviceEventReport({ type: 'session.step.started', data: { model: { id: 'm' } } })).toBeNull()
+    expect(serviceEventReport({ type: 'session.text.delta', data: {} })).toBeNull()
+  })
 })
+

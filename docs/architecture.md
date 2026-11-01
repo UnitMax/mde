@@ -70,13 +70,14 @@ or Archived. The context menu marks a thread read or unread, archives it, or del
 
 The Inbox is locked until Settings → OpenCode status reporting is on, and on platforms where the
 status plugin cannot run (anything but macOS and Windows with WSL). The locked view explains why
-and opens Settings → OpenCode. The main area shows the selected thread's details above a
-placeholder; the conversation view itself is not built yet.
+and opens Settings → OpenCode. The main area shows the selected thread's conversation (see Inbox
+chat), or the new-thread page when nothing is selected.
 
-Threads are recorded only from MDE terminals, by the status plugin (version 2.1.0 or newer),
-never imported from OpenCode's history. The plugin reports each root conversation the terminal
-has shown (see OpenCode integration). In the main process `src/main/inbox/recorder.ts` applies
-those reports:
+Threads come from two places and are never imported from OpenCode's history: conversations
+started in the Inbox itself, and conversations run in MDE terminals, which the status plugin
+(version 2.1.0 or newer) reports for each root conversation the terminal has shown (see OpenCode
+integration). In the main process `src/main/inbox/recorder.ts` applies those reports, and the
+service events of threads it already holds:
 
 - A conversation that has only been looked at, never run, is not recorded.
 - Finishing, failing, or asking for input or permission moves the thread to the top, marks it
@@ -88,12 +89,69 @@ those reports:
   previous branch.
 - Deleting a thread removes only MDE's record; it comes back if OpenCode reports new activity.
 
-`src/main/inbox/store.ts` keeps the threads in memory and in `inbox.json` in the user-data
-directory, written at most every 500 ms with the same temporary-file-and-rename write as
-`workspace.json`, and once more on quit. Loading validates every record, drops malformed ones,
-shows threads that were working when MDE closed as idle, and keeps the 1,000 most recent. The
+`src/main/inbox/store.ts` keeps the threads, the Inbox folders and the last composer choices in
+memory and in `inbox.json` in the user-data directory, written at most every 500 ms with the same
+temporary-file-and-rename write as `workspace.json`, and once more on quit. The file is at
+version 2; a version 1 file loads with no folders. Loading validates every record, drops
+malformed ones, shows threads that were working when MDE closed as idle, and keeps the 1,000 most
+recent threads and 200 most recently used folders. The
 renderer loads the list once at startup (`inbox:list`) and then follows `inbox:changed` pushes,
 so opening the Inbox never waits for OpenCode or Git.
+
+### Inbox chat
+
+MDE has two modes that do not touch each other. The Projects tab ("legacy" mode) works with
+projects, sessions and terminals in `workspace.json`. Inbox mode keeps its own list of folders in
+`inbox.json` and never reads or changes projects or sessions. An Inbox folder is a directory and a
+target: the Mac, or a WSL distro on Windows, where only WSL paths are accepted because OpenCode
+runs there.
+
+**New thread.** "New thread" at the top of the Inbox, or selecting nothing, shows "What should we
+build in ‹folder›?". The folder name opens a menu of the Inbox folders with Add folder… and
+remove buttons. Below it is the composer: a prompt box, a model picker (searchable, grouped by
+provider, enabled and non-deprecated models only), an agent picker (Build, Plan, then any other
+primary agent that is not hidden), and a send button. Enter sends and Shift+Enter adds a newline.
+The folder, model and agent last used are remembered in `inbox.json`; otherwise the composer
+starts with OpenCode's default model and the Build agent. Sending creates the OpenCode session in
+the folder, records it as a chat thread, selects it, and sends the prompt.
+
+**Conversation.** The thread view shows the newest 50 messages and loads older ones when you
+scroll up. User messages are bubbles; assistant text is Markdown rendered read-only with the
+preview's extensions (raw HTML off, links opened through the external-link validator); reasoning
+is a collapsible "Thought" block; each tool call is a row with a status icon and a summary such as
+"Read src/app.ts" or "Ran npm test" that expands to its full input and output, each cut at 64 KB.
+Agent and model switches, failures and stops appear as small notes. Text streams in as OpenCode
+produces it. Permission requests (Allow once, Always allow, Reject) and questions (option buttons,
+checkboxes, free text) are answered inline as cards; a question with field types MDE cannot show
+asks you to answer it in a terminal. While the thread works, the send button becomes Stop. A
+follow-up switches the session's agent or model first only when you changed them. The renderer
+keeps the last ten opened threads in memory so going back to one is instant; MDE never writes
+messages to disk.
+
+**Transport.** OpenCode 2 runs one background service per machine, which its terminal UI also
+uses, so a thread can be continued in a terminal (`opencode --session ses_…`) and both stay in
+sync. `src/main/opencode/service/discovery.ts` finds the service for a target by running a fixed
+script through the same login-shell launch as the session picker: `opencode service start`
+(which does nothing when the service is already running), then printing
+`${XDG_STATE_HOME:-~/.local/state}/opencode/service.json` between random markers on standard
+output. The file's `url` must be plain HTTP on a loopback address with a port, and its password
+1–256 printable characters. The endpoint is cached in memory per target and rediscovered once
+when a request gets a 401 or cannot connect, or when the OpenCode executable in Settings changes.
+On Windows, MDE reaches the WSL service at `127.0.0.1`, which needs WSL's localhost forwarding
+(on by default); the error says so when it is off.
+
+`src/main/opencode/service/client.ts` sends requests with Electron's `fetch` and HTTP Basic auth
+(user `opencode`). Only a fixed list of OpenCode operations can be called, path parameters must
+match OpenCode's ID patterns, requests time out after 30 seconds and responses are capped at
+16 MB. `parse.ts` turns every response into MDE's own narrow types and drops unknown fields.
+`events.ts` keeps one server-sent-event stream (`/api/event`) per target that has an active chat
+thread, from the first request until status reporting is turned off or MDE quits. A dropped
+stream reconnects with backoff and gives up after five failures in a row until the next request;
+after a reconnect, open threads refetch. Events are matched to threads by session ID: text and
+reasoning deltas, message and request changes, and run state go to the renderer for threads that
+are open (`chat:subscribe`), and run starts, finishes, failures, renames and pending permissions
+or questions update the thread's status in the Inbox. Events for sessions the Inbox does not
+hold are ignored.
 
 ### Window chrome
 

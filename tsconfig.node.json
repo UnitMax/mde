@@ -96,6 +96,9 @@
     "src/renderer/components/InboxPanel.tsx",
     "src/renderer/components/InboxThreadView.tsx",
     "src/renderer/components/SettingsDialog.tsx",
+    "src/renderer/components/inbox/*.tsx",
+    "src/renderer/lib/chat.ts",
+    "src/renderer/store/inbox-chat.ts",
     "src/shared/**/*",
     "test/**/*"
   ],

@@ -280,7 +280,209 @@ export interface InboxThread {
   lastActivityAt: number
   readAt: number
   archived: boolean
+  /** 'chat' when the thread was started from the Inbox; absent for terminal threads. */
+  origin?: 'chat'
+  /** The Inbox folder a chat thread was started in. */
+  folderId?: string
 }
+
+/**
+ * A folder the Inbox can start chat threads in. Inbox folders are separate
+ * from the Projects view and never change workspace projects or sessions.
+ */
+export interface InboxFolder {
+  id: string
+  name: string
+  /** Absolute directory in the target's own format. */
+  directory: string
+  target: OpenCodePluginTarget
+  createdAt: number
+  lastUsedAt: number
+}
+
+/** The last choices made in the Inbox composer. */
+export interface InboxComposerState {
+  folderId?: string
+  agent?: string
+  model?: OpenCodeModelRef
+}
+
+export interface InboxFoldersState {
+  folders: InboxFolder[]
+  composer: InboxComposerState
+}
+
+export interface InboxAddFolderRequest {
+  kind: ProjectKind
+  distro?: string
+  path: string
+}
+
+export interface InboxRemoveFolderRequest {
+  id: string
+}
+
+/** An OpenCode agent the composer can pick (primary agents that are not hidden). */
+export interface ChatAgent {
+  id: string
+  name: string
+  description?: string
+  /** A CSS hex color or a theme color name, as OpenCode reports it. */
+  color?: string
+}
+
+export interface ChatModel {
+  id: string
+  providerId: string
+  providerName: string
+  name: string
+}
+
+export interface ChatOptions {
+  agents: ChatAgent[]
+  models: ChatModel[]
+  defaultModel: OpenCodeModelRef | null
+  defaultAgent: string | null
+}
+
+export type ChatToolStatus = 'pending' | 'running' | 'completed' | 'error'
+
+export type ChatPart =
+  | { kind: 'text'; text: string }
+  | { kind: 'reasoning'; text: string }
+  | {
+      kind: 'tool'
+      id: string
+      name: string
+      status: ChatToolStatus
+      /** Pretty-printed tool input, possibly truncated. */
+      input: string
+      /** Text output, possibly truncated. */
+      output?: string
+      error?: string
+      truncated?: boolean
+    }
+
+export type ChatMessage =
+  | { kind: 'user'; id: string; time: number; text: string }
+  | {
+      kind: 'assistant'
+      id: string
+      time: number
+      agent: string
+      model: OpenCodeModelRef
+      parts: ChatPart[]
+      completed: boolean
+      error?: string
+    }
+  /** Agent or model switches, compaction, shell commands, and other notes. */
+  | { kind: 'note'; id: string; time: number; tone: 'info' | 'error'; text: string; detail?: string }
+
+export interface ChatMessagesPage {
+  /** Oldest first. */
+  messages: ChatMessage[]
+  /** Cursor for the next older page, or null at the start of the thread. */
+  older: string | null
+  /** Whether OpenCode is currently running this thread. */
+  running: boolean
+}
+
+export interface ChatPermission {
+  id: string
+  action: string
+  resources: string[]
+  message?: string
+}
+
+export interface ChatFormOption {
+  value: string
+  label: string
+  description?: string
+}
+
+export interface ChatFormField {
+  key: string
+  type: 'string' | 'number' | 'integer' | 'boolean' | 'multiselect'
+  title?: string
+  description?: string
+  required: boolean
+  options: ChatFormOption[]
+  /** Whether a free-text answer is allowed besides the options. */
+  custom: boolean
+  placeholder?: string
+}
+
+export interface ChatForm {
+  id: string
+  title: string
+  fields: ChatFormField[]
+  /** Fields MDE cannot show; such a form has to be answered in a terminal. */
+  unsupported: boolean
+}
+
+export interface ChatRequests {
+  permissions: ChatPermission[]
+  forms: ChatForm[]
+}
+
+export type ChatFormValue = string | number | boolean | string[]
+
+export interface ChatConfigureRequest {
+  executable: string
+}
+
+/** Options for a folder (new thread) or for an existing thread; exactly one is given. */
+export interface ChatOptionsRequest {
+  folderId?: string
+  threadId?: string
+}
+
+export interface ChatCreateRequest {
+  folderId: string
+  text: string
+  agent: string
+  model: OpenCodeModelRef
+}
+
+export interface ChatThreadRequest {
+  threadId: string
+}
+
+export interface ChatMessagesRequest {
+  threadId: string
+  /** Cursor from a previous page's `older`; omitted for the newest page. */
+  cursor?: string
+}
+
+export interface ChatSendRequest {
+  threadId: string
+  text: string
+  agent?: string
+  model?: OpenCodeModelRef
+}
+
+export interface ChatPermissionReplyRequest {
+  threadId: string
+  requestId: string
+  decision: 'once' | 'always' | 'reject'
+}
+
+export interface ChatFormReplyRequest {
+  threadId: string
+  formId: string
+  answer: Record<string, ChatFormValue>
+}
+
+/** Live changes for subscribed chat threads, pushed from the main process. */
+export type ChatEvent =
+  | { type: 'delta'; threadId: string; messageId: string; part: 'text' | 'reasoning'; ordinal: number; delta: string }
+  /** The thread's messages changed; refetch the newest page. */
+  | { type: 'messages'; threadId: string }
+  /** Pending permissions or questions changed; refetch them. */
+  | { type: 'requests'; threadId: string }
+  | { type: 'running'; threadId: string; running: boolean }
+  /** The service connection was lost and restored; refetch everything. */
+  | { type: 'reconnected'; threadId: string }
 
 export interface InboxSetReadRequest {
   id: string

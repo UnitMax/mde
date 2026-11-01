@@ -3,10 +3,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { InboxThread } from '../src/shared/types'
+import type { InboxFolder } from '../src/shared/types'
 import {
+  INBOX_MAX_FOLDERS,
   INBOX_MAX_THREADS,
   InboxStore,
   normalizeInboxFile,
+  normalizeInboxFolders,
+  validateComposer,
+  validateInboxFolder,
   validateInboxThread
 } from '../src/main/inbox/store'
 
@@ -120,8 +125,10 @@ describe('inbox store', () => {
     await store.flush()
     expect(writeFile).toHaveBeenCalledTimes(1)
     expect(writeFile).toHaveBeenCalledWith(file, {
-      version: 1,
-      threads: [expect.objectContaining({ id: 'ses_b' }), expect.objectContaining({ id: 'ses_a' })]
+      version: 2,
+      threads: [expect.objectContaining({ id: 'ses_b' }), expect.objectContaining({ id: 'ses_a' })],
+      folders: [],
+      composer: {}
     })
     await store.flush()
     expect(writeFile).toHaveBeenCalledTimes(1)
@@ -150,5 +157,79 @@ describe('inbox store', () => {
     expect(store.list()).toHaveLength(INBOX_MAX_THREADS)
     expect(store.get('ses_0')).toBeUndefined()
     void store.flush()
+  })
+})
+
+function folder(overrides: Partial<InboxFolder> = {}): InboxFolder {
+  return {
+    id: 'fld_one',
+    name: 'app',
+    directory: '/home/me/app',
+    target: { kind: 'wsl', distro: 'Ubuntu-24.04' },
+    createdAt: 1,
+    lastUsedAt: 2,
+    ...overrides
+  }
+}
+
+describe('inbox folders', () => {
+  it('validates folders and composer choices', () => {
+    expect(validateInboxFolder({ ...folder(), extra: true })).toEqual(folder())
+    for (const bad of [
+      folder({ id: 'one' }),
+      folder({ id: 'fld_../x' }),
+      folder({ name: '' }),
+      folder({ directory: 'x'.repeat(5000) }),
+      folder({ target: { kind: 'wsl', distro: '' } }),
+      folder({ lastUsedAt: -1 })
+    ]) {
+      expect(validateInboxFolder(bad)).toBeNull()
+    }
+    expect(validateComposer({ folderId: 'fld_one', agent: 'plan', model: { id: 'm', providerId: 'p' }, other: 1 }))
+      .toEqual({ folderId: 'fld_one', agent: 'plan', model: { id: 'm', providerId: 'p' } })
+    expect(validateComposer({ folderId: 'nope', agent: '../x', model: { id: '' } })).toEqual({})
+    expect(validateComposer(null)).toEqual({})
+  })
+
+  it('accepts chat threads and rejects a bad origin or folder', () => {
+    expect(validateInboxThread(thread({ origin: 'chat', folderId: 'fld_one' })))
+      .toMatchObject({ origin: 'chat', folderId: 'fld_one' })
+    expect(validateInboxThread(thread({ origin: 'mail' as never }))).toBeNull()
+    expect(validateInboxThread(thread({ folderId: 'one' }))).toBeNull()
+  })
+
+  it('migrates a version 1 file to no folders, and sorts and caps version 2 folders', () => {
+    expect(normalizeInboxFolders({ version: 1, threads: [] })).toEqual([])
+    const many = Array.from({ length: INBOX_MAX_FOLDERS + 3 }, (_, index) =>
+      folder({ id: `fld_${index}`, lastUsedAt: index }))
+    const folders = normalizeInboxFolders({ version: 2, folders: [...many, folder({ id: 'fld_0', name: 'Duplicate' })] })
+    expect(folders).toHaveLength(INBOX_MAX_FOLDERS)
+    expect(folders[0]?.id).toBe(`fld_${INBOX_MAX_FOLDERS + 2}`)
+  })
+
+  it('round-trips folders and the composer, and forgets a composer folder that was removed', async () => {
+    const directory = await temporaryDirectory()
+    const file = join(directory, 'inbox.json')
+    await fs.writeFile(file, JSON.stringify({ version: 1, threads: [thread()] }))
+    const store = new InboxStore(file)
+    await store.load()
+    expect(store.list()).toEqual([thread()])
+    expect(store.folders()).toEqual([])
+    store.putFolder(folder())
+    store.putFolder(folder({ id: 'fld_two', name: 'api', lastUsedAt: 5 }))
+    store.setComposer({ folderId: 'fld_one', agent: 'plan' })
+    await store.flush()
+
+    const reloaded = new InboxStore(file)
+    await reloaded.load()
+    expect(reloaded.folders().map((item) => item.id)).toEqual(['fld_two', 'fld_one'])
+    expect(reloaded.composer()).toEqual({ folderId: 'fld_one', agent: 'plan' })
+    expect(reloaded.removeFolder('fld_one')).toBe(true)
+    expect(reloaded.composer()).toEqual({ agent: 'plan' })
+    await reloaded.flush()
+
+    await fs.writeFile(file, JSON.stringify({ version: 2, threads: [], folders: [], composer: { folderId: 'fld_gone' } }))
+    await reloaded.load()
+    expect(reloaded.composer()).toEqual({})
   })
 })

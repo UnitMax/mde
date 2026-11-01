@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IpcChannels, IpcEvents, type RendererApi } from '@shared/ipc'
 import type {
+  ChatEvent,
   InboxThread,
   OpenCodeTuiInstancesUpdate,
   OpenCodeTuiStatusUpdate,
@@ -149,7 +150,25 @@ const api: RendererApi = {
     setRead: (req) => ipcRenderer.invoke(IpcChannels.inboxSetRead, req),
     setArchived: (req) => ipcRenderer.invoke(IpcChannels.inboxSetArchived, req),
     remove: (req) => ipcRenderer.invoke(IpcChannels.inboxRemove, req),
-    onChanged: (listener) => subscribe<InboxThread>(IpcEvents.inboxChanged, listener)
+    onChanged: (listener) => subscribe<InboxThread>(IpcEvents.inboxChanged, listener),
+    folders: () => ipcRenderer.invoke(IpcChannels.inboxFolders),
+    addFolder: (req) => ipcRenderer.invoke(IpcChannels.inboxFoldersAdd, req),
+    removeFolder: (req) => ipcRenderer.invoke(IpcChannels.inboxFoldersRemove, req),
+    setComposer: (req) => ipcRenderer.invoke(IpcChannels.inboxComposerSet, req)
+  },
+  chat: {
+    configure: (req) => ipcRenderer.invoke(IpcChannels.chatConfigure, req),
+    options: (req) => ipcRenderer.invoke(IpcChannels.chatOptions, req),
+    create: (req) => ipcRenderer.invoke(IpcChannels.chatCreate, req),
+    messages: (req) => ipcRenderer.invoke(IpcChannels.chatMessages, req),
+    send: (req) => ipcRenderer.invoke(IpcChannels.chatSend, req),
+    interrupt: (req) => ipcRenderer.invoke(IpcChannels.chatInterrupt, req),
+    requests: (req) => ipcRenderer.invoke(IpcChannels.chatRequests, req),
+    replyPermission: (req) => ipcRenderer.invoke(IpcChannels.chatPermissionReply, req),
+    replyForm: (req) => ipcRenderer.invoke(IpcChannels.chatFormReply, req),
+    subscribe: (req) => ipcRenderer.invoke(IpcChannels.chatSubscribe, req),
+    unsubscribe: (req) => ipcRenderer.invoke(IpcChannels.chatUnsubscribe, req),
+    onEvent: (listener) => subscribe<ChatEvent>(IpcEvents.chatEvent, listener)
   },
   windowMode: {
     get: () => ipcRenderer.invoke(IpcChannels.windowModeGet),

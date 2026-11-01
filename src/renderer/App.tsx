@@ -49,6 +49,7 @@ import {
   type TerminalResizeAxis
 } from '@/terminal/layout'
 import type { PersistedTerminalLayout, Session, TodoTask } from '@shared/types'
+import { useInboxChat } from '@/store/inbox-chat'
 import {
   liveTerminalDescriptors,
   type LiveTerminalDescriptor
@@ -144,6 +145,8 @@ export function App(): JSX.Element {
   useEffect(() => {
     sessionsRef.current = sessions
   }, [sessions])
+
+  useEffect(() => useInboxChat.getState().init(), [])
 
   useEffect(() => {
     void init()

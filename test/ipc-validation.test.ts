@@ -11,6 +11,7 @@ const sessionId = { sessionId: 'session' }
 const terminalId = { terminalId: 'pane' }
 const tab = { sessionId: 'session', tabId: 'tab' }
 const plugin = { target: { kind: 'wsl', distro: 'Ubuntu-24.04' } }
+const model = { id: 'model-1', providerId: 'provider-1' }
 
 /** Explicit legitimate fixtures prevent an exhaustive registry that rejects normal use. */
 const validPayloads = {
@@ -75,6 +76,21 @@ const validPayloads = {
   [IpcChannels.inboxSetRead]: { id: 'ses_thread', read: true },
   [IpcChannels.inboxSetArchived]: { id: 'ses_thread', archived: false },
   [IpcChannels.inboxRemove]: { id: 'ses_thread' },
+  [IpcChannels.inboxFolders]: undefined,
+  [IpcChannels.inboxFoldersAdd]: { kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/app' },
+  [IpcChannels.inboxFoldersRemove]: { id: 'fld_1234' },
+  [IpcChannels.inboxComposerSet]: { folderId: 'fld_1234', agent: 'plan', model },
+  [IpcChannels.chatConfigure]: { executable: 'opencode' },
+  [IpcChannels.chatOptions]: { folderId: 'fld_1234' },
+  [IpcChannels.chatCreate]: { folderId: 'fld_1234', text: 'Fix the login\n\tplease', agent: 'build', model },
+  [IpcChannels.chatMessages]: { threadId: 'ses_thread', cursor: 'eyJpZCI6Im1zZyJ9' },
+  [IpcChannels.chatSend]: { threadId: 'ses_thread', text: 'Next step', agent: 'plan', model },
+  [IpcChannels.chatInterrupt]: { threadId: 'ses_thread' },
+  [IpcChannels.chatRequests]: { threadId: 'ses_thread' },
+  [IpcChannels.chatPermissionReply]: { threadId: 'ses_thread', requestId: 'per_1', decision: 'once' },
+  [IpcChannels.chatFormReply]: { threadId: 'ses_thread', formId: 'frm_1', answer: { q0: 'Red', q1: ['a', 'b'], q2: true, q3: 3 } },
+  [IpcChannels.chatSubscribe]: { threadId: 'ses_thread' },
+  [IpcChannels.chatUnsubscribe]: { threadId: 'ses_thread' },
   [IpcChannels.windowModeGet]: undefined,
   [IpcChannels.windowModeSet]: { mode: 'mini' },
   [IpcChannels.windowChromeSet]: { color: '#10141b', symbolColor: '#7b8698' },
@@ -112,6 +128,29 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.inboxSetArchived, { id: 'ses_../escape', archived: true })
     rejects(IpcChannels.inboxRemove, { id: '' })
     rejects(IpcChannels.inboxList, { id: 'ses_thread' })
+  })
+
+  it('bounds chat requests', () => {
+    rejects(IpcChannels.chatCreate, { folderId: 'fld_1234', text: '   ', agent: 'build', model })
+    rejects(IpcChannels.chatCreate, { folderId: 'fld_1234', text: 'x'.repeat(100_001), agent: 'build', model })
+    rejects(IpcChannels.chatCreate, { folderId: 'fld_1234', text: 'bell\u0007', agent: 'build', model })
+    rejects(IpcChannels.chatCreate, { folderId: '../fld', text: 'Hi', agent: 'build', model })
+    rejects(IpcChannels.chatCreate, { folderId: 'fld_1234', text: 'Hi', agent: '../build', model })
+    rejects(IpcChannels.chatCreate, { folderId: 'fld_1234', text: 'Hi', agent: 'build', model: { id: 'm' } })
+    rejects(IpcChannels.chatSend, { threadId: 'thread', text: 'Hi' })
+    rejects(IpcChannels.chatMessages, { threadId: 'ses_thread', cursor: 'has space' })
+    rejects(IpcChannels.chatPermissionReply, { threadId: 'ses_thread', requestId: 'per_1', decision: 'maybe' })
+    rejects(IpcChannels.chatPermissionReply, { threadId: 'ses_thread', requestId: 'frm_1', decision: 'once' })
+    rejects(IpcChannels.chatFormReply, { threadId: 'ses_thread', formId: 'frm_1', answer: { q0: { nested: true } } })
+    rejects(IpcChannels.chatFormReply, { threadId: 'ses_thread', formId: 'frm_1', answer: [] })
+    rejects(IpcChannels.chatFormReply, {
+      threadId: 'ses_thread', formId: 'frm_1',
+      answer: Object.fromEntries(Array.from({ length: 51 }, (_, index) => [`q${index}`, 'x']))
+    })
+    rejects(IpcChannels.inboxFoldersAdd, { kind: 'docker', path: '/home/me/app' })
+    expect(() => assertIpcPayload(IpcChannels.chatOptions, { threadId: 'ses_thread' })).not.toThrow()
+    rejects(IpcChannels.chatOptions, {})
+    rejects(IpcChannels.chatOptions, { folderId: 'fld_1234', threadId: 'ses_thread' })
   })
 
   it('rejects getters without executing them and inherited/unknown nested fields', () => {

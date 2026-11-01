@@ -1,0 +1,114 @@
+{
+ "data": [
+  {
+   "id": "msg_194921b410020UNPiJiAN1BILU",
+   "time": {
+    "created": 1793493965633
+   },
+   "type": "idle",
+   "outcome": "succeeded"
+  },
+  {
+   "id": "msg_19492138a00109X7w4m20MsCRx",
+   "time": {
+    "created": 1793493963664,
+    "streamed": 1793493965630,
+    "completed": 1793493965631
+   },
+   "type": "assistant",
+   "agent": "build",
+   "model": {
+    "id": "deepseek-v4.1-flash-free",
+    "providerID": "opencode",
+    "variant": "default"
+   },
+   "content": [
+    {
+     "type": "reasoning",
+     "text": "The read tool was rejected with \"Not now\". I should not try workarounds (e.g., shell cat) to bypass a user denial. Report that.\n\nActually, let me consider: the permission rejection might be a fluke. But the right behavior is to tell the user it was blocked, and not circumvent via shell.",
+     "native": {
+      "reasoningField": "reasoning_content"
+     },
+     "time": {
+      "created": 1793493964875,
+      "completed": 1793493965625
+     }
+    },
+    {
+     "type": "text",
+     "text": "The read was blocked — the tool returned a permission rejection (\"Not now\"), so I don't have the file's contents to show you.\n\nI won't try to work around that by reading it through the shell, since that would sidestep the same approval you declined.\n\nIf it was an accidental dismissal, a couple of options:\n- Re-run the request and approve the read prompt when it appears.\n- Tell me the specific keys you need (e.g. just the variable names, or non-secret values), and I can suggest how to get them.\n\nOne note: `.env` files typically hold credentials, so if you do want me to read it, be aware the values will appear in this conversation."
+    }
+   ],
+   "finish": "stop",
+   "rawFinish": "stop",
+   "cost": 0,
+   "tokens": {
+    "input": 212,
+    "output": 145,
+    "reasoning": 67,
+    "cache": {
+     "read": 7680,
+     "write": 0
+    }
+   }
+  },
+  {
+   "id": "msg_194920dad00111Rh1fc9yZhBjs",
+   "time": {
+    "created": 1793493962162,
+    "streamed": 1793493963459,
+    "completed": 1793493963652
+   },
+   "type": "assistant",
+   "agent": "build",
+   "model": {
+    "id": "deepseek-v4.1-flash-free",
+    "providerID": "opencode",
+    "variant": "default"
+   },
+   "content": [
+    {
+     "type": "text",
+     "text": "I'll read the file for you."
+    },
+    {
+     "type": "tool",
+     "id": "call_00_ET_SFxj4QsNkmmvyUdKYjqp8637",
+     "name": "read",
+     "executed": false,
+     "state": {
+      "status": "error",
+      "input": {
+       "path": "/home/me/app/.env"
+      },
+      "error": {
+       "type": "permission.rejected",
+       "message": "Not now"
+      }
+     },
+     "time": {
+      "created": 1793493963372,
+      "ran": 1793493963456,
+      "completed": 1793493963650
+     }
+    }
+   ],
+   "finish": "tool-calls",
+   "rawFinish": "tool_calls",
+   "cost": 0,
+   "tokens": {
+    "input": 3548,
+    "output": 89,
+    "reasoning": 0,
+    "cache": {
+     "read": 4224,
+     "write": 0
+    }
+   }
+  }
+ ],
+ "cursor": {
+  "previous": "eyJpZCI6Im1zZ18xOTQ5MjFiNDEwMDIwVU5QaUppQU4xQklMVSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+  "next": "eyJpZCI6Im1zZ18xOTQ5MjBkYWQwMDExMVJoMWZjOXlaaEJqcyIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ"
+ }
+}

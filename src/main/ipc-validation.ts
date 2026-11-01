@@ -144,6 +144,31 @@ const pluginRequest = object({ target: pluginTarget })
 const relativePath: Validator = (value) => path(value) && !(value as string).startsWith('/') &&
   !(value as string).includes('\\') && (value as string).split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..')
 const listPath: Validator = (value) => value === '' || relativePath(value)
+const inboxFolderId: Validator = (value) => typeof value === 'string' && /^fld_[A-Za-z0-9-]{1,64}$/.test(value)
+const agentId: Validator = (value) => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value)
+const modelRef = object({ id: string(512), providerId: string(512), variant: optional(string(512)) })
+/** Prompt text: newlines and tabs are fine, other control characters are not. */
+const promptText: Validator = (value) => typeof value === 'string' && value.length <= 100_000 &&
+  value.trim().length > 0 && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value)
+const chatThread = object({ threadId: opencodeSessionId })
+const formValue: Validator = (value) =>
+  (typeof value === 'string' && value.length <= 20_000) ||
+  (typeof value === 'number' && Number.isFinite(value)) ||
+  typeof value === 'boolean' ||
+  array(string(2000, true), 100)(value)
+/** A form answer is a plain object of up to 50 field keys. */
+const formAnswer: Validator = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const prototype = Object.getPrototypeOf(value)
+  if (prototype !== Object.prototype && prototype !== null) return false
+  const keys = Reflect.ownKeys(value)
+  if (keys.length > 50) return false
+  return keys.every((key) => {
+    if (typeof key !== 'string' || !/^[^\u0000-\u001f\u007f-\u009f]{1,200}$/.test(key)) return false
+    const descriptor = Object.getOwnPropertyDescriptor(value, key)
+    return Boolean(descriptor && 'value' in descriptor && formValue(descriptor.value))
+  })
+}
 
 /** Exhaustive registry: a new channel cannot compile without a runtime contract. */
 export const ipcPayloadValidators = {
@@ -216,6 +241,30 @@ export const ipcPayloadValidators = {
   [IpcChannels.inboxSetRead]: object({ id: opencodeSessionId, read: boolean }),
   [IpcChannels.inboxSetArchived]: object({ id: opencodeSessionId, archived: boolean }),
   [IpcChannels.inboxRemove]: object({ id: opencodeSessionId }),
+  [IpcChannels.inboxFolders]: noPayload,
+  [IpcChannels.inboxFoldersAdd]: object({ kind, distro: optional(distro), path }),
+  [IpcChannels.inboxFoldersRemove]: object({ id: inboxFolderId }),
+  [IpcChannels.inboxComposerSet]: object({ folderId: optional(inboxFolderId), agent: optional(agentId), model: optional(modelRef) }),
+  [IpcChannels.chatConfigure]: object({ executable: path }),
+  [IpcChannels.chatOptions]: (value) => object({ folderId: optional(inboxFolderId), threadId: optional(opencodeSessionId) })(value) &&
+    ((value as { folderId?: string }).folderId === undefined) !== ((value as { threadId?: string }).threadId === undefined),
+  [IpcChannels.chatCreate]: object({ folderId: inboxFolderId, text: promptText, agent: agentId, model: modelRef }),
+  [IpcChannels.chatMessages]: object({ threadId: opencodeSessionId, cursor: optional((value) => typeof value === 'string' && /^[A-Za-z0-9_=.-]{1,2048}$/.test(value)) }),
+  [IpcChannels.chatSend]: object({ threadId: opencodeSessionId, text: promptText, agent: optional(agentId), model: optional(modelRef) }),
+  [IpcChannels.chatInterrupt]: chatThread,
+  [IpcChannels.chatRequests]: chatThread,
+  [IpcChannels.chatPermissionReply]: object({
+    threadId: opencodeSessionId,
+    requestId: (value) => typeof value === 'string' && /^per_[A-Za-z0-9_-]{1,200}$/.test(value),
+    decision: oneOf('once', 'always', 'reject'),
+  }),
+  [IpcChannels.chatFormReply]: object({
+    threadId: opencodeSessionId,
+    formId: (value) => typeof value === 'string' && /^frm_[A-Za-z0-9_-]{1,200}$/.test(value),
+    answer: formAnswer,
+  }),
+  [IpcChannels.chatSubscribe]: chatThread,
+  [IpcChannels.chatUnsubscribe]: chatThread,
   [IpcChannels.windowModeGet]: noPayload,
   [IpcChannels.windowModeSet]: object({ mode: oneOf('normal', 'mini') }),
   [IpcChannels.windowChromeSet]: object({ color: hexColor, symbolColor: hexColor }),

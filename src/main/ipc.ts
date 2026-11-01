@@ -72,10 +72,26 @@ import type {
   CodingAgent,
   TerminalLaunchDirectory,
   WindowMode,
+  InboxAddFolderRequest,
+  InboxComposerState,
+  InboxFolder,
+  InboxFoldersState,
+  InboxRemoveFolderRequest,
   InboxRemoveRequest,
   InboxSetArchivedRequest,
   InboxSetReadRequest,
-  InboxThread
+  InboxThread,
+  ChatConfigureRequest,
+  ChatCreateRequest,
+  ChatFormReplyRequest,
+  ChatMessagesPage,
+  ChatMessagesRequest,
+  ChatOptions,
+  ChatOptionsRequest,
+  ChatPermissionReplyRequest,
+  ChatRequests,
+  ChatSendRequest,
+  ChatThreadRequest
 } from '@shared/types'
 import { assertIpcSender, type IpcSecurityContext } from './ipc-security'
 import { assertIpcPayload, type IpcChannel } from './ipc-validation'
@@ -84,6 +100,7 @@ import { fileTreeDropFile, resolveTerminalDrop } from './pty/drop'
 import type { OpenCodeTuiStatusManager } from './opencode/tui-status'
 import type { OpenCodeAlertManager } from './opencode/alerts'
 import type { InboxRecorder } from './inbox/recorder'
+import type { InboxChatService } from './inbox/chat'
 import type { MiniWindowController } from './mini-window'
 import type { TitleBarController } from './window-chrome'
 import { createAppInfo } from '@shared/app-info'
@@ -394,8 +411,10 @@ export function registerIpcHandlers(
   opencodeAlertManager: OpenCodeAlertManager,
   miniWindow: MiniWindowController,
   titleBar: TitleBarController,
-  inboxRecorder: InboxRecorder
+  inbox: { recorder: InboxRecorder; chat: InboxChatService }
 ): void {
+  const inboxRecorder = inbox.recorder
+  const chat = inbox.chat
   const pendingEnsures = new Map<string, symbol>()
   const handle = <Req, Res>(
     channel: IpcChannel,
@@ -510,7 +529,11 @@ export function registerIpcHandlers(
       if (typeof req?.enabled !== 'boolean') {
         throw new Error('Invalid OpenCode TUI enabled setting.')
       }
-      return opencodeTuiStatusManager.setEnabled(req.enabled)
+      return opencodeTuiStatusManager.setEnabled(req.enabled).then((settings) => {
+        if (settings.enabled) chat.start()
+        else chat.stop()
+        return settings
+      })
     }
   )
   handle<OpenCodeTuiSetInstanceLabelModeRequest, OpenCodeTuiSettings>(
@@ -544,6 +567,34 @@ export function registerIpcHandlers(
     inboxRecorder.setArchived(req.id, req.archived)
   )
   handle<InboxRemoveRequest, void>(IpcChannels.inboxRemove, (req) => inboxRecorder.remove(req.id))
+  handle<void, InboxFoldersState>(IpcChannels.inboxFolders, () => chat.folders())
+  handle<InboxAddFolderRequest, InboxFolder>(IpcChannels.inboxFoldersAdd, async (req) => {
+    // OpenCode's service runs where the folder lives: in WSL on Windows, natively on macOS.
+    if (process.platform === 'win32' && req.kind !== 'wsl') throw new Error('On Windows, Inbox folders must be in WSL.')
+    if (process.platform !== 'win32' && req.kind !== 'native') throw new Error('WSL folders are only available on Windows.')
+    const resolution = await resolveForTarget(req.kind, req.distro, req.path)
+    const distro = resolution.distro ?? req.distro
+    const check = await validatePath({ kind: req.kind, ...(distro ? { distro } : {}), path: resolution.path })
+    if (!check.exists) throw new Error(check.error ?? 'That folder does not exist.')
+    return chat.addFolder({
+      directory: resolution.path,
+      target: req.kind === 'wsl' ? { kind: 'wsl', distro: distro as string } : { kind: 'native' },
+    })
+  })
+  handle<InboxRemoveFolderRequest, void>(IpcChannels.inboxFoldersRemove, (req) => chat.removeFolder(req.id))
+  handle<InboxComposerState, InboxComposerState>(IpcChannels.inboxComposerSet, (req) => chat.setComposer(req))
+
+  handle<ChatConfigureRequest, void>(IpcChannels.chatConfigure, (req) => chat.configure(req.executable))
+  handle<ChatOptionsRequest, ChatOptions>(IpcChannels.chatOptions, (req) => chat.chatOptions(req))
+  handle<ChatCreateRequest, InboxThread>(IpcChannels.chatCreate, (req) => chat.create(req))
+  handle<ChatMessagesRequest, ChatMessagesPage>(IpcChannels.chatMessages, (req) => chat.messages(req))
+  handle<ChatSendRequest, void>(IpcChannels.chatSend, (req) => chat.send(req))
+  handle<ChatThreadRequest, void>(IpcChannels.chatInterrupt, (req) => chat.interrupt(req.threadId))
+  handle<ChatThreadRequest, ChatRequests>(IpcChannels.chatRequests, (req) => chat.requests(req.threadId))
+  handle<ChatPermissionReplyRequest, void>(IpcChannels.chatPermissionReply, (req) => chat.replyPermission(req))
+  handle<ChatFormReplyRequest, void>(IpcChannels.chatFormReply, (req) => chat.replyForm(req))
+  handle<ChatThreadRequest, void>(IpcChannels.chatSubscribe, (req) => chat.subscribe(req.threadId))
+  handle<ChatThreadRequest, void>(IpcChannels.chatUnsubscribe, (req) => chat.unsubscribe(req.threadId))
 
   handle<void, WindowMode>(IpcChannels.windowModeGet, () => miniWindow.mode)
   handle<SetWindowModeRequest, WindowMode>(IpcChannels.windowModeSet, (req) => {

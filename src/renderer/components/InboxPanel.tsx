@@ -7,6 +7,7 @@ import {
   Lock,
   Mail,
   MailOpen,
+  PenSquare,
   Search,
   Settings2,
   Trash2
@@ -263,7 +264,22 @@ export function InboxPanel(): JSX.Element {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-1.5">
-      <div className="relative px-1 pt-0.5">
+      <div className="px-1 pt-0.5">
+        <button
+          type="button"
+          data-testid="inbox-new-thread-button"
+          aria-current={selectedId === null || undefined}
+          onClick={() => selectThread(null)}
+          className={cn(
+            'flex h-7 w-full items-center gap-2 rounded px-2 text-[13px] transition-colors',
+            selectedId === null ? 'bg-active text-fg' : 'text-fg-muted hover:bg-hover hover:text-fg'
+          )}
+        >
+          <PenSquare className="h-3.5 w-3.5" />
+          New thread
+        </button>
+      </div>
+      <div className="relative px-1">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-subtle" />
         <Input
           aria-label="Search inbox"
@@ -303,8 +319,8 @@ export function InboxPanel(): JSX.Element {
             <p>{emptyMessage(filter, query)}</p>
             {threads.length === 0 && (
               <p className="mt-1">
-                OpenCode conversations you run in MDE terminals appear here. They need the MDE
-                status plugin 2.1.0 or newer for each target in{' '}
+                Start one with New thread. OpenCode conversations you run in MDE terminals appear
+                here too; they need the MDE status plugin 2.1.0 or newer for each target in{' '}
                 <button
                   type="button"
                   className="text-accent hover:underline"

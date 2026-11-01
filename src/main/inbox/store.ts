@@ -1,5 +1,7 @@
 import { promises as fs } from 'node:fs'
 import type {
+  InboxComposerState,
+  InboxFolder,
   InboxThread,
   OpenCodeModelRef,
   OpenCodePluginTarget,
@@ -8,20 +10,31 @@ import type {
 import { writeJsonAtomic } from '../store/atomic-json'
 
 export const INBOX_FILE = 'inbox.json'
-export const INBOX_FILE_VERSION = 1
+export const INBOX_FILE_VERSION = 2
 /** Oldest threads (by last activity) are dropped beyond this many. */
 export const INBOX_MAX_THREADS = 1000
+export const INBOX_MAX_FOLDERS = 200
 export const INBOX_WRITE_DELAY_MS = 500
 export const INBOX_TITLE_MAX_LENGTH = 512
 export const INBOX_DIRECTORY_MAX_LENGTH = 4096
 const INBOX_SHORT_TEXT_MAX_LENGTH = 512
 
 const SESSION_ID = /^ses_[A-Za-z0-9_-]{1,200}$/
+const FOLDER_ID = /^fld_[A-Za-z0-9-]{1,64}$/
+const AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 const DISTRO = /^[A-Za-z0-9][A-Za-z0-9._ -]{0,127}$/
 const CONTROLS = /[\u0000-\u001f\u007f-\u009f]/
 
 export function isInboxThreadId(value: unknown): value is string {
   return typeof value === 'string' && SESSION_ID.test(value)
+}
+
+export function isInboxFolderId(value: unknown): value is string {
+  return typeof value === 'string' && FOLDER_ID.test(value)
+}
+
+export function isChatAgentId(value: unknown): value is string {
+  return typeof value === 'string' && AGENT_ID.test(value)
 }
 
 function text(value: unknown, max: number): value is string {
@@ -47,7 +60,7 @@ function validateTarget(value: unknown): OpenCodePluginTarget | null {
   return null
 }
 
-function validateModel(value: unknown): OpenCodeModelRef | undefined | null {
+export function validateModel(value: unknown): OpenCodeModelRef | undefined | null {
   if (value === undefined) return undefined
   if (!value || typeof value !== 'object') return null
   const record = value as Record<string, unknown>
@@ -80,6 +93,8 @@ export function validateInboxThread(raw: unknown): InboxThread | null {
     : attentionReason !== undefined) return null
   if (!timestamp(record.createdAt) || !timestamp(record.lastActivityAt) || !timestamp(record.readAt)) return null
   if (typeof record.archived !== 'boolean') return null
+  if (record.origin !== undefined && record.origin !== 'chat') return null
+  if (record.folderId !== undefined && !isInboxFolderId(record.folderId)) return null
   return {
     id: record.id,
     title: record.title,
@@ -93,8 +108,59 @@ export function validateInboxThread(raw: unknown): InboxThread | null {
     createdAt: record.createdAt,
     lastActivityAt: record.lastActivityAt,
     readAt: record.readAt,
-    archived: record.archived
+    archived: record.archived,
+    ...(record.origin === 'chat' ? { origin: 'chat' as const } : {}),
+    ...(record.folderId !== undefined ? { folderId: record.folderId as string } : {})
   }
+}
+
+/** Returns a clean copy of one stored folder, or null when any field is malformed. */
+export function validateInboxFolder(raw: unknown): InboxFolder | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const record = raw as Record<string, unknown>
+  if (!isInboxFolderId(record.id)) return null
+  if (!text(record.name, INBOX_TITLE_MAX_LENGTH)) return null
+  if (!text(record.directory, INBOX_DIRECTORY_MAX_LENGTH)) return null
+  const target = validateTarget(record.target)
+  if (!target) return null
+  if (!timestamp(record.createdAt) || !timestamp(record.lastUsedAt)) return null
+  return {
+    id: record.id,
+    name: record.name,
+    directory: record.directory,
+    target,
+    createdAt: record.createdAt,
+    lastUsedAt: record.lastUsedAt
+  }
+}
+
+export function validateComposer(raw: unknown): InboxComposerState {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const record = raw as Record<string, unknown>
+  const model = validateModel(record.model)
+  return {
+    ...(isInboxFolderId(record.folderId) ? { folderId: record.folderId } : {}),
+    ...(isChatAgentId(record.agent) ? { agent: record.agent } : {}),
+    ...(model ? { model } : {})
+  }
+}
+
+function byRecentUse(a: InboxFolder, b: InboxFolder): number {
+  return b.lastUsedAt - a.lastUsedAt || a.name.localeCompare(b.name)
+}
+
+/** Folders of a version 2 file; a version 1 file has none. */
+export function normalizeInboxFolders(raw: unknown): InboxFolder[] {
+  const list = raw && typeof raw === 'object' && !Array.isArray(raw)
+    ? (raw as Record<string, unknown>).folders
+    : undefined
+  if (!Array.isArray(list)) return []
+  const folders = new Map<string, InboxFolder>()
+  for (const item of list) {
+    const folder = validateInboxFolder(item)
+    if (folder && !folders.has(folder.id)) folders.set(folder.id, folder)
+  }
+  return [...folders.values()].sort(byRecentUse).slice(0, INBOX_MAX_FOLDERS)
 }
 
 function byRecentActivity(a: InboxThread, b: InboxThread): number {
@@ -131,9 +197,14 @@ const defaultDependencies: InboxStoreDependencies = {
   writeDelayMs: INBOX_WRITE_DELAY_MS
 }
 
-/** MDE's own record of OpenCode threads, kept in memory and saved to `inbox.json`. */
+/**
+ * MDE's own record of OpenCode threads and the Inbox's folders, kept in
+ * memory and saved to `inbox.json`.
+ */
 export class InboxStore {
   private readonly threads = new Map<string, InboxThread>()
+  private readonly folderMap = new Map<string, InboxFolder>()
+  private composerState: InboxComposerState = {}
   private readonly dependencies: InboxStoreDependencies
   private timer: ReturnType<typeof setTimeout> | null = null
   private writeQueue: Promise<void> = Promise.resolve()
@@ -147,6 +218,8 @@ export class InboxStore {
 
   async load(): Promise<void> {
     this.threads.clear()
+    this.folderMap.clear()
+    this.composerState = {}
     let source: string
     try {
       source = await this.dependencies.readFile(this.file)
@@ -164,6 +237,48 @@ export class InboxStore {
       return
     }
     for (const thread of normalizeInboxFile(parsed)) this.threads.set(thread.id, thread)
+    for (const folder of normalizeInboxFolders(parsed)) this.folderMap.set(folder.id, folder)
+    const composer = validateComposer((parsed as Record<string, unknown> | null)?.composer)
+    if (composer.folderId && !this.folderMap.has(composer.folderId)) delete composer.folderId
+    this.composerState = composer
+  }
+
+  /** Most recently used first. */
+  folders(): InboxFolder[] {
+    return [...this.folderMap.values()].sort(byRecentUse)
+  }
+
+  folder(id: string): InboxFolder | undefined {
+    return this.folderMap.get(id)
+  }
+
+  putFolder(folder: InboxFolder): void {
+    this.folderMap.set(folder.id, folder)
+    if (this.folderMap.size > INBOX_MAX_FOLDERS) {
+      for (const stale of this.folders().slice(INBOX_MAX_FOLDERS)) this.folderMap.delete(stale.id)
+    }
+    this.scheduleSave()
+  }
+
+  removeFolder(id: string): boolean {
+    const removed = this.folderMap.delete(id)
+    if (removed) {
+      if (this.composerState.folderId === id) {
+        const { folderId: _removed, ...rest } = this.composerState
+        this.composerState = rest
+      }
+      this.scheduleSave()
+    }
+    return removed
+  }
+
+  composer(): InboxComposerState {
+    return { ...this.composerState }
+  }
+
+  setComposer(composer: InboxComposerState): void {
+    this.composerState = { ...composer }
+    this.scheduleSave()
   }
 
   /** Most recent activity first. */
@@ -209,7 +324,12 @@ export class InboxStore {
   }
 
   private enqueueSave(): void {
-    const snapshot = { version: INBOX_FILE_VERSION, threads: this.list() }
+    const snapshot = {
+      version: INBOX_FILE_VERSION,
+      threads: this.list(),
+      folders: this.folders(),
+      composer: this.composerState
+    }
     this.writeQueue = this.writeQueue
       .then(() => this.dependencies.writeFile(this.file, snapshot))
       .catch((error: unknown) => console.warn('[inbox] could not save inbox.json:', error))

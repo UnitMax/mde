@@ -50,7 +50,15 @@ not. File-viewer and tree-drop paths must stay relative and contain no dot
 segments, backslashes or controls. Inbox requests (`inbox:set-read`,
 `inbox:set-archived`, `inbox:remove`) accept only an OpenCode session ID
 (`ses_` followed by letters, digits, `_` or `-`) and a boolean where one is
-expected; they change MDE's own `inbox.json` and never reach OpenCode. Domain handlers still verify resource
+expected; they change MDE's own `inbox.json` and never reach OpenCode.
+Inbox folder requests (`inbox:folders-add`, `inbox:folders-remove`,
+`inbox:composer-set`) accept a target and a path, which the handler resolves and
+validates like a session path (WSL only on Windows, native elsewhere), or an
+`fld_` folder ID, an OpenCode model reference and an agent ID. Chat requests
+(`chat:*`) accept `ses_`, `per_` and `frm_` IDs by pattern, prompts of at most
+100,000 code units without controls other than newline and tab, permission
+decisions from the fixed set `once`, `always`, `reject`, and form answers of
+bounded keys, strings, numbers, booleans and string lists. Domain handlers still verify resource
 existence, session/source ownership, filesystem containment and platform
 constraints after the central validation.
 
@@ -83,6 +91,40 @@ and another sandboxed window loading the same app URL could not invoke
 untouched. This was an unpackaged Linux check, not Windows/WSL verification.
 
 The sender policy follows [Electron's IPC sender validation guidance](https://www.electronjs.org/docs/latest/tutorial/security#17-validate-the-sender-of-all-ipc-messages).
+
+## OpenCode service connection
+
+The Inbox chat view talks to OpenCode's local background service from the
+main process only (`src/main/opencode/service/`). The renderer never gets the
+service address or password and has no network access to it; it can only call
+the validated `chat:*` channels.
+
+- **Discovery.** A fixed script runs the configured OpenCode executable (checked
+  like every other OpenCode launch) with `service start`, then prints
+  OpenCode's `service.json` between random markers on standard output; no
+  temporary file is involved. The `url` must be `http:` on `127.0.0.1`,
+  `localhost` or `[::1]` with an explicit port and no credentials, path, query
+  or fragment, and the password must be 1–256 printable ASCII characters.
+  Anything else is refused, so a tampered state file cannot point MDE, and the
+  password, at another host.
+- **Secrets.** The password is held in memory per target, sent only as HTTP
+  Basic auth to that loopback origin, and never logged, stored or put in an
+  error message. A 401 or connection failure drops it and rediscovers once.
+- **Operations.** `SERVICE_OPERATIONS` is a fixed allowlist of sixteen method
+  and path pairs (agents, providers, models, session create/get/active, message
+  list, prompt, interrupt, agent and model switch, and permission and form
+  list/reply). Path parameters must match `ses_`, `per_` or `frm_` ID patterns,
+  only the query keys `limit`, `order`, `cursor` and `location[directory]` are
+  allowed, request bodies are capped at 1 MB, responses at 16 MB, and each
+  request times out after 30 seconds.
+- **Responses.** Every response and event is parsed into MDE's own types; unknown
+  fields are dropped, tool input and output are cut at 64 KB, and control
+  characters are stripped. Events for sessions the Inbox does not already hold
+  are ignored. Assistant Markdown is rendered with raw HTML off, and its links
+  go through the same main-process URL validator as other external links.
+
+Inbox folders are separate from workspace projects and sessions; adding one
+resolves and validates the path through the same checks as a session path.
 
 ## Windows executable selection
 

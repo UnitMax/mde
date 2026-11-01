@@ -83,8 +83,7 @@ export function metadataQueryLaunch(
 } {
   validateOpenCodeExecutable(executable)
   const apiArguments = openCodeApiArguments(request)
-  const native = session.kind === 'native'
-  if (!native && !session.distro) throw new Error('Session history requires a configured WSL distro.')
+  if (session.kind !== 'native' && !session.distro) throw new Error('Session history requires a configured WSL distro.')
   const begin = `__MDE_OPENCODE_BEGIN_${marker}__`
   const end = `__MDE_OPENCODE_END_${marker}__`
   const script = [
@@ -107,54 +106,80 @@ export function metadataQueryLaunch(
     'printf "\\n%s\\n" "$mde_end"',
     'exit "$mde_query_status"',
   ].join('\n')
-  const spec = buildLaunchSpec(session, {
+  const spec = loginShellScriptLaunch(session, script, 'mde-opencode-query', [executable, begin, end, ...apiArguments], hostExecutable)
+  return { spec, begin, end }
+}
+
+/**
+ * Runs a fixed `/bin/sh` script inside the target's login environment, so the
+ * user's PATH applies. Arguments reach the script as `$1…`, never re-parsed.
+ */
+export function loginShellScriptLaunch(
+  session: Session,
+  script: string,
+  name: string,
+  args: string[],
+  hostExecutable?: HostExecutable,
+): LaunchSpec {
+  const native = session.kind === 'native'
+  if (!native && !session.distro) throw new Error('A WSL target needs a configured distro.')
+  return buildLaunchSpec(session, {
     platform: native ? 'darwin' : 'win32',
     windowsExecutable: hostExecutable,
     defaultShell: native ? nativeLoginShell() : undefined,
     workingDirectory: '/',
-    agent: {
-      executable: '/bin/sh',
-      args: ['-c', script, 'mde-opencode-query', executable, begin, end, ...apiArguments]
-    },
+    agent: { executable: '/bin/sh', args: ['-c', script, name, ...args] },
   })
-  return { spec, begin, end }
 }
 
-const runApiQuery: OpenCodeApiQuery = (session, executable, request) => {
+export interface LaunchOutput {
+  stdout: string
+  stderr: string
+  error: (Error & { code?: unknown; killed?: boolean }) | null
+}
+
+/** Runs a spec from `loginShellScriptLaunch` and decodes its output. */
+export function runLoginShellScript(
+  session: Session,
+  spec: LaunchSpec,
+  options: { timeout: number; maxBuffer: number },
+): Promise<LaunchOutput> {
   const native = session.kind === 'native'
-  const { spec, begin, end } = metadataQueryLaunch(session, executable, request, randomUUID(), native ? undefined : resolveWslExecutable('win32'))
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     execFile(spec.file, spec.args, {
       env: native ? process.env : wslEnv(),
       cwd: spec.cwd,
       encoding: 'buffer',
-      timeout: QUERY_TIMEOUT_MS,
-      maxBuffer: MAX_QUERY_BYTES,
+      timeout: options.timeout,
+      maxBuffer: options.maxBuffer,
       windowsHide: true,
     }, (error, rawStdout, rawStderr) => {
-      const stdout = native ? rawStdout.toString('utf8') : decodeWslOutput(rawStdout)
-      const stderr = native ? rawStderr.toString('utf8') : decodeWslOutput(rawStderr)
-      if (error) {
-        if (error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
-          reject(new Error('OpenCode session history exceeded the output size limit.'))
-        } else if (error.killed) {
-          reject(new Error('Reading OpenCode session history timed out.'))
-        } else if (request.operation === 'session.get' && /SessionNotFoundError/.test(stdout)) {
-          reject(new Error(SESSION_GONE))
-        } else if (/unknown (command|argument)|operation not found/i.test(stderr + stdout)) {
-          reject(new Error(UNSUPPORTED))
-        } else {
-          reject(new Error('Could not read OpenCode session history. Check the configured executable and login environment.'))
-        }
-        return
-      }
-      try {
-        resolve(parseMetadataOutput(stdout, begin, end))
-      } catch (error) {
-        reject(error)
-      }
+      resolve({
+        stdout: native ? rawStdout.toString('utf8') : decodeWslOutput(rawStdout),
+        stderr: native ? rawStderr.toString('utf8') : decodeWslOutput(rawStderr),
+        error,
+      })
     })
   })
+}
+
+const runApiQuery: OpenCodeApiQuery = async (session, executable, request) => {
+  const native = session.kind === 'native'
+  const { spec, begin, end } = metadataQueryLaunch(session, executable, request, randomUUID(), native ? undefined : resolveWslExecutable('win32'))
+  const { stdout, stderr, error } = await runLoginShellScript(session, spec, { timeout: QUERY_TIMEOUT_MS, maxBuffer: MAX_QUERY_BYTES })
+  if (error) {
+    if (error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
+      throw new Error('OpenCode session history exceeded the output size limit.')
+    } else if (error.killed) {
+      throw new Error('Reading OpenCode session history timed out.')
+    } else if (request.operation === 'session.get' && /SessionNotFoundError/.test(stdout)) {
+      throw new Error(SESSION_GONE)
+    } else if (/unknown (command|argument)|operation not found/i.test(stderr + stdout)) {
+      throw new Error(UNSUPPORTED)
+    }
+    throw new Error('Could not read OpenCode session history. Check the configured executable and login environment.')
+  }
+  return parseMetadataOutput(stdout, begin, end)
 }
 
 function record(value: unknown): Record<string, unknown> {
