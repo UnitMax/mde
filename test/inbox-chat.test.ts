@@ -42,6 +42,7 @@ const api = {
     removeFolder: vi.fn(async () => undefined),
   },
   chat: {
+    draft: vi.fn(async (req: { text?: string }) => ({ text: req.text ?? '', revision: 1, attachments: [] })),
     options: vi.fn(async () => options),
     create: vi.fn(async () => thread({ id: 'ses_new', title: 'New thread' })),
     messages: vi.fn(async () => page),
@@ -126,7 +127,7 @@ describe('Inbox new thread', () => {
       textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     })
     await vi.waitFor(() => expect(api.chat.create).toHaveBeenCalledWith({
-      folderId: 'fld_app', text: 'Add a dark mode', agent: 'build', model: { id: 'free-1', providerId: 'opencode' },
+      attachmentIds: [], draftRevision: 1, folderId: 'fld_app', text: 'Add a dark mode', agent: 'build', model: { id: 'free-1', providerId: 'opencode' },
     }))
     await vi.waitFor(() => expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_new'))
     expect(useWorkspace.getState().inboxThreads.map((item) => item.id)).toEqual(['ses_new'])
@@ -264,7 +265,7 @@ describe('Inbox conversation', () => {
     await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-agent-picker"]')?.textContent).toContain('Build'))
     await type(view.querySelector('textarea')!, 'Thanks')
     await act(async () => button(view, 'Send').click())
-    await vi.waitFor(() => expect(api.chat.send).toHaveBeenCalledWith({ threadId: 'ses_one', text: 'Thanks' }))
+    await vi.waitFor(() => expect(api.chat.send).toHaveBeenCalledWith({ threadId: 'ses_one', text: 'Thanks', attachmentIds: [], draftRevision: 1 }))
   })
 
   describe('file changes', () => {

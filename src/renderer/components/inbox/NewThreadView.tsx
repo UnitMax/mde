@@ -125,6 +125,8 @@ export function NewThreadView(): JSX.Element {
         </div>
         {folder && (
           <ChatComposer
+            key={folder.id}
+            draftKey={`folder:${folder.id}`}
             autoFocus
             options={options}
             agent={agent}
@@ -133,9 +135,9 @@ export function NewThreadView(): JSX.Element {
             onModelChange={chooseModel}
             onRetryOptions={() => void loadOptions({ folderId: folder.id }, true)}
             placeholder="Describe what you want to build or change"
-            onSend={async (text) => {
+            onSend={async (text, attachments) => {
               if (!agent || !model) return
-              await createThread({ folderId: folder.id, text, agent, model })
+              await createThread({ folderId: folder.id, text, agent, model, ...attachments })
             }}
           />
         )}

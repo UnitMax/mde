@@ -157,6 +157,7 @@ const api: RendererApi = {
     setComposer: (req) => ipcRenderer.invoke(IpcChannels.inboxComposerSet, req)
   },
   chat: {
+    draft: (req) => ipcRenderer.invoke(IpcChannels.chatDraft, req),
     configure: (req) => ipcRenderer.invoke(IpcChannels.chatConfigure, req),
     options: (req) => ipcRenderer.invoke(IpcChannels.chatOptions, req),
     create: (req) => ipcRenderer.invoke(IpcChannels.chatCreate, req),

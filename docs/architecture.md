@@ -521,3 +521,27 @@ you installed them:
 The old `codex-status.json` in MDE's user-data directory is ignored and can optionally be
 deleted. After closing the old terminals, the unused `/tmp/mde-codex` runtime snapshots in the
 affected distro can also be deleted. Codex itself and unrelated Codex configuration remain intact.
+
+### Inbox attachments and drafts
+
+Both composers accept multiple files through the paperclip's native chooser, clipboard image
+paste, external file drops, and Files-sidebar drops. Images show removable thumbnails, other
+files show filename/size chips, and messages can contain attachments without text. The renderer
+reads only browser-provided File objects; source-tree reads remain in the main process with the
+same real-path containment checks as the viewer. Binary attachment reads have a separate 20 MiB
+limit and do not enlarge the text viewer's limit.
+
+`InboxDraftStore` serializes mutations and atomically saves each text edit and attachment change
+under `inbox-drafts/` in user data. Copies use opaque filenames and private permissions. Drafts
+are scoped to a thread or new-chat folder and survive restart. Native create/send requests carry
+attachment IDs and a draft revision. The main process validates ownership, sends copied contents
+as OpenCode native data-URL files, and clears only the submitted revision after acceptance. A
+created session whose initial prompt fails retains the draft on that session for retry.
+
+Prompt bodies and prompt/message-list responses allow 32 MiB; other transport limits stay the
+same. Oversized history pages retry the same cursor with successively smaller page sizes down
+to one message. Main-process parsing discards full file data before IPC, returning filename,
+MIME, size, and bounded raster thumbnails (160 pixels per side, at most 180,000 URL characters).
+Copies are removed on send, attachment removal, and owner deletion, with startup orphan cleanup.
+Limits are 10 files / 20 MiB per draft and 200 MiB across saved attachments. Folders are rejected;
+unsupported file contents are handled by OpenCode and the selected model.

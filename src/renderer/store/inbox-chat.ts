@@ -79,12 +79,12 @@ interface InboxChatStore {
   removeFolder: (id: string) => Promise<void>
   setComposer: (patch: InboxComposerState) => void
   loadOptions: (key: { folderId: string } | { threadId: string }, force?: boolean) => Promise<void>
-  createThread: (input: { folderId: string; text: string; agent: string; model: OpenCodeModelRef }) => Promise<InboxThread>
+  createThread: (input: { folderId: string; text: string; agent: string; model: OpenCodeModelRef; attachmentIds?: string[]; draftRevision?: number }) => Promise<InboxThread>
   openThread: (threadId: string) => () => void
   refresh: (threadId: string) => Promise<void>
   refreshRequests: (threadId: string) => Promise<void>
   loadOlder: (threadId: string) => Promise<void>
-  send: (threadId: string, text: string, choice?: { agent?: string; model?: OpenCodeModelRef }) => Promise<void>
+  send: (threadId: string, text: string, choice?: { agent?: string; model?: OpenCodeModelRef; attachmentIds?: string[]; draftRevision?: number }) => Promise<void>
   interrupt: (threadId: string) => Promise<void>
   replyPermission: (threadId: string, requestId: string, decision: 'once' | 'always' | 'reject') => Promise<void>
   replyForm: (threadId: string, formId: string, answer: Record<string, ChatFormValue>) => Promise<void>
@@ -293,6 +293,9 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
 
     send: async (threadId, text, choice = {}) => {
       await window.api.chat.send({ threadId, text, ...choice })
+      const workspace = useWorkspace.getState()
+      const record = workspace.inboxThreads.find((thread) => thread.id === threadId)
+      if (record?.sendError) workspace.upsertInboxThread({ ...record, sendError: undefined })
       if (choice.agent || choice.model) {
         set((state) => ({ composer: { ...state.composer, ...choice } }))
       }

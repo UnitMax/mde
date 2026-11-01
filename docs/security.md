@@ -227,3 +227,18 @@ compilation, the dependency audit, and the Windows build. Regenerate third-party
 notices with `npm run licenses` when shipped dependencies change. Avoid blindly
 applying `npm audit fix --force`: its proposed major-version changes can downgrade
 the direct build and diagram dependencies.
+
+### Inbox attachment boundary
+
+`chat:draft` is a fixed, validated union of draft load/text/add/tree/remove/clear/flush operations.
+Keys name an existing Inbox thread or folder. Binary uploads are bounded Uint8Arrays; generated
+IDs reference only files owned by that draft. Original filenames never form storage paths.
+Sidebar sources resolve through known sessions/folders and bounded regular-file reads with
+real-path containment checks, including in WSL. Renderer payloads cannot supply service URLs,
+file URLs, shell commands, or storage paths. Attachment contents are never logged.
+
+Draft files and their atomic index use private permissions on POSIX systems, and live under the
+app's user-data directory. They are not encrypted. Generated thumbnails are raster data URLs;
+remote image URLs and attachment HTML are never rendered. Existing CSP and renderer isolation
+remain unchanged. Prompt and history size allowances are restricted to the relevant fixed
+OpenCode operations; oversized history responses retry with smaller pages, never unbounded reads.

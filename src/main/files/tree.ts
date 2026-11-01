@@ -321,3 +321,37 @@ export async function readSessionFile(
   }
   return readNativeFile(session, relativePath)
 }
+
+/** Reads a binary attachment with the viewer's same root containment checks. */
+export async function readSessionAttachment(session: Session, path: string): Promise<Buffer> {
+  const limit = 20 * 1024 * 1024
+  if (!path || !isSafeRelativePath(path)) throw new Error('Invalid attachment path.')
+  if (session.kind === 'wsl') {
+    if (process.platform !== 'win32') throw new Error('WSL files require Windows.')
+    const { distro, root } = await wslRoot(session, defaultDependencies)
+    const result = await runWslCommandBuffer(distro, ['bash', '-c', READ_WSL_FILE_SCRIPT, 'mde-attach', root, joinWslPath(root, path), String(limit + 1)], { maxBuffer: limit + 64 * 1024 })
+    if (result.code !== 0) throw new Error(WSL_READ_ERRORS[result.code] ?? 'Could not read attachment.')
+    const newline = result.stdout.indexOf(10)
+    const size = Number(result.stdout.subarray(0, newline).toString('ascii'))
+    const bytes = result.stdout.subarray(newline + 1)
+    if (newline < 0 || !Number.isSafeInteger(size) || size < 0 || size > limit || bytes.length !== size) throw new Error('Attachment exceeds 20 MiB or changed while reading.')
+    return bytes
+  }
+  const root = await fs.realpath(session.path)
+  const real = await fs.realpath(join(root, ...path.split('/')))
+  if (!isInside(root, real)) throw new Error('File is outside the session folder.')
+  const handle = await fs.open(real, 'r')
+  try {
+    const stat = await handle.stat()
+    if (!stat.isFile() || stat.size > limit) throw new Error('Choose a regular file of at most 20 MiB.')
+    const bytes = Buffer.alloc(stat.size + 1)
+    let length = 0
+    while (length < bytes.length) {
+      const read = await handle.read(bytes, length, bytes.length - length, length)
+      if (!read.bytesRead) break
+      length += read.bytesRead
+    }
+    if (length !== stat.size) throw new Error('The file changed while reading. Try again.')
+    return bytes.subarray(0, length)
+  } finally { await handle.close() }
+}

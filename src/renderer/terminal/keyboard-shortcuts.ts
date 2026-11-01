@@ -27,6 +27,15 @@ export function getKeyboardShortcutGroups(
 
   return [
     {
+      id: 'inbox-chat',
+      label: 'Inbox chat',
+      shortcuts: [
+        { id: 'inbox-paste-image', keys: [`${primaryModifier}+V`], description: 'Paste clipboard images as attachments in the message box; text pastes normally.' },
+        { id: 'inbox-send', keys: ['Enter'], description: 'Send the message and attachments.' },
+        { id: 'inbox-newline', keys: ['Shift+Enter'], description: 'Insert a newline in the message box.' }
+      ]
+    },
+    {
       id: 'workspace',
       label: 'Workspace',
       shortcuts: [

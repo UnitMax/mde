@@ -57,7 +57,9 @@ import type {
   ChatPermissionReplyRequest,
   ChatRequests,
   ChatSendRequest,
-  ChatThreadRequest
+  ChatThreadRequest,
+  ChatDraft,
+  ChatDraftRequest
 } from './types'
 
 export interface WorkspaceData {
@@ -155,6 +157,7 @@ export const IpcChannels = {
   chatCreate: 'chat:create',
   chatMessages: 'chat:messages',
   chatSend: 'chat:send',
+  chatDraft: 'chat:draft',
   chatInterrupt: 'chat:interrupt',
   chatRegenerateTitle: 'chat:regenerate-title',
   chatRequests: 'chat:requests',
@@ -516,6 +519,7 @@ export interface RendererApi {
     setComposer(req: InboxComposerState): Promise<InboxComposerState>
   }
   chat: {
+    draft(req: ChatDraftRequest): Promise<ChatDraft>
     configure(req: ChatConfigureRequest): Promise<void>
     options(req: ChatOptionsRequest): Promise<ChatOptions>
     create(req: ChatCreateRequest): Promise<InboxThread>

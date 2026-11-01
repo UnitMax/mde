@@ -265,7 +265,7 @@ function InboxThreadRow({
         <AlertDialogContent>
           <AlertDialogTitle>Delete “{thread.title}” from the Inbox?</AlertDialogTitle>
           <AlertDialogDescription>
-            This removes the thread from MDE’s Inbox. The OpenCode conversation is kept, and
+            This removes the thread and any unsent draft from MDE’s Inbox. The OpenCode conversation is kept, and
             later activity will not restore it to the Inbox.
           </AlertDialogDescription>
           <AlertDialogFooter>

@@ -37,7 +37,7 @@ MDE stores data only on the local machine:
   restricted to that user (0600). MDE removes snapshots when terminals close and matching
   artifacts older than 24 hours on startup. Abrupt termination may leave these temporary files.
 
-MDE does not copy file contents or terminal output into any of these. Terminal scrollback is held
+Apart from explicitly added Inbox draft attachments described below, MDE does not copy file contents or terminal output into these stores. Terminal scrollback is held
 in memory only. The OpenCode session picker asks the configured OpenCode executable for session metadata on demand
 (`opencode api`, which reads OpenCode's own local background service: session
 titles, directories, models, token usage and cost) and keeps the result in memory only. The query output passes through a private temporary file on the native Mac host or in the distro, which is deleted when the query ends.
@@ -60,6 +60,22 @@ to the model provider selected by its title-agent configuration. MDE does not ma
 provider request itself, create an additional conversation, or persist the context.
 The resulting title replaces the existing title in `inbox.json`; loading and error
 feedback stays in memory.
+
+## Inbox attachments and saved drafts
+
+The Inbox paperclip, image paste, and file drops save copies under `inbox-drafts/` in
+Electron's user-data directory. `index.json` stores unsent prompt text, filenames, MIME hints,
+sizes, revisions and generated attachment IDs; `attachments/` holds the copied contents.
+These local drafts are not encrypted. They survive app restarts and changes to the original
+files. Each thread and new-chat folder has its own draft. Removing an attachment, successfully
+sending its draft, or removing its owning thread/folder draft deletes the relevant copies.
+Startup removes orphaned copies. Valid drafts do not expire automatically. Saved attachment
+contents are capped at 200 MiB total, with 10 files and 20 MiB per draft.
+
+Only sending a message transfers attachments to the loopback OpenCode service, as native inline
+file attachments. OpenCode stores them and may forward their contents to the chosen provider.
+MDE does not send unsent drafts automatically. Conversation history retains attachment metadata
+and small raster thumbnails in memory; MDE does not persist conversation attachment downloads.
 
 ## Network behavior in the released application
 

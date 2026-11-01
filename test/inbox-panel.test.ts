@@ -43,6 +43,7 @@ beforeEach(() => {
   vi.stubGlobal('api', {
     inbox: { setRead, setArchived: vi.fn(async () => null), remove: vi.fn(async () => undefined) },
     chat: {
+      draft: vi.fn(async () => ({ text: '', revision: 0, attachments: [] })),
       subscribe: vi.fn(async () => undefined),
       unsubscribe: vi.fn(async () => undefined),
       messages: vi.fn(async () => ({

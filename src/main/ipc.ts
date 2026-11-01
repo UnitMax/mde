@@ -91,7 +91,9 @@ import type {
   ChatPermissionReplyRequest,
   ChatRequests,
   ChatSendRequest,
-  ChatThreadRequest
+  ChatThreadRequest,
+  ChatDraftRequest,
+  ChatDraft
 } from '@shared/types'
 import { assertIpcSender, type IpcSecurityContext } from './ipc-security'
 import { assertIpcPayload, type IpcChannel } from './ipc-validation'
@@ -562,7 +564,7 @@ export function registerIpcHandlers(
   handle<InboxSetArchivedRequest, InboxThread | null>(IpcChannels.inboxSetArchived, (req) =>
     inboxRecorder.setArchived(req.id, req.archived)
   )
-  handle<InboxRemoveRequest, void>(IpcChannels.inboxRemove, (req) => inboxRecorder.remove(req.id))
+  handle<InboxRemoveRequest, void>(IpcChannels.inboxRemove, async (req) => { await chat.removeDraft(`thread:${req.id}`); inboxRecorder.remove(req.id) })
   handle<void, InboxFoldersState>(IpcChannels.inboxFolders, () => chat.folders())
   handle<InboxAddFolderRequest, InboxFolder>(IpcChannels.inboxFoldersAdd, async (req) => {
     // OpenCode's service runs where the folder lives: in WSL on Windows, natively on macOS.
@@ -577,13 +579,14 @@ export function registerIpcHandlers(
       target: req.kind === 'wsl' ? { kind: 'wsl', distro: distro as string } : { kind: 'native' },
     })
   })
-  handle<InboxRemoveFolderRequest, void>(IpcChannels.inboxFoldersRemove, (req) => chat.removeFolder(req.id))
+  handle<InboxRemoveFolderRequest, void>(IpcChannels.inboxFoldersRemove, async (req) => { await chat.removeDraft(`folder:${req.id}`); chat.removeFolder(req.id) })
   handle<InboxComposerState, InboxComposerState>(IpcChannels.inboxComposerSet, (req) => chat.setComposer(req))
 
   handle<ChatConfigureRequest, void>(IpcChannels.chatConfigure, (req) => chat.configure(req.executable))
   handle<ChatOptionsRequest, ChatOptions>(IpcChannels.chatOptions, (req) => chat.chatOptions(req))
   handle<ChatCreateRequest, InboxThread>(IpcChannels.chatCreate, (req) => chat.create(req))
   handle<ChatMessagesRequest, ChatMessagesPage>(IpcChannels.chatMessages, (req) => chat.messages(req))
+  handle<ChatDraftRequest, ChatDraft>(IpcChannels.chatDraft, async (req) => chat.draft(req, req.action === 'tree' ? (await getSession(req.sessionId)) ?? undefined : undefined))
   handle<ChatSendRequest, void>(IpcChannels.chatSend, (req) => chat.send(req))
   handle<ChatThreadRequest, void>(IpcChannels.chatInterrupt, (req) => chat.interrupt(req.threadId))
   handle<ChatThreadRequest, void>(IpcChannels.chatRegenerateTitle, (req) => chat.regenerateTitle(req.threadId))

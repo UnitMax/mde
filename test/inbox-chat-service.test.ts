@@ -1,3 +1,7 @@
+import { promises as fs } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { InboxDraftStore } from '../src/main/inbox/drafts'
 import { describe, expect, it, vi } from 'vitest'
 import type { ChatEvent } from '../src/shared/types'
 import { InboxChatService } from '../src/main/inbox/chat'
@@ -9,7 +13,7 @@ import { OpenCodeServiceError } from '../src/main/opencode/service/client'
 const wsl = { kind: 'wsl' as const, distro: 'Ubuntu-24.04' }
 const model = { id: 'model-1', providerId: 'provider-1' }
 
-function setup(responses: Partial<Record<ServiceOperation, unknown>> = {}) {
+function setup(responses: Partial<Record<ServiceOperation, unknown>> = {}, drafts?: InboxDraftStore) {
   let now = 1_000
   let enabled = true
   const store = new InboxStore('/unused', { writeFile: async () => {}, writeDelayMs: 60_000 })
@@ -32,6 +36,7 @@ function setup(responses: Partial<Record<ServiceOperation, unknown>> = {}) {
   // The event stream never opens in these tests.
   const openEvents = vi.fn(() => new Promise<ReadableStream<Uint8Array>>(() => {}))
   const service = new InboxChatService({
+    drafts,
     client: { request, openEvents, reset: vi.fn() },
     store,
     recorder,
@@ -344,6 +349,52 @@ describe('Inbox chat service', () => {
     events.length = 0
     emit('session.tool.called', { sessionID: 'ses_new' })
     expect(events).toEqual([])
+    service.stop()
+  })
+})
+
+
+describe('Inbox native attachments', () => {
+  it('sends copied bytes natively and keeps a failed initial prompt on its created thread', async () => {
+    const path = await fs.mkdtemp(join(tmpdir(), 'mde-chat-attachments-'))
+    const drafts = new InboxDraftStore(path)
+    const { service, folder, calls, request } = setup({
+      'session.create': { data: { id: 'ses_new' } },
+      'session.prompt': new Error('Unavailable'),
+    }, drafts)
+    try {
+      const key = `folder:${folder.id}` as const
+      await drafts.add(key, 'notes.txt', 'text/plain', new Uint8Array([65, 66]))
+      const draft = await drafts.get(key)
+      const attachmentIds = draft.attachments.map((file) => file.id)
+      const thread = await service.create({ folderId: folder.id, text: '', agent: 'build', model, attachmentIds, draftRevision: draft.revision })
+      expect(thread.sendError).toContain('draft has been kept')
+      expect(calls.find((call) => call.operation === 'session.prompt')?.request.body).toEqual({ text: '', files: [{ name: 'notes.txt', uri: 'data:application/octet-stream;base64,QUI=' }] })
+      expect((await drafts.get(key)).attachments).toHaveLength(0)
+      const retained = await drafts.get('thread:ses_new')
+      expect(retained.attachments).toHaveLength(1)
+      request.mockResolvedValue(null)
+      await service.send({ threadId: thread.id, text: '', attachmentIds, draftRevision: retained.revision })
+      expect((await drafts.get('thread:ses_new')).attachments).toHaveLength(0)
+      expect(await fs.readdir(join(path, 'attachments'))).toEqual([])
+    } finally { service.stop(); await fs.rm(path, { recursive: true, force: true }) }
+  })
+
+  it('reduces oversized history pages while preserving their cursor and pagination', async () => {
+    const { service, folder, request } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'session.active': { data: {} } })
+    await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+    const previous = request.getMockImplementation()!
+    const limits: string[] = []
+    request.mockImplementation(async (target, operation, input) => {
+      if (operation !== 'session.message.list') return previous(target, operation, input)
+      limits.push(input!.query!.limit!)
+      expect(input!.query!.cursor).toBe('older-page')
+      if (input!.query!.limit === '50') throw new Error('The OpenCode service sent more data than MDE accepts.')
+      return { data: Array.from({ length: 25 }, (_, index) => ({ type: 'user', id: `msg_${index}`, text: 'Hello', time: { created: index } })), cursor: { next: 'next-page' } }
+    })
+    const page = await service.messages({ threadId: 'ses_new', cursor: 'older-page' })
+    expect(limits).toEqual(['50', '25'])
+    expect(page.older).toBe('next-page')
     service.stop()
   })
 })

@@ -1,3 +1,6 @@
+import type { ChatDraftRequest, ChatDraftKey } from '@shared/types'
+import type { InboxDraftStore } from './drafts'
+import { readSessionAttachment } from '../files/tree'
 import { randomUUID } from 'node:crypto'
 import type {
   ChatAgent,
@@ -53,6 +56,8 @@ const AGENT_ATTEMPTS = 6
 const AGENT_RETRY_MS = 250
 
 export interface InboxChatDependencies {
+  drafts?: InboxDraftStore
+  thumbnail?(bytes: Buffer): string | undefined
   client: Pick<OpenCodeServiceClient, 'request' | 'openEvents' | 'reset'>
   store: InboxStore
   recorder: InboxRecorder
@@ -219,11 +224,33 @@ export class InboxChatService {
     return value
   }
 
+  async draft(request: ChatDraftRequest, sourceSession?: Session) {
+    this.assertEnabled()
+    const [kind, id = ''] = request.key.split(':')
+    if (kind === 'thread') this.thread(id)
+    else this.folder(id)
+    const store = this.dependencies.drafts
+    if (!store) throw new Error('Draft storage is unavailable.')
+    if (request.action === 'text') await store.text(request.key, request.text)
+    if (request.action === 'add') await store.add(request.key, request.name, request.mime, request.data)
+    if (request.action === 'tree') {
+      const source = sourceSession ?? this.fileRoot(request.sessionId)
+      if (!source) throw new Error('Source folder no longer exists.')
+      await store.add(request.key, request.path.split('/').at(-1)!, 'application/octet-stream', await readSessionAttachment(source, request.path))
+    }
+    if (request.action === 'remove') await store.remove(request.key, request.attachmentId)
+    if (request.action === 'clear') await store.remove(request.key)
+    return store.get(request.key)
+  }
+
+  async removeDraft(key: ChatDraftKey): Promise<void> { await this.dependencies.drafts?.remove(key) }
+
   async create(request: ChatCreateRequest): Promise<InboxThread> {
     this.assertEnabled()
     const folder = this.folder(request.folderId)
-    const text = this.promptText(request.text)
+    const text = this.promptText(request.text, request.attachmentIds)
     if (!isChatAgentId(request.agent)) throw new Error('Choose an agent.')
+    const files = request.attachmentIds?.length ? await this.dependencies.drafts?.files(`folder:${folder.id}`, request.attachmentIds, request.draftRevision) : undefined
     this.streams.ensure(folder.target)
     const created = parseCreatedSession(await this.dependencies.client.request(folder.target, 'session.create', {
       body: { agent: request.agent, model: modelBody(request.model), location: { directory: folder.directory } },
@@ -236,15 +263,18 @@ export class InboxChatService {
     })
     this.dependencies.store.putFolder({ ...folder, lastUsedAt: this.dependencies.now() })
     this.dependencies.store.setComposer({ folderId: folder.id, agent: request.agent, model: request.model })
+    await this.dependencies.drafts?.move(`folder:${folder.id}`, `thread:${thread.id}`)
     try {
       await this.dependencies.client.request(folder.target, 'session.prompt', {
         params: { sessionID: created.id },
-        body: { text },
+        body: { text, ...(files?.length ? { files } : {}) },
       })
     } catch (error) {
       this.dependencies.recorder.markStatus(thread.id, 'idle')
+      if (this.dependencies.drafts) return { ...(this.dependencies.store.get(thread.id) ?? thread), sendError: 'Could not send the first message. Your draft has been kept; try sending again.' }
       throw error
     }
+    await this.dependencies.drafts?.remove(`thread:${thread.id}`, undefined, request.draftRevision)
     return this.dependencies.store.get(thread.id) ?? thread
   }
 
@@ -254,15 +284,24 @@ export class InboxChatService {
     const query: Record<string, string> = { limit: String(CHAT_PAGE_SIZE) }
     if (request.cursor) query.cursor = request.cursor
     else query.order = 'desc'
+    let pageSize = CHAT_PAGE_SIZE
+    const loadPage = async (): Promise<unknown> => {
+      try { return await this.dependencies.client.request(thread.target, 'session.message.list', { params: { sessionID: thread.id }, query: { ...query, limit: String(pageSize) } }) }
+      catch (error) {
+        if (!(error instanceof Error) || error.message !== 'The OpenCode service sent more data than MDE accepts.' || pageSize === 1) throw error
+        pageSize = Math.max(1, Math.floor(pageSize / 2))
+        return loadPage()
+      }
+    }
     const [page, active, session] = await Promise.all([
-      this.dependencies.client.request(thread.target, 'session.message.list', { params: { sessionID: thread.id }, query }),
+      loadPage(),
       this.dependencies.client.request(thread.target, 'session.active'),
       // The thread's totals are only wanted with the newest page, and the conversation shows without them.
       request.cursor
         ? null
         : this.dependencies.client.request(thread.target, 'session.get', { params: { sessionID: thread.id } }).catch(() => null),
     ])
-    const result = parseMessagesPage(page, parseActiveSessions(active).has(thread.id), CHAT_PAGE_SIZE)
+    const result = parseMessagesPage(page, parseActiveSessions(active).has(thread.id), pageSize, this.dependencies.thumbnail)
     const usage = session ? parseSessionUsage(session) : null
     return usage ? { ...result, usage } : result
   }
@@ -270,7 +309,8 @@ export class InboxChatService {
   async send(request: ChatSendRequest): Promise<void> {
     this.assertEnabled()
     const thread = this.thread(request.threadId)
-    const text = this.promptText(request.text)
+    const text = this.promptText(request.text, request.attachmentIds)
+    const files = request.attachmentIds?.length ? await this.dependencies.drafts?.files(`thread:${thread.id}`, request.attachmentIds, request.draftRevision) : undefined
     this.streams.ensure(thread.target)
     if (request.agent !== undefined || request.model !== undefined) {
       const session = parseSessionInfo(await this.dependencies.client.request(thread.target, 'session.get', {
@@ -295,8 +335,9 @@ export class InboxChatService {
     }
     await this.dependencies.client.request(thread.target, 'session.prompt', {
       params: { sessionID: thread.id },
-      body: { text },
+      body: { text, ...(files?.length ? { files } : {}) },
     })
+    await this.dependencies.drafts?.remove(`thread:${thread.id}`, undefined, request.draftRevision)
     this.dependencies.recorder.markStatus(thread.id, 'working')
   }
 
@@ -478,8 +519,8 @@ export class InboxChatService {
     return thread
   }
 
-  private promptText(text: string): string {
-    if (!text.trim()) throw new Error('Type a message first.')
+  private promptText(text: string, attachments?: string[]): string {
+    if (!text.trim() && !attachments?.length) throw new Error('Type a message first.')
     if (text.length > CHAT_TEXT_MAX_LENGTH) throw new Error('The message is too long.')
     return text
   }

@@ -141,6 +141,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
           {requests?.forms.map((form) => (
             <QuestionCard key={form.id} form={form} onReply={(answer) => replyForm(thread.id, form.id, answer)} />
           ))}
+          {thread.sendError && <p role="alert" className="text-xs text-danger">{thread.sendError}</p>}
           {state?.error && (
             <div role="alert" className="flex items-center gap-2 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
@@ -155,6 +156,8 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
       </div>
       <div className="mx-auto w-full max-w-3xl shrink-0 px-6 pb-5 pt-2">
         <ChatComposer
+          key={thread.id}
+          draftKey={`thread:${thread.id}`}
           options={options}
           agent={agent}
           model={model}
@@ -164,9 +167,10 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
           running={running}
           context={context}
           onStop={() => void interrupt(thread.id)}
-          onSend={async (text) => {
+          onSend={async (text, attachments) => {
             stickRef.current = true
             await send(thread.id, text, {
+              ...attachments,
               ...(agent && agent !== latest?.agent ? { agent } : {}),
               ...(model && (model.id !== latest?.model.id || model.providerId !== latest?.model.providerId) ? { model } : {}),
             })

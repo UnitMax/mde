@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { ArrowUp, Bot, ChevronDown, Hammer, ListChecks, LoaderCircle, Search, Sparkles, Square } from 'lucide-react'
-import type { ChatAgent, ChatModel, OpenCodeModelRef } from '@shared/types'
+import { Paperclip, X, File as FileIcon, ArrowUp, Bot, ChevronDown, Hammer, ListChecks, LoaderCircle, Search, Sparkles, Square } from 'lucide-react'
+import { readFileTreeDrop, isFileDrop } from '@/terminal/drop'
+import type { ChatDraft, ChatDraftKey, ChatDraftRequest, ChatAgent, ChatModel, OpenCodeModelRef } from '@shared/types'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -139,13 +140,14 @@ export function AgentPicker({
 }
 
 export interface ChatComposerProps {
+  draftKey?: ChatDraftKey
   options: OptionsState | undefined
   agent: string | null
   model: OpenCodeModelRef | null
   onAgentChange: (agent: string) => void
   onModelChange: (model: OpenCodeModelRef) => void
   /** Sends the text; a rejection keeps the text and shows the error. */
-  onSend: (text: string) => Promise<void>
+  onSend: (text: string, attachments?: { attachmentIds: string[]; draftRevision: number }) => Promise<void>
   /** Shown as a Stop button while the agent is working. */
   running?: boolean
   onStop?: () => void
@@ -159,6 +161,7 @@ export interface ChatComposerProps {
 
 /** The prompt box with model and agent pickers and a round send (or stop) button. */
 export function ChatComposer({
+  draftKey,
   options,
   agent,
   model,
@@ -174,11 +177,49 @@ export function ChatComposer({
   disabled = false,
 }: ChatComposerProps): JSX.Element {
   const [text, setText] = useState('')
+  const [draft, setDraft] = useState<ChatDraft>({ text: '', revision: 0, attachments: [] })
+  const [loaded, setLoaded] = useState(!draftKey)
+  const [adding, setAdding] = useState(false)
+  const [dragging, setDragging] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const currentKey = useRef(draftKey)
+  currentKey.current = draftKey
+  const mutate = (request: ChatDraftRequest): Promise<ChatDraft> => {
+    return window.api.chat.draft(request)
+  }
+  useEffect(() => {
+    setLoaded(!draftKey)
+    setText('')
+    setDraft({ text: '', revision: 0, attachments: [] })
+    setError(null)
+    if (!draftKey) return
+    void mutate({ key: draftKey, action: 'load' }).then((value) => {
+      if (currentKey.current !== draftKey) return
+      setDraft(value)
+      setText(value.text)
+      setLoaded(true)
+    }).catch((reason) => setError(ipcErrorMessage(reason, 'Could not restore the draft.')))
+  }, [draftKey])
+  const addFiles = async (files: File[], notice?: string): Promise<void> => {
+    if (!draftKey || disabled || !loaded || sending || adding) return
+    setAdding(true)
+    setError(null)
+    const errors: string[] = notice ? [notice] : []
+    for (const file of files) {
+      try {
+        if (file.size > 20 * 1024 * 1024) throw new Error('File exceeds 20 MiB.')
+        const value = await mutate({ key: draftKey, action: 'add', name: file.name || 'Clipboard image.png', mime: file.type || 'application/octet-stream', data: new Uint8Array(await file.arrayBuffer()) })
+        if (currentKey.current === draftKey) setDraft(value)
+      } catch (reason) { errors.push(`${file.name}: ${ipcErrorMessage(reason, 'Could not add file.')}`) }
+    }
+    setAdding(false)
+    if (errors.length) setError(errors.join(' '))
+  }
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const ready = options?.status === 'ready'
-  const canSend = ready && !disabled && !sending && text.trim().length > 0 && Boolean(agent) && Boolean(model)
+  const canSend = ready && !disabled && !sending && !adding && loaded && (text.trim().length > 0 || draft.attachments.length > 0) && Boolean(agent) && Boolean(model)
 
   useEffect(() => {
     const textarea = textareaRef.current
@@ -192,8 +233,13 @@ export function ChatComposer({
     setSending(true)
     setError(null)
     try {
-      await onSend(text)
+      let value: ChatDraft | undefined
+      if (draftKey) {
+        value = await mutate({ key: draftKey, action: 'text', text })
+      }
+      await onSend(text, value ? { attachmentIds: value.attachments.map((file) => file.id), draftRevision: value.revision } : undefined)
       setText('')
+      setDraft({ text: '', revision: 0, attachments: [] })
     } catch (reason) {
       setError(ipcErrorMessage(reason, 'Could not send the message.'))
     } finally {
@@ -213,21 +259,60 @@ export function ChatComposer({
     <div className="flex flex-col gap-1.5">
       <div
         data-testid="chat-composer"
+        onDragOver={(event) => { if (isFileDrop(event.dataTransfer)) { event.preventDefault(); setDragging(true) } }}
+        onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false) }}
+        onDrop={(event) => {
+          if (!isFileDrop(event.dataTransfer)) return
+          event.preventDefault()
+          setDragging(false)
+          if (!draftKey || sending || adding || !loaded) return
+          const entry = readFileTreeDrop(event.dataTransfer)
+          if (entry) {
+            setAdding(true)
+            void mutate({ key: draftKey, action: 'tree', ...entry }).then(setDraft).catch((reason) => setError(ipcErrorMessage(reason, 'Could not add file.'))).finally(() => setAdding(false))
+          } else {
+            const items = Array.from(event.dataTransfer.items)
+            const files = items.length ? items.filter((item) => !item.webkitGetAsEntry?.()?.isDirectory).flatMap((item) => { const file = item.getAsFile(); return file ? [file] : [] }) : Array.from(event.dataTransfer.files)
+            const notice = items.some((item) => item.webkitGetAsEntry?.()?.isDirectory)
+              ? 'Folders cannot be attached. Choose individual files.' : undefined
+            if (files.length) void addFiles(files, notice)
+            else if (notice) setError(notice)
+          }
+        }}
+        style={dragging ? { outline: '2px solid var(--color-accent)' } : undefined}
         className="@container rounded-2xl border border-line-strong bg-elevated shadow-lg shadow-black/20 focus-within:border-accent/60"
       >
+        <input ref={inputRef} type="file" multiple hidden aria-label="Choose attachments" onChange={(event) => { void addFiles(Array.from(event.target.files ?? [])); event.target.value = '' }} />
+        {draft.attachments.length > 0 && <div className="flex flex-wrap gap-2 px-4 pt-3" aria-label="Attachments">
+          {draft.attachments.map((file) => <div key={file.id} className="relative flex max-w-48 items-center gap-2 rounded-lg border border-line p-2 text-xs" title={`${file.name} (${file.size.toLocaleString()} bytes)`}>
+            {file.thumbnail ? <img src={file.thumbnail} alt={file.name} className="h-16 w-20 rounded object-contain" /> : <FileIcon className="h-5 w-5 shrink-0" />}
+            <span className="truncate">{file.name}<span className="block text-fg-subtle">{Math.ceil(file.size / 1024)} KB</span></span>
+            <button type="button" disabled={sending || adding} aria-label={`Remove ${file.name}`} onClick={() => { if (draftKey) void mutate({ key: draftKey, action: 'remove', attachmentId: file.id }).then(setDraft).catch((reason) => setError(ipcErrorMessage(reason, 'Could not remove file.'))) }}><X className="h-3.5 w-3.5" /></button>
+          </div>)}
+        </div>}
+        {adding && <p role="status" className="px-4 pt-2 text-xs text-fg-muted">Adding attachments…</p>}
         <textarea
           ref={textareaRef}
           aria-label="Message"
           rows={3}
           autoFocus={autoFocus}
           value={text}
-          disabled={disabled}
+          disabled={disabled || sending || !loaded}
           placeholder={placeholder}
-          onChange={(event) => setText(event.target.value)}
+          onChange={(event) => {
+            const next = event.target.value
+            setText(next)
+            if (draftKey) void mutate({ key: draftKey, action: 'text', text: next }).catch((reason) => setError(ipcErrorMessage(reason, 'Could not save the draft.')))
+          }}
+          onPaste={(event) => {
+            const images = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith('image/'))
+            if (images.length) { event.preventDefault(); void addFiles(images) }
+          }}
           onKeyDown={onKeyDown}
           className="block max-h-60 min-h-[4.5rem] w-full resize-none bg-transparent px-4 pt-3 text-[14px] leading-relaxed text-fg outline-none placeholder:text-fg-subtle"
         />
         <div className="flex min-w-0 items-center gap-1 px-2 pb-2">
+          {draftKey && <button type="button" aria-label="Attach files" title="Attach files" disabled={disabled || sending || adding || !loaded} className={pickerButton} onClick={() => inputRef.current?.click()}><Paperclip className="h-4 w-4" /></button>}
           {options?.status === 'ready' ? (
             <>
               <ModelPicker models={options.value.models} value={model} onChange={onModelChange} disabled={disabled} />
@@ -251,7 +336,7 @@ export function ChatComposer({
           )}
           <span className="flex-1" />
           {context && <ContextMeter usage={context} running={running} />}
-          {running && onStop && !text.trim() ? (
+          {running && onStop && !text.trim() && draft.attachments.length === 0 ? (
             <button
               type="button"
               aria-label="Stop"
@@ -275,7 +360,17 @@ export function ChatComposer({
           )}
         </div>
       </div>
-      {error && <p role="alert" className="px-2 text-xs text-danger">{error}</p>}
+      {error && <p role="alert" className="px-2 text-xs text-danger">
+        {error}
+        {!loaded && draftKey && <button type="button" className="ml-2 text-accent hover:underline" onClick={() => {
+          void mutate({ key: draftKey, action: 'load' }).then((value) => {
+            setDraft(value)
+            setText(value.text)
+            setLoaded(true)
+            setError(null)
+          }).catch((reason) => setError(ipcErrorMessage(reason, 'Could not restore the draft.')))
+        }}>Retry</button>}
+      </p>}
     </div>
   )
 }

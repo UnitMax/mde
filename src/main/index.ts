@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, nativeTheme, screen, session, shell } from 'electron'
+import { app, BrowserWindow, nativeImage, nativeTheme, screen, session, shell } from 'electron'
 import { IpcEvents } from '@shared/ipc'
 import { registerIpcHandlers } from './ipc'
 import { rendererEntryUrl } from './ipc-security'
@@ -11,6 +11,7 @@ import { PtyManager } from './pty/manager'
 import { initWorkspaceStore } from './store/workspace'
 import { InboxStore, INBOX_FILE } from './inbox/store'
 import { InboxRecorder } from './inbox/recorder'
+import { InboxDraftStore } from './inbox/drafts'
 import { InboxChatService } from './inbox/chat'
 import { OpenCodeServiceClient } from './opencode/service/client'
 import { discoverOpenCodeService } from './opencode/service/discovery'
@@ -23,6 +24,7 @@ import { installRendererProtocol, registerRendererScheme } from './renderer-prot
 let mainWindow: BrowserWindow | null = null
 let inboxStore: InboxStore | null = null
 let inboxRecorder: InboxRecorder | null = null
+let inboxDrafts: InboxDraftStore | null = null
 let inboxChat: InboxChatService | null = null
 let quitPrepared = false
 const rendererUrl = rendererEntryUrl(app.isPackaged, process.env.ELECTRON_RENDERER_URL)
@@ -194,7 +196,21 @@ if (!app.requestSingleInstanceLock()) {
       discover: discoverOpenCodeService,
       executable: () => inboxChat?.executable() ?? 'opencode'
     })
+    const previewAttachment = (bytes: Buffer): string | undefined => {
+      const image = nativeImage.createFromBuffer(bytes)
+      if (image.isEmpty()) return undefined
+      const size = image.getSize()
+      const scale = Math.min(1, 160 / Math.max(size.width, size.height))
+      const url = image.resize({ width: Math.max(1, Math.round(size.width * scale)), height: Math.max(1, Math.round(size.height * scale)) }).toDataURL()
+      return url.length <= 180_000 ? url : undefined
+    }
+    inboxDrafts = new InboxDraftStore(join(app.getPath('userData'), 'inbox-drafts'), previewAttachment, (key) => {
+      const id = key.slice(key.indexOf(':') + 1)
+      return Boolean(key.startsWith('thread:') ? inboxStore?.get(id) : inboxStore?.folder(id))
+    })
     inboxChat = new InboxChatService({
+      drafts: inboxDrafts,
+      thumbnail: previewAttachment,
       client: serviceClient,
       store: inboxStore,
       recorder: inboxRecorder,
@@ -239,7 +255,7 @@ if (!app.requestSingleInstanceLock()) {
     if (inboxStore) {
       const store = inboxStore
       event.preventDefault()
-      void store.flush().finally(() => app.quit())
+      void Promise.all([store.flush(), inboxDrafts?.flush()]).finally(() => app.quit())
     }
   })
 }

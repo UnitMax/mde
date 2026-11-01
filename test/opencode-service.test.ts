@@ -493,3 +493,19 @@ describe('OpenCode service parsing', () => {
       .toEqual(['ses_1'])
   })
 })
+
+
+it('returns attachment metadata and bounded previews without forwarding file bytes', () => {
+  const page = parseMessagesPage({ data: [{ type: 'user', id: 'msg_image', time: { created: 1 }, text: '', files: [
+    { name: 'screen.png', mime: 'image/png', data: 'AQID' },
+    { name: 'notes.txt', mime: 'text/plain', data: 'aGVsbG8=' },
+  ] }] }, false, 50, () => 'data:image/png;base64,eA==')
+  const message = page.messages[0]!
+  expect(message.kind).toBe('user')
+  if (message.kind !== 'user') throw new Error('Expected user message')
+  expect(message.attachments).toEqual([
+    { id: 'msg_image-0', name: 'screen.png', mime: 'image/png', size: 3, thumbnail: 'data:image/png;base64,eA==' },
+    { id: 'msg_image-1', name: 'notes.txt', mime: 'text/plain', size: 5 },
+  ])
+  expect(JSON.stringify(message)).not.toContain('aGVsbG8=')
+})

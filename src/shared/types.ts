@@ -239,6 +239,8 @@ export interface OpenCodeModelRef {
  * never prompts or messages. A thread is unread while `lastActivityAt > readAt`.
  */
 export interface InboxThread {
+  /** Initial prompt failed; the created thread keeps its draft for retry. */
+  sendError?: string
   id: string
   title: string
   directory: string
@@ -371,7 +373,7 @@ export type ChatPart =
     }
 
 export type ChatMessage =
-  | { kind: 'user'; id: string; time: number; text: string }
+  | { kind: 'user'; id: string; time: number; text: string; attachments?: ChatAttachment[] }
   | {
       kind: 'assistant'
       id: string
@@ -456,6 +458,8 @@ export interface ChatOptionsRequest {
 }
 
 export interface ChatCreateRequest {
+  attachmentIds?: string[]
+  draftRevision?: number
   folderId: string
   text: string
   agent: string
@@ -473,6 +477,8 @@ export interface ChatMessagesRequest {
 }
 
 export interface ChatSendRequest {
+  attachmentIds?: string[]
+  draftRevision?: number
   threadId: string
   text: string
   agent?: string
@@ -719,3 +725,24 @@ export interface FileReadResponse {
   binary: boolean
   tooLarge: boolean
 }
+
+/** A draft belongs to a thread, or to the new-chat composer of a folder. */
+export type ChatDraftKey = `thread:${string}` | `folder:${string}`
+export interface ChatAttachment {
+  id: string
+  name: string
+  mime: string
+  size: number
+  thumbnail?: string
+}
+export interface ChatDraft {
+  revision: number
+  text: string
+  attachments: ChatAttachment[]
+}
+export type ChatDraftRequest =
+  | { key: ChatDraftKey; action: 'load' | 'flush' | 'clear' }
+  | { key: ChatDraftKey; action: 'text'; text: string }
+  | { key: ChatDraftKey; action: 'add'; name: string; mime: string; data: Uint8Array }
+  | { key: ChatDraftKey; action: 'tree'; sessionId: string; path: string }
+  | { key: ChatDraftKey; action: 'remove'; attachmentId: string }

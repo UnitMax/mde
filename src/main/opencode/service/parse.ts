@@ -262,14 +262,22 @@ function modelLabel(model: OpenCodeModelRef): string {
 }
 
 /** Maps one OpenCode message; types MDE does not show return null. */
-export function parseMessage(value: unknown): ChatMessage | null {
+export function parseMessage(value: unknown, thumbnail?: (bytes: Buffer) => string | undefined): ChatMessage | null {
   const message = record(value)
   const id = short(message?.id)
   if (!message || !id) return null
   const at = time(message.time)
   switch (message.type) {
     case 'user':
-      return { kind: 'user', id, time: at, text: body(message.text, CHAT_TEXT_LIMIT).text }
+      return { kind: 'user', id, time: at, text: body(message.text, CHAT_TEXT_LIMIT).text, ...(Array.isArray(message.files) && message.files.length ? { attachments: message.files.slice(0, 10).flatMap((raw, index) => {
+        const file = record(raw)
+        const mime = short(file?.mime, 200)
+        if (!file || !mime || typeof file.data !== 'string' || file.data.length > 28 * 1024 * 1024) return []
+        const bytes = Buffer.from(file.data, 'base64')
+        let preview: string | undefined
+        try { if (mime.startsWith('image/')) preview = thumbnail?.(bytes) } catch { /* A broken preview still shows its filename. */ }
+        return [{ id: `${id}-${index}`, name: short(file.name) ?? 'Attachment', mime, size: bytes.length, ...(preview ? { thumbnail: preview } : {}) }]
+      }) } : {}) }
     case 'assistant': {
       const model = parseModelRef(message.model)
       if (!model) return null
@@ -344,10 +352,10 @@ export function parseMessage(value: unknown): ChatMessage | null {
  * returns a next cursor even on the last page, so a page shorter than `limit`
  * means there is nothing older.
  */
-export function parseMessagesPage(value: unknown, running: boolean, limit: number): ChatMessagesPage {
+export function parseMessagesPage(value: unknown, running: boolean, limit: number, thumbnail?: (bytes: Buffer) => string | undefined): ChatMessagesPage {
   const response = record(value)
   if (!response || !Array.isArray(response.data)) throw new ServiceShapeError('a message list')
-  const messages = response.data.map(parseMessage).filter((item): item is ChatMessage => item !== null).reverse()
+  const messages = response.data.map((message) => parseMessage(message, thumbnail)).filter((item): item is ChatMessage => item !== null).reverse()
   const next = record(response.cursor)?.next
   const older = typeof next === 'string' && /^[A-Za-z0-9_=.-]{1,2048}$/.test(next) && response.data.length >= limit ? next : null
   return { messages, older, running }

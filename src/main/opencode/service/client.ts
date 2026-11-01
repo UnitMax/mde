@@ -201,7 +201,7 @@ export class OpenCodeServiceClient {
     const url = serviceUrl(endpoint.url, operation, request)
     const { method } = SERVICE_OPERATIONS[operation]
     const body = request.body === undefined ? undefined : JSON.stringify(request.body)
-    if (body !== undefined && Buffer.byteLength(body) > SERVICE_MAX_BODY_BYTES) throw new Error('The message is too large.')
+    if (body !== undefined && Buffer.byteLength(body) > (operation === 'session.prompt' ? 32 * 1024 * 1024 : SERVICE_MAX_BODY_BYTES)) throw new Error('The message is too large.')
     const response = await this.fetch(url, {
       method,
       headers: {
@@ -213,7 +213,7 @@ export class OpenCodeServiceClient {
       redirect: 'error',
       signal: AbortSignal.timeout(this.options.timeoutMs ?? SERVICE_REQUEST_TIMEOUT_MS),
     })
-    const text = await readLimitedText(response, this.options.maxResponseBytes ?? SERVICE_MAX_RESPONSE_BYTES)
+    const text = await readLimitedText(response, this.options.maxResponseBytes ?? ((operation === 'session.message.list' || operation === 'session.prompt') ? 32 * 1024 * 1024 : SERVICE_MAX_RESPONSE_BYTES))
     if (!response.ok) {
       const { message, tag } = errorMessage(text, response.status)
       throw new OpenCodeServiceError(message, response.status, tag)

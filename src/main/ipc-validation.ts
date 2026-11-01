@@ -143,7 +143,7 @@ const agentId: Validator = (value) => typeof value === 'string' && /^[A-Za-z0-9]
 const modelRef = object({ id: string(512), providerId: string(512), variant: optional(string(512)) })
 /** Prompt text: newlines and tabs are fine, other control characters are not. */
 const promptText: Validator = (value) => typeof value === 'string' && value.length <= 100_000 &&
-  value.trim().length > 0 && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value)
+  !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value)
 const chatThread = object({ threadId: opencodeSessionId })
 const formValue: Validator = (value) =>
   (typeof value === 'string' && value.length <= 20_000) ||
@@ -242,9 +242,17 @@ export const ipcPayloadValidators = {
   [IpcChannels.chatConfigure]: object({ executable: path }),
   [IpcChannels.chatOptions]: (value) => object({ folderId: optional(inboxFolderId), threadId: optional(opencodeSessionId) })(value) &&
     ((value as { folderId?: string }).folderId === undefined) !== ((value as { threadId?: string }).threadId === undefined),
-  [IpcChannels.chatCreate]: object({ folderId: inboxFolderId, text: promptText, agent: agentId, model: modelRef }),
+  [IpcChannels.chatDraft]: (value) => {
+    const key: Validator = (v) => typeof v === 'string' && /^(?:thread:ses_[A-Za-z0-9_-]{1,200}|folder:fld_[A-Za-z0-9-]{1,64})$/.test(v)
+    return object({ key, action: oneOf('load', 'flush', 'clear') })(value) ||
+      object({ key, action: oneOf('text'), text: promptText })(value) ||
+      object({ key, action: oneOf('add'), name: string(512), mime: string(200), data: (v) => v instanceof Uint8Array && v.byteLength <= 20 * 1024 * 1024 })(value) ||
+      object({ key, action: oneOf('tree'), sessionId: id, path: relativePath })(value) ||
+      object({ key, action: oneOf('remove'), attachmentId: string(64) })(value)
+  },
+  [IpcChannels.chatCreate]: object({ attachmentIds: optional(array(string(64), 10)), draftRevision: optional((v) => Number.isSafeInteger(v) && Number(v) >= 0), folderId: inboxFolderId, text: promptText, agent: agentId, model: modelRef }),
   [IpcChannels.chatMessages]: object({ threadId: opencodeSessionId, cursor: optional((value) => typeof value === 'string' && /^[A-Za-z0-9_=.-]{1,2048}$/.test(value)) }),
-  [IpcChannels.chatSend]: object({ threadId: opencodeSessionId, text: promptText, agent: optional(agentId), model: optional(modelRef) }),
+  [IpcChannels.chatSend]: object({ attachmentIds: optional(array(string(64), 10)), draftRevision: optional((v) => Number.isSafeInteger(v) && Number(v) >= 0), threadId: opencodeSessionId, text: promptText, agent: optional(agentId), model: optional(modelRef) }),
   [IpcChannels.chatInterrupt]: chatThread,
   [IpcChannels.chatRegenerateTitle]: chatThread,
   [IpcChannels.chatRequests]: chatThread,

@@ -82,6 +82,7 @@ const validPayloads = {
   [IpcChannels.inboxComposerSet]: { folderId: 'fld_1234', agent: 'plan', model },
   [IpcChannels.chatConfigure]: { executable: 'opencode' },
   [IpcChannels.chatOptions]: { folderId: 'fld_1234' },
+  [IpcChannels.chatDraft]: { key: 'thread:ses_one', action: 'load' },
   [IpcChannels.chatCreate]: { folderId: 'fld_1234', text: 'Fix the login\n\tplease', agent: 'build', model },
   [IpcChannels.chatMessages]: { threadId: 'ses_thread', cursor: 'eyJpZCI6Im1zZyJ9' },
   [IpcChannels.chatSend]: { threadId: 'ses_thread', text: 'Next step', agent: 'plan', model },
@@ -134,7 +135,7 @@ describe('IPC payload boundary', () => {
   it('bounds chat requests', () => {
     rejects(IpcChannels.chatRegenerateTitle, { threadId: 'ses_../escape' })
     rejects(IpcChannels.chatRegenerateTitle, { threadId: 'ses_thread', title: 'Injected' })
-    rejects(IpcChannels.chatCreate, { folderId: 'fld_1234', text: '   ', agent: 'build', model })
+    expect(() => assertIpcPayload(IpcChannels.chatCreate, { folderId: 'fld_1234', text: '', attachmentIds: ['a'], draftRevision: 1, agent: 'build', model })).not.toThrow()
     rejects(IpcChannels.chatCreate, { folderId: 'fld_1234', text: 'x'.repeat(100_001), agent: 'build', model })
     rejects(IpcChannels.chatCreate, { folderId: 'fld_1234', text: 'bell\u0007', agent: 'build', model })
     rejects(IpcChannels.chatCreate, { folderId: '../fld', text: 'Hi', agent: 'build', model })
@@ -267,4 +268,18 @@ describe('IPC payload boundary', () => {
       { ...nine, layout: 'sevenGrid', panes: panes(7), sizes: { columnRatio: 1 / 3, secondColumnRatio: 2 / 3, rowRatio: 0.5 } },
     ]) rejects(IpcChannels.tabsUpdate, update(value))
   })
+})
+
+
+it('rejects attachment paths, unknown operations, foreign shapes and oversized bytes', () => {
+  const valid = { key: 'thread:ses_one', action: 'add', name: 'screen.png', mime: 'image/png', data: new Uint8Array([1]) }
+  expect(() => assertIpcPayload(IpcChannels.chatDraft, valid)).not.toThrow()
+  for (const payload of [
+    { ...valid, key: 'thread:../outside' },
+    { ...valid, action: 'fetch' },
+    { ...valid, path: '/some/file' },
+    { ...valid, data: [1, 2] },
+    { ...valid, data: new Uint8Array(20 * 1024 * 1024 + 1) },
+    { key: 'folder:fld_one', action: 'tree', sessionId: 'source', path: '../secret' },
+  ]) expect(() => assertIpcPayload(IpcChannels.chatDraft, payload)).toThrow()
 })
