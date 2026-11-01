@@ -71,6 +71,16 @@ with activity you have not opened are bold with a dot, and the tab shows how man
 list can be searched by title, folder, branch and model, and filtered to All, Unread, Needs input
 or Archived. The context menu marks a thread read or unread, archives it, or deletes it.
 
+Opening a thread counts it as read, and so does something new happening in the thread you are
+looking at (the Inbox showing and the window in front), as with an open mail. Since that leaves no
+dot to see, the row glows and its status chip, in the list and in the thread's header, pops for
+about two seconds (`inboxCues` in the workspace store, `.inbox-cue` in `index.css`; with reduced
+motion only the glow remains). Only new activity counts: something that happens while the window is
+in the background leaves the thread unread until the window comes back to the front. A thread you
+mark unread by hand stays unread, even while it is the open one and after the window loses and
+regains focus, until you open it again (its row, or returning to the Inbox) or something new
+happens in it (`inboxMarkedUnread`).
+
 The Inbox works without the OpenCode status plugin or status reporting: it talks to OpenCode's
 background service directly (see Inbox chat). It is locked, with an explanation, anywhere MDE
 cannot reach that service: everywhere except macOS and Windows with WSL. The main area shows the

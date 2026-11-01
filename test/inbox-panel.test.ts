@@ -60,6 +60,8 @@ beforeEach(() => {
     wslAvailable: true,
     inboxThreads: [],
     selectedInboxThreadId: null,
+    inboxMarkedUnread: {},
+    inboxCues: {},
     activeWorkspaceView: 'inbox',
     settingsDialog: { open: false, section: 'appearance' }
   })
@@ -185,6 +187,40 @@ describe('Inbox', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('cues something new in the thread being read with a glow on its row and a pop of its chip, for a moment', async () => {
+    useWorkspace.setState({
+      inboxThreads: [thread({ status: 'completed', readAt: Date.now() }), thread({ id: 'ses_two', status: 'completed', readAt: Date.now() })],
+      inboxCues: { ses_one: Date.now() - 100, ses_two: Date.now() - 60_000 }
+    })
+    const panel = await render(createElement(InboxPanel))
+    const row = (id: string): Element => panel.querySelector(`[data-testid="inbox-thread-${id}"]`)!.parentElement!
+    expect(panel.querySelector('[data-testid="inbox-thread-cue-ses_one"]')).not.toBeNull()
+    expect(row('ses_one').querySelector('[data-testid="inbox-status-chip"]')?.classList.contains('inbox-cue-pop')).toBe(true)
+    // A cue that has run its course is not played again when the row is drawn anew.
+    expect(panel.querySelector('[data-testid="inbox-thread-cue-ses_two"]')).toBeNull()
+    expect(row('ses_two').querySelector('[data-testid="inbox-status-chip"]')?.classList.contains('inbox-cue-pop')).toBe(false)
+    // It is only a cue: the thread stays read.
+    expect(panel.querySelector('[data-unread]')).toBeNull()
+
+    // A newer cue replaces the element, which is what starts the animation again.
+    const first = panel.querySelector('[data-testid="inbox-thread-cue-ses_one"]')
+    await act(async () => useWorkspace.setState({ inboxCues: { ses_one: Date.now() + 1 } }))
+    expect(panel.querySelector('[data-testid="inbox-thread-cue-ses_one"]')).not.toBe(first)
+  })
+
+  it('counts the open thread as seen when the window comes back, unless it was marked unread by hand', async () => {
+    useWorkspace.setState({ inboxThreads: [thread()], selectedInboxThreadId: 'ses_one' })
+    await render(createElement(InboxThreadView))
+    expect(setRead).not.toHaveBeenCalled()
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
+    expect(setRead).toHaveBeenCalledWith({ id: 'ses_one', read: true })
+
+    setRead.mockClear()
+    useWorkspace.setState({ inboxMarkedUnread: { ses_one: true } })
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
+    expect(setRead).not.toHaveBeenCalled()
   })
 
   it('filters and searches the list', async () => {

@@ -36,6 +36,7 @@ import {
   INBOX_FILTERS,
   inboxFolderLabel,
   inboxLocked,
+  inboxCueActive,
   inboxModelLabel,
   inboxStatusChip,
   isInboxThreadUnread,
@@ -80,13 +81,19 @@ export function InboxStatusBadge({
   elapsed?: boolean
 }): JSX.Element | null {
   const chip = inboxStatusChip(thread)
+  const cueAt = useWorkspace((state) => state.inboxCues[thread.id])
   if (!chip) return null
+  const cued = inboxCueActive(cueAt)
   return (
     <span
+      // A new key replays the pop each time something new happens in the thread being read.
+      key={cued ? cueAt : 'still'}
       data-testid="inbox-status-chip"
+      data-cue={cued || undefined}
       className={cn(
         'inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-px text-[10px] font-medium',
-        CHIP_TONES[chip.tone]
+        CHIP_TONES[chip.tone],
+        cued && 'inbox-cue-pop'
       )}
     >
       {thread.status === 'working' && (
@@ -146,6 +153,7 @@ function InboxThreadRow({
   const [confirmingRemove, setConfirmingRemove] = useState(false)
   const unread = isInboxThreadUnread(thread)
   const model = inboxModelLabel(thread.model)
+  const cueAt = useWorkspace((state) => state.inboxCues[thread.id])
 
   return (
     <>
@@ -222,6 +230,14 @@ function InboxThreadRow({
           >
             {thread.archived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
           </button>
+          {inboxCueActive(cueAt) && (
+            <span
+              key={cueAt}
+              aria-hidden="true"
+              data-testid={`inbox-thread-cue-${thread.id}`}
+              className="inbox-cue pointer-events-none absolute inset-0 rounded"
+            />
+          )}
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>

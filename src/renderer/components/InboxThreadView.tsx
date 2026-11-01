@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Folder, GitBranch, LoaderCircle, RefreshCw, Sparkles } from 'lucide-react'
 import type { InboxThread } from '@shared/types'
 import {
@@ -82,7 +83,14 @@ export function InboxThreadView(): JSX.Element {
   const threads = useWorkspace((state) => state.inboxThreads)
   const selectedId = useWorkspace((state) => state.selectedInboxThreadId)
   const lock = useInboxLock()
+  const markSeen = useWorkspace((state) => state.markOpenInboxThreadSeen)
   const thread = threads.find((item) => item.id === selectedId) ?? null
+
+  // Coming back to the window counts as seeing what the open thread did meanwhile.
+  useEffect(() => {
+    window.addEventListener('focus', markSeen)
+    return () => window.removeEventListener('focus', markSeen)
+  }, [markSeen])
 
   if (lock) return <InboxLockedNotice />
   if (!thread) return <NewThreadView />

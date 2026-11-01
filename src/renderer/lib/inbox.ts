@@ -17,6 +17,14 @@ export function isInboxThreadUnread(thread: InboxThread): boolean {
   return thread.lastActivityAt > thread.readAt
 }
 
+/** How long the cue for new activity on the open thread lasts; its animations take about this long. */
+export const INBOX_CUE_MS = 2200
+
+/** Whether a cue started at `at` (a time from `Date.now()`) is still showing. */
+export function inboxCueActive(at: number | undefined, now = Date.now()): boolean {
+  return at !== undefined && now - at < INBOX_CUE_MS
+}
+
 /** Unread threads outside the archive, for the tab badge. */
 export function countUnreadInboxThreads(threads: readonly InboxThread[]): number {
   return threads.filter((thread) => !thread.archived && isInboxThreadUnread(thread)).length
