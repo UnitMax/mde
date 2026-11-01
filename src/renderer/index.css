@@ -373,6 +373,112 @@
     border-radius: 0.5rem;
     background-color: color-mix(in srgb, var(--color-accent) 8%, transparent);
   }
+
+  /*
+   * The diff of a file change in the Inbox chat. Added and removed lines are tinted from the
+   * theme's ok and danger colors, so every theme gets matching ones. The line numbers and signs
+   * cannot be selected, so copying a diff copies only the code.
+   */
+  .file-diff {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.55;
+    tab-size: 4;
+  }
+
+  /* Every row is as wide as the longest line, so a tint reaches the end when the diff scrolls sideways. */
+  .file-diff-lines {
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .file-diff-row {
+    display: flex;
+    min-height: 1.55em;
+  }
+
+  .file-diff-row[data-kind='add'] {
+    background-color: color-mix(in srgb, var(--color-ok) 13%, transparent);
+  }
+
+  .file-diff-row[data-kind='del'] {
+    background-color: color-mix(in srgb, var(--color-danger) 13%, transparent);
+  }
+
+  .file-diff-gutter {
+    flex: none;
+    padding: 0 0.5rem;
+    color: var(--color-fg-subtle);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    user-select: none;
+  }
+
+  .file-diff-row[data-kind='add'] .file-diff-gutter {
+    background-color: color-mix(in srgb, var(--color-ok) 9%, transparent);
+    color: color-mix(in srgb, var(--color-ok) 75%, var(--color-fg-subtle));
+  }
+
+  .file-diff-row[data-kind='del'] .file-diff-gutter {
+    background-color: color-mix(in srgb, var(--color-danger) 9%, transparent);
+    color: color-mix(in srgb, var(--color-danger) 75%, var(--color-fg-subtle));
+  }
+
+  /* A whole file written at once has no changes to pick out, so its lines are only lightly tinted. */
+  .file-diff[data-quiet] .file-diff-row[data-kind='add'] {
+    background-color: color-mix(in srgb, var(--color-ok) 5%, transparent);
+  }
+
+  .file-diff[data-quiet] .file-diff-row[data-kind='add'] .file-diff-gutter {
+    background-color: color-mix(in srgb, var(--color-ok) 8%, transparent);
+  }
+
+  .file-diff-sign {
+    flex: none;
+    width: 1.25rem;
+    color: var(--color-fg-subtle);
+    text-align: center;
+    user-select: none;
+  }
+
+  .file-diff-row[data-kind='add'] .file-diff-sign {
+    color: var(--color-ok);
+  }
+
+  .file-diff-row[data-kind='del'] .file-diff-sign {
+    color: var(--color-danger);
+  }
+
+  .file-diff-code {
+    flex: 1 0 auto;
+    padding-right: 0.75rem;
+    color: var(--color-fg);
+    white-space: pre;
+  }
+
+  /* The words that changed within a line stand out from the rest of its tint. */
+  .file-diff-emphasis {
+    border-radius: 2px;
+  }
+
+  .file-diff-row[data-kind='add'] .file-diff-emphasis {
+    background-color: color-mix(in srgb, var(--color-ok) 34%, transparent);
+  }
+
+  .file-diff-row[data-kind='del'] .file-diff-emphasis {
+    background-color: color-mix(in srgb, var(--color-danger) 34%, transparent);
+  }
+
+  .file-diff-gap {
+    display: flex;
+    height: 1.5rem;
+    align-items: center;
+    padding: 0 0.5rem;
+    background-color: color-mix(in srgb, var(--color-accent) 7%, transparent);
+    color: var(--color-fg-subtle);
+    font-size: 11px;
+    user-select: none;
+  }
 }
 
 @keyframes mde-menu-in {

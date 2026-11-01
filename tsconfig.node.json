@@ -98,6 +98,9 @@
     "src/renderer/components/SettingsDialog.tsx",
     "src/renderer/components/inbox/*.tsx",
     "src/renderer/lib/chat.ts",
+    "src/renderer/lib/diff.ts",
+    "src/renderer/lib/diff-highlight.ts",
+    "src/renderer/lib/syntax-style.ts",
     "src/renderer/store/inbox-chat.ts",
     "src/shared/**/*",
     "test/**/*"

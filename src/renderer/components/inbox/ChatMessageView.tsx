@@ -1,19 +1,12 @@
-import { memo, useState } from 'react'
-import {
-  AlertTriangle,
-  Brain,
-  Check,
-  ChevronRight,
-  CircleDashed,
-  Info,
-  LoaderCircle,
-  Wrench,
-  X,
-} from 'lucide-react'
+import { memo, useMemo, useState } from 'react'
+import { AlertTriangle, Brain, ChevronRight, Info, LoaderCircle, Wrench } from 'lucide-react'
 import type { ChatMessage, ChatPart } from '@shared/types'
+import { FileChangeView } from '@/components/inbox/ChatFileChange'
 import { ChatMarkdown } from '@/components/inbox/ChatMarkdown'
 import { SubagentGroup } from '@/components/inbox/ChatSubagents'
+import { ToolIcon } from '@/components/inbox/ToolIcon'
 import { messageBlocks, toolSummary } from '@/lib/chat'
+import { toolFileChanges } from '@/lib/diff'
 import { cn } from '@/lib/utils'
 
 function Disclosure({
@@ -63,14 +56,16 @@ function CodeBlock({ label, text }: { label: string; text: string }): JSX.Elemen
   )
 }
 
-function ToolIcon({ status }: { status: Extract<ChatPart, { kind: 'tool' }>['status'] }): JSX.Element {
-  if (status === 'completed') return <Check className="h-3.5 w-3.5 shrink-0 text-ok" />
-  if (status === 'error') return <X className="h-3.5 w-3.5 shrink-0 text-danger" />
-  if (status === 'running') return <LoaderCircle className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
-  return <CircleDashed className="h-3.5 w-3.5 shrink-0 text-fg-subtle" />
-}
-
 export function ToolCallView({ part, directory }: { part: Extract<ChatPart, { kind: 'tool' }>; directory: string }): JSX.Element {
+  // A fresh fetch brings new objects with the same content; the diff is only worked out again when the content changes.
+  const patches = part.patches?.map((patch) => `${patch.path}\u0000${patch.patch}`).join('\u0001')
+  const changes = useMemo(
+    () => toolFileChanges(part),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [part.name, part.status, part.input, patches, part.existed],
+  )
+  // A failed edit keeps the plain row, which carries OpenCode's reason.
+  if (changes && part.status !== 'error') return <FileChangeView part={part} changes={changes} directory={directory} />
   return (
     <Disclosure
       testId={`chat-tool-${part.id}`}

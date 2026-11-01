@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { ChatPart } from '../src/shared/types'
 import {
   OpenCodeServiceClient,
   OpenCodeServiceError,
@@ -355,6 +356,63 @@ describe('OpenCode service parsing', () => {
     expect(tool).toMatchObject({ kind: 'tool', truncated: true })
     expect(tool?.kind === 'tool' && tool.output?.length).toBe(CHAT_TOOL_TEXT_LIMIT)
     expect(tool?.kind === 'tool' && tool.output?.includes('\u001b')).toBe(false)
+  })
+
+  describe('file changes', () => {
+    const patch = [
+      'Index: /home/me/app/src/a.ts', '='.repeat(67), '--- /home/me/app/src/a.ts', '+++ /home/me/app/src/a.ts',
+      '@@ -1,3 +1,3 @@', ' const a = 1', '-const b = 2', '+const b = 3', ' const c = 4', '',
+    ].join('\n')
+    const edit = (state: Record<string, unknown>) => parseMessage({
+      id: 'msg_1', type: 'assistant', agent: 'build', model: { id: 'm', providerID: 'p' }, time: { created: 1 },
+      content: [{ type: 'tool', id: 'call_1', name: 'edit', time: { created: 1 }, state: { input: { filePath: '/home/me/app/src/a.ts' }, ...state } }],
+    })
+    const tool = (message: ReturnType<typeof edit>) => (message?.kind === 'assistant' ? message.parts[0] : null) as
+      Extract<ChatPart, { kind: 'tool' }> | null
+
+    it('reads the diff of a finished edit from either shape OpenCode has used', () => {
+      const single = tool(edit({ status: 'completed', content: [], metadata: { diff: patch, filediff: { file: '/home/me/app/src/a.ts', patch, additions: 1, deletions: 1 } } }))
+      expect(single?.patches).toEqual([{ path: '/home/me/app/src/a.ts', patch }])
+      const several = tool(edit({ status: 'completed', content: [], metadata: { files: [
+        { file: 'src/a.ts', patch, status: 'modified' }, { file: 'src/b.ts', patch, status: 'added' }, { file: 'src/empty.ts', patch: '  ' }, { patch },
+      ] } }))
+      expect(several?.patches?.map((entry) => entry.path)).toEqual(['src/a.ts', 'src/b.ts'])
+      expect(several).not.toHaveProperty('truncated')
+    })
+
+    it('shows no diff for an edit that has not finished or failed', () => {
+      const metadata = { filediff: { file: 'src/a.ts', patch } }
+      expect(tool(edit({ status: 'running', metadata }))).not.toHaveProperty('patches')
+      expect(tool(edit({ status: 'error', error: { message: 'No match' }, metadata }))).not.toHaveProperty('patches')
+      expect(tool(edit({ status: 'completed', content: [] }))).not.toHaveProperty('patches')
+      expect(tool(edit({ status: 'completed', content: [], metadata: { filediff: 'nope', files: 'nope' } }))).not.toHaveProperty('patches')
+    })
+
+    it('cuts one huge diff, and caps how many files and how much text a call carries', () => {
+      const huge = tool(edit({ status: 'completed', metadata: { filediff: { file: 'src/a.ts', patch: `@@ -1 +1 @@\n+${'x'.repeat(CHAT_TOOL_TEXT_LIMIT)}` } } }))
+      expect(huge?.patches?.[0]?.patch).toHaveLength(CHAT_TOOL_TEXT_LIMIT)
+      expect(huge?.truncated).toBe(true)
+
+      const many = tool(edit({ status: 'completed', metadata: { files: Array.from({ length: 30 }, (_, index) => ({ file: `src/${index}.ts`, patch })) } }))
+      expect(many?.patches).toHaveLength(20)
+      expect(many?.truncated).toBe(true)
+
+      const big = 'y'.repeat(CHAT_TOOL_TEXT_LIMIT - 20)
+      const total = tool(edit({ status: 'completed', metadata: { files: Array.from({ length: 8 }, (_, index) => ({ file: `src/${index}.ts`, patch: big })) } }))
+      expect(total?.patches?.reduce((sum, entry) => sum + entry.patch.length, 0)).toBeLessThanOrEqual(256 * 1024)
+      expect(total?.truncated).toBe(true)
+    })
+
+    it('remembers whether a written file was already there', () => {
+      const write = (state: Record<string, unknown>) => tool(parseMessage({
+        id: 'msg_1', type: 'assistant', agent: 'build', model: { id: 'm', providerID: 'p' }, time: { created: 1 },
+        content: [{ type: 'tool', id: 'call_1', name: 'write', time: { created: 1 }, state: { input: { filePath: 'a.md', content: 'Hi' }, ...state } }],
+      }))
+      expect(write({ status: 'completed', metadata: { exists: true } })?.existed).toBe(true)
+      expect(write({ status: 'completed', metadata: { exists: false } })?.existed).toBe(false)
+      expect(write({ status: 'completed', metadata: { truncated: false } })).not.toHaveProperty('existed')
+      expect(write({ status: 'running', metadata: { exists: true } })).not.toHaveProperty('existed')
+    })
   })
 
   it('maps permission requests and question forms', () => {

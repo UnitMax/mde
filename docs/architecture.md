@@ -124,6 +124,24 @@ follow-up switches the session's agent or model first only when you changed them
 keeps the last ten opened threads in memory so going back to one is instant; MDE never writes
 messages to disk.
 
+**File changes.** The `edit` and `write` tools are drawn as diffs instead of raw JSON, one card per
+file (`ChatFileChange`): a header with the verb ("Edited", "Created", "Overwrote"), the path
+relative to the thread's folder, and `+added −removed` counts, then the lines with a line-number
+gutter, green and red tints taken from the theme's `ok` and `danger` colors, a mark on the words
+that changed within a line, and syntax colors from the same table as the file viewer
+(`lib/syntax-style.ts`). Each side of a hunk is colored as its own piece of code, so a comment or
+string spanning lines reads right; a language that is unknown or too big shows plain. The card is
+open by default and folds from its header; a diff over 40 lines starts at 28 with "Show N more
+lines". A whole file written at once is only lightly tinted. For a finished edit the diff is the
+one OpenCode reports in the tool's metadata (`filediff`, or `files` when it lists several), kept
+by `parse.ts` as a unified diff capped at 64 KB per file and 256 KB per call, which gives exact
+line numbers and context. While an edit runs, or waits for permission above the permission card,
+there is no such diff yet, so the diff is worked out in the renderer from the call's own
+`oldString` and `newString` (`lib/diff.ts`), without line numbers. A write has no diff in
+OpenCode's metadata, so its content is shown as additions, and only whether the file already
+existed is known (once the tool has finished). A failed edit keeps the plain row with OpenCode's
+reason, and every other tool is unchanged.
+
 **Context usage.** Once a step of the conversation has finished, a pill in the composer's bottom
 row, left of the send button, shows how full the model's context window is: a five-segment gauge
 and a token count (`ContextMeter`). The count is the newest finished assistant step's own tokens

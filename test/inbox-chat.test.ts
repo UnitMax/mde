@@ -224,6 +224,141 @@ describe('Inbox conversation', () => {
     await vi.waitFor(() => expect(api.chat.send).toHaveBeenCalledWith({ threadId: 'ses_one', text: 'Thanks' }))
   })
 
+  describe('file changes', () => {
+    const model = options.defaultModel!
+    const patch = [
+      'Index: /home/me/app/src/auth.ts', '='.repeat(67), '--- /home/me/app/src/auth.ts', '+++ /home/me/app/src/auth.ts',
+      '@@ -8,5 +8,5 @@', ' export function total(items: string[]) {', '-  return items.length', '+  return items.size', ' }', ' ', ' export const limit = 3', '',
+    ].join('\n')
+    type Tool = Extract<ChatMessagesPage['messages'][number], { kind: 'assistant' }>['parts'][number]
+    const assistant = (...parts: Tool[]): ChatMessagesPage['messages'][number] =>
+      ({ kind: 'assistant', id: 'msg_2', time: 2, agent: 'build', model, completed: true, parts })
+    const edit = (overrides: Record<string, unknown> = {}): Tool => ({
+      kind: 'tool', id: 'call_1', name: 'edit', status: 'completed',
+      input: JSON.stringify({ filePath: '/home/me/app/src/auth.ts', oldString: '  return items.length', newString: '  return items.size' }),
+      output: 'Edited auth.ts (1 replacement)',
+      patches: [{ path: '/home/me/app/src/auth.ts', patch }],
+      ...overrides,
+    } as Tool)
+    const card = (view: HTMLElement): HTMLElement | null => view.querySelector('[data-testid="chat-diff"]')
+    const rows = (view: HTMLElement): { kind: string | null; text: string }[] =>
+      Array.from(view.querySelectorAll('.file-diff-row')).map((row) => ({ kind: row.getAttribute('data-kind'), text: row.querySelector('.file-diff-code')?.textContent ?? '' }))
+
+    it('draws a finished edit as a numbered diff instead of raw JSON', async () => {
+      page = { running: false, older: null, messages: [assistant(edit())] }
+      const view = await render()
+      await vi.waitFor(() => expect(card(view)).not.toBeNull())
+      expect(card(view)?.getAttribute('aria-label')).toBe('Edited src/auth.ts')
+      expect(view.querySelector('.file-diff[data-quiet]')).toBeNull()
+      expect(card(view)?.querySelector('[data-testid="chat-diff-stats"]')?.textContent).toBe('+1−1')
+      expect(rows(view)).toEqual([
+        { kind: 'context', text: 'export function total(items: string[]) {' },
+        { kind: 'del', text: '  return items.length' },
+        { kind: 'add', text: '  return items.size' },
+        { kind: 'context', text: '}' },
+        { kind: 'context', text: '' },
+        { kind: 'context', text: 'export const limit = 3' },
+      ])
+      // The numbers: a deleted line has its old number, the others their new one.
+      expect(Array.from(view.querySelectorAll('.file-diff-gutter')).map((cell) => cell.textContent)).toEqual(['8', '9', '9', '10', '11', '12'])
+      expect(view.textContent).not.toContain('oldString')
+      expect(view.textContent).not.toContain('Index:')
+    })
+
+    it('marks the words that changed within a line', async () => {
+      page = { running: false, older: null, messages: [assistant(edit())] }
+      const view = await render()
+      await vi.waitFor(() => expect(card(view)).not.toBeNull())
+      const marked = Array.from(view.querySelectorAll('.file-diff-row')).map((row) =>
+        Array.from(row.querySelectorAll('.file-diff-emphasis')).map((span) => span.textContent).join(''))
+      expect(marked).toEqual(['', 'length', 'size', '', '', ''])
+    })
+
+    it('colors the code by its language once that has loaded', async () => {
+      page = { running: false, older: null, messages: [assistant(edit())] }
+      const view = await render()
+      await vi.waitFor(() => expect(view.querySelector('.file-diff-row[data-kind="del"]')?.innerHTML).toContain('--color-syntax-keyword'))
+      // Colors never change the text.
+      expect(rows(view)[1]!.text).toBe('  return items.length')
+    })
+
+    it('shows an edit that waits for permission with the change it asks for', async () => {
+      page = { running: true, older: null, messages: [assistant(edit({ status: 'running', patches: undefined, output: undefined }))] }
+      requests = { permissions: [{ id: 'per_1', action: 'edit', resources: ['src/auth.ts'] }], forms: [] }
+      const view = await render()
+      await vi.waitFor(() => expect(card(view)).not.toBeNull())
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-permission-per_1"]')).not.toBeNull())
+      expect(card(view)?.getAttribute('aria-label')).toBe('Editing src/auth.ts')
+      expect(rows(view)).toEqual([{ kind: 'del', text: '  return items.length' }, { kind: 'add', text: '  return items.size' }])
+      // Without OpenCode's diff there are no line numbers.
+      expect(view.querySelector('.file-diff-gutter')).toBeNull()
+    })
+
+    it('folds the diff away from its header', async () => {
+      page = { running: false, older: null, messages: [assistant(edit())] }
+      const view = await render()
+      await vi.waitFor(() => expect(card(view)).not.toBeNull())
+      const header = card(view)!.querySelector('button')!
+      expect(header.getAttribute('aria-expanded')).toBe('true')
+      await act(async () => header.click())
+      expect(header.getAttribute('aria-expanded')).toBe('false')
+      expect(view.querySelector('.file-diff-row')).toBeNull()
+      expect(card(view)?.textContent).toContain('src/auth.ts')
+      await act(async () => header.click())
+      expect(view.querySelectorAll('.file-diff-row')).toHaveLength(6)
+    })
+
+    it('shows a written file as additions, and says whether it replaced one', async () => {
+      const write = (existed: boolean | undefined): Tool => ({
+        kind: 'tool', id: 'call_2', name: 'write', status: 'completed',
+        input: JSON.stringify({ filePath: '/home/me/app/NOTES.md', content: '# Notes\n\nHello\n' }),
+        ...(existed === undefined ? {} : { existed }),
+      } as Tool)
+      page = { running: false, older: null, messages: [assistant(write(false))] }
+      const view = await render()
+      await vi.waitFor(() => expect(card(view)).not.toBeNull())
+      expect(card(view)?.getAttribute('aria-label')).toBe('Created NOTES.md')
+      expect(card(view)?.querySelector('[data-testid="chat-diff-stats"]')?.textContent).toBe('+3')
+      expect(rows(view).map((row) => row.kind)).toEqual(['add', 'add', 'add'])
+      // A whole file is tinted lightly; an edit's changed lines are not.
+      expect(view.querySelector('.file-diff[data-quiet]')).not.toBeNull()
+      expect(Array.from(view.querySelectorAll('.file-diff-gutter')).map((cell) => cell.textContent)).toEqual(['1', '2', '3'])
+
+      page = { running: false, older: null, messages: [assistant(write(true))] }
+      await act(async () => { useInboxChat.getState().applyEvent({ type: 'messages', threadId: 'ses_one' }) })
+      await vi.waitFor(() => expect(card(view)?.getAttribute('aria-label')).toBe('Overwrote NOTES.md'))
+    })
+
+    it('keeps the plain row, with the reason, for an edit that failed', async () => {
+      page = { running: false, older: null, messages: [assistant(edit({ status: 'error', patches: undefined, output: undefined, error: 'Found 2 matches for oldString' }))] }
+      const view = await render()
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-tool-call_1"]')).not.toBeNull())
+      expect(card(view)).toBeNull()
+      expect(view.querySelector('[data-testid="chat-tool-call_1"]')?.textContent).toContain('Found 2 matches for oldString')
+    })
+
+    it('shortens a long diff and shows the rest on request', async () => {
+      const body = Array.from({ length: 60 }, (_, index) => `line ${index}`).join('\n')
+      const write: Tool = { kind: 'tool', id: 'call_3', name: 'write', status: 'completed', input: JSON.stringify({ filePath: '/home/me/app/long.txt', content: body }), existed: false }
+      page = { running: false, older: null, messages: [assistant(write)] }
+      const view = await render()
+      await vi.waitFor(() => expect(card(view)).not.toBeNull())
+      expect(view.querySelectorAll('.file-diff-row')).toHaveLength(28)
+      expect(button(view, 'Show 32 more lines')).toBeTruthy()
+      await act(async () => button(view, 'Show 32 more lines').click())
+      expect(view.querySelectorAll('.file-diff-row')).toHaveLength(60)
+      expect(() => button(view, 'Show 32 more lines')).toThrow()
+    })
+
+    it('leaves other tools as they were', async () => {
+      page = { running: false, older: null, messages: [assistant({ kind: 'tool', id: 'call_4', name: 'read', status: 'completed', input: '{"path":"/home/me/app/src/auth.ts"}', output: 'x' })] }
+      const view = await render()
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-tool-call_4"]')).not.toBeNull())
+      expect(card(view)).toBeNull()
+      expect(view.querySelector('[data-testid="chat-tool-call_4"]')?.textContent).toContain('Read src/auth.ts')
+    })
+  })
+
   describe('context usage', () => {
     const windowed: ChatOptions = {
       ...options,

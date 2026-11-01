@@ -339,6 +339,12 @@ export interface ChatUsage {
 
 export type ChatToolStatus = 'pending' | 'running' | 'completed' | 'error'
 
+/** One file's change as OpenCode reports it: a unified diff, possibly truncated. */
+export interface ChatFilePatch {
+  path: string
+  patch: string
+}
+
 export type ChatPart =
   | { kind: 'text'; text: string }
   | { kind: 'reasoning'; text: string }
@@ -353,6 +359,10 @@ export type ChatPart =
       output?: string
       error?: string
       truncated?: boolean
+      /** What an edit changed, once the tool has finished. */
+      patches?: ChatFilePatch[]
+      /** For a file write: whether the file was already there. Known once the tool has finished. */
+      existed?: boolean
     }
 
 export type ChatMessage =

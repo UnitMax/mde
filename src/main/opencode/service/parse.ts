@@ -4,6 +4,7 @@ import type {
   ChatFormField,
   ChatFormOption,
   ChatMessage,
+  ChatFilePatch,
   ChatMessagesPage,
   ChatModel,
   ChatPart,
@@ -176,6 +177,34 @@ function toolOutput(content: unknown): { text: string; truncated: boolean } {
   return body(texts.join('\n'), CHAT_TOOL_TEXT_LIMIT)
 }
 
+/** A tool call shows at most this many changed files, and this much diff text in all. */
+const MAX_PATCH_FILES = 20
+const MAX_PATCH_TOTAL = 256 * 1024
+
+/**
+ * The diffs an edit tool reports in its metadata. OpenCode has sent them as `filediff` (one file)
+ * and as `files` (a list); both hold the file's path and a unified diff.
+ */
+function parsePatches(metadata: Json | null): { patches: ChatFilePatch[]; truncated: boolean } {
+  const entries = Array.isArray(metadata?.files) ? metadata.files : metadata?.filediff ? [metadata.filediff] : []
+  const patches: ChatFilePatch[] = []
+  let budget = MAX_PATCH_TOTAL
+  let truncated = entries.length > MAX_PATCH_FILES
+  for (const entry of entries.slice(0, MAX_PATCH_FILES)) {
+    const file = record(entry)
+    const path = short(file?.file, 4096)
+    const patch = body(file?.patch, Math.min(CHAT_TOOL_TEXT_LIMIT, budget))
+    if (!path || !patch.text.trim()) continue
+    patches.push({ path, patch: patch.text })
+    budget -= patch.text.length
+    if (patch.truncated || budget <= 0) {
+      truncated = true
+      if (budget <= 0) break
+    }
+  }
+  return { patches, truncated }
+}
+
 function parsePart(value: unknown): ChatPart | null {
   const part = record(value)
   if (!part) return null
@@ -198,6 +227,8 @@ function parsePart(value: unknown): ChatPart | null {
   const input = toolInput(state.input)
   const output = toolOutput(state.content)
   const error = status === 'error' ? errorText(state.error) : undefined
+  const metadata = record(state.metadata)
+  const changes = status === 'completed' ? parsePatches(metadata) : { patches: [], truncated: false }
   return {
     kind: 'tool',
     id,
@@ -206,7 +237,9 @@ function parsePart(value: unknown): ChatPart | null {
     input: input.text,
     ...(output.text ? { output: output.text } : {}),
     ...(error ? { error } : {}),
-    ...(input.truncated || output.truncated ? { truncated: true } : {}),
+    ...(input.truncated || output.truncated || changes.truncated ? { truncated: true } : {}),
+    ...(changes.patches.length > 0 ? { patches: changes.patches } : {}),
+    ...(status === 'completed' && typeof metadata?.exists === 'boolean' ? { existed: metadata.exists } : {}),
   }
 }
 
