@@ -65,6 +65,17 @@
     user-select: text;
   }
 
+  /* Chat messages can be selected and copied; the controls inside them stay plain buttons. */
+  .chat-selectable,
+  .chat-selectable * {
+    user-select: text;
+  }
+
+  .chat-selectable button,
+  .chat-selectable button * {
+    user-select: none;
+  }
+
   :focus-visible {
     outline: 2px solid var(--color-accent);
     outline-offset: 1px;

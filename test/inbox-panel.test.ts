@@ -121,6 +121,18 @@ describe('Inbox', () => {
     expect(main.querySelector('[data-testid="chat-composer"]')).not.toBeNull()
   })
 
+  it('archives a thread straight from its row and shows a spinner while it works', async () => {
+    useWorkspace.setState({ inboxThreads: [thread({ status: 'working' })] })
+    const panel = await render(createElement(InboxPanel))
+    expect(panel.querySelector('[data-testid="inbox-status-chip"] svg.animate-spin')).not.toBeNull()
+    const archive = panel.querySelector<HTMLButtonElement>('[data-testid="inbox-thread-archive-ses_one"]')!
+    expect(archive.getAttribute('aria-label')).toBe('Archive')
+    await act(async () => archive.click())
+    expect(window.api.inbox.setArchived).toHaveBeenCalledWith({ id: 'ses_one', archived: true })
+    // The row itself is not clicked, so the thread is not opened.
+    expect(useWorkspace.getState().selectedInboxThreadId).toBeNull()
+  })
+
   it('filters and searches the list', async () => {
     useWorkspace.setState({
       inboxThreads: [

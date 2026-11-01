@@ -4,6 +4,7 @@ import {
   ArchiveRestore,
   Folder,
   GitBranch,
+  LoaderCircle,
   Lock,
   Mail,
   MailOpen,
@@ -79,8 +80,17 @@ export function InboxStatusBadge({ thread }: { thread: InboxThread }): JSX.Eleme
   return (
     <span
       data-testid="inbox-status-chip"
-      className={cn('shrink-0 rounded px-1.5 py-px text-[10px] font-medium', CHIP_TONES[chip.tone])}
+      className={cn(
+        'inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-px text-[10px] font-medium',
+        CHIP_TONES[chip.tone]
+      )}
     >
+      {thread.status === 'working' && (
+        <LoaderCircle
+          aria-hidden="true"
+          className="h-2.5 w-2.5 animate-spin text-accent motion-reduce:animate-none"
+        />
+      )}
       {chip.label}
     </span>
   )
@@ -141,6 +151,7 @@ function InboxThreadRow({
     <>
       <ContextMenu>
         <ContextMenuTrigger asChild>
+          <div className="group relative">
           <button
             type="button"
             data-testid={`inbox-thread-${thread.id}`}
@@ -170,7 +181,7 @@ function InboxThreadRow({
               <time
                 dateTime={new Date(thread.lastActivityAt).toISOString()}
                 title={sessionDate(thread.lastActivityAt)}
-                className="shrink-0 text-[11px] text-fg-subtle"
+                className="shrink-0 text-[11px] text-fg-subtle group-hover:invisible"
               >
                 {sessionAge(thread.lastActivityAt, now)}
               </time>
@@ -201,6 +212,17 @@ function InboxThreadRow({
               </span>
             )}
           </button>
+          <button
+            type="button"
+            data-testid={`inbox-thread-archive-${thread.id}`}
+            aria-label={thread.archived ? 'Move to Inbox' : 'Archive'}
+            title={thread.archived ? 'Move to Inbox' : 'Archive'}
+            onClick={() => void setArchived(thread.id, !thread.archived)}
+            className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded text-fg-muted opacity-0 transition-opacity hover:bg-active hover:text-fg focus-visible:bg-active focus-visible:opacity-100 group-hover:opacity-100"
+          >
+            {thread.archived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
+          </button>
+          </div>
         </ContextMenuTrigger>
         <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
           <ContextMenuItem onSelect={() => void setRead(thread.id, unread)}>

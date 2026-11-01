@@ -86,7 +86,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="chat-thread">
-      <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto" data-testid="chat-transcript">
+      <div ref={scrollRef} onScroll={onScroll} className="chat-selectable min-h-0 flex-1 overflow-y-auto" data-testid="chat-transcript">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-6 py-5">
           {state?.older && (
             <button
