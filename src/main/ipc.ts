@@ -850,7 +850,7 @@ export function registerIpcHandlers(
     if (!req || typeof req.sessionId !== 'string' || !req.sessionId || typeof req.path !== 'string') {
       throw new Error('Invalid file tree request.')
     }
-    const session = await getSession(req.sessionId)
+    const session = (await getSession(req.sessionId)) ?? chat.fileRoot(req.sessionId)
     if (!session) throw new Error('Session no longer exists.')
     return listSessionDirectory(session, req.path)
   })
@@ -859,7 +859,7 @@ export function registerIpcHandlers(
     if (!req || typeof req.sessionId !== 'string' || !req.sessionId || typeof req.path !== 'string') {
       throw new Error('Invalid file read request.')
     }
-    const session = await getSession(req.sessionId)
+    const session = (await getSession(req.sessionId)) ?? chat.fileRoot(req.sessionId)
     if (!session) throw new Error('Session no longer exists.')
     return readSessionFile(session, req.path)
   })

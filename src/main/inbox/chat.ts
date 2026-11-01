@@ -17,6 +17,7 @@ import type {
   InboxThread,
   OpenCodeModelRef,
   OpenCodePluginTarget,
+  Session,
 } from '@shared/types'
 import type { OpenCodeServiceClient } from '../opencode/service/client'
 import { serviceTargetKey } from '../opencode/service/discovery'
@@ -389,6 +390,27 @@ export class InboxChatService {
       if (agents.length > 0) return agents
       if (attempt >= AGENT_ATTEMPTS) throw new Error('OpenCode has not finished loading this folder yet. Try again in a moment.')
       await sleep(AGENT_RETRY_MS)
+    }
+  }
+
+  /**
+   * The directory behind a folder or thread ID, shaped like a session so the file tree and viewer
+   * can list and read it. Only the directory fields are meaningful; null for anything else.
+   */
+  fileRoot(id: string): Session | null {
+    const source = id.startsWith('fld_')
+      ? this.dependencies.store.folder(id)
+      : id.startsWith('ses_') ? this.dependencies.store.get(id) : null
+    if (!source) return null
+    const target = source.target
+    return {
+      id,
+      projectId: '',
+      name: 'name' in source ? source.name : folderName(source.directory),
+      kind: target.kind,
+      ...(target.kind === 'wsl' ? { distro: target.distro } : {}),
+      path: source.directory,
+      createdAt: '',
     }
   }
 

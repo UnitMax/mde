@@ -19,7 +19,6 @@ import {
   Minimize2,
   Plus,
   RotateCw,
-  Settings2,
   X
 } from 'lucide-react'
 import type { FileTreeDropEntry } from '@shared/ipc'
@@ -1138,23 +1137,6 @@ function TerminalResizeHandle({
   )
 }
 
-function SettingsButton(): JSX.Element {
-  const openSettings = useWorkspace((state) => state.openSettings)
-  return (
-    <button
-      type="button"
-      aria-label="Change settings"
-      data-testid="terminal-settings-control"
-      title="Settings"
-      onClick={() => openSettings()}
-      className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded px-2 text-xs text-fg-subtle hover:bg-hover hover:text-fg"
-    >
-      <Settings2 className="h-3.5 w-3.5" />
-      Settings
-    </button>
-  )
-}
-
 function SessionTabStrip({
   session,
   activeTab,
@@ -1880,8 +1862,6 @@ export function TerminalView({
             </button>
           ))}
         </div>
-        <SettingsButton />
-
       </header>
 
       <div

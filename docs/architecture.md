@@ -56,7 +56,7 @@ status.
 
 The Settings dialog is a single dialog mounted by `App` (`src/renderer/components/SettingsDialog.tsx`)
 and opened through the workspace store's `openSettings(section)`, so any view can open it at a
-given section. The Settings button above the terminals opens it at Appearance.
+given section. The Settings button in the title bar, next to the mini agents button, opens it at Appearance and is available in every mode.
 
 ### Inbox
 
@@ -105,6 +105,8 @@ projects, sessions and terminals in `workspace.json`. Inbox mode keeps its own l
 `inbox.json` and never reads or changes projects or sessions. An Inbox folder is a directory and a
 target: the Mac, or a WSL distro on Windows, where only WSL paths are accepted because OpenCode
 runs there.
+
+The Inbox also shows the Files sidebar for the open thread's folder, or for the folder a new thread starts in. It is the same tree and viewer as in Projects mode, but browse-only: the VS Code and File Explorer buttons are hidden. The renderer passes the thread's or folder's own ID to `files:list` and `files:read`; the main process looks it up in the Inbox store when no workspace session has that ID.
 
 **New thread.** "New thread" at the top of the Inbox, or selecting nothing, shows "What should we
 build in ‹folder›?". The folder name opens a menu of the Inbox folders with Add folder… and

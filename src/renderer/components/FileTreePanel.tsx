@@ -49,7 +49,15 @@ function statusText(row: Exclude<FileTreeRow, FileTreeEntryRow>): string {
   return row.message ?? 'Could not list folder.'
 }
 
-function FileTree({ session, onCollapse }: { session: Session; onCollapse: () => void }): JSX.Element {
+function FileTree({
+  session,
+  onCollapse,
+  browseOnly
+}: {
+  session: Session
+  onCollapse: () => void
+  browseOnly: boolean
+}): JSX.Element {
   const [cache, setCache] = useState<Map<string, FileTreeDirectoryState>>(() => new Map())
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   const [focusedPath, setFocusedPath] = useState<string | null>(null)
@@ -66,7 +74,7 @@ function FileTree({ session, onCollapse }: { session: Session; onCollapse: () =>
   const isWindows = useWorkspace((state) => state.platform?.isWindows === true)
   const wslAvailable = useWorkspace((state) => state.wslAvailable)
   // Main only hands WSL folders to VS Code, matching the terminal header button.
-  const canOpenInVsCode = isWindows && wslAvailable && session.kind === 'wsl' && Boolean(session.distro)
+  const canOpenInVsCode = !browseOnly && isWindows && wslAvailable && session.kind === 'wsl' && Boolean(session.distro)
 
   const load = useCallback(
     async (path: string): Promise<void> => {
@@ -195,16 +203,18 @@ function FileTree({ session, onCollapse }: { session: Session; onCollapse: () =>
             <Code className="h-3.5 w-3.5" />
           </Button>
         )}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="shrink-0"
-          onClick={() => void revealSession(session.id)}
-          title="Open folder in File Explorer"
-          aria-label="Open folder in File Explorer"
-        >
-          <FolderOpen className="h-3.5 w-3.5" />
-        </Button>
+        {!browseOnly && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="shrink-0"
+            onClick={() => void revealSession(session.id)}
+            title="Open folder in File Explorer"
+            aria-label="Open folder in File Explorer"
+          >
+            <FolderOpen className="h-3.5 w-3.5" />
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon-sm"
@@ -318,7 +328,17 @@ function FileTree({ session, onCollapse }: { session: Session; onCollapse: () =>
   )
 }
 
-export function FileTreePanel({ session }: { session: Session }): JSX.Element {
+/**
+ * The files of a session. `browseOnly` is for folders MDE does not manage as sessions (the Inbox):
+ * the tree and viewer work, but opening the folder in VS Code or the file manager does not.
+ */
+export function FileTreePanel({
+  session,
+  browseOnly = false
+}: {
+  session: Session
+  browseOnly?: boolean
+}): JSX.Element {
   const collapsed = useWorkspace((state) => state.fileTreeCollapsed)
   const toggleFileTree = useWorkspace((state) => state.toggleFileTree)
 
@@ -338,5 +358,5 @@ export function FileTreePanel({ session }: { session: Session }): JSX.Element {
     )
   }
 
-  return <FileTree key={session.id} session={session} onCollapse={toggleFileTree} />
+  return <FileTree key={session.id} session={session} onCollapse={toggleFileTree} browseOnly={browseOnly} />
 }

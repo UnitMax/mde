@@ -63,6 +63,19 @@ describe('Inbox chat service', () => {
     expect(service.folders()).toEqual({ folders: [], composer: {} })
   })
 
+  it('resolves a folder or thread ID to its directory for the file tree', async () => {
+    const { service, folder } = setup({ 'session.create': { data: { id: 'ses_new', title: 'New session' } } })
+    expect(service.fileRoot(folder.id)).toEqual({
+      id: 'fld_abc', projectId: '', name: 'app', kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/app', createdAt: '',
+    })
+    await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+    expect(service.fileRoot('ses_new')).toMatchObject({ id: 'ses_new', kind: 'wsl', path: '/home/me/app' })
+    expect(service.fileRoot('ses_gone')).toBeNull()
+    expect(service.fileRoot('fld_gone')).toBeNull()
+    expect(service.fileRoot('other')).toBeNull()
+    service.stop()
+  })
+
   it('loads agents and models for the folder and caches them', async () => {
     const { service, folder, calls } = setup({
       'agent.list': { data: [{ id: 'plan', name: 'Plan', mode: 'primary' }, { id: 'build', name: 'Build', mode: 'primary' }] },

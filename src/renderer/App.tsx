@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { PictureInPicture2, Plus, Terminal } from 'lucide-react'
+import { PictureInPicture2, Plus, Settings2, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AddSessionDialog } from '@/components/AddProjectDialog'
 import { GitDialog } from '@/components/GitDialog'
@@ -14,6 +14,8 @@ import { TerminalView } from '@/components/TerminalView'
 import { TitleBar, TitleBarButton } from '@/components/TitleBar'
 import { TodoProjectView } from '@/components/TodoProjectView'
 import { InboxThreadView } from '@/components/InboxThreadView'
+import { useInboxLock } from '@/components/InboxPanel'
+import { inboxFileRoot } from '@/lib/inbox'
 import { SettingsDialog } from '@/components/SettingsDialog'
 import { TodoSearch } from '@/components/TodoSearch'
 import { TodoProjectSettingsDialog } from '@/components/TodoProjectSettingsDialog'
@@ -89,6 +91,7 @@ export function App(): JSX.Element {
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
   const openFiles = useWorkspace((state) => state.openFiles)
   const openFileAction = useWorkspace((state) => state.openFile)
+  const openSettings = useWorkspace((state) => state.openSettings)
   const closeFileAction = useWorkspace((state) => state.closeFile)
   const selectedTodoProjectId = useWorkspace((state) => state.selectedTodoProjectId)
   const activeWorkspaceView = useWorkspace((state) => state.activeWorkspaceView)
@@ -698,6 +701,21 @@ export function App(): JSX.Element {
 
   const openFilePath = selected ? openFiles[selected.id] : undefined
 
+  // The Inbox shows the files of the open thread's folder, or of the folder the new thread starts in.
+  const inboxLock = useInboxLock()
+  const inboxThreads = useWorkspace((state) => state.inboxThreads)
+  const selectedInboxThreadId = useWorkspace((state) => state.selectedInboxThreadId)
+  const inboxFolders = useInboxChat((state) => state.folders)
+  const inboxComposerFolderId = useInboxChat((state) => state.composer.folderId)
+  const inboxRoot = useMemo(() => {
+    if (activeWorkspaceView !== 'inbox' || inboxLock) return null
+    const thread = inboxThreads.find((item) => item.id === selectedInboxThreadId)
+    if (thread) return inboxFileRoot(thread)
+    const folder = inboxFolders.find((item) => item.id === inboxComposerFolderId) ?? inboxFolders[0]
+    return folder ? inboxFileRoot(folder) : null
+  }, [activeWorkspaceView, inboxLock, inboxThreads, selectedInboxThreadId, inboxFolders, inboxComposerFolderId])
+  const inboxOpenFilePath = inboxRoot ? openFiles[inboxRoot.id] : undefined
+
   const closeOpenFile = (sessionId: string): void => {
     closeFileAction(sessionId)
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
@@ -751,6 +769,14 @@ export function App(): JSX.Element {
         >
           <PictureInPicture2 className="h-3.5 w-3.5" />
         </TitleBarButton>
+        <TitleBarButton
+          data-testid="settings-open"
+          onClick={() => openSettings()}
+          title="Settings"
+          aria-label="Open settings"
+        >
+          <Settings2 className="h-3.5 w-3.5" />
+        </TitleBarButton>
       </TitleBar>
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <Sidebar
@@ -765,7 +791,18 @@ export function App(): JSX.Element {
 
         <main className="relative h-full min-w-0 flex-1">
           {!ready ? null : activeWorkspaceView === 'inbox' ? (
-            <InboxThreadView />
+            <>
+              <InboxThreadView />
+              {inboxRoot && inboxOpenFilePath !== undefined && (
+                <FileViewer
+                  key={`viewer:${inboxRoot.id}`}
+                  session={inboxRoot}
+                  path={inboxOpenFilePath}
+                  onOpenFile={(path) => openFileAction(inboxRoot.id, path)}
+                  onClose={() => closeFileAction(inboxRoot.id)}
+                />
+              )}
+            </>
           ) : activeWorkspaceView === 'todo' ? (
             <TodoProjectView
               project={selectedTodoProject}
@@ -823,6 +860,7 @@ export function App(): JSX.Element {
         </main>
 
         {ready && activeWorkspaceView === 'projects' && selected && <FileTreePanel session={selected} />}
+        {ready && inboxRoot && <FileTreePanel session={inboxRoot} browseOnly />}
 
         <SettingsDialog terminalIds={layoutForSession?.panes.map((pane) => pane.terminalId) ?? []} />
 

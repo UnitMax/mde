@@ -1,4 +1,4 @@
-import type { InboxThread, OpenCodeModelRef } from '@shared/types'
+import type { InboxThread, OpenCodeModelRef, OpenCodePluginTarget, Session } from '@shared/types'
 import { matchSubsequence, queryTokens } from '@/lib/fuzzy-search'
 
 export type InboxFilter = 'all' | 'unread' | 'attention' | 'archived'
@@ -100,4 +100,22 @@ export function inboxLockReason(
   const supported = platform?.platform === 'darwin' || (platform?.isWindows === true && wslAvailable)
   if (!supported) return 'unsupported'
   return reportingEnabled ? null : 'disabled'
+}
+
+/**
+ * The folder of an Inbox thread or new-thread folder, shaped like a session so the file tree and
+ * viewer can show it. The ID is the thread's or folder's own; the main process resolves it.
+ */
+export function inboxFileRoot(
+  source: { id: string; directory: string; target: OpenCodePluginTarget } & { name?: string }
+): Session {
+  return {
+    id: source.id,
+    projectId: '',
+    name: source.name ?? inboxFolderLabel(source.directory),
+    kind: source.target.kind,
+    ...(source.target.kind === 'wsl' ? { distro: source.target.distro } : {}),
+    path: source.directory,
+    createdAt: ''
+  }
 }

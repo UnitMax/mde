@@ -58,7 +58,7 @@ validates like a session path (WSL only on Windows, native elsewhere), or an
 (`chat:*`) accept `ses_`, `per_` and `frm_` IDs by pattern, prompts of at most
 100,000 code units without controls other than newline and tab, permission
 decisions from the fixed set `once`, `always`, `reject`, and form answers of
-bounded keys, strings, numbers, booleans and string lists. Domain handlers still verify resource
+bounded keys, strings, numbers, booleans and string lists. `files:list` and `files:read` also accept an Inbox `fld_` folder ID or `ses_` thread ID in place of a session ID; the main process resolves it to that folder's directory, and the usual containment checks apply. Domain handlers still verify resource
 existence, session/source ownership, filesystem containment and platform
 constraints after the central validation.
 
