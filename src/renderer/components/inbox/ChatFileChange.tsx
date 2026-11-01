@@ -119,11 +119,11 @@ function FileDiffCard({ change, status, directory }: { change: FileChange; statu
         <ChevronRight className={cn('h-3 w-3 shrink-0 text-fg-subtle transition-transform', open && 'rotate-90')} />
         <ToolIcon status={status} />
         <span className="shrink-0 text-fg-muted">{verb}</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-[11.5px]" title={change.path}>
+        <span className="inbox-code-font min-w-0 flex-1 truncate text-[11.5px]" title={change.path}>
           <span className="text-fg-subtle">{shown.slice(0, split)}</span>
           <span className="text-fg">{shown.slice(split)}</span>
         </span>
-        <span className="flex shrink-0 items-center gap-2 font-mono text-[11.5px] tabular-nums" data-testid="chat-diff-stats">
+        <span className="inbox-code-font flex shrink-0 items-center gap-2 text-[11.5px] tabular-nums" data-testid="chat-diff-stats">
           {change.additions > 0 && <span className="text-ok">+{change.additions}</span>}
           {change.deletions > 0 && <span className="text-danger">−{change.deletions}</span>}
         </span>

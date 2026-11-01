@@ -48,7 +48,10 @@ Agents section configures the launcher commands described below. The application
 Ember, Frost, High contrast) and zoom are also adjustable. The Appearance section sets the terminal
 font family, size and line height, and separately the font family of the file viewer's source code
 preview; both families are chosen from the same list of installed monospace fonts and default to
-its first entry.
+its first entry. The code preview font family also applies to Inbox tool input, output and error
+blocks, edit/write diffs (including line numbers and change markers), and their file paths and
+change counts. Changes take effect immediately in the open conversation, including content
+expanded or streamed afterward; code preview font selection is independent of the terminal font.
 
 The expanded Projects sidebar includes a collapsible Agents overview below the sessions, combining
 currently reported OpenCode instances from every session with their originating session, tab, and

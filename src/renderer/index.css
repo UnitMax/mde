@@ -379,8 +379,12 @@
    * theme's ok and danger colors, so every theme gets matching ones. The line numbers and signs
    * cannot be selected, so copying a diff copies only the code.
    */
+  .inbox-code-font,
   .file-diff {
-    font-family: var(--font-mono);
+    font-family: var(--inbox-code-font, var(--font-mono));
+  }
+
+  .file-diff {
     font-size: 12px;
     line-height: 1.55;
     tab-size: 4;

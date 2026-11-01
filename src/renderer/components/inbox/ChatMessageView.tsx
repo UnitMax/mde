@@ -49,7 +49,7 @@ function CodeBlock({ label, text }: { label: string; text: string }): JSX.Elemen
   return (
     <div className="mb-1.5 min-w-0">
       <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-fg-subtle">{label}</p>
-      <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md border border-line bg-bg px-2.5 py-2 font-mono text-[12px] leading-snug text-fg-muted">
+      <pre className="inbox-code-font max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md border border-line bg-bg px-2.5 py-2 text-[12px] leading-snug text-fg-muted">
         {text}
       </pre>
     </div>

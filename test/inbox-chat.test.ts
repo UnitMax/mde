@@ -3,10 +3,13 @@
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { ChatMessagesPage, ChatOptions, ChatRequests, InboxFolder, InboxThread } from '../src/shared/types'
 import { InboxThreadView } from '../src/renderer/components/InboxThreadView'
 import { useInboxChat } from '../src/renderer/store/inbox-chat'
 import { useWorkspace } from '../src/renderer/store/workspace'
+import { getTerminalSettings, saveTerminalSettings, TERMINAL_SETTINGS_STORAGE_KEY } from '../src/renderer/terminal/terminal-settings'
 
 const roots: Root[] = []
 
@@ -283,6 +286,61 @@ describe('Inbox conversation', () => {
     const card = (view: HTMLElement): HTMLElement | null => view.querySelector('[data-testid="chat-diff"]')
     const rows = (view: HTMLElement): { kind: string | null; text: string }[] =>
       Array.from(view.querySelectorAll('.file-diff-row')).map((row) => ({ kind: row.getAttribute('data-kind'), text: row.querySelector('.file-diff-code')?.textContent ?? '' }))
+
+    it.each(['completed', 'running'] as const)('follows the code preview font in %s tools and newly expanded details', async (status) => {
+      const stored = localStorage.getItem(TERMINAL_SETTINGS_STORAGE_KEY)
+      const fonts = Object.getOwnPropertyDescriptor(document, 'fonts')
+      Object.defineProperty(document, 'fonts', {
+        configurable: true,
+        value: { check: (query: string) => query.includes('Fira Code') || query.includes('JetBrains Mono') },
+      })
+      // happy-dom does not apply cascade layers; load the actual font rule outside its layer.
+      const css = readFileSync(join(__dirname, '../src/renderer/index.css'), 'utf8')
+      const rule = css.match(/\.inbox-code-font,\s*\.file-diff\s*\{[^}]+\}/)?.[0]
+      expect(rule).toBeTruthy()
+      const style = document.createElement('style')
+      style.textContent = `:root { --font-mono: monospace; }\n${rule}`
+      document.head.append(style)
+      try {
+        saveTerminalSettings({ ...getTerminalSettings(), family: 'JetBrains Mono', codeFamily: 'Fira Code' })
+        page = { running: status === 'running', older: null, messages: [assistant(
+          edit({ status }),
+          { kind: 'tool', id: 'call_write', name: 'write', status, existed: false, input: JSON.stringify({ filePath: '/home/me/app/new.ts', content: 'export const a = 1\n' }) },
+          { kind: 'tool', id: 'call_read', name: 'read', status: 'completed', input: '{"path":"/home/me/app/src/auth.ts"}', output: 'file contents' },
+          edit({ id: 'call_failed', status: 'error', error: 'Edit failed' }),
+        )] }
+        const view = await render()
+        await vi.waitFor(() => expect(card(view)).not.toBeNull())
+        const diff = view.querySelector('.file-diff-code')!
+        await act(async () => view.querySelector<HTMLButtonElement>('[data-testid="chat-tool-call_read"] button')!.click())
+        const codeNodes = (): Element[] => Array.from(view.querySelectorAll(
+          '.file-diff-code, .file-diff-gutter, .file-diff-sign, .inbox-code-font',
+        ))
+        expect(codeNodes().length).toBeGreaterThan(10)
+        expect(view.querySelector('[data-testid="chat-tool-call_read"] pre')).not.toBeNull()
+        for (const node of codeNodes()) expect(getComputedStyle(node).fontFamily).toContain('Fira Code')
+
+        await act(async () => saveTerminalSettings({ ...getTerminalSettings(), codeFamily: 'JetBrains Mono' }))
+        expect(view.querySelector('.file-diff-code')).toBe(diff)
+        for (const node of codeNodes()) expect(getComputedStyle(node).fontFamily).toContain('JetBrains Mono')
+
+        await act(async () => view.querySelector<HTMLButtonElement>('[data-testid="chat-tool-call_failed"] button')!.click())
+        const details = Array.from(view.querySelectorAll('[data-testid="chat-tool-call_failed"] pre'))
+        expect(details.length).toBeGreaterThan(0)
+        for (const node of details) expect(getComputedStyle(node).fontFamily).toContain('JetBrains Mono')
+
+        await act(async () => saveTerminalSettings({ ...getTerminalSettings(), family: 'Fira Code' }))
+        for (const node of codeNodes()) expect(getComputedStyle(node).fontFamily).toContain('JetBrains Mono')
+        await act(async () => saveTerminalSettings({ ...getTerminalSettings(), codeFamily: 'monospace' }))
+        for (const node of codeNodes()) expect(getComputedStyle(node).fontFamily).toBe('monospace')
+      } finally {
+        style.remove()
+        if (fonts) Object.defineProperty(document, 'fonts', fonts)
+        else delete (document as { fonts?: unknown }).fonts
+        if (stored === null) localStorage.removeItem(TERMINAL_SETTINGS_STORAGE_KEY)
+        else localStorage.setItem(TERMINAL_SETTINGS_STORAGE_KEY, stored)
+      }
+    })
 
     it('draws a finished edit as a numbered diff instead of raw JSON', async () => {
       page = { running: false, older: null, messages: [assistant(edit())] }

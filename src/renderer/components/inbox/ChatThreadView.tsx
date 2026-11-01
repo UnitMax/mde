@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { AlertTriangle, LoaderCircle, RefreshCw } from 'lucide-react'
 import type { InboxThread, OpenCodeModelRef } from '@shared/types'
 import { ChatComposer } from '@/components/inbox/ChatComposer'
@@ -7,6 +7,7 @@ import { PermissionCard, QuestionCard } from '@/components/inbox/ChatRequestCard
 import { TurnDuration, WorkingFor } from '@/components/inbox/ChatTurnTime'
 import { contextUsage, findModel, initialChoice, mergeLive, turnDurations } from '@/lib/chat'
 import { optionsKey, useInboxChat, type ChatThreadState } from '@/store/inbox-chat'
+import { codeViewerFontFamily, getTerminalSettings, subscribeTerminalSettings } from '@/terminal/terminal-settings'
 
 /** Within this distance of the bottom, new content keeps the view pinned to it. */
 const STICK_THRESHOLD_PX = 80
@@ -37,6 +38,9 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const stickRef = useRef(true)
   const [agent, setAgent] = useState<string | null>(null)
   const [model, setModel] = useState<OpenCodeModelRef | null>(null)
+  const [codeFamily, setCodeFamily] = useState(() => getTerminalSettings().codeFamily)
+
+  useEffect(() => subscribeTerminalSettings(() => setCodeFamily(getTerminalSettings().codeFamily)), [])
 
   useEffect(() => openThread(thread.id), [openThread, thread.id])
   useEffect(() => {
@@ -92,7 +96,11 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const busySince = thread.status === 'working' || thread.status === 'attention' ? thread.workingSince : undefined
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col" data-testid="chat-thread">
+    <div
+      className="flex min-h-0 flex-1 flex-col"
+      data-testid="chat-thread"
+      style={{ '--inbox-code-font': codeViewerFontFamily(codeFamily) } as CSSProperties}
+    >
       <div ref={scrollRef} onScroll={onScroll} className="chat-selectable min-h-0 flex-1 overflow-y-auto" data-testid="chat-transcript">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-6 py-5">
           {state?.older && (
