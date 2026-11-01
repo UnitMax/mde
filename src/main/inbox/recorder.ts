@@ -41,6 +41,12 @@ interface ThreadReport {
   model?: OpenCodeModelRef
 }
 
+function threadTitle(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() && value.length <= 512 && !/[\u0000-\u001f\u007f-\u009f]/.test(value)
+    ? value.trim()
+    : null
+}
+
 /** What a service event says about its thread, or null when it says nothing the inbox keeps. */
 export function serviceEventReport(event: ServiceEvent): ThreadReport | null {
   switch (event.type) {
@@ -60,10 +66,8 @@ export function serviceEventReport(event: ServiceEvent): ThreadReport | null {
     case 'form.created':
       return { status: 'attention', attentionReason: 'question' }
     case 'session.renamed': {
-      const title = event.data.title
-      return typeof title === 'string' && title.trim() && title.length <= 512 && !/[\u0000-\u001f\u007f-\u009f]/.test(title)
-        ? { title: title.trim() }
-        : null
+      const title = threadTitle(event.data.title)
+      return title ? { title } : null
     }
     case 'session.model.selected':
     case 'session.step.started': {
@@ -103,6 +107,13 @@ export class InboxRecorder {
 
   list(): InboxThread[] {
     return this.store.list()
+  }
+
+  /** Reconciles service metadata without treating a rename as conversation activity. */
+  updateTitle(id: string, value: string): void {
+    const thread = this.store.get(id)
+    const title = threadTitle(value)
+    if (thread && title) this.transition(thread, { title })
   }
 
   setRead(id: string, read: boolean): InboxThread | null {

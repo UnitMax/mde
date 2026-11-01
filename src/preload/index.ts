@@ -163,6 +163,7 @@ const api: RendererApi = {
     messages: (req) => ipcRenderer.invoke(IpcChannels.chatMessages, req),
     send: (req) => ipcRenderer.invoke(IpcChannels.chatSend, req),
     interrupt: (req) => ipcRenderer.invoke(IpcChannels.chatInterrupt, req),
+    regenerateTitle: (req) => ipcRenderer.invoke(IpcChannels.chatRegenerateTitle, req),
     requests: (req) => ipcRenderer.invoke(IpcChannels.chatRequests, req),
     replyPermission: (req) => ipcRenderer.invoke(IpcChannels.chatPermissionReply, req),
     replyForm: (req) => ipcRenderer.invoke(IpcChannels.chatFormReply, req),

@@ -97,6 +97,23 @@ describe('OpenCode service discovery', () => {
 })
 
 describe('OpenCode service client', () => {
+  it('sends native title regeneration as an authenticated PATCH and accepts no content', async () => {
+    const bodies: unknown[] = []
+    const url = await serve((request, response) => {
+      expect(authorized(request, 'p')).toBe(true)
+      let body = ''
+      request.on('data', (chunk) => { body += chunk })
+      request.on('end', () => {
+        bodies.push({ method: request.method, url: request.url, body: JSON.parse(body) })
+        response.writeHead(204).end()
+      })
+    })
+    const client = new OpenCodeServiceClient({ discover: async () => ({ url, password: 'p' }), executable: () => 'opencode' })
+    await expect(client.request(wsl, 'session.update', {
+      params: { sessionID: 'ses_one' }, body: { title: '' },
+    })).resolves.toBeNull()
+    expect(bodies).toEqual([{ method: 'PATCH', url: '/api/session/ses_one', body: { title: '' } }])
+  })
   it('builds URLs only from the fixed operation table and checked parameters', () => {
     expect(serviceUrl('http://127.0.0.1:1', 'session.permission.reply', { params: { sessionID: 'ses_a', requestID: 'per_b' } }))
       .toBe('http://127.0.0.1:1/api/session/ses_a/permission/per_b/reply')

@@ -45,6 +45,7 @@ const api = {
     requests: vi.fn(async () => requests),
     send: vi.fn(async () => undefined),
     interrupt: vi.fn(async () => undefined),
+    regenerateTitle: vi.fn(async (): Promise<void> => undefined),
     replyPermission: vi.fn(async () => undefined),
     replyForm: vi.fn(async () => undefined),
     subscribe: vi.fn(async () => undefined),
@@ -88,7 +89,7 @@ beforeEach(() => {
     selectedInboxThreadId: null,
     activeWorkspaceView: 'inbox',
   })
-  useInboxChat.setState({ folders: [folder], composer: { folderId: 'fld_app' }, foldersLoaded: true, options: {}, threads: {}, recent: [] })
+  useInboxChat.setState({ folders: [folder], composer: { folderId: 'fld_app' }, foldersLoaded: true, options: {}, threads: {}, recent: [], titleRegenerations: {} })
 })
 
 afterEach(async () => {
@@ -142,6 +143,45 @@ describe('Inbox new thread', () => {
 })
 
 describe('Inbox conversation', () => {
+  it('regenerates the selected title, keeps pending state across navigation, and follows title updates', async () => {
+    const original = thread({ archived: true })
+    useWorkspace.setState({ inboxThreads: [original, thread({ id: 'ses_two', title: 'Other' })], selectedInboxThreadId: original.id })
+    let finish!: () => void
+    api.chat.regenerateTitle.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve }))
+    const view = await render()
+    await act(async () => button(view, 'Regenerate title').click())
+    expect(api.chat.regenerateTitle).toHaveBeenCalledWith({ threadId: 'ses_one' })
+    expect(button(view, 'Regenerate title').disabled).toBe(true)
+    expect(view.textContent).toContain('Regenerating…')
+    await act(async () => useWorkspace.setState({ selectedInboxThreadId: 'ses_two' }))
+    expect(button(view, 'Regenerate title').disabled).toBe(false)
+    await act(async () => useWorkspace.setState({ selectedInboxThreadId: 'ses_one' }))
+    expect(button(view, 'Regenerate title').disabled).toBe(true)
+    await act(async () => {
+      useWorkspace.getState().upsertInboxThread({ ...original, title: 'Updated title' })
+      finish()
+    })
+    expect(view.querySelector('h2')?.textContent).toBe('Updated title')
+    expect(button(view, 'Regenerate title').disabled).toBe(false)
+    expect(useWorkspace.getState().inboxThreads.find((item) => item.id === original.id)?.title).toBe('Updated title')
+  })
+
+  it('shows title errors only on their thread and permits retry', async () => {
+    useWorkspace.setState({ inboxThreads: [thread(), thread({ id: 'ses_two' })], selectedInboxThreadId: 'ses_one' })
+    api.chat.regenerateTitle.mockRejectedValueOnce(new Error("Error invoking remote method 'chat:regenerate-title': Error: Service unavailable"))
+    const view = await render()
+    await act(async () => button(view, 'Regenerate title').click())
+    expect(view.querySelector('[role="alert"]')?.textContent).toBe('Service unavailable')
+    expect(view.querySelector('h2')?.textContent).toBe('Fix login')
+    await act(async () => useWorkspace.setState({ selectedInboxThreadId: 'ses_two' }))
+    expect(view.querySelector('[role="alert"]')).toBeNull()
+    await act(async () => useWorkspace.setState({ selectedInboxThreadId: 'ses_one' }))
+    expect(view.querySelector('[role="alert"]')?.textContent).toBe('Service unavailable')
+    await act(async () => button(view, 'Regenerate title').click())
+    expect(view.querySelector('[role="alert"]')).toBeNull()
+    expect(api.chat.regenerateTitle).toHaveBeenCalledTimes(2)
+  })
+
   beforeEach(() => {
     useWorkspace.setState({ inboxThreads: [thread()], selectedInboxThreadId: 'ses_one' })
   })

@@ -79,6 +79,7 @@ describe('Inbox', () => {
     expect(panel.querySelector('[data-testid="inbox-thread-ses_one"]')).toBeNull()
     const main = await render(createElement(InboxThreadView))
     expect(main.querySelector('[data-testid="inbox-locked"]')).not.toBeNull()
+    expect(main.querySelector('[aria-label="Regenerate title"]')).toBeNull()
 
     useWorkspace.setState({ platform: { platform: 'win32', isWindows: true }, opencodeTuiEnabled: false })
     const open = await render(createElement(InboxPanel))

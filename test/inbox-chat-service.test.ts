@@ -4,6 +4,7 @@ import { InboxChatService } from '../src/main/inbox/chat'
 import { InboxRecorder } from '../src/main/inbox/recorder'
 import { InboxStore } from '../src/main/inbox/store'
 import type { ServiceOperation, ServiceRequest } from '../src/main/opencode/service/client'
+import { OpenCodeServiceError } from '../src/main/opencode/service/client'
 
 const wsl = { kind: 'wsl' as const, distro: 'Ubuntu-24.04' }
 const model = { id: 'model-1', providerId: 'provider-1' }
@@ -49,6 +50,92 @@ function setup(responses: Partial<Record<ServiceOperation, unknown>> = {}) {
 }
 
 describe('Inbox chat service', () => {
+  it('regenerates natively and reconciles the title when no event arrives, preserving metadata', async () => {
+    const { service, folder, calls, store, request } = setup({
+      'session.create': { data: { id: 'ses_new', title: 'Original' } },
+      'session.get': { data: { title: 'New title' } },
+    })
+    await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+    await vi.waitFor(() => expect(store.get('ses_new')?.branch).toBe('main'))
+    store.put({ ...store.get('ses_new')!, archived: true, status: 'attention', attentionReason: 'question' })
+    const before = store.get('ses_new')!
+    calls.length = 0
+    await service.regenerateTitle('ses_new')
+    expect(calls).toEqual([
+      { operation: 'session.update', request: { params: { sessionID: 'ses_new' }, body: { title: '' } } },
+      { operation: 'session.get', request: { params: { sessionID: 'ses_new' } } },
+    ])
+    expect(request).toHaveBeenCalledWith(wsl, 'session.update', expect.anything())
+    expect(store.get('ses_new')).toEqual({ ...before, title: 'New title' })
+    service.stop()
+  })
+
+  it('coalesces regeneration and lets a rename event during readback win', async () => {
+    const { service, folder, request, store } = setup({ 'session.create': { data: { id: 'ses_new' } } })
+    await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+    let finish!: (value: unknown) => void
+    const answer = request.getMockImplementation()!
+    request.mockImplementation((target, operation, req) => operation === 'session.get'
+      ? new Promise((resolve) => { finish = resolve }) : answer(target, operation, req))
+    const first = service.regenerateTitle('ses_new')
+    const second = service.regenerateTitle('ses_new')
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+    const emit = (service as unknown as { onEvent(event: { type: string; data: Record<string, unknown> }): void })
+    emit.onEvent({ type: 'session.renamed', data: { sessionID: 'ses_new', title: 'Newest title' } })
+    finish({ data: { title: 'Stale snapshot' } })
+    await Promise.all([first, second])
+    expect(request.mock.calls.filter((call) => call[1] === 'session.update')).toHaveLength(1)
+    expect(store.get('ses_new')?.title).toBe('Newest title')
+    service.stop()
+  })
+
+  it('ignores deleted threads during readback and rejects unknown or unavailable threads', async () => {
+    const { service, folder, request, store, disable } = setup({ 'session.create': { data: { id: 'ses_new' } } })
+    await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+    const answer = request.getMockImplementation()!
+    request.mockImplementation(async (target, operation, req) => {
+      if (operation !== 'session.get') return answer(target, operation, req)
+      store.remove('ses_new')
+      return { data: { title: 'Deleted' } }
+    })
+    await service.regenerateTitle('ses_new')
+    expect(store.get('ses_new')).toBeUndefined()
+    await expect(service.regenerateTitle('ses_new')).rejects.toThrow('no longer in the Inbox')
+    disable()
+    await expect(service.regenerateTitle('ses_new')).rejects.toThrow('only available on macOS')
+    service.stop()
+  })
+
+  it.each([
+    [new Error('Service unavailable'), 'Service unavailable'],
+    [new OpenCodeServiceError('Unsupported', 405), 'does not support native title regeneration'],
+  ])('keeps the title after an update failure and permits retry (%s)', async (error, message) => {
+    const responses = {
+      'session.create': { data: { id: 'ses_new', title: 'Original' } },
+      'session.update': error,
+      'session.get': { data: { title: 'Original' } },
+    }
+    const { service, folder, store } = setup(responses)
+    await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+    await expect(service.regenerateTitle('ses_new')).rejects.toThrow(message as string)
+    expect(store.get('ses_new')?.title).toBe('Original')
+    delete (responses as Partial<typeof responses>)['session.update']
+    await service.regenerateTitle('ses_new')
+    expect(store.get('ses_new')?.title).toBe('Original')
+    service.stop()
+  })
+
+  it.each(['', 'bad\u0007title', 'x'.repeat(513)])('rejects an invalid readback title', async (title) => {
+    const { service, folder, store } = setup({
+      'session.create': { data: { id: 'ses_new', title: 'Original' } },
+      'session.get': { data: { title } },
+    })
+    await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+    await expect(service.regenerateTitle('ses_new')).rejects.toThrow('invalid session title')
+    expect(store.get('ses_new')?.title).toBe('Original')
+    service.stop()
+  })
+
   it('adds a folder once, names it, and remembers it as the composer folder', () => {
     const { service, store, folder, advance } = setup()
     expect(folder).toEqual({

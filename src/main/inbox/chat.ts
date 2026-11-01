@@ -19,7 +19,7 @@ import type {
   OpenCodePluginTarget,
   Session,
 } from '@shared/types'
-import type { OpenCodeServiceClient } from '../opencode/service/client'
+import { OpenCodeServiceError, type OpenCodeServiceClient } from '../opencode/service/client'
 import { serviceTargetKey } from '../opencode/service/discovery'
 import {
   ServiceEventStreams,
@@ -119,6 +119,8 @@ export class InboxChatService {
   private readonly subscribed = new Map<string, number>()
   private readonly options = new Map<string, { at: number; value: Promise<ChatOptions> }>()
   private configuredExecutable = 'opencode'
+  private readonly titleRegenerations = new Map<string, Promise<void>>()
+  private readonly titleReads = new Map<string, { renamed: boolean }>()
 
   constructor(private readonly dependencies: InboxChatDependencies) {
     this.streams = new ServiceEventStreams(dependencies.client, {
@@ -303,6 +305,45 @@ export class InboxChatService {
     await this.dependencies.client.request(thread.target, 'session.interrupt', { params: { sessionID: thread.id } })
   }
 
+  async regenerateTitle(threadId: string): Promise<void> {
+    this.assertEnabled()
+    const thread = this.thread(threadId)
+    const pending = this.titleRegenerations.get(threadId)
+    if (pending) return pending
+    const run = (async () => {
+      this.streams.ensure(thread.target)
+      try {
+        await this.dependencies.client.request(thread.target, 'session.update', {
+          params: { sessionID: threadId }, body: { title: '' },
+        })
+      } catch (error) {
+        if (error instanceof OpenCodeServiceError && (error.status === 405 || error.status === 501)) {
+          throw new Error('This OpenCode service does not support native title regeneration. Update OpenCode and try again.')
+        }
+        throw error
+      }
+      // The update returns no content. Read it back in case the event stream missed the rename.
+      // A rename received during this read is newer than its snapshot and must win.
+      const read = { renamed: false }
+      this.titleReads.set(threadId, read)
+      try {
+        const session = parseSessionInfo(await this.dependencies.client.request(thread.target, 'session.get', {
+          params: { sessionID: threadId },
+        }))
+        if (!session.title) throw new Error('OpenCode returned an invalid session title.')
+        if (!read.renamed) this.dependencies.recorder.updateTitle(threadId, session.title)
+      } finally {
+        this.titleReads.delete(threadId)
+      }
+    })()
+    this.titleRegenerations.set(threadId, run)
+    try {
+      await run
+    } finally {
+      this.titleRegenerations.delete(threadId)
+    }
+  }
+
   async requests(threadId: string): Promise<ChatRequests> {
     const thread = this.thread(threadId)
     const [permissions, forms] = await Promise.all([
@@ -343,6 +384,10 @@ export class InboxChatService {
   private onEvent(event: ServiceEvent): void {
     this.dependencies.recorder.applyServiceEvent(event)
     const threadId = serviceEventSessionId(event)
+    if (threadId && event.type === 'session.renamed') {
+      const read = this.titleReads.get(threadId)
+      if (read) read.renamed = true
+    }
     if (!threadId || !this.subscribed.has(threadId)) return
     if ((event.type === 'session.text.delta' || event.type === 'session.reasoning.delta')) {
       const { assistantMessageID: messageId, ordinal, delta } = event.data

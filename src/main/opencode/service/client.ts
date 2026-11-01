@@ -10,6 +10,7 @@ export const SERVICE_OPERATIONS = {
   'session.create': { method: 'POST', path: '/api/session' },
   'session.active': { method: 'GET', path: '/api/session/active' },
   'session.get': { method: 'GET', path: '/api/session/{sessionID}' },
+  'session.update': { method: 'PATCH', path: '/api/session/{sessionID}' },
   'session.message.list': { method: 'GET', path: '/api/session/{sessionID}/message' },
   'session.prompt': { method: 'POST', path: '/api/session/{sessionID}/prompt' },
   'session.interrupt': { method: 'POST', path: '/api/session/{sessionID}/interrupt' },
@@ -19,7 +20,7 @@ export const SERVICE_OPERATIONS = {
   'session.permission.reply': { method: 'POST', path: '/api/session/{sessionID}/permission/{requestID}/reply' },
   'session.form.list': { method: 'GET', path: '/api/session/{sessionID}/form' },
   'session.form.reply': { method: 'POST', path: '/api/session/{sessionID}/form/{formID}/reply' },
-} as const satisfies Record<string, { method: 'GET' | 'POST'; path: string }>
+} as const satisfies Record<string, { method: 'GET' | 'POST' | 'PATCH'; path: string }>
 
 export type ServiceOperation = keyof typeof SERVICE_OPERATIONS
 

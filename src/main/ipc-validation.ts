@@ -246,6 +246,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.chatMessages]: object({ threadId: opencodeSessionId, cursor: optional((value) => typeof value === 'string' && /^[A-Za-z0-9_=.-]{1,2048}$/.test(value)) }),
   [IpcChannels.chatSend]: object({ threadId: opencodeSessionId, text: promptText, agent: optional(agentId), model: optional(modelRef) }),
   [IpcChannels.chatInterrupt]: chatThread,
+  [IpcChannels.chatRegenerateTitle]: chatThread,
   [IpcChannels.chatRequests]: chatThread,
   [IpcChannels.chatPermissionReply]: object({
     threadId: opencodeSessionId,

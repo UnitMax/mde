@@ -94,6 +94,17 @@ so opening the Inbox never waits for OpenCode or Git.
 
 ### Inbox chat
 
+The open thread's header has a **Regenerate title** button. It asks OpenCode's native title
+agent to regenerate the current title (`PATCH /api/session/{sessionID}` with `title: ""`),
+including while the conversation is running or archived. OpenCode chooses the title model
+and conversation context using its own configuration. It may keep the same title when
+generation is disabled, fails internally, or produces the existing title. MDE never sends
+a chat prompt or creates another session for this action. Pending state and request errors
+are kept per thread in memory. The main process coalesces concurrent requests, follows
+`session.renamed`, and reads the title back after completion in case an event was missed.
+Newer rename events take precedence over an in-flight readback; deleted threads stay deleted.
+Updating a title preserves the thread's status, activity time, read state and archive flag.
+
 MDE has two modes that do not touch each other. The Projects tab ("legacy" mode) works with
 projects, sessions and terminals in `workspace.json`. Inbox mode keeps its own list of folders in
 `inbox.json` and never reads or changes projects or sessions. An Inbox folder is a directory and a

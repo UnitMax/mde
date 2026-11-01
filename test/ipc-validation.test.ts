@@ -86,6 +86,7 @@ const validPayloads = {
   [IpcChannels.chatMessages]: { threadId: 'ses_thread', cursor: 'eyJpZCI6Im1zZyJ9' },
   [IpcChannels.chatSend]: { threadId: 'ses_thread', text: 'Next step', agent: 'plan', model },
   [IpcChannels.chatInterrupt]: { threadId: 'ses_thread' },
+  [IpcChannels.chatRegenerateTitle]: { threadId: 'ses_thread' },
   [IpcChannels.chatRequests]: { threadId: 'ses_thread' },
   [IpcChannels.chatPermissionReply]: { threadId: 'ses_thread', requestId: 'per_1', decision: 'once' },
   [IpcChannels.chatFormReply]: { threadId: 'ses_thread', formId: 'frm_1', answer: { q0: 'Red', q1: ['a', 'b'], q2: true, q3: 3 } },
@@ -131,6 +132,8 @@ describe('IPC payload boundary', () => {
   })
 
   it('bounds chat requests', () => {
+    rejects(IpcChannels.chatRegenerateTitle, { threadId: 'ses_../escape' })
+    rejects(IpcChannels.chatRegenerateTitle, { threadId: 'ses_thread', title: 'Injected' })
     rejects(IpcChannels.chatCreate, { folderId: 'fld_1234', text: '   ', agent: 'build', model })
     rejects(IpcChannels.chatCreate, { folderId: 'fld_1234', text: 'x'.repeat(100_001), agent: 'build', model })
     rejects(IpcChannels.chatCreate, { folderId: 'fld_1234', text: 'bell\u0007', agent: 'build', model })

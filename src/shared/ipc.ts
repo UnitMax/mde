@@ -156,6 +156,7 @@ export const IpcChannels = {
   chatMessages: 'chat:messages',
   chatSend: 'chat:send',
   chatInterrupt: 'chat:interrupt',
+  chatRegenerateTitle: 'chat:regenerate-title',
   chatRequests: 'chat:requests',
   chatPermissionReply: 'chat:permission-reply',
   chatFormReply: 'chat:form-reply',
@@ -521,6 +522,7 @@ export interface RendererApi {
     messages(req: ChatMessagesRequest): Promise<ChatMessagesPage>
     send(req: ChatSendRequest): Promise<void>
     interrupt(req: ChatThreadRequest): Promise<void>
+    regenerateTitle(req: ChatThreadRequest): Promise<void>
     requests(req: ChatThreadRequest): Promise<ChatRequests>
     replyPermission(req: ChatPermissionReplyRequest): Promise<void>
     replyForm(req: ChatFormReplyRequest): Promise<void>

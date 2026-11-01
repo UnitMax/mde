@@ -586,6 +586,7 @@ export function registerIpcHandlers(
   handle<ChatMessagesRequest, ChatMessagesPage>(IpcChannels.chatMessages, (req) => chat.messages(req))
   handle<ChatSendRequest, void>(IpcChannels.chatSend, (req) => chat.send(req))
   handle<ChatThreadRequest, void>(IpcChannels.chatInterrupt, (req) => chat.interrupt(req.threadId))
+  handle<ChatThreadRequest, void>(IpcChannels.chatRegenerateTitle, (req) => chat.regenerateTitle(req.threadId))
   handle<ChatThreadRequest, ChatRequests>(IpcChannels.chatRequests, (req) => chat.requests(req.threadId))
   handle<ChatPermissionReplyRequest, void>(IpcChannels.chatPermissionReply, (req) => chat.replyPermission(req))
   handle<ChatFormReplyRequest, void>(IpcChannels.chatFormReply, (req) => chat.replyForm(req))

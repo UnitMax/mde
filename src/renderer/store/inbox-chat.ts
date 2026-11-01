@@ -63,6 +63,8 @@ function mergeNewest(current: readonly ChatMessage[], newest: readonly ChatMessa
 }
 
 interface InboxChatStore {
+  titleRegenerations: Record<string, { pending: boolean; error: string | null }>
+  regenerateTitle: (threadId: string) => Promise<void>
   folders: InboxFolder[]
   composer: InboxComposerState
   foldersLoaded: boolean
@@ -120,6 +122,20 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
   }
 
   return {
+    titleRegenerations: {},
+    regenerateTitle: async (threadId) => {
+      if (get().titleRegenerations[threadId]?.pending) return
+      const patch = (pending: boolean, error: string | null): void => {
+        set((state) => ({ titleRegenerations: { ...state.titleRegenerations, [threadId]: { pending, error } } }))
+      }
+      patch(true, null)
+      try {
+        await window.api.chat.regenerateTitle({ threadId })
+        patch(false, null)
+      } catch (error) {
+        patch(false, ipcErrorMessage(error, 'Could not regenerate the title.'))
+      }
+    },
     folders: [],
     composer: {},
     foldersLoaded: false,

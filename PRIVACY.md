@@ -54,6 +54,13 @@ opened threads); MDE does not write them to disk. Prompts and answers you send g
 which stores them in OpenCode's own data and forwards them to the model provider you chose, as
 OpenCode does in a terminal.
 
+The Inbox's **Regenerate title** button asks that same local service to run OpenCode's
+native title agent on the current conversation. OpenCode may send conversation context
+to the model provider selected by its title-agent configuration. MDE does not make that
+provider request itself, create an additional conversation, or persist the context.
+The resulting title replaces the existing title in `inbox.json`; loading and error
+feedback stays in memory.
+
 ## Network behavior in the released application
 
 MDE does not make automatic network requests. It reads local files and invokes local commands to support terminal sessions and file actions: Git for repository status, `wsl.exe` on Windows, and the configured OpenCode executable for the session picker and to find the OpenCode background service.

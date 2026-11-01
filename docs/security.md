@@ -110,10 +110,12 @@ the validated `chat:*` channels.
 - **Secrets.** The password is held in memory per target, sent only as HTTP
   Basic auth to that loopback origin, and never logged, stored or put in an
   error message. A 401 or connection failure drops it and rediscovers once.
-- **Operations.** `SERVICE_OPERATIONS` is a fixed allowlist of sixteen method
+- **Operations.** `SERVICE_OPERATIONS` is a fixed allowlist of seventeen method
   and path pairs (agents, providers, models, session create/get/active, message
   list, prompt, interrupt, agent and model switch, and permission and form
-  list/reply). Path parameters must match `ses_`, `per_` or `frm_` ID patterns,
+  list/reply, and session update). The `chat:regenerate-title` channel accepts only a
+  recorded session ID and sends a fixed PATCH body `{ title: '' }`; the renderer cannot
+  supply arbitrary update fields, paths or targets. Path parameters must match `ses_`, `per_` or `frm_` ID patterns,
   only the query keys `limit`, `order`, `cursor` and `location[directory]` are
   allowed, request bodies are capped at 1 MB, responses at 16 MB, and each
   request times out after 30 seconds.
