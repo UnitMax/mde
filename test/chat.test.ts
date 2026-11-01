@@ -1,17 +1,26 @@
 import { describe, expect, it } from 'vitest'
-import type { ChatForm, ChatMessage, ChatPart } from '../src/shared/types'
+import type { ChatForm, ChatMessage, ChatPart, ChatTokens } from '../src/shared/types'
 import {
   appendLive,
+  contextTone,
+  contextUsage,
   displayPath,
+  formatCost,
+  formatExactTokens,
+  formatPercent,
+  formatTokens,
   formAnswer,
   groupModels,
   initialChoice,
   initialFormDraft,
+  latestStepTokens,
   messageBlocks,
   mergeLive,
   modelName,
   orderAgents,
   pruneLive,
+  segmentFill,
+  stepContext,
   subagentInfo,
   subagentResult,
   toolSummary,
@@ -171,5 +180,78 @@ describe('subagent calls', () => {
     const blocks = messageBlocks([text, call({ id: 'a' }), call({ id: 'b' }), text, call({ id: 'c' })])
     expect(blocks.map((block) => block.kind)).toEqual(['part', 'subagents', 'part', 'subagents'])
     expect(blocks[1]).toMatchObject({ kind: 'subagents', parts: [{ id: 'a' }, { id: 'b' }] })
+  })
+})
+
+describe('context usage', () => {
+  const tokens = (overrides: Partial<ChatTokens> = {}): ChatTokens => ({ input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, ...overrides })
+  const step = (id: string, stepTokens: ChatTokens | undefined, completed = true): ChatMessage => ({
+    kind: 'assistant', id, time: 1, agent: 'build', model, parts: [], completed, ...(stepTokens ? { tokens: stepTokens } : {}),
+  })
+  const user: ChatMessage = { kind: 'user', id: 'msg_u', time: 1, text: 'Hi' }
+  const windowed = { id: 'model-1', providerId: 'p', providerName: 'P', name: 'Model One', contextLimit: 200_000, outputLimit: 32_000 }
+
+  it('adds up a step the way the model saw it: the whole prompt plus what it wrote', () => {
+    expect(stepContext(tokens({ input: 100, output: 20, reasoning: 5, cacheRead: 1000, cacheWrite: 10 }))).toBe(1135)
+  })
+
+  it('measures the newest finished step and ignores streaming and empty ones', () => {
+    const older = tokens({ input: 10, cacheRead: 100 })
+    const newest = tokens({ input: 20, output: 5, cacheRead: 300 })
+    expect(latestStepTokens([user, step('a', older), step('b', newest), step('c', undefined, false)])).toBe(newest)
+    expect(latestStepTokens([step('a', older), step('b', tokens({ input: 1 }), false)])).toBe(older)
+    expect(latestStepTokens([step('a', older), step('b', tokens())])).toBe(older)
+    expect(latestStepTokens([user, step('a', undefined)])).toBeNull()
+    expect(latestStepTokens([])).toBeNull()
+  })
+
+  it('has nothing to show before a step has finished', () => {
+    expect(contextUsage({ messages: [user, step('a', undefined, false)], model: windowed })).toBeNull()
+  })
+
+  it('relates the newest step to the chosen model\'s window', () => {
+    const totals = { cost: 0.5, tokens: tokens({ input: 9 }) }
+    const usage = contextUsage({
+      messages: [step('a', tokens({ input: 1000 })), step('b', tokens({ input: 2000, output: 500, cacheRead: 137_500 }))],
+      usage: totals,
+      model: windowed,
+    })
+    expect(usage).toMatchObject({
+      used: 140_000, limit: 200_000, ratio: 0.7, tone: 'warn', outputLimit: 32_000, modelName: 'Model One', thread: totals,
+    })
+    expect(usage?.step).toEqual(tokens({ input: 2000, output: 500, cacheRead: 137_500 }))
+  })
+
+  it('still reports the count when the model has no known window', () => {
+    expect(contextUsage({ messages: [step('a', tokens({ input: 42 }))] })).toMatchObject({
+      used: 42, limit: null, ratio: null, tone: 'normal', outputLimit: null, modelName: null, thread: null,
+    })
+    expect(contextUsage({ messages: [step('a', tokens({ input: 42 }))], model: { ...windowed, contextLimit: undefined } })?.ratio).toBeNull()
+  })
+
+  it('turns amber at 70% and red at 90%', () => {
+    expect([0, 0.69, 0.7, 0.89, 0.9, 1.4].map(contextTone)).toEqual(['normal', 'normal', 'warn', 'warn', 'danger', 'danger'])
+    expect(contextTone(null)).toBe('normal')
+  })
+
+  it('lights the gauge segment by segment, and leaves it dark without a window', () => {
+    const lit = (ratio: number | null): number[] => Array.from({ length: 5 }, (_, index) => Number(segmentFill(ratio, index).toFixed(2)))
+    expect(lit(0)).toEqual([0, 0, 0, 0, 0])
+    expect(lit(0.21)).toEqual([1, 0.05, 0, 0, 0])
+    expect(lit(0.75)).toEqual([1, 1, 1, 0.75, 0])
+    expect(lit(1)).toEqual([1, 1, 1, 1, 1])
+    expect(lit(1.6)).toEqual([1, 1, 1, 1, 1])
+    expect(lit(null)).toEqual([0, 0, 0, 0, 0])
+  })
+
+  it('writes counts, percentages and costs compactly', () => {
+    expect([0, 842, 999, 1000, 4231, 42_300, 99_960, 100_000, 412_345, 999_499, 999_500, 1_048_576, 12_400_000]
+      .map(formatTokens)).toEqual(['0', '842', '999', '1K', '4.2K', '42.3K', '100K', '100K', '412K', '999K', '1M', '1.05M', '12.4M'])
+    expect(formatTokens(-5)).toBe('0')
+    expect(formatExactTokens(1_048_576)).toBe('1,048,576')
+    expect([0, 0.001, 0.004, 0.0099, 0.2, 1].map(formatPercent)).toEqual(['0%', '<1%', '<1%', '<1%', '20%', '100%'])
+    expect(formatPercent(0.01)).toBe('1%')
+    expect(formatPercent(1.043)).toBe('104%')
+    expect([0, 0.00123, 0.5, 12.3456, 1234.5].map(formatCost)).toEqual(['$0.00', '$0.0012', '$0.50', '$12.35', '$1,234.50'])
   })
 })

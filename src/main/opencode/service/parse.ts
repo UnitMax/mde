@@ -8,7 +8,9 @@ import type {
   ChatModel,
   ChatPart,
   ChatPermission,
+  ChatTokens,
   ChatToolStatus,
+  ChatUsage,
   OpenCodeModelRef,
 } from '@shared/types'
 
@@ -50,6 +52,13 @@ function body(value: unknown, limit: number): { text: string; truncated: boolean
   return text.length > limit
     ? { text: text.slice(0, limit), truncated: true }
     : { text, truncated: false }
+}
+
+/** Token counts and limits are whole numbers; anything else is treated as missing. */
+const MAX_COUNT = 1e12
+
+function count(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= MAX_COUNT ? Math.floor(value) : undefined
 }
 
 function time(value: unknown): number {
@@ -116,11 +125,16 @@ export function parseModels(value: unknown, providers: Map<string, string>): Cha
     const key = `${providerId}/${id}`
     if (seen.has(key)) continue
     seen.add(key)
+    const limit = record(model.limit)
+    const contextLimit = count(limit?.context)
+    const outputLimit = count(limit?.output)
     models.push({
       id,
       providerId,
       providerName: providers.get(providerId) ?? providerId,
       name: short(model.name) ?? id,
+      ...(contextLimit ? { contextLimit } : {}),
+      ...(outputLimit ? { outputLimit } : {}),
     })
   }
   return models
@@ -196,6 +210,20 @@ function parsePart(value: unknown): ChatPart | null {
   }
 }
 
+/** OpenCode's `{ input, output, reasoning, cache: { read, write } }`; missing counts are 0. */
+export function parseTokens(value: unknown): ChatTokens | undefined {
+  const tokens = record(value)
+  if (!tokens) return undefined
+  const cache = record(tokens.cache)
+  return {
+    input: count(tokens.input) ?? 0,
+    output: count(tokens.output) ?? 0,
+    reasoning: count(tokens.reasoning) ?? 0,
+    cacheRead: count(cache?.read) ?? 0,
+    cacheWrite: count(cache?.write) ?? 0,
+  }
+}
+
 function modelLabel(model: OpenCodeModelRef): string {
   return `${model.providerId}/${model.id}`
 }
@@ -215,6 +243,7 @@ export function parseMessage(value: unknown): ChatMessage | null {
       const parts = list(message.content).map(parsePart).filter((part): part is ChatPart => part !== null)
       const completed = typeof record(message.time)?.completed === 'number'
       const error = errorText(message.error)
+      const tokens = parseTokens(message.tokens)
       return {
         kind: 'assistant',
         id,
@@ -224,6 +253,7 @@ export function parseMessage(value: unknown): ChatMessage | null {
         parts,
         completed,
         ...(error ? { error } : {}),
+        ...(tokens ? { tokens } : {}),
       }
     }
     case 'agent-switched': {
@@ -284,6 +314,14 @@ export function parseMessagesPage(value: unknown, running: boolean, limit: numbe
   const next = record(response.cursor)?.next
   const older = typeof next === 'string' && /^[A-Za-z0-9_=.-]{1,2048}$/.test(next) && response.data.length >= limit ? next : null
   return { messages, older, running }
+}
+
+/** The session's running totals from a `session.get` answer; null when it has none. */
+export function parseSessionUsage(value: unknown): ChatUsage | null {
+  const session = record(record(value)?.data)
+  const tokens = parseTokens(session?.tokens)
+  if (!tokens) return null
+  return { tokens, cost: typeof session?.cost === 'number' && Number.isFinite(session.cost) && session.cost >= 0 ? session.cost : 0 }
 }
 
 export function parseActiveSessions(value: unknown): Set<string> {

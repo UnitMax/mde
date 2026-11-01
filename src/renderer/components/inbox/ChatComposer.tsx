@@ -7,7 +7,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { groupModels, modelKey, modelName, orderAgents, sameModelRef } from '@/lib/chat'
+import { ContextMeter } from '@/components/inbox/ContextMeter'
+import { groupModels, modelKey, modelName, orderAgents, sameModelRef, type ContextUsage } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { cn } from '@/lib/utils'
 import type { OptionsState } from '@/store/inbox-chat'
@@ -149,6 +150,8 @@ export interface ChatComposerProps {
   running?: boolean
   onStop?: () => void
   onRetryOptions?: () => void
+  /** How full the model's context window is; the pill is left out when there is nothing to show. */
+  context?: ContextUsage | null
   placeholder?: string
   autoFocus?: boolean
   disabled?: boolean
@@ -165,6 +168,7 @@ export function ChatComposer({
   running = false,
   onStop,
   onRetryOptions,
+  context = null,
   placeholder = 'Ask for changes or send follow-ups',
   autoFocus = false,
   disabled = false,
@@ -209,7 +213,7 @@ export function ChatComposer({
     <div className="flex flex-col gap-1.5">
       <div
         data-testid="chat-composer"
-        className="rounded-2xl border border-line-strong bg-elevated shadow-lg shadow-black/20 focus-within:border-accent/60"
+        className="@container rounded-2xl border border-line-strong bg-elevated shadow-lg shadow-black/20 focus-within:border-accent/60"
       >
         <textarea
           ref={textareaRef}
@@ -246,6 +250,7 @@ export function ChatComposer({
             </span>
           )}
           <span className="flex-1" />
+          {context && <ContextMeter usage={context} running={running} />}
           {running && onStop && !text.trim() ? (
             <button
               type="button"

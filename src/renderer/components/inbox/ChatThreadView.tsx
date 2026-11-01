@@ -4,7 +4,7 @@ import type { InboxThread, OpenCodeModelRef } from '@shared/types'
 import { ChatComposer } from '@/components/inbox/ChatComposer'
 import { ChatMessageView } from '@/components/inbox/ChatMessageView'
 import { PermissionCard, QuestionCard } from '@/components/inbox/ChatRequestCards'
-import { initialChoice, mergeLive } from '@/lib/chat'
+import { contextUsage, findModel, initialChoice, mergeLive } from '@/lib/chat'
 import { optionsKey, useInboxChat, type ChatThreadState } from '@/store/inbox-chat'
 
 /** Within this distance of the bottom, new content keeps the view pinned to it. */
@@ -56,6 +56,12 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
     setAgent((current) => current ?? latest?.agent ?? fallback.agent)
     setModel((current) => current ?? latest?.model ?? thread.model ?? fallback.model)
   }, [ready, latest, remembered, thread.model])
+
+  // The window is the chosen model's, so picking another model shows right away whether the thread still fits.
+  const context = useMemo(
+    () => contextUsage({ messages: state?.messages ?? [], usage: state?.usage ?? null, model: findModel(ready?.models ?? [], model) }),
+    [state?.messages, state?.usage, ready?.models, model],
+  )
 
   const onScroll = useCallback(() => {
     const element = scrollRef.current
@@ -146,6 +152,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
           onModelChange={setModel}
           onRetryOptions={() => void loadOptions({ threadId: thread.id }, true)}
           running={running}
+          context={context}
           onStop={() => void interrupt(thread.id)}
           onSend={async (text) => {
             stickRef.current = true

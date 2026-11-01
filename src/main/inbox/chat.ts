@@ -37,6 +37,7 @@ import {
   parsePermissions,
   parseProviderNames,
   parseSessionInfo,
+  parseSessionUsage,
 } from '../opencode/service/parse'
 import type { InboxRecorder } from './recorder'
 import { isChatAgentId, type InboxStore } from './store'
@@ -251,11 +252,17 @@ export class InboxChatService {
     const query: Record<string, string> = { limit: String(CHAT_PAGE_SIZE) }
     if (request.cursor) query.cursor = request.cursor
     else query.order = 'desc'
-    const [page, active] = await Promise.all([
+    const [page, active, session] = await Promise.all([
       this.dependencies.client.request(thread.target, 'session.message.list', { params: { sessionID: thread.id }, query }),
       this.dependencies.client.request(thread.target, 'session.active'),
+      // The thread's totals are only wanted with the newest page, and the conversation shows without them.
+      request.cursor
+        ? null
+        : this.dependencies.client.request(thread.target, 'session.get', { params: { sessionID: thread.id } }).catch(() => null),
     ])
-    return parseMessagesPage(page, parseActiveSessions(active).has(thread.id), CHAT_PAGE_SIZE)
+    const result = parseMessagesPage(page, parseActiveSessions(active).has(thread.id), CHAT_PAGE_SIZE)
+    const usage = session ? parseSessionUsage(session) : null
+    return usage ? { ...result, usage } : result
   }
 
   async send(request: ChatSendRequest): Promise<void> {

@@ -124,6 +124,23 @@ follow-up switches the session's agent or model first only when you changed them
 keeps the last ten opened threads in memory so going back to one is instant; MDE never writes
 messages to disk.
 
+**Context usage.** Once a step of the conversation has finished, a pill in the composer's bottom
+row, left of the send button, shows how full the model's context window is: a five-segment gauge
+and a token count (`ContextMeter`). The count is the newest finished assistant step's own tokens
+(new input, cache read and write, output and reasoning), which is what the conversation held after
+that step; a step that is still streaming has no count yet. The window is the *chosen* model's
+`limit.context` from OpenCode's model list, so picking another model in the composer shows at once
+whether the thread still fits. The gauge turns amber from 70% and red from 90%, and its last lit
+segment pulses while the thread works. Without a known window the pill shows only the count, and
+below about 30 rem of composer width the gauge collapses to an icon. Clicking the pill opens a
+breakdown: the count against the window, one bar split by kind of token, the thread's total tokens
+and the cost OpenCode reports (many providers report $0), and the model's window and reply limit.
+The thread totals come from `session.get`, requested with the newest page of messages only, so
+they stay right however many older pages are loaded; if that request fails, the conversation
+still loads and the totals are left out. After a compaction the count stays at its old value until
+the next step finishes. The pill does not appear in the new-thread composer, where nothing has
+been measured yet.
+
 **Transport.** OpenCode 2 runs one background service per machine, which its terminal UI also
 uses, so a thread can be continued in a terminal (`opencode --session ses_…`) and both stay in
 sync. `src/main/opencode/service/discovery.ts` finds the service for a target by running a fixed

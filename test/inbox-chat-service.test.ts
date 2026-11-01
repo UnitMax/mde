@@ -183,9 +183,39 @@ describe('Inbox chat service', () => {
     expect(page.messages[0]).toEqual({ kind: 'user', id: 'msg_1', time: 1, text: 'Hi' })
     expect(page).toMatchObject({ older: 'older-1', running: true })
     expect(calls[0]?.request.query).toEqual({ limit: '50', order: 'desc' })
+    calls.length = 0
     await service.messages({ threadId: 'ses_new', cursor: 'older-1' })
-    expect(calls[2]?.request.query).toEqual({ limit: '50', cursor: 'older-1' })
+    // An older page needs neither the running state's session lookup nor the thread's totals again.
+    expect(calls.map((call) => call.operation)).toEqual(['session.message.list', 'session.active'])
+    expect(calls[0]?.request.query).toEqual({ limit: '50', cursor: 'older-1' })
     service.stop()
+  })
+
+  it('adds the thread totals to the newest page only, and still loads without them', async () => {
+    const totals = { cost: 0.42, tokens: { input: 1200, output: 300, reasoning: 50, cache: { read: 9000, write: 100 } } }
+    const withTotals = setup({
+      'session.create': { data: { id: 'ses_new' } },
+      'session.message.list': { data: [], cursor: { next: 'older-1' } },
+      'session.active': { data: {} },
+      'session.get': { data: { id: 'ses_new', ...totals } },
+    })
+    await withTotals.service.create({ folderId: withTotals.folder.id, text: 'Hi', agent: 'build', model })
+    expect(await withTotals.service.messages({ threadId: 'ses_new' })).toMatchObject({
+      usage: { cost: 0.42, tokens: { input: 1200, output: 300, reasoning: 50, cacheRead: 9000, cacheWrite: 100 } },
+    })
+    expect(await withTotals.service.messages({ threadId: 'ses_new', cursor: 'older-1' })).not.toHaveProperty('usage')
+    withTotals.service.stop()
+
+    const failing = setup({
+      'session.create': { data: { id: 'ses_new' } },
+      'session.message.list': { data: [] },
+      'session.active': { data: {} },
+      'session.get': new Error('gone'),
+    })
+    await failing.service.create({ folderId: failing.folder.id, text: 'Hi', agent: 'build', model })
+    const page = await failing.service.messages({ threadId: 'ses_new' })
+    expect(page).toEqual({ messages: [], older: null, running: false })
+    failing.service.stop()
   })
 
   it('replies to permissions and questions with checked IDs', async () => {

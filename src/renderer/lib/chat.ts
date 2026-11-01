@@ -6,6 +6,8 @@ import type {
   ChatMessage,
   ChatModel,
   ChatPart,
+  ChatTokens,
+  ChatUsage,
   OpenCodeModelRef,
 } from '@shared/types'
 
@@ -74,6 +76,120 @@ export function initialChoice(
     ? { id: rememberedModel.id, providerId: rememberedModel.providerId }
     : options.defaultModel ?? (options.models[0] ? { id: options.models[0].id, providerId: options.models[0].providerId } : null)
   return { agent, model }
+}
+
+/** How full the context window is before the display turns amber and then red. */
+export const CONTEXT_WARN_RATIO = 0.7
+export const CONTEXT_DANGER_RATIO = 0.9
+
+export type ContextTone = 'normal' | 'warn' | 'danger'
+
+/** The gauge in the composer is this many segments, each worth an equal share of the window. */
+export const CONTEXT_SEGMENTS = 5
+
+/** How much of one gauge segment is lit, from 0 (dark) to 1 (full). */
+export function segmentFill(ratio: number | null, index: number): number {
+  if (ratio === null) return 0
+  return Math.min(1, Math.max(0, ratio * CONTEXT_SEGMENTS - index))
+}
+
+export interface ContextUsage {
+  /** Tokens the conversation held after the latest model step. */
+  used: number
+  /** That step's tokens by kind; they add up to `used`. */
+  step: ChatTokens
+  /** The model's context window, or null when OpenCode does not report one. */
+  limit: number | null
+  /** `used / limit`, which can pass 1; null without a limit. */
+  ratio: number | null
+  tone: ContextTone
+  /** The most tokens one reply can have, when known. */
+  outputLimit: number | null
+  modelName: string | null
+  /** The thread's totals, when OpenCode reported them. */
+  thread: ChatUsage | null
+}
+
+/** What one step added up to: its whole prompt (cached or not) plus what the model wrote. */
+export function stepContext(tokens: ChatTokens): number {
+  return tokens.input + tokens.output + tokens.reasoning + tokens.cacheRead + tokens.cacheWrite
+}
+
+/** The newest finished step that reports tokens; a step still streaming has no count yet. */
+export function latestStepTokens(messages: readonly ChatMessage[]): ChatTokens | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!
+    if (message.kind === 'assistant' && message.completed && message.tokens && stepContext(message.tokens) > 0) {
+      return message.tokens
+    }
+  }
+  return null
+}
+
+export function contextTone(ratio: number | null): ContextTone {
+  if (ratio === null) return 'normal'
+  return ratio >= CONTEXT_DANGER_RATIO ? 'danger' : ratio >= CONTEXT_WARN_RATIO ? 'warn' : 'normal'
+}
+
+/**
+ * How much of the context window the conversation fills, measured at its latest step. The window
+ * is the chosen model's, so switching models in the composer shows the effect before sending.
+ * Null until a step has finished: there is nothing to measure yet.
+ */
+export function contextUsage(input: {
+  messages: readonly ChatMessage[]
+  usage?: ChatUsage | null
+  model?: ChatModel
+}): ContextUsage | null {
+  const step = latestStepTokens(input.messages)
+  if (!step) return null
+  const used = stepContext(step)
+  const limit = input.model?.contextLimit ?? null
+  const ratio = limit ? used / limit : null
+  return {
+    used,
+    step,
+    limit,
+    ratio,
+    tone: contextTone(ratio),
+    outputLimit: input.model?.outputLimit ?? null,
+    modelName: input.model?.name ?? null,
+    thread: input.usage ?? null,
+  }
+}
+
+function trimZeros(text: string): string {
+  return text.includes('.') ? text.replace(/0+$/, '').replace(/\.$/, '') : text
+}
+
+/** A short token count: 842, 4.2K, 42.3K, 412K, 1.05M. */
+export function formatTokens(value: number): string {
+  const tokens = Math.max(0, value)
+  if (tokens < 1000) return String(Math.round(tokens))
+  if (tokens < 999_500) {
+    const thousands = tokens / 1000
+    return `${thousands < 100 ? trimZeros(thousands.toFixed(1)) : Math.round(thousands)}K`
+  }
+  const millions = tokens / 1_000_000
+  return `${trimZeros(millions.toFixed(millions < 10 ? 2 : 1))}M`
+}
+
+/** The exact count with thousands separators. */
+export function formatExactTokens(value: number): string {
+  return Math.round(value).toLocaleString('en-US')
+}
+
+/** "21%", "<1%" for a sliver, and "0%" for none. */
+export function formatPercent(ratio: number): string {
+  if (ratio <= 0) return '0%'
+  if (ratio < 0.01) return '<1%'
+  return `${Math.round(ratio * 100)}%`
+}
+
+/** US dollars: cents normally, four decimals for a fraction of a cent. */
+export function formatCost(cost: number): string {
+  const digits = cost > 0 && cost < 0.01 ? { minimumFractionDigits: 2, maximumFractionDigits: 4 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+  return `$${cost.toLocaleString('en-US', digits)}`
 }
 
 /** Text streamed for one part of a message that may not be fetched yet. */

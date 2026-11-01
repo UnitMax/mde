@@ -307,6 +307,10 @@ export interface ChatModel {
   providerId: string
   providerName: string
   name: string
+  /** The context window in tokens, when OpenCode reports one. */
+  contextLimit?: number
+  /** The most tokens one reply can have, when OpenCode reports it. */
+  outputLimit?: number
 }
 
 export interface ChatOptions {
@@ -314,6 +318,23 @@ export interface ChatOptions {
   models: ChatModel[]
   defaultModel: OpenCodeModelRef | null
   defaultAgent: string | null
+}
+
+/** Token counts for one model step, or summed over a whole thread. */
+export interface ChatTokens {
+  /** Prompt tokens that were not served from the cache. */
+  input: number
+  output: number
+  reasoning: number
+  cacheRead: number
+  cacheWrite: number
+}
+
+/** What a thread has used in total, as OpenCode reports it for the session. */
+export interface ChatUsage {
+  tokens: ChatTokens
+  /** The cost OpenCode reports, in US dollars; many providers report 0. */
+  cost: number
 }
 
 export type ChatToolStatus = 'pending' | 'running' | 'completed' | 'error'
@@ -345,6 +366,8 @@ export type ChatMessage =
       parts: ChatPart[]
       completed: boolean
       error?: string
+      /** What the step used, once OpenCode has reported it. */
+      tokens?: ChatTokens
     }
   /** Agent or model switches, compaction, shell commands, and other notes. */
   | { kind: 'note'; id: string; time: number; tone: 'info' | 'error'; text: string; detail?: string }
@@ -356,6 +379,8 @@ export interface ChatMessagesPage {
   older: string | null
   /** Whether OpenCode is currently running this thread. */
   running: boolean
+  /** The thread's totals; only on the newest page, and only when OpenCode answered. */
+  usage?: ChatUsage
 }
 
 export interface ChatPermission {

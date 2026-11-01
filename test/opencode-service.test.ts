@@ -34,6 +34,8 @@ import {
   parseModels,
   parsePermissions,
   parseProviderNames,
+  parseSessionUsage,
+  parseTokens,
 } from '../src/main/opencode/service/parse'
 
 const fixtures = join(__dirname, 'fixtures/opencode-chat')
@@ -262,6 +264,51 @@ describe('OpenCode service parsing', () => {
     ])
     expect(parseDefaultModel({ data: { id: 'free-1', providerID: 'opencode', name: 'x' } })).toEqual({ id: 'free-1', providerId: 'opencode' })
     expect(parseDefaultModel({ data: null })).toBeNull()
+  })
+
+  it('keeps a model\'s context window and reply limit when they are plausible', () => {
+    const models = parseModels({ data: [
+      { id: 'big', providerID: 'p', name: 'Big', limit: { context: 1_048_576, output: 65_536.9 } },
+      { id: 'odd', providerID: 'p', name: 'Odd', limit: { context: -5, output: 'many' } },
+      { id: 'zero', providerID: 'p', name: 'Zero', limit: { context: 0, output: 0 } },
+      { id: 'none', providerID: 'p', name: 'None' },
+    ] }, new Map())
+    expect(models.map(({ id, contextLimit, outputLimit }) => ({ id, contextLimit, outputLimit }))).toEqual([
+      { id: 'big', contextLimit: 1_048_576, outputLimit: 65_536 },
+      { id: 'odd', contextLimit: undefined, outputLimit: undefined },
+      { id: 'zero', contextLimit: undefined, outputLimit: undefined },
+      { id: 'none', contextLimit: undefined, outputLimit: undefined },
+    ])
+    expect(models[1]).not.toHaveProperty('contextLimit')
+  })
+
+  it('reads token counts, treating missing or invalid ones as 0', () => {
+    expect(parseTokens({ input: 246, output: 13, reasoning: 5, cache: { read: 7808, write: 12 } }))
+      .toEqual({ input: 246, output: 13, reasoning: 5, cacheRead: 7808, cacheWrite: 12 })
+    expect(parseTokens({ input: 10, output: NaN, cache: { read: -1 } }))
+      .toEqual({ input: 10, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 })
+    expect(parseTokens(null)).toBeUndefined()
+    expect(parseTokens([])).toBeUndefined()
+    expect(parseTokens('lots')).toBeUndefined()
+
+    const raw = JSON.parse(fixture('messages-tools.json'))
+    const steps = parseMessagesPage(raw, false, raw.data.length).messages.filter((message) => message.kind === 'assistant')
+    expect(steps.map((step) => step.kind === 'assistant' && step.tokens)).toEqual([
+      { input: 3551, output: 83, reasoning: 0, cacheRead: 4224, cacheWrite: 0 },
+      { input: 251, output: 105, reasoning: 0, cacheRead: 7680, cacheWrite: 0 },
+      { input: 246, output: 13, reasoning: 0, cacheRead: 7808, cacheWrite: 0 },
+    ])
+    expect(parseMessage({ id: 'msg_1', type: 'assistant', model: { id: 'm', providerID: 'p' }, time: { created: 1 }, content: [] }))
+      .not.toHaveProperty('tokens')
+  })
+
+  it('reads the thread totals from a session answer', () => {
+    expect(parseSessionUsage({ data: { id: 'ses_1', cost: 1.25, tokens: { input: 5, output: 4, reasoning: 3, cache: { read: 2, write: 1 } } } }))
+      .toEqual({ cost: 1.25, tokens: { input: 5, output: 4, reasoning: 3, cacheRead: 2, cacheWrite: 1 } })
+    expect(parseSessionUsage({ data: { tokens: { input: 5 }, cost: 'free' } })?.cost).toBe(0)
+    expect(parseSessionUsage({ data: { id: 'ses_1' } })).toBeNull()
+    expect(parseSessionUsage(null)).toBeNull()
+    expect(parseSessionUsage({ nope: true })).toBeNull()
   })
 
   it('maps a recorded conversation oldest first, with tools and their output', () => {

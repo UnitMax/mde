@@ -224,6 +224,100 @@ describe('Inbox conversation', () => {
     await vi.waitFor(() => expect(api.chat.send).toHaveBeenCalledWith({ threadId: 'ses_one', text: 'Thanks' }))
   })
 
+  describe('context usage', () => {
+    const windowed: ChatOptions = {
+      ...options,
+      models: [
+        { id: 'free-1', providerId: 'opencode', providerName: 'OpenCode', name: 'Flint Free', contextLimit: 200_000, outputLimit: 64_000 },
+        { id: 'small-1', providerId: 'opencode', providerName: 'OpenCode', name: 'Small', contextLimit: 160_000 },
+      ],
+    }
+    const step = (tokens: { input: number; output: number; cacheRead: number }, completed = true): ChatMessagesPage['messages'][number] => ({
+      kind: 'assistant', id: `msg_${tokens.input}`, time: 2, agent: 'build', model: options.defaultModel!, completed, parts: [],
+      ...(completed ? { tokens: { reasoning: 0, cacheWrite: 0, ...tokens } } : {}),
+    })
+    const meter = (view: HTMLElement): HTMLElement | null => view.querySelector('[data-testid="chat-context-meter"]')
+    afterEach(() => { api.chat.options.mockImplementation(async () => options) })
+    /** Radix opens its menus on a pointer press; the keyboard route is what happy-dom supports reliably. */
+    const open = async (trigger: Element): Promise<void> => {
+      await act(async () => { trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+    }
+
+    it('waits for a finished step, then shows how full the window is', async () => {
+      api.chat.options.mockResolvedValue(windowed)
+      page = { running: true, older: null, messages: [{ kind: 'user', id: 'msg_1', time: 1, text: 'Fix it' }, step({ input: 1, output: 1, cacheRead: 1 }, false)] }
+      const view = await render()
+      await vi.waitFor(() => expect(view.textContent).toContain('Fix it'))
+      expect(meter(view)).toBeNull()
+
+      page = {
+        running: false, older: null,
+        usage: { cost: 0.42, tokens: { input: 5000, output: 900, reasoning: 100, cacheRead: 400_000, cacheWrite: 0 } },
+        messages: [{ kind: 'user', id: 'msg_1', time: 1, text: 'Fix it' }, step({ input: 2000, output: 1000, cacheRead: 147_000 })],
+      }
+      await act(async () => { useInboxChat.getState().applyEvent({ type: 'messages', threadId: 'ses_one' }) })
+      await vi.waitFor(() => expect(meter(view)).not.toBeNull())
+      expect(meter(view)?.getAttribute('aria-label')).toBe('Context: 150K of 200K tokens used (75%)')
+      expect(meter(view)?.getAttribute('data-tone')).toBe('warn')
+      expect(meter(view)?.textContent).toBe('150K')
+
+      await open(meter(view)!)
+      const details = await vi.waitFor(() => {
+        const found = document.querySelector('[data-testid="chat-context-details"]')
+        expect(found).not.toBeNull()
+        return found!
+      })
+      expect(details.textContent).toContain('150K')
+      expect(details.textContent).toContain('of 200K tokens')
+      expect(details.textContent).toContain('75%')
+      expect(details.textContent).toContain('Cache read147K')
+      expect(details.textContent).toContain('New input2K')
+      expect(details.textContent).toContain('Output1K')
+      expect(details.textContent).not.toContain('Cache write')
+      expect(details.textContent).toContain('Thread total406K')
+      expect(details.textContent).toContain('Reported cost$0.42')
+      expect(details.textContent).toContain('Flint Free · 200K window · 64K max reply')
+    })
+
+    it('measures against the model chosen in the composer', async () => {
+      api.chat.options.mockResolvedValue(windowed)
+      page = { running: false, older: null, messages: [step({ input: 2000, output: 1000, cacheRead: 117_000 })] }
+      const view = await render()
+      await vi.waitFor(() => expect(meter(view)).not.toBeNull())
+      expect(meter(view)?.getAttribute('aria-label')).toBe('Context: 120K of 200K tokens used (60%)')
+      expect(meter(view)?.getAttribute('data-tone')).toBe('normal')
+
+      // The same conversation in a smaller window is fuller, before anything is sent.
+      await open(view.querySelector('[data-testid="chat-model-picker"]')!)
+      const small = await vi.waitFor(() => {
+        const found = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((item) => item.textContent === 'Small')
+        expect(found).toBeDefined()
+        return found!
+      })
+      await act(async () => small.click())
+      await vi.waitFor(() => expect(meter(view)?.getAttribute('aria-label')).toBe('Context: 120K of 160K tokens used (75%)'))
+      expect(meter(view)?.getAttribute('data-tone')).toBe('warn')
+    })
+
+    it('shows only the count when the model reports no window', async () => {
+      page = { running: false, older: null, messages: [step({ input: 2000, output: 1000, cacheRead: 117_000 })] }
+      const view = await render()
+      await vi.waitFor(() => expect(meter(view)).not.toBeNull())
+      expect(meter(view)?.getAttribute('aria-label')).toBe('Context: 120K tokens used')
+      expect(meter(view)?.getAttribute('data-tone')).toBe('normal')
+      await open(meter(view)!)
+      await vi.waitFor(() => expect(document.querySelector('[data-testid="chat-context-details"]')?.textContent).toContain('window size unknown'))
+    })
+
+    it('turns red when the window is nearly full', async () => {
+      api.chat.options.mockResolvedValue(windowed)
+      page = { running: false, older: null, messages: [step({ input: 1000, output: 1000, cacheRead: 183_000 })] }
+      const view = await render()
+      await vi.waitFor(() => expect(meter(view)?.getAttribute('data-tone')).toBe('danger'))
+      expect(meter(view)?.getAttribute('aria-label')).toBe('Context: 185K of 200K tokens used (93%)')
+    })
+  })
+
   it('answers permission requests and questions inline', async () => {
     requests = {
       permissions: [{ id: 'per_1', action: 'read', resources: ['.env'] }],

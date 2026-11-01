@@ -5,6 +5,7 @@ import type {
   ChatMessage,
   ChatOptions,
   ChatRequests,
+  ChatUsage,
   InboxAddFolderRequest,
   InboxComposerState,
   InboxFolder,
@@ -26,6 +27,8 @@ export interface ChatThreadState {
   error: string | null
   requests: ChatRequests
   live: LivePart[]
+  /** The thread's totals from the last refetch; kept when a refetch brings none. */
+  usage: ChatUsage | null
 }
 
 export type OptionsState =
@@ -47,6 +50,7 @@ const emptyThread = (): ChatThreadState => ({
   error: null,
   requests: { permissions: [], forms: [] },
   live: [],
+  usage: null,
 })
 
 /** Keeps the newest page when a refetch arrives: earlier pages stay loaded. */
@@ -229,6 +233,7 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
               loading: false,
               error: null,
               live: page.running ? pruneLive(messages, thread.live) : [],
+              usage: page.usage ?? thread.usage,
             }
           })
         } catch (error) {
