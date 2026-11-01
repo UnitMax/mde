@@ -4,8 +4,6 @@ import type {
   OpenCodeModelRef,
   OpenCodeTuiAttentionReason,
   OpenCodeTuiStatus,
-  OpenCodeTuiThreadSnapshot,
-  OpenCodeTuiThreadsUpdate,
   Session
 } from '@shared/types'
 import { targetSession } from '../opencode/service/discovery'
@@ -18,8 +16,6 @@ export const UNTITLED_THREAD = 'Untitled session'
 
 export interface InboxRecorderDependencies {
   now(): number
-  /** The MDE session whose transport (native or WSL distro) reads the branch. */
-  lookupSession(sessionId: string): Promise<Session | null>
   /** Branch of `directory`, or null outside a repository or on a detached HEAD. Throws on failure. */
   readBranch(session: Session, directory: string): Promise<string | null>
   onChanged(thread: InboxThread): void
@@ -43,9 +39,6 @@ interface ThreadReport {
   attentionReason?: OpenCodeTuiAttentionReason
   title?: string
   model?: OpenCodeModelRef
-  directory?: string
-  target?: InboxThread['target']
-  mdeSessionId?: string
 }
 
 /** What a service event says about its thread, or null when it says nothing the inbox keeps. */
@@ -86,7 +79,6 @@ function sameThread(a: InboxThread, b: InboxThread): boolean {
   return a.title === b.title &&
     a.directory === b.directory &&
     JSON.stringify(a.target) === JSON.stringify(b.target) &&
-    a.mdeSessionId === b.mdeSessionId &&
     a.branch === b.branch &&
     sameModel(a.model, b.model) &&
     a.status === b.status &&
@@ -94,16 +86,14 @@ function sameThread(a: InboxThread, b: InboxThread): boolean {
     a.lastActivityAt === b.lastActivityAt &&
     a.readAt === b.readAt &&
     a.archived === b.archived &&
-    a.origin === b.origin &&
     a.folderId === b.folderId
 }
 
 /**
- * Applies the status plugin's thread reports to the inbox, like mail:
- * finishing, failing, or asking for input moves a thread to the top, marks it
- * unread, and brings it back from the archive. Starting work only updates the
- * status, so a busy thread does not keep jumping. A thread that has only been
- * looked at, never run, is not recorded.
+ * MDE's record of the threads started in the Inbox, kept like mail: finishing,
+ * failing, or asking for input moves a thread to the top, marks it unread, and
+ * brings it back from the archive. Starting work only updates the status, so a
+ * busy thread does not keep jumping.
  */
 export class InboxRecorder {
   constructor(
@@ -113,13 +103,6 @@ export class InboxRecorder {
 
   list(): InboxThread[] {
     return this.store.list()
-  }
-
-  apply(update: OpenCodeTuiThreadsUpdate): void {
-    for (const snapshot of update.threads) {
-      if (update.closed) this.close(snapshot.id)
-      else this.record(update, snapshot)
-    }
   }
 
   setRead(id: string, read: boolean): InboxThread | null {
@@ -140,47 +123,7 @@ export class InboxRecorder {
     this.store.remove(id)
   }
 
-  private close(id: string): void {
-    const thread = this.store.get(id)
-    if (thread?.status === 'working') this.save(thread, { ...thread, status: 'idle' })
-  }
-
-  private record(update: OpenCodeTuiThreadsUpdate, snapshot: OpenCodeTuiThreadSnapshot): void {
-    const now = this.dependencies.now()
-    const existing = this.store.get(snapshot.id)
-    if (!existing) {
-      if (snapshot.status === 'idle') return
-      const created: InboxThread = {
-        id: snapshot.id,
-        title: snapshot.title ?? UNTITLED_THREAD,
-        directory: snapshot.directory,
-        target: update.target,
-        mdeSessionId: update.sessionId,
-        status: snapshot.status,
-        ...(snapshot.attentionReason ? { attentionReason: snapshot.attentionReason } : {}),
-        branch: null,
-        ...(snapshot.model ? { model: snapshot.model } : {}),
-        createdAt: now,
-        lastActivityAt: now,
-        // A thread first seen already finished arrives unread; one first seen working does not.
-        readAt: isInboxActivity(snapshot.status) ? 0 : now,
-        archived: false
-      }
-      this.insert(created)
-      return
-    }
-    this.transition(existing, {
-      status: snapshot.status,
-      attentionReason: snapshot.attentionReason,
-      title: snapshot.title,
-      model: snapshot.model,
-      directory: snapshot.directory,
-      target: update.target,
-      mdeSessionId: update.sessionId
-    })
-  }
-
-  /** Records a thread the Inbox chat view just started; it is working and already read. */
+  /** Records a thread the Inbox just started; it is working and already read. */
   recordChatThread(input: { id: string; title?: string | null; folder: InboxFolder; model: OpenCodeModelRef }): InboxThread {
     const now = this.dependencies.now()
     const existing = this.store.get(input.id)
@@ -197,7 +140,6 @@ export class InboxRecorder {
       lastActivityAt: now,
       readAt: now,
       archived: false,
-      origin: 'chat',
       folderId: input.folder.id
     }
     this.insert(created)
@@ -212,7 +154,7 @@ export class InboxRecorder {
 
   /**
    * Applies an OpenCode service event to a thread the inbox already knows.
-   * Events never add threads: only MDE terminals and the chat view do.
+   * Events never add threads: only starting one in the Inbox does.
    */
   applyServiceEvent(event: ServiceEvent): void {
     const id = serviceEventSessionId(event)
@@ -242,9 +184,6 @@ export class InboxRecorder {
     const { attentionReason: _previousReason, ...rest } = existing
     const next: InboxThread = {
       ...rest,
-      ...(report.directory ? { directory: report.directory } : {}),
-      ...(report.target ? { target: report.target } : {}),
-      ...(report.mdeSessionId ? { mdeSessionId: report.mdeSessionId } : {}),
       status,
       ...(status === 'attention' && attentionReason ? { attentionReason } : {}),
       title: report.title ?? existing.title,
@@ -252,7 +191,7 @@ export class InboxRecorder {
       ...(activity ? { lastActivityAt: now, archived: false } : {})
     }
     const saved = this.save(existing, next)
-    if (saved !== existing && (activity || existing.directory !== next.directory)) this.refreshBranch(saved)
+    if (saved !== existing && activity) this.refreshBranch(saved)
   }
 
   private save(previous: InboxThread, next: InboxThread): InboxThread {
@@ -263,14 +202,9 @@ export class InboxRecorder {
   }
 
   private refreshBranch(thread: InboxThread): void {
-    const { id, directory, mdeSessionId, target } = thread
+    const { id, directory, target } = thread
     void (async () => {
-      // A chat thread has no MDE session; its target alone says how to run Git.
-      const session = mdeSessionId
-        ? await this.dependencies.lookupSession(mdeSessionId)
-        : targetSession(target, directory)
-      if (!session) return
-      const branch = await this.dependencies.readBranch(session, directory)
+      const branch = await this.dependencies.readBranch(targetSession(target, directory), directory)
       const current = this.store.get(id)
       // The thread may have moved or been deleted while Git was running.
       if (!current || current.directory !== directory) return

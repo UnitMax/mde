@@ -10,11 +10,9 @@ import {
   MailOpen,
   PenSquare,
   Search,
-  Settings2,
   Trash2
 } from 'lucide-react'
 import type { InboxThread } from '@shared/types'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
   AlertDialog,
@@ -36,13 +34,12 @@ import {
   INBOX_CLOCK_MS,
   INBOX_FILTERS,
   inboxFolderLabel,
-  inboxLockReason,
+  inboxLocked,
   inboxModelLabel,
   inboxStatusChip,
   isInboxThreadUnread,
   visibleInboxThreads,
   type InboxFilter,
-  type InboxLockReason,
   type InboxStatusChip
 } from '@/lib/inbox'
 import { sessionAge, sessionDate } from '@/lib/opencode-sessions'
@@ -59,12 +56,11 @@ export function useInboxClock(): number {
   return now
 }
 
-/** The current lock state; null while the Inbox can be used. */
-export function useInboxLock(): InboxLockReason | null {
+/** True where the Inbox cannot be used. */
+export function useInboxLock(): boolean {
   const platform = useWorkspace((state) => state.platform)
   const wslAvailable = useWorkspace((state) => state.wslAvailable)
-  const enabled = useWorkspace((state) => state.opencodeTuiEnabled)
-  return inboxLockReason(platform, wslAvailable, enabled)
+  return inboxLocked(platform, wslAvailable)
 }
 
 const CHIP_TONES: Record<InboxStatusChip['tone'], string> = {
@@ -96,14 +92,7 @@ export function InboxStatusBadge({ thread }: { thread: InboxThread }): JSX.Eleme
   )
 }
 
-export function InboxLockedNotice({
-  reason,
-  compact = false
-}: {
-  reason: InboxLockReason
-  compact?: boolean
-}): JSX.Element {
-  const openSettings = useWorkspace((state) => state.openSettings)
+export function InboxLockedNotice({ compact = false }: { compact?: boolean }): JSX.Element {
   return (
     <div
       data-testid="inbox-locked"
@@ -114,17 +103,12 @@ export function InboxLockedNotice({
     >
       <Lock className={cn('text-fg-subtle', compact ? 'h-4 w-4' : 'h-6 w-6')} />
       <div>
-        <p className="text-[13px] text-fg-muted">Inbox is locked</p>
+        <p className="text-[13px] text-fg-muted">Inbox is not available here</p>
         <p className="mt-1 text-xs text-fg-subtle">
-          {reason === 'unsupported'
-            ? 'The Inbox is filled by the MDE status plugin for OpenCode, which runs on macOS and in WSL on Windows.'
-            : 'The Inbox is filled by the MDE status plugin for OpenCode. Turn on status reporting and install the plugin in Settings → OpenCode.'}
+          The Inbox talks to OpenCode’s background service, which MDE can reach on macOS and in WSL
+          on Windows.
         </p>
       </div>
-      <Button size="sm" variant={compact ? 'secondary' : 'default'} onClick={() => openSettings('opencode')}>
-        <Settings2 className="h-3.5 w-3.5" />
-        Open OpenCode settings
-      </Button>
     </div>
   )
 }
@@ -275,14 +259,13 @@ export function InboxPanel(): JSX.Element {
   const threads = useWorkspace((state) => state.inboxThreads)
   const selectedId = useWorkspace((state) => state.selectedInboxThreadId)
   const selectThread = useWorkspace((state) => state.selectInboxThread)
-  const openSettings = useWorkspace((state) => state.openSettings)
   const lock = useInboxLock()
   const now = useInboxClock()
   const [filter, setFilter] = useState<InboxFilter>('all')
   const [query, setQuery] = useState('')
   const visible = visibleInboxThreads(threads, filter, query)
 
-  if (lock) return <InboxLockedNotice reason={lock} compact />
+  if (lock) return <InboxLockedNotice compact />
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-1.5">
@@ -341,16 +324,7 @@ export function InboxPanel(): JSX.Element {
             <p>{emptyMessage(filter, query)}</p>
             {threads.length === 0 && (
               <p className="mt-1">
-                Start one with New thread. OpenCode conversations you run in MDE terminals appear
-                here too; they need the MDE status plugin 2.1.0 or newer for each target in{' '}
-                <button
-                  type="button"
-                  className="text-accent hover:underline"
-                  onClick={() => openSettings('opencode')}
-                >
-                  Settings → OpenCode
-                </button>
-                ; restart OpenCode after updating it.
+                Start one with New thread.
               </p>
             )}
           </div>

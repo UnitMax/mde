@@ -200,7 +200,6 @@ export function toolSummary(part: Extract<ChatPart, { kind: 'tool' }>, directory
     case 'todowrite':
     case 'todo':
       return 'Updated the to-do list'
-    case 'task':
     case 'subagent':
       return text('description') ? `Subagent: ${firstLine(text('description')!, 70)}` : 'Ran a subagent'
     default:
@@ -210,9 +209,9 @@ export function toolSummary(part: Extract<ChatPart, { kind: 'tool' }>, directory
 
 type ToolPart = Extract<ChatPart, { kind: 'tool' }>
 
-/** OpenCode 2 calls it `subagent`; earlier versions call it `task`. */
+/** OpenCode runs a subagent through its `subagent` tool. */
 export function isSubagentCall(part: ChatPart): part is ToolPart {
-  return part.kind === 'tool' && (part.name === 'subagent' || part.name === 'task')
+  return part.kind === 'tool' && part.name === 'subagent'
 }
 
 export interface SubagentInfo {

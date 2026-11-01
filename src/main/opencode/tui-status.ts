@@ -15,9 +15,6 @@ import type {
   OpenCodeTuiStatus,
   OpenCodeTuiStatusSnapshot,
   OpenCodeTuiStatusUpdate,
-  OpenCodeTuiThreadSnapshot,
-  OpenCodeTuiThreadsUpdate,
-  OpenCodeModelRef,
   OpenCodePluginTarget,
   Session,
 } from '@shared/types'
@@ -34,7 +31,6 @@ import type { PtyLaunchIntegration } from '../pty/manager'
 import {
   TUI_STATUS_HEARTBEAT_MS,
   TUI_STATUS_LEGACY_FILE,
-  TUI_STATUS_MAX_THREADS,
   TUI_STATUS_PLUGIN_DIRECTORY,
   TUI_STATUS_PLUGIN_MARKER,
   TUI_STATUS_PLUGIN_VERSION,
@@ -49,7 +45,6 @@ import {
 export {
   TUI_STATUS_HEARTBEAT_MS,
   TUI_STATUS_LEGACY_FILE,
-  TUI_STATUS_MAX_THREADS,
   TUI_STATUS_PLUGIN_DIRECTORY,
   TUI_STATUS_PLUGIN_MARKER,
   TUI_STATUS_PLUGIN_VERSION,
@@ -73,91 +68,6 @@ const TUI_STATUS_SETTINGS_FILE = 'opencode-tui.json'
 export interface OpenCodeTuiStatusEvents {
   onStatus(update: OpenCodeTuiStatusUpdate): void
   onInstances(update: OpenCodeTuiInstancesUpdate): void
-  /** Root conversations one pane reports; feeds the Inbox. */
-  onThreads?(update: OpenCodeTuiThreadsUpdate): void
-}
-
-export const TUI_STATUS_DIRECTORY_MAX_LENGTH = 4096
-export const TUI_STATUS_MODEL_FIELD_MAX_LENGTH = 200
-const OPENCODE_SESSION_ID = /^ses_[A-Za-z0-9_-]{1,200}$/
-const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/
-
-function boundedText(value: unknown, maxLength: number): string | undefined {
-  return typeof value === 'string' && value.length > 0 && value.length <= maxLength &&
-    !CONTROL_CHARACTERS.test(value)
-    ? value
-    : undefined
-}
-
-function isAbsoluteTargetPath(value: string): boolean {
-  return value.startsWith('/') || /^[A-Za-z]:[\\/]/.test(value)
-}
-
-function decodeTuiModel(value: unknown): OpenCodeModelRef | undefined | null {
-  if (value === undefined) return undefined
-  if (typeof value !== 'object' || value === null) return null
-  const record = value as Record<string, unknown>
-  const id = boundedText(record.id, TUI_STATUS_MODEL_FIELD_MAX_LENGTH)
-  const providerId = boundedText(record.providerId, TUI_STATUS_MODEL_FIELD_MAX_LENGTH)
-  if (!id || !providerId) return null
-  if (record.variant !== undefined && !boundedText(record.variant, TUI_STATUS_MODEL_FIELD_MAX_LENGTH)) return null
-  return { id, providerId, ...(record.variant !== undefined ? { variant: record.variant as string } : {}) }
-}
-
-function decodeTuiThread(value: unknown): OpenCodeTuiThreadSnapshot | null {
-  if (typeof value !== 'object' || value === null) return null
-  const record = value as Record<string, unknown>
-  if (typeof record.id !== 'string' || !OPENCODE_SESSION_ID.test(record.id)) return null
-  const directory = boundedText(record.directory, TUI_STATUS_DIRECTORY_MAX_LENGTH)
-  if (!directory || !isAbsoluteTargetPath(directory)) return null
-  if (!isTuiStatus(record.status)) return null
-  const attentionReason = record.attentionReason
-  if (record.status === 'attention'
-    ? attentionReason !== 'permission' && attentionReason !== 'question'
-    : attentionReason !== undefined) return null
-  if (record.title !== undefined && typeof record.title !== 'string') return null
-  const title = cleanTuiTitle(record.title)
-  const model = decodeTuiModel(record.model)
-  if (model === null) return null
-  return {
-    id: record.id,
-    ...(title ? { title } : {}),
-    directory,
-    ...(model ? { model } : {}),
-    status: record.status,
-    ...(record.status === 'attention' ? { attentionReason: attentionReason as OpenCodeTuiAttentionReason } : {})
-  }
-}
-
-/** Validates the optional thread list; an invalid list is dropped, never the whole snapshot. */
-export function decodeTuiThreads(value: unknown): OpenCodeTuiThreadSnapshot[] | undefined {
-  if (!Array.isArray(value) || value.length === 0 || value.length > TUI_STATUS_MAX_THREADS) return undefined
-  const threads: OpenCodeTuiThreadSnapshot[] = []
-  const seen = new Set<string>()
-  for (const item of value) {
-    const thread = decodeTuiThread(item)
-    if (!thread || seen.has(thread.id)) return undefined
-    seen.add(thread.id)
-    threads.push(thread)
-  }
-  return threads
-}
-
-function isTuiStatus(value: unknown): value is OpenCodeTuiStatus {
-  return value === 'idle' || value === 'working' || value === 'attention' ||
-    value === 'completed' || value === 'error'
-}
-
-function cleanTuiTitle(value: string | undefined): string | undefined {
-  const title = value?.replace(/\s+/g, ' ').trim().slice(0, TUI_STATUS_TITLE_MAX_LENGTH)
-  return title || undefined
-}
-
-function sameThreads(
-  a: readonly OpenCodeTuiThreadSnapshot[] | undefined,
-  b: readonly OpenCodeTuiThreadSnapshot[] | undefined
-): boolean {
-  return JSON.stringify(a ?? []) === JSON.stringify(b ?? [])
 }
 
 interface Runtime {
@@ -252,8 +162,10 @@ export function decodeTuiStatusSnapshot(value: unknown, now = Date.now()): OpenC
   if (hasProcessStartedAt && (typeof record.processStartedAt !== 'string' ||
     !/^[A-Za-z]{3} [A-Za-z]{3} \d{1,2} \d{2}:\d{2}:\d{2} \d{4}$/.test(record.processStartedAt))) return null
   if (record.title !== undefined && typeof record.title !== 'string') return null
-  const title = cleanTuiTitle(record.title)
-  const threads = decodeTuiThreads(record.threads)
+  const title = record.title
+    ?.replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, TUI_STATUS_TITLE_MAX_LENGTH)
 
   return {
     protocol: TUI_STATUS_PROTOCOL,
@@ -269,8 +181,7 @@ export function decodeTuiStatusSnapshot(value: unknown, now = Date.now()): OpenC
           ...(hasProcessStartedAt ? { processStartedAt: record.processStartedAt as string } : {})
         }
       : {}),
-    ...(record.closed === true ? { closed: true } : {}),
-    ...(threads ? { threads } : {})
+    ...(record.closed === true ? { closed: true } : {})
   }
 }
 
@@ -625,7 +536,6 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
     if (!runtime) return
     clearInterval(runtime.timer)
     this.runtimes.delete(terminalId)
-    if (runtime.snapshot?.threads?.length) this.emitThreads(runtime, runtime.snapshot.threads, true)
     void this.unlinkStatusFile(runtime.hostPath)
     this.emitSessionInstances(runtime.sessionId)
     this.emitSessionStatus(runtime.sessionId)
@@ -825,10 +735,6 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
 
     runtime.lastHeartbeatAt = now
     runtime.lastProbeAt = null
-    if (processChanged && previous?.threads?.length) this.emitThreads(runtime, previous.threads, true)
-    if (processChanged || !sameThreads(previous?.threads, snapshot.threads)) {
-      this.emitThreads(runtime, snapshot.threads ?? [], false)
-    }
     if (
       previous?.revision === snapshot.revision &&
       previous.status === snapshot.status &&
@@ -869,20 +775,8 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
     }
   }
 
-  private emitThreads(runtime: Runtime, threads: OpenCodeTuiThreadSnapshot[], closed: boolean): void {
-    if (!closed && threads.length === 0) return
-    this.events.onThreads?.({
-      sessionId: runtime.sessionId,
-      terminalId: runtime.terminalId,
-      target: runtime.target,
-      threads,
-      closed
-    })
-  }
-
   private clearRuntimeSnapshot(runtime: Runtime): void {
     if (runtime.snapshot === null) return
-    if (runtime.snapshot.threads?.length) this.emitThreads(runtime, runtime.snapshot.threads, true)
     runtime.snapshot = null
     runtime.lastHeartbeatAt = null
     runtime.lastProbeAt = null

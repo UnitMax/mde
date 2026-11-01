@@ -86,20 +86,15 @@ export function visibleInboxThreads(
     .sort((a, b) => b.lastActivityAt - a.lastActivityAt || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
 }
 
-export type InboxLockReason = 'unsupported' | 'disabled'
-
 /**
- * The Inbox is filled by the OpenCode status plugin, which runs on macOS and in
- * WSL on Windows, and only while global status reporting is on.
+ * The Inbox talks to OpenCode's background service, which MDE reaches on macOS and, on Windows,
+ * inside WSL. Everywhere else it is locked.
  */
-export function inboxLockReason(
+export function inboxLocked(
   platform: { platform: string; isWindows: boolean } | null,
-  wslAvailable: boolean,
-  reportingEnabled: boolean
-): InboxLockReason | null {
-  const supported = platform?.platform === 'darwin' || (platform?.isWindows === true && wslAvailable)
-  if (!supported) return 'unsupported'
-  return reportingEnabled ? null : 'disabled'
+  wslAvailable: boolean
+): boolean {
+  return !(platform?.platform === 'darwin' || (platform?.isWindows === true && wslAvailable))
 }
 
 /**

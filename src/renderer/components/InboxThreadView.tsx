@@ -67,7 +67,7 @@ export function InboxThreadView(): JSX.Element {
   const lock = useInboxLock()
   const thread = threads.find((item) => item.id === selectedId) ?? null
 
-  if (lock) return <InboxLockedNotice reason={lock} />
+  if (lock) return <InboxLockedNotice />
   if (!thread) return <NewThreadView />
 
   return (

@@ -115,9 +115,7 @@ interface PluginHarness {
 }
 
 /** Runs the real plugin source against a stand-in for OpenCode's terminal plugin context. */
-type PluginSession = { parentID?: string; title?: string; location?: { directory?: string }; model?: Record<string, unknown> }
-
-async function startStatusPlugin(sessions: Record<string, PluginSession>): Promise<PluginHarness> {
+async function startStatusPlugin(sessions: Record<string, { parentID?: string; title?: string }>): Promise<PluginHarness> {
   const root = await temporaryDirectory()
   const file = join(root, 'status.json')
   const module = join(await temporaryDirectory(), 'tui.mjs')
@@ -213,48 +211,6 @@ describe('native status plugin management', () => {
       plugin.setRoute('ses_mine')
       plugin.emit('session.deleted', { sessionID: 'ses_other' })
       await vi.waitFor(async () => expect(await plugin.read()).toMatchObject({ status: 'completed' }), { timeout: 3000 })
-    } finally {
-      await plugin.stop()
-    }
-  })
-
-  it.skipIf(process.platform === 'win32')('reports each shown root conversation with its folder and model, without new revisions for metadata', async () => {
-    const sessions: Record<string, PluginSession> = {
-      ses_a: { title: 'First', location: { directory: '/work/a' }, model: { id: 'm1', providerID: 'p1', variant: 'high', secret: 'x' } },
-      ses_b: { title: 'Second', location: { directory: '/work/b' } },
-      ses_b_child: { parentID: 'ses_b' },
-      ses_c: { title: 'No folder' },
-    }
-    const plugin = await startStatusPlugin(sessions)
-    const threads = async () => ((await plugin.read()).threads ?? []) as Array<Record<string, unknown>>
-    try {
-      await vi.waitFor(async () => expect(await plugin.read()).toMatchObject({ status: 'idle' }))
-      expect(await plugin.read()).not.toHaveProperty('threads')
-      plugin.setRoute('ses_a')
-      plugin.emit('session.execution.started', { sessionID: 'ses_a' })
-      await vi.waitFor(async () => expect(await threads()).toEqual([{
-        id: 'ses_a', title: 'First', directory: '/work/a',
-        model: { id: 'm1', providerId: 'p1', variant: 'high' }, status: 'working',
-      }]))
-
-      plugin.setRoute('ses_b')
-      plugin.emit('permission.asked', { id: 'request', sessionID: 'ses_b_child' })
-      await vi.waitFor(async () => expect(await threads()).toEqual([
-        { id: 'ses_b', title: 'Second', directory: '/work/b', status: 'attention', attentionReason: 'permission' },
-        expect.objectContaining({ id: 'ses_a', status: 'working' }),
-      ]))
-      plugin.emit('session.execution.succeeded', { sessionID: 'ses_a' })
-      await vi.waitFor(async () => expect((await threads())[1]).toMatchObject({ id: 'ses_a', status: 'completed' }))
-
-      const revision = (await plugin.read()).revision
-      sessions.ses_b!.title = 'Renamed'
-      await vi.waitFor(async () => expect((await threads())[0]).toMatchObject({ title: 'Renamed' }), { timeout: 3000 })
-      expect((await plugin.read()).revision).toBe(revision)
-
-      plugin.setRoute('ses_c')
-      await vi.waitFor(async () => expect((await threads())[0]).toEqual({
-        id: 'ses_c', title: 'No folder', directory: process.cwd(), status: 'idle',
-      }), { timeout: 3000 })
     } finally {
       await plugin.stop()
     }

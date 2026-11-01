@@ -3,7 +3,7 @@ import type { InboxThread } from '../src/shared/types'
 import {
   countUnreadInboxThreads,
   inboxFolderLabel,
-  inboxLockReason,
+  inboxLocked,
   inboxModelLabel,
   inboxStatusChip,
   visibleInboxThreads
@@ -21,6 +21,7 @@ function thread(overrides: Partial<InboxThread> = {}): InboxThread {
     lastActivityAt: 10,
     readAt: 0,
     archived: false,
+    folderId: 'fld_app',
     ...overrides
   }
 }
@@ -69,15 +70,13 @@ describe('inbox list helpers', () => {
     expect(inboxStatusChip(thread({ status: 'idle' }))).toBeNull()
   })
 
-  it('locks the inbox until status reporting is available and on', () => {
+  it('is locked except on macOS and on Windows with WSL', () => {
     const mac = { platform: 'darwin', isWindows: false }
     const windows = { platform: 'win32', isWindows: true }
-    expect(inboxLockReason(null, false, true)).toBe('unsupported')
-    expect(inboxLockReason({ platform: 'linux', isWindows: false }, false, true)).toBe('unsupported')
-    expect(inboxLockReason(windows, false, true)).toBe('unsupported')
-    expect(inboxLockReason(windows, true, false)).toBe('disabled')
-    expect(inboxLockReason(windows, true, true)).toBeNull()
-    expect(inboxLockReason(mac, false, false)).toBe('disabled')
-    expect(inboxLockReason(mac, false, true)).toBeNull()
+    expect(inboxLocked(null, false)).toBe(true)
+    expect(inboxLocked({ platform: 'linux', isWindows: false }, false)).toBe(true)
+    expect(inboxLocked(windows, false)).toBe(true)
+    expect(inboxLocked(windows, true)).toBe(false)
+    expect(inboxLocked(mac, false)).toBe(false)
   })
 })

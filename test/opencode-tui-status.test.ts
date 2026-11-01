@@ -6,14 +6,12 @@ import {
   aggregateTuiStatuses,
   classifyTuiPluginFiles,
   collectTuiInstanceStatuses,
-  decodeTuiThreads,
   OpenCodeTuiStatusManager,
   parseLinuxProcessStartTicks,
   parseTuiPluginVersion,
   parseTuiStatusSnapshot,
   TUI_STATUS_HEARTBEAT_MS,
   TUI_STATUS_LIVENESS_PROBE_MS,
-  TUI_STATUS_MAX_THREADS,
   TUI_STATUS_PLUGIN_MARKER,
   TUI_STATUS_PLUGIN_VERSION,
   TUI_STATUS_POLL_MS,
@@ -93,96 +91,6 @@ describe('OpenCode TUI status protocol', () => {
         10_000
       )
     ).toBeNull()
-  })
-
-  it('decodes per-thread metadata and drops an invalid thread list without dropping the snapshot', () => {
-    const thread = {
-      id: 'ses_root',
-      title: '  Fix\n login ',
-      directory: '/home/me/app',
-      model: { id: 'model-1', providerId: 'provider-1', variant: 'high' },
-      status: 'attention',
-      attentionReason: 'permission'
-    }
-    expect(parseTuiStatusSnapshot(
-      { protocol: 1, status: 'working', revision: 1, updatedAt: 10_000, threads: [thread] },
-      10_000
-    )).toMatchObject({ threads: [{ ...thread, title: 'Fix login' }] })
-    expect(decodeTuiThreads([{ id: 'ses_win', directory: 'C:\\src\\app', status: 'idle' }]))
-      .toEqual([{ id: 'ses_win', directory: 'C:\\src\\app', status: 'idle' }])
-
-    for (const bad of [
-      { ...thread, id: 'nope' },
-      { ...thread, directory: 'relative/path' },
-      { ...thread, directory: '/home/me/\u0007app' },
-      { ...thread, status: 'attention', attentionReason: undefined },
-      { ...thread, status: 'completed' },
-      { ...thread, model: { id: 'model-1' } },
-      { ...thread, model: { id: 'model-1', providerId: 'x'.repeat(500) } },
-      { ...thread, title: 42 }
-    ]) {
-      const snapshot = parseTuiStatusSnapshot(
-        { protocol: 1, status: 'working', revision: 1, updatedAt: 10_000, threads: [bad] },
-        10_000
-      )
-      expect(snapshot).toMatchObject({ status: 'working' })
-      expect(snapshot).not.toHaveProperty('threads')
-    }
-    expect(decodeTuiThreads([thread, thread])).toBeUndefined()
-    expect(decodeTuiThreads(Array.from({ length: TUI_STATUS_MAX_THREADS + 1 }, (_, index) =>
-      ({ ...thread, id: `ses_${index}` })))).toBeUndefined()
-    expect(decodeTuiThreads('nope')).toBeUndefined()
-  })
-
-  it('reports thread changes without waiting for a new revision, and closes them with the process', async () => {
-    let now = 100_000
-    let title = 'First'
-    let closed = false
-    const onThreads = vi.fn()
-    const onStatus = vi.fn()
-    const manager = new OpenCodeTuiStatusManager(
-      { onInstances: vi.fn(), onStatus, onThreads },
-      {
-        now: () => now,
-        readStatusFile: async () => JSON.stringify({
-          protocol: 1,
-          status: 'working',
-          revision: 1,
-          updatedAt: now,
-          processId: 42,
-          processStartTicks: 88,
-          threads: [{ id: 'ses_root', title, directory: '/home/me/app', status: 'working' }],
-          ...(closed ? { closed: true } : {})
-        }),
-        unlinkStatusFile: vi.fn(async () => {})
-      }
-    )
-    installRuntime(manager)
-    const update = (threadTitle: string, isClosed: boolean) => ({
-      sessionId: 'session-1',
-      terminalId: 'terminal-1',
-      target: { kind: 'wsl', distro: 'Ubuntu' },
-      threads: [{ id: 'ses_root', title: threadTitle, directory: '/home/me/app', status: 'working' }],
-      closed: isClosed
-    })
-
-    await managerInternals(manager).poll('terminal-1')
-    expect(onThreads).toHaveBeenLastCalledWith(update('First', false))
-    now += TUI_STATUS_POLL_MS
-    await managerInternals(manager).poll('terminal-1')
-    expect(onThreads).toHaveBeenCalledTimes(1)
-
-    title = 'Second'
-    now += TUI_STATUS_POLL_MS
-    await managerInternals(manager).poll('terminal-1')
-    expect(onThreads).toHaveBeenLastCalledWith(update('Second', false))
-    expect(onStatus).toHaveBeenCalledTimes(1)
-
-    closed = true
-    now += TUI_STATUS_POLL_MS
-    await managerInternals(manager).poll('terminal-1')
-    expect(onThreads).toHaveBeenLastCalledWith(update('Second', true))
-    expect(onThreads).toHaveBeenCalledTimes(3)
   })
 
   it('rejects stale, malformed, and incomplete snapshots', () => {

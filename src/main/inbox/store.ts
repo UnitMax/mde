@@ -10,7 +10,7 @@ import type {
 import { writeJsonAtomic } from '../store/atomic-json'
 
 export const INBOX_FILE = 'inbox.json'
-export const INBOX_FILE_VERSION = 2
+export const INBOX_FILE_VERSION = 1
 /** Oldest threads (by last activity) are dropped beyond this many. */
 export const INBOX_MAX_THREADS = 1000
 export const INBOX_MAX_FOLDERS = 200
@@ -82,7 +82,6 @@ export function validateInboxThread(raw: unknown): InboxThread | null {
   if (!text(record.directory, INBOX_DIRECTORY_MAX_LENGTH)) return null
   const target = validateTarget(record.target)
   if (!target) return null
-  if (record.mdeSessionId !== undefined && !text(record.mdeSessionId, INBOX_SHORT_TEXT_MAX_LENGTH)) return null
   if (record.branch !== null && !text(record.branch, INBOX_SHORT_TEXT_MAX_LENGTH)) return null
   const model = validateModel(record.model)
   if (model === null) return null
@@ -93,14 +92,12 @@ export function validateInboxThread(raw: unknown): InboxThread | null {
     : attentionReason !== undefined) return null
   if (!timestamp(record.createdAt) || !timestamp(record.lastActivityAt) || !timestamp(record.readAt)) return null
   if (typeof record.archived !== 'boolean') return null
-  if (record.origin !== undefined && record.origin !== 'chat') return null
-  if (record.folderId !== undefined && !isInboxFolderId(record.folderId)) return null
+  if (!isInboxFolderId(record.folderId)) return null
   return {
     id: record.id,
     title: record.title,
     directory: record.directory,
     target,
-    ...(record.mdeSessionId !== undefined ? { mdeSessionId: record.mdeSessionId as string } : {}),
     branch: record.branch as string | null,
     ...(model ? { model } : {}),
     status: record.status,
@@ -109,8 +106,7 @@ export function validateInboxThread(raw: unknown): InboxThread | null {
     lastActivityAt: record.lastActivityAt,
     readAt: record.readAt,
     archived: record.archived,
-    ...(record.origin === 'chat' ? { origin: 'chat' as const } : {}),
-    ...(record.folderId !== undefined ? { folderId: record.folderId as string } : {})
+    folderId: record.folderId
   }
 }
 
@@ -149,7 +145,7 @@ function byRecentUse(a: InboxFolder, b: InboxFolder): number {
   return b.lastUsedAt - a.lastUsedAt || a.name.localeCompare(b.name)
 }
 
-/** Folders of a version 2 file; a version 1 file has none. */
+/** The valid folders of the stored file, most recently used first. */
 export function normalizeInboxFolders(raw: unknown): InboxFolder[] {
   const list = raw && typeof raw === 'object' && !Array.isArray(raw)
     ? (raw as Record<string, unknown>).folders

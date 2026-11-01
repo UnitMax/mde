@@ -14,7 +14,6 @@ function setup(responses: Partial<Record<ServiceOperation, unknown>> = {}) {
   const store = new InboxStore('/unused', { writeFile: async () => {}, writeDelayMs: 60_000 })
   const recorder = new InboxRecorder(store, {
     now: () => now,
-    lookupSession: async () => null,
     readBranch: async () => 'main',
     onChanged: () => {},
   })
@@ -128,7 +127,7 @@ describe('Inbox chat service', () => {
       agent: 'plan', model: { id: 'model-1', providerID: 'provider-1' }, location: { directory: '/home/me/app' },
     })
     expect(calls[1]?.request).toEqual({ params: { sessionID: 'ses_new' }, body: { text: 'Fix the login' } })
-    expect(thread).toMatchObject({ id: 'ses_new', title: 'New session', origin: 'chat', folderId: 'fld_abc', status: 'working' })
+    expect(thread).toMatchObject({ id: 'ses_new', title: 'New session', folderId: 'fld_abc', status: 'working' })
     expect(store.composer()).toEqual({ folderId: 'fld_abc', agent: 'plan', model })
     expect(openEvents).toHaveBeenCalledWith(wsl, expect.any(AbortSignal))
     service.stop()
@@ -144,11 +143,11 @@ describe('Inbox chat service', () => {
     service.stop()
   })
 
-  it('refuses to start threads while the Inbox is locked or with an empty message', async () => {
+  it('refuses to start threads where the Inbox is unavailable or with an empty message', async () => {
     const { service, folder, disable } = setup()
     await expect(service.create({ folderId: folder.id, text: '   ', agent: 'build', model })).rejects.toThrow('Type a message first.')
     disable()
-    await expect(service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })).rejects.toThrow('status reporting')
+    await expect(service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })).rejects.toThrow('only available on macOS')
   })
 
   it('switches agent and model only when they changed, then sends', async () => {

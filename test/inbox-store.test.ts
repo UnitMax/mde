@@ -33,7 +33,6 @@ function thread(overrides: Partial<InboxThread> = {}): InboxThread {
     title: 'Fix login',
     directory: '/home/me/app',
     target: { kind: 'wsl', distro: 'Ubuntu-24.04' },
-    mdeSessionId: 'session-1',
     branch: 'main',
     model: { id: 'model-1', providerId: 'provider-1' },
     status: 'completed',
@@ -41,6 +40,7 @@ function thread(overrides: Partial<InboxThread> = {}): InboxThread {
     lastActivityAt: 200,
     readAt: 0,
     archived: false,
+    folderId: 'fld_one',
     ...overrides
   }
 }
@@ -50,7 +50,7 @@ describe('inbox thread validation', () => {
     expect(validateInboxThread({ ...thread(), prompt: 'private' })).toEqual(thread())
     expect(validateInboxThread(thread({ status: 'attention', attentionReason: 'question' })))
       .toMatchObject({ status: 'attention', attentionReason: 'question' })
-    expect(validateInboxThread(thread({ branch: null, model: undefined, mdeSessionId: undefined })))
+    expect(validateInboxThread(thread({ branch: null, model: undefined })))
       .toMatchObject({ branch: null })
   })
 
@@ -125,7 +125,7 @@ describe('inbox store', () => {
     await store.flush()
     expect(writeFile).toHaveBeenCalledTimes(1)
     expect(writeFile).toHaveBeenCalledWith(file, {
-      version: 2,
+      version: 1,
       threads: [expect.objectContaining({ id: 'ses_b' }), expect.objectContaining({ id: 'ses_a' })],
       folders: [],
       composer: {}
@@ -191,18 +191,18 @@ describe('inbox folders', () => {
     expect(validateComposer(null)).toEqual({})
   })
 
-  it('accepts chat threads and rejects a bad origin or folder', () => {
-    expect(validateInboxThread(thread({ origin: 'chat', folderId: 'fld_one' })))
-      .toMatchObject({ origin: 'chat', folderId: 'fld_one' })
-    expect(validateInboxThread(thread({ origin: 'mail' as never }))).toBeNull()
+  it('requires a valid folder', () => {
+    expect(validateInboxThread(thread({ folderId: 'fld_two' }))).toMatchObject({ folderId: 'fld_two' })
     expect(validateInboxThread(thread({ folderId: 'one' }))).toBeNull()
+    const { folderId: _folderId, ...withoutFolder } = thread()
+    expect(validateInboxThread(withoutFolder)).toBeNull()
   })
 
-  it('migrates a version 1 file to no folders, and sorts and caps version 2 folders', () => {
+  it('sorts and caps folders, and reads a file without any', () => {
     expect(normalizeInboxFolders({ version: 1, threads: [] })).toEqual([])
     const many = Array.from({ length: INBOX_MAX_FOLDERS + 3 }, (_, index) =>
       folder({ id: `fld_${index}`, lastUsedAt: index }))
-    const folders = normalizeInboxFolders({ version: 2, folders: [...many, folder({ id: 'fld_0', name: 'Duplicate' })] })
+    const folders = normalizeInboxFolders({ version: 1, folders: [...many, folder({ id: 'fld_0', name: 'Duplicate' })] })
     expect(folders).toHaveLength(INBOX_MAX_FOLDERS)
     expect(folders[0]?.id).toBe(`fld_${INBOX_MAX_FOLDERS + 2}`)
   })
@@ -228,7 +228,7 @@ describe('inbox folders', () => {
     expect(reloaded.composer()).toEqual({ agent: 'plan' })
     await reloaded.flush()
 
-    await fs.writeFile(file, JSON.stringify({ version: 2, threads: [], folders: [], composer: { folderId: 'fld_gone' } }))
+    await fs.writeFile(file, JSON.stringify({ version: 1, threads: [], folders: [], composer: { folderId: 'fld_gone' } }))
     await reloaded.load()
     expect(reloaded.composer()).toEqual({})
   })

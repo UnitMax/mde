@@ -20,20 +20,17 @@ MDE stores data only on the local machine:
   centered column or fills the page (the word `centered` or `full`).
 - Small preference files in the user-data directory for the OpenCode status integration and
   notifications.
-- `inbox.json` under Electron's user-data directory, when OpenCode status reporting is on: one
-  record for each OpenCode conversation that ran in an MDE terminal, with its session ID, title,
-  folder, target (Mac or WSL distro), the MDE session it ran in, Git branch, model and provider
-  identifiers, last status, timestamps, and read and archived flags. It also holds the Inbox
-  folders you add (path, target, name, timestamps; at most 200) and the folder, model and agent
+- `inbox.json` under Electron's user-data directory, once you use the Inbox: one record for each
+  OpenCode conversation you started in the Inbox, with its session ID, title, folder, target (Mac
+  or WSL distro), Git branch, model and provider identifiers, last status, timestamps, and read
+  and archived flags. It also holds the Inbox folders you add (path, target, name, timestamps; at most 200) and the folder, model and agent
   you last chose in the Inbox composer. It never holds prompts, messages or tool data. It keeps at
   most 1,000 conversations; deleting a conversation from the Inbox removes only MDE's record.
 - If you enable the optional OpenCode integrations, a short status snapshot under
   `/tmp/mde-opencode` in the WSL distro, or a private `mde-opencode` directory under the
   macOS user temporary directory (state, current session title, timestamps, and a process ID
-  with its start identity; from plugin 2.1.0 also, for each conversation the terminal has shown,
-  its session ID, title, folder, model and provider identifiers, and status; never prompts,
-  messages or tool data), plus the plugin files MDE installs into the target's OpenCode
-  configuration directory (`plugins/mde-status/`). The plugin runs inside the OpenCode terminal
+  with its start identity; never prompts, messages or tool data), plus the plugin files MDE
+  installs into the target's OpenCode configuration directory (`plugins/mde-status/`). The plugin runs inside the OpenCode terminal
   process and edits no OpenCode configuration file. Disabling an integration does not uninstall
   its plugin.
   On Mac the snapshot directory is accessible only by the current user (0700), with files

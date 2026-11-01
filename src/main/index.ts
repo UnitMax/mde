@@ -8,7 +8,7 @@ import { getMiniWindowAction, MiniWindowController } from './mini-window'
 import { TitleBarController } from './window-chrome'
 import { OpenCodeTuiStatusManager } from './opencode/tui-status'
 import { PtyManager } from './pty/manager'
-import { getSession, initWorkspaceStore } from './store/workspace'
+import { initWorkspaceStore } from './store/workspace'
 import { InboxStore, INBOX_FILE } from './inbox/store'
 import { InboxRecorder } from './inbox/recorder'
 import { InboxChatService } from './inbox/chat'
@@ -65,8 +65,7 @@ const opencodeTuiStatusManager = new OpenCodeTuiStatusManager({
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send(IpcEvents.opencodeTuiInstances, update)
     }
-  },
-  onThreads: (update) => inboxRecorder?.apply(update)
+  }
 })
 
 const ptyManager = new PtyManager({
@@ -181,7 +180,6 @@ if (!app.requestSingleInstanceLock()) {
     await inboxStore.load()
     inboxRecorder = new InboxRecorder(inboxStore, {
       now: () => Date.now(),
-      lookupSession: getSession,
       readBranch: async (target, directory) => {
         const info = await readGitTerminalInfo(target, directory)
         return info.repository ? info.branch : null
@@ -201,14 +199,15 @@ if (!app.requestSingleInstanceLock()) {
       store: inboxStore,
       recorder: inboxRecorder,
       now: () => Date.now(),
-      enabled: () => opencodeTuiStatusManager.settings().enabled &&
-        (process.platform === 'darwin' || process.platform === 'win32'),
+      enabled: () => process.platform === 'darwin' || process.platform === 'win32',
       send: (event) => {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send(IpcEvents.chatEvent, event)
         }
       }
     })
+    // Threads that were still working when MDE last quit start receiving their events again.
+    inboxChat.start()
     registerIpcHandlers(
       { getWebContents: () => mainWindow?.webContents ?? null, rendererUrl },
       ptyManager,

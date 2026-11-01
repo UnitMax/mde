@@ -4,11 +4,9 @@
 export const TUI_STATUS_HEARTBEAT_MS = 5_000
 export const TUI_STATUS_TICK_MS = 1_000
 export const TUI_STATUS_PLUGIN_MARKER = 'mde-opencode-tui-status-plugin-v1'
-export const TUI_STATUS_PLUGIN_VERSION = '2.1.0'
+export const TUI_STATUS_PLUGIN_VERSION = '2.0.0'
 export const TUI_STATUS_PLUGIN_VERSION_MARKER = 'mde-opencode-tui-status-plugin-version:'
 export const TUI_STATUS_TITLE_MAX_LENGTH = 160
-/** Most root conversations one snapshot reports. */
-export const TUI_STATUS_MAX_THREADS = 16
 
 /** Directory under the OpenCode config's `plugins/` that holds both entrypoints. */
 export const TUI_STATUS_PLUGIN_DIRECTORY = 'mde-status'
@@ -56,9 +54,6 @@ export default {
     let currentSessionId
     let processStartTicks
     let processStartedAt
-    let threads = []
-    let threadsKey = '[]'
-    const threadStatuses = new Map()
     const active = new Map()
     const permissions = new Map()
     const forms = new Map()
@@ -90,7 +85,6 @@ export default {
       ...(processStartTicks === undefined ? {} : { processId: process.pid, processStartTicks }),
       ...(processStartedAt === undefined ? {} : { processId: process.pid, processStartedAt }),
       ...(closed ? { closed: true } : {}),
-      ...(threads.length > 0 ? { threads } : {}),
       updatedAt: Date.now(),
     })
 
@@ -178,69 +172,6 @@ export default {
       write()
     }
 
-    const modelOf = (info) => {
-      const model = info?.model
-      if (!model || typeof model.id !== 'string' || !model.id || typeof model.providerID !== 'string' || !model.providerID) {
-        return undefined
-      }
-      return {
-        id: model.id,
-        providerId: model.providerID,
-        ...(typeof model.variant === 'string' && model.variant ? { variant: model.variant } : {}),
-      }
-    }
-
-    const directoryOf = (info) => {
-      const value = info?.location?.directory ?? info?.directory
-      return typeof value === 'string' && path.isAbsolute(value) ? value : process.cwd()
-    }
-
-    // Mirrors derive() for one root conversation: questions first, then work, then failure.
-    const threadStatusOf = (root) => {
-      const inRoot = (sessionId) => rootOf(sessionId) === root
-      for (const entry of permissions.values()) if (inRoot(entry.sessionId)) return ['attention', 'permission']
-      for (const entry of forms.values()) if (inRoot(entry.sessionId)) return ['attention', 'question']
-      for (const sessionId of active.keys()) if (inRoot(sessionId)) return ['working']
-      for (const sessionId of errored) if (inRoot(sessionId)) return ['error']
-      const previous = threadStatuses.get(root)
-      return [previous === undefined || previous === 'idle' || previous === 'error' ? 'idle' : 'completed']
-    }
-
-    // Thread metadata changes rewrite the snapshot without a new revision, so the
-    // pane highlight still fires only on real status changes.
-    const refreshThreads = () => {
-      const roots = []
-      if (currentSessionId) roots.push(rootOf(currentSessionId))
-      for (const sessionId of [...shown].reverse()) {
-        const root = rootOf(sessionId)
-        if (!roots.includes(root)) roots.push(root)
-      }
-      const next = []
-      for (const root of roots.slice(0, ${TUI_STATUS_MAX_THREADS})) {
-        let info
-        try {
-          info = context.data.session.get(root)
-        } catch {}
-        const [threadStatus, reason] = threadStatusOf(root)
-        threadStatuses.set(root, threadStatus)
-        const threadTitle = cleanTitle(info?.title)
-        const model = modelOf(info)
-        next.push({
-          id: root,
-          ...(threadTitle ? { title: threadTitle } : {}),
-          directory: directoryOf(info),
-          ...(model ? { model } : {}),
-          status: threadStatus,
-          ...(reason ? { attentionReason: reason } : {}),
-        })
-      }
-      const key = JSON.stringify(next)
-      if (key === threadsKey) return
-      threadsKey = key
-      threads = next
-      write()
-    }
-
     const forget = (sessionId) => {
       active.delete(sessionId)
       errored.delete(sessionId)
@@ -251,7 +182,6 @@ export default {
     const derive = () => {
       claimShown()
       refreshTitle()
-      refreshThreads()
       const roots = new Set([...shown].map(rootOf))
       const owned = (sessionId) => roots.has(rootOf(sessionId))
       const ownsAny = (sessionIds) => {

@@ -25,7 +25,7 @@ function thread(overrides: Partial<InboxThread> = {}): InboxThread {
   return {
     id: 'ses_one', title: 'Fix login', directory: '/home/me/app', target: { kind: 'wsl', distro: 'Ubuntu' },
     branch: 'main', model: { id: 'free-1', providerId: 'opencode' }, status: 'working',
-    createdAt: 1, lastActivityAt: Date.now(), readAt: Date.now(), archived: false, origin: 'chat', folderId: 'fld_app',
+    createdAt: 1, lastActivityAt: Date.now(), readAt: Date.now(), archived: false, folderId: 'fld_app',
     ...overrides,
   }
 }
@@ -84,7 +84,6 @@ beforeEach(() => {
   useWorkspace.setState({
     platform: { platform: 'win32', isWindows: true },
     wslAvailable: true,
-    opencodeTuiEnabled: true,
     inboxThreads: [],
     selectedInboxThreadId: null,
     activeWorkspaceView: 'inbox',

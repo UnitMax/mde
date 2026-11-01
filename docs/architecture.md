@@ -68,34 +68,28 @@ with activity you have not opened are bold with a dot, and the tab shows how man
 list can be searched by title, folder, branch and model, and filtered to All, Unread, Needs input
 or Archived. The context menu marks a thread read or unread, archives it, or deletes it.
 
-The Inbox is locked until Settings → OpenCode status reporting is on, and on platforms where the
-status plugin cannot run (anything but macOS and Windows with WSL). The locked view explains why
-and opens Settings → OpenCode. The main area shows the selected thread's conversation (see Inbox
-chat), or the new-thread page when nothing is selected.
+The Inbox works without the OpenCode status plugin or status reporting: it talks to OpenCode's
+background service directly (see Inbox chat). It is locked, with an explanation, anywhere MDE
+cannot reach that service: everywhere except macOS and Windows with WSL. The main area shows the
+selected thread's conversation, or the new-thread page when nothing is selected.
 
-Threads come from two places and are never imported from OpenCode's history: conversations
-started in the Inbox itself, and conversations run in MDE terminals, which the status plugin
-(version 2.1.0 or newer) reports for each root conversation the terminal has shown (see OpenCode
-integration). In the main process `src/main/inbox/recorder.ts` applies those reports, and the
-service events of threads it already holds:
+Threads are only the ones started in the Inbox; conversations run in terminals, and OpenCode's
+history, are never imported. In the main process `src/main/inbox/recorder.ts` records each new
+thread and applies the OpenCode service events of the threads it holds:
 
-- A conversation that has only been looked at, never run, is not recorded.
 - Finishing, failing, or asking for input or permission moves the thread to the top, marks it
   unread, and brings it back from the archive, as a reply does in mail. Starting work changes only
   the status chip, so a busy thread does not keep moving.
-- When the terminal's OpenCode exits, its threads that were still working become idle.
 - The branch is read with the same background Git query as the terminal header, for the thread's
   folder, when the thread is first recorded and after each activity. A failed read keeps the
   previous branch.
-- Deleting a thread removes only MDE's record; it comes back if OpenCode reports new activity.
+- Deleting a thread removes only MDE's record; later events for it are ignored.
 
 `src/main/inbox/store.ts` keeps the threads, the Inbox folders and the last composer choices in
 memory and in `inbox.json` in the user-data directory, written at most every 500 ms with the same
-temporary-file-and-rename write as `workspace.json`, and once more on quit. The file is at
-version 2; a version 1 file loads with no folders. Loading validates every record, drops
-malformed ones, shows threads that were working when MDE closed as idle, and keeps the 1,000 most
-recent threads and 200 most recently used folders. The
-renderer loads the list once at startup (`inbox:list`) and then follows `inbox:changed` pushes,
+temporary-file-and-rename write as `workspace.json`, and once more on quit. Loading validates
+every record, drops malformed ones, shows threads that were working when MDE closed as idle, and
+keeps the 1,000 most recent threads and 200 most recently used folders. The renderer loads the list once at startup (`inbox:list`) and then follows `inbox:changed` pushes,
 so opening the Inbox never waits for OpenCode or Git.
 
 ### Inbox chat
@@ -122,7 +116,7 @@ scroll up. User messages are bubbles; assistant text is Markdown rendered read-o
 preview's extensions (raw HTML off, links opened through the external-link validator); reasoning
 is a collapsible "Thought" block; each tool call is a row with a status icon and a summary such as
 "Read src/app.ts" or "Ran npm test" that expands to its full input and output, each cut at 64 KB.
-Subagent calls (OpenCode's `subagent` tool, or `task` in older versions) are shown as cards instead: the agent type, the title, its state (Working, Done, Stopped, Failed) and a one-line preview of the task. Subagents started together are grouped under one heading, and a card expands to the full task and the answer rendered as Markdown. The subagent's own steps are not shown, since MDE only follows sessions it recorded. Agent and model switches, failures and stops appear as small notes. Text streams in as OpenCode
+Subagent calls (OpenCode's `subagent` tool) are shown as cards instead: the agent type, the title, its state (Working, Done, Stopped, Failed) and a one-line preview of the task. Subagents started together are grouped under one heading, and a card expands to the full task and the answer rendered as Markdown. The subagent's own steps are not shown, since MDE only follows sessions it recorded. Agent and model switches, failures and stops appear as small notes. Text streams in as OpenCode
 produces it. Permission requests (Allow once, Always allow, Reject) and questions (option buttons,
 checkboxes, free text) are answered inline as cards; a question with field types MDE cannot show
 asks you to answer it in a terminal. While the thread works, the send button becomes Stop. A
@@ -147,7 +141,8 @@ On Windows, MDE reaches the WSL service at `127.0.0.1`, which needs WSL's localh
 match OpenCode's ID patterns, requests time out after 30 seconds and responses are capped at
 16 MB. `parse.ts` turns every response into MDE's own narrow types and drops unknown fields.
 `events.ts` keeps one server-sent-event stream (`/api/event`) per target that has an active chat
-thread, from the first request until status reporting is turned off or MDE quits. A dropped
+thread, from the first request until MDE quits; at launch, streams reopen for threads that were
+still working. A dropped
 stream reconnects with backoff and gives up after five failures in a row until the next request;
 after a reconnect, open threads refetch. Events are matched to threads by session ID: text and
 reasoning deltas, message and request changes, and run state go to the renderer for threads that
@@ -375,15 +370,6 @@ All integrations are optional and read-only with respect to prompts and project 
   directories have mode 0700 and snapshots mode 0600. Disposal removes a pane's snapshot;
   startup removes matching artifacts older than 24 hours. Plugin protocol 1 is unchanged, so older
   snapshots stay readable; plugin version 2.0.0 is the first for OpenCode 2.
-
-  Plugin 2.1.0 adds an optional `threads` list for the Inbox: one entry for each root conversation
-  the terminal has shown (at most 16, the current one first) with its session ID, title, folder
-  (`location.directory`, or the terminal's working directory when OpenCode does not report one),
-  model and provider identifiers, and its own status, worked out the same way as the pane status.
-  A change to this list rewrites the snapshot without a new revision, so the pane highlight still
-  fires only on status changes. MDE validates every entry and drops an invalid list rather than
-  the whole snapshot. Older plugins keep working without the Inbox; Settings → OpenCode offers
-  the update.
 
   The plugin subscribes to the terminal's event feed: `session.execution.started` marks work,
   `succeeded`/`interrupted` marks completion and `failed` marks an error that stays until that session

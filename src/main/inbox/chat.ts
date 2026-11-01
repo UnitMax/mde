@@ -57,7 +57,7 @@ export interface InboxChatDependencies {
   recorder: InboxRecorder
   /** Pushes a live change to the renderer. */
   send(event: ChatEvent): void
-  /** Whether the Inbox is usable at all (status reporting on, supported platform). */
+  /** Whether the Inbox can be used on this platform (macOS, or Windows with WSL). */
   enabled(): boolean
   now(): number
   createId?(): string
@@ -134,12 +134,12 @@ export class InboxChatService {
     })
   }
 
-  /** Starts event streams for targets that have chat threads, once the Inbox is usable. */
+  /** Starts event streams for targets that have working threads, once the Inbox is usable. */
   start(): void {
     if (!this.dependencies.enabled()) return
     const targets = new Map<string, OpenCodePluginTarget>()
     for (const thread of this.dependencies.store.list()) {
-      if (thread.origin === 'chat' && (thread.status === 'working' || thread.status === 'attention')) {
+      if (thread.status === 'working' || thread.status === 'attention') {
         targets.set(serviceTargetKey(thread.target), thread.target)
       }
     }
@@ -433,6 +433,6 @@ export class InboxChatService {
   }
 
   private assertEnabled(): void {
-    if (!this.dependencies.enabled()) throw new Error('Turn on OpenCode status reporting in Settings to use the Inbox.')
+    if (!this.dependencies.enabled()) throw new Error('The Inbox is only available on macOS and on Windows with WSL.')
   }
 }

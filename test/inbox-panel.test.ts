@@ -24,6 +24,7 @@ function thread(overrides: Partial<InboxThread> = {}): InboxThread {
     lastActivityAt: Date.now() - 5 * 60_000,
     readAt: 0,
     archived: false,
+    folderId: 'fld_app',
     ...overrides
   }
 }
@@ -57,7 +58,6 @@ beforeEach(() => {
   useWorkspace.setState({
     platform: { platform: 'win32', isWindows: true },
     wslAvailable: true,
-    opencodeTuiEnabled: true,
     inboxThreads: [],
     selectedInboxThreadId: null,
     activeWorkspaceView: 'inbox',
@@ -72,21 +72,25 @@ afterEach(async () => {
 })
 
 describe('Inbox', () => {
-  it('is locked until status reporting is on, and opens OpenCode settings from there', async () => {
-    useWorkspace.setState({ opencodeTuiEnabled: false, inboxThreads: [thread()] })
+  it('is locked where OpenCode’s service is not reachable, and works without status reporting elsewhere', async () => {
+    useWorkspace.setState({ platform: { platform: 'linux', isWindows: false }, inboxThreads: [thread()] })
     const panel = await render(createElement(InboxPanel))
     expect(panel.querySelector('[data-testid="inbox-locked"]')).not.toBeNull()
     expect(panel.querySelector('[data-testid="inbox-thread-ses_one"]')).toBeNull()
     const main = await render(createElement(InboxThreadView))
-    const button = Array.from(main.querySelectorAll('button')).find((item) => item.textContent?.includes('Open OpenCode settings'))
-    await act(async () => button!.click())
-    expect(useWorkspace.getState().settingsDialog).toEqual({ open: true, section: 'opencode' })
+    expect(main.querySelector('[data-testid="inbox-locked"]')).not.toBeNull()
+
+    useWorkspace.setState({ platform: { platform: 'win32', isWindows: true }, opencodeTuiEnabled: false })
+    const open = await render(createElement(InboxPanel))
+    expect(open.querySelector('[data-testid="inbox-locked"]')).toBeNull()
+    expect(open.querySelector('[data-testid="inbox-thread-ses_one"]')).not.toBeNull()
   })
 
-  it('explains where threads come from while empty', async () => {
+  it('says how to start a thread while empty', async () => {
+    useWorkspace.setState({ inboxThreads: [] })
     const panel = await render(createElement(InboxPanel))
     expect(panel.textContent).toContain('No threads yet.')
-    expect(panel.textContent).toContain('2.1.0')
+    expect(panel.textContent).toContain('Start one with New thread.')
   })
 
   it('lists threads like mail and opens the selected one', async () => {

@@ -529,11 +529,7 @@ export function registerIpcHandlers(
       if (typeof req?.enabled !== 'boolean') {
         throw new Error('Invalid OpenCode TUI enabled setting.')
       }
-      return opencodeTuiStatusManager.setEnabled(req.enabled).then((settings) => {
-        if (settings.enabled) chat.start()
-        else chat.stop()
-        return settings
-      })
+      return opencodeTuiStatusManager.setEnabled(req.enabled)
     }
   )
   handle<OpenCodeTuiSetInstanceLabelModeRequest, OpenCodeTuiSettings>(

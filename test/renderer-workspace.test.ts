@@ -855,6 +855,7 @@ describe('renderer workspace event bridge', () => {
     lastActivityAt: 200,
     readAt: 0,
     archived: false,
+    folderId: 'fld_app',
     ...overrides
   })
 
@@ -864,7 +865,7 @@ describe('renderer workspace event bridge', () => {
       inboxThread({ id: 'ses_new', lastActivityAt: 300 })
     ])
     api.opencodeTui.settings.mockResolvedValueOnce({
-      enabled: true, currentPluginVersion: '2.1.0', instanceLabelMode: 'numbered'
+      enabled: true, currentPluginVersion: '2.0.0', instanceLabelMode: 'numbered'
     })
     useWorkspace.setState({ inboxThreads: [inboxThread({ id: 'ses_old', title: 'Renamed', lastActivityAt: 400 })] })
     await useWorkspace.getState().init()

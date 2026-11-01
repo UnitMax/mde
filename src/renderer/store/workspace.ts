@@ -139,7 +139,7 @@ interface WorkspaceState {
   opencodeTuiInstances: Record<string, OpenCodeTuiInstanceStatus[]>
   opencodeTuiReadRevisions: OpenCodeTuiReadRevisions
   opencodeTuiInstanceLabelMode: OpenCodeTuiInstanceLabelMode
-  /** Global OpenCode status reporting; the Inbox stays locked while it is off. */
+  /** Global OpenCode status reporting. */
   opencodeTuiEnabled: boolean
   /** MDE's own record of OpenCode threads, newest activity first. */
   inboxThreads: InboxThread[]

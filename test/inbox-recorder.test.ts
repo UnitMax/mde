@@ -1,10 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type {
-  InboxThread,
-  OpenCodeTuiThreadSnapshot,
-  OpenCodeTuiThreadsUpdate,
-  Session
-} from '../src/shared/types'
+import type { InboxThread } from '../src/shared/types'
 import { InboxStore } from '../src/main/inbox/store'
 import { InboxRecorder, isInboxThreadUnread, serviceEventReport } from '../src/main/inbox/recorder'
 import { readFileSync } from 'node:fs'
@@ -21,10 +16,7 @@ const folder = {
   target: { kind: 'wsl' as const, distro: 'Ubuntu-24.04' }, createdAt: 1, lastUsedAt: 1
 }
 
-const session: Session = {
-  id: 'session-1', projectId: 'project-1', name: 'App', kind: 'wsl',
-  distro: 'Ubuntu-24.04', path: '/home/me/app', createdAt: '2026-01-01T00:00:00Z'
-}
+const model = { id: 'model-1', providerId: 'provider-1' }
 
 function setup(options: { branch?: () => Promise<string | null> } = {}) {
   let now = 1_000
@@ -33,100 +25,67 @@ function setup(options: { branch?: () => Promise<string | null> } = {}) {
   const readBranch = vi.fn(options.branch ?? (async () => 'main'))
   const recorder = new InboxRecorder(store, {
     now: () => now,
-    lookupSession: async (id) => (id === session.id ? session : null),
     readBranch,
     onChanged: (thread) => changed.push(thread)
   })
-  const report = (threads: Partial<OpenCodeTuiThreadSnapshot>[], extra: Partial<OpenCodeTuiThreadsUpdate> = {}) =>
-    recorder.apply({
-      sessionId: session.id,
-      terminalId: 'session-1:pane-1',
-      target: { kind: 'wsl', distro: 'Ubuntu-24.04' },
-      closed: false,
-      threads: threads.map((thread) => ({
-        id: 'ses_one', directory: '/home/me/app', status: 'working', ...thread
-      }) as OpenCodeTuiThreadSnapshot),
-      ...extra
-    })
+  const start = (id = 'ses_one', title: string | null = 'Fix login') => recorder.recordChatThread({ id, title, folder, model })
+  const emit = (id: string, type: string, data: Record<string, unknown> = {}) =>
+    recorder.applyServiceEvent({ type, data: { sessionID: id, ...data } })
   return {
-    store, recorder, changed, readBranch, report,
+    store, recorder, changed, readBranch, start, emit,
     advance: (ms: number) => { now += ms },
     thread: (id = 'ses_one') => store.get(id)
   }
 }
 
 describe('inbox recorder', () => {
-  it('does not record a thread that has only been looked at', () => {
-    const { report, store } = setup()
-    report([{ status: 'idle', title: 'Old work' }])
-    expect(store.list()).toEqual([])
-  })
-
-  it('records a new thread with its metadata, then fills in the branch', async () => {
-    const { report, thread, readBranch } = setup()
-    report([{ title: 'Fix login', model: { id: 'model-1', providerId: 'provider-1' } }])
-    expect(thread()).toMatchObject({
-      id: 'ses_one', title: 'Fix login', directory: '/home/me/app', mdeSessionId: 'session-1',
-      target: { kind: 'wsl', distro: 'Ubuntu-24.04' }, model: { id: 'model-1', providerId: 'provider-1' },
-      status: 'working', branch: null, createdAt: 1_000, lastActivityAt: 1_000, archived: false
-    })
-    expect(isInboxThreadUnread(thread()!)).toBe(false)
-    await vi.waitFor(() => expect(thread()?.branch).toBe('main'))
-    expect(readBranch).toHaveBeenCalledWith(session, '/home/me/app')
-  })
-
   it('moves a thread up and marks it unread only when the agent finishes, fails, or asks', () => {
-    const { report, thread, advance, store } = setup()
-    report([{ id: 'ses_one' }])
+    const { start, emit, thread, advance, store } = setup()
+    start('ses_one')
     advance(1_000)
-    report([{ id: 'ses_two' }])
+    start('ses_two')
     expect(store.list().map((item) => item.id)).toEqual(['ses_two', 'ses_one'])
 
     advance(1_000)
-    report([{ id: 'ses_one', status: 'completed' }])
+    emit('ses_one', 'session.execution.succeeded')
     expect(store.list().map((item) => item.id)).toEqual(['ses_one', 'ses_two'])
     expect(thread()).toMatchObject({ status: 'completed', lastActivityAt: 3_000 })
     expect(isInboxThreadUnread(thread()!)).toBe(true)
 
     // Starting work again changes the chip but not the order or the time.
     advance(1_000)
-    report([{ id: 'ses_one', status: 'working' }])
+    emit('ses_one', 'session.execution.started')
     expect(thread()).toMatchObject({ status: 'working', lastActivityAt: 3_000 })
 
     advance(1_000)
-    report([{ id: 'ses_one', status: 'attention', attentionReason: 'question' }])
+    emit('ses_one', 'form.created')
     expect(thread()).toMatchObject({ status: 'attention', attentionReason: 'question', lastActivityAt: 5_000 })
 
     advance(1_000)
-    report([{ id: 'ses_one', status: 'attention', attentionReason: 'permission' }])
+    emit('ses_one', 'permission.asked')
     expect(thread()).toMatchObject({ attentionReason: 'permission', lastActivityAt: 6_000 })
 
     advance(1_000)
-    report([{ id: 'ses_one', status: 'error' }])
+    emit('ses_one', 'session.execution.failed')
     expect(thread()).toMatchObject({ status: 'error', lastActivityAt: 7_000 })
     expect(thread()).not.toHaveProperty('attentionReason')
   })
 
-  it('records a thread first seen finished as unread', () => {
-    const { report, thread } = setup()
-    report([{ status: 'completed' }])
-    expect(isInboxThreadUnread(thread()!)).toBe(true)
-  })
-
   it('brings an archived thread back on new activity and keeps it archived otherwise', () => {
-    const { report, recorder, thread, advance } = setup()
-    report([{}])
+    const { start, emit, recorder, thread, advance } = setup()
+    start()
     recorder.setArchived('ses_one', true)
-    report([{ title: 'Renamed' }])
+    emit('ses_one', 'session.renamed', { title: 'Renamed' })
     expect(thread()).toMatchObject({ archived: true, title: 'Renamed' })
     advance(10)
-    report([{ status: 'completed' }])
+    emit('ses_one', 'session.execution.succeeded')
     expect(thread()?.archived).toBe(false)
   })
 
   it('marks read and unread', () => {
-    const { report, recorder, thread, advance } = setup()
-    report([{ status: 'completed' }])
+    const { start, emit, recorder, thread, advance } = setup()
+    start()
+    emit('ses_one', 'session.execution.succeeded')
     advance(5)
     expect(recorder.setRead('ses_one', true)).toMatchObject({ readAt: 1_005 })
     expect(isInboxThreadUnread(thread()!)).toBe(false)
@@ -135,51 +94,44 @@ describe('inbox recorder', () => {
     expect(recorder.setRead('ses_missing', true)).toBeNull()
   })
 
-  it('keeps the title and model when a later report omits them', () => {
-    const { report, thread } = setup()
-    report([{ title: 'Fix login', model: { id: 'model-1', providerId: 'provider-1' } }])
-    report([{ status: 'completed' }])
-    expect(thread()).toMatchObject({ title: 'Fix login', model: { id: 'model-1', providerId: 'provider-1' } })
-  })
-
-  it('settles working threads when their terminal closes', () => {
-    const { report, thread } = setup()
-    report([{ id: 'ses_one' }, { id: 'ses_two', status: 'completed' }])
-    report([{ id: 'ses_one' }, { id: 'ses_two', status: 'completed' }], { closed: true })
-    expect(thread('ses_one')?.status).toBe('idle')
-    expect(thread('ses_two')?.status).toBe('completed')
+  it('keeps the title and model when a later event omits them', () => {
+    const { start, emit, thread } = setup()
+    start()
+    emit('ses_one', 'session.execution.succeeded')
+    expect(thread()).toMatchObject({ title: 'Fix login', model })
   })
 
   it('keeps the previous branch when the lookup fails', async () => {
     let fail = false
-    const { report, thread, advance } = setup({
+    const { start, emit, thread, advance } = setup({
       branch: async () => {
         if (fail) throw new Error('git unavailable')
         return 'feature'
       }
     })
-    report([{}])
+    start()
     await vi.waitFor(() => expect(thread()?.branch).toBe('feature'))
     fail = true
     advance(10)
-    report([{ status: 'completed' }])
+    emit('ses_one', 'session.execution.succeeded')
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(thread()?.branch).toBe('feature')
   })
 
-  it('forgets a deleted thread until it reports new activity', () => {
-    const { report, recorder, store } = setup()
-    report([{}])
+  it('forgets a deleted thread for good', () => {
+    const { start, emit, recorder, store } = setup()
+    start()
     recorder.remove('ses_one')
     expect(store.list()).toEqual([])
-    report([{ title: 'Back' }])
-    expect(store.get('ses_one')?.title).toBe('Back')
+    emit('ses_one', 'session.execution.succeeded')
+    expect(store.list()).toEqual([])
   })
 
   it('reports each change once', () => {
-    const { report, changed } = setup()
-    report([{}])
-    report([{}])
+    const { start, emit, changed } = setup()
+    start()
+    emit('ses_one', 'session.execution.started')
+    emit('ses_one', 'session.execution.started')
     expect(changed).toHaveLength(1)
   })
 
@@ -189,11 +141,11 @@ describe('inbox recorder', () => {
     const id = events.find((event) => event.type === 'session.created')!.data.sessionID as string
     const created = recorder.recordChatThread({ id, title: null, folder, model: { id: 'model-1', providerId: 'provider-1' } })
     expect(created).toMatchObject({
-      id, title: 'Untitled session', origin: 'chat', folderId: 'fld_app', status: 'working',
+      id, title: 'Untitled session', folderId: 'fld_app', status: 'working',
       directory: '/home/me/app', target: { kind: 'wsl', distro: 'Ubuntu-24.04' }
     })
     expect(isInboxThreadUnread(created)).toBe(false)
-    // A chat thread has no MDE session, so Git runs through a stand-in for its target.
+    // Git runs through a stand-in session for the folder's target.
     await vi.waitFor(() => expect(readBranch).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/app' }), '/home/me/app'))
 
