@@ -134,7 +134,7 @@ export class InboxRecorder {
     return this.save(thread, { ...thread, archived })
   }
 
-  /** Forgets MDE's record only; a later report of new activity records it again. */
+  /** Forgets MDE's record only; later events for the removed thread are ignored. */
   remove(id: string): void {
     this.store.remove(id)
   }
