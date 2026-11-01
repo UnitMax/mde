@@ -219,7 +219,7 @@ Generated from `package-lock.json` by `npm run licenses`. 266 shipped package en
 | `dayjs` | `1.11.23` | no | MIT | https://registry.npmjs.org/dayjs/-/dayjs-1.11.23.tgz |
 | `delaunator` | `5.1.0` | no | ISC | https://registry.npmjs.org/delaunator/-/delaunator-5.1.0.tgz |
 | `detect-node-es` | `1.1.0` | no | MIT | https://registry.npmjs.org/detect-node-es/-/detect-node-es-1.1.0.tgz |
-| `dompurify` | `3.4.16` | yes | (MPL-2.0 OR Apache-2.0) | https://registry.npmjs.org/dompurify/-/dompurify-3.4.16.tgz |
+| `dompurify` | `3.4.17` | yes | (MPL-2.0 OR Apache-2.0) | https://registry.npmjs.org/dompurify/-/dompurify-3.4.17.tgz |
 | `elkjs` | `0.9.3` | no | EPL-2.0 | https://registry.npmjs.org/elkjs/-/elkjs-0.9.3.tgz |
 | `es-toolkit` | `1.52.0` | no | MIT | https://registry.npmjs.org/es-toolkit/-/es-toolkit-1.52.0.tgz |
 | `fast-equals` | `5.4.1` | no | MIT | https://registry.npmjs.org/fast-equals/-/fast-equals-5.4.1.tgz |
@@ -355,7 +355,7 @@ SOFTWARE.
 
 ### Notice text 3
 
-Packages: `@chevrotain/cst-dts-gen@13.2.0`, `@chevrotain/gast@13.2.0`, `@chevrotain/regexp-to-ast@13.2.0`, `@chevrotain/types@13.2.0`, `@chevrotain/utils@13.2.0`, `chevrotain@13.2.0`, `dompurify@3.4.16`
+Packages: `@chevrotain/cst-dts-gen@13.2.0`, `@chevrotain/gast@13.2.0`, `@chevrotain/regexp-to-ast@13.2.0`, `@chevrotain/types@13.2.0`, `@chevrotain/utils@13.2.0`, `chevrotain@13.2.0`, `dompurify@3.4.17`
 
 Files:
 
@@ -2392,7 +2392,7 @@ SOFTWARE.
 
 ### Notice text 52
 
-Packages: `dompurify@3.4.16`
+Packages: `dompurify@3.4.17`
 
 Files:
 
@@ -2776,7 +2776,7 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
 
 ### Notice text 53
 
-Packages: `dompurify@3.4.16`
+Packages: `dompurify@3.4.17`
 
 Files:
 

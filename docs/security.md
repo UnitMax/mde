@@ -182,6 +182,30 @@ so contributors must still run the local checks above.
 The lockfile includes patched `http-cache-semantics` 4.3.0 and `source-map-js`
 1.2.2. These updates remain within their parents' existing dependency ranges.
 
+Plain `npm audit fix` (without `--force`) also moved the three `undici` copies
+(`node-gyp`, `@electron/get` and `jsdom`) to 6.29.1, 7.30.1 and 8.12.3, again within
+their parents' ranges.
+
+### Open advisory: `minimatch` in Electron builder's toolchain
+
+[GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249) (a denial of
+service from glob-pattern expansion) affects every `minimatch` below 11.0.1, and
+`npm audit` reports it as 15 moderate findings under `electron-builder`: `app-builder-lib`,
+`@electron/asar`, `@electron/universal`, `dir-compare`, `ejs`, `jake`, `filelist`, `glob`,
+`rimraf`, `temp` and `electron-winstaller`. These are packaging tools, run only at build
+time on patterns from this repository's own configuration; none of it ships in the app.
+
+No safe fix exists yet. The newest `electron-builder` (26.18.1, and the 27 alpha),
+`@electron/asar` 4.3.1, `dir-compare` 5.0.0 and `filelist` 2.0.2 all still depend on
+`minimatch` 3 to 10. Forcing 11.0.3 with an override was tried and rejected: `glob` 7,
+which `@electron/asar` uses to crawl files when packing, throws, `dir-compare` fails with
+`minimatch_1.default is not a function`, and asar's unpacking stops working. The
+suggestion of `npm audit fix --force` (`electron-builder` 20.23.1) is a downgrade by
+six major versions.
+
+Removal condition: `electron-builder` and the tools above move to `minimatch` 11.0.1
+or later; then update, rerun `npm run audit:deps`, and build for each platform.
+
 Two scoped overrides address advisories while preserving the current direct
 dependency versions:
 
