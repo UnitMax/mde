@@ -18,6 +18,7 @@ import {
   FolderPlus,
   GitBranch,
   GripVertical,
+  Inbox,
   LoaderCircle,
   ListTodo,
   MoreHorizontal,
@@ -102,6 +103,8 @@ import {
   openCodeTuiInstanceLabel
 } from '@/lib/opencode-tui-instances'
 import { countOpenCodeTuiNotifications } from '@/lib/opencode-tui-notifications'
+import { InboxPanel } from '@/components/InboxPanel'
+import { countUnreadInboxThreads } from '@/lib/inbox'
 import {
   terminalDirectoryLabel,
   terminalPaneLabel,
@@ -122,19 +125,23 @@ type OpenCodeIndicatorStatus = 'idle' | 'working' | 'attention' | 'completed' | 
 
 const SIDEBAR_SECTIONS = [
   { id: 'projects' as const, label: 'Projects', Icon: Folder },
-  { id: 'todo' as const, label: 'To Do', Icon: ListTodo }
+  { id: 'todo' as const, label: 'To Do', Icon: ListTodo },
+  { id: 'inbox' as const, label: 'Inbox', Icon: Inbox }
 ]
 
 interface SidebarSectionNavigationProps {
   activeSection: WorkspaceView
   collapsed: boolean
   onSelect: (section: WorkspaceView) => void
+  /** Unread Inbox threads, shown as a badge on the Inbox tab. */
+  inboxUnread: number
 }
 
 function SidebarSectionNavigation({
   activeSection,
   collapsed,
-  onSelect
+  onSelect,
+  inboxUnread
 }: SidebarSectionNavigationProps): JSX.Element {
   return (
     <div
@@ -150,20 +157,22 @@ function SidebarSectionNavigation({
       {SIDEBAR_SECTIONS.map((section) => {
         const Icon = section.Icon
         const active = section.id === activeSection
+        const unread = section.id === 'inbox' ? inboxUnread : 0
+        const unreadLabel = `${unread} unread Inbox thread${unread === 1 ? '' : 's'}`
         return (
           <button
             key={section.id}
             type="button"
             id={collapsed ? undefined : `sidebar-section-tab-${section.id}`}
             role={collapsed ? undefined : 'tab'}
-            aria-label={section.label}
+            aria-label={unread > 0 ? `${section.label}, ${unreadLabel}` : section.label}
             aria-selected={collapsed ? undefined : active}
             aria-pressed={collapsed ? active : undefined}
             aria-controls={collapsed ? undefined : `sidebar-section-${section.id}`}
             title={section.label}
             onClick={() => onSelect(section.id)}
             className={cn(
-              'flex items-center justify-center rounded text-left transition-colors',
+              'relative flex items-center justify-center gap-1 rounded text-left transition-colors',
               collapsed
                 ? 'h-7 w-7'
                 : 'h-7 min-w-0 flex-1 border-b-2 px-2 text-[13px]',
@@ -177,6 +186,18 @@ function SidebarSectionNavigation({
             )}
           >
             {collapsed ? <Icon className="h-4 w-4 shrink-0" /> : <span>{section.label}</span>}
+            {unread > 0 && (
+              <span
+                data-testid="inbox-unread-count"
+                title={unreadLabel}
+                className={cn(
+                  'flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-medium leading-none text-accent-fg',
+                  collapsed && 'absolute -right-1 -top-1 h-3.5 min-w-3.5 px-0.5 text-[9px] ring-2 ring-panel'
+                )}
+              >
+                {unread}
+              </span>
+            )}
           </button>
         )
       })}
@@ -1331,6 +1352,7 @@ export function Sidebar({
   const toggleSidebar = useWorkspace((state) => state.toggleSidebar)
   const activeSection = useWorkspace((state) => state.activeWorkspaceView)
   const setActiveSection = useWorkspace((state) => state.setWorkspaceView)
+  const inboxUnread = useWorkspace((state) => countUnreadInboxThreads(state.inboxThreads))
   const [terminalSettings, setTerminalSettings] = useState(() => getTerminalSettings())
   const [agentsCollapsed, setAgentsCollapsed] = useState(false)
   const gitSessionKey = sessions.map((session) => `${session.id}:${session.path}`).join('\u0000')
@@ -1403,6 +1425,7 @@ export function Sidebar({
             activeSection={activeSection}
             collapsed
             onSelect={setActiveSection}
+            inboxUnread={inboxUnread}
           />
         </div>
         <div className="mt-2 min-h-0 w-full flex-1 overflow-y-auto">
@@ -1535,7 +1558,7 @@ export function Sidebar({
             </div>
           )}
         </div>
-        <div className="mt-auto shrink-0">
+        <div className="mt-auto shrink-0" hidden={activeSection === 'inbox'}>
           <SidebarCreateActions
             activeSection={activeSection}
             collapsed
@@ -1556,6 +1579,7 @@ export function Sidebar({
           activeSection={activeSection}
           collapsed={false}
           onSelect={setActiveSection}
+          inboxUnread={inboxUnread}
         />
         <Button
           variant="ghost"
@@ -1632,9 +1656,19 @@ export function Sidebar({
             ))
           )}
         </div>
+
+        <div
+          id="sidebar-section-inbox"
+          role="tabpanel"
+          aria-labelledby="sidebar-section-tab-inbox"
+          className="h-full min-h-0"
+          hidden={activeSection !== 'inbox'}
+        >
+          {activeSection === 'inbox' && <InboxPanel />}
+        </div>
       </div>
 
-      <div className="shrink-0 border-t border-line p-2">
+      <div className="shrink-0 border-t border-line p-2" hidden={activeSection === 'inbox'}>
         <SidebarCreateActions
           activeSection={activeSection}
           collapsed={false}

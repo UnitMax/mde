@@ -71,7 +71,11 @@ import type {
   AgentCommand,
   CodingAgent,
   TerminalLaunchDirectory,
-  WindowMode
+  WindowMode,
+  InboxRemoveRequest,
+  InboxSetArchivedRequest,
+  InboxSetReadRequest,
+  InboxThread
 } from '@shared/types'
 import { assertIpcSender, type IpcSecurityContext } from './ipc-security'
 import { assertIpcPayload, type IpcChannel } from './ipc-validation'
@@ -79,6 +83,7 @@ import type { PtyLaunchOptions, PtyManager } from './pty/manager'
 import { fileTreeDropFile, resolveTerminalDrop } from './pty/drop'
 import type { OpenCodeTuiStatusManager } from './opencode/tui-status'
 import type { OpenCodeAlertManager } from './opencode/alerts'
+import type { InboxRecorder } from './inbox/recorder'
 import type { MiniWindowController } from './mini-window'
 import type { TitleBarController } from './window-chrome'
 import { createAppInfo } from '@shared/app-info'
@@ -388,7 +393,8 @@ export function registerIpcHandlers(
   opencodeTuiStatusManager: OpenCodeTuiStatusManager,
   opencodeAlertManager: OpenCodeAlertManager,
   miniWindow: MiniWindowController,
-  titleBar: TitleBarController
+  titleBar: TitleBarController,
+  inboxRecorder: InboxRecorder
 ): void {
   const pendingEnsures = new Map<string, symbol>()
   const handle = <Req, Res>(
@@ -529,6 +535,15 @@ export function registerIpcHandlers(
       return opencodeAlertManager.setEnabled(req.enabled)
     }
   )
+
+  handle<void, InboxThread[]>(IpcChannels.inboxList, () => inboxRecorder.list())
+  handle<InboxSetReadRequest, InboxThread | null>(IpcChannels.inboxSetRead, (req) =>
+    inboxRecorder.setRead(req.id, req.read)
+  )
+  handle<InboxSetArchivedRequest, InboxThread | null>(IpcChannels.inboxSetArchived, (req) =>
+    inboxRecorder.setArchived(req.id, req.archived)
+  )
+  handle<InboxRemoveRequest, void>(IpcChannels.inboxRemove, (req) => inboxRecorder.remove(req.id))
 
   handle<void, WindowMode>(IpcChannels.windowModeGet, () => miniWindow.mode)
   handle<SetWindowModeRequest, WindowMode>(IpcChannels.windowModeSet, (req) => {

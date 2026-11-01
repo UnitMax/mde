@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IpcChannels, IpcEvents, type RendererApi } from '@shared/ipc'
 import type {
+  InboxThread,
   OpenCodeTuiInstancesUpdate,
   OpenCodeTuiStatusUpdate,
   PtyDataChunk,
@@ -142,6 +143,13 @@ const api: RendererApi = {
   opencodeAlerts: {
     settings: () => ipcRenderer.invoke(IpcChannels.opencodeAlertsSettings),
     setEnabled: (req) => ipcRenderer.invoke(IpcChannels.opencodeAlertsSetEnabled, req)
+  },
+  inbox: {
+    list: () => ipcRenderer.invoke(IpcChannels.inboxList),
+    setRead: (req) => ipcRenderer.invoke(IpcChannels.inboxSetRead, req),
+    setArchived: (req) => ipcRenderer.invoke(IpcChannels.inboxSetArchived, req),
+    remove: (req) => ipcRenderer.invoke(IpcChannels.inboxRemove, req),
+    onChanged: (listener) => subscribe<InboxThread>(IpcEvents.inboxChanged, listener)
   },
   windowMode: {
     get: () => ipcRenderer.invoke(IpcChannels.windowModeGet),

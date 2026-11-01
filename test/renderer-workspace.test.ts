@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
+  InboxThread,
   OpenCodeTuiInstancesUpdate,
   OpenCodeTuiStatusUpdate,
   Session,
@@ -16,7 +17,24 @@ describe('renderer workspace event bridge', () => {
   const tuiInstanceListeners: Array<(update: OpenCodeTuiInstancesUpdate) => void> = []
   const directoryListeners: Array<(update: { terminalId: string; directory: string | null }) => void> = []
   const windowModeListeners: Array<(mode: 'normal' | 'mini') => void> = []
+  const inboxListeners: Array<(thread: InboxThread) => void> = []
   const api = {
+    inbox: {
+      list: vi.fn(async (): Promise<InboxThread[]> => []),
+      setRead: vi.fn(async ({ id, read }: { id: string; read: boolean }) => {
+        const thread = useWorkspace.getState().inboxThreads.find((item) => item.id === id)
+        return thread ? { ...thread, readAt: read ? thread.lastActivityAt : 0 } : null
+      }),
+      setArchived: vi.fn(async ({ id, archived }: { id: string; archived: boolean }) => {
+        const thread = useWorkspace.getState().inboxThreads.find((item) => item.id === id)
+        return thread ? { ...thread, archived } : null
+      }),
+      remove: vi.fn(async () => undefined),
+      onChanged: vi.fn((listener: (thread: InboxThread) => void) => {
+        inboxListeners.push(listener)
+        return vi.fn()
+      })
+    },
     platform: { info: vi.fn(async () => ({ platform: 'linux', arch: 'x64' })) },
     workspace: {
       list: vi.fn(async () => ({ projects: [], todoProjects: [], todoTasks: [], sessions: [] }))
@@ -137,8 +155,16 @@ describe('renderer workspace event bridge', () => {
       selectedSessionId: null,
       selectedTodoProjectId: null,
       activeWorkspaceView: 'projects',
-      windowMode: 'normal'
+      windowMode: 'normal',
+      inboxThreads: [],
+      selectedInboxThreadId: null,
+      opencodeTuiEnabled: false,
+      settingsDialog: { open: false, section: 'appearance' }
     })
+    api.inbox.list.mockClear()
+    api.inbox.setRead.mockClear()
+    api.inbox.setArchived.mockClear()
+    api.inbox.remove.mockClear()
     api.windowMode.get.mockClear()
     api.windowMode.set.mockClear()
     api.windowMode.onChanged.mockClear()
@@ -783,6 +809,7 @@ describe('renderer workspace event bridge', () => {
     expect(api.opencodeTui.onStatus).toHaveBeenCalledTimes(1)
     expect(api.opencodeTui.onInstances).toHaveBeenCalledTimes(1)
     expect(api.windowMode.onChanged).toHaveBeenCalledTimes(1)
+    expect(api.inbox.onChanged).toHaveBeenCalledTimes(1)
     windowModeListeners[0]?.('mini')
     expect(useWorkspace.getState().windowMode).toBe('mini')
     windowModeListeners[0]?.('normal')
@@ -816,5 +843,70 @@ describe('renderer workspace event bridge', () => {
     api.windowMode.set.mockResolvedValueOnce('mini')
     await useWorkspace.getState().setWindowMode('normal')
     expect(useWorkspace.getState().windowMode).toBe('mini')
+  })
+  const inboxThread = (overrides: Partial<InboxThread> = {}): InboxThread => ({
+    id: 'ses_one',
+    title: 'Fix login',
+    directory: '/home/me/app',
+    target: { kind: 'wsl', distro: 'Ubuntu' },
+    branch: 'main',
+    status: 'completed',
+    createdAt: 100,
+    lastActivityAt: 200,
+    readAt: 0,
+    archived: false,
+    ...overrides
+  })
+
+  it('loads the inbox and the reporting switch at startup, keeping pushes that arrived first', async () => {
+    api.inbox.list.mockResolvedValueOnce([
+      inboxThread({ id: 'ses_old', lastActivityAt: 100 }),
+      inboxThread({ id: 'ses_new', lastActivityAt: 300 })
+    ])
+    api.opencodeTui.settings.mockResolvedValueOnce({
+      enabled: true, currentPluginVersion: '2.1.0', instanceLabelMode: 'numbered'
+    })
+    useWorkspace.setState({ inboxThreads: [inboxThread({ id: 'ses_old', title: 'Renamed', lastActivityAt: 400 })] })
+    await useWorkspace.getState().init()
+    const state = useWorkspace.getState()
+    expect(state.opencodeTuiEnabled).toBe(true)
+    expect(state.inboxThreads.map((thread) => [thread.id, thread.title])).toEqual([
+      ['ses_old', 'Renamed'],
+      ['ses_new', 'Fix login']
+    ])
+  })
+
+  it('keeps pushed threads newest first and marks the open thread read on selection', async () => {
+    useWorkspace.getState().upsertInboxThread(inboxThread({ id: 'ses_a', lastActivityAt: 100 }))
+    useWorkspace.getState().upsertInboxThread(inboxThread({ id: 'ses_b', lastActivityAt: 200 }))
+    expect(useWorkspace.getState().inboxThreads.map((thread) => thread.id)).toEqual(['ses_b', 'ses_a'])
+    useWorkspace.getState().upsertInboxThread(inboxThread({ id: 'ses_a', lastActivityAt: 300 }))
+    expect(useWorkspace.getState().inboxThreads.map((thread) => thread.id)).toEqual(['ses_a', 'ses_b'])
+
+    useWorkspace.getState().selectInboxThread('ses_b')
+    expect(useWorkspace.getState().activeWorkspaceView).toBe('inbox')
+    expect(api.inbox.setRead).toHaveBeenCalledWith({ id: 'ses_b', read: true })
+    await vi.waitFor(() => expect(
+      useWorkspace.getState().inboxThreads.find((thread) => thread.id === 'ses_b')?.readAt
+    ).toBe(200))
+  })
+
+  it('archives and deletes threads, clearing a deleted selection', async () => {
+    useWorkspace.setState({ inboxThreads: [inboxThread()], selectedInboxThreadId: 'ses_one' })
+    await useWorkspace.getState().setInboxThreadArchived('ses_one', true)
+    expect(useWorkspace.getState().inboxThreads[0]?.archived).toBe(true)
+    await useWorkspace.getState().removeInboxThread('ses_one')
+    expect(api.inbox.remove).toHaveBeenCalledWith({ id: 'ses_one' })
+    expect(useWorkspace.getState().inboxThreads).toEqual([])
+    expect(useWorkspace.getState().selectedInboxThreadId).toBeNull()
+  })
+
+  it('opens the shared settings dialog at a requested section', () => {
+    useWorkspace.getState().openSettings('opencode')
+    expect(useWorkspace.getState().settingsDialog).toEqual({ open: true, section: 'opencode' })
+    useWorkspace.getState().closeSettings()
+    expect(useWorkspace.getState().settingsDialog).toEqual({ open: false, section: 'opencode' })
+    useWorkspace.getState().openSettings()
+    expect(useWorkspace.getState().settingsDialog.section).toBe('appearance')
   })
 })

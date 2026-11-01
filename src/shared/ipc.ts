@@ -36,7 +36,11 @@ import type {
   TerminalLaunch,
   OpenCodeSessionsRequest,
   OpenCodeSessionSummary,
-  WindowMode
+  WindowMode,
+  InboxRemoveRequest,
+  InboxSetArchivedRequest,
+  InboxSetReadRequest,
+  InboxThread
 } from './types'
 
 export interface WorkspaceData {
@@ -120,6 +124,11 @@ export const IpcChannels = {
   opencodeAlertsSettings: 'opencode-alerts:settings',
   opencodeAlertsSetEnabled: 'opencode-alerts:set-enabled',
 
+  inboxList: 'inbox:list',
+  inboxSetRead: 'inbox:set-read',
+  inboxSetArchived: 'inbox:set-archived',
+  inboxRemove: 'inbox:remove',
+
   windowModeGet: 'window-mode:get',
   windowModeSet: 'window-mode:set',
   windowChromeSet: 'window-chrome:set',
@@ -135,6 +144,7 @@ export const IpcEvents = {
   ptyDirectory: 'pty:directory',
   opencodeTuiStatus: 'opencode-tui:status',
   opencodeTuiInstances: 'opencode-tui:instances',
+  inboxChanged: 'inbox:changed',
   windowModeChanged: 'window-mode:changed',
 } as const
 
@@ -458,6 +468,13 @@ export interface RendererApi {
   opencodeAlerts: {
     settings(): Promise<OpenCodeAlertSettings>
     setEnabled(req: OpenCodeAlertSetEnabledRequest): Promise<OpenCodeAlertSettings>
+  }
+  inbox: {
+    list(): Promise<InboxThread[]>
+    setRead(req: InboxSetReadRequest): Promise<InboxThread | null>
+    setArchived(req: InboxSetArchivedRequest): Promise<InboxThread | null>
+    remove(req: InboxRemoveRequest): Promise<void>
+    onChanged(listener: (thread: InboxThread) => void): () => void
   }
   windowMode: {
     get(): Promise<WindowMode>

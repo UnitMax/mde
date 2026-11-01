@@ -71,6 +71,10 @@ const validPayloads = {
   [IpcChannels.opencodeTuiSetInstanceLabelMode]: { mode: 'numbered' },
   [IpcChannels.opencodeAlertsSettings]: undefined,
   [IpcChannels.opencodeAlertsSetEnabled]: enabled,
+  [IpcChannels.inboxList]: undefined,
+  [IpcChannels.inboxSetRead]: { id: 'ses_thread', read: true },
+  [IpcChannels.inboxSetArchived]: { id: 'ses_thread', archived: false },
+  [IpcChannels.inboxRemove]: { id: 'ses_thread' },
   [IpcChannels.windowModeGet]: undefined,
   [IpcChannels.windowModeSet]: { mode: 'mini' },
   [IpcChannels.windowChromeSet]: { color: '#10141b', symbolColor: '#7b8698' },
@@ -100,6 +104,14 @@ describe('IPC payload boundary', () => {
     const normal = validPayloads[channel]
     const extra = normal && typeof normal === 'object' ? { ...normal, unexpected: true } : { unexpected: true }
     rejects(channel, extra)
+  })
+
+  it('accepts only OpenCode session IDs and booleans for inbox changes', () => {
+    rejects(IpcChannels.inboxSetRead, { id: 'thread', read: true })
+    rejects(IpcChannels.inboxSetRead, { id: 'ses_thread', read: 'yes' })
+    rejects(IpcChannels.inboxSetArchived, { id: 'ses_../escape', archived: true })
+    rejects(IpcChannels.inboxRemove, { id: '' })
+    rejects(IpcChannels.inboxList, { id: 'ses_thread' })
   })
 
   it('rejects getters without executing them and inherited/unknown nested fields', () => {

@@ -129,10 +129,11 @@ const args: Validator = (value) => argsShape(value) &&
 const command = object({ executable: path, args })
 const agent = object({ kind: oneOf('opencode', 'codex', 'claude'), command })
 const commandLaunch = object({ sourceTerminalId: id, directory: oneOf('terminal', 'session'), agent: optional(agent) })
+const opencodeSessionId: Validator = (value) => id(value) && /^ses_[A-Za-z0-9_-]+$/.test(value as string)
 const resumeLaunch = object({
   sourceTerminalId: id,
   executable: path,
-  opencodeSessionId: (value) => id(value) && /^ses_[A-Za-z0-9_-]+$/.test(value as string),
+  opencodeSessionId,
 })
 const launch: Validator = (value) => commandLaunch(value) || resumeLaunch(value)
 const ensure = object({ terminalId: id, sessionId: id, size, palette, launch: optional(launch) })
@@ -211,6 +212,10 @@ export const ipcPayloadValidators = {
   [IpcChannels.opencodeTuiSetInstanceLabelMode]: object({ mode: oneOf('numbered', 'title') }),
   [IpcChannels.opencodeAlertsSettings]: noPayload,
   [IpcChannels.opencodeAlertsSetEnabled]: enabled,
+  [IpcChannels.inboxList]: noPayload,
+  [IpcChannels.inboxSetRead]: object({ id: opencodeSessionId, read: boolean }),
+  [IpcChannels.inboxSetArchived]: object({ id: opencodeSessionId, archived: boolean }),
+  [IpcChannels.inboxRemove]: object({ id: opencodeSessionId }),
   [IpcChannels.windowModeGet]: noPayload,
   [IpcChannels.windowModeSet]: object({ mode: oneOf('normal', 'mini') }),
   [IpcChannels.windowChromeSet]: object({ color: hexColor, symbolColor: hexColor }),

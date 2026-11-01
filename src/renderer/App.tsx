@@ -13,6 +13,8 @@ import { SessionSwitcher } from '@/components/SessionSwitcher'
 import { TerminalView } from '@/components/TerminalView'
 import { TitleBar, TitleBarButton } from '@/components/TitleBar'
 import { TodoProjectView } from '@/components/TodoProjectView'
+import { InboxThreadView } from '@/components/InboxThreadView'
+import { SettingsDialog } from '@/components/SettingsDialog'
 import { TodoSearch } from '@/components/TodoSearch'
 import { TodoProjectSettingsDialog } from '@/components/TodoProjectSettingsDialog'
 import { TodoTaskDialog } from '@/components/TodoTaskDialog'
@@ -759,7 +761,9 @@ export function App(): JSX.Element {
         />
 
         <main className="relative h-full min-w-0 flex-1">
-          {!ready ? null : activeWorkspaceView === 'todo' ? (
+          {!ready ? null : activeWorkspaceView === 'inbox' ? (
+            <InboxThreadView />
+          ) : activeWorkspaceView === 'todo' ? (
             <TodoProjectView
               project={selectedTodoProject}
               tasks={selectedTodoTasks}
@@ -815,7 +819,9 @@ export function App(): JSX.Element {
           )}
         </main>
 
-        {ready && activeWorkspaceView !== 'todo' && selected && <FileTreePanel session={selected} />}
+        {ready && activeWorkspaceView === 'projects' && selected && <FileTreePanel session={selected} />}
+
+        <SettingsDialog terminalIds={layoutForSession?.panes.map((pane) => pane.terminalId) ?? []} />
 
         <AddSessionDialog
           open={newSessionOpen}

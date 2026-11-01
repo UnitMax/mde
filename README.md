@@ -6,7 +6,8 @@ persistent terminal sessions, with first-class WSL support on Windows.
 It is a desktop shell focused on persistent terminal workflows: tabbed multi-pane terminals per
 session, Git status in the sidebar, a file tree with Markdown and Mermaid preview, an OpenCode
 session picker, and To Do boards. An optional OpenCode 2 terminal plugin provides agent status,
-alerts, and instance labels without replacing the terminal experience. See
+alerts, instance labels, and an Inbox of OpenCode conversations without replacing the terminal
+experience. See
 [`docs/architecture.md`](docs/architecture.md) for how each part behaves.
 
 ## Requirements

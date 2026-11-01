@@ -47,7 +47,10 @@ terminal input and clipboard text allow controls and newlines so normal text
 editing and terminal key sequences work. Empty arguments, descriptions,
 clipboard text and terminal input are valid; empty IDs and required names are
 not. File-viewer and tree-drop paths must stay relative and contain no dot
-segments, backslashes or controls. Domain handlers still verify resource
+segments, backslashes or controls. Inbox requests (`inbox:set-read`,
+`inbox:set-archived`, `inbox:remove`) accept only an OpenCode session ID
+(`ses_` followed by letters, digits, `_` or `-`) and a boolean where one is
+expected; they change MDE's own `inbox.json` and never reach OpenCode. Domain handlers still verify resource
 existence, session/source ownership, filesystem containment and platform
 constraints after the central validation.
 

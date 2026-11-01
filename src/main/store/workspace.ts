@@ -31,6 +31,7 @@ import type {
 } from '@shared/types'
 import { isSessionColor } from '@shared/session-colors'
 import { isSessionIcon } from '@shared/session-icons'
+import { writeJsonAtomic } from './atomic-json'
 
 const FILE_NAME = 'workspace.json'
 
@@ -433,20 +434,8 @@ function enqueueWrite(workspace: WorkspaceData): Promise<void> {
   return run
 }
 
-async function persist(workspace: WorkspaceData): Promise<void> {
-  const target = storeFile()
-  const tmp = `${target}.${process.pid}.${Date.now()}.tmp`
-  const contents = `${JSON.stringify(workspace, null, 2)}\n`
-
-  await fs.mkdir(storeDir as string, { recursive: true })
-  const handle = await fs.open(tmp, 'w')
-  try {
-    await handle.writeFile(contents, 'utf8')
-    await handle.sync()
-  } finally {
-    await handle.close()
-  }
-  await fs.rename(tmp, target)
+function persist(workspace: WorkspaceData): Promise<void> {
+  return writeJsonAtomic(storeFile(), workspace)
 }
 
 export async function createProject(input: NewProject): Promise<Project> {

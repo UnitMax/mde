@@ -8,13 +8,19 @@ import { getMiniWindowAction, MiniWindowController } from './mini-window'
 import { TitleBarController } from './window-chrome'
 import { OpenCodeTuiStatusManager } from './opencode/tui-status'
 import { PtyManager } from './pty/manager'
-import { initWorkspaceStore } from './store/workspace'
+import { getSession, initWorkspaceStore } from './store/workspace'
+import { InboxStore, INBOX_FILE } from './inbox/store'
+import { InboxRecorder } from './inbox/recorder'
+import { readGitTerminalInfo } from './git'
 import { adjustZoomFactor, DEFAULT_ZOOM_FACTOR, getZoomAction } from './zoom'
 import { handleWindowOpen } from './external-links'
 import { installPermissionPolicy } from './permissions'
 import { installRendererProtocol, registerRendererScheme } from './renderer-protocol'
 
 let mainWindow: BrowserWindow | null = null
+let inboxStore: InboxStore | null = null
+let inboxRecorder: InboxRecorder | null = null
+let quitPrepared = false
 const rendererUrl = rendererEntryUrl(app.isPackaged, process.env.ELECTRON_RENDERER_URL)
 
 // Shrinks this window into the always-on-top agents list; the screen module is only
@@ -55,7 +61,8 @@ const opencodeTuiStatusManager = new OpenCodeTuiStatusManager({
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send(IpcEvents.opencodeTuiInstances, update)
     }
-  }
+  },
+  onThreads: (update) => inboxRecorder?.apply(update)
 })
 
 const ptyManager = new PtyManager({
@@ -166,13 +173,29 @@ if (!app.requestSingleInstanceLock()) {
     initWorkspaceStore(app.getPath('userData'))
     await opencodeTuiStatusManager.configure(app.getPath('userData'))
     await opencodeAlertManager.configure(app.getPath('userData'))
+    inboxStore = new InboxStore(join(app.getPath('userData'), INBOX_FILE))
+    await inboxStore.load()
+    inboxRecorder = new InboxRecorder(inboxStore, {
+      now: () => Date.now(),
+      lookupSession: getSession,
+      readBranch: async (target, directory) => {
+        const info = await readGitTerminalInfo(target, directory)
+        return info.repository ? info.branch : null
+      },
+      onChanged: (thread) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(IpcEvents.inboxChanged, thread)
+        }
+      }
+    })
     registerIpcHandlers(
       { getWebContents: () => mainWindow?.webContents ?? null, rendererUrl },
       ptyManager,
       opencodeTuiStatusManager,
       opencodeAlertManager,
       miniWindow,
-      titleBar
+      titleBar,
+      inboxRecorder
     )
     createWindow()
 
@@ -185,9 +208,17 @@ if (!app.requestSingleInstanceLock()) {
     app.quit()
   })
 
-  app.on('before-quit', () => {
+  app.on('before-quit', (event) => {
+    if (quitPrepared) return
+    quitPrepared = true
     opencodeAlertManager.dispose()
     ptyManager.disposeAll()
     opencodeTuiStatusManager.disposeAll()
+    // Closing the terminals settles their inbox threads; save them before exiting.
+    if (inboxStore) {
+      const store = inboxStore
+      event.preventDefault()
+      void store.flush().finally(() => app.quit())
+    }
   })
 }

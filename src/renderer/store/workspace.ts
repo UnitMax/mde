@@ -3,6 +3,7 @@ import type { PlatformInfo, WorkspaceData } from '@shared/ipc'
 import type {
   Distro,
   GitStatusResponse,
+  InboxThread,
   NewProject,
   NewTodoProject,
   NewTodoTask,
@@ -53,7 +54,32 @@ let eventBridgeReady = false
 let gitStatusRefreshPromise: Promise<void> | null = null
 let gitStatusRefreshQueued = false
 
-export type WorkspaceView = 'projects' | 'todo'
+export type WorkspaceView = 'projects' | 'todo' | 'inbox'
+
+export type SettingsSection =
+  | 'appearance'
+  | 'terminal'
+  | 'shortcuts'
+  | 'agents'
+  | 'sidebar'
+  | 'opencode'
+  | 'about'
+
+export interface SettingsDialogState {
+  open: boolean
+  section: SettingsSection
+}
+
+/** Newest activity first, matching the main process order. */
+function sortInboxThreads(threads: InboxThread[]): InboxThread[] {
+  return [...threads].sort(
+    (a, b) => b.lastActivityAt - a.lastActivityAt || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)
+  )
+}
+
+function withInboxThread(threads: readonly InboxThread[], thread: InboxThread): InboxThread[] {
+  return sortInboxThreads([...threads.filter((item) => item.id !== thread.id), thread])
+}
 
 function belongsToSession(runtimeId: string, sessionId: string): boolean {
   return runtimeId === sessionId || runtimeId.startsWith(`${sessionId}:`)
@@ -113,6 +139,12 @@ interface WorkspaceState {
   opencodeTuiInstances: Record<string, OpenCodeTuiInstanceStatus[]>
   opencodeTuiReadRevisions: OpenCodeTuiReadRevisions
   opencodeTuiInstanceLabelMode: OpenCodeTuiInstanceLabelMode
+  /** Global OpenCode status reporting; the Inbox stays locked while it is off. */
+  opencodeTuiEnabled: boolean
+  /** MDE's own record of OpenCode threads, newest activity first. */
+  inboxThreads: InboxThread[]
+  selectedInboxThreadId: string | null
+  settingsDialog: SettingsDialogState
   /** One-shot pane highlights by terminal id; kept here because TerminalView remounts. */
   terminalHighlights: Record<string, TerminalHighlight>
   platform: PlatformInfo | null
@@ -185,6 +217,15 @@ interface WorkspaceState {
   flashTerminal: (terminalId: string, tone?: TerminalHighlightTone) => void
   clearTerminalHighlight: (terminalId: string, token: number) => void
   setOpenCodeTuiInstanceLabelMode: (mode: OpenCodeTuiInstanceLabelMode) => Promise<void>
+  setOpenCodeTuiEnabled: (enabled: boolean) => void
+  openSettings: (section?: SettingsSection) => void
+  closeSettings: () => void
+  selectInboxThread: (id: string | null) => void
+  setInboxThreadRead: (id: string, read: boolean) => Promise<void>
+  setInboxThreadArchived: (id: string, archived: boolean) => Promise<void>
+  removeInboxThread: (id: string) => Promise<void>
+  /** Applies a thread pushed by the main process. */
+  upsertInboxThread: (thread: InboxThread) => void
   setWindowMode: (mode: WindowMode) => Promise<void>
   refreshDistros: () => Promise<void>
 }
@@ -206,6 +247,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   opencodeTuiInstances: {},
   opencodeTuiReadRevisions: {},
   opencodeTuiInstanceLabelMode: 'numbered',
+  opencodeTuiEnabled: false,
+  inboxThreads: [],
+  selectedInboxThreadId: null,
+  settingsDialog: { open: false, section: 'appearance' },
   terminalHighlights: {},
   platform: null,
   windowMode: 'normal',
@@ -225,6 +270,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       window.api.pty.onDirectory((update) => get().setTerminalDirectory(update))
       window.api.opencodeTui.onStatus((update) => get().appendOpenCodeTuiStatus(update))
       window.api.opencodeTui.onInstances((update) => get().appendOpenCodeTuiInstances(update))
+      window.api.inbox.onChanged((thread) => get().upsertInboxThread(thread))
       window.api.windowMode.onChanged((windowMode) => set({ windowMode }))
     }
 
@@ -235,7 +281,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       directories,
       wslAvailable,
       opencodeTuiSettings,
-      windowMode
+      windowMode,
+      inboxThreads
     ] = await Promise.all([
       window.api.platform.info(),
       window.api.workspace.list(),
@@ -244,7 +291,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       window.api.wsl.available(),
       window.api.opencodeTui.settings(),
       // A renderer reload can happen while the window is still in mini mode.
-      window.api.windowMode.get()
+      window.api.windowMode.get(),
+      // A local file read; the inbox must never hold up the rest of the workspace.
+      window.api.inbox.list().catch(() => [] as InboxThread[])
     ])
 
     const { projects, todoProjects, todoTasks, sessions } = workspace as WorkspaceData
@@ -263,6 +312,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       opencodeTuiStatuses: {},
       opencodeTuiReadRevisions: {},
       opencodeTuiInstanceLabelMode: opencodeTuiSettings.instanceLabelMode,
+      opencodeTuiEnabled: opencodeTuiSettings.enabled,
+      // Pushes that arrived during startup are newer than the listed snapshot.
+      inboxThreads: get().inboxThreads.reduce(withInboxThread, sortInboxThreads(inboxThreads)),
       wslAvailable,
       selectedSessionId: null,
       selectedTodoProjectId: todoProjects[0]?.id ?? null,
@@ -292,7 +344,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       }
     }),
 
-  setWorkspaceView: (view) =>
+  setWorkspaceView: (view) => {
     set((state) => ({
       activeWorkspaceView: view,
       ...(view === 'todo' && !state.todoProjects.some(
@@ -300,7 +352,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       )
         ? { selectedTodoProjectId: state.todoProjects[0]?.id ?? null }
         : {})
-    })),
+    }))
+    if (view === 'inbox') {
+      const { inboxThreads, selectedInboxThreadId } = get()
+      const thread = inboxThreads.find((item) => item.id === selectedInboxThreadId)
+      if (thread && thread.lastActivityAt > thread.readAt) void get().setInboxThreadRead(thread.id, true)
+    }
+  },
 
   selectTodoProject: (id) =>
     set((state) =>
@@ -855,6 +913,52 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   setOpenCodeTuiInstanceLabelMode: async (mode) => {
     const settings = await window.api.opencodeTui.setInstanceLabelMode({ mode })
     set({ opencodeTuiInstanceLabelMode: settings.instanceLabelMode })
+  },
+
+  setOpenCodeTuiEnabled: (enabled) => set({ opencodeTuiEnabled: enabled }),
+
+  openSettings: (section = 'appearance') => set({ settingsDialog: { open: true, section } }),
+
+  closeSettings: () =>
+    set((state) => ({ settingsDialog: { ...state.settingsDialog, open: false } })),
+
+  selectInboxThread: (id) => {
+    set({ selectedInboxThreadId: id, ...(id ? { activeWorkspaceView: 'inbox' as const } : {}) })
+    const thread = id ? get().inboxThreads.find((item) => item.id === id) : undefined
+    if (thread && thread.lastActivityAt > thread.readAt) void get().setInboxThreadRead(thread.id, true)
+  },
+
+  setInboxThreadRead: async (id, read) => {
+    const thread = await window.api.inbox.setRead({ id, read })
+    if (thread) get().upsertInboxThread(thread)
+  },
+
+  setInboxThreadArchived: async (id, archived) => {
+    const thread = await window.api.inbox.setArchived({ id, archived })
+    if (thread) get().upsertInboxThread(thread)
+  },
+
+  removeInboxThread: async (id) => {
+    await window.api.inbox.remove({ id })
+    set((state) => ({
+      inboxThreads: state.inboxThreads.filter((thread) => thread.id !== id),
+      selectedInboxThreadId: state.selectedInboxThreadId === id ? null : state.selectedInboxThreadId
+    }))
+  },
+
+  upsertInboxThread: (thread) => {
+    const state = get()
+    set({ inboxThreads: withInboxThread(state.inboxThreads, thread) })
+    // New activity on the thread being read is seen immediately, like an open mail.
+    if (
+      state.activeWorkspaceView === 'inbox' &&
+      state.selectedInboxThreadId === thread.id &&
+      thread.lastActivityAt > thread.readAt &&
+      typeof document !== 'undefined' &&
+      document.hasFocus()
+    ) {
+      void get().setInboxThreadRead(thread.id, true)
+    }
   },
 
   setWindowMode: async (mode) => {

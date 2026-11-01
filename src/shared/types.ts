@@ -226,6 +226,74 @@ export interface OpenCodeTuiStatusSnapshot {
   processStartedAt?: string
   /** Explicit plugin shutdown marker; distinct from a completed task. */
   closed?: true
+  /** Root conversations this terminal has shown, newest first (plugin 2.1.0 and later). */
+  threads?: OpenCodeTuiThreadSnapshot[]
+}
+
+/** The model an OpenCode conversation uses; identifiers only. */
+export interface OpenCodeModelRef {
+  id: string
+  providerId: string
+  variant?: string
+}
+
+/** One root OpenCode conversation as reported by the status plugin. Metadata only. */
+export interface OpenCodeTuiThreadSnapshot {
+  /** OpenCode session ID (`ses_…`). */
+  id: string
+  title?: string
+  /** Absolute directory in the target's own format. */
+  directory: string
+  model?: OpenCodeModelRef
+  status: OpenCodeTuiStatus
+  attentionReason?: OpenCodeTuiAttentionReason
+}
+
+/** Main-process report of the threads one terminal pane currently shows. */
+export interface OpenCodeTuiThreadsUpdate {
+  sessionId: string
+  terminalId: string
+  target: OpenCodePluginTarget
+  threads: OpenCodeTuiThreadSnapshot[]
+  /** True when the terminal's OpenCode process is gone; its threads are no longer live. */
+  closed: boolean
+}
+
+/**
+ * One OpenCode conversation recorded in MDE's own inbox. Only metadata is stored,
+ * never prompts or messages. A thread is unread while `lastActivityAt > readAt`.
+ */
+export interface InboxThread {
+  id: string
+  title: string
+  directory: string
+  target: OpenCodePluginTarget
+  /** The MDE session whose terminal last reported this thread. */
+  mdeSessionId?: string
+  /** Branch of `directory` at the last recorded activity; null when unknown or detached. */
+  branch: string | null
+  model?: OpenCodeModelRef
+  status: OpenCodeTuiStatus
+  attentionReason?: OpenCodeTuiAttentionReason
+  createdAt: number
+  /** Last time the agent finished, failed, or asked for input (or first seen). */
+  lastActivityAt: number
+  readAt: number
+  archived: boolean
+}
+
+export interface InboxSetReadRequest {
+  id: string
+  read: boolean
+}
+
+export interface InboxSetArchivedRequest {
+  id: string
+  archived: boolean
+}
+
+export interface InboxRemoveRequest {
+  id: string
 }
 
 /** Main-process status transition for one MDE workspace session. */

@@ -54,6 +54,47 @@ The expanded Projects sidebar includes a collapsible Agents overview below the s
 currently reported OpenCode instances from every session with their originating session, tab, and
 status.
 
+The Settings dialog is a single dialog mounted by `App` (`src/renderer/components/SettingsDialog.tsx`)
+and opened through the workspace store's `openSettings(section)`, so any view can open it at a
+given section. The Settings button above the terminals opens it at Appearance.
+
+### Inbox
+
+The Inbox is the third sidebar tab, beside Projects and To Do. It lists OpenCode conversations
+("threads") like a mail inbox, the most recent agent action first. Each row shows the time since
+that action ("5m ago"), the title, the folder name with the full path as a tooltip, the Git branch,
+the model, and a status chip: Needs input or Needs permission, Done, Failed, or Working. Threads
+with activity you have not opened are bold with a dot, and the tab shows how many there are. The
+list can be searched by title, folder, branch and model, and filtered to All, Unread, Needs input
+or Archived. The context menu marks a thread read or unread, archives it, or deletes it.
+
+The Inbox is locked until Settings → OpenCode status reporting is on, and on platforms where the
+status plugin cannot run (anything but macOS and Windows with WSL). The locked view explains why
+and opens Settings → OpenCode. The main area shows the selected thread's details above a
+placeholder; the conversation view itself is not built yet.
+
+Threads are recorded only from MDE terminals, by the status plugin (version 2.1.0 or newer),
+never imported from OpenCode's history. The plugin reports each root conversation the terminal
+has shown (see OpenCode integration). In the main process `src/main/inbox/recorder.ts` applies
+those reports:
+
+- A conversation that has only been looked at, never run, is not recorded.
+- Finishing, failing, or asking for input or permission moves the thread to the top, marks it
+  unread, and brings it back from the archive, as a reply does in mail. Starting work changes only
+  the status chip, so a busy thread does not keep moving.
+- When the terminal's OpenCode exits, its threads that were still working become idle.
+- The branch is read with the same background Git query as the terminal header, for the thread's
+  folder, when the thread is first recorded and after each activity. A failed read keeps the
+  previous branch.
+- Deleting a thread removes only MDE's record; it comes back if OpenCode reports new activity.
+
+`src/main/inbox/store.ts` keeps the threads in memory and in `inbox.json` in the user-data
+directory, written at most every 500 ms with the same temporary-file-and-rename write as
+`workspace.json`, and once more on quit. Loading validates every record, drops malformed ones,
+shows threads that were working when MDE closed as idle, and keeps the 1,000 most recent. The
+renderer loads the list once at startup (`inbox:list`) and then follows `inbox:changed` pushes,
+so opening the Inbox never waits for OpenCode or Git.
+
 ### Window chrome
 
 The OS title bar is hidden (`titleBarStyle: 'hidden'`) and the renderer draws its own bar,
@@ -274,6 +315,15 @@ All integrations are optional and read-only with respect to prompts and project 
   directories have mode 0700 and snapshots mode 0600. Disposal removes a pane's snapshot;
   startup removes matching artifacts older than 24 hours. Plugin protocol 1 is unchanged, so older
   snapshots stay readable; plugin version 2.0.0 is the first for OpenCode 2.
+
+  Plugin 2.1.0 adds an optional `threads` list for the Inbox: one entry for each root conversation
+  the terminal has shown (at most 16, the current one first) with its session ID, title, folder
+  (`location.directory`, or the terminal's working directory when OpenCode does not report one),
+  model and provider identifiers, and its own status, worked out the same way as the pane status.
+  A change to this list rewrites the snapshot without a new revision, so the pane highlight still
+  fires only on status changes. MDE validates every entry and drops an invalid list rather than
+  the whole snapshot. Older plugins keep working without the Inbox; Settings → OpenCode offers
+  the update.
 
   The plugin subscribes to the terminal's event feed: `session.execution.started` marks work,
   `succeeded`/`interrupted` marks completion and `failed` marks an error that stays until that session
