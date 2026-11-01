@@ -7,10 +7,13 @@ import {
   groupModels,
   initialChoice,
   initialFormDraft,
+  messageBlocks,
   mergeLive,
   modelName,
   orderAgents,
   pruneLive,
+  subagentInfo,
+  subagentResult,
   toolSummary,
 } from '../src/renderer/lib/chat'
 
@@ -135,5 +138,38 @@ describe('question answers', () => {
     expect(formAnswer(form, { ...draft, color: 'Red', tags: ['a'], count: '2.5' })).toEqual({ error: '“Count” needs a whole number.' })
     expect(formAnswer(form, { color: ' Green ', tags: ['a'], count: '3', sure: true }))
       .toEqual({ answer: { color: 'Green', tags: ['a'], count: 3, sure: true } })
+  })
+})
+
+describe('subagent calls', () => {
+  const call = (overrides: Partial<Extract<ChatPart, { kind: 'tool' }>> = {}): Extract<ChatPart, { kind: 'tool' }> => ({
+    kind: 'tool', id: 'call_1', name: 'subagent', status: 'running',
+    input: JSON.stringify({ agent: 'explore', description: 'Explore repo structure', prompt: 'Read the README.\nThen list the modules.' }),
+    ...overrides,
+  })
+
+  it('reads who, what and how it went', () => {
+    expect(subagentInfo(call())).toEqual({
+      agent: 'explore', title: 'Explore repo structure', task: 'Read the README.\nThen list the modules.', state: 'running', problem: null,
+    })
+    expect(subagentInfo(call({ status: 'completed', output: 'All good' })).state).toBe('done')
+    expect(subagentInfo(call({ status: 'pending', input: '{"agent": "expl' }))).toMatchObject({ agent: null, state: 'starting' })
+    expect(subagentInfo(call({ status: 'error', error: 'Tool execution interrupted (sessionID: ses_x)' })))
+      .toMatchObject({ state: 'interrupted', problem: 'Tool execution interrupted' })
+    expect(subagentInfo(call({ status: 'error', error: 'Subagent failed (sessionID: ses_x): no credits' })))
+      .toMatchObject({ state: 'failed', problem: 'Subagent failed: no credits' })
+    expect(toolSummary(call(), '/')).toBe('Subagent: Explore repo structure')
+  })
+
+  it('drops the wrapper tag around a subagent answer', () => {
+    expect(subagentResult('<subagent sessionID="ses_x" state="completed">\n**Found** it\n</subagent>')).toBe('**Found** it')
+    expect(subagentResult('Plain answer')).toBe('Plain answer')
+  })
+
+  it('groups consecutive subagent calls into one block', () => {
+    const text: ChatPart = { kind: 'text', text: 'Launching' }
+    const blocks = messageBlocks([text, call({ id: 'a' }), call({ id: 'b' }), text, call({ id: 'c' })])
+    expect(blocks.map((block) => block.kind)).toEqual(['part', 'subagents', 'part', 'subagents'])
+    expect(blocks[1]).toMatchObject({ kind: 'subagents', parts: [{ id: 'a' }, { id: 'b' }] })
   })
 })

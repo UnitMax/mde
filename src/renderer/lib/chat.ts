@@ -201,10 +201,70 @@ export function toolSummary(part: Extract<ChatPart, { kind: 'tool' }>, directory
     case 'todo':
       return 'Updated the to-do list'
     case 'task':
-      return text('description') ? `Delegated: ${firstLine(text('description')!, 70)}` : 'Delegated a task'
+    case 'subagent':
+      return text('description') ? `Subagent: ${firstLine(text('description')!, 70)}` : 'Ran a subagent'
     default:
       return part.name
   }
+}
+
+type ToolPart = Extract<ChatPart, { kind: 'tool' }>
+
+/** OpenCode 2 calls it `subagent`; earlier versions call it `task`. */
+export function isSubagentCall(part: ChatPart): part is ToolPart {
+  return part.kind === 'tool' && (part.name === 'subagent' || part.name === 'task')
+}
+
+export interface SubagentInfo {
+  /** The kind of subagent, such as "explore" or "general". */
+  agent: string | null
+  /** The short title the agent gave the work. */
+  title: string | null
+  /** What the subagent was asked to do. */
+  task: string | null
+  state: 'starting' | 'running' | 'done' | 'interrupted' | 'failed'
+  /** The reason it did not finish, with OpenCode's internal session ID removed. */
+  problem: string | null
+}
+
+/** What a subagent call shows: who, what, and how it went. */
+export function subagentInfo(part: ToolPart): SubagentInfo {
+  const input = parseInput(part.input)
+  const text = (key: string): string | null => (typeof input[key] === 'string' && input[key].trim() ? (input[key] as string).trim() : null)
+  const problem = part.error?.replace(/\s*\(sessionID: [^)]*\)/g, '').trim() || null
+  const state: SubagentInfo['state'] = part.status === 'completed'
+    ? 'done'
+    : part.status === 'error'
+      ? /interrupt|abort|cancel/i.test(part.error ?? '') ? 'interrupted' : 'failed'
+      : part.status === 'running' ? 'running' : 'starting'
+  return { agent: text('agent'), title: text('description'), task: text('prompt'), state, problem }
+}
+
+/** OpenCode wraps a subagent's answer in a `<subagent …>` tag carrying its internal session ID; only the answer is shown. */
+export function subagentResult(output: string): string {
+  return output
+    .replace(/^\s*<subagent\b[^>]*>\s*/i, '')
+    .replace(/\s*<\/subagent>\s*$/i, '')
+    .trim()
+}
+
+export type MessageBlock =
+  | { kind: 'part'; part: ChatPart; index: number }
+  | { kind: 'subagents'; parts: ToolPart[]; index: number }
+
+/** Groups consecutive subagent calls so parallel work reads as one block. */
+export function messageBlocks(parts: readonly ChatPart[]): MessageBlock[] {
+  const blocks: MessageBlock[] = []
+  parts.forEach((part, index) => {
+    const last = blocks[blocks.length - 1]
+    if (isSubagentCall(part)) {
+      if (last?.kind === 'subagents') last.parts.push(part)
+      else blocks.push({ kind: 'subagents', parts: [part], index })
+    } else {
+      blocks.push({ kind: 'part', part, index })
+    }
+  })
+  return blocks
 }
 
 export type FormDraft = Record<string, ChatFormValue | undefined>

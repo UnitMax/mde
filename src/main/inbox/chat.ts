@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type {
+  ChatAgent,
   ChatCreateRequest,
   ChatEvent,
   ChatFormReplyRequest,
@@ -42,6 +43,12 @@ import { isChatAgentId, type InboxStore } from './store'
 export const CHAT_PAGE_SIZE = 50
 export const CHAT_TEXT_MAX_LENGTH = 100_000
 const OPTIONS_TTL_MS = 60_000
+/**
+ * OpenCode answers the first agent request for a folder it has not loaded yet with an empty list
+ * (the models are fine), and the next request is complete. Ask a few more times before giving up.
+ */
+const AGENT_ATTEMPTS = 6
+const AGENT_RETRY_MS = 250
 
 export interface InboxChatDependencies {
   client: Pick<OpenCodeServiceClient, 'request' | 'openEvents' | 'reset'>
@@ -53,6 +60,8 @@ export interface InboxChatDependencies {
   enabled(): boolean
   now(): number
   createId?(): string
+  /** Waits between agent list attempts; tests replace it. */
+  sleep?(ms: number): Promise<void>
 }
 
 function folderName(directory: string): string {
@@ -356,18 +365,30 @@ export class InboxChatService {
 
   private async loadOptions(folder: { target: OpenCodePluginTarget; directory: string }): Promise<ChatOptions> {
     const query = { 'location[directory]': folder.directory }
-    const [agents, providers, models, defaultModel] = await Promise.all([
-      this.dependencies.client.request(folder.target, 'agent.list', { query }),
+    const [providers, models, defaultModel] = await Promise.all([
       this.dependencies.client.request(folder.target, 'provider.list', { query }).catch(() => ({ data: [] })),
       this.dependencies.client.request(folder.target, 'model.list', { query }),
       this.dependencies.client.request(folder.target, 'model.default', { query }).catch(() => ({ data: null })),
     ])
-    const agentList = parseAgents(agents)
+    const agentList = await this.loadAgents(folder, query)
     return {
       agents: agentList,
       models: parseModels(models, parseProviderNames(providers)),
       defaultModel: parseDefaultModel(defaultModel),
       defaultAgent: agentList.find((agent) => agent.id === 'build')?.id ?? agentList[0]?.id ?? null,
+    }
+  }
+
+  private async loadAgents(
+    folder: { target: OpenCodePluginTarget },
+    query: Record<string, string>,
+  ): Promise<ChatAgent[]> {
+    const sleep = this.dependencies.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
+    for (let attempt = 1; ; attempt += 1) {
+      const agents = parseAgents(await this.dependencies.client.request(folder.target, 'agent.list', { query }))
+      if (agents.length > 0) return agents
+      if (attempt >= AGENT_ATTEMPTS) throw new Error('OpenCode has not finished loading this folder yet. Try again in a moment.')
+      await sleep(AGENT_RETRY_MS)
     }
   }
 

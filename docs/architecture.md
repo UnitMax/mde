@@ -120,7 +120,7 @@ scroll up. User messages are bubbles; assistant text is Markdown rendered read-o
 preview's extensions (raw HTML off, links opened through the external-link validator); reasoning
 is a collapsible "Thought" block; each tool call is a row with a status icon and a summary such as
 "Read src/app.ts" or "Ran npm test" that expands to its full input and output, each cut at 64 KB.
-Agent and model switches, failures and stops appear as small notes. Text streams in as OpenCode
+Subagent calls (OpenCode's `subagent` tool, or `task` in older versions) are shown as cards instead: the agent type, the title, its state (Working, Done, Stopped, Failed) and a one-line preview of the task. Subagents started together are grouped under one heading, and a card expands to the full task and the answer rendered as Markdown. The subagent's own steps are not shown, since MDE only follows sessions it recorded. Agent and model switches, failures and stops appear as small notes. Text streams in as OpenCode
 produces it. Permission requests (Allow once, Always allow, Reject) and questions (option buttons,
 checkboxes, free text) are answered inline as cards; a question with field types MDE cannot show
 asks you to answer it in a terminal. While the thread works, the send button becomes Stop. A

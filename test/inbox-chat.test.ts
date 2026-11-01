@@ -179,6 +179,36 @@ describe('Inbox conversation', () => {
     await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-message-msg_3"]')?.textContent).toContain('Streaming answer'))
   })
 
+  it('shows parallel subagents as cards with their task and result', async () => {
+    const input = (description: string) => JSON.stringify({ agent: 'explore', description, prompt: `Look at ${description}.\nDo not edit files.` })
+    page = {
+      running: true, older: null,
+      messages: [{
+        kind: 'assistant', id: 'msg_2', time: 2, agent: 'build', model: options.defaultModel!, completed: false,
+        parts: [
+          { kind: 'text', text: 'Launching two subagents.' },
+          { kind: 'tool', id: 'call_a', name: 'subagent', status: 'running', input: input('structure') },
+          { kind: 'tool', id: 'call_b', name: 'subagent', status: 'completed', input: input('logic'), output: '<subagent sessionID="ses_c" state="completed">\nThe **core** loop is in `main.ts`.\n</subagent>' },
+        ],
+      }],
+    }
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-subagents"]')).not.toBeNull())
+    expect(view.querySelectorAll('[data-testid="chat-subagents"]')).toHaveLength(1)
+    expect(view.querySelector('[data-testid="chat-subagents"]')?.textContent).toContain('2 subagents · 1 working')
+    const running = view.querySelector<HTMLElement>('[data-testid="chat-subagent-call_a"]')!
+    expect(running.textContent).toContain('structure')
+    expect(running.textContent).toContain('Working')
+    expect(running.textContent).not.toContain('"agent"')
+    const done = view.querySelector<HTMLElement>('[data-testid="chat-subagent-call_b"]')!
+    expect(done.textContent).toContain('Done')
+    expect(done.textContent).not.toContain('core loop')
+    await act(async () => done.querySelector('button')!.click())
+    expect(done.textContent).toContain('Do not edit files.')
+    await vi.waitFor(() => expect(done.textContent).toContain('The core loop is in main.ts.'))
+    expect(done.textContent).not.toContain('sessionID')
+  })
+
   it('stops a running thread and sends follow-ups with a changed agent only', async () => {
     page = {
       running: true, older: null,
@@ -201,7 +231,8 @@ describe('Inbox conversation', () => {
       forms: [{
         id: 'frm_1', title: 'Questions', unsupported: false,
         fields: [{ key: 'q0', type: 'string', title: 'Beverage', required: false, custom: true,
-          options: [{ value: 'Tea', label: 'Tea' }, { value: 'Coffee', label: 'Coffee' }] }],
+          description: 'Would you like tea or coffee?',
+          options: [{ value: 'Tea', label: 'Tea', description: 'A nice cup of tea' }, { value: 'Coffee', label: 'Coffee', description: 'A cup of coffee' }] }],
       }],
     }
     const view = await render()
@@ -215,7 +246,10 @@ describe('Inbox conversation', () => {
     const question = view.querySelector<HTMLElement>('[data-testid="chat-question-frm_1"]')!
     await act(async () => button(question, 'Send answer').click())
     expect(question.textContent).toContain('Answer “Beverage”.')
-    await act(async () => button(question, 'Tea').click())
+    expect(question.textContent).toContain('Would you like tea or coffee?')
+    expect(question.querySelector('[data-testid="chat-option-Tea"]')?.textContent).toContain('A nice cup of tea')
+    expect(question.querySelector('[data-testid="chat-option-Coffee"]')?.textContent).toContain('A cup of coffee')
+    await act(async () => question.querySelector<HTMLButtonElement>('[data-testid="chat-option-Tea"]')!.click())
     await act(async () => button(question, 'Send answer').click())
     expect(api.chat.replyForm).toHaveBeenCalledWith({ threadId: 'ses_one', formId: 'frm_1', answer: { q0: 'Tea' } })
   })

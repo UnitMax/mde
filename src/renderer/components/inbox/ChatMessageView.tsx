@@ -1,5 +1,4 @@
-import { memo, useEffect, useRef, useState, type MouseEvent } from 'react'
-import { EditorContent, useEditor } from '@tiptap/react'
+import { memo, useState } from 'react'
 import {
   AlertTriangle,
   Brain,
@@ -12,53 +11,10 @@ import {
   X,
 } from 'lucide-react'
 import type { ChatMessage, ChatPart } from '@shared/types'
-import { toolSummary } from '@/lib/chat'
-import { externalLinkUrl } from '@/lib/file-viewer'
-import { markdownPreviewExtensions } from '@/lib/markdown-extensions'
+import { ChatMarkdown } from '@/components/inbox/ChatMarkdown'
+import { SubagentGroup } from '@/components/inbox/ChatSubagents'
+import { messageBlocks, toolSummary } from '@/lib/chat'
 import { cn } from '@/lib/utils'
-
-/** Streaming text is re-parsed at most this often. */
-const MARKDOWN_UPDATE_MS = 120
-
-/** Read-only Markdown for assistant text; links open in the browser after the main process checks them. */
-export const ChatMarkdown = memo(function ChatMarkdown({ text }: { text: string }): JSX.Element {
-  const editor = useEditor(
-    {
-      extensions: markdownPreviewExtensions,
-      content: text,
-      contentType: 'markdown',
-      editable: false,
-      injectCSS: false,
-      editorProps: { attributes: { class: 'markdown-prose chat-markdown', 'aria-label': 'Assistant message' } },
-      immediatelyRender: true,
-      shouldRerenderOnTransaction: false,
-    },
-    [],
-  )
-  const latest = useRef(text)
-  latest.current = text
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      editor.commands.setContent(latest.current, { contentType: 'markdown', emitUpdate: false })
-    }, MARKDOWN_UPDATE_MS)
-    return () => window.clearTimeout(timer)
-  }, [text, editor])
-
-  const onClick = (event: MouseEvent<HTMLDivElement>): void => {
-    const href = (event.target as HTMLElement).closest('a')?.getAttribute('href')
-    if (!href) return
-    event.preventDefault()
-    const external = externalLinkUrl(href)
-    if (external) window.open(external, '_blank', 'noopener,noreferrer')
-  }
-
-  return (
-    <div className="min-w-0 text-[14px] leading-relaxed text-fg" onClick={onClick}>
-      <EditorContent editor={editor} />
-    </div>
-  )
-})
 
 function Disclosure({
   summary,
@@ -198,7 +154,9 @@ export const ChatMessageView = memo(function ChatMessageView({
   const lastIndex = message.parts.length - 1
   return (
     <div className="flex min-w-0 flex-col gap-1.5" data-testid={`chat-message-${message.id}`}>
-      {message.parts.map((part, index) => {
+      {messageBlocks(message.parts).map((block) => {
+        if (block.kind === 'subagents') return <SubagentGroup key={`subagents-${block.index}`} parts={block.parts} />
+        const { part, index } = block
         if (part.kind === 'text') return part.text.trim() ? <ChatMarkdown key={index} text={part.text} /> : null
         if (part.kind === 'reasoning') {
           return <ReasoningView key={index} text={part.text} active={!message.completed && index === lastIndex} />

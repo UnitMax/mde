@@ -39,6 +39,7 @@ function setup(responses: Partial<Record<ServiceOperation, unknown>> = {}) {
     enabled: () => enabled,
     now: () => now,
     createId: () => 'abc',
+    sleep: async () => {},
   })
   const folder = service.addFolder({ directory: '/home/me/app', target: wsl })
   return {
@@ -81,6 +82,29 @@ describe('Inbox chat service', () => {
     expect(calls).toHaveLength(4)
     await expect(service.chatOptions({ folderId: 'fld_gone' })).rejects.toThrow('no longer in the Inbox')
     await expect(service.chatOptions({ threadId: 'ses_gone' })).rejects.toThrow('no longer in the Inbox')
+  })
+
+  it('asks again when OpenCode has not loaded the folder yet and answers with no agents', async () => {
+    const { service, folder, request } = setup({
+      'provider.list': { data: [] },
+      'model.list': { data: [{ id: 'model-1', providerID: 'provider-1', name: 'Model' }] },
+      'model.default': { data: null },
+    })
+    const agents = [{ id: 'build', name: 'Build', mode: 'primary' }]
+    let attempts = 0
+    const answer = request.getMockImplementation()!
+    request.mockImplementation(async (target, operation, req) => {
+      if (operation !== 'agent.list') return answer(target, operation, req)
+      attempts += 1
+      return { data: attempts < 3 ? [] : agents }
+    })
+    expect((await service.chatOptions({ folderId: folder.id })).agents).toEqual([{ id: 'build', name: 'Build' }])
+    expect(attempts).toBe(3)
+
+    request.mockImplementation(async (target, operation, req) =>
+      operation === 'agent.list' ? { data: [] } : answer(target, operation, req))
+    const other = service.addFolder({ directory: '/home/me/other', target: wsl })
+    await expect(service.chatOptions({ folderId: other.id })).rejects.toThrow('not finished loading')
   })
 
   it('creates a session in the folder, records it, and sends the first message', async () => {

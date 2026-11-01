@@ -115,8 +115,8 @@ function FieldInput({
                 onChange(event.target.checked ? [...selected, option.value] : selected.filter((item) => item !== option.value))}
             />
             <span>
-              {option.label}
-              {option.description && <span className="block text-[11px] text-fg-subtle">{option.description}</span>}
+              <span className="font-medium">{option.label}</span>
+              {option.description && <span className="block text-[12px] leading-snug text-fg-muted">{option.description}</span>}
             </span>
           </label>
         ))}
@@ -137,28 +137,55 @@ function FieldInput({
   }
   const text = typeof value === 'string' ? value : ''
   const chosen = field.options.some((option) => option.value === text)
+  // Options that explain themselves are listed as rows so the explanation stays readable.
+  const described = field.options.some((option) => option.description)
   return (
     <div className="flex flex-col gap-1.5">
       {field.options.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {field.options.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              aria-pressed={text === option.value}
-              title={option.description}
-              onClick={() => onChange(option.value)}
-              className={cn(
-                'rounded-full border px-3 py-1 text-[12.5px] transition-colors',
-                text === option.value
-                  ? 'border-accent bg-accent/15 text-fg'
-                  : 'border-line-strong text-fg-muted hover:bg-hover hover:text-fg',
-              )}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
+        described ? (
+          <div role="group" aria-label={field.title ?? field.key} className="flex flex-col gap-1.5">
+            {field.options.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={text === option.value}
+                data-testid={`chat-option-${option.value}`}
+                onClick={() => onChange(option.value)}
+                className={cn(
+                  'rounded-lg border px-3 py-2 text-left transition-colors',
+                  text === option.value
+                    ? 'border-accent bg-accent/15'
+                    : 'border-line-strong hover:bg-hover',
+                )}
+              >
+                <span className="block text-[13px] font-medium text-fg">{option.label}</span>
+                {option.description && (
+                  <span className="mt-0.5 block text-[12px] leading-snug text-fg-muted">{option.description}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {field.options.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={text === option.value}
+                data-testid={`chat-option-${option.value}`}
+                onClick={() => onChange(option.value)}
+                className={cn(
+                  'rounded-full border px-3 py-1 text-[12.5px] transition-colors',
+                  text === option.value
+                    ? 'border-accent bg-accent/15 text-fg'
+                    : 'border-line-strong text-fg-muted hover:bg-hover hover:text-fg',
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        )
       )}
       {(field.custom || field.options.length === 0) && (
         <input
