@@ -138,6 +138,55 @@ describe('Inbox', () => {
     expect(useWorkspace.getState().selectedInboxThreadId).toBeNull()
   })
 
+  it('counts up how long a working thread has been going in its pill', async () => {
+    vi.useFakeTimers({ now: 5_000_000 })
+    try {
+      useWorkspace.setState({
+        inboxThreads: [
+          thread({ id: 'ses_one', status: 'working', workingSince: 5_000_000 - 90_000 }),
+          // Working, but nothing says since when: the pill names the state and no more.
+          thread({ id: 'ses_two', status: 'working' }),
+          thread({ id: 'ses_three', status: 'completed' })
+        ]
+      })
+      const panel = await render(createElement(InboxPanel))
+      const chip = (id: string): string | undefined =>
+        panel.querySelector(`[data-testid="inbox-thread-${id}"] [data-testid="inbox-status-chip"]`)?.textContent ?? undefined
+      expect(chip('ses_one')).toBe('Working·1m 30s')
+      expect(chip('ses_two')).toBe('Working')
+      expect(chip('ses_three')).toBe('Done')
+
+      // The count moves on a moment after each whole second has passed, never before it.
+      await act(async () => { vi.advanceTimersByTime(900) })
+      expect(chip('ses_one')).toBe('Working·1m 30s')
+      await act(async () => { vi.advanceTimersByTime(200) })
+      expect(chip('ses_one')).toBe('Working·1m 31s')
+      await act(async () => { vi.advanceTimersByTime(30_000) })
+      expect(chip('ses_one')).toBe('Working·2m 1s')
+      expect(panel.querySelector('[data-testid="inbox-thread-ses_one"] [role="timer"]')).not.toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops the clock when the thread stops working', async () => {
+    vi.useFakeTimers({ now: 5_000_000 })
+    try {
+      useWorkspace.setState({ inboxThreads: [thread({ status: 'working', workingSince: 5_000_000 - 5_000 })] })
+      const panel = await render(createElement(InboxPanel))
+      expect(panel.querySelector('[data-testid="inbox-status-chip"]')?.textContent).toBe('Working·5s')
+      await act(async () => {
+        useWorkspace.setState({ inboxThreads: [thread({ status: 'completed' })] })
+      })
+      expect(panel.querySelector('[data-testid="inbox-status-chip"]')?.textContent).toBe('Done')
+      expect(panel.querySelector('[role="timer"]')).toBeNull()
+      // Nothing is left ticking once the pill no longer shows a count.
+      expect(vi.getTimerCount()).toBeLessThanOrEqual(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('filters and searches the list', async () => {
     useWorkspace.setState({
       inboxThreads: [

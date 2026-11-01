@@ -24,6 +24,7 @@ import {
   subagentInfo,
   subagentResult,
   toolSummary,
+  turnDurations,
 } from '../src/renderer/lib/chat'
 
 const model = { id: 'model-1', providerId: 'p' }
@@ -253,5 +254,60 @@ describe('context usage', () => {
     expect(formatPercent(0.01)).toBe('1%')
     expect(formatPercent(1.043)).toBe('104%')
     expect([0, 0.00123, 0.5, 12.3456, 1234.5].map(formatCost)).toEqual(['$0.00', '$0.0012', '$0.50', '$12.35', '$1,234.50'])
+  })
+})
+
+describe('turn durations', () => {
+  const user = (id: string, time: number): ChatMessage => ({ kind: 'user', id, time, text: 'Do it' })
+  const step = (id: string, time: number, completedAt?: number): ChatMessage => ({
+    kind: 'assistant', id, time, agent: 'build', model, parts: [], completed: completedAt !== undefined,
+    ...(completedAt !== undefined ? { completedAt } : {}),
+  })
+  const note = (id: string, time: number, text = 'Stopped'): ChatMessage => ({ kind: 'note', id, time, tone: 'info', text })
+
+  it('times a turn from the user message to its last finished step, under that step', () => {
+    const { finished, openSince } = turnDurations([
+      user('u1', 1_000), step('a1', 1_015, 6_000), step('a2', 6_020, 91_000),
+      user('u2', 100_000), step('a3', 100_010, 103_500),
+    ])
+    expect([...finished]).toEqual([['a2', 90_000], ['a3', 3_500]])
+    expect(openSince).toBeNull()
+  })
+
+  it('puts the time ahead of the note about how the run ended, and ignores notes elsewhere', () => {
+    const { finished } = turnDurations([
+      user('u1', 1_000), step('a1', 1_010, 23_000), note('n1', 23_003),
+      note('n2', 30_000, 'Switched to other/model'), user('u2', 30_010), step('a2', 30_020, 31_000),
+    ])
+    expect([...finished]).toEqual([['a1', 22_000], ['a2', 990]])
+  })
+
+  it('leaves out the turn in progress and says when it began', () => {
+    const working = turnDurations([user('u1', 1_000), step('a1', 1_010, 5_000), user('u2', 9_000), step('a2', 9_010)])
+    expect([...working.finished]).toEqual([['a1', 4_000]])
+    expect(working.openSince).toBe(9_000)
+
+    // Between steps every step so far is finished; it is the turn that decides, not the last step.
+    const waiting = turnDurations([user('u1', 1_000), step('a1', 1_010, 5_000)])
+    expect(waiting.finished.get('a1')).toBe(4_000)
+
+    const justSent = turnDurations([user('u1', 1_000), step('a1', 1_010, 5_000), user('u2', 9_000)])
+    expect([...justSent.finished]).toEqual([['a1', 4_000]])
+    expect(justSent.openSince).toBe(9_000)
+  })
+
+  it('does not time a turn whose start or end is unknown', () => {
+    // The user message is in an older page that is not loaded.
+    expect(turnDurations([step('a1', 1_010, 5_000), user('u2', 9_000), step('a2', 9_010, 9_900)]).finished.has('a1')).toBe(false)
+    // The run was cut off before any step finished.
+    expect(turnDurations([user('u1', 1_000), step('a1', 1_010)]).finished.size).toBe(0)
+    // A user message without a time.
+    expect(turnDurations([user('u1', 0), step('a1', 10, 5_000)]).finished.size).toBe(0)
+    expect(turnDurations([user('u1', 0)]).openSince).toBeNull()
+    expect(turnDurations([]).finished.size).toBe(0)
+  })
+
+  it('never reports a negative time', () => {
+    expect(turnDurations([user('u1', 9_000), step('a1', 9_010, 8_000)]).finished.get('a1')).toBe(0)
   })
 })

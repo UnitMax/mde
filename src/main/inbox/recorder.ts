@@ -30,6 +30,10 @@ export function isInboxThreadUnread(thread: InboxThread): boolean {
   return thread.lastActivityAt > thread.readAt
 }
 
+function isBusy(status: OpenCodeTuiStatus): boolean {
+  return status === 'working' || status === 'attention'
+}
+
 function sameModel(a: InboxThread['model'], b: InboxThread['model']): boolean {
   return a?.id === b?.id && a?.providerId === b?.providerId && a?.variant === b?.variant
 }
@@ -88,6 +92,7 @@ function sameThread(a: InboxThread, b: InboxThread): boolean {
     a.status === b.status &&
     a.attentionReason === b.attentionReason &&
     a.lastActivityAt === b.lastActivityAt &&
+    a.workingSince === b.workingSince &&
     a.readAt === b.readAt &&
     a.archived === b.archived &&
     a.folderId === b.folderId
@@ -147,6 +152,7 @@ export class InboxRecorder {
       branch: null,
       model: input.model,
       status: 'working',
+      workingSince: now,
       createdAt: now,
       lastActivityAt: now,
       readAt: now,
@@ -192,11 +198,15 @@ export class InboxRecorder {
     const attentionReason = report.status ? report.attentionReason : existing.attentionReason
     const changedStatus = existing.status !== status || existing.attentionReason !== attentionReason
     const activity = changedStatus && isInboxActivity(status)
-    const { attentionReason: _previousReason, ...rest } = existing
+    // A run goes on while the agent waits for an answer, so only a thread that was idle starts the clock.
+    const busy = isBusy(status)
+    const workingSince = busy ? (isBusy(existing.status) ? existing.workingSince ?? now : now) : undefined
+    const { attentionReason: _previousReason, workingSince: _previousSince, ...rest } = existing
     const next: InboxThread = {
       ...rest,
       status,
       ...(status === 'attention' && attentionReason ? { attentionReason } : {}),
+      ...(workingSince !== undefined ? { workingSince } : {}),
       title: report.title ?? existing.title,
       ...(report.model ?? existing.model ? { model: report.model ?? existing.model } : {}),
       ...(activity ? { lastActivityAt: now, archived: false } : {})

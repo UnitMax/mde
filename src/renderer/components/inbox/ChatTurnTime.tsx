@@ -1,0 +1,36 @@
+import { Clock3, LoaderCircle } from 'lucide-react'
+import { ElapsedTime } from '@/components/ElapsedTime'
+import { formatDuration, spokenDuration } from '@/lib/duration'
+
+/** The line under a finished turn: how long the agent worked on it. */
+export function TurnDuration({ ms }: { ms: number }): JSX.Element {
+  return (
+    <div
+      className="flex items-center gap-2 px-1.5 text-[11.5px] text-fg-subtle"
+      data-testid="chat-turn-duration"
+      title={spokenDuration(ms)}
+    >
+      <Clock3 aria-hidden className="h-3 w-3 shrink-0" />
+      <span className="shrink-0">
+        Worked for <span className="tabular-nums text-fg-muted">{formatDuration(ms)}</span>
+      </span>
+      <span aria-hidden className="h-px min-w-6 flex-1 bg-gradient-to-r from-line-strong/70 to-transparent" />
+    </div>
+  )
+}
+
+/**
+ * The same line while the agent is still going: a spinner, the time so far counting up, and a rule
+ * with a light moving along it. `since` is where the count starts; null starts it now.
+ */
+export function WorkingFor({ since }: { since: number | null }): JSX.Element {
+  return (
+    <div className="flex items-center gap-2 px-1.5 text-[11.5px] text-fg-muted" data-testid="chat-working">
+      <LoaderCircle aria-hidden className="h-3 w-3 shrink-0 animate-spin text-accent motion-reduce:animate-none" />
+      <span className="shrink-0">
+        Working for <ElapsedTime since={since} className="text-fg" />
+      </span>
+      <span aria-hidden className="working-rule h-px min-w-6 flex-1" />
+    </div>
+  )
+}

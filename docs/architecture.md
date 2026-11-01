@@ -80,6 +80,10 @@ thread and applies the OpenCode service events of the threads it holds:
 - Finishing, failing, or asking for input or permission moves the thread to the top, marks it
   unread, and brings it back from the archive, as a reply does in mail. Starting work changes only
   the status chip, so a busy thread does not keep moving.
+- While a thread is working or waiting for an answer it carries `workingSince`, the time its run
+  began on this computer's clock. Asking and being answered does not restart it; stopping, however
+  it stops, removes it. It is not trusted across a restart: a thread that was working is shown
+  idle on load and the stored value is dropped.
 - The branch is read with the same background Git query as the terminal header, for the thread's
   folder, when the thread is first recorded and after each activity. A failed read keeps the
   previous branch.
@@ -169,6 +173,23 @@ they stay right however many older pages are loaded; if that request fails, the 
 still loads and the totals are left out. After a compaction the count stays at its old value until
 the next step finishes. The pill does not appear in the new-thread composer, where nothing has
 been measured yet.
+
+**Time worked.** A line under each turn says how long the agent worked on it (`TurnDuration`,
+`ChatTurnTime.tsx`), such as `Worked for 1m 30s`, and while the turn is still going the same line
+reads `Working for 1m 30s`, counting up every second, with a spinner and a light moving along its
+rule (`WorkingFor`). A turn is a user message with everything after it up to the next user message
+(`turnDurations` in `lib/chat.ts`). It began when the user's message was created and ended when
+its last step completed, both from the service's own timestamps, so the difference does not depend
+on this computer's clock; the line sits under the turn's last step and above any note about how the
+run ended. A turn whose user message is in an older, unloaded page, or that has no finished step,
+has no line. For the turn in progress the count starts from the thread's `workingSince`, which is
+on this computer's clock like the count itself, and falls back to the user message's time only when
+there is none; a clock that disagrees with the service's, as WSL's can after the computer sleeps,
+therefore cannot skew it. The sidebar's `Working` pill counts from the same `workingSince` (`Working
+· 1m 30s`); the pill in the thread's header only names the state, and `Needs input` pills show no
+time. Durations are cut off to whole seconds and shown as `45s`, `1m 30s`, `2m` or `1h 5m`
+(`lib/duration.ts`), with the full words in a tooltip. The counters are timers that run only while
+they are on screen.
 
 **Transport.** OpenCode 2 runs one background service per machine, which its terminal UI also
 uses, so a thread can be continued in a terminal (`opencode --session ses_…`) and both stay in

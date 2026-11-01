@@ -399,6 +399,76 @@ describe('Inbox conversation', () => {
     })
   })
 
+  describe('time worked', () => {
+    const model = options.defaultModel!
+    const user = (id: string, time: number): ChatMessagesPage['messages'][number] => ({ kind: 'user', id, time, text: `Ask ${id}` })
+    const step = (id: string, time: number, completedAt?: number): ChatMessagesPage['messages'][number] => ({
+      kind: 'assistant', id, time, agent: 'build', model, completed: completedAt !== undefined, parts: [{ kind: 'text', text: `Answer ${id}` }],
+      ...(completedAt !== undefined ? { completedAt } : {}),
+    })
+    const durations = (view: HTMLElement): string[] =>
+      Array.from(view.querySelectorAll('[data-testid="chat-turn-duration"]')).map((item) => item.textContent ?? '')
+
+    it('says how long each finished turn took, under its answer and above the next question', async () => {
+      useWorkspace.setState({ inboxThreads: [thread({ status: 'completed' })], selectedInboxThreadId: 'ses_one' })
+      page = {
+        running: false, older: null,
+        messages: [
+          user('u1', 1_000), step('a1', 1_010, 6_000), step('a2', 6_020, 91_000),
+          user('u2', 200_000), step('a3', 200_010, 203_400),
+        ],
+      }
+      const view = await render()
+      await vi.waitFor(() => expect(durations(view)).toHaveLength(2))
+      expect(durations(view)).toEqual(['Worked for 1m 30s', 'Worked for 3s'])
+      expect(view.querySelector('[data-testid="chat-turn-duration"]')?.getAttribute('title')).toBe('1 minute 30 seconds')
+      expect(view.querySelector('[data-testid="chat-working"]')).toBeNull()
+
+      const order = Array.from(view.querySelectorAll('[data-testid^="chat-message-"], [data-testid="chat-turn-duration"]'))
+        .map((item) => item.getAttribute('data-testid') === 'chat-turn-duration' ? 'time' : item.getAttribute('data-testid'))
+      expect(order).toEqual(['chat-message-u1', 'chat-message-a1', 'chat-message-a2', 'time', 'chat-message-u2', 'chat-message-a3', 'time'])
+    })
+
+    it('counts the turn in progress from when the thread began working, not from the service clock', async () => {
+      // The service's clock is far off; the count must not follow it.
+      useWorkspace.setState({
+        inboxThreads: [thread({ status: 'working', workingSince: Date.now() - 90_000 })], selectedInboxThreadId: 'ses_one',
+      })
+      page = { running: true, older: null, messages: [user('u1', 5), step('a1', 6, 50), step('a2', 60)] }
+      const view = await render()
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-working"]')).not.toBeNull())
+      expect(view.querySelector('[data-testid="chat-working"]')?.textContent).toMatch(/^Working for 1m (30|31|32)s$/)
+      // The unfinished turn has no finished-turn line yet.
+      expect(durations(view)).toEqual([])
+      // The same count is not repeated in the header, which only names the state.
+      expect(view.querySelector('[data-testid="inbox-thread-view"] [data-testid="inbox-status-chip"]')?.textContent).toBe('Working')
+    })
+
+    it('counts from the question when the thread has no clock of its own, and keeps the previous turn\'s time', async () => {
+      useWorkspace.setState({ inboxThreads: [thread({ status: 'working' })], selectedInboxThreadId: 'ses_one' })
+      const sent = Date.now() - 20_000
+      page = { running: true, older: null, messages: [user('u1', 1_000), step('a1', 1_010, 5_000), user('u2', sent)] }
+      const view = await render()
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-working"]')).not.toBeNull())
+      expect(view.querySelector('[data-testid="chat-working"]')?.textContent).toMatch(/^Working for (19|20|21|22)s$/)
+      expect(durations(view)).toEqual(['Worked for 4s'])
+    })
+
+    it('starts at zero when nothing says when the work began, and turns into the finished line when it ends', async () => {
+      useWorkspace.setState({ inboxThreads: [thread({ status: 'working' })], selectedInboxThreadId: 'ses_one' })
+      page = { running: true, older: null, messages: [] }
+      const view = await render()
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-working"]')?.textContent).toBe('Working for 0s'))
+
+      page = { running: false, older: null, messages: [user('u1', 1_000), step('a1', 1_010, 66_000)] }
+      await act(async () => {
+        useInboxChat.getState().applyEvent({ type: 'running', threadId: 'ses_one', running: false })
+      })
+      await vi.waitFor(() => expect(durations(view)).toEqual(['Worked for 1m 5s']))
+      expect(view.querySelector('[data-testid="chat-working"]')).toBeNull()
+    })
+  })
+
   describe('context usage', () => {
     const windowed: ChatOptions = {
       ...options,

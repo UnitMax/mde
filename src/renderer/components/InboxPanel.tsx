@@ -13,6 +13,7 @@ import {
   Trash2
 } from 'lucide-react'
 import type { InboxThread } from '@shared/types'
+import { ElapsedTime } from '@/components/ElapsedTime'
 import { Input } from '@/components/ui/input'
 import {
   AlertDialog,
@@ -70,7 +71,14 @@ const CHIP_TONES: Record<InboxStatusChip['tone'], string> = {
   muted: 'bg-elevated text-fg-muted'
 }
 
-export function InboxStatusBadge({ thread }: { thread: InboxThread }): JSX.Element | null {
+/** `elapsed` adds how long a working thread has been going, counting up. */
+export function InboxStatusBadge({
+  thread,
+  elapsed = false
+}: {
+  thread: InboxThread
+  elapsed?: boolean
+}): JSX.Element | null {
   const chip = inboxStatusChip(thread)
   if (!chip) return null
   return (
@@ -88,6 +96,14 @@ export function InboxStatusBadge({ thread }: { thread: InboxThread }): JSX.Eleme
         />
       )}
       {chip.label}
+      {elapsed && thread.status === 'working' && thread.workingSince !== undefined && (
+        <>
+          <span aria-hidden="true" className="opacity-50">
+            ·
+          </span>
+          <ElapsedTime since={thread.workingSince} className="font-normal text-fg-subtle" />
+        </>
+      )}
     </span>
   )
 }
@@ -192,7 +208,7 @@ function InboxThreadRow({
                 >
                   {model}
                 </span>
-                <InboxStatusBadge thread={thread} />
+                <InboxStatusBadge thread={thread} elapsed />
               </span>
             )}
           </button>

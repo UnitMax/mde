@@ -71,6 +71,61 @@ describe('inbox recorder', () => {
     expect(thread()).not.toHaveProperty('attentionReason')
   })
 
+  it('starts a run clock when work starts and keeps it while the agent waits for an answer', () => {
+    const { start, emit, thread, advance, recorder } = setup()
+    start('ses_one')
+    expect(thread()).toMatchObject({ status: 'working', workingSince: 1_000 })
+
+    // Being told it is working again does not restart the clock.
+    advance(5_000)
+    emit('ses_one', 'session.execution.started')
+    expect(thread()?.workingSince).toBe(1_000)
+    recorder.markStatus('ses_one', 'working')
+    expect(thread()?.workingSince).toBe(1_000)
+
+    // Asking and being answered is still the same run.
+    advance(1_000)
+    emit('ses_one', 'permission.asked')
+    expect(thread()).toMatchObject({ status: 'attention', workingSince: 1_000 })
+    advance(1_000)
+    emit('ses_one', 'permission.replied')
+    expect(thread()).toMatchObject({ status: 'working', workingSince: 1_000 })
+
+    // Stopping ends it, however it stops, and the next run starts a new clock.
+    let clock = 1_000 + 5_000 + 1_000 + 1_000
+    for (const [type, status] of [
+      ['session.execution.succeeded', 'completed'],
+      ['session.execution.failed', 'error'],
+      ['session.execution.interrupted', 'idle']
+    ] as const) {
+      advance(1_000)
+      clock += 1_000
+      emit('ses_one', type)
+      expect(thread()).toMatchObject({ status })
+      expect(thread()).not.toHaveProperty('workingSince')
+      advance(1_000)
+      clock += 1_000
+      emit('ses_one', 'session.execution.started')
+      expect(thread()).toMatchObject({ status: 'working', workingSince: clock })
+    }
+  })
+
+  it('starts the clock when a thread that needed an answer first goes to work, and tells the app', () => {
+    const { start, emit, thread, advance, changed } = setup()
+    start('ses_one')
+    emit('ses_one', 'session.execution.succeeded')
+    advance(1_000)
+    emit('ses_one', 'form.created')
+    // Waiting for an answer counts as part of a run, even one first seen that way.
+    expect(thread()).toMatchObject({ status: 'attention', workingSince: 2_000 })
+    advance(3_000)
+    changed.length = 0
+    emit('ses_one', 'form.replied')
+    expect(thread()).toMatchObject({ status: 'working', workingSince: 2_000 })
+    expect(changed).toHaveLength(1)
+    expect(changed[0]).toMatchObject({ status: 'working', workingSince: 2_000 })
+  })
+
   it('brings an archived thread back on new activity and keeps it archived otherwise', () => {
     const { start, emit, recorder, thread, advance } = setup()
     start()

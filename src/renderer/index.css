@@ -578,6 +578,28 @@
   animation: mde-pane-glow 1500ms ease-out both;
 }
 
+/* The rule beside "Working for…" (ChatTurnTime): a short bright stretch of accent travels along a faint line. */
+.working-rule {
+  background:
+    linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-accent) 75%, transparent), transparent) no-repeat -40% 0 / 40% 100%,
+    linear-gradient(90deg, var(--color-line-strong), transparent);
+  animation: mde-working-sweep 2200ms ease-in-out infinite;
+}
+
+@keyframes mde-working-sweep {
+  to {
+    background-position: 140% 0, 0 0;
+  }
+}
+
+/* Without the movement the rule keeps the accent, fading out along its length. */
+@media (prefers-reduced-motion: reduce) {
+  .working-rule {
+    background: linear-gradient(90deg, color-mix(in srgb, var(--color-accent) 55%, transparent), transparent);
+    animation: none;
+  }
+}
+
 @keyframes mde-pane-sweep {
   0% {
     --mde-pane-sweep: 0deg;

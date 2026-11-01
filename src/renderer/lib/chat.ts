@@ -192,6 +192,55 @@ export function formatCost(cost: number): string {
   return `$${cost.toLocaleString('en-US', digits)}`
 }
 
+export interface TurnDurations {
+  /** How long each finished turn took in milliseconds, by the ID of the message it is shown under. */
+  finished: Map<string, number>
+  /**
+   * When the turn still in progress began, on the service's clock; null when that turn is not in the
+   * loaded messages or when nothing is in progress.
+   */
+  openSince: number | null
+}
+
+/**
+ * How long each turn of the conversation took. A turn is a user message and everything after it up
+ * to the next user message: the user's request, then the steps the agent took to answer it. It
+ * began when the user sent the message and ended when its last step finished, so both times come
+ * from the service's clock and the difference is right whatever this computer's clock says.
+ *
+ * The duration belongs under the turn's last step, ahead of any note about how the run ended. A turn
+ * is left out when its start is not loaded, or when it has no finished step; one with a step still
+ * running is the turn in progress.
+ */
+export function turnDurations(messages: readonly ChatMessage[]): TurnDurations {
+  const finished = new Map<string, number>()
+  let startedAt: number | null = null
+  let endedAt: number | null = null
+  let anchor: string | null = null
+  let open = false
+
+  const close = (): void => {
+    if (startedAt !== null && anchor !== null && endedAt !== null && !open) finished.set(anchor, Math.max(0, endedAt - startedAt))
+  }
+
+  for (const message of messages) {
+    if (message.kind === 'user') {
+      close()
+      // A message without a time (0) says nothing about when the turn began.
+      startedAt = message.time > 0 ? message.time : null
+      endedAt = null
+      anchor = message.id
+      open = false
+    } else if (message.kind === 'assistant') {
+      anchor = message.id
+      if (message.completedAt === undefined) open = true
+      else endedAt = Math.max(endedAt ?? 0, message.completedAt)
+    }
+  }
+  close()
+  return { finished, openSince: startedAt !== null && (open || endedAt === null) ? startedAt : null }
+}
+
 /** Text streamed for one part of a message that may not be fetched yet. */
 export interface LivePart {
   messageId: string

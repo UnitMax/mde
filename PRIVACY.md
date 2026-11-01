@@ -22,8 +22,8 @@ MDE stores data only on the local machine:
   notifications.
 - `inbox.json` under Electron's user-data directory, once you use the Inbox: one record for each
   OpenCode conversation you started in the Inbox, with its session ID, title, folder, target (Mac
-  or WSL distro), Git branch, model and provider identifiers, last status, timestamps, and read
-  and archived flags. It also holds the Inbox folders you add (path, target, name, timestamps; at most 200) and the folder, model and agent
+  or WSL distro), Git branch, model and provider identifiers, last status, timestamps (including,
+  while a conversation is working, when its current run began), and read and archived flags. It also holds the Inbox folders you add (path, target, name, timestamps; at most 200) and the folder, model and agent
   you last chose in the Inbox composer. It never holds prompts, messages or tool data. It keeps at
   most 1,000 conversations; deleting a conversation from the Inbox removes only MDE's record.
 - If you enable the optional OpenCode integrations, a short status snapshot under

@@ -80,7 +80,7 @@ describe('inbox thread validation', () => {
       version: 1,
       threads: [
         thread({ id: 'ses_old', lastActivityAt: 100 }),
-        thread({ id: 'ses_busy', status: 'working', lastActivityAt: 300 }),
+        thread({ id: 'ses_busy', status: 'working', lastActivityAt: 300, workingSince: 250 }),
         thread({ id: 'ses_old', title: 'Duplicate', lastActivityAt: 900 }),
         { id: 'broken' }
       ]
@@ -89,6 +89,7 @@ describe('inbox thread validation', () => {
       ['ses_busy', 'idle'],
       ['ses_old', 'completed']
     ])
+    expect(threads.every((item) => !('workingSince' in item))).toBe(true)
     expect(normalizeInboxFile({ threads: 'nope' })).toEqual([])
     expect(normalizeInboxFile(null)).toEqual([])
 

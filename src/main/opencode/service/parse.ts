@@ -274,7 +274,8 @@ export function parseMessage(value: unknown): ChatMessage | null {
       const model = parseModelRef(message.model)
       if (!model) return null
       const parts = list(message.content).map(parsePart).filter((part): part is ChatPart => part !== null)
-      const completed = typeof record(message.time)?.completed === 'number'
+      const finished = record(message.time)?.completed
+      const completed = typeof finished === 'number'
       const error = errorText(message.error)
       const tokens = parseTokens(message.tokens)
       return {
@@ -285,6 +286,7 @@ export function parseMessage(value: unknown): ChatMessage | null {
         model,
         parts,
         completed,
+        ...(completed && Number.isFinite(finished) && finished >= 0 ? { completedAt: finished } : {}),
         ...(error ? { error } : {}),
         ...(tokens ? { tokens } : {}),
       }

@@ -251,6 +251,11 @@ export interface InboxThread {
   createdAt: number
   /** Last time the agent finished, failed, or asked for input (or first seen). */
   lastActivityAt: number
+  /**
+   * When the current run began, on this computer's clock. Set while the thread is working or waiting
+   * for an answer and gone once it stops; a run is not restarted by the agent asking and being answered.
+   */
+  workingSince?: number
   readAt: number
   archived: boolean
   /** The Inbox folder the thread was started in. */
@@ -375,6 +380,8 @@ export type ChatMessage =
       model: OpenCodeModelRef
       parts: ChatPart[]
       completed: boolean
+      /** When the step finished, on the service's clock; absent while it runs. */
+      completedAt?: number
       error?: string
       /** What the step used, once OpenCode has reported it. */
       tokens?: ChatTokens

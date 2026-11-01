@@ -320,6 +320,15 @@ describe('OpenCode service parsing', () => {
       .not.toHaveProperty('tokens')
   })
 
+  it('reads when a step finished, and nothing while it runs', () => {
+    const step = (time: Record<string, unknown>) =>
+      parseMessage({ id: 'msg_1', type: 'assistant', model: { id: 'm', providerID: 'p' }, time, content: [] })
+    expect(step({ created: 1_000, streamed: 1_500, completed: 6_000 })).toMatchObject({ completed: true, completedAt: 6_000 })
+    expect(step({ created: 1_000, streamed: 1_500 })).toMatchObject({ completed: false })
+    expect(step({ created: 1_000 })).not.toHaveProperty('completedAt')
+    expect(step({ created: 1_000, completed: -1 })).not.toHaveProperty('completedAt')
+  })
+
   it('reads the thread totals from a session answer', () => {
     expect(parseSessionUsage({ data: { id: 'ses_1', cost: 1.25, tokens: { input: 5, output: 4, reasoning: 3, cache: { read: 2, write: 1 } } } }))
       .toEqual({ cost: 1.25, tokens: { input: 5, output: 4, reasoning: 3, cacheRead: 2, cacheWrite: 1 } })

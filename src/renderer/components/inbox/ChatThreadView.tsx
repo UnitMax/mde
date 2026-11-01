@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, LoaderCircle, RefreshCw } from 'lucide-react'
 import type { InboxThread, OpenCodeModelRef } from '@shared/types'
 import { ChatComposer } from '@/components/inbox/ChatComposer'
 import { ChatMessageView } from '@/components/inbox/ChatMessageView'
 import { PermissionCard, QuestionCard } from '@/components/inbox/ChatRequestCards'
-import { contextUsage, findModel, initialChoice, mergeLive } from '@/lib/chat'
+import { TurnDuration, WorkingFor } from '@/components/inbox/ChatTurnTime'
+import { contextUsage, findModel, initialChoice, mergeLive, turnDurations } from '@/lib/chat'
 import { optionsKey, useInboxChat, type ChatThreadState } from '@/store/inbox-chat'
 
 /** Within this distance of the bottom, new content keeps the view pinned to it. */
@@ -85,10 +86,10 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   }, [messages, requests])
 
   const running = state?.running ?? thread.status === 'working'
-  const streaming = (() => {
-    const last = messages[messages.length - 1]
-    return last?.kind === 'assistant' && !last.completed
-  })()
+  // The time under each turn comes from the service's clock; the count for the turn in progress prefers
+  // this computer's own, which the sidebar's pill also counts from, so a clock that is off cannot skew it.
+  const durations = useMemo(() => turnDurations(messages), [messages])
+  const busySince = thread.status === 'working' || thread.status === 'attention' ? thread.workingSince : undefined
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="chat-thread">
@@ -112,15 +113,16 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
           ) : state.messages.length === 0 && messages.length === 0 && !state.error ? (
             <p className="py-10 text-center text-xs text-fg-subtle">No messages yet.</p>
           ) : null}
-          {messages.map((message) => (
-            <ChatMessageView key={message.id} message={message} directory={thread.directory} />
-          ))}
-          {running && !streaming && (
-            <div className="flex items-center gap-2 px-1.5 text-[12px] text-fg-subtle" data-testid="chat-working">
-              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-              Working…
-            </div>
-          )}
+          {messages.map((message) => {
+            const took = durations.finished.get(message.id)
+            return (
+              <Fragment key={message.id}>
+                <ChatMessageView message={message} directory={thread.directory} />
+                {took !== undefined && <TurnDuration ms={took} />}
+              </Fragment>
+            )
+          })}
+          {running && <WorkingFor since={busySince ?? durations.openSince} />}
           {requests?.permissions.map((permission) => (
             <PermissionCard
               key={permission.id}
