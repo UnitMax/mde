@@ -487,6 +487,28 @@ describe('Inbox conversation', () => {
       expect(order).toEqual(['chat-message-u1', 'chat-message-a1', 'chat-message-a2', 'time', 'chat-message-u2', 'chat-message-a3', 'time'])
     })
 
+    it('adds how fast the model generated when OpenCode\'s numbers give it, and leaves it out when they do not', async () => {
+      useWorkspace.setState({ inboxThreads: [thread({ status: 'completed' })], selectedInboxThreadId: 'ses_one' })
+      const timed = (id: string, time: number, streamedAt: number, completedAt: number, output: number): ChatMessagesPage['messages'][number] => ({
+        kind: 'assistant', id, time, agent: 'build', model, completed: true, completedAt, streamedAt,
+        parts: [{ kind: 'text', text: `Answer ${id}` }], tokens: { input: 5, output, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+      })
+      page = {
+        running: false, older: null,
+        messages: [
+          user('u1', 1_000), timed('a1', 1_010, 3_010, 8_000, 106), timed('a2', 8_020, 9_020, 9_100, 100),
+          user('u2', 20_000), step('a3', 20_010, 21_000),
+        ],
+      }
+      const view = await render()
+      await vi.waitFor(() => expect(durations(view)).toHaveLength(2))
+      // (106 + 100) tokens over 2 s + 1 s of generating; the 5 s the first step spent on tools do not count.
+      expect(durations(view)).toEqual(['Worked for 8s·68.7 tok/s', 'Worked for 1s'])
+      const rates = view.querySelectorAll('[data-testid="chat-turn-rate"]')
+      expect(rates).toHaveLength(1)
+      expect(rates[0]!.getAttribute('title')).toContain('tokens per second')
+    })
+
     it('counts the turn in progress from when the thread began working, not from the service clock', async () => {
       // The service's clock is far off; the count must not follow it.
       useWorkspace.setState({

@@ -382,6 +382,11 @@ export type ChatMessage =
       completed: boolean
       /** When the step finished, on the service's clock; absent while it runs. */
       completedAt?: number
+      /**
+       * When the model stopped generating, on the service's clock; absent while it still does. Tools
+       * the step ran afterwards come between this and `completedAt`.
+       */
+      streamedAt?: number
       error?: string
       /** What the step used, once OpenCode has reported it. */
       tokens?: ChatTokens

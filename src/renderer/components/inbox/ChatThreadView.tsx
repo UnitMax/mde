@@ -5,7 +5,7 @@ import { ChatComposer } from '@/components/inbox/ChatComposer'
 import { ChatMessageView } from '@/components/inbox/ChatMessageView'
 import { PermissionCard, QuestionCard } from '@/components/inbox/ChatRequestCards'
 import { TurnDuration, WorkingFor } from '@/components/inbox/ChatTurnTime'
-import { contextUsage, findModel, initialChoice, mergeLive, turnDurations } from '@/lib/chat'
+import { contextUsage, findModel, initialChoice, mergeLive, turnStats } from '@/lib/chat'
 import { optionsKey, useInboxChat, type ChatThreadState } from '@/store/inbox-chat'
 import { codeViewerFontFamily, getTerminalSettings, subscribeTerminalSettings } from '@/terminal/terminal-settings'
 
@@ -92,7 +92,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const running = state?.running ?? thread.status === 'working'
   // The time under each turn comes from the service's clock; the count for the turn in progress prefers
   // this computer's own, which the sidebar's pill also counts from, so a clock that is off cannot skew it.
-  const durations = useMemo(() => turnDurations(messages), [messages])
+  const turns = useMemo(() => turnStats(messages), [messages])
   const busySince = thread.status === 'working' || thread.status === 'attention' ? thread.workingSince : undefined
 
   return (
@@ -122,15 +122,15 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
             <p className="py-10 text-center text-xs text-fg-subtle">No messages yet.</p>
           ) : null}
           {messages.map((message) => {
-            const took = durations.finished.get(message.id)
+            const took = turns.finished.get(message.id)
             return (
               <Fragment key={message.id}>
                 <ChatMessageView message={message} directory={thread.directory} />
-                {took !== undefined && <TurnDuration ms={took} />}
+                {took !== undefined && <TurnDuration ms={took.ms} tokensPerSecond={took.tokensPerSecond} />}
               </Fragment>
             )
           })}
-          {running && <WorkingFor since={busySince ?? durations.openSince} />}
+          {running && <WorkingFor since={busySince ?? turns.openSince} />}
           {requests?.permissions.map((permission) => (
             <PermissionCard
               key={permission.id}

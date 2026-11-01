@@ -34,6 +34,11 @@ export function spokenDuration(ms: number): string {
   return rest ? `${unit(hours, 'hour')} ${unit(rest, 'minute')}` : unit(hours, 'hour')
 }
 
+/** A generation speed with one decimal, as OpenCode's own interface writes it: `53.1`. */
+export function formatRate(tokensPerSecond: number): string {
+  return Number.isFinite(tokensPerSecond) && tokensPerSecond > 0 ? tokensPerSecond.toFixed(1) : '0.0'
+}
+
 /**
  * How long to wait before the next whole second of `now - since` is reached, so a counter shown
  * from `since` goes up by exactly one each time. A start in the future (clocks that disagree)

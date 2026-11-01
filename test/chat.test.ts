@@ -24,7 +24,7 @@ import {
   subagentInfo,
   subagentResult,
   toolSummary,
-  turnDurations,
+  turnStats,
 } from '../src/renderer/lib/chat'
 
 const model = { id: 'model-1', providerId: 'p' }
@@ -257,57 +257,97 @@ describe('context usage', () => {
   })
 })
 
-describe('turn durations', () => {
+describe('turn stats', () => {
   const user = (id: string, time: number): ChatMessage => ({ kind: 'user', id, time, text: 'Do it' })
-  const step = (id: string, time: number, completedAt?: number): ChatMessage => ({
+  const step = (
+    id: string, time: number, completedAt?: number,
+    extra: { streamedAt?: number; output?: number; reasoning?: number } = {},
+  ): ChatMessage => ({
     kind: 'assistant', id, time, agent: 'build', model, parts: [], completed: completedAt !== undefined,
     ...(completedAt !== undefined ? { completedAt } : {}),
+    ...(extra.streamedAt !== undefined ? { streamedAt: extra.streamedAt } : {}),
+    ...(extra.output !== undefined ? { tokens: { input: 10, output: extra.output, reasoning: extra.reasoning ?? 0, cacheRead: 0, cacheWrite: 0 } } : {}),
   })
   const note = (id: string, time: number, text = 'Stopped'): ChatMessage => ({ kind: 'note', id, time, tone: 'info', text })
+  const took = (stats: ReturnType<typeof turnStats>): [string, number][] => [...stats.finished].map(([id, stat]) => [id, stat.ms])
 
   it('times a turn from the user message to its last finished step, under that step', () => {
-    const { finished, openSince } = turnDurations([
+    const { finished, openSince } = turnStats([
       user('u1', 1_000), step('a1', 1_015, 6_000), step('a2', 6_020, 91_000),
       user('u2', 100_000), step('a3', 100_010, 103_500),
     ])
-    expect([...finished]).toEqual([['a2', 90_000], ['a3', 3_500]])
+    expect(took({ finished, openSince })).toEqual([['a2', 90_000], ['a3', 3_500]])
     expect(openSince).toBeNull()
   })
 
-  it('puts the time ahead of the note about how the run ended, and ignores notes elsewhere', () => {
-    const { finished } = turnDurations([
+  it('puts the line ahead of the note about how the run ended, and ignores notes elsewhere', () => {
+    const stats = turnStats([
       user('u1', 1_000), step('a1', 1_010, 23_000), note('n1', 23_003),
       note('n2', 30_000, 'Switched to other/model'), user('u2', 30_010), step('a2', 30_020, 31_000),
     ])
-    expect([...finished]).toEqual([['a1', 22_000], ['a2', 990]])
+    expect(took(stats)).toEqual([['a1', 22_000], ['a2', 990]])
   })
 
   it('leaves out the turn in progress and says when it began', () => {
-    const working = turnDurations([user('u1', 1_000), step('a1', 1_010, 5_000), user('u2', 9_000), step('a2', 9_010)])
-    expect([...working.finished]).toEqual([['a1', 4_000]])
+    const working = turnStats([user('u1', 1_000), step('a1', 1_010, 5_000), user('u2', 9_000), step('a2', 9_010)])
+    expect(took(working)).toEqual([['a1', 4_000]])
     expect(working.openSince).toBe(9_000)
 
     // Between steps every step so far is finished; it is the turn that decides, not the last step.
-    const waiting = turnDurations([user('u1', 1_000), step('a1', 1_010, 5_000)])
-    expect(waiting.finished.get('a1')).toBe(4_000)
+    const waiting = turnStats([user('u1', 1_000), step('a1', 1_010, 5_000)])
+    expect(waiting.finished.get('a1')?.ms).toBe(4_000)
 
-    const justSent = turnDurations([user('u1', 1_000), step('a1', 1_010, 5_000), user('u2', 9_000)])
-    expect([...justSent.finished]).toEqual([['a1', 4_000]])
+    const justSent = turnStats([user('u1', 1_000), step('a1', 1_010, 5_000), user('u2', 9_000)])
+    expect(took(justSent)).toEqual([['a1', 4_000]])
     expect(justSent.openSince).toBe(9_000)
   })
 
   it('does not time a turn whose start or end is unknown', () => {
     // The user message is in an older page that is not loaded.
-    expect(turnDurations([step('a1', 1_010, 5_000), user('u2', 9_000), step('a2', 9_010, 9_900)]).finished.has('a1')).toBe(false)
+    expect(turnStats([step('a1', 1_010, 5_000), user('u2', 9_000), step('a2', 9_010, 9_900)]).finished.has('a1')).toBe(false)
     // The run was cut off before any step finished.
-    expect(turnDurations([user('u1', 1_000), step('a1', 1_010)]).finished.size).toBe(0)
+    expect(turnStats([user('u1', 1_000), step('a1', 1_010)]).finished.size).toBe(0)
     // A user message without a time.
-    expect(turnDurations([user('u1', 0), step('a1', 10, 5_000)]).finished.size).toBe(0)
-    expect(turnDurations([user('u1', 0)]).openSince).toBeNull()
-    expect(turnDurations([]).finished.size).toBe(0)
+    expect(turnStats([user('u1', 0), step('a1', 10, 5_000)]).finished.size).toBe(0)
+    expect(turnStats([user('u1', 0)]).openSince).toBeNull()
+    expect(turnStats([]).finished.size).toBe(0)
   })
 
   it('never reports a negative time', () => {
-    expect(turnDurations([user('u1', 9_000), step('a1', 9_010, 8_000)]).finished.get('a1')).toBe(0)
+    expect(turnStats([user('u1', 9_000), step('a1', 9_010, 8_000)]).finished.get('a1')?.ms).toBe(0)
+  })
+
+  describe('tokens per second', () => {
+    it('divides every step\'s output and reasoning tokens by the time the steps spent generating', () => {
+      // 3 s then 1 s of generating (the 10 s between stream end and completion was a tool running):
+      // (100 + 20 + 40) tokens over 4 s.
+      const stats = turnStats([
+        user('u1', 1_000),
+        step('a1', 1_010, 14_000, { streamedAt: 4_010, output: 100, reasoning: 20 }),
+        step('a2', 14_020, 15_100, { streamedAt: 15_020, output: 40 }),
+      ])
+      expect(stats.finished.get('a2')).toEqual({ ms: 14_100, tokensPerSecond: 40 })
+    })
+
+    it('is the same number whichever way the steps are cut up, and counts only its own turn', () => {
+      const stats = turnStats([
+        user('u1', 1_000), step('a1', 1_010, 3_000, { streamedAt: 2_010, output: 50 }),
+        user('u2', 9_000), step('a2', 9_010, 10_000, { streamedAt: 9_510, output: 500 }),
+      ])
+      expect(stats.finished.get('a1')?.tokensPerSecond).toBe(50)
+      expect(stats.finished.get('a2')?.tokensPerSecond).toBe(1_000)
+    })
+
+    it('has none when a step lacks its times, there are no tokens, or nothing was generated', () => {
+      const rate = (...steps: ChatMessage[]) => turnStats([user('u1', 1_000), ...steps]).finished.values().next().value?.tokensPerSecond
+      expect(rate(step('a1', 1_010, 3_000, { output: 50 }))).toBeNull()
+      expect(rate(step('a1', 1_010, 3_000, { streamedAt: 2_010, output: 50 }), step('a2', 3_010, 4_000, { output: 50 }))).toBeNull()
+      expect(rate(step('a1', 0, 3_000, { streamedAt: 2_010, output: 50 }))).toBeNull()
+      expect(rate(step('a1', 1_010, 3_000, { streamedAt: 2_010 }))).toBeNull()
+      expect(rate(step('a1', 1_010, 3_000, { streamedAt: 2_010, output: 0 }))).toBeNull()
+      expect(rate(step('a1', 1_010, 3_000, { streamedAt: 1_010, output: 50 }))).toBeNull()
+      // The line is still there without a rate.
+      expect(turnStats([user('u1', 1_000), step('a1', 1_010, 3_000)]).finished.get('a1')).toEqual({ ms: 2_000, tokensPerSecond: null })
+    })
   })
 })

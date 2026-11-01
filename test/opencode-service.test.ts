@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ChatPart } from '../src/shared/types'
+import { turnStats } from '../src/renderer/lib/chat'
 import {
   OpenCodeServiceClient,
   OpenCodeServiceError,
@@ -327,6 +328,25 @@ describe('OpenCode service parsing', () => {
     expect(step({ created: 1_000, streamed: 1_500 })).toMatchObject({ completed: false })
     expect(step({ created: 1_000 })).not.toHaveProperty('completedAt')
     expect(step({ created: 1_000, completed: -1 })).not.toHaveProperty('completedAt')
+    // The end of the stream comes before the end of the step, which includes the tools it ran.
+    expect(step({ created: 1_000, streamed: 1_500, completed: 6_000 })).toMatchObject({ streamedAt: 1_500, completedAt: 6_000 })
+    expect(step({ created: 1_000, streamed: 1_500 })).toMatchObject({ streamedAt: 1_500 })
+    expect(step({ created: 1_000 })).not.toHaveProperty('streamedAt')
+    expect(step({ created: 1_000, streamed: 'soon' })).not.toHaveProperty('streamedAt')
+  })
+
+  it('gives the tokens per second OpenCode itself shows for a recorded turn', () => {
+    // Three steps: (13 + 105 + 83) output tokens over 844 + 1,090 + 1,851 ms of generating. The
+    // milliseconds each step then spent finishing up are not part of it.
+    const raw = JSON.parse(fixture('messages-tools.json'))
+    const { messages } = parseMessagesPage(raw, false, raw.data.length)
+    const stats = turnStats(messages)
+    const last = messages.filter((message) => message.kind === 'assistant').at(-1)!
+    expect([...stats.finished.keys()]).toEqual([last.id])
+    const stat = stats.finished.get(last.id)!
+    expect(stat.ms).toBe(3_832)
+    expect(stat.tokensPerSecond).toBeCloseTo(201 / 3.785, 6)
+    expect(stat.tokensPerSecond!.toFixed(1)).toBe('53.1')
   })
 
   it('reads the thread totals from a session answer', () => {

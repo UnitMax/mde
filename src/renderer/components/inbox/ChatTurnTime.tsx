@@ -1,9 +1,12 @@
 import { Clock3, LoaderCircle } from 'lucide-react'
 import { ElapsedTime } from '@/components/ElapsedTime'
-import { formatDuration, spokenDuration } from '@/lib/duration'
+import { formatDuration, formatRate, spokenDuration } from '@/lib/duration'
 
-/** The line under a finished turn: how long the agent worked on it. */
-export function TurnDuration({ ms }: { ms: number }): JSX.Element {
+/**
+ * The line under a finished turn: how long the agent worked on it and, when OpenCode's numbers allow
+ * it, how fast the model generated, as OpenCode's own interface shows.
+ */
+export function TurnDuration({ ms, tokensPerSecond = null }: { ms: number; tokensPerSecond?: number | null }): JSX.Element {
   return (
     <div
       className="flex items-center gap-2 px-1.5 text-[11.5px] text-fg-subtle"
@@ -14,6 +17,20 @@ export function TurnDuration({ ms }: { ms: number }): JSX.Element {
       <span className="shrink-0">
         Worked for <span className="tabular-nums text-fg-muted">{formatDuration(ms)}</span>
       </span>
+      {tokensPerSecond !== null && (
+        <>
+          <span aria-hidden className="shrink-0 opacity-60">
+            ·
+          </span>
+          <span
+            className="shrink-0"
+            data-testid="chat-turn-rate"
+            title="Output and reasoning tokens per second while the model was generating, not counting the time tools ran"
+          >
+            <span className="tabular-nums text-fg-muted">{formatRate(tokensPerSecond)}</span> tok/s
+          </span>
+        </>
+      )}
       <span aria-hidden className="h-px min-w-6 flex-1 bg-gradient-to-r from-line-strong/70 to-transparent" />
     </div>
   )

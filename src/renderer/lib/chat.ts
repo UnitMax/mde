@@ -192,9 +192,16 @@ export function formatCost(cost: number): string {
   return `$${cost.toLocaleString('en-US', digits)}`
 }
 
-export interface TurnDurations {
-  /** How long each finished turn took in milliseconds, by the ID of the message it is shown under. */
-  finished: Map<string, number>
+export interface TurnStat {
+  /** How long the turn took in milliseconds. */
+  ms: number
+  /** How fast the model generated during the turn; null when it cannot be told. */
+  tokensPerSecond: number | null
+}
+
+export interface TurnStats {
+  /** Each finished turn, by the ID of the message its line is shown under. */
+  finished: Map<string, TurnStat>
   /**
    * When the turn still in progress began, on the service's clock; null when that turn is not in the
    * loaded messages or when nothing is in progress.
@@ -203,24 +210,47 @@ export interface TurnDurations {
 }
 
 /**
- * How long each turn of the conversation took. A turn is a user message and everything after it up
- * to the next user message: the user's request, then the steps the agent took to answer it. It
- * began when the user sent the message and ended when its last step finished, so both times come
- * from the service's clock and the difference is right whatever this computer's clock says.
+ * How fast the model generated over a turn, worked out the way OpenCode's own interface does it:
+ * the output and reasoning tokens of every step, divided by the time those steps spent generating,
+ * from the step's creation to the end of its stream. The time a step then spends running tools is
+ * not counted. Null when any step has no stream end or start time (one still going, or one the
+ * service gave no times for) or when there is nothing to divide.
+ */
+export function tokensPerSecond(steps: readonly Extract<ChatMessage, { kind: 'assistant' }>[]): number | null {
+  if (steps.length === 0) return null
+  let tokens = 0
+  let generating = 0
+  for (const step of steps) {
+    if (step.streamedAt === undefined || step.time <= 0) return null
+    generating += Math.max(0, step.streamedAt - step.time)
+    tokens += (step.tokens?.output ?? 0) + (step.tokens?.reasoning ?? 0)
+  }
+  return tokens > 0 && generating > 0 ? tokens / (generating / 1000) : null
+}
+
+/**
+ * How long each turn of the conversation took, and how fast the model generated in it. A turn is a
+ * user message and everything after it up to the next user message: the user's request, then the
+ * steps the agent took to answer it. It began when the user sent the message and ended when its last
+ * step finished, so both times come from the service's clock and the difference is right whatever
+ * this computer's clock says.
  *
- * The duration belongs under the turn's last step, ahead of any note about how the run ended. A turn
+ * The line for a turn belongs under its last step, ahead of any note about how the run ended. A turn
  * is left out when its start is not loaded, or when it has no finished step; one with a step still
  * running is the turn in progress.
  */
-export function turnDurations(messages: readonly ChatMessage[]): TurnDurations {
-  const finished = new Map<string, number>()
+export function turnStats(messages: readonly ChatMessage[]): TurnStats {
+  const finished = new Map<string, TurnStat>()
   let startedAt: number | null = null
   let endedAt: number | null = null
   let anchor: string | null = null
   let open = false
+  let steps: Extract<ChatMessage, { kind: 'assistant' }>[] = []
 
   const close = (): void => {
-    if (startedAt !== null && anchor !== null && endedAt !== null && !open) finished.set(anchor, Math.max(0, endedAt - startedAt))
+    if (startedAt !== null && anchor !== null && endedAt !== null && !open) {
+      finished.set(anchor, { ms: Math.max(0, endedAt - startedAt), tokensPerSecond: tokensPerSecond(steps) })
+    }
   }
 
   for (const message of messages) {
@@ -231,8 +261,10 @@ export function turnDurations(messages: readonly ChatMessage[]): TurnDurations {
       endedAt = null
       anchor = message.id
       open = false
+      steps = []
     } else if (message.kind === 'assistant') {
       anchor = message.id
+      steps.push(message)
       if (message.completedAt === undefined) open = true
       else endedAt = Math.max(endedAt ?? 0, message.completedAt)
     }

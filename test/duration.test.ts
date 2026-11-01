@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDuration, msToNextSecond, spokenDuration } from '../src/renderer/lib/duration'
+import { formatDuration, formatRate, msToNextSecond, spokenDuration } from '../src/renderer/lib/duration'
 
 const SECOND = 1000
 const MINUTE = 60 * SECOND
@@ -39,6 +39,21 @@ describe('spokenDuration', () => {
     expect(spokenDuration(2 * MINUTE)).toBe('2 minutes')
     expect(spokenDuration(HOUR + MINUTE)).toBe('1 hour 1 minute')
     expect(spokenDuration(3 * HOUR)).toBe('3 hours')
+  })
+})
+
+describe('formatRate', () => {
+  it('writes one decimal, as OpenCode does', () => {
+    expect(formatRate(53.104)).toBe('53.1')
+    expect(formatRate(40)).toBe('40.0')
+    expect(formatRate(0.04)).toBe('0.0')
+    expect(formatRate(1234.56)).toBe('1234.6')
+  })
+
+  it('shows nothing odd for numbers that are not rates', () => {
+    expect(formatRate(Number.NaN)).toBe('0.0')
+    expect(formatRate(-3)).toBe('0.0')
+    expect(formatRate(Number.POSITIVE_INFINITY)).toBe('0.0')
   })
 })
 

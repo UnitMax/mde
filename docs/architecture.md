@@ -181,7 +181,7 @@ been measured yet.
 `ChatTurnTime.tsx`), such as `Worked for 1m 30s`, and while the turn is still going the same line
 reads `Working for 1m 30s`, counting up every second, with a spinner and a light moving along its
 rule (`WorkingFor`). A turn is a user message with everything after it up to the next user message
-(`turnDurations` in `lib/chat.ts`). It began when the user's message was created and ended when
+(`turnStats` in `lib/chat.ts`). It began when the user's message was created and ended when
 its last step completed, both from the service's own timestamps, so the difference does not depend
 on this computer's clock; the line sits under the turn's last step and above any note about how the
 run ended. A turn whose user message is in an older, unloaded page, or that has no finished step,
@@ -190,7 +190,15 @@ on this computer's clock like the count itself, and falls back to the user messa
 there is none; a clock that disagrees with the service's, as WSL's can after the computer sleeps,
 therefore cannot skew it. The sidebar's `Working` pill counts from the same `workingSince` (`Working
 · 1m 30s`); the pill in the thread's header only names the state, and `Needs input` pills show no
-time. Durations are cut off to whole seconds and shown as `45s`, `1m 30s`, `2m` or `1h 5m`
+time. The finished line also carries the model's generation speed when OpenCode's numbers give
+it, such as `Worked for 1m 30s · 53.1 tok/s`. The service has no such field; OpenCode's own
+interface works it out from the same messages, and `tokensPerSecond` in `lib/chat.ts` does the same
+sum: the output and reasoning tokens of every step in the turn, divided by the time those steps spent
+generating, from the step's `time.created` to its `time.streamed` (the end of the stream). The time a
+step then spends running tools lies between `streamed` and `completed` and is not counted. A turn
+with a step that lacks those times, or with no tokens, shows no speed. One difference from OpenCode:
+when a message is sent while the previous one is still being worked on, OpenCode joins both into one
+turn, where MDE shows a line for each. Durations are cut off to whole seconds and shown as `45s`, `1m 30s`, `2m` or `1h 5m`
 (`lib/duration.ts`), with the full words in a tooltip. The counters are timers that run only while
 they are on screen.
 
