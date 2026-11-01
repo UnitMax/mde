@@ -59,6 +59,28 @@ const normalizedSession = {
   activeTabId: defaultTab.id
 }
 
+describe('removed terminal layout fallback', () => {
+  const removedTab = {
+    id: 'removed-tab',
+    name: 'Removed layout',
+    layout: {
+      layout: 'threeColumns',
+      panes: [{ id: 'pane-1' }, { id: 'pane-2' }, { id: 'pane-3' }],
+      sizes: { columnRatio: 1 / 3, secondColumnRatio: 2 / 3, rowRatio: 0.5 }
+    }
+  }
+
+  it('uses a default tab when the only saved tab uses the removed layout', () => {
+    expect(validateSession({ ...session, tabs: [removedTab], activeTabId: removedTab.id }, new Set([project.id])))
+      .toEqual(normalizedSession)
+  })
+
+  it('selects a surviving tab when the active saved tab uses the removed layout', () => {
+    expect(validateSession({ ...session, tabs: [removedTab, defaultTab], activeTabId: removedTab.id }, new Set([project.id])))
+      .toEqual(normalizedSession)
+  })
+})
+
 describe('workspace validation', () => {
   it('keeps project labels free of session location data', () => {
     expect(validateProject(project)).toEqual(project)
@@ -212,11 +234,11 @@ describe('workspace validation', () => {
     const invalidRatios = validateSession({
       ...session,
       tabs: [{
-        id: 'tab-three',
-        name: 'Three',
+        id: 'tab-six',
+        name: 'Six',
         layout: {
-          layout: 'threeColumns',
-          panes: panes.slice(0, 3),
+          layout: 'sixGrid',
+          panes,
           sizes: { columnRatio: 0.8, secondColumnRatio: 0.2, rowRatio: 0.5 }
         }
       }]

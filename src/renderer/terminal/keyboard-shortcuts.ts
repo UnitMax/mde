@@ -69,7 +69,7 @@ export function getKeyboardShortcutGroups(
           id: 'terminal-layout',
           keys: ['Ctrl+1–9'],
           description: 'Choose a terminal layout.',
-          note: '1 pane, 2 columns, 3 terminals, 4 quadrant, 5 grid, 6 grid, 7 columns, 8 and 9 grids. The seven-terminal grid has no shortcut. Numpad digits also work.'
+          note: 'Choose 1–9 terminals using the corresponding digit. Numpad digits also work.'
         },
         {
           id: 'terminal-fullscreen',

@@ -20,8 +20,8 @@ Every renderer-to-main call is authenticated and validated centrally; see
 
 Projects are groups that contain sessions. Sessions own the name, path, platform, distro and
 optional shell override. Each session persists an ordered set of terminal tabs. Every tab owns an
-independent layout of one to nine panes, chosen from ten arrangements (Ctrl+1–9; the seven-terminal
-grid has no shortcut), including three terminals side by side, a six-terminal 3 × 2 grid and a
+independent layout of one to nine panes (Ctrl+1–9 selects the corresponding pane count),
+including three terminals arranged as two above one, a six-terminal 3 × 2 grid and a
 nine-terminal 3 × 3 grid; new tabs start with one fresh terminal. The
 renderer keeps one `xterm` instance per runtime terminal identity in a plain Map outside React.
 Switching sessions or tabs re-parents terminal containers rather than disposing them, so each

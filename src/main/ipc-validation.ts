@@ -1,3 +1,10 @@
+import {
+  TERMINAL_LAYOUT_DEFINITIONS,
+  MAX_TERMINAL_COUNT,
+  isTerminalLayout,
+  isThreeRowLayout,
+  isThreeColumnLayout,
+} from '@shared/terminal-layouts'
 import { IpcChannels } from '@shared/ipc'
 import { isSessionColor } from '@shared/session-colors'
 import { isSessionIcon } from '@shared/session-icons'
@@ -85,22 +92,9 @@ const dimension: Validator = (value) => typeof value === 'number' && Number.isIn
 const size = object({ cols: dimension, rows: dimension })
 const ratio: Validator = (value) => typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 1
 const pane = object({ id, title: optional(label) })
-const layoutCounts: Record<TerminalLayout, number> = {
-  single: 1,
-  columns: 2,
-  three: 3,
-  quadrant: 4,
-  fiveGrid: 5,
-  threeColumns: 3,
-  sixGrid: 6,
-  sevenGrid: 7,
-  eightGrid: 8,
-  nineGrid: 9,
-}
-const threeRowLayouts: readonly TerminalLayout[] = ['sevenGrid', 'eightGrid', 'nineGrid']
 const layoutShape = object({
-  layout: (value) => typeof value === 'string' && Object.hasOwn(layoutCounts, value),
-  panes: array(pane, Math.max(...Object.values(layoutCounts))),
+  layout: isTerminalLayout,
+  panes: array(pane, MAX_TERMINAL_COUNT),
   sizes: object({
     columnRatio: ratio,
     rowRatio: ratio,
@@ -115,9 +109,9 @@ const layout: Validator = (value) => {
     panes: { id: string }[]
     sizes: { columnRatio: number; rowRatio: number; secondColumnRatio?: number; secondRowRatio?: number }
   }
-  const threeRows = threeRowLayouts.includes(entry.layout)
-  const threeColumns = threeRows || ['threeColumns', 'fiveGrid', 'sixGrid'].includes(entry.layout)
-  return entry.panes.length === layoutCounts[entry.layout] &&
+  const threeRows = isThreeRowLayout(entry.layout)
+  const threeColumns = isThreeColumnLayout(entry.layout)
+  return entry.panes.length === TERMINAL_LAYOUT_DEFINITIONS[entry.layout].count &&
     new Set(entry.panes.map((pane) => pane.id)).size === entry.panes.length &&
     (!threeColumns || (entry.sizes.secondColumnRatio !== undefined && entry.sizes.columnRatio < entry.sizes.secondColumnRatio)) &&
     (!threeRows || (entry.sizes.secondRowRatio !== undefined && entry.sizes.rowRatio < entry.sizes.secondRowRatio))

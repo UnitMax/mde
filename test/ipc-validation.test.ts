@@ -240,7 +240,8 @@ describe('IPC payload boundary', () => {
       { ...layout, sizes: { columnRatio: Infinity, rowRatio: 0.5 } },
       { ...layout, sizes: { columnRatio: 0, rowRatio: 0.5 } },
       { ...layout, panes: [{ id: 'pane', unexpected: true }] },
-      { ...layout, layout: 'threeColumns', panes: [{ id: 'a' }, { id: 'b' }, { id: 'c' }], sizes: { columnRatio: 0.8, secondColumnRatio: 0.2, rowRatio: 0.5 } },
+      { ...layout, layout: 'threeColumns', panes: [{ id: 'a' }, { id: 'b' }, { id: 'c' }], sizes: { columnRatio: 1 / 3, secondColumnRatio: 2 / 3, rowRatio: 0.5 } },
+      { ...layout, layout: 'sixGrid', panes: Array.from({ length: 6 }, (_, index) => ({ id: `pane-${index}` })), sizes: { columnRatio: 0.8, secondColumnRatio: 0.2, rowRatio: 0.5 } },
     ]) rejects(IpcChannels.tabsUpdate, update(value))
   })
 

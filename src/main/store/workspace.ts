@@ -1,3 +1,9 @@
+import {
+  TERMINAL_LAYOUT_DEFINITIONS,
+  isTerminalLayout,
+  isThreeRowLayout,
+  isThreeColumnLayout,
+} from '@shared/terminal-layouts'
 import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
@@ -26,8 +32,7 @@ import type {
   TodoColumn,
   TodoTask,
   Session,
-  SessionTab,
-  TerminalLayout
+  SessionTab
 } from '@shared/types'
 import { isSessionColor } from '@shared/session-colors'
 import { isSessionIcon } from '@shared/session-icons'
@@ -85,23 +90,6 @@ function uniqueEntries<T extends { id: string }>(entries: T[], kind: string): T[
   })
 }
 
-const TERMINAL_LAYOUT_COUNTS: Record<TerminalLayout, number> = {
-  single: 1,
-  columns: 2,
-  three: 3,
-  quadrant: 4,
-  fiveGrid: 5,
-  threeColumns: 3,
-  sixGrid: 6,
-  sevenGrid: 7,
-  eightGrid: 8,
-  nineGrid: 9
-}
-
-function isTerminalLayout(value: unknown): value is TerminalLayout {
-  return typeof value === 'string' && Object.hasOwn(TERMINAL_LAYOUT_COUNTS, value)
-}
-
 function ratio(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 1
     ? value
@@ -110,15 +98,6 @@ function ratio(value: unknown): number {
 
 function validRatio(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 1
-}
-
-function isThreeRowLayout(layout: TerminalLayout): boolean {
-  return layout === 'sevenGrid' || layout === 'eightGrid' || layout === 'nineGrid'
-}
-
-function isThreeColumnLayout(layout: TerminalLayout): boolean {
-  return layout === 'threeColumns' || layout === 'fiveGrid' || layout === 'sixGrid' ||
-    isThreeRowLayout(layout)
 }
 
 function threeRowRatios(sizes: Record<string, unknown>): { rowRatio: number; secondRowRatio: number } {
@@ -146,7 +125,7 @@ function validateTerminalLayout(raw: unknown): PersistedTerminalLayout | null {
   const record = raw as Record<string, unknown>
   if (!isTerminalLayout(record.layout) || !Array.isArray(record.panes)) return null
 
-  const expectedCount = TERMINAL_LAYOUT_COUNTS[record.layout]
+  const expectedCount = TERMINAL_LAYOUT_DEFINITIONS[record.layout].count
   const panes = record.panes
     .filter((pane): pane is Record<string, unknown> => typeof pane === 'object' && pane !== null)
     .filter((pane) => isNonEmptyString(pane.id))

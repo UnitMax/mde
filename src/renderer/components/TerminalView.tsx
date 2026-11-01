@@ -4,7 +4,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type CSSProperties,
   type DragEvent as ReactDragEvent,
   type PointerEvent as ReactPointerEvent,
   type RefObject
@@ -62,16 +61,13 @@ import {
 import { getTerminalPalette } from '@/theme/themes'
 import {
   terminalGridTemplates,
-  terminalColumnRatios,
   terminalColumnSplitRatio,
   terminalRowColumns,
   terminalRowGroups,
-  terminalRowRatios,
   terminalRowSplitRatio,
   isTerminalPaneClosable,
   isThreeColumnLayout,
   isThreeRowLayout,
-  layoutClass,
   paneClass,
   panesToTrim,
   TERMINAL_LAYOUTS,
@@ -79,6 +75,8 @@ import {
   getTerminalLayoutShortcut,
   swapTerminalPanes,
   terminalResizeHandles,
+  terminalResizeHandleStyle,
+  terminalResizeRatio,
   terminalSplitRatio,
   type SessionTerminalLayout,
   type TerminalLayout,
@@ -944,7 +942,7 @@ function LayoutGlyph({ layout }: { layout: TerminalLayout }): JSX.Element {
       : isThreeColumnLayout(layout)
         ? 'grid-cols-3'
         : 'grid-cols-2'
-  const rows = layout === 'single' || layout === 'columns' || layout === 'threeColumns'
+  const rows = layout === 'single' || layout === 'columns'
     ? 'grid-rows-1'
     : isThreeRowLayout(layout)
       ? 'grid-rows-3'
@@ -987,44 +985,6 @@ interface TerminalDragState {
   frame?: number
   previousCursor: string
   previousUserSelect: string
-}
-
-function splitLinePosition(ratio: number, gapCount = 1, dividerIndex = 0): string {
-  return `calc(${ratio * 100}% + ${dividerIndex + 0.5 - ratio * gapCount}px)`
-}
-
-function terminalResizeHandleStyle(
-  layout: TerminalLayout,
-  axis: TerminalResizeAxis,
-  scope: TerminalResizeScope,
-  sizes: SessionTerminalLayout['sizes'],
-  columnIndex: TerminalColumnIndex | undefined,
-  rowIndex: TerminalRowIndex | undefined
-): CSSProperties {
-  if (axis === 'column') {
-    const dividerIndex = columnIndex ?? 0
-    const [firstColumnRatio, secondColumnRatio] = terminalColumnRatios(sizes)
-    const ratio = dividerIndex === 0 ? firstColumnRatio : secondColumnRatio
-    const gapCount = isThreeColumnLayout(layout) ? 2 : 1
-    return {
-      left: splitLinePosition(ratio, gapCount, dividerIndex),
-      top: 0,
-      height: scope === 'top'
-        ? splitLinePosition(sizes.rowRatio)
-        : scope === 'upper'
-          ? splitLinePosition(terminalRowRatios(sizes)[1], 2, 1)
-          : '100%'
-    }
-  }
-
-  const dividerIndex = rowIndex ?? 0
-  return {
-    left: 0,
-    top: isThreeRowLayout(layout)
-      ? splitLinePosition(terminalRowRatios(sizes)[dividerIndex], 2, dividerIndex)
-      : splitLinePosition(sizes.rowRatio),
-    width: '100%'
-  }
 }
 
 function TerminalResizeHandle({
@@ -1848,9 +1808,7 @@ export function TerminalView({
               aria-label={candidate.label}
               aria-pressed={terminalLayout.layout === candidate.value}
               data-testid={`terminal-layout-${candidate.value}`}
-              title={candidate.shortcut === undefined
-                ? candidate.label
-                : `${candidate.label} (Ctrl+${candidate.shortcut})`}
+              title={`${candidate.label} (Ctrl+${candidate.shortcut})`}
               onClick={() => requestLayout(candidate.value)}
               className={
                 terminalLayout.layout === candidate.value
@@ -1866,7 +1824,7 @@ export function TerminalView({
 
       <div
           ref={gridRef}
-          className={`relative grid h-full min-h-0 flex-1 gap-px bg-line ${layoutClass(terminalLayout.layout)}`}
+          className="relative grid h-full min-h-0 flex-1 gap-px bg-line"
           style={{
             gridTemplateColumns: gridTemplates.columns,
             gridTemplateRows: gridTemplates.rows
@@ -1906,11 +1864,7 @@ export function TerminalView({
               scope={scope}
               columnIndex={columnIndex}
               rowIndex={rowIndex}
-              ratio={axis === 'column'
-                ? terminalColumnRatios(terminalLayout.sizes)[columnIndex ?? 0]
-                : isThreeRowLayout(terminalLayout.layout)
-                  ? terminalRowRatios(terminalLayout.sizes)[rowIndex ?? 0]
-                  : terminalLayout.sizes.rowRatio}
+              ratio={terminalResizeRatio(terminalLayout.layout, axis, terminalLayout.sizes, columnIndex ?? rowIndex ?? 0)}
               sizes={terminalLayout.sizes}
               containerRef={gridRef}
               onResize={(ratio) => onLayoutResize(axis, ratio, axis === 'column' ? columnIndex : rowIndex)}

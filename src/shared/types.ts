@@ -125,7 +125,6 @@ export type TerminalLayout =
   | 'three'
   | 'quadrant'
   | 'fiveGrid'
-  | 'threeColumns'
   | 'sixGrid'
   | 'sevenGrid'
   | 'eightGrid'

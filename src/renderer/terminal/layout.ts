@@ -1,9 +1,16 @@
+import type { CSSProperties } from 'react'
+import {
+  TERMINAL_LAYOUT_DEFINITIONS,
+  isThreeRowLayout,
+  isThreeColumnLayout,
+} from '@shared/terminal-layouts'
 import type {
   TerminalLaunch,
   TerminalLayout,
   TerminalLayoutSizes
 } from '@shared/types'
 
+export { MAX_TERMINAL_COUNT, isThreeRowLayout, isThreeColumnLayout } from '@shared/terminal-layouts'
 export type { TerminalLayout, TerminalLayoutSizes } from '@shared/types'
 
 export type TerminalResizeAxis = 'column' | 'row'
@@ -42,36 +49,12 @@ export interface TerminalResizeHandleDefinition {
 export const TERMINAL_RESIZE_MIN_TRACK_PX = 120
 export const TERMINAL_RESIZE_GAP_PX = 1
 
-export const TERMINAL_LAYOUTS: readonly {
-  value: TerminalLayout
-  label: string
-  count: number
-  /** Digit for Ctrl+<digit>; absent when no free digit is left for the layout. */
-  shortcut?: number
-}[] = [
-  { value: 'single', label: 'One terminal', count: 1, shortcut: 1 },
-  { value: 'columns', label: 'Two terminals side by side', count: 2, shortcut: 2 },
-  { value: 'three', label: 'Three terminals', count: 3, shortcut: 3 },
-  { value: 'quadrant', label: 'Four terminals in a quadrant', count: 4, shortcut: 4 },
-  { value: 'fiveGrid', label: 'Five terminals in a 3 × 2 grid', count: 5, shortcut: 5 },
-  { value: 'sixGrid', label: 'Six terminals in a 3 × 2 grid', count: 6, shortcut: 6 },
-  // Ctrl+0 resets the zoom, so the seven-terminal layout has no shortcut of its own.
-  { value: 'sevenGrid', label: 'Seven terminals in a 3 × 3 grid', count: 7 },
-  { value: 'eightGrid', label: 'Eight terminals in a 3 × 3 grid', count: 8, shortcut: 8 },
-  { value: 'nineGrid', label: 'Nine terminals in a 3 × 3 grid', count: 9, shortcut: 9 },
-  { value: 'threeColumns', label: 'Three terminals side by side', count: 3, shortcut: 7 }
-]
-
-export const MAX_TERMINAL_COUNT = Math.max(...TERMINAL_LAYOUTS.map((candidate) => candidate.count))
-
-export function isThreeRowLayout(layout: TerminalLayout): boolean {
-  return layout === 'sevenGrid' || layout === 'eightGrid' || layout === 'nineGrid'
-}
-
-export function isThreeColumnLayout(layout: TerminalLayout): boolean {
-  return layout === 'threeColumns' || layout === 'fiveGrid' || layout === 'sixGrid' ||
-    isThreeRowLayout(layout)
-}
+export const TERMINAL_LAYOUTS = (Object.keys(TERMINAL_LAYOUT_DEFINITIONS) as TerminalLayout[]).map((value) => ({
+  value,
+  label: TERMINAL_LAYOUT_DEFINITIONS[value].label,
+  count: TERMINAL_LAYOUT_DEFINITIONS[value].count,
+  shortcut: TERMINAL_LAYOUT_DEFINITIONS[value].count,
+}))
 
 /**
  * Panes per row for layouts drawn as stacked rows, each with its own column split, so a short
@@ -88,12 +71,12 @@ export function terminalRowGroups(layout: TerminalLayout): readonly number[] | n
 /** Column tracks for one row of a stacked layout: the shared ratios when it has three panes. */
 export function terminalRowColumns(paneCount: number, sizes: TerminalLayoutSizes): string {
   return paneCount === 3
-    ? terminalGridTemplates('threeColumns', sizes).columns
+    ? threeColumnTemplate(sizes)
     : `repeat(${paneCount}, minmax(0, 1fr))`
 }
 
 export function terminalCount(layout: TerminalLayout): number {
-  return TERMINAL_LAYOUTS.find((candidate) => candidate.value === layout)?.count ?? 1
+  return TERMINAL_LAYOUT_DEFINITIONS[layout].count
 }
 
 export function layoutForCount(count: number): TerminalLayout {
@@ -122,12 +105,6 @@ export function terminalResizeHandles(layout: TerminalLayout): readonly Terminal
     return [
       { axis: 'column', scope: 'full', columnIndex: 0 },
       { axis: 'row', scope: 'full' }
-    ]
-  }
-  if (layout === 'threeColumns') {
-    return [
-      { axis: 'column', scope: 'full', columnIndex: 0 },
-      { axis: 'column', scope: 'full', columnIndex: 1 }
     ]
   }
   if (layout === 'fiveGrid') {
@@ -251,6 +228,58 @@ export function terminalRowSplitRatio(
   )
 }
 
+function threeColumnTemplate(sizes: TerminalLayoutSizes): string {
+  const [first, second] = terminalColumnRatios(sizes)
+  return `minmax(0, ${first}fr) minmax(0, ${second - first}fr) minmax(0, ${1 - second}fr)`
+}
+
+/** Use the same divider ratio for placement and the start of a pointer drag. */
+export function terminalResizeRatio(
+  layout: TerminalLayout,
+  axis: TerminalResizeAxis,
+  sizes: TerminalLayoutSizes,
+  index: TerminalColumnIndex | TerminalRowIndex = 0
+): number {
+  return axis === 'column'
+    ? isThreeColumnLayout(layout) ? terminalColumnRatios(sizes)[index] : sizes.columnRatio
+    : isThreeRowLayout(layout) ? terminalRowRatios(sizes)[index] : sizes.rowRatio
+}
+
+function splitLinePosition(ratio: number, gapCount = 1, dividerIndex = 0): string {
+  return `calc(${ratio * 100}% + ${dividerIndex + 0.5 - ratio * gapCount}px)`
+}
+
+export function terminalResizeHandleStyle(
+  layout: TerminalLayout,
+  axis: TerminalResizeAxis,
+  scope: TerminalResizeScope,
+  sizes: SessionTerminalLayout['sizes'],
+  columnIndex?: TerminalColumnIndex,
+  rowIndex?: TerminalRowIndex
+): CSSProperties {
+  if (axis === 'column') {
+    const dividerIndex = columnIndex ?? 0
+    const ratio = terminalResizeRatio(layout, axis, sizes, dividerIndex)
+    const gapCount = isThreeColumnLayout(layout) ? 2 : 1
+    return {
+      left: splitLinePosition(ratio, gapCount, dividerIndex),
+      top: 0,
+      height: scope === 'top'
+        ? splitLinePosition(sizes.rowRatio)
+        : scope === 'upper'
+          ? splitLinePosition(terminalRowRatios(sizes)[1], 2, 1)
+          : '100%'
+    }
+  }
+
+  const dividerIndex = rowIndex ?? 0
+  return {
+    left: 0,
+    top: splitLinePosition(terminalResizeRatio(layout, axis, sizes, dividerIndex), isThreeRowLayout(layout) ? 2 : 1, dividerIndex),
+    width: '100%'
+  }
+}
+
 export function terminalGridTemplates(
   layout: TerminalLayout,
   sizes: TerminalLayoutSizes
@@ -262,15 +291,12 @@ export function terminalGridTemplates(
       rows: `minmax(0, ${firstRowRatio}fr) minmax(0, ${secondRowRatio - firstRowRatio}fr) minmax(0, ${1 - secondRowRatio}fr)`
     }
   }
-  const [firstColumnRatio, secondColumnRatio] = terminalColumnRatios(sizes)
-  const columns = layout === 'single'
+  const columns = layout === 'single' || layout === 'fiveGrid'
     ? 'minmax(0, 1fr)'
-    : layout === 'fiveGrid'
-      ? 'minmax(0, 1fr)'
-      : isThreeColumnLayout(layout)
-        ? `minmax(0, ${firstColumnRatio}fr) minmax(0, ${secondColumnRatio - firstColumnRatio}fr) minmax(0, ${1 - secondColumnRatio}fr)`
-        : `minmax(0, ${sizes.columnRatio}fr) minmax(0, ${1 - sizes.columnRatio}fr)`
-  const rows = layout === 'single' || layout === 'columns' || layout === 'threeColumns'
+    : isThreeColumnLayout(layout)
+      ? threeColumnTemplate(sizes)
+      : `minmax(0, ${sizes.columnRatio}fr) minmax(0, ${1 - sizes.columnRatio}fr)`
+  const rows = TERMINAL_LAYOUT_DEFINITIONS[layout].rows === 1
     ? 'minmax(0, 1fr)'
     : `minmax(0, ${sizes.rowRatio}fr) minmax(0, ${1 - sizes.rowRatio}fr)`
   return { columns, rows }
@@ -295,17 +321,6 @@ export function getTerminalLayoutShortcut(input: TerminalLayoutShortcutInput): T
   if (!digit) return null
 
   return TERMINAL_LAYOUTS.find((candidate) => candidate.shortcut === Number(digit))?.value ?? null
-}
-
-export function layoutClass(layout: TerminalLayout): string {
-  if (layout === 'single') return 'grid-cols-1 grid-rows-1'
-  if (layout === 'threeColumns') return 'grid-cols-3 grid-rows-1'
-  if (layout === 'fiveGrid') return 'grid-cols-1 grid-rows-2'
-  if (layout === 'sixGrid') return 'grid-cols-3 grid-rows-2'
-  if (isThreeRowLayout(layout)) return 'grid-cols-1 grid-rows-3'
-  return layout === 'three' || layout === 'quadrant'
-    ? 'grid-cols-2 grid-rows-2'
-    : 'grid-cols-2 grid-rows-1'
 }
 
 export function paneClass(layout: TerminalLayout, index: number): string {

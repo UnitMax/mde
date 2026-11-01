@@ -9,7 +9,6 @@ import {
   defaultTerminalLayoutSizes,
   getTerminalLayoutShortcut,
   isTerminalPaneClosable,
-  layoutClass,
   layoutForCount,
   orderTerminalPanes,
   panesToTrim,
@@ -22,6 +21,8 @@ import {
   terminalGridTemplates,
   terminalFocusTargetAfterRemoval,
   terminalResizeHandles,
+  terminalResizeRatio,
+  terminalResizeHandleStyle,
   terminalRowColumns,
   terminalRowGroups,
   terminalRowRatios,
@@ -49,7 +50,7 @@ describe('terminal layouts', () => {
     expect(getTerminalLayoutShortcut(input('4'))).toBe('quadrant')
     expect(getTerminalLayoutShortcut(input('5'))).toBe('fiveGrid')
     expect(getTerminalLayoutShortcut(input('6'))).toBe('sixGrid')
-    expect(getTerminalLayoutShortcut(input('7'))).toBe('threeColumns')
+    expect(getTerminalLayoutShortcut(input('7'))).toBe('sevenGrid')
     expect(getTerminalLayoutShortcut(input('8'))).toBe('eightGrid')
     expect(getTerminalLayoutShortcut(input('9'))).toBe('nineGrid')
     expect(getTerminalLayoutShortcut(input('Dead', { code: 'Numpad9' }))).toBe('nineGrid')
@@ -60,7 +61,7 @@ describe('terminal layouts', () => {
 
     expect(new Set(digits).size).toBe(digits.length)
     expect(digits.sort()).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9])
-    expect(TERMINAL_LAYOUTS.find((candidate) => candidate.value === 'sevenGrid')?.shortcut).toBeUndefined()
+    expect(TERMINAL_LAYOUTS).toHaveLength(9)
   })
 
   it('ignores layout shortcuts without plain Ctrl modifier state', () => {
@@ -89,7 +90,6 @@ describe('terminal layouts', () => {
     expect(terminalCount('three')).toBe(3)
     expect(terminalCount('quadrant')).toBe(4)
     expect(terminalCount('fiveGrid')).toBe(5)
-    expect(terminalCount('threeColumns')).toBe(3)
     expect(terminalCount('sixGrid')).toBe(6)
     expect(layoutForCount(1)).toBe('single')
     expect(layoutForCount(2)).toBe('columns')
@@ -113,19 +113,10 @@ describe('terminal layouts', () => {
   })
 
   it('describes the requested grid geometry', () => {
-    expect(layoutClass('single')).toContain('grid-cols-1')
-    expect(layoutClass('columns')).toContain('grid-rows-1')
-    expect(layoutClass('three')).toContain('grid-rows-2')
-    expect(layoutClass('fiveGrid')).toEqual('grid-cols-1 grid-rows-2')
-    expect(layoutClass('threeColumns')).toEqual('grid-cols-3 grid-rows-1')
-    expect(layoutClass('sixGrid')).toEqual('grid-cols-3 grid-rows-2')
     expect(paneClass('three', 2)).toBe('col-span-2')
     expect(paneClass('quadrant', 2)).toBe('')
     expect(paneClass('fiveGrid', 4)).toBe('')
     expect(paneClass('sixGrid', 2)).toBe('')
-    for (const layout of ['sevenGrid', 'eightGrid', 'nineGrid'] as const) {
-      expect(layoutClass(layout)).toEqual('grid-cols-1 grid-rows-3')
-    }
   })
 
   it('stacks the rows of the five- to nine-pane layouts and covers every pane', () => {
@@ -159,10 +150,6 @@ describe('terminal layouts', () => {
       { axis: 'column', scope: 'full', columnIndex: 0 },
       { axis: 'row', scope: 'full' }
     ])
-    expect(terminalResizeHandles('threeColumns')).toEqual([
-      { axis: 'column', scope: 'full', columnIndex: 0 },
-      { axis: 'column', scope: 'full', columnIndex: 1 }
-    ])
     expect(terminalResizeHandles('fiveGrid')).toEqual([
       { axis: 'column', scope: 'top', columnIndex: 0 },
       { axis: 'column', scope: 'top', columnIndex: 1 },
@@ -192,6 +179,47 @@ describe('terminal layouts', () => {
     }
   })
 
+  // Resolve the percentage and pixel offset for a 1000px container, including grid gaps.
+  function dividerPixels(position: unknown): number {
+    const match = String(position).match(/^calc\(([\d.]+)% \+ ([-\d.e]+)px\)$/)
+    if (!match) throw new Error(`Unexpected divider position: ${position}`)
+    return Number(match[1]) * 10 + Number(match[2])
+  }
+
+  it('keeps two-column handles aligned past two-thirds and starts drags at that split', () => {
+    for (const layout of ['columns', 'three', 'quadrant'] as const) {
+      for (const columnRatio of [2 / 3, 0.8]) {
+        const sizes = { columnRatio, rowRatio: 0.5 }
+        const style = terminalResizeHandleStyle(layout, 'column', layout === 'three' ? 'top' : 'full', sizes)
+
+        expect(terminalResizeRatio(layout, 'column', sizes)).toBe(columnRatio)
+        expect(terminalGridTemplates(layout, sizes).columns).toContain(`${columnRatio}fr`)
+        expect(dividerPixels(style.left)).toBeCloseTo(999 * columnRatio + 0.5)
+      }
+    }
+  })
+
+  it('positions three-column dividers on the gaps and stops them before short rows', () => {
+    const sizes = { columnRatio: 0.25, secondColumnRatio: 0.6, rowRatio: 0.2, secondRowRatio: 0.65 }
+    for (const layout of ['fiveGrid', 'sixGrid', 'sevenGrid', 'eightGrid', 'nineGrid'] as const) {
+      const handles = terminalResizeHandles(layout).filter((handle) => handle.axis === 'column')
+      const styles = handles.map(({ axis, scope, columnIndex }) =>
+        terminalResizeHandleStyle(layout, axis, scope, sizes, columnIndex))
+
+      expect(dividerPixels(styles[0]!.left)).toBeCloseTo(250)
+      expect(dividerPixels(styles[1]!.left)).toBeCloseTo(600.3)
+      expect(terminalResizeRatio(layout, 'column', sizes, 1)).toBe(0.6)
+      if (layout === 'fiveGrid') expect(dividerPixels(styles[0]!.height)).toBeCloseTo(200.3)
+      else if (layout === 'sevenGrid' || layout === 'eightGrid') {
+        expect(dividerPixels(styles[0]!.height)).toBeCloseTo(650.2)
+      } else expect(styles[0]!.height).toBe('100%')
+    }
+    expect(dividerPixels(terminalResizeHandleStyle('nineGrid', 'row', 'full', sizes, undefined, 0).top))
+      .toBeCloseTo(200.1)
+    expect(dividerPixels(terminalResizeHandleStyle('nineGrid', 'row', 'full', sizes, undefined, 1).top))
+      .toBeCloseTo(650.2)
+  })
+
   it('builds grid tracks from the first column and row ratios', () => {
     expect(terminalGridTemplates('single', { columnRatio: 0.25, rowRatio: 0.75 })).toEqual({
       columns: 'minmax(0, 1fr)',
@@ -201,13 +229,13 @@ describe('terminal layouts', () => {
       columns: 'minmax(0, 0.25fr) minmax(0, 0.75fr)',
       rows: 'minmax(0, 0.75fr) minmax(0, 0.25fr)'
     })
-    expect(terminalGridTemplates('threeColumns', {
+    expect(terminalGridTemplates('sixGrid', {
       columnRatio: 0.25,
       secondColumnRatio: 0.6,
       rowRatio: 0.75
     })).toEqual({
       columns: 'minmax(0, 0.25fr) minmax(0, 0.35fr) minmax(0, 0.4fr)',
-      rows: 'minmax(0, 1fr)'
+      rows: 'minmax(0, 0.75fr) minmax(0, 0.25fr)'
     })
     expect(terminalGridTemplates('sixGrid', {
       columnRatio: 1 / 3,
