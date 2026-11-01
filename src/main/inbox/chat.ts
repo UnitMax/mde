@@ -13,6 +13,8 @@ import type {
   ChatOptionsRequest,
   ChatPermissionReplyRequest,
   ChatRequests,
+  ChatRevert,
+  ChatRevertRequest,
   ChatSendRequest,
   InboxComposerState,
   InboxFolder,
@@ -40,6 +42,8 @@ import {
   parsePermissions,
   parseProviderNames,
   parseSessionInfo,
+  parseSessionRevert,
+  parseStagedRevert,
   parseSessionUsage,
 } from '../opencode/service/parse'
 import type { InboxRecorder } from './recorder'
@@ -54,6 +58,12 @@ const OPTIONS_TTL_MS = 60_000
  */
 const AGENT_ATTEMPTS = 6
 const AGENT_RETRY_MS = 250
+/**
+ * OpenCode refuses to revert a conversation that is running, and an interrupt takes a moment to
+ * land, so staging is tried again for a while: this many tries, this far apart (about ten seconds).
+ */
+const REVERT_ATTEMPTS = 40
+const REVERT_RETRY_MS = 250
 
 export interface InboxChatDependencies {
   drafts?: InboxDraftStore
@@ -110,6 +120,10 @@ const MESSAGE_EVENTS = new Set([
   'session.execution.succeeded',
   'session.execution.failed',
   'session.execution.interrupted',
+  // A staged revert hides messages without changing them, so the page has to be read again.
+  'session.revert.staged',
+  'session.revert.cleared',
+  'session.revert.committed',
 ])
 const REQUEST_EVENTS = new Set(['permission.asked', 'permission.replied', 'form.created', 'form.replied', 'form.cancelled'])
 
@@ -232,6 +246,7 @@ export class InboxChatService {
     const store = this.dependencies.drafts
     if (!store) throw new Error('Draft storage is unavailable.')
     if (request.action === 'text') await store.text(request.key, request.text)
+    if (request.action === 'prepend') await store.prepend(request.key, request.text)
     if (request.action === 'add') await store.add(request.key, request.name, request.mime, request.data)
     if (request.action === 'tree') {
       const source = sourceSession ?? this.fileRoot(request.sessionId)
@@ -303,7 +318,9 @@ export class InboxChatService {
     ])
     const result = parseMessagesPage(page, parseActiveSessions(active).has(thread.id), pageSize, this.dependencies.thumbnail)
     const usage = session ? parseSessionUsage(session) : null
-    return usage ? { ...result, usage } : result
+    // Only an answer from the service says whether a revert is staged; without one it stays unknown.
+    const revert = session ? parseSessionRevert(session) : undefined
+    return { ...result, ...(usage ? { usage } : {}), ...(revert !== undefined ? { revert } : {}) }
   }
 
   async send(request: ChatSendRequest): Promise<void> {
@@ -344,6 +361,66 @@ export class InboxChatService {
   async interrupt(threadId: string): Promise<void> {
     const thread = this.thread(threadId)
     await this.dependencies.client.request(thread.target, 'session.interrupt', { params: { sessionID: thread.id } })
+  }
+
+  /**
+   * Brings back what a staged revert hid: OpenCode shows the messages again and puts the files back
+   * as they were when the revert was staged. With no revert staged it does nothing.
+   */
+  async redo(threadId: string): Promise<void> {
+    this.assertEnabled()
+    const thread = this.thread(threadId)
+    this.streams.ensure(thread.target)
+    try {
+      await this.dependencies.client.request(thread.target, 'session.revert.clear', { params: { sessionID: thread.id } })
+    } catch (error) {
+      if (error instanceof OpenCodeServiceError) {
+        if (error.status === 409) throw new Error('OpenCode is still working on this thread. Stop it, then redo.')
+        // A route the service does not know answers 404 with no body; a missing session says so by name.
+        if (error.status === 404 && error.tag === undefined) {
+          throw new Error('This OpenCode service does not support redo. Update OpenCode and try again.')
+        }
+      }
+      throw error
+    }
+  }
+
+  /**
+   * Reverts a thread to just before one of the user's messages: the agent is stopped if it is
+   * working, then OpenCode hides that message and everything after it and, unless asked not to,
+   * puts back the files the agent changed from there on. Nothing is deleted until the next message
+   * is sent, so a redo undoes it. Returns the revert OpenCode staged.
+   */
+  async revert(request: ChatRevertRequest): Promise<ChatRevert> {
+    this.assertEnabled()
+    const thread = this.thread(request.threadId)
+    this.streams.ensure(thread.target)
+    // Interrupting a thread that is idle does nothing.
+    await this.dependencies.client.request(thread.target, 'session.interrupt', { params: { sessionID: thread.id } })
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        const answer = await this.dependencies.client.request(thread.target, 'session.revert.stage', {
+          params: { sessionID: thread.id },
+          body: { messageID: request.messageId, ...(request.files === false ? { files: false } : {}) },
+        })
+        // The revert is staged; an answer MDE cannot read still leaves the next read to say what it holds.
+        return parseStagedRevert(answer) ?? { messageId: request.messageId, files: [] }
+      } catch (error) {
+        if (error instanceof OpenCodeServiceError) {
+          if (error.status === 409 && attempt < REVERT_ATTEMPTS) {
+            await this.pause(REVERT_RETRY_MS)
+            continue
+          }
+          if (error.status === 409) throw new Error('OpenCode is still stopping this thread. Try again in a moment.')
+          if (error.status === 404 && error.tag === 'MessageNotFoundError') throw new Error('That message is no longer in the conversation.')
+          // A route the service does not know answers 404 with no body; a missing session says so by name.
+          if (error.status === 404 && error.tag === undefined) {
+            throw new Error('This OpenCode service does not support reverting. Update OpenCode and try again.')
+          }
+        }
+        throw error
+      }
+    }
   }
 
   async regenerateTitle(threadId: string): Promise<void> {
@@ -477,13 +554,17 @@ export class InboxChatService {
     folder: { target: OpenCodePluginTarget },
     query: Record<string, string>,
   ): Promise<ChatAgent[]> {
-    const sleep = this.dependencies.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
     for (let attempt = 1; ; attempt += 1) {
       const agents = parseAgents(await this.dependencies.client.request(folder.target, 'agent.list', { query }))
       if (agents.length > 0) return agents
       if (attempt >= AGENT_ATTEMPTS) throw new Error('OpenCode has not finished loading this folder yet. Try again in a moment.')
-      await sleep(AGENT_RETRY_MS)
+      await this.pause(AGENT_RETRY_MS)
     }
+  }
+
+  /** Waits between attempts; tests replace the wait. */
+  private pause(ms: number): Promise<void> {
+    return (this.dependencies.sleep ?? ((wait: number) => new Promise<void>((resolve) => setTimeout(resolve, wait))))(ms)
   }
 
   /**

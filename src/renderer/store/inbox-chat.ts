@@ -5,6 +5,7 @@ import type {
   ChatMessage,
   ChatOptions,
   ChatRequests,
+  ChatRevert,
   ChatUsage,
   InboxAddFolderRequest,
   InboxComposerState,
@@ -29,6 +30,13 @@ export interface ChatThreadState {
   live: LivePart[]
   /** The thread's totals from the last refetch; kept when a refetch brings none. */
   usage: ChatUsage | null
+  /**
+   * The revert OpenCode has staged, or null. `messages` still holds the hidden ones, so redoing
+   * shows them at once; the view cuts them out. Kept when a refetch does not say.
+   */
+  revert: ChatRevert | null
+  /** Something to tell the reader about the thread that is not an error of loading it; null for nothing. */
+  notice: string | null
 }
 
 export type OptionsState =
@@ -51,6 +59,8 @@ const emptyThread = (): ChatThreadState => ({
   requests: { permissions: [], forms: [] },
   live: [],
   usage: null,
+  revert: null,
+  notice: null,
 })
 
 /** Keeps the newest page when a refetch arrives: earlier pages stay loaded. */
@@ -73,6 +83,11 @@ interface InboxChatStore {
   threads: Record<string, ChatThreadState>
   /** Most recently opened first; bounds the cache. */
   recent: string[]
+  /**
+   * Set when text has been put in a thread's draft from outside the composer, so the composer that
+   * shows it reads the draft again. `caret` is where the added text ends.
+   */
+  draftReloads: Record<string, { id: number; caret: number }>
 
   init: () => () => void
   addFolder: (request: InboxAddFolderRequest) => Promise<InboxFolder>
@@ -86,6 +101,13 @@ interface InboxChatStore {
   loadOlder: (threadId: string) => Promise<void>
   send: (threadId: string, text: string, choice?: { agent?: string; model?: OpenCodeModelRef; attachmentIds?: string[]; draftRevision?: number }) => Promise<void>
   interrupt: (threadId: string) => Promise<void>
+  /** Undoes a staged revert; the messages and files come back. A rejection leaves the thread as it was. */
+  redo: (threadId: string) => Promise<void>
+  /**
+   * Reverts a thread to before one of its user messages and puts that message's text above whatever
+   * is in the box. A rejection means nothing was reverted.
+   */
+  revert: (threadId: string, input: { messageId: string; text: string; files: boolean }) => Promise<void>
   replyPermission: (threadId: string, requestId: string, decision: 'once' | 'always' | 'reject') => Promise<void>
   replyForm: (threadId: string, formId: string, answer: Record<string, ChatFormValue>) => Promise<void>
   applyEvent: (event: ChatEvent) => void
@@ -142,6 +164,7 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
     options: {},
     threads: {},
     recent: [],
+    draftReloads: {},
 
     init: () => {
       const configure = (): void => {
@@ -250,6 +273,7 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
               error: null,
               live: page.running ? pruneLive(messages, thread.live) : [],
               usage: page.usage ?? thread.usage,
+              revert: page.revert === undefined ? thread.revert : page.revert,
             }
           })
         } catch (error) {
@@ -299,12 +323,40 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
       if (choice.agent || choice.model) {
         set((state) => ({ composer: { ...state.composer, ...choice } }))
       }
-      patchThread(threadId, { running: true })
+      patchThread(threadId, { running: true, notice: null })
       scheduleRefresh(threadId)
     },
 
     interrupt: async (threadId) => {
       await window.api.chat.interrupt({ threadId })
+    },
+
+    redo: async (threadId) => {
+      await window.api.chat.redo({ threadId })
+      // The hidden messages were never dropped, so they are back at once; the service's events and
+      // this refetch then confirm what it holds.
+      patchThread(threadId, { revert: null, notice: null })
+      scheduleRefresh(threadId)
+    },
+
+    revert: async (threadId, input) => {
+      const revert = await window.api.chat.revert({ threadId, messageId: input.messageId, ...(input.files ? {} : { files: false }) })
+      // The agent was stopped for this, and the messages stay loaded, only hidden.
+      patchThread(threadId, { revert, running: false, notice: null })
+      scheduleRefresh(threadId)
+      if (!input.text.trim()) return
+      // The text goes above whatever is in the box already. The revert has happened either way, so a
+      // draft that cannot take the text is told to the reader, not thrown at the dialog that is closing.
+      try {
+        await window.api.chat.draft({ key: `thread:${threadId}`, action: 'prepend', text: input.text })
+        set((state) => ({
+          draftReloads: { ...state.draftReloads, [threadId]: { id: (state.draftReloads[threadId]?.id ?? 0) + 1, caret: input.text.length } },
+        }))
+      } catch (error) {
+        patchThread(threadId, {
+          notice: `The conversation was reverted, but the message could not be put back in the box: ${ipcErrorMessage(error, 'the draft could not be saved.')}`,
+        })
+      }
     },
 
     replyPermission: async (threadId, requestId, decision) => {

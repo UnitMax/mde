@@ -110,12 +110,21 @@ the validated `chat:*` channels.
 - **Secrets.** The password is held in memory per target, sent only as HTTP
   Basic auth to that loopback origin, and never logged, stored or put in an
   error message. A 401 or connection failure drops it and rediscovers once.
-- **Operations.** `SERVICE_OPERATIONS` is a fixed allowlist of seventeen method
+- **Operations.** `SERVICE_OPERATIONS` is a fixed allowlist of nineteen method
   and path pairs (agents, providers, models, session create/get/active, message
-  list, prompt, interrupt, agent and model switch, and permission and form
-  list/reply, and session update). The `chat:regenerate-title` channel accepts only a
+  list, prompt, interrupt, agent and model switch, permission and form
+  list/reply, session update, and staging or clearing a revert). The `chat:regenerate-title` channel accepts only a
   recorded session ID and sends a fixed PATCH body `{ title: '' }`; the renderer cannot
-  supply arbitrary update fields, paths or targets. Path parameters must match `ses_`, `per_` or `frm_` ID patterns,
+  supply arbitrary update fields, paths or targets. The `chat:redo` channel likewise accepts only a
+  recorded session ID and sends `DELETE /api/session/{sessionID}/revert` with no body, which
+  undoes a revert OpenCode has staged. The `chat:revert` channel accepts only a recorded
+  thread ID, a message ID matching `msg_` followed by at most 200 ID characters, and an optional
+  boolean (`files`), and sends `POST /api/session/{sessionID}/revert/stage` with the body
+  `{ messageID }`, or `{ messageID, files: false }` to leave the files alone. The agent is
+  interrupted first, and a busy answer is retried for about ten seconds. The service itself
+  restores the files from its own snapshot; MDE sends no paths or file contents, and the diff
+  OpenCode answers with is reduced to paths, status and line counts before it reaches the
+  renderer. Path parameters must match `ses_`, `per_` or `frm_` ID patterns,
   only the query keys `limit`, `order`, `cursor` and `location[directory]` are
   allowed, request bodies are capped at 1 MB, responses at 16 MB, and each
   request times out after 30 seconds.
@@ -230,7 +239,7 @@ the direct build and diagram dependencies.
 
 ### Inbox attachment boundary
 
-`chat:draft` is a fixed, validated union of draft load/text/add/tree/remove/clear/flush operations.
+`chat:draft` is a fixed, validated union of draft load/text/prepend/add/tree/remove/clear/flush operations.
 Keys name an existing Inbox thread or folder. Binary uploads are bounded Uint8Arrays; generated
 IDs reference only files owned by that draft. Original filenames never form storage paths.
 Sidebar sources resolve through known sessions/folders and bounded regular-file reads with

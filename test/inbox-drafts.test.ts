@@ -27,6 +27,36 @@ describe('Inbox saved drafts', () => {
     expect(await restarted.files(key, [draft.attachments[0]!.id], draft.revision)).toEqual([{ name: 'screenshot.png', uri: 'data:application/octet-stream;base64,AQID' }])
   })
 
+  it('puts text above the draft in one step, and leaves an empty or oversized addition alone', async () => {
+    const { path, store } = await setup()
+    await store.prepend(key, 'Restored message')
+    expect((await store.get(key)).text).toBe('Restored message')
+    const first = await store.get(key)
+    await store.text(key, 'Something I was typing')
+    await store.prepend(key, 'Second restored')
+    expect((await store.get(key)).text).toBe('Second restored\n\nSomething I was typing')
+    expect((await store.get(key)).revision).toBeGreaterThan(first.revision)
+    // Blank text changes nothing, not even the revision a send is checked against.
+    const before = await store.get(key)
+    await store.prepend(key, '  \n ')
+    expect(await store.get(key)).toEqual(before)
+    // A draft that would pass the limit stays as it was.
+    await expect(store.prepend(key, 'x'.repeat(100_000))).rejects.toThrow('too long')
+    expect(await store.get(key)).toEqual(before)
+    // And what was written survives a restart.
+    expect((await new InboxDraftStore(path).get(key)).text).toBe('Second restored\n\nSomething I was typing')
+  })
+
+  it('puts text above the newest text, including a keystroke saved a moment before', async () => {
+    const { store } = await setup()
+    await store.text(key, 'typed')
+    // Neither call has finished when the other is made, as when typing and a revert overlap.
+    const typed = store.text(key, 'typed more')
+    const added = store.prepend(key, 'Restored')
+    await Promise.all([typed, added])
+    expect((await store.get(key)).text).toBe('Restored\n\ntyped more')
+  })
+
   it('rejects stale revisions and attachments from another draft', async () => {
     const { store } = await setup()
     await store.add(key, 'file.bin', 'application/octet-stream', new Uint8Array([4]))

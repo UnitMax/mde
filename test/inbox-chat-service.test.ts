@@ -310,6 +310,211 @@ describe('Inbox chat service', () => {
     failing.service.stop()
   })
 
+  it('reports a staged revert with the newest page only, and says none when OpenCode has none', async () => {
+    const revert = {
+      messageID: 'msg_3',
+      snapshot: 'abc',
+      files: [{ file: 'src/a.ts', patch: 'diff --git a/src/a.ts b/src/a.ts', additions: 2, deletions: 1, status: 'modified' }],
+    }
+    const staged = setup({
+      'session.create': { data: { id: 'ses_new' } },
+      'session.message.list': { data: [], cursor: { next: 'older-1' } },
+      'session.active': { data: {} },
+      'session.get': { data: { id: 'ses_new', revert } },
+    })
+    await staged.service.create({ folderId: staged.folder.id, text: 'Hi', agent: 'build', model })
+    expect(await staged.service.messages({ threadId: 'ses_new' })).toMatchObject({
+      revert: { messageId: 'msg_3', files: [{ path: 'src/a.ts', status: 'modified', additions: 2, deletions: 1 }] },
+    })
+    // The diff stays in OpenCode; and an older page neither asks nor answers.
+    expect(JSON.stringify(await staged.service.messages({ threadId: 'ses_new' }))).not.toContain('diff --git')
+    expect(await staged.service.messages({ threadId: 'ses_new', cursor: 'older-1' })).not.toHaveProperty('revert')
+    staged.service.stop()
+
+    const none = setup({
+      'session.create': { data: { id: 'ses_new' } },
+      'session.message.list': { data: [] },
+      'session.active': { data: {} },
+      'session.get': { data: { id: 'ses_new' } },
+    })
+    await none.service.create({ folderId: none.folder.id, text: 'Hi', agent: 'build', model })
+    expect(await none.service.messages({ threadId: 'ses_new' })).toHaveProperty('revert', null)
+    none.service.stop()
+  })
+
+  it('refetches the conversation when a revert is staged, redone or made permanent', async () => {
+    const { service, folder, events } = setup({ 'session.create': { data: { id: 'ses_new' } } })
+    await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+    service.subscribe('ses_new')
+    const emit = (type: string, data: Record<string, unknown>) =>
+      (service as unknown as { onEvent(event: { type: string; data: Record<string, unknown> }): void }).onEvent({ type, data })
+    emit('session.revert.staged', { sessionID: 'ses_new', revert: { messageID: 'msg_3', files: [] } })
+    emit('session.revert.cleared', { sessionID: 'ses_new' })
+    emit('session.revert.committed', { sessionID: 'ses_new', to: 'msg_3' })
+    emit('session.revert.staged', { sessionID: 'ses_other', revert: { messageID: 'msg_3', files: [] } })
+    expect(events).toEqual([
+      { type: 'messages', threadId: 'ses_new' },
+      { type: 'messages', threadId: 'ses_new' },
+      { type: 'messages', threadId: 'ses_new' },
+    ])
+    service.stop()
+  })
+
+  it('redoes a staged revert with one DELETE on the recorded session', async () => {
+    const { service, folder, calls, request, store, disable } = setup({ 'session.create': { data: { id: 'ses_new' } } })
+    await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+    calls.length = 0
+    await service.redo('ses_new')
+    expect(calls).toEqual([{ operation: 'session.revert.clear', request: { params: { sessionID: 'ses_new' } } }])
+    expect(request).toHaveBeenLastCalledWith(wsl, 'session.revert.clear', { params: { sessionID: 'ses_new' } })
+    // Nothing about the thread changes: the status and read state belong to the run, not to a redo.
+    expect(store.get('ses_new')?.status).toBe('working')
+    await expect(service.redo('ses_other')).rejects.toThrow('no longer in the Inbox')
+    disable()
+    await expect(service.redo('ses_new')).rejects.toThrow('only available on macOS')
+    service.stop()
+  })
+
+  it.each([
+    [new OpenCodeServiceError('Session is busy: ses_new', 409, 'SessionBusyError'), 'still working on this thread'],
+    [new OpenCodeServiceError('OpenCode answered with status 404.', 404), 'does not support redo'],
+    [new OpenCodeServiceError('Session not found: ses_new', 404, 'SessionNotFoundError'), 'Session not found: ses_new'],
+    [new OpenCodeServiceError('Location not found', 404, 'LocationNotFoundError'), 'Location not found'],
+    [new Error('The OpenCode service did not answer in time.'), 'did not answer in time'],
+  ])('explains why a redo failed (%s)', async (error, message) => {
+    const { service, folder } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'session.revert.clear': error })
+    await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+    await expect(service.redo('ses_new')).rejects.toThrow(message as string)
+    service.stop()
+  })
+
+  describe('reverting to a message', () => {
+    const staged = {
+      data: {
+        messageID: 'msg_3',
+        snapshot: 'abc',
+        files: [{ file: 'src/a.ts', patch: 'diff --git a/src/a.ts b/src/a.ts', additions: 2, deletions: 1, status: 'modified' }],
+      },
+    }
+
+    it('stops the thread, stages the revert on the recorded session, and returns what OpenCode staged', async () => {
+      const { service, folder, calls, request, store, disable } = setup({
+        'session.create': { data: { id: 'ses_new' } },
+        'session.interrupt': { interrupted: true },
+        'session.revert.stage': staged,
+      })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      calls.length = 0
+      const revert = await service.revert({ threadId: 'ses_new', messageId: 'msg_3' })
+      expect(calls).toEqual([
+        { operation: 'session.interrupt', request: { params: { sessionID: 'ses_new' } } },
+        { operation: 'session.revert.stage', request: { params: { sessionID: 'ses_new' }, body: { messageID: 'msg_3' } } },
+      ])
+      expect(request).toHaveBeenLastCalledWith(wsl, 'session.revert.stage', expect.anything())
+      // The diff stays in OpenCode.
+      expect(revert).toEqual({ messageId: 'msg_3', files: [{ path: 'src/a.ts', status: 'modified', additions: 2, deletions: 1 }] })
+      expect(store.get('ses_new')).toBeDefined()
+      await expect(service.revert({ threadId: 'ses_other', messageId: 'msg_3' })).rejects.toThrow('no longer in the Inbox')
+      disable()
+      await expect(service.revert({ threadId: 'ses_new', messageId: 'msg_3' })).rejects.toThrow('only available on macOS')
+      service.stop()
+    })
+
+    it('leaves the files alone only when asked to', async () => {
+      const { service, folder, calls } = setup({
+        'session.create': { data: { id: 'ses_new' } },
+        'session.revert.stage': { data: { messageID: 'msg_3', files: [] } },
+      })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      const bodies = async (files?: boolean): Promise<unknown> => {
+        calls.length = 0
+        await service.revert({ threadId: 'ses_new', messageId: 'msg_3', ...(files === undefined ? {} : { files }) })
+        return calls.find((call) => call.operation === 'session.revert.stage')?.request.body
+      }
+      expect(await bodies()).toEqual({ messageID: 'msg_3' })
+      expect(await bodies(true)).toEqual({ messageID: 'msg_3' })
+      expect(await bodies(false)).toEqual({ messageID: 'msg_3', files: false })
+      service.stop()
+    })
+
+    it('tries again while OpenCode is still stopping, and stages as soon as it has', async () => {
+      const { service, folder, request } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'session.interrupt': { interrupted: true } })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      let busy = 3
+      const previous = request.getMockImplementation()!
+      request.mockImplementation(async (target, operation, input) => {
+        if (operation !== 'session.revert.stage') return previous(target, operation, input)
+        if (busy-- > 0) throw new OpenCodeServiceError('Session is busy: ses_new', 409, 'SessionBusyError')
+        return staged
+      })
+      request.mockClear()
+      await expect(service.revert({ threadId: 'ses_new', messageId: 'msg_3' })).resolves.toMatchObject({ messageId: 'msg_3' })
+      const operations = request.mock.calls.map((call) => call[1])
+      expect(operations.filter((operation) => operation === 'session.interrupt')).toHaveLength(1)
+      expect(operations.filter((operation) => operation === 'session.revert.stage')).toHaveLength(4)
+      service.stop()
+    })
+
+    it('gives up with a plain message when the thread never stops', async () => {
+      const { service, folder, request } = setup({
+        'session.create': { data: { id: 'ses_new' } },
+        'session.revert.stage': new OpenCodeServiceError('Session is busy: ses_new', 409, 'SessionBusyError'),
+      })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      request.mockClear()
+      await expect(service.revert({ threadId: 'ses_new', messageId: 'msg_3' })).rejects.toThrow('still stopping this thread')
+      expect(request.mock.calls.filter((call) => call[1] === 'session.revert.stage')).toHaveLength(40)
+      service.stop()
+    })
+
+    it.each([
+      [new OpenCodeServiceError('Message not found: msg_3', 404, 'MessageNotFoundError'), 'no longer in the conversation'],
+      [new OpenCodeServiceError('OpenCode answered with status 404.', 404), 'does not support reverting'],
+      [new OpenCodeServiceError('Session not found: ses_new', 404, 'SessionNotFoundError'), 'Session not found: ses_new'],
+      [new OpenCodeServiceError('Bad message', 400, 'InvalidRequestError'), 'Bad message'],
+      [new Error('The OpenCode service did not answer in time.'), 'did not answer in time'],
+    ])('explains why a revert failed (%s)', async (error, message) => {
+      const { service, folder, request } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'session.revert.stage': error })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      request.mockClear()
+      await expect(service.revert({ threadId: 'ses_new', messageId: 'msg_3' })).rejects.toThrow(message as string)
+      // Only a busy thread is tried again.
+      expect(request.mock.calls.filter((call) => call[1] === 'session.revert.stage')).toHaveLength(1)
+      service.stop()
+    })
+
+    it('does not try to revert when stopping the thread failed', async () => {
+      const { service, folder, request } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'session.interrupt': new Error('Service unavailable') })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      request.mockClear()
+      await expect(service.revert({ threadId: 'ses_new', messageId: 'msg_3' })).rejects.toThrow('Service unavailable')
+      expect(request.mock.calls.map((call) => call[1])).toEqual(['session.interrupt'])
+      service.stop()
+    })
+
+    it('still reports the revert when OpenCode answers in a shape MDE cannot read', async () => {
+      const { service, folder } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'session.revert.stage': null })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      await expect(service.revert({ threadId: 'ses_new', messageId: 'msg_3' })).resolves.toEqual({ messageId: 'msg_3', files: [] })
+      service.stop()
+    })
+
+    it('puts text above the thread draft through the draft channel', async () => {
+      const path = await fs.mkdtemp(join(tmpdir(), 'mde-chat-revert-draft-'))
+      const drafts = new InboxDraftStore(path)
+      const { service, folder } = setup({ 'session.create': { data: { id: 'ses_new' } } }, drafts)
+      try {
+        await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+        const key = 'thread:ses_new' as const
+        expect((await service.draft({ key, action: 'prepend', text: 'Restored message' })).text).toBe('Restored message')
+        await service.draft({ key, action: 'text', text: 'Typed since' })
+        expect((await service.draft({ key, action: 'prepend', text: 'Another' })).text).toBe('Another\n\nTyped since')
+        // Only a thread MDE holds has a draft to put text in.
+        await expect(service.draft({ key: 'thread:ses_unknown', action: 'prepend', text: 'x' })).rejects.toThrow('no longer in the Inbox')
+      } finally { service.stop(); await fs.rm(path, { recursive: true, force: true }) }
+    })
+  })
+
   it('replies to permissions and questions with checked IDs', async () => {
     const { service, folder, calls } = setup({ 'session.create': { data: { id: 'ses_new' } } })
     await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })

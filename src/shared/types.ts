@@ -396,6 +396,33 @@ export type ChatMessage =
   /** Agent or model switches, compaction, shell commands, and other notes. */
   | { kind: 'note'; id: string; time: number; tone: 'info' | 'error'; text: string; detail?: string }
 
+/** One file a staged revert restored, as OpenCode summarizes it (without the diff). */
+export interface ChatRevertFile {
+  path: string
+  status: 'added' | 'deleted' | 'modified'
+  additions: number
+  deletions: number
+}
+
+/**
+ * A revert OpenCode has staged: the conversation from `messageId` on is hidden, and the files its
+ * steps changed were restored. Redoing brings it all back; the next message makes it permanent.
+ */
+export interface ChatRevert {
+  /** The first message that is hidden. Message IDs sort in the order the messages were written. */
+  messageId: string
+  files: ChatRevertFile[]
+}
+
+/** Reverts a thread to just before one of the user's messages. */
+export interface ChatRevertRequest {
+  threadId: string
+  /** The user message to revert to: it and everything after it is hidden. */
+  messageId: string
+  /** Whether the files the agent changed from there on are put back. Left out means they are. */
+  files?: boolean
+}
+
 export interface ChatMessagesPage {
   /** Oldest first. */
   messages: ChatMessage[]
@@ -405,6 +432,12 @@ export interface ChatMessagesPage {
   running: boolean
   /** The thread's totals; only on the newest page, and only when OpenCode answered. */
   usage?: ChatUsage
+  /**
+   * The staged revert, or null when there is none. Like `usage` it comes with the newest page only;
+   * it is absent on older pages and when OpenCode did not answer, which means "unknown", not "none".
+   * The messages are all of them: hiding the reverted ones is up to the reader.
+   */
+  revert?: ChatRevert | null
 }
 
 export interface ChatPermission {
@@ -743,6 +776,8 @@ export interface ChatDraft {
 export type ChatDraftRequest =
   | { key: ChatDraftKey; action: 'load' | 'flush' | 'clear' }
   | { key: ChatDraftKey; action: 'text'; text: string }
+  /** Puts text above what the draft already holds. */
+  | { key: ChatDraftKey; action: 'prepend'; text: string }
   | { key: ChatDraftKey; action: 'add'; name: string; mime: string; data: Uint8Array }
   | { key: ChatDraftKey; action: 'tree'; sessionId: string; path: string }
   | { key: ChatDraftKey; action: 'remove'; attachmentId: string }

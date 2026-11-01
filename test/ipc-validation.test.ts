@@ -87,6 +87,8 @@ const validPayloads = {
   [IpcChannels.chatMessages]: { threadId: 'ses_thread', cursor: 'eyJpZCI6Im1zZyJ9' },
   [IpcChannels.chatSend]: { threadId: 'ses_thread', text: 'Next step', agent: 'plan', model },
   [IpcChannels.chatInterrupt]: { threadId: 'ses_thread' },
+  [IpcChannels.chatRedo]: { threadId: 'ses_thread' },
+  [IpcChannels.chatRevert]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a', files: false },
   [IpcChannels.chatRegenerateTitle]: { threadId: 'ses_thread' },
   [IpcChannels.chatRequests]: { threadId: 'ses_thread' },
   [IpcChannels.chatPermissionReply]: { threadId: 'ses_thread', requestId: 'per_1', decision: 'once' },
@@ -133,6 +135,18 @@ describe('IPC payload boundary', () => {
   })
 
   it('bounds chat requests', () => {
+    rejects(IpcChannels.chatRedo, { threadId: 'ses_../escape' })
+    for (const bad of [
+      { threadId: 'ses_thread' },
+      { threadId: 'ses_thread', messageId: 'ses_thread' },
+      { threadId: 'ses_thread', messageId: 'msg_../escape' },
+      { threadId: 'ses_thread', messageId: 'msg_' },
+      { threadId: 'ses_thread', messageId: 'msg_1', files: 'no' },
+      { threadId: 'ses_thread', messageId: 'msg_1', text: 'Injected' },
+      { threadId: 'ses_../escape', messageId: 'msg_1' },
+    ]) rejects(IpcChannels.chatRevert, bad)
+    expect(() => assertIpcPayload(IpcChannels.chatRevert, { threadId: 'ses_thread', messageId: 'msg_1' })).not.toThrow()
+    rejects(IpcChannels.chatRedo, { threadId: 'ses_thread', files: false })
     rejects(IpcChannels.chatRegenerateTitle, { threadId: 'ses_../escape' })
     rejects(IpcChannels.chatRegenerateTitle, { threadId: 'ses_thread', title: 'Injected' })
     expect(() => assertIpcPayload(IpcChannels.chatCreate, { folderId: 'fld_1234', text: '', attachmentIds: ['a'], draftRevision: 1, agent: 'build', model })).not.toThrow()
@@ -281,5 +295,18 @@ it('rejects attachment paths, unknown operations, foreign shapes and oversized b
     { ...valid, data: [1, 2] },
     { ...valid, data: new Uint8Array(20 * 1024 * 1024 + 1) },
     { key: 'folder:fld_one', action: 'tree', sessionId: 'source', path: '../secret' },
+  ]) expect(() => assertIpcPayload(IpcChannels.chatDraft, payload)).toThrow()
+})
+
+it('accepts prepending prompt text to a draft, and nothing else with it', () => {
+  const valid = { key: 'thread:ses_one', action: 'prepend', text: 'Fix the login\n\tplease' }
+  expect(() => assertIpcPayload(IpcChannels.chatDraft, valid)).not.toThrow()
+  for (const payload of [
+    { ...valid, text: 'bell\u0007' },
+    { ...valid, text: 'x'.repeat(100_001) },
+    { ...valid, text: 42 },
+    { ...valid, name: 'file.txt' },
+    { ...valid, key: 'thread:../outside' },
+    { key: 'thread:ses_one', action: 'prepend' },
   ]) expect(() => assertIpcPayload(IpcChannels.chatDraft, payload)).toThrow()
 })

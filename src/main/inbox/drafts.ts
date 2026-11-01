@@ -5,10 +5,12 @@ import type { ChatDraft, ChatDraftKey } from '@shared/types'
 
 export const ATTACHMENT_LIMIT = 20 * 1024 * 1024
 export const DRAFT_STORAGE_LIMIT = 200 * 1024 * 1024
+/** The longest prompt text a draft holds, the same as the longest one MDE sends. */
+export const DRAFT_TEXT_LIMIT = 100_000
 const empty = (): ChatDraft => ({ revision: 0, text: '', attachments: [] })
 
 function validDraft(draft: ChatDraft): boolean {
-  if (!draft || typeof draft.text !== 'string' || draft.text.length > 100_000 ||
+  if (!draft || typeof draft.text !== 'string' || draft.text.length > DRAFT_TEXT_LIMIT ||
     !Number.isSafeInteger(draft.revision) || draft.revision < 0 ||
     !Array.isArray(draft.attachments) || draft.attachments.length > 10) return false
   const ids = new Set<string>()
@@ -97,6 +99,22 @@ export class InboxDraftStore {
     return this.run(async () => {
       const draft = this.drafts[key] ?? empty()
       this.drafts[key] = { ...draft, text, revision: draft.revision + 1 }
+      await this.persist()
+    })
+  }
+
+  /**
+   * Puts text above what the draft already holds, with a blank line between. It is one step, so a
+   * keystroke saved at the same moment is not lost. A draft that would grow past the limit is left
+   * as it was.
+   */
+  prepend(key: ChatDraftKey, text: string): Promise<void> {
+    return this.run(async () => {
+      if (!text.trim()) return
+      const draft = this.drafts[key] ?? empty()
+      const merged = draft.text.trim() ? `${text}\n\n${draft.text}` : text
+      if (merged.length > DRAFT_TEXT_LIMIT) throw new Error('The text is too long to add to this draft.')
+      this.drafts[key] = { ...draft, text: merged, revision: draft.revision + 1 }
       await this.persist()
     })
   }

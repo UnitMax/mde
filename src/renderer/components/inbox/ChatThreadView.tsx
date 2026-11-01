@@ -1,11 +1,13 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { AlertTriangle, LoaderCircle, RefreshCw } from 'lucide-react'
-import type { InboxThread, OpenCodeModelRef } from '@shared/types'
+import type { ChatMessage, InboxThread, OpenCodeModelRef } from '@shared/types'
 import { ChatComposer } from '@/components/inbox/ChatComposer'
 import { ChatMessageView } from '@/components/inbox/ChatMessageView'
 import { PermissionCard, QuestionCard } from '@/components/inbox/ChatRequestCards'
+import { ChatRevertBanner } from '@/components/inbox/ChatRevertBanner'
+import { ChatRevertDialog } from '@/components/inbox/ChatRevertDialog'
 import { TurnDuration, WorkingFor } from '@/components/inbox/ChatTurnTime'
-import { contextUsage, findModel, initialChoice, mergeLive, turnStats } from '@/lib/chat'
+import { contextUsage, findModel, hideReverted, initialChoice, mergeLive, revertedMessageCount, turnStats } from '@/lib/chat'
 import { optionsKey, useInboxChat, type ChatThreadState } from '@/store/inbox-chat'
 import { codeViewerFontFamily, getTerminalSettings, subscribeTerminalSettings } from '@/terminal/terminal-settings'
 
@@ -21,6 +23,8 @@ function lastAssistant(messages: ChatThreadState['messages'] | undefined): { age
   return null
 }
 
+type UserMessage = Extract<ChatMessage, { kind: 'user' }>
+
 /** The conversation of one thread with its composer. */
 export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element {
   const openThread = useInboxChat((state) => state.openThread)
@@ -32,6 +36,9 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const refresh = useInboxChat((store) => store.refresh)
   const send = useInboxChat((store) => store.send)
   const interrupt = useInboxChat((store) => store.interrupt)
+  const redo = useInboxChat((store) => store.redo)
+  const revertTo = useInboxChat((store) => store.revert)
+  const draftReload = useInboxChat((store) => store.draftReloads[thread.id])
   const replyPermission = useInboxChat((store) => store.replyPermission)
   const replyForm = useInboxChat((store) => store.replyForm)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -39,6 +46,10 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const [agent, setAgent] = useState<string | null>(null)
   const [model, setModel] = useState<OpenCodeModelRef | null>(null)
   const [codeFamily, setCodeFamily] = useState(() => getTerminalSettings().codeFamily)
+  // The message the person asked to revert to, while the dialog about it is open.
+  const [revertTarget, setRevertTarget] = useState<UserMessage | null>(null)
+  const askRevert = useCallback((message: UserMessage) => setRevertTarget(message), [])
+  useEffect(() => setRevertTarget(null), [thread.id])
 
   useEffect(() => subscribeTerminalSettings(() => setCodeFamily(getTerminalSettings().codeFamily)), [])
 
@@ -47,11 +58,26 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
     void loadOptions({ threadId: thread.id })
   }, [loadOptions, thread.id])
 
-  const latest = useMemo(() => lastAssistant(state?.messages), [state?.messages])
-  const messages = useMemo(
-    () => (state ? mergeLive(state.messages, state.live, latest ?? (thread.model ? { agent: 'build', model: thread.model } : undefined)) : []),
-    [state, latest, thread.model],
+  // A staged revert hides the end of the conversation. The hidden messages stay loaded, so a redo shows them at once.
+  const revert = state?.revert ?? null
+  const shown = useMemo(() => hideReverted(state?.messages ?? [], revert), [state?.messages, revert])
+  const revertedCount = useMemo(() => revertedMessageCount(state?.messages ?? [], revert), [state?.messages, revert])
+  const revertHides = useMemo(
+    () => (revertTarget ? shown.filter((message) => message.kind === 'user' && message.id >= revertTarget.id).length : 0),
+    [shown, revertTarget],
   )
+  const latest = useMemo(() => lastAssistant(shown), [shown])
+  const messages = useMemo(
+    () => (state ? mergeLive(shown, state.live, latest ?? (thread.model ? { agent: 'build', model: thread.model } : undefined)) : []),
+    [state, shown, latest, thread.model],
+  )
+
+  // A revert can reach back past the newest pages. Load back to the first message it leaves in view,
+  // which also makes the count of hidden messages complete. A failed page stops the loading.
+  const olderToLoad = revert !== null && shown.length === 0 && Boolean(state?.older) && !state?.loadingOlder && !state?.error
+  useEffect(() => {
+    if (olderToLoad) void loadOlder(thread.id)
+  }, [olderToLoad, loadOlder, thread.id])
 
   // The composer starts with what the thread last used, so a follow-up does not switch anything by accident.
   const ready = options?.status === 'ready' ? options.value : null
@@ -64,8 +90,8 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
 
   // The window is the chosen model's, so picking another model shows right away whether the thread still fits.
   const context = useMemo(
-    () => contextUsage({ messages: state?.messages ?? [], usage: state?.usage ?? null, model: findModel(ready?.models ?? [], model) }),
-    [state?.messages, state?.usage, ready?.models, model],
+    () => contextUsage({ messages: shown, usage: state?.usage ?? null, model: findModel(ready?.models ?? [], model) }),
+    [shown, state?.usage, ready?.models, model],
   )
 
   const onScroll = useCallback(() => {
@@ -125,11 +151,12 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
             const took = turns.finished.get(message.id)
             return (
               <Fragment key={message.id}>
-                <ChatMessageView message={message} directory={thread.directory} />
+                <ChatMessageView message={message} directory={thread.directory} onRevert={message.kind === 'user' ? askRevert : undefined} />
                 {took !== undefined && <TurnDuration ms={took.ms} tokensPerSecond={took.tokensPerSecond} />}
               </Fragment>
             )
           })}
+          {revert && <ChatRevertBanner revert={revert} messages={revertedCount} directory={thread.directory} onRedo={() => redo(thread.id)} />}
           {running && <WorkingFor since={busySince ?? turns.openSince} />}
           {requests?.permissions.map((permission) => (
             <PermissionCard
@@ -142,6 +169,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
             <QuestionCard key={form.id} form={form} onReply={(answer) => replyForm(thread.id, form.id, answer)} />
           ))}
           {thread.sendError && <p role="alert" className="text-xs text-danger">{thread.sendError}</p>}
+          {state?.notice && <p role="alert" className="text-xs text-danger" data-testid="chat-notice">{state.notice}</p>}
           {state?.error && (
             <div role="alert" className="flex items-center gap-2 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
@@ -158,6 +186,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
         <ChatComposer
           key={thread.id}
           draftKey={`thread:${thread.id}`}
+          draftReload={draftReload}
           options={options}
           agent={agent}
           model={model}
@@ -177,6 +206,18 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
           }}
         />
       </div>
+      <ChatRevertDialog
+        message={revertTarget}
+        hidden={revertHides}
+        running={running}
+        onCancel={() => setRevertTarget(null)}
+        onConfirm={async ({ files }) => {
+          if (!revertTarget) return
+          await revertTo(thread.id, { messageId: revertTarget.id, text: revertTarget.text, files })
+          stickRef.current = true
+          setRevertTarget(null)
+        }}
+      />
     </div>
   )
 }

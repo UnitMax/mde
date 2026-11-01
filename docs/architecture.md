@@ -212,6 +212,71 @@ turn, where MDE shows a line for each. Durations are cut off to whole seconds an
 (`lib/duration.ts`), with the full words in a tooltip. The counters are timers that run only while
 they are on screen.
 
+**Reverted messages.** OpenCode can revert a conversation to an earlier point (`/undo` and the
+message actions in its terminal UI). That is staged, not done: the session records a `revert` with
+the first message to hide and the files whose changes were undone, the files on disk are put back
+at once, and every message stays in the session until the next message, a compaction, or a commit
+makes the revert permanent by deleting the messages from the boundary on. A redo clears the revert
+and puts the files back as they were. `session.get` reports it, so the newest page of messages
+carries `revert` (`parseSessionRevert`: the first hidden message and, per file, its path, what the
+revert did to it and the line counts, without the diff), and the `session.revert.staged`, `.cleared`
+and `.committed` events make the thread refetch. A page without `revert` means the service did not
+say, and the thread keeps what it knew; `revert: null` means none. The page still holds every
+message. The thread view cuts the conversation before the first hidden message, as OpenCode's own
+interface does (message IDs sort in the order the messages were written, `hideReverted` in
+`lib/chat.ts`), and so does everything computed from the conversation: the context pill, the turn
+times and the agent and model the composer starts from. Where the hidden messages would be, a note
+(`ChatRevertBanner`) says how many of your messages are hidden, lists the files that were restored
+(Restored, Removed or Recreated, with line counts; a list of more than six starts folded and shows
+twenty), and warns that sending a message removes the reverted messages for good. When the revert
+reaches back past the pages that are loaded, the thread loads earlier pages, one after another,
+until a message before the cut is in view, which also makes the count complete; a page that fails
+stops it. Reverted messages are only hidden in MDE; this is also what shows a revert made in a
+terminal.
+
+The note has a **Redo** button (`chat:redo`, `InboxChatService.redo`). It sends
+`DELETE /api/session/{sessionID}/revert`, which clears the staged revert and makes OpenCode put the
+files back as they were when the revert was staged, so any edit you made to those files since then
+is replaced. The thread drops its `revert` at once, which shows the hidden messages without waiting
+for a refetch, and the `session.revert.cleared` event and a refetch then confirm what OpenCode
+holds. While the request runs the button reads "Redoing…" and ignores clicks; a failure keeps the
+note and the hidden messages and shows the reason under the summary, so the button can be used
+again. OpenCode refuses while the agent is working ("Stop it, then redo"), and a service without
+the route (an unknown route answers 404 with no body, where a missing session answers with a named
+error) is reported as too old. A redo of a revert that is no longer staged does nothing.
+
+**Reverting to a message.** Each of your own messages has an undo button that appears on hover or
+keyboard focus. It opens a dialog (`ChatRevertDialog`, hosted by the thread view because the message
+it belongs to is hidden by the revert) that quotes the message, says how many of your messages go,
+and offers "Restore file changes", ticked by default, with the warning that changes you made to
+those files yourself since then are replaced. It also says when the agent is still working (it is
+stopped first) and when the message had attachments (they are not put back), and that a redo is
+possible until the next message is sent. Confirming calls `chat:revert`
+(`InboxChatService.revert`): it ensures the thread's event stream, always interrupts the session,
+then sends `POST /api/session/{sessionID}/revert/stage` with `{ messageID }`, adding
+`files: false` only when the box was unticked. OpenCode answers 409 while the session is still
+stopping (`interrupt` returns before the work has ended), so a busy answer is retried every 250 ms
+up to 40 times and then reported as "OpenCode is still stopping this thread. Try again in a moment."
+Any other failure stops at once: a missing message ("That message is no longer in the
+conversation."), a service without the route ("…does not support reverting. Update OpenCode…",
+told apart from a missing session by the 404 having no named error), or OpenCode's own message. A
+failed interrupt means nothing is staged. The result is the same `ChatRevert` the banner shows,
+and the thread view hides the messages at once, with the service's events and a refetch
+confirming. A folder that is not a git repository has no snapshot, so the revert hides messages
+only and lists no files.
+
+The message text then goes into the thread's saved draft **above** whatever is already there,
+separated by a blank line (`InboxDraftStore.prepend`, the `prepend` draft action, applied inside
+the store's serialized queue so a keystroke saved a moment earlier is kept; a blank text changes
+nothing, and a result over the draft's 100,000 characters is refused). The composer then reloads
+the draft, focuses the box and puts the caret at the end of the restored text. The revert has
+happened by then, so if the draft cannot take the text, the thread shows a notice saying so
+instead of failing the dialog; sending or redoing clears the notice. The text is the only thing
+put back: attachments are not. The message is not deleted from
+OpenCode until the next message is sent, which makes the revert permanent. Only your own messages
+can be reverted to for now; stepping back to the middle of a turn, or branching a copy of the
+conversation, are not offered.
+
 **Transport.** OpenCode 2 runs one background service per machine, which its terminal UI also
 uses, so a thread can be continued in a terminal (`opencode --session ses_…`) and both stay in
 sync. `src/main/opencode/service/discovery.ts` finds the service for a target by running a fixed
@@ -537,6 +602,8 @@ are scoped to a thread or new-chat folder and survive restart. Native create/sen
 attachment IDs and a draft revision. The main process validates ownership, sends copied contents
 as OpenCode native data-URL files, and clears only the submitted revision after acceptance. A
 created session whose initial prompt fails retains the draft on that session for retry.
+Reverting an Inbox thread to a message adds that message's text to the top of the thread's draft in
+the same store.
 
 Prompt bodies and prompt/message-list responses allow 32 MiB; other transport limits stay the
 same. Oversized history pages retry the same cursor with successively smaller page sizes down

@@ -9,6 +9,8 @@ import type {
   ChatModel,
   ChatPart,
   ChatPermission,
+  ChatRevert,
+  ChatRevertFile,
   ChatTokens,
   ChatToolStatus,
   ChatUsage,
@@ -367,6 +369,43 @@ export function parseSessionUsage(value: unknown): ChatUsage | null {
   const tokens = parseTokens(session?.tokens)
   if (!tokens) return null
   return { tokens, cost: typeof session?.cost === 'number' && Number.isFinite(session.cost) && session.cost >= 0 ? session.cost : 0 }
+}
+
+const MESSAGE_ID = /^msg_[A-Za-z0-9_-]{1,200}$/
+/** A staged revert lists at most this many files; the rest are counted out. */
+const MAX_REVERT_FILES = 200
+
+function parseRevertFile(value: unknown): ChatRevertFile | null {
+  const file = record(value)
+  const path = short(file?.file, 4096)
+  const status = file?.status
+  if (!file || !path || (status !== 'added' && status !== 'deleted' && status !== 'modified')) return null
+  return { path, status, additions: count(file.additions) ?? 0, deletions: count(file.deletions) ?? 0 }
+}
+
+/**
+ * One revert as OpenCode reports it; null when there is none. A revert whose message ID is not one
+ * MDE recognizes counts as none, so a change in OpenCode never hides the conversation.
+ */
+function parseRevert(value: unknown): ChatRevert | null {
+  const revert = record(value)
+  const messageId = short(revert?.messageID)
+  if (!revert || !messageId || !MESSAGE_ID.test(messageId)) return null
+  const files = list(revert.files)
+    .slice(0, MAX_REVERT_FILES)
+    .map(parseRevertFile)
+    .filter((file): file is ChatRevertFile => file !== null)
+  return { messageId, files }
+}
+
+/** The revert a `session.get` answer says is staged. */
+export function parseSessionRevert(value: unknown): ChatRevert | null {
+  return parseRevert(record(record(value)?.data)?.revert)
+}
+
+/** The revert a stage answer reports, which has the shape of the session's `revert` itself. */
+export function parseStagedRevert(value: unknown): ChatRevert | null {
+  return parseRevert(record(value)?.data)
 }
 
 export function parseActiveSessions(value: unknown): Set<string> {

@@ -14,13 +14,15 @@ export const SERVICE_OPERATIONS = {
   'session.message.list': { method: 'GET', path: '/api/session/{sessionID}/message' },
   'session.prompt': { method: 'POST', path: '/api/session/{sessionID}/prompt' },
   'session.interrupt': { method: 'POST', path: '/api/session/{sessionID}/interrupt' },
+  'session.revert.stage': { method: 'POST', path: '/api/session/{sessionID}/revert/stage' },
+  'session.revert.clear': { method: 'DELETE', path: '/api/session/{sessionID}/revert' },
   'session.switchAgent': { method: 'POST', path: '/api/session/{sessionID}/agent' },
   'session.switchModel': { method: 'POST', path: '/api/session/{sessionID}/model' },
   'session.permission.list': { method: 'GET', path: '/api/session/{sessionID}/permission' },
   'session.permission.reply': { method: 'POST', path: '/api/session/{sessionID}/permission/{requestID}/reply' },
   'session.form.list': { method: 'GET', path: '/api/session/{sessionID}/form' },
   'session.form.reply': { method: 'POST', path: '/api/session/{sessionID}/form/{formID}/reply' },
-} as const satisfies Record<string, { method: 'GET' | 'POST' | 'PATCH'; path: string }>
+} as const satisfies Record<string, { method: 'GET' | 'POST' | 'PATCH' | 'DELETE'; path: string }>
 
 export type ServiceOperation = keyof typeof SERVICE_OPERATIONS
 

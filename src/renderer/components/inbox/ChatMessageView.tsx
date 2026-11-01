@@ -1,5 +1,5 @@
 import { memo, useMemo, useState } from 'react'
-import { AlertTriangle, Brain, ChevronRight, Info, LoaderCircle, Wrench } from 'lucide-react'
+import { AlertTriangle, Brain, ChevronRight, Info, LoaderCircle, Undo2, Wrench } from 'lucide-react'
 import type { ChatMessage, ChatPart } from '@shared/types'
 import { FileChangeView } from '@/components/inbox/ChatFileChange'
 import { ChatMarkdown } from '@/components/inbox/ChatMarkdown'
@@ -109,13 +109,28 @@ function ReasoningView({ text, active }: { text: string; active: boolean }): JSX
 export const ChatMessageView = memo(function ChatMessageView({
   message,
   directory,
+  onRevert,
 }: {
   message: ChatMessage
   directory: string
+  /** Offered on the user's own messages: asks to revert the conversation to just before this one. */
+  onRevert?: (message: Extract<ChatMessage, { kind: 'user' }>) => void
 }): JSX.Element | null {
   if (message.kind === 'user') {
     return (
-      <div className="flex justify-end" data-testid={`chat-message-${message.id}`}>
+      <div className="group flex items-start justify-end gap-1.5" data-testid={`chat-message-${message.id}`}>
+        {onRevert && (
+          <button
+            type="button"
+            aria-label="Revert to before this message"
+            title="Revert to here"
+            data-testid={`chat-revert-to-${message.id}`}
+            onClick={() => onRevert(message)}
+            className="mt-1.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-fg-subtle opacity-0 transition-opacity hover:bg-hover hover:text-fg focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100"
+          >
+            <Undo2 aria-hidden className="h-3.5 w-3.5" />
+          </button>
+        )}
         <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-active px-3.5 py-2 text-[14px] leading-relaxed text-fg">
           {message.attachments?.length ? <div className="flex flex-wrap gap-2 pb-2">{message.attachments.map((file) => <div key={file.id} className="max-w-48 rounded border border-line p-2 text-xs" title={`${file.name} (${file.size.toLocaleString()} bytes)`}>
             {file.thumbnail && <img src={file.thumbnail} alt={file.name} className="mb-1 h-24 w-32 object-contain" />}

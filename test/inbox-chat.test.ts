@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { ChatMessagesPage, ChatOptions, ChatRequests, InboxFolder, InboxThread } from '../src/shared/types'
+import type { ChatDraft, ChatDraftRequest, ChatMessage, ChatMessagesPage, ChatOptions, ChatRequests, ChatRevert, ChatRevertRequest, InboxFolder, InboxThread } from '../src/shared/types'
 import { InboxThreadView } from '../src/renderer/components/InboxThreadView'
 import { useInboxChat } from '../src/renderer/store/inbox-chat'
 import { useWorkspace } from '../src/renderer/store/workspace'
@@ -49,6 +49,8 @@ const api = {
     requests: vi.fn(async () => requests),
     send: vi.fn(async () => undefined),
     interrupt: vi.fn(async () => undefined),
+    redo: vi.fn(async (): Promise<void> => undefined),
+    revert: vi.fn(async (request: ChatRevertRequest): Promise<ChatRevert> => ({ messageId: request.messageId, files: [] })),
     regenerateTitle: vi.fn(async (): Promise<void> => undefined),
     replyPermission: vi.fn(async () => undefined),
     replyForm: vi.fn(async () => undefined),
@@ -686,5 +688,381 @@ describe('Inbox conversation', () => {
     expect(view.textContent).toContain('No messages yet.')
     await act(async () => roots.splice(0).forEach((root) => root.unmount()))
     expect(api.chat.unsubscribe).toHaveBeenCalledWith({ threadId: 'ses_one' })
+  })
+})
+
+describe('Inbox staged revert', () => {
+  beforeEach(() => {
+    useWorkspace.setState({ inboxThreads: [thread()], selectedInboxThreadId: 'ses_one' })
+  })
+
+  const user = (id: string, text: string): ChatMessage => ({ kind: 'user', id, time: 1, text })
+  const reply = (id: string, text: string): ChatMessage => ({
+    kind: 'assistant', id, time: 2, agent: 'build', model: options.defaultModel!, completed: true, parts: [{ kind: 'text', text }],
+  })
+  const conversation = [user('msg_1', 'First request'), reply('msg_2', 'First answer'), user('msg_3', 'Second request'), reply('msg_4', 'Second answer')]
+  // The stub takes no arguments in its type, but the store passes the request.
+  const pageRequestsWithCursor = (): unknown[] =>
+    (api.chat.messages.mock.calls as unknown as Array<[{ threadId: string; cursor?: string }?]>).filter(([request]) => request?.cursor)
+  const refetch = async (): Promise<void> => {
+    await act(async () => useInboxChat.getState().applyEvent({ type: 'messages', threadId: 'ses_one' }))
+  }
+
+  it('hides the messages from the revert on, says what it restored, and shows them again once it is gone', async () => {
+    page = {
+      running: false,
+      older: null,
+      messages: conversation,
+      revert: {
+        messageId: 'msg_3',
+        files: [
+          { path: 'src/a.ts', status: 'modified', additions: 2, deletions: 1 },
+          { path: 'b.txt', status: 'deleted', additions: 0, deletions: 1 },
+        ],
+      },
+    }
+    const view = await render()
+    await vi.waitFor(() => expect(view.textContent).toContain('First answer'))
+    expect(view.textContent).not.toContain('Second request')
+    expect(view.textContent).not.toContain('Second answer')
+    expect(view.querySelector('[data-testid="chat-revert-summary"]')?.textContent).toBe('1 message reverted · 2 files restored')
+    const files = view.querySelector('[data-testid="chat-revert-files"]')!.textContent!
+    expect(files).toContain('Restoredsrc/a.ts+2−1')
+    expect(files).toContain('Removedb.txt−1')
+    expect(view.querySelector('[data-testid="chat-revert"]')?.textContent).toContain('Sending a message now removes the reverted messages for good.')
+
+    // A reply that does not say whether a revert is staged leaves things as they are.
+    page = { running: false, older: null, messages: conversation }
+    await refetch()
+    await vi.waitFor(() => expect(api.chat.messages).toHaveBeenCalledTimes(2))
+    expect(view.querySelector('[data-testid="chat-revert"]')).not.toBeNull()
+    expect(view.textContent).not.toContain('Second request')
+
+    // Redone: the messages were never dropped, so they are back with the next read.
+    page = { running: false, older: null, messages: conversation, revert: null }
+    await refetch()
+    await vi.waitFor(() => expect(view.textContent).toContain('Second answer'))
+    expect(view.textContent).toContain('Second request')
+    expect(view.querySelector('[data-testid="chat-revert"]')).toBeNull()
+  })
+
+  it('shows the banner alone when the revert reaches the start, and names a partial reply honestly', async () => {
+    page = { running: false, older: null, messages: conversation, revert: { messageId: 'msg_1', files: [] } }
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-revert"]')).not.toBeNull())
+    expect(view.textContent).not.toContain('First request')
+    expect(view.textContent).not.toContain('No messages yet.')
+    expect(view.querySelector('[data-testid="chat-revert-summary"]')?.textContent).toBe('2 messages reverted')
+    // No files, so there is nothing to fold open.
+    expect(view.querySelector('[data-testid="chat-revert-files"]')).toBeNull()
+
+    page = { running: false, older: null, messages: conversation, revert: { messageId: 'msg_4', files: [] } }
+    await refetch()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-revert-summary"]')?.textContent).toBe('The conversation reverted'))
+    expect(view.textContent).toContain('Second request')
+    expect(view.textContent).not.toContain('Second answer')
+  })
+
+  it('folds a long file list and counts the files it leaves out', async () => {
+    const files = Array.from({ length: 24 }, (_, index) => ({ path: `src/f${index}.ts`, status: 'modified' as const, additions: 1, deletions: 0 }))
+    page = { running: false, older: null, messages: conversation, revert: { messageId: 'msg_3', files } }
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-revert"]')).not.toBeNull())
+    expect(view.querySelector('[data-testid="chat-revert-files"]')).toBeNull()
+    await act(async () => button(view, 'Show files').click())
+    expect(view.querySelectorAll('[data-testid="chat-revert-files"] li')).toHaveLength(21)
+    expect(view.querySelector('[data-testid="chat-revert-files"]')?.textContent).toContain('and 4 more')
+  })
+
+  it('redoes the revert from the note: the messages come back at once and the note goes', async () => {
+    const reverted = { messageId: 'msg_3', files: [{ path: 'src/a.ts', status: 'modified' as const, additions: 2, deletions: 1 }] }
+    page = { running: false, older: null, messages: conversation, revert: reverted }
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-revert"]')).not.toBeNull())
+    expect(view.textContent).not.toContain('Second request')
+    // After the redo OpenCode reports no revert, which the next refetch confirms.
+    page = { running: false, older: null, messages: conversation, revert: null }
+    await act(async () => button(view, 'Redo').click())
+    expect(api.chat.redo).toHaveBeenCalledTimes(1)
+    expect(api.chat.redo).toHaveBeenCalledWith({ threadId: 'ses_one' })
+    expect(view.querySelector('[data-testid="chat-revert"]')).toBeNull()
+    expect(view.textContent).toContain('Second request')
+    expect(view.textContent).toContain('Second answer')
+    await vi.waitFor(() => expect(api.chat.messages).toHaveBeenCalledTimes(2))
+    expect(view.querySelector('[data-testid="chat-revert"]')).toBeNull()
+  })
+
+  it('keeps the note and the hidden messages when a redo fails, and lets you try again', async () => {
+    page = { running: false, older: null, messages: conversation, revert: { messageId: 'msg_3', files: [] } }
+    api.chat.redo.mockRejectedValueOnce(new Error("Error invoking remote method 'chat:redo': Error: OpenCode is still working on this thread. Stop it, then redo."))
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-revert"]')).not.toBeNull())
+    await act(async () => button(view, 'Redo').click())
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-revert"] [role="alert"]')?.textContent)
+      .toBe('OpenCode is still working on this thread. Stop it, then redo.'))
+    expect(view.textContent).not.toContain('Second request')
+    expect(button(view, 'Redo').disabled).toBe(false)
+
+    page = { running: false, older: null, messages: conversation, revert: null }
+    await act(async () => button(view, 'Redo').click())
+    expect(api.chat.redo).toHaveBeenCalledTimes(2)
+    expect(view.querySelector('[data-testid="chat-revert"]')).toBeNull()
+    expect(view.textContent).toContain('Second request')
+  })
+
+  it('shows that it is redoing and ignores a second click meanwhile', async () => {
+    page = { running: false, older: null, messages: conversation, revert: { messageId: 'msg_3', files: [] } }
+    let finish!: () => void
+    api.chat.redo.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve }))
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-revert"]')).not.toBeNull())
+    await act(async () => button(view, 'Redo').click())
+    const pending = button(view, 'Redoing…')
+    expect(pending.disabled).toBe(true)
+    await act(async () => pending.click())
+    expect(api.chat.redo).toHaveBeenCalledTimes(1)
+    expect(view.textContent).not.toContain('Second request')
+    page = { running: false, older: null, messages: conversation, revert: null }
+    await act(async () => finish())
+    expect(view.querySelector('[data-testid="chat-revert"]')).toBeNull()
+    expect(view.textContent).toContain('Second request')
+  })
+
+  it('loads earlier pages until a message before the revert is in view, once per page', async () => {
+    const newest: ChatMessagesPage = {
+      running: false,
+      older: 'cursor-1',
+      messages: [user('msg_5', 'Third request'), reply('msg_6', 'Third answer')],
+      revert: { messageId: 'msg_5', files: [] },
+    }
+    const earlier: ChatMessagesPage = { running: false, older: null, messages: conversation }
+    api.chat.messages.mockImplementation(async (request?: { cursor?: string }) => (request?.cursor ? earlier : newest))
+    try {
+      const view = await render()
+      await vi.waitFor(() => expect(view.textContent).toContain('Second answer'))
+      expect(view.textContent).not.toContain('Third request')
+      expect(view.querySelector('[data-testid="chat-revert-summary"]')?.textContent).toBe('1 message reverted')
+      const older = pageRequestsWithCursor()
+      expect(older).toEqual([[{ threadId: 'ses_one', cursor: 'cursor-1' }]])
+    } finally {
+      api.chat.messages.mockImplementation(async () => page)
+    }
+  })
+
+  it('stops loading when an earlier page fails, instead of asking again and again', async () => {
+    const newest: ChatMessagesPage = {
+      running: false,
+      older: 'cursor-1',
+      messages: [user('msg_5', 'Third request')],
+      revert: { messageId: 'msg_5', files: [] },
+    }
+    api.chat.messages.mockImplementation(async (request?: { cursor?: string }) => {
+      if (request?.cursor) throw new Error('Earlier page unavailable')
+      return newest
+    })
+    try {
+      const view = await render()
+      await vi.waitFor(() => expect(view.querySelector('[role="alert"]')?.textContent).toContain('Earlier page unavailable'))
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)) })
+      const older = pageRequestsWithCursor()
+      expect(older).toHaveLength(1)
+    } finally {
+      api.chat.messages.mockImplementation(async () => page)
+    }
+  })
+
+  describe('reverting to a message', () => {
+    const open = async (view: HTMLElement, id: string): Promise<HTMLElement> => {
+      await act(async () => (view.querySelector(`[data-testid="chat-revert-to-${id}"]`) as HTMLButtonElement).click())
+      // The dialog is in a portal.
+      return document.body.querySelector('[data-testid="chat-revert-dialog"]') as HTMLElement
+    }
+    const dialogButton = (dialog: HTMLElement, label: string): HTMLButtonElement => button(dialog, label)
+    const withPicture = (id: string, text: string, size: number): ChatMessage => ({
+      kind: 'user', id, time: 1, text, attachments: [{ id: 'att_1', name: 'shot.png', mime: 'image/png', size }],
+    })
+    const checkbox = (dialog: HTMLElement): HTMLInputElement => dialog.querySelector('input[type="checkbox"]') as HTMLInputElement
+    const showConversation = async (): Promise<HTMLElement> => {
+      page = { running: false, older: null, messages: conversation }
+      const view = await render()
+      await vi.waitFor(() => expect(view.textContent).toContain('Second answer'))
+      return view
+    }
+    // A draft store in miniature: what the composer loads is what was last typed or put above it.
+    const draftStore = (initial: string): { saved: () => string } => {
+      let stored = initial
+      api.chat.draft.mockImplementation((async (request: ChatDraftRequest): Promise<ChatDraft> => {
+        if (request.action === 'text') stored = request.text
+        if (request.action === 'prepend') stored = stored.trim() ? `${request.text}\n\n${stored}` : request.text
+        return { text: stored, revision: 1, attachments: [] }
+      }) as never)
+      return { saved: () => stored }
+    }
+    afterEach(() => {
+      api.chat.draft.mockImplementation(async (req: { text?: string }) => ({ text: req.text ?? '', revision: 1, attachments: [] }))
+      api.chat.revert.mockImplementation(async (request: ChatRevertRequest) => ({ messageId: request.messageId, files: [] }))
+    })
+
+    it('offers the revert on the user\'s own messages only', async () => {
+      const view = await showConversation()
+      expect(view.querySelector('[data-testid="chat-revert-to-msg_1"]')).not.toBeNull()
+      expect(view.querySelector('[data-testid="chat-revert-to-msg_3"]')?.getAttribute('aria-label')).toBe('Revert to before this message')
+      expect(view.querySelector('[data-testid="chat-revert-to-msg_2"]')).toBeNull()
+      expect(view.querySelector('[data-testid="chat-revert-to-msg_4"]')).toBeNull()
+      expect(document.body.querySelector('[data-testid="chat-revert-dialog"]')).toBeNull()
+    })
+
+    it('asks first: shows the message, how much goes, and restoring files as the default', async () => {
+      const view = await showConversation()
+      const dialog = await open(view, 'msg_1')
+      expect(dialog.textContent).toContain('Revert to before this message?')
+      expect(dialog.querySelector('[data-testid="chat-revert-quote"]')?.textContent).toBe('First request')
+      expect(dialog.textContent).toContain('These 2 messages and the agent\'s replies will be hidden')
+      expect(checkbox(dialog).checked).toBe(true)
+      expect(dialog.textContent).toContain('You can redo this until you send a message.')
+      // Nothing is said about work in progress or attachments when there is none.
+      expect(dialog.textContent).not.toContain('still working')
+      expect(dialog.textContent).not.toContain('Attachments on this message')
+
+      await act(async () => dialogButton(dialog, 'Cancel').click())
+      expect(document.body.querySelector('[data-testid="chat-revert-dialog"]')).toBeNull()
+      expect(api.chat.revert).not.toHaveBeenCalled()
+      const single = await open(view, 'msg_3')
+      expect(single.textContent).toContain('This message and the agent\'s replies will be hidden')
+      expect(single.querySelector('[data-testid="chat-revert-quote"]')?.textContent).toBe('Second request')
+    })
+
+    it('reverts, hides the messages, and puts the text in the box above what is there', async () => {
+      const draft = draftStore('Something half written')
+      api.chat.revert.mockResolvedValueOnce({ messageId: 'msg_3', files: [{ path: 'src/a.ts', status: 'modified', additions: 2, deletions: 1 }] })
+      const view = await showConversation()
+      const textarea = view.querySelector('textarea') as HTMLTextAreaElement
+      await vi.waitFor(() => expect(textarea.value).toBe('Something half written'))
+
+      const dialog = await open(view, 'msg_3')
+      await act(async () => dialogButton(dialog, 'Revert').click())
+      expect(api.chat.revert).toHaveBeenCalledTimes(1)
+      expect(api.chat.revert).toHaveBeenCalledWith({ threadId: 'ses_one', messageId: 'msg_3' })
+      expect(api.chat.draft).toHaveBeenCalledWith({ key: 'thread:ses_one', action: 'prepend', text: 'Second request' })
+      expect(document.body.querySelector('[data-testid="chat-revert-dialog"]')).toBeNull()
+
+      expect(view.textContent).toContain('First answer')
+      expect(view.textContent).not.toContain('Second answer')
+      expect(view.querySelector('[data-testid="chat-revert-summary"]')?.textContent).toBe('1 message reverted · 1 file restored')
+      await vi.waitFor(() => expect(textarea.value).toBe('Second request\n\nSomething half written'))
+      expect(draft.saved()).toBe('Second request\n\nSomething half written')
+      // Ready for changes: focused, with the caret at the end of the restored text.
+      await vi.waitFor(() => expect(document.activeElement).toBe(textarea))
+      expect(textarea.selectionStart).toBe('Second request'.length)
+      expect(textarea.selectionEnd).toBe('Second request'.length)
+      expect(view.querySelector('[data-testid="chat-notice"]')).toBeNull()
+    })
+
+    it('leaves the files alone when the box is unticked', async () => {
+      draftStore('')
+      const view = await showConversation()
+      const dialog = await open(view, 'msg_1')
+      await act(async () => checkbox(dialog).click())
+      expect(checkbox(dialog).checked).toBe(false)
+      await act(async () => dialogButton(dialog, 'Revert').click())
+      expect(api.chat.revert).toHaveBeenCalledWith({ threadId: 'ses_one', messageId: 'msg_1', files: false })
+      await vi.waitFor(() => expect((view.querySelector('textarea') as HTMLTextAreaElement).value).toBe('First request'))
+      // The revert reached the start, so only the note is left of the conversation.
+      expect(view.textContent).not.toContain('First answer')
+    })
+
+    it('keeps the dialog open with the reason when the revert fails, and does not touch the box', async () => {
+      const draft = draftStore('Keep me')
+      api.chat.revert.mockRejectedValueOnce(new Error("Error invoking remote method 'chat:revert': Error: OpenCode is still stopping this thread. Try again in a moment."))
+      const view = await showConversation()
+      const dialog = await open(view, 'msg_3')
+      await act(async () => dialogButton(dialog, 'Revert').click())
+      await vi.waitFor(() => expect(dialog.querySelector('[role="alert"]')?.textContent)
+        .toBe('OpenCode is still stopping this thread. Try again in a moment.'))
+      expect(document.body.querySelector('[data-testid="chat-revert-dialog"]')).toBe(dialog)
+      expect(api.chat.draft).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'prepend' }))
+      expect(draft.saved()).toBe('Keep me')
+      expect(view.textContent).toContain('Second answer')
+      expect(view.querySelector('[data-testid="chat-revert"]')).toBeNull()
+
+      // Asking again works, and the error is gone while it does.
+      await act(async () => dialogButton(dialog, 'Revert').click())
+      expect(api.chat.revert).toHaveBeenCalledTimes(2)
+      expect(document.body.querySelector('[data-testid="chat-revert-dialog"]')).toBeNull()
+      expect(view.textContent).not.toContain('Second answer')
+    })
+
+    it('ignores a second click while the revert is under way', async () => {
+      draftStore('')
+      let finish!: (value: ChatRevert) => void
+      api.chat.revert.mockImplementationOnce(() => new Promise<ChatRevert>((resolve) => { finish = resolve }))
+      const view = await showConversation()
+      const dialog = await open(view, 'msg_3')
+      await act(async () => dialogButton(dialog, 'Revert').click())
+      expect(dialogButton(dialog, 'Revert').disabled).toBe(true)
+      expect(dialogButton(dialog, 'Cancel').disabled).toBe(true)
+      expect(checkbox(dialog).disabled).toBe(true)
+      await act(async () => dialogButton(dialog, 'Revert').click())
+      expect(api.chat.revert).toHaveBeenCalledTimes(1)
+      await act(async () => finish({ messageId: 'msg_3', files: [] }))
+      expect(document.body.querySelector('[data-testid="chat-revert-dialog"]')).toBeNull()
+    })
+
+    it('says that a working agent is stopped first, and that attachments are not put back', async () => {
+      page = {
+        running: true,
+        older: null,
+        messages: [withPicture('msg_1', 'See picture', 2048), reply('msg_2', 'Looking')],
+      }
+      const view = await render()
+      await vi.waitFor(() => expect(view.textContent).toContain('Looking'))
+      const dialog = await open(view, 'msg_1')
+      expect(dialog.textContent).toContain('The agent is still working and will be stopped first.')
+      expect(dialog.textContent).toContain('Attachments on this message are not put back.')
+    })
+
+    it('says so when the message could not be put back in the box, though the conversation is reverted', async () => {
+      draftStore('')
+      api.chat.draft.mockImplementation((async (request: ChatDraftRequest): Promise<ChatDraft> => {
+        if (request.action === 'prepend') throw new Error("Error invoking remote method 'chat:draft': Error: The text is too long to add to this draft.")
+        return { text: '', revision: 1, attachments: [] }
+      }) as never)
+      const view = await showConversation()
+      const dialog = await open(view, 'msg_3')
+      await act(async () => dialogButton(dialog, 'Revert').click())
+      expect(document.body.querySelector('[data-testid="chat-revert-dialog"]')).toBeNull()
+      expect(view.querySelector('[data-testid="chat-revert"]')).not.toBeNull()
+      expect(view.textContent).not.toContain('Second answer')
+      expect(view.querySelector('[data-testid="chat-notice"]')?.textContent)
+        .toBe('The conversation was reverted, but the message could not be put back in the box: The text is too long to add to this draft.')
+      expect((view.querySelector('textarea') as HTMLTextAreaElement).value).toBe('')
+
+      // Redoing clears the notice along with the note.
+      await act(async () => button(view, 'Redo').click())
+      expect(view.querySelector('[data-testid="chat-notice"]')).toBeNull()
+    })
+
+    it('puts nothing in the box for a message without text', async () => {
+      draftStore('')
+      page = { running: false, older: null, messages: [withPicture('msg_1', '', 10), reply('msg_2', 'Seen')] }
+      const view = await render()
+      await vi.waitFor(() => expect(view.textContent).toContain('Seen'))
+      const dialog = await open(view, 'msg_1')
+      expect(dialog.querySelector('[data-testid="chat-revert-quote"]')?.textContent).toBe('A message without text')
+      await act(async () => dialogButton(dialog, 'Revert').click())
+      expect(api.chat.revert).toHaveBeenCalledTimes(1)
+      expect(api.chat.draft).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'prepend' }))
+      expect(view.querySelector('[data-testid="chat-notice"]')).toBeNull()
+    })
+
+    it('closes the question when another thread is opened', async () => {
+      useWorkspace.setState({ inboxThreads: [thread(), thread({ id: 'ses_two', title: 'Other' })] })
+      const view = await showConversation()
+      await open(view, 'msg_3')
+      expect(document.body.querySelector('[data-testid="chat-revert-dialog"]')).not.toBeNull()
+      await act(async () => useWorkspace.setState({ selectedInboxThreadId: 'ses_two' }))
+      expect(document.body.querySelector('[data-testid="chat-revert-dialog"]')).toBeNull()
+      expect(api.chat.revert).not.toHaveBeenCalled()
+    })
   })
 })

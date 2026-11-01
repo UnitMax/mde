@@ -90,6 +90,8 @@ import type {
   ChatOptionsRequest,
   ChatPermissionReplyRequest,
   ChatRequests,
+  ChatRevert,
+  ChatRevertRequest,
   ChatSendRequest,
   ChatThreadRequest,
   ChatDraftRequest,
@@ -589,6 +591,8 @@ export function registerIpcHandlers(
   handle<ChatDraftRequest, ChatDraft>(IpcChannels.chatDraft, async (req) => chat.draft(req, req.action === 'tree' ? (await getSession(req.sessionId)) ?? undefined : undefined))
   handle<ChatSendRequest, void>(IpcChannels.chatSend, (req) => chat.send(req))
   handle<ChatThreadRequest, void>(IpcChannels.chatInterrupt, (req) => chat.interrupt(req.threadId))
+  handle<ChatThreadRequest, void>(IpcChannels.chatRedo, (req) => chat.redo(req.threadId))
+  handle<ChatRevertRequest, ChatRevert>(IpcChannels.chatRevert, (req) => chat.revert(req))
   handle<ChatThreadRequest, void>(IpcChannels.chatRegenerateTitle, (req) => chat.regenerateTitle(req.threadId))
   handle<ChatThreadRequest, ChatRequests>(IpcChannels.chatRequests, (req) => chat.requests(req.threadId))
   handle<ChatPermissionReplyRequest, void>(IpcChannels.chatPermissionReply, (req) => chat.replyPermission(req))

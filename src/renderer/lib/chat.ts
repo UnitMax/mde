@@ -6,6 +6,7 @@ import type {
   ChatMessage,
   ChatModel,
   ChatPart,
+  ChatRevert,
   ChatTokens,
   ChatUsage,
   OpenCodeModelRef,
@@ -344,6 +345,25 @@ function parseInput(input: string): Record<string, unknown> {
   } catch {
     return {}
   }
+}
+
+/**
+ * The messages a staged revert leaves in view: those before its first hidden message. OpenCode
+ * orders messages by ID and its own interface cuts at the same place, so this does the same. The
+ * messages come back as they are when nothing is staged.
+ */
+export function hideReverted(messages: ChatMessage[], revert: ChatRevert | null | undefined): ChatMessage[] {
+  if (!revert) return messages
+  return messages.filter((message) => message.id < revert.messageId)
+}
+
+/**
+ * How many of the user's own messages a staged revert hides. It counts the loaded ones, and that is
+ * all of them once a message before the cut is loaded, because older pages hold nothing after it.
+ */
+export function revertedMessageCount(messages: readonly ChatMessage[], revert: ChatRevert | null | undefined): number {
+  if (!revert) return 0
+  return messages.reduce((total, message) => total + (message.kind === 'user' && message.id >= revert.messageId ? 1 : 0), 0)
 }
 
 /** A path shown relative to the thread's folder when it lies inside it. */

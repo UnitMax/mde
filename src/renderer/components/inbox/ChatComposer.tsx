@@ -141,6 +141,8 @@ export function AgentPicker({
 
 export interface ChatComposerProps {
   draftKey?: ChatDraftKey
+  /** Changes when text was added to the draft from outside; the box then reads the draft again and puts the caret at `caret`. */
+  draftReload?: { id: number; caret: number }
   options: OptionsState | undefined
   agent: string | null
   model: OpenCodeModelRef | null
@@ -162,6 +164,7 @@ export interface ChatComposerProps {
 /** The prompt box with model and agent pickers and a round send (or stop) button. */
 export function ChatComposer({
   draftKey,
+  draftReload,
   options,
   agent,
   model,
@@ -218,6 +221,26 @@ export function ChatComposer({
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  // A reload that is already there when the box appears has been dealt with; only later ones count.
+  const appliedReload = useRef(draftReload?.id ?? 0)
+  useEffect(() => {
+    if (!draftKey || !draftReload || draftReload.id === appliedReload.current) return
+    appliedReload.current = draftReload.id
+    void mutate({ key: draftKey, action: 'load' }).then((value) => {
+      if (currentKey.current !== draftKey) return
+      setDraft(value)
+      setText(value.text)
+      // The added text is at the top; the caret goes to its end, ready for changes.
+      requestAnimationFrame(() => {
+        const textarea = textareaRef.current
+        if (!textarea) return
+        textarea.focus()
+        const caret = Math.min(draftReload.caret, value.text.length)
+        textarea.setSelectionRange(caret, caret)
+      })
+    }).catch((reason) => setError(ipcErrorMessage(reason, 'Could not restore the draft.')))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftReload, draftKey])
   const ready = options?.status === 'ready'
   const canSend = ready && !disabled && !sending && !adding && loaded && (text.trim().length > 0 || draft.attachments.length > 0) && Boolean(agent) && Boolean(model)
 

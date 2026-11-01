@@ -11,6 +11,7 @@ import {
   formatTokens,
   formAnswer,
   groupModels,
+  hideReverted,
   initialChoice,
   initialFormDraft,
   latestStepTokens,
@@ -19,6 +20,7 @@ import {
   modelName,
   orderAgents,
   pruneLive,
+  revertedMessageCount,
   segmentFill,
   stepContext,
   subagentInfo,
@@ -349,5 +351,33 @@ describe('turn stats', () => {
       // The line is still there without a rate.
       expect(turnStats([user('u1', 1_000), step('a1', 1_010, 3_000)]).finished.get('a1')).toEqual({ ms: 2_000, tokensPerSecond: null })
     })
+  })
+})
+
+describe('staged revert', () => {
+  const user = (id: string): ChatMessage => ({ kind: 'user', id, time: 1, text: id })
+  const reply = (id: string): ChatMessage => ({ kind: 'assistant', id, time: 2, agent: 'build', model, parts: [], completed: true })
+  const messages = [user('msg_1'), reply('msg_2'), user('msg_3'), reply('msg_4'), user('msg_5')]
+  const revert = (messageId: string) => ({ messageId, files: [] })
+  const ids = (list: readonly ChatMessage[]) => list.map((message) => message.id)
+
+  it('keeps what comes before the first hidden message, as OpenCode orders them', () => {
+    expect(ids(hideReverted(messages, revert('msg_3')))).toEqual(['msg_1', 'msg_2'])
+    // A step of a reply can be the boundary too.
+    expect(ids(hideReverted(messages, revert('msg_4')))).toEqual(['msg_1', 'msg_2', 'msg_3'])
+    expect(ids(hideReverted(messages, revert('msg_1')))).toEqual([])
+  })
+
+  it('hands back the same messages when nothing is staged or the cut is past the end', () => {
+    expect(hideReverted(messages, null)).toBe(messages)
+    expect(hideReverted(messages, undefined)).toBe(messages)
+    expect(ids(hideReverted(messages, revert('msg_9')))).toEqual(ids(messages))
+  })
+
+  it('counts the user messages that are hidden, not the replies', () => {
+    expect(revertedMessageCount(messages, revert('msg_3'))).toBe(2)
+    expect(revertedMessageCount(messages, revert('msg_4'))).toBe(1)
+    expect(revertedMessageCount(messages, revert('msg_9'))).toBe(0)
+    expect(revertedMessageCount(messages, null)).toBe(0)
   })
 })

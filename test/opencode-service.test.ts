@@ -36,7 +36,9 @@ import {
   parseModels,
   parsePermissions,
   parseProviderNames,
+  parseSessionRevert,
   parseSessionUsage,
+  parseStagedRevert,
   parseTokens,
 } from '../src/main/opencode/service/parse'
 
@@ -115,6 +117,50 @@ describe('OpenCode service client', () => {
     })).resolves.toBeNull()
     expect(bodies).toEqual([{ method: 'PATCH', url: '/api/session/ses_one', body: { title: '' } }])
   })
+  it('sends a redo as an authenticated DELETE with no body, and accepts no content', async () => {
+    const seen: unknown[] = []
+    const url = await serve((request, response) => {
+      expect(authorized(request, 'p')).toBe(true)
+      let body = ''
+      request.on('data', (chunk) => { body += chunk })
+      request.on('end', () => {
+        seen.push({ method: request.method, url: request.url, body, contentType: request.headers['content-type'] })
+        response.writeHead(204).end()
+      })
+    })
+    const client = new OpenCodeServiceClient({ discover: async () => ({ url, password: 'p' }), executable: () => 'opencode' })
+    await expect(client.request(wsl, 'session.revert.clear', { params: { sessionID: 'ses_one' } })).resolves.toBeNull()
+    expect(seen).toEqual([{ method: 'DELETE', url: '/api/session/ses_one/revert', body: '', contentType: undefined }])
+  })
+
+  it('sends a revert stage as an authenticated POST with a fixed JSON body', async () => {
+    const seen: unknown[] = []
+    const url = await serve((request, response) => {
+      expect(authorized(request, 'p')).toBe(true)
+      let body = ''
+      request.on('data', (chunk) => { body += chunk })
+      request.on('end', () => {
+        seen.push({ method: request.method, url: request.url, body: JSON.parse(body) })
+        response.writeHead(200, { 'content-type': 'application/json' }).end('{"data":{"messageID":"msg_3","files":[]}}')
+      })
+    })
+    const client = new OpenCodeServiceClient({ discover: async () => ({ url, password: 'p' }), executable: () => 'opencode' })
+    await expect(client.request(wsl, 'session.revert.stage', { params: { sessionID: 'ses_one' }, body: { messageID: 'msg_3', files: false } }))
+      .resolves.toEqual({ data: { messageID: 'msg_3', files: [] } })
+    expect(seen).toEqual([{ method: 'POST', url: '/api/session/ses_one/revert/stage', body: { messageID: 'msg_3', files: false } }])
+    expect(serviceUrl('http://127.0.0.1:1', 'session.revert.stage', { params: { sessionID: 'ses_a' } }))
+      .toBe('http://127.0.0.1:1/api/session/ses_a/revert/stage')
+    expect(() => serviceUrl('http://127.0.0.1:1', 'session.revert.stage', { params: { sessionID: 'ses_a', messageID: 'msg_1' } })).toThrow()
+  })
+
+  it('keeps the revert route tied to a session ID', () => {
+    expect(serviceUrl('http://127.0.0.1:1', 'session.revert.clear', { params: { sessionID: 'ses_a' } }))
+      .toBe('http://127.0.0.1:1/api/session/ses_a/revert')
+    expect(() => serviceUrl('http://127.0.0.1:1', 'session.revert.clear', { params: { sessionID: '../x' } })).toThrow('Invalid OpenCode sessionID.')
+    expect(() => serviceUrl('http://127.0.0.1:1', 'session.revert.clear', { params: { sessionID: 'ses_a', messageID: 'msg_1' } })).toThrow()
+    expect(() => serviceUrl('http://127.0.0.1:1', 'session.revert.clear')).toThrow('Invalid OpenCode sessionID.')
+  })
+
   it('builds URLs only from the fixed operation table and checked parameters', () => {
     expect(serviceUrl('http://127.0.0.1:1', 'session.permission.reply', { params: { sessionID: 'ses_a', requestID: 'per_b' } }))
       .toBe('http://127.0.0.1:1/api/session/ses_a/permission/per_b/reply')
@@ -347,6 +393,64 @@ describe('OpenCode service parsing', () => {
     expect(stat.ms).toBe(3_832)
     expect(stat.tokensPerSecond).toBeCloseTo(201 / 3.785, 6)
     expect(stat.tokensPerSecond!.toFixed(1)).toBe('53.1')
+  })
+
+  it('reads the staged revert from a session answer, leaving out what MDE cannot use', () => {
+    const answer = {
+      data: {
+        id: 'ses_1',
+        revert: {
+          messageID: 'msg_3',
+          snapshot: 'abc',
+          files: [
+            { file: 'src/a.ts', patch: 'diff --git a/src/a.ts b/src/a.ts', additions: 2, deletions: 1, status: 'modified' },
+            { file: 'b.txt', additions: 0, deletions: 1, status: 'deleted' },
+            { file: '', additions: 1, deletions: 0, status: 'added' },
+            { file: 'c.txt', additions: 1, deletions: 0, status: 'renamed' },
+            'junk',
+          ],
+        },
+      },
+    }
+    // The diff text stays in OpenCode: the banner needs the file, what happened to it and the counts.
+    expect(parseSessionRevert(answer)).toEqual({
+      messageId: 'msg_3',
+      files: [
+        { path: 'src/a.ts', status: 'modified', additions: 2, deletions: 1 },
+        { path: 'b.txt', status: 'deleted', additions: 0, deletions: 1 },
+      ],
+    })
+    expect(parseSessionRevert({ data: { revert: { messageID: 'msg_3' } } })).toEqual({ messageId: 'msg_3', files: [] })
+    expect(parseSessionRevert({ data: { revert: { messageID: 'msg_3', files: [{ file: 'a.ts', status: 'added', additions: -1, deletions: 'x' }] } } }))
+      .toEqual({ messageId: 'msg_3', files: [{ path: 'a.ts', status: 'added', additions: 0, deletions: 0 }] })
+    const many = Array.from({ length: 250 }, (_, index) => ({ file: `f${index}.ts`, status: 'modified', additions: 1, deletions: 0 }))
+    expect(parseSessionRevert({ data: { revert: { messageID: 'msg_3', files: many } } })?.files).toHaveLength(200)
+  })
+
+  it('reads the revert a stage answer reports, which is shaped like the session\'s own', () => {
+    const answer = {
+      data: {
+        messageID: 'msg_3',
+        snapshot: 'abc',
+        files: [{ file: 'src/a.ts', patch: 'diff --git a/src/a.ts b/src/a.ts', additions: 2, deletions: 1, status: 'modified' }],
+      },
+    }
+    expect(parseStagedRevert(answer)).toEqual({ messageId: 'msg_3', files: [{ path: 'src/a.ts', status: 'modified', additions: 2, deletions: 1 }] })
+    expect(parseStagedRevert({ data: { messageID: 'msg_3', snapshot: 'abc', files: [] } })).toEqual({ messageId: 'msg_3', files: [] })
+    expect(parseStagedRevert({ data: { messageID: 'nope' } })).toBeNull()
+    expect(parseStagedRevert({ data: {} })).toBeNull()
+    expect(parseStagedRevert(null)).toBeNull()
+  })
+
+  it('treats a missing or unusable revert as none, so the conversation is never hidden by mistake', () => {
+    expect(parseSessionRevert({ data: { id: 'ses_1' } })).toBeNull()
+    expect(parseSessionRevert({ data: { id: 'ses_1', revert: null } })).toBeNull()
+    expect(parseSessionRevert({ data: { revert: { files: [] } } })).toBeNull()
+    expect(parseSessionRevert({ data: { revert: { messageID: 'not a message' } } })).toBeNull()
+    expect(parseSessionRevert({ data: { revert: { messageID: 'ses_1' } } })).toBeNull()
+    expect(parseSessionRevert({ data: { revert: 'msg_3' } })).toBeNull()
+    expect(parseSessionRevert(null)).toBeNull()
+    expect(parseSessionRevert({ nope: true })).toBeNull()
   })
 
   it('reads the thread totals from a session answer', () => {
