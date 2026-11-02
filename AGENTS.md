@@ -49,6 +49,10 @@ When `package.json` or `package-lock.json` changes, run `npm run audit:deps` bef
 
 The application version is authoritative in `package.json` and must stay synchronized with `package-lock.json`. The initial version is `0.0.1`. Increase the patch version by `0.0.1` once when preparing each commit unless the user explicitly says otherwise; do not increase it merely because a task changes files, and do not increase it again when committing a version that was already bumped for that commit. The About dialog must display this same package version.
 
+## Data Migrations
+
+Versions in development usually have no users yet, so changing stored data (`inbox.json`, `workspace.json`, settings, and so on) normally needs no migration, and breaking old data is fine. Still ask when a change would affect existing data, but expect the answer to be "no migration"; only write one when told that a released version is affected.
+
 ## Security & Configuration Tips
 
 Keep `contextIsolation` and renderer sandboxing intact. Validate WSL/process arguments and never log credentials or session data. Do not commit workspace state, build artifacts, or secrets. Never commit a real home directory, username, hostname, or other account-specific path; use neutral placeholders such as `/home/me`, `C:\Users\Me`, or `TestUser` in tests, fixtures, and documentation. `npm run audit:package` checks only the packaged output, so this one is on review.
