@@ -80,6 +80,7 @@ const validPayloads = {
   [IpcChannels.inboxFoldersAdd]: { kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/app' },
   [IpcChannels.inboxFoldersRemove]: { id: 'fld_1234' },
   [IpcChannels.inboxComposerSet]: { folderId: 'fld_1234', agent: 'plan', model },
+  [IpcChannels.inboxGitInfo]: { folderId: 'fld_1234' },
   [IpcChannels.chatConfigure]: { executable: 'opencode' },
   [IpcChannels.chatOptions]: { folderId: 'fld_1234' },
   [IpcChannels.chatDraft]: { key: 'thread:ses_one', action: 'load' },
@@ -132,6 +133,10 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.inboxSetRead, { id: 'ses_thread', read: 'yes' })
     rejects(IpcChannels.inboxSetArchived, { id: 'ses_../escape', archived: true })
     rejects(IpcChannels.inboxRemove, { id: '' })
+    expect(() => assertIpcPayload(IpcChannels.inboxRemove, { id: 'ses_thread', removeWorktree: true })).not.toThrow()
+    rejects(IpcChannels.inboxRemove, { id: 'ses_thread', removeWorktree: 'yes' })
+    rejects(IpcChannels.inboxGitInfo, { folderId: '../fld' })
+    rejects(IpcChannels.inboxGitInfo, { folderId: 'fld_1234', directory: '/home/me/app' })
     rejects(IpcChannels.inboxList, { id: 'ses_thread' })
   })
 
@@ -169,6 +174,16 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.chatCreate, { folderId: '../fld', text: 'Hi', agent: 'build', model })
     rejects(IpcChannels.chatCreate, { folderId: 'fld_1234', text: 'Hi', agent: '../build', model })
     rejects(IpcChannels.chatCreate, { folderId: 'fld_1234', text: 'Hi', agent: 'build', model: { id: 'm' } })
+    // A worktree request names only the branch to start from, never a path or a new branch name.
+    const create = { folderId: 'fld_1234', text: 'Hi', agent: 'build', model }
+    expect(() => assertIpcPayload(IpcChannels.chatCreate, { ...create, worktree: { base: 'origin/main' } })).not.toThrow()
+    rejects(IpcChannels.chatCreate, { ...create, worktree: {} })
+    rejects(IpcChannels.chatCreate, { ...create, worktree: { base: '' } })
+    rejects(IpcChannels.chatCreate, { ...create, worktree: { base: 'x'.repeat(257) } })
+    rejects(IpcChannels.chatCreate, { ...create, worktree: { base: 'main\nother' } })
+    rejects(IpcChannels.chatCreate, { ...create, worktree: { base: 'main', path: '/home/me/elsewhere' } })
+    rejects(IpcChannels.chatCreate, { ...create, worktree: { base: 'main', branch: 'mine' } })
+    rejects(IpcChannels.chatCreate, { ...create, worktree: 'main' })
     rejects(IpcChannels.chatSend, { threadId: 'thread', text: 'Hi' })
     rejects(IpcChannels.chatMessages, { threadId: 'ses_thread', cursor: 'has space' })
     rejects(IpcChannels.chatPermissionReply, { threadId: 'ses_thread', requestId: 'per_1', decision: 'maybe' })

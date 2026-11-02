@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { ChatDraft, ChatDraftRequest, ChatForkRequest, ChatForkResult, ChatMessage, ChatMessagesPage, ChatOptions, ChatRequests, ChatRevert, ChatRevertRequest, InboxFolder, InboxThread } from '../src/shared/types'
+import type { ChatCreateRequest, ChatDraft, ChatDraftRequest, ChatForkRequest, ChatForkResult, ChatMessage, ChatMessagesPage, ChatOptions, ChatRequests, ChatRevert, ChatRevertRequest, InboxFolder, InboxGitInfo, InboxThread } from '../src/shared/types'
 import { InboxThreadView } from '../src/renderer/components/InboxThreadView'
 import { useInboxChat } from '../src/renderer/store/inbox-chat'
 import { useWorkspace } from '../src/renderer/store/workspace'
@@ -45,11 +45,12 @@ const api = {
     setRead: vi.fn(async () => null),
     setComposer: vi.fn(async (composer: unknown) => composer),
     removeFolder: vi.fn(async () => undefined),
+    gitInfo: vi.fn(async (): Promise<InboxGitInfo> => ({ repository: false, branch: null, branches: [] })),
   },
   chat: {
     draft: vi.fn(async (req: { text?: string }) => ({ text: req.text ?? '', revision: 1, attachments: [] })),
     options: vi.fn(async () => options),
-    create: vi.fn(async () => thread({ id: 'ses_new', title: 'New thread' })),
+    create: vi.fn(async (_request: ChatCreateRequest) => thread({ id: 'ses_new', title: 'New thread' })),
     messages: vi.fn(async () => page),
     requests: vi.fn(async () => requests),
     send: vi.fn(async () => undefined),
@@ -170,6 +171,136 @@ describe('Inbox new thread', () => {
     await act(async () => button(view, 'Send').click())
     await vi.waitFor(() => expect(view.querySelector('[role="alert"]')?.textContent).toBe('Model unavailable'))
     expect(textarea.value).toBe('Hello')
+  })
+})
+
+describe('Inbox worktree mode', () => {
+  const repo: InboxGitInfo = {
+    repository: true,
+    branch: 'main',
+    branches: [
+      { name: 'main', remote: false },
+      { name: 'feature/login', remote: false },
+      { name: 'origin/main', remote: true },
+    ],
+  }
+  /** Radix opens its menus on a pointer press; the keyboard route is what happy-dom supports reliably. */
+  const open = async (trigger: Element): Promise<void> => {
+    await act(async () => { trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+  }
+  const choose = async (label: string): Promise<void> => {
+    const item = await vi.waitFor(() => {
+      const found = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((entry) => entry.textContent?.includes(label))
+      expect(found).toBeDefined()
+      return found!
+    })
+    await act(async () => item.click())
+  }
+  const send = async (view: HTMLElement, text: string): Promise<void> => {
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-model-picker"]')?.textContent).toContain('Flint Free'))
+    await type(view.querySelector('textarea')!, text)
+    await act(async () => button(view, 'Send').click())
+  }
+  afterEach(() => {
+    api.inbox.gitInfo.mockReset()
+    api.inbox.gitInfo.mockImplementation(async () => ({ repository: false, branch: null, branches: [] }))
+  })
+
+  it('has no bar for a folder that is not a Git repository, or when Git cannot be asked', async () => {
+    const view = await render()
+    await vi.waitFor(() => expect(api.inbox.gitInfo).toHaveBeenCalledWith({ folderId: 'fld_app' }))
+    expect(view.querySelector('[data-testid="worktree-bar"]')).toBeNull()
+    api.inbox.gitInfo.mockRejectedValue(new Error('Git could not be run.'))
+    const other = await render()
+    await vi.waitFor(() => expect(api.inbox.gitInfo).toHaveBeenCalledTimes(2))
+    expect(other.querySelector('[data-testid="worktree-bar"]')).toBeNull()
+    expect(other.querySelector('[data-testid="chat-composer"]')).not.toBeNull()
+  })
+
+  it('runs in the folder by default, showing its branch, and sends no worktree request', async () => {
+    api.inbox.gitInfo.mockResolvedValue(repo)
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="worktree-bar"]')).not.toBeNull())
+    expect(view.querySelector('[data-testid="worktree-mode-picker"]')?.textContent).toBe('Current directory')
+    expect(view.querySelector('[data-testid="worktree-current-branch"]')?.textContent).toBe('main')
+    expect(view.querySelector('[data-testid="worktree-branch-picker"]')).toBeNull()
+    await send(view, 'Add a dark mode')
+    await vi.waitFor(() => expect(api.chat.create).toHaveBeenCalledTimes(1))
+    expect(api.chat.create.mock.calls[0]?.[0]).not.toHaveProperty('worktree')
+  })
+
+  it('names a detached HEAD', async () => {
+    api.inbox.gitInfo.mockResolvedValue({ ...repo, branch: null })
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="worktree-current-branch"]')?.textContent).toBe('Detached HEAD'))
+  })
+
+  it('starts the thread in a new worktree from the current branch, or from the branch picked', async () => {
+    api.inbox.gitInfo.mockResolvedValue(repo)
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="worktree-bar"]')).not.toBeNull())
+    await open(view.querySelector('[data-testid="worktree-mode-picker"]')!)
+    await choose('New worktree')
+    expect(view.querySelector('[data-testid="worktree-mode-picker"]')?.textContent).toBe('New worktree')
+    expect(view.querySelector('[data-testid="worktree-current-branch"]')).toBeNull()
+    expect(view.querySelector('[data-testid="worktree-branch-picker"]')?.textContent).toBe('From main')
+
+    await open(view.querySelector('[data-testid="worktree-branch-picker"]')!)
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="worktree-branch-list"]')?.textContent).toContain('origin/main'))
+    const list = document.querySelector('[data-testid="worktree-branch-list"]')!
+    expect(Array.from(list.querySelectorAll('[role="group"]')).map((group) => group.getAttribute('aria-label'))).toEqual(['Local', 'Remote'])
+    await choose('origin/main')
+    expect(view.querySelector('[data-testid="worktree-branch-picker"]')?.textContent).toBe('From origin/main')
+
+    await send(view, 'Add a dark mode')
+    await vi.waitFor(() => expect(api.chat.create).toHaveBeenCalledWith(expect.objectContaining({ folderId: 'fld_app', worktree: { base: 'origin/main' } })))
+  })
+
+  it('filters the branch list as the user types', async () => {
+    api.inbox.gitInfo.mockResolvedValue(repo)
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="worktree-bar"]')).not.toBeNull())
+    await open(view.querySelector('[data-testid="worktree-mode-picker"]')!)
+    await choose('New worktree')
+    await open(view.querySelector('[data-testid="worktree-branch-picker"]')!)
+    const search = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLInputElement>('input[aria-label="Search branches"]')
+      expect(found).not.toBeNull()
+      return found!
+    })
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'LOGIN')
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const names = Array.from(document.querySelectorAll('[data-testid="worktree-branch-list"] [role="menuitem"]')).map((item) => item.textContent)
+    expect(names).toEqual(['feature/login'])
+  })
+
+  it('goes back to the folder itself when another folder is chosen', async () => {
+    const second: InboxFolder = { ...folder, id: 'fld_other', name: 'other', directory: '/home/me/other' }
+    useInboxChat.setState({ folders: [folder, second] })
+    api.inbox.gitInfo.mockResolvedValue(repo)
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="worktree-bar"]')).not.toBeNull())
+    await open(view.querySelector('[data-testid="worktree-mode-picker"]')!)
+    await choose('New worktree')
+    await act(async () => useInboxChat.setState({ composer: { folderId: 'fld_other' } }))
+    await vi.waitFor(() => expect(api.inbox.gitInfo).toHaveBeenCalledWith({ folderId: 'fld_other' }))
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="worktree-mode-picker"]')?.textContent).toBe('Current directory'))
+  })
+
+  it('offers no worktree in a repository that has no branches yet', async () => {
+    api.inbox.gitInfo.mockResolvedValue({ repository: true, branch: null, branches: [] })
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="worktree-bar"]')).not.toBeNull())
+    await open(view.querySelector('[data-testid="worktree-mode-picker"]')!)
+    const item = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[data-testid="worktree-mode-worktree"]')
+      expect(found).not.toBeNull()
+      return found!
+    })
+    expect(item.getAttribute('aria-disabled')).toBe('true')
+    expect(item.textContent).toContain('no branches yet')
   })
 })
 

@@ -11,7 +11,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { AddInboxFolderDialog } from '@/components/inbox/AddInboxFolderDialog'
 import { ChatComposer } from '@/components/inbox/ChatComposer'
+import { WorktreeBar, useInboxGit, type WorktreeMode } from '@/components/inbox/WorktreeBar'
 import { initialChoice } from '@/lib/chat'
+import { defaultWorktreeBase } from '@/lib/inbox'
 import { optionsKey, useInboxChat } from '@/store/inbox-chat'
 
 /** The Inbox's start page: pick a folder, a model and an agent, and describe the work. */
@@ -28,6 +30,18 @@ export function NewThreadView(): JSX.Element {
   const options = useInboxChat((state) => (folder ? state.options[optionsKey({ folderId: folder.id })] : undefined))
   const [agent, setAgent] = useState<string | null>(null)
   const [model, setModel] = useState<OpenCodeModelRef | null>(null)
+  // Where the thread runs. Every visit starts in the folder itself, so a worktree is always a choice.
+  const git = useInboxGit(folder?.id)
+  const [mode, setMode] = useState<WorktreeMode>('current')
+  const [pickedBase, setPickedBase] = useState<string | null>(null)
+  const folderId = folder?.id
+  useEffect(() => {
+    setMode('current')
+    setPickedBase(null)
+  }, [folderId])
+  const defaultBase = useMemo(() => (git ? defaultWorktreeBase(git) : null), [git])
+  const base = git && pickedBase && git.branches.some((branch) => branch.name === pickedBase) ? pickedBase : defaultBase
+  const worktree = git && mode === 'worktree' && base ? { base } : undefined
 
   useEffect(() => {
     if (folder) void loadOptions({ folderId: folder.id })
@@ -135,9 +149,12 @@ export function NewThreadView(): JSX.Element {
             onModelChange={chooseModel}
             onRetryOptions={() => void loadOptions({ folderId: folder.id }, true)}
             placeholder="Describe what you want to build or change"
+            footer={git && (
+              <WorktreeBar info={git} mode={mode} base={base} onModeChange={setMode} onBaseChange={setPickedBase} />
+            )}
             onSend={async (text, attachments) => {
               if (!agent || !model) return
-              await createThread({ folderId: folder.id, text, agent, model, ...attachments })
+              await createThread({ folderId: folder.id, text, agent, model, ...attachments, ...(worktree ? { worktree } : {}) })
             }}
           />
         )}

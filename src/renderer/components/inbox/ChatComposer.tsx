@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Paperclip, X, File as FileIcon, ArrowUp, Bot, ChevronDown, Hammer, ListChecks, LoaderCircle, Search, Sparkles, Square } from 'lucide-react'
 import { readFileTreeDrop, isFileDrop } from '@/terminal/drop'
 import type { ChatDraft, ChatDraftKey, ChatDraftRequest, ChatAgent, ChatModel, OpenCodeModelRef } from '@shared/types'
@@ -164,6 +164,8 @@ export interface ChatComposerProps {
   placeholder?: string
   autoFocus?: boolean
   disabled?: boolean
+  /** Shown directly under the box, above any error; the new-thread page puts its Git bar here. */
+  footer?: ReactNode
 }
 
 /** The prompt box with model and agent pickers and a round send (or stop) button. */
@@ -184,6 +186,7 @@ export function ChatComposer({
   placeholder = 'Ask for changes or send follow-ups',
   autoFocus = false,
   disabled = false,
+  footer,
 }: ChatComposerProps): JSX.Element {
   const [text, setText] = useState('')
   const [draft, setDraft] = useState<ChatDraft>({ text: '', revision: 0, attachments: [] })
@@ -397,6 +400,7 @@ export function ChatComposer({
           )}
         </div>
       </div>
+      {footer}
       {error && <p role="alert" className="px-2 text-xs text-danger">
         {error}
         {!loaded && draftKey && <button type="button" className="ml-2 text-accent hover:underline" onClick={() => {

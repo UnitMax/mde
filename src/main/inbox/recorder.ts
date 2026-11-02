@@ -1,6 +1,7 @@
 import type {
   InboxFolder,
   InboxThread,
+  InboxWorktree,
   OpenCodeModelRef,
   OpenCodeTuiAttentionReason,
   OpenCodeTuiStatus,
@@ -139,15 +140,25 @@ export class InboxRecorder {
     this.store.remove(id)
   }
 
-  /** Records a thread the Inbox just started; it is working and already read. */
-  recordChatThread(input: { id: string; title?: string | null; folder: InboxFolder; model: OpenCodeModelRef }): InboxThread {
+  /**
+   * Records a thread the Inbox just started; it is working and already read. It runs in the
+   * folder's directory unless it was given a worktree of its own, whose directory is then used.
+   */
+  recordChatThread(input: {
+    id: string
+    title?: string | null
+    folder: InboxFolder
+    model: OpenCodeModelRef
+    directory?: string
+    worktree?: InboxWorktree
+  }): InboxThread {
     const now = this.dependencies.now()
     const existing = this.store.get(input.id)
     if (existing) return existing
     const created: InboxThread = {
       id: input.id,
       title: input.title?.trim() || UNTITLED_THREAD,
-      directory: input.folder.directory,
+      directory: input.directory ?? input.folder.directory,
       target: input.folder.target,
       branch: null,
       model: input.model,
@@ -157,7 +168,8 @@ export class InboxRecorder {
       lastActivityAt: now,
       readAt: now,
       archived: false,
-      folderId: input.folder.id
+      folderId: input.folder.id,
+      ...(input.worktree ? { worktree: input.worktree } : {})
     }
     this.insert(created)
     return created
@@ -186,7 +198,9 @@ export class InboxRecorder {
       readAt: now,
       archived: false,
       folderId: source.folderId,
-      forkedFrom: source.id
+      forkedFrom: source.id,
+      // A fork shares the source's directory, so it shares the worktree too.
+      ...(source.worktree ? { worktree: source.worktree } : {})
     }
     this.insert(created)
     return created

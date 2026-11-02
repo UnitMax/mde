@@ -264,6 +264,39 @@ export interface InboxThread {
   folderId: string
   /** The thread this one was forked from, which may since have been removed. */
   forkedFrom?: string
+  /** Set when the thread runs in a Git worktree MDE created; `directory` is then inside `root`. */
+  worktree?: InboxWorktree
+}
+
+/** The Git worktree an Inbox thread was started in. Forks of the thread share it. */
+export interface InboxWorktree {
+  /** The folder's directory when the worktree was made, where Git commands for it run. */
+  repository: string
+  /** The worktree's root directory, in the target's own format. */
+  root: string
+  /** The new branch MDE created for the worktree. */
+  branch: string
+  /** The branch the worktree was cut from, as the picker showed it (`main`, `origin/main`). */
+  base: string
+}
+
+/** A branch a worktree can start from, named as the picker shows it. */
+export interface InboxGitBranch {
+  name: string
+  remote: boolean
+}
+
+export interface InboxGitInfoRequest {
+  folderId: string
+}
+
+/** What the new-thread page needs to offer Git worktree mode for a folder. */
+export interface InboxGitInfo {
+  repository: boolean
+  /** The folder's current branch; null for a detached HEAD or a folder that is not a repository. */
+  branch: string | null
+  /** Local branches, then remote-tracking ones, most recently committed first. */
+  branches: InboxGitBranch[]
 }
 
 /**
@@ -522,6 +555,8 @@ export interface ChatCreateRequest {
   text: string
   agent: string
   model: OpenCodeModelRef
+  /** Run the thread in a new Git worktree cut from this branch, instead of in the folder itself. */
+  worktree?: { base: string }
 }
 
 export interface ChatThreadRequest {
@@ -578,6 +613,8 @@ export interface InboxSetArchivedRequest {
 
 export interface InboxRemoveRequest {
   id: string
+  /** Also remove the thread's Git worktree, which Git refuses while it has uncommitted changes. */
+  removeWorktree?: boolean
 }
 
 /** Main-process status transition for one MDE workspace session. */

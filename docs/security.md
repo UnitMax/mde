@@ -50,7 +50,10 @@ not. File-viewer and tree-drop paths must stay relative and contain no dot
 segments, backslashes or controls. Inbox requests (`inbox:set-read`,
 `inbox:set-archived`, `inbox:remove`) accept only an OpenCode session ID
 (`ses_` followed by letters, digits, `_` or `-`) and a boolean where one is
-expected; they change MDE's own `inbox.json` and never reach OpenCode.
+expected (`inbox:remove` also takes an optional `removeWorktree` boolean); they
+change MDE's own `inbox.json` and never reach OpenCode, except that
+`removeWorktree` also runs `git worktree remove` (see "Inbox worktree boundary").
+`inbox:git-info` accepts only an `fld_` folder ID.
 Inbox folder requests (`inbox:folders-add`, `inbox:folders-remove`,
 `inbox:composer-set`) accept a target and a path, which the handler resolves and
 validates like a session path (WSL only on Windows, native elsewhere), or an
@@ -77,7 +80,8 @@ restriction or move of command preferences into main-process storage should
 be evaluated separately.
 
 Regression coverage includes `test/ipc-security.test.ts`,
-`test/ipc-validation.test.ts`, and the registered-handler tests in
+`test/ipc-validation.test.ts`, `test/inbox-worktree.test.ts` (real Git, including hostile base
+names), and the registered-handler tests in
 `test/ipc-drop.test.ts`. Every shared channel must have a validator and a normal
 request fixture. Existing path/drop/history tests exercise the same real
 boundary with a trusted sender fixture. Native Windows/WSL smoke testing is
@@ -144,6 +148,42 @@ the validated `chat:*` channels.
 
 Inbox folders are separate from workspace projects and sessions; adding one
 resolves and validates the path through the same checks as a session path.
+
+### Inbox worktree boundary
+
+An Inbox thread can run in a Git worktree MDE creates, which is the only place MDE changes a
+repository. `chat:create` accepts an optional `worktree: { base }`, where `base` is a string of at
+most 256 characters without controls; the object takes no other key, so the renderer cannot name a
+path, a new branch, a remote or a command.
+
+- **The base is matched, never trusted.** The main process lists the refs with
+  `git for-each-ref` and accepts `base` only if it equals the displayed name of one of them, so a
+  string such as `--force`, `HEAD`, `../x` or a ref that does not exist never reaches a
+  creating command. The start point is passed as the full refname (`refs/heads/…` or
+  `refs/remotes/…`), which cannot be read as a tag, a path or an option.
+- **Paths and names are generated.** The worktree is
+  `<home>/.mde/worktrees/<folder name>-<folder id>/<id>` and the branch is `mde/<id>`, where `<id>`
+  is eight random hex digits and the folder name is reduced to letters, digits, `.`, `_` and `-`.
+  The home directory comes from the folder's own target (`os.homedir()` on macOS, the distro's
+  login-shell `$HOME` on Windows) and must be a plain absolute path.
+- **No shell.** Arguments are a fixed array with `--` before the positional operands. WSL commands
+  run through `wsl.exe -e` direct execution, like every other WSL command.
+- **Same hardening, longer clock.** The runner keeps the safety options of the automatic queries
+  (hooks, `core.fsmonitor`, credential helpers, askpass and ssh commands are disabled) and drops only
+  `--attr-source`, which would make a checkout ignore `.gitattributes`. Creating a worktree never
+  fetches, so it uses no network and no credentials, and never runs the repository's hooks.
+- **Removal is conservative.** `inbox:remove` with `removeWorktree` acts only on a thread MDE
+  recorded with a worktree, whose root is a plain absolute path inside `<home>/.mde/worktrees/` and
+  contains the thread's directory, and only when no other thread uses that root. It runs
+  `git worktree remove` without `--force` from the recorded repository, so uncommitted changes
+  make Git refuse and the refusal is shown; the branch is kept. The renderer can request
+  removal only for a thread ID, never for a path.
+- **Failed starts clean up after themselves.** A worktree whose session could not be created is
+  removed with `--force` together with its branch, which is safe because nothing has run in it;
+  cleanup errors are swallowed and the original error is reported.
+
+`inbox.json` stores the worktree record (the repository directory, the root, the branch and the
+base) and is validated on load like every other field.
 
 ## Windows executable selection
 

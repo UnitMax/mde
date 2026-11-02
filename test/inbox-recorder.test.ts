@@ -78,6 +78,31 @@ describe('inbox recorder: forked threads', () => {
     expect(changed).toEqual([])
   })
 
+  const worktree = { repository: '/home/me/app', root: '/home/me/.mde/worktrees/app-abc/1a2b3c4d', branch: 'mde/1a2b3c4d', base: 'origin/main' }
+
+  it('records a thread started in a worktree there, and a fork of it shares the worktree', () => {
+    const { recorder, thread, readBranch } = setup()
+    const created = recorder.recordChatThread({ id: 'ses_wt', title: 'Fix login', folder, model, directory: worktree.root, worktree })
+    expect(created).toMatchObject({ directory: worktree.root, folderId: 'fld_app', worktree })
+    expect(thread('ses_wt')).toEqual(created)
+    // The branch comes from the worktree's own directory.
+    expect(readBranch).toHaveBeenCalledWith(expect.objectContaining({ path: worktree.root }), worktree.root)
+    const fork = recorder.recordForkedThread({ id: 'ses_fork', source: thread('ses_wt')! })
+    expect(fork).toMatchObject({ directory: worktree.root, forkedFrom: 'ses_wt', worktree })
+    // An ordinary thread has neither.
+    const plain = recorder.recordChatThread({ id: 'ses_plain', folder, model })
+    expect(plain.directory).toBe('/home/me/app')
+    expect('worktree' in plain).toBe(false)
+    expect('worktree' in recorder.recordForkedThread({ id: 'ses_plain_fork', source: plain })).toBe(false)
+  })
+
+  it('keeps the worktree through status changes', () => {
+    const { recorder, thread, emit } = setup()
+    recorder.recordChatThread({ id: 'ses_wt', folder, model, directory: worktree.root, worktree })
+    emit('ses_wt', 'session.execution.succeeded')
+    expect(thread('ses_wt')).toMatchObject({ status: 'completed', directory: worktree.root, worktree })
+  })
+
   it('works out the fork\'s own branch after recording it', async () => {
     const { start, recorder, thread, readBranch, store } = setup({ branch: async () => 'main' })
     start('ses_one')

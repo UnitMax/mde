@@ -21,6 +21,8 @@ import type {
   InboxComposerState,
   InboxFolder,
   InboxFoldersState,
+  InboxGitInfo,
+  InboxGitInfoRequest,
   InboxThread,
   OpenCodeModelRef,
   OpenCodePluginTarget,
@@ -53,6 +55,7 @@ import {
 } from '../opencode/service/parse'
 import type { InboxRecorder } from './recorder'
 import { isChatAgentId, type InboxStore } from './store'
+import type { CreatedWorktree, InboxWorktrees } from './worktree'
 
 export const CHAT_PAGE_SIZE = 50
 export const CHAT_TEXT_MAX_LENGTH = 100_000
@@ -74,6 +77,8 @@ const TURN_SCAN_PAGES = 10
 
 export interface InboxChatDependencies {
   drafts?: InboxDraftStore
+  /** Git worktrees for threads; without it, worktree mode is unavailable. */
+  worktrees?: Pick<InboxWorktrees, 'info' | 'create' | 'remove' | 'discard'>
   thumbnail?(bytes: Buffer): string | undefined
   client: Pick<OpenCodeServiceClient, 'request' | 'openEvents' | 'reset'>
   store: InboxStore
@@ -273,16 +278,30 @@ export class InboxChatService {
     const text = this.promptText(request.text, request.attachmentIds)
     if (!isChatAgentId(request.agent)) throw new Error('Choose an agent.')
     const files = request.attachmentIds?.length ? await this.dependencies.drafts?.files(`folder:${folder.id}`, request.attachmentIds, request.draftRevision) : undefined
+    let place: CreatedWorktree | undefined
+    if (request.worktree) {
+      if (!this.dependencies.worktrees) throw new Error('Git worktrees are unavailable.')
+      place = await this.dependencies.worktrees.create(folder, request.worktree.base)
+    }
     this.streams.ensure(folder.target)
-    const created = parseCreatedSession(await this.dependencies.client.request(folder.target, 'session.create', {
-      body: { agent: request.agent, model: modelBody(request.model), location: { directory: folder.directory } },
-    }))
-    const thread = this.dependencies.recorder.recordChatThread({
-      id: created.id,
-      title: created.title,
-      folder,
-      model: request.model,
-    })
+    let created: ReturnType<typeof parseCreatedSession>
+    let thread: InboxThread
+    try {
+      created = parseCreatedSession(await this.dependencies.client.request(folder.target, 'session.create', {
+        body: { agent: request.agent, model: modelBody(request.model), location: { directory: place?.directory ?? folder.directory } },
+      }))
+      thread = this.dependencies.recorder.recordChatThread({
+        id: created.id,
+        title: created.title,
+        folder,
+        model: request.model,
+        ...(place ? { directory: place.directory, worktree: place.worktree } : {}),
+      })
+    } catch (error) {
+      // Nothing has run in the worktree, so it goes too rather than being left behind unused.
+      if (place) await this.dependencies.worktrees?.discard(folder.target, place.worktree)
+      throw error
+    }
     this.dependencies.store.putFolder({ ...folder, lastUsedAt: this.dependencies.now() })
     this.dependencies.store.setComposer({ folderId: folder.id, agent: request.agent, model: request.model })
     await this.dependencies.drafts?.move(`folder:${folder.id}`, `thread:${thread.id}`)
@@ -298,6 +317,22 @@ export class InboxChatService {
     }
     await this.dependencies.drafts?.remove(`thread:${thread.id}`, undefined, request.draftRevision)
     return this.dependencies.store.get(thread.id) ?? thread
+  }
+
+  /** Whether a folder is a Git repository, its current branch, and the branches a worktree can start from. */
+  async gitInfo(request: InboxGitInfoRequest): Promise<InboxGitInfo> {
+    this.assertEnabled()
+    const folder = this.folder(request.folderId)
+    if (!this.dependencies.worktrees) return { repository: false, branch: null, branches: [] }
+    return this.dependencies.worktrees.info(folder)
+  }
+
+  /** Removes the worktree a thread runs in, unless another thread uses it or Git refuses. */
+  async removeThreadWorktree(id: string): Promise<void> {
+    this.assertEnabled()
+    const thread = this.thread(id)
+    if (!this.dependencies.worktrees) throw new Error('Git worktrees are unavailable.')
+    await this.dependencies.worktrees.remove(thread, this.dependencies.store.list())
   }
 
   async messages(request: ChatMessagesRequest): Promise<ChatMessagesPage> {

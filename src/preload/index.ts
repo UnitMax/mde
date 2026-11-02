@@ -154,7 +154,8 @@ const api: RendererApi = {
     folders: () => ipcRenderer.invoke(IpcChannels.inboxFolders),
     addFolder: (req) => ipcRenderer.invoke(IpcChannels.inboxFoldersAdd, req),
     removeFolder: (req) => ipcRenderer.invoke(IpcChannels.inboxFoldersRemove, req),
-    setComposer: (req) => ipcRenderer.invoke(IpcChannels.inboxComposerSet, req)
+    setComposer: (req) => ipcRenderer.invoke(IpcChannels.inboxComposerSet, req),
+    gitInfo: (req) => ipcRenderer.invoke(IpcChannels.inboxGitInfo, req)
   },
   chat: {
     draft: (req) => ipcRenderer.invoke(IpcChannels.chatDraft, req),

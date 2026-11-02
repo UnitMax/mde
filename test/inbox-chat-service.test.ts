@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { InboxDraftStore } from '../src/main/inbox/drafts'
 import { describe, expect, it, vi } from 'vitest'
 import type { ChatEvent } from '../src/shared/types'
-import { InboxChatService } from '../src/main/inbox/chat'
+import { InboxChatService, type InboxChatDependencies } from '../src/main/inbox/chat'
 import { InboxRecorder, isInboxThreadUnread } from '../src/main/inbox/recorder'
 import { InboxStore } from '../src/main/inbox/store'
 import type { ServiceOperation, ServiceRequest } from '../src/main/opencode/service/client'
@@ -13,7 +13,7 @@ import { OpenCodeServiceError } from '../src/main/opencode/service/client'
 const wsl = { kind: 'wsl' as const, distro: 'Ubuntu-24.04' }
 const model = { id: 'model-1', providerId: 'provider-1' }
 
-function setup(responses: Partial<Record<ServiceOperation, unknown>> = {}, drafts?: InboxDraftStore) {
+function setup(responses: Partial<Record<ServiceOperation, unknown>> = {}, drafts?: InboxDraftStore, worktrees?: InboxChatDependencies['worktrees']) {
   let now = 1_000
   let enabled = true
   const store = new InboxStore('/unused', { writeFile: async () => {}, writeDelayMs: 60_000 })
@@ -37,6 +37,7 @@ function setup(responses: Partial<Record<ServiceOperation, unknown>> = {}, draft
   const openEvents = vi.fn(() => new Promise<ReadableStream<Uint8Array>>(() => {}))
   const service = new InboxChatService({
     drafts,
+    worktrees,
     client: { request, openEvents, reset: vi.fn() },
     store,
     recorder,
@@ -779,6 +780,103 @@ describe('Inbox native attachments', () => {
     const page = await service.messages({ threadId: 'ses_new', cursor: 'older-page' })
     expect(limits).toEqual(['50', '25'])
     expect(page.older).toBe('next-page')
+    service.stop()
+  })
+})
+
+describe('Inbox chat service worktrees', () => {
+  const worktree = { repository: '/home/me/app', root: '/home/me/.mde/worktrees/app-abc/1a2b3c4d', branch: 'mde/1a2b3c4d', base: 'origin/main' }
+  const made = { directory: worktree.root, worktree }
+
+  function fake() {
+    return {
+      info: vi.fn(async () => ({ repository: true, branch: 'main', branches: [{ name: 'main', remote: false }] })),
+      create: vi.fn(async () => made),
+      remove: vi.fn(async () => {}),
+      discard: vi.fn(async () => {}),
+    }
+  }
+
+  it('starts the session in a new worktree and records the thread there', async () => {
+    const worktrees = fake()
+    const { service, store, folder, calls } = setup({ 'session.create': { data: { id: 'ses_new', title: 'New session' } } }, undefined, worktrees)
+    const thread = await service.create({ folderId: folder.id, text: 'Fix the login', agent: 'plan', model, worktree: { base: 'origin/main' } })
+    expect(worktrees.create).toHaveBeenCalledWith(expect.objectContaining({ id: folder.id, directory: '/home/me/app' }), 'origin/main')
+    expect(calls[0]?.request.body).toEqual({
+      agent: 'plan', model: { id: 'model-1', providerID: 'provider-1' }, location: { directory: worktree.root },
+    })
+    expect(thread).toMatchObject({ id: 'ses_new', directory: worktree.root, folderId: folder.id, worktree })
+    expect(store.get('ses_new')).toMatchObject({ directory: worktree.root, worktree })
+    expect(worktrees.discard).not.toHaveBeenCalled()
+    service.stop()
+  })
+
+  it('leaves a thread without a worktree request in the folder, without touching Git', async () => {
+    const worktrees = fake()
+    const { service, folder, calls } = setup({ 'session.create': { data: { id: 'ses_new' } } }, undefined, worktrees)
+    const thread = await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+    expect(calls[0]?.request.body).toMatchObject({ location: { directory: '/home/me/app' } })
+    expect(thread.directory).toBe('/home/me/app')
+    expect(thread.worktree).toBeUndefined()
+    expect(worktrees.create).not.toHaveBeenCalled()
+    service.stop()
+  })
+
+  it('removes the new worktree when the session cannot be created', async () => {
+    const worktrees = fake()
+    const { service, store, folder } = setup({ 'session.create': new Error('Service unavailable') }, undefined, worktrees)
+    await expect(service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model, worktree: { base: 'main' } })).rejects.toThrow('Service unavailable')
+    expect(worktrees.discard).toHaveBeenCalledWith(wsl, worktree)
+    expect(store.list()).toEqual([])
+    service.stop()
+  })
+
+  it('keeps the worktree when only the first message fails, because the thread exists and its draft is kept', async () => {
+    const worktrees = fake()
+    const { service, store, folder } = setup({
+      'session.create': { data: { id: 'ses_new' } },
+      'session.prompt': new Error('Model unavailable'),
+    }, undefined, worktrees)
+    await expect(service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model, worktree: { base: 'main' } })).rejects.toThrow('Model unavailable')
+    expect(worktrees.discard).not.toHaveBeenCalled()
+    expect(store.get('ses_new')?.worktree).toEqual(worktree)
+    service.stop()
+  })
+
+  it('does not start a session when the worktree cannot be made', async () => {
+    const worktrees = fake()
+    worktrees.create.mockRejectedValue(new Error('Could not create the worktree: no space left'))
+    const { service, folder, calls } = setup({}, undefined, worktrees)
+    await expect(service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model, worktree: { base: 'main' } })).rejects.toThrow('no space left')
+    expect(calls).toEqual([])
+    expect(worktrees.discard).not.toHaveBeenCalled()
+  })
+
+  it('refuses a worktree request when worktrees are unavailable', async () => {
+    const { service, folder, calls } = setup()
+    await expect(service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model, worktree: { base: 'main' } })).rejects.toThrow('Git worktrees are unavailable.')
+    expect(calls).toEqual([])
+  })
+
+  it('reports Git details for a folder, and none when worktrees are unavailable', async () => {
+    const worktrees = fake()
+    const { service, folder } = setup({}, undefined, worktrees)
+    await expect(service.gitInfo({ folderId: folder.id })).resolves.toEqual({ repository: true, branch: 'main', branches: [{ name: 'main', remote: false }] })
+    expect(worktrees.info).toHaveBeenCalledWith(expect.objectContaining({ id: folder.id }))
+    const bare = setup()
+    await expect(bare.service.gitInfo({ folderId: bare.folder.id })).resolves.toEqual({ repository: false, branch: null, branches: [] })
+    await expect(service.gitInfo({ folderId: 'fld_gone' })).rejects.toThrow('no longer in the Inbox')
+  })
+
+  it('removes a thread’s worktree with the other threads in view, and passes Git’s refusal on', async () => {
+    const worktrees = fake()
+    const { service, store, folder } = setup({ 'session.create': { data: { id: 'ses_new' } } }, undefined, worktrees)
+    await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model, worktree: { base: 'main' } })
+    await service.removeThreadWorktree('ses_new')
+    expect(worktrees.remove).toHaveBeenCalledWith(expect.objectContaining({ id: 'ses_new' }), store.list())
+    worktrees.remove.mockRejectedValue(new Error('Could not remove the worktree: it has changes'))
+    await expect(service.removeThreadWorktree('ses_new')).rejects.toThrow('it has changes')
+    await expect(service.removeThreadWorktree('ses_gone')).rejects.toThrow('no longer in the Inbox')
     service.stop()
   })
 })

@@ -1,4 +1,4 @@
-import type { InboxThread, OpenCodeModelRef, OpenCodePluginTarget, Session } from '@shared/types'
+import type { InboxGitInfo, InboxThread, OpenCodeModelRef, OpenCodePluginTarget, Session } from '@shared/types'
 import { matchSubsequence, queryTokens } from '@/lib/fuzzy-search'
 
 export type InboxFilter = 'all' | 'unread' | 'attention' | 'archived'
@@ -40,6 +40,36 @@ export function inboxFolderLabel(directory: string): string {
   const trimmed = directory.replace(/[\\/]+$/, '')
   const segment = trimmed.split(/[\\/]/).pop()
   return segment || directory
+}
+
+/**
+ * The folder a thread belongs to, for labels: the one it was started in, even when it runs in a
+ * worktree whose own directory is only a random id.
+ */
+export function inboxThreadHome(thread: Pick<InboxThread, 'directory' | 'worktree'>): string {
+  return thread.worktree?.repository ?? thread.directory
+}
+
+/** Whether a thread's worktree is still used by another thread, such as a fork of it. */
+export function inboxWorktreeShared(thread: InboxThread, threads: readonly InboxThread[]): boolean {
+  const worktree = thread.worktree
+  if (!worktree) return false
+  return threads.some((other) =>
+    other.id !== thread.id &&
+    other.worktree?.root === worktree.root &&
+    other.target.kind === thread.target.kind &&
+    (other.target.kind === 'native' || (thread.target.kind === 'wsl' && other.target.distro === thread.target.distro)))
+}
+
+/**
+ * The branch a new worktree starts from until one is picked: the folder's current branch, else
+ * `main` or `master`, else the first local branch, else whatever branch there is.
+ */
+export function defaultWorktreeBase(info: InboxGitInfo): string | null {
+  const local = info.branches.filter((branch) => !branch.remote).map((branch) => branch.name)
+  const names = info.branches.map((branch) => branch.name)
+  if (info.branch && local.includes(info.branch)) return info.branch
+  return ['main', 'master'].find((name) => local.includes(name)) ?? local[0] ?? names[0] ?? null
 }
 
 export interface InboxStatusChip {
@@ -110,12 +140,12 @@ export function inboxLocked(
  * viewer can show it. The ID is the thread's or folder's own; the main process resolves it.
  */
 export function inboxFileRoot(
-  source: { id: string; directory: string; target: OpenCodePluginTarget } & { name?: string }
+  source: { id: string; directory: string; target: OpenCodePluginTarget; worktree?: { repository: string } } & { name?: string }
 ): Session {
   return {
     id: source.id,
     projectId: '',
-    name: source.name ?? inboxFolderLabel(source.directory),
+    name: source.name ?? inboxFolderLabel(source.worktree?.repository ?? source.directory),
     kind: source.target.kind,
     ...(source.target.kind === 'wsl' ? { distro: source.target.distro } : {}),
     path: source.directory,

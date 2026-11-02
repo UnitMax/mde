@@ -23,7 +23,7 @@ MDE stores data only on the local machine:
 - `inbox.json` under Electron's user-data directory, once you use the Inbox: one record for each
   OpenCode conversation you started in the Inbox, with its session ID, title, folder, target (Mac
   or WSL distro), Git branch, model and provider identifiers, last status, timestamps (including,
-  while a conversation is working, when its current run began), read and archived flags, and for a forked conversation the session ID of the one it was forked from. It also holds the Inbox folders you add (path, target, name, timestamps; at most 200) and the folder, model and agent
+  while a conversation is working, when its current run began), read and archived flags, and for a forked conversation the session ID of the one it was forked from. For a conversation started in a Git worktree it also holds that worktree's root path, the repository's path, and the names of the new branch and the branch it was cut from. It also holds the Inbox folders you add (path, target, name, timestamps; at most 200) and the folder, model and agent
   you last chose in the Inbox composer. It never holds prompts, messages or tool data. It keeps at
   most 1,000 conversations; deleting a conversation from the Inbox removes only MDE's record.
 - If you enable the optional OpenCode integrations, a short status snapshot under
@@ -61,6 +61,16 @@ provider request itself, create an additional conversation, or persist the conte
 The resulting title replaces the existing title in `inbox.json`; loading and error
 feedback stays in memory.
 
+## Inbox worktrees
+
+When you start an Inbox conversation in a **New worktree**, MDE asks Git to check out a copy of the
+branch you chose under `.mde/worktrees/` in your home directory (inside the WSL distro's home on
+Windows), on a new branch named `mde/` followed by eight hex digits. That folder holds ordinary
+working files and sits outside MDE's user-data directory, so MDE's own cleanup does not cover it.
+It stays until you remove it: tick **Also remove the worktree** when you delete the conversation,
+or run `git worktree remove` yourself. The new branch is kept either way. MDE reads local branch
+names to fill the picker and never contacts a remote.
+
 ## Inbox attachments and saved drafts
 
 The Inbox paperclip, image paste, and file drops save copies under `inbox-drafts/` in
@@ -80,7 +90,7 @@ and small raster thumbnails in memory; MDE does not persist conversation attachm
 
 ## Network behavior in the released application
 
-MDE does not make automatic network requests. It reads local files and invokes local commands to support terminal sessions and file actions: Git for repository status, `wsl.exe` on Windows, and the configured OpenCode executable for the session picker and to find the OpenCode background service.
+MDE does not make automatic network requests. It reads local files and invokes local commands to support terminal sessions and file actions: Git for repository status (and, when you start an Inbox conversation in a new worktree or delete one with its worktree, to create or remove that worktree; MDE never runs `git fetch` or any other Git network command), `wsl.exe` on Windows, and the configured OpenCode executable for the session picker and to find the OpenCode background service.
 
 The Inbox chat view makes HTTP requests, and holds an event stream open, to the OpenCode background service on a loopback address (`127.0.0.1`, `localhost` or `[::1]`) only; MDE refuses any other address in the service's state file. On Windows these reach the service inside WSL through WSL's localhost forwarding. MDE starts these connections only while OpenCode status reporting is on and a chat thread is in use. Any internet traffic that follows, such as calls to a model provider, is made by OpenCode, not by MDE.
 

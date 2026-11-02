@@ -3,7 +3,7 @@
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ChatDraft, ChatDraftRequest, ChatForkRequest, ChatForkResult, InboxThread } from '../src/shared/types'
+import type { ChatDraft, ChatDraftRequest, ChatForkRequest, ChatForkResult, InboxRemoveRequest, InboxThread } from '../src/shared/types'
 import { InboxPanel } from '../src/renderer/components/InboxPanel'
 import { InboxThreadView } from '../src/renderer/components/InboxThreadView'
 import { useInboxChat } from '../src/renderer/store/inbox-chat'
@@ -11,6 +11,7 @@ import { useWorkspace } from '../src/renderer/store/workspace'
 
 const roots: Root[] = []
 const setRead = vi.fn(async () => null)
+const remove = vi.fn(async (_request: InboxRemoveRequest): Promise<void> => undefined)
 const fork = vi.fn(async (_request: ChatForkRequest): Promise<ChatForkResult> => ({ thread: thread({ id: 'ses_fork', title: 'Fix login (fork #1)', status: 'idle', forkedFrom: 'ses_one', readAt: Date.now(), lastActivityAt: Date.now() }) }))
 const draft = vi.fn(async (_request: ChatDraftRequest): Promise<ChatDraft> => ({ text: '', revision: 0, attachments: [] }))
 
@@ -44,7 +45,7 @@ async function render(element: Parameters<Root['render']>[0]): Promise<HTMLEleme
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('api', {
-    inbox: { setRead, setArchived: vi.fn(async () => null), remove: vi.fn(async () => undefined) },
+    inbox: { setRead, setArchived: vi.fn(async () => null), remove },
     chat: {
       draft,
       fork,
@@ -60,6 +61,8 @@ beforeEach(() => {
     }
   })
   setRead.mockClear()
+  remove.mockReset()
+  remove.mockResolvedValue(undefined)
   fork.mockClear()
   draft.mockClear()
   useInboxChat.setState({ threads: {}, recent: [], draftReloads: {} })
@@ -398,5 +401,105 @@ describe('Inbox fork marker', () => {
     const line = view.querySelector('[data-testid="inbox-forked-from"]')!
     expect(line.textContent).toContain('Forked from a thread that is no longer in the Inbox')
     expect(line.querySelector('button')).toBeNull()
+  })
+})
+
+describe('Inbox thread deletion and worktrees', () => {
+  const worktree = { repository: '/home/me/app', root: '/home/me/.mde/worktrees/app-abc/1a2b3c4d', branch: 'mde/1a2b3c4d', base: 'main' }
+  const inWorktree = (overrides: Partial<InboxThread> = {}): InboxThread =>
+    thread({ directory: worktree.root, branch: worktree.branch, worktree, ...overrides })
+  const dialog = (): HTMLElement | null => document.body.querySelector('[role="alertdialog"]')
+  const checkbox = (): HTMLInputElement | null => document.body.querySelector('[data-testid="inbox-remove-worktree"]')
+  const openDialog = async (panel: HTMLElement, id = 'ses_one'): Promise<void> => {
+    const row = panel.querySelector(`[data-testid="inbox-thread-${id}"]`)!.parentElement!
+    await act(async () => { row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 20, button: 2 })) })
+    const item = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((entry) => entry.textContent?.trim() === 'Delete from Inbox')!
+    await act(async () => item.click())
+  }
+  const confirm = async (): Promise<void> => {
+    const button = Array.from(dialog()!.querySelectorAll('button')).find((entry) => entry.textContent?.trim() === 'Delete')!
+    await act(async () => button.click())
+  }
+
+  it('deletes an ordinary thread with no worktree choice and no worktree flag', async () => {
+    useWorkspace.setState({ inboxThreads: [thread()] })
+    const panel = await render(createElement(InboxPanel))
+    await openDialog(panel)
+    expect(dialog()).not.toBeNull()
+    expect(checkbox()).toBeNull()
+    await confirm()
+    expect(remove).toHaveBeenCalledWith({ id: 'ses_one' })
+    await vi.waitFor(() => expect(useWorkspace.getState().inboxThreads).toEqual([]))
+    expect(dialog()).toBeNull()
+  })
+
+  it('offers to remove a worktree thread’s worktree, off unless ticked', async () => {
+    useWorkspace.setState({ inboxThreads: [inWorktree()] })
+    const panel = await render(createElement(InboxPanel))
+    await openDialog(panel)
+    expect(checkbox()?.checked).toBe(false)
+    expect(dialog()?.textContent).toContain('Also remove the worktree')
+    expect(dialog()?.textContent).toContain('mde/1a2b3c4d')
+    await confirm()
+    expect(remove).toHaveBeenCalledWith({ id: 'ses_one' })
+    expect(remove.mock.calls[0]?.[0]).not.toHaveProperty('removeWorktree')
+  })
+
+  it('removes the worktree too when ticked', async () => {
+    useWorkspace.setState({ inboxThreads: [inWorktree()] })
+    const panel = await render(createElement(InboxPanel))
+    await openDialog(panel)
+    await act(async () => checkbox()!.click())
+    expect(checkbox()?.checked).toBe(true)
+    await confirm()
+    expect(remove).toHaveBeenCalledWith({ id: 'ses_one', removeWorktree: true })
+    await vi.waitFor(() => expect(useWorkspace.getState().inboxThreads).toEqual([]))
+  })
+
+  it('does not offer a worktree that another thread still runs in', async () => {
+    useWorkspace.setState({ inboxThreads: [inWorktree(), inWorktree({ id: 'ses_fork', title: 'Fix login (fork #1)', forkedFrom: 'ses_one' })] })
+    const panel = await render(createElement(InboxPanel))
+    await openDialog(panel)
+    expect(checkbox()).toBeNull()
+    await confirm()
+    expect(remove).toHaveBeenCalledWith({ id: 'ses_one' })
+  })
+
+  it('keeps the dialog and the thread when Git refuses, shows why, and lets the user delete without it', async () => {
+    remove.mockRejectedValueOnce(new Error("Error invoking remote method 'inbox:remove': Error: Could not remove the worktree: contains modified or untracked files"))
+    useWorkspace.setState({ inboxThreads: [inWorktree()] })
+    const panel = await render(createElement(InboxPanel))
+    await openDialog(panel)
+    await act(async () => checkbox()!.click())
+    await confirm()
+    await vi.waitFor(() => expect(dialog()?.querySelector('[role="alert"]')?.textContent).toBe('Could not remove the worktree: contains modified or untracked files'))
+    expect(useWorkspace.getState().inboxThreads.map((item) => item.id)).toEqual(['ses_one'])
+    expect(checkbox()?.checked).toBe(true)
+    // Untick it and delete the thread alone.
+    await act(async () => checkbox()!.click())
+    await confirm()
+    expect(remove).toHaveBeenLastCalledWith({ id: 'ses_one' })
+    await vi.waitFor(() => expect(useWorkspace.getState().inboxThreads).toEqual([]))
+  })
+
+  it('labels a worktree thread by its folder, not by the worktree’s random name', async () => {
+    useWorkspace.setState({ inboxThreads: [inWorktree()], selectedInboxThreadId: 'ses_one' })
+    const panel = await render(createElement(InboxPanel))
+    const row = panel.querySelector('[data-testid="inbox-thread-ses_one"]')!
+    // The label is the folder's; the worktree's own path stays available as its tooltip.
+    expect(row.querySelector(`[title="${worktree.root}"]`)?.textContent).toBe('app')
+    expect(row.textContent).toContain('mde/1a2b3c4d')
+  })
+
+  it('marks a worktree thread in its header, naming the folder and the branch it started from', async () => {
+    useWorkspace.setState({ inboxThreads: [inWorktree()], selectedInboxThreadId: 'ses_one' })
+    const view = await render(createElement(InboxThreadView))
+    const header = view.querySelector('header')!
+    expect(header.textContent).toContain('/home/me/app')
+    expect(header.textContent).not.toContain('.mde/worktrees')
+    const marker = header.querySelector('[data-testid="inbox-thread-worktree"]')
+    expect(marker?.textContent).toBe('worktree')
+    expect(marker?.getAttribute('title')).toContain('started from main')
+    expect(marker?.getAttribute('title')).toContain(worktree.root)
   })
 })

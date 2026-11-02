@@ -13,6 +13,7 @@ import { InboxStore, INBOX_FILE } from './inbox/store'
 import { InboxRecorder } from './inbox/recorder'
 import { InboxDraftStore } from './inbox/drafts'
 import { InboxChatService } from './inbox/chat'
+import { InboxWorktrees } from './inbox/worktree'
 import { OpenCodeServiceClient } from './opencode/service/client'
 import { discoverOpenCodeService } from './opencode/service/discovery'
 import { readGitTerminalInfo } from './git'
@@ -210,6 +211,7 @@ if (!app.requestSingleInstanceLock()) {
     })
     inboxChat = new InboxChatService({
       drafts: inboxDrafts,
+      worktrees: new InboxWorktrees(),
       thumbnail: previewAttachment,
       client: serviceClient,
       store: inboxStore,

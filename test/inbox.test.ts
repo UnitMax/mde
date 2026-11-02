@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import type { InboxThread } from '../src/shared/types'
+import type { InboxGitInfo, InboxThread } from '../src/shared/types'
 import {
   countUnreadInboxThreads,
+  defaultWorktreeBase,
+  inboxFileRoot,
   inboxFolderLabel,
   inboxLocked,
   inboxModelLabel,
   inboxStatusChip,
+  inboxThreadHome,
+  inboxWorktreeShared,
   visibleInboxThreads
 } from '../src/renderer/lib/inbox'
 
@@ -78,5 +82,53 @@ describe('inbox list helpers', () => {
     expect(inboxLocked(windows, false)).toBe(true)
     expect(inboxLocked(windows, true)).toBe(false)
     expect(inboxLocked(mac, false)).toBe(false)
+  })
+})
+
+describe('inbox worktree helpers', () => {
+  const worktree = { repository: '/home/me/app', root: '/home/me/.mde/worktrees/app-abc/1a2b3c4d', branch: 'mde/1a2b3c4d', base: 'main' }
+  const inWorktree = (overrides: Partial<InboxThread> = {}): InboxThread =>
+    thread({ directory: worktree.root, worktree, ...overrides })
+
+  it('labels a worktree thread by the folder it belongs to', () => {
+    expect(inboxThreadHome(thread())).toBe('/home/me/app')
+    expect(inboxThreadHome(inWorktree())).toBe('/home/me/app')
+    expect(inboxFileRoot(thread()).name).toBe('app')
+    const root = inboxFileRoot(inWorktree())
+    // The file tree opens the worktree's own files, under the folder's name.
+    expect(root).toMatchObject({ name: 'app', path: worktree.root })
+  })
+
+  it('knows when another thread runs in the same worktree', () => {
+    const mine = inWorktree()
+    expect(inboxWorktreeShared(mine, [mine])).toBe(false)
+    expect(inboxWorktreeShared(mine, [mine, inWorktree({ id: 'ses_fork' })])).toBe(true)
+    expect(inboxWorktreeShared(mine, [mine, thread({ id: 'ses_plain' })])).toBe(false)
+    expect(inboxWorktreeShared(mine, [mine, inWorktree({ id: 'ses_other', target: { kind: 'wsl', distro: 'Ubuntu' } })])).toBe(false)
+    expect(inboxWorktreeShared(thread(), [thread(), inWorktree({ id: 'ses_fork' })])).toBe(false)
+  })
+
+  describe('default worktree base', () => {
+    const info = (branch: string | null, ...names: string[]): InboxGitInfo => ({
+      repository: true,
+      branch,
+      branches: names.map((name) => ({ name, remote: name.includes('/') && name.startsWith('origin') })),
+    })
+
+    it('starts from the current branch when it is a local one', () => {
+      expect(defaultWorktreeBase(info('feature', 'main', 'feature'))).toBe('feature')
+    })
+
+    it('falls back to main, then master, then the first local branch', () => {
+      expect(defaultWorktreeBase(info(null, 'dev', 'main', 'master'))).toBe('main')
+      expect(defaultWorktreeBase(info(null, 'dev', 'master'))).toBe('master')
+      expect(defaultWorktreeBase(info(null, 'dev', 'topic'))).toBe('dev')
+    })
+
+    it('uses a remote-tracking branch only when there is no local one, and none when there is no branch', () => {
+      expect(defaultWorktreeBase(info(null, 'origin/main'))).toBe('origin/main')
+      expect(defaultWorktreeBase(info('gone', 'origin/main', 'main'))).toBe('main')
+      expect(defaultWorktreeBase(info(null))).toBeNull()
+    })
   })
 })

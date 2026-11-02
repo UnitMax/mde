@@ -37,6 +37,8 @@ import {
   INBOX_CLOCK_MS,
   INBOX_FILTERS,
   inboxFolderLabel,
+  inboxThreadHome,
+  inboxWorktreeShared,
   inboxLocked,
   inboxCueActive,
   inboxModelLabel,
@@ -160,6 +162,11 @@ function InboxThreadRow({
   const setArchived = useWorkspace((state) => state.setInboxThreadArchived)
   const removeThread = useWorkspace((state) => state.removeInboxThread)
   const [confirmingRemove, setConfirmingRemove] = useState(false)
+  const [alsoRemoveWorktree, setAlsoRemoveWorktree] = useState(false)
+  const [removing, setRemoving] = useState(false)
+  const [removeError, setRemoveError] = useState<string | null>(null)
+  // A worktree another thread (a fork of this one, say) still runs in is not offered for removal.
+  const ownsWorktree = useWorkspace((state) => Boolean(thread.worktree) && !inboxWorktreeShared(thread, state.inboxThreads))
   const unread = isInboxThreadUnread(thread)
   const model = inboxModelLabel(thread.model)
   const cueAt = useWorkspace((state) => state.inboxCues[thread.id])
@@ -214,7 +221,7 @@ function InboxThreadRow({
             <span className="flex w-full min-w-0 items-center gap-1 text-[11px] text-fg-subtle">
               <Folder className="h-3 w-3 shrink-0" />
               <span className="min-w-0 truncate" title={thread.directory}>
-                {inboxFolderLabel(thread.directory)}
+                {inboxFolderLabel(inboxThreadHome(thread))}
               </span>
               {thread.branch && (
                 <>
@@ -282,16 +289,59 @@ function InboxThreadRow({
         </ContextMenuContent>
       </ContextMenu>
 
-      <AlertDialog open={confirmingRemove} onOpenChange={setConfirmingRemove}>
+      <AlertDialog
+        open={confirmingRemove}
+        onOpenChange={(open) => {
+          setConfirmingRemove(open)
+          if (!open) {
+            setAlsoRemoveWorktree(false)
+            setRemoveError(null)
+          }
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogTitle>Delete “{thread.title}” from the Inbox?</AlertDialogTitle>
           <AlertDialogDescription>
             This removes the thread and any unsent draft from MDE’s Inbox. The OpenCode conversation is kept, and
             later activity will not restore it to the Inbox.
           </AlertDialogDescription>
+          {ownsWorktree && (
+            <label className="mt-3 flex items-start gap-2 text-xs">
+              <input
+                type="checkbox"
+                data-testid="inbox-remove-worktree"
+                className="mt-0.5"
+                checked={alsoRemoveWorktree}
+                disabled={removing}
+                onChange={(event) => setAlsoRemoveWorktree(event.target.checked)}
+              />
+              <span>
+                <span className="text-fg">Also remove the worktree</span>
+                <span className="block text-fg-muted">
+                  Deletes the checkout folder. Git refuses while it has uncommitted changes. The branch{' '}
+                  {thread.worktree?.branch} is kept.
+                </span>
+              </span>
+            </label>
+          )}
+          {removeError && <p role="alert" className="mt-3 text-xs text-danger">{removeError}</p>}
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void removeThread(thread.id)}>Delete</AlertDialogAction>
+            <AlertDialogCancel disabled={removing}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={removing}
+              onClick={(event) => {
+                // Stay open until Git has answered, so a refusal can be shown and tried again.
+                event.preventDefault()
+                setRemoving(true)
+                setRemoveError(null)
+                removeThread(thread.id, alsoRemoveWorktree && ownsWorktree ? { removeWorktree: true } : undefined)
+                  .then(() => setConfirmingRemove(false))
+                  .catch((reason) => setRemoveError(ipcErrorMessage(reason, 'Could not delete the thread.')))
+                  .finally(() => setRemoving(false))
+              }}
+            >
+              Delete
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createGitCommandRunner,
+  createGitMutationRunner,
   isBinaryGitDiff,
+  parseGitRefs,
+  readGitRefs,
   parseGitAheadCount,
   parseGitNumstat,
   parseGitStatus,
@@ -787,5 +790,94 @@ describe('Git command hardening (SEC-008)', () => {
 
     expect(calls).toHaveLength(2)
     expect(calls.every((args) => args[0] === safetyArgs[0])).toBe(true)
+  })
+})
+
+describe('Git branch listing', () => {
+  it('lists local branches first, then remote-tracking ones, and skips a remote HEAD', () => {
+    const output = [
+      'refs/remotes/origin/HEAD',
+      'refs/remotes/origin/main',
+      'refs/heads/feature/login',
+      'refs/remotes/upstream/dev',
+      'refs/heads/main',
+      'refs/tags/v1',
+      'refs/heads/',
+      'refs/remotes/orphan',
+      ''
+    ].join('\n')
+
+    expect(parseGitRefs(output)).toEqual([
+      { name: 'feature/login', remote: false, ref: 'refs/heads/feature/login' },
+      { name: 'main', remote: false, ref: 'refs/heads/main' },
+      { name: 'origin/main', remote: true, ref: 'refs/remotes/origin/main' },
+      { name: 'upstream/dev', remote: true, ref: 'refs/remotes/upstream/dev' }
+    ])
+  })
+
+  it('stops at a fixed number of branches', () => {
+    const output = Array.from({ length: 400 }, (_, index) => `refs/heads/b${index}`).join('\n')
+    expect(parseGitRefs(output)).toHaveLength(300)
+  })
+
+  it('asks for refs only and reports a failed listing', async () => {
+    const calls: string[][] = []
+    const ok = async (args: string[]): Promise<GitCommandResult> => {
+      calls.push(args)
+      return result('refs/heads/main\n')
+    }
+    await expect(readGitRefs(ok)).resolves.toEqual([{ name: 'main', remote: false, ref: 'refs/heads/main' }])
+    expect(calls[0]).toEqual([
+      '--no-pager', 'for-each-ref', '--format=%(refname)', '--sort=-committerdate', 'refs/heads', 'refs/remotes'
+    ])
+    await expect(readGitRefs(async () => result('', 'fatal: not a git repository', 128)))
+      .rejects.toThrow('Could not read Git branches.')
+  })
+})
+
+describe('Git mutation runner', () => {
+  it('keeps every safety option except attr-source, so a checkout honours .gitattributes', async () => {
+    const calls: Array<{ file: string; args: string[]; options: { cwd: string; timeout: number } }> = []
+    mocks.execFile.mockImplementation(
+      (file: string, args: string[], options: { cwd: string; timeout: number }, callback: (error: null, stdout: string, stderr: string) => void) => {
+        calls.push({ file, args, options })
+        callback(null, '', '')
+      }
+    )
+
+    const run = createGitMutationRunner(nativeSession, '/workspace/native', undefined, 'linux')
+    await run(['worktree', 'add', '--', '/workspace/wt', 'refs/heads/main'])
+
+    expect(calls).toHaveLength(1)
+    const [call] = calls
+    expect(call?.file).toBe('git')
+    expect(call?.args).toEqual([...safetyArgs.slice(1), 'worktree', 'add', '--', '/workspace/wt', 'refs/heads/main'])
+    expect(call?.args.some((arg) => arg.startsWith('--attr-source'))).toBe(false)
+    expect(call?.options.cwd).toBe('/workspace/native')
+    expect(call?.options.timeout).toBe(120_000)
+  })
+
+  it('runs a WSL distro command directly with the longer timeout', async () => {
+    mocks.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
+
+    const run = createGitMutationRunner(wslSession, '/home/me/src/app', 90_000, 'win32')
+    await run(['worktree', 'remove', '--', '/home/me/.mde/worktrees/app-01234567/abcd1234'])
+
+    expect(mocks.runWslCommand).toHaveBeenCalledWith(
+      'Ubuntu-24.04',
+      ['git', ...safetyArgs.slice(1), 'worktree', 'remove', '--', '/home/me/.mde/worktrees/app-01234567/abcd1234'],
+      { cwd: '/home/me/src/app', timeoutMs: 90_000 }
+    )
+  })
+
+  it('leaves ordinary queries on the short timeout', async () => {
+    mocks.execFile.mockImplementation(
+      (_file: string, _args: string[], options: { timeout: number }, callback: (error: null, stdout: string, stderr: string) => void) => {
+        expect(options.timeout).toBe(10_000)
+        callback(null, '', '')
+      }
+    )
+    await createGitCommandRunner(nativeSession, 'linux')(['--no-pager', 'status'])
+    expect(mocks.execFile).toHaveBeenCalled()
   })
 })

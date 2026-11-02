@@ -16,6 +16,9 @@ import { runWslCommand } from './wsl/distros'
 
 const GIT_HISTORY_LIMIT = 50
 const GIT_COMMAND_TIMEOUT_MS = 10_000
+/** A checkout writes a whole working tree, so it gets far longer than a status query. */
+const GIT_MUTATION_TIMEOUT_MS = 120_000
+const GIT_REF_LIMIT = 300
 const GIT_DIFF_CONTEXT_LINES = 80
 const GIT_MAX_BUFFER = 8 * 1024 * 1024
 const GIT_EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
@@ -83,7 +86,12 @@ export interface GitLineChangeCounts {
   deletions: number
 }
 
-function runNativeGit(file: string, args: string[], cwd: string): Promise<GitCommandResult> {
+function runNativeGit(
+  file: string,
+  args: string[],
+  cwd: string,
+  timeoutMs = GIT_COMMAND_TIMEOUT_MS
+): Promise<GitCommandResult> {
   return new Promise((resolve) => {
     execFile(
       file,
@@ -92,7 +100,7 @@ function runNativeGit(file: string, args: string[], cwd: string): Promise<GitCom
         cwd,
         env: { ...process.env, ...gitEnvironment },
         encoding: 'utf8',
-        timeout: GIT_COMMAND_TIMEOUT_MS,
+        timeout: timeoutMs,
         maxBuffer: GIT_MAX_BUFFER,
         windowsHide: true
       },
@@ -109,13 +117,18 @@ function runNativeGit(file: string, args: string[], cwd: string): Promise<GitCom
   })
 }
 
-async function runWindowsGit(args: string[], workspaceDirectory: string): Promise<GitCommandResult> {
+async function runWindowsGit(
+  args: string[],
+  workspaceDirectory: string,
+  timeoutMs?: number
+): Promise<GitCommandResult> {
   try {
     const executable = await resolveWindowsGitExecutable(workspaceDirectory)
     return runNativeGit(
       executable,
       ['-C', workspaceDirectory, ...args],
-      win32.dirname(executable)
+      win32.dirname(executable),
+      timeoutMs
     )
   } catch {
     return { stdout: '', stderr: '', code: 1, launchError: true }
@@ -125,7 +138,8 @@ async function runWindowsGit(args: string[], workspaceDirectory: string): Promis
 function createTransportRunner(
   session: Session,
   workspaceDirectory: string,
-  platform: NodeJS.Platform
+  platform: NodeJS.Platform,
+  timeoutMs?: number
 ): GitCommandRunner {
   if (session.kind === 'wsl') {
     if (platform !== 'win32') {
@@ -135,13 +149,16 @@ function createTransportRunner(
 
     const distro = session.distro
     return async (args) => {
-      const result = await runWslCommand(distro, ['git', ...args], { cwd: workspaceDirectory })
+      const result = await runWslCommand(distro, ['git', ...args], {
+        cwd: workspaceDirectory,
+        ...(timeoutMs === undefined ? {} : { timeoutMs })
+      })
       return { stdout: result.stdout, stderr: result.stderr, code: result.code }
     }
   }
 
-  if (platform === 'win32') return (args) => runWindowsGit(args, workspaceDirectory)
-  return (args) => runNativeGit('git', args, workspaceDirectory)
+  if (platform === 'win32') return (args) => runWindowsGit(args, workspaceDirectory, timeoutMs)
+  return (args) => runNativeGit('git', args, workspaceDirectory, timeoutMs)
 }
 
 /**
@@ -184,6 +201,64 @@ export function createGitCommandRunner(
     attrSourceUnsupported.add(key)
     return run(hardened)
   }
+}
+
+/**
+ * A runner for the few commands that change a repository, such as creating or removing a worktree.
+ * It keeps every safety option (hooks, credential helpers, and askpass stay off) but not
+ * `--attr-source`: a checkout must honour the repository's own `.gitattributes`, or a
+ * repository using LFS or line-ending conversion would be written out with the wrong content.
+ * The timeout is long because a checkout writes a whole working tree.
+ */
+export function createGitMutationRunner(
+  session: Session,
+  workspaceDirectory = session.path,
+  timeoutMs = GIT_MUTATION_TIMEOUT_MS,
+  platform: NodeJS.Platform = process.platform
+): GitCommandRunner {
+  const transport = createTransportRunner(session, workspaceDirectory, platform, timeoutMs)
+  return (args) => gitSpawns.run('interactive', () => transport([...gitSafetyArgs, ...args]))
+}
+
+export interface GitRef {
+  /** The name to show and to match: `main`, or `origin/main` for a remote-tracking branch. */
+  name: string
+  remote: boolean
+  /** The full refname, which cannot be mistaken for a tag or a path. */
+  ref: string
+}
+
+/**
+ * Parses `for-each-ref --format=%(refname)` output. Local branches come first, then
+ * remote-tracking ones, each most recently committed first; a remote's `HEAD` pointer is not a
+ * branch.
+ */
+export function parseGitRefs(stdout: string): GitRef[] {
+  const local: GitRef[] = []
+  const remote: GitRef[] = []
+  for (const line of stdout.split('\n')) {
+    const ref = line.trim()
+    if (ref.startsWith('refs/heads/') && ref.length > 'refs/heads/'.length) {
+      local.push({ name: ref.slice('refs/heads/'.length), remote: false, ref })
+    } else if (ref.startsWith('refs/remotes/') && !ref.endsWith('/HEAD')) {
+      const name = ref.slice('refs/remotes/'.length)
+      if (name.includes('/')) remote.push({ name, remote: true, ref })
+    }
+  }
+  return [...local, ...remote].slice(0, GIT_REF_LIMIT)
+}
+
+export async function readGitRefs(run: GitCommandRunner): Promise<GitRef[]> {
+  const result = await run([
+    '--no-pager',
+    'for-each-ref',
+    '--format=%(refname)',
+    '--sort=-committerdate',
+    'refs/heads',
+    'refs/remotes'
+  ])
+  if (result.code !== 0) throw commandError('branches', result)
+  return parseGitRefs(result.stdout)
 }
 
 function isNotRepository(result: GitCommandResult): boolean {

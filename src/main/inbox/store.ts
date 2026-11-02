@@ -3,6 +3,7 @@ import type {
   InboxComposerState,
   InboxFolder,
   InboxThread,
+  InboxWorktree,
   OpenCodeModelRef,
   OpenCodePluginTarget,
   OpenCodeTuiStatus
@@ -93,6 +94,7 @@ export function validateInboxThread(raw: unknown): InboxThread | null {
   if (!timestamp(record.createdAt) || !timestamp(record.lastActivityAt) || !timestamp(record.readAt)) return null
   if (typeof record.archived !== 'boolean') return null
   if (!isInboxFolderId(record.folderId)) return null
+  const worktree = validateWorktree(record.worktree)
   return {
     id: record.id,
     title: record.title,
@@ -108,8 +110,18 @@ export function validateInboxThread(raw: unknown): InboxThread | null {
     archived: record.archived,
     folderId: record.folderId,
     // Only a pointer for the header, so a bad one is dropped instead of losing the thread.
-    ...(isInboxThreadId(record.forkedFrom) ? { forkedFrom: record.forkedFrom } : {})
+    ...(isInboxThreadId(record.forkedFrom) ? { forkedFrom: record.forkedFrom } : {}),
+    // Without its record the thread still works; only removing its worktree from the Inbox is lost.
+    ...(worktree ? { worktree } : {})
   }
+}
+
+function validateWorktree(raw: unknown): InboxWorktree | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const record = raw as Record<string, unknown>
+  if (!text(record.repository, INBOX_DIRECTORY_MAX_LENGTH) || !text(record.root, INBOX_DIRECTORY_MAX_LENGTH)) return null
+  if (!text(record.branch, INBOX_SHORT_TEXT_MAX_LENGTH) || !text(record.base, INBOX_SHORT_TEXT_MAX_LENGTH)) return null
+  return { repository: record.repository, root: record.root, branch: record.branch, base: record.base }
 }
 
 /** Returns a clean copy of one stored folder, or null when any field is malformed. */

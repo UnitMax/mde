@@ -100,13 +100,19 @@ thread and applies the OpenCode service events of the threads it holds:
 - The branch is read with the same background Git query as the terminal header, for the thread's
   folder, when the thread is first recorded and after each activity. A failed read keeps the
   previous branch.
-- Deleting a thread removes only MDE's record; later events for it are ignored.
+- Deleting a thread removes only MDE's record; later events for it are ignored. For a thread that
+  runs in a worktree MDE made, the delete dialog can also remove the worktree (see "Git worktrees
+  for threads").
 
 `src/main/inbox/store.ts` keeps the threads, the Inbox folders and the last composer choices in
 memory and in `inbox.json` in the user-data directory, written at most every 500 ms with the same
 temporary-file-and-rename write as `workspace.json`, and once more on quit. Loading validates
 every record, drops malformed ones, shows threads that were working when MDE closed as idle, and
-keeps the 1,000 most recent threads and 200 most recently used folders. The renderer loads the list once at startup (`inbox:list`) and then follows `inbox:changed` pushes,
+keeps the 1,000 most recent threads and 200 most recently used folders. A thread started in a
+worktree also stores `worktree` (the folder's directory, the worktree's root, the new branch and
+the branch it was cut from); like `forkedFrom` it is optional, and a malformed one is dropped
+without losing the thread. A thread evicted by the 1,000-thread limit leaves its worktree on disk,
+for the user to remove with `git worktree remove`. The renderer loads the list once at startup (`inbox:list`) and then follows `inbox:changed` pushes,
 so opening the Inbox never waits for OpenCode or Git.
 
 ### Inbox chat
@@ -137,7 +143,47 @@ provider, enabled and non-deprecated models only), an agent picker (Build, Plan,
 primary agent that is not hidden), and a send button. Enter sends and Shift+Enter adds a newline.
 The folder, model and agent last used are remembered in `inbox.json`; otherwise the composer
 starts with OpenCode's default model and the Build agent. Sending creates the OpenCode session in
-the folder, records it as a chat thread, selects it, and sends the prompt.
+the folder (or in a new worktree, below), records it as a chat thread, selects it, and sends the
+prompt.
+
+**Git worktrees for threads.** When the folder is a Git repository, a strip under the composer
+chooses where the thread runs (`WorktreeBar`). **Current directory**, the default, runs it in the
+folder as it is and shows the folder's current branch (or "Detached HEAD"), read-only; MDE never
+switches a branch. **New worktree** replaces the branch label with a "From ‹branch›" picker: a
+searchable list of local branches and then remote-tracking branches that already exist (for example
+`origin/main`), starting from the current branch, else `main`, `master` or the first local branch.
+MDE never runs `git fetch`, so a remote branch is as current as the last fetch. Every visit and
+every folder change starts in **Current directory**, so a worktree is always a deliberate choice;
+the choice is not remembered. The strip is absent when the folder is not a repository or Git cannot
+be run, and **New worktree** is disabled in a repository with no branches yet. The renderer asks
+for the branches with `inbox:git-info` (a folder ID) and starts the thread with
+`chat:create { …, worktree: { base } }`; it never names a path or a new branch.
+
+`src/main/inbox/worktree.ts` does the work in the main process. It re-lists the refs and accepts
+`base` only if it is one of them, passes the full refname (`refs/remotes/origin/main`, never the
+bare name) so it cannot be taken for a tag or a path, and runs
+`git worktree add --no-track -b mde/‹id› -- ‹path› ‹refname›` from the folder, where `‹id›` is eight
+random hex digits. `--no-track` keeps the new branch from tracking its base, so a push does not
+target it. The worktree goes to `~/.mde/worktrees/‹folder name›-‹folder id›/‹id›`, in the home
+directory of the folder's own target (a WSL distro's `$HOME` on Windows), so the repository itself
+stays clean and nothing needs ignoring. A folder inside a repository (`packages/app`) gets the
+thread running in the same subfolder of the worktree when the base branch has it, and in the
+worktree root otherwise. The session is then created in that directory, so the thread, its file tree,
+its branch label and any fork of it all follow the worktree. If the session cannot be created, the
+new worktree and its branch are removed again; if only the first message fails, they are kept with
+the thread and its draft, like any new thread. A clash with an existing branch or folder retries
+with a new id up to three times.
+
+The sidebar and thread header name the folder the thread was started in rather than the worktree's
+random directory, and the header shows a WORKTREE marker with the worktree's path and base branch
+as its tooltip. A fork of a worktree thread shares the worktree, as it shares the directory.
+
+**Removing a worktree.** The delete dialog for a thread whose worktree no other thread uses has an
+unticked "Also remove the worktree" box. Ticking it runs `git worktree remove` (never `--force`)
+before the thread is forgotten, so Git refusing because of uncommitted changes leaves the thread in
+place with Git's reason shown, and unticking the box deletes the thread alone. The branch is always
+kept. The main process checks again that no other thread shares the worktree and that its root is
+inside `~/.mde/worktrees`, and a worktree already deleted by hand counts as removed.
 
 **Conversation.** The thread view shows the newest 50 messages and loads older ones when you
 scroll up. User messages are bubbles; assistant text is Markdown rendered read-only with the
@@ -319,7 +365,9 @@ read the draft again, take focus and put the caret after the added text. A compo
 whenever it sees it, including when it appears after it was set, and then calls `clearDraftReload`,
 so what runs first, the box or the text, does not matter and a thread opened later is not told
 again. Attachments are not put back in the box, as with a revert, and both threads share one working
-directory, so file changes made by either show up in both, which the new thread's header says.
+directory, so file changes made by either show up in both, which the new thread's header says. When
+that directory is a worktree MDE made for the original, the fork shares the worktree too, and it is
+removed only with the last thread that uses it.
 
 The new thread's header says "Forked from" with the original's title, a link while the original is
 still in the Inbox, and the sidebar row shows a small fork icon. `forkedFrom` is stored in
@@ -487,7 +535,9 @@ and 200 edges; invalid or oversized diagrams show their source instead.
 Sessions whose folder is a repository show their branch, line change counts and commits ahead in
 the sidebar. Each terminal header also shows the branch and worktree root for that terminal's
 current directory when Git can read them. MDE polls that automatically through `src/main/git.ts`,
-which runs read-only Git commands over the native, Windows and WSL transports.
+which runs read-only Git commands over the native, Windows and WSL transports. The one exception
+is the Inbox's worktrees (see "Git worktrees for threads"), which create and remove a worktree on
+request through a separate runner.
 
 Every Git process goes through one shared pool of three slots (`src/main/spawn-limiter.ts`), and the
 polled readers queue behind requests you make yourself, such as opening the Git dialog. The sidebar
@@ -511,6 +561,13 @@ during a plain `status` or `diff`, so every Git call disables hooks, `core.fsmon
 diff and textconv helpers, credential helpers and in-tree attributes. Opening a terminal in such a
 folder and running its commands yourself remains ordinary code execution: the hardening covers only
 MDE's own automatic queries.
+
+The runner for worktree requests (`createGitMutationRunner`) keeps all of that hardening except
+in-tree attributes, which a checkout has to honour: reading attributes from the empty tree would
+write a repository that uses LFS or line-ending conversion with the wrong content. It also allows
+two minutes instead of ten seconds, since a checkout writes a whole working tree. Because hooks
+stay disabled, a `post-checkout` hook (a tool installing its own hooks, say) does not run in a new
+worktree.
 
 ## WSL
 

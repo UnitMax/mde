@@ -9,7 +9,7 @@ import {
 } from '@/components/InboxPanel'
 import { ChatThreadView } from '@/components/inbox/ChatThreadView'
 import { NewThreadView } from '@/components/inbox/NewThreadView'
-import { inboxModelLabel } from '@/lib/inbox'
+import { inboxModelLabel, inboxThreadHome } from '@/lib/inbox'
 import { sessionAge, sessionDate } from '@/lib/opencode-sessions'
 import { useWorkspace } from '@/store/workspace'
 import { useInboxChat } from '@/store/inbox-chat'
@@ -76,15 +76,24 @@ function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
           <dt className="sr-only">Folder</dt>
           <Folder className="h-3.5 w-3.5 shrink-0" />
           <dd className="min-w-0 truncate" title={thread.directory}>
-            {thread.directory}
+            {inboxThreadHome(thread)}
             {thread.target.kind === 'wsl' ? ` (${thread.target.distro})` : ''}
           </dd>
         </div>
-        {thread.branch && (
+        {(thread.branch || thread.worktree) && (
           <div className="flex min-w-0 items-center gap-1">
             <dt className="sr-only">Branch</dt>
             <GitBranch className="h-3.5 w-3.5 shrink-0" />
-            <dd className="min-w-0 truncate">{thread.branch}</dd>
+            <dd className="min-w-0 truncate">{thread.branch ?? thread.worktree?.branch}</dd>
+            {thread.worktree && (
+              <dd
+                data-testid="inbox-thread-worktree"
+                className="shrink-0 rounded bg-hover px-1 text-[10px] uppercase tracking-wide text-fg-muted"
+                title={`Runs in a worktree of ${thread.worktree.repository}, started from ${thread.worktree.base}: ${thread.directory}`}
+              >
+                worktree
+              </dd>
+            )}
           </div>
         )}
         {model && thread.model && (

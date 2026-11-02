@@ -76,6 +76,8 @@ import type {
   InboxComposerState,
   InboxFolder,
   InboxFoldersState,
+  InboxGitInfo,
+  InboxGitInfoRequest,
   InboxRemoveFolderRequest,
   InboxRemoveRequest,
   InboxSetArchivedRequest,
@@ -568,7 +570,12 @@ export function registerIpcHandlers(
   handle<InboxSetArchivedRequest, InboxThread | null>(IpcChannels.inboxSetArchived, (req) =>
     inboxRecorder.setArchived(req.id, req.archived)
   )
-  handle<InboxRemoveRequest, void>(IpcChannels.inboxRemove, async (req) => { await chat.removeDraft(`thread:${req.id}`); inboxRecorder.remove(req.id) })
+  handle<InboxRemoveRequest, void>(IpcChannels.inboxRemove, async (req) => {
+    // First, so that Git refusing (uncommitted changes) leaves the thread in place to try again.
+    if (req.removeWorktree) await chat.removeThreadWorktree(req.id)
+    await chat.removeDraft(`thread:${req.id}`)
+    inboxRecorder.remove(req.id)
+  })
   handle<void, InboxFoldersState>(IpcChannels.inboxFolders, () => chat.folders())
   handle<InboxAddFolderRequest, InboxFolder>(IpcChannels.inboxFoldersAdd, async (req) => {
     // OpenCode's service runs where the folder lives: in WSL on Windows, natively on macOS.
@@ -585,6 +592,7 @@ export function registerIpcHandlers(
   })
   handle<InboxRemoveFolderRequest, void>(IpcChannels.inboxFoldersRemove, async (req) => { await chat.removeDraft(`folder:${req.id}`); chat.removeFolder(req.id) })
   handle<InboxComposerState, InboxComposerState>(IpcChannels.inboxComposerSet, (req) => chat.setComposer(req))
+  handle<InboxGitInfoRequest, InboxGitInfo>(IpcChannels.inboxGitInfo, (req) => chat.gitInfo(req))
 
   handle<ChatConfigureRequest, void>(IpcChannels.chatConfigure, (req) => chat.configure(req.executable))
   handle<ChatOptionsRequest, ChatOptions>(IpcChannels.chatOptions, (req) => chat.chatOptions(req))
