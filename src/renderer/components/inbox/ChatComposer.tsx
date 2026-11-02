@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ContextMeter } from '@/components/inbox/ContextMeter'
-import { groupModels, modelKey, modelName, orderAgents, sameModelRef, type ContextUsage } from '@/lib/chat'
+import { findModel, groupModels, modelKey, modelName, orderAgents, sameModelRef, type ContextUsage } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { cn } from '@/lib/utils'
 import type { OptionsState } from '@/store/inbox-chat'
@@ -45,13 +45,17 @@ export function ModelPicker({
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const groups = useMemo(() => groupModels(models, query), [models, query])
+  const current = findModel(models, value)
 
   return (
     <DropdownMenu open={open} onOpenChange={(next) => { setOpen(next); if (!next) setQuery('') }}>
       <DropdownMenuTrigger asChild disabled={disabled}>
         <button type="button" className={pickerButton} aria-label="Model" data-testid="chat-model-picker">
           <Sparkles className="h-3.5 w-3.5 shrink-0 text-accent" />
-          <span className="max-w-[16rem] truncate">{modelName(models, value)}</span>
+          <span className="max-w-[16rem] truncate" title={value ? modelKey(value) : undefined}>
+            {value && <span className="text-fg-subtle">{current?.providerName ?? value.providerId} / </span>}
+            {modelName(models, value)}
+          </span>
           <ChevronDown className="h-3 w-3 shrink-0 opacity-70" />
         </button>
       </DropdownMenuTrigger>

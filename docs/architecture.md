@@ -146,6 +146,7 @@ build in ‹folder›?". The folder name opens a menu of the Inbox folders with 
 remove buttons. Below it is the composer: a prompt box, a model picker (searchable, grouped by
 provider, enabled and non-deprecated models only), an agent picker (Build, Plan, then any other
 primary agent that is not hidden), and a send button. Enter sends and Shift+Enter adds a newline.
+The model picker shows the selected provider and model as “Provider / Model”, with a muted provider prefix.
 The folder, model and agent last used are remembered in `inbox.json`; otherwise the composer
 starts with OpenCode's default model and the Build agent. Sending creates the OpenCode session in
 the folder (or in a new worktree, below), records it as a chat thread, selects it, and sends the
