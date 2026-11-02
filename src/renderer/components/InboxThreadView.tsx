@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Folder, GitBranch, LoaderCircle, RefreshCw, Sparkles } from 'lucide-react'
+import { Folder, GitBranch, GitFork, LoaderCircle, RefreshCw, Sparkles } from 'lucide-react'
 import type { InboxThread } from '@shared/types'
 import {
   InboxLockedNotice,
@@ -14,6 +14,38 @@ import { sessionAge, sessionDate } from '@/lib/opencode-sessions'
 import { useWorkspace } from '@/store/workspace'
 import { useInboxChat } from '@/store/inbox-chat'
 import { Button } from '@/components/ui/button'
+
+/** Says which thread this one was forked from, and that the two share a folder. */
+function ForkedFrom({ source }: { source: string }): JSX.Element {
+  const original = useWorkspace((state) => state.inboxThreads.find((item) => item.id === source))
+  const select = useWorkspace((state) => state.selectInboxThread)
+  return (
+    <p
+      className="mt-1.5 flex min-w-0 items-center gap-1 text-xs text-fg-subtle"
+      data-testid="inbox-forked-from"
+      title="This thread works in the same folder as the one it was forked from, so file changes made by either show up in both."
+    >
+      <GitFork aria-hidden className="h-3.5 w-3.5 shrink-0" />
+      <span className="min-w-0 truncate">
+        Forked from{' '}
+        {original ? (
+          <button
+            type="button"
+            onClick={() => select(original.id)}
+            className="text-accent hover:underline"
+            title={`Open ${original.title}`}
+          >
+            {original.title}
+          </button>
+        ) : (
+          'a thread that is no longer in the Inbox'
+        )}
+        {' · '}
+        works in the same folder, so file changes show up in both
+      </span>
+    </p>
+  )
+}
 
 function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
   const now = useInboxClock()
@@ -71,6 +103,7 @@ function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
           </dd>
         </div>
       </dl>
+      {thread.forkedFrom && <ForkedFrom source={thread.forkedFrom} />}
     </header>
   )
 }

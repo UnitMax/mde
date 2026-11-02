@@ -57,6 +57,8 @@ import type {
   ChatPermissionReplyRequest,
   ChatRequests,
   ChatRevert,
+  ChatForkRequest,
+  ChatForkResult,
   ChatRevertRequest,
   ChatSendRequest,
   ChatThreadRequest,
@@ -163,6 +165,7 @@ export const IpcChannels = {
   chatInterrupt: 'chat:interrupt',
   chatRedo: 'chat:redo',
   chatRevert: 'chat:revert',
+  chatFork: 'chat:fork',
   chatRegenerateTitle: 'chat:regenerate-title',
   chatRequests: 'chat:requests',
   chatPermissionReply: 'chat:permission-reply',
@@ -532,6 +535,7 @@ export interface RendererApi {
     interrupt(req: ChatThreadRequest): Promise<void>
     redo(req: ChatThreadRequest): Promise<void>
     revert(req: ChatRevertRequest): Promise<ChatRevert>
+    fork(req: ChatForkRequest): Promise<ChatForkResult>
     regenerateTitle(req: ChatThreadRequest): Promise<void>
     requests(req: ChatThreadRequest): Promise<ChatRequests>
     replyPermission(req: ChatPermissionReplyRequest): Promise<void>

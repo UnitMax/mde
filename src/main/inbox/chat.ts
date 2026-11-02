@@ -6,6 +6,8 @@ import type {
   ChatAgent,
   ChatCreateRequest,
   ChatEvent,
+  ChatForkRequest,
+  ChatForkResult,
   ChatFormReplyRequest,
   ChatMessagesPage,
   ChatMessagesRequest,
@@ -45,6 +47,9 @@ import {
   parseSessionRevert,
   parseStagedRevert,
   parseSessionUsage,
+  parseTurnMarkers,
+  unfinishedTurnStart,
+  type TurnMarker,
 } from '../opencode/service/parse'
 import type { InboxRecorder } from './recorder'
 import { isChatAgentId, type InboxStore } from './store'
@@ -64,6 +69,8 @@ const AGENT_RETRY_MS = 250
  */
 const REVERT_ATTEMPTS = 40
 const REVERT_RETRY_MS = 250
+/** Pages of messages read to find where the agent's current turn began, at most. */
+const TURN_SCAN_PAGES = 10
 
 export interface InboxChatDependencies {
   drafts?: InboxDraftStore
@@ -421,6 +428,70 @@ export class InboxChatService {
         throw error
       }
     }
+  }
+
+  /**
+   * Forks a thread into a new one that starts with a copy of the conversation. OpenCode copies the
+   * messages under new IDs inside the service, and the new session works in the same directory.
+   * Nothing is stopped or changed in the original.
+   */
+  async fork(request: ChatForkRequest): Promise<ChatForkResult> {
+    this.assertEnabled()
+    const source = this.thread(request.threadId)
+    this.streams.ensure(source.target)
+    const { before, text } = request.messageId ? { before: request.messageId, text: undefined } : await this.forkBoundary(source)
+    let answer: unknown
+    try {
+      answer = await this.dependencies.client.request(source.target, 'session.fork', {
+        params: { sessionID: source.id },
+        body: { before },
+      })
+    } catch (error) {
+      if (error instanceof OpenCodeServiceError && error.status === 404) {
+        if (error.tag === 'MessageNotFoundError') throw new Error('That message is no longer in the conversation.')
+        // A route the service does not know answers 404 with no body; a missing session says so by name.
+        if (error.tag === undefined) throw new Error('This OpenCode service does not support forking. Update OpenCode and try again.')
+      }
+      throw error
+    }
+    const created = parseCreatedSession(answer)
+    const model = parseSessionInfo(answer).model
+    const thread = this.dependencies.recorder.recordForkedThread({
+      id: created.id,
+      title: created.title,
+      source,
+      ...(model ? { model } : {}),
+    })
+    return { thread, ...(text ? { text } : {}) }
+  }
+
+  /**
+   * Where a fork of the whole conversation is cut. OpenCode copies every message, so two things it
+   * would copy are left out here: what a staged revert hides, which the copy would bring back, and the
+   * turn the agent is working on, which would arrive as a message with no reply. Null copies it all.
+   */
+  private async forkBoundary(thread: InboxThread): Promise<{ before: string | null; text?: string }> {
+    const [session, active] = await Promise.all([
+      this.dependencies.client.request(thread.target, 'session.get', { params: { sessionID: thread.id } }),
+      this.dependencies.client.request(thread.target, 'session.active'),
+    ])
+    const revert = parseSessionRevert(session)
+    if (revert) return { before: revert.messageId }
+    if (!parseActiveSessions(active).has(thread.id)) return { before: null }
+    const markers: TurnMarker[] = []
+    let cursor: string | null = null
+    for (let page = 0; page < TURN_SCAN_PAGES; page += 1) {
+      const answer = parseTurnMarkers(await this.dependencies.client.request(thread.target, 'session.message.list', {
+        params: { sessionID: thread.id },
+        query: { limit: String(CHAT_PAGE_SIZE), ...(cursor ? { cursor } : { order: 'desc' }) },
+      }))
+      markers.push(...answer.markers)
+      cursor = answer.count >= CHAT_PAGE_SIZE ? answer.next : null
+      // The turn began after the newest `idle` found so far, or there is nothing older to read.
+      if (!cursor || markers.some((marker) => marker.kind === 'idle')) break
+    }
+    const start = unfinishedTurnStart(markers)
+    return start ? { before: start.id, ...(start.text?.trim() ? { text: start.text } : {}) } : { before: null }
   }
 
   async regenerateTitle(threadId: string): Promise<void> {

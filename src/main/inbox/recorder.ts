@@ -163,6 +163,35 @@ export class InboxRecorder {
     return created
   }
 
+  /**
+   * Records a thread forked from another: idle until it is given something to do, already read, and
+   * in the source's folder, target and directory, which stay valid if the folder has been removed.
+   */
+  recordForkedThread(input: { id: string; title?: string | null; source: InboxThread; model?: OpenCodeModelRef }): InboxThread {
+    const now = this.dependencies.now()
+    const existing = this.store.get(input.id)
+    if (existing) return existing
+    const { source } = input
+    const model = input.model ?? source.model
+    const created: InboxThread = {
+      id: input.id,
+      title: input.title?.trim() || source.title,
+      directory: source.directory,
+      target: source.target,
+      branch: source.branch,
+      ...(model ? { model } : {}),
+      status: 'idle',
+      createdAt: now,
+      lastActivityAt: now,
+      readAt: now,
+      archived: false,
+      folderId: source.folderId,
+      forkedFrom: source.id
+    }
+    this.insert(created)
+    return created
+  }
+
   /** Sets a known thread's status, e.g. working after the user sent it a message. */
   markStatus(id: string, status: 'working' | 'idle'): void {
     const thread = this.store.get(id)

@@ -258,6 +258,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.chatInterrupt]: chatThread,
   [IpcChannels.chatRedo]: chatThread,
   [IpcChannels.chatRevert]: object({ threadId: opencodeSessionId, messageId, files: optional(boolean) }),
+  [IpcChannels.chatFork]: object({ threadId: opencodeSessionId, messageId: optional(messageId) }),
   [IpcChannels.chatRegenerateTitle]: chatThread,
   [IpcChannels.chatRequests]: chatThread,
   [IpcChannels.chatPermissionReply]: object({

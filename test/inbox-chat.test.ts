@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { ChatDraft, ChatDraftRequest, ChatMessage, ChatMessagesPage, ChatOptions, ChatRequests, ChatRevert, ChatRevertRequest, InboxFolder, InboxThread } from '../src/shared/types'
+import type { ChatDraft, ChatDraftRequest, ChatForkRequest, ChatForkResult, ChatMessage, ChatMessagesPage, ChatOptions, ChatRequests, ChatRevert, ChatRevertRequest, InboxFolder, InboxThread } from '../src/shared/types'
 import { InboxThreadView } from '../src/renderer/components/InboxThreadView'
 import { useInboxChat } from '../src/renderer/store/inbox-chat'
 import { useWorkspace } from '../src/renderer/store/workspace'
@@ -33,6 +33,11 @@ function thread(overrides: Partial<InboxThread> = {}): InboxThread {
   }
 }
 
+/** What a fork of `ses_one` looks like once recorded. */
+function forkedThread(): InboxThread {
+  return thread({ id: 'ses_fork', title: 'Fix login (fork #1)', status: 'idle', forkedFrom: 'ses_one', readAt: Date.now() })
+}
+
 let page: ChatMessagesPage
 let requests: ChatRequests
 const api = {
@@ -51,6 +56,7 @@ const api = {
     interrupt: vi.fn(async () => undefined),
     redo: vi.fn(async (): Promise<void> => undefined),
     revert: vi.fn(async (request: ChatRevertRequest): Promise<ChatRevert> => ({ messageId: request.messageId, files: [] })),
+    fork: vi.fn(async (_request: ChatForkRequest): Promise<ChatForkResult> => ({ thread: forkedThread() })),
     regenerateTitle: vi.fn(async (): Promise<void> => undefined),
     replyPermission: vi.fn(async () => undefined),
     replyForm: vi.fn(async () => undefined),
@@ -82,6 +88,21 @@ function button(container: HTMLElement, label: string): HTMLButtonElement {
   return found
 }
 
+/**
+ * A draft store in miniature: what a composer loads is what was last typed or put above it, kept per
+ * draft. `initial` is the text of the open thread's draft.
+ */
+function draftStore(initial: string): { saved: (key?: string) => string } {
+  const stored: Record<string, string> = { 'thread:ses_one': initial }
+  api.chat.draft.mockImplementation((async (request: ChatDraftRequest): Promise<ChatDraft> => {
+    const current = stored[request.key] ?? ''
+    if (request.action === 'text') stored[request.key] = request.text
+    if (request.action === 'prepend') stored[request.key] = current.trim() ? `${request.text}\n\n${current}` : request.text
+    return { text: stored[request.key] ?? current, revision: 1, attachments: [] }
+  }) as never)
+  return { saved: (key = 'thread:ses_one') => stored[key] ?? '' }
+}
+
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('api', api)
@@ -99,6 +120,10 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
+  // Tests that stand in for the service put the plain answers back.
+  api.chat.draft.mockImplementation(async (req: { text?: string }) => ({ text: req.text ?? '', revision: 1, attachments: [] }))
+  api.chat.revert.mockImplementation(async (request: ChatRevertRequest) => ({ messageId: request.messageId, files: [] }))
+  api.chat.fork.mockImplementation(async () => ({ thread: forkedThread() }))
   await act(async () => roots.splice(0).forEach((root) => root.unmount()))
   document.body.innerHTML = ''
   vi.unstubAllGlobals()
@@ -888,20 +913,6 @@ describe('Inbox staged revert', () => {
       await vi.waitFor(() => expect(view.textContent).toContain('Second answer'))
       return view
     }
-    // A draft store in miniature: what the composer loads is what was last typed or put above it.
-    const draftStore = (initial: string): { saved: () => string } => {
-      let stored = initial
-      api.chat.draft.mockImplementation((async (request: ChatDraftRequest): Promise<ChatDraft> => {
-        if (request.action === 'text') stored = request.text
-        if (request.action === 'prepend') stored = stored.trim() ? `${request.text}\n\n${stored}` : request.text
-        return { text: stored, revision: 1, attachments: [] }
-      }) as never)
-      return { saved: () => stored }
-    }
-    afterEach(() => {
-      api.chat.draft.mockImplementation(async (req: { text?: string }) => ({ text: req.text ?? '', revision: 1, attachments: [] }))
-      api.chat.revert.mockImplementation(async (request: ChatRevertRequest) => ({ messageId: request.messageId, files: [] }))
-    })
 
     it('offers the revert on the user\'s own messages only', async () => {
       const view = await showConversation()
@@ -1064,5 +1075,214 @@ describe('Inbox staged revert', () => {
       expect(document.body.querySelector('[data-testid="chat-revert-dialog"]')).toBeNull()
       expect(api.chat.revert).not.toHaveBeenCalled()
     })
+  })
+})
+
+
+describe('Inbox fork from a message', () => {
+  beforeEach(() => {
+    useWorkspace.setState({ inboxThreads: [thread()], selectedInboxThreadId: 'ses_one' })
+  })
+
+  const user = (id: string, text: string): ChatMessage => ({ kind: 'user', id, time: 1, text })
+  const reply = (id: string, text: string): ChatMessage => ({
+    kind: 'assistant', id, time: 2, agent: 'build', model: options.defaultModel!, completed: true, parts: [{ kind: 'text', text }],
+  })
+  const conversation = [user('msg_1', 'First request'), reply('msg_2', 'First answer'), user('msg_3', 'Second request'), reply('msg_4', 'Second answer')]
+  const showConversation = async (): Promise<HTMLElement> => {
+    page = { running: false, older: null, messages: conversation }
+    const view = await render()
+    await vi.waitFor(() => expect(view.textContent).toContain('Second answer'))
+    return view
+  }
+  const forkButton = (view: HTMLElement, id: string): HTMLButtonElement | null =>
+    view.querySelector(`[data-testid="chat-fork-from-${id}"]`)
+
+  it('offers the fork beside the revert on the user\'s own messages only', async () => {
+    const view = await showConversation()
+    for (const id of ['msg_1', 'msg_3']) {
+      expect(forkButton(view, id)?.getAttribute('aria-label')).toBe('Fork from before this message')
+      expect(forkButton(view, id)?.getAttribute('title')).toBe('Fork from here')
+      const revert = view.querySelector(`[data-testid="chat-revert-to-${id}"]`)!
+      expect(revert).not.toBeNull()
+      expect(forkButton(view, id)!.parentElement).toBe(revert.parentElement)
+    }
+    expect(forkButton(view, 'msg_2')).toBeNull()
+    expect(forkButton(view, 'msg_4')).toBeNull()
+  })
+
+  it('forks from before the message at once, opens the new thread and puts the message in its box', async () => {
+    const draft = draftStore('')
+    const view = await showConversation()
+    await act(async () => forkButton(view, 'msg_3')!.click())
+    // Nothing is deleted, so there is nothing to ask.
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(api.chat.fork).toHaveBeenCalledTimes(1)
+    expect(api.chat.fork).toHaveBeenCalledWith({ threadId: 'ses_one', messageId: 'msg_3' })
+    expect(api.chat.draft).toHaveBeenCalledWith({ key: 'thread:ses_fork', action: 'prepend', text: 'Second request' })
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_fork')
+    expect(useWorkspace.getState().inboxThreads.map((item) => item.id).sort()).toEqual(['ses_fork', 'ses_one'])
+    await vi.waitFor(() => expect(api.chat.subscribe).toHaveBeenCalledWith({ threadId: 'ses_fork' }))
+
+    const textarea = view.querySelector('textarea') as HTMLTextAreaElement
+    await vi.waitFor(() => expect(textarea.value).toBe('Second request'))
+    expect(draft.saved('thread:ses_fork')).toBe('Second request')
+    // Ready for changes: focused, with the caret after the restored text.
+    await vi.waitFor(() => expect(document.activeElement).toBe(textarea))
+    expect(textarea.selectionStart).toBe('Second request'.length)
+    expect(textarea.selectionEnd).toBe('Second request'.length)
+    // The box took the instruction, so a thread opened later is not told again.
+    expect(useInboxChat.getState().draftReloads.ses_fork).toBeUndefined()
+    expect(view.querySelector('[data-testid="chat-notice"]')).toBeNull()
+    expect(view.querySelector('[data-testid="chat-fork-error"]')).toBeNull()
+  })
+
+  it('leaves the original thread as it was', async () => {
+    draftStore('Half written follow-up')
+    const view = await showConversation()
+    await vi.waitFor(() => expect((view.querySelector('textarea') as HTMLTextAreaElement).value).toBe('Half written follow-up'))
+    await act(async () => forkButton(view, 'msg_1')!.click())
+    expect(api.chat.draft).not.toHaveBeenCalledWith(expect.objectContaining({ key: 'thread:ses_one', action: 'prepend' }))
+    expect(api.chat.revert).not.toHaveBeenCalled()
+    expect(api.chat.interrupt).not.toHaveBeenCalled()
+    // Back in the original, its messages are all there and its box still holds what was typed.
+    await act(async () => useWorkspace.getState().selectInboxThread('ses_one'))
+    await vi.waitFor(() => expect(view.textContent).toContain('Second answer'))
+    expect(view.querySelector('[data-testid="chat-revert"]')).toBeNull()
+    await vi.waitFor(() => expect((view.querySelector('textarea') as HTMLTextAreaElement).value).toBe('Half written follow-up'))
+  })
+
+  it('opens the fork without touching its box for a message that has no text', async () => {
+    draftStore('')
+    page = { running: false, older: null, messages: [{ kind: 'user', id: 'msg_1', time: 1, text: '', attachments: [{ id: 'att_1', name: 'shot.png', mime: 'image/png', size: 10 }] }, reply('msg_2', 'Seen')] }
+    const view = await render()
+    await vi.waitFor(() => expect(view.textContent).toContain('Seen'))
+    await act(async () => forkButton(view, 'msg_1')!.click())
+    expect(api.chat.fork).toHaveBeenCalledWith({ threadId: 'ses_one', messageId: 'msg_1' })
+    expect(api.chat.draft).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'prepend' }))
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_fork')
+  })
+
+  it('shows that it is forking and ignores a second click meanwhile', async () => {
+    draftStore('')
+    let finish!: (result: ChatForkResult) => void
+    api.chat.fork.mockImplementationOnce(() => new Promise<ChatForkResult>((resolve) => { finish = resolve }))
+    const view = await showConversation()
+    await act(async () => forkButton(view, 'msg_3')!.click())
+    expect(view.querySelector('[data-testid="chat-fork-status"]')?.textContent).toContain('Forking thread…')
+    await act(async () => forkButton(view, 'msg_1')!.click())
+    expect(api.chat.fork).toHaveBeenCalledTimes(1)
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_one')
+    await act(async () => finish({ thread: forkedThread() }))
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_fork')
+    expect(view.querySelector('[data-testid="chat-fork-status"]')).toBeNull()
+  })
+
+  it('says why the fork failed, stays in the thread, and clears the message when tried again', async () => {
+    draftStore('')
+    api.chat.fork.mockRejectedValueOnce(new Error("Error invoking remote method 'chat:fork': Error: That message is no longer in the conversation."))
+    const view = await showConversation()
+    await act(async () => forkButton(view, 'msg_3')!.click())
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-fork-error"]')?.textContent).toBe('That message is no longer in the conversation.'))
+    expect(view.querySelector('[data-testid="chat-fork-status"]')).toBeNull()
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_one')
+    expect(useWorkspace.getState().inboxThreads.map((item) => item.id)).toEqual(['ses_one'])
+    expect(api.chat.draft).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'prepend' }))
+    expect(view.textContent).toContain('Second answer')
+
+    await act(async () => forkButton(view, 'msg_3')!.click())
+    expect(api.chat.fork).toHaveBeenCalledTimes(2)
+    expect(view.querySelector('[data-testid="chat-fork-error"]')).toBeNull()
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_fork')
+  })
+
+  it('opens the fork and says so when the message could not be put in its box', async () => {
+    draftStore('')
+    api.chat.draft.mockImplementation((async (request: ChatDraftRequest): Promise<ChatDraft> => {
+      if (request.action === 'prepend') throw new Error("Error invoking remote method 'chat:draft': Error: The text is too long to add to this draft.")
+      return { text: '', revision: 1, attachments: [] }
+    }) as never)
+    const view = await showConversation()
+    await act(async () => forkButton(view, 'msg_3')!.click())
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_fork')
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-notice"]')?.textContent)
+      .toBe('The thread was forked, but the message could not be put in its box: The text is too long to add to this draft.'))
+    expect((view.querySelector('textarea') as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('forks from a message that a revert leaves visible, and offers nothing on the ones it hides', async () => {
+    draftStore('')
+    page = { running: false, older: null, messages: conversation, revert: { messageId: 'msg_3', files: [] } }
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-revert"]')).not.toBeNull())
+    expect(forkButton(view, 'msg_3')).toBeNull()
+    await act(async () => forkButton(view, 'msg_1')!.click())
+    expect(api.chat.fork).toHaveBeenCalledWith({ threadId: 'ses_one', messageId: 'msg_1' })
+  })
+})
+
+
+describe('Inbox draft reload', () => {
+  beforeEach(() => {
+    useWorkspace.setState({ inboxThreads: [thread()], selectedInboxThreadId: 'ses_one' })
+    useInboxChat.setState({ draftReloads: {} })
+  })
+
+  it('takes a reload that was set before the box appeared, then lets go of it', async () => {
+    draftStore('Added text and the rest')
+    useInboxChat.setState({ draftReloads: { ses_one: { id: 4, caret: 10 } } })
+    const view = await render()
+    const textarea = view.querySelector('textarea') as HTMLTextAreaElement
+    await vi.waitFor(() => expect(textarea.value).toBe('Added text and the rest'))
+    await vi.waitFor(() => expect(document.activeElement).toBe(textarea))
+    expect(textarea.selectionStart).toBe(10)
+    expect(useInboxChat.getState().draftReloads.ses_one).toBeUndefined()
+  })
+
+  it('waits for the box to switch on before taking focus, however slowly the draft loads', async () => {
+    draftStore('Existing text')
+    // The first read, which the box needs before it can be used, is the slow one.
+    const answer = api.chat.draft.getMockImplementation()! as unknown as (request: ChatDraftRequest) => Promise<ChatDraft>
+    let loads = 0
+    api.chat.draft.mockImplementation((async (request: ChatDraftRequest) => {
+      if (request.action === 'load' && loads++ === 0) await new Promise((resolve) => setTimeout(resolve, 120))
+      return answer(request)
+    }) as never)
+    useInboxChat.setState({ draftReloads: { ses_one: { id: 1, caret: 4 } } })
+    const view = await render()
+    const textarea = view.querySelector('textarea') as HTMLTextAreaElement
+    // Until then the box is switched off, and a box that is off cannot take focus.
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(textarea.disabled).toBe(true)
+    expect(document.activeElement).not.toBe(textarea)
+    await vi.waitFor(() => expect(document.activeElement).toBe(textarea))
+    expect(textarea.disabled).toBe(false)
+    expect(textarea.value).toBe('Existing text')
+    expect(textarea.selectionStart).toBe(4)
+  })
+
+  it('takes the next reload as well, even when it has the number the last one had', async () => {
+    draftStore('Hello world')
+    const view = await render()
+    const textarea = view.querySelector('textarea') as HTMLTextAreaElement
+    await vi.waitFor(() => expect(textarea.value).toBe('Hello world'))
+    for (const caret of [5, 2]) {
+      textarea.blur()
+      expect(document.activeElement).not.toBe(textarea)
+      await act(async () => useInboxChat.setState({ draftReloads: { ses_one: { id: 1, caret } } }))
+      await vi.waitFor(() => expect(document.activeElement).toBe(textarea))
+      expect(textarea.selectionStart).toBe(caret)
+      expect(useInboxChat.getState().draftReloads.ses_one).toBeUndefined()
+    }
+  })
+
+  it('does not let go of a newer reload than the one that was taken', () => {
+    useInboxChat.setState({ draftReloads: { ses_one: { id: 2, caret: 4 }, ses_two: { id: 1, caret: 0 } } })
+    useInboxChat.getState().clearDraftReload('ses_one', 1)
+    expect(useInboxChat.getState().draftReloads.ses_one).toEqual({ id: 2, caret: 4 })
+    useInboxChat.getState().clearDraftReload('ses_one', 2)
+    expect(useInboxChat.getState().draftReloads).toEqual({ ses_two: { id: 1, caret: 0 } })
+    useInboxChat.getState().clearDraftReload('ses_three', 1)
+    expect(useInboxChat.getState().draftReloads).toEqual({ ses_two: { id: 1, caret: 0 } })
   })
 })

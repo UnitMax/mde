@@ -39,6 +39,8 @@ import {
   parseSessionRevert,
   parseSessionUsage,
   parseStagedRevert,
+  parseTurnMarkers,
+  unfinishedTurnStart,
   parseTokens,
 } from '../src/main/opencode/service/parse'
 
@@ -151,6 +153,73 @@ describe('OpenCode service client', () => {
     expect(serviceUrl('http://127.0.0.1:1', 'session.revert.stage', { params: { sessionID: 'ses_a' } }))
       .toBe('http://127.0.0.1:1/api/session/ses_a/revert/stage')
     expect(() => serviceUrl('http://127.0.0.1:1', 'session.revert.stage', { params: { sessionID: 'ses_a', messageID: 'msg_1' } })).toThrow()
+  })
+
+  it('forks through a fixed route that carries only the message to cut before', async () => {
+    const seen: { method?: string; url?: string; body: unknown }[] = []
+    const url = await serve((request, response) => {
+      expect(authorized(request, 'p')).toBe(true)
+      let body = ''
+      request.on('data', (chunk) => { body += chunk })
+      request.on('end', () => {
+        seen.push({ method: request.method, url: request.url, body: JSON.parse(body) })
+        response.writeHead(200, { 'content-type': 'application/json' }).end('{"data":{"id":"ses_fork"}}')
+      })
+    })
+    const client = new OpenCodeServiceClient({ discover: async () => ({ url, password: 'p' }), executable: () => 'opencode' })
+    await client.request(wsl, 'session.fork', { params: { sessionID: 'ses_one' }, body: { before: null } })
+    await client.request(wsl, 'session.fork', { params: { sessionID: 'ses_one' }, body: { before: 'msg_3' } })
+    expect(seen).toEqual([
+      { method: 'POST', url: '/api/session/ses_one/fork', body: { before: null } },
+      { method: 'POST', url: '/api/session/ses_one/fork', body: { before: 'msg_3' } },
+    ])
+    expect(serviceUrl('http://127.0.0.1:1', 'session.fork', { params: { sessionID: 'ses_a' } })).toBe('http://127.0.0.1:1/api/session/ses_a/fork')
+    expect(() => serviceUrl('http://127.0.0.1:1', 'session.fork', { params: { sessionID: '../x' } })).toThrow('Invalid OpenCode sessionID.')
+    expect(() => serviceUrl('http://127.0.0.1:1', 'session.fork', { params: { sessionID: 'ses_a', messageID: 'msg_1' } })).toThrow()
+  })
+
+  it('reduces a message list to where turns begin and end, newest first', () => {
+    const page = {
+      data: [
+        { id: 'msg_9', type: 'idle', outcome: 'succeeded' },
+        { id: 'msg_8', type: 'assistant', content: [] },
+        { id: 'msg_7', type: 'user', text: 'Second request' },
+        { id: 'msg_6', type: 'synthetic', text: 'Context' },
+        { id: 'bad id', type: 'user', text: 'Skipped' },
+        { id: 'msg_5', type: 'user', text: 'x\u0000y' },
+      ],
+      cursor: { next: 'cursor-2' },
+    }
+    expect(parseTurnMarkers(page)).toEqual({
+      markers: [
+        { id: 'msg_9', kind: 'idle' },
+        { id: 'msg_8', kind: 'other' },
+        { id: 'msg_7', kind: 'user', text: 'Second request' },
+        { id: 'msg_6', kind: 'other' },
+        { id: 'msg_5', kind: 'user', text: 'xy' },
+      ],
+      next: 'cursor-2',
+      count: 6,
+    })
+    expect(parseTurnMarkers({ data: [], cursor: { next: '../no' } })).toEqual({ markers: [], next: null, count: 0 })
+    expect(() => parseTurnMarkers({})).toThrow()
+    expect(() => parseTurnMarkers(null)).toThrow()
+  })
+
+  it('finds the user message the current turn began with', () => {
+    const user = (id: string, text = id) => ({ id, kind: 'user' as const, text })
+    const other = (id: string) => ({ id, kind: 'other' as const })
+    const idle = (id: string) => ({ id, kind: 'idle' as const })
+    // Newest first: a turn in progress after a finished one.
+    expect(unfinishedTurnStart([other('m6'), user('m5'), idle('m4'), other('m3'), user('m2')])).toMatchObject({ id: 'm5' })
+    // Two messages sent while the agent worked belong to the same turn, which began with the older.
+    expect(unfinishedTurnStart([user('m7'), other('m6'), user('m5'), idle('m4'), user('m3')])).toMatchObject({ id: 'm5' })
+    // The first turn has no idle before it.
+    expect(unfinishedTurnStart([other('m3'), other('m2'), user('m1')])).toMatchObject({ id: 'm1' })
+    // Nothing started it: the last thing written was the agent stopping, or a run the service resumed.
+    expect(unfinishedTurnStart([idle('m3'), other('m2'), user('m1')])).toBeNull()
+    expect(unfinishedTurnStart([other('m2'), other('m1')])).toBeNull()
+    expect(unfinishedTurnStart([])).toBeNull()
   })
 
   it('keeps the revert route tied to a session ID', () => {

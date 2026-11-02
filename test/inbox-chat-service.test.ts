@@ -5,7 +5,7 @@ import { InboxDraftStore } from '../src/main/inbox/drafts'
 import { describe, expect, it, vi } from 'vitest'
 import type { ChatEvent } from '../src/shared/types'
 import { InboxChatService } from '../src/main/inbox/chat'
-import { InboxRecorder } from '../src/main/inbox/recorder'
+import { InboxRecorder, isInboxThreadUnread } from '../src/main/inbox/recorder'
 import { InboxStore } from '../src/main/inbox/store'
 import type { ServiceOperation, ServiceRequest } from '../src/main/opencode/service/client'
 import { OpenCodeServiceError } from '../src/main/opencode/service/client'
@@ -512,6 +512,185 @@ describe('Inbox chat service', () => {
         // Only a thread MDE holds has a draft to put text in.
         await expect(service.draft({ key: 'thread:ses_unknown', action: 'prepend', text: 'x' })).rejects.toThrow('no longer in the Inbox')
       } finally { service.stop(); await fs.rm(path, { recursive: true, force: true }) }
+    })
+  })
+
+  describe('forking a thread', () => {
+    const forked = { data: { id: 'ses_fork', title: 'Fix login (fork #1)', model: { id: 'free-1', providerID: 'opencode' }, fork: { sessionID: 'ses_new', boundary: { type: 'through', messageID: 'msg_9' } } } }
+    const none = { data: {} }
+    const running = { data: { ses_new: { type: 'running' } } }
+    const started = async (responses: Parameters<typeof setup>[0] = {}) => {
+      const context = setup({ 'session.create': { data: { id: 'ses_new', title: 'Fix login' } }, 'session.fork': forked, 'session.get': { data: {} }, 'session.active': none, ...responses })
+      await context.service.create({ folderId: context.folder.id, text: 'Hi', agent: 'build', model })
+      await vi.waitFor(() => expect(context.store.get('ses_new')?.branch).toBe('main'))
+      context.calls.length = 0
+      return context
+    }
+    /** Answers message-list requests from pages, newest first, whatever the other operations do. */
+    const pages = (context: Awaited<ReturnType<typeof started>>, answers: unknown[]) => {
+      const previous = context.request.getMockImplementation()!
+      let next = 0
+      context.request.mockImplementation(async (target, operation, input) => {
+        if (operation === 'session.message.list') {
+          context.calls.push({ operation, request: input ?? {} })
+          return answers[Math.min(next++, answers.length - 1)]
+        }
+        return previous(target, operation, input)
+      })
+    }
+    const user = (id: string, text: string) => ({ id, type: 'user', text })
+    const filler = (count: number, prefix: string) => Array.from({ length: count }, (_, index) => ({ id: `msg_${prefix}${String(index).padStart(3, '0')}`, type: 'assistant', content: [] }))
+
+    it('forks the whole conversation of an idle thread and records the new thread beside it', async () => {
+      const { service, store, calls } = await started()
+      const original = store.get('ses_new')
+      const result = await service.fork({ threadId: 'ses_new' })
+      expect(calls).toEqual([
+        { operation: 'session.get', request: { params: { sessionID: 'ses_new' } } },
+        { operation: 'session.active', request: {} },
+        { operation: 'session.fork', request: { params: { sessionID: 'ses_new' }, body: { before: null } } },
+      ])
+      expect(result.text).toBeUndefined()
+      expect(result.thread).toMatchObject({
+        id: 'ses_fork', title: 'Fix login (fork #1)', status: 'idle', forkedFrom: 'ses_new', folderId: original!.folderId,
+        directory: original!.directory, target: original!.target, model: { id: 'free-1', providerId: 'opencode' }, archived: false,
+      })
+      expect(store.get('ses_fork')).toEqual(result.thread)
+      expect(isInboxThreadUnread(result.thread)).toBe(false)
+      // Nothing about the original changes.
+      expect(store.get('ses_new')).toEqual(original)
+      service.stop()
+    })
+
+    it('cuts before the message it is asked to, and reads nothing else first', async () => {
+      const { service, calls, store } = await started()
+      const result = await service.fork({ threadId: 'ses_new', messageId: 'msg_3' })
+      expect(calls).toEqual([{ operation: 'session.fork', request: { params: { sessionID: 'ses_new' }, body: { before: 'msg_3' } } }])
+      expect(result.text).toBeUndefined()
+      expect(store.get('ses_fork')).toMatchObject({ forkedFrom: 'ses_new' })
+      service.stop()
+    })
+
+    it('cuts at a staged revert, so the fork does not bring the hidden messages back', async () => {
+      const { service, calls } = await started({ 'session.get': { data: { revert: { messageID: 'msg_5', files: [] } } }, 'session.active': running })
+      const result = await service.fork({ threadId: 'ses_new' })
+      expect(calls.map((call) => call.operation)).toEqual(['session.get', 'session.active', 'session.fork'])
+      expect(calls[2]!.request.body).toEqual({ before: 'msg_5' })
+      expect(result.text).toBeUndefined()
+      service.stop()
+    })
+
+    it('cuts before the unfinished turn of a working thread and hands back its text', async () => {
+      const context = await started({ 'session.active': running })
+      pages(context, [{ data: [{ id: 'msg_8', type: 'assistant' }, user('msg_7', 'Now fix the tests'), { id: 'msg_6', type: 'idle', outcome: 'succeeded' }, user('msg_5', 'Earlier request')] }])
+      const result = await context.service.fork({ threadId: 'ses_new' })
+      expect(context.calls.map((call) => call.operation)).toEqual(['session.get', 'session.active', 'session.message.list', 'session.fork'])
+      expect(context.calls[2]!.request).toEqual({ params: { sessionID: 'ses_new' }, query: { limit: '50', order: 'desc' } })
+      expect(context.calls[3]!.request.body).toEqual({ before: 'msg_7' })
+      expect(result.text).toBe('Now fix the tests')
+      context.service.stop()
+    })
+
+    it('reads on through older pages until it finds where the turn began', async () => {
+      const context = await started({ 'session.active': running })
+      pages(context, [
+        { data: filler(50, 'a'), cursor: { next: 'cursor-2' } },
+        { data: [{ id: 'msg_c', type: 'assistant' }, user('msg_b', 'The long request'), { id: 'msg_a', type: 'idle' }], cursor: { next: 'cursor-3' } },
+      ])
+      const result = await context.service.fork({ threadId: 'ses_new' })
+      const lists = context.calls.filter((call) => call.operation === 'session.message.list')
+      expect(lists.map((call) => call.request.query)).toEqual([{ limit: '50', order: 'desc' }, { limit: '50', cursor: 'cursor-2' }])
+      expect(context.calls.at(-1)!.request.body).toEqual({ before: 'msg_b' })
+      expect(result.text).toBe('The long request')
+      context.service.stop()
+    })
+
+    it('treats the first turn as unfinished when the thread has no earlier idle, and does not read forever', async () => {
+      const first = await started({ 'session.active': running })
+      pages(first, [{ data: [{ id: 'msg_2', type: 'assistant' }, user('msg_1', 'The very first request')] }])
+      await expect(first.service.fork({ threadId: 'ses_new' })).resolves.toMatchObject({ text: 'The very first request' })
+      expect(first.calls.at(-1)!.request.body).toEqual({ before: 'msg_1' })
+      first.service.stop()
+
+      // A page that is always full with a cursor stops at ten, keeping the oldest user message it saw.
+      const endless = await started({ 'session.active': running })
+      const full = (index: number) => ({ data: [...filler(49, `p${index}`), user(`msg_u${index}`, `Request ${index}`)], cursor: { next: `cursor-${index + 1}` } })
+      pages(endless, Array.from({ length: 12 }, (_, index) => full(index)))
+      const result = await endless.service.fork({ threadId: 'ses_new' })
+      expect(endless.calls.filter((call) => call.operation === 'session.message.list')).toHaveLength(10)
+      expect(endless.calls.at(-1)!.request.body).toEqual({ before: 'msg_u9' })
+      expect(result.text).toBe('Request 9')
+      endless.service.stop()
+    })
+
+    it('copies everything when nothing started the run, and offers no text for a message without any', async () => {
+      const stopped = await started({ 'session.active': running })
+      pages(stopped, [{ data: [{ id: 'msg_3', type: 'idle' }, user('msg_2', 'Done')] }])
+      const result = await stopped.service.fork({ threadId: 'ses_new' })
+      expect(stopped.calls.at(-1)!.request.body).toEqual({ before: null })
+      expect(result.text).toBeUndefined()
+      stopped.service.stop()
+
+      const silent = await started({ 'session.active': running })
+      pages(silent, [{ data: [user('msg_2', '   ')] }])
+      const blank = await silent.service.fork({ threadId: 'ses_new' })
+      expect(silent.calls.at(-1)!.request.body).toEqual({ before: 'msg_2' })
+      expect(blank.text).toBeUndefined()
+      silent.service.stop()
+    })
+
+    it.each([
+      [new OpenCodeServiceError('Message not found: msg_3', 404, 'MessageNotFoundError'), 'no longer in the conversation'],
+      [new OpenCodeServiceError('OpenCode answered with status 404.', 404), 'does not support forking'],
+      [new OpenCodeServiceError('Session not found: ses_new', 404, 'SessionNotFoundError'), 'Session not found: ses_new'],
+      [new OpenCodeServiceError('Expected a string starting with "msg_"', 400, 'InvalidRequestError'), 'Expected a string starting with'],
+      [new Error('The OpenCode service did not answer in time.'), 'did not answer in time'],
+    ])('explains why a fork failed and records nothing (%s)', async (error, message) => {
+      const { service, store, request } = await started({ 'session.fork': error })
+      request.mockClear()
+      await expect(service.fork({ threadId: 'ses_new', messageId: 'msg_3' })).rejects.toThrow(message as string)
+      expect(request.mock.calls.filter((call) => call[1] === 'session.fork')).toHaveLength(1)
+      expect(store.list().map((thread) => thread.id)).toEqual(['ses_new'])
+      service.stop()
+    })
+
+    it('records nothing when the service answers with something that is not a session', async () => {
+      for (const answer of [null, { data: {} }, { data: { id: '../x' } }]) {
+        const { service, store } = await started({ 'session.fork': answer })
+        await expect(service.fork({ threadId: 'ses_new', messageId: 'msg_3' })).rejects.toThrow()
+        expect(store.list().map((thread) => thread.id)).toEqual(['ses_new'])
+        service.stop()
+      }
+    })
+
+    it('does not ask the service anything for a thread it does not hold or where the Inbox is off', async () => {
+      const { service, request, disable } = await started()
+      request.mockClear()
+      await expect(service.fork({ threadId: 'ses_other' })).rejects.toThrow('no longer in the Inbox')
+      disable()
+      await expect(service.fork({ threadId: 'ses_new' })).rejects.toThrow('only available on macOS')
+      expect(request).not.toHaveBeenCalled()
+      service.stop()
+    })
+
+    it('forks a thread whose folder has been removed from the Inbox', async () => {
+      const { service, store, folder } = await started()
+      store.removeFolder(folder.id)
+      const result = await service.fork({ threadId: 'ses_new' })
+      expect(result.thread).toMatchObject({ id: 'ses_fork', folderId: folder.id, directory: '/home/me/app' })
+      service.stop()
+    })
+
+    it('forks a fork, pointing at the thread it came from', async () => {
+      const { service, store, request } = await started()
+      await service.fork({ threadId: 'ses_new' })
+      request.mockImplementation(async (...args) => (args[1] === 'session.fork'
+        ? { data: { id: 'ses_grandchild', title: 'Fix login (fork #2)' } }
+        : args[1] === 'session.active' ? none : null))
+      const result = await service.fork({ threadId: 'ses_fork' })
+      expect(result.thread).toMatchObject({ id: 'ses_grandchild', forkedFrom: 'ses_fork' })
+      expect(store.get('ses_fork')?.forkedFrom).toBe('ses_new')
+      service.stop()
     })
   })
 

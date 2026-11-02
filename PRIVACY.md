@@ -23,7 +23,7 @@ MDE stores data only on the local machine:
 - `inbox.json` under Electron's user-data directory, once you use the Inbox: one record for each
   OpenCode conversation you started in the Inbox, with its session ID, title, folder, target (Mac
   or WSL distro), Git branch, model and provider identifiers, last status, timestamps (including,
-  while a conversation is working, when its current run began), and read and archived flags. It also holds the Inbox folders you add (path, target, name, timestamps; at most 200) and the folder, model and agent
+  while a conversation is working, when its current run began), read and archived flags, and for a forked conversation the session ID of the one it was forked from. It also holds the Inbox folders you add (path, target, name, timestamps; at most 200) and the folder, model and agent
   you last chose in the Inbox composer. It never holds prompts, messages or tool data. It keeps at
   most 1,000 conversations; deleting a conversation from the Inbox removes only MDE's record.
 - If you enable the optional OpenCode integrations, a short status snapshot under
@@ -74,7 +74,8 @@ contents are capped at 200 MiB total, with 10 files and 20 MiB per draft.
 
 Only sending a message transfers attachments to the loopback OpenCode service, as native inline
 file attachments. OpenCode stores them and may forward their contents to the chosen provider.
-MDE does not send unsent drafts automatically. Conversation history retains attachment metadata
+Forking a conversation makes OpenCode copy its messages, attachments included, inside its own
+data; MDE does not handle that content. MDE does not send unsent drafts automatically. Conversation history retains attachment metadata
 and small raster thumbnails in memory; MDE does not persist conversation attachment downloads.
 
 ## Network behavior in the released application

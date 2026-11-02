@@ -38,6 +38,57 @@ function setup(options: { branch?: () => Promise<string | null> } = {}) {
   }
 }
 
+describe('inbox recorder: forked threads', () => {
+  it('records a fork as an idle, read thread in the source\'s folder, pointing back at the source', () => {
+    const { start, recorder, thread, changed, advance, store } = setup()
+    start('ses_one', 'Fix login')
+    store.put({ ...thread('ses_one')!, branch: 'feature', archived: true, readAt: 0, status: 'attention', attentionReason: 'question', model: { id: 'old', providerId: 'p' } })
+    advance(5_000)
+    changed.length = 0
+    const created = recorder.recordForkedThread({ id: 'ses_fork', title: 'Fix login (fork #1)', source: thread('ses_one')!, model: { id: 'new', providerId: 'q' } })
+    expect(created).toEqual({
+      id: 'ses_fork',
+      title: 'Fix login (fork #1)',
+      directory: folder.directory,
+      target: folder.target,
+      branch: 'feature',
+      model: { id: 'new', providerId: 'q' },
+      status: 'idle',
+      createdAt: 6_000,
+      lastActivityAt: 6_000,
+      readAt: 6_000,
+      archived: false,
+      folderId: folder.id,
+      forkedFrom: 'ses_one',
+    })
+    expect(thread('ses_fork')).toEqual(created)
+    expect(changed).toEqual([created])
+    expect(isInboxThreadUnread(created)).toBe(false)
+    // The original is untouched.
+    expect(thread('ses_one')).toMatchObject({ archived: true, readAt: 0, status: 'attention' })
+  })
+
+  it('falls back to the source\'s title and model, and records a thread once', () => {
+    const { start, recorder, thread, changed } = setup()
+    start('ses_one', 'Fix login')
+    const created = recorder.recordForkedThread({ id: 'ses_fork', title: '   ', source: thread('ses_one')! })
+    expect(created).toMatchObject({ title: 'Fix login', model, forkedFrom: 'ses_one' })
+    changed.length = 0
+    expect(recorder.recordForkedThread({ id: 'ses_fork', title: 'Other', source: thread('ses_one')! })).toBe(created)
+    expect(changed).toEqual([])
+  })
+
+  it('works out the fork\'s own branch after recording it', async () => {
+    const { start, recorder, thread, readBranch, store } = setup({ branch: async () => 'main' })
+    start('ses_one')
+    store.put({ ...thread('ses_one')!, branch: null })
+    recorder.recordForkedThread({ id: 'ses_fork', source: thread('ses_one')! })
+    expect(thread('ses_fork')?.branch).toBeNull()
+    await vi.waitFor(() => expect(thread('ses_fork')?.branch).toBe('main'))
+    expect(readBranch).toHaveBeenCalled()
+  })
+})
+
 describe('inbox recorder', () => {
   it('moves a thread up and marks it unread only when the agent finishes, fails, or asks', () => {
     const { start, emit, thread, advance, store } = setup()

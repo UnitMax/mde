@@ -110,10 +110,10 @@ the validated `chat:*` channels.
 - **Secrets.** The password is held in memory per target, sent only as HTTP
   Basic auth to that loopback origin, and never logged, stored or put in an
   error message. A 401 or connection failure drops it and rediscovers once.
-- **Operations.** `SERVICE_OPERATIONS` is a fixed allowlist of nineteen method
+- **Operations.** `SERVICE_OPERATIONS` is a fixed allowlist of twenty method
   and path pairs (agents, providers, models, session create/get/active, message
   list, prompt, interrupt, agent and model switch, permission and form
-  list/reply, session update, and staging or clearing a revert). The `chat:regenerate-title` channel accepts only a
+  list/reply, session update, staging or clearing a revert, and fork). The `chat:regenerate-title` channel accepts only a
   recorded session ID and sends a fixed PATCH body `{ title: '' }`; the renderer cannot
   supply arbitrary update fields, paths or targets. The `chat:redo` channel likewise accepts only a
   recorded session ID and sends `DELETE /api/session/{sessionID}/revert` with no body, which
@@ -124,7 +124,15 @@ the validated `chat:*` channels.
   interrupted first, and a busy answer is retried for about ten seconds. The service itself
   restores the files from its own snapshot; MDE sends no paths or file contents, and the diff
   OpenCode answers with is reduced to paths, status and line counts before it reaches the
-  renderer. Path parameters must match `ses_`, `per_` or `frm_` ID patterns,
+  renderer. The `chat:fork` channel accepts only a recorded thread ID and an optional message ID
+  of the same `msg_` form, and sends `POST /api/session/{sessionID}/fork` with the body
+  `{ before }`, where `before` is that message ID or `null`. For a fork of the whole conversation the
+  main process, not the renderer, decides what `before` is (see "Forking a thread" in
+  `architecture.md`): it reads the session and the active list, and only while the agent is working
+  it also reads pages of messages, keeping only the ID and text of the message the turn began with.
+  OpenCode copies the messages and attachments inside the service, so the copy itself does not pass
+  through MDE or the renderer, and the answer is reduced to the new session's ID, title and model.
+  Path parameters must match `ses_`, `per_` or `frm_` ID patterns,
   only the query keys `limit`, `order`, `cursor` and `location[directory]` are
   allowed, request bodies are capped at 1 MB, responses at 16 MB, and each
   request times out after 30 seconds.

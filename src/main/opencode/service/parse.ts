@@ -363,6 +363,52 @@ export function parseMessagesPage(value: unknown, running: boolean, limit: numbe
   return { messages, older, running }
 }
 
+/** What a message list says about where turns begin and end, newest first. */
+export interface TurnMarker {
+  id: string
+  kind: 'user' | 'idle' | 'other'
+  /** The text of a user message. */
+  text?: string
+}
+
+/**
+ * One page of the message list reduced to turn markers, newest first as the list is read. A user
+ * message starts a turn and an `idle` message, which OpenCode writes when the agent stops, ends one;
+ * everything else is `other`. Messages without a usable ID are skipped.
+ */
+export function parseTurnMarkers(value: unknown): { markers: TurnMarker[]; next: string | null; count: number } {
+  const response = record(value)
+  if (!response || !Array.isArray(response.data)) throw new ServiceShapeError('a message list')
+  const markers: TurnMarker[] = []
+  for (const raw of response.data) {
+    const message = record(raw)
+    const id = short(message?.id)
+    if (!message || !id || !MESSAGE_ID.test(id)) continue
+    if (message.type === 'user') markers.push({ id, kind: 'user', text: body(message.text, CHAT_TEXT_LIMIT).text })
+    else markers.push({ id, kind: message.type === 'idle' ? 'idle' : 'other' })
+  }
+  const next = record(response.cursor)?.next
+  return {
+    markers,
+    next: typeof next === 'string' && /^[A-Za-z0-9_=.-]{1,2048}$/.test(next) ? next : null,
+    count: response.data.length,
+  }
+}
+
+/**
+ * The user message the agent's current turn began with, from markers read newest first: the oldest
+ * user message after the last `idle`, or after nothing at all when the turn is the first. Null when
+ * no user message started it, as when the run was resumed by the service itself.
+ */
+export function unfinishedTurnStart(markers: readonly TurnMarker[]): TurnMarker | null {
+  let start: TurnMarker | null = null
+  for (const marker of markers) {
+    if (marker.kind === 'idle') break
+    if (marker.kind === 'user') start = marker
+  }
+  return start
+}
+
 /** The session's running totals from a `session.get` answer; null when it has none. */
 export function parseSessionUsage(value: unknown): ChatUsage | null {
   const session = record(record(value)?.data)

@@ -85,10 +85,13 @@ interface InboxChatStore {
   recent: string[]
   /**
    * Set when text has been put in a thread's draft from outside the composer, so the composer that
-   * shows it reads the draft again. `caret` is where the added text ends.
+   * shows it reads the draft again and takes focus. `caret` is where the added text ends. It stays
+   * until a composer has taken it, so it does not matter whether the box was there yet.
    */
   draftReloads: Record<string, { id: number; caret: number }>
 
+  /** Lets go of a draft reload a composer has taken, unless a newer one has been set since. */
+  clearDraftReload: (threadId: string, id: number) => void
   init: () => () => void
   addFolder: (request: InboxAddFolderRequest) => Promise<InboxFolder>
   removeFolder: (id: string) => Promise<void>
@@ -108,6 +111,13 @@ interface InboxChatStore {
    * is in the box. A rejection means nothing was reverted.
    */
   revert: (threadId: string, input: { messageId: string; text: string; files: boolean }) => Promise<void>
+  /**
+   * Forks a thread into a new one and opens it. Given a user message, the new thread starts from just
+   * before it with its text in the box; otherwise it starts from the whole conversation, with the
+   * text of an unfinished turn in the box when the fork was cut before one. The original is not
+   * touched. A rejection means no thread was made.
+   */
+  forkThread: (threadId: string, input?: { messageId: string; text: string }) => Promise<InboxThread>
   replyPermission: (threadId: string, requestId: string, decision: 'once' | 'always' | 'reject') => Promise<void>
   replyForm: (threadId: string, formId: string, answer: Record<string, ChatFormValue>) => Promise<void>
   applyEvent: (event: ChatEvent) => void
@@ -357,6 +367,35 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
           notice: `The conversation was reverted, but the message could not be put back in the box: ${ipcErrorMessage(error, 'the draft could not be saved.')}`,
         })
       }
+    },
+
+    clearDraftReload: (threadId, id) => {
+      set((state) => {
+        if (state.draftReloads[threadId]?.id !== id) return {}
+        const { [threadId]: _taken, ...rest } = state.draftReloads
+        return { draftReloads: rest }
+      })
+    },
+
+    forkThread: async (threadId, input) => {
+      const result = await window.api.chat.fork({ threadId, ...(input ? { messageId: input.messageId } : {}) })
+      const forkId = result.thread.id
+      const workspace = useWorkspace.getState()
+      workspace.upsertInboxThread(result.thread)
+      workspace.selectInboxThread(forkId)
+      const text = input?.text ?? result.text
+      if (!text?.trim()) return result.thread
+      // The new thread's box is shown by now, so it reads the draft again once the text is in it. The
+      // fork has happened either way, so a draft that cannot take the text is told to the reader.
+      try {
+        await window.api.chat.draft({ key: `thread:${forkId}`, action: 'prepend', text })
+        set((state) => ({
+          draftReloads: { ...state.draftReloads, [forkId]: { id: (state.draftReloads[forkId]?.id ?? 0) + 1, caret: text.length } },
+        }))
+      } catch (error) {
+        set((state) => ({ threads: { ...state.threads, [forkId]: { ...(state.threads[forkId] ?? emptyThread()), notice: `The thread was forked, but the message could not be put in its box: ${ipcErrorMessage(error, 'the draft could not be saved.')}` } } }))
+      }
+      return result.thread
     },
 
     replyPermission: async (threadId, requestId, decision) => {

@@ -274,8 +274,56 @@ happened by then, so if the draft cannot take the text, the thread shows a notic
 instead of failing the dialog; sending or redoing clears the notice. The text is the only thing
 put back: attachments are not. The message is not deleted from
 OpenCode until the next message is sent, which makes the revert permanent. Only your own messages
-can be reverted to for now; stepping back to the middle of a turn, or branching a copy of the
-conversation, are not offered.
+can be reverted to for now; stepping back to the middle of a turn is not offered. To keep the
+conversation and try another way, fork it instead (below).
+
+**Forking a thread.** A fork is a new Inbox thread that starts with a copy of another's
+conversation and goes on from there; the original is not stopped, reverted or otherwise changed.
+It is offered in two places. The sidebar's right-click menu has **Fork thread**, which forks the
+whole conversation. Each of your own messages has a fork button beside the revert button, which
+forks from just before that message and puts its text in the new thread's box, so you can say it
+differently without losing the original; there is no confirmation because nothing is deleted. A
+sidebar fork that fails shows its reason in the panel and a message fork in the thread, and each
+ignores a second click while its own fork is in progress.
+
+`chat:fork` (`InboxChatService.fork`) sends `POST /api/session/{sessionID}/fork` with
+`{ before: <message ID> | null }`. OpenCode 2.1.4 copies the messages under new IDs inside the
+service, with their tokens, costs, timings, agent and model and any attachments (stored a second
+time by OpenCode), and starts the new session idle in the same project and directory, with the
+session's own cost and token totals at zero. Its title is the original's plus ` (fork #N)`, where N
+counts the depth of forks of forks, so forks of one thread share a title; the thread keeps that
+title, and the marker below tells them apart. A fork that names a message cuts there. A fork of the
+whole conversation sends `null`, except in two cases, which the main process works out first
+(`forkBoundary`) because OpenCode would copy what the person is not looking at:
+
+- **A staged revert.** The copy would bring back the hidden messages and carry no revert, so the
+  fork is cut at the revert's first hidden message.
+- **A working agent.** The message the agent is answering would arrive with no reply. The fork is
+  cut before the turn in progress, which starts at the oldest user message after the newest `idle`
+  message (OpenCode writes one when the agent stops; `parseTurnMarkers`, `unfinishedTurnStart`),
+  reading back up to ten pages of messages to find it. Its text is returned with the thread, so the
+  new thread's box offers it again; the original keeps working.
+
+The result is recorded by `InboxRecorder.recordForkedThread`: idle, read, not archived, in the
+original's folder, target, directory and branch, and with `forkedFrom` set to the original's ID. It
+copies those from the original thread rather than looking up its folder, so it still works if the
+folder has been removed. Events never add threads, so this is the only way a fork appears. The
+renderer (`forkThread` in the Inbox store) puts the thread in the list, opens it, then adds the text
+to its draft the way a revert does. Failures say what happened: a message that is gone ("That
+message is no longer in the conversation."), a service without the route (a 404 with no named
+error, "This OpenCode service does not support forking. Update OpenCode and try again."), or
+OpenCode's own message; if only the draft cannot take the text, the new thread opens with a notice.
+
+The restored text reaches the box through `draftReloads` in the store, a pending instruction to
+read the draft again, take focus and put the caret after the added text. A composer applies it
+whenever it sees it, including when it appears after it was set, and then calls `clearDraftReload`,
+so what runs first, the box or the text, does not matter and a thread opened later is not told
+again. Attachments are not put back in the box, as with a revert, and both threads share one working
+directory, so file changes made by either show up in both, which the new thread's header says.
+
+The new thread's header says "Forked from" with the original's title, a link while the original is
+still in the Inbox, and the sidebar row shows a small fork icon. `forkedFrom` is stored in
+`inbox.json` as a thread ID and dropped if it is not one; it is not otherwise used.
 
 **Transport.** OpenCode 2 runs one background service per machine, which its terminal UI also
 uses, so a thread can be continued in a terminal (`opencode --session ses_…`) and both stay in

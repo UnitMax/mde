@@ -141,8 +141,13 @@ export function AgentPicker({
 
 export interface ChatComposerProps {
   draftKey?: ChatDraftKey
-  /** Changes when text was added to the draft from outside; the box then reads the draft again and puts the caret at `caret`. */
+  /**
+   * Set when text was added to the draft from outside: the box reads the draft again, takes focus and
+   * puts the caret at `caret`. It is applied whenever it is seen, including when the box appears
+   * after it was set, and `onDraftReloaded` then lets go of it.
+   */
   draftReload?: { id: number; caret: number }
+  onDraftReloaded?: (id: number) => void
   options: OptionsState | undefined
   agent: string | null
   model: OpenCodeModelRef | null
@@ -165,6 +170,7 @@ export interface ChatComposerProps {
 export function ChatComposer({
   draftKey,
   draftReload,
+  onDraftReloaded,
   options,
   agent,
   model,
@@ -221,26 +227,34 @@ export function ChatComposer({
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  // A reload that is already there when the box appears has been dealt with; only later ones count.
-  const appliedReload = useRef(draftReload?.id ?? 0)
+  const appliedReload = useRef(0)
   useEffect(() => {
+    // Once it is let go of the next one may start counting again.
+    if (!draftReload) appliedReload.current = 0
     if (!draftKey || !draftReload || draftReload.id === appliedReload.current) return
     appliedReload.current = draftReload.id
+    onDraftReloaded?.(draftReload.id)
     void mutate({ key: draftKey, action: 'load' }).then((value) => {
       if (currentKey.current !== draftKey) return
       setDraft(value)
       setText(value.text)
       // The added text is at the top; the caret goes to its end, ready for changes.
-      requestAnimationFrame(() => {
-        const textarea = textareaRef.current
-        if (!textarea) return
-        textarea.focus()
-        const caret = Math.min(draftReload.caret, value.text.length)
-        textarea.setSelectionRange(caret, caret)
-      })
+      setFocusAt(Math.min(draftReload.caret, value.text.length))
     }).catch((reason) => setError(ipcErrorMessage(reason, 'Could not restore the draft.')))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftReload, draftKey])
+  // Asked for focus and a caret position. The box is switched off until the draft has loaded, and a
+  // box that is off cannot take focus, so this waits for the render that switches it on.
+  const [focusAt, setFocusAt] = useState<number | null>(null)
+  useEffect(() => {
+    if (focusAt === null || !loaded) return
+    const textarea = textareaRef.current
+    if (!textarea || textarea.disabled) return
+    textarea.focus()
+    const caret = Math.min(focusAt, textarea.value.length)
+    textarea.setSelectionRange(caret, caret)
+    setFocusAt(null)
+  }, [focusAt, loaded, disabled, sending, text])
   const ready = options?.status === 'ready'
   const canSend = ready && !disabled && !sending && !adding && loaded && (text.trim().length > 0 || draft.attachments.length > 0) && Boolean(agent) && Boolean(model)
 

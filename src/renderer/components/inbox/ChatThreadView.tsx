@@ -8,6 +8,7 @@ import { ChatRevertBanner } from '@/components/inbox/ChatRevertBanner'
 import { ChatRevertDialog } from '@/components/inbox/ChatRevertDialog'
 import { TurnDuration, WorkingFor } from '@/components/inbox/ChatTurnTime'
 import { contextUsage, findModel, hideReverted, initialChoice, mergeLive, revertedMessageCount, turnStats } from '@/lib/chat'
+import { ipcErrorMessage } from '@/lib/ipc-error'
 import { optionsKey, useInboxChat, type ChatThreadState } from '@/store/inbox-chat'
 import { codeViewerFontFamily, getTerminalSettings, subscribeTerminalSettings } from '@/terminal/terminal-settings'
 
@@ -38,7 +39,9 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const interrupt = useInboxChat((store) => store.interrupt)
   const redo = useInboxChat((store) => store.redo)
   const revertTo = useInboxChat((store) => store.revert)
+  const forkThread = useInboxChat((store) => store.forkThread)
   const draftReload = useInboxChat((store) => store.draftReloads[thread.id])
+  const clearDraftReload = useInboxChat((store) => store.clearDraftReload)
   const replyPermission = useInboxChat((store) => store.replyPermission)
   const replyForm = useInboxChat((store) => store.replyForm)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -50,6 +53,28 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const [revertTarget, setRevertTarget] = useState<UserMessage | null>(null)
   const askRevert = useCallback((message: UserMessage) => setRevertTarget(message), [])
   useEffect(() => setRevertTarget(null), [thread.id])
+  // Forking from a message makes a request that can fail; the failure is told here, in this thread.
+  const [fork, setFork] = useState<{ pending: boolean; error: string | null }>({ pending: false, error: null })
+  const forking = useRef(false)
+  useEffect(() => {
+    forking.current = false
+    setFork({ pending: false, error: null })
+  }, [thread.id])
+  const forkFrom = useCallback((message: UserMessage) => {
+    if (forking.current) return
+    forking.current = true
+    setFork({ pending: true, error: null })
+    forkThread(thread.id, { messageId: message.id, text: message.text }).then(
+      () => {
+        forking.current = false
+        setFork({ pending: false, error: null })
+      },
+      (error: unknown) => {
+        forking.current = false
+        setFork({ pending: false, error: ipcErrorMessage(error, 'Could not fork the thread.') })
+      },
+    )
+  }, [forkThread, thread.id])
 
   useEffect(() => subscribeTerminalSettings(() => setCodeFamily(getTerminalSettings().codeFamily)), [])
 
@@ -151,7 +176,12 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
             const took = turns.finished.get(message.id)
             return (
               <Fragment key={message.id}>
-                <ChatMessageView message={message} directory={thread.directory} onRevert={message.kind === 'user' ? askRevert : undefined} />
+                <ChatMessageView
+                  message={message}
+                  directory={thread.directory}
+                  onRevert={message.kind === 'user' ? askRevert : undefined}
+                  onFork={message.kind === 'user' ? forkFrom : undefined}
+                />
                 {took !== undefined && <TurnDuration ms={took.ms} tokensPerSecond={took.tokensPerSecond} />}
               </Fragment>
             )
@@ -170,6 +200,13 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
           ))}
           {thread.sendError && <p role="alert" className="text-xs text-danger">{thread.sendError}</p>}
           {state?.notice && <p role="alert" className="text-xs text-danger" data-testid="chat-notice">{state.notice}</p>}
+          {fork.pending && (
+            <p role="status" className="flex items-center gap-1.5 text-xs text-fg-muted" data-testid="chat-fork-status">
+              <LoaderCircle aria-hidden className="h-3 w-3 animate-spin text-accent motion-reduce:animate-none" />
+              Forking thread…
+            </p>
+          )}
+          {fork.error && <p role="alert" className="text-xs text-danger" data-testid="chat-fork-error">{fork.error}</p>}
           {state?.error && (
             <div role="alert" className="flex items-center gap-2 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
@@ -187,6 +224,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
           key={thread.id}
           draftKey={`thread:${thread.id}`}
           draftReload={draftReload}
+          onDraftReloaded={(id) => clearDraftReload(thread.id, id)}
           options={options}
           agent={agent}
           model={model}

@@ -262,6 +262,8 @@ export interface InboxThread {
   archived: boolean
   /** The Inbox folder the thread was started in. */
   folderId: string
+  /** The thread this one was forked from, which may since have been removed. */
+  forkedFrom?: string
 }
 
 /**
@@ -421,6 +423,29 @@ export interface ChatRevertRequest {
   messageId: string
   /** Whether the files the agent changed from there on are put back. Left out means they are. */
   files?: boolean
+}
+
+/**
+ * Forks a thread into a new one. The new thread is a separate OpenCode session that starts with a
+ * copy of the conversation and goes on from there; the original is not changed.
+ */
+export interface ChatForkRequest {
+  threadId: string
+  /**
+   * Fork from just before this message, which is not copied. Left out, the whole conversation is
+   * copied, except what a staged revert hides and, while the agent is working, the unfinished turn.
+   */
+  messageId?: string
+}
+
+export interface ChatForkResult {
+  /** The new thread, already recorded in the Inbox. */
+  thread: InboxThread
+  /**
+   * The text of the unfinished turn's message when the fork was cut before it, so the new thread can
+   * offer it again. Absent when the fork was not cut for that reason.
+   */
+  text?: string
 }
 
 export interface ChatMessagesPage {

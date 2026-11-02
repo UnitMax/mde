@@ -89,6 +89,7 @@ const validPayloads = {
   [IpcChannels.chatInterrupt]: { threadId: 'ses_thread' },
   [IpcChannels.chatRedo]: { threadId: 'ses_thread' },
   [IpcChannels.chatRevert]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a', files: false },
+  [IpcChannels.chatFork]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a' },
   [IpcChannels.chatRegenerateTitle]: { threadId: 'ses_thread' },
   [IpcChannels.chatRequests]: { threadId: 'ses_thread' },
   [IpcChannels.chatPermissionReply]: { threadId: 'ses_thread', requestId: 'per_1', decision: 'once' },
@@ -147,6 +148,19 @@ describe('IPC payload boundary', () => {
     ]) rejects(IpcChannels.chatRevert, bad)
     expect(() => assertIpcPayload(IpcChannels.chatRevert, { threadId: 'ses_thread', messageId: 'msg_1' })).not.toThrow()
     rejects(IpcChannels.chatRedo, { threadId: 'ses_thread', files: false })
+    for (const bad of [
+      {},
+      { threadId: 'ses_../escape' },
+      { threadId: 'ses_thread', messageId: 'ses_thread' },
+      { threadId: 'ses_thread', messageId: 'msg_../escape' },
+      { threadId: 'ses_thread', messageId: 'msg_' },
+      { threadId: 'ses_thread', messageId: null },
+      { threadId: 'ses_thread', before: 'msg_1' },
+      { threadId: 'ses_thread', messageId: 'msg_1', title: 'Injected' },
+    ]) rejects(IpcChannels.chatFork, bad)
+    // A fork of the whole conversation names no message.
+    expect(() => assertIpcPayload(IpcChannels.chatFork, { threadId: 'ses_thread' })).not.toThrow()
+    expect(() => assertIpcPayload(IpcChannels.chatFork, { threadId: 'ses_thread', messageId: 'msg_1' })).not.toThrow()
     rejects(IpcChannels.chatRegenerateTitle, { threadId: 'ses_../escape' })
     rejects(IpcChannels.chatRegenerateTitle, { threadId: 'ses_thread', title: 'Injected' })
     expect(() => assertIpcPayload(IpcChannels.chatCreate, { folderId: 'fld_1234', text: '', attachmentIds: ['a'], draftRevision: 1, agent: 'build', model })).not.toThrow()

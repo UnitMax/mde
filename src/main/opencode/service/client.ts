@@ -16,6 +16,7 @@ export const SERVICE_OPERATIONS = {
   'session.interrupt': { method: 'POST', path: '/api/session/{sessionID}/interrupt' },
   'session.revert.stage': { method: 'POST', path: '/api/session/{sessionID}/revert/stage' },
   'session.revert.clear': { method: 'DELETE', path: '/api/session/{sessionID}/revert' },
+  'session.fork': { method: 'POST', path: '/api/session/{sessionID}/fork' },
   'session.switchAgent': { method: 'POST', path: '/api/session/{sessionID}/agent' },
   'session.switchModel': { method: 'POST', path: '/api/session/{sessionID}/model' },
   'session.permission.list': { method: 'GET', path: '/api/session/{sessionID}/permission' },

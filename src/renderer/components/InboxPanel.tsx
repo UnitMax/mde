@@ -4,13 +4,15 @@ import {
   ArchiveRestore,
   Folder,
   GitBranch,
+  GitFork,
   LoaderCircle,
   Lock,
   Mail,
   MailOpen,
   PenSquare,
   Search,
-  Trash2
+  Trash2,
+  X
 } from 'lucide-react'
 import type { InboxThread } from '@shared/types'
 import { ElapsedTime } from '@/components/ElapsedTime'
@@ -44,8 +46,10 @@ import {
   type InboxFilter,
   type InboxStatusChip
 } from '@/lib/inbox'
+import { ipcErrorMessage } from '@/lib/ipc-error'
 import { sessionAge, sessionDate } from '@/lib/opencode-sessions'
 import { cn } from '@/lib/utils'
+import { useInboxChat } from '@/store/inbox-chat'
 import { useWorkspace } from '@/store/workspace'
 
 /** Re-renders on an interval so "5m ago" labels stay current. */
@@ -140,12 +144,17 @@ function InboxThreadRow({
   thread,
   selected,
   now,
-  onSelect
+  forking,
+  onSelect,
+  onFork
 }: {
   thread: InboxThread
   selected: boolean
   now: number
+  /** A fork is being made, so another one waits. */
+  forking: boolean
   onSelect: () => void
+  onFork: () => void
 }): JSX.Element {
   const setRead = useWorkspace((state) => state.setInboxThreadRead)
   const setArchived = useWorkspace((state) => state.setInboxThreadArchived)
@@ -176,6 +185,14 @@ function InboxThreadRow({
                 <span
                   aria-label="Unread"
                   className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+                />
+              )}
+              {thread.forkedFrom && (
+                <GitFork
+                  role="img"
+                  aria-label="Forked thread"
+                  data-testid={`inbox-thread-fork-mark-${thread.id}`}
+                  className="h-3 w-3 shrink-0 text-fg-subtle"
                 />
               )}
               <span
@@ -253,6 +270,10 @@ function InboxThreadRow({
             )}
             {thread.archived ? 'Move to Inbox' : 'Archive'}
           </ContextMenuItem>
+          <ContextMenuItem disabled={forking} onSelect={onFork}>
+            <GitFork className="h-3.5 w-3.5" />
+            Fork thread
+          </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem destructive onSelect={() => setConfirmingRemove(true)}>
             <Trash2 className="h-3.5 w-3.5" />
@@ -293,9 +314,20 @@ export function InboxPanel(): JSX.Element {
   const selectThread = useWorkspace((state) => state.selectInboxThread)
   const lock = useInboxLock()
   const now = useInboxClock()
+  const forkThread = useInboxChat((state) => state.forkThread)
   const [filter, setFilter] = useState<InboxFilter>('all')
   const [query, setQuery] = useState('')
+  // A fork is a request to the service and can fail; the menu has no place to say so.
+  const [fork, setFork] = useState<{ pending: boolean; error: string | null }>({ pending: false, error: null })
   const visible = visibleInboxThreads(threads, filter, query)
+  const startFork = (thread: InboxThread): void => {
+    if (fork.pending) return
+    setFork({ pending: true, error: null })
+    forkThread(thread.id).then(
+      () => setFork({ pending: false, error: null }),
+      (error: unknown) => setFork({ pending: false, error: ipcErrorMessage(error, 'Could not fork the thread.') })
+    )
+  }
 
   if (lock) return <InboxLockedNotice compact />
 
@@ -350,6 +382,25 @@ export function InboxPanel(): JSX.Element {
           </button>
         ))}
       </div>
+      {fork.pending && (
+        <p role="status" data-testid="inbox-fork-status" className="mx-1 flex items-center gap-1.5 rounded bg-elevated px-2 py-1 text-[11px] text-fg-muted">
+          <LoaderCircle aria-hidden="true" className="h-3 w-3 shrink-0 animate-spin text-accent motion-reduce:animate-none" />
+          Forking thread…
+        </p>
+      )}
+      {fork.error && (
+        <div role="alert" data-testid="inbox-fork-error" className="mx-1 flex items-start gap-1.5 rounded bg-danger/10 px-2 py-1 text-[11px] text-danger">
+          <span className="min-w-0 flex-1 break-words">{fork.error}</span>
+          <button
+            type="button"
+            aria-label="Dismiss"
+            onClick={() => setFork({ pending: false, error: null })}
+            className="mt-px shrink-0 rounded text-danger/80 hover:text-danger"
+          >
+            <X aria-hidden="true" className="h-3 w-3" />
+          </button>
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto" data-testid="inbox-thread-list">
         {visible.length === 0 ? (
           <div className="px-2 py-1 text-xs text-fg-subtle">
@@ -368,7 +419,9 @@ export function InboxPanel(): JSX.Element {
                 thread={thread}
                 selected={thread.id === selectedId}
                 now={now}
+                forking={fork.pending}
                 onSelect={() => selectThread(thread.id)}
+                onFork={() => startFork(thread)}
               />
             ))}
           </div>

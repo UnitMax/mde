@@ -1,5 +1,5 @@
 import { memo, useMemo, useState } from 'react'
-import { AlertTriangle, Brain, ChevronRight, Info, LoaderCircle, Undo2, Wrench } from 'lucide-react'
+import { AlertTriangle, Brain, ChevronRight, GitFork, Info, LoaderCircle, Undo2, Wrench } from 'lucide-react'
 import type { ChatMessage, ChatPart } from '@shared/types'
 import { FileChangeView } from '@/components/inbox/ChatFileChange'
 import { ChatMarkdown } from '@/components/inbox/ChatMarkdown'
@@ -106,19 +106,38 @@ function ReasoningView({ text, active }: { text: string; active: boolean }): JSX
 }
 
 /** One message of the conversation. */
+/** The small buttons beside one of the user's messages, which show while the message is hovered or has focus. */
+const MESSAGE_ACTION =
+  'mt-1.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-fg-subtle opacity-0 transition-opacity hover:bg-hover hover:text-fg focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100'
+
 export const ChatMessageView = memo(function ChatMessageView({
   message,
   directory,
   onRevert,
+  onFork,
 }: {
   message: ChatMessage
   directory: string
   /** Offered on the user's own messages: asks to revert the conversation to just before this one. */
   onRevert?: (message: Extract<ChatMessage, { kind: 'user' }>) => void
+  /** Offered on the user's own messages: starts a new thread from just before this message. */
+  onFork?: (message: Extract<ChatMessage, { kind: 'user' }>) => void
 }): JSX.Element | null {
   if (message.kind === 'user') {
     return (
       <div className="group flex items-start justify-end gap-1.5" data-testid={`chat-message-${message.id}`}>
+        {onFork && (
+          <button
+            type="button"
+            aria-label="Fork from before this message"
+            title="Fork from here"
+            data-testid={`chat-fork-from-${message.id}`}
+            onClick={() => onFork(message)}
+            className={MESSAGE_ACTION}
+          >
+            <GitFork aria-hidden className="h-3.5 w-3.5" />
+          </button>
+        )}
         {onRevert && (
           <button
             type="button"
@@ -126,7 +145,7 @@ export const ChatMessageView = memo(function ChatMessageView({
             title="Revert to here"
             data-testid={`chat-revert-to-${message.id}`}
             onClick={() => onRevert(message)}
-            className="mt-1.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-fg-subtle opacity-0 transition-opacity hover:bg-hover hover:text-fg focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100"
+            className={MESSAGE_ACTION}
           >
             <Undo2 aria-hidden className="h-3.5 w-3.5" />
           </button>

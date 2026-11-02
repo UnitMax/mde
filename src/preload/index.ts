@@ -166,6 +166,7 @@ const api: RendererApi = {
     interrupt: (req) => ipcRenderer.invoke(IpcChannels.chatInterrupt, req),
     redo: (req) => ipcRenderer.invoke(IpcChannels.chatRedo, req),
     revert: (req) => ipcRenderer.invoke(IpcChannels.chatRevert, req),
+    fork: (req) => ipcRenderer.invoke(IpcChannels.chatFork, req),
     regenerateTitle: (req) => ipcRenderer.invoke(IpcChannels.chatRegenerateTitle, req),
     requests: (req) => ipcRenderer.invoke(IpcChannels.chatRequests, req),
     replyPermission: (req) => ipcRenderer.invoke(IpcChannels.chatPermissionReply, req),

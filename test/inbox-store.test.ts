@@ -54,6 +54,13 @@ describe('inbox thread validation', () => {
       .toMatchObject({ branch: null })
   })
 
+  it('keeps the thread a fork came from, and drops a pointer that is not a thread', () => {
+    expect(validateInboxThread(thread({ forkedFrom: 'ses_origin' }))).toEqual(thread({ forkedFrom: 'ses_origin' }))
+    for (const forkedFrom of ['fld_one', '../x', 5, null, '']) {
+      expect(validateInboxThread({ ...thread(), forkedFrom })).toEqual(thread())
+    }
+  })
+
   it('rejects malformed threads', () => {
     for (const bad of [
       thread({ id: 'not-a-session' }),

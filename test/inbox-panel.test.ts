@@ -3,13 +3,16 @@
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { InboxThread } from '../src/shared/types'
+import type { ChatDraft, ChatDraftRequest, ChatForkRequest, ChatForkResult, InboxThread } from '../src/shared/types'
 import { InboxPanel } from '../src/renderer/components/InboxPanel'
 import { InboxThreadView } from '../src/renderer/components/InboxThreadView'
+import { useInboxChat } from '../src/renderer/store/inbox-chat'
 import { useWorkspace } from '../src/renderer/store/workspace'
 
 const roots: Root[] = []
 const setRead = vi.fn(async () => null)
+const fork = vi.fn(async (_request: ChatForkRequest): Promise<ChatForkResult> => ({ thread: thread({ id: 'ses_fork', title: 'Fix login (fork #1)', status: 'idle', forkedFrom: 'ses_one', readAt: Date.now(), lastActivityAt: Date.now() }) }))
+const draft = vi.fn(async (_request: ChatDraftRequest): Promise<ChatDraft> => ({ text: '', revision: 0, attachments: [] }))
 
 function thread(overrides: Partial<InboxThread> = {}): InboxThread {
   return {
@@ -43,7 +46,8 @@ beforeEach(() => {
   vi.stubGlobal('api', {
     inbox: { setRead, setArchived: vi.fn(async () => null), remove: vi.fn(async () => undefined) },
     chat: {
-      draft: vi.fn(async () => ({ text: '', revision: 0, attachments: [] })),
+      draft,
+      fork,
       subscribe: vi.fn(async () => undefined),
       unsubscribe: vi.fn(async () => undefined),
       messages: vi.fn(async () => ({
@@ -56,6 +60,9 @@ beforeEach(() => {
     }
   })
   setRead.mockClear()
+  fork.mockClear()
+  draft.mockClear()
+  useInboxChat.setState({ threads: {}, recent: [], draftReloads: {} })
   useWorkspace.setState({
     platform: { platform: 'win32', isWindows: true },
     wslAvailable: true,
@@ -246,5 +253,150 @@ describe('Inbox', () => {
     })
     expect(panel.querySelector('[data-testid="inbox-thread-ses_one"]')).not.toBeNull()
     expect(panel.querySelector('[data-testid="inbox-thread-ses_two"]')).toBeNull()
+  })
+})
+
+describe('Inbox thread fork', () => {
+  const menuItem = (label: string): HTMLElement | undefined =>
+    Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((item) => item.textContent?.trim() === label)
+  const openMenu = async (panel: HTMLElement, id = 'ses_one'): Promise<void> => {
+    const row = panel.querySelector(`[data-testid="inbox-thread-${id}"]`)!.parentElement!
+    await act(async () => { row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 20, button: 2 })) })
+  }
+  const choose = async (label: string): Promise<void> => {
+    await act(async () => menuItem(label)!.click())
+  }
+  const alertText = (panel: HTMLElement): string | undefined => panel.querySelector('[data-testid="inbox-fork-error"]')?.textContent?.trim()
+
+  it('offers Fork thread in the right-click menu, next to the other thread actions', async () => {
+    useWorkspace.setState({ inboxThreads: [thread()] })
+    const panel = await render(createElement(InboxPanel))
+    await openMenu(panel)
+    const labels = Array.from(document.body.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent?.trim())
+    expect(labels).toEqual(['Mark as read', 'Archive', 'Fork thread', 'Delete from Inbox'])
+    expect(fork).not.toHaveBeenCalled()
+  })
+
+  it('forks the whole thread, adds the new thread to the list and opens it', async () => {
+    useWorkspace.setState({ inboxThreads: [thread(), thread({ id: 'ses_two', title: 'Other', lastActivityAt: Date.now() - 9 * 60_000 })], selectedInboxThreadId: 'ses_two' })
+    const panel = await render(createElement(InboxPanel))
+    await openMenu(panel)
+    await choose('Fork thread')
+    // Only the thread is named: the service decides where a whole-conversation fork is cut.
+    expect(fork).toHaveBeenCalledTimes(1)
+    expect(fork).toHaveBeenCalledWith({ threadId: 'ses_one' })
+    expect(draft).not.toHaveBeenCalled()
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_fork')
+    expect(useWorkspace.getState().activeWorkspaceView).toBe('inbox')
+    const row = panel.querySelector('[data-testid="inbox-thread-ses_fork"]')
+    expect(row?.textContent).toContain('Fix login (fork #1)')
+    expect(row?.getAttribute('aria-current')).toBe('true')
+    // The original is where it was, unchanged.
+    expect(panel.querySelector('[data-testid="inbox-thread-ses_one"]')?.getAttribute('aria-current')).toBeNull()
+    expect(useWorkspace.getState().inboxThreads.find((item) => item.id === 'ses_one')).toEqual(thread({ lastActivityAt: expect.any(Number) }))
+    expect(panel.querySelector('[data-testid="inbox-fork-status"]')).toBeNull()
+    expect(alertText(panel)).toBeUndefined()
+  })
+
+  it('puts the unfinished turn\'s text in the new thread\'s box when the fork was cut before it', async () => {
+    fork.mockResolvedValueOnce({ thread: thread({ id: 'ses_fork', title: 'Fix login (fork #1)', status: 'idle', forkedFrom: 'ses_one' }), text: 'Run the whole suite' })
+    useWorkspace.setState({ inboxThreads: [thread({ status: 'working' })] })
+    const panel = await render(createElement(InboxPanel))
+    await openMenu(panel)
+    await choose('Fork thread')
+    expect(draft).toHaveBeenCalledTimes(1)
+    expect(draft).toHaveBeenCalledWith({ key: 'thread:ses_fork', action: 'prepend', text: 'Run the whole suite' })
+    // The box that shows the draft is told to read it again, with the caret after the added text.
+    expect(useInboxChat.getState().draftReloads.ses_fork).toEqual({ id: 1, caret: 'Run the whole suite'.length })
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_fork')
+  })
+
+  it('still opens the fork and says so when the text could not be put in its box', async () => {
+    fork.mockResolvedValueOnce({ thread: thread({ id: 'ses_fork', title: 'Fix login (fork #1)', status: 'idle', forkedFrom: 'ses_one' }), text: 'Run the whole suite' })
+    draft.mockRejectedValueOnce(new Error("Error invoking remote method 'chat:draft': Error: The text is too long to add to this draft."))
+    useWorkspace.setState({ inboxThreads: [thread()] })
+    const panel = await render(createElement(InboxPanel))
+    await openMenu(panel)
+    await choose('Fork thread')
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_fork')
+    expect(useInboxChat.getState().threads.ses_fork?.notice)
+      .toBe('The thread was forked, but the message could not be put in its box: The text is too long to add to this draft.')
+    expect(useInboxChat.getState().draftReloads.ses_fork).toBeUndefined()
+    expect(alertText(panel)).toBeUndefined()
+  })
+
+  it('shows that it is forking and waits for it before another fork', async () => {
+    let finish!: (result: ChatForkResult) => void
+    fork.mockImplementationOnce(() => new Promise<ChatForkResult>((resolve) => { finish = resolve }))
+    useWorkspace.setState({ inboxThreads: [thread(), thread({ id: 'ses_two', title: 'Other', lastActivityAt: Date.now() - 9 * 60_000 })] })
+    const panel = await render(createElement(InboxPanel))
+    await openMenu(panel)
+    await choose('Fork thread')
+    expect(panel.querySelector('[data-testid="inbox-fork-status"]')?.textContent).toContain('Forking thread…')
+    expect(useWorkspace.getState().selectedInboxThreadId).toBeNull()
+    // Any thread's menu waits, so the same click cannot make two forks.
+    await openMenu(panel, 'ses_two')
+    expect(menuItem('Fork thread')?.hasAttribute('data-disabled')).toBe(true)
+    await choose('Fork thread')
+    expect(fork).toHaveBeenCalledTimes(1)
+    await act(async () => finish({ thread: thread({ id: 'ses_fork', title: 'Fix login (fork #1)', status: 'idle', forkedFrom: 'ses_one' }) }))
+    expect(panel.querySelector('[data-testid="inbox-fork-status"]')).toBeNull()
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_fork')
+  })
+
+  it('says why a fork failed, changes nothing, and lets the message be dismissed', async () => {
+    fork.mockRejectedValueOnce(new Error("Error invoking remote method 'chat:fork': Error: This OpenCode service does not support forking. Update OpenCode and try again."))
+    useWorkspace.setState({ inboxThreads: [thread()], selectedInboxThreadId: 'ses_one' })
+    const panel = await render(createElement(InboxPanel))
+    await openMenu(panel)
+    await choose('Fork thread')
+    expect(alertText(panel)).toBe('This OpenCode service does not support forking. Update OpenCode and try again.')
+    expect(panel.querySelector('[data-testid="inbox-fork-status"]')).toBeNull()
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_one')
+    expect(useWorkspace.getState().inboxThreads.map((item) => item.id)).toEqual(['ses_one'])
+
+    // Trying again clears the old message first, and a dismissed one is gone.
+    await openMenu(panel)
+    await choose('Fork thread')
+    expect(alertText(panel)).toBeUndefined()
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_fork')
+    fork.mockRejectedValueOnce(new Error('Service unavailable'))
+    await openMenu(panel, 'ses_one')
+    await choose('Fork thread')
+    expect(alertText(panel)).toBe('Service unavailable')
+    await act(async () => (panel.querySelector('[data-testid="inbox-fork-error"] button') as HTMLButtonElement).click())
+    expect(alertText(panel)).toBeUndefined()
+  })
+})
+
+describe('Inbox fork marker', () => {
+  const original = (): InboxThread => thread({ id: 'ses_one', title: 'Fix login' })
+  const fork = (): InboxThread => thread({ id: 'ses_fork', title: 'Fix login (fork #1)', forkedFrom: 'ses_one', status: 'idle', readAt: Date.now() })
+
+  it('marks a fork in the list and nothing else', async () => {
+    useWorkspace.setState({ inboxThreads: [original(), fork()] })
+    const panel = await render(createElement(InboxPanel))
+    expect(panel.querySelector('[data-testid="inbox-thread-fork-mark-ses_fork"]')?.getAttribute('aria-label')).toBe('Forked thread')
+    expect(panel.querySelector('[data-testid="inbox-thread-fork-mark-ses_one"]')).toBeNull()
+  })
+
+  it('says in the header which thread this one was forked from, and opens that thread from there', async () => {
+    useWorkspace.setState({ inboxThreads: [original(), fork()], selectedInboxThreadId: 'ses_fork' })
+    const view = await render(createElement(InboxThreadView))
+    const line = view.querySelector('[data-testid="inbox-forked-from"]')!
+    expect(line.textContent).toBe('Forked from Fix login · works in the same folder, so file changes show up in both')
+    await act(async () => (line.querySelector('button') as HTMLButtonElement).click())
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_one')
+    // The original is not a fork, so its header has no such line.
+    await act(async () => { /* the view follows the selection */ })
+    expect(view.querySelector('[data-testid="inbox-forked-from"]')).toBeNull()
+  })
+
+  it('does not offer a link when the thread it came from is no longer in the Inbox', async () => {
+    useWorkspace.setState({ inboxThreads: [fork()], selectedInboxThreadId: 'ses_fork' })
+    const view = await render(createElement(InboxThreadView))
+    const line = view.querySelector('[data-testid="inbox-forked-from"]')!
+    expect(line.textContent).toContain('Forked from a thread that is no longer in the Inbox')
+    expect(line.querySelector('button')).toBeNull()
   })
 })
