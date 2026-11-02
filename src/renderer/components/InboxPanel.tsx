@@ -161,6 +161,7 @@ function InboxThreadRow({
   const setRead = useWorkspace((state) => state.setInboxThreadRead)
   const setArchived = useWorkspace((state) => state.setInboxThreadArchived)
   const removeThread = useWorkspace((state) => state.removeInboxThread)
+  const reloadFolders = useInboxChat((state) => state.reloadFolders)
   const [confirmingRemove, setConfirmingRemove] = useState(false)
   const [alsoRemoveWorktree, setAlsoRemoveWorktree] = useState(false)
   const [removing, setRemoving] = useState(false)
@@ -334,8 +335,13 @@ function InboxThreadRow({
                 event.preventDefault()
                 setRemoving(true)
                 setRemoveError(null)
-                removeThread(thread.id, alsoRemoveWorktree && ownsWorktree ? { removeWorktree: true } : undefined)
-                  .then(() => setConfirmingRemove(false))
+                const removeWorktree = alsoRemoveWorktree && ownsWorktree
+                removeThread(thread.id, removeWorktree ? { removeWorktree: true } : undefined)
+                  .then(() => {
+                    setConfirmingRemove(false)
+                    // The worktree's entry in the folder chooser went with it.
+                    if (removeWorktree) void reloadFolders()
+                  })
                   .catch((reason) => setRemoveError(ipcErrorMessage(reason, 'Could not delete the thread.')))
                   .finally(() => setRemoving(false))
               }}

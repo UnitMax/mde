@@ -7,6 +7,7 @@ import type { InboxFolder } from '../src/shared/types'
 import {
   INBOX_MAX_FOLDERS,
   INBOX_MAX_THREADS,
+  INBOX_MAX_WORKTREE_FOLDERS,
   InboxStore,
   normalizeInboxFile,
   normalizeInboxFolders,
@@ -204,6 +205,38 @@ describe('inbox folders', () => {
       .toEqual({ folderId: 'fld_one', agent: 'plan', model: { id: 'm', providerId: 'p' } })
     expect(validateComposer({ folderId: 'nope', agent: '../x', model: { id: '' } })).toEqual({})
     expect(validateComposer(null)).toEqual({})
+  })
+
+  describe('worktree folders', () => {
+    const worktree = { repository: '/home/me/app', root: '/home/me/.mde/worktrees/app-abc/1a2b3c4d', branch: 'mde/1a2b3c4d', base: 'origin/main' }
+
+    it('keeps the worktree record of a folder, and drops a malformed one without losing the folder', () => {
+      const tree = folder({ id: 'fld_tree', directory: worktree.root, worktree })
+      expect(validateInboxFolder({ ...tree, worktree: { ...worktree, extra: 1 } })).toEqual(tree)
+      for (const bad of [{ ...worktree, branch: '' }, { ...worktree, root: 7 }, { repository: '/home/me/app' }, 'worktree', [], null]) {
+        expect(validateInboxFolder({ ...tree, worktree: bad })).toEqual(folder({ id: 'fld_tree', directory: worktree.root }))
+      }
+      expect(validateInboxFolder(folder())).not.toHaveProperty('worktree')
+    })
+
+    it('limits worktree folders on their own, so they cannot push real folders out', () => {
+      const real = Array.from({ length: INBOX_MAX_FOLDERS }, (_, index) => folder({ id: `fld_real${index}`, lastUsedAt: index }))
+      const trees = Array.from({ length: INBOX_MAX_WORKTREE_FOLDERS + 5 }, (_, index) =>
+        folder({ id: `fld_tree${index}`, name: `tree ${index}`, lastUsedAt: 10_000 + index, worktree }))
+      const kept = normalizeInboxFolders({ version: 1, folders: [...real, ...trees] })
+      expect(kept.filter((item) => !item.worktree)).toHaveLength(INBOX_MAX_FOLDERS)
+      expect(kept.filter((item) => item.worktree)).toHaveLength(INBOX_MAX_WORKTREE_FOLDERS)
+      // The worktree folders that go are the least recently used ones.
+      expect(kept.some((item) => item.id === 'fld_tree0')).toBe(false)
+      expect(kept.some((item) => item.id === `fld_tree${INBOX_MAX_WORKTREE_FOLDERS + 4}`)).toBe(true)
+
+      const store = new InboxStore('/unused', { writeFile: async () => {}, writeDelayMs: 60_000 })
+      for (const item of [...real, ...trees]) store.putFolder(item)
+      expect(store.folders().filter((item) => !item.worktree)).toHaveLength(INBOX_MAX_FOLDERS)
+      expect(store.folders().filter((item) => item.worktree)).toHaveLength(INBOX_MAX_WORKTREE_FOLDERS)
+      expect(store.folder('fld_real0')).toBeDefined()
+      expect(store.folder('fld_tree0')).toBeUndefined()
+    })
   })
 
   it('requires a valid folder', () => {

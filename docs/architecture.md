@@ -183,6 +183,24 @@ retries with a new id up to three times; a chosen name is never retried, and a b
 under that name in the meantime is left alone, not cleaned up. The folder under `.mde/worktrees`
 is always named from the random id, never from the branch name.
 
+**Worktrees in the folder chooser.** When a thread is started in a new worktree, MDE also adds the
+worktree to the Inbox folders (`InboxFolder.worktree` holds the same record the thread carries, and
+`directory` is the thread's directory, so a monorepo subfolder is kept). The folder menu then lists
+real folders first and a **Worktrees** group below them. A worktree shows its branch with a
+WORKTREE tag and "Based on ‹base branch› in ‹original folder›", which is the Inbox folder with the
+repository's directory, or that directory's last segment once the folder has been removed. The
+heading reads `‹folder› · ‹branch›` and its tooltip names the same. Choosing one starts threads in
+it: the strip shows "Worktree" instead of the where-to-run choice (the branch it is on is still
+shown), no worktree request is sent, and the thread runs in that directory with the folder's
+worktree record, so the header marker, the delete dialog and forks behave as for the thread that made
+it. A worktree cannot be cut from a worktree: the main process refuses a `worktree` request for such
+a folder. Worktree folders have their own limit of 100, apart from the 200 real folders, so a run of
+worktrees cannot push the folders out, and without a remembered choice the page starts on a real
+folder. The menu's remove button forgets the entry only, and the worktree stays on disk. Removing a
+worktree through the delete dialog also drops its entry and its draft, and a worktree deleted by hand
+stays listed until it is removed from the menu. Threads started in a worktree before this existed are
+not listed.
+
 The sidebar and thread header name the folder the thread was started in rather than the worktree's
 random directory, and the header shows a WORKTREE marker with the worktree's path and base branch
 as its tooltip. A fork of a worktree thread shares the worktree, as it shares the directory.

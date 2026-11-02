@@ -23,7 +23,7 @@ MDE stores data only on the local machine:
 - `inbox.json` under Electron's user-data directory, once you use the Inbox: one record for each
   OpenCode conversation you started in the Inbox, with its session ID, title, folder, target (Mac
   or WSL distro), Git branch, model and provider identifiers, last status, timestamps (including,
-  while a conversation is working, when its current run began), read and archived flags, and for a forked conversation the session ID of the one it was forked from. For a conversation started in a Git worktree it also holds that worktree's root path, the repository's path, and the names of the new branch and the branch it was cut from. It also holds the Inbox folders you add (path, target, name, timestamps; at most 200) and the folder, model and agent
+  while a conversation is working, when its current run began), read and archived flags, and for a forked conversation the session ID of the one it was forked from. For a conversation started in a Git worktree it also holds that worktree's root path, the repository's path, and the names of the new branch and the branch it was cut from. It also holds the Inbox folders you add (path, target, name, timestamps; at most 200), the worktrees MDE created for you (the same record and a name made from the folder and branch; at most 100, so that more conversations can be started in them) and the folder, model and agent
   you last chose in the Inbox composer. It never holds prompts, messages or tool data. It keeps at
   most 1,000 conversations; deleting a conversation from the Inbox removes only MDE's record.
 - If you enable the optional OpenCode integrations, a short status snapshot under
@@ -69,7 +69,7 @@ Windows), on a new branch: the name you typed, or `mde/` followed by eight hex d
 left it empty. The folder itself is named from random digits, not from the branch. It holds ordinary
 working files and sits outside MDE's user-data directory, so MDE's own cleanup does not cover it.
 It stays until you remove it: tick **Also remove the worktree** when you delete the conversation,
-or run `git worktree remove` yourself. The new branch is kept either way. MDE reads local branch
+or run `git worktree remove` yourself. The new branch is kept either way. A worktree you created is also listed in the Inbox's folder menu until you remove it there (which only forgets it) or delete it with a conversation. MDE reads local branch
 names to fill the picker and never contacts a remote.
 
 ## Inbox attachments and saved drafts

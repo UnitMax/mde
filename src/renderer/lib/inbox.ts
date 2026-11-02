@@ -1,4 +1,4 @@
-import type { InboxGitInfo, InboxThread, OpenCodeModelRef, OpenCodePluginTarget, Session } from '@shared/types'
+import type { InboxFolder, InboxGitInfo, InboxThread, InboxWorktree, OpenCodeModelRef, OpenCodePluginTarget, Session } from '@shared/types'
 import { matchSubsequence, queryTokens } from '@/lib/fuzzy-search'
 
 export type InboxFilter = 'all' | 'unread' | 'attention' | 'archived'
@@ -50,15 +50,26 @@ export function inboxThreadHome(thread: Pick<InboxThread, 'directory' | 'worktre
   return thread.worktree?.repository ?? thread.directory
 }
 
+function sameInboxTarget(a: OpenCodePluginTarget, b: OpenCodePluginTarget): boolean {
+  return a.kind === b.kind && (a.kind === 'native' || (b.kind === 'wsl' && a.distro === b.distro))
+}
+
 /** Whether a thread's worktree is still used by another thread, such as a fork of it. */
 export function inboxWorktreeShared(thread: InboxThread, threads: readonly InboxThread[]): boolean {
   const worktree = thread.worktree
   if (!worktree) return false
   return threads.some((other) =>
-    other.id !== thread.id &&
-    other.worktree?.root === worktree.root &&
-    other.target.kind === thread.target.kind &&
-    (other.target.kind === 'native' || (thread.target.kind === 'wsl' && other.target.distro === thread.target.distro)))
+    other.id !== thread.id && other.worktree?.root === worktree.root && sameInboxTarget(other.target, thread.target))
+}
+
+/**
+ * The name of the Inbox folder a worktree was cut from, for labels. It is looked up by the
+ * repository's directory, and falls back to that directory's last segment when the folder has since
+ * been removed from the Inbox.
+ */
+export function inboxWorktreeSource(worktree: InboxWorktree, target: OpenCodePluginTarget, folders: readonly InboxFolder[]): string {
+  const source = folders.find((folder) => !folder.worktree && folder.directory === worktree.repository && sameInboxTarget(folder.target, target))
+  return source?.name ?? inboxFolderLabel(worktree.repository)
 }
 
 /**

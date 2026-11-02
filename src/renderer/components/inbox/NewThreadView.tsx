@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, FolderPlus, Trash2 } from 'lucide-react'
-import type { InboxGitBranch, OpenCodeModelRef } from '@shared/types'
+import type { InboxFolder, InboxGitBranch, OpenCodeModelRef } from '@shared/types'
 import { worktreeBranchConflict, worktreeBranchProblem } from '@shared/worktree-branch'
 import { Button } from '@/components/ui/button'
 import {
@@ -14,12 +14,70 @@ import { AddInboxFolderDialog } from '@/components/inbox/AddInboxFolderDialog'
 import { ChatComposer } from '@/components/inbox/ChatComposer'
 import { WorktreeBar, useInboxGit, type WorktreeMode } from '@/components/inbox/WorktreeBar'
 import { initialChoice } from '@/lib/chat'
-import { defaultWorktreeBase } from '@/lib/inbox'
+import { defaultWorktreeBase, inboxWorktreeSource } from '@/lib/inbox'
 import { optionsKey, useInboxChat } from '@/store/inbox-chat'
 
 /** Why the chosen name cannot be used for the new branch, judged from what the page already knows. */
 function worktreeBranchError(branches: InboxGitBranch[], name: string): string | null {
   return worktreeBranchProblem(name) ?? worktreeBranchConflict(name, branches.filter((branch) => !branch.remote).map((branch) => branch.name))
+}
+
+/** The tooltip of the folder in the heading: where it is and, for a worktree, what it was cut from. */
+function folderTitle(folder: InboxFolder, folders: InboxFolder[]): string {
+  const place = `${folder.directory}${folder.target.kind === 'wsl' ? ` (${folder.target.distro})` : ''}`
+  if (!folder.worktree) return place
+  return `Worktree of ${inboxWorktreeSource(folder.worktree, folder.target, folders)}, based on ${folder.worktree.base}\n${place}`
+}
+
+/** One folder in the chooser; a worktree says so, and which folder and branch it was based on. */
+function FolderItem({
+  item,
+  folders,
+  onChoose,
+  onRemove,
+}: {
+  item: InboxFolder
+  folders: InboxFolder[]
+  onChoose: (id: string) => void
+  onRemove: (id: string) => void
+}): JSX.Element {
+  const worktree = item.worktree
+  return (
+    <DropdownMenuItem
+      onSelect={() => onChoose(item.id)}
+      className="group items-start"
+      title={folderTitle(item, folders)}
+      data-testid={worktree ? 'inbox-worktree-folder' : 'inbox-folder-item'}
+    >
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5">
+          <span className="block truncate">{worktree ? worktree.branch : item.name}</span>
+          {worktree && (
+            <span className="shrink-0 rounded bg-hover px-1 text-[10px] font-medium uppercase tracking-wide text-fg-muted">Worktree</span>
+          )}
+        </span>
+        <span className="block truncate text-[11px] text-fg-subtle">
+          {worktree
+            ? `Based on ${worktree.base} in ${inboxWorktreeSource(worktree, item.target, folders)}`
+            : `${item.directory}${item.target.kind === 'wsl' ? ` · ${item.target.distro}` : ''}`}
+        </span>
+      </span>
+      <button
+        type="button"
+        aria-label={`Remove ${item.name} from the Inbox`}
+        title={worktree ? 'Remove from the Inbox (the worktree stays on disk)' : 'Remove from the Inbox'}
+        className="invisible mt-0.5 rounded p-0.5 text-fg-subtle hover:text-danger group-data-[highlighted]:visible"
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          onRemove(item.id)
+        }}
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
+    </DropdownMenuItem>
+  )
 }
 
 /** The Inbox's start page: pick a folder, a model and an agent, and describe the work. */
@@ -32,7 +90,10 @@ export function NewThreadView(): JSX.Element {
   const loadOptions = useInboxChat((state) => state.loadOptions)
   const createThread = useInboxChat((state) => state.createThread)
   const [adding, setAdding] = useState(false)
-  const folder = folders.find((item) => item.id === composer.folderId) ?? folders[0] ?? null
+  const plainFolders = useMemo(() => folders.filter((item) => !item.worktree), [folders])
+  const worktreeFolders = useMemo(() => folders.filter((item) => item.worktree), [folders])
+  // Without a remembered choice, a real folder comes first: a worktree is something to pick on purpose.
+  const folder = folders.find((item) => item.id === composer.folderId) ?? plainFolders[0] ?? folders[0] ?? null
   const options = useInboxChat((state) => (folder ? state.options[optionsKey({ folderId: folder.id })] : undefined))
   const [agent, setAgent] = useState<string | null>(null)
   const [model, setModel] = useState<OpenCodeModelRef | null>(null)
@@ -50,9 +111,12 @@ export function NewThreadView(): JSX.Element {
   }, [folderId])
   const defaultBase = useMemo(() => (git ? defaultWorktreeBase(git) : null), [git])
   const base = git && pickedBase && git.branches.some((branch) => branch.name === pickedBase) ? pickedBase : defaultBase
+  // A folder that is itself a worktree has no choice to make: threads started in it run in it.
+  const locked = Boolean(folder?.worktree)
+  const choosing = git !== null && !locked && mode === 'worktree'
   const chosenBranch = branchName.trim()
-  const branchProblem = git && mode === 'worktree' && chosenBranch ? worktreeBranchError(git.branches, chosenBranch) : null
-  const worktree = git && mode === 'worktree' && base ? { base, ...(chosenBranch ? { branch: chosenBranch } : {}) } : undefined
+  const branchProblem = git && choosing && chosenBranch ? worktreeBranchError(git.branches, chosenBranch) : null
+  const worktree = choosing && base ? { base, ...(chosenBranch ? { branch: chosenBranch } : {}) } : undefined
 
   useEffect(() => {
     if (folder) void loadOptions({ folderId: folder.id })
@@ -83,56 +147,44 @@ export function NewThreadView(): JSX.Element {
             {folder ? (
               <>
                 What should we build in{' '}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      data-testid="inbox-folder-picker"
-                      title={`${folder.directory}${folder.target.kind === 'wsl' ? ` (${folder.target.distro})` : ''}`}
-                      className="inline-flex items-baseline gap-1 rounded underline decoration-fg-subtle decoration-dotted decoration-2 underline-offset-[6px] outline-none hover:decoration-fg-muted focus-visible:ring-2 focus-visible:ring-accent/60"
-                    >
-                      {folder.name}
-                      <ChevronDown className="h-4 w-4 self-center text-fg-subtle" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="center" className="w-80">
-                    {folders.map((item) => (
-                      <DropdownMenuItem
-                        key={item.id}
-                        onSelect={() => setComposer({ folderId: item.id })}
-                        className="group items-start"
+                {/* The name and the question mark stay together; a very long name is cut short, its tooltip has it all. */}
+                <span className="whitespace-nowrap">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        data-testid="inbox-folder-picker"
+                        title={folderTitle(folder, folders)}
+                        className="inline-flex max-w-[min(28rem,70vw)] items-baseline gap-1 rounded align-bottom underline decoration-fg-subtle decoration-dotted decoration-2 underline-offset-[6px] outline-none hover:decoration-fg-muted focus-visible:ring-2 focus-visible:ring-accent/60"
                       >
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate">{item.name}</span>
-                          <span className="block truncate text-[11px] text-fg-subtle">
-                            {item.directory}
-                            {item.target.kind === 'wsl' ? ` · ${item.target.distro}` : ''}
-                          </span>
-                        </span>
-                        <button
-                          type="button"
-                          aria-label={`Remove ${item.name} from the Inbox`}
-                          title="Remove from the Inbox"
-                          className="invisible mt-0.5 rounded p-0.5 text-fg-subtle hover:text-danger group-data-[highlighted]:visible"
-                          onPointerDown={(event) => event.stopPropagation()}
-                          onClick={(event) => {
-                            event.preventDefault()
-                            event.stopPropagation()
-                            void removeFolder(item.id)
-                          }}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        <span className="truncate">{folder.name}</span>
+                        <ChevronDown className="h-4 w-4 shrink-0 self-center text-fg-subtle" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="center" className="w-80">
+                      <div className="max-h-[min(24rem,60vh)] overflow-y-auto">
+                        {plainFolders.map((item) => (
+                          <FolderItem key={item.id} item={item} folders={folders} onChoose={(id) => setComposer({ folderId: id })} onRemove={(id) => void removeFolder(id)} />
+                        ))}
+                        {worktreeFolders.length > 0 && (
+                          <>
+                            {plainFolders.length > 0 && <DropdownMenuSeparator />}
+                            <p className="px-2 pb-0.5 pt-1 text-[10px] font-medium uppercase tracking-wide text-fg-subtle">Worktrees</p>
+                            {worktreeFolders.map((item) => (
+                              <FolderItem key={item.id} item={item} folders={folders} onChoose={(id) => setComposer({ folderId: id })} onRemove={(id) => void removeFolder(id)} />
+                            ))}
+                          </>
+                        )}
+                      </div>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onSelect={() => setAdding(true)}>
+                        <FolderPlus className="h-3.5 w-3.5" />
+                        Add folder…
                       </DropdownMenuItem>
-                    ))}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onSelect={() => setAdding(true)}>
-                      <FolderPlus className="h-3.5 w-3.5" />
-                      Add folder…
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                ?
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  ?
+                </span>
               </>
             ) : (
               'What should we build?'
@@ -164,7 +216,8 @@ export function NewThreadView(): JSX.Element {
             footer={git && (
               <WorktreeBar
                 info={git}
-                mode={mode}
+                locked={locked}
+                mode={locked ? 'current' : mode}
                 base={base}
                 branchName={branchName}
                 branchProblem={branchProblem}

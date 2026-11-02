@@ -12,6 +12,7 @@ import { useWorkspace } from '../src/renderer/store/workspace'
 const roots: Root[] = []
 const setRead = vi.fn(async () => null)
 const remove = vi.fn(async (_request: InboxRemoveRequest): Promise<void> => undefined)
+const folders = vi.fn(async () => ({ folders: [], composer: {} }))
 const fork = vi.fn(async (_request: ChatForkRequest): Promise<ChatForkResult> => ({ thread: thread({ id: 'ses_fork', title: 'Fix login (fork #1)', status: 'idle', forkedFrom: 'ses_one', readAt: Date.now(), lastActivityAt: Date.now() }) }))
 const draft = vi.fn(async (_request: ChatDraftRequest): Promise<ChatDraft> => ({ text: '', revision: 0, attachments: [] }))
 
@@ -45,7 +46,7 @@ async function render(element: Parameters<Root['render']>[0]): Promise<HTMLEleme
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('api', {
-    inbox: { setRead, setArchived: vi.fn(async () => null), remove },
+    inbox: { setRead, setArchived: vi.fn(async () => null), remove, folders },
     chat: {
       draft,
       fork,
@@ -63,6 +64,7 @@ beforeEach(() => {
   setRead.mockClear()
   remove.mockReset()
   remove.mockResolvedValue(undefined)
+  folders.mockClear()
   fork.mockClear()
   draft.mockClear()
   useInboxChat.setState({ threads: {}, recent: [], draftReloads: {} })
@@ -454,6 +456,37 @@ describe('Inbox thread deletion and worktrees', () => {
     await confirm()
     expect(remove).toHaveBeenCalledWith({ id: 'ses_one', removeWorktree: true })
     await vi.waitFor(() => expect(useWorkspace.getState().inboxThreads).toEqual([]))
+  })
+
+  it('reads the folder list again when the worktree went with the thread, since its entry did too', async () => {
+    useInboxChat.setState({ folders: [{ id: 'fld_tree', name: 'app · mde/1a2b3c4d', directory: worktree.root, target: { kind: 'wsl', distro: 'Ubuntu' }, createdAt: 1, lastUsedAt: 1, worktree }], composer: {} })
+    useWorkspace.setState({ inboxThreads: [inWorktree()] })
+    const panel = await render(createElement(InboxPanel))
+    await openDialog(panel)
+    await act(async () => checkbox()!.click())
+    await confirm()
+    await vi.waitFor(() => expect(folders).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(useInboxChat.getState().folders).toEqual([]))
+  })
+
+  it('leaves the folder list alone when only the thread is deleted', async () => {
+    useWorkspace.setState({ inboxThreads: [inWorktree()] })
+    const panel = await render(createElement(InboxPanel))
+    await openDialog(panel)
+    await confirm()
+    await vi.waitFor(() => expect(useWorkspace.getState().inboxThreads).toEqual([]))
+    expect(folders).not.toHaveBeenCalled()
+  })
+
+  it('leaves the folder list alone when Git refuses to remove the worktree', async () => {
+    remove.mockRejectedValueOnce(new Error('Could not remove the worktree: it has changes'))
+    useWorkspace.setState({ inboxThreads: [inWorktree()] })
+    const panel = await render(createElement(InboxPanel))
+    await openDialog(panel)
+    await act(async () => checkbox()!.click())
+    await confirm()
+    await vi.waitFor(() => expect(dialog()?.querySelector('[role="alert"]')).not.toBeNull())
+    expect(folders).not.toHaveBeenCalled()
   })
 
   it('does not offer a worktree that another thread still runs in', async () => {

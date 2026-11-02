@@ -95,6 +95,8 @@ interface InboxChatStore {
   init: () => () => void
   addFolder: (request: InboxAddFolderRequest) => Promise<InboxFolder>
   removeFolder: (id: string) => Promise<void>
+  /** Reads the folders again, after main added or dropped one itself (a worktree was created or removed). */
+  reloadFolders: () => Promise<void>
   setComposer: (patch: InboxComposerState) => void
   loadOptions: (key: { folderId: string } | { threadId: string }, force?: boolean) => Promise<void>
   createThread: (input: { folderId: string; text: string; agent: string; model: OpenCodeModelRef; attachmentIds?: string[]; draftRevision?: number; worktree?: { base: string; branch?: string } }) => Promise<InboxThread>
@@ -214,6 +216,15 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
       })
     },
 
+    reloadFolders: async () => {
+      try {
+        const state = await window.api.inbox.folders()
+        if (state) set({ folders: state.folders, composer: state.composer })
+      } catch {
+        // The list on screen stays; the next start reads it again.
+      }
+    },
+
     setComposer: (patch) => {
       const composer = { ...get().composer, ...patch }
       set({ composer })
@@ -242,6 +253,8 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
       const workspace = useWorkspace.getState()
       workspace.upsertInboxThread(thread)
       workspace.selectInboxThread(thread.id)
+      // A new worktree was added to the folder list by main, so that more threads can be started in it.
+      if (input.worktree) void get().reloadFolders()
       return thread
     },
 

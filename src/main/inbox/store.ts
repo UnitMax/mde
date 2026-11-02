@@ -15,6 +15,8 @@ export const INBOX_FILE_VERSION = 1
 /** Oldest threads (by last activity) are dropped beyond this many. */
 export const INBOX_MAX_THREADS = 1000
 export const INBOX_MAX_FOLDERS = 200
+/** Worktree folders have a limit of their own, so a run of worktrees cannot push the folders out. */
+export const INBOX_MAX_WORKTREE_FOLDERS = 100
 export const INBOX_WRITE_DELAY_MS = 500
 export const INBOX_TITLE_MAX_LENGTH = 512
 export const INBOX_DIRECTORY_MAX_LENGTH = 4096
@@ -134,13 +136,16 @@ export function validateInboxFolder(raw: unknown): InboxFolder | null {
   const target = validateTarget(record.target)
   if (!target) return null
   if (!timestamp(record.createdAt) || !timestamp(record.lastUsedAt)) return null
+  // Without its record the folder is still a folder; only what says it is a worktree is lost.
+  const worktree = validateWorktree(record.worktree)
   return {
     id: record.id,
     name: record.name,
     directory: record.directory,
     target,
     createdAt: record.createdAt,
-    lastUsedAt: record.lastUsedAt
+    lastUsedAt: record.lastUsedAt,
+    ...(worktree ? { worktree } : {})
   }
 }
 
@@ -159,6 +164,13 @@ function byRecentUse(a: InboxFolder, b: InboxFolder): number {
   return b.lastUsedAt - a.lastUsedAt || a.name.localeCompare(b.name)
 }
 
+/** Keeps the most recently used folders of each kind, within that kind's limit. `sorted` is most recent first. */
+function limitFolders(sorted: InboxFolder[]): InboxFolder[] {
+  let plain = 0
+  let worktrees = 0
+  return sorted.filter((folder) => (folder.worktree ? ++worktrees <= INBOX_MAX_WORKTREE_FOLDERS : ++plain <= INBOX_MAX_FOLDERS))
+}
+
 /** The valid folders of the stored file, most recently used first. */
 export function normalizeInboxFolders(raw: unknown): InboxFolder[] {
   const list = raw && typeof raw === 'object' && !Array.isArray(raw)
@@ -170,7 +182,7 @@ export function normalizeInboxFolders(raw: unknown): InboxFolder[] {
     const folder = validateInboxFolder(item)
     if (folder && !folders.has(folder.id)) folders.set(folder.id, folder)
   }
-  return [...folders.values()].sort(byRecentUse).slice(0, INBOX_MAX_FOLDERS)
+  return limitFolders([...folders.values()].sort(byRecentUse))
 }
 
 function byRecentActivity(a: InboxThread, b: InboxThread): number {
@@ -264,9 +276,8 @@ export class InboxStore {
 
   putFolder(folder: InboxFolder): void {
     this.folderMap.set(folder.id, folder)
-    if (this.folderMap.size > INBOX_MAX_FOLDERS) {
-      for (const stale of this.folders().slice(INBOX_MAX_FOLDERS)) this.folderMap.delete(stale.id)
-    }
+    const kept = new Set(limitFolders(this.folders()).map((item) => item.id))
+    for (const id of [...this.folderMap.keys()]) if (!kept.has(id)) this.folderMap.delete(id)
     this.scheduleSave()
   }
 

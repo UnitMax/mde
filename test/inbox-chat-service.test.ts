@@ -16,6 +16,7 @@ const model = { id: 'model-1', providerId: 'provider-1' }
 function setup(responses: Partial<Record<ServiceOperation, unknown>> = {}, drafts?: InboxDraftStore, worktrees?: InboxChatDependencies['worktrees']) {
   let now = 1_000
   let enabled = true
+  let nextId = 0
   const store = new InboxStore('/unused', { writeFile: async () => {}, writeDelayMs: 60_000 })
   const recorder = new InboxRecorder(store, {
     now: () => now,
@@ -44,7 +45,8 @@ function setup(responses: Partial<Record<ServiceOperation, unknown>> = {}, draft
     send: (event) => events.push(event),
     enabled: () => enabled,
     now: () => now,
-    createId: () => 'abc',
+    // The first id is the folder added below; later ones stay distinct, as real ones are.
+    createId: () => (nextId++ === 0 ? 'abc' : `abc${nextId}`),
     sleep: async () => {},
   })
   const folder = service.addFolder({ directory: '/home/me/app', target: wsl })
@@ -858,6 +860,91 @@ describe('Inbox chat service worktrees', () => {
     await expect(service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model, worktree: { base: 'main' } })).rejects.toThrow('no space left')
     expect(calls).toEqual([])
     expect(worktrees.discard).not.toHaveBeenCalled()
+  })
+
+  describe('worktree folders', () => {
+    it('lists a new worktree as a folder of its own, cut from the folder it was started in', async () => {
+      const worktrees = fake()
+      const { service, store, folder } = setup({ 'session.create': { data: { id: 'ses_new' } } }, undefined, worktrees)
+      const thread = await service.create({ folderId: folder.id, text: 'Fix the login', agent: 'plan', model, worktree: { base: 'origin/main' } })
+      const listed = store.folders().filter((item) => item.worktree)
+      expect(listed).toEqual([{
+        id: expect.stringMatching(/^fld_/), name: 'app · mde/1a2b3c4d', directory: worktree.root, target: wsl,
+        createdAt: expect.any(Number), lastUsedAt: expect.any(Number), worktree,
+      }])
+      expect(listed[0]!.id).not.toBe(folder.id)
+      // The thread itself belongs to the folder it was started in, and the composer stays there.
+      expect(thread.folderId).toBe(folder.id)
+      expect(store.composer()).toMatchObject({ folderId: folder.id })
+      expect(service.folders().folders.map((item) => item.id)).toContain(listed[0]!.id)
+      service.stop()
+    })
+
+    it('lists no folder when there is no worktree, or when the thread could not be started', async () => {
+      const plain = setup({ 'session.create': { data: { id: 'ses_one' } } }, undefined, fake())
+      await plain.service.create({ folderId: plain.folder.id, text: 'Hi', agent: 'build', model })
+      expect(plain.store.folders()).toHaveLength(1)
+      plain.service.stop()
+
+      const failing = setup({ 'session.create': new Error('Service unavailable') }, undefined, fake())
+      await expect(failing.service.create({ folderId: failing.folder.id, text: 'Hi', agent: 'build', model, worktree: { base: 'main' } })).rejects.toThrow('Service unavailable')
+      expect(failing.store.folders()).toHaveLength(1)
+      failing.service.stop()
+    })
+
+    const listedTree = { id: 'fld_tree', name: 'app · mde/1a2b3c4d', directory: worktree.root, target: wsl, createdAt: 1, lastUsedAt: 1, worktree }
+
+    it('starts a thread in a worktree folder inside it, with its worktree record and without making another', async () => {
+      const worktrees = fake()
+      const { service, store, calls } = setup({ 'session.create': { data: { id: 'ses_second' } } }, undefined, worktrees)
+      store.putFolder(listedTree)
+      const thread = await service.create({ folderId: 'fld_tree', text: 'Second', agent: 'build', model })
+      expect(worktrees.create).not.toHaveBeenCalled()
+      expect(calls[0]?.request.body).toMatchObject({ location: { directory: worktree.root } })
+      expect(thread).toMatchObject({ id: 'ses_second', directory: worktree.root, folderId: 'fld_tree', worktree })
+      expect(store.get('ses_second')?.worktree).toEqual(worktree)
+      // Using it counts as use, and it is what the composer comes back to.
+      expect(store.folder('fld_tree')!.lastUsedAt).toBe(1_000)
+      expect(store.composer()).toMatchObject({ folderId: 'fld_tree' })
+      expect(store.folders().filter((item) => item.worktree)).toHaveLength(1)
+      service.stop()
+    })
+
+    it('does not cut a worktree from a worktree folder', async () => {
+      const worktrees = fake()
+      const { service, store, calls } = setup({}, undefined, worktrees)
+      store.putFolder(listedTree)
+      await expect(service.create({ folderId: 'fld_tree', text: 'Hi', agent: 'build', model, worktree: { base: 'main' } })).rejects.toThrow('already a worktree')
+      expect(worktrees.create).not.toHaveBeenCalled()
+      expect(calls).toEqual([])
+      service.stop()
+    })
+
+    it('drops the folder, its draft and a composer pointing at it when the worktree is removed', async () => {
+      const worktrees = fake()
+      const { service, store, folder } = setup({ 'session.create': { data: { id: 'ses_new' } } }, undefined, worktrees)
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model, worktree: { base: 'main' } })
+      const listed = store.folders().find((item) => item.worktree)!
+      service.setComposer({ folderId: listed.id })
+      await service.removeThreadWorktree('ses_new')
+      expect(store.folder(listed.id)).toBeUndefined()
+      expect(store.folder(folder.id)).toBeDefined()
+      expect(store.composer().folderId).toBeUndefined()
+      service.stop()
+    })
+
+    it('keeps the folder when the worktree cannot be removed, and leaves other worktrees alone', async () => {
+      const worktrees = fake()
+      const { service, store, folder } = setup({ 'session.create': { data: { id: 'ses_new' } } }, undefined, worktrees)
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model, worktree: { base: 'main' } })
+      store.putFolder({ id: 'fld_other', name: 'app · mde/other', directory: '/home/me/.mde/worktrees/app-abc/other', target: wsl, createdAt: 1, lastUsedAt: 1, worktree: { ...worktree, root: '/home/me/.mde/worktrees/app-abc/other' } })
+      worktrees.remove.mockRejectedValueOnce(new Error('Could not remove the worktree: it has changes'))
+      await expect(service.removeThreadWorktree('ses_new')).rejects.toThrow('it has changes')
+      expect(store.folders().filter((item) => item.worktree)).toHaveLength(2)
+      await service.removeThreadWorktree('ses_new')
+      expect(store.folders().filter((item) => item.worktree).map((item) => item.id)).toEqual(['fld_other'])
+      service.stop()
+    })
   })
 
   it('refuses a worktree request when worktrees are unavailable', async () => {

@@ -275,6 +275,8 @@ export class InboxChatService {
   async create(request: ChatCreateRequest): Promise<InboxThread> {
     this.assertEnabled()
     const folder = this.folder(request.folderId)
+    // A worktree folder already is one: threads started in it run in it, and a new worktree is cut from the real folder.
+    if (request.worktree && folder.worktree) throw new Error('This folder is already a worktree. Start the thread in it, or start a new worktree from the folder it came from.')
     const text = this.promptText(request.text, request.attachmentIds)
     if (!isChatAgentId(request.agent)) throw new Error('Choose an agent.')
     const files = request.attachmentIds?.length ? await this.dependencies.drafts?.files(`folder:${folder.id}`, request.attachmentIds, request.draftRevision) : undefined
@@ -295,7 +297,8 @@ export class InboxChatService {
         title: created.title,
         folder,
         model: request.model,
-        ...(place ? { directory: place.directory, worktree: place.worktree } : {}),
+        // A thread started in a worktree folder runs in it, and carries the folder's worktree record.
+        ...(place ? { directory: place.directory, worktree: place.worktree } : folder.worktree ? { worktree: folder.worktree } : {}),
       })
     } catch (error) {
       // Nothing has run in the worktree, so it goes too rather than being left behind unused.
@@ -303,6 +306,7 @@ export class InboxChatService {
       throw error
     }
     this.dependencies.store.putFolder({ ...folder, lastUsedAt: this.dependencies.now() })
+    if (place) this.addWorktreeFolder(folder, place)
     this.dependencies.store.setComposer({ folderId: folder.id, agent: request.agent, model: request.model })
     await this.dependencies.drafts?.move(`folder:${folder.id}`, `thread:${thread.id}`)
     try {
@@ -327,12 +331,35 @@ export class InboxChatService {
     return this.dependencies.worktrees.info(folder)
   }
 
-  /** Removes the worktree a thread runs in, unless another thread uses it or Git refuses. */
+  /**
+   * Removes the worktree a thread runs in, unless another thread uses it or Git refuses. Once it is
+   * gone, so is its entry in the folder chooser, whose directory no longer exists.
+   */
   async removeThreadWorktree(id: string): Promise<void> {
     this.assertEnabled()
     const thread = this.thread(id)
     if (!this.dependencies.worktrees) throw new Error('Git worktrees are unavailable.')
     await this.dependencies.worktrees.remove(thread, this.dependencies.store.list())
+    const root = thread.worktree?.root
+    for (const folder of this.dependencies.store.folders()) {
+      if (folder.worktree?.root !== root || serviceTargetKey(folder.target) !== serviceTargetKey(thread.target)) continue
+      this.dependencies.store.removeFolder(folder.id)
+      await this.removeDraft(`folder:${folder.id}`).catch(() => undefined)
+    }
+  }
+
+  /** Lists a worktree that was just created in the folder chooser, so more threads can be started in it. */
+  private addWorktreeFolder(source: InboxFolder, place: CreatedWorktree): void {
+    const now = this.dependencies.now()
+    this.dependencies.store.putFolder({
+      id: `fld_${(this.dependencies.createId ?? randomUUID)()}`,
+      name: `${source.name.slice(0, 200)} · ${place.worktree.branch}`,
+      directory: place.directory,
+      target: source.target,
+      createdAt: now,
+      lastUsedAt: now,
+      worktree: place.worktree,
+    })
   }
 
   async messages(request: ChatMessagesRequest): Promise<ChatMessagesPage> {

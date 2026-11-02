@@ -311,6 +311,12 @@ export interface InboxFolder {
   target: OpenCodePluginTarget
   createdAt: number
   lastUsedAt: number
+  /**
+   * Set when the folder is a Git worktree MDE created for an earlier thread, so that more threads
+   * can be started in it. `directory` is then inside `worktree.root`, and every thread started here
+   * carries the same record.
+   */
+  worktree?: InboxWorktree
 }
 
 /** The last choices made in the Inbox composer. */

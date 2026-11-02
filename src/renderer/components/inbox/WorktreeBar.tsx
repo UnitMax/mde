@@ -116,6 +116,51 @@ function BranchPicker({
   )
 }
 
+function ModePicker({
+  mode,
+  canBranch,
+  onModeChange,
+  disabled,
+}: {
+  mode: WorktreeMode
+  canBranch: boolean
+  onModeChange: (mode: WorktreeMode) => void
+  disabled?: boolean
+}): JSX.Element {
+  const active = MODES.find((item) => item.id === mode) ?? MODES[0]!
+  const Icon = mode === 'worktree' ? FolderGit2 : Folder
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild disabled={disabled}>
+        <button type="button" className={trigger} aria-label="Where to run" data-testid="worktree-mode-picker">
+          <Icon className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">{active.label}</span>
+          <ChevronDown className="h-3 w-3 shrink-0 opacity-70" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-72">
+        {MODES.map((item) => (
+          <DropdownMenuItem
+            key={item.id}
+            disabled={item.id === 'worktree' && !canBranch}
+            onSelect={() => onModeChange(item.id)}
+            className="items-start"
+            data-testid={`worktree-mode-${item.id}`}
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block">{item.label}</span>
+              <span className="block text-[11px] text-fg-subtle">
+                {item.id === 'worktree' && !canBranch ? 'This repository has no branches yet.' : item.description}
+              </span>
+            </span>
+            {item.id === mode && <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 /**
  * The strip under the new-thread composer for a Git folder: run in the folder as it is, or in a new
  * worktree cut from a branch. In the folder the branch is only shown; MDE never switches it.
@@ -126,6 +171,7 @@ export function WorktreeBar({
   base,
   branchName,
   branchProblem,
+  locked = false,
   onModeChange,
   onBaseChange,
   onBranchNameChange,
@@ -139,49 +185,33 @@ export function WorktreeBar({
   branchName: string
   /** Why that name cannot be used, or null. */
   branchProblem: string | null
+  /** The folder is itself a worktree: threads started in it run there, and the mode is not a choice. */
+  locked?: boolean
   onModeChange: (mode: WorktreeMode) => void
   onBaseChange: (name: string) => void
   onBranchNameChange: (name: string) => void
   disabled?: boolean
 }): JSX.Element {
   const [nameFocused, setNameFocused] = useState(false)
-  const active = MODES.find((item) => item.id === mode) ?? MODES[0]!
   const canBranch = info.branches.length > 0
-  const Icon = mode === 'worktree' ? FolderGit2 : Folder
 
   return (
     <div
       data-testid="worktree-bar"
       className="-mt-1.5 mx-5 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 rounded-b-xl border border-t-0 border-line bg-elevated/50 px-1.5 pb-1 pt-2"
     >
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild disabled={disabled}>
-          <button type="button" className={trigger} aria-label="Where to run" data-testid="worktree-mode-picker">
-            <Icon className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">{active.label}</span>
-            <ChevronDown className="h-3 w-3 shrink-0 opacity-70" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-72">
-          {MODES.map((item) => (
-            <DropdownMenuItem
-              key={item.id}
-              disabled={item.id === 'worktree' && !canBranch}
-              onSelect={() => onModeChange(item.id)}
-              className="items-start"
-              data-testid={`worktree-mode-${item.id}`}
-            >
-              <span className="min-w-0 flex-1">
-                <span className="block">{item.label}</span>
-                <span className="block text-[11px] text-fg-subtle">
-                  {item.id === 'worktree' && !canBranch ? 'This repository has no branches yet.' : item.description}
-                </span>
-              </span>
-              {item.id === mode && <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {locked ? (
+        <span
+          className="flex h-6 min-w-0 items-center gap-1.5 px-1.5 text-[12px] text-fg-muted"
+          data-testid="worktree-fixed"
+          title="This folder is a worktree. Threads started here run in it."
+        >
+          <FolderGit2 className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">Worktree</span>
+        </span>
+      ) : (
+        <ModePicker mode={mode} canBranch={canBranch} onModeChange={onModeChange} disabled={disabled} />
+      )}
       {mode === 'worktree' ? (
         <div className="ml-auto flex min-w-0 items-center gap-1">
           <input

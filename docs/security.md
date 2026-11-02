@@ -191,8 +191,17 @@ object takes no other key, so the renderer cannot name a path, a remote or a com
   removed with `--force` together with its branch, which is safe because nothing has run in it;
   cleanup errors are swallowed and the original error is reported.
 
+- **Worktree folders are listed by main, never by the renderer.** A new worktree is added to the
+  Inbox folders only after its thread was recorded, with the same record the thread carries; no
+  channel takes a worktree record from the renderer. A thread started in such a folder copies the
+  folder's record, so removal later passes the same checks, and a `worktree` request for a worktree
+  folder is refused so a worktree is never cut from another.
+- **Removal drops the entry.** `inbox:remove` with `removeWorktree` that succeeds also removes the
+  folders recorded for that root and their drafts; if Git refuses, nothing is dropped.
+
 `inbox.json` stores the worktree record (the repository directory, the root, the branch and the
-base) and is validated on load like every other field.
+base) on the thread and on the folder entry, and is validated on load like every other field; a
+malformed record on a folder is dropped and the folder stays.
 
 ## Windows executable selection
 

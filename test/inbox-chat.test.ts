@@ -45,6 +45,7 @@ const api = {
     setRead: vi.fn(async () => null),
     setComposer: vi.fn(async (composer: unknown) => composer),
     removeFolder: vi.fn(async () => undefined),
+    folders: vi.fn(async () => ({ folders: useInboxChat.getState().folders, composer: useInboxChat.getState().composer })),
     gitInfo: vi.fn(async (): Promise<InboxGitInfo> => ({ repository: false, branch: null, branches: [] })),
   },
   chat: {
@@ -254,6 +255,130 @@ describe('Inbox worktree mode', () => {
 
     await send(view, 'Add a dark mode')
     await vi.waitFor(() => expect(api.chat.create).toHaveBeenCalledWith(expect.objectContaining({ folderId: 'fld_app', worktree: { base: 'origin/main' } })))
+  })
+
+  describe('worktree folders', () => {
+    const tree: InboxFolder = {
+      id: 'fld_tree', name: 'app · mde/1a2b3c4d', directory: '/home/me/.mde/worktrees/app-abc/1a2b3c4d', target: folder.target,
+      createdAt: 2, lastUsedAt: 2,
+      worktree: { repository: '/home/me/app', root: '/home/me/.mde/worktrees/app-abc/1a2b3c4d', branch: 'mde/1a2b3c4d', base: 'origin/main' },
+    }
+    const chooser = async (view: HTMLElement): Promise<HTMLElement> => {
+      await open(view.querySelector('[data-testid="inbox-folder-picker"]')!)
+      return vi.waitFor(() => {
+        const found = document.querySelector<HTMLElement>('[role="menu"]')
+        expect(found).not.toBeNull()
+        return found!
+      })
+    }
+
+    it('lists worktrees under the folders, saying they are worktrees and what they were based on', async () => {
+      useInboxChat.setState({ folders: [tree, folder], composer: { folderId: 'fld_app' } })
+      const view = await render()
+      const menu = await chooser(view)
+      const real = Array.from(menu.querySelectorAll('[data-testid="inbox-folder-item"]'))
+      const trees = Array.from(menu.querySelectorAll('[data-testid="inbox-worktree-folder"]'))
+      expect(real.map((item) => item.textContent)).toEqual(['app/home/me/app · Ubuntu'])
+      expect(trees).toHaveLength(1)
+      expect(trees[0]?.textContent).toContain('mde/1a2b3c4d')
+      expect(trees[0]?.textContent).toContain('Worktree')
+      expect(trees[0]?.textContent).toContain('Based on origin/main in app')
+      expect(menu.textContent).toContain('Worktrees')
+      // The real folders come first, whatever was used last.
+      const order = Array.from(menu.querySelectorAll('[data-testid]')).map((item) => item.getAttribute('data-testid'))
+      expect(order.indexOf('inbox-folder-item')).toBeLessThan(order.indexOf('inbox-worktree-folder'))
+    })
+
+    it('shows no Worktrees group when there are none', async () => {
+      const view = await render()
+      const menu = await chooser(view)
+      expect(menu.textContent).not.toContain('Worktrees')
+      expect(menu.querySelector('[data-testid="inbox-worktree-folder"]')).toBeNull()
+    })
+
+    it('names the original folder from its directory when that folder is no longer in the Inbox', async () => {
+      useInboxChat.setState({ folders: [tree], composer: { folderId: 'fld_tree' } })
+      const view = await render()
+      const menu = await chooser(view)
+      expect(menu.querySelector('[data-testid="inbox-worktree-folder"]')?.textContent).toContain('Based on origin/main in app')
+    })
+
+    it('starts on a real folder, not a worktree, when nothing was chosen before', async () => {
+      useInboxChat.setState({ folders: [tree, folder], composer: {} })
+      const view = await render()
+      expect(view.querySelector('[data-testid="inbox-folder-picker"]')?.textContent).toBe('app')
+    })
+
+    it('says what the folder in the heading is when it is a worktree', async () => {
+      useInboxChat.setState({ folders: [folder, tree], composer: { folderId: 'fld_tree' } })
+      const view = await render()
+      const picker = view.querySelector('[data-testid="inbox-folder-picker"]')!
+      expect(picker.textContent).toBe('app · mde/1a2b3c4d')
+      expect(picker.getAttribute('title')).toContain('Worktree of app, based on origin/main')
+      expect(picker.getAttribute('title')).toContain('/home/me/.mde/worktrees/app-abc/1a2b3c4d')
+    })
+
+    it('starts a thread in the chosen worktree, with no choice of where to run and no new worktree', async () => {
+      api.inbox.gitInfo.mockResolvedValue(repo)
+      useInboxChat.setState({ folders: [folder, tree], composer: { folderId: 'fld_app' } })
+      const view = await render()
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="worktree-mode-picker"]')).not.toBeNull())
+      const menu = await chooser(view)
+      await act(async () => Array.from(menu.querySelectorAll<HTMLElement>('[data-testid="inbox-worktree-folder"]'))[0]!.click())
+      await vi.waitFor(() => expect(api.inbox.gitInfo).toHaveBeenLastCalledWith({ folderId: 'fld_tree' }))
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="worktree-fixed"]')).not.toBeNull())
+      expect(view.querySelector('[data-testid="worktree-mode-picker"]')).toBeNull()
+      expect(view.querySelector('[data-testid="worktree-branch-name"]')).toBeNull()
+      expect(view.querySelector('[data-testid="worktree-fixed"]')?.textContent).toBe('Worktree')
+      expect(view.querySelector('[data-testid="worktree-current-branch"]')?.textContent).toBe('main')
+      await send(view, 'More work')
+      await vi.waitFor(() => expect(api.chat.create).toHaveBeenCalledTimes(1))
+      expect(api.chat.create.mock.calls[0]?.[0]).toMatchObject({ folderId: 'fld_tree', text: 'More work' })
+      expect(api.chat.create.mock.calls[0]?.[0]).not.toHaveProperty('worktree')
+    })
+
+    it('does not carry a half-made choice for the folder over into a worktree folder', async () => {
+      api.inbox.gitInfo.mockResolvedValue(repo)
+      useInboxChat.setState({ folders: [folder, tree], composer: { folderId: 'fld_app' } })
+      const view = await render()
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="worktree-mode-picker"]')).not.toBeNull())
+      await open(view.querySelector('[data-testid="worktree-mode-picker"]')!)
+      await choose('New worktree')
+      await act(async () => useInboxChat.setState({ composer: { folderId: 'fld_tree' } }))
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="worktree-fixed"]')).not.toBeNull())
+      await send(view, 'More work')
+      await vi.waitFor(() => expect(api.chat.create).toHaveBeenCalledTimes(1))
+      expect(api.chat.create.mock.calls[0]?.[0]).not.toHaveProperty('worktree')
+    })
+
+    it('reads the folders again after a thread was started in a new worktree, so the worktree is listed', async () => {
+      api.inbox.gitInfo.mockResolvedValue(repo)
+      const view = await render()
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="worktree-bar"]')).not.toBeNull())
+      api.inbox.folders.mockResolvedValueOnce({ folders: [folder, tree], composer: { folderId: 'fld_app' } })
+      await open(view.querySelector('[data-testid="worktree-mode-picker"]')!)
+      await choose('New worktree')
+      await send(view, 'Add a dark mode')
+      await vi.waitFor(() => expect(api.inbox.folders).toHaveBeenCalledTimes(1))
+      await vi.waitFor(() => expect(useInboxChat.getState().folders.map((item) => item.id)).toEqual(['fld_app', 'fld_tree']))
+    })
+
+    it('does not read the folders again after an ordinary thread', async () => {
+      api.inbox.gitInfo.mockResolvedValue(repo)
+      const view = await render()
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="worktree-bar"]')).not.toBeNull())
+      await send(view, 'Add a dark mode')
+      await vi.waitFor(() => expect(api.chat.create).toHaveBeenCalledTimes(1))
+      expect(api.inbox.folders).not.toHaveBeenCalled()
+    })
+
+    it('says in the trash button that removing a worktree from the list leaves it on disk', async () => {
+      useInboxChat.setState({ folders: [folder, tree], composer: { folderId: 'fld_app' } })
+      const view = await render()
+      const menu = await chooser(view)
+      const removers = Array.from(menu.querySelectorAll('button[aria-label^="Remove "]'))
+      expect(removers.map((item) => item.getAttribute('title'))).toEqual(['Remove from the Inbox', 'Remove from the Inbox (the worktree stays on disk)'])
+    })
   })
 
   describe('naming the new branch', () => {
