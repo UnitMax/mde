@@ -13,6 +13,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { WslFolderBrowser } from '@/components/WslFolderBrowser'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { useInboxChat } from '@/store/inbox-chat'
 import { useWorkspace } from '@/store/workspace'
@@ -39,12 +40,14 @@ export function AddInboxFolderDialog({
   const [path, setPath] = useState('')
   const [distro, setDistro] = useState('')
   const [adding, setAdding] = useState(false)
+  const [browsing, setBrowsing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open) return
     setPath('')
     setError(null)
+    setBrowsing(false)
     if (wsl) void refreshDistros()
   }, [open, wsl, refreshDistros])
 
@@ -55,11 +58,15 @@ export function AddInboxFolderDialog({
   }, [wsl, distro, distros])
 
   const browse = async (): Promise<void> => {
+    // The Windows file dialog cannot show a distro's folders, so WSL folders are chosen in MDE's own browser.
+    if (wsl) {
+      setBrowsing(true)
+      return
+    }
     const picked = await window.api.paths.browse()
     if (!picked) return
-    const resolution = await window.api.paths.resolve({ kind: wsl ? 'wsl' : 'native', ...(distro ? { distro } : {}), rawPath: picked })
+    const resolution = await window.api.paths.resolve({ kind: 'native', rawPath: picked })
     setPath(resolution.path)
-    if (resolution.distro) setDistro(resolution.distro)
   }
 
   const canAdd = path.trim().length > 0 && (!wsl || distro.length > 0) && !adding
@@ -80,62 +87,82 @@ export function AddInboxFolderDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Add a folder to the Inbox</DialogTitle>
-          <DialogDescription>
-            New threads start OpenCode in this folder. Inbox folders are separate from your projects.
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          className="flex flex-col gap-3"
-          onSubmit={(event) => {
-            event.preventDefault()
-            void add()
-          }}
-        >
-          {wsl && (
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add a folder to the Inbox</DialogTitle>
+            <DialogDescription>
+              New threads start OpenCode in this folder. Inbox folders are separate from your projects.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="flex flex-col gap-3"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void add()
+            }}
+          >
+            {wsl && (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="inbox-folder-distro">WSL distro</Label>
+                <Select value={distro} onValueChange={setDistro}>
+                  <SelectTrigger id="inbox-folder-distro">
+                    <SelectValue placeholder="Choose a distro" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {distros.map((item) => (
+                      <SelectItem key={item.name} value={item.name}>{item.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="inbox-folder-distro">WSL distro</Label>
-              <Select value={distro} onValueChange={setDistro}>
-                <SelectTrigger id="inbox-folder-distro">
-                  <SelectValue placeholder="Choose a distro" />
-                </SelectTrigger>
-                <SelectContent>
-                  {distros.map((item) => (
-                    <SelectItem key={item.name} value={item.name}>{item.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label htmlFor="inbox-folder-path">Folder</Label>
+              <div className="flex gap-1.5">
+                <Input
+                  id="inbox-folder-path"
+                  autoFocus
+                  value={path}
+                  placeholder={wsl ? '/home/me/src/app' : '/Users/me/src/app'}
+                  onChange={(event) => setPath(event.target.value)}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={wsl && !distro}
+                  onClick={() => void browse()}
+                  title={wsl ? `Browse folders in ${distro || 'a WSL distro'}` : 'Browse'}
+                >
+                  <FolderSearch className="h-3.5 w-3.5" />
+                  Browse
+                </Button>
+              </div>
             </div>
-          )}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="inbox-folder-path">Folder</Label>
-            <div className="flex gap-1.5">
-              <Input
-                id="inbox-folder-path"
-                autoFocus
-                value={path}
-                placeholder={wsl ? '/home/me/src/app' : '/Users/me/src/app'}
-                onChange={(event) => setPath(event.target.value)}
-              />
-              <Button type="button" variant="secondary" onClick={() => void browse()} title="Browse">
-                <FolderSearch className="h-3.5 w-3.5" />
-                Browse
+            {error && <p role="alert" className="text-xs text-danger">{error}</p>}
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+              <Button type="submit" disabled={!canAdd}>
+                {adding && <LoaderCircle className="h-3.5 w-3.5 animate-spin" />}
+                Add folder
               </Button>
-            </div>
-          </div>
-          {error && <p role="alert" className="text-xs text-danger">{error}</p>}
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={!canAdd}>
-              {adding && <LoaderCircle className="h-3.5 w-3.5 animate-spin" />}
-              Add folder
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+      {wsl && (
+        <WslFolderBrowser
+          open={open && browsing}
+          onOpenChange={setBrowsing}
+          distro={distro}
+          startPath={path}
+          onChoose={(chosen) => {
+            setPath(chosen)
+            setBrowsing(false)
+          }}
+        />
+      )}
+    </>
   )
 }

@@ -109,6 +109,7 @@ const api: RendererApi = {
     browse: () => ipcRenderer.invoke(IpcChannels.pathBrowse),
     resolve: (req) => ipcRenderer.invoke(IpcChannels.pathResolve, req),
     validate: (req) => ipcRenderer.invoke(IpcChannels.pathValidate, req),
+    listWslDirectories: (req) => ipcRenderer.invoke(IpcChannels.pathListWslDirectories, req),
     reveal: (sessionId) => ipcRenderer.invoke(IpcChannels.pathReveal, sessionId),
     revealTerminal: (terminalId) =>
       ipcRenderer.invoke(IpcChannels.pathRevealTerminal, terminalId),

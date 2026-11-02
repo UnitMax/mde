@@ -132,7 +132,12 @@ MDE has two modes that do not touch each other. The Projects tab ("legacy" mode)
 projects, sessions and terminals in `workspace.json`. Inbox mode keeps its own list of folders in
 `inbox.json` and never reads or changes projects or sessions. An Inbox folder is a directory and a
 target: the Mac, or a WSL distro on Windows, where only WSL paths are accepted because OpenCode
-runs there.
+runs there. In the Add folder dialog the path can be typed or chosen with Browse. On the Mac that
+opens the system folder dialog. On Windows it opens MDE's own folder browser, which lists only the
+folders inside the chosen distro (the Windows file dialog cannot show a distro's filesystem). The
+browser opens in the folder already typed when it exists, otherwise in the distro's home. It has
+home and parent buttons, a breadcrumb, and a "Show hidden folders" switch, and it hands back a plain
+Linux path.
 
 The Inbox also shows the Files sidebar for the open thread's folder, or for the folder a new thread starts in. It is the same tree and viewer as in Projects mode, but browse-only: the VS Code and File Explorer buttons are hidden. The renderer passes the thread's or folder's own ID to `files:list` and `files:read`; the main process looks it up in the Inbox store when no workspace session has that ID.
 
@@ -619,6 +624,12 @@ worktree.
 - Session paths are stored in the target's own format. `wslpath` is used only at the UI
   boundary — when the Windows folder picker returns a `\\wsl$\` / `\\wsl.localhost\` UNC path,
   when translating a dropped file, and when revealing a folder in Explorer.
+- Choosing a folder for a WSL location (the New session dialog with WSL selected, and the Inbox's
+  Add folder dialog on Windows) opens MDE's folder browser (`WslFolderBrowser`, backed by
+  `path:list-wsl-directories` in `src/main/wsl/browse.ts`) instead of the Windows file dialog, so
+  only folders of the chosen distro can be picked. The Windows file dialog remains for Windows
+  folders. Folders under `/mnt/c` are listed like any other; in the New session dialog the chosen
+  path still goes through `path:resolve`, which adds the 9p performance warning.
 - A session whose files sit under `/mnt/c` gets an inline warning about 9p performance. It is
   a warning, not a block.
 

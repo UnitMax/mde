@@ -36,6 +36,7 @@ import {
   type UpdateSessionTabRequest,
   type SelectSessionTabRequest,
   type ValidatePathRequest,
+  type ListWslDirectoriesRequest,
   type WritePtyRequest,
   type WorkspaceData
 } from '@shared/ipc'
@@ -54,6 +55,7 @@ import type {
   NewSession,
   PathCheckResult,
   PathResolution,
+  WslDirectoryListing,
   Project,
   TodoProject,
   TodoTask,
@@ -121,6 +123,7 @@ import {
   toWindows,
   uncPathFor
 } from './wsl/paths'
+import { listWslDirectories } from './wsl/browse'
 import { buildVsCodeRemoteUri } from './vscode'
 import { safeVsCodeRemoteUrl } from './external-links'
 import {
@@ -749,6 +752,7 @@ export function registerIpcHandlers(
     resolveForTarget(req.kind, req.distro, req.rawPath)
   )
   handle<ValidatePathRequest, PathCheckResult>(IpcChannels.pathValidate, (req) => validatePath(req))
+  handle<ListWslDirectoriesRequest, WslDirectoryListing>(IpcChannels.pathListWslDirectories, (req) => listWslDirectories(req))
   handle<string, void>(IpcChannels.pathReveal, async (sessionId) => {
     const session = await getSession(sessionId)
     if (session) await revealSession(session)

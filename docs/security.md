@@ -203,6 +203,28 @@ object takes no other key, so the renderer cannot name a path, a remote or a com
 base) on the thread and on the folder entry, and is validated on load like every other field; a
 malformed record on a folder is dropped and the folder stays.
 
+### WSL folder browser boundary
+
+The Windows file dialog cannot show a WSL distro's own filesystem, so choosing a WSL folder uses a
+browser built into MDE (the Add folder dialog of the Inbox and the New session dialog). It is backed
+by one read-only channel, `path:list-wsl-directories`, which takes a distro name, an optional
+absolute Linux path and a flag for hidden folders.
+
+- **Names only.** The reply is the folder names directly inside one folder: no file names, no file
+  content, and nothing is created, changed or opened. Names that are not plain path text (a
+  backslash or a control character) are left out, and a listing is cut off after 1,000 folders.
+- **Validated in both places.** The IPC validator accepts the distro by the same pattern as the other
+  path channels and rejects a path with controls or over the path limit. The main process then
+  requires `isPlainAbsolutePath` (absolute, no backslash, no control character, no `.` or `..`
+  segment), and refuses to run outside Windows.
+- **No shell.** The distro runs `find -L <path> -mindepth 1 -maxdepth 1 -printf …` through
+  `wsl.exe -e`, so the path is one argument that cannot be parsed as syntax and, being absolute,
+  cannot be read as an option. Without a path the start is the distro's login-shell `$HOME`.
+- **Same reach as a file dialog.** The renderer can list any folder the distro user can read, as the
+  system file dialog could. A folder chosen here is only text in the form field: it is validated and
+  canonicalized again by `path:resolve` and `path:validate` and by the add handlers before anything
+  is stored or run.
+
 ## Windows executable selection
 
 `src/main/windows-executable.ts` resolves Windows host programs before launch.

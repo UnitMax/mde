@@ -736,6 +736,16 @@ export interface PathResolution {
   warning?: string
 }
 
+/** The folders directly inside one folder of a WSL distro, for the in-app folder browser. */
+export interface WslDirectoryListing {
+  /** The absolute Linux path that was listed (the home directory when none was asked for). */
+  path: string
+  /** Folder names, sorted, without any path. */
+  directories: string[]
+  /** More folders exist than were returned. */
+  truncated: boolean
+}
+
 /** A single commit shown by the read-only Git history view. */
 export interface GitCommit {
   /** Full object ID; the renderer may shorten this for display. */

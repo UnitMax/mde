@@ -11,6 +11,7 @@ import type {
   NewSession,
   PathCheckResult,
   PathResolution,
+  WslDirectoryListing,
   Project,
   TodoProject,
   TodoTask,
@@ -124,6 +125,7 @@ export const IpcChannels = {
   pathBrowse: 'path:browse',
   pathResolve: 'path:resolve',
   pathValidate: 'path:validate',
+  pathListWslDirectories: 'path:list-wsl-directories',
   pathReveal: 'path:reveal',
   pathRevealTerminal: 'path:reveal-terminal',
   pathOpenInVsCode: 'path:open-in-vscode',
@@ -218,6 +220,14 @@ export interface ValidatePathRequest {
   kind: ProjectKind
   distro?: string
   path: string
+}
+
+export interface ListWslDirectoriesRequest {
+  distro: string
+  /** An absolute Linux path in the distro. Omitted: the distro user's home directory. */
+  path?: string
+  /** Include folders whose names start with a dot. */
+  hidden?: boolean
 }
 
 export interface GitInfoRequest {
@@ -485,6 +495,7 @@ export interface RendererApi {
     browse(): Promise<string | null>
     resolve(req: ResolvePathRequest): Promise<PathResolution>
     validate(req: ValidatePathRequest): Promise<PathCheckResult>
+    listWslDirectories(req: ListWslDirectoriesRequest): Promise<WslDirectoryListing>
     reveal(sessionId: string): Promise<void>
     revealTerminal(terminalId: string): Promise<void>
     openInVsCode(sessionId: string): Promise<void>

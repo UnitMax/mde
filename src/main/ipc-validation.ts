@@ -218,6 +218,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.pathBrowse]: noPayload,
   [IpcChannels.pathResolve]: object({ kind, distro: optional(distro), rawPath: optionalPath }),
   [IpcChannels.pathValidate]: object({ kind, distro: optional(distro), path: optionalPath }),
+  [IpcChannels.pathListWslDirectories]: object({ distro, path: optional(path), hidden: optional(boolean) }),
   [IpcChannels.pathReveal]: id,
   [IpcChannels.pathRevealTerminal]: id,
   [IpcChannels.pathOpenInVsCode]: id,

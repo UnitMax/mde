@@ -53,6 +53,7 @@ const validPayloads = {
   [IpcChannels.pathBrowse]: undefined,
   [IpcChannels.pathResolve]: { kind: 'wsl', distro: undefined, rawPath: '' },
   [IpcChannels.pathValidate]: { kind: 'native', path: 'C:\\src\\project' },
+  [IpcChannels.pathListWslDirectories]: { distro: 'Ubuntu-24.04', path: '/home/me', hidden: true },
   [IpcChannels.pathReveal]: 'session',
   [IpcChannels.pathRevealTerminal]: 'pane',
   [IpcChannels.pathOpenInVsCode]: 'session',
@@ -126,6 +127,20 @@ describe('IPC payload boundary', () => {
     const normal = validPayloads[channel]
     const extra = normal && typeof normal === 'object' ? { ...normal, unexpected: true } : { unexpected: true }
     rejects(channel, extra)
+  })
+
+  it('accepts a distro with an optional path and hidden flag when listing WSL folders', () => {
+    const channel = IpcChannels.pathListWslDirectories
+    expect(() => assertIpcPayload(channel, { distro: 'Ubuntu-24.04' })).not.toThrow()
+    expect(() => assertIpcPayload(channel, { distro: 'Ubuntu-24.04', path: '/home/me/src' })).not.toThrow()
+    rejects(channel, {})
+    rejects(channel, { distro: '-d' })
+    rejects(channel, { distro: 'Ubuntu\n' })
+    rejects(channel, { distro: 'Ubuntu', path: '' })
+    rejects(channel, { distro: 'Ubuntu', path: '/home/me\n/x' })
+    rejects(channel, { distro: 'Ubuntu', path: 'x'.repeat(IPC_LIMITS.path + 1) })
+    rejects(channel, { distro: 'Ubuntu', hidden: 'yes' })
+    rejects(channel, { distro: 'Ubuntu', command: 'ls' })
   })
 
   it('accepts only OpenCode session IDs and booleans for inbox changes', () => {

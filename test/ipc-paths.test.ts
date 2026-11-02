@@ -710,4 +710,42 @@ describe('file tree IPC', () => {
     ).resolves.toEqual({ path: 'README.md', content: 'hi\n', size: 3, binary: false, tooLarge: false })
     expect(wslDistrosMock.runWslCommandBuffer.mock.calls[0]?.[1]).toContain('/home/me/configured/README.md')
   })
+
+  it('lists WSL folders through the browser channel, starting at the distro home', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    registerForTest(vi.fn())
+    wslDistrosMock.runWslCommand.mockImplementation(async (_distro: string, command: string[]) =>
+      command[0] === 'bash'
+        ? { stdout: '__MDE_VALUE_BEGIN__/home/me__MDE_VALUE_END__\n', stderr: '', code: 0 }
+        : { stdout: 'd\tsrc\nf\ta.txt\n', stderr: '', code: 0 })
+
+    await expect(
+      handler(IpcChannels.pathListWslDirectories)(trustedEvent, { distro: 'Ubuntu-24.04' })
+    ).resolves.toEqual({ path: '/home/me', directories: ['src'], truncated: false })
+    expect(wslDistrosMock.runWslCommand).toHaveBeenLastCalledWith(
+      'Ubuntu-24.04',
+      ['find', '-L', '/home/me', '-mindepth', '1', '-maxdepth', '1', '-printf', '%y\\t%f\\n']
+    )
+  })
+
+  it('rejects malformed folder-browser requests before reaching the distro', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    registerForTest(vi.fn())
+    const list = handler(IpcChannels.pathListWslDirectories)
+
+    await expect(list(trustedEvent, { distro: 'Ubuntu', path: '/home/me\nx' })).rejects.toThrow('Invalid IPC payload for path:list-wsl-directories.')
+    await expect(list(trustedEvent, { distro: 'Ubuntu', path: '../etc' })).rejects.toThrow('Invalid folder path.')
+    await expect(list(trustedEvent, { distro: '--help' })).rejects.toThrow('Invalid IPC payload for path:list-wsl-directories.')
+    expect(wslDistrosMock.runWslCommand).not.toHaveBeenCalled()
+  })
+
+  it('does not browse WSL folders on macOS', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    registerForTest(vi.fn())
+
+    await expect(
+      handler(IpcChannels.pathListWslDirectories)(trustedEvent, { distro: 'Ubuntu-24.04' })
+    ).rejects.toThrow('only be browsed on Windows')
+    expect(wslDistrosMock.runWslCommand).not.toHaveBeenCalled()
+  })
 })
