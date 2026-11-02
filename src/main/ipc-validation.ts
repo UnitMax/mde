@@ -8,6 +8,7 @@ import {
 import { IpcChannels } from '@shared/ipc'
 import { isSessionColor } from '@shared/session-colors'
 import { isSessionIcon } from '@shared/session-icons'
+import { worktreeBranchProblem } from '@shared/worktree-branch'
 import type { TerminalLayout } from '@shared/types'
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels]
@@ -142,6 +143,8 @@ const inboxFolderId: Validator = (value) => typeof value === 'string' && /^fld_[
 const agentId: Validator = (value) => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value)
 /** A branch name as the picker shows it; main matches it against the refs Git itself lists. */
 const worktreeBase = string(256)
+/** A branch name the person chose for the new worktree; main checks the same rules again with a message. */
+const worktreeBranch: Validator = (value) => typeof value === 'string' && worktreeBranchProblem(value) === null
 const modelRef = object({ id: string(512), providerId: string(512), variant: optional(string(512)) })
 /** Prompt text: newlines and tabs are fine, other control characters are not. */
 const promptText: Validator = (value) => typeof value === 'string' && value.length <= 100_000 &&
@@ -255,7 +258,7 @@ export const ipcPayloadValidators = {
       object({ key, action: oneOf('tree'), sessionId: id, path: relativePath })(value) ||
       object({ key, action: oneOf('remove'), attachmentId: string(64) })(value)
   },
-  [IpcChannels.chatCreate]: object({ attachmentIds: optional(array(string(64), 10)), draftRevision: optional((v) => Number.isSafeInteger(v) && Number(v) >= 0), folderId: inboxFolderId, text: promptText, agent: agentId, model: modelRef, worktree: optional(object({ base: worktreeBase })) }),
+  [IpcChannels.chatCreate]: object({ attachmentIds: optional(array(string(64), 10)), draftRevision: optional((v) => Number.isSafeInteger(v) && Number(v) >= 0), folderId: inboxFolderId, text: promptText, agent: agentId, model: modelRef, worktree: optional(object({ base: worktreeBase, branch: optional(worktreeBranch) })) }),
   [IpcChannels.chatMessages]: object({ threadId: opencodeSessionId, cursor: optional((value) => typeof value === 'string' && /^[A-Za-z0-9_=.-]{1,2048}$/.test(value)) }),
   [IpcChannels.chatSend]: object({ attachmentIds: optional(array(string(64), 10)), draftRevision: optional((v) => Number.isSafeInteger(v) && Number(v) >= 0), threadId: opencodeSessionId, text: promptText, agent: optional(agentId), model: optional(modelRef) }),
   [IpcChannels.chatInterrupt]: chatThread,

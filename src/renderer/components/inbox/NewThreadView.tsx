@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, FolderPlus, Trash2 } from 'lucide-react'
-import type { OpenCodeModelRef } from '@shared/types'
+import type { InboxGitBranch, OpenCodeModelRef } from '@shared/types'
+import { worktreeBranchConflict, worktreeBranchProblem } from '@shared/worktree-branch'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -15,6 +16,11 @@ import { WorktreeBar, useInboxGit, type WorktreeMode } from '@/components/inbox/
 import { initialChoice } from '@/lib/chat'
 import { defaultWorktreeBase } from '@/lib/inbox'
 import { optionsKey, useInboxChat } from '@/store/inbox-chat'
+
+/** Why the chosen name cannot be used for the new branch, judged from what the page already knows. */
+function worktreeBranchError(branches: InboxGitBranch[], name: string): string | null {
+  return worktreeBranchProblem(name) ?? worktreeBranchConflict(name, branches.filter((branch) => !branch.remote).map((branch) => branch.name))
+}
 
 /** The Inbox's start page: pick a folder, a model and an agent, and describe the work. */
 export function NewThreadView(): JSX.Element {
@@ -34,14 +40,19 @@ export function NewThreadView(): JSX.Element {
   const git = useInboxGit(folder?.id)
   const [mode, setMode] = useState<WorktreeMode>('current')
   const [pickedBase, setPickedBase] = useState<string | null>(null)
+  // The new branch's name; empty means MDE picks one (`mde/<id>`).
+  const [branchName, setBranchName] = useState('')
   const folderId = folder?.id
   useEffect(() => {
     setMode('current')
     setPickedBase(null)
+    setBranchName('')
   }, [folderId])
   const defaultBase = useMemo(() => (git ? defaultWorktreeBase(git) : null), [git])
   const base = git && pickedBase && git.branches.some((branch) => branch.name === pickedBase) ? pickedBase : defaultBase
-  const worktree = git && mode === 'worktree' && base ? { base } : undefined
+  const chosenBranch = branchName.trim()
+  const branchProblem = git && mode === 'worktree' && chosenBranch ? worktreeBranchError(git.branches, chosenBranch) : null
+  const worktree = git && mode === 'worktree' && base ? { base, ...(chosenBranch ? { branch: chosenBranch } : {}) } : undefined
 
   useEffect(() => {
     if (folder) void loadOptions({ folderId: folder.id })
@@ -149,8 +160,18 @@ export function NewThreadView(): JSX.Element {
             onModelChange={chooseModel}
             onRetryOptions={() => void loadOptions({ folderId: folder.id }, true)}
             placeholder="Describe what you want to build or change"
+            sendBlocked={Boolean(branchProblem)}
             footer={git && (
-              <WorktreeBar info={git} mode={mode} base={base} onModeChange={setMode} onBaseChange={setPickedBase} />
+              <WorktreeBar
+                info={git}
+                mode={mode}
+                base={base}
+                branchName={branchName}
+                branchProblem={branchProblem}
+                onModeChange={setMode}
+                onBaseChange={setPickedBase}
+                onBranchNameChange={setBranchName}
+              />
             )}
             onSend={async (text, attachments) => {
               if (!agent || !model) return

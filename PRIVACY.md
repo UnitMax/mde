@@ -65,7 +65,8 @@ feedback stays in memory.
 
 When you start an Inbox conversation in a **New worktree**, MDE asks Git to check out a copy of the
 branch you chose under `.mde/worktrees/` in your home directory (inside the WSL distro's home on
-Windows), on a new branch named `mde/` followed by eight hex digits. That folder holds ordinary
+Windows), on a new branch: the name you typed, or `mde/` followed by eight hex digits when you
+left it empty. The folder itself is named from random digits, not from the branch. It holds ordinary
 working files and sits outside MDE's user-data directory, so MDE's own cleanup does not cover it.
 It stays until you remove it: tick **Also remove the worktree** when you delete the conversation,
 or run `git worktree remove` yourself. The new branch is kept either way. MDE reads local branch

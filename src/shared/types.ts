@@ -555,8 +555,11 @@ export interface ChatCreateRequest {
   text: string
   agent: string
   model: OpenCodeModelRef
-  /** Run the thread in a new Git worktree cut from this branch, instead of in the folder itself. */
-  worktree?: { base: string }
+  /**
+   * Run the thread in a new Git worktree cut from `base`, instead of in the folder itself. `branch`
+   * names the new branch; without it MDE generates `mde/<id>`.
+   */
+  worktree?: { base: string; branch?: string }
 }
 
 export interface ChatThreadRequest {

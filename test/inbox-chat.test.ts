@@ -256,6 +256,103 @@ describe('Inbox worktree mode', () => {
     await vi.waitFor(() => expect(api.chat.create).toHaveBeenCalledWith(expect.objectContaining({ folderId: 'fld_app', worktree: { base: 'origin/main' } })))
   })
 
+  describe('naming the new branch', () => {
+    const nameField = (view: HTMLElement): HTMLInputElement => view.querySelector<HTMLInputElement>('[data-testid="worktree-branch-name"]')!
+    const setName = async (view: HTMLElement, value: string): Promise<void> => {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(nameField(view), value)
+        nameField(view).dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    const inWorktreeMode = async (): Promise<HTMLElement> => {
+      api.inbox.gitInfo.mockResolvedValue(repo)
+      const view = await render()
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="worktree-bar"]')).not.toBeNull())
+      await open(view.querySelector('[data-testid="worktree-mode-picker"]')!)
+      await choose('New worktree')
+      return view
+    }
+    const problem = (view: HTMLElement): string | undefined => view.querySelector('[data-testid="worktree-branch-problem"]')?.textContent ?? undefined
+
+    it('offers the field only for a new worktree, empty so that the name is automatic', async () => {
+      api.inbox.gitInfo.mockResolvedValue(repo)
+      const view = await render()
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="worktree-bar"]')).not.toBeNull())
+      expect(nameField(view)).toBeNull()
+      await open(view.querySelector('[data-testid="worktree-mode-picker"]')!)
+      await choose('New worktree')
+      expect(nameField(view).value).toBe('')
+      expect(nameField(view).placeholder).toBe('New branch name (auto)')
+      expect(problem(view)).toBeUndefined()
+    })
+
+    it('sends the name that was typed, without surrounding spaces', async () => {
+      const view = await inWorktreeMode()
+      await setName(view, '  feature/dark-mode ')
+      expect(problem(view)).toBeUndefined()
+      await send(view, 'Add a dark mode')
+      await vi.waitFor(() => expect(api.chat.create).toHaveBeenCalledTimes(1))
+      expect(api.chat.create.mock.calls[0]?.[0]).toMatchObject({ worktree: { base: 'main', branch: 'feature/dark-mode' } })
+    })
+
+    it('sends no name when the field is empty or only spaces, so the name stays automatic', async () => {
+      const view = await inWorktreeMode()
+      await setName(view, '   ')
+      await send(view, 'Add a dark mode')
+      await vi.waitFor(() => expect(api.chat.create).toHaveBeenCalledTimes(1))
+      expect(api.chat.create.mock.calls[0]?.[0].worktree).toEqual({ base: 'main' })
+    })
+
+    it('does not send the name when the thread runs in the folder, even if one was typed', async () => {
+      const view = await inWorktreeMode()
+      await setName(view, 'feature/dark-mode')
+      await open(view.querySelector('[data-testid="worktree-mode-picker"]')!)
+      await choose('Current directory')
+      await send(view, 'Add a dark mode')
+      await vi.waitFor(() => expect(api.chat.create).toHaveBeenCalledTimes(1))
+      expect(api.chat.create.mock.calls[0]?.[0]).not.toHaveProperty('worktree')
+    })
+
+    it('says why a name cannot be used and does not send until it is fixed', async () => {
+      const view = await inWorktreeMode()
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-model-picker"]')?.textContent).toContain('Flint Free'))
+      await type(view.querySelector('textarea')!, 'Add a dark mode')
+      for (const [name, message] of [
+        ['two words', /spaces/], ['--force', /start with -/], ['a..b', /\.\./], ['main', /already exists/],
+        ['main/sub', /so main\/sub cannot be created/], ['feature', /Branches under feature\/ already exist/],
+      ] as const) {
+        await setName(view, name)
+        expect(problem(view), name).toMatch(message)
+        expect(nameField(view).getAttribute('aria-invalid')).toBe('true')
+        expect(button(view, 'Send').disabled, name).toBe(true)
+      }
+      expect(api.chat.create).not.toHaveBeenCalled()
+      await setName(view, 'feature/dark-mode')
+      expect(problem(view)).toBeUndefined()
+      expect(nameField(view).getAttribute('aria-invalid')).toBeNull()
+      expect(button(view, 'Send').disabled).toBe(false)
+    })
+
+    it('ignores remote-tracking branches, which live apart from local ones', async () => {
+      const view = await inWorktreeMode()
+      // `origin/main` is a remote-tracking branch; a local branch called `origin` does not clash with it.
+      await setName(view, 'origin')
+      expect(problem(view)).toBeUndefined()
+    })
+
+    it('starts with an empty field again when another folder is chosen', async () => {
+      const second: InboxFolder = { ...folder, id: 'fld_other', name: 'other', directory: '/home/me/other' }
+      useInboxChat.setState({ folders: [folder, second] })
+      const view = await inWorktreeMode()
+      await setName(view, 'feature/dark-mode')
+      await act(async () => useInboxChat.setState({ composer: { folderId: 'fld_other' } }))
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="worktree-mode-picker"]')?.textContent).toBe('Current directory'))
+      await open(view.querySelector('[data-testid="worktree-mode-picker"]')!)
+      await choose('New worktree')
+      expect(nameField(view).value).toBe('')
+    })
+  })
+
   it('filters the branch list as the user types', async () => {
     api.inbox.gitInfo.mockResolvedValue(repo)
     const view = await render()

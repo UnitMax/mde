@@ -164,6 +164,8 @@ export interface ChatComposerProps {
   placeholder?: string
   autoFocus?: boolean
   disabled?: boolean
+  /** True while something outside the box makes sending impossible (the Git bar's branch name is invalid). */
+  sendBlocked?: boolean
   /** Shown directly under the box, above any error; the new-thread page puts its Git bar here. */
   footer?: ReactNode
 }
@@ -186,6 +188,7 @@ export function ChatComposer({
   placeholder = 'Ask for changes or send follow-ups',
   autoFocus = false,
   disabled = false,
+  sendBlocked = false,
   footer,
 }: ChatComposerProps): JSX.Element {
   const [text, setText] = useState('')
@@ -259,7 +262,7 @@ export function ChatComposer({
     setFocusAt(null)
   }, [focusAt, loaded, disabled, sending, text])
   const ready = options?.status === 'ready'
-  const canSend = ready && !disabled && !sending && !adding && loaded && (text.trim().length > 0 || draft.attachments.length > 0) && Boolean(agent) && Boolean(model)
+  const canSend = ready && !disabled && !sendBlocked && !sending && !adding && loaded && (text.trim().length > 0 || draft.attachments.length > 0) && Boolean(agent) && Boolean(model)
 
   useEffect(() => {
     const textarea = textareaRef.current

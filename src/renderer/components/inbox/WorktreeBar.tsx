@@ -124,18 +124,27 @@ export function WorktreeBar({
   info,
   mode,
   base,
+  branchName,
+  branchProblem,
   onModeChange,
   onBaseChange,
+  onBranchNameChange,
   disabled,
 }: {
   info: InboxGitInfo
   mode: WorktreeMode
   /** The branch a new worktree starts from; null when the repository has none yet. */
   base: string | null
+  /** The name typed for the new branch; empty lets MDE pick `mde/<id>`. */
+  branchName: string
+  /** Why that name cannot be used, or null. */
+  branchProblem: string | null
   onModeChange: (mode: WorktreeMode) => void
   onBaseChange: (name: string) => void
+  onBranchNameChange: (name: string) => void
   disabled?: boolean
 }): JSX.Element {
+  const [nameFocused, setNameFocused] = useState(false)
   const active = MODES.find((item) => item.id === mode) ?? MODES[0]!
   const canBranch = info.branches.length > 0
   const Icon = mode === 'worktree' ? FolderGit2 : Folder
@@ -143,7 +152,7 @@ export function WorktreeBar({
   return (
     <div
       data-testid="worktree-bar"
-      className="-mt-1.5 mx-5 flex items-center justify-between gap-2 rounded-b-xl border border-t-0 border-line bg-elevated/50 px-1.5 pb-1 pt-2"
+      className="-mt-1.5 mx-5 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 rounded-b-xl border border-t-0 border-line bg-elevated/50 px-1.5 pb-1 pt-2"
     >
       <DropdownMenu>
         <DropdownMenuTrigger asChild disabled={disabled}>
@@ -174,12 +183,43 @@ export function WorktreeBar({
         </DropdownMenuContent>
       </DropdownMenu>
       {mode === 'worktree' ? (
-        <BranchPicker branches={info.branches} current={info.branch} value={base} onChange={onBaseChange} disabled={disabled} />
+        <div className="ml-auto flex min-w-0 items-center gap-1">
+          <input
+            aria-label="New branch name"
+            aria-invalid={branchProblem ? true : undefined}
+            data-testid="worktree-branch-name"
+            placeholder="New branch name (auto)"
+            title="Name for the new branch. Leave it empty for an automatic name like mde/1a2b3c4d."
+            value={branchName}
+            disabled={disabled}
+            spellCheck={false}
+            autoCapitalize="off"
+            autoComplete="off"
+            onChange={(event) => onBranchNameChange(event.target.value)}
+            onFocus={() => setNameFocused(true)}
+            onBlur={() => setNameFocused(false)}
+            className={cn(
+              'h-6 w-44 min-w-0 rounded-md bg-transparent px-1.5 text-[12px] text-fg outline-none transition-colors placeholder:text-fg-subtle',
+              'hover:bg-hover focus:bg-hover focus-visible:ring-1 focus-visible:ring-accent/60 disabled:opacity-50',
+              branchProblem && !nameFocused && 'ring-1 ring-danger/70'
+            )}
+          />
+          <BranchPicker branches={info.branches} current={info.branch} value={base} onChange={onBaseChange} disabled={disabled} />
+        </div>
       ) : (
         <span className="flex h-6 min-w-0 items-center gap-1.5 px-1.5 text-[12px] text-fg-subtle" data-testid="worktree-current-branch" title="The folder's current branch">
           <GitBranch className="h-3.5 w-3.5 shrink-0" />
           <span className="max-w-[14rem] truncate">{info.branch ?? 'Detached HEAD'}</span>
         </span>
+      )}
+      {mode === 'worktree' && branchProblem && (
+        <p
+          role="status"
+          data-testid="worktree-branch-problem"
+          className={cn('basis-full px-1.5 pb-0.5 text-right text-[11px]', nameFocused ? 'text-fg-subtle' : 'text-danger')}
+        >
+          {branchProblem}
+        </p>
       )}
     </div>
   )

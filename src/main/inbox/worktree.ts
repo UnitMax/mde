@@ -15,6 +15,7 @@ import {
   type GitCommandResult,
   type GitCommandRunner,
 } from '../git'
+import { worktreeBranchConflict, worktreeBranchProblem } from '@shared/worktree-branch'
 import { targetSession } from '../opencode/service/discovery'
 import { isPlainAbsolutePath } from '../wsl/paths'
 import { assertWslLinuxPath, readWslShellValue } from '../wsl/shell-value'
@@ -53,10 +54,14 @@ const defaults: InboxWorktreeDependencies = {
   randomId: () => randomBytes(4).toString('hex'),
 }
 
-/** The first line Git printed, without its `fatal:` prefix, short enough for a dialog. */
+/**
+ * What went wrong, from Git's error output: its `fatal:` or `error:` line, without the prefix (Git
+ * may print progress such as "Preparing worktree" before it), short enough for a dialog.
+ */
 function gitMessage(result: GitCommandResult): string {
   if (result.launchError) return 'Git could not be run.'
-  const line = result.stderr.split('\n').map((item) => item.trim()).find(Boolean) ?? 'Git failed.'
+  const lines = result.stderr.split('\n').map((item) => item.trim()).filter(Boolean)
+  const line = lines.find((item) => /^(?:fatal|error):/i.test(item)) ?? lines[0] ?? 'Git failed.'
   const message = line.replace(/^(?:fatal|error):\s*/i, '')
   return message.length > MESSAGE_MAX_LENGTH ? `${message.slice(0, MESSAGE_MAX_LENGTH - 1)}…` : message
 }
@@ -81,8 +86,8 @@ function sameTarget(a: OpenCodePluginTarget, b: OpenCodePluginTarget): boolean {
 /**
  * Git worktrees for Inbox threads: the branches a thread can start from, creating a worktree on
  * a new branch, and removing it again. The renderer never names a path or a branch to create:
- * the base must be one of the refs Git itself lists, and every path and new branch name is made
- * here from a random id.
+ * the base must be one of the refs Git itself lists, every path is made here from a random id, and
+ * a branch name is either generated or a validated name of the person's own.
  */
 export class InboxWorktrees {
   private readonly dependencies: InboxWorktreeDependencies
@@ -103,10 +108,24 @@ export class InboxWorktrees {
     }
   }
 
-  async create(folder: InboxFolder, base: string): Promise<CreatedWorktree> {
+  /**
+   * Creates a worktree on a new branch cut from `base`. The branch is named `mde/<id>` unless the
+   * person chose a name, which must be valid and must not be taken: a branch that already exists is
+   * never reused, and never deleted by the cleanup after a failure.
+   */
+  async create(folder: InboxFolder, base: string, chosenBranch?: string): Promise<CreatedWorktree> {
     const read = this.dependencies.read(folder.target, folder.directory)
-    const ref = (await readGitRefs(read)).find((item) => item.name === base)
+    const refs = await readGitRefs(read)
+    const ref = refs.find((item) => item.name === base)
     if (!ref) throw new Error('Choose a branch from the list.')
+    if (chosenBranch !== undefined) {
+      const problem = worktreeBranchProblem(chosenBranch) ??
+        worktreeBranchConflict(chosenBranch, refs.filter((item) => !item.remote).map((item) => item.name))
+      if (problem) throw new Error(problem)
+      // The list is capped, so ask Git about this exact name too.
+      const taken = await read(['show-ref', '--verify', '--quiet', `refs/heads/${chosenBranch}`])
+      if (taken.code === 0) throw new Error(`A branch named ${chosenBranch} already exists. Choose another name.`)
+    }
 
     const home = await this.dependencies.home(folder.target)
     const parent = `${home.replace(/\/+$/, '')}/${WORKTREES_DIRECTORY}/${slug(folder.name)}-${folderSuffix(folder.id)}`
@@ -114,9 +133,11 @@ export class InboxWorktrees {
 
     const prefix = await this.folderPrefix(read, ref.ref)
     const mutate = this.dependencies.mutate(folder.target, folder.directory)
+    // A chosen name cannot be retried with another id: if it clashes, the person has to pick again.
+    const attempts = chosenBranch === undefined ? CREATE_ATTEMPTS : 1
     for (let attempt = 1; ; attempt++) {
       const id = this.dependencies.randomId()
-      const branch = `mde/${id}`
+      const branch = chosenBranch ?? `mde/${id}`
       const root = `${parent}/${id}`
       const result = await mutate(['worktree', 'add', '--no-track', '-b', branch, '--', root, ref.ref])
       if (result.code === 0) {
@@ -125,10 +146,11 @@ export class InboxWorktrees {
           worktree: { repository: folder.directory, root, branch, base },
         }
       }
-      // A clash with an existing branch or folder is only bad luck, and left nothing of ours behind.
-      // Any other failure will fail again, and may have left a partial worktree and its branch.
+      // A clash with an existing branch or folder left nothing of ours behind (and a chosen name that
+      // clashes is somebody's own branch, which must stay). Any other failure will fail again, and
+      // may have left a partial worktree and the branch we were creating.
       const clash = !result.launchError && /already exists/i.test(result.stderr)
-      if (clash && attempt < CREATE_ATTEMPTS) continue
+      if (clash && attempt < attempts) continue
       if (!clash) await this.discard(folder.target, { repository: folder.directory, root, branch, base })
       throw new Error(`Could not create the worktree: ${gitMessage(result)}`)
     }

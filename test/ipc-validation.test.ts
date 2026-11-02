@@ -174,7 +174,7 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.chatCreate, { folderId: '../fld', text: 'Hi', agent: 'build', model })
     rejects(IpcChannels.chatCreate, { folderId: 'fld_1234', text: 'Hi', agent: '../build', model })
     rejects(IpcChannels.chatCreate, { folderId: 'fld_1234', text: 'Hi', agent: 'build', model: { id: 'm' } })
-    // A worktree request names only the branch to start from, never a path or a new branch name.
+    // A worktree request names the branch to start from and, optionally, a valid name for the new one; never a path.
     const create = { folderId: 'fld_1234', text: 'Hi', agent: 'build', model }
     expect(() => assertIpcPayload(IpcChannels.chatCreate, { ...create, worktree: { base: 'origin/main' } })).not.toThrow()
     rejects(IpcChannels.chatCreate, { ...create, worktree: {} })
@@ -182,7 +182,12 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.chatCreate, { ...create, worktree: { base: 'x'.repeat(257) } })
     rejects(IpcChannels.chatCreate, { ...create, worktree: { base: 'main\nother' } })
     rejects(IpcChannels.chatCreate, { ...create, worktree: { base: 'main', path: '/home/me/elsewhere' } })
-    rejects(IpcChannels.chatCreate, { ...create, worktree: { base: 'main', branch: 'mine' } })
+    expect(() => assertIpcPayload(IpcChannels.chatCreate, { ...create, worktree: { base: 'main', branch: 'feature/dark-mode_2' } })).not.toThrow()
+    for (const branch of ['', ' ', '-f', '--force', 'two words', 'a..b', 'a//b', '/a', 'a/', 'a.lock', '.hidden', 'HEAD', 'x'.repeat(101), 'tab\there', 'new\nline', 'ünï', 'a:b', 'a~1']) {
+      rejects(IpcChannels.chatCreate, { ...create, worktree: { base: 'main', branch } })
+    }
+    rejects(IpcChannels.chatCreate, { ...create, worktree: { base: 'main', branch: 42 } })
+    rejects(IpcChannels.chatCreate, { ...create, worktree: { base: 'main', branch: null } })
     rejects(IpcChannels.chatCreate, { ...create, worktree: 'main' })
     rejects(IpcChannels.chatSend, { threadId: 'thread', text: 'Hi' })
     rejects(IpcChannels.chatMessages, { threadId: 'ses_thread', cursor: 'has space' })

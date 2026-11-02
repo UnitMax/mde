@@ -152,18 +152,25 @@ folder as it is and shows the folder's current branch (or "Detached HEAD"), read
 switches a branch. **New worktree** replaces the branch label with a "From ‹branch›" picker: a
 searchable list of local branches and then remote-tracking branches that already exist (for example
 `origin/main`), starting from the current branch, else `main`, `master` or the first local branch.
-MDE never runs `git fetch`, so a remote branch is as current as the last fetch. Every visit and
+Next to it is a **New branch name** field. Left empty, which is the default, MDE names the branch
+`mde/‹id›`; typed in, the name is used as it is. The page checks the name as you type (plain ASCII
+letters, digits and `. _ - / +`, Git's other branch-name rules, at most 100 characters, and not a
+local branch that exists or one that would sit inside or on top of another, since `feature` and
+`feature/login` cannot both exist) and disables sending while it is invalid. MDE never runs `git fetch`, so a remote branch is as current as the last fetch. Every visit and
 every folder change starts in **Current directory**, so a worktree is always a deliberate choice;
 the choice is not remembered. The strip is absent when the folder is not a repository or Git cannot
 be run, and **New worktree** is disabled in a repository with no branches yet. The renderer asks
 for the branches with `inbox:git-info` (a folder ID) and starts the thread with
-`chat:create { …, worktree: { base } }`; it never names a path or a new branch.
+`chat:create { …, worktree: { base, branch? } }`; it never names a path.
 
 `src/main/inbox/worktree.ts` does the work in the main process. It re-lists the refs and accepts
 `base` only if it is one of them, passes the full refname (`refs/remotes/origin/main`, never the
 bare name) so it cannot be taken for a tag or a path, and runs
-`git worktree add --no-track -b mde/‹id› -- ‹path› ‹refname›` from the folder, where `‹id›` is eight
-random hex digits. `--no-track` keeps the new branch from tracking its base, so a push does not
+`git worktree add --no-track -b ‹branch› -- ‹path› ‹refname›` from the folder, where `‹branch›` is
+the chosen name or `mde/‹id›`, and `‹id›` is eight random hex digits. A chosen name is validated
+again here (`src/shared/worktree-branch.ts` holds the rules both sides use) and checked against the
+local branches and with `git show-ref`, so an existing branch is refused with a message instead of
+reused. `--no-track` keeps the new branch from tracking its base, so a push does not
 target it. The worktree goes to `~/.mde/worktrees/‹folder name›-‹folder id›/‹id›`, in the home
 directory of the folder's own target (a WSL distro's `$HOME` on Windows), so the repository itself
 stays clean and nothing needs ignoring. A folder inside a repository (`packages/app`) gets the
@@ -171,8 +178,10 @@ thread running in the same subfolder of the worktree when the base branch has it
 worktree root otherwise. The session is then created in that directory, so the thread, its file tree,
 its branch label and any fork of it all follow the worktree. If the session cannot be created, the
 new worktree and its branch are removed again; if only the first message fails, they are kept with
-the thread and its draft, like any new thread. A clash with an existing branch or folder retries
-with a new id up to three times.
+the thread and its draft, like any new thread. A clash with an existing generated branch or folder
+retries with a new id up to three times; a chosen name is never retried, and a branch that appears
+under that name in the meantime is left alone, not cleaned up. The folder under `.mde/worktrees`
+is always named from the random id, never from the branch name.
 
 The sidebar and thread header name the folder the thread was started in rather than the worktree's
 random directory, and the header shows a WORKTREE marker with the worktree's path and base branch

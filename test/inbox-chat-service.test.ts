@@ -801,13 +801,21 @@ describe('Inbox chat service worktrees', () => {
     const worktrees = fake()
     const { service, store, folder, calls } = setup({ 'session.create': { data: { id: 'ses_new', title: 'New session' } } }, undefined, worktrees)
     const thread = await service.create({ folderId: folder.id, text: 'Fix the login', agent: 'plan', model, worktree: { base: 'origin/main' } })
-    expect(worktrees.create).toHaveBeenCalledWith(expect.objectContaining({ id: folder.id, directory: '/home/me/app' }), 'origin/main')
+    expect(worktrees.create).toHaveBeenCalledWith(expect.objectContaining({ id: folder.id, directory: '/home/me/app' }), 'origin/main', undefined)
     expect(calls[0]?.request.body).toEqual({
       agent: 'plan', model: { id: 'model-1', providerID: 'provider-1' }, location: { directory: worktree.root },
     })
     expect(thread).toMatchObject({ id: 'ses_new', directory: worktree.root, folderId: folder.id, worktree })
     expect(store.get('ses_new')).toMatchObject({ directory: worktree.root, worktree })
     expect(worktrees.discard).not.toHaveBeenCalled()
+    service.stop()
+  })
+
+  it('passes a chosen branch name on to the worktree', async () => {
+    const worktrees = fake()
+    const { service, folder } = setup({ 'session.create': { data: { id: 'ses_new' } } }, undefined, worktrees)
+    await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model, worktree: { base: 'main', branch: 'feature/dark-mode' } })
+    expect(worktrees.create).toHaveBeenLastCalledWith(expect.objectContaining({ id: folder.id }), 'main', 'feature/dark-mode')
     service.stop()
   })
 

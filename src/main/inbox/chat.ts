@@ -281,7 +281,7 @@ export class InboxChatService {
     let place: CreatedWorktree | undefined
     if (request.worktree) {
       if (!this.dependencies.worktrees) throw new Error('Git worktrees are unavailable.')
-      place = await this.dependencies.worktrees.create(folder, request.worktree.base)
+      place = await this.dependencies.worktrees.create(folder, request.worktree.base, request.worktree.branch)
     }
     this.streams.ensure(folder.target)
     let created: ReturnType<typeof parseCreatedSession>

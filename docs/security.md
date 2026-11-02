@@ -80,8 +80,9 @@ restriction or move of command preferences into main-process storage should
 be evaluated separately.
 
 Regression coverage includes `test/ipc-security.test.ts`,
-`test/ipc-validation.test.ts`, `test/inbox-worktree.test.ts` (real Git, including hostile base
-names), and the registered-handler tests in
+`test/ipc-validation.test.ts`, `test/worktree-branch.test.ts`, `test/inbox-worktree.test.ts` (real
+Git, including hostile base and branch names and a branch that already exists), and the
+registered-handler tests in
 `test/ipc-drop.test.ts`. Every shared channel must have a validator and a normal
 request fixture. Existing path/drop/history tests exercise the same real
 boundary with a trusted sender fixture. Native Windows/WSL smoke testing is
@@ -152,18 +153,26 @@ resolves and validates the path through the same checks as a session path.
 ### Inbox worktree boundary
 
 An Inbox thread can run in a Git worktree MDE creates, which is the only place MDE changes a
-repository. `chat:create` accepts an optional `worktree: { base }`, where `base` is a string of at
-most 256 characters without controls; the object takes no other key, so the renderer cannot name a
-path, a new branch, a remote or a command.
+repository. `chat:create` accepts an optional `worktree: { base, branch? }`, where `base` is a string
+of at most 256 characters without controls and `branch` is an optional name for the new branch; the
+object takes no other key, so the renderer cannot name a path, a remote or a command.
 
 - **The base is matched, never trusted.** The main process lists the refs with
   `git for-each-ref` and accepts `base` only if it equals the displayed name of one of them, so a
   string such as `--force`, `HEAD`, `../x` or a ref that does not exist never reaches a
   creating command. The start point is passed as the full refname (`refs/heads/…` or
   `refs/remotes/…`), which cannot be read as a tag, a path or an option.
-- **Paths and names are generated.** The worktree is
-  `<home>/.mde/worktrees/<folder name>-<folder id>/<id>` and the branch is `mde/<id>`, where `<id>`
-  is eight random hex digits and the folder name is reduced to letters, digits, `.`, `_` and `-`.
+- **Paths are generated; a branch name is generated or validated.** The worktree is
+  `<home>/.mde/worktrees/<folder name>-<folder id>/<id>`, where `<id>` is eight random hex digits and
+  the folder name is reduced to letters, digits, `.`, `_` and `-`; no user text reaches a path. The
+  branch is `mde/<id>` unless the person typed a name. A typed name must pass
+  `worktreeBranchProblem` (`src/shared/worktree-branch.ts`): at most 100 characters of plain ASCII
+  letters, digits and `. _ - / +`, with Git's own branch-name rules and no leading `-`, so it
+  cannot be read as an option. The IPC validator applies that function, the main process applies it
+  again with a readable message, and Git validates the name a third time. The name must not exist as
+  a local branch (listed and checked with `git show-ref`) and must not sit inside or on top of one,
+  so an existing branch is never reused. The cleanup after a failed start deletes the branch only
+  because the name was checked to be free first, and never after a clash.
   The home directory comes from the folder's own target (`os.homedir()` on macOS, the distro's
   login-shell `$HOME` on Windows) and must be a plain absolute path.
 - **No shell.** Arguments are a fixed array with `--` before the positional operands. WSL commands
