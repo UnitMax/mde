@@ -144,7 +144,9 @@ the validated `chat:*` channels.
 - **Responses.** Every response and event is parsed into MDE's own types; unknown
   fields are dropped, tool input and output are cut at 64 KB, and control
   characters are stripped. Events for sessions the Inbox does not already hold
-  are ignored. Assistant Markdown is rendered with raw HTML off, and its links
+  are ignored. Assistant replies and reasoning share the read-only Markdown renderer:
+  only registered schema nodes and attributes are rendered, with no arbitrary HTML,
+  scripts, embedded frames or remote images. Links open only for HTTP(S) URLs and
   go through the same main-process URL validator as other external links.
 
 Inbox folders are separate from workspace projects and sessions; adding one

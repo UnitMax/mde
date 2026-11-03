@@ -98,9 +98,7 @@ function ReasoningView({ text, active }: { text: string; active: boolean }): JSX
       icon={active ? <LoaderCircle className="h-3.5 w-3.5 shrink-0 animate-spin" /> : <Brain className="h-3.5 w-3.5 shrink-0" />}
       summary={active ? 'Thinking…' : 'Thought'}
     >
-      <p className="whitespace-pre-wrap break-words border-l-2 border-line pl-3 text-[12.5px] italic leading-relaxed text-fg-subtle">
-        {text}
-      </p>
+      <ChatMarkdown text={text} variant="reasoning" />
     </Disclosure>
   )
 }

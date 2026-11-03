@@ -602,6 +602,150 @@ describe('Inbox conversation', () => {
     await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-message-msg_3"]')?.textContent).toContain('Streaming answer'))
   })
 
+  it('renders expanded reasoning as read-only Markdown', async () => {
+    page.messages = [{
+      kind: 'assistant', id: 'msg_2', time: 2, agent: 'build', model: options.defaultModel!, completed: true,
+      parts: [{ kind: 'reasoning', text: [
+        '## Plan',
+        '',
+        'Check **authentication**, *sessions* and ~~old logic~~ in `auth.ts`.',
+        '',
+        '- Inspect login',
+        '- Inspect logout',
+        '',
+        '1. Read the code',
+        '2. Check the tests',
+        '',
+        '> Preserve existing sessions.',
+        '',
+        '```ts',
+        'const valid = true',
+        '```',
+        '',
+        '| Check | State |',
+        '| --- | --- |',
+        '| Login | Pending |',
+        '',
+        '- [x] Read the request',
+        '- [ ] Verify the fix',
+      ].join('\n') }],
+    }]
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-reasoning"]')).not.toBeNull())
+    const reasoning = view.querySelector<HTMLElement>('[data-testid="chat-reasoning"]')!
+    const toggle = reasoning.querySelector('button')!
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(reasoning.querySelector('.chat-markdown')).toBeNull()
+
+    await act(async () => toggle.click())
+    const prose = reasoning.querySelector<HTMLElement>('[aria-label="Assistant reasoning"]')!
+    expect(prose.getAttribute('contenteditable')).toBe('false')
+    expect(prose.querySelector('h2')?.textContent).toBe('Plan')
+    expect(prose.querySelector('strong')?.textContent).toBe('authentication')
+    expect(prose.querySelector('em')?.textContent).toBe('sessions')
+    expect(prose.querySelector('s')?.textContent).toBe('old logic')
+    expect(prose.querySelector('p code')?.textContent).toBe('auth.ts')
+    expect(prose.querySelectorAll('ul:not([data-type="taskList"]) > li')).toHaveLength(2)
+    expect(prose.querySelectorAll('ol > li')).toHaveLength(2)
+    expect(prose.querySelector('blockquote')?.textContent).toBe('Preserve existing sessions.')
+    expect(prose.querySelector('pre code.language-ts')?.textContent).toBe('const valid = true')
+    expect(prose.querySelector('table')?.textContent).toContain('LoginPending')
+    expect(prose.querySelectorAll('ul[data-type="taskList"] input')).toHaveLength(2)
+
+    await act(async () => toggle.click())
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(reasoning.querySelector('.chat-markdown')).toBeNull()
+  })
+
+  it('formats reasoning deltas while expanded and shows the latest Markdown when reopened', async () => {
+    page.running = true
+    page.messages = [{
+      kind: 'assistant', id: 'msg_2', time: 2, agent: 'build', model: options.defaultModel!, completed: false,
+      parts: [{ kind: 'reasoning', text: '**Inspect' }],
+    }]
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-reasoning"]')).not.toBeNull())
+    const reasoning = view.querySelector<HTMLElement>('[data-testid="chat-reasoning"]')!
+    const toggle = reasoning.querySelector('button')!
+    expect(toggle.textContent).toContain('Thinking…')
+    // Streamed chunks accumulate from the start, alongside the fetched snapshot.
+    await act(async () => useInboxChat.getState().applyEvent({
+      type: 'delta', threadId: 'ses_one', messageId: 'msg_2', part: 'reasoning', ordinal: 0,
+      delta: '**Inspect',
+    }))
+    await act(async () => toggle.click())
+
+    await act(async () => useInboxChat.getState().applyEvent({
+      type: 'delta', threadId: 'ses_one', messageId: 'msg_2', part: 'reasoning', ordinal: 0,
+      delta: ' authentication**\n\n- Read `auth.ts`',
+    }))
+    await vi.waitFor(() => {
+      expect(reasoning.querySelector('strong')?.textContent).toBe('Inspect authentication')
+      expect(reasoning.querySelector('li code')?.textContent).toBe('auth.ts')
+    })
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+
+    await act(async () => toggle.click())
+    await act(async () => useInboxChat.getState().applyEvent({
+      type: 'delta', threadId: 'ses_one', messageId: 'msg_2', part: 'reasoning', ordinal: 0,
+      delta: '\n- Run **tests**',
+    }))
+    await act(async () => toggle.click())
+    expect(reasoning.querySelectorAll('li')).toHaveLength(2)
+    expect(reasoning.querySelector('li strong')?.textContent).toBe('tests')
+  })
+
+  it('keeps unsafe HTML and image embeds out of reasoning and opens only web links', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    try {
+      page.messages = [{
+        kind: 'assistant', id: 'msg_2', time: 2, agent: 'build', model: options.defaultModel!, completed: true,
+        parts: [{ kind: 'reasoning', text: [
+          '<script>alert(1)</script>',
+          '',
+          '<iframe src="https://example.com/embed"></iframe>',
+          '',
+          '<img src="https://example.com/tracker" onerror="alert(1)">',
+          '',
+          '<p onclick="alert(1)">Check this safely.</p>',
+          '',
+          '![Remote image](https://example.com/tracker.png)',
+          '',
+          '[Script](javascript:alert%281%29) [Data](data:text/html,unsafe)',
+          '',
+          '[Email](mailto:test@example.com) [Local](file:///tmp/private) [Relative](./auth.ts)',
+          '',
+          '[**Documentation**](https://example.com/docs)',
+        ].join('\n') }],
+      }]
+      const view = await render()
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-reasoning"]')).not.toBeNull())
+      const reasoning = view.querySelector<HTMLElement>('[data-testid="chat-reasoning"]')!
+      await act(async () => reasoning.querySelector('button')!.click())
+      expect(reasoning.querySelector('script, iframe, img, object, embed, style, [onclick], [onerror]')).toBeNull()
+      expect(reasoning.querySelector('a[href^="javascript:"], a[href^="data:"]')).toBeNull()
+      expect(open).not.toHaveBeenCalled()
+
+      for (const link of Array.from(reasoning.querySelectorAll<HTMLAnchorElement>('a:not([href^="https:"])'))) {
+        const event = new Event('click', { bubbles: true, cancelable: true })
+        await act(async () => { link.dispatchEvent(event) })
+        expect(event.defaultPrevented).toBe(true)
+      }
+      expect(open).not.toHaveBeenCalled()
+
+      const link = reasoning.querySelector<HTMLAnchorElement>('a[href="https://example.com/docs"]')!
+      expect(link.target).toBe('_blank')
+      expect(link.rel.split(' ')).toEqual(expect.arrayContaining(['noopener', 'noreferrer']))
+      // A click on formatted text inside the link follows the same checked route.
+      const event = new Event('click', { bubbles: true, cancelable: true })
+      await act(async () => { link.querySelector('strong')!.dispatchEvent(event) })
+      expect(event.defaultPrevented).toBe(true)
+      expect(open).toHaveBeenCalledExactlyOnceWith('https://example.com/docs', '_blank', 'noopener,noreferrer')
+    } finally {
+      open.mockRestore()
+    }
+  })
+
   it('shows parallel subagents as cards with their task and result', async () => {
     const input = (description: string) => JSON.stringify({ agent: 'explore', description, prompt: `Look at ${description}.\nDo not edit files.` })
     page = {

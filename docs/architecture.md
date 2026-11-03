@@ -264,9 +264,10 @@ kept. The main process checks again that no other thread shares the worktree and
 inside `~/.mde/worktrees`, and a worktree already deleted by hand counts as removed.
 
 **Conversation.** The thread view shows the newest 50 messages and loads older ones when you
-scroll up. User messages are bubbles; assistant text is Markdown rendered read-only with the
-preview's extensions (raw HTML off, links opened through the external-link validator); reasoning
-is a collapsible "Thought" block; each tool call is a row with a status icon and a summary such as
+scroll up. User messages are bubbles; assistant text and reasoning are Markdown rendered read-only
+with the preview's extensions (raw HTML off, links opened through the external-link validator).
+Reasoning is a collapsible "Thought" block and updates as it streams, using the same Markdown
+renderer as replies; each tool call is a row with a status icon and a summary such as
 "Read src/app.ts" or "Ran npm test" that expands to its full input and output, each cut at 64 KB.
 Subagent calls (OpenCode's `subagent` tool) are shown as cards instead: the agent type, the title, its state (Working, Done, Stopped, Failed) and a one-line preview of the task. Subagents started together are grouped under one heading, and a card expands to the full task and the answer rendered as Markdown. The subagent's own steps are not shown, since MDE only follows sessions it recorded. Agent and model switches, failures and stops appear as small notes. Text streams in as OpenCode
 produces it. Permission requests (Allow once, Always allow, Reject) and questions (option buttons,

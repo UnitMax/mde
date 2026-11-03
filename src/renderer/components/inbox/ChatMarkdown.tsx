@@ -2,12 +2,19 @@ import { memo, useEffect, useRef, type MouseEvent } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { externalLinkUrl } from '@/lib/file-viewer'
 import { markdownPreviewExtensions } from '@/lib/markdown-extensions'
+import { cn } from '@/lib/utils'
 
 /** Streaming text is re-parsed at most this often. */
 const MARKDOWN_UPDATE_MS = 120
 
-/** Read-only Markdown for assistant text; links open in the browser after the main process checks them. */
-export const ChatMarkdown = memo(function ChatMarkdown({ text }: { text: string }): JSX.Element {
+/** Read-only Markdown for assistant replies and reasoning; the main process checks external links. */
+export const ChatMarkdown = memo(function ChatMarkdown({
+  text,
+  variant = 'message',
+}: {
+  text: string
+  variant?: 'message' | 'reasoning'
+}): JSX.Element {
   const editor = useEditor(
     {
       extensions: markdownPreviewExtensions,
@@ -15,7 +22,12 @@ export const ChatMarkdown = memo(function ChatMarkdown({ text }: { text: string 
       contentType: 'markdown',
       editable: false,
       injectCSS: false,
-      editorProps: { attributes: { class: 'markdown-prose chat-markdown', 'aria-label': 'Assistant message' } },
+      editorProps: {
+        attributes: {
+          class: 'markdown-prose chat-markdown',
+          'aria-label': variant === 'reasoning' ? 'Assistant reasoning' : 'Assistant message',
+        },
+      },
       immediatelyRender: true,
       shouldRerenderOnTransaction: false,
     },
@@ -32,15 +44,25 @@ export const ChatMarkdown = memo(function ChatMarkdown({ text }: { text: string 
   }, [text, editor])
 
   const onClick = (event: MouseEvent<HTMLDivElement>): void => {
-    const href = (event.target as HTMLElement).closest('a')?.getAttribute('href')
-    if (!href) return
+    const anchor = (event.target as HTMLElement).closest('a')
+    if (!anchor) return
     event.preventDefault()
+    const href = anchor.getAttribute('href')
+    if (!href) return
     const external = externalLinkUrl(href)
     if (external) window.open(external, '_blank', 'noopener,noreferrer')
   }
 
   return (
-    <div className="min-w-0 text-[14px] leading-relaxed text-fg" onClick={onClick}>
+    <div
+      className={cn(
+        'min-w-0 break-words leading-relaxed',
+        variant === 'reasoning'
+          ? 'border-l-2 border-line pl-3 text-[12.5px] text-fg-subtle'
+          : 'text-[14px] text-fg',
+      )}
+      onClick={onClick}
+    >
       <EditorContent editor={editor} />
     </div>
   )
