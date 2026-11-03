@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import {
-  Archive,
-  ArchiveRestore,
+  Car,
   Folder,
   GitBranch,
   GitFork,
+  Inbox,
   LoaderCircle,
   Lock,
   Mail,
@@ -163,6 +163,8 @@ function InboxThreadRow({
 }): JSX.Element {
   const setRead = useWorkspace((state) => state.setInboxThreadRead)
   const setArchived = useWorkspace((state) => state.setInboxThreadArchived)
+  const parkLabel = thread.archived ? 'Move to Inbox' : 'Park'
+  const ParkIcon = thread.archived ? Inbox : Car
   const removeThread = useWorkspace((state) => state.removeInboxThread)
   const reloadFolders = useInboxChat((state) => state.reloadFolders)
   const [confirmingRemove, setConfirmingRemove] = useState(false)
@@ -191,7 +193,14 @@ function InboxThreadRow({
             onClick={onSelect}
             className="flex w-full min-w-0 flex-col gap-0.5 rounded px-2 py-1.5 text-left"
           >
-            <span className="flex w-full min-w-0 items-center gap-1.5">
+            <span
+              className={cn(
+                'flex w-full min-w-0 items-center gap-1.5',
+                thread.archived
+                  ? 'group-hover:pr-28 group-focus-within:pr-28'
+                  : 'group-hover:pr-14 group-focus-within:pr-14',
+              )}
+            >
               {unread && (
                 <span
                   aria-label="Unread"
@@ -217,7 +226,7 @@ function InboxThreadRow({
               <time
                 dateTime={new Date(thread.lastActivityAt).toISOString()}
                 title={sessionDate(thread.lastActivityAt)}
-                className="shrink-0 text-[11px] text-fg-subtle group-hover:invisible"
+                className="shrink-0 text-[11px] text-fg-subtle group-hover:hidden group-focus-within:hidden"
               >
                 {sessionAge(thread.lastActivityAt, now)}
               </time>
@@ -251,13 +260,14 @@ function InboxThreadRow({
           {showChanges && <InboxChangesBadge threadId={thread.id} />}
           <button
             type="button"
-            data-testid={`inbox-thread-archive-${thread.id}`}
-            aria-label={thread.archived ? 'Move to Inbox' : 'Archive'}
-            title={thread.archived ? 'Move to Inbox' : 'Archive'}
+            data-testid={`inbox-thread-park-${thread.id}`}
+            aria-label={parkLabel}
+            title={parkLabel}
             onClick={() => void setArchived(thread.id, !thread.archived)}
-            className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded text-fg-muted opacity-0 transition-opacity hover:bg-active hover:text-fg focus-visible:bg-active focus-visible:opacity-100 group-hover:opacity-100"
+            className="absolute right-1.5 top-1.5 flex h-5 items-center justify-center gap-1 whitespace-nowrap rounded px-1.5 text-[11px] text-fg-muted opacity-0 transition-opacity hover:bg-active hover:text-fg focus-visible:bg-active group-focus-within:opacity-100 group-hover:opacity-100"
           >
-            {thread.archived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
+            <ParkIcon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+            <span>{parkLabel}</span>
           </button>
           {inboxCueActive(cueAt) && (
             <span
@@ -275,12 +285,8 @@ function InboxThreadRow({
             {unread ? 'Mark as read' : 'Mark as unread'}
           </ContextMenuItem>
           <ContextMenuItem onSelect={() => void setArchived(thread.id, !thread.archived)}>
-            {thread.archived ? (
-              <ArchiveRestore className="h-3.5 w-3.5" />
-            ) : (
-              <Archive className="h-3.5 w-3.5" />
-            )}
-            {thread.archived ? 'Move to Inbox' : 'Archive'}
+            <ParkIcon aria-hidden="true" className="h-3.5 w-3.5" />
+            {parkLabel}
           </ContextMenuItem>
           <ContextMenuItem disabled={forking} onSelect={onFork}>
             <GitFork className="h-3.5 w-3.5" />
@@ -363,7 +369,7 @@ function emptyMessage(filter: InboxFilter, query: string): string {
   if (query.trim()) return 'No threads match your search.'
   if (filter === 'unread') return 'No unread threads.'
   if (filter === 'attention') return 'No threads need your input.'
-  if (filter === 'archived') return 'No archived threads.'
+  if (filter === 'archived') return 'No parked threads.'
   return 'No threads yet.'
 }
 

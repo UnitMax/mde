@@ -69,7 +69,8 @@ that action ("5m ago"), the title, the folder name with the full path as a toolt
 the model, and a status chip: Needs input or Needs permission, Done, Failed, or Working. Threads
 with activity you have not opened are bold with a dot, and the tab shows how many there are. The
 list can be searched by title, folder, branch and model, and filtered to All, Unread, Needs input
-or Archived. The context menu marks a thread read or unread, archives it, or deletes it.
+or Parked. Hovering or focusing a row shows a car icon and a "Park" label; parked threads offer
+"Move to Inbox" instead. The context menu marks a thread read or unread, parks it, or deletes it.
 
 Opening a thread counts it as read, and so does something new happening in the thread you are
 looking at (the Inbox showing and the window in front), as with an open mail. Since that leaves no
@@ -91,7 +92,7 @@ history, are never imported. In the main process `src/main/inbox/recorder.ts` re
 thread and applies the OpenCode service events of the threads it holds:
 
 - Finishing, failing, or asking for input or permission moves the thread to the top, marks it
-  unread, and brings it back from the archive, as a reply does in mail. Starting work changes only
+  unread, and brings it back from Parked, as a reply does in mail. Starting work changes only
   the status chip, so a busy thread does not keep moving.
 - While a thread is working or waiting for an answer it carries `workingSince`, the time its run
   began on this computer's clock. Asking and being answered does not restart it; stopping, however
@@ -164,14 +165,14 @@ The file tree keeps its open folders while Changes is showing.
 
 The open thread's header has a **Regenerate title** button. It asks OpenCode's native title
 agent to regenerate the current title (`PATCH /api/session/{sessionID}` with `title: ""`),
-including while the conversation is running or archived. OpenCode chooses the title model
+including while the conversation is running or parked. OpenCode chooses the title model
 and conversation context using its own configuration. It may keep the same title when
 generation is disabled, fails internally, or produces the existing title. MDE never sends
 a chat prompt or creates another session for this action. Pending state and request errors
 are kept per thread in memory. The main process coalesces concurrent requests, follows
 `session.renamed`, and reads the title back after completion in case an event was missed.
 Newer rename events take precedence over an in-flight readback; deleted threads stay deleted.
-Updating a title preserves the thread's status, activity time, read state and archive flag.
+Updating a title preserves the thread's status, activity time, read state and parked flag (`archived`).
 
 MDE has two modes that do not touch each other. The Projects tab ("legacy" mode) works with
 projects, sessions and terminals in `workspace.json`. Inbox mode keeps its own list of folders in
@@ -457,7 +458,7 @@ whole conversation sends `null`, except in two cases, which the main process wor
   reading back up to ten pages of messages to find it. Its text is returned with the thread, so the
   new thread's box offers it again; the original keeps working.
 
-The result is recorded by `InboxRecorder.recordForkedThread`: idle, read, not archived, in the
+The result is recorded by `InboxRecorder.recordForkedThread`: idle, read, not parked, in the
 original's folder, target, directory and branch, and with `forkedFrom` set to the original's ID. It
 copies those from the original thread rather than looking up its folder, so it still works if the
 folder has been removed. Events never add threads, so this is the only way a fork appears. The

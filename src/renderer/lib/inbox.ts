@@ -7,7 +7,7 @@ export const INBOX_FILTERS: ReadonlyArray<{ id: InboxFilter; label: string }> = 
   { id: 'all', label: 'All' },
   { id: 'unread', label: 'Unread' },
   { id: 'attention', label: 'Needs input' },
-  { id: 'archived', label: 'Archived' }
+  { id: 'archived', label: 'Parked' }
 ]
 
 /** Relative times in the list are refreshed this often. */
@@ -25,7 +25,7 @@ export function inboxCueActive(at: number | undefined, now = Date.now()): boolea
   return at !== undefined && now - at < INBOX_CUE_MS
 }
 
-/** Unread threads outside the archive, for the tab badge. */
+/** Unread threads that are not parked, for the tab badge. */
 export function countUnreadInboxThreads(threads: readonly InboxThread[]): number {
   return threads.filter((thread) => !thread.archived && isInboxThreadUnread(thread)).length
 }

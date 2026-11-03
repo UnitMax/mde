@@ -141,13 +141,15 @@ describe('Inbox', () => {
     expect(main.querySelector('[data-testid="chat-composer"]')).not.toBeNull()
   })
 
-  it('archives a thread straight from its row and shows a spinner while it works', async () => {
+  it('parks a thread straight from its row and shows a spinner while it works', async () => {
     useWorkspace.setState({ inboxThreads: [thread({ status: 'working' })] })
     const panel = await render(createElement(InboxPanel))
     expect(panel.querySelector('[data-testid="inbox-status-chip"] svg.animate-spin')).not.toBeNull()
-    const archive = panel.querySelector<HTMLButtonElement>('[data-testid="inbox-thread-archive-ses_one"]')!
-    expect(archive.getAttribute('aria-label')).toBe('Archive')
-    await act(async () => archive.click())
+    const park = panel.querySelector<HTMLButtonElement>('[data-testid="inbox-thread-park-ses_one"]')!
+    expect(park.getAttribute('aria-label')).toBe('Park')
+    expect(park.textContent).toBe('Park')
+    expect(park.querySelector('svg.lucide-car')).not.toBeNull()
+    await act(async () => park.click())
     expect(window.api.inbox.setArchived).toHaveBeenCalledWith({ id: 'ses_one', archived: true })
     // The row itself is not clicked, so the thread is not opened.
     expect(useWorkspace.getState().selectedInboxThreadId).toBeNull()
@@ -245,6 +247,8 @@ describe('Inbox', () => {
     })
     const panel = await render(createElement(InboxPanel))
     const filter = (label: string) => Array.from(panel.querySelectorAll('button')).find((item) => item.textContent === label)!
+    await act(async () => filter('Parked').click())
+    expect(panel.textContent).toContain('No parked threads.')
     await act(async () => filter('Needs input').click())
     expect(panel.querySelector('[data-testid="inbox-thread-ses_one"]')).toBeNull()
     expect(panel.querySelector('[data-testid="inbox-thread-ses_two"]')).not.toBeNull()
@@ -278,7 +282,7 @@ describe('Inbox thread fork', () => {
     const panel = await render(createElement(InboxPanel))
     await openMenu(panel)
     const labels = Array.from(document.body.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent?.trim())
-    expect(labels).toEqual(['Mark as read', 'Archive', 'Fork thread', 'Delete from Inbox'])
+    expect(labels).toEqual(['Mark as read', 'Park', 'Fork thread', 'Delete from Inbox'])
     expect(fork).not.toHaveBeenCalled()
   })
 
