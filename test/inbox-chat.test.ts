@@ -22,6 +22,7 @@ const options: ChatOptions = {
   models: [{ id: 'free-1', providerId: 'opencode', providerName: 'OpenCode', name: 'Flint Free' }],
   defaultModel: { id: 'free-1', providerId: 'opencode' },
   defaultAgent: 'build',
+  skills: [],
 }
 
 function thread(overrides: Partial<InboxThread> = {}): InboxThread {
@@ -600,6 +601,48 @@ describe('Inbox conversation', () => {
       useInboxChat.getState().applyEvent({ type: 'delta', threadId: 'ses_one', messageId: 'msg_3', part: 'text', ordinal: 0, delta: 'answer' })
     })
     await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-message-msg_3"]')?.textContent).toContain('Streaming answer'))
+  })
+
+  it('shows the skills a message used and the skills the agent loaded', async () => {
+    const wrapped = (body: string, files: string[] = []): string =>
+      `<skill_content name="demo">\n# Skill: demo\n\n${body}\n\nBase directory for this skill: /home/me/app/.claude/skills/demo\nRelative paths in this skill are relative to this base directory.\n\n<skill_files>\n${files.map((file) => `<file>${file}</file>`).join('\n')}\n</skill_files>\n</skill_content>`
+    page.messages = [
+      { kind: 'user', id: 'msg_1', time: 1, text: 'use $demo please', skills: [{ id: 'demo', name: 'Demo skill' }] },
+      {
+        kind: 'assistant', id: 'msg_2', time: 2, agent: 'build', model: options.defaultModel!, completed: true,
+        parts: [
+          { kind: 'tool', id: 'call_skill', name: 'skill', status: 'completed', input: '{"id":"demo"}', output: wrapped('Reply with PINEAPPLE.', ['/home/me/app/.claude/skills/demo/scripts/run.sh']) },
+          { kind: 'tool', id: 'call_missing', name: 'skill', status: 'error', input: '{"id":"nope"}', error: 'Skill not found: nope' },
+          { kind: 'tool', id: 'call_loading', name: 'skill', status: 'running', input: '{"id":"later"}' },
+        ],
+      },
+      { kind: 'note', id: 'msg_3', time: 3, tone: 'info', text: 'Loaded the review skill', detail: '# Review\n\nLook at the diff.' },
+    ]
+    const view = await render()
+    await vi.waitFor(() => expect(view.textContent).toContain('use $demo please'))
+    // The message keeps its words and shows which skill they brought in.
+    expect(view.querySelector('[data-testid="chat-skill-demo"]')?.textContent).toBe('Demo skill')
+    expect(view.querySelector('[data-testid="chat-message-msg_1"]')?.textContent).toContain('use $demo please')
+
+    const loaded = view.querySelector('[data-testid="chat-tool-call_skill"]')!
+    expect(loaded.textContent).toContain('Loaded the demo skill')
+    expect(loaded.textContent).not.toContain('PINEAPPLE')
+    await act(async () => loaded.querySelector('button')!.click())
+    expect(loaded.textContent).toContain('Instructions')
+    expect(loaded.textContent).toContain('Reply with PINEAPPLE.')
+    expect(loaded.textContent).toContain('/home/me/app/.claude/skills/demo/scripts/run.sh')
+    // OpenCode's wrapper and its note about the directory are not for reading.
+    expect(loaded.textContent).not.toContain('skill_content')
+    expect(loaded.textContent).not.toContain('Base directory')
+
+    expect(view.querySelector('[data-testid="chat-tool-call_missing"]')?.textContent).toContain('Could not load the nope skill — Skill not found: nope')
+    expect(view.querySelector('[data-testid="chat-tool-call_loading"]')?.textContent).toContain('Loading the later skill')
+
+    // A skill the user brought in by other means arrives as a note with its text.
+    const note = view.querySelector('[data-testid="chat-message-msg_3"]')!
+    expect(note.textContent).toContain('Loaded the review skill')
+    await act(async () => note.querySelector('button')!.click())
+    expect(note.textContent).toContain('Look at the diff.')
   })
 
   it('renders expanded reasoning as read-only Markdown', async () => {

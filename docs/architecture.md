@@ -277,6 +277,34 @@ follow-up switches the session's agent or model first only when you changed them
 keeps the last ten opened threads in memory so going back to one is instant; MDE never writes
 messages to disk.
 
+**Skills.** A skill is a folder of instructions (a `SKILL.md`) that OpenCode finds in the project
+(for example `.claude/skills/<name>/SKILL.md` in the folder) and in the user's own configuration, plus a
+few it ships with; where OpenCode looks is up to OpenCode, and MDE shows whatever it lists. A word that starts with `$` in either composer
+opens a list of the skills that fit it, above the box (`SkillPicker` in `ChatComposer.tsx`; the
+rules for what counts as a `$word` are in `src/shared/skills.ts`, shared with the sender). Up and Down
+move, Tab or Enter write `$name ` over the word, Escape closes the list until that word is gone, and a click
+does the same as Enter without moving the caret out of the box. The list only opens when something
+matches, so `$HOME` or `cost$5` never takes over Enter. The skills come with the composer's options
+(`ChatOptions.skills`, from `GET /api/skill`, cached for a minute with the agents and models): only the
+id, name and one line of description reach the renderer, never a skill's text or path. OpenCode answers
+the first request for a folder it has not loaded with an empty list, and its built-in skills are always
+present, so an empty answer is asked for again a few times; a failure leaves the list empty and the
+pickers working.
+
+When a message is sent (a new thread's first message or a follow-up), the main process looks for `$name`
+in the text where the name is a skill's id, exactly, at the start of a word, and sends each skill once as
+`skills: [{ id, mention: { start, end, text } }]` next to the unchanged text; OpenCode then gives the
+model the skill's instructions with the message. The skills are listed for the directory the session
+runs in (the worktree, for a thread started in one), because OpenCode refuses a skill its session cannot
+see. `$text` that is not a skill is plain text, a message without a `$` costs no extra request, and if
+the listing fails the message goes without the skill rather than not at all. The offsets are UTF-16
+indices; OpenCode stores them as given and does not check them. In the conversation, the user's message
+shows a chip for each skill it used. When the model loads a skill itself (OpenCode's `skill` tool) the
+call is a "Loaded the demo skill" row that expands to the skill's instructions and the files that
+come with it, without OpenCode's wrapper and its note about the skill's directory; a skill that cannot be
+found says so on that row. A skill activated by other means appears as a note whose details are the
+skill's text, and the `session.skill.activated` event refreshes the conversation.
+
 **File changes.** The `edit` and `write` tools are drawn as diffs instead of raw JSON, one card per
 file (`ChatFileChange`): a header with the verb ("Edited", "Created", "Overwrote"), the path
 relative to the thread's folder, and `+added −removed` counts, then the lines with a line-number

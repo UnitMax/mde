@@ -1,11 +1,11 @@
 import { memo, useMemo, useState } from 'react'
-import { AlertTriangle, Brain, ChevronRight, GitFork, Info, LoaderCircle, Undo2, Wrench } from 'lucide-react'
+import { AlertTriangle, BookOpen, Brain, ChevronRight, GitFork, Info, LoaderCircle, Undo2, Wrench } from 'lucide-react'
 import type { ChatMessage, ChatPart } from '@shared/types'
 import { FileChangeView } from '@/components/inbox/ChatFileChange'
 import { ChatMarkdown } from '@/components/inbox/ChatMarkdown'
 import { SubagentGroup } from '@/components/inbox/ChatSubagents'
 import { ToolIcon } from '@/components/inbox/ToolIcon'
-import { messageBlocks, toolSummary } from '@/lib/chat'
+import { messageBlocks, skillCall, toolSummary } from '@/lib/chat'
 import { toolFileChanges } from '@/lib/diff'
 import { cn } from '@/lib/utils'
 
@@ -56,6 +56,31 @@ function CodeBlock({ label, text }: { label: string; text: string }): JSX.Elemen
   )
 }
 
+/** The agent loading one of the skills (instructions for a kind of task) it has been given. */
+function SkillCallView({ part, directory }: { part: Extract<ChatPart, { kind: 'tool' }>; directory: string }): JSX.Element {
+  const skill = skillCall(part)
+  return (
+    <Disclosure
+      testId={`chat-tool-${part.id}`}
+      icon={part.status === 'completed' ? <BookOpen className="h-3.5 w-3.5 shrink-0 text-accent" /> : <ToolIcon status={part.status} />}
+      tone={part.status === 'error' ? 'danger' : 'muted'}
+      summary={
+        <>
+          {toolSummary(part, directory)}
+          {part.error && <span className="text-danger"> — {part.error}</span>}
+        </>
+      }
+    >
+      {skill.body && <CodeBlock label="Instructions" text={skill.body} />}
+      {/* Output that is not in the usual shape is shown as it came rather than hidden. */}
+      {!skill.body && part.output && <CodeBlock label="Output" text={part.output} />}
+      {skill.files.length > 0 && <CodeBlock label="Files" text={skill.files.join('\n')} />}
+      {part.error && <CodeBlock label="Error" text={part.error} />}
+      {part.truncated && <p className="text-[11px] text-fg-subtle">Shortened; the full text is in OpenCode.</p>}
+    </Disclosure>
+  )
+}
+
 export function ToolCallView({ part, directory }: { part: Extract<ChatPart, { kind: 'tool' }>; directory: string }): JSX.Element {
   // A fresh fetch brings new objects with the same content; the diff is only worked out again when the content changes.
   const patches = part.patches?.map((patch) => `${patch.path}\u0000${patch.patch}`).join('\u0001')
@@ -66,6 +91,7 @@ export function ToolCallView({ part, directory }: { part: Extract<ChatPart, { ki
   )
   // A failed edit keeps the plain row, which carries OpenCode's reason.
   if (changes && part.status !== 'error') return <FileChangeView part={part} changes={changes} directory={directory} />
+  if (part.name === 'skill') return <SkillCallView part={part} directory={directory} />
   return (
     <Disclosure
       testId={`chat-tool-${part.id}`}
@@ -153,6 +179,12 @@ export const ChatMessageView = memo(function ChatMessageView({
             {file.thumbnail && <img src={file.thumbnail} alt={file.name} className="mb-1 h-24 w-32 object-contain" />}
             <span className="block truncate">{file.name}</span><span className="text-fg-subtle">{Math.ceil(file.size / 1024)} KB</span>
           </div>)}</div> : null}
+          {message.skills?.length ? <div className="flex flex-wrap gap-1.5 pb-2" aria-label="Skills used">
+            {message.skills.map((skill) => <span key={skill.id} data-testid={`chat-skill-${skill.id}`} title={`$${skill.id}`} className="inline-flex max-w-full items-center gap-1 rounded-full border border-line-strong px-2 py-0.5 text-xs text-fg-muted">
+              <BookOpen aria-hidden className="h-3 w-3 shrink-0 text-accent" />
+              <span className="truncate">{skill.name}</span>
+            </span>)}
+          </div> : null}
           {message.text}
         </div>
       </div>

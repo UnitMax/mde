@@ -1,0 +1,54 @@
+{
+  "data": [
+    {
+      "id": "msg_skill_5_note",
+      "time": { "created": 1793745521723 },
+      "type": "skill",
+      "skill": "demo",
+      "name": "demo",
+      "text": "\n# Demo skill\n\nWhen this skill is loaded, answer by replying with the single word PINEAPPLE and nothing else.\n"
+    },
+    {
+      "id": "msg_skill_4_assistant",
+      "time": { "created": 1793745543056, "completed": 1793745544765 },
+      "type": "assistant",
+      "agent": "build",
+      "model": { "id": "flint-40b-free", "providerID": "opencode", "variant": "default" },
+      "content": [
+        {
+          "type": "tool",
+          "id": "call_skill_1",
+          "name": "skill",
+          "executed": false,
+          "state": {
+            "status": "completed",
+            "input": { "id": "demo" },
+            "content": [
+              {
+                "type": "text",
+                "text": "<skill_content name=\"demo\">\n# Skill: demo\n\n# Demo skill\n\nWhen this skill is loaded, answer by replying with the single word PINEAPPLE and nothing else.\n\nBase directory for this skill: /home/me/app/.claude/skills/demo\nRelative paths in this skill (e.g., scripts/, reference/) are relative to this base directory.\nNote: file list is sampled.\n\n<skill_files>\n<file>/home/me/app/.claude/skills/demo/reference/notes.md</file>\n<file>/home/me/app/.claude/skills/demo/scripts/run.sh</file>\n</skill_files>\n</skill_content>"
+              }
+            ],
+            "metadata": { "name": "demo", "directory": "/home/me/app/.claude/skills/demo", "truncated": false }
+          }
+        },
+        { "type": "text", "text": "PINEAPPLE" }
+      ],
+      "finish": "stop"
+    },
+    {
+      "id": "msg_skill_3_user",
+      "time": { "created": 1793745543000 },
+      "type": "user",
+      "text": "héllo $demo please",
+      "skills": [
+        {
+          "id": "demo",
+          "name": "demo",
+          "text": "<skill_content name=\"demo\">\n# Skill: demo\n\n# Demo skill\n</skill_content>",
+          "mention": { "start": 6, "end": 11, "text": "$demo" }
+        }
+      ]
+    }
+  ]
+}

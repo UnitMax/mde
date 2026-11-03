@@ -18,6 +18,7 @@ import type {
   ChatRevert,
   ChatRevertRequest,
   ChatSendRequest,
+  ChatSkill,
   InboxComposerState,
   InboxFolder,
   InboxFoldersState,
@@ -49,10 +50,12 @@ import {
   parseSessionRevert,
   parseStagedRevert,
   parseSessionUsage,
+  parseSkills,
   parseTurnMarkers,
   unfinishedTurnStart,
   type TurnMarker,
 } from '../opencode/service/parse'
+import { skillMentions } from '@shared/skills'
 import type { InboxRecorder } from './recorder'
 import { isChatAgentId, type InboxStore } from './store'
 import type { CreatedWorktree, InboxWorktrees } from './worktree'
@@ -66,6 +69,11 @@ const OPTIONS_TTL_MS = 60_000
  */
 const AGENT_ATTEMPTS = 6
 const AGENT_RETRY_MS = 250
+/**
+ * The same goes for skills: OpenCode's built-in ones are always there, so an empty list only means the
+ * folder has not loaded yet. Unlike agents, an empty list at the end is not an error; skills are optional.
+ */
+const SKILL_ATTEMPTS = 4
 /**
  * OpenCode refuses to revert a conversation that is running, and an interrupt takes a moment to
  * land, so staging is tried again for a while: this many tries, this far apart (about ten seconds).
@@ -123,6 +131,7 @@ const MESSAGE_EVENTS = new Set([
   'session.tool.failed',
   'session.agent.selected',
   'session.model.selected',
+  'session.skill.activated',
   'session.compaction.started',
   'session.compaction.ended',
   'session.compaction.failed',
@@ -312,7 +321,7 @@ export class InboxChatService {
     try {
       await this.dependencies.client.request(folder.target, 'session.prompt', {
         params: { sessionID: created.id },
-        body: { text, ...(files?.length ? { files } : {}) },
+        body: await this.promptBody({ target: folder.target, directory: place?.directory ?? folder.directory }, text, files),
       })
     } catch (error) {
       this.dependencies.recorder.markStatus(thread.id, 'idle')
@@ -421,7 +430,7 @@ export class InboxChatService {
     }
     await this.dependencies.client.request(thread.target, 'session.prompt', {
       params: { sessionID: thread.id },
-      body: { text, ...(files?.length ? { files } : {}) },
+      body: await this.promptBody(thread, text, files),
     })
     await this.dependencies.drafts?.remove(`thread:${thread.id}`, undefined, request.draftRevision)
     this.dependencies.recorder.markStatus(thread.id, 'working')
@@ -675,11 +684,50 @@ export class InboxChatService {
       this.dependencies.client.request(folder.target, 'model.default', { query }).catch(() => ({ data: null })),
     ])
     const agentList = await this.loadAgents(folder, query)
+    // After the agents, which wait for the folder to finish loading. Skills are optional: an OpenCode
+    // that cannot list them still gets working pickers.
+    const skills = await this.loadSkills(folder).catch((): ChatSkill[] => [])
     return {
       agents: agentList,
       models: parseModels(models, parseProviderNames(providers)),
       defaultModel: parseDefaultModel(defaultModel),
       defaultAgent: agentList.find((agent) => agent.id === 'build')?.id ?? agentList[0]?.id ?? null,
+      skills,
+    }
+  }
+
+  private async loadSkills(place: { target: OpenCodePluginTarget; directory: string }): Promise<ChatSkill[]> {
+    for (let attempt = 1; ; attempt += 1) {
+      const skills = parseSkills(await this.dependencies.client.request(place.target, 'skill.list', {
+        query: { 'location[directory]': place.directory },
+      }))
+      if (skills.length > 0 || attempt >= SKILL_ATTEMPTS) return skills
+      await this.pause(AGENT_RETRY_MS)
+    }
+  }
+
+  /**
+   * The body of a prompt. A `$id` that names a skill becomes a real skill invocation, so OpenCode gives
+   * the model the skill's text; the message text itself is sent unchanged. The skills are listed for the
+   * directory the session runs in, because that is what OpenCode checks them against: a skill that
+   * exists only in the main checkout is not one in a worktree. Text without a `$` costs no request, and a
+   * listing that fails sends the message as plain text rather than losing it.
+   */
+  private async promptBody(
+    place: { target: OpenCodePluginTarget; directory: string },
+    text: string,
+    files: unknown[] | undefined,
+  ): Promise<Record<string, unknown>> {
+    let mentions: ReturnType<typeof skillMentions> = []
+    if (text.includes('$')) {
+      try {
+        mentions = skillMentions(text, (await this.loadSkills(place)).map((skill) => skill.id))
+      } catch { /* The skills are an extra; the message goes without them. */ }
+    }
+    return {
+      text,
+      ...(files?.length ? { files } : {}),
+      ...(mentions.length ? { skills: mentions.map(({ id, start, end, text: written }) => ({ id, mention: { start, end, text: written } })) } : {}),
     }
   }
 

@@ -7,6 +7,7 @@ export const SERVICE_OPERATIONS = {
   'provider.list': { method: 'GET', path: '/api/provider' },
   'model.list': { method: 'GET', path: '/api/model' },
   'model.default': { method: 'GET', path: '/api/model/default' },
+  'skill.list': { method: 'GET', path: '/api/skill' },
   'session.create': { method: 'POST', path: '/api/session' },
   'session.active': { method: 'GET', path: '/api/session/active' },
   'session.get': { method: 'GET', path: '/api/session/{sessionID}' },

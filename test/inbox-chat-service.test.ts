@@ -183,10 +183,12 @@ describe('Inbox chat service', () => {
       models: [{ id: 'model-1', providerId: 'provider-1', providerName: 'Provider', name: 'Model' }],
       defaultModel: model,
       defaultAgent: 'build',
+      // OpenCode could not list skills here; the pickers work without them.
+      skills: [],
     })
     expect(calls[0]?.request.query).toEqual({ 'location[directory]': '/home/me/app' })
     await service.chatOptions({ folderId: folder.id })
-    expect(calls).toHaveLength(4)
+    expect(calls).toHaveLength(5)
     await expect(service.chatOptions({ folderId: 'fld_gone' })).rejects.toThrow('no longer in the Inbox')
     await expect(service.chatOptions({ threadId: 'ses_gone' })).rejects.toThrow('no longer in the Inbox')
   })
@@ -212,6 +214,129 @@ describe('Inbox chat service', () => {
       operation === 'agent.list' ? { data: [] } : answer(target, operation, req))
     const other = service.addFolder({ directory: '/home/me/other', target: wsl })
     await expect(service.chatOptions({ folderId: other.id })).rejects.toThrow('not finished loading')
+  })
+
+  describe('skills', () => {
+    const skillList = (...ids: string[]) => ({ data: ids.map((id) => ({ id, name: id, path: `/home/me/${id}.md`, content: 'secret text' })) })
+    const agents = { 'agent.list': { data: [{ id: 'build', name: 'Build', mode: 'primary' }] } }
+
+    it('lists the skills of the folder next to the agents, without their text or paths', async () => {
+      const { service, folder, calls } = setup({
+        ...agents,
+        'provider.list': { data: [] },
+        'model.list': { data: [] },
+        'model.default': { data: null },
+        'skill.list': skillList('demo', 'review'),
+      })
+      const options = await service.chatOptions({ folderId: folder.id })
+      expect(options.skills).toEqual([{ id: 'demo', name: 'demo' }, { id: 'review', name: 'review' }])
+      expect(JSON.stringify(options)).not.toMatch(/secret text|home\/me\/demo/)
+      expect(calls.find((call) => call.operation === 'skill.list')?.request.query).toEqual({ 'location[directory]': '/home/me/app' })
+    })
+
+    it('still answers with agents and models when the skills cannot be listed', async () => {
+      const { service, folder } = setup({
+        ...agents,
+        'provider.list': { data: [] },
+        'model.list': { data: [{ id: 'model-1', providerID: 'provider-1', name: 'Model' }] },
+        'model.default': { data: null },
+        'skill.list': new OpenCodeServiceError('Not found', 404),
+      })
+      const options = await service.chatOptions({ folderId: folder.id })
+      expect(options.skills).toEqual([])
+      expect(options.agents).toEqual([{ id: 'build', name: 'Build' }])
+      expect(options.models).toHaveLength(1)
+    })
+
+    it('asks again while a folder that has not loaded yet answers with no skills', async () => {
+      const { service, folder, request } = setup({ ...agents, 'provider.list': { data: [] }, 'model.list': { data: [] }, 'model.default': { data: null } })
+      const answer = request.getMockImplementation()!
+      let attempts = 0
+      request.mockImplementation(async (target, operation, req) => {
+        if (operation !== 'skill.list') return answer(target, operation, req)
+        attempts += 1
+        return attempts < 3 ? { data: [] } : skillList('demo')
+      })
+      expect((await service.chatOptions({ folderId: folder.id })).skills).toEqual([{ id: 'demo', name: 'demo' }])
+      expect(attempts).toBe(3)
+    })
+
+    it('gives up quietly on a folder that really has none', async () => {
+      const { service, folder, calls } = setup({ ...agents, 'provider.list': { data: [] }, 'model.list': { data: [] }, 'model.default': { data: null }, 'skill.list': { data: [] } })
+      expect((await service.chatOptions({ folderId: folder.id })).skills).toEqual([])
+      expect(calls.filter((call) => call.operation === 'skill.list')).toHaveLength(4)
+    })
+
+    it('sends a $skill in a follow-up as a skill, with the text unchanged', async () => {
+      const { service, folder, calls } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'skill.list': skillList('demo', 'review') })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      calls.length = 0
+      await service.send({ threadId: 'ses_new', text: 'héllo $demo, then $review please' })
+      expect(calls.map((call) => call.operation)).toEqual(['skill.list', 'session.prompt'])
+      expect(calls[0]?.request.query).toEqual({ 'location[directory]': '/home/me/app' })
+      expect(calls[1]?.request).toEqual({
+        params: { sessionID: 'ses_new' },
+        body: {
+          text: 'héllo $demo, then $review please',
+          skills: [
+            { id: 'demo', mention: { start: 6, end: 11, text: '$demo' } },
+            { id: 'review', mention: { start: 18, end: 25, text: '$review' } },
+          ],
+        },
+      })
+      service.stop()
+    })
+
+    it('names a skill once even when the message does', async () => {
+      const { service, folder, calls } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'skill.list': skillList('demo') })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      calls.length = 0
+      await service.send({ threadId: 'ses_new', text: '$demo and again $demo' })
+      expect((calls[1]?.request.body as { skills: unknown[] }).skills).toHaveLength(1)
+      service.stop()
+    })
+
+    it('leaves $text that is not a known skill alone, and asks nothing when there is no $', async () => {
+      const { service, folder, calls } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'skill.list': skillList('demo') })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      calls.length = 0
+      await service.send({ threadId: 'ses_new', text: 'echo $HOME and $nope' })
+      expect(calls[1]?.request.body).toEqual({ text: 'echo $HOME and $nope' })
+      calls.length = 0
+      await service.send({ threadId: 'ses_new', text: 'plain words' })
+      expect(calls.map((call) => call.operation)).toEqual(['session.prompt'])
+      service.stop()
+    })
+
+    it('sends the message as plain text when the skills cannot be listed', async () => {
+      const { service, folder, calls } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'skill.list': new OpenCodeServiceError('Unavailable', 503) })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      calls.length = 0
+      await service.send({ threadId: 'ses_new', text: 'use $demo' })
+      expect(calls[calls.length - 1]).toEqual({ operation: 'session.prompt', request: { params: { sessionID: 'ses_new' }, body: { text: 'use $demo' } } })
+      service.stop()
+    })
+
+    it('sends a $skill in the first message of a new thread', async () => {
+      const { service, folder, calls } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'skill.list': skillList('demo') })
+      await service.create({ folderId: folder.id, text: '$demo go', agent: 'build', model })
+      expect(calls.map((call) => call.operation)).toEqual(['session.create', 'skill.list', 'session.prompt'])
+      expect(calls[2]?.request.body).toEqual({ text: '$demo go', skills: [{ id: 'demo', mention: { start: 0, end: 5, text: '$demo' } }] })
+      service.stop()
+    })
+
+    it('lists the skills of the worktree a new thread runs in, because that is where OpenCode checks them', async () => {
+      const root = '/home/me/.mde/worktrees/app-abc/1a2b3c4d'
+      const worktree = { repository: '/home/me/app', root, branch: 'mde/1a2b3c4d', base: 'origin/main' }
+      const worktrees = {
+        info: vi.fn(), remove: vi.fn(async () => {}), discard: vi.fn(async () => {}),
+        create: vi.fn(async () => ({ directory: root, worktree })),
+      }
+      const { service, folder, calls } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'skill.list': skillList('demo') }, undefined, worktrees)
+      await service.create({ folderId: folder.id, text: '$demo go', agent: 'build', model, worktree: { base: 'origin/main' } })
+      expect(calls.find((call) => call.operation === 'skill.list')?.request.query).toEqual({ 'location[directory]': root })
+      service.stop()
+    })
   })
 
   it('creates a session in the folder, records it, and sends the first message', async () => {

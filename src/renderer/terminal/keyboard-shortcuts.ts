@@ -33,6 +33,8 @@ export function getKeyboardShortcutGroups(
         { id: 'inbox-changes-tabs', keys: ['Left', 'Right', 'Home', 'End'], description: 'Switch Files and Changes when a thread sidebar tab is focused.' },
         { id: 'inbox-close-changes', keys: ['Escape'], description: 'Close the Git change review, or the changed-file list under a thread.' },
         { id: 'inbox-paste-image', keys: [`${primaryModifier}+V`], description: 'Paste clipboard images as attachments in the message box; text pastes normally.' },
+        { id: 'inbox-skill-picker', keys: ['$'], description: 'Start a word with $ in the message box to pick a skill; keep typing to narrow the list.' },
+        { id: 'inbox-skill-picker-keys', keys: ['Up', 'Down', 'Tab', 'Enter', 'Escape'], description: 'In the skill list: Up and Down move, Tab or Enter insert the skill, Escape closes the list.' },
         { id: 'inbox-send', keys: ['Enter'], description: 'Send the message and attachments.' },
         { id: 'inbox-newline', keys: ['Shift+Enter'], description: 'Insert a newline in the message box.' }
       ]

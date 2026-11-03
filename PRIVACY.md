@@ -56,6 +56,12 @@ opened threads); MDE does not write them to disk. Prompts and answers you send g
 which stores them in OpenCode's own data and forwards them to the model provider you chose, as
 OpenCode does in a terminal.
 
+The message box's `$` list is filled from the service's list of skills for the folder (their names
+and one-line descriptions only; MDE drops each skill's text and file path) and is kept in memory for
+about a minute. When you send a message that names a skill, MDE tells the service which skill, and the
+service gives the skill's text to the model, as OpenCode does in a terminal. MDE stores nothing more
+for skills, and a skill the model loads is shown from the conversation the service returns.
+
 The Inbox's Changes tab for the open thread, and the changes line under each visible thread
 (when you turn that on in the Inbox's gear menu; it is off by default) with the file list and
 diff review they open, run read-only local Git commands for that thread's checkout. They show staged,

@@ -115,10 +115,14 @@ the validated `chat:*` channels.
 - **Secrets.** The password is held in memory per target, sent only as HTTP
   Basic auth to that loopback origin, and never logged, stored or put in an
   error message. A 401 or connection failure drops it and rediscovers once.
-- **Operations.** `SERVICE_OPERATIONS` is a fixed allowlist of twenty method
-  and path pairs (agents, providers, models, session create/get/active, message
+- **Operations.** `SERVICE_OPERATIONS` is a fixed allowlist of twenty-one method
+  and path pairs (agents, skills, providers, models, session create/get/active, message
   list, prompt, interrupt, agent and model switch, permission and form
-  list/reply, session update, staging or clearing a revert, and fork). The `chat:regenerate-title` channel accepts only a
+  list/reply, session update, staging or clearing a revert, and fork). The skill list (`GET /api/skill`)
+  takes only the `location[directory]` query. OpenCode answers with each skill's full text and file path;
+  the main process keeps the id, name and a one-line description and drops the rest, so neither reaches
+  the renderer. A prompt can carry `skills` ids, but only ones the main process found by exact match in
+  that same list; the renderer sends text only and has no field to name a skill. The `chat:regenerate-title` channel accepts only a
   recorded session ID and sends a fixed PATCH body `{ title: '' }`; the renderer cannot
   supply arbitrary update fields, paths or targets. The `chat:redo` channel likewise accepts only a
   recorded session ID and sends `DELETE /api/session/{sessionID}/revert` with no body, which

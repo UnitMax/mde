@@ -11,6 +11,8 @@ import type {
   ChatPermission,
   ChatRevert,
   ChatRevertFile,
+  ChatSkill,
+  ChatSkillUse,
   ChatTokens,
   ChatToolStatus,
   ChatUsage,
@@ -104,6 +106,51 @@ export function parseAgents(value: unknown): ChatAgent[] {
     })
   }
   return agents
+}
+
+/** One line of free text: runs of whitespace and control characters become a space, and long text is cut. */
+function line(value: unknown, max: number): string | null {
+  if (typeof value !== 'string') return null
+  const text = value.replace(/[\s\u0000-\u001f\u007f-\u009f]+/g, ' ').trim()
+  return text ? text.slice(0, max) : null
+}
+
+/** More skills than this are not offered; nobody scrolls that far. */
+const SKILL_LIMIT = 500
+
+/**
+ * The skills a message can invoke. OpenCode also sends each skill's full text and file path; the picker
+ * needs neither, so they stop here.
+ */
+export function parseSkills(value: unknown): ChatSkill[] {
+  const skills: ChatSkill[] = []
+  const seen = new Set<string>()
+  for (const item of list(data(value, 'a skill list'))) {
+    const skill = record(item)
+    const id = short(skill?.id, 200)
+    // `$id` ends at whitespace, so a name with a space or a `$` could never be written.
+    if (!skill || !id || seen.has(id) || /[\s$]/.test(id)) continue
+    seen.add(id)
+    const description = line(skill.description, 400)
+    skills.push({ id, name: line(skill.name, 200) ?? id, ...(description ? { description } : {}) })
+    if (skills.length >= SKILL_LIMIT) break
+  }
+  return skills
+}
+
+/** The skills a user message invoked, by id and display name. */
+function parseSkillUses(value: unknown): ChatSkillUse[] {
+  const uses: ChatSkillUse[] = []
+  const seen = new Set<string>()
+  for (const item of list(value)) {
+    const skill = record(item)
+    const id = short(skill?.id, 200)
+    if (!skill || !id || seen.has(id)) continue
+    seen.add(id)
+    uses.push({ id, name: short(skill.name, 200) ?? id })
+    if (uses.length >= 20) break
+  }
+  return uses
 }
 
 export function parseProviderNames(value: unknown): Map<string, string> {
@@ -270,8 +317,9 @@ export function parseMessage(value: unknown, thumbnail?: (bytes: Buffer) => stri
   if (!message || !id) return null
   const at = time(message.time)
   switch (message.type) {
-    case 'user':
-      return { kind: 'user', id, time: at, text: body(message.text, CHAT_TEXT_LIMIT).text, ...(Array.isArray(message.files) && message.files.length ? { attachments: message.files.slice(0, 10).flatMap((raw, index) => {
+    case 'user': {
+      const skills = parseSkillUses(message.skills)
+      return { kind: 'user', id, time: at, text: body(message.text, CHAT_TEXT_LIMIT).text, ...(skills.length ? { skills } : {}), ...(Array.isArray(message.files) && message.files.length ? { attachments: message.files.slice(0, 10).flatMap((raw, index) => {
         const file = record(raw)
         const mime = short(file?.mime, 200)
         if (!file || !mime || typeof file.data !== 'string' || file.data.length > 28 * 1024 * 1024) return []
@@ -280,6 +328,7 @@ export function parseMessage(value: unknown, thumbnail?: (bytes: Buffer) => stri
         try { if (mime.startsWith('image/')) preview = thumbnail?.(bytes) } catch { /* A broken preview still shows its filename. */ }
         return [{ id: `${id}-${index}`, name: short(file.name) ?? 'Attachment', mime, size: bytes.length, ...(preview ? { thumbnail: preview } : {}) }]
       }) } : {}) }
+    }
     case 'assistant': {
       const model = parseModelRef(message.model)
       if (!model) return null
@@ -323,8 +372,13 @@ export function parseMessage(value: unknown, thumbnail?: (bytes: Buffer) => stri
       }
     }
     case 'skill': {
-      const name = short(message.name)
-      return { kind: 'note', id, time: at, tone: 'info', text: name ? `Loaded the ${name} skill` : 'Loaded a skill' }
+      const name = short(message.name) ?? short(message.skill)
+      const text = body(message.text, CHAT_TOOL_TEXT_LIMIT).text.trim()
+      return {
+        kind: 'note', id, time: at, tone: 'info',
+        text: name ? `Loaded the ${name} skill` : 'Loaded a skill',
+        ...(text ? { detail: text } : {}),
+      }
     }
     case 'synthetic':
     case 'system': {

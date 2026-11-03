@@ -23,7 +23,7 @@ async function setup(fail = false) {
   dispose = () => root.unmount()
   await act(async () => root.render(createElement(ChatComposer, {
     draftKey: 'thread:ses_one', agent: 'build', model: { id: 'm', providerId: 'p' },
-    options: { status: 'ready', value: { agents: [], models: [], defaultModel: null, defaultAgent: null } },
+    options: { status: 'ready', value: { agents: [], models: [], defaultModel: null, defaultAgent: null, skills: [] } },
     onAgentChange: () => {}, onModelChange: () => {}, onSend: send,
   })))
   return { container, request, send }

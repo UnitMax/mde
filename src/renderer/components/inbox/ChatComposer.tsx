@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Paperclip, X, File as FileIcon, ArrowUp, Bot, ChevronDown, Hammer, ListChecks, LoaderCircle, Search, Sparkles, Square } from 'lucide-react'
 import { readFileTreeDrop, isFileDrop } from '@/terminal/drop'
-import type { ChatDraft, ChatDraftKey, ChatDraftRequest, ChatAgent, ChatModel, OpenCodeModelRef } from '@shared/types'
+import type { ChatDraft, ChatDraftKey, ChatDraftRequest, ChatAgent, ChatModel, ChatSkill, OpenCodeModelRef } from '@shared/types'
+import { skillTriggerAt } from '@shared/skills'
+import { applySkill, filterSkills } from '@/lib/skills'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -143,6 +145,57 @@ export function AgentPicker({
   )
 }
 
+const NO_SKILLS: ChatSkill[] = []
+
+/**
+ * The skills that fit what is being typed after a `$`, as a list above the box. It never takes focus
+ * (the caret stays in the text), so the box handles the keys and tells the list which row is active.
+ */
+function SkillPicker({
+  id,
+  skills,
+  active,
+  onActive,
+  onPick,
+}: {
+  id: string
+  skills: ChatSkill[]
+  active: number
+  onActive: (index: number) => void
+  onPick: (skill: ChatSkill) => void
+}): JSX.Element {
+  useEffect(() => {
+    document.getElementById(`${id}-${active}`)?.scrollIntoView?.({ block: 'nearest' })
+  }, [id, active])
+  return (
+    <div
+      id={id}
+      role="listbox"
+      aria-label="Skills"
+      data-testid="skill-picker"
+      className="absolute inset-x-0 bottom-full z-30 mb-1.5 max-h-64 overflow-y-auto rounded-xl border border-line-strong bg-elevated p-1 shadow-lg shadow-black/30"
+    >
+      {skills.map((skill, index) => (
+        <div
+          key={skill.id}
+          id={`${id}-${index}`}
+          role="option"
+          aria-selected={index === active}
+          data-testid={`skill-option-${skill.id}`}
+          // Keeps the caret in the text: a click on the list must not move focus out of the box.
+          onMouseDown={(event) => event.preventDefault()}
+          onMouseMove={() => { if (index !== active) onActive(index) }}
+          onClick={() => onPick(skill)}
+          className={cn('flex min-w-0 cursor-pointer items-baseline gap-2 rounded-lg px-2.5 py-1.5 text-[13px]', index === active ? 'bg-active' : 'hover:bg-hover')}
+        >
+          <span className="shrink-0 font-medium text-fg">${skill.id}</span>
+          {skill.description && <span className="min-w-0 truncate text-[12px] text-fg-muted">{skill.description}</span>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export interface ChatComposerProps {
   draftKey?: ChatDraftKey
   /**
@@ -268,6 +321,50 @@ export function ChatComposer({
   const ready = options?.status === 'ready'
   const canSend = ready && !disabled && !sendBlocked && !sending && !adding && loaded && (text.trim().length > 0 || draft.attachments.length > 0) && Boolean(agent) && Boolean(model)
 
+  // Skills: a `$word` at the caret offers the skills that fit it. Where the caret is only counts for
+  // the text it was measured in, so text put there from outside (a loaded draft) never opens the list.
+  const listId = useId()
+  const skills = options?.status === 'ready' ? options.value.skills : NO_SKILLS
+  const [cursor, setCursor] = useState<{ text: string; at: number } | null>(null)
+  const [activeSkill, setActiveSkill] = useState(0)
+  // The `$` of a list the user closed with Escape; it stays closed until that word is gone.
+  const [dismissed, setDismissed] = useState<number | null>(null)
+  const trigger = useMemo(
+    () => (skills.length > 0 && cursor?.text === text ? skillTriggerAt(text, cursor.at) : null),
+    [skills, cursor, text],
+  )
+  useEffect(() => { if (!trigger) setDismissed(null) }, [trigger])
+  const matches = useMemo(() => (trigger ? filterSkills(skills, trigger.query) : NO_SKILLS), [skills, trigger])
+  const pickerOpen = Boolean(trigger) && matches.length > 0 && trigger?.start !== dismissed && !disabled && !sending && loaded
+  const activeIndex = Math.min(activeSkill, Math.max(matches.length - 1, 0))
+
+  const persist = (next: string): void => {
+    if (draftKey) void mutate({ key: draftKey, action: 'text', text: next }).catch((reason) => setError(ipcErrorMessage(reason, 'Could not save the draft.')))
+  }
+  // Where the caret goes once the chosen skill is in the box. This is a ref applied right after the
+  // text lands, not the `focusAt` state above: that is cleared by a later render, and a key pressed
+  // before then is drawn with the old value still set, which put the caret back where it had been.
+  const pendingCaret = useRef<number | null>(null)
+  useLayoutEffect(() => {
+    const at = pendingCaret.current
+    if (at === null) return
+    pendingCaret.current = null
+    const textarea = textareaRef.current
+    if (!textarea || textarea.disabled) return
+    textarea.focus()
+    const caret = Math.min(at, textarea.value.length)
+    textarea.setSelectionRange(caret, caret)
+  })
+  const pickSkill = (skill: ChatSkill): void => {
+    if (!trigger) return
+    const next = applySkill(text, trigger, skill)
+    pendingCaret.current = next.caret
+    setText(next.text)
+    persist(next.text)
+    // A new object each time, so the box renders and puts the caret in place even when the text is unchanged.
+    setCursor({ text: next.text, at: next.caret })
+  }
+
   useEffect(() => {
     const textarea = textareaRef.current
     if (!textarea) return
@@ -296,6 +393,27 @@ export function ChatComposer({
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
+    // The open list gets the keys first, so Enter chooses the skill instead of sending half a message.
+    if (pickerOpen && trigger && !event.nativeEvent.isComposing) {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault()
+        setActiveSkill((activeIndex + (event.key === 'ArrowDown' ? 1 : -1) + matches.length) % matches.length)
+        return
+      }
+      if ((event.key === 'Enter' && !event.shiftKey) || (event.key === 'Tab' && !event.shiftKey)) {
+        event.preventDefault()
+        const skill = matches[activeIndex]
+        if (skill) pickSkill(skill)
+        return
+      }
+      if (event.key === 'Escape') {
+        // Closing the list is all Escape does here; it must not also close whatever else Escape closes.
+        event.preventDefault()
+        event.stopPropagation()
+        setDismissed(trigger.start)
+        return
+      }
+    }
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault()
       void send()
@@ -327,8 +445,9 @@ export function ChatComposer({
           }
         }}
         style={dragging ? { outline: '2px solid var(--color-accent)' } : undefined}
-        className="@container rounded-2xl border border-line-strong bg-elevated shadow-lg shadow-black/20 focus-within:border-accent/60"
+        className="@container relative rounded-2xl border border-line-strong bg-elevated shadow-lg shadow-black/20 focus-within:border-accent/60"
       >
+        {pickerOpen && <SkillPicker id={listId} skills={matches} active={activeIndex} onActive={setActiveSkill} onPick={pickSkill} />}
         <input ref={inputRef} type="file" multiple hidden aria-label="Choose attachments" onChange={(event) => { void addFiles(Array.from(event.target.files ?? [])); event.target.value = '' }} />
         {draft.attachments.length > 0 && <div className="flex flex-wrap gap-2 px-4 pt-3" aria-label="Attachments">
           {draft.attachments.map((file) => <div key={file.id} className="relative flex max-w-48 items-center gap-2 rounded-lg border border-line p-2 text-xs" title={`${file.name} (${file.size.toLocaleString()} bytes)`}>
@@ -349,8 +468,17 @@ export function ChatComposer({
           onChange={(event) => {
             const next = event.target.value
             setText(next)
-            if (draftKey) void mutate({ key: draftKey, action: 'text', text: next }).catch((reason) => setError(ipcErrorMessage(reason, 'Could not save the draft.')))
+            setCursor({ text: next, at: event.target.selectionStart === event.target.selectionEnd ? event.target.selectionStart : -1 })
+            setActiveSkill(0)
+            persist(next)
           }}
+          // Moving the caret with the keys or the mouse changes which word it is in.
+          onSelect={(event) => {
+            const box = event.currentTarget
+            setCursor({ text: box.value, at: box.selectionStart === box.selectionEnd ? box.selectionStart : -1 })
+          }}
+          aria-controls={pickerOpen ? listId : undefined}
+          aria-activedescendant={pickerOpen ? `${listId}-${activeIndex}` : undefined}
           onPaste={(event) => {
             const images = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith('image/'))
             if (images.length) { event.preventDefault(); void addFiles(images) }

@@ -361,11 +361,27 @@ export interface ChatModel {
   outputLimit?: number
 }
 
+/** A skill a sent message invoked. */
+export interface ChatSkillUse {
+  id: string
+  name: string
+}
+
+/** A skill the user can invoke by writing `$id` in a message. */
+export interface ChatSkill {
+  /** What follows the `$`: the skill's directory name, which can differ from `name`. */
+  id: string
+  name: string
+  description?: string
+}
+
 export interface ChatOptions {
   agents: ChatAgent[]
   models: ChatModel[]
   defaultModel: OpenCodeModelRef | null
   defaultAgent: string | null
+  /** The skills available in this folder, built-in ones included. Empty when OpenCode could not list them. */
+  skills: ChatSkill[]
 }
 
 /** Token counts for one model step, or summed over a whole thread. */
@@ -414,7 +430,7 @@ export type ChatPart =
     }
 
 export type ChatMessage =
-  | { kind: 'user'; id: string; time: number; text: string; attachments?: ChatAttachment[] }
+  | { kind: 'user'; id: string; time: number; text: string; attachments?: ChatAttachment[]; skills?: ChatSkillUse[] }
   | {
       kind: 'assistant'
       id: string

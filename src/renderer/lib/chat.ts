@@ -419,12 +419,50 @@ export function toolSummary(part: Extract<ChatPart, { kind: 'tool' }>, directory
       return 'Updated the to-do list'
     case 'subagent':
       return text('description') ? `Subagent: ${firstLine(text('description')!, 70)}` : 'Ran a subagent'
+    case 'skill': {
+      const name = skillCall(part).name
+      if (part.status === 'error') return name ? `Could not load the ${name} skill` : 'Could not load a skill'
+      return name ? `${done ? 'Loaded' : 'Loading'} the ${name} skill` : 'Loaded a skill'
+    }
     default:
       return part.name
   }
 }
 
 type ToolPart = Extract<ChatPart, { kind: 'tool' }>
+
+export interface SkillCall {
+  /** The skill's name, from OpenCode's answer or else the id the agent asked for; null when neither is known. */
+  name: string | null
+  /** The instructions the agent was given, without OpenCode's wrapper; null until the skill has loaded. */
+  body: string | null
+  /** Files that ship with the skill, as paths. */
+  files: string[]
+}
+
+/**
+ * What a call of OpenCode's `skill` tool shows. The agent asks for a skill by id and gets the skill's
+ * text back wrapped as `<skill_content name="…"># Skill: …` + text + a note about the skill's directory
+ * and a `<skill_files>` list. Only the text is worth reading; the files are listed on their own, and the
+ * rest is dropped. Output that does not look like that is left to the caller to show as it is.
+ */
+export function skillCall(part: ToolPart): SkillCall {
+  const input = parseInput(part.input)
+  const asked = typeof input.id === 'string' && input.id.trim() ? input.id.trim() : null
+  const output = part.output ?? ''
+  const wrapper = /^\s*<skill_content\b([^>]*)>/.exec(output)
+  const named = wrapper ? /\bname="([^"]*)"/.exec(wrapper[1] ?? '')?.[1]?.trim() : undefined
+  const name = named || asked
+  if (!wrapper) return { name, body: null, files: [] }
+  let inner = output.slice(wrapper[0].length).replace(/\s*<\/skill_content>\s*$/, '')
+  const files = [...inner.matchAll(/<file>([^<]*)<\/file>/g)].map((match) => (match[1] ?? '').trim()).filter(Boolean)
+  // The tail is the files block and a note about relative paths; a skill that was cut short may lack the end tags.
+  inner = inner.replace(/\s*<skill_files>[\s\S]*$/, '')
+  const note = inner.lastIndexOf('\nBase directory for this skill:')
+  if (note >= 0) inner = inner.slice(0, note)
+  inner = inner.replace(/^\s*# Skill: [^\n]*\n+/, '')
+  return { name, body: inner.trim() || null, files }
+}
 
 /** OpenCode runs a subagent through its `subagent` tool. */
 export function isSubagentCall(part: ChatPart): part is ToolPart {
