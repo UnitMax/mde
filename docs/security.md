@@ -156,6 +156,11 @@ the validated `chat:*` channels.
 Inbox folders are separate from workspace projects and sessions; adding one
 resolves and validates the path through the same checks as a session path.
 
+The Inbox message input is a plain-text CodeMirror editor with decorations for Markdown bullet
+markers. It never renders prompt HTML, links or image embeds. Text paste reads only `text/plain`;
+clipboard images follow the existing attachment boundary. Drafts and sent prompts remain plain
+Markdown, including text that is outside the supported formatting.
+
 ### Inbox worktree boundary
 
 An Inbox thread can run in a Git worktree MDE creates, which is the only place MDE changes a

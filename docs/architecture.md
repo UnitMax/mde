@@ -191,7 +191,14 @@ The Inbox also shows the Files sidebar for the open thread's folder, or for the 
 build in ‹folder›?". The folder name opens a menu of the Inbox folders with Add folder… and
 remove buttons. Below it is the composer: a prompt box, a model picker (searchable, grouped by
 provider, enabled and non-deprecated models only), an agent picker (Build, Plan, then any other
-primary agent that is not hidden), and a send button. Enter sends and Shift+Enter adds a newline.
+primary agent that is not hidden), and a send button. Enter sends; Shift+Enter and Ctrl+J add a newline.
+Both the new-thread and follow-up inputs show Markdown bullet markers (`-`, `*`, or `+` followed
+by a space) as formatted bullets while typing. A newline continues the current bullet list;
+on an empty item it leaves the list.
+`ChatInput` uses the existing CodeMirror Markdown parser and text editor. It decorates bullet
+markers rather than rendering HTML, so pasted HTML, links and images remain literal text.
+Code fences stay literal, and drafts, skill positions and sent messages keep plain Markdown
+without converting it through HTML. Clipboard images still go through the attachment controls.
 The model picker shows the selected provider and model as “Provider / Model”, with a muted provider prefix.
 The folder, model and agent last used are remembered in `inbox.json`; otherwise the composer
 starts with OpenCode's default model and the Build agent. Sending creates the OpenCode session in

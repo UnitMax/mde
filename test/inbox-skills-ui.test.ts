@@ -1,11 +1,14 @@
 // @vitest-environment happy-dom
 import { act, createElement } from 'react'
+import type { EditorView } from '@codemirror/view'
+import { messageInput, setMessageText, pressMessageKey } from './helpers/chat-input'
 import { createRoot } from 'react-dom/client'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChatComposer } from '../src/renderer/components/inbox/ChatComposer'
 import type { ChatDraft, ChatDraftRequest, ChatSkill } from '../src/shared/types'
 
 let dispose: (() => void) | undefined
+beforeEach(() => vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true))
 afterEach(async () => { await act(async () => dispose?.()); vi.unstubAllGlobals(); document.body.innerHTML = '' })
 
 const skills: ChatSkill[] = [
@@ -31,31 +34,19 @@ async function setup({ initial = '', list = skills, disabled = false }: { initia
     options: { status: 'ready', value: { agents: [], models: [], defaultModel: null, defaultAgent: null, skills: list } },
     onAgentChange: () => {}, onModelChange: () => {}, onSend: send,
   })))
-  const box = container.querySelector('textarea')!
+  const box = messageInput(container)
   return { container, box, request, send }
 }
 
 /** Types the way a person does: the box takes the new text with the caret at `caret`. */
-async function type(box: HTMLTextAreaElement, value: string, caret = value.length) {
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(box, value)
-    box.setSelectionRange(caret, caret)
-    box.dispatchEvent(new Event('input', { bubbles: true }))
-  })
+async function type(box: EditorView, value: string, caret = value.length) {
+  await setMessageText(box, value, caret)
 }
-/** Clicks into the box at `caret`. React reports a moved caret on the key or mouse release of the focused box. */
-async function moveCaret(box: HTMLTextAreaElement, caret: number) {
-  await act(async () => { box.focus() })
-  await act(async () => {
-    box.setSelectionRange(caret, caret)
-    box.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
-  })
+/** Moves the real editor selection, as a click or arrow key would. */
+async function moveCaret(box: EditorView, caret: number) {
+  await act(async () => { box.focus(); box.dispatch({ selection: { anchor: caret } }) })
 }
-async function press(box: HTMLTextAreaElement, key: string, init: KeyboardEventInit = {}) {
-  const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })
-  await act(async () => { box.dispatchEvent(event) })
-  return event
-}
+const press = pressMessageKey
 const list = (container: HTMLElement) => container.querySelector('[data-testid="skill-picker"]')
 const options = (container: HTMLElement) => Array.from(container.querySelectorAll('[role="option"]')).map((option) => option.getAttribute('data-testid')?.replace('skill-option-', ''))
 
@@ -74,8 +65,8 @@ describe('the $ skill picker in the message box', () => {
     expect(list(container)?.getAttribute('role')).toBe('listbox')
     expect(options(container)).toEqual(['demo', 'deploy', 'code-review'])
     expect(container.querySelector('[role="option"]')?.textContent).toContain('A demo skill')
-    expect(box.getAttribute('aria-controls')).toBe(list(container)?.id)
-    expect(box.getAttribute('aria-activedescendant')).toBe(container.querySelector('[role="option"][aria-selected="true"]')?.id)
+    expect(box.contentDOM.getAttribute('aria-controls')).toBe(list(container)?.id)
+    expect(box.contentDOM.getAttribute('aria-activedescendant')).toBe(container.querySelector('[role="option"][aria-selected="true"]')?.id)
     await type(box, 'please use $')
     expect(options(container)).toEqual(['code-review', 'demo', 'deploy'])
     await type(box, 'please use $zzz')
@@ -97,21 +88,23 @@ describe('the $ skill picker in the message box', () => {
     await press(box, 'ArrowDown')
     const enter = await press(box, 'Enter')
     expect(enter.defaultPrevented).toBe(true)
-    expect(box.value).toBe('use $demo ')
-    expect(box.selectionStart).toBe(10)
+    expect(box.state.doc.toString()).toBe('use $demo ')
+    expect(box.state.selection.main.from).toBe(10)
     expect(list(container)).toBeNull()
     expect(send).not.toHaveBeenCalled()
     expect(request).toHaveBeenLastCalledWith({ key: 'thread:ses_one', action: 'text', text: 'use $demo ' })
   })
 
-  it('inserts with Tab too, but leaves Shift+Tab and Shift+Enter to the page', async () => {
+  it('inserts with Tab, leaves Shift+Tab alone, and adds a newline with Shift+Enter', async () => {
     const { container, box } = await setup()
     await type(box, '$dep')
     expect((await press(box, 'Tab', { shiftKey: true })).defaultPrevented).toBe(false)
-    expect((await press(box, 'Enter', { shiftKey: true })).defaultPrevented).toBe(false)
-    expect(list(container)).not.toBeNull()
+    expect((await press(box, 'Enter', { shiftKey: true })).defaultPrevented).toBe(true)
+    expect(box.state.doc.toString()).toBe('$dep\n')
+    expect(list(container)).toBeNull()
+    await type(box, '$dep')
     await press(box, 'Tab')
-    expect(box.value).toBe('$deploy ')
+    expect(box.state.doc.toString()).toBe('$deploy ')
   })
 
   it('inserts the skill that is clicked, without taking the caret out of the box', async () => {
@@ -122,7 +115,7 @@ describe('the $ skill picker in the message box', () => {
     await act(async () => { option.dispatchEvent(down) })
     expect(down.defaultPrevented).toBe(true)
     await act(async () => option.click())
-    expect(box.value).toBe('$deploy ')
+    expect(box.state.doc.toString()).toBe('$deploy ')
     expect(send).not.toHaveBeenCalled()
   })
 
@@ -142,7 +135,7 @@ describe('the $ skill picker in the message box', () => {
     expect(escape.defaultPrevented).toBe(true)
     expect(heard).not.toHaveBeenCalled()
     expect(list(container)).toBeNull()
-    expect(box.value).toBe('use $de')
+    expect(box.state.doc.toString()).toBe('use $de')
     await type(box, 'use $dem')
     expect(list(container)).toBeNull()
     await type(box, 'use ')
@@ -176,7 +169,7 @@ describe('the $ skill picker in the message box', () => {
     await type(box, '$de')
     const enter = await press(box, 'Enter', { isComposing: true })
     expect(enter.defaultPrevented).toBe(false)
-    expect(box.value).toBe('$de')
+    expect(box.state.doc.toString()).toBe('$de')
     expect(send).not.toHaveBeenCalled()
     expect(list(container)).not.toBeNull()
   })
@@ -193,7 +186,7 @@ describe('the $ skill picker in the message box', () => {
 
   it('does not open for a draft that was only loaded', async () => {
     const { container, box } = await setup({ initial: 'old draft $de' })
-    expect(box.value).toBe('old draft $de')
+    expect(box.state.doc.toString()).toBe('old draft $de')
     expect(list(container)).toBeNull()
     await moveCaret(box, 13)
     expect(options(container)).toEqual(['demo', 'deploy', 'code-review'])

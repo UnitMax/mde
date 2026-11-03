@@ -36,7 +36,7 @@ export function getKeyboardShortcutGroups(
         { id: 'inbox-skill-picker', keys: ['$'], description: 'Start a word with $ in the message box to pick a skill; keep typing to narrow the list.' },
         { id: 'inbox-skill-picker-keys', keys: ['Up', 'Down', 'Tab', 'Enter', 'Escape'], description: 'In the skill list: Up and Down move, Tab or Enter insert the skill, Escape closes the list.' },
         { id: 'inbox-send', keys: ['Enter'], description: 'Send the message and attachments.' },
-        { id: 'inbox-newline', keys: ['Shift+Enter'], description: 'Insert a newline in the message box.' }
+        { id: 'inbox-newline', keys: ['Shift+Enter', 'Ctrl+J'], description: 'Insert a newline in the message box; continue a bullet list, or leave it when its last item is empty.' }
       ]
     },
     {

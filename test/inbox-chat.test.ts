@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 
 import { act, createElement } from 'react'
+import type { EditorView } from '@codemirror/view'
+import { messageInput, setMessageText } from './helpers/chat-input'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -77,11 +79,8 @@ async function render(): Promise<HTMLElement> {
   return container
 }
 
-async function type(element: HTMLTextAreaElement, value: string): Promise<void> {
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(element, value)
-    element.dispatchEvent(new Event('input', { bubbles: true }))
-  })
+async function type(element: EditorView, value: string): Promise<void> {
+  await setMessageText(element, value)
 }
 
 function button(container: HTMLElement, label: string): HTMLButtonElement {
@@ -150,11 +149,11 @@ describe('Inbox new thread', () => {
 
     const send = button(view, 'Send')
     expect(send.disabled).toBe(true)
-    const textarea = view.querySelector('textarea')!
-    await type(textarea, 'Add a dark mode')
+    const input = messageInput(view)
+    await type(input, 'Add a dark mode')
     expect(send.disabled).toBe(false)
     await act(async () => {
-      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      input.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     })
     await vi.waitFor(() => expect(api.chat.create).toHaveBeenCalledWith({
       attachmentIds: [], draftRevision: 1, folderId: 'fld_app', text: 'Add a dark mode', agent: 'build', model: { id: 'free-1', providerId: 'opencode' },
@@ -168,11 +167,11 @@ describe('Inbox new thread', () => {
     const view = await render()
     await vi.waitFor(() => expect(button(view, 'Send')).toBeTruthy())
     await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-model-picker"]')).not.toBeNull())
-    const textarea = view.querySelector('textarea')!
-    await type(textarea, 'Hello')
+    const input = messageInput(view)
+    await type(input, 'Hello')
     await act(async () => button(view, 'Send').click())
     await vi.waitFor(() => expect(view.querySelector('[role="alert"]')?.textContent).toBe('Model unavailable'))
-    expect(textarea.value).toBe('Hello')
+    expect(input.state.doc.toString()).toBe('Hello')
   })
 })
 
@@ -200,7 +199,7 @@ describe('Inbox worktree mode', () => {
   }
   const send = async (view: HTMLElement, text: string): Promise<void> => {
     await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-model-picker"]')?.textContent).toContain('Flint Free'))
-    await type(view.querySelector('textarea')!, text)
+    await type(messageInput(view), text)
     await act(async () => button(view, 'Send').click())
   }
   afterEach(() => {
@@ -442,7 +441,7 @@ describe('Inbox worktree mode', () => {
     it('says why a name cannot be used and does not send until it is fixed', async () => {
       const view = await inWorktreeMode()
       await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-model-picker"]')?.textContent).toContain('Flint Free'))
-      await type(view.querySelector('textarea')!, 'Add a dark mode')
+      await type(messageInput(view), 'Add a dark mode')
       for (const [name, message] of [
         ['two words', /spaces/], ['--force', /start with -/], ['a..b', /\.\./], ['main', /already exists/],
         ['main/sub', /so main\/sub cannot be created/], ['feature', /Branches under feature\/ already exist/],
@@ -830,7 +829,7 @@ describe('Inbox conversation', () => {
     expect(api.chat.interrupt).toHaveBeenCalledWith({ threadId: 'ses_one' })
 
     await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-agent-picker"]')?.textContent).toContain('Build'))
-    await type(view.querySelector('textarea')!, 'Thanks')
+    await type(messageInput(view), 'Thanks')
     await act(async () => button(view, 'Send').click())
     await vi.waitFor(() => expect(api.chat.send).toHaveBeenCalledWith({ threadId: 'ses_one', text: 'Thanks', attachmentIds: [], draftRevision: 1 }))
   })
@@ -1487,8 +1486,8 @@ describe('Inbox staged revert', () => {
       const draft = draftStore('Something half written')
       api.chat.revert.mockResolvedValueOnce({ messageId: 'msg_3', files: [{ path: 'src/a.ts', status: 'modified', additions: 2, deletions: 1 }] })
       const view = await showConversation()
-      const textarea = view.querySelector('textarea') as HTMLTextAreaElement
-      await vi.waitFor(() => expect(textarea.value).toBe('Something half written'))
+      const input = messageInput(view)
+      await vi.waitFor(() => expect(input.state.doc.toString()).toBe('Something half written'))
 
       const dialog = await open(view, 'msg_3')
       await act(async () => dialogButton(dialog, 'Revert').click())
@@ -1500,12 +1499,12 @@ describe('Inbox staged revert', () => {
       expect(view.textContent).toContain('First answer')
       expect(view.textContent).not.toContain('Second answer')
       expect(view.querySelector('[data-testid="chat-revert-summary"]')?.textContent).toBe('1 message reverted · 1 file restored')
-      await vi.waitFor(() => expect(textarea.value).toBe('Second request\n\nSomething half written'))
+      await vi.waitFor(() => expect(input.state.doc.toString()).toBe('Second request\n\nSomething half written'))
       expect(draft.saved()).toBe('Second request\n\nSomething half written')
       // Ready for changes: focused, with the caret at the end of the restored text.
-      await vi.waitFor(() => expect(document.activeElement).toBe(textarea))
-      expect(textarea.selectionStart).toBe('Second request'.length)
-      expect(textarea.selectionEnd).toBe('Second request'.length)
+      await vi.waitFor(() => expect(document.activeElement).toBe(input.contentDOM))
+      expect(input.state.selection.main.from).toBe('Second request'.length)
+      expect(input.state.selection.main.to).toBe('Second request'.length)
       expect(view.querySelector('[data-testid="chat-notice"]')).toBeNull()
     })
 
@@ -1517,7 +1516,7 @@ describe('Inbox staged revert', () => {
       expect(checkbox(dialog).checked).toBe(false)
       await act(async () => dialogButton(dialog, 'Revert').click())
       expect(api.chat.revert).toHaveBeenCalledWith({ threadId: 'ses_one', messageId: 'msg_1', files: false })
-      await vi.waitFor(() => expect((view.querySelector('textarea') as HTMLTextAreaElement).value).toBe('First request'))
+      await vi.waitFor(() => expect(messageInput(view).state.doc.toString()).toBe('First request'))
       // The revert reached the start, so only the note is left of the conversation.
       expect(view.textContent).not.toContain('First answer')
     })
@@ -1586,7 +1585,7 @@ describe('Inbox staged revert', () => {
       expect(view.textContent).not.toContain('Second answer')
       expect(view.querySelector('[data-testid="chat-notice"]')?.textContent)
         .toBe('The conversation was reverted, but the message could not be put back in the box: The text is too long to add to this draft.')
-      expect((view.querySelector('textarea') as HTMLTextAreaElement).value).toBe('')
+      expect(messageInput(view).state.doc.toString()).toBe('')
 
       // Redoing clears the notice along with the note.
       await act(async () => button(view, 'Redo').click())
@@ -1664,13 +1663,13 @@ describe('Inbox fork from a message', () => {
     expect(useWorkspace.getState().inboxThreads.map((item) => item.id).sort()).toEqual(['ses_fork', 'ses_one'])
     await vi.waitFor(() => expect(api.chat.subscribe).toHaveBeenCalledWith({ threadId: 'ses_fork' }))
 
-    const textarea = view.querySelector('textarea') as HTMLTextAreaElement
-    await vi.waitFor(() => expect(textarea.value).toBe('Second request'))
+    const input = messageInput(view)
+    await vi.waitFor(() => expect(input.state.doc.toString()).toBe('Second request'))
     expect(draft.saved('thread:ses_fork')).toBe('Second request')
     // Ready for changes: focused, with the caret after the restored text.
-    await vi.waitFor(() => expect(document.activeElement).toBe(textarea))
-    expect(textarea.selectionStart).toBe('Second request'.length)
-    expect(textarea.selectionEnd).toBe('Second request'.length)
+    await vi.waitFor(() => expect(document.activeElement).toBe(input.contentDOM))
+    expect(input.state.selection.main.from).toBe('Second request'.length)
+    expect(input.state.selection.main.to).toBe('Second request'.length)
     // The box took the instruction, so a thread opened later is not told again.
     expect(useInboxChat.getState().draftReloads.ses_fork).toBeUndefined()
     expect(view.querySelector('[data-testid="chat-notice"]')).toBeNull()
@@ -1680,7 +1679,7 @@ describe('Inbox fork from a message', () => {
   it('leaves the original thread as it was', async () => {
     draftStore('Half written follow-up')
     const view = await showConversation()
-    await vi.waitFor(() => expect((view.querySelector('textarea') as HTMLTextAreaElement).value).toBe('Half written follow-up'))
+    await vi.waitFor(() => expect(messageInput(view).state.doc.toString()).toBe('Half written follow-up'))
     await act(async () => forkButton(view, 'msg_1')!.click())
     expect(api.chat.draft).not.toHaveBeenCalledWith(expect.objectContaining({ key: 'thread:ses_one', action: 'prepend' }))
     expect(api.chat.revert).not.toHaveBeenCalled()
@@ -1689,7 +1688,7 @@ describe('Inbox fork from a message', () => {
     await act(async () => useWorkspace.getState().selectInboxThread('ses_one'))
     await vi.waitFor(() => expect(view.textContent).toContain('Second answer'))
     expect(view.querySelector('[data-testid="chat-revert"]')).toBeNull()
-    await vi.waitFor(() => expect((view.querySelector('textarea') as HTMLTextAreaElement).value).toBe('Half written follow-up'))
+    await vi.waitFor(() => expect(messageInput(view).state.doc.toString()).toBe('Half written follow-up'))
   })
 
   it('opens the fork without touching its box for a message that has no text', async () => {
@@ -1747,7 +1746,7 @@ describe('Inbox fork from a message', () => {
     expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_fork')
     await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-notice"]')?.textContent)
       .toBe('The thread was forked, but the message could not be put in its box: The text is too long to add to this draft.'))
-    expect((view.querySelector('textarea') as HTMLTextAreaElement).value).toBe('')
+    expect(messageInput(view).state.doc.toString()).toBe('')
   })
 
   it('forks from a message that a revert leaves visible, and offers nothing on the ones it hides', async () => {
@@ -1772,10 +1771,10 @@ describe('Inbox draft reload', () => {
     draftStore('Added text and the rest')
     useInboxChat.setState({ draftReloads: { ses_one: { id: 4, caret: 10 } } })
     const view = await render()
-    const textarea = view.querySelector('textarea') as HTMLTextAreaElement
-    await vi.waitFor(() => expect(textarea.value).toBe('Added text and the rest'))
-    await vi.waitFor(() => expect(document.activeElement).toBe(textarea))
-    expect(textarea.selectionStart).toBe(10)
+    const input = messageInput(view)
+    await vi.waitFor(() => expect(input.state.doc.toString()).toBe('Added text and the rest'))
+    await vi.waitFor(() => expect(document.activeElement).toBe(input.contentDOM))
+    expect(input.state.selection.main.from).toBe(10)
     expect(useInboxChat.getState().draftReloads.ses_one).toBeUndefined()
   })
 
@@ -1790,28 +1789,28 @@ describe('Inbox draft reload', () => {
     }) as never)
     useInboxChat.setState({ draftReloads: { ses_one: { id: 1, caret: 4 } } })
     const view = await render()
-    const textarea = view.querySelector('textarea') as HTMLTextAreaElement
+    const input = messageInput(view)
     // Until then the box is switched off, and a box that is off cannot take focus.
     await new Promise((resolve) => setTimeout(resolve, 40))
-    expect(textarea.disabled).toBe(true)
-    expect(document.activeElement).not.toBe(textarea)
-    await vi.waitFor(() => expect(document.activeElement).toBe(textarea))
-    expect(textarea.disabled).toBe(false)
-    expect(textarea.value).toBe('Existing text')
-    expect(textarea.selectionStart).toBe(4)
+    expect(input.state.readOnly).toBe(true)
+    expect(document.activeElement).not.toBe(input.contentDOM)
+    await vi.waitFor(() => expect(document.activeElement).toBe(input.contentDOM))
+    expect(input.state.readOnly).toBe(false)
+    expect(input.state.doc.toString()).toBe('Existing text')
+    expect(input.state.selection.main.from).toBe(4)
   })
 
   it('takes the next reload as well, even when it has the number the last one had', async () => {
     draftStore('Hello world')
     const view = await render()
-    const textarea = view.querySelector('textarea') as HTMLTextAreaElement
-    await vi.waitFor(() => expect(textarea.value).toBe('Hello world'))
+    const input = messageInput(view)
+    await vi.waitFor(() => expect(input.state.doc.toString()).toBe('Hello world'))
     for (const caret of [5, 2]) {
-      textarea.blur()
-      expect(document.activeElement).not.toBe(textarea)
+      input.contentDOM.blur()
+      expect(document.activeElement).not.toBe(input.contentDOM)
       await act(async () => useInboxChat.setState({ draftReloads: { ses_one: { id: 1, caret } } }))
-      await vi.waitFor(() => expect(document.activeElement).toBe(textarea))
-      expect(textarea.selectionStart).toBe(caret)
+      await vi.waitFor(() => expect(document.activeElement).toBe(input.contentDOM))
+      expect(input.state.selection.main.from).toBe(caret)
       expect(useInboxChat.getState().draftReloads.ses_one).toBeUndefined()
     }
   })

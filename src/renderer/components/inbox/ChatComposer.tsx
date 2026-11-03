@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Paperclip, X, File as FileIcon, ArrowUp, Bot, ChevronDown, Hammer, ListChecks, LoaderCircle, Search, Sparkles, Square } from 'lucide-react'
 import { readFileTreeDrop, isFileDrop } from '@/terminal/drop'
 import type { ChatDraft, ChatDraftKey, ChatDraftRequest, ChatAgent, ChatModel, ChatSkill, OpenCodeModelRef } from '@shared/types'
@@ -11,12 +11,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ContextMeter } from '@/components/inbox/ContextMeter'
+import { ChatInput, type ChatInputHandle } from '@/components/inbox/ChatInput'
 import { findModel, groupModels, modelKey, modelName, orderAgents, sameModelRef, type ContextUsage } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { cn } from '@/lib/utils'
 import type { OptionsState } from '@/store/inbox-chat'
-
-const MAX_TEXTAREA_HEIGHT = 240
 
 function AgentIcon({ id, className }: { id: string; className?: string }): JSX.Element {
   if (id === 'build') return <Hammer className={className} />
@@ -289,7 +288,7 @@ export function ChatComposer({
   }
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const messageRef = useRef<ChatInputHandle>(null)
   const appliedReload = useRef(0)
   useEffect(() => {
     // Once it is let go of the next one may start counting again.
@@ -311,11 +310,8 @@ export function ChatComposer({
   const [focusAt, setFocusAt] = useState<number | null>(null)
   useEffect(() => {
     if (focusAt === null || !loaded) return
-    const textarea = textareaRef.current
-    if (!textarea || textarea.disabled) return
-    textarea.focus()
-    const caret = Math.min(focusAt, textarea.value.length)
-    textarea.setSelectionRange(caret, caret)
+    if (disabled || sending) return
+    messageRef.current?.focus(focusAt)
     setFocusAt(null)
   }, [focusAt, loaded, disabled, sending, text])
   const ready = options?.status === 'ready'
@@ -349,11 +345,7 @@ export function ChatComposer({
     const at = pendingCaret.current
     if (at === null) return
     pendingCaret.current = null
-    const textarea = textareaRef.current
-    if (!textarea || textarea.disabled) return
-    textarea.focus()
-    const caret = Math.min(at, textarea.value.length)
-    textarea.setSelectionRange(caret, caret)
+    messageRef.current?.focus(at)
   })
   const pickSkill = (skill: ChatSkill): void => {
     if (!trigger) return
@@ -364,13 +356,6 @@ export function ChatComposer({
     // A new object each time, so the box renders and puts the caret in place even when the text is unchanged.
     setCursor({ text: next.text, at: next.caret })
   }
-
-  useEffect(() => {
-    const textarea = textareaRef.current
-    if (!textarea) return
-    textarea.style.height = 'auto'
-    textarea.style.height = `${Math.min(textarea.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`
-  }, [text])
 
   const send = async (): Promise<void> => {
     if (!canSend) return
@@ -388,13 +373,14 @@ export function ChatComposer({
       setError(ipcErrorMessage(reason, 'Could not send the message.'))
     } finally {
       setSending(false)
-      textareaRef.current?.focus()
+      setFocusAt(text.length)
     }
   }
 
-  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
+  const onKeyDown = (event: KeyboardEvent): void => {
+    if (event.isComposing) return
     // The open list gets the keys first, so Enter chooses the skill instead of sending half a message.
-    if (pickerOpen && trigger && !event.nativeEvent.isComposing) {
+    if (pickerOpen && trigger) {
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault()
         setActiveSkill((activeIndex + (event.key === 'ArrowDown' ? 1 : -1) + matches.length) % matches.length)
@@ -414,7 +400,12 @@ export function ChatComposer({
         return
       }
     }
-    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+    if ((event.key === 'Enter' && event.shiftKey) || (event.key.toLowerCase() === 'j' && event.ctrlKey && !event.shiftKey && !event.metaKey && !event.altKey)) {
+      event.preventDefault()
+      messageRef.current?.insertNewline()
+      return
+    }
+    if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
       void send()
     }
@@ -426,7 +417,7 @@ export function ChatComposer({
         data-testid="chat-composer"
         onDragOver={(event) => { if (isFileDrop(event.dataTransfer)) { event.preventDefault(); setDragging(true) } }}
         onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false) }}
-        onDrop={(event) => {
+        onDropCapture={(event) => {
           if (!isFileDrop(event.dataTransfer)) return
           event.preventDefault()
           setDragging(false)
@@ -457,34 +448,28 @@ export function ChatComposer({
           </div>)}
         </div>}
         {adding && <p role="status" className="px-4 pt-2 text-xs text-fg-muted">Adding attachments…</p>}
-        <textarea
-          ref={textareaRef}
-          aria-label="Message"
-          rows={3}
+        <ChatInput
+          key={draftKey}
+          ref={messageRef}
           autoFocus={autoFocus}
           value={text}
           disabled={disabled || sending || !loaded}
           placeholder={placeholder}
-          onChange={(event) => {
-            const next = event.target.value
+          onChange={(next, caret) => {
             setText(next)
-            setCursor({ text: next, at: event.target.selectionStart === event.target.selectionEnd ? event.target.selectionStart : -1 })
+            setCursor({ text: next, at: caret })
             setActiveSkill(0)
             persist(next)
           }}
           // Moving the caret with the keys or the mouse changes which word it is in.
-          onSelect={(event) => {
-            const box = event.currentTarget
-            setCursor({ text: box.value, at: box.selectionStart === box.selectionEnd ? box.selectionStart : -1 })
-          }}
-          aria-controls={pickerOpen ? listId : undefined}
-          aria-activedescendant={pickerOpen ? `${listId}-${activeIndex}` : undefined}
+          onSelect={(next, caret) => setCursor({ text: next, at: caret })}
+          controls={pickerOpen ? listId : undefined}
+          activeDescendant={pickerOpen ? `${listId}-${activeIndex}` : undefined}
           onPaste={(event) => {
-            const images = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith('image/'))
+            const images = Array.from(event.clipboardData?.files ?? []).filter((file) => file.type.startsWith('image/'))
             if (images.length) { event.preventDefault(); void addFiles(images) }
           }}
           onKeyDown={onKeyDown}
-          className="block max-h-60 min-h-[4.5rem] w-full resize-none bg-transparent px-4 pt-3 text-[14px] leading-relaxed text-fg outline-none placeholder:text-fg-subtle"
         />
         <div className="flex min-w-0 items-center gap-1 px-2 pb-2">
           {draftKey && <button type="button" aria-label="Attach files" title="Attach files" disabled={disabled || sending || adding || !loaded} className={pickerButton} onClick={() => inputRef.current?.click()}><Paperclip className="h-4 w-4" /></button>}

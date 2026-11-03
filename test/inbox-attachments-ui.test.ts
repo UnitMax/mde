@@ -1,11 +1,13 @@
 // @vitest-environment happy-dom
 import { act, createElement } from 'react'
+import { messageInput } from './helpers/chat-input'
 import { createRoot } from 'react-dom/client'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChatComposer } from '../src/renderer/components/inbox/ChatComposer'
 import type { ChatDraft, ChatDraftRequest } from '../src/shared/types'
 
 let dispose: (() => void) | undefined
+beforeEach(() => vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true))
 afterEach(async () => { await act(async () => dispose?.()); vi.unstubAllGlobals(); document.body.innerHTML = '' })
 async function setup(fail = false) {
   let draft: ChatDraft = { text: '', revision: 0, attachments: [] }
@@ -32,7 +34,7 @@ function image() { return new File([new Uint8Array([1, 2, 3])], 'screen.png', { 
 async function paste(container: HTMLElement) {
   const event = new Event('paste', { bubbles: true, cancelable: true })
   Object.defineProperty(event, 'clipboardData', { value: { files: [image()] } })
-  await act(async () => container.querySelector('textarea')!.dispatchEvent(event))
+  await act(async () => messageInput(container).contentDOM.dispatchEvent(event))
 }
 describe('Inbox attachment inputs', () => {
   it('opens the chooser and stages selected files with removable thumbnails', async () => {
@@ -44,9 +46,9 @@ describe('Inbox attachment inputs', () => {
     Object.defineProperty(input, 'files', { configurable: true, value: [image()] })
     await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })))
     expect(request).toHaveBeenCalledWith(expect.objectContaining({ action: 'add', name: 'screen.png', data: new Uint8Array([1, 2, 3]) }))
-    expect(container.querySelector('img')?.alt).toBe('screen.png')
+    expect(container.querySelector<HTMLImageElement>('[aria-label="Attachments"] img')?.alt).toBe('screen.png')
     await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Remove screen.png"]')!.click())
-    expect(container.querySelector('img')).toBeNull()
+    expect(container.querySelector('[aria-label="Attachments"] img')).toBeNull()
   })
   it('sends pasted images without text and retains them after failure', async () => {
     const { container, send } = await setup(true)
@@ -55,7 +57,7 @@ describe('Inbox attachment inputs', () => {
     expect(button.disabled).toBe(false)
     await act(async () => button.click())
     expect(send).toHaveBeenCalledWith('', { attachmentIds: ['file-one'], draftRevision: 2 })
-    expect(container.querySelector('img')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Attachments"] img')).not.toBeNull()
     expect(container.textContent).toContain('Service unavailable')
   })
   it('accepts external file-manager drops', async () => {
