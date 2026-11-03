@@ -18,6 +18,8 @@ MDE stores data only on the local machine:
   Claude launchers. Any secret typed into an argument string is stored there in plain text.
 - The renderer's local storage (`mde.markdown-preview-width`): whether the Markdown preview is a
   centered column or fills the page (the word `centered` or `full`).
+- The renderer's local storage (`mde.inbox-sidebar-changes`): whether the Inbox's thread list shows
+  each thread's Git changes (the word `on` or `off`).
 - Small preference files in the user-data directory for the OpenCode status integration and
   notifications.
 - `inbox.json` under Electron's user-data directory, once you use the Inbox: one record for each
@@ -53,6 +55,15 @@ service when a thread is opened and are kept in memory only (the renderer keeps 
 opened threads); MDE does not write them to disk. Prompts and answers you send go to the service,
 which stores them in OpenCode's own data and forwards them to the model provider you chose, as
 OpenCode does in a terminal.
+
+The Inbox's Changes tab for the open thread, and the changes line under each visible thread
+(when you turn that on in the Inbox's gear menu; it is off by default) with the file list and
+diff review they open, run read-only local Git commands for that thread's checkout. They show staged,
+unstaged, and untracked changes against HEAD, shared by conversations using that checkout.
+The file list loads when the list or tab is opened and file diffs when a file is chosen.
+Counts and diff previews stay in memory; MDE does not save them or create a snapshot
+store. Viewing changes does not read conversation history, contact OpenCode or a model
+provider, or modify files.
 
 The Inbox's **Regenerate title** button asks that same local service to run OpenCode's
 native title agent on the current conversation. OpenCode may send conversation context

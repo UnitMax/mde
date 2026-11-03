@@ -247,6 +247,8 @@ export const ipcPayloadValidators = {
   [IpcChannels.inboxFoldersRemove]: object({ id: inboxFolderId }),
   [IpcChannels.inboxComposerSet]: object({ folderId: optional(inboxFolderId), agent: optional(agentId), model: optional(modelRef) }),
   [IpcChannels.inboxGitInfo]: object({ folderId: inboxFolderId }),
+  [IpcChannels.inboxChangeDiff]: object({ threadId: opencodeSessionId, path }),
+  [IpcChannels.inboxChanges]: object({ threadId: opencodeSessionId, details: optional(boolean) }),
   [IpcChannels.chatConfigure]: object({ executable: path }),
   [IpcChannels.chatOptions]: (value) => object({ folderId: optional(inboxFolderId), threadId: optional(opencodeSessionId) })(value) &&
     ((value as { folderId?: string }).folderId === undefined) !== ((value as { threadId?: string }).threadId === undefined),

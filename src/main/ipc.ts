@@ -88,6 +88,10 @@ import type {
   ChatConfigureRequest,
   ChatCreateRequest,
   ChatFormReplyRequest,
+  InboxChangesResponse,
+  InboxChangesRequest,
+  InboxChangeDiffRequest,
+  InboxChangeDiff,
   ChatMessagesPage,
   ChatMessagesRequest,
   ChatOptions,
@@ -133,6 +137,7 @@ import {
   validateOpenCodeSessionId
 } from './opencode/sessions'
 import { readGitDiff, readGitInfo, readGitStatus, readGitTerminalInfo } from './git'
+import { readInboxGitChanges, readInboxGitDiff } from './inbox/changes'
 import { isSafeRelativePath, listSessionDirectory, readSessionFile } from './files/tree'
 import {
   createProject,
@@ -600,6 +605,13 @@ export function registerIpcHandlers(
   handle<ChatConfigureRequest, void>(IpcChannels.chatConfigure, (req) => chat.configure(req.executable))
   handle<ChatOptionsRequest, ChatOptions>(IpcChannels.chatOptions, (req) => chat.chatOptions(req))
   handle<ChatCreateRequest, InboxThread>(IpcChannels.chatCreate, (req) => chat.create(req))
+  const inboxGitRoot = (threadId: string): Session => {
+    const session = chat.fileRoot(threadId)
+    if (!session) throw new Error('This thread is no longer in the Inbox.')
+    return session
+  }
+  handle<InboxChangesRequest, InboxChangesResponse>(IpcChannels.inboxChanges, (req) => readInboxGitChanges(inboxGitRoot(req.threadId), req.details))
+  handle<InboxChangeDiffRequest, InboxChangeDiff>(IpcChannels.inboxChangeDiff, (req) => readInboxGitDiff(inboxGitRoot(req.threadId), req.path))
   handle<ChatMessagesRequest, ChatMessagesPage>(IpcChannels.chatMessages, (req) => chat.messages(req))
   handle<ChatDraftRequest, ChatDraft>(IpcChannels.chatDraft, async (req) => chat.draft(req, req.action === 'tree' ? (await getSession(req.sessionId)) ?? undefined : undefined))
   handle<ChatSendRequest, void>(IpcChannels.chatSend, (req) => chat.send(req))

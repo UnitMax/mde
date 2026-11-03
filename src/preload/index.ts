@@ -147,6 +147,8 @@ const api: RendererApi = {
     setEnabled: (req) => ipcRenderer.invoke(IpcChannels.opencodeAlertsSetEnabled, req)
   },
   inbox: {
+    changes: (req) => ipcRenderer.invoke(IpcChannels.inboxChanges, req),
+    changeDiff: (req) => ipcRenderer.invoke(IpcChannels.inboxChangeDiff, req),
     list: () => ipcRenderer.invoke(IpcChannels.inboxList),
     setRead: (req) => ipcRenderer.invoke(IpcChannels.inboxSetRead, req),
     setArchived: (req) => ipcRenderer.invoke(IpcChannels.inboxSetArchived, req),

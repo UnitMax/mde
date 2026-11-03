@@ -115,6 +115,51 @@ without losing the thread. A thread evicted by the 1,000-thread limit leaves its
 for the user to remove with `git worktree remove`. The renderer loads the list once at startup (`inbox:list`) and then follows `inbox:changed` pushes,
 so opening the Inbox never waits for OpenCode or Git.
 
+### Inbox changes
+
+The Git changes in a thread's checkout show up in two places, both as the same view: its
+branch, the files and lines added and removed, and the list of changed files. Choosing a file
+reviews its diff.
+
+- **The Changes tab** in the right-hand sidebar, beside Files, for the thread that is open.
+  It is always available, and it shows the number of changed files, so the open thread's
+  changes are read while the sidebar is open. A new thread, which has no changes yet, shows
+  only the file tree.
+- **The thread list**, under each thread: a line with the number of files and the lines added
+  and removed. Resting the pointer on it (or pressing Enter, or clicking, which keeps it open)
+  lists the changed files in a popover beside the sidebar. A checkout with no changes, or
+  without Git, leaves no line. This is off by default; the gear at the end of the Inbox
+  filters has a menu with a **Git changes** switch, kept in the renderer's `localStorage`
+  (`mde.inbox-sidebar-changes`). Off, the list itself reads no Git status.
+
+These are uncommitted changes against HEAD: staged and unstaged tracked changes plus untracked
+files, across the whole checkout even when the thread starts in a subfolder. Threads and forks
+using the same checkout show the same changes. Commits clear the corresponding changes, and
+switching branches updates the line and the branch shown on the thread.
+
+The main process reads Git directly through the existing hardened native/Windows/WSL
+runner and shared spawn limiter. It does not read conversation history, snapshots, turn
+boundaries, or fork metadata. `inbox:changes` accepts a recorded thread ID and an optional
+`details` flag (the file list); the main process resolves its directory. `inbox:change-diff`
+accepts that ID and a file path, which must still be present in current Git status.
+Paths are interpreted literally from the checkout root. Renames, deleted files,
+binary files, detached HEAD, unborn branches, and folders without Git are supported.
+Untracked files are absent from `git diff`, so each one costs a process to count; only the
+first 50 are counted, and the popover says how many were left out of the totals.
+
+Visible rows (when shown), the open thread, and an open popover or Changes tab refresh every
+ten seconds and on window focus, and not while the window is hidden. Threads sharing a checkout location use one poller, coalesced
+requests, and the same in-memory results. The renderer limits concurrent loads to two and
+prioritizes the open popover or tab. Routine refreshes keep the last successful counts, file list,
+and open diff visible; a failed refresh marks cached results stale and shows the error.
+Git errors never alter read flags or activity order. The popover lists at most 200 files.
+
+Choosing a file loads its current Git diff in a read-only review above the conversation,
+in the style of a file opened from the tree; Escape closes it, as does opening a file from
+the tree or leaving the thread. Patch previews are capped at 64 KiB and marked when shortened.
+Binary files have no text preview. The only thing persisted is the thread-list switch above.
+The file tree keeps its open folders while Changes is showing.
+
 ### Inbox chat
 
 The open thread's header has a **Regenerate title** button. It asks OpenCode's native title

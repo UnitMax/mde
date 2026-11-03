@@ -53,6 +53,10 @@ import type {
   ChatCreateRequest,
   ChatEvent,
   ChatFormReplyRequest,
+  InboxChangesResponse,
+  InboxChangesRequest,
+  InboxChangeDiffRequest,
+  InboxChangeDiff,
   ChatMessagesPage,
   ChatMessagesRequest,
   ChatOptions,
@@ -164,6 +168,8 @@ export const IpcChannels = {
   chatConfigure: 'chat:configure',
   chatOptions: 'chat:options',
   chatCreate: 'chat:create',
+  inboxChanges: 'inbox:changes',
+  inboxChangeDiff: 'inbox:change-diff',
   chatMessages: 'chat:messages',
   chatSend: 'chat:send',
   chatDraft: 'chat:draft',
@@ -529,6 +535,8 @@ export interface RendererApi {
     setEnabled(req: OpenCodeAlertSetEnabledRequest): Promise<OpenCodeAlertSettings>
   }
   inbox: {
+    changes(req: InboxChangesRequest): Promise<InboxChangesResponse>
+    changeDiff(req: InboxChangeDiffRequest): Promise<InboxChangeDiff>
     list(): Promise<InboxThread[]>
     setRead(req: InboxSetReadRequest): Promise<InboxThread | null>
     setArchived(req: InboxSetArchivedRequest): Promise<InboxThread | null>

@@ -862,3 +862,39 @@ export type ChatDraftRequest =
   | { key: ChatDraftKey; action: 'add'; name: string; mime: string; data: Uint8Array }
   | { key: ChatDraftKey; action: 'tree'; sessionId: string; path: string }
   | { key: ChatDraftKey; action: 'remove'; attachmentId: string }
+
+/** Git changes in the checkout a thread uses, relative to HEAD. Memory only. */
+export interface InboxChangesRequest {
+  threadId: string
+  details?: boolean
+}
+
+export interface InboxChangedFile {
+  path: string
+  status: GitChangeStatus
+  additions: number
+  deletions: number
+  binary?: boolean
+}
+
+export interface InboxChangeDiffRequest {
+  threadId: string
+  path: string
+}
+
+export interface InboxChangeDiff extends GitDiffResponse {
+  truncated: boolean
+}
+
+export interface InboxChangesResponse {
+  branch: string | null
+  worktree: string | null
+  available: boolean
+  reason?: string
+  additions: number
+  deletions: number
+  fileCount: number
+  /** Untracked files past the counting limit: listed, but their line counts are left out of the totals. */
+  uncounted?: number
+  files?: InboxChangedFile[]
+}

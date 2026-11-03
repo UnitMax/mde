@@ -62,6 +62,7 @@
     "src/renderer/lib/ipc-error.ts",
     "src/renderer/lib/wsl-folder.ts",
     "src/renderer/lib/file-viewer.ts",
+    "src/renderer/lib/inbox-settings.ts",
     "src/renderer/lib/code-languages.ts",
     "src/renderer/lib/markdown-extensions.ts",
     "src/renderer/lib/markdown-preview-width.ts",
@@ -106,6 +107,7 @@
     "src/renderer/lib/diff-highlight.ts",
     "src/renderer/lib/syntax-style.ts",
     "src/renderer/store/inbox-chat.ts",
+    "src/renderer/store/inbox-changes.ts",
     "src/shared/**/*",
     "test/**/*"
   ],

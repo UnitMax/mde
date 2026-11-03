@@ -16,6 +16,8 @@ import {
 } from 'lucide-react'
 import type { InboxThread } from '@shared/types'
 import { ElapsedTime } from '@/components/ElapsedTime'
+import { InboxChangesBadge } from '@/components/inbox/InboxChanges'
+import { InboxSettingsMenu } from '@/components/inbox/InboxSettingsMenu'
 import { Input } from '@/components/ui/input'
 import {
   AlertDialog,
@@ -52,6 +54,7 @@ import { ipcErrorMessage } from '@/lib/ipc-error'
 import { sessionAge, sessionDate } from '@/lib/opencode-sessions'
 import { cn } from '@/lib/utils'
 import { useInboxChat } from '@/store/inbox-chat'
+import { useInboxChanges, inboxChangesKey } from '@/store/inbox-changes'
 import { useWorkspace } from '@/store/workspace'
 
 /** Re-renders on an interval so "5m ago" labels stay current. */
@@ -170,23 +173,23 @@ function InboxThreadRow({
   const ownsWorktree = useWorkspace((state) => Boolean(thread.worktree) && !inboxWorktreeShared(thread, state.inboxThreads))
   const unread = isInboxThreadUnread(thread)
   const model = inboxModelLabel(thread.model)
+  const showChanges = useInboxChanges((state) => state.sidebarChanges)
+  const checkout = useInboxChanges((state) => state.entries[inboxChangesKey(thread.id)]?.value)
+  const branch = checkout?.available ? checkout.branch : thread.branch
   const cueAt = useWorkspace((state) => state.inboxCues[thread.id])
 
   return (
     <>
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <div className="group relative">
+          <div className={cn('group relative rounded', selected ? 'bg-active' : 'hover:bg-hover')}>
           <button
             type="button"
             data-testid={`inbox-thread-${thread.id}`}
             data-unread={unread || undefined}
             aria-current={selected || undefined}
             onClick={onSelect}
-            className={cn(
-              'flex w-full min-w-0 flex-col gap-0.5 rounded px-2 py-1.5 text-left',
-              selected ? 'bg-active' : 'hover:bg-hover'
-            )}
+            className="flex w-full min-w-0 flex-col gap-0.5 rounded px-2 py-1.5 text-left"
           >
             <span className="flex w-full min-w-0 items-center gap-1.5">
               {unread && (
@@ -224,11 +227,11 @@ function InboxThreadRow({
               <span className="min-w-0 truncate" title={thread.directory}>
                 {inboxFolderLabel(inboxThreadHome(thread))}
               </span>
-              {thread.branch && (
+              {branch && (
                 <>
                   <GitBranch className="ml-1 h-3 w-3 shrink-0" />
-                  <span className="min-w-0 truncate" title={thread.branch}>
-                    {thread.branch}
+                  <span className="min-w-0 truncate" title={branch}>
+                    {branch}
                   </span>
                 </>
               )}
@@ -245,6 +248,7 @@ function InboxThreadRow({
               </span>
             )}
           </button>
+          {showChanges && <InboxChangesBadge threadId={thread.id} />}
           <button
             type="button"
             data-testid={`inbox-thread-archive-${thread.id}`}
@@ -366,6 +370,7 @@ function emptyMessage(filter: InboxFilter, query: string): string {
 /** The Inbox tab of the sidebar: OpenCode threads, most recent activity first. */
 export function InboxPanel(): JSX.Element {
   const threads = useWorkspace((state) => state.inboxThreads)
+  useEffect(() => useInboxChanges.getState().prune(threads.map((thread) => thread.id)), [threads])
   const selectedId = useWorkspace((state) => state.selectedInboxThreadId)
   const selectThread = useWorkspace((state) => state.selectInboxThread)
   const lock = useInboxLock()
@@ -420,23 +425,26 @@ export function InboxPanel(): JSX.Element {
           className="h-7 pl-7 text-xs"
         />
       </div>
-      <div role="group" aria-label="Inbox filter" className="flex gap-0.5 px-1">
-        {INBOX_FILTERS.map((option) => (
-          <button
-            key={option.id}
-            type="button"
-            aria-pressed={filter === option.id}
-            onClick={() => setFilter(option.id)}
-            className={cn(
-              'h-6 rounded px-1.5 text-[11px] transition-colors',
-              filter === option.id
-                ? 'bg-active text-fg'
-                : 'text-fg-subtle hover:bg-hover hover:text-fg'
-            )}
-          >
-            {option.label}
-          </button>
-        ))}
+      <div className="flex items-center px-1">
+        <div role="group" aria-label="Inbox filter" className="flex gap-0.5">
+          {INBOX_FILTERS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              aria-pressed={filter === option.id}
+              onClick={() => setFilter(option.id)}
+              className={cn(
+                'h-6 whitespace-nowrap rounded px-1 text-[11px] transition-colors',
+                filter === option.id
+                  ? 'bg-active text-fg'
+                  : 'text-fg-subtle hover:bg-hover hover:text-fg'
+              )}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <InboxSettingsMenu />
       </div>
       {fork.pending && (
         <p role="status" data-testid="inbox-fork-status" className="mx-1 flex items-center gap-1.5 rounded bg-elevated px-2 py-1 text-[11px] text-fg-muted">

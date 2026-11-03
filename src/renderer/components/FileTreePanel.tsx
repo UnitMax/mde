@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import {
   ChevronRight,
   Code,
@@ -52,11 +52,13 @@ function statusText(row: Exclude<FileTreeRow, FileTreeEntryRow>): string {
 function FileTree({
   session,
   onCollapse,
-  browseOnly
+  browseOnly,
+  heading
 }: {
   session: Session
   onCollapse: () => void
   browseOnly: boolean
+  heading?: ReactNode
 }): JSX.Element {
   const [cache, setCache] = useState<Map<string, FileTreeDirectoryState>>(() => new Map())
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
@@ -188,9 +190,11 @@ function FileTree({
       className="flex h-full min-h-0 w-[260px] shrink-0 flex-col border-l border-line bg-panel"
     >
       <div className="flex items-center gap-1 px-3 pb-2 pt-3">
-        <span className="min-w-0 flex-1 truncate text-[11px] font-medium uppercase tracking-wide text-fg-muted" title={session.path}>
-          Files
-        </span>
+        {heading ?? (
+          <span className="min-w-0 flex-1 truncate text-[11px] font-medium uppercase tracking-wide text-fg-muted" title={session.path}>
+            Files
+          </span>
+        )}
         {canOpenInVsCode && (
           <Button
             variant="ghost"
@@ -334,10 +338,13 @@ function FileTree({
  */
 export function FileTreePanel({
   session,
-  browseOnly = false
+  browseOnly = false,
+  heading
 }: {
   session: Session
   browseOnly?: boolean
+  /** Replaces the "Files" title in the header, for a host that offers other tabs beside the files. */
+  heading?: ReactNode
 }): JSX.Element {
   const collapsed = useWorkspace((state) => state.fileTreeCollapsed)
   const toggleFileTree = useWorkspace((state) => state.toggleFileTree)
@@ -358,5 +365,5 @@ export function FileTreePanel({
     )
   }
 
-  return <FileTree key={session.id} session={session} onCollapse={toggleFileTree} browseOnly={browseOnly} />
+  return <FileTree key={session.id} session={session} onCollapse={toggleFileTree} browseOnly={browseOnly} heading={heading} />
 }

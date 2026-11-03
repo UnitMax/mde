@@ -86,6 +86,8 @@ const validPayloads = {
   [IpcChannels.chatOptions]: { folderId: 'fld_1234' },
   [IpcChannels.chatDraft]: { key: 'thread:ses_one', action: 'load' },
   [IpcChannels.chatCreate]: { folderId: 'fld_1234', text: 'Fix the login\n\tplease', agent: 'build', model },
+  [IpcChannels.inboxChangeDiff]: { threadId: 'ses_thread', path: 'src/app.ts' },
+  [IpcChannels.inboxChanges]: { threadId: 'ses_thread', details: true },
   [IpcChannels.chatMessages]: { threadId: 'ses_thread', cursor: 'eyJpZCI6Im1zZyJ9' },
   [IpcChannels.chatSend]: { threadId: 'ses_thread', text: 'Next step', agent: 'plan', model },
   [IpcChannels.chatInterrupt]: { threadId: 'ses_thread' },

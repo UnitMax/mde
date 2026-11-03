@@ -39,7 +39,7 @@ function lineNumber(line: DiffHunk['lines'][number]): number | undefined {
   return line.kind === 'del' ? line.oldNo : line.newNo
 }
 
-function DiffBody({ change, expanded, onExpand }: { change: FileChange; expanded: boolean; onExpand: () => void }): JSX.Element {
+export function DiffBody({ change, expanded, onExpand }: { change: FileChange; expanded: boolean; onExpand: () => void }): JSX.Element {
   const colors = useSyntaxColors(change.path, change.hunks)
   const marks = useMemo(() => change.hunks.map(emphasisIn), [change.hunks])
   const total = change.hunks.reduce((sum, hunk) => sum + hunk.lines.length, 0)

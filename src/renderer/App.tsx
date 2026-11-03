@@ -6,6 +6,7 @@ import { GitDialog } from '@/components/GitDialog'
 import { MiniAgentWindow } from '@/components/MiniAgentWindow'
 import { FileTreePanel } from '@/components/FileTreePanel'
 import { FileViewer } from '@/components/FileViewer'
+import { InboxChangeViewer, InboxSidebar } from '@/components/inbox/InboxChanges'
 import { NewProjectDialog } from '@/components/NewProjectDialog'
 import { NewTodoProjectDialog } from '@/components/NewTodoProjectDialog'
 import { Sidebar } from '@/components/Sidebar'
@@ -793,6 +794,7 @@ export function App(): JSX.Element {
           {!ready ? null : activeWorkspaceView === 'inbox' ? (
             <>
               <InboxThreadView />
+              {selectedInboxThreadId && <InboxChangeViewer threadId={selectedInboxThreadId} />}
               {inboxRoot && inboxOpenFilePath !== undefined && (
                 <FileViewer
                   key={`viewer:${inboxRoot.id}`}
@@ -860,7 +862,7 @@ export function App(): JSX.Element {
         </main>
 
         {ready && activeWorkspaceView === 'projects' && selected && <FileTreePanel session={selected} />}
-        {ready && inboxRoot && <FileTreePanel session={inboxRoot} browseOnly />}
+        {ready && inboxRoot && <InboxSidebar session={inboxRoot} threadId={selectedInboxThreadId ?? undefined} />}
 
         <SettingsDialog terminalIds={layoutForSession?.panes.map((pane) => pane.terminalId) ?? []} />
 

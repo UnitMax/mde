@@ -2,6 +2,8 @@ import { execFile } from './exec-host'
 import { win32 } from 'node:path'
 import type {
   GitChange,
+  InboxChangesResponse,
+  InboxChangeDiff,
   GitChangeStatus,
   GitDiffResponse,
   GitInfoResponse,
@@ -624,4 +626,110 @@ export async function readGitDiffWithRunner(
 export function readGitDiff(session: Session, path: string): Promise<GitDiffResponse> {
   const nullDevice = session.kind === 'wsl' || process.platform !== 'win32' ? '/dev/null' : 'NUL'
   return readGitDiffWithRunner(createGitCommandRunner(session), path, nullDevice)
+}
+
+/** Untracked files whose line counts are read; the rest are listed without counts. */
+export const INBOX_UNTRACKED_COUNT_LIMIT = 50
+export const INBOX_DIFF_PREVIEW_BYTES = 64 * 1024
+
+/** Per-file NUL-delimited numstat, including Git's three-field rename records. */
+export function parseGitFileNumstat(output: string): Map<string, GitLineChangeCounts & { binary: boolean }> {
+  const fields = output.split('\0')
+  const files = new Map<string, GitLineChangeCounts & { binary: boolean }>()
+  for (let index = 0; index < fields.length; index += 1) {
+    const match = /^(\d+|-)\t(\d+|-)\t(.*)$/s.exec(fields[index]!)
+    if (!match) continue
+    let path = match[3]!
+    if (!path) {
+      index += 2 // Empty path is followed by the old and new names.
+      path = fields[index] ?? ''
+    }
+    if (path) files.set(path, {
+      additions: match[1] === '-' ? 0 : Number(match[1]),
+      deletions: match[2] === '-' ? 0 : Number(match[2]),
+      binary: match[1] === '-' || match[2] === '-'
+    })
+  }
+  return files
+}
+
+/** Always run from the checkout root: porcelain paths are relative to that root. */
+async function checkoutRunner(run: GitCommandRunner): Promise<{ root: string; run: GitCommandRunner } | null> {
+  if (!(await ensureRepository(run))) return null
+  const root = await run(['--no-pager', 'rev-parse', '--show-toplevel'])
+  if (root.code !== 0 || !root.stdout.trim()) throw commandError('worktree', root)
+  return {
+    root: root.stdout.trim(),
+    run: (args) => run(['--literal-pathspecs', '-C', root.stdout.trim(), ...args])
+  }
+}
+
+export async function readGitCheckoutChangesWithRunner(
+  source: GitCommandRunner,
+  nullDevice = '/dev/null'
+): Promise<InboxChangesResponse> {
+  const checkout = await checkoutRunner(source)
+  if (!checkout) return {
+    available: false, reason: 'This folder is not a Git repository.', branch: null, worktree: null,
+    additions: 0, deletions: 0, fileCount: 0, files: []
+  }
+  const run = checkout.run
+  const [branch, head, changes] = await Promise.all([
+    run(['--no-pager', 'branch', '--show-current']),
+    run(['--no-pager', 'rev-parse', '--verify', 'HEAD']),
+    readGitChangesAfterRepository(run)
+  ])
+  if (branch.code !== 0) throw commandError('branch', branch)
+  if (head.launchError || (head.code !== 0 && !isMissingHead(head))) throw commandError('HEAD', head)
+  const baseline = head.code === 0 ? 'HEAD' : GIT_EMPTY_TREE
+  const stats = await run([
+    '--no-pager', 'diff', '--numstat', '-z', '--no-ext-diff', '--no-textconv', '--no-color',
+    '--find-renames', baseline, '--'
+  ])
+  if (stats.code !== 0) throw commandError('diff', stats)
+  const counts = parseGitFileNumstat(stats.stdout)
+  // Untracked files are absent from `git diff HEAD`, so each one costs a process. A folder full of
+  // them (an ignored-by-nobody build directory) must not queue thousands of spawns on every poll.
+  const untracked = changes.filter((change) => change.status === 'untracked')
+  const counted = new Set(untracked.slice(0, INBOX_UNTRACKED_COUNT_LIMIT).map((change) => change.path))
+  const uncounted = untracked.length - counted.size
+  const files = await Promise.all(changes.map(async (change) => {
+    let numbers = counts.get(change.path)
+    if (change.status === 'untracked' && counted.has(change.path)) {
+      const diff = await run([
+        '--no-pager', 'diff', '--no-index', '--numstat', '-z', '--no-ext-diff', '--no-textconv',
+        '--no-color', '--', nullDevice, change.path
+      ])
+      if (diff.launchError || (diff.code !== 0 && diff.code !== 1)) throw commandError('diff', diff)
+      numbers = parseGitFileNumstat(diff.stdout).get(change.path)
+    }
+    return { path: change.path, status: change.status, ...(numbers ?? { additions: 0, deletions: 0, binary: false }) }
+  }))
+  return {
+    available: true,
+    branch: branch.stdout.trim() || null,
+    worktree: checkout.root,
+    additions: files.reduce((sum, file) => sum + file.additions, 0),
+    deletions: files.reduce((sum, file) => sum + file.deletions, 0),
+    fileCount: files.length,
+    ...(uncounted > 0 ? { uncounted } : {}),
+    files
+  }
+}
+
+export async function readGitCheckoutDiffWithRunner(
+  source: GitCommandRunner,
+  path: string,
+  nullDevice = '/dev/null'
+): Promise<InboxChangeDiff> {
+  const checkout = await checkoutRunner(source)
+  if (!checkout) throw new Error('This folder is not a Git repository.')
+  // The existing reader accepts only paths present in current Git status.
+  const result = await readGitDiffWithRunner(checkout.run, path, nullDevice)
+  const bytes = Buffer.from(result.diff, 'utf8')
+  const truncated = bytes.length > INBOX_DIFF_PREVIEW_BYTES
+  // Cutting inside a multi-byte character leaves one replacement character at the end; drop it.
+  // A diff that fits is returned as it is.
+  const diff = truncated ? bytes.subarray(0, INBOX_DIFF_PREVIEW_BYTES).toString('utf8').replace(/\ufffd$/, '') : result.diff
+  return { ...result, diff, truncated }
 }
