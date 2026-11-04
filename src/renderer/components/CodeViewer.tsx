@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { defaultKeymap } from '@codemirror/commands'
+import { defaultKeymap, selectAll } from '@codemirror/commands'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search'
 import { Compartment, EditorState, type Extension } from '@codemirror/state'
@@ -13,6 +13,7 @@ import {
 } from '@codemirror/view'
 import { languageForPath } from '@/lib/code-languages'
 import { SYNTAX_STYLE } from '@/lib/syntax-style'
+import { FilePreviewMenu } from '@/components/FilePreviewMenu'
 import {
   codeViewerFontFamily,
   getTerminalSettings,
@@ -153,5 +154,22 @@ export function CodeViewer({ path, content }: CodeViewerProps): JSX.Element {
     }
   }, [path])
 
-  return <div ref={hostRef} data-testid="code-viewer" className="h-full min-h-0" />
+  return (
+    <FilePreviewMenu
+      empty={content.length === 0}
+      getSelectedText={() => {
+        const view = viewRef.current
+        if (!view) return ''
+        const { from, to } = view.state.selection.main
+        return view.state.sliceDoc(from, to)
+      }}
+      onSelectAll={() => {
+        const view = viewRef.current
+        if (view) selectAll(view)
+      }}
+      onClose={() => viewRef.current?.focus()}
+    >
+      <div ref={hostRef} data-testid="code-viewer" className="h-full min-h-0" />
+    </FilePreviewMenu>
+  )
 }

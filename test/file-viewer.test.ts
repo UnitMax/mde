@@ -2,6 +2,7 @@
 
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { EditorView } from '@codemirror/view'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FileReadResponse, Session } from '../src/shared/types'
 import { FileViewer } from '../src/renderer/components/FileViewer'
@@ -22,6 +23,7 @@ import {
 const roots: Root[] = []
 const containers: HTMLDivElement[] = []
 const read = vi.fn()
+const writeText = vi.fn(async (_text: string): Promise<void> => undefined)
 
 const session: Session = {
   id: 'session-1',
@@ -59,6 +61,26 @@ async function renderViewer(
   // Let the language chunk load and apply.
   await act(async () => {})
   return container
+}
+
+async function rightClick(element: Element): Promise<void> {
+  await act(async () => {
+    element.dispatchEvent(new MouseEvent('contextmenu', {
+      bubbles: true, cancelable: true, clientX: 20, clientY: 20, button: 2,
+    }))
+  })
+}
+
+function menuItem(label: string): HTMLElement {
+  const item = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+    .find((candidate) => candidate.textContent?.trim() === label)
+  if (!item) throw new Error(`Missing menu item: ${label}`)
+  return item
+}
+
+async function choose(label: string): Promise<void> {
+  await act(async () => menuItem(label).click())
+  await vi.waitFor(() => expect(document.querySelector('[role="menu"]')).toBeNull())
 }
 
 describe('file viewer helpers', () => {
@@ -130,8 +152,11 @@ describe('file viewer helpers', () => {
 describe('FileViewer', () => {
   beforeEach(() => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-    Object.defineProperty(window, 'api', { configurable: true, value: { files: { read } } })
+    Object.defineProperty(window, 'api', { configurable: true, value: { files: { read }, clipboard: { writeText } } })
     read.mockReset()
+    writeText.mockReset()
+    writeText.mockResolvedValue(undefined)
+    window.getSelection()?.removeAllRanges()
     localStorage.clear()
   })
 
@@ -247,6 +272,110 @@ describe('FileViewer', () => {
     expect(viewer?.querySelector('.cm-content')?.getAttribute('contenteditable')).toBe('false')
     expect(viewer?.querySelector('.cm-lineNumbers')).not.toBeNull()
     expect(container.textContent).not.toContain('Preview')
+  })
+
+  it.each(['src/index.ts', 'README.md'])('selects and copies the entire source of %s, including lines outside the viewport', async (path) => {
+    const content = Array.from({ length: 1000 }, (_, index) => `const value${index} = ${index}`).join('\n') + '\n'
+    read.mockResolvedValue(file({ path, content, size: content.length }))
+    const container = await renderViewer(path)
+    if (path.endsWith('.md')) {
+      const source = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Source')!
+      await act(async () => source.click())
+    }
+    const host = container.querySelector('[data-testid="code-viewer"]')!
+    const view = EditorView.findFromDOM(host.querySelector('.cm-content')!)!
+    expect(host.textContent).not.toContain('value999')
+
+    await rightClick(view.contentDOM)
+    expect(Array.from(document.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent?.trim()))
+      .toEqual(['Copy', 'Select all'])
+    expect(menuItem('Copy').hasAttribute('data-disabled')).toBe(true)
+    await choose('Select all')
+    expect(view.state.selection.main.from).toBe(0)
+    expect(view.state.selection.main.to).toBe(content.length)
+    await vi.waitFor(() => expect(document.activeElement).toBe(view.contentDOM))
+
+    await rightClick(view.contentDOM)
+    await choose('Copy')
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(content)
+    expect(view.state.doc.toString()).toBe(content)
+  })
+
+  it('copies just the selected source text and preserves the selection after the menu closes', async () => {
+    read.mockResolvedValue(file({ path: 'notes.txt', content: 'hello world', size: 11 }))
+    const container = await renderViewer('notes.txt')
+    const view = EditorView.findFromDOM(container.querySelector('.cm-content')!)!
+    await act(async () => view.dispatch({ selection: { anchor: 6, head: 11 } }))
+
+    await rightClick(view.contentDOM)
+    await choose('Copy')
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('world')
+    expect(view.state.selection.main.from).toBe(6)
+    expect(view.state.selection.main.to).toBe(11)
+    await vi.waitFor(() => expect(document.activeElement).toBe(view.contentDOM))
+  })
+
+  it('copies the Markdown selection captured before the menu took focus', async () => {
+    read.mockResolvedValue(file({ content: '# Title\n\nHello **world**.', size: 25 }))
+    const container = await renderViewer('README.md')
+    const word = container.querySelector('.markdown-preview strong')!
+    window.getSelection()!.selectAllChildren(word)
+
+    await rightClick(word)
+    expect(menuItem('Copy').hasAttribute('data-disabled')).toBe(false)
+    window.getSelection()!.removeAllRanges()
+    await choose('Copy')
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('world')
+  })
+
+  it('selects only the rendered Markdown contents, then copies them without source markup or the toolbar', async () => {
+    read.mockResolvedValue(file({ content: '# Title\n\nHello **world**.', size: 25 }))
+    const container = await renderViewer('README.md')
+    const preview = container.querySelector('.markdown-preview')!
+
+    // A selection outside the document must not be offered for copying.
+    window.getSelection()!.selectAllChildren(container.querySelector('[title="README.md"]')!)
+    await rightClick(preview)
+    expect(menuItem('Copy').hasAttribute('data-disabled')).toBe(true)
+    await choose('Select all')
+    const selected = window.getSelection()!.toString()
+    expect(selected).toContain('Title')
+    expect(selected).toContain('Hello world.')
+    expect(selected).not.toContain('README.md')
+    expect(selected).not.toContain('Preview')
+    expect(selected).not.toContain('**')
+    expect(preview.contains(window.getSelection()!.anchorNode)).toBe(true)
+    expect(preview.contains(window.getSelection()!.focusNode)).toBe(true)
+
+    await rightClick(preview)
+    await choose('Copy')
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(selected)
+  })
+
+  it.each(['empty.txt', 'empty.md'])('disables Copy and Select all for an empty file: %s', async (path) => {
+    read.mockResolvedValue(file({ path }))
+    const container = await renderViewer(path)
+    await rightClick(container.querySelector('.markdown-preview, [data-testid="code-viewer"]')!)
+    expect(menuItem('Copy').hasAttribute('data-disabled')).toBe(true)
+    expect(menuItem('Select all').hasAttribute('data-disabled')).toBe(true)
+  })
+
+  it('shows clipboard errors and clears them after a successful copy', async () => {
+    read.mockResolvedValue(file({ path: 'notes.txt', content: 'hello', size: 5 }))
+    writeText.mockRejectedValueOnce(new Error("Error invoking remote method 'clipboard:write-text': Error: Clipboard unavailable."))
+    const container = await renderViewer('notes.txt')
+    const view = EditorView.findFromDOM(container.querySelector('.cm-content')!)!
+    await act(async () => view.dispatch({ selection: { anchor: 0, head: 5 } }))
+
+    await rightClick(view.contentDOM)
+    await choose('Copy')
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('Clipboard unavailable.')
+    expect(view.state.doc.toString()).toBe('hello')
+
+    await rightClick(view.contentDOM)
+    await choose('Copy')
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+    expect(writeText).toHaveBeenLastCalledWith('hello')
   })
 
   it('uses the code preview font setting and follows changes to it', async () => {

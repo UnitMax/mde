@@ -822,6 +822,10 @@ cannot be reached there. File drops do not copy file contents or stage clipboard
 Open a Markdown file from the Files tree to preview it, or switch to Source to read its code.
 The preview is a centered column by default; the width control beside Preview and Source makes it fill the
 whole page instead, and the choice is remembered for every file.
+Right-clicking rendered Markdown or a source preview offers **Copy** and **Select all**.
+Copy uses the selected text; Select all selects the file contents without the viewer toolbar or
+surrounding app. Source selections cover the full document, including lines outside the viewport.
+Copy uses the existing main-process clipboard channel and shows a message if the clipboard write fails.
 The file viewer covers the terminal view while terminals stay mounted at their existing size.
 The terminal view has its own stacking context so resize handles and pane overlays stay beneath the viewer.
 Fenced `mermaid` blocks render with selectable text and follow the application's color theme.

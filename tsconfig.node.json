@@ -74,6 +74,7 @@
     "src/renderer/lib/mermaid-preview.ts",
     "src/renderer/lib/mermaid-svg.ts",
     "src/renderer/components/FileViewer.tsx",
+    "src/renderer/components/FilePreviewMenu.tsx",
     "src/renderer/components/CodeViewer.tsx",
     "src/renderer/components/MarkdownPreview.tsx",
     "src/renderer/App.tsx",
