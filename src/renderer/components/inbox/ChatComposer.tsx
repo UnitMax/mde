@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Paperclip, X, File as FileIcon, Bot, ChevronDown, Hammer, ListChecks, LoaderCircle, Search, Sparkles, Square } from 'lucide-react'
+import { Paperclip, PenLine, X, File as FileIcon, Bot, ChevronDown, Hammer, ListChecks, LoaderCircle, Search, Sparkles, Square } from 'lucide-react'
 import { readFileTreeDrop, isFileDrop } from '@/terminal/drop'
-import type { ChatDelivery, ChatDraft, ChatDraftKey, ChatDraftRequest, ChatAgent, ChatModel, ChatSkill, OpenCodeModelRef } from '@shared/types'
+import type { ChatDelivery, ChatDraft, ChatDraftChoice, ChatDraftKey, ChatDraftRequest, ChatAgent, ChatModel, ChatSkill, OpenCodeModelRef } from '@shared/types'
 import { skillTriggerAt } from '@shared/skills'
 import { applySkill, filterSkills } from '@/lib/skills'
 import {
@@ -17,6 +17,7 @@ import { findModel, groupModels, modelKey, modelName, orderAgents, sameModelRef,
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { cn } from '@/lib/utils'
 import type { OptionsState } from '@/store/inbox-chat'
+import { useWorkspace } from '@/store/workspace'
 
 function AgentIcon({ id, className }: { id: string; className?: string }): JSX.Element {
   if (id === 'build') return <Hammer className={className} />
@@ -199,10 +200,16 @@ function SkillPicker({
 export interface ChatComposerProps {
   draftKey?: ChatDraftKey
   /**
-   * The folder a new thread's draft (`draft:` key) is written for. Every change to the draft names it,
-   * and changing it moves the draft, so the draft can be listed and reopened there.
+   * What a new thread's draft (`draft:` key) is written for: its folder, and how it would start (the
+   * agent, the model, a worktree) once that is known. Every change to the draft carries it, and a change
+   * to it is told to the draft, so the draft can be listed and reopened with the same choices.
    */
-  draftFolderId?: string
+  draftMeta?: { folderId: string; choice?: ChatDraftChoice }
+  /**
+   * Offers Save as draft (a button, and Cmd/Ctrl+S) where what is typed is a new thread: the page then
+   * sets it aside and starts blank. Only offered with something typed or attached.
+   */
+  onSaveDraft?: () => void
   /** The preceding nonempty user message in this thread; older pages are loaded as needed. */
   onPreviousMessage?: (beforeId?: string) => Promise<{ id: string; text: string } | null>
   /**
@@ -242,7 +249,8 @@ export interface ChatComposerProps {
 /** The prompt box with model and agent pickers and a round send (or stop) button. */
 export function ChatComposer({
   draftKey,
-  draftFolderId,
+  draftMeta,
+  onSaveDraft,
   onPreviousMessage,
   draftReload,
   onDraftReloaded,
@@ -275,16 +283,19 @@ export function ChatComposer({
   const currentKey = useRef(draftKey)
   currentKey.current = draftKey
   const mutate = (request: ChatDraftRequest): Promise<ChatDraft> => {
-    return window.api.chat.draft(draftFolderId && request.key.startsWith('draft:') ? { ...request, folderId: draftFolderId } : request)
+    if (!draftMeta || !request.key.startsWith('draft:')) return window.api.chat.draft(request)
+    return window.api.chat.draft({ ...request, folderId: draftMeta.folderId, ...(draftMeta.choice ? { choice: draftMeta.choice } : {}) })
   }
-  // The page was given another folder: the draft follows it, with nothing else changed.
-  const writtenFor = useRef(draftFolderId)
+  // The page was given another folder, or the choices were changed: the draft follows, with nothing else changed.
+  const writtenFor = useRef(JSON.stringify(draftMeta))
   useEffect(() => {
-    if (writtenFor.current === draftFolderId) return
-    writtenFor.current = draftFolderId
-    if (draftKey && draftFolderId) void mutate({ key: draftKey, action: 'flush' }).catch(() => undefined)
+    const now = JSON.stringify(draftMeta)
+    if (writtenFor.current === now) return
+    writtenFor.current = now
+    if (draftKey && draftMeta) void mutate({ key: draftKey, action: 'flush' }).catch(() => undefined)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftFolderId])
+  }, [draftMeta])
+  const mac = useWorkspace((state) => state.platform?.platform === 'darwin')
   useEffect(() => {
     resetHistory()
     return resetHistory
@@ -351,6 +362,8 @@ export function ChatComposer({
   }, [focusAt, loaded, disabled, sending, text])
   const ready = options?.status === 'ready'
   const canSend = ready && !disabled && !sendBlocked && !sending && !adding && loaded && (text.trim().length > 0 || draft.attachments.length > 0) && Boolean(agent) && Boolean(model)
+  // Saving as a draft needs no agent or model, since nothing is started: only something to keep.
+  const canSave = Boolean(onSaveDraft) && !disabled && !sending && !adding && loaded && (text.trim().length > 0 || draft.attachments.length > 0)
 
   // Skills: a `$word` at the caret offers the skills that fit it. Where the caret is only counts for
   // the text it was measured in, so text put there from outside (a loaded draft) never opens the list.
@@ -455,6 +468,11 @@ export function ChatComposer({
 
   const onKeyDown = (event: KeyboardEvent): void => {
     if (event.isComposing) return
+    if (onSaveDraft && (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 's') {
+      event.preventDefault()
+      if (canSave) onSaveDraft()
+      return
+    }
     // The open list gets the keys first, so Enter chooses the skill instead of sending half a message.
     if (pickerOpen && trigger) {
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -578,6 +596,19 @@ export function ChatComposer({
           )}
           <span className="flex-1" />
           {context && <ContextMeter usage={context} running={running} />}
+          {onSaveDraft && (
+            <button
+              type="button"
+              data-testid="chat-save-draft"
+              aria-label="Save as draft"
+              title={`Save as draft (${mac ? 'Cmd' : 'Ctrl'}+S)`}
+              disabled={!canSave}
+              onClick={onSaveDraft}
+              className={cn(pickerButton, 'w-7 justify-center px-0')}
+            >
+              <PenLine aria-hidden="true" className="h-4 w-4" />
+            </button>
+          )}
           {running && onStop && !text.trim() && draft.attachments.length === 0 ? (
             <button
               type="button"

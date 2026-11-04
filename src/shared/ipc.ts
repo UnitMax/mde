@@ -77,7 +77,7 @@ import type {
   ChatThreadRequest,
   ChatDraft,
   ChatDraftRequest,
-  ChatDraftSummary
+  ChatDraftList
 } from './types'
 
 export interface WorkspaceData {
@@ -568,8 +568,8 @@ export interface RendererApi {
   }
   chat: {
     draft(req: ChatDraftRequest): Promise<ChatDraft>
-    /** The new-thread drafts that have something in them, most recently changed first. */
-    drafts(): Promise<ChatDraftSummary[]>
+    /** The new-thread drafts that have something in them, most recently changed first, and the threads with an unsent message. */
+    drafts(): Promise<ChatDraftList>
     configure(req: ChatConfigureRequest): Promise<void>
     options(req: ChatOptionsRequest): Promise<ChatOptions>
     create(req: ChatCreateRequest): Promise<InboxThread>

@@ -101,7 +101,17 @@ typed on, does nothing. A thread started from a draft removes it. The section ta
 sidebar's height and folds up like Working (`mde.inbox-drafts-collapsed`); the filter tabs do not
 apply to it, the search does (text, file name and folder). A draft whose folder was removed from the
 Inbox is kept, labelled "Removed folder", and opens in whichever folder the page shows. Unsent
-text in an existing thread is not listed here: it stays in that thread's box, as before.
+text in an existing thread is not listed here: it stays in that thread's box, as before, but the
+thread's row in the sidebar carries a **Draft** chip while that box holds a message or a file and the
+thread is not the open one (the open thread shows the text itself). A draft also remembers how it
+would start: the agent, the model and, when **New worktree** is chosen, the branch it is cut from and
+the branch name typed so far. Opening the draft brings them back, whatever was chosen last elsewhere;
+a draft written before this, or one whose agent or model OpenCode no longer offers, falls back to the
+last choice made (or the default). A row with a worktree shows a branch icon ("Starts in a new worktree cut from ‹branch›").
+**Save as draft** (the pen button before Send in the new-thread composer, or Cmd+S / Ctrl+S in its
+box) sets what was typed aside and shows a blank page, without leaving it; a note under the composer
+says where the draft went and fades after four seconds. It is offered only on the new-thread page and
+only once there is text or a file.
 
 Opening a thread counts it as read, and so does something new happening in the thread you are
 looking at (the Inbox showing and the window in front), as with an open mail. Since that leaves no
@@ -276,7 +286,8 @@ letters, digits and `. _ - / +`, Git's other branch-name rules, at most 100 char
 local branch that exists or one that would sit inside or on top of another, since `feature` and
 `feature/login` cannot both exist) and disables sending while it is invalid. MDE never runs `git fetch`, so a remote branch is as current as the last fetch. Every visit and
 every folder change starts in **Current directory**, so a worktree is always a deliberate choice;
-the choice is not remembered. The strip is absent when the folder is not a repository or Git cannot
+the choice is not remembered between visits, only with a draft, which opens with it again (but not in
+another folder, whose branches differ). The strip is absent when the folder is not a repository or Git cannot
 be run, and **New worktree** is disabled in a repository with no branches yet. The renderer asks
 for the branches with `inbox:git-info` (a folder ID) and starts the thread with
 `chat:create { …, worktree: { base, branch? } }`; it never names a path.
@@ -987,18 +998,26 @@ also names the draft it starts from (`draftId`). The main process validates owne
 contents as OpenCode native data-URL files, and clears only the submitted revision after acceptance.
 A created session whose initial prompt fails retains the draft on that session for retry.
 
-A new thread's draft also records the folder it was written for and when it last changed, which is
-what the sidebar's Drafts section lists by. Every change to it (`text`, `prepend`, `add`, `tree`)
-carries `folderId` and the main process refuses one without it; `load` and `flush` with a
-`folderId` move an existing draft to that folder, which is how the page keeps a draft when its
-folder is changed. `chat:drafts` returns only what a row shows (id, folder, the first 300
-characters of the text, the file count and first file name, the time), never the attachments. A
+A new thread's draft also records the folder it was written for, how it would start (`choice`: the
+agent, the model and a worktree `{ base, branch? }`) and when it last changed, which is what the
+sidebar's Drafts section lists by. Every change to it (`text`, `prepend`, `add`, `tree`) carries
+`folderId` and the main process refuses one without it; the page adds its current `choice` to every
+request once the agent and model are known, and a change that names none leaves the stored one alone
+(the page does not know them yet when it first loads). `load` and `flush` with a `folderId` or a
+`choice` update an existing draft (`InboxDraftStore.setMeta`), which is how the page keeps a draft
+when its folder is changed or something else is picked, and never create one. A `choice` replaces
+the stored one as a whole, so leaving a worktree takes it away; one that does not read back as an
+agent id, model and worktree on load is dropped without losing the draft. `chat:drafts` returns
+`{ drafts, threads }`: `drafts` holds only what a row shows (id, folder, the first 300 characters of
+the text, the file count and first file name, the choice, the time), never the attachments, and
+`threads` the ids of the threads in the Inbox with an unsent message, for the Draft chip. A
 new-thread draft that holds nothing (no text, no files) is not kept, and startup drops any. The
 renderer's `store/inbox-drafts.ts` holds the list and `page`, the draft the new-thread page edits:
 a fresh id (`drf_<uuid>`, saved only once something is typed) that is replaced when the page is
 left or New thread is chosen on it, so what was typed stays behind as a draft, and the draft taken
 from the list while `opened`. The list is read when the sidebar opens and whenever the page is left,
-a draft is opened or deleted; an answer that arrives after a newer request is dropped. Before
+a draft is opened or deleted, and when another thread is opened (the chip then moves); an answer
+that arrives after a newer request is dropped. Before
 drafts were listed, a folder had one draft of its own (`folder:<id>`); startup turns each into a
 new-thread draft, so nothing typed earlier is lost. Removing a folder does not delete its drafts.
 Reverting an Inbox thread to a message adds that message's text to the top of the thread's draft in

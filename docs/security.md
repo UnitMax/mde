@@ -201,8 +201,13 @@ Markdown, including text that is outside the supported formatting.
 Draft keys are validated as `thread:ses_…` or `draft:drf_…` (letters, digits, `-` and `_`, at most
 64 characters for a draft id), so an id never becomes a path: attachment copies have opaque names
 and the draft index is one file. A draft's `folderId` must look like a folder id and, when a change
-names it, be a folder in the Inbox. `chat:drafts` takes no payload and returns text previews cut at
-300 characters, no file contents.
+names it, be a folder in the Inbox. A draft request may also carry `choice`, which takes only an
+`agent` id, a `model` reference and a `worktree` of `{ base, branch? }` (strings of at most 256
+characters without controls, no other key anywhere). The branch is not held to Git's branch-name rules
+there, since it is saved while it is typed; `chat:create` checks it as before and the main process
+again when the worktree is made. `chat:drafts` takes no payload and returns text previews cut at
+300 characters and the saved choices, no file contents, plus the ids of threads with an unsent message
+(never their text).
 
 ### Inbox worktree boundary
 

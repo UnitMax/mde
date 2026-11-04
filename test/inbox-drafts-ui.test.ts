@@ -96,7 +96,9 @@ describe('Inbox Drafts section', () => {
   let root: Root
   let container: HTMLDivElement
   let stored: ChatDraftSummary[]
-  const drafts = vi.fn(async () => stored.map((draft) => ({ ...draft })))
+  /** The threads with an unsent message in their box. */
+  let storedThreads: string[]
+  const drafts = vi.fn(async () => ({ drafts: stored.map((draft) => ({ ...draft })), threads: [...storedThreads] }))
   const draft = vi.fn(async (request: ChatDraftRequest) => {
     if (request.action === 'clear') stored = stored.filter((entry) => `draft:${entry.id}` !== request.key)
     return { text: '', revision: 0, attachments: [] }
@@ -119,7 +121,7 @@ describe('Inbox Drafts section', () => {
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })
   }
-  const pageDraft = (): { id: string; opened: boolean } => useInboxDrafts.getState().page
+  const pageDraft = (): { id: string; opened: boolean; folderId?: string } => useInboxDrafts.getState().page
 
   beforeEach(() => {
     localStorage.clear()
@@ -131,6 +133,7 @@ describe('Inbox Drafts section', () => {
     })
     for (const mock of [drafts, draft, setComposer, setArchived]) mock.mockClear()
     stored = []
+    storedThreads = []
     useWorkspace.setState({
       platform: { platform: 'darwin', isWindows: false },
       inboxThreads: [thread()],
@@ -263,7 +266,7 @@ describe('Inbox Drafts section', () => {
     expect(q('inbox-new-thread-button')!.getAttribute('aria-current')).toBeNull()
     await act(async () => q('inbox-draft-drf_two')!.click())
     expect(useWorkspace.getState().selectedInboxThreadId).toBeNull()
-    expect(pageDraft()).toEqual({ id: 'drf_two', opened: true })
+    expect(pageDraft()).toEqual({ id: 'drf_two', opened: true, folderId: 'fld_docs' })
     expect(useInboxChat.getState().composer.folderId).toBe('fld_docs')
     expect(setComposer).toHaveBeenCalledWith(expect.objectContaining({ folderId: 'fld_docs' }))
     // It stays in the list, as the current one; New thread is not.
@@ -278,7 +281,7 @@ describe('Inbox Drafts section', () => {
     await render()
     await settle()
     await act(async () => q('inbox-draft-drf_one')!.click())
-    expect(pageDraft()).toEqual({ id: 'drf_one', opened: true })
+    expect(pageDraft()).toEqual({ id: 'drf_one', opened: true, folderId: 'fld_gone' })
     expect(useInboxChat.getState().composer.folderId).toBe('fld_app')
     expect(setComposer).not.toHaveBeenCalled()
   })
@@ -436,14 +439,98 @@ describe('Inbox Drafts section', () => {
   })
 
   it('drops an answer that arrives after a newer one', async () => {
-    let release: (value: ChatDraftSummary[]) => void = () => {}
+    let release: (value: { drafts: ChatDraftSummary[]; threads: string[] }) => void = () => {}
     drafts.mockImplementationOnce(() => new Promise((resolve) => { release = resolve }))
     const first = useInboxDrafts.getState().load()
     stored = [summary({ id: 'drf_new' })]
     await useInboxDrafts.getState().load()
-    release([summary({ id: 'drf_stale' })])
+    release({ drafts: [summary({ id: 'drf_stale' })], threads: ['ses_stale'] })
     await first
     expect(useInboxDrafts.getState().drafts.map((entry) => entry.id)).toEqual(['drf_new'])
+    expect(useInboxDrafts.getState().threadDrafts).toEqual([])
+  })
+
+  it('marks a worktree draft with where it would start, and no other', async () => {
+    stored = [
+      summary({ id: 'drf_tree', choice: { agent: 'build', model: { id: 'free-1', providerId: 'opencode' }, worktree: { base: 'origin/main' } } }),
+      summary({ id: 'drf_plain', choice: { agent: 'build', model: { id: 'free-1', providerId: 'opencode' } } }),
+      summary({ id: 'drf_old' }),
+    ]
+    await render()
+    await settle()
+    const hint = q('inbox-draft-worktree-drf_tree')
+    expect(hint).not.toBeNull()
+    expect(hint!.getAttribute('title')).toBe('Starts in a new worktree cut from origin/main')
+    expect(hint!.textContent).toBe('New worktree')
+    expect(hint!.closest('[data-testid="inbox-draft-drf_tree"]')).not.toBeNull()
+    expect(q('inbox-draft-worktree-drf_plain')).toBeNull()
+    expect(q('inbox-draft-worktree-drf_old')).toBeNull()
+  })
+
+  describe('marking threads with an unsent message', () => {
+    const second = (): InboxThread => thread({ id: 'ses_two', title: 'Add dark theme', lastActivityAt: minutes(9) })
+    const mark = (id: string): HTMLElement | null => q(`inbox-thread-draft-${id}`)
+
+    it('puts a Draft mark on a thread that is not open, and none on one that is', async () => {
+      useWorkspace.setState({ inboxThreads: [thread(), second()], selectedInboxThreadId: 'ses_one' })
+      storedThreads = ['ses_one', 'ses_two']
+      await render()
+      await settle()
+      expect(mark('ses_two')?.textContent).toBe('Draft')
+      expect(mark('ses_two')?.closest('[data-testid="inbox-thread-ses_two"]')).not.toBeNull()
+      // Its box is in front of the person, who sees the text there.
+      expect(mark('ses_one')).toBeNull()
+    })
+
+    it('moves with the open thread, once the list has been read again', async () => {
+      useWorkspace.setState({ inboxThreads: [thread(), second()], selectedInboxThreadId: 'ses_one' })
+      storedThreads = ['ses_two']
+      await render()
+      await settle()
+      expect(mark('ses_two')).not.toBeNull()
+      drafts.mockClear()
+      // Leaving ses_one with a message in it, and opening ses_two.
+      storedThreads = ['ses_one']
+      await act(async () => useWorkspace.getState().selectInboxThread('ses_two'))
+      await settle()
+      expect(drafts).toHaveBeenCalled()
+      expect(mark('ses_two')).toBeNull()
+      expect(mark('ses_one')?.textContent).toBe('Draft')
+    })
+
+    it('shows on a row that has no model or status to show, and is gone once the box is empty', async () => {
+      // Neither a model nor a status chip: the row would have had only two lines.
+      useWorkspace.setState({ inboxThreads: [thread(), { ...second(), status: 'idle' }], selectedInboxThreadId: 'ses_one' })
+      storedThreads = ['ses_two']
+      await render()
+      await settle()
+      expect(mark('ses_two')).not.toBeNull()
+      storedThreads = []
+      await act(async () => useInboxDrafts.getState().load())
+      expect(mark('ses_two')).toBeNull()
+    })
+
+    it('is not on a thread the list names that is not in the sidebar, and not where the answer has no thread list', async () => {
+      useWorkspace.setState({ inboxThreads: [thread(), second()], selectedInboxThreadId: 'ses_one' })
+      storedThreads = ['ses_gone']
+      await render()
+      await settle()
+      expect(container.querySelectorAll('[data-testid^="inbox-thread-draft-"]')).toHaveLength(0)
+      // An answer from a build that does not know the marks leaves none.
+      drafts.mockImplementationOnce(async () => ({ drafts: [] }) as unknown as { drafts: ChatDraftSummary[]; threads: string[] })
+      await act(async () => useInboxDrafts.getState().load())
+      expect(useInboxDrafts.getState().threadDrafts).toEqual([])
+      expect(container.querySelectorAll('[data-testid^="inbox-thread-draft-"]')).toHaveLength(0)
+    })
+
+    it('does not cover the Park button or the status of the row', async () => {
+      useWorkspace.setState({ inboxThreads: [thread(), second()], selectedInboxThreadId: 'ses_one' })
+      storedThreads = ['ses_two']
+      await render()
+      await settle()
+      expect(q('inbox-thread-park-ses_two')).not.toBeNull()
+      expect(q('inbox-thread-ses_two')!.textContent).toContain('Add dark theme')
+    })
   })
 
   it('works where the build has no draft list, with no section', async () => {

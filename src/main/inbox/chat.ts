@@ -1,4 +1,4 @@
-import type { ChatDraftRequest, ChatDraftSummary } from '@shared/types'
+import type { ChatDraftList, ChatDraftRequest } from '@shared/types'
 import type { InboxDraftStore } from './drafts'
 import { readSessionAttachment } from '../files/tree'
 import { randomUUID } from 'node:crypto'
@@ -367,7 +367,7 @@ export class InboxChatService {
     // That folder may be gone by the time a draft is opened; the page then names the one it shows instead.
     if (kind === 'thread') this.thread(id)
     else if (request.folderId) this.folder(request.folderId)
-    const meta = kind === 'draft' && request.folderId ? { folderId: request.folderId } : undefined
+    const meta = kind === 'draft' && request.folderId ? { folderId: request.folderId, ...(request.choice ? { choice: request.choice } : {}) } : undefined
     if ((request.action === 'text' || request.action === 'prepend' || request.action === 'add' || request.action === 'tree') && kind === 'draft' && !meta) {
       throw new Error('A new thread’s draft needs its folder.')
     }
@@ -381,15 +381,18 @@ export class InboxChatService {
     }
     if (request.action === 'remove') await store.remove(request.key, request.attachmentId)
     if (request.action === 'clear') await store.remove(request.key)
-    // Reading or looking again at a draft is how the page says it now shows it for another folder.
-    if ((request.action === 'load' || request.action === 'flush') && meta?.folderId) await store.setFolder(request.key, meta.folderId)
+    // Reading or looking again at a draft is how the page says it now shows it for another folder, or with other choices.
+    if ((request.action === 'load' || request.action === 'flush') && meta) await store.setMeta(request.key, meta)
     return store.get(request.key)
   }
 
-  /** The new-thread drafts that have something in them, newest change first. */
-  async drafts(): Promise<ChatDraftSummary[]> {
+  /** The new-thread drafts that have something in them, newest change first, and the threads with an unsent message. */
+  async drafts(): Promise<ChatDraftList> {
     this.assertEnabled()
-    return (await this.dependencies.drafts?.list()) ?? []
+    const store = this.dependencies.drafts
+    if (!store) return { drafts: [], threads: [] }
+    const threads = (await store.threadIds()).filter((id) => this.dependencies.store.get(id))
+    return { drafts: await store.list(), threads }
   }
 
   async removeDraft(key: `thread:${string}`): Promise<void> { await this.dependencies.drafts?.remove(key) }

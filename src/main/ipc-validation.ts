@@ -147,6 +147,15 @@ const worktreeBase = string(256)
 /** A branch name the person chose for the new worktree; main checks the same rules again with a message. */
 const worktreeBranch: Validator = (value) => typeof value === 'string' && worktreeBranchProblem(value) === null
 const modelRef = object({ id: string(512), providerId: string(512), variant: optional(string(512)) })
+/**
+ * How a new thread's draft would start. The branch is only remembered text, so it is not held to the rules
+ * for a real branch name while it is being typed; creating the thread checks it as it does any other.
+ */
+const draftChoice = object({
+  agent: optional(agentId),
+  model: optional(modelRef),
+  worktree: optional(object({ base: worktreeBase, branch: optional(string(256)) })),
+})
 /** Prompt text: newlines and tabs are fine, other control characters are not. */
 const promptText: Validator = (value) => typeof value === 'string' && value.length <= 100_000 &&
   !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value)
@@ -260,14 +269,15 @@ export const ipcPayloadValidators = {
     exactlyOnePlace(value),
   [IpcChannels.chatDraft]: (value) => {
     const key: Validator = (v) => typeof v === 'string' && /^(?:thread:ses_[A-Za-z0-9_-]{1,200}|draft:drf_[A-Za-z0-9-]{1,64})$/.test(v)
-    // The folder a new-thread draft is for rides along with every change to it.
+    // The folder a new-thread draft is for, and how it would start, ride along with every change to it.
     const folderId = optional(inboxFolderId)
-    return object({ key, action: oneOf('load', 'flush', 'clear'), folderId })(value) ||
-      object({ key, action: oneOf('text'), text: promptText, folderId })(value) ||
-      object({ key, action: oneOf('prepend'), text: promptText, folderId })(value) ||
-      object({ key, action: oneOf('add'), name: string(512), mime: string(200), data: (v) => v instanceof Uint8Array && v.byteLength <= 20 * 1024 * 1024, folderId })(value) ||
-      object({ key, action: oneOf('tree'), sessionId: id, path: relativePath, folderId })(value) ||
-      object({ key, action: oneOf('remove'), attachmentId: string(64), folderId })(value)
+    const choice = optional(draftChoice)
+    return object({ key, action: oneOf('load', 'flush', 'clear'), folderId, choice })(value) ||
+      object({ key, action: oneOf('text'), text: promptText, folderId, choice })(value) ||
+      object({ key, action: oneOf('prepend'), text: promptText, folderId, choice })(value) ||
+      object({ key, action: oneOf('add'), name: string(512), mime: string(200), data: (v) => v instanceof Uint8Array && v.byteLength <= 20 * 1024 * 1024, folderId, choice })(value) ||
+      object({ key, action: oneOf('tree'), sessionId: id, path: relativePath, folderId, choice })(value) ||
+      object({ key, action: oneOf('remove'), attachmentId: string(64), folderId, choice })(value)
   },
   [IpcChannels.chatDrafts]: noPayload,
   [IpcChannels.chatCreate]: object({ attachmentIds: optional(array(string(64), 10)), draftRevision: optional((v) => Number.isSafeInteger(v) && Number(v) >= 0), draftId: optional((v) => typeof v === 'string' && /^drf_[A-Za-z0-9-]{1,64}$/.test(v)), folderId: inboxFolderId, text: promptText, agent: agentId, model: modelRef, worktree: optional(object({ base: worktreeBase, branch: optional(worktreeBranch) })) }),

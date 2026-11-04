@@ -439,6 +439,46 @@ it('accepts a new thread’s draft with the folder it is for, on every kind of c
   ]) expect(() => assertIpcPayload(IpcChannels.chatDraft, payload)).toThrow()
 })
 
+it('accepts how a new thread would start with a draft, and nothing it would not understand', () => {
+  const key = 'draft:drf_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab'
+  const choice = { agent: 'build', model, worktree: { base: 'origin/main', branch: 'feature/dark-mode' } }
+  for (const payload of [
+    { key, action: 'text', text: 'Fix it', folderId: 'fld_one', choice },
+    { key, action: 'prepend', text: 'Fix it', folderId: 'fld_one', choice },
+    { key, action: 'add', name: 'a.png', mime: 'image/png', data: new Uint8Array([1]), folderId: 'fld_one', choice },
+    { key, action: 'tree', sessionId: 'source', path: 'src/a.ts', folderId: 'fld_one', choice },
+    { key, action: 'remove', attachmentId: 'abc', folderId: 'fld_one', choice },
+    { key, action: 'load', folderId: 'fld_one', choice },
+    { key, action: 'flush', folderId: 'fld_one', choice },
+    { key, action: 'flush', folderId: 'fld_one', choice: {} },
+    { key, action: 'flush', folderId: 'fld_one', choice: { agent: 'plan' } },
+    { key, action: 'flush', folderId: 'fld_one', choice: { worktree: { base: 'main' } } },
+    // A name still being typed is no reason to lose the text: only the size is checked here.
+    { key, action: 'text', text: 'Fix it', folderId: 'fld_one', choice: { ...choice, worktree: { base: 'main', branch: 'topic/' } } },
+  ]) expect(() => assertIpcPayload(IpcChannels.chatDraft, payload)).not.toThrow()
+  const text = { key, action: 'text', text: 'Fix it', folderId: 'fld_one' }
+  for (const choice of [
+    'build',
+    null,
+    [],
+    { agent: '../build' },
+    { agent: 7 },
+    { model: { id: 'm' } },
+    { model: 'free-1' },
+    { worktree: 'main' },
+    { worktree: {} },
+    { worktree: { base: 5 } },
+    { worktree: { base: 'x'.repeat(257) } },
+    { worktree: { base: 'main', branch: 'x'.repeat(257) } },
+    { worktree: { base: 'main', branch: 5 } },
+    // A blank name is left out by the page, not sent.
+    { worktree: { base: 'main', branch: '  ' } },
+    { worktree: { base: 'main', branch: 'topic\n/x' } },
+    { worktree: { base: 'main', directory: '/home/me/app' } },
+    { agent: 'build', directory: '/home/me/app' },
+  ]) expect(() => assertIpcPayload(IpcChannels.chatDraft, { ...text, choice })).toThrow()
+})
+
 it('takes the draft list without a payload, and a thread started from a draft by its id', () => {
   expect(() => assertIpcPayload(IpcChannels.chatDrafts, undefined)).not.toThrow()
   for (const payload of [{}, null, 'all', { folderId: 'fld_one' }]) expect(() => assertIpcPayload(IpcChannels.chatDrafts, payload)).toThrow()

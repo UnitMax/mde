@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, Folder, Paperclip, PenLine, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Folder, GitBranch, Paperclip, PenLine, Trash2 } from 'lucide-react'
 import type { ChatDraftSummary, InboxFolder } from '@shared/types'
 import {
   AlertDialog,
@@ -67,6 +67,16 @@ function DraftRow({
           <span className="flex w-full min-w-0 items-center gap-1 text-[11px] text-fg-subtle">
             <Folder aria-hidden="true" className="h-3 w-3 shrink-0" />
             <span className="min-w-0 truncate">{draftFolderLabel(draft, folders)}</span>
+            {draft.choice?.worktree && (
+              <span
+                data-testid={`inbox-draft-worktree-${draft.id}`}
+                className="ml-1 inline-flex shrink-0 items-center gap-0.5"
+                title={`Starts in a new worktree cut from ${draft.choice.worktree.base}`}
+              >
+                <GitBranch aria-hidden="true" className="h-3 w-3" />
+                <span className="sr-only">New worktree</span>
+              </span>
+            )}
             {draft.attachments > 0 && (
               <>
                 <Paperclip aria-hidden="true" className="ml-1 h-3 w-3 shrink-0" />

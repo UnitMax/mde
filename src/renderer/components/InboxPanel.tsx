@@ -11,6 +11,7 @@ import {
   Lock,
   Mail,
   MailOpen,
+  PenLine,
   PenSquare,
   Search,
   Trash2,
@@ -187,6 +188,8 @@ function InboxThreadRow({
   const checkout = useInboxChanges((state) => state.entries[inboxChangesKey(thread.id)]?.value)
   const branch = checkout?.available ? checkout.branch : thread.branch
   const cueAt = useWorkspace((state) => state.inboxCues[thread.id])
+  // An unsent message waits in this thread's box. The open thread is left out: its box is right there.
+  const hasDraft = useInboxDrafts((state) => !selected && state.threadDrafts.includes(thread.id))
 
   return (
     <>
@@ -253,7 +256,7 @@ function InboxThreadRow({
                 </>
               )}
             </span>
-            {(model || inboxStatusChip(thread)) && (
+            {(model || hasDraft || inboxStatusChip(thread)) && (
               <span className="flex w-full min-w-0 items-center gap-1.5 text-[11px]">
                 <span
                   className="min-w-0 flex-1 truncate text-fg-subtle"
@@ -261,6 +264,16 @@ function InboxThreadRow({
                 >
                   {model}
                 </span>
+                {hasDraft && (
+                  <span
+                    data-testid={`inbox-thread-draft-${thread.id}`}
+                    title="There is an unsent message in this thread’s box"
+                    className="inline-flex shrink-0 items-center gap-1 rounded bg-elevated px-1.5 py-px text-[10px] font-medium text-fg-muted"
+                  >
+                    <PenLine aria-hidden="true" className="h-2.5 w-2.5" />
+                    Draft
+                  </span>
+                )}
                 <InboxStatusBadge thread={thread} elapsed />
               </span>
             )}
@@ -482,9 +495,10 @@ export function InboxPanel(): JSX.Element {
   const loadDrafts = useInboxDrafts((state) => state.load)
   const openDraft = useInboxDrafts((state) => state.open)
   const startFresh = useInboxDrafts((state) => state.startFresh)
+  // Read when the panel opens and whenever another thread is opened: the one left may have unsent text in its box.
   useEffect(() => {
     void loadDrafts()
-  }, [loadDrafts])
+  }, [loadDrafts, selectedId])
   // A new thread being written for the first time is not listed until its page is left; one taken from the list stays in it.
   const onNewThread = selectedId === null && !page.opened
   const listedDrafts = visibleDrafts(drafts, onNewThread ? page.id : null, folders)

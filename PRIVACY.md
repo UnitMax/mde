@@ -110,8 +110,9 @@ Electron's user-data directory. `index.json` stores unsent prompt text, filename
 sizes, revisions and generated attachment IDs; `attachments/` holds the copied contents.
 These local drafts are not encrypted. They survive app restarts and changes to the original
 files. Each thread has its own draft, and any number of unsent new threads are kept as drafts of
-their own, each noting the folder it was written for and when it last changed; the Inbox lists
-them in its sidebar. Removing an attachment, successfully sending its draft, deleting a new-thread
+their own, each noting the folder it was written for, how it would start (agent, model, and the
+worktree branch and name if a new worktree was chosen) and when it last changed; the Inbox lists them
+in its sidebar and marks the threads that have an unsent message. Removing an attachment, successfully sending its draft, deleting a new-thread
 draft from the sidebar, or removing a thread deletes the relevant copies. Removing a folder from the
 Inbox leaves its drafts. Startup removes orphaned copies and new-thread drafts with nothing in them. Valid drafts do not expire automatically. Saved attachment
 contents are capped at 200 MiB total, with 10 files and 20 MiB per draft.

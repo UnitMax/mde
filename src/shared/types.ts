@@ -970,6 +970,16 @@ export type ChatDraftRequest = (
 ) & {
   /** The folder a new-thread draft is for. Every change to such a draft names it, so the draft can be listed and reopened there. */
   folderId?: string
+  /** How the new thread would start, as it is now; it replaces what the draft remembered. Left out while that is not known yet. */
+  choice?: ChatDraftChoice
+}
+
+/** What a new thread's draft remembers of how it would start, so reopening it brings the same choices back. */
+export interface ChatDraftChoice {
+  agent?: string
+  model?: OpenCodeModelRef
+  /** The thread would run in a new Git worktree cut from `base`; `branch` is the name typed for it, valid or not yet. */
+  worktree?: { base: string; branch?: string }
 }
 
 /** One unsent new thread, as the Inbox sidebar lists it. Only what the row shows; the draft itself is read by its composer. */
@@ -983,6 +993,15 @@ export interface ChatDraftSummary {
   attachments: number
   attachmentName?: string
   updatedAt: number
+  choice?: ChatDraftChoice
+}
+
+/** What the sidebar knows about unsent text. */
+export interface ChatDraftList {
+  /** The new threads that were started and not sent. */
+  drafts: ChatDraftSummary[]
+  /** The threads in the Inbox with an unsent message in their box. */
+  threads: string[]
 }
 
 /** Git changes in the checkout a thread uses, relative to HEAD. Memory only. */

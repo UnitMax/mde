@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import type { ChatDraft, ChatDraftKey, ChatDraftSummary } from '@shared/types'
+import type { ChatDraft, ChatDraftChoice, ChatDraftKey, ChatDraftSummary } from '@shared/types'
 
 export const ATTACHMENT_LIMIT = 20 * 1024 * 1024
 export const DRAFT_STORAGE_LIMIT = 200 * 1024 * 1024
@@ -13,21 +13,46 @@ const empty = (): StoredDraft => ({ revision: 0, text: '', attachments: [] })
 
 /**
  * What is kept for a draft. A new-thread draft (`draft:` key) also knows the folder it was written
- * for and when it last changed, which the Inbox sidebar lists it by; a thread's draft has neither.
+ * for, how it would start and when it last changed, which the Inbox sidebar lists it by; a thread's
+ * draft has none of these.
  */
 interface StoredDraft extends ChatDraft {
   folderId?: string
+  choice?: ChatDraftChoice
   updatedAt?: number
 }
 
 /** What a change to a new-thread draft says about it. */
 export interface DraftMeta {
   folderId?: string
+  choice?: ChatDraftChoice
 }
 
 const isNewThread = (key: string): boolean => key.startsWith('draft:')
 const hasContent = (draft: ChatDraft): boolean => draft.text.trim().length > 0 || draft.attachments.length > 0
-const plain = ({ folderId: _folder, updatedAt: _time, ...draft }: StoredDraft): ChatDraft => draft
+const plain = ({ folderId: _folder, choice: _choice, updatedAt: _time, ...draft }: StoredDraft): ChatDraft => draft
+const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
+const short = (value: unknown, max: number): value is string => typeof value === 'string' && value.length > 0 && value.length <= max
+
+/**
+ * The remembered choice as it can be used: only what is well formed, so a hand-edited or damaged file
+ * costs a draft its choices and nothing else.
+ */
+function cleanChoice(value: unknown): ChatDraftChoice | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const { agent, model, worktree } = value as Record<string, unknown>
+  const choice: ChatDraftChoice = {}
+  if (short(agent, 128)) choice.agent = agent
+  if (model && typeof model === 'object') {
+    const { id, providerId, variant } = model as Record<string, unknown>
+    if (short(id, 512) && short(providerId, 512)) choice.model = { id, providerId, ...(short(variant, 512) ? { variant } : {}) }
+  }
+  if (worktree && typeof worktree === 'object') {
+    const { base, branch } = worktree as Record<string, unknown>
+    if (short(base, 256)) choice.worktree = { base, ...(short(branch, 256) ? { branch } : {}) }
+  }
+  return Object.keys(choice).length > 0 ? choice : undefined
+}
 
 function validDraft(draft: StoredDraft): boolean {
   if (!draft || typeof draft.text !== 'string' || draft.text.length > DRAFT_TEXT_LIMIT ||
@@ -74,7 +99,9 @@ export class InboxDraftStore {
           throw new Error('Invalid draft index')
         }
         // Preview data is regenerated from the copy; never trust stored HTML or URLs.
-        const kept = { ...draft, attachments: draft.attachments.map(({ thumbnail: _preview, ...file }) => file) }
+        const { choice: stored, ...rest } = draft
+        const choice = cleanChoice(stored)
+        const kept = { ...rest, ...(choice ? { choice } : {}), attachments: draft.attachments.map(({ thumbnail: _preview, ...file }) => file) }
         // The one draft a folder used to have is now a new-thread draft of its own, so it is listed too.
         if (key.startsWith('folder:')) this.drafts[`draft:drf_${randomUUID()}`] = { ...kept, folderId: key.slice('folder:'.length), updatedAt: this.now() }
         else this.drafts[key] = kept
@@ -129,10 +156,15 @@ export class InboxDraftStore {
     })
   }
 
-  /** The draft after a change to it; a new-thread one also notes its folder and the time. */
+  /** The draft after a change to it; a new-thread one also notes its folder, how it would start and the time. */
   private changed(key: ChatDraftKey, draft: StoredDraft, meta?: DraftMeta): StoredDraft {
     if (!isNewThread(key)) return draft
-    return { ...draft, ...(meta?.folderId ? { folderId: meta.folderId } : {}), updatedAt: this.now() }
+    return {
+      ...draft,
+      ...(meta?.folderId ? { folderId: meta.folderId } : {}),
+      ...(meta?.choice ? { choice: meta.choice } : {}),
+      updatedAt: this.now(),
+    }
   }
 
   /** Keeps a new-thread draft only while it holds something. */
@@ -221,17 +253,35 @@ export class InboxDraftStore {
           attachments: draft.attachments.length,
           ...(first ? { attachmentName: first.name } : {}),
           updatedAt: draft.updatedAt ?? 0,
+          ...(draft.choice ? { choice: draft.choice } : {}),
         }]
       })
       .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id)))
   }
 
-  /** Moves a new-thread draft to another folder, as when the page's folder is changed. A draft that is not there, or already there, is left alone. */
-  setFolder(key: ChatDraftKey, folderId: string): Promise<void> {
+  /**
+   * The threads whose box holds an unsent message, as the Inbox marks them. A thread's draft with
+   * nothing in it, which is what a sent message leaves behind, does not count.
+   */
+  threadIds(): Promise<string[]> {
+    return this.run(async () => Object.entries(this.drafts)
+      .filter(([key, draft]) => key.startsWith('thread:') && hasContent(draft))
+      .map(([key]) => key.slice('thread:'.length))
+      .sort())
+  }
+
+  /**
+   * Says that a new-thread draft is now shown for another folder, or with other choices, as when the
+   * page's folder is changed. A draft that is not there, or already so, is left alone.
+   */
+  setMeta(key: ChatDraftKey, meta: DraftMeta): Promise<void> {
     return this.run(async () => {
       const draft = this.drafts[key]
-      if (!draft || !isNewThread(key) || draft.folderId === folderId) return
-      this.drafts[key] = this.changed(key, draft, { folderId })
+      if (!draft || !isNewThread(key)) return
+      const folderChanged = Boolean(meta.folderId) && draft.folderId !== meta.folderId
+      const choiceChanged = Boolean(meta.choice) && !same(draft.choice, meta.choice)
+      if (!folderChanged && !choiceChanged) return
+      this.drafts[key] = this.changed(key, draft, meta)
       await this.persist()
     })
   }

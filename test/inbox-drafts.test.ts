@@ -115,6 +115,7 @@ describe('Inbox saved drafts', () => {
 
 describe('Inbox new-thread drafts', () => {
   const other = 'draft:drf_two' as const
+  const third = 'draft:drf_three' as const
 
   it('lists the new threads that hold something, the newest change first, with what a row shows', async () => {
     const { store } = await setup()
@@ -175,18 +176,18 @@ describe('Inbox new-thread drafts', () => {
   it('moves a draft to another folder, and leaves a missing one or one already there alone', async () => {
     const { path, store } = await setup()
     clock.now = 1_000
-    await store.setFolder(draftKey, 'fld_two')
+    await store.setMeta(draftKey, { folderId: 'fld_two' })
     expect(await store.list()).toEqual([])
     await store.text(draftKey, 'Hello', folder)
     clock.now = 2_000
-    await store.setFolder(draftKey, 'fld_one')
+    await store.setMeta(draftKey, { folderId: 'fld_one' })
     expect((await store.list())[0]).toMatchObject({ folderId: 'fld_one', updatedAt: 1_000 })
-    await store.setFolder(draftKey, 'fld_two')
+    await store.setMeta(draftKey, { folderId: 'fld_two' })
     expect((await store.list())[0]).toMatchObject({ folderId: 'fld_two', updatedAt: 2_000 })
     expect((await new InboxDraftStore(path).list())[0]).toMatchObject({ folderId: 'fld_two' })
     // A thread's draft has no folder to move.
     await store.text(key, 'Hi')
-    await store.setFolder(key, 'fld_two')
+    await store.setMeta(key, { folderId: 'fld_two' })
     expect(JSON.parse(await fs.readFile(join(path, 'index.json'), 'utf8')).drafts[key]).not.toHaveProperty('folderId')
   })
 
@@ -215,6 +216,92 @@ describe('Inbox new-thread drafts', () => {
     // Its file is still there, and the old key is gone from storage.
     expect(await fs.readdir(join(path, 'attachments'))).toEqual([attachments[0]!.id])
     expect(Object.keys(JSON.parse(await fs.readFile(join(path, 'index.json'), 'utf8')).drafts)).toEqual([`draft:${converted!.id}`])
+  })
+
+  describe('how a draft would start', () => {
+    const model = { id: 'free-1', providerId: 'opencode' }
+    const choice = { agent: 'build', model, worktree: { base: 'main', branch: 'topic/x' } }
+    const raw = async (path: string): Promise<Record<string, any>> => JSON.parse(await fs.readFile(join(path, 'index.json'), 'utf8')).drafts
+
+    it('is kept with the draft, listed for a row, and still there after a restart', async () => {
+      const { path, store } = await setup()
+      await store.text(draftKey, 'Try it', { ...folder, choice })
+      expect((await store.list())[0]).toMatchObject({ id: 'drf_one', choice })
+      expect((await new InboxDraftStore(path).list())[0]!.choice).toEqual(choice)
+      // The composer is given the text and files only.
+      expect(await store.get(draftKey)).toEqual({ revision: 1, text: 'Try it', attachments: [] })
+    })
+
+    it('is replaced as a whole by the next one, so leaving a worktree takes it away', async () => {
+      const { store } = await setup()
+      await store.text(draftKey, 'Try it', { ...folder, choice })
+      await store.text(draftKey, 'Try it again', { ...folder, choice: { agent: 'plan', model } })
+      expect((await store.list())[0]!.choice).toEqual({ agent: 'plan', model })
+    })
+
+    it('is kept when a change says nothing about it, as before the options were known', async () => {
+      const { store } = await setup()
+      await store.text(draftKey, 'Try it', { ...folder, choice })
+      await store.text(draftKey, 'Try it harder', folder)
+      expect((await store.list())[0]).toMatchObject({ preview: 'Try it harder', choice })
+    })
+
+    it('is not stored for a thread, whose box has no start to choose', async () => {
+      const { path, store } = await setup()
+      await store.text(key, 'Hi', { choice })
+      expect((await raw(path))[key]).not.toHaveProperty('choice')
+    })
+
+    it('can be changed on its own, which counts as a change but only when it is one', async () => {
+      const { path, store } = await setup()
+      clock.now = 1_000
+      await store.text(draftKey, 'Try it', { ...folder, choice })
+      clock.now = 2_000
+      await store.setMeta(draftKey, { choice })
+      expect((await store.list())[0]!.updatedAt).toBe(1_000)
+      await store.setMeta(draftKey, { choice: { ...choice, agent: 'plan' } })
+      expect((await store.list())[0]).toMatchObject({ updatedAt: 2_000, folderId: 'fld_one', choice: { ...choice, agent: 'plan' } })
+      // Nothing is made of a draft that is not there, and saying nothing changes nothing.
+      clock.now = 3_000
+      await store.setMeta('draft:drf_none', { folderId: 'fld_one', choice })
+      await store.setMeta(draftKey, { folderId: 'fld_one' })
+      expect((await store.list()).map((draft) => [draft.id, draft.updatedAt])).toEqual([['drf_one', 2_000]])
+      expect(Object.keys(await raw(path))).toEqual([draftKey])
+    })
+
+    it('loses only what is damaged when the file was edited by hand', async () => {
+      const { path, store } = await setup()
+      await store.text(draftKey, 'One', { ...folder, choice })
+      await store.text(other, 'Two', { folderId: 'fld_two', choice })
+      await store.text(third, 'Three', { folderId: 'fld_three', choice })
+      const drafts = await raw(path)
+      drafts[draftKey].choice = { agent: 7, model: { id: 'free-1' }, worktree: { base: '' }, extra: true }
+      drafts[other].choice = 'build'
+      drafts[third].choice = { agent: 'plan', model: { id: 'x'.repeat(600), providerId: 'opencode' }, worktree: { base: 'main', branch: 5 } }
+      await fs.writeFile(join(path, 'index.json'), JSON.stringify({ version: 1, drafts }))
+      const list = await new InboxDraftStore(path).list()
+      const byId = Object.fromEntries(list.map((draft) => [draft.id, draft]))
+      expect(Object.keys(byId).sort()).toEqual(['drf_one', 'drf_three', 'drf_two'])
+      expect(byId.drf_one).not.toHaveProperty('choice')
+      expect(byId.drf_two).not.toHaveProperty('choice')
+      expect(byId.drf_three!.choice).toEqual({ agent: 'plan', worktree: { base: 'main' } })
+      expect(byId.drf_three!.preview).toBe('Three')
+    })
+  })
+
+  describe('threads with an unsent message', () => {
+    it('are the ones whose box holds text or a file, and not one a sent message emptied', async () => {
+      const { store } = await setup()
+      expect(await store.threadIds()).toEqual([])
+      await store.text('thread:ses_b', 'Second thought')
+      await store.add('thread:ses_a', 'a.txt', 'text/plain', new Uint8Array([1]))
+      await store.text('thread:ses_c', 'Typed')
+      await store.text('thread:ses_c', '  \n')
+      await store.text('thread:ses_d', '')
+      // A new thread is a draft of its own, listed elsewhere.
+      await store.text(draftKey, 'A new one', folder)
+      expect(await store.threadIds()).toEqual(['ses_a', 'ses_b'])
+    })
   })
 
   it('refuses a folder that is not a folder id', async () => {
