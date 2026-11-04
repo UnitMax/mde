@@ -82,10 +82,10 @@ export function getKeyboardShortcutGroups(
       label: 'Terminal',
       shortcuts: [
         {
-          id: 'terminal-layout',
-          keys: ['Ctrl+1–9'],
-          description: 'Choose a terminal layout.',
-          note: 'Choose 1–9 terminals using the corresponding digit. Numpad digits also work. In the Inbox terminal they act only while the keyboard is in it.'
+          id: 'terminal-split',
+          keys: ['Ctrl'],
+          description: 'Hold to show controls for adding a terminal at any edge.',
+          note: 'Click + on the left, right, top or bottom of a pane to split it. Drag a divider to resize.'
         },
         {
           id: 'terminal-fullscreen',
@@ -101,7 +101,7 @@ export function getKeyboardShortcutGroups(
           id: 'terminal-pane-switch',
           keys: ['Ctrl+Shift+1–9'],
           description: 'Focus a terminal by its number.',
-          note: 'Numpad digits also work. Ignored while a terminal is fullscreen.'
+          note: 'Focus the first nine panes. Numpad digits also work. Ignored while a terminal is fullscreen.'
         },
         {
           id: 'terminal-fullscreen-escape',

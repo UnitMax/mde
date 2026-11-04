@@ -1,6 +1,5 @@
-import { isTerminalLayout } from '@shared/terminal-layouts'
-import type { TerminalLayout, TerminalLayoutSizes } from '@shared/types'
-import { defaultTerminalLayoutSizes } from '@/terminal/layout'
+import { isTerminalLayoutTree } from '@shared/terminal-layouts'
+import type { TerminalLayoutNode } from '@shared/types'
 
 export const INBOX_SIDEBAR_CHANGES_STORAGE_KEY = 'mde.inbox-sidebar-changes'
 export const INBOX_WORKING_SECTION_STORAGE_KEY = 'mde.inbox-working-section'
@@ -91,30 +90,17 @@ export function saveInboxSidebarWidth(width: number): void {
   }
 }
 
-/** The shape of the Inbox terminal's layout that is kept between runs: which arrangement, and where its dividers are. */
+/** Only pane identities, split directions and divider ratios are kept between runs. */
 export interface StoredTerminalLayout {
-  layout: TerminalLayout
-  sizes: TerminalLayoutSizes
+  tree: TerminalLayoutNode
 }
 
-const RATIO_KEYS = ['columnRatio', 'rowRatio', 'secondColumnRatio', 'secondRowRatio'] as const
-
-/** Reads a stored layout back, or null for anything that is not one; a hand-edited value never reaches the terminal. */
 export function parseStoredTerminalLayout(raw: string | null): StoredTerminalLayout | null {
   if (!raw) return null
   try {
     const value: unknown = JSON.parse(raw)
-    if (!value || typeof value !== 'object') return null
-    const { layout, sizes } = value as { layout?: unknown; sizes?: unknown }
-    if (!isTerminalLayout(layout) || !sizes || typeof sizes !== 'object') return null
-    const clean: TerminalLayoutSizes = { ...defaultTerminalLayoutSizes(layout) }
-    for (const key of RATIO_KEYS) {
-      const ratio = (sizes as Record<string, unknown>)[key]
-      if (ratio === undefined) continue
-      if (typeof ratio !== 'number' || !Number.isFinite(ratio) || ratio <= 0 || ratio >= 1) return null
-      clean[key] = ratio
-    }
-    return { layout, sizes: clean }
+    if (!value || typeof value !== 'object' || !('tree' in value) || !isTerminalLayoutTree(value.tree)) return null
+    return { tree: value.tree }
   } catch {
     return null
   }
@@ -130,7 +116,7 @@ export function getInboxTerminalLayout(): StoredTerminalLayout | null {
 
 export function saveInboxTerminalLayout(value: StoredTerminalLayout): void {
   try {
-    localStorage.setItem(INBOX_TERMINAL_LAYOUT_STORAGE_KEY, JSON.stringify({ layout: value.layout, sizes: value.sizes }))
+    localStorage.setItem(INBOX_TERMINAL_LAYOUT_STORAGE_KEY, JSON.stringify({ tree: value.tree }))
   } catch {
     // A restricted storage environment keeps the layout for this session only.
   }

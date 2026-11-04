@@ -1,9 +1,4 @@
-import {
-  TERMINAL_LAYOUT_DEFINITIONS,
-  isTerminalLayout,
-  isThreeRowLayout,
-  isThreeColumnLayout,
-} from '@shared/terminal-layouts'
+import { isPersistedTerminalLayout } from '@shared/terminal-layouts'
 import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
@@ -90,74 +85,22 @@ function uniqueEntries<T extends { id: string }>(entries: T[], kind: string): T[
   })
 }
 
-function ratio(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 1
-    ? value
-    : 0.5
-}
-
-function validRatio(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 1
-}
-
-function threeRowRatios(sizes: Record<string, unknown>): { rowRatio: number; secondRowRatio: number } {
-  const rowRatio = validRatio(sizes.rowRatio) ? sizes.rowRatio : 1 / 3
-  const secondRowRatio = validRatio(sizes.secondRowRatio) ? sizes.secondRowRatio : 2 / 3
-  return rowRatio < secondRowRatio
-    ? { rowRatio, secondRowRatio }
-    : { rowRatio: 1 / 3, secondRowRatio: 2 / 3 }
-}
-
 function defaultTab(sessionId: string): SessionTab {
   return {
     id: `${sessionId}:tab:default`,
     name: 'Tab 1',
     layout: {
-      layout: 'single',
-      panes: [{ id: 'pane-1' }],
-      sizes: { columnRatio: 0.5, rowRatio: 0.5 }
+      tree: { type: 'pane', paneId: 'pane-1' },
+      panes: [{ id: 'pane-1' }]
     }
   }
 }
 
 function validateTerminalLayout(raw: unknown): PersistedTerminalLayout | null {
-  if (typeof raw !== 'object' || raw === null) return null
-  const record = raw as Record<string, unknown>
-  if (!isTerminalLayout(record.layout) || !Array.isArray(record.panes)) return null
-
-  const expectedCount = TERMINAL_LAYOUT_DEFINITIONS[record.layout].count
-  const panes = record.panes
-    .filter((pane): pane is Record<string, unknown> => typeof pane === 'object' && pane !== null)
-    .filter((pane) => isNonEmptyString(pane.id))
-    .map((pane) => ({
-      id: pane.id as string,
-      ...(isNonEmptyString(pane.title) ? { title: pane.title.trim() } : {})
-    }))
-  if (panes.length !== expectedCount || new Set(panes.map((pane) => pane.id)).size !== panes.length) {
-    return null
-  }
-
-  const sizes = typeof record.sizes === 'object' && record.sizes !== null
-    ? record.sizes as Record<string, unknown>
-    : {}
-  const columnRatio = isThreeColumnLayout(record.layout)
-    ? validRatio(sizes.columnRatio) ? sizes.columnRatio : 1 / 3
-    : ratio(sizes.columnRatio)
-  const secondColumnRatio = isThreeColumnLayout(record.layout)
-    ? validRatio(sizes.secondColumnRatio) ? sizes.secondColumnRatio : 2 / 3
-    : undefined
-  const normalizedColumnRatios = isThreeColumnLayout(record.layout) && columnRatio >= (secondColumnRatio ?? 0)
-    ? { columnRatio: 1 / 3, secondColumnRatio: 2 / 3 }
-    : { columnRatio, ...(secondColumnRatio === undefined ? {} : { secondColumnRatio }) }
+  if (!isPersistedTerminalLayout(raw)) return null
   return {
-    layout: record.layout,
-    panes,
-    sizes: {
-      ...normalizedColumnRatios,
-      ...(isThreeRowLayout(record.layout)
-        ? threeRowRatios(sizes)
-        : { rowRatio: ratio(sizes.rowRatio) })
-    }
+    tree: structuredClone(raw.tree),
+    panes: raw.panes.map((pane) => ({ id: pane.id, ...(pane.title ? { title: pane.title.trim() } : {}) })),
   }
 }
 
@@ -166,8 +109,7 @@ function validateSessionTab(raw: unknown): SessionTab | null {
   const record = raw as Record<string, unknown>
   if (!isNonEmptyString(record.id) || !isNonEmptyString(record.name)) return null
   const layout = validateTerminalLayout(record.layout)
-  if (!layout) return null
-  return { id: record.id, name: record.name.trim(), layout }
+  return { id: record.id, name: record.name.trim(), layout: layout ?? defaultTab(record.id).layout }
 }
 
 function sessionTabs(raw: unknown, sessionId: string): { tabs: SessionTab[]; activeTabId: string } {

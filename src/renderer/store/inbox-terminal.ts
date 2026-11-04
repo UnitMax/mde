@@ -1,3 +1,4 @@
+import { terminalPaneIds } from '@shared/terminal-layouts'
 import { create } from 'zustand'
 import type { PtyExitInfo } from '@shared/types'
 import { INBOX_TERMINAL_SESSION_ID } from '@shared/inbox-terminal'
@@ -5,10 +6,8 @@ import { getInboxTerminalLayout, saveInboxTerminalLayout } from '@/lib/inbox-set
 import { disposeRuntimeTerminal } from '@/terminal/dispose'
 import { focusTerminalWhenReady } from '@/terminal/focus'
 import {
-  layoutReduced,
   layoutReordered,
   layoutResized,
-  layoutSwitched,
   layoutTitled
 } from '@/terminal/layout-edits'
 import {
@@ -16,12 +15,9 @@ import {
   terminalFocusTargetAfterRemoval,
   type RuntimeTerminalLaunch,
   type SessionTerminalLayout,
-  type TerminalColumnIndex,
-  type TerminalLayout,
-  type TerminalResizeAxis,
-  type TerminalRowIndex
+  type TerminalSplitSide,
 } from '@/terminal/layout'
-import { appendRuntimePane, createRuntimeLayout, defaultSessionTab } from '@/terminal/tabs'
+import { appendRuntimePane, splitRuntimePane, createRuntimeLayout, defaultSessionTab } from '@/terminal/tabs'
 
 /** The Inbox terminal is one tab of one session, so it has one tab and nothing to choose between. */
 export const INBOX_TERMINAL_TAB = defaultSessionTab(INBOX_TERMINAL_SESSION_ID)
@@ -32,16 +28,17 @@ const RESIZE_SAVE_DELAY_MS = 180
 function startingLayout(): SessionTerminalLayout {
   const single = createRuntimeLayout(INBOX_TERMINAL_SESSION_ID, INBOX_TERMINAL_TAB)
   const stored = getInboxTerminalLayout()
-  const grown = stored && layoutSwitched(single, stored.layout, INBOX_TERMINAL_SESSION_ID, INBOX_TERMINAL_TAB.id)
-  return stored && grown ? { ...grown, sizes: stored.sizes } : single
+  return stored ? createRuntimeLayout(INBOX_TERMINAL_SESSION_ID, {
+    ...INBOX_TERMINAL_TAB,
+    layout: { tree: stored.tree, panes: terminalPaneIds(stored.tree).map((id) => ({ id })) },
+  }) : single
 }
 
 interface Store {
   /** What the terminal looks like: its arrangement and panes. Their shells run in the main process. */
   layout: SessionTerminalLayout
-  switchLayout: (layout: TerminalLayout) => void
-  reduceLayout: (layout: TerminalLayout, terminalIds: string[]) => void
-  resize: (axis: TerminalResizeAxis, ratio: number, index?: TerminalColumnIndex | TerminalRowIndex) => void
+  splitPane: (terminalId: string, side: TerminalSplitSide) => void
+  resize: (splitId: string, ratio: number) => void
   reorder: (terminalIds: readonly string[]) => void
   titlePane: (terminalId: string, title: string | null) => void
   addPane: (sourceTerminalId: string, launch: RuntimeTerminalLaunch) => void
@@ -65,7 +62,7 @@ export const useInboxTerminal = create<Store>((set, get) => {
   const commit = (next: SessionTerminalLayout, settle = true): void => {
     set({ layout: next })
     window.clearTimeout(saveTimer)
-    const save = (): void => saveInboxTerminalLayout({ layout: next.layout, sizes: next.sizes })
+    const save = (): void => saveInboxTerminalLayout({ tree: next.tree })
     if (settle) save()
     else saveTimer = window.setTimeout(save, RESIZE_SAVE_DELAY_MS)
   }
@@ -81,20 +78,16 @@ export const useInboxTerminal = create<Store>((set, get) => {
   return {
     layout: startingLayout(),
 
-    switchLayout: (layout) => {
-      const next = layoutSwitched(get().layout, layout, INBOX_TERMINAL_SESSION_ID, INBOX_TERMINAL_TAB.id)
-      if (next) commit(next)
-    },
-
-    reduceLayout: (layout, terminalIds) => {
+    splitPane: (terminalId, side) => {
       const previous = get().layout
-      terminalIds.forEach(disposeRuntimeTerminal)
-      const next = layoutReduced(previous, layout, terminalIds)
+      const next = splitRuntimePane(INBOX_TERMINAL_SESSION_ID, INBOX_TERMINAL_TAB.id, previous, terminalId, side)
+      if (!next) return
       commit(next)
-      focusAfterRemoval(previous, terminalIds, next)
+      const added = next.panes.find((pane) => !previous.panes.includes(pane))
+      if (added) focusTerminalWhenReady(added.terminalId)
     },
 
-    resize: (axis, ratio, index) => commit(layoutResized(get().layout, axis, ratio, index), false),
+    resize: (splitId, ratio) => commit(layoutResized(get().layout, splitId, ratio), false),
 
     reorder: (terminalIds) => {
       const next = layoutReordered(get().layout, terminalIds)
@@ -112,7 +105,7 @@ export const useInboxTerminal = create<Store>((set, get) => {
       const next = appendRuntimePane(INBOX_TERMINAL_SESSION_ID, INBOX_TERMINAL_TAB.id, existing, launch)
       if (!next) return
       commit(next)
-      const added = next.panes[next.panes.length - 1]
+      const added = next.panes.find((pane) => !existing.panes.includes(pane))
       if (added) focusTerminalWhenReady(added.terminalId)
     },
 

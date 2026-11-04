@@ -1,3 +1,4 @@
+import { testLayout } from './helpers/terminal-layout'
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -52,21 +53,17 @@ describe('workspace session tabs', () => {
       tabId: firstTab.id,
       patch: {
         name: 'Shell',
-        layout: {
-          layout: 'columns',
-          panes: [
-            { id: 'pane-1' },
-            { id: 'pane-2', title: '  API  ' }
-          ],
-          sizes: { columnRatio: 0.4, rowRatio: 0.5 }
-        }
+        layout: testLayout([
+          { id: 'pane-1' },
+          { id: 'pane-2', title: '  API  ' }
+        ], 0.4)
       }
     })
-    expect(updated?.tabs?.[0]).toMatchObject({ name: 'Shell', layout: { layout: 'columns' } })
+    expect(updated?.tabs?.[0]).toMatchObject({ name: 'Shell', layout: { tree: { type: 'split', ratio: 0.4 } } })
     expect(updated?.tabs?.[0]?.layout.panes[1]).toMatchObject({ title: 'API' })
 
     const reloaded = await loadWorkspace()
-    expect(reloaded.sessions[0]?.tabs?.[0]).toMatchObject({ name: 'Shell', layout: { layout: 'columns' } })
+    expect(reloaded.sessions[0]?.tabs?.[0]).toMatchObject({ name: 'Shell', layout: { tree: { type: 'split', ratio: 0.4 } } })
     expect(reloaded.sessions[0]?.tabs?.[0]?.layout.panes[1]).toMatchObject({ title: 'API' })
     expect(reloaded.sessions[0]?.activeTabId).toBe(firstTab.id)
 
@@ -74,14 +71,10 @@ describe('workspace session tabs', () => {
       sessionId: session.id,
       tabId: firstTab.id,
       patch: {
-        layout: {
-          layout: 'columns',
-          panes: [
-            { id: 'pane-1' },
-            { id: 'pane-2', title: '   ' }
-          ],
-          sizes: { columnRatio: 0.4, rowRatio: 0.5 }
-        }
+        layout: testLayout([
+          { id: 'pane-1' },
+          { id: 'pane-2' }
+        ], 0.4)
       }
     })
     expect(cleared?.tabs?.[0]?.layout.panes[1]).not.toHaveProperty('title')
@@ -106,78 +99,14 @@ describe('workspace session tabs', () => {
     expect(await removeSessionTab({ sessionId: session.id, tabId: tabs[0]?.id ?? '' })).toBeNull()
   })
 
-  it('persists a six-pane layout with both column boundaries', async () => {
+  it('persists a nested arrangement and all divider ratios across a reload', async () => {
     const project = await createProject({ name: 'Work' })
-    const session = await createSession({
-      projectId: project.id,
-      name: 'App',
-      kind: 'native',
-      path: '/workspace/app'
-    })
-    const panes = [
-      { id: 'pane-1' },
-      { id: 'pane-2' },
-      { id: 'pane-3' },
-      { id: 'pane-4' },
-      { id: 'pane-5' },
-      { id: 'pane-6' }
-    ]
-    const updated = await updateSessionTab({
-      sessionId: session.id,
-      tabId: session.tabs?.[0]?.id ?? '',
-      patch: {
-        layout: {
-          layout: 'sixGrid',
-          panes,
-          sizes: { columnRatio: 0.3, secondColumnRatio: 0.7, rowRatio: 0.4 }
-        }
-      }
-    })
-
-    expect(updated?.tabs?.[0]?.layout).toEqual({
-      layout: 'sixGrid',
-      panes,
-      sizes: { columnRatio: 0.3, secondColumnRatio: 0.7, rowRatio: 0.4 }
-    })
-    await expect(loadWorkspace()).resolves.toMatchObject({
-      sessions: [{ tabs: [{ layout: { layout: 'sixGrid' } }] }]
-    })
-  })
-
-  it('persists a five-pane 3-by-2 layout', async () => {
-    const project = await createProject({ name: 'Work' })
-    const session = await createSession({
-      projectId: project.id,
-      name: 'App',
-      kind: 'native',
-      path: '/workspace/app'
-    })
-    const panes = [
-      { id: 'pane-1' },
-      { id: 'pane-2' },
-      { id: 'pane-3' },
-      { id: 'pane-4' },
-      { id: 'pane-5' }
-    ]
-    const updated = await updateSessionTab({
-      sessionId: session.id,
-      tabId: session.tabs?.[0]?.id ?? '',
-      patch: {
-        layout: {
-          layout: 'fiveGrid',
-          panes,
-          sizes: { columnRatio: 0.3, secondColumnRatio: 0.7, rowRatio: 0.4 }
-        }
-      }
-    })
-
-    expect(updated?.tabs?.[0]?.layout).toEqual({
-      layout: 'fiveGrid',
-      panes,
-      sizes: { columnRatio: 0.3, secondColumnRatio: 0.7, rowRatio: 0.4 }
-    })
-    await expect(loadWorkspace()).resolves.toMatchObject({
-      sessions: [{ tabs: [{ layout: { layout: 'fiveGrid', panes } }] }]
-    })
+    const session = await createSession({ projectId: project.id, name: 'App', kind: 'native', path: '/workspace/app' })
+    const layout = testLayout(Array.from({ length: 12 }, (_, index) => ({ id: `pane-${index}` })), 0.3)
+    const updated = await updateSessionTab({ sessionId: session.id, tabId: session.tabs![0]!.id, patch: { layout } })
+    expect(updated?.tabs?.[0]?.layout).toEqual(layout)
+    initWorkspaceStore(storeDir)
+    const reloaded = await loadWorkspace()
+    expect(reloaded.sessions[0]?.tabs?.[0]?.layout).toEqual(layout)
   })
 })

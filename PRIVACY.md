@@ -25,8 +25,8 @@ MDE stores data only on the local machine:
   section is folded up (the word `on` or `off` for each).
 - The renderer's local storage (`mde.inbox-sidebar-width` and `mde.inbox-terminal-layout`): how wide
   the Inbox's right-hand sidebar is (a number of pixels), and the arrangement of the Inbox terminal
-  (which layout, such as two side by side, and where its dividers are, as numbers). Neither holds any
-  terminal content; the terminal's shells are not restored on the next run.
+  (a tree of pane IDs, split IDs, horizontal or vertical directions, and numeric divider ratios).
+  Neither holds terminal content or pane titles; the terminal's shells are not restored on the next run.
 - Small preference files in the user-data directory for the OpenCode status integration and
   notifications.
 - `inbox.json` under Electron's user-data directory, once you use the Inbox: one record for each

@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { testLayout } from './helpers/terminal-layout'
 
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -166,11 +167,7 @@ describe('OpenCode notification badges in navigation', () => {
     const container = render(sidebar({
       terminalLayouts: {
         [session.id]: {
-          [tab.id]: {
-            layout: 'single',
-            panes: [{ terminalId: session.id }],
-            sizes: { columnRatio: 0.5, rowRatio: 0.5 }
-          }
+          [tab.id]: testLayout([{ terminalId: session.id }])
         }
       }
     }))
@@ -194,11 +191,7 @@ describe('OpenCode notification badges in navigation', () => {
       onFocusTerminal,
       terminalLayouts: {
         [session.id]: {
-          [tab.id]: {
-            layout: 'three',
-            panes: [instances[2]!, instances[0]!, instances[1]!].map(({ terminalId }) => ({ terminalId })),
-            sizes: { columnRatio: 0.5, rowRatio: 0.5 }
-          }
+          [tab.id]: testLayout([instances[2]!, instances[0]!, instances[1]!].map(({ terminalId }) => ({ terminalId })))
         }
       }
     }))

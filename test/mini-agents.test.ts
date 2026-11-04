@@ -1,3 +1,4 @@
+import { testLayout } from './helpers/terminal-layout'
 import { describe, expect, it } from 'vitest'
 import type { OpenCodeTuiInstanceStatus, Session } from '../src/shared/types'
 import { collectOpenCodeTuiOverviewEntries } from '../src/renderer/lib/opencode-tui-instances'
@@ -20,11 +21,7 @@ function session(id: string, name: string, color?: Session['color']): Session {
     tabs: [{
       id: `${id}-tab`,
       name: 'Main',
-      layout: {
-        layout: 'columns',
-        panes: [{ id: 'pane-1' }, { id: 'pane-2' }],
-        sizes: { columnRatio: 0.5, rowRatio: 0.5 }
-      }
+      layout: testLayout([{ id: 'pane-1' }, { id: 'pane-2' }])
     }],
     activeTabId: `${id}-tab`
   }
@@ -32,11 +29,7 @@ function session(id: string, name: string, color?: Session['color']): Session {
 
 function layout(id: string): Record<string, SessionTerminalLayout> {
   return {
-    [`${id}-tab`]: {
-      layout: 'columns',
-      panes: [{ terminalId: id }, { terminalId: `${id}:split:1` }],
-      sizes: { columnRatio: 0.5, rowRatio: 0.5 }
-    }
+    [`${id}-tab`]: testLayout([{ terminalId: id }, { terminalId: `${id}:split:1` }])
   }
 }
 

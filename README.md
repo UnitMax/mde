@@ -10,6 +10,9 @@ alerts and instance labels without replacing the terminal experience. The Inbox 
 chat view for starting and continuing OpenCode conversations; it needs no plugin. See
 [`docs/architecture.md`](docs/architecture.md) for how each part behaves.
 
+Build terminal layouts by holding Ctrl and clicking + on a pane’s left, right, top or bottom edge.
+Drag dividers to resize; closing a pane expands its sibling and preserves the rest of the layout.
+
 ## Requirements
 
 - Node 22.22.2+, or Node 24.15+ (the locked test dependencies require these versions)

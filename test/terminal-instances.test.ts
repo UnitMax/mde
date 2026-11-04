@@ -1,3 +1,4 @@
+import { testLayout } from './helpers/terminal-layout'
 import { describe, expect, it } from 'vitest'
 import {
   terminalDirectoryLabel,
@@ -6,15 +7,11 @@ import {
 } from '../src/renderer/lib/terminal-instances'
 import type { SessionTerminalLayout } from '../src/renderer/terminal/layout'
 
-const layout: SessionTerminalLayout = {
-  layout: 'three',
-  panes: [
-    { terminalId: 'session-1' },
-    { terminalId: 'session-1:split:1' },
-    { terminalId: 'session-1:split:2' }
-  ],
-  sizes: { columnRatio: 0.5, rowRatio: 0.5 }
-}
+const layout: SessionTerminalLayout = testLayout([
+  { terminalId: 'session-1' },
+  { terminalId: 'session-1:split:1' },
+  { terminalId: 'session-1:split:2' }
+])
 
 describe('terminal sidebar helpers', () => {
   it('filters OpenCode panes while preserving visible pane order', () => {

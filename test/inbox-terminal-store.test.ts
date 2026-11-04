@@ -32,68 +32,57 @@ afterEach(() => {
 describe('the Inbox terminal store', () => {
   it('starts as one terminal whose ID belongs to the Inbox terminal session', async () => {
     const store = await load()
-    expect(store.getState().layout.layout).toBe('single')
+    expect(store.getState().layout.tree).toEqual({ type: 'pane', paneId: 'pane-1' })
     expect(store.getState().layout.panes).toEqual([{ terminalId: ID(1), paneId: 'pane-1' }])
   })
 
-  it('grows to the chosen layout and keeps the arrangement for next time, and nothing else', async () => {
+  it('splits on a chosen side, focuses the new pane and stores only the arrangement', async () => {
     const store = await load()
-    store.getState().switchLayout('columns')
-    expect(store.getState().layout.panes.map((pane) => pane.terminalId)).toEqual([ID(1), ID(2)])
-    expect(stored()).toEqual({ layout: 'columns', sizes: { columnRatio: 0.5, rowRatio: 0.5 } })
+    store.getState().titlePane(ID(1), 'private title')
+    store.getState().splitPane(ID(1), 'top')
+    expect(store.getState().layout.panes.map((pane) => pane.terminalId)).toEqual([ID(2), ID(1)])
+    expect(focus).toHaveBeenCalledWith(ID(2))
+    expect(stored()).toEqual({ tree: store.getState().layout.tree })
+    expect(JSON.stringify(stored())).not.toContain('private title')
+    expect(JSON.stringify(stored())).not.toContain(ID(1))
   })
 
   it('saves a divider after it settles, not at every step of a drag', async () => {
     const store = await load()
-    store.getState().switchLayout('columns')
-    store.getState().resize('column', 0.3)
-    store.getState().resize('column', 0.35)
-    expect(store.getState().layout.sizes.columnRatio).toBe(0.35)
-    expect((stored() as { sizes: { columnRatio: number } }).sizes.columnRatio).toBe(0.5)
+    store.getState().splitPane(ID(1), 'right')
+    const tree = store.getState().layout.tree
+    if (tree.type !== 'split') throw new Error('Expected split')
+    store.getState().resize(tree.id, 0.3)
+    store.getState().resize(tree.id, 0.35)
+    expect(store.getState().layout.tree).toMatchObject({ ratio: 0.35 })
+    expect(stored()).toMatchObject({ tree: { ratio: 0.5 } })
     await vi.advanceTimersByTimeAsync(200)
-    expect((stored() as { sizes: { columnRatio: number } }).sizes.columnRatio).toBe(0.35)
+    expect(stored()).toMatchObject({ tree: { ratio: 0.35 } })
   })
 
-  it('comes back with the arrangement it was left in, one fresh terminal per pane', async () => {
-    localStorage.setItem(INBOX_TERMINAL_LAYOUT_STORAGE_KEY, JSON.stringify({ layout: 'three', sizes: { columnRatio: 0.4, rowRatio: 0.6 } }))
+  it('restores the saved arrangement with fresh shells and stable pane IDs', async () => {
+    const tree = { type: 'split', id: 'split', axis: 'row', ratio: 0.3, first: { type: 'pane', paneId: 'pane-2' }, second: { type: 'pane', paneId: 'pane-1' } }
+    localStorage.setItem(INBOX_TERMINAL_LAYOUT_STORAGE_KEY, JSON.stringify({ tree }))
     const store = await load()
-    expect(store.getState().layout.layout).toBe('three')
-    expect(store.getState().layout.panes).toHaveLength(3)
-    expect(store.getState().layout.sizes).toMatchObject({ columnRatio: 0.4, rowRatio: 0.6 })
+    expect(store.getState().layout.tree).toEqual(tree)
+    expect(store.getState().layout.panes.map((pane) => pane.terminalId)).toEqual([ID(2), ID(1)])
+    expect(store.getState().layout.panes.every((pane) => !pane.launch && !pane.exited)).toBe(true)
   })
 
-  it.each([
-    ['not JSON', '{'],
-    ['an unknown layout', JSON.stringify({ layout: 'sixty', sizes: { columnRatio: 0.5, rowRatio: 0.5 } })],
-    ['a divider outside the window', JSON.stringify({ layout: 'columns', sizes: { columnRatio: 4, rowRatio: 0.5 } })],
-    ['a divider that is not a number', JSON.stringify({ layout: 'columns', sizes: { columnRatio: '0.5', rowRatio: 0.5 } })],
-  ])('starts with one terminal when the stored layout is %s', async (_name, raw) => {
+  it.each(['{', 'null', JSON.stringify({ layout: 'columns', sizes: {} }), JSON.stringify({ tree: { type: 'pane' } })])('starts with one terminal for an invalid or old layout: %s', async (raw) => {
     localStorage.setItem(INBOX_TERMINAL_LAYOUT_STORAGE_KEY, raw)
     const store = await load()
-    expect(store.getState().layout.layout).toBe('single')
-    expect(store.getState().layout.panes).toHaveLength(1)
+    expect(store.getState().layout.tree).toEqual({ type: 'pane', paneId: 'pane-1' })
   })
 
-  it('ends the terminals a smaller layout drops, and hands the keyboard to one that is left', async () => {
+  it('closes a pane, expands its sibling and keeps the last pane available', async () => {
     const store = await load()
-    store.getState().switchLayout('quadrant')
-    store.getState().paneFocused(ID(4))
-    store.getState().reduceLayout('columns', [ID(3), ID(4)])
-    expect(dispose.mock.calls.map(([id]) => id)).toEqual([ID(3), ID(4)])
-    expect(store.getState().layout.panes.map((pane) => pane.terminalId)).toEqual([ID(1), ID(2)])
-    expect(store.getState().layout.layout).toBe('columns')
-    expect(focus).toHaveBeenCalledTimes(1)
-    expect([ID(1), ID(2)]).toContain(focus.mock.calls[0]![0])
-  })
-
-  it('closes a pane by ending its terminal and shrinking to the layout that fits', async () => {
-    const store = await load()
-    store.getState().switchLayout('columns')
+    store.getState().splitPane(ID(1), 'right')
+    store.getState().paneFocused(ID(1))
     store.getState().closePane(ID(1))
     expect(dispose).toHaveBeenCalledWith(ID(1))
-    expect(store.getState().layout.panes.map((pane) => pane.terminalId)).toEqual([ID(2)])
-    expect(store.getState().layout.layout).toBe('single')
-    // The last terminal cannot be closed.
+    expect(focus).toHaveBeenLastCalledWith(ID(2))
+    expect(store.getState().layout.tree).toEqual({ type: 'pane', paneId: 'pane-2' })
     store.getState().closePane(ID(2))
     expect(store.getState().layout.panes).toHaveLength(1)
   })
@@ -106,13 +95,13 @@ describe('the Inbox terminal store', () => {
     store.getState().addPane(ID(1), launch)
     expect(store.getState().layout.panes).toHaveLength(2)
     expect(store.getState().layout.panes[1]!.launch).toBe(launch)
-    expect(store.getState().layout.layout).toBe('columns')
+    expect(store.getState().layout.tree.type).toBe('split')
     expect(focus).toHaveBeenCalledWith(ID(2))
   })
 
   it('keeps the title of a pane, reorders panes, and ignores an order that is not one', async () => {
     const store = await load()
-    store.getState().switchLayout('columns')
+    store.getState().splitPane(ID(1), 'right')
     store.getState().titlePane(ID(2), 'server')
     expect(store.getState().layout.panes[1]!.title).toBe('server')
     store.getState().reorder([ID(2), ID(1)])
@@ -135,9 +124,9 @@ describe('the Inbox terminal store', () => {
       expect(dispose).not.toHaveBeenCalled()
     })
 
-    it('removes one of several, and shrinks the layout to fit the rest', async () => {
+    it('removes an ended pane and expands its sibling', async () => {
       const store = await load()
-      store.getState().switchLayout('columns')
+      store.getState().splitPane(ID(1), 'right')
       store.getState().paneFocused(ID(2))
       store.getState().paneExited(exit(ID(2)))
       expect(dispose).toHaveBeenCalledWith(ID(2))
@@ -150,7 +139,7 @@ describe('the Inbox terminal store', () => {
       const stop = vi.fn()
       const onExit = vi.fn((_listener: (info: PtyExitInfo) => void) => stop)
       vi.stubGlobal('api', { pty: { onExit } })
-      store.getState().switchLayout('columns')
+      store.getState().splitPane(ID(1), 'right')
       const unsubscribe = store.getState().init()
       onExit.mock.calls[0]![0](exit(ID(2)))
       expect(store.getState().layout.panes).toHaveLength(1)

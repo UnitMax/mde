@@ -31,15 +31,14 @@ import { useWorkspace } from '@/store/workspace'
 import { focusTerminalWhenReady } from '@/terminal/focus'
 import { disposeRuntimeTerminal } from '@/terminal/dispose'
 import {
-  layoutReduced,
   layoutReordered,
   layoutResized,
-  layoutSwitched,
   layoutTitled
 } from '@/terminal/layout-edits'
 import {
   activeSessionTab,
   appendRuntimePane,
+  splitRuntimePane,
   createRuntimeLayout,
   persistRuntimeLayout,
   sessionTabs,
@@ -49,11 +48,8 @@ import {
   removeTerminalPane,
   terminalFocusTargetAfterRemoval,
   type SessionTerminalLayout,
-  type TerminalLayout,
+  type TerminalSplitSide,
   type RuntimeTerminalLaunch,
-  type TerminalColumnIndex,
-  type TerminalRowIndex,
-  type TerminalResizeAxis
 } from '@/terminal/layout'
 import type { PersistedTerminalLayout, Session, TodoTask } from '@shared/types'
 import { useInboxChat } from '@/store/inbox-chat'
@@ -546,13 +542,16 @@ export function App(): JSX.Element {
     })
   }
 
-  const changeTerminalLayout = (sessionId: string, tabId: string, layout: TerminalLayout): void => {
+  const splitTerminalPane = (sessionId: string, tabId: string, terminalId: string, side: TerminalSplitSide): void => {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!session) return
-    const next = layoutSwitched(layoutForTab(session, tabId), layout, sessionId, tabId)
+    const existing = layoutForTab(session, tabId)
+    const next = splitRuntimePane(sessionId, tabId, existing, terminalId, side)
     if (!next) return
     setRuntimeLayout(sessionId, tabId, next)
     queueLayoutPersistence(sessionId, tabId, next, true)
+    const added = next.panes.find((pane) => !existing.panes.includes(pane))
+    if (added) setPendingTerminalFocus({ sessionId, tabId, terminalId: added.terminalId })
   }
 
   const addTerminalPane = (
@@ -570,7 +569,7 @@ export function App(): JSX.Element {
     if (!next) return
     setRuntimeLayout(sessionId, tabId, next)
     queueLayoutPersistence(sessionId, tabId, next, true)
-    const pane = next.panes[next.panes.length - 1]
+    const pane = next.panes.find((candidate) => !existing.panes.includes(candidate))
     if (pane) {
       setPendingTerminalFocus({
         sessionId,
@@ -578,22 +577,6 @@ export function App(): JSX.Element {
         terminalId: pane.terminalId
       })
     }
-  }
-
-  const reduceTerminalLayout = (
-    sessionId: string,
-    tabId: string,
-    layout: TerminalLayout,
-    paneIds: string[]
-  ): void => {
-    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
-    if (!session) return
-    const existing = layoutForTab(session, tabId)
-    paneIds.forEach(disposeRuntimeTerminal)
-    const next = layoutReduced(existing, layout, paneIds)
-    setRuntimeLayout(sessionId, tabId, next)
-    queueLayoutPersistence(sessionId, tabId, next, true)
-    focusTerminalAfterPaneRemoval(sessionId, tabId, existing, paneIds, next)
   }
 
   const closeTerminalPane = (sessionId: string, tabId: string, terminalId: string): void => {
@@ -611,13 +594,12 @@ export function App(): JSX.Element {
   const resizeTerminalLayout = (
     sessionId: string,
     tabId: string,
-    axis: TerminalResizeAxis,
-    ratio: number,
-    index?: TerminalColumnIndex | TerminalRowIndex
+    splitId: string,
+    ratio: number
   ): void => {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!session) return
-    const next = layoutResized(layoutForTab(session, tabId), axis, ratio, index)
+    const next = layoutResized(layoutForTab(session, tabId), splitId, ratio)
     setRuntimeLayout(sessionId, tabId, next)
     queueLayoutPersistence(sessionId, tabId, next)
   }
@@ -758,10 +740,9 @@ export function App(): JSX.Element {
                 onTabRenameStart={cancelTerminalFocus}
                 onRenameTab={(tabId, name) => renameTab(selected.id, tabId, name)}
                 onCloseTab={(tabId) => closeTab(selected.id, tabId)}
-                onLayoutChange={(layout) => changeTerminalLayout(selected.id, activeTab.id, layout)}
-                onLayoutResize={(axis, ratio, index) => resizeTerminalLayout(selected.id, activeTab.id, axis, ratio, index)}
+                onSplitPane={(terminalId, side) => splitTerminalPane(selected.id, activeTab.id, terminalId, side)}
+                onLayoutResize={(splitId, ratio) => resizeTerminalLayout(selected.id, activeTab.id, splitId, ratio)}
                 onPaneOrderChange={(terminalIds) => reorderTerminalPanes(selected.id, activeTab.id, terminalIds)}
-                onReduceLayout={(layout, paneIds) => reduceTerminalLayout(selected.id, activeTab.id, layout, paneIds)}
                 onAddPane={(sourceTerminalId, launch) =>
                   addTerminalPane(selected.id, activeTab.id, sourceTerminalId, launch)
                 }

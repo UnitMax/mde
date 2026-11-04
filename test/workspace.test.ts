@@ -1,3 +1,4 @@
+import { testLayout } from './helpers/terminal-layout'
 import { describe, expect, it } from 'vitest'
 import {
   validateProject,
@@ -47,9 +48,8 @@ const defaultTab = {
   id: 'session-1:tab:default',
   name: 'Tab 1',
   layout: {
-    layout: 'single',
-    panes: [{ id: 'pane-1' }],
-    sizes: { columnRatio: 0.5, rowRatio: 0.5 }
+    tree: { type: 'pane', paneId: 'pane-1' },
+    panes: [{ id: 'pane-1' }]
   }
 }
 
@@ -59,25 +59,13 @@ const normalizedSession = {
   activeTabId: defaultTab.id
 }
 
-describe('removed terminal layout fallback', () => {
-  const removedTab = {
-    id: 'removed-tab',
-    name: 'Removed layout',
-    layout: {
-      layout: 'threeColumns',
-      panes: [{ id: 'pane-1' }, { id: 'pane-2' }, { id: 'pane-3' }],
-      sizes: { columnRatio: 1 / 3, secondColumnRatio: 2 / 3, rowRatio: 0.5 }
-    }
-  }
-
-  it('uses a default tab when the only saved tab uses the removed layout', () => {
-    expect(validateSession({ ...session, tabs: [removedTab], activeTabId: removedTab.id }, new Set([project.id])))
-      .toEqual(normalizedSession)
-  })
-
-  it('selects a surviving tab when the active saved tab uses the removed layout', () => {
-    expect(validateSession({ ...session, tabs: [removedTab, defaultTab], activeTabId: removedTab.id }, new Set([project.id])))
-      .toEqual(normalizedSession)
+describe('saved layout fallback', () => {
+  it('resets an older layout while keeping tab identity, name and selection', () => {
+    const tab = { id: 'existing-tab', name: 'Shell', layout: { layout: 'columns', panes: [{ id: 'a' }, { id: 'b' }] } }
+    const restored = validateSession({ ...session, tabs: [tab, defaultTab], activeTabId: tab.id }, new Set([project.id]))
+    expect(restored?.tabs?.[0]).toEqual({ ...tab, layout: defaultTab.layout })
+    expect(restored?.tabs).toHaveLength(2)
+    expect(restored?.activeTabId).toBe(tab.id)
   })
 })
 
@@ -151,152 +139,21 @@ describe('workspace validation', () => {
     expect(validateSessionList([session, session], projectIds)).toHaveLength(1)
   })
 
-  it('normalizes tab names, ratios, and malformed tab entries', () => {
-    const projectIds = new Set([project.id])
-    const custom = validateSession({
-      ...session,
-      tabs: [
-        {
-          id: 'tab-custom',
-          name: '  Shell  ',
-          layout: {
-            layout: 'columns',
-            panes: [
-              { id: 'pane-1' },
-              { id: 'pane-2' }
-            ],
-            sizes: { columnRatio: 2, rowRatio: -1 }
-          }
-        },
-        { id: 'broken', name: '', layout: {} }
-      ],
-      activeTabId: 'tab-custom'
-    }, projectIds)
-
-    expect(custom).toMatchObject({
-      tabs: [{
-        id: 'tab-custom',
-        name: 'Shell',
-        layout: { layout: 'columns', sizes: { columnRatio: 0.5, rowRatio: 0.5 } }
-      }],
-      activeTabId: 'tab-custom'
-    })
+  it('normalizes tab names and ignores malformed tab entries', () => {
+    const layout = testLayout([{ id: 'a' }, { id: 'b' }], 0.3)
+    const custom = validateSession({ ...session, tabs: [
+      { id: 'tab-custom', name: '  Shell  ', layout },
+      { id: 'broken', name: '', layout: {} },
+    ], activeTabId: 'tab-custom' }, new Set([project.id]))
+    expect(custom).toMatchObject({ tabs: [{ id: 'tab-custom', name: 'Shell', layout }], activeTabId: 'tab-custom' })
   })
 
-  it('validates three-column, five-pane, and six-pane layouts with independent column ratios', () => {
-    const projectIds = new Set([project.id])
-    const panes = [
-      { id: 'pane-1' },
-      { id: 'pane-2' },
-      { id: 'pane-3' },
-      { id: 'pane-4' },
-      { id: 'pane-5' },
-      { id: 'pane-6' }
-    ]
-    const six = validateSession({
-      ...session,
-      tabs: [{
-        id: 'tab-six',
-        name: 'Six',
-        layout: {
-          layout: 'sixGrid',
-          panes,
-          sizes: { columnRatio: 0.3, secondColumnRatio: 0.7, rowRatio: 0.4 }
-        }
-      }]
-    }, projectIds)
-
-    expect(six?.tabs?.[0]?.layout).toEqual({
-      layout: 'sixGrid',
-      panes,
-      sizes: { columnRatio: 0.3, secondColumnRatio: 0.7, rowRatio: 0.4 }
-    })
-
-    const five = validateSession({
-      ...session,
-      tabs: [{
-        id: 'tab-five',
-        name: 'Five',
-        layout: {
-          layout: 'fiveGrid',
-          panes: panes.slice(0, 5),
-          sizes: { columnRatio: 0.3, secondColumnRatio: 0.7, rowRatio: 0.4 }
-        }
-      }]
-    }, projectIds)
-
-    expect(five?.tabs?.[0]?.layout).toEqual({
-      layout: 'fiveGrid',
-      panes: panes.slice(0, 5),
-      sizes: { columnRatio: 0.3, secondColumnRatio: 0.7, rowRatio: 0.4 }
-    })
-
-    const invalidRatios = validateSession({
-      ...session,
-      tabs: [{
-        id: 'tab-six',
-        name: 'Six',
-        layout: {
-          layout: 'sixGrid',
-          panes,
-          sizes: { columnRatio: 0.8, secondColumnRatio: 0.2, rowRatio: 0.5 }
-        }
-      }]
-    }, projectIds)
-    expect(invalidRatios?.tabs?.[0]?.layout.sizes).toEqual({
-      columnRatio: 1 / 3,
-      secondColumnRatio: 2 / 3,
-      rowRatio: 0.5
-    })
-
-    const invalidPaneCount = validateSession({
-      ...session,
-      tabs: [{
-        id: 'tab-invalid',
-        name: 'Invalid',
-        layout: {
-          layout: 'sixGrid',
-          panes: panes.slice(0, 5),
-          sizes: { columnRatio: 1 / 3, secondColumnRatio: 2 / 3, rowRatio: 0.5 }
-        }
-      }]
-    }, projectIds)
-    expect(invalidPaneCount?.tabs?.[0]?.name).toBe('Tab 1')
-  })
-
-  it('validates the seven- to nine-pane layouts with independent row and column ratios', () => {
-    const projectIds = new Set([project.id])
-    const panes = Array.from({ length: 10 }, (_, index) => ({ id: `pane-${index + 1}` }))
-    const tabFor = (layout: string, count: number, sizes: Record<string, number>) => validateSession({
-      ...session,
-      tabs: [{ id: 'tab-grid', name: 'Grid', layout: { layout, panes: panes.slice(0, count), sizes } }]
-    }, projectIds)?.tabs?.[0]
-
-    const custom = { columnRatio: 0.3, secondColumnRatio: 0.7, rowRatio: 0.2, secondRowRatio: 0.5 }
-    for (const [layout, count] of [['sevenGrid', 7], ['eightGrid', 8], ['nineGrid', 9]] as const) {
-      expect(tabFor(layout, count, custom)?.layout).toEqual({
-        layout,
-        panes: panes.slice(0, count),
-        sizes: custom
-      })
-    }
-
-    const even = { columnRatio: 1 / 3, secondColumnRatio: 2 / 3, rowRatio: 1 / 3, secondRowRatio: 2 / 3 }
-    // Out-of-order, missing or out-of-range row ratios fall back to even rows.
-    expect(tabFor('nineGrid', 9, { ...custom, rowRatio: 0.8, secondRowRatio: 0.2 })?.layout.sizes).toEqual({
-      ...custom,
-      ...{ rowRatio: 1 / 3, secondRowRatio: 2 / 3 }
-    })
-    expect(tabFor('nineGrid', 9, { columnRatio: 1 / 3, secondColumnRatio: 2 / 3, rowRatio: 0.5 })?.layout.sizes).toEqual({
-      ...even,
-      rowRatio: 0.5
-    })
-    expect(tabFor('nineGrid', 9, { columnRatio: 1 / 3, secondColumnRatio: 2 / 3, rowRatio: 2 })?.layout.sizes).toEqual(even)
-    // A layout that does not use a second row divider never stores one.
-    expect(tabFor('sixGrid', 6, custom)?.layout.sizes).not.toHaveProperty('secondRowRatio')
-    // The pane count must match the layout exactly.
-    expect(tabFor('nineGrid', 8, custom)?.name).toBe('Tab 1')
-    expect(tabFor('eightGrid', 9, custom)?.name).toBe('Tab 1')
+  it('preserves arbitrary nested splits and resets a malformed tree', () => {
+    const layout = testLayout(Array.from({ length: 12 }, (_, index) => ({ id: `pane-${index}` })), 0.3)
+    const raw = { ...session, tabs: [{ id: 'tab', name: 'Shell', layout }] }
+    expect(validateSession(raw, new Set([project.id]))?.tabs?.[0]?.layout).toEqual(layout)
+    const broken = { ...raw, tabs: [{ ...raw.tabs[0], layout: { ...layout, panes: layout.panes.slice(1) } }] }
+    expect(validateSession(broken, new Set([project.id]))?.tabs?.[0]?.layout).toEqual(defaultTab.layout)
   })
 
   it('loads grouped projects and sessions from the new workspace shape', () => {

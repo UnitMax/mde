@@ -1,3 +1,4 @@
+import { testLayout } from './helpers/terminal-layout'
 import { describe, expect, it } from 'vitest'
 import type { Session } from '../src/shared/types'
 import type { SessionTerminalLayout } from '../src/renderer/terminal/layout'
@@ -18,28 +19,20 @@ const session: Session = {
   tabs: [{
     id: 'tab-1',
     name: 'Main',
-    layout: {
-      layout: 'three',
-      panes: [
-        { id: 'pane-1', title: 'API' },
-        { id: 'pane-2' },
-        { id: 'pane-3' }
-      ],
-      sizes: { columnRatio: 0.5, rowRatio: 0.5 }
-    }
+    layout: testLayout([
+      { id: 'pane-1', title: 'API' },
+      { id: 'pane-2' },
+      { id: 'pane-3' }
+    ])
   }],
   activeTabId: 'tab-1'
 }
 
-const layout: SessionTerminalLayout = {
-  layout: 'three',
-  panes: [
-    { terminalId: 'session-1:tab:tab-1:pane:pane-1', paneId: 'pane-1', title: 'API' },
-    { terminalId: 'session-1:tab:tab-1:pane:pane-2', paneId: 'pane-2' },
-    { terminalId: 'session-1:tab:tab-1:pane:pane-3', paneId: 'pane-3' }
-  ],
-  sizes: { columnRatio: 0.5, rowRatio: 0.5 }
-}
+const layout: SessionTerminalLayout = testLayout([
+  { terminalId: 'session-1:tab:tab-1:pane:pane-1', paneId: 'pane-1', title: 'API' },
+  { terminalId: 'session-1:tab:tab-1:pane:pane-2', paneId: 'pane-2' },
+  { terminalId: 'session-1:tab:tab-1:pane:pane-3', paneId: 'pane-3' }
+])
 
 describe('runtime terminal task links', () => {
   it('indexes links in both directions', () => {

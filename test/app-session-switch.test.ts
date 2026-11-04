@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 
+import { testLayout } from './helpers/terminal-layout'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -46,11 +47,7 @@ function session(id: string, name: string, paneCount: number): Session {
     createdAt: '2026-01-01T00:00:00.000Z',
     tabs: [{
       id: `${id}-tab`, name: 'Tab 1',
-      layout: {
-        layout: paneCount === 4 ? 'quadrant' : 'columns',
-        panes: Array.from({ length: paneCount }, (_, index) => ({ id: `pane-${index + 1}` })),
-        sizes: { columnRatio: 0.5, rowRatio: 0.5 }
-      }
+      layout: testLayout(Array.from({ length: paneCount }, (_, index) => ({ id: `pane-${index + 1}` })))
     }],
     activeTabId: `${id}-tab`
   }

@@ -1,16 +1,9 @@
-import {
-  TERMINAL_LAYOUT_DEFINITIONS,
-  MAX_TERMINAL_COUNT,
-  isTerminalLayout,
-  isThreeRowLayout,
-  isThreeColumnLayout,
-} from '@shared/terminal-layouts'
+import { isPersistedTerminalLayout } from '@shared/terminal-layouts'
 import { IpcChannels } from '@shared/ipc'
 import { isSessionColor } from '@shared/session-colors'
 import { isSessionIcon } from '@shared/session-icons'
 import { MCP_SERVER_NAME } from '@shared/mcp'
 import { worktreeBranchProblem } from '@shared/worktree-branch'
-import type { TerminalLayout } from '@shared/types'
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels]
 type Validator = (value: unknown) => boolean
@@ -92,32 +85,7 @@ const palette = object({
 const dimension: Validator = (value) => typeof value === 'number' && Number.isInteger(value) &&
   value >= 1 && value <= IPC_LIMITS.terminalDimension
 const size = object({ cols: dimension, rows: dimension })
-const ratio: Validator = (value) => typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 1
-const pane = object({ id, title: optional(label) })
-const layoutShape = object({
-  layout: isTerminalLayout,
-  panes: array(pane, MAX_TERMINAL_COUNT),
-  sizes: object({
-    columnRatio: ratio,
-    rowRatio: ratio,
-    secondColumnRatio: optional(ratio),
-    secondRowRatio: optional(ratio),
-  }),
-})
-const layout: Validator = (value) => {
-  if (!layoutShape(value)) return false
-  const entry = value as {
-    layout: TerminalLayout
-    panes: { id: string }[]
-    sizes: { columnRatio: number; rowRatio: number; secondColumnRatio?: number; secondRowRatio?: number }
-  }
-  const threeRows = isThreeRowLayout(entry.layout)
-  const threeColumns = isThreeColumnLayout(entry.layout)
-  return entry.panes.length === TERMINAL_LAYOUT_DEFINITIONS[entry.layout].count &&
-    new Set(entry.panes.map((pane) => pane.id)).size === entry.panes.length &&
-    (!threeColumns || (entry.sizes.secondColumnRatio !== undefined && entry.sizes.columnRatio < entry.sizes.secondColumnRatio)) &&
-    (!threeRows || (entry.sizes.secondRowRatio !== undefined && entry.sizes.rowRatio < entry.sizes.secondRowRatio))
-}
+const layout: Validator = isPersistedTerminalLayout
 const tab = object({ sessionId: id, tabId: id })
 const argsShape = array(string(IPC_LIMITS.path, true), IPC_LIMITS.arguments)
 const args: Validator = (value) => argsShape(value) &&

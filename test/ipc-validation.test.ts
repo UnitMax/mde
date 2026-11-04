@@ -1,3 +1,5 @@
+import { testLayout } from './helpers/terminal-layout'
+import { MAX_TERMINAL_COUNT } from '../src/shared/terminal-layouts'
 import { describe, expect, it } from 'vitest'
 import { IpcChannels } from '../src/shared/ipc'
 import { assertIpcPayload, IPC_LIMITS, ipcPayloadValidators, type IpcChannel } from '../src/main/ipc-validation'
@@ -5,7 +7,7 @@ import { assertIpcPayload, IPC_LIMITS, ipcPayloadValidators, type IpcChannel } f
 const palette = { foreground: '#ffffff', background: '#000000' }
 const size = { cols: 80, rows: 24 }
 const ensure = { terminalId: 'pane', sessionId: 'session', palette, size }
-const layout = { layout: 'single', panes: [{ id: 'pane' }], sizes: { columnRatio: 0.5, rowRatio: 0.5 } }
+const layout = testLayout([{ id: 'pane' }])
 const enabled = { enabled: true }
 const sessionId = { sessionId: 'session' }
 const terminalId = { terminalId: 'pane' }
@@ -366,38 +368,39 @@ describe('IPC payload boundary', () => {
     }
   })
 
-  it('rejects malformed layouts, mismatched counts, duplicate panes and invalid ratios', () => {
-    const update = (value: unknown): unknown => ({ ...tab, patch: { layout: value } })
+  it('rejects malformed trees, unmatched pane references and invalid ratios', () => {
+    const valid = testLayout([{ id: 'a' }, { id: 'b' }])
+    if (valid.tree.type !== 'split') throw new Error('Expected split')
+    const update = (value: unknown) => ({ ...tab, patch: { layout: value } })
     for (const value of [
       { ...layout, layout: 'unknown' },
       { ...layout, panes: [] },
-      { ...layout, layout: 'columns', panes: [{ id: 'same' }, { id: 'same' }] },
-      { ...layout, sizes: { columnRatio: Infinity, rowRatio: 0.5 } },
-      { ...layout, sizes: { columnRatio: 0, rowRatio: 0.5 } },
+      { ...valid, panes: [{ id: 'a' }, { id: 'a' }] },
+      { ...valid, tree: { ...valid.tree, ratio: Infinity } },
+      { ...valid, tree: { ...valid.tree, ratio: 0 } },
+      { ...valid, tree: { ...valid.tree, ratio: 1 } },
+      { ...valid, tree: { ...valid.tree, axis: 'diagonal' } },
+      { ...valid, tree: { ...valid.tree, second: valid.tree.first } },
+      { ...valid, tree: { ...valid.tree, first: { type: 'pane', paneId: 'missing' } } },
+      { ...valid, panes: [...valid.panes].reverse() },
       { ...layout, panes: [{ id: 'pane', unexpected: true }] },
-      { ...layout, layout: 'threeColumns', panes: [{ id: 'a' }, { id: 'b' }, { id: 'c' }], sizes: { columnRatio: 1 / 3, secondColumnRatio: 2 / 3, rowRatio: 0.5 } },
-      { ...layout, layout: 'sixGrid', panes: Array.from({ length: 6 }, (_, index) => ({ id: `pane-${index}` })), sizes: { columnRatio: 0.8, secondColumnRatio: 0.2, rowRatio: 0.5 } },
+      { ...layout, tree: { ...layout.tree, unexpected: true } },
+      { ...layout, tree: Object.create(layout.tree) },
+      { ...layout, panes: Array(1) },
+      { ...layout, panes: [{ id: 'pane', get title() { throw new Error('Must not access getter') } }] },
+      { ...valid, tree: { ...valid.tree, get ratio() { throw new Error('Must not access getter') } } },
     ]) rejects(IpcChannels.tabsUpdate, update(value))
+    const cycle = { ...valid.tree }
+    cycle.first = cycle
+    rejects(IpcChannels.tabsUpdate, update({ ...valid, tree: cycle }))
   })
 
-  it('accepts nine-pane layouts and rejects broken row dividers or a tenth pane', () => {
-    const panes = (count: number) => Array.from({ length: count }, (_, index) => ({ id: `pane-${index + 1}` }))
-    const nine = {
-      layout: 'nineGrid',
-      panes: panes(9),
-      sizes: { columnRatio: 1 / 3, secondColumnRatio: 2 / 3, rowRatio: 1 / 3, secondRowRatio: 2 / 3 }
-    }
-    const update = (value: unknown): unknown => ({ ...tab, patch: { layout: value } })
-
-    expect(() => assertIpcPayload(IpcChannels.tabsUpdate, update(nine))).not.toThrow()
-    for (const value of [
-      { ...nine, sizes: { ...nine.sizes, secondRowRatio: undefined } },
-      { ...nine, sizes: { ...nine.sizes, rowRatio: 0.8, secondRowRatio: 0.2 } },
-      { ...nine, sizes: { ...nine.sizes, secondRowRatio: 1 } },
-      { ...nine, layout: 'eightGrid' },
-      { ...nine, panes: panes(10) },
-      { ...nine, layout: 'sevenGrid', panes: panes(7), sizes: { columnRatio: 1 / 3, secondColumnRatio: 2 / 3, rowRatio: 0.5 } },
-    ]) rejects(IpcChannels.tabsUpdate, update(value))
+  it('accepts nested layouts beyond nine panes and rejects excessive tree sizes', () => {
+    const make = (count: number) => testLayout(Array.from({ length: count }, (_, index) => ({ id: `pane-${index}` })))
+    const update = (value: unknown) => ({ ...tab, patch: { layout: value } })
+    expect(() => assertIpcPayload(IpcChannels.tabsUpdate, update(make(12)))).not.toThrow()
+    expect(() => assertIpcPayload(IpcChannels.tabsUpdate, update(make(MAX_TERMINAL_COUNT)))).not.toThrow()
+    rejects(IpcChannels.tabsUpdate, update(make(MAX_TERMINAL_COUNT + 1)))
   })
 })
 

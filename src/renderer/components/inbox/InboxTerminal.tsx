@@ -23,8 +23,7 @@ export function focusInboxTerminalWhenShown(): void {
  */
 export function InboxTerminal(): JSX.Element {
   const layout = useInboxTerminal((state) => state.layout)
-  const switchLayout = useInboxTerminal((state) => state.switchLayout)
-  const reduceLayout = useInboxTerminal((state) => state.reduceLayout)
+  const splitPane = useInboxTerminal((state) => state.splitPane)
   const resize = useInboxTerminal((state) => state.resize)
   const reorder = useInboxTerminal((state) => state.reorder)
   const titlePane = useInboxTerminal((state) => state.titlePane)
@@ -52,10 +51,9 @@ export function InboxTerminal(): JSX.Element {
       activeTab={INBOX_TERMINAL_TAB}
       terminalLayout={layout}
       embedded
-      onLayoutChange={switchLayout}
+      onSplitPane={splitPane}
       onLayoutResize={resize}
       onPaneOrderChange={reorder}
-      onReduceLayout={reduceLayout}
       onAddPane={addPane}
       onClosePane={closePane}
       onPaneFocus={paneFocused}

@@ -1,3 +1,4 @@
+import { testLayout } from './helpers/terminal-layout'
 import { describe, expect, it } from 'vitest'
 import type { OpenCodeTuiInstanceStatus, Session } from '../src/shared/types'
 import {
@@ -8,15 +9,11 @@ import {
 } from '../src/renderer/lib/opencode-tui-instances'
 import type { SessionTerminalLayout } from '../src/renderer/terminal/layout'
 
-const layout: SessionTerminalLayout = {
-  layout: 'three',
-  panes: [
-    { terminalId: 'session-1:split:2' },
-    { terminalId: 'session-1' },
-    { terminalId: 'session-1:split:1' }
-  ],
-  sizes: { columnRatio: 0.5, rowRatio: 0.5 }
-}
+const layout: SessionTerminalLayout = testLayout([
+  { terminalId: 'session-1:split:2' },
+  { terminalId: 'session-1' },
+  { terminalId: 'session-1:split:1' }
+])
 
 const instances: OpenCodeTuiInstanceStatus[] = [
   { terminalId: 'session-1', status: 'completed', revision: 2 },
@@ -40,25 +37,17 @@ function overviewSession(id: string, name: string, tabId: string, tabName: strin
     tabs: [{
       id: tabId,
       name: tabName,
-      layout: {
-        layout: 'columns',
-        panes: [{ id: 'pane-1' }, { id: 'pane-2' }],
-        sizes: { columnRatio: 0.5, rowRatio: 0.5 }
-      }
+      layout: testLayout([{ id: 'pane-1' }, { id: 'pane-2' }])
     }],
     activeTabId: tabId
   }
 }
 
 function overviewLayout(sessionId: string, tabId: string): SessionTerminalLayout {
-  return {
-    layout: 'columns',
-    panes: [
-      { terminalId: `${sessionId}:tab:${tabId}:pane:pane-2` },
-      { terminalId: `${sessionId}:tab:${tabId}:pane:pane-1` }
-    ],
-    sizes: { columnRatio: 0.5, rowRatio: 0.5 }
-  }
+  return testLayout([
+    { terminalId: `${sessionId}:tab:${tabId}:pane:pane-2` },
+    { terminalId: `${sessionId}:tab:${tabId}:pane:pane-1` }
+  ])
 }
 
 describe('OpenCode TUI instance sidebar helpers', () => {

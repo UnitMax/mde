@@ -1,3 +1,4 @@
+import { testLayout } from './helpers/terminal-layout'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   InboxThread,
@@ -649,11 +650,7 @@ describe('renderer workspace event bridge', () => {
     const firstTab = {
       id: 'tab-1',
       name: 'Tab 1',
-      layout: {
-        layout: 'single' as const,
-        panes: [{ id: 'pane-1' }],
-        sizes: { columnRatio: 0.5, rowRatio: 0.5 }
-      }
+      layout: testLayout([{ id: 'pane-1' }])
     }
     const secondTab = { ...firstTab, id: 'tab-2', name: 'Tab 2' }
     const session: Session = {

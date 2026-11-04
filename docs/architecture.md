@@ -20,9 +20,12 @@ Every renderer-to-main call is authenticated and validated centrally; see
 
 Projects are groups that contain sessions. Sessions own the name, path, platform, distro and
 optional shell override. Each session persists an ordered set of terminal tabs. Every tab owns an
-independent layout of one to nine panes (Ctrl+1–9 selects the corresponding pane count),
-including three terminals arranged as two above one, a six-terminal 3 × 2 grid and a
-nine-terminal 3 × 3 grid; new tabs start with one fresh terminal. The
+independent layout built by splitting individual panes; new tabs start with one fresh terminal.
+Hold Ctrl to reveal + controls on the left, right, top and bottom of each pane. Clicking an edge
+splits that pane in half and focuses a fresh shell on the chosen side. Each split has its own
+ratio and draggable divider; focused dividers also accept arrow keys. Closing or exiting a pane
+collapses only its parent split, so the rest of the arrangement keeps its proportions. Layouts
+support up to 64 panes per tab as a resource bound, independent of their arrangement. The
 renderer keeps one `xterm` instance per runtime terminal identity in a plain Map outside React.
 Switching sessions or tabs re-parents terminal containers rather than disposing them, so each
 process, its scrollback and its cursor position survive. Unvisited persisted tabs create their PTYs
@@ -31,9 +34,14 @@ lazily; the PTYs themselves do not survive application restart.
 The workspace is stored as `workspace.json` in Electron's user-data directory with separate
 `projects`, `todoProjects`, `todoTasks` and `sessions` arrays. Session array order is the persistent
 sidebar order within each project; tab names, order, active tab, pane order, layouts and resize
-ratios are stored inside each session. Legacy sessions without tab data are normalized to a single
-`Tab 1` on load. Terminal and agent-command preferences live in the renderer's `localStorage`
-instead (`mde.terminal-settings`).
+ratios are stored inside each session. A layout contains an ordered pane list and a binary tree of
+pane identities and splits (stable split ID, axis, ratio and two children). IPC and stored layouts
+share strict validation of that tree, including unique IDs, matching pane order and bounded node
+counts. The renderer positions panes in flat slots derived from the tree, keeping existing terminal
+components mounted as splits are inserted, removed or reordered. Legacy sessions without tab data
+are normalized to a single `Tab 1` on load. Older preset layouts reset to one pane while tab names,
+identities and selection are retained; no layout migration is provided. Terminal and agent-command
+preferences live in the renderer's `localStorage` instead (`mde.terminal-settings`).
 
 Keyboard shortcuts are listed in the app under Settings → Keyboard Shortcuts; that list is defined
 in `src/renderer/terminal/keyboard-shortcuts.ts`.
@@ -235,7 +243,7 @@ The Inbox also shows a right-hand sidebar with three tabs, Files, Changes and Te
 
 **Resizing.** Dragging the sidebar's left edge makes it wider (up to 70% of the window) or narrower (never under 260 px). The edge is a keyboard-operable separator: Left and Right arrows change the width by 16 px (64 with Shift), Home and End go to the limits, and a double-click restores 260 px. One width serves all three tabs and is kept in the renderer's `localStorage` (`mde.inbox-sidebar-width`).
 
-**Terminal tab.** The Inbox has one terminal, shared by every thread: it is the same whichever thread (or the new-thread page) is open, and it keeps running while the sidebar shows another tab or the Projects view is open. It reuses the project view's terminal layout (`TerminalView` in its embedded mode: no tab strip, a header that is only the layout picker, and Ctrl+1–9, Ctrl+Shift+F and the pane-switch shortcuts acting only while the keyboard is inside it, so typing in the composer is never intercepted). All nine layouts, resizing the dividers, reordering panes, pane titles, fullscreen, restart, the terminal launcher and the OpenCode history work as in Projects; only linking a terminal to a To Do task is not offered. Every shell starts in the home directory: `~` in the default WSL distro on Windows, the home directory on the Mac. The layout and its dividers are kept in `localStorage` (`mde.inbox-terminal-layout`) and come back as fresh shells on the next run; the shells themselves are not restored. The layout edits shared with the project view live in `src/renderer/terminal/layout-edits.ts`, and the Inbox's copy of the state in `src/renderer/store/inbox-terminal.ts`.
+**Terminal tab.** The Inbox has one terminal, shared by every thread: it is the same whichever thread (or the new-thread page) is open, and it keeps running while the sidebar shows another tab or the Projects view is open. It reuses the project view's terminal layout (`TerminalView` in its embedded mode: no tab strip, a location header, and Ctrl split controls, Ctrl+Shift+F and the pane-switch shortcuts acting only while the keyboard is inside it, so typing in the composer is never intercepted). Splitting any pane on any side, resizing the dividers, reordering panes, pane titles, fullscreen, restart, the terminal launcher and the OpenCode history work as in Projects; only linking a terminal to a To Do task is not offered. Every shell starts in the home directory: `~` in the default WSL distro on Windows, the home directory on the Mac. The layout and its dividers are kept in `localStorage` (`mde.inbox-terminal-layout`) and come back as fresh shells on the next run; the shells themselves are not restored. The layout edits shared with the project view live in `src/renderer/terminal/layout-edits.ts`, and the Inbox's copy of the state in `src/renderer/store/inbox-terminal.ts`.
 
 The terminal is not a workspace session and is never stored. Terminal requests name it with the reserved session ID `inbox-terminal` (`src/shared/inbox-terminal.ts`), which the main process resolves on demand (`src/main/inbox/terminal.ts`) for requests that start or look after a terminal only; file browsing and Git status never accept it.
 
@@ -761,7 +769,8 @@ In a focused Mac or Windows/WSL terminal, Ctrl+N or Cmd+N opens a launcher for a
 Claude pane. It defaults to that terminal's current directory and can switch to the session
 directory with Tab; the two directory choices are also clickable. If the terminal has not reported
 its current directory yet, the session directory remains available. The session choice is disabled
-when both paths are identical. The launcher keeps at most nine panes per tab.
+when both paths are identical. New launcher and history panes split their source pane to its right,
+preserving the surrounding arrangement and its divider ratios. The per-tab resource limit is 64 panes.
 Configure each executable and its shell-style arguments in the Settings dialog's Agents section.
 Arguments are passed as literal argv values; shell expansion and command chaining are not supported.
 Agent launch identity is runtime-only, so reopening the app restores ordinary shells rather than

@@ -119,26 +119,19 @@ export interface TodoTask {
   updatedAt: string
 }
 
-export type TerminalLayout =
-  | 'single'
-  | 'columns'
-  | 'three'
-  | 'quadrant'
-  | 'fiveGrid'
-  | 'sixGrid'
-  | 'sevenGrid'
-  | 'eightGrid'
-  | 'nineGrid'
+export type TerminalSplitSide = 'left' | 'right' | 'top' | 'bottom'
+export type TerminalResizeAxis = 'column' | 'row'
 
-export interface TerminalLayoutSizes {
-  columnRatio: number
-  /** First horizontal divider ratio; the only one for layouts with at most two rows. */
-  rowRatio: number
-  /** Second vertical divider ratio for three-column layouts. */
-  secondColumnRatio?: number
-  /** Second horizontal divider ratio for three-row layouts. */
-  secondRowRatio?: number
-}
+export type TerminalLayoutNode =
+  | { type: 'pane'; paneId: string }
+  | {
+      type: 'split'
+      id: string
+      axis: TerminalResizeAxis
+      ratio: number
+      first: TerminalLayoutNode
+      second: TerminalLayoutNode
+    }
 
 export interface PersistedTerminalPane {
   /** Stable logical pane identity; runtime PTY IDs are derived from it. */
@@ -148,9 +141,8 @@ export interface PersistedTerminalPane {
 }
 
 export interface PersistedTerminalLayout {
-  layout: TerminalLayout
+  tree: TerminalLayoutNode
   panes: PersistedTerminalPane[]
-  sizes: TerminalLayoutSizes
 }
 
 export interface SessionTab {

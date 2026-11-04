@@ -40,7 +40,7 @@ The current limits are:
 | Agent arguments | 128 entries; 256 Ki code units combined |
 | Dropped file descriptors | 256 entries |
 | Terminal columns and rows | Integers from 1 through 4,096 |
-| Layouts | Defined layout enum, matching pane count, unique pane IDs, finite ratios strictly between 0 and 1 |
+| Layouts | Bounded split tree (up to 64 panes), unique pane and split IDs, matching pane references and order, finite ratios strictly between 0 and 1; unknown keys, cycles and accessors rejected |
 
 Process/path/identity fields and labels reject C0/C1 controls. Task descriptions,
 terminal input and clipboard text allow controls and newlines so normal text

@@ -53,7 +53,7 @@ describe('KeyboardShortcutsSettings', () => {
     expect(section?.textContent).toContain('Ctrl+N')
     expect(section?.textContent).toContain('Ctrl+Shift+O')
     expect(section?.textContent).toContain('Shift+Enter')
-    expect(section?.textContent).toContain('Ctrl+1–9')
+    expect(section?.textContent).toContain('Hold to show controls for adding a terminal at any edge.')
     expect(section?.textContent).toContain('Ctrl+Shift+F')
     expect(section?.textContent).toContain('Ctrl+Shift+1–9')
     expect(section?.textContent).toContain('Ctrl+Insert')

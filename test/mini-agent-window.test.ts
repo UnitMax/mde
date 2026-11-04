@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { testLayout } from './helpers/terminal-layout'
 
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -25,11 +26,7 @@ function session(id: string, name: string): Session {
     tabs: [{
       id: `${id}-tab`,
       name: `${name} tab`,
-      layout: {
-        layout: 'columns',
-        panes: [{ id: 'pane-1' }, { id: 'pane-2' }],
-        sizes: { columnRatio: 0.5, rowRatio: 0.5 }
-      }
+      layout: testLayout([{ id: 'pane-1' }, { id: 'pane-2' }])
     }],
     activeTabId: `${id}-tab`
   }
@@ -37,11 +34,7 @@ function session(id: string, name: string): Session {
 
 function layouts(...ids: string[]): Record<string, Record<string, SessionTerminalLayout>> {
   return Object.fromEntries(ids.map((id) => [id, {
-    [`${id}-tab`]: {
-      layout: 'columns',
-      panes: [{ terminalId: id }, { terminalId: `${id}:split:1` }],
-      sizes: { columnRatio: 0.5, rowRatio: 0.5 }
-    }
+    [`${id}-tab`]: testLayout([{ terminalId: id }, { terminalId: `${id}:split:1` }])
   }]))
 }
 

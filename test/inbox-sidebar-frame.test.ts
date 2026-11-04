@@ -36,18 +36,17 @@ describe('the sidebar width setting', () => {
 })
 
 describe('the stored terminal layout', () => {
-  it('accepts a layout with its dividers, and fills a divider it does not mention with the default', () => {
-    expect(parseStoredTerminalLayout(JSON.stringify({ layout: 'columns', sizes: { columnRatio: 0.3 } }))).toEqual({ layout: 'columns', sizes: { columnRatio: 0.3, rowRatio: 0.5 } })
+  it('accepts a nested tree with its divider ratios', () => {
+    const tree = { type: 'split', id: 'split', axis: 'row', ratio: 0.3, first: { type: 'pane', paneId: 'a' }, second: { type: 'pane', paneId: 'b' } }
+    expect(parseStoredTerminalLayout(JSON.stringify({ tree }))).toEqual({ tree })
+    expect(parseStoredTerminalLayout(JSON.stringify({ tree: { ...tree, ratio: 0 } }))).toBeNull()
+    expect(parseStoredTerminalLayout(JSON.stringify({ tree: { ...tree, second: tree.first } }))).toBeNull()
   })
 
-  it('accepts nothing else', () => {
-    expect(parseStoredTerminalLayout(null)).toBeNull()
-    expect(parseStoredTerminalLayout('null')).toBeNull()
-    expect(parseStoredTerminalLayout('[]')).toBeNull()
-    expect(parseStoredTerminalLayout(JSON.stringify({ layout: 'columns' }))).toBeNull()
-    expect(parseStoredTerminalLayout(JSON.stringify({ layout: 'columns', sizes: { columnRatio: 0 } }))).toBeNull()
-    expect(parseStoredTerminalLayout(JSON.stringify({ layout: 'columns', sizes: { columnRatio: 1 } }))).toBeNull()
-    expect(parseStoredTerminalLayout(JSON.stringify({ layout: '__proto__', sizes: {} }))).toBeNull()
+  it('rejects malformed values and old preset layouts', () => {
+    for (const raw of [null, 'null', '[]', '{', JSON.stringify({ layout: 'columns', sizes: {} })]) {
+      expect(parseStoredTerminalLayout(raw)).toBeNull()
+    }
   })
 })
 

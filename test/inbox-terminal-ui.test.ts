@@ -7,8 +7,8 @@ import { InboxTerminal } from '../src/renderer/components/inbox/InboxTerminal'
 import { INBOX_TERMINAL_SESSION_ID } from '../src/shared/inbox-terminal'
 import { INBOX_TERMINAL_TAB, useInboxTerminal } from '../src/renderer/store/inbox-terminal'
 import { useWorkspace } from '../src/renderer/store/workspace'
-import { createRuntimeLayout, defaultSessionTab } from '../src/renderer/terminal/tabs'
-import { layoutSwitched } from '../src/renderer/terminal/layout-edits'
+import { createRuntimeLayout, defaultSessionTab, splitRuntimePane } from '../src/renderer/terminal/tabs'
+import { attachSession, detachSession } from '../src/renderer/terminal/sessions'
 import type { SessionTerminalLayout } from '../src/renderer/terminal/layout'
 import type { Session } from '../src/shared/types'
 
@@ -21,11 +21,11 @@ vi.mock('../src/renderer/terminal/sessions', () => {
     themeId: 'dark',
   })
   return {
-    attachSession: (terminalId: string, host: HTMLElement) => {
+    attachSession: vi.fn((terminalId: string, host: HTMLElement) => {
       const session = fake(terminalId)
       host.append(session.container)
       return session
-    },
+    }),
     detachSession: vi.fn(),
     disposeSession: vi.fn(),
     fitSession: () => ({ cols: 80, rows: 24 }),
@@ -51,10 +51,9 @@ function props(layout: SessionTerminalLayout, overrides: Record<string, unknown>
     onTabRenameStart: vi.fn(),
     onRenameTab: vi.fn(),
     onCloseTab: vi.fn(),
-    onLayoutChange: vi.fn(),
+    onSplitPane: vi.fn(),
     onLayoutResize: vi.fn(),
     onPaneOrderChange: vi.fn(),
-    onReduceLayout: vi.fn(),
     onAddPane: vi.fn(),
     onClosePane: vi.fn(),
     onPaneFocus: vi.fn(),
@@ -66,6 +65,7 @@ function props(layout: SessionTerminalLayout, overrides: Record<string, unknown>
 
 beforeEach(() => {
   localStorage.clear()
+  vi.clearAllMocks()
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('ResizeObserver', class { observe(): void {} disconnect(): void {} unobserve(): void {} })
   vi.stubGlobal('api', { pty: { ensure: vi.fn(async () => 'running'), resize: vi.fn(async () => {}), statuses: vi.fn(async () => ({})) }, git: { terminalInfo: vi.fn(async () => null) } })
@@ -80,100 +80,183 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-describe('TerminalView in the Projects view', () => {
-  it('keeps its tab strip, its session name and its location', async () => {
-    const view = props(createRuntimeLayout(session.id, defaultSessionTab(session.id)))
-    await render(createElement(TerminalView, view))
+const controls = () => container.querySelectorAll('[data-testid="terminal-split-controls"]')
+const host = () => container.querySelector('.terminal-host')!
+const initial = () => createRuntimeLayout(session.id, defaultSessionTab(session.id))
+const release = () => act(async () => {
+  window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Control', ctrlKey: false, bubbles: true }))
+})
+
+describe('TerminalView dynamic splits', () => {
+  it('keeps the project tabs, session and location, with no preset picker', async () => {
+    await render(createElement(TerminalView, props(initial())))
     expect(container.querySelector('[role="tablist"]')).not.toBeNull()
-    expect(container.querySelector('[aria-label="New terminal tab"]')).not.toBeNull()
     expect(container.textContent).toContain('My project')
     expect(container.textContent).toContain('/home/me/app')
-    expect(layoutButtons()).toHaveLength(9)
+    expect(layoutButtons()).toHaveLength(0)
+    expect(controls()).toHaveLength(0)
   })
 
-  it('answers a layout shortcut typed anywhere', async () => {
-    const view = props(createRuntimeLayout(session.id, defaultSessionTab(session.id)))
+  it.each(['left', 'right', 'top', 'bottom'] as const)('reveals controls while Ctrl is held and splits to the %s', async (side) => {
+    const layout = initial()
+    const view = props(layout)
     await render(createElement(TerminalView, view))
-    await press(document.body, '2')
-    expect(view.onLayoutChange).toHaveBeenCalledWith('columns')
+    await press(host(), 'Control')
+    expect(controls()).toHaveLength(1)
+    await act(async () => container.querySelector<HTMLElement>(`[data-testid="terminal-split-${side}"]`)!.click())
+    expect(view.onSplitPane).toHaveBeenCalledWith(layout.panes[0]!.terminalId, side)
+    expect(view.onClosePane).not.toHaveBeenCalled()
+    await release()
+    expect(controls()).toHaveLength(0)
+  })
+
+  it('hides split controls on blur and while Ctrl+Shift is used for pane switching', async () => {
+    await render(createElement(TerminalView, props(initial())))
+    await press(host(), 'Control')
+    await press(host(), 'Shift', { shiftKey: true })
+    expect(controls()).toHaveLength(0)
+    await press(host(), 'Control')
+    expect(controls()).toHaveLength(1)
+    await act(async () => window.dispatchEvent(new Event('blur')))
+    expect(controls()).toHaveLength(0)
+  })
+
+  it('leaves Ctrl+digits available to the terminal', async () => {
+    const view = props(initial())
+    await render(createElement(TerminalView, view))
+    const event = new KeyboardEvent('keydown', { key: '2', code: 'Digit2', ctrlKey: true, bubbles: true, cancelable: true })
+    await act(async () => host().dispatchEvent(event))
+    expect(event.defaultPrevented).toBe(false)
+    expect(view.onSplitPane).not.toHaveBeenCalled()
+  })
+
+  it('leaves fullscreen when adding a terminal beside the fullscreen pane', async () => {
+    const base = initial()
+    const two = splitRuntimePane(session.id, 't', base, base.panes[0]!.terminalId, 'right')!
+    const view = props(two)
+    await render(createElement(TerminalView, view))
+    await act(async () => container.querySelector<HTMLElement>('[aria-label="Enter terminal fullscreen"]')!.click())
+    expect(container.querySelectorAll('.terminal-host')).toHaveLength(1)
+    await press(host(), 'Control')
+    await act(async () => container.querySelector<HTMLElement>('[data-testid="terminal-split-bottom"]')!.click())
+    expect(view.onSplitPane).toHaveBeenCalledWith(two.panes[0]!.terminalId, 'bottom')
+    expect(container.querySelectorAll('.terminal-host')).toHaveLength(2)
+  })
+
+  it('keeps live terminal surfaces mounted while splitting a pane in any direction', async () => {
+    let layout = initial()
+    await render(createElement(TerminalView, props(layout)))
+    const firstHost = host()
+    for (const side of ['left', 'top', 'right', 'bottom'] as const) {
+      layout = splitRuntimePane(session.id, defaultSessionTab(session.id).id, layout, layout.panes[0]!.terminalId, side)!
+      await render(createElement(TerminalView, props(layout)))
+      expect(firstHost.isConnected).toBe(true)
+    }
+    expect(attachSession).toHaveBeenCalledTimes(5)
+    expect(detachSession).not.toHaveBeenCalled()
+    expect(container.querySelectorAll('[role="separator"]')).toHaveLength(4)
+  })
+
+  it('resizes a nested divider using its own region and restores pointer styles', async () => {
+    const base = initial()
+    const two = splitRuntimePane(session.id, 't', base, base.panes[0]!.terminalId, 'right')!
+    const three = splitRuntimePane(session.id, 't', two, two.panes[1]!.terminalId, 'bottom')!
+    const view = props(three)
+    await render(createElement(TerminalView, view))
+    const separator = container.querySelector<HTMLElement>('[aria-orientation="horizontal"]')!
+    vi.spyOn(separator.parentElement!, 'getBoundingClientRect').mockReturnValue({ left: 500, top: 100, width: 500, height: 400 } as DOMRect)
+    separator.setPointerCapture = vi.fn()
+    separator.hasPointerCapture = () => true
+    separator.releasePointerCapture = vi.fn()
+    const pointer = (type: string, y: number) => act(async () => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 600, clientY: y })
+      Object.assign(event, { pointerId: 1 })
+      separator.dispatchEvent(event)
+    })
+    await pointer('pointerdown', 300)
+    expect(document.body.style.cursor).toBe('row-resize')
+    await pointer('pointermove', 260)
+    await pointer('pointerup', 260)
+    expect(view.onLayoutResize).toHaveBeenLastCalledWith(three.tree.type === 'split' && three.tree.second.type === 'split' ? three.tree.second.id : '', (160 - 0.5) / 399)
+    expect(document.body.style.cursor).toBe('')
+    expect(separator.releasePointerCapture).toHaveBeenCalledWith(1)
+  })
+
+  it('supports keyboard resizing of individual dividers', async () => {
+    const base = initial()
+    const two = splitRuntimePane(session.id, 't', base, base.panes[0]!.terminalId, 'right')!
+    const view = props(two)
+    await render(createElement(TerminalView, view))
+    await press(container.querySelector('[role="separator"]')!, 'ArrowRight', { ctrlKey: false })
+    expect(view.onLayoutResize).toHaveBeenCalledWith(two.tree.type === 'split' ? two.tree.id : '', 0.52)
   })
 })
 
 describe('TerminalView embedded in the Inbox sidebar', () => {
-  const embedded = (overrides: Record<string, unknown> = {}) =>
-    createElement(TerminalView, props(createRuntimeLayout(session.id, defaultSessionTab(session.id)), { embedded: true, onLinkTask: undefined, ...overrides }))
+  const embedded = (overrides: Record<string, unknown> = {}) => createElement(TerminalView, props(initial(), { embedded: true, onLinkTask: undefined, ...overrides }))
 
-  it('has no tab strip and no session name, only the location and the layout picker', async () => {
+  it('has only the location and split hint above its panes', async () => {
     await render(embedded())
     expect(container.querySelector('[role="tablist"]')).toBeNull()
-    expect(container.querySelector('[aria-label="New terminal tab"]')).toBeNull()
     expect(container.textContent).not.toContain('My project')
     expect(container.textContent).toContain('/home/me/app')
-    expect(layoutButtons()).toHaveLength(9)
+    expect(layoutButtons()).toHaveLength(0)
   })
 
-  it('switches layout from the picker', async () => {
-    const onLayoutChange = vi.fn()
-    await render(embedded({ onLayoutChange }))
-    await act(async () => container.querySelector<HTMLElement>('[data-testid="terminal-layout-quadrant"]')!.click())
-    expect(onLayoutChange).toHaveBeenCalledWith('quadrant')
+  it('shows controls only while the keyboard is inside the terminal', async () => {
+    const outside = document.createElement('textarea')
+    document.body.append(outside)
+    await render(embedded())
+    await press(outside, 'Control')
+    expect(controls()).toHaveLength(0)
+    await press(host(), 'Control')
+    expect(controls()).toHaveLength(1)
+    outside.remove()
   })
 
-  it('asks before a smaller layout closes terminals', async () => {
-    const four = layoutSwitched(createRuntimeLayout(session.id, defaultSessionTab(session.id)), 'quadrant', session.id, 't')!
-    const onReduceLayout = vi.fn()
-    await render(createElement(TerminalView, props(four, { embedded: true, onLinkTask: undefined, onReduceLayout })))
-    await act(async () => container.querySelector<HTMLElement>('[data-testid="terminal-layout-columns"]')!.click())
-    expect(document.body.textContent).toContain('Close extra terminals?')
-    expect(onReduceLayout).not.toHaveBeenCalled()
+  it('clears the controls when focus moves back to the composer', async () => {
+    const outside = document.createElement('textarea')
+    document.body.append(outside)
+    await render(embedded())
+    await press(host(), 'Control')
+    expect(controls()).toHaveLength(1)
+    await act(async () => outside.focus())
+    expect(controls()).toHaveLength(0)
+    outside.remove()
   })
 
-  it('offers no To Do link, even for a running terminal', async () => {
-    const layout = createRuntimeLayout(session.id, defaultSessionTab(session.id))
+  it('offers no To Do link for a running terminal', async () => {
+    const layout = initial()
     useWorkspace.setState({ statuses: { [layout.panes[0]!.terminalId]: 'running' } })
     await render(embedded())
     expect(container.querySelector('[data-testid^="terminal-task-link-"]')).toBeNull()
   })
-
-  it('answers a layout shortcut only while the keyboard is inside it, so typing elsewhere is left alone', async () => {
-    const onLayoutChange = vi.fn()
-    const outside = document.createElement('textarea')
-    document.body.append(outside)
-    await render(embedded({ onLayoutChange }))
-    await press(outside, '2')
-    expect(onLayoutChange).not.toHaveBeenCalled()
-    await press(container.querySelector('[data-testid="terminal-layout-single"]')!, '2')
-    expect(onLayoutChange).toHaveBeenCalledWith('columns')
-    outside.remove()
-  })
 })
 
 describe('InboxTerminal', () => {
-  beforeEach(() => {
-    useInboxTerminal.setState({ layout: createRuntimeLayout(INBOX_TERMINAL_SESSION_ID, INBOX_TERMINAL_TAB) })
-  })
+  beforeEach(() => useInboxTerminal.setState({ layout: createRuntimeLayout(INBOX_TERMINAL_SESSION_ID, INBOX_TERMINAL_TAB) }))
 
-  it('shows the Inbox terminal at `~`, starts its shell in the Inbox terminal session, and follows the store', async () => {
+  it('starts at ~, uses the Inbox session and follows the split store', async () => {
     await render(createElement(InboxTerminal))
     expect(container.textContent).toContain('~')
     expect(container.querySelector('[role="tablist"]')).toBeNull()
-    expect(layoutButtons()).toHaveLength(9)
     await vi.waitFor(() => expect(window.api.pty.ensure).toHaveBeenCalled())
     expect(vi.mocked(window.api.pty.ensure).mock.calls[0]![0]).toMatchObject({ sessionId: 'inbox-terminal' })
-
-    await act(async () => container.querySelector<HTMLElement>('[data-testid="terminal-layout-columns"]')!.click())
-    expect(useInboxTerminal.getState().layout.layout).toBe('columns')
-    expect(container.querySelector('[data-testid="terminal-layout-columns"]')?.getAttribute('aria-pressed')).toBe('true')
+    await press(host(), 'Control')
+    await act(async () => container.querySelector<HTMLElement>('[data-testid="terminal-split-bottom"]')!.click())
+    expect(useInboxTerminal.getState().layout.tree).toMatchObject({ type: 'split', axis: 'row' })
+    expect(container.querySelectorAll('.terminal-host')).toHaveLength(2)
+    expect(container.querySelectorAll('[role="separator"]')).toHaveLength(1)
   })
 
-  it('says what is missing on Windows without a WSL distribution', async () => {
+  it('says what is missing on Windows without WSL', async () => {
     useWorkspace.setState({ platform: { platform: 'win32', isWindows: true }, distros: [] })
     await render(createElement(InboxTerminal))
     expect(container.textContent).toContain('needs a WSL distribution')
-    expect(layoutButtons()).toHaveLength(0)
+    expect(container.querySelectorAll('.terminal-host')).toHaveLength(0)
   })
 
-  it('is a WSL shell in the default distro on Windows', async () => {
+  it('uses the default WSL distro on Windows', async () => {
     useWorkspace.setState({ platform: { platform: 'win32', isWindows: true }, distros: [{ name: 'Debian', state: 'Running', version: 2, isDefault: true }] })
     await render(createElement(InboxTerminal))
     await vi.waitFor(() => expect(window.api.pty.ensure).toHaveBeenCalled())

@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { testLayout } from './helpers/terminal-layout'
 
 import { act, createElement, type ComponentProps } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -250,13 +251,11 @@ async function renderTerminal(target: Session = session) {
   const root = newRoot()
   await act(async () => root.render(createElement(TerminalView, {
     session: target,
-    activeTab: { id: 'tab-1', name: 'Tab 1', layout: {
-      layout: 'columns', panes: [{ id: 'pane-1' }, { id: 'pane-2' }], sizes: { columnRatio: 0.5, rowRatio: 0.5 }
-    } },
-    terminalLayout: { layout: 'columns', panes: [{ terminalId: 'source-pane' }, { terminalId: 'second-pane' }], sizes: { columnRatio: 0.5, rowRatio: 0.5 } },
+    activeTab: { id: 'tab-1', name: 'Tab 1', layout: testLayout([{ id: 'pane-1' }, { id: 'pane-2' }]) },
+    terminalLayout: testLayout([{ terminalId: 'source-pane' }, { terminalId: 'second-pane' }]),
     onAddPane, onSelectTab: vi.fn(), onAddTab: vi.fn(), onTabRenameStart: vi.fn(), onRenameTab: vi.fn(),
-    onCloseTab: vi.fn(), onLayoutChange: vi.fn(), onLayoutResize: vi.fn(), onPaneOrderChange: vi.fn(),
-    onReduceLayout: vi.fn(), onClosePane: vi.fn(), onPaneFocus: vi.fn(), onPaneTitleChange: vi.fn(), onLinkTask: vi.fn()
+    onCloseTab: vi.fn(), onSplitPane: vi.fn(), onLayoutResize: vi.fn(), onPaneOrderChange: vi.fn(),
+    onClosePane: vi.fn(), onPaneFocus: vi.fn(), onPaneTitleChange: vi.fn(), onLinkTask: vi.fn()
   })))
   return { onAddPane }
 }

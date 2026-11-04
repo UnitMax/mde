@@ -6,7 +6,7 @@ import {
   useState,
   type DragEvent as ReactDragEvent,
   type PointerEvent as ReactPointerEvent,
-  type RefObject
+  type CSSProperties
 } from 'react'
 import {
   Code,
@@ -60,32 +60,16 @@ import {
 } from '@/terminal/terminal-settings'
 import { getTerminalPalette } from '@/theme/themes'
 import {
-  terminalGridTemplates,
-  terminalColumnSplitRatio,
-  terminalRowColumns,
-  terminalRowGroups,
-  terminalRowSplitRatio,
   isTerminalPaneClosable,
-  isThreeColumnLayout,
-  isThreeRowLayout,
-  paneClass,
-  panesToTrim,
-  TERMINAL_LAYOUTS,
-  terminalCount,
-  getTerminalLayoutShortcut,
+  MAX_TERMINAL_COUNT,
   swapTerminalPanes,
-  terminalResizeHandles,
-  terminalResizeHandleStyle,
-  terminalResizeRatio,
+  terminalLayoutGeometry,
   terminalSplitRatio,
   type SessionTerminalLayout,
-  type TerminalLayout,
+  type TerminalSplitSide,
   type TerminalPaneState,
   type RuntimeTerminalLaunch,
-  type TerminalColumnIndex,
   type TerminalResizeAxis,
-  type TerminalResizeScope,
-  type TerminalRowIndex
 } from '@/terminal/layout'
 import {
   isTerminalFullscreenShortcut,
@@ -134,8 +118,8 @@ interface TerminalViewProps {
   activeTab: SessionTab
   terminalLayout: SessionTerminalLayout
   /**
-   * Drawn inside another view, as the Inbox does in its sidebar: one tab with no strip, a header that is only
-   * the layout picker, and keyboard shortcuts that act only while the keyboard is in this view. The tab
+   * Drawn inside another view, as the Inbox does in its sidebar: one tab with no strip, and keyboard
+   * shortcuts that act only while the keyboard is in this view. The tab
    * callbacks and `onLinkTask` are not needed then.
    */
   embedded?: boolean
@@ -144,14 +128,9 @@ interface TerminalViewProps {
   onTabRenameStart?: () => void
   onRenameTab?: (tabId: string, name: string) => void
   onCloseTab?: (tabId: string) => void
-  onLayoutChange: (layout: TerminalLayout) => void
-  onLayoutResize: (
-    axis: TerminalResizeAxis,
-    ratio: number,
-    index?: TerminalColumnIndex | TerminalRowIndex
-  ) => void
+  onSplitPane: (terminalId: string, side: TerminalSplitSide) => void
+  onLayoutResize: (splitId: string, ratio: number) => void
   onPaneOrderChange: (terminalIds: readonly string[]) => void
-  onReduceLayout: (layout: TerminalLayout, paneIds: string[]) => void
   onAddPane: (sourceTerminalId: string, launch: RuntimeTerminalLaunch) => void
   onClosePane: (terminalId: string) => void
   onPaneFocus: (terminalId: string) => void
@@ -606,7 +585,9 @@ function TerminalPane({
   reorderState = 'none',
   paneOverlayVisible = false,
   paneOverlayNumber = null,
-  paneOverlayActive = false
+  paneOverlayActive = false,
+  splitControlsVisible = false,
+  onSplit,
 }: {
   session: Session
   pane: TerminalPaneState
@@ -623,6 +604,8 @@ function TerminalPane({
   paneOverlayVisible?: boolean
   paneOverlayNumber?: number | null
   paneOverlayActive?: boolean
+  splitControlsVisible?: boolean
+  onSplit: (side: TerminalSplitSide) => void
 }): JSX.Element {
   const clearExit = useWorkspace((state) => state.clearExit)
   const setStatus = useWorkspace((state) => state.setStatus)
@@ -879,6 +862,38 @@ function TerminalPane({
         active={paneOverlayActive}
         isFullscreen={isFullscreen}
       />
+      {splitControlsVisible && (
+        <div aria-label="Add terminal" role="group" data-testid="terminal-split-controls">
+          {(['left', 'right', 'top', 'bottom'] as const).map((side) => (
+            <button
+              key={side}
+              type="button"
+              aria-label={`Add terminal ${side === 'top' ? 'above' : side === 'bottom' ? 'below' : `to the ${side}`}`}
+              title={`Add terminal ${side === 'top' ? 'above' : side === 'bottom' ? 'below' : `to the ${side}`}`}
+              data-testid={`terminal-split-${side}`}
+              className={`absolute z-30 flex h-7 w-7 items-center justify-center rounded border border-accent/60 bg-panel text-accent shadow-md hover:bg-accent hover:text-bg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
+                side === 'left' ? 'left-1 top-1/2 -translate-y-1/2'
+                  : side === 'right' ? 'right-1 top-1/2 -translate-y-1/2'
+                    : side === 'top' ? 'left-1/2 top-7 -translate-x-1/2'
+                      : 'bottom-1 left-1/2 -translate-x-1/2'
+              }`}
+              onPointerDown={(event) => {
+                if (event.button !== 0) return
+                event.preventDefault()
+                event.stopPropagation()
+                onSplit(side)
+              }}
+              onClick={(event) => {
+                // Keyboard activation; pointer activation happens before a macOS Ctrl-click context menu.
+                if (event.detail === 0) onSplit(side)
+              }}
+              onContextMenu={(event) => event.preventDefault()}
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          ))}
+        </div>
+      )}
       <TerminalPaneHighlight terminalId={pane.terminalId} />
       {reorderState === 'target' && (
         <div
@@ -941,49 +956,11 @@ function restoreTerminalReorderStyles(drag: TerminalReorderDragState): void {
   document.body.style.userSelect = drag.previousUserSelect
 }
 
-function LayoutGlyph({ layout }: { layout: TerminalLayout }): JSX.Element {
-  const count = terminalCount(layout)
-  const columns = layout === 'single'
-    ? 'grid-cols-1'
-    : layout === 'fiveGrid' || layout === 'eightGrid'
-      ? 'grid-cols-6'
-      : isThreeColumnLayout(layout)
-        ? 'grid-cols-3'
-        : 'grid-cols-2'
-  const rows = layout === 'single' || layout === 'columns'
-    ? 'grid-rows-1'
-    : isThreeRowLayout(layout)
-      ? 'grid-rows-3'
-      : 'grid-rows-2'
-  return (
-    <span className={`grid h-3.5 w-4 gap-px ${columns} ${rows}`} aria-hidden="true">
-      {Array.from({ length: count }, (_, index) => (
-        <span
-          key={index}
-          className={`rounded-[1px] bg-current ${layout === 'three' && index === 2
-            ? 'col-span-2'
-            : layout === 'fiveGrid'
-              ? index < 3 ? 'col-span-2' : 'col-span-3'
-              : layout === 'eightGrid'
-                ? index < 6 ? 'col-span-2' : 'col-span-3'
-                : layout === 'sevenGrid' && index === 6
-                  ? 'col-span-3'
-                  : ''}`}
-        />
-      ))}
-    </span>
-  )
-}
-
 interface TerminalResizeHandleProps {
-  layout: TerminalLayout
+  splitId: string
   axis: TerminalResizeAxis
-  scope: TerminalResizeScope
-  columnIndex?: TerminalColumnIndex
-  rowIndex?: TerminalRowIndex
   ratio: number
-  sizes: SessionTerminalLayout['sizes']
-  containerRef: RefObject<HTMLDivElement>
+  style: CSSProperties
   onResize: (ratio: number) => void
 }
 
@@ -996,16 +973,13 @@ interface TerminalDragState {
 }
 
 function TerminalResizeHandle({
-  layout,
+  splitId,
   axis,
-  scope,
-  columnIndex,
-  rowIndex,
   ratio,
-  sizes,
-  containerRef,
+  style,
   onResize
 }: TerminalResizeHandleProps): JSX.Element {
+  const containerRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<TerminalDragState | null>(null)
 
   const restoreDocumentStyles = (drag: TerminalDragState): void => {
@@ -1038,7 +1012,7 @@ function TerminalResizeHandle({
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>): void => {
     const container = containerRef.current
-    if (!container) return
+    if (!container || event.button !== 0) return
 
     event.preventDefault()
     event.stopPropagation()
@@ -1064,13 +1038,7 @@ function TerminalResizeHandle({
       ? event.clientX - bounds.left
       : event.clientY - bounds.top
     const trackSize = axis === 'column' ? bounds.width : bounds.height
-    drag.pendingRatio = axis === 'column' &&
-      isThreeColumnLayout(layout) &&
-      columnIndex !== undefined
-      ? terminalColumnSplitRatio(pointerPosition, trackSize, columnIndex, sizes)
-      : axis === 'row' && isThreeRowLayout(layout) && rowIndex !== undefined
-        ? terminalRowSplitRatio(pointerPosition, trackSize, rowIndex, sizes)
-        : terminalSplitRatio(pointerPosition, trackSize)
+    drag.pendingRatio = terminalSplitRatio(pointerPosition, trackSize)
 
     if (drag.frame !== undefined) return
     drag.frame = requestAnimationFrame(() => {
@@ -1086,21 +1054,39 @@ function TerminalResizeHandle({
     ? 'h-full w-2 -translate-x-1/2 cursor-col-resize flex-col'
     : 'h-2 w-full -translate-y-1/2 cursor-row-resize flex-row'
 
+  const position = `calc(${ratio * 100}% + ${0.5 - ratio}px)`
   return (
-    <div
-      role="separator"
-      aria-label={axis === 'column' ? 'Resize terminal columns' : 'Resize terminal rows'}
-      aria-orientation={axis === 'column' ? 'vertical' : 'horizontal'}
-      data-testid={`terminal-resize-${axis}-${scope}${(axis === 'column' ? columnIndex : rowIndex) === 1 ? '-1' : ''}`}
-      className={`group absolute z-20 flex touch-none items-center justify-center ${handleClass}`}
-      style={terminalResizeHandleStyle(layout, axis, scope, sizes, columnIndex, rowIndex)}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={finishDrag}
-      onPointerCancel={finishDrag}
-      onLostPointerCapture={finishDrag}
-    >
-      <span className={`bg-transparent transition-colors group-hover:bg-accent ${lineClass}`} />
+    <div ref={containerRef} className="pointer-events-none absolute" style={style}>
+      <div
+        role="separator"
+        aria-label={axis === 'column' ? 'Resize terminal columns' : 'Resize terminal rows'}
+        aria-orientation={axis === 'column' ? 'vertical' : 'horizontal'}
+        data-testid={`terminal-resize-${splitId}`}
+        tabIndex={0}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(ratio * 100)}
+        onKeyDown={(event) => {
+          const decrease = axis === 'column' ? 'ArrowLeft' : 'ArrowUp'
+          const increase = axis === 'column' ? 'ArrowRight' : 'ArrowDown'
+          if (event.key !== decrease && event.key !== increase) return
+          event.preventDefault()
+          event.stopPropagation()
+          const bounds = containerRef.current?.getBoundingClientRect()
+          const size = bounds ? axis === 'column' ? bounds.width : bounds.height : 0
+          const target = ratio + (event.key === decrease ? -0.02 : 0.02)
+          onResize(size > 0 ? terminalSplitRatio(target * (size - 1) + 0.5, size) : Math.max(0.05, Math.min(0.95, target)))
+        }}
+        className={`group pointer-events-auto absolute z-20 flex touch-none items-center justify-center ${handleClass}`}
+        style={axis === 'column' ? { left: position, top: 0 } : { top: position, left: 0 }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={finishDrag}
+        onPointerCancel={finishDrag}
+        onLostPointerCapture={finishDrag}
+      >
+        <span className={`bg-transparent transition-colors group-hover:bg-accent group-focus-visible:bg-accent ${lineClass}`} />
+      </div>
     </div>
   )
 }
@@ -1241,10 +1227,9 @@ export function TerminalView({
   onTabRenameStart = noop,
   onRenameTab = noop,
   onCloseTab = noop,
-  onLayoutChange,
+  onSplitPane,
   onLayoutResize,
   onPaneOrderChange,
-  onReduceLayout,
   onAddPane,
   onClosePane,
   onPaneFocus,
@@ -1257,10 +1242,7 @@ export function TerminalView({
     (state) => state.opencodeTuiInstances[selectedSession.id]
   )
   const terminalDirectories = useWorkspace((state) => state.terminalDirectories)
-  const [pendingReduction, setPendingReduction] = useState<{
-    layout: TerminalLayout
-    paneIds: string[]
-  } | null>(null)
+  const [splitModifierHeld, setSplitModifierHeld] = useState(false)
   const [reorderModifierHeld, setReorderModifierHeld] = useState(false)
   const [hoveredPaneId, setHoveredPaneId] = useState<string | null>(null)
   const [reorderSourceId, setReorderSourceId] = useState<string | null>(null)
@@ -1332,6 +1314,7 @@ export function TerminalView({
   useEffect(() => {
     focusedTerminalIdRef.current = null
     setFocusedTerminalId(null)
+    setSplitModifierHeld(false)
     setFullscreenTerminalId(null)
     setTerminalLauncherOpen(false)
     setTerminalLauncherSourceId(null)
@@ -1365,19 +1348,6 @@ export function TerminalView({
       throw error
     }
   }
-
-  const requestLayout = useCallback((layout: TerminalLayout): void => {
-    const targetCount = terminalCount(layout)
-    if (targetCount >= terminalLayout.panes.length) {
-      setFullscreenTerminalId(null)
-      onLayoutChange(layout)
-      return
-    }
-    setPendingReduction({
-      layout,
-      paneIds: panesToTrim(terminalLayout.panes, targetCount)
-    })
-  }, [onLayoutChange, terminalLayout.panes.length])
 
   const requestClosePane = (terminalId: string): void => {
     if (!isTerminalPaneClosable(terminalLayout.panes, terminalId)) return
@@ -1515,6 +1485,36 @@ export function TerminalView({
   }
 
   useEffect(() => {
+    const update = (event: KeyboardEvent): void => {
+      const target = event.target
+      const editing = target instanceof Element && target.closest('input, textarea, [contenteditable="true"]') &&
+        !target.closest('.terminal-host')
+      setSplitModifierHeld(event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey &&
+        handlesKey(event) && !editing && !document.querySelector('[role="dialog"], [role="alertdialog"]'))
+    }
+    const clear = (): void => setSplitModifierHeld(false)
+    const onFocus = (event: FocusEvent): void => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      if ((embedded && !rootRef.current?.contains(target)) ||
+        (target.closest('input, textarea, [contenteditable="true"], [role="dialog"], [role="alertdialog"]') &&
+          !target.closest('.terminal-host'))) clear()
+    }
+    document.addEventListener('focusin', onFocus)
+    window.addEventListener('keydown', update, true)
+    window.addEventListener('keyup', update, true)
+    window.addEventListener('blur', clear)
+    document.addEventListener('visibilitychange', clear)
+    return () => {
+      window.removeEventListener('keydown', update, true)
+      window.removeEventListener('keyup', update, true)
+      window.removeEventListener('blur', clear)
+      document.removeEventListener('visibilitychange', clear)
+      document.removeEventListener('focusin', onFocus)
+    }
+  }, [handlesKey, embedded])
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape' && reorderDragRef.current) {
         event.preventDefault()
@@ -1597,32 +1597,6 @@ export function TerminalView({
       restoreTerminalReorderStyles(drag)
     }
   }, [])
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      const target = event.target
-      if (target instanceof HTMLElement && target.closest('[role="dialog"]')) return
-      if (!handlesKey(event)) return
-
-      const layout = getTerminalLayoutShortcut({
-        type: event.type,
-        key: event.key,
-        code: event.code,
-        control: event.ctrlKey,
-        meta: event.metaKey,
-        alt: event.altKey,
-        shift: event.shiftKey
-      })
-      if (!layout) return
-
-      event.preventDefault()
-      event.stopPropagation()
-      requestLayout(layout)
-    }
-
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [requestLayout, handlesKey])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -1722,13 +1696,6 @@ export function TerminalView({
     setFullscreenTerminalId((current) => current === terminalId ? null : terminalId)
   }
 
-  const confirmReduceLayout = (): void => {
-    if (!pendingReduction) return
-    setFullscreenTerminalId(null)
-    onReduceLayout(pendingReduction.layout, pendingReduction.paneIds)
-    setPendingReduction(null)
-  }
-
   const location =
     selectedSession.kind === 'wsl'
       ? `${selectedSession.distro ?? 'WSL'} · ${selectedSession.path}`
@@ -1736,18 +1703,14 @@ export function TerminalView({
   const renderedPanes = terminalLayout.panes
   const fullscreenPane = terminalFullscreenPane(renderedPanes, fullscreenTerminalId)
   const isFullscreen = fullscreenPane !== null
-  const visiblePanes = fullscreenPane ? [fullscreenPane] : renderedPanes
-  const gridTemplates = isFullscreen
-    ? { columns: 'minmax(0, 1fr)', rows: 'minmax(0, 1fr)' }
-    : terminalGridTemplates(terminalLayout.layout, terminalLayout.sizes)
-  const rowGroups = isFullscreen ? null : terminalRowGroups(terminalLayout.layout)
-  const resizeHandles = isFullscreen ? [] : terminalResizeHandles(terminalLayout.layout)
+  const geometry = terminalLayoutGeometry(terminalLayout.tree)
 
   const renderPane = (pane: TerminalPaneState, index: number): JSX.Element => (
     <div
       key={pane.terminalId}
       data-terminal-pane-slot={index}
-      className={`h-full min-h-0 min-w-0 ${isFullscreen ? '' : paneClass(terminalLayout.layout, index)}`}
+      className="absolute min-h-0 min-w-0"
+      style={isFullscreen ? { inset: 0 } : geometry.panes[index]?.style}
       onPointerDownCapture={(event) => beginReorder(event, pane.terminalId)}
     >
       <TerminalPane
@@ -1784,6 +1747,11 @@ export function TerminalView({
         paneOverlayNumber={isFullscreen ? null : index + 1}
         paneOverlayActive={pane.terminalId === focusedTerminalId}
         onClose={() => requestClosePane(pane.terminalId)}
+        splitControlsVisible={splitModifierHeld && !reorderSourceId && !terminalLauncherOpen && !openCodeSessionsOpen && terminalLayout.panes.length < MAX_TERMINAL_COUNT}
+        onSplit={(side) => {
+          setFullscreenTerminalId(null)
+          onSplitPane(pane.terminalId, side)
+        }}
       />
     </div>
   )
@@ -1822,80 +1790,37 @@ export function TerminalView({
           </span>
         </div>
 
-        <div
-          aria-label="Terminal layout"
-          role="group"
-          className="flex shrink-0 items-center gap-0.5 rounded border border-line bg-panel p-0.5"
-        >
-          {TERMINAL_LAYOUTS.map((candidate) => (
-            <button
-              key={candidate.value}
-              type="button"
-              aria-label={candidate.label}
-              aria-pressed={terminalLayout.layout === candidate.value}
-              data-testid={`terminal-layout-${candidate.value}`}
-              title={`${candidate.label} (Ctrl+${candidate.shortcut})`}
-              onClick={() => requestLayout(candidate.value)}
-              className={`rounded-sm py-1 ${embedded ? 'px-1' : 'px-1.5'} ${
-                terminalLayout.layout === candidate.value
-                  ? 'bg-active text-fg'
-                  : 'text-fg-subtle hover:bg-hover hover:text-fg'
-              }`}
-            >
-              <LayoutGlyph layout={candidate.value} />
-            </button>
-          ))}
-        </div>
+        <span className="shrink-0 text-[10px] text-fg-subtle" title="Hold Ctrl and click a + at a terminal edge to split it">
+          Hold Ctrl to split
+        </span>
       </header>
 
       <div
-          ref={gridRef}
-          className="relative grid h-full min-h-0 flex-1 gap-px bg-line"
-          style={{
-            gridTemplateColumns: gridTemplates.columns,
-            gridTemplateRows: gridTemplates.rows
-          }}
-          onPointerMove={moveReorder}
-          onPointerUp={finishReorder}
-          onPointerCancel={cancelReorder}
-          onLostPointerCapture={cancelReorder}
-          onPointerLeave={() => {
-            if (!reorderDragRef.current) setHoveredPaneId(null)
-          }}
-        >
-          {rowGroups
-            ? rowGroups.map((paneCount, groupIndex) => {
-                const start = rowGroups.slice(0, groupIndex).reduce((sum, count) => sum + count, 0)
-                return (
-                  <div
-                    key={groupIndex}
-                    className="grid min-h-0 min-w-0 gap-px"
-                    style={{
-                      gridTemplateColumns: terminalRowColumns(paneCount, terminalLayout.sizes),
-                      gridTemplateRows: 'minmax(0, 1fr)'
-                    }}
-                  >
-                    {visiblePanes
-                      .slice(start, start + paneCount)
-                      .map((pane, index) => renderPane(pane, start + index))}
-                  </div>
-                )
-              })
-            : visiblePanes.map(renderPane)}
-          {resizeHandles.map(({ axis, scope, columnIndex, rowIndex }) => (
-            <TerminalResizeHandle
-              key={`${axis}-${scope}-${columnIndex ?? rowIndex ?? 0}`}
-              layout={terminalLayout.layout}
-              axis={axis}
-              scope={scope}
-              columnIndex={columnIndex}
-              rowIndex={rowIndex}
-              ratio={terminalResizeRatio(terminalLayout.layout, axis, terminalLayout.sizes, columnIndex ?? rowIndex ?? 0)}
-              sizes={terminalLayout.sizes}
-              containerRef={gridRef}
-              onResize={(ratio) => onLayoutResize(axis, ratio, axis === 'column' ? columnIndex : rowIndex)}
-            />
-          ))}
+        ref={gridRef}
+        className="relative h-full min-h-0 flex-1 bg-line"
+        onPointerMoveCapture={(event) => {
+          setSplitModifierHeld(event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey &&
+            !document.querySelector('[role="dialog"], [role="alertdialog"]'))
+        }}
+        onPointerMove={moveReorder}
+        onPointerUp={finishReorder}
+        onPointerCancel={cancelReorder}
+        onLostPointerCapture={cancelReorder}
+        onPointerLeave={() => {
+          if (!reorderDragRef.current) setHoveredPaneId(null)
+        }}
+      >
+        {(fullscreenPane ? [fullscreenPane] : renderedPanes).map((pane) => renderPane(pane, renderedPanes.indexOf(pane)))}
+        {!isFullscreen && geometry.splits.map(({ node, style }) => (
+          <TerminalResizeHandle
+            key={node.id}
+            splitId={node.id}
+            axis={node.axis}
+            ratio={node.ratio}
+            style={style}
+            onResize={(ratio) => onLayoutResize(node.id, ratio)}
+          />
+        ))}
       </div>
 
       <OpenCodeSessionsDialog
@@ -1930,29 +1855,13 @@ export function TerminalView({
           : undefined}
         paneCount={terminalLayout.panes.length}
         onSelect={(launch) => {
+          setFullscreenTerminalId(null)
           onAddPane(launch.sourceTerminalId, launch)
           setTerminalLauncherOpen(false)
           setTerminalLauncherSourceId(null)
         }}
       />
 
-      <AlertDialog
-        open={pendingReduction !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingReduction(null)
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogTitle>Close extra terminals?</AlertDialogTitle>
-          <AlertDialogDescription>
-            {`Changing to ${pendingReduction ? TERMINAL_LAYOUTS.find((candidate) => candidate.value === pendingReduction.layout)?.label.toLowerCase() : 'a smaller layout'} will close the extra terminals.`}
-          </AlertDialogDescription>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep current layout</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmReduceLayout}>Close terminals</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   )
 }
