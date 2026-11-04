@@ -28,22 +28,26 @@ import {
 import { isSessionSwitcherShortcut } from '@/lib/session-switcher'
 import { isTodoSearchShortcut } from '@/lib/todo-search'
 import { useWorkspace } from '@/store/workspace'
-import { disposeSession, getSession } from '@/terminal/sessions'
+import { focusTerminalWhenReady } from '@/terminal/focus'
+import { disposeRuntimeTerminal } from '@/terminal/dispose'
+import {
+  layoutReduced,
+  layoutReordered,
+  layoutResized,
+  layoutSwitched,
+  layoutTitled
+} from '@/terminal/layout-edits'
 import {
   activeSessionTab,
   appendRuntimePane,
   createRuntimeLayout,
-  nextPaneId,
   persistRuntimeLayout,
   sessionTabs,
   terminalIdForPane
 } from '@/terminal/tabs'
 import {
-  defaultTerminalLayoutSizes,
-  orderTerminalPanes,
   removeTerminalPane,
   terminalFocusTargetAfterRemoval,
-  terminalCount,
   type SessionTerminalLayout,
   type TerminalLayout,
   type RuntimeTerminalLaunch,
@@ -53,6 +57,7 @@ import {
 } from '@/terminal/layout'
 import type { PersistedTerminalLayout, Session, TodoTask } from '@shared/types'
 import { useInboxChat } from '@/store/inbox-chat'
+import { useInboxTerminal } from '@/store/inbox-terminal'
 import {
   liveTerminalDescriptors,
   type LiveTerminalDescriptor
@@ -102,9 +107,6 @@ export function App(): JSX.Element {
   const renameTabAction = useWorkspace((state) => state.renameTab)
   const updateTabLayoutAction = useWorkspace((state) => state.updateTabLayout)
   const removeTabAction = useWorkspace((state) => state.removeTab)
-  const clearExit = useWorkspace((state) => state.clearExit)
-  const setStatus = useWorkspace((state) => state.setStatus)
-  const unlinkTerminalTask = useWorkspace((state) => state.unlinkTerminalTask)
   const [newSessionOpen, setNewSessionOpen] = useState(false)
   const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [newTodoProjectOpen, setNewTodoProjectOpen] = useState(false)
@@ -151,6 +153,7 @@ export function App(): JSX.Element {
   }, [sessions])
 
   useEffect(() => useInboxChat.getState().init(), [])
+  useEffect(() => useInboxTerminal.getState().init(), [])
 
   useEffect(() => {
     void init()
@@ -197,14 +200,6 @@ export function App(): JSX.Element {
       Object.keys(pendingLayoutPersistence.current).forEach(flushLayoutPersistence)
     }
   }, [])
-
-  const disposeRuntimeTerminal = (terminalId: string): void => {
-    clearExit(terminalId)
-    setStatus(terminalId, 'none')
-    unlinkTerminalTask(terminalId)
-    disposeSession(terminalId)
-    void window.api.pty.dispose(terminalId)
-  }
 
   const setRuntimeLayout = (
     sessionId: string,
@@ -331,26 +326,10 @@ export function App(): JSX.Element {
       return
     }
 
-    let frame: number | undefined
-    let attempts = 0
-    const focus = (): void => {
-      const terminal = getSession(pendingTerminalFocus.terminalId)
-      if (terminal?.container.isConnected) {
-        terminal.term.focus()
-        if (pendingTerminalFocus.highlight) {
-          useWorkspace.getState().flashTerminal(pendingTerminalFocus.terminalId)
-        }
-        setPendingTerminalFocus(null)
-        return
-      }
-      attempts += 1
-      if (attempts < 8) frame = window.requestAnimationFrame(focus)
-      else setPendingTerminalFocus(null)
-    }
-    frame = window.requestAnimationFrame(focus)
-    return () => {
-      if (frame !== undefined) window.cancelAnimationFrame(frame)
-    }
+    return focusTerminalWhenReady(pendingTerminalFocus.terminalId, {
+      highlight: pendingTerminalFocus.highlight,
+      done: () => setPendingTerminalFocus(null)
+    })
   }, [pendingTerminalFocus, selectedSessionId, sessions])
 
   useEffect(() => {
@@ -534,24 +513,8 @@ export function App(): JSX.Element {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!session) return
 
-    const existing = layoutForTab(session, tabId)
-    if (!existing.panes.some((pane) => pane.terminalId === terminalId)) return
-
-    const normalizedTitle = title?.trim()
-    const next = {
-      ...existing,
-      panes: existing.panes.map((pane) => {
-        if (pane.terminalId !== terminalId) return pane
-
-        const updatedPane = { ...pane }
-        if (normalizedTitle) {
-          updatedPane.title = normalizedTitle
-        } else {
-          delete updatedPane.title
-        }
-        return updatedPane
-      })
-    }
+    const next = layoutTitled(layoutForTab(session, tabId), terminalId, title)
+    if (!next) return
 
     setRuntimeLayout(sessionId, tabId, next)
     queueLayoutPersistence(sessionId, tabId, next, true)
@@ -586,26 +549,8 @@ export function App(): JSX.Element {
   const changeTerminalLayout = (sessionId: string, tabId: string, layout: TerminalLayout): void => {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!session) return
-    const existing = layoutForTab(session, tabId)
-    const targetCount = terminalCount(layout)
-    if (targetCount <= existing.panes.length) {
-      if (targetCount === existing.panes.length) {
-        const next = { ...existing, layout, sizes: defaultTerminalLayoutSizes(layout) }
-        setRuntimeLayout(sessionId, tabId, next)
-        queueLayoutPersistence(sessionId, tabId, next, true)
-      }
-      return
-    }
-
-    const panes = [...existing.panes]
-    while (panes.length < targetCount) {
-      const paneId = nextPaneId(panes)
-      panes.push({
-        terminalId: terminalIdForPane(sessionId, tabId, paneId),
-        paneId
-      })
-    }
-    const next = { layout, panes, sizes: defaultTerminalLayoutSizes(layout) }
+    const next = layoutSwitched(layoutForTab(session, tabId), layout, sessionId, tabId)
+    if (!next) return
     setRuntimeLayout(sessionId, tabId, next)
     queueLayoutPersistence(sessionId, tabId, next, true)
   }
@@ -645,11 +590,7 @@ export function App(): JSX.Element {
     if (!session) return
     const existing = layoutForTab(session, tabId)
     paneIds.forEach(disposeRuntimeTerminal)
-    const next = {
-      layout,
-      panes: existing.panes.filter((pane) => !paneIds.includes(pane.terminalId)),
-      sizes: defaultTerminalLayoutSizes(layout)
-    }
+    const next = layoutReduced(existing, layout, paneIds)
     setRuntimeLayout(sessionId, tabId, next)
     queueLayoutPersistence(sessionId, tabId, next, true)
     focusTerminalAfterPaneRemoval(sessionId, tabId, existing, paneIds, next)
@@ -676,15 +617,7 @@ export function App(): JSX.Element {
   ): void => {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!session) return
-    const existing = layoutForTab(session, tabId)
-    const sizes = axis === 'column'
-      ? index === 1
-        ? { ...existing.sizes, secondColumnRatio: ratio }
-        : { ...existing.sizes, columnRatio: ratio }
-      : index === 1
-        ? { ...existing.sizes, secondRowRatio: ratio }
-        : { ...existing.sizes, rowRatio: ratio }
-    const next = { ...existing, sizes }
+    const next = layoutResized(layoutForTab(session, tabId), axis, ratio, index)
     setRuntimeLayout(sessionId, tabId, next)
     queueLayoutPersistence(sessionId, tabId, next)
   }
@@ -692,10 +625,8 @@ export function App(): JSX.Element {
   const reorderTerminalPanes = (sessionId: string, tabId: string, terminalIds: readonly string[]): void => {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!session) return
-    const existing = layoutForTab(session, tabId)
-    const panes = orderTerminalPanes(existing.panes, terminalIds)
-    if (!panes) return
-    const next = { ...existing, panes }
+    const next = layoutReordered(layoutForTab(session, tabId), terminalIds)
+    if (!next) return
     setRuntimeLayout(sessionId, tabId, next)
     queueLayoutPersistence(sessionId, tabId, next, true)
   }

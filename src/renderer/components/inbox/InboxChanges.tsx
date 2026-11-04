@@ -5,6 +5,8 @@ import type { GitChangeStatus, InboxChangeDiff, InboxChangedFile, InboxChangesRe
 import { Button } from '@/components/ui/button'
 import { FileTreePanel } from '@/components/FileTreePanel'
 import { DiffBody } from './ChatFileChange'
+import { focusInboxTerminalWhenShown, InboxTerminal } from './InboxTerminal'
+import { InboxSidebarFrame } from './InboxSidebarFrame'
 import { parseUnifiedDiff } from '@/lib/diff'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { cn } from '@/lib/utils'
@@ -433,24 +435,34 @@ export function InboxChangesBadge({ threadId }: { threadId: string }): JSX.Eleme
   )
 }
 
-const SIDEBAR_TABS = ['files', 'changes'] as const
+const SIDEBAR_TABS = ['files', 'changes', 'terminal'] as const
 type SidebarTab = (typeof SIDEBAR_TABS)[number]
+const SIDEBAR_TAB_LABELS: Record<SidebarTab, string> = { files: 'Files', changes: 'Changes', terminal: 'Terminal' }
+/** A thread has changes to show; the page for a new one has none yet, so it offers the other two. */
+const tabsFor = (threadId: string | undefined): readonly SidebarTab[] => threadId ? SIDEBAR_TABS : SIDEBAR_TABS.filter((item) => item !== 'changes')
 /**
  * Each panel draws its own tabs in its header, so switching replaces the strip that has focus. The tab that was
  * chosen is focused again in the one that takes its place.
  */
 let refocusTab: SidebarTab | null = null
 
-/** Files and Changes, in the place of the file tree's title. Left and Right (or Home and End) move between them. */
-function SidebarTabs({ threadId }: { threadId: string }): JSX.Element {
-  const tab = useInboxChanges((s) => s.tab)
+/**
+ * Files, Changes (of an open thread) and Terminal, in the place of the file tree's title. Left and Right (or
+ * Home and End) move between them.
+ */
+function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
+  const stored = useInboxChanges((s) => s.tab)
+  const tabs = tabsFor(threadId)
+  const tab = tabs.includes(stored) ? stored : 'files'
   const count = useInboxChanges((s) => {
-    const value = s.entries[inboxChangesKey(threadId)]?.value
+    const value = threadId ? s.entries[inboxChangesKey(threadId)]?.value : undefined
     return value?.available ? value.fileCount : 0
   })
-  const choose = (next: SidebarTab): void => {
+  const choose = (next: SidebarTab, pointer = false): void => {
     // Nothing is replaced when the tab is already showing, so nothing would take the focus back.
-    if (useInboxChanges.getState().tab === next) return
+    if (tab === next) return
+    // A tab chosen with the pointer hands the keyboard to the terminal; one chosen with the keyboard keeps it.
+    if (next === 'terminal' && pointer) focusInboxTerminalWhenShown()
     refocusTab = next
     useInboxChanges.getState().setTab(next)
   }
@@ -469,11 +481,14 @@ function SidebarTabs({ threadId }: { threadId: string }): JSX.Element {
       onKeyDown={(event) => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
         event.preventDefault()
-        const next = event.key === 'Home' ? 'files' : event.key === 'End' ? 'changes' : tab === 'files' ? 'changes' : 'files'
-        choose(next)
+        const at = tabs.indexOf(tab)
+        const next = event.key === 'Home' ? tabs[0]
+          : event.key === 'End' ? tabs[tabs.length - 1]
+            : tabs[(at + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]
+        if (next) choose(next)
       }}
     >
-      {SIDEBAR_TABS.map((item) => {
+      {tabs.map((item) => {
         const selected = tab === item
         return (
           <button
@@ -486,7 +501,7 @@ function SidebarTabs({ threadId }: { threadId: string }): JSX.Element {
             aria-selected={selected}
             aria-controls={`inbox-${item}-panel`}
             tabIndex={selected ? 0 : -1}
-            onClick={() => choose(item)}
+            onClick={(event) => choose(item, event.detail > 0)}
             className={cn(
               'relative flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide transition-colors',
               selected
@@ -494,7 +509,7 @@ function SidebarTabs({ threadId }: { threadId: string }): JSX.Element {
                 : 'text-fg-subtle hover:text-fg-muted'
             )}
           >
-            {item === 'files' ? 'Files' : 'Changes'}
+            {SIDEBAR_TAB_LABELS[item]}
             {item === 'changes' && count > 0 && (
               <span className="rounded-full bg-fg/10 px-1.5 py-px text-[10px] normal-case leading-none tabular-nums text-fg-muted">{count}</span>
             )}
@@ -515,7 +530,7 @@ function ChangesAside({ threadId }: { threadId: string }): JSX.Element {
     return stop
   }, [threadId])
   return (
-    <aside data-testid="inbox-changes-panel" className="flex h-full min-h-0 w-[260px] shrink-0 flex-col border-l border-line bg-panel">
+    <aside data-testid="inbox-changes-panel" className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-line bg-panel">
       <div className="flex items-center gap-1 px-3 pb-2 pt-3">
         <SidebarTabs threadId={threadId} />
         <Button
@@ -551,21 +566,50 @@ function ChangesAside({ threadId }: { threadId: string }): JSX.Element {
 }
 
 /**
- * The right-hand sidebar of an open Inbox thread: its files, or its Git changes. A new thread has no changes
- * yet, so it keeps the plain file tree.
+ * The Terminal tab: the Inbox's one terminal. It is the same whichever thread is open, so it is not tied to
+ * one, and it is shown with the new-thread page as well.
+ */
+function TerminalAside({ threadId }: { threadId?: string }): JSX.Element {
+  const toggle = useWorkspace((s) => s.toggleFileTree)
+  return (
+    <aside data-testid="inbox-terminal-panel" className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-line bg-panel">
+      <div className="flex items-center gap-1 px-3 pb-2 pt-3">
+        <SidebarTabs threadId={threadId} />
+        <Button variant="ghost" size="icon-sm" className="shrink-0" title="Collapse sidebar" aria-label="Collapse sidebar" onClick={toggle}>
+          <PanelRightClose className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      <div
+        role="tabpanel"
+        id="inbox-terminal-panel"
+        aria-labelledby="inbox-terminal-tab"
+        className="flex min-h-0 flex-1 flex-col border-t border-line"
+      >
+        <InboxTerminal />
+      </div>
+    </aside>
+  )
+}
+
+/**
+ * The right-hand sidebar of the Inbox: the files of the open thread's folder (or of the folder a new thread
+ * starts in), the thread's Git changes, and the terminal. A new thread has no changes yet, so it offers
+ * only the other two. It can be dragged wider, which the terminal in particular wants.
  */
 export function InboxSidebar({ session, threadId }: { session: Session; threadId?: string }): JSX.Element {
-  const tab = useInboxChanges((s) => s.tab)
+  const stored = useInboxChanges((s) => s.tab)
   const collapsed = useWorkspace((s) => s.fileTreeCollapsed)
+  // Changes belong to a thread. Without one, that tab is not offered and Files shows in its place.
+  const tab = tabsFor(threadId).includes(stored) ? stored : 'files'
   const shown = Boolean(threadId) && !collapsed
   // The tab's count stays current while the sidebar is open: one thread, so one cheap read.
   useEffect(() => {
     if (threadId && shown) return useInboxChanges.getState().watch(threadId)
   }, [threadId, shown])
-  if (!threadId || collapsed) return <FileTreePanel session={session} browseOnly />
+  if (collapsed) return <FileTreePanel session={session} browseOnly />
   return (
-    <>
-      {/* Kept mounted while Changes is showing, so the tree comes back with its folders open. Only the
+    <InboxSidebarFrame>
+      {/* Kept mounted while another tab is showing, so the tree comes back with its folders open. Only the
           copy on screen carries the tabs. */}
       <div
         role="tabpanel"
@@ -574,10 +618,11 @@ export function InboxSidebar({ session, threadId }: { session: Session; threadId
         className={tab === 'files' ? 'contents' : 'hidden'}
         data-testid="inbox-files-panel"
       >
-        <FileTreePanel session={session} browseOnly heading={tab === 'files' ? <SidebarTabs threadId={threadId} /> : undefined} />
+        <FileTreePanel session={session} browseOnly fill heading={tab === 'files' ? <SidebarTabs threadId={threadId} /> : undefined} />
       </div>
-      {tab === 'changes' && <ChangesAside threadId={threadId} />}
-    </>
+      {tab === 'changes' && threadId && <ChangesAside threadId={threadId} />}
+      {tab === 'terminal' && <TerminalAside threadId={threadId} />}
+    </InboxSidebarFrame>
   )
 }
 

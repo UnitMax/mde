@@ -119,6 +119,7 @@ import { openCodeTuiInstanceLabel } from '@/lib/opencode-tui-instances'
 import { isTerminalLauncherShortcut } from '@/lib/terminal-launcher'
 
 const FALLBACK_SIZE: PtySize = { cols: 80, rows: 24 }
+const noop = (): void => {}
 const RESIZE_DEBOUNCE_MS = 100
 
 function textInputHasFocus(): boolean {
@@ -132,11 +133,17 @@ interface TerminalViewProps {
   session: Session
   activeTab: SessionTab
   terminalLayout: SessionTerminalLayout
-  onSelectTab: (tabId: string) => void
-  onAddTab: () => void
-  onTabRenameStart: () => void
-  onRenameTab: (tabId: string, name: string) => void
-  onCloseTab: (tabId: string) => void
+  /**
+   * Drawn inside another view, as the Inbox does in its sidebar: one tab with no strip, a header that is only
+   * the layout picker, and keyboard shortcuts that act only while the keyboard is in this view. The tab
+   * callbacks and `onLinkTask` are not needed then.
+   */
+  embedded?: boolean
+  onSelectTab?: (tabId: string) => void
+  onAddTab?: () => void
+  onTabRenameStart?: () => void
+  onRenameTab?: (tabId: string, name: string) => void
+  onCloseTab?: (tabId: string) => void
   onLayoutChange: (layout: TerminalLayout) => void
   onLayoutResize: (
     axis: TerminalResizeAxis,
@@ -149,7 +156,8 @@ interface TerminalViewProps {
   onClosePane: (terminalId: string) => void
   onPaneFocus: (terminalId: string) => void
   onPaneTitleChange: (terminalId: string, title: string | null) => void
-  onLinkTask: (terminalId: string) => void
+  /** Offers to link a terminal to a To Do task; left out where terminals are not tied to a task. */
+  onLinkTask?: (terminalId: string) => void
 }
 
 interface TerminalSurfaceProps {
@@ -609,7 +617,7 @@ function TerminalPane({
   isFullscreen: boolean
   onToggleFullscreen: () => void
   onTitleChange: (title: string | null) => void
-  onLinkTask: (terminalId: string) => void
+  onLinkTask?: (terminalId: string) => void
   onOpenCodeSessions: () => void
   reorderState?: 'none' | 'candidate' | 'active' | 'target'
   paneOverlayVisible?: boolean
@@ -750,7 +758,7 @@ function TerminalPane({
           <TerminalFullscreenIndicator isFullscreen={isFullscreen} />
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          {terminalStatus === 'running' && (
+          {onLinkTask && terminalStatus === 'running' && (
             <Button
               variant="ghost"
               size="icon-sm"
@@ -1227,11 +1235,12 @@ export function TerminalView({
   session: selectedSession,
   activeTab,
   terminalLayout,
-  onSelectTab,
-  onAddTab,
-  onTabRenameStart,
-  onRenameTab,
-  onCloseTab,
+  embedded = false,
+  onSelectTab = noop,
+  onAddTab = noop,
+  onTabRenameStart = noop,
+  onRenameTab = noop,
+  onCloseTab = noop,
   onLayoutChange,
   onLayoutResize,
   onPaneOrderChange,
@@ -1263,7 +1272,14 @@ export function TerminalView({
   const [openCodeSessionsSourceId, setOpenCodeSessionsSourceId] = useState<string | null>(null)
   const openCodeSessionsSourceStatus = useWorkspace((state) => state.statuses[openCodeSessionsSourceId ?? ''])
   const [terminalSettings, setTerminalSettings] = useState<TerminalSettings>(() => getTerminalSettings())
+  const rootRef = useRef<HTMLDivElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
+  /** Whether a key press is this view's to act on: any, in the Projects view; only ones typed inside it, when embedded. */
+  const handlesKey = useCallback(
+    (event: KeyboardEvent): boolean =>
+      !embedded || (event.target instanceof Node && rootRef.current?.contains(event.target) === true),
+    [embedded]
+  )
   const reorderDragRef = useRef<TerminalReorderDragState | null>(null)
   const focusedTerminalIdRef = useRef<string | null>(null)
   const [focusedTerminalId, setFocusedTerminalId] = useState<string | null>(null)
@@ -1586,6 +1602,7 @@ export function TerminalView({
     const onKeyDown = (event: KeyboardEvent): void => {
       const target = event.target
       if (target instanceof HTMLElement && target.closest('[role="dialog"]')) return
+      if (!handlesKey(event)) return
 
       const layout = getTerminalLayoutShortcut({
         type: event.type,
@@ -1605,12 +1622,13 @@ export function TerminalView({
 
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [requestLayout])
+  }, [requestLayout, handlesKey])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       const target = event.target
       const inDialog = target instanceof Element && target.closest('[role="dialog"]') !== null
+      if (!handlesKey(event)) return
       if (!shouldExitTerminalFullscreen({
         key: event.key,
         escapeExitsFullscreen: terminalSettings.escapeExitsFullscreen,
@@ -1627,12 +1645,13 @@ export function TerminalView({
 
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [fullscreenTerminalId, terminalSettings.escapeExitsFullscreen])
+  }, [fullscreenTerminalId, terminalSettings.escapeExitsFullscreen, handlesKey])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       const target = event.target
       if (target instanceof Element && target.closest('[role="dialog"]')) return
+      if (!handlesKey(event)) return
 
       if (!isTerminalFullscreenShortcut({
         type: event.type,
@@ -1661,12 +1680,13 @@ export function TerminalView({
 
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [terminalLayout.panes])
+  }, [terminalLayout.panes, handlesKey])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       const target = event.target
       if (target instanceof Element && target.closest('[role="dialog"]')) return
+      if (!handlesKey(event)) return
 
       const index = getTerminalPaneSwitchIndex({
         type: event.type,
@@ -1687,7 +1707,7 @@ export function TerminalView({
 
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [fullscreenTerminalId, terminalLayout.panes])
+  }, [fullscreenTerminalId, terminalLayout.panes, handlesKey])
 
   useEffect(() => {
     if (
@@ -1743,7 +1763,7 @@ export function TerminalView({
           onPaneFocus(pane.terminalId)
         }}
         onTitleChange={(title) => onPaneTitleChange(pane.terminalId, title)}
-        onLinkTask={() => onLinkTask(pane.terminalId)}
+        onLinkTask={onLinkTask}
         onOpenCodeSessions={() => {
           hidePaneOverlay()
           setOpenCodeSessionsSourceId(pane.terminalId)
@@ -1769,25 +1789,31 @@ export function TerminalView({
   )
 
   return (
-    <div className="relative z-0 isolate flex h-full min-w-0 flex-col bg-bg">
-      <SessionTabStrip
-        session={selectedSession}
-        activeTab={activeTab}
-        onSelect={onSelectTab}
-        onAdd={onAddTab}
-        onRenameStart={onTabRenameStart}
-        onRename={onRenameTab}
-        onClose={onCloseTab}
-      />
-      <header className="flex h-10 shrink-0 items-center gap-3 border-b border-line bg-panel/50 px-3">
+    <div ref={rootRef} className="relative z-0 isolate flex h-full min-w-0 flex-col bg-bg">
+      {!embedded && (
+        <SessionTabStrip
+          session={selectedSession}
+          activeTab={activeTab}
+          onSelect={onSelectTab}
+          onAdd={onAddTab}
+          onRenameStart={onTabRenameStart}
+          onRename={onRenameTab}
+          onClose={onCloseTab}
+        />
+      )}
+      <header className={`flex shrink-0 items-center border-b border-line bg-panel/50 ${embedded ? 'h-9 gap-2 px-2' : 'h-10 gap-3 px-3'}`}>
         <div className="flex min-w-0 flex-1 items-baseline gap-2">
-          <span
-            className="min-w-0 max-w-[40%] truncate text-[13px] font-semibold leading-5 text-fg"
-            title={selectedSession.name}
-          >
-            {selectedSession.name}
-          </span>
-          <span aria-hidden="true" className="h-3 w-px shrink-0 self-center bg-line-strong" />
+          {!embedded && (
+            <>
+              <span
+                className="min-w-0 max-w-[40%] truncate text-[13px] font-semibold leading-5 text-fg"
+                title={selectedSession.name}
+              >
+                {selectedSession.name}
+              </span>
+              <span aria-hidden="true" className="h-3 w-px shrink-0 self-center bg-line-strong" />
+            </>
+          )}
           <span
             className="min-w-0 flex-1 truncate font-mono text-xs leading-5 text-fg-muted"
             title={location}
@@ -1810,11 +1836,11 @@ export function TerminalView({
               data-testid={`terminal-layout-${candidate.value}`}
               title={`${candidate.label} (Ctrl+${candidate.shortcut})`}
               onClick={() => requestLayout(candidate.value)}
-              className={
+              className={`rounded-sm py-1 ${embedded ? 'px-1' : 'px-1.5'} ${
                 terminalLayout.layout === candidate.value
-                  ? 'rounded-sm bg-active px-1.5 py-1 text-fg'
-                  : 'rounded-sm px-1.5 py-1 text-fg-subtle hover:bg-hover hover:text-fg'
-              }
+                  ? 'bg-active text-fg'
+                  : 'text-fg-subtle hover:bg-hover hover:text-fg'
+              }`}
             >
               <LayoutGlyph layout={candidate.value} />
             </button>

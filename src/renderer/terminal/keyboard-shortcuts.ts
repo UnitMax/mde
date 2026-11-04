@@ -85,7 +85,7 @@ export function getKeyboardShortcutGroups(
           id: 'terminal-layout',
           keys: ['Ctrl+1–9'],
           description: 'Choose a terminal layout.',
-          note: 'Choose 1–9 terminals using the corresponding digit. Numpad digits also work.'
+          note: 'Choose 1–9 terminals using the corresponding digit. Numpad digits also work. In the Inbox terminal they act only while the keyboard is in it.'
         },
         {
           id: 'terminal-fullscreen',

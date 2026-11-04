@@ -15,9 +15,9 @@ interface Store {
   /** Show each thread's changes in the Inbox list (a preference, off by default). */
   sidebarChanges: boolean
   setSidebarChanges: (on: boolean) => void
-  /** Which tab the right-hand sidebar shows for the open thread. */
-  tab: 'files' | 'changes'
-  setTab: (tab: 'files' | 'changes') => void
+  /** Which tab the right-hand sidebar shows. */
+  tab: 'files' | 'changes' | 'terminal'
+  setTab: (tab: 'files' | 'changes' | 'terminal') => void
   /** The changed file open in the review above the conversation. */
   selectedPath: { threadId: string; path: string } | null
   /** Selects the thread and shows one of its changed files in the review. */

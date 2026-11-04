@@ -65,6 +65,8 @@ bounded keys, strings, numbers, booleans and string lists. `files:list` and `fil
 existence, session/source ownership, filesystem containment and platform
 constraints after the central validation.
 
+The Inbox terminal is the one terminal that belongs to no workspace session. Requests that start or look after a terminal (`pty:ensure`, `pty:restart`, file drops onto a terminal, the OpenCode history list, and the Git and reveal lookups that start from a terminal ID) accept the reserved session ID `inbox-terminal` in place of a session ID. The main process builds that session on demand, as a shell in the home directory (`~` in the default WSL distro on Windows), and the reserved ID always wins over a stored session. Every other handler that takes a session ID (`files:list`, `files:read`, `git:status` and the rest) keeps asking the workspace store only, so naming `inbox-terminal` there fails and the home directory never becomes something those can read. This adds no authority the renderer does not already have: it can run any command in a terminal through `pty:write`.
+
 The clipboard has two channels. `clipboard:write-text` carries the text to write (up to 2 Mi code
 units). `clipboard:paste` carries nothing and returns nothing: the main process calls
 `webContents.paste()` on the window that asked, which pastes the system clipboard into whatever

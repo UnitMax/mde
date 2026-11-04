@@ -53,12 +53,14 @@ function FileTree({
   session,
   onCollapse,
   browseOnly,
-  heading
+  heading,
+  fill
 }: {
   session: Session
   onCollapse: () => void
   browseOnly: boolean
   heading?: ReactNode
+  fill: boolean
 }): JSX.Element {
   const [cache, setCache] = useState<Map<string, FileTreeDirectoryState>>(() => new Map())
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
@@ -187,7 +189,10 @@ function FileTree({
   return (
     <aside
       data-testid="file-tree-panel"
-      className="flex h-full min-h-0 w-[260px] shrink-0 flex-col border-l border-line bg-panel"
+      className={cn(
+        'flex h-full min-h-0 flex-col border-l border-line bg-panel',
+        fill ? 'w-full min-w-0' : 'w-[260px] shrink-0'
+      )}
     >
       <div className="flex items-center gap-1 px-3 pb-2 pt-3">
         {heading ?? (
@@ -339,12 +344,15 @@ function FileTree({
 export function FileTreePanel({
   session,
   browseOnly = false,
-  heading
+  heading,
+  fill = false
 }: {
   session: Session
   browseOnly?: boolean
   /** Replaces the "Files" title in the header, for a host that offers other tabs beside the files. */
   heading?: ReactNode
+  /** Takes the width of its container instead of its own 260px, for a host whose sidebar can be resized. */
+  fill?: boolean
 }): JSX.Element {
   const collapsed = useWorkspace((state) => state.fileTreeCollapsed)
   const toggleFileTree = useWorkspace((state) => state.toggleFileTree)
@@ -365,5 +373,5 @@ export function FileTreePanel({
     )
   }
 
-  return <FileTree key={session.id} session={session} onCollapse={toggleFileTree} browseOnly={browseOnly} heading={heading} />
+  return <FileTree key={session.id} session={session} onCollapse={toggleFileTree} browseOnly={browseOnly} heading={heading} fill={fill} />
 }

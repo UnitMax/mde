@@ -28,6 +28,9 @@
     "src/renderer/terminal/pane-switch.ts",
     "src/renderer/terminal/keyboard-shortcuts.ts",
     "src/renderer/terminal/tabs.ts",
+    "src/renderer/terminal/layout-edits.ts",
+    "src/renderer/terminal/dispose.ts",
+    "src/renderer/terminal/focus.ts",
     "src/renderer/terminal/clipboard.ts",
     "src/renderer/terminal/osc52.ts",
     "src/renderer/terminal/osc52-notices.ts",
@@ -115,6 +118,7 @@
     "src/renderer/store/inbox-drafts.ts",
     "src/renderer/store/inbox-changes.ts",
     "src/renderer/store/inbox-view.ts",
+    "src/renderer/store/inbox-terminal.ts",
     "src/shared/**/*",
     "test/**/*"
   ],

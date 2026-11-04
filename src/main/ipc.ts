@@ -1,4 +1,5 @@
 import { promises as fs } from 'node:fs'
+import { homedir } from 'node:os'
 import { supportsAgentIntegration } from '@shared/agent-support'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import {
@@ -146,6 +147,7 @@ import {
 } from './opencode/sessions'
 import { readGitDiff, readGitInfo, readGitStatus, readGitTerminalInfo } from './git'
 import { readInboxGitChanges, readInboxGitDiff } from './inbox/changes'
+import { terminalSessionResolver } from './inbox/terminal'
 import { isSafeRelativePath, listSessionDirectory, readSessionFile } from './files/tree'
 import {
   createProject,
@@ -440,6 +442,8 @@ export function registerIpcHandlers(
   const inboxRecorder = inbox.recorder
   const chat = inbox.chat
   const pendingEnsures = new Map<string, symbol>()
+  // Terminals belong to a workspace session or to the Inbox's one global terminal; nothing else may name the latter.
+  const getTerminalSession = terminalSessionResolver({ getSession, listDistros, platform: process.platform, home: homedir })
   const handle = <Req, Res>(
     channel: IpcChannel,
     handler: (req: Req, event: Electron.IpcMainInvokeEvent) => Promise<Res> | Res
@@ -661,7 +665,7 @@ export function registerIpcHandlers(
       throw new Error('Invalid OpenCode session history request.')
     }
     validateOpenCodeExecutable(req.executable)
-    const session = await getSession(req.sessionId)
+    const session = await getTerminalSession(req.sessionId)
     if (!session || !supportsAgentIntegration(process.platform, session)) {
       throw new Error('Session history requires macOS or a Windows/WSL terminal.')
     }
@@ -674,7 +678,7 @@ export function registerIpcHandlers(
     const pending = Symbol()
     pendingEnsures.set(req.terminalId, pending)
     try {
-      const session = await getSession(req.sessionId)
+      const session = await getTerminalSession(req.sessionId)
       if (!session) return 'none'
       if (req.launch !== undefined) validatePtyLaunchRequest(req.launch)
       // Reattaching an existing resumed TUI must not depend on its saved record
@@ -698,7 +702,7 @@ export function registerIpcHandlers(
     const pending = Symbol()
     pendingEnsures.set(req.terminalId, pending)
     try {
-      const session = await getSession(req.sessionId)
+      const session = await getTerminalSession(req.sessionId)
       if (!session) return 'none'
       const launch = await resolvePtyReplacementOptions(ptyManager, session, req)
       if (pendingEnsures.get(req.terminalId) !== pending) return 'none'
@@ -755,7 +759,7 @@ export function registerIpcHandlers(
       return terminalDropUnavailable(droppedFiles)
     }
 
-    const session = await getSession(terminal.sessionId)
+    const session = await getTerminalSession(terminal.sessionId)
     if (!session) return terminalDropUnavailable(droppedFiles)
 
     const files = [...req.files]
@@ -795,7 +799,7 @@ export function registerIpcHandlers(
     const terminal = ptyManager.terminalInfo(terminalId)
     if (!terminal?.directory) return
 
-    const session = await getSession(terminal.sessionId)
+    const session = await getTerminalSession(terminal.sessionId)
     if (!session || process.platform !== 'win32' || session.kind !== 'wsl' || !session.distro) return
 
     const directory = await verifiedDirectory(session, terminal.directory)
@@ -826,7 +830,7 @@ export function registerIpcHandlers(
     const terminal = ptyManager.terminalInfo(terminalId)
     if (!terminal?.directory) return
 
-    const session = await getSession(terminal.sessionId)
+    const session = await getTerminalSession(terminal.sessionId)
     if (!session || process.platform !== 'win32' || session.kind !== 'wsl' || !session.distro) return
 
     const directory = await verifiedDirectory(session, terminal.directory)
@@ -873,7 +877,7 @@ export function registerIpcHandlers(
       const terminal = ptyManager.terminalInfo(req.terminalId)
       if (!terminal) return null
 
-      const session = await getSession(terminal.sessionId)
+      const session = await getTerminalSession(terminal.sessionId)
       if (!session) return null
 
       const candidateDirectory = terminal.directory ?? session.path

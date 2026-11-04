@@ -168,10 +168,10 @@ The Git changes in a thread's checkout show up in two places, both as the same v
 branch, the files and lines added and removed, and the list of changed files. Choosing a file
 reviews its diff.
 
-- **The Changes tab** in the right-hand sidebar, beside Files, for the thread that is open.
+- **The Changes tab** in the right-hand sidebar, beside Files and Terminal, for the thread that is open.
   It is always available, and it shows the number of changed files, so the open thread's
-  changes are read while the sidebar is open. A new thread, which has no changes yet, shows
-  only the file tree.
+  changes are read while the sidebar is open. A new thread, which has no changes yet, does not
+  offer it.
 - **The thread list**, under each thread: a line with the number of files and the lines added
   and removed. Resting the pointer on it (or pressing Enter, or clicking, which keeps it open)
   lists the changed files in a popover beside the sidebar. A checkout with no changes, or
@@ -231,7 +231,13 @@ browser opens in the folder already typed when it exists, otherwise in the distr
 home and parent buttons, a breadcrumb, and a "Show hidden folders" switch, and it hands back a plain
 Linux path.
 
-The Inbox also shows the Files sidebar for the open thread's folder, or for the folder a new thread starts in. It is the same tree and viewer as in Projects mode, but browse-only: the VS Code and File Explorer buttons are hidden. The renderer passes the thread's or folder's own ID to `files:list` and `files:read`; the main process looks it up in the Inbox store when no workspace session has that ID.
+The Inbox also shows a right-hand sidebar with three tabs, Files, Changes and Terminal (a new thread, which has no changes yet, offers Files and Terminal). The Files tab shows the open thread's folder, or the folder a new thread starts in. It is the same tree and viewer as in Projects mode, but browse-only: the VS Code and File Explorer buttons are hidden. The renderer passes the thread's or folder's own ID to `files:list` and `files:read`; the main process looks it up in the Inbox store when no workspace session has that ID.
+
+**Resizing.** Dragging the sidebar's left edge makes it wider (up to 70% of the window) or narrower (never under 260 px). The edge is a keyboard-operable separator: Left and Right arrows change the width by 16 px (64 with Shift), Home and End go to the limits, and a double-click restores 260 px. One width serves all three tabs and is kept in the renderer's `localStorage` (`mde.inbox-sidebar-width`).
+
+**Terminal tab.** The Inbox has one terminal, shared by every thread: it is the same whichever thread (or the new-thread page) is open, and it keeps running while the sidebar shows another tab or the Projects view is open. It reuses the project view's terminal layout (`TerminalView` in its embedded mode: no tab strip, a header that is only the layout picker, and Ctrl+1–9, Ctrl+Shift+F and the pane-switch shortcuts acting only while the keyboard is inside it, so typing in the composer is never intercepted). All nine layouts, resizing the dividers, reordering panes, pane titles, fullscreen, restart, the terminal launcher and the OpenCode history work as in Projects; only linking a terminal to a To Do task is not offered. Every shell starts in the home directory: `~` in the default WSL distro on Windows, the home directory on the Mac. The layout and its dividers are kept in `localStorage` (`mde.inbox-terminal-layout`) and come back as fresh shells on the next run; the shells themselves are not restored. The layout edits shared with the project view live in `src/renderer/terminal/layout-edits.ts`, and the Inbox's copy of the state in `src/renderer/store/inbox-terminal.ts`.
+
+The terminal is not a workspace session and is never stored. Terminal requests name it with the reserved session ID `inbox-terminal` (`src/shared/inbox-terminal.ts`), which the main process resolves on demand (`src/main/inbox/terminal.ts`) for requests that start or look after a terminal only; file browsing and Git status never accept it.
 
 **New thread.** "New thread" at the top of the Inbox, or selecting nothing, shows "What should we
 build in ‹folder›?". The folder name opens a menu of the Inbox folders with Add folder… and

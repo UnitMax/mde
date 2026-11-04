@@ -1,9 +1,12 @@
 import { create } from 'zustand'
 import {
+  clampInboxSidebarWidth,
   getInboxDraftsCollapsed,
+  getInboxSidebarWidth,
   getInboxWorkingCollapsed,
   getInboxWorkingSection,
   saveInboxDraftsCollapsed,
+  saveInboxSidebarWidth,
   saveInboxWorkingCollapsed,
   saveInboxWorkingSection,
 } from '@/lib/inbox-settings'
@@ -18,6 +21,10 @@ interface Store {
   /** The Drafts section is folded up, leaving only its header. */
   draftsCollapsed: boolean
   setDraftsCollapsed: (collapsed: boolean) => void
+  /** How wide the right-hand sidebar (files, changes, terminal) is, in pixels. */
+  sidebarWidth: number
+  /** Dragging sets the width without keeping it; `keep` is for the last step, so storage is written once. */
+  setSidebarWidth: (width: number, keep?: boolean) => void
 }
 
 /** How the Inbox sidebar is laid out, as the user last left it. */
@@ -36,5 +43,11 @@ export const useInboxView = create<Store>((set) => ({
   setDraftsCollapsed: (collapsed) => {
     saveInboxDraftsCollapsed(collapsed)
     set({ draftsCollapsed: collapsed })
+  },
+  sidebarWidth: getInboxSidebarWidth(),
+  setSidebarWidth: (width, keep = true) => {
+    const next = clampInboxSidebarWidth(width)
+    if (keep) saveInboxSidebarWidth(next)
+    set({ sidebarWidth: next })
   },
 }))
