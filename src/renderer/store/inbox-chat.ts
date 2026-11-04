@@ -118,6 +118,12 @@ interface InboxChatStore {
    * back and tells the reader why. One the agent took up in the meantime stays in the conversation.
    */
   discardPending: (threadId: string, messageId: string) => Promise<void>
+  /**
+   * Changes how a held message is delivered, steering or queued. It shows at once; a rejection puts the
+   * old way back and tells the reader why. A message the agent took up in the meantime is shown in the
+   * conversation by the next refetch.
+   */
+  setPendingDelivery: (threadId: string, messageId: string, delivery: ChatPendingMessage['delivery']) => Promise<void>
   /** Undoes a staged revert; the messages and files come back. A rejection leaves the thread as it was. */
   redo: (threadId: string) => Promise<void>
   /**
@@ -153,6 +159,8 @@ const refreshing = new Map<string, Promise<void>>()
  * of the service that began before then cannot know of the change, so it does not get to undo it.
  */
 const pendingChangedAt = new Map<string, number>()
+/** Held messages whose way of delivery is being changed; a second change waits for the first to be answered. */
+const switchingDelivery = new Set<string>()
 
 export const useInboxChat = create<InboxChatStore>((set, get) => {
   const patchThread = (threadId: string, patch: Partial<ChatThreadState> | ((thread: ChatThreadState) => Partial<ChatThreadState>)): void => {
@@ -398,6 +406,30 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
           notice: `The message could not be taken back: ${ipcErrorMessage(error, 'OpenCode did not answer.')}`,
         }))
       } finally {
+        scheduleRefresh(threadId)
+      }
+    },
+
+    setPendingDelivery: async (threadId, messageId, delivery) => {
+      const entry = get().threads[threadId]?.pending.find((item) => item.id === messageId)
+      if (!entry || entry.delivery === delivery || switchingDelivery.has(messageId)) return
+      const before = entry.delivery
+      const withDelivery = (value: ChatPendingMessage['delivery']) => (thread: ChatThreadState): Partial<ChatThreadState> => ({
+        pending: thread.pending.map((item) => (item.id === messageId ? { ...item, delivery: value } : item)),
+      })
+      switchingDelivery.add(messageId)
+      pendingChangedAt.set(threadId, Date.now())
+      patchThread(threadId, withDelivery(delivery))
+      try {
+        await window.api.chat.setDelivery({ threadId, messageId, delivery })
+      } catch (error) {
+        pendingChangedAt.set(threadId, Date.now())
+        patchThread(threadId, (thread) => ({
+          ...withDelivery(before)(thread),
+          notice: `The message could not be switched to ${delivery === 'queue' ? 'queued' : 'steering'}: ${ipcErrorMessage(error, 'OpenCode did not answer.')}`,
+        }))
+      } finally {
+        switchingDelivery.delete(messageId)
         scheduleRefresh(threadId)
       }
     },

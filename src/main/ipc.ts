@@ -105,6 +105,7 @@ import type {
   ChatSendRequest,
   ChatPendingMessage,
   ChatDiscardPendingRequest,
+  ChatSetDeliveryRequest,
   ChatThreadRequest,
   ChatDraftRequest,
   ChatDraft
@@ -624,6 +625,7 @@ export function registerIpcHandlers(
   handle<ChatDraftRequest, ChatDraft>(IpcChannels.chatDraft, async (req) => chat.draft(req, req.action === 'tree' ? (await getSession(req.sessionId)) ?? undefined : undefined))
   handle<ChatSendRequest, ChatPendingMessage | null>(IpcChannels.chatSend, (req) => chat.send(req))
   handle<ChatDiscardPendingRequest, void>(IpcChannels.chatDiscardPending, (req) => chat.discardPending(req))
+  handle<ChatSetDeliveryRequest, void>(IpcChannels.chatSetDelivery, (req) => chat.setDelivery(req))
   handle<ChatThreadRequest, void>(IpcChannels.chatInterrupt, (req) => chat.interrupt(req.threadId))
   handle<ChatThreadRequest, void>(IpcChannels.chatRedo, (req) => chat.redo(req.threadId))
   handle<ChatRevertRequest, ChatRevert>(IpcChannels.chatRevert, (req) => chat.revert(req))

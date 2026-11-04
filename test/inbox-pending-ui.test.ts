@@ -38,6 +38,7 @@ let page: ChatMessagesPage
 let accepted: ChatPendingMessage | null
 const send = vi.fn(async (_request: unknown): Promise<ChatPendingMessage | null> => accepted)
 const discardPending = vi.fn(async (_request: unknown): Promise<void> => undefined)
+const setDelivery = vi.fn(async (_request: unknown): Promise<void> => undefined)
 const messages = vi.fn(async (): Promise<ChatMessagesPage> => page)
 const api = {
   inbox: {
@@ -52,6 +53,7 @@ const api = {
     messages,
     send,
     discardPending,
+    setDelivery,
     requests: vi.fn(async () => ({ permissions: [], forms: [] })),
     subscribe: vi.fn(async () => undefined),
     unsubscribe: vi.fn(async () => undefined),
@@ -88,6 +90,8 @@ beforeEach(() => {
   send.mockClear()
   discardPending.mockReset()
   discardPending.mockResolvedValue(undefined)
+  setDelivery.mockReset()
+  setDelivery.mockResolvedValue(undefined)
   messages.mockClear()
   accepted = null
   page = { messages: conversation, older: null, running: true, pending: [] }
@@ -285,5 +289,99 @@ describe('taking a held message back', () => {
     await refetched()
     expect(byId('chat-message-msg_p1')!.textContent).toContain('Just in time')
     expect(shownPending()).toEqual([])
+  })
+})
+
+describe('switching how a held message is delivered', () => {
+  const label = (id: string): string | undefined => byId(`chat-pending-switch-${id}`)?.textContent?.trim()
+  const status = (id: string): string => byId(`chat-pending-status-${id}`)!.textContent ?? ''
+
+  it('offers the other way: queue a steered message, steer a queued one', async () => {
+    page = { ...page, pending: [held('msg_p1', 'Steered'), held('msg_p2', 'Queued', 'queue')] }
+    await render()
+    expect(label('msg_p1')).toBe('Queue instead')
+    expect(label('msg_p2')).toBe('Steer now')
+  })
+
+  it('switches at once and asks OpenCode, in both directions', async () => {
+    page = { ...page, pending: [held('msg_p1', 'Steered'), held('msg_p2', 'Queued', 'queue')] }
+    await render()
+    await act(async () => byId('chat-pending-switch-msg_p1')!.click())
+    expect(setDelivery).toHaveBeenLastCalledWith({ threadId: 'ses_one', messageId: 'msg_p1', delivery: 'queue' })
+    expect(status('msg_p1')).toMatch(/Queued.*sent when the agent is done/)
+    expect(label('msg_p1')).toBe('Steer now')
+    await act(async () => byId('chat-pending-switch-msg_p2')!.click())
+    expect(setDelivery).toHaveBeenLastCalledWith({ threadId: 'ses_one', messageId: 'msg_p2', delivery: 'steer' })
+    expect(status('msg_p2')).toMatch(/Steering.*the agent reads it at its next step/)
+    expect(store().threads.ses_one!.pending.map((entry) => [entry.id, entry.delivery])).toEqual([['msg_p1', 'queue'], ['msg_p2', 'steer']])
+  })
+
+  it('does not offer it when nothing is running, where both ways wait for the next run, but still offers Remove', async () => {
+    page = { ...page, running: false, pending: [held('msg_p1', 'Stranded', 'queue')] }
+    await render()
+    expect(byId('chat-pending-switch-msg_p1')).toBeNull()
+    expect(byId('chat-pending-discard-msg_p1')).not.toBeNull()
+  })
+
+  it('goes back to the old way, and says why, when OpenCode cannot switch it', async () => {
+    page = { ...page, pending: [held('msg_p1', 'Steered')] }
+    await render()
+    setDelivery.mockRejectedValueOnce(new Error('the agent may already have taken it up.'))
+    await act(async () => byId('chat-pending-switch-msg_p1')!.click())
+    await vi.waitFor(() => expect(byId('chat-notice')!.textContent).toBe('The message could not be switched to queued: the agent may already have taken it up.'))
+    expect(status('msg_p1')).toMatch(/Steering/)
+    expect(label('msg_p1')).toBe('Queue instead')
+  })
+
+  it('shows a message the agent took up before the switch was answered as part of the conversation', async () => {
+    page = { ...page, pending: [held('msg_p1', 'Just in time')] }
+    await render()
+    setDelivery.mockRejectedValueOnce(new Error('the agent may already have taken it up.'))
+    page = { ...page, messages: [...conversation, { kind: 'user', id: 'msg_p1', time: 6, text: 'Just in time' }], pending: [] }
+    await act(async () => byId('chat-pending-switch-msg_p1')!.click())
+    await refetched()
+    expect(shownPending()).toEqual([])
+    expect(byId('chat-message-msg_p1')!.textContent).toContain('Just in time')
+  })
+
+  it('is not undone by a refetch that began before the switch', async () => {
+    page = { ...page, pending: [held('msg_p1', 'Steered')] }
+    await render()
+    const before = { ...page }
+    let answer!: (page: ChatMessagesPage) => void
+    messages.mockImplementationOnce(() => new Promise<ChatMessagesPage>((resolve) => { answer = resolve }))
+    const stale = store().refresh('ses_one')
+    await act(async () => byId('chat-pending-switch-msg_p1')!.click())
+    // The late answer still says steer.
+    await act(async () => { answer(before); await stale })
+    expect(status('msg_p1')).toMatch(/Queued/)
+    // The refetch that follows the switch is after it, and says queue.
+    page = { ...page, pending: [held('msg_p1', 'Steered', 'queue')] }
+    await refetched()
+    expect(status('msg_p1')).toMatch(/Queued/)
+  })
+
+  it('follows a switch made elsewhere, through the next refetch', async () => {
+    page = { ...page, pending: [held('msg_p1', 'Steered')] }
+    await render()
+    page = { ...page, pending: [held('msg_p1', 'Steered', 'queue')] }
+    await act(async () => { await store().refresh('ses_one') })
+    expect(status('msg_p1')).toMatch(/Queued/)
+    expect(label('msg_p1')).toBe('Steer now')
+  })
+
+  it('waits for the first switch to be answered before taking another click on the same message', async () => {
+    page = { ...page, pending: [held('msg_p1', 'Steered')] }
+    await render()
+    let answer!: () => void
+    setDelivery.mockImplementationOnce(() => new Promise<void>((resolve) => { answer = resolve }))
+    await act(async () => byId('chat-pending-switch-msg_p1')!.click())
+    // It already reads "Steer now", but the first request is still out.
+    await act(async () => byId('chat-pending-switch-msg_p1')!.click())
+    expect(setDelivery).toHaveBeenCalledOnce()
+    await act(async () => { answer() })
+    await act(async () => byId('chat-pending-switch-msg_p1')!.click())
+    expect(setDelivery).toHaveBeenCalledTimes(2)
+    expect(setDelivery).toHaveBeenLastCalledWith({ threadId: 'ses_one', messageId: 'msg_p1', delivery: 'steer' })
   })
 })

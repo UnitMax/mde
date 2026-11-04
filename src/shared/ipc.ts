@@ -70,6 +70,7 @@ import type {
   ChatRevertRequest,
   ChatPendingMessage,
   ChatSendRequest,
+  ChatSetDeliveryRequest,
   ChatThreadRequest,
   ChatDraft,
   ChatDraftRequest
@@ -176,6 +177,7 @@ export const IpcChannels = {
   chatMessages: 'chat:messages',
   chatSend: 'chat:send',
   chatDiscardPending: 'chat:discard-pending',
+  chatSetDelivery: 'chat:set-delivery',
   chatDraft: 'chat:draft',
   chatInterrupt: 'chat:interrupt',
   chatRedo: 'chat:redo',
@@ -570,6 +572,8 @@ export interface RendererApi {
     send(req: ChatSendRequest): Promise<ChatPendingMessage | null>
     /** Takes back a message OpenCode still holds for the agent. One it has already delivered stays. */
     discardPending(req: ChatDiscardPendingRequest): Promise<void>
+    /** Changes a held message between steering (read at the agent's next step) and queued (sent when it is done). */
+    setDelivery(req: ChatSetDeliveryRequest): Promise<void>
     interrupt(req: ChatThreadRequest): Promise<void>
     redo(req: ChatThreadRequest): Promise<void>
     revert(req: ChatRevertRequest): Promise<ChatRevert>

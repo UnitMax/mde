@@ -130,7 +130,7 @@ the validated `chat:*` channels.
   and path pairs (agents, skills, providers, models, session create/get/active, message
   list, prompt, interrupt, agent and model switch, permission and form
   list/reply, session update, staging or clearing a revert, fork, and listing or cancelling the inbox items
-  the service holds for a busy agent). The skill list (`GET /api/skill`)
+  the service holds for a busy agent, and changing their delivery). The skill list (`GET /api/skill`)
   takes only the `location[directory]` query. OpenCode answers with each skill's full text and file path;
   the main process keeps the id, name and a one-line description and drops the rest, so neither reaches
   the renderer. A prompt can carry `skills` ids, but only ones the main process found by exact match in
@@ -150,8 +150,10 @@ the validated `chat:*` channels.
   cancels a message the service has not yet delivered to the agent and does nothing for one it has. The
   held messages are read with `GET /api/session/{sessionID}/inbox`, whose answer is parsed down to the
   user's own messages; an ID that is not `msg_` form is dropped, so every message that is shown can be
-  taken back. `chat:send` returns the message as the service accepted it, and sends no `delivery` of its
-  own. The `chat:fork` channel accepts only a recorded thread ID and an optional message ID
+  taken back. The `chat:set-delivery` channel accepts the same two IDs and a `delivery` from the fixed set
+  `steer`, `queue`, and sends `PATCH /api/session/{sessionID}/inbox/{inboxID}` with the body
+  `{ delivery }`; nothing else can be put in the body. `chat:send` returns the message as the service
+  accepted it, and sends no `delivery` of its own. The `chat:fork` channel accepts only a recorded thread ID and an optional message ID
   of the same `msg_` form, and sends `POST /api/session/{sessionID}/fork` with the body
   `{ before }`, where `before` is that message ID or `null`. For a fork of the whole conversation the
   main process, not the renderer, decides what `before` is (see "Forking a thread" in

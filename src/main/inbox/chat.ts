@@ -17,6 +17,7 @@ import type {
   ChatPendingMessage,
   ChatPermissionReplyRequest,
   ChatRequests,
+  ChatSetDeliveryRequest,
   ChatRevert,
   ChatRevertRequest,
   ChatSendRequest,
@@ -467,6 +468,28 @@ export class InboxChatService {
     await this.dependencies.client.request(thread.target, 'session.inbox.cancel', {
       params: { sessionID: thread.id, inboxID: request.messageId },
     })
+  }
+
+  /**
+   * Changes how a held message is delivered: steering (the agent reads it at its next step) or queued
+   * (it waits until the agent is done). The service refuses with a conflict when the message is no longer
+   * held, because the agent took it up, or already has that delivery, and that is told plainly.
+   */
+  async setDelivery(request: ChatSetDeliveryRequest): Promise<void> {
+    this.assertEnabled()
+    const thread = this.thread(request.threadId)
+    try {
+      await this.dependencies.client.request(thread.target, 'session.inbox.update', {
+        params: { sessionID: thread.id, inboxID: request.messageId },
+        body: { delivery: request.delivery },
+      })
+    } catch (error) {
+      if (error instanceof OpenCodeServiceError && error.status === 409) {
+        // The reason only: the reader's notice says that the switch failed.
+        throw new Error('the agent may already have taken it up.')
+      }
+      throw error
+    }
   }
 
   async interrupt(threadId: string): Promise<void> {

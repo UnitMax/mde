@@ -14,9 +14,10 @@ export const SERVICE_OPERATIONS = {
   'session.update': { method: 'PATCH', path: '/api/session/{sessionID}' },
   'session.message.list': { method: 'GET', path: '/api/session/{sessionID}/message' },
   'session.prompt': { method: 'POST', path: '/api/session/{sessionID}/prompt' },
-  // What the service holds for the agent while it is busy: listed, and taken back.
+  // What the service holds for the agent while it is busy: listed, taken back, or changed between steering and queued.
   'session.inbox.list': { method: 'GET', path: '/api/session/{sessionID}/inbox' },
   'session.inbox.cancel': { method: 'DELETE', path: '/api/session/{sessionID}/inbox/{inboxID}' },
+  'session.inbox.update': { method: 'PATCH', path: '/api/session/{sessionID}/inbox/{inboxID}' },
   'session.interrupt': { method: 'POST', path: '/api/session/{sessionID}/interrupt' },
   'session.revert.stage': { method: 'POST', path: '/api/session/{sessionID}/revert/stage' },
   'session.revert.clear': { method: 'DELETE', path: '/api/session/{sessionID}/revert' },

@@ -331,8 +331,16 @@ apart, after the conversation and above the "Working for" line, which is where t
 lands (`ChatPendingView`). It is drawn like the user's message it will become (text, files, skills) with a
 dashed outline and a line saying what happens to it (Steering, Queued), and **Remove** takes it back
 (`chat:discard-pending`, `DELETE /api/session/{id}/inbox/{id}`; one already delivered stays, and the next
-read shows it in the conversation). A message keeps its ID when it is delivered, so the delivered one
-replaces the pending one in the same place. After a Stop nothing is running, but OpenCode keeps the held
+read shows it in the conversation). While the agent runs, a second button switches the message between
+the two ways, **Queue instead** on a steered one and **Steer now** on a queued one (`chat:set-delivery`,
+`PATCH /api/session/{id}/inbox/{id}` with `{ delivery }`). The switch shows at once, a refusal puts the old
+way back and says why, and a second click on the same message waits until the first is answered. The
+service answers 409 for a message it no longer holds (the agent took it up), one that already has that
+delivery, and one it never had, so a refusal is told as "the agent may already have taken it up"; the next
+refetch shows where the message went. The button is not offered when nothing is running, because then both
+ways wait for the next run. (Steering a message held after a Stop would start the agent and deliver
+everything held, which MDE does not offer.) A message keeps its ID when it is delivered, so the delivered
+one replaces the pending one in the same place. After a Stop nothing is running, but OpenCode keeps the held
 messages until the next message starts the agent again and then delivers them all; the line then says
 "Not sent yet" and Remove is the way to drop them.
 
@@ -345,7 +353,8 @@ refetch. A message sent to a busy thread is shown at once from the prompt's own 
 the held message, `parsePromptAnswer`), not after the next refetch; one sent to an idle thread is not set
 aside, since it goes straight into the conversation. The store notes when it last changed what is held
 (`pendingChangedAt`), and a refetch that began before that is not allowed to undo the change, so a message
-neither blinks out when a read from just before the send comes back, nor returns after being removed.
+neither blinks out when a read from just before the send comes back, nor returns after being removed, nor
+switches back after being switched.
 
 **Skills.** A skill is a folder of instructions (a `SKILL.md`) that OpenCode finds in the project
 (for example `.claude/skills/<name>/SKILL.md` in the folder) and in the user's own configuration, plus a

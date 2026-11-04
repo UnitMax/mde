@@ -94,6 +94,7 @@ const validPayloads = {
   [IpcChannels.chatInterrupt]: { threadId: 'ses_thread' },
   [IpcChannels.chatRedo]: { threadId: 'ses_thread' },
   [IpcChannels.chatDiscardPending]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a' },
+  [IpcChannels.chatSetDelivery]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a', delivery: 'queue' },
   [IpcChannels.chatRevert]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a', files: false },
   [IpcChannels.chatFork]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a' },
   [IpcChannels.chatRegenerateTitle]: { threadId: 'ses_thread' },
@@ -197,6 +198,24 @@ describe('IPC payload boundary', () => {
       { threadId: 'ses_thread', messageId: 'msg_1', delivery: 'steer' },
     ]) rejects(IpcChannels.chatDiscardPending, bad)
     expect(() => assertIpcPayload(IpcChannels.chatDiscardPending, { threadId: 'ses_thread', messageId: 'msg_1' })).not.toThrow()
+    // Switching a held message names the thread, the message and one of the two ways of delivery.
+    for (const bad of [
+      {},
+      { threadId: 'ses_thread', messageId: 'msg_1' },
+      { threadId: 'ses_thread', delivery: 'steer' },
+      { messageId: 'msg_1', delivery: 'steer' },
+      { threadId: 'ses_thread', messageId: 'msg_1', delivery: 'later' },
+      { threadId: 'ses_thread', messageId: 'msg_1', delivery: 'STEER' },
+      { threadId: 'ses_thread', messageId: 'msg_1', delivery: null },
+      { threadId: 'ses_thread', messageId: 'msg_1', delivery: ['steer'] },
+      { threadId: 'ses_../escape', messageId: 'msg_1', delivery: 'steer' },
+      { threadId: 'ses_thread', messageId: 'msg_../escape', delivery: 'steer' },
+      { threadId: 'ses_thread', messageId: 'ses_thread', delivery: 'steer' },
+      { threadId: 'ses_thread', messageId: 'msg_1', delivery: 'steer', text: 'Injected' },
+    ]) rejects(IpcChannels.chatSetDelivery, bad)
+    for (const delivery of ['steer', 'queue']) {
+      expect(() => assertIpcPayload(IpcChannels.chatSetDelivery, { threadId: 'ses_thread', messageId: 'msg_1', delivery })).not.toThrow()
+    }
     rejects(IpcChannels.chatRegenerateTitle, { threadId: 'ses_../escape' })
     rejects(IpcChannels.chatRegenerateTitle, { threadId: 'ses_thread', title: 'Injected' })
     expect(() => assertIpcPayload(IpcChannels.chatCreate, { folderId: 'fld_1234', text: '', attachmentIds: ['a'], draftRevision: 1, agent: 'build', model })).not.toThrow()

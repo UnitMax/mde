@@ -40,6 +40,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const send = useInboxChat((store) => store.send)
   const interrupt = useInboxChat((store) => store.interrupt)
   const discardPending = useInboxChat((store) => store.discardPending)
+  const setPendingDelivery = useInboxChat((store) => store.setPendingDelivery)
   const redo = useInboxChat((store) => store.redo)
   const revertTo = useInboxChat((store) => store.revert)
   const forkThread = useInboxChat((store) => store.forkThread)
@@ -197,7 +198,13 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
           })}
           {/* Held for the agent: where the conversation will put them once it takes them up. */}
           {pending?.map((held) => (
-            <ChatPendingView key={held.id} pending={held} running={running} onDiscard={(id) => void discardPending(thread.id, id)} />
+            <ChatPendingView
+              key={held.id}
+              pending={held}
+              running={running}
+              onDiscard={(id) => void discardPending(thread.id, id)}
+              onSetDelivery={(id, delivery) => void setPendingDelivery(thread.id, id, delivery)}
+            />
           ))}
           {revert && <ChatRevertBanner revert={revert} messages={revertedCount} directory={thread.directory} onRedo={() => redo(thread.id)} />}
           {running && <WorkingFor since={busySince ?? turns.openSince} />}

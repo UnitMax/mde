@@ -241,6 +241,11 @@ describe('OpenCode service client', () => {
       .toBe('http://127.0.0.1:1/api/session/ses_a/inbox/msg_1a3f33')
     expect(SERVICE_OPERATIONS['session.inbox.list'].method).toBe('GET')
     expect(SERVICE_OPERATIONS['session.inbox.cancel'].method).toBe('DELETE')
+    // Switching how a held message is delivered is the same path with another method.
+    expect(SERVICE_OPERATIONS['session.inbox.update']).toEqual({ method: 'PATCH', path: SERVICE_OPERATIONS['session.inbox.cancel'].path })
+    expect(serviceUrl('http://127.0.0.1:1', 'session.inbox.update', { params: { sessionID: 'ses_a', inboxID: 'msg_1a3f33' } }))
+      .toBe('http://127.0.0.1:1/api/session/ses_a/inbox/msg_1a3f33')
+    expect(() => serviceUrl('http://127.0.0.1:1', 'session.inbox.update', { params: { sessionID: 'ses_a', inboxID: '../x' } })).toThrow('Invalid OpenCode inboxID.')
     for (const inboxID of ['../x', 'ses_a', 'msg_', 'msg_a/b', 'msg_a?b', '']) {
       expect(() => serviceUrl('http://127.0.0.1:1', 'session.inbox.cancel', { params: { sessionID: 'ses_a', inboxID } })).toThrow('Invalid OpenCode inboxID.')
     }

@@ -629,6 +629,13 @@ export interface ChatDiscardPendingRequest {
   messageId: string
 }
 
+export interface ChatSetDeliveryRequest {
+  threadId: string
+  /** The `id` of a {@link ChatPendingMessage}. */
+  messageId: string
+  delivery: ChatPendingMessage['delivery']
+}
+
 export interface ChatPermissionReplyRequest {
   threadId: string
   requestId: string

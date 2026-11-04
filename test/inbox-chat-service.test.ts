@@ -578,6 +578,45 @@ describe('Inbox chat service', () => {
       service.stop()
     })
 
+    it('switches how a held message is delivered with one PATCH on the recorded session and message', async () => {
+      const { service, folder, calls, disable } = setup({ 'session.create': { data: { id: 'ses_new' } } })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      calls.length = 0
+      await service.setDelivery({ threadId: 'ses_new', messageId: 'msg_p1', delivery: 'queue' })
+      await service.setDelivery({ threadId: 'ses_new', messageId: 'msg_p1', delivery: 'steer' })
+      expect(calls).toEqual([
+        { operation: 'session.inbox.update', request: { params: { sessionID: 'ses_new', inboxID: 'msg_p1' }, body: { delivery: 'queue' } } },
+        { operation: 'session.inbox.update', request: { params: { sessionID: 'ses_new', inboxID: 'msg_p1' }, body: { delivery: 'steer' } } },
+      ])
+      await expect(service.setDelivery({ threadId: 'ses_unknown', messageId: 'msg_p1', delivery: 'queue' })).rejects.toThrow()
+      disable()
+      calls.length = 0
+      await expect(service.setDelivery({ threadId: 'ses_new', messageId: 'msg_p1', delivery: 'queue' })).rejects.toThrow()
+      expect(calls).toEqual([])
+      service.stop()
+    })
+
+    it('gives the reason, that the agent may have taken the message up, when the service refuses the switch, and passes other failures on', async () => {
+      const refused = setup({
+        'session.create': { data: { id: 'ses_new' } },
+        'session.inbox.update': new OpenCodeServiceError('Pending input cannot change to queue: msg_p1', 409, 'ConflictError'),
+      })
+      await refused.service.create({ folderId: refused.folder.id, text: 'Hi', agent: 'build', model })
+      const failure = await refused.service.setDelivery({ threadId: 'ses_new', messageId: 'msg_p1', delivery: 'queue' }).catch((error: Error) => error)
+      expect(failure).toBeInstanceOf(Error)
+      expect((failure as Error).message).toBe('the agent may already have taken it up.')
+      // The service's own wording, with its ID, is not what the reader sees.
+      expect((failure as Error).message).not.toContain('msg_p1')
+      refused.service.stop()
+      const down = setup({
+        'session.create': { data: { id: 'ses_new' } },
+        'session.inbox.update': new OpenCodeServiceError('Session not found', 404, 'SessionNotFoundError'),
+      })
+      await down.service.create({ folderId: down.folder.id, text: 'Hi', agent: 'build', model })
+      await expect(down.service.setDelivery({ threadId: 'ses_new', messageId: 'msg_p1', delivery: 'queue' })).rejects.toThrow('Session not found')
+      down.service.stop()
+    })
+
     it('passes on why the service would not take a message back', async () => {
       const { service, folder } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'session.inbox.cancel': new OpenCodeServiceError('Session not found', 404, 'SessionNotFoundError') })
       await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
