@@ -1221,11 +1221,11 @@ describe('Inbox native attachments', () => {
       'session.prompt': new Error('Unavailable'),
     }, drafts)
     try {
-      const key = `folder:${folder.id}` as const
-      await drafts.add(key, 'notes.txt', 'text/plain', new Uint8Array([65, 66]))
+      const key = 'draft:drf_one' as const
+      await drafts.add(key, 'notes.txt', 'text/plain', new Uint8Array([65, 66]), { folderId: folder.id })
       const draft = await drafts.get(key)
       const attachmentIds = draft.attachments.map((file) => file.id)
-      const thread = await service.create({ folderId: folder.id, text: '', agent: 'build', model, attachmentIds, draftRevision: draft.revision })
+      const thread = await service.create({ folderId: folder.id, text: '', agent: 'build', model, draftId: 'drf_one', attachmentIds, draftRevision: draft.revision })
       expect(thread.sendError).toContain('draft has been kept')
       expect(calls.find((call) => call.operation === 'session.prompt')?.request.body).toEqual({ text: '', files: [{ name: 'notes.txt', uri: 'data:application/octet-stream;base64,QUI=' }] })
       expect((await drafts.get(key)).attachments).toHaveLength(0)
@@ -1254,6 +1254,118 @@ describe('Inbox native attachments', () => {
     expect(limits).toEqual(['50', '25'])
     expect(page.older).toBe('next-page')
     service.stop()
+  })
+})
+
+describe('Inbox new-thread drafts', () => {
+  async function withDrafts(responses: Partial<Record<ServiceOperation, unknown>> = {}) {
+    const path = await fs.mkdtemp(join(tmpdir(), 'mde-chat-drafts-'))
+    const drafts = new InboxDraftStore(path)
+    const made = setup(responses, drafts)
+    return { ...made, drafts, path, done: async () => { made.service.stop(); await fs.rm(path, { recursive: true, force: true }) } }
+  }
+
+  it('saves what is typed under the folder it was written for, and lists it', async () => {
+    const { service, folder, done } = await withDrafts()
+    try {
+      expect(await service.drafts()).toEqual([])
+      const draft = await service.draft({ key: 'draft:drf_one', action: 'text', text: 'Fix the login', folderId: folder.id })
+      expect(draft).toEqual({ revision: 1, text: 'Fix the login', attachments: [] })
+      expect(await service.drafts()).toEqual([expect.objectContaining({ id: 'drf_one', folderId: folder.id, preview: 'Fix the login', attachments: 0 })])
+    } finally { await done() }
+  })
+
+  it('needs the folder to start or change a new thread’s draft, and one that is in the Inbox', async () => {
+    const { service, folder, done } = await withDrafts()
+    try {
+      for (const request of [
+        { key: 'draft:drf_one', action: 'text', text: 'Hi' },
+        { key: 'draft:drf_one', action: 'prepend', text: 'Hi' },
+        { key: 'draft:drf_one', action: 'add', name: 'a.txt', mime: 'text/plain', data: new Uint8Array([1]) },
+      ] as const) await expect(service.draft(request)).rejects.toThrow('needs its folder')
+      await expect(service.draft({ key: 'draft:drf_one', action: 'text', text: 'Hi', folderId: 'fld_gone' })).rejects.toThrow('no longer in the Inbox')
+      expect(await service.drafts()).toEqual([])
+      // Reading it, or taking a file off it, needs no folder.
+      await service.draft({ key: 'draft:drf_one', action: 'text', text: 'Hi', folderId: folder.id })
+      await expect(service.draft({ key: 'draft:drf_one', action: 'load' })).resolves.toMatchObject({ text: 'Hi' })
+    } finally { await done() }
+  })
+
+  it('moves the draft along when the page is given another folder, however it asks', async () => {
+    const { service, folder, drafts, done } = await withDrafts()
+    try {
+      const second = service.addFolder({ directory: '/home/me/other', target: wsl })
+      await service.draft({ key: 'draft:drf_one', action: 'text', text: 'Hi', folderId: folder.id })
+      await service.draft({ key: 'draft:drf_one', action: 'flush', folderId: second.id })
+      expect((await service.drafts())[0]?.folderId).toBe(second.id)
+      await service.draft({ key: 'draft:drf_one', action: 'load', folderId: folder.id })
+      expect((await service.drafts())[0]?.folderId).toBe(folder.id)
+      // A draft that is not there is not made by asking.
+      await service.draft({ key: 'draft:drf_two', action: 'load', folderId: folder.id })
+      expect((await service.drafts()).map((draft) => draft.id)).toEqual(['drf_one'])
+      expect(await drafts.get('draft:drf_two')).toMatchObject({ text: '', revision: 0 })
+    } finally { await done() }
+  })
+
+  it('deletes a draft, and its files, with clear', async () => {
+    const { service, folder, path, done } = await withDrafts()
+    try {
+      await service.draft({ key: 'draft:drf_one', action: 'add', name: 'a.txt', mime: 'text/plain', data: new Uint8Array([1]), folderId: folder.id })
+      expect(await fs.readdir(join(path, 'attachments'))).toHaveLength(1)
+      await service.draft({ key: 'draft:drf_one', action: 'clear' })
+      expect(await service.drafts()).toEqual([])
+      expect(await fs.readdir(join(path, 'attachments'))).toEqual([])
+    } finally { await done() }
+  })
+
+  it('starts a thread from a draft, sends its files and leaves no draft behind', async () => {
+    const { service, folder, calls, drafts, done } = await withDrafts({ 'session.create': { data: { id: 'ses_new' } } })
+    try {
+      await service.draft({ key: 'draft:drf_one', action: 'add', name: 'notes.txt', mime: 'text/plain', data: new Uint8Array([65, 66]), folderId: folder.id })
+      const { text, revision, attachments } = await service.draft({ key: 'draft:drf_one', action: 'text', text: 'Read these', folderId: folder.id })
+      await service.create({ folderId: folder.id, text, agent: 'build', model, draftId: 'drf_one', attachmentIds: attachments.map((file) => file.id), draftRevision: revision })
+      expect(calls.find((call) => call.operation === 'session.prompt')?.request.body).toEqual({ text: 'Read these', files: [{ name: 'notes.txt', uri: 'data:application/octet-stream;base64,QUI=' }] })
+      expect(await service.drafts()).toEqual([])
+      expect(await drafts.get('thread:ses_new')).toMatchObject({ text: '', attachments: [] })
+    } finally { await done() }
+  })
+
+  it('keeps the draft listed when the thread could not be created at all', async () => {
+    const { service, folder, done } = await withDrafts({ 'session.create': new Error('Unavailable') })
+    try {
+      await service.draft({ key: 'draft:drf_one', action: 'text', text: 'Hello', folderId: folder.id })
+      await expect(service.create({ folderId: folder.id, text: 'Hello', agent: 'build', model, draftId: 'drf_one' })).rejects.toThrow('Unavailable')
+      expect((await service.drafts()).map((draft) => draft.id)).toEqual(['drf_one'])
+    } finally { await done() }
+  })
+
+  it('does not take files that are not from a draft, or from another draft', async () => {
+    const { service, folder, done } = await withDrafts({ 'session.create': { data: { id: 'ses_new' } } })
+    try {
+      await service.draft({ key: 'draft:drf_one', action: 'add', name: 'a.txt', mime: 'text/plain', data: new Uint8Array([1]), folderId: folder.id })
+      const { revision, attachments } = await service.draft({ key: 'draft:drf_one', action: 'load' })
+      const ids = attachments.map((file) => file.id)
+      await expect(service.create({ folderId: folder.id, text: '', agent: 'build', model, attachmentIds: ids, draftRevision: revision })).rejects.toThrow('do not belong to a draft')
+      await expect(service.create({ folderId: folder.id, text: '', agent: 'build', model, draftId: 'drf_other', attachmentIds: ids, draftRevision: revision })).rejects.toThrow('draft changed')
+      expect((await service.drafts()).map((draft) => draft.id)).toEqual(['drf_one'])
+    } finally { await done() }
+  })
+
+  it('keeps a thread’s draft under the thread, with no folder to name', async () => {
+    const { service, folder, done } = await withDrafts({ 'session.create': { data: { id: 'ses_new' } } })
+    try {
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      await service.draft({ key: 'thread:ses_new', action: 'text', text: 'And then' })
+      expect(await service.drafts()).toEqual([])
+    } finally { await done() }
+  })
+
+  it('is not there where the Inbox is not', async () => {
+    const { service, disable, done } = await withDrafts()
+    try {
+      disable()
+      await expect(service.drafts()).rejects.toThrow()
+    } finally { await done() }
   })
 })
 

@@ -76,7 +76,8 @@ import type {
   ChatSetDeliveryRequest,
   ChatThreadRequest,
   ChatDraft,
-  ChatDraftRequest
+  ChatDraftRequest,
+  ChatDraftSummary
 } from './types'
 
 export interface WorkspaceData {
@@ -184,6 +185,7 @@ export const IpcChannels = {
   chatMcp: 'chat:mcp',
   chatMcpSet: 'chat:mcp-set',
   chatDraft: 'chat:draft',
+  chatDrafts: 'chat:drafts',
   chatInterrupt: 'chat:interrupt',
   chatRedo: 'chat:redo',
   chatRevert: 'chat:revert',
@@ -566,6 +568,8 @@ export interface RendererApi {
   }
   chat: {
     draft(req: ChatDraftRequest): Promise<ChatDraft>
+    /** The new-thread drafts that have something in them, most recently changed first. */
+    drafts(): Promise<ChatDraftSummary[]>
     configure(req: ChatConfigureRequest): Promise<void>
     options(req: ChatOptionsRequest): Promise<ChatOptions>
     create(req: ChatCreateRequest): Promise<InboxThread>

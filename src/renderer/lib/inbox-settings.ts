@@ -1,6 +1,7 @@
 export const INBOX_SIDEBAR_CHANGES_STORAGE_KEY = 'mde.inbox-sidebar-changes'
 export const INBOX_WORKING_SECTION_STORAGE_KEY = 'mde.inbox-working-section'
 export const INBOX_WORKING_COLLAPSED_STORAGE_KEY = 'mde.inbox-working-collapsed'
+export const INBOX_DRAFTS_COLLAPSED_STORAGE_KEY = 'mde.inbox-drafts-collapsed'
 
 /** `on` when it was turned on; off for anything else and when storage cannot be read. */
 function readSwitch(key: string): boolean {
@@ -44,4 +45,13 @@ export function getInboxWorkingCollapsed(): boolean {
 
 export function saveInboxWorkingCollapsed(collapsed: boolean): void {
   writeSwitch(INBOX_WORKING_COLLAPSED_STORAGE_KEY, collapsed)
+}
+
+/** Whether the Drafts section is folded up. Open unless it was folded, and open when unreadable. */
+export function getInboxDraftsCollapsed(): boolean {
+  return readSwitch(INBOX_DRAFTS_COLLAPSED_STORAGE_KEY)
+}
+
+export function saveInboxDraftsCollapsed(collapsed: boolean): void {
+  writeSwitch(INBOX_DRAFTS_COLLAPSED_STORAGE_KEY, collapsed)
 }

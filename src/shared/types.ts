@@ -640,6 +640,8 @@ export type ChatMcpSetRequest = ChatOptionsRequest & { server: string; enabled: 
 export interface ChatCreateRequest {
   attachmentIds?: string[]
   draftRevision?: number
+  /** The new-thread draft this starts from (`drf_…`): its files are sent and it is removed once the thread has its first message. */
+  draftId?: string
   folderId: string
   text: string
   agent: string
@@ -940,8 +942,11 @@ export interface FileReadResponse {
   tooLarge: boolean
 }
 
-/** A draft belongs to a thread, or to the new-chat composer of a folder. */
-export type ChatDraftKey = `thread:${string}` | `folder:${string}`
+/**
+ * A draft belongs to a thread, or is a new thread not yet started (`draft:drf_…`): the Inbox lists
+ * those, and any number of them can wait, each for the folder it was written for.
+ */
+export type ChatDraftKey = `thread:${string}` | `draft:${string}`
 export interface ChatAttachment {
   id: string
   name: string
@@ -954,7 +959,7 @@ export interface ChatDraft {
   text: string
   attachments: ChatAttachment[]
 }
-export type ChatDraftRequest =
+export type ChatDraftRequest = (
   | { key: ChatDraftKey; action: 'load' | 'flush' | 'clear' }
   | { key: ChatDraftKey; action: 'text'; text: string }
   /** Puts text above what the draft already holds. */
@@ -962,6 +967,23 @@ export type ChatDraftRequest =
   | { key: ChatDraftKey; action: 'add'; name: string; mime: string; data: Uint8Array }
   | { key: ChatDraftKey; action: 'tree'; sessionId: string; path: string }
   | { key: ChatDraftKey; action: 'remove'; attachmentId: string }
+) & {
+  /** The folder a new-thread draft is for. Every change to such a draft names it, so the draft can be listed and reopened there. */
+  folderId?: string
+}
+
+/** One unsent new thread, as the Inbox sidebar lists it. Only what the row shows; the draft itself is read by its composer. */
+export interface ChatDraftSummary {
+  /** `drf_…`; the draft's key is `draft:<id>`. */
+  id: string
+  folderId: string
+  /** The start of the text, cut at a bounded length. */
+  preview: string
+  /** How many files are attached, and the name of the first. */
+  attachments: number
+  attachmentName?: string
+  updatedAt: number
+}
 
 /** Git changes in the checkout a thread uses, relative to HEAD. Memory only. */
 export interface InboxChangesRequest {

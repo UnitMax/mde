@@ -86,6 +86,23 @@ that, and the list above keeps a small minimum height. Both choices are kept in 
 `localStorage` (`mde.inbox-working-section`, off by default, and `mde.inbox-working-collapsed`, open
 by default; `store/inbox-view.ts`).
 
+**Drafts.** A new thread that was started and not sent is a draft, listed in a **Drafts** section
+directly above Working. The section is not there at all while there are no drafts. A draft joins it
+when its page is left with something in it, whether by choosing New thread, opening a thread or
+leaving the Inbox, and it stays until it is sent or deleted, so there can be any number of them, each
+for the folder it was written for. Rows look like thread rows: the first line of the text (or the
+first file's name), the folder, a paperclip with the file count, and how long ago it changed, newest
+first. Hovering a row says **Delete draft** where a thread says Park; a draft has nothing to park, so
+the button asks first ("Delete this draft?") and then deletes the text and the files saved with it.
+Opening a draft puts it on the new-thread page in its own folder to carry on with, and the row stays
+in the list, marked as the open one, while New thread is not; choosing New thread then sets the
+open draft aside and shows a blank page. Choosing New thread on a blank page, or one nothing was
+typed on, does nothing. A thread started from a draft removes it. The section takes at most 35% of the
+sidebar's height and folds up like Working (`mde.inbox-drafts-collapsed`); the filter tabs do not
+apply to it, the search does (text, file name and folder). A draft whose folder was removed from the
+Inbox is kept, labelled "Removed folder", and opens in whichever folder the page shows. Unsent
+text in an existing thread is not listed here: it stays in that thread's box, as before.
+
 Opening a thread counts it as read, and so does something new happening in the thread you are
 looking at (the Inbox showing and the window in front), as with an open mail. Since that leaves no
 dot to see, the row glows and its status chip, in the list and in the thread's header, pops for
@@ -203,7 +220,7 @@ The Inbox also shows the Files sidebar for the open thread's folder, or for the 
 
 **New thread.** "New thread" at the top of the Inbox, or selecting nothing, shows "What should we
 build in ‹folder›?". The folder name opens a menu of the Inbox folders with Add folder… and
-remove buttons. Below it is the composer: a prompt box, a model picker (searchable, grouped by
+remove buttons. Changing the folder keeps what was typed; the draft moves to the new folder. Below it is the composer: a prompt box, a model picker (searchable, grouped by
 provider, enabled and non-deprecated models only), an agent picker (Build, Plan, then any other
 primary agent that is not hidden), and a send button. Enter sends; Shift+Enter and Ctrl+J add a newline.
 Both the new-thread and follow-up inputs show Markdown bullet markers (`-`, `*`, or `+` followed
@@ -964,10 +981,26 @@ limit and do not enlarge the text viewer's limit.
 
 `InboxDraftStore` serializes mutations and atomically saves each text edit and attachment change
 under `inbox-drafts/` in user data. Copies use opaque filenames and private permissions. Drafts
-are scoped to a thread or new-chat folder and survive restart. Native create/send requests carry
-attachment IDs and a draft revision. The main process validates ownership, sends copied contents
-as OpenCode native data-URL files, and clears only the submitted revision after acceptance. A
-created session whose initial prompt fails retains the draft on that session for retry.
+belong to a thread (`thread:<id>`) or are a new thread not yet started (`draft:drf_<uuid>`), and
+survive restart. Native create/send requests carry attachment IDs and a draft revision; a create
+also names the draft it starts from (`draftId`). The main process validates ownership, sends copied
+contents as OpenCode native data-URL files, and clears only the submitted revision after acceptance.
+A created session whose initial prompt fails retains the draft on that session for retry.
+
+A new thread's draft also records the folder it was written for and when it last changed, which is
+what the sidebar's Drafts section lists by. Every change to it (`text`, `prepend`, `add`, `tree`)
+carries `folderId` and the main process refuses one without it; `load` and `flush` with a
+`folderId` move an existing draft to that folder, which is how the page keeps a draft when its
+folder is changed. `chat:drafts` returns only what a row shows (id, folder, the first 300
+characters of the text, the file count and first file name, the time), never the attachments. A
+new-thread draft that holds nothing (no text, no files) is not kept, and startup drops any. The
+renderer's `store/inbox-drafts.ts` holds the list and `page`, the draft the new-thread page edits:
+a fresh id (`drf_<uuid>`, saved only once something is typed) that is replaced when the page is
+left or New thread is chosen on it, so what was typed stays behind as a draft, and the draft taken
+from the list while `opened`. The list is read when the sidebar opens and whenever the page is left,
+a draft is opened or deleted; an answer that arrives after a newer request is dropped. Before
+drafts were listed, a folder had one draft of its own (`folder:<id>`); startup turns each into a
+new-thread draft, so nothing typed earlier is lost. Removing a folder does not delete its drafts.
 Reverting an Inbox thread to a message adds that message's text to the top of the thread's draft in
 the same store.
 

@@ -206,8 +206,9 @@ if (!app.requestSingleInstanceLock()) {
       return url.length <= 180_000 ? url : undefined
     }
     inboxDrafts = new InboxDraftStore(join(app.getPath('userData'), 'inbox-drafts'), previewAttachment, (key) => {
-      const id = key.slice(key.indexOf(':') + 1)
-      return Boolean(key.startsWith('thread:') ? inboxStore?.get(id) : inboxStore?.folder(id))
+      // A thread's draft goes with the thread. A new thread's draft belongs to no one place: its folder may
+      // have been removed since, and it then opens in whichever folder the page shows.
+      return !key.startsWith('thread:') || Boolean(inboxStore?.get(key.slice('thread:'.length)))
     })
     inboxChat = new InboxChatService({
       drafts: inboxDrafts,

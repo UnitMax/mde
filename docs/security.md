@@ -198,6 +198,12 @@ markers. It never renders prompt HTML, links or image embeds. Text paste reads o
 clipboard images follow the existing attachment boundary. Drafts and sent prompts remain plain
 Markdown, including text that is outside the supported formatting.
 
+Draft keys are validated as `thread:ses_…` or `draft:drf_…` (letters, digits, `-` and `_`, at most
+64 characters for a draft id), so an id never becomes a path: attachment copies have opaque names
+and the draft index is one file. A draft's `folderId` must look like a folder id and, when a change
+names it, be a folder in the Inbox. `chat:drafts` takes no payload and returns text previews cut at
+300 characters, no file contents.
+
 ### Inbox worktree boundary
 
 An Inbox thread can run in a Git worktree MDE creates, which is the only place MDE changes a
@@ -245,7 +251,8 @@ object takes no other key, so the renderer cannot name a path, a remote or a com
   folder's record, so removal later passes the same checks, and a `worktree` request for a worktree
   folder is refused so a worktree is never cut from another.
 - **Removal drops the entry.** `inbox:remove` with `removeWorktree` that succeeds also removes the
-  folders recorded for that root and their drafts; if Git refuses, nothing is dropped.
+  folders recorded for that root; if Git refuses, nothing is dropped. Drafts written for such a
+  folder are kept and open in another folder.
 
 `inbox.json` stores the worktree record (the repository directory, the root, the branch and the
 base) on the thread and on the folder entry, and is validated on load like every other field; a

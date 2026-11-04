@@ -17,6 +17,7 @@ import { WorktreeBar, useInboxGit, type WorktreeMode } from '@/components/inbox/
 import { initialChoice } from '@/lib/chat'
 import { defaultWorktreeBase, inboxWorktreeSource } from '@/lib/inbox'
 import { optionsKey, useInboxChat } from '@/store/inbox-chat'
+import { useInboxDrafts } from '@/store/inbox-drafts'
 
 /** Why the chosen name cannot be used for the new branch, judged from what the page already knows. */
 function worktreeBranchError(branches: InboxGitBranch[], name: string): string | null {
@@ -90,6 +91,9 @@ export function NewThreadView(): JSX.Element {
   const removeFolder = useInboxChat((state) => state.removeFolder)
   const loadOptions = useInboxChat((state) => state.loadOptions)
   const createThread = useInboxChat((state) => state.createThread)
+  // The draft this page writes into. Leaving the page makes what was typed a draft of the sidebar's, and the next visit a blank one.
+  const draftId = useInboxDrafts((state) => state.page.id)
+  useEffect(() => () => useInboxDrafts.getState().leave(), [])
   const [adding, setAdding] = useState(false)
   const plainFolders = useMemo(() => folders.filter((item) => !item.worktree), [folders])
   const worktreeFolders = useMemo(() => folders.filter((item) => item.worktree), [folders])
@@ -203,8 +207,10 @@ export function NewThreadView(): JSX.Element {
         </div>
         {folder && (
           <ChatComposer
-            key={folder.id}
-            draftKey={`folder:${folder.id}`}
+            // The draft stays with the page when its folder is changed, so what was typed is not lost to the switch.
+            key={draftId}
+            draftKey={`draft:${draftId}`}
+            draftFolderId={folder.id}
             autoFocus
             options={options}
             agent={agent}
@@ -231,7 +237,7 @@ export function NewThreadView(): JSX.Element {
             )}
             onSend={async (text, attachments) => {
               if (!agent || !model) return
-              await createThread({ folderId: folder.id, text, agent, model, ...attachments, ...(worktree ? { worktree } : {}) })
+              await createThread({ folderId: folder.id, text, agent, model, draftId, ...attachments, ...(worktree ? { worktree } : {}) })
             }}
           />
         )}

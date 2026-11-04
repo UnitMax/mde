@@ -109,7 +109,7 @@ interface InboxChatStore {
   reloadFolders: () => Promise<void>
   setComposer: (patch: InboxComposerState) => void
   loadOptions: (key: { folderId: string } | { threadId: string }, force?: boolean) => Promise<void>
-  createThread: (input: { folderId: string; text: string; agent: string; model: OpenCodeModelRef; attachmentIds?: string[]; draftRevision?: number; worktree?: { base: string; branch?: string } }) => Promise<InboxThread>
+  createThread: (input: { folderId: string; text: string; agent: string; model: OpenCodeModelRef; draftId?: string; attachmentIds?: string[]; draftRevision?: number; worktree?: { base: string; branch?: string } }) => Promise<InboxThread>
   openThread: (threadId: string) => () => void
   refresh: (threadId: string) => Promise<void>
   refreshRequests: (threadId: string) => Promise<void>

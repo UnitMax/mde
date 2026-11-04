@@ -157,6 +157,8 @@ describe('Inbox new thread', () => {
     })
     await vi.waitFor(() => expect(api.chat.create).toHaveBeenCalledWith({
       attachmentIds: [], draftRevision: 1, folderId: 'fld_app', text: 'Add a dark mode', agent: 'build', model: { id: 'free-1', providerId: 'opencode' },
+      // The thread starts from the page's own draft, which is spent with it.
+      draftId: expect.stringMatching(/^drf_/),
     }))
     await vi.waitFor(() => expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_new'))
     expect(useWorkspace.getState().inboxThreads.map((item) => item.id)).toEqual(['ses_new'])

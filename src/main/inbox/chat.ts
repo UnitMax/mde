@@ -1,4 +1,4 @@
-import type { ChatDraftRequest, ChatDraftKey } from '@shared/types'
+import type { ChatDraftRequest, ChatDraftSummary } from '@shared/types'
 import type { InboxDraftStore } from './drafts'
 import { readSessionAttachment } from '../files/tree'
 import { randomUUID } from 'node:crypto'
@@ -361,24 +361,38 @@ export class InboxChatService {
   async draft(request: ChatDraftRequest, sourceSession?: Session) {
     this.assertEnabled()
     const [kind, id = ''] = request.key.split(':')
-    if (kind === 'thread') this.thread(id)
-    else this.folder(id)
     const store = this.dependencies.drafts
     if (!store) throw new Error('Draft storage is unavailable.')
-    if (request.action === 'text') await store.text(request.key, request.text)
-    if (request.action === 'prepend') await store.prepend(request.key, request.text)
-    if (request.action === 'add') await store.add(request.key, request.name, request.mime, request.data)
+    // A new thread's draft is listed under the folder it was written for, which every change to it names.
+    // That folder may be gone by the time a draft is opened; the page then names the one it shows instead.
+    if (kind === 'thread') this.thread(id)
+    else if (request.folderId) this.folder(request.folderId)
+    const meta = kind === 'draft' && request.folderId ? { folderId: request.folderId } : undefined
+    if ((request.action === 'text' || request.action === 'prepend' || request.action === 'add' || request.action === 'tree') && kind === 'draft' && !meta) {
+      throw new Error('A new thread’s draft needs its folder.')
+    }
+    if (request.action === 'text') await store.text(request.key, request.text, meta)
+    if (request.action === 'prepend') await store.prepend(request.key, request.text, meta)
+    if (request.action === 'add') await store.add(request.key, request.name, request.mime, request.data, meta)
     if (request.action === 'tree') {
       const source = sourceSession ?? this.fileRoot(request.sessionId)
       if (!source) throw new Error('Source folder no longer exists.')
-      await store.add(request.key, request.path.split('/').at(-1)!, 'application/octet-stream', await readSessionAttachment(source, request.path))
+      await store.add(request.key, request.path.split('/').at(-1)!, 'application/octet-stream', await readSessionAttachment(source, request.path), meta)
     }
     if (request.action === 'remove') await store.remove(request.key, request.attachmentId)
     if (request.action === 'clear') await store.remove(request.key)
+    // Reading or looking again at a draft is how the page says it now shows it for another folder.
+    if ((request.action === 'load' || request.action === 'flush') && meta?.folderId) await store.setFolder(request.key, meta.folderId)
     return store.get(request.key)
   }
 
-  async removeDraft(key: ChatDraftKey): Promise<void> { await this.dependencies.drafts?.remove(key) }
+  /** The new-thread drafts that have something in them, newest change first. */
+  async drafts(): Promise<ChatDraftSummary[]> {
+    this.assertEnabled()
+    return (await this.dependencies.drafts?.list()) ?? []
+  }
+
+  async removeDraft(key: `thread:${string}`): Promise<void> { await this.dependencies.drafts?.remove(key) }
 
   async create(request: ChatCreateRequest): Promise<InboxThread> {
     this.assertEnabled()
@@ -387,7 +401,10 @@ export class InboxChatService {
     if (request.worktree && folder.worktree) throw new Error('This folder is already a worktree. Start the thread in it, or start a new worktree from the folder it came from.')
     const text = this.promptText(request.text, request.attachmentIds)
     if (!isChatAgentId(request.agent)) throw new Error('Choose an agent.')
-    const files = request.attachmentIds?.length ? await this.dependencies.drafts?.files(`folder:${folder.id}`, request.attachmentIds, request.draftRevision) : undefined
+    // The files come from the draft this starts from, and that draft is spent once the thread has its message.
+    if (request.attachmentIds?.length && !request.draftId) throw new Error('The attachments do not belong to a draft.')
+    const draftKey = request.draftId ? `draft:${request.draftId}` as const : undefined
+    const files = request.attachmentIds?.length && draftKey ? await this.dependencies.drafts?.files(draftKey, request.attachmentIds, request.draftRevision) : undefined
     let place: CreatedWorktree | undefined
     if (request.worktree) {
       if (!this.dependencies.worktrees) throw new Error('Git worktrees are unavailable.')
@@ -416,7 +433,7 @@ export class InboxChatService {
     this.dependencies.store.putFolder({ ...folder, lastUsedAt: this.dependencies.now() })
     if (place) this.addWorktreeFolder(folder, place)
     this.dependencies.store.setComposer({ folderId: folder.id, agent: request.agent, model: request.model })
-    await this.dependencies.drafts?.move(`folder:${folder.id}`, `thread:${thread.id}`)
+    if (draftKey) await this.dependencies.drafts?.move(draftKey, `thread:${thread.id}`)
     try {
       await this.dependencies.client.request(folder.target, 'session.prompt', {
         params: { sessionID: created.id },
@@ -452,7 +469,6 @@ export class InboxChatService {
     for (const folder of this.dependencies.store.folders()) {
       if (folder.worktree?.root !== root || serviceTargetKey(folder.target) !== serviceTargetKey(thread.target)) continue
       this.dependencies.store.removeFolder(folder.id)
-      await this.removeDraft(`folder:${folder.id}`).catch(() => undefined)
     }
   }
 

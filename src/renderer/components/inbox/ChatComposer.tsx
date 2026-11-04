@@ -198,6 +198,11 @@ function SkillPicker({
 
 export interface ChatComposerProps {
   draftKey?: ChatDraftKey
+  /**
+   * The folder a new thread's draft (`draft:` key) is written for. Every change to the draft names it,
+   * and changing it moves the draft, so the draft can be listed and reopened there.
+   */
+  draftFolderId?: string
   /** The preceding nonempty user message in this thread; older pages are loaded as needed. */
   onPreviousMessage?: (beforeId?: string) => Promise<{ id: string; text: string } | null>
   /**
@@ -237,6 +242,7 @@ export interface ChatComposerProps {
 /** The prompt box with model and agent pickers and a round send (or stop) button. */
 export function ChatComposer({
   draftKey,
+  draftFolderId,
   onPreviousMessage,
   draftReload,
   onDraftReloaded,
@@ -269,8 +275,16 @@ export function ChatComposer({
   const currentKey = useRef(draftKey)
   currentKey.current = draftKey
   const mutate = (request: ChatDraftRequest): Promise<ChatDraft> => {
-    return window.api.chat.draft(request)
+    return window.api.chat.draft(draftFolderId && request.key.startsWith('draft:') ? { ...request, folderId: draftFolderId } : request)
   }
+  // The page was given another folder: the draft follows it, with nothing else changed.
+  const writtenFor = useRef(draftFolderId)
+  useEffect(() => {
+    if (writtenFor.current === draftFolderId) return
+    writtenFor.current = draftFolderId
+    if (draftKey && draftFolderId) void mutate({ key: draftKey, action: 'flush' }).catch(() => undefined)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftFolderId])
   useEffect(() => {
     resetHistory()
     return resetHistory

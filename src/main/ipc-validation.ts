@@ -259,15 +259,18 @@ export const ipcPayloadValidators = {
   [IpcChannels.chatOptions]: (value) => object({ folderId: optional(inboxFolderId), threadId: optional(opencodeSessionId) })(value) &&
     exactlyOnePlace(value),
   [IpcChannels.chatDraft]: (value) => {
-    const key: Validator = (v) => typeof v === 'string' && /^(?:thread:ses_[A-Za-z0-9_-]{1,200}|folder:fld_[A-Za-z0-9-]{1,64})$/.test(v)
-    return object({ key, action: oneOf('load', 'flush', 'clear') })(value) ||
-      object({ key, action: oneOf('text'), text: promptText })(value) ||
-      object({ key, action: oneOf('prepend'), text: promptText })(value) ||
-      object({ key, action: oneOf('add'), name: string(512), mime: string(200), data: (v) => v instanceof Uint8Array && v.byteLength <= 20 * 1024 * 1024 })(value) ||
-      object({ key, action: oneOf('tree'), sessionId: id, path: relativePath })(value) ||
-      object({ key, action: oneOf('remove'), attachmentId: string(64) })(value)
+    const key: Validator = (v) => typeof v === 'string' && /^(?:thread:ses_[A-Za-z0-9_-]{1,200}|draft:drf_[A-Za-z0-9-]{1,64})$/.test(v)
+    // The folder a new-thread draft is for rides along with every change to it.
+    const folderId = optional(inboxFolderId)
+    return object({ key, action: oneOf('load', 'flush', 'clear'), folderId })(value) ||
+      object({ key, action: oneOf('text'), text: promptText, folderId })(value) ||
+      object({ key, action: oneOf('prepend'), text: promptText, folderId })(value) ||
+      object({ key, action: oneOf('add'), name: string(512), mime: string(200), data: (v) => v instanceof Uint8Array && v.byteLength <= 20 * 1024 * 1024, folderId })(value) ||
+      object({ key, action: oneOf('tree'), sessionId: id, path: relativePath, folderId })(value) ||
+      object({ key, action: oneOf('remove'), attachmentId: string(64), folderId })(value)
   },
-  [IpcChannels.chatCreate]: object({ attachmentIds: optional(array(string(64), 10)), draftRevision: optional((v) => Number.isSafeInteger(v) && Number(v) >= 0), folderId: inboxFolderId, text: promptText, agent: agentId, model: modelRef, worktree: optional(object({ base: worktreeBase, branch: optional(worktreeBranch) })) }),
+  [IpcChannels.chatDrafts]: noPayload,
+  [IpcChannels.chatCreate]: object({ attachmentIds: optional(array(string(64), 10)), draftRevision: optional((v) => Number.isSafeInteger(v) && Number(v) >= 0), draftId: optional((v) => typeof v === 'string' && /^drf_[A-Za-z0-9-]{1,64}$/.test(v)), folderId: inboxFolderId, text: promptText, agent: agentId, model: modelRef, worktree: optional(object({ base: worktreeBase, branch: optional(worktreeBranch) })) }),
   [IpcChannels.chatMessages]: object({ threadId: opencodeSessionId, cursor: optional((value) => typeof value === 'string' && /^[A-Za-z0-9_=.-]{1,2048}$/.test(value)) }),
   [IpcChannels.chatSend]: object({ attachmentIds: optional(array(string(64), 10)), draftRevision: optional((v) => Number.isSafeInteger(v) && Number(v) >= 0), threadId: opencodeSessionId, text: promptText, agent: optional(agentId), model: optional(modelRef), delivery: optional(oneOf('steer', 'queue')) }),
   [IpcChannels.chatDiscardPending]: object({ threadId: opencodeSessionId, messageId }),

@@ -19,6 +19,7 @@ import {
 import type { InboxThread } from '@shared/types'
 import { ElapsedTime } from '@/components/ElapsedTime'
 import { InboxChangesBadge } from '@/components/inbox/InboxChanges'
+import { InboxDraftsSection } from '@/components/inbox/InboxDrafts'
 import { InboxSettingsMenu } from '@/components/inbox/InboxSettingsMenu'
 import { Input } from '@/components/ui/input'
 import {
@@ -54,11 +55,13 @@ import {
   type InboxFilter,
   type InboxStatusChip
 } from '@/lib/inbox'
+import { visibleDrafts } from '@/lib/inbox-drafts'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { sessionAge, sessionDate } from '@/lib/opencode-sessions'
 import { cn } from '@/lib/utils'
 import { useInboxChat } from '@/store/inbox-chat'
 import { useInboxChanges, inboxChangesKey } from '@/store/inbox-changes'
+import { useInboxDrafts } from '@/store/inbox-drafts'
 import { useInboxView } from '@/store/inbox-view'
 import { useWorkspace } from '@/store/workspace'
 
@@ -473,6 +476,19 @@ export function InboxPanel(): JSX.Element {
   const [query, setQuery] = useState('')
   // A fork is a request to the service and can fail; the menu has no place to say so.
   const [fork, setFork] = useState<{ pending: boolean; error: string | null }>({ pending: false, error: null })
+  const folders = useInboxChat((state) => state.folders)
+  const drafts = useInboxDrafts((state) => state.drafts)
+  const page = useInboxDrafts((state) => state.page)
+  const loadDrafts = useInboxDrafts((state) => state.load)
+  const openDraft = useInboxDrafts((state) => state.open)
+  const startFresh = useInboxDrafts((state) => state.startFresh)
+  useEffect(() => {
+    void loadDrafts()
+  }, [loadDrafts])
+  // A new thread being written for the first time is not listed until its page is left; one taken from the list stays in it.
+  const onNewThread = selectedId === null && !page.opened
+  const listedDrafts = visibleDrafts(drafts, onNewThread ? page.id : null, folders)
+  const shownDrafts = query.trim() ? visibleDrafts(drafts, onNewThread ? page.id : null, folders, query) : listedDrafts
   const showWorking = useInboxView((state) => state.workingSection)
   // With the section on, the threads that are working are in it and not in the list.
   const visible = visibleInboxThreads(threads, filter, query, showWorking)
@@ -495,11 +511,12 @@ export function InboxPanel(): JSX.Element {
         <button
           type="button"
           data-testid="inbox-new-thread-button"
-          aria-current={selectedId === null || undefined}
-          onClick={() => selectThread(null)}
+          aria-current={onNewThread || undefined}
+          // From a thread this opens the blank page; on the page itself it sets aside what is typed there.
+          onClick={() => (selectedId === null ? void startFresh() : selectThread(null))}
           className={cn(
             'flex h-7 w-full items-center gap-2 rounded px-2 text-[13px] transition-colors',
-            selectedId === null ? 'bg-active text-fg' : 'text-fg-muted hover:bg-hover hover:text-fg'
+            onNewThread ? 'bg-active text-fg' : 'text-fg-muted hover:bg-hover hover:text-fg'
           )}
         >
           <PenSquare className="h-3.5 w-3.5" />
@@ -588,6 +605,16 @@ export function InboxPanel(): JSX.Element {
           </div>
         )}
       </div>
+      {listedDrafts.length > 0 && (
+        <InboxDraftsSection
+          drafts={shownDrafts}
+          folders={folders}
+          searching={query.trim() !== ''}
+          selectedId={selectedId === null && page.opened ? page.id : null}
+          now={now}
+          onOpen={openDraft}
+        />
+      )}
       {showWorking && (
         <InboxWorkingSection
           threads={working}

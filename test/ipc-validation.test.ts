@@ -86,6 +86,7 @@ const validPayloads = {
   [IpcChannels.chatConfigure]: { executable: 'opencode' },
   [IpcChannels.chatOptions]: { folderId: 'fld_1234' },
   [IpcChannels.chatDraft]: { key: 'thread:ses_one', action: 'load' },
+  [IpcChannels.chatDrafts]: undefined,
   [IpcChannels.chatCreate]: { folderId: 'fld_1234', text: 'Fix the login\n\tplease', agent: 'build', model },
   [IpcChannels.inboxChangeDiff]: { threadId: 'ses_thread', path: 'src/app.ts' },
   [IpcChannels.inboxChanges]: { threadId: 'ses_thread', details: true },
@@ -406,8 +407,46 @@ it('rejects attachment paths, unknown operations, foreign shapes and oversized b
     { ...valid, path: '/some/file' },
     { ...valid, data: [1, 2] },
     { ...valid, data: new Uint8Array(20 * 1024 * 1024 + 1) },
-    { key: 'folder:fld_one', action: 'tree', sessionId: 'source', path: '../secret' },
+    { key: 'draft:drf_one', action: 'tree', sessionId: 'source', path: '../secret' },
   ]) expect(() => assertIpcPayload(IpcChannels.chatDraft, payload)).toThrow()
+})
+
+it('accepts a new thread’s draft with the folder it is for, on every kind of change, and nothing foreign', () => {
+  const key = 'draft:drf_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab'
+  for (const payload of [
+    { key, action: 'text', text: 'Fix it', folderId: 'fld_one' },
+    { key, action: 'prepend', text: 'Fix it', folderId: 'fld_one' },
+    { key, action: 'add', name: 'a.png', mime: 'image/png', data: new Uint8Array([1]), folderId: 'fld_one' },
+    { key, action: 'tree', sessionId: 'source', path: 'src/a.ts', folderId: 'fld_one' },
+    { key, action: 'remove', attachmentId: 'abc', folderId: 'fld_one' },
+    { key, action: 'load', folderId: 'fld_one' },
+    { key, action: 'flush', folderId: 'fld_one' },
+    { key, action: 'clear' },
+    { key, action: 'load' },
+  ]) expect(() => assertIpcPayload(IpcChannels.chatDraft, payload)).not.toThrow()
+  for (const payload of [
+    { key: 'draft:drf_', action: 'load' },
+    { key: 'draft:../outside', action: 'load' },
+    { key: 'draft:drf_one/../x', action: 'load' },
+    { key: `draft:drf_${'a'.repeat(65)}`, action: 'load' },
+    { key: 'draft:ses_one', action: 'load' },
+    // The old key for a folder’s one draft is not a key any more.
+    { key: 'folder:fld_one', action: 'load' },
+    { key, action: 'text', text: 'Fix it', folderId: '../outside' },
+    { key, action: 'text', text: 'Fix it', folderId: 'ses_one' },
+    { key, action: 'text', text: 'Fix it', folderId: 42 },
+    { key, action: 'text', text: 'Fix it', folder: 'fld_one' },
+  ]) expect(() => assertIpcPayload(IpcChannels.chatDraft, payload)).toThrow()
+})
+
+it('takes the draft list without a payload, and a thread started from a draft by its id', () => {
+  expect(() => assertIpcPayload(IpcChannels.chatDrafts, undefined)).not.toThrow()
+  for (const payload of [{}, null, 'all', { folderId: 'fld_one' }]) expect(() => assertIpcPayload(IpcChannels.chatDrafts, payload)).toThrow()
+  const create = { folderId: 'fld_1234', text: 'Fix it', agent: 'build', model, draftId: 'drf_0b1c2d3e-aaaa-bbbb-cccc-1234567890ab', attachmentIds: ['abc'], draftRevision: 3 }
+  expect(() => assertIpcPayload(IpcChannels.chatCreate, create)).not.toThrow()
+  for (const draftId of ['', 'fld_one', 'drf_', 'drf_../x', `drf_${'a'.repeat(65)}`, 7, null]) {
+    expect(() => assertIpcPayload(IpcChannels.chatCreate, { ...create, draftId })).toThrow()
+  }
 })
 
 it('accepts prepending prompt text to a draft, and nothing else with it', () => {

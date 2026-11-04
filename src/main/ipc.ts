@@ -111,7 +111,8 @@ import type {
   ChatSetDeliveryRequest,
   ChatThreadRequest,
   ChatDraftRequest,
-  ChatDraft
+  ChatDraft,
+  ChatDraftSummary
 } from '@shared/types'
 import { assertIpcSender, type IpcSecurityContext } from './ipc-security'
 import { assertIpcPayload, type IpcChannel } from './ipc-validation'
@@ -610,7 +611,7 @@ export function registerIpcHandlers(
       target: req.kind === 'wsl' ? { kind: 'wsl', distro: distro as string } : { kind: 'native' },
     })
   })
-  handle<InboxRemoveFolderRequest, void>(IpcChannels.inboxFoldersRemove, async (req) => { await chat.removeDraft(`folder:${req.id}`); chat.removeFolder(req.id) })
+  handle<InboxRemoveFolderRequest, void>(IpcChannels.inboxFoldersRemove, (req) => chat.removeFolder(req.id))
   handle<InboxComposerState, InboxComposerState>(IpcChannels.inboxComposerSet, (req) => chat.setComposer(req))
   handle<InboxGitInfoRequest, InboxGitInfo>(IpcChannels.inboxGitInfo, (req) => chat.gitInfo(req))
 
@@ -625,6 +626,7 @@ export function registerIpcHandlers(
   handle<InboxChangesRequest, InboxChangesResponse>(IpcChannels.inboxChanges, (req) => readInboxGitChanges(inboxGitRoot(req.threadId), req.details))
   handle<InboxChangeDiffRequest, InboxChangeDiff>(IpcChannels.inboxChangeDiff, (req) => readInboxGitDiff(inboxGitRoot(req.threadId), req.path))
   handle<ChatMessagesRequest, ChatMessagesPage>(IpcChannels.chatMessages, (req) => chat.messages(req))
+  handle<void, ChatDraftSummary[]>(IpcChannels.chatDrafts, () => chat.drafts())
   handle<ChatDraftRequest, ChatDraft>(IpcChannels.chatDraft, async (req) => chat.draft(req, req.action === 'tree' ? (await getSession(req.sessionId)) ?? undefined : undefined))
   handle<ChatSendRequest, ChatPendingMessage | null>(IpcChannels.chatSend, (req) => chat.send(req))
   handle<ChatDiscardPendingRequest, void>(IpcChannels.chatDiscardPending, (req) => chat.discardPending(req))

@@ -1,17 +1,39 @@
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import type { ChatDraft, ChatDraftKey } from '@shared/types'
+import type { ChatDraft, ChatDraftKey, ChatDraftSummary } from '@shared/types'
 
 export const ATTACHMENT_LIMIT = 20 * 1024 * 1024
 export const DRAFT_STORAGE_LIMIT = 200 * 1024 * 1024
 /** The longest prompt text a draft holds, the same as the longest one MDE sends. */
 export const DRAFT_TEXT_LIMIT = 100_000
-const empty = (): ChatDraft => ({ revision: 0, text: '', attachments: [] })
+/** How much of a new-thread draft's text its sidebar row is sent; the row shows a line or two. */
+export const DRAFT_PREVIEW_LIMIT = 300
+const empty = (): StoredDraft => ({ revision: 0, text: '', attachments: [] })
 
-function validDraft(draft: ChatDraft): boolean {
+/**
+ * What is kept for a draft. A new-thread draft (`draft:` key) also knows the folder it was written
+ * for and when it last changed, which the Inbox sidebar lists it by; a thread's draft has neither.
+ */
+interface StoredDraft extends ChatDraft {
+  folderId?: string
+  updatedAt?: number
+}
+
+/** What a change to a new-thread draft says about it. */
+export interface DraftMeta {
+  folderId?: string
+}
+
+const isNewThread = (key: string): boolean => key.startsWith('draft:')
+const hasContent = (draft: ChatDraft): boolean => draft.text.trim().length > 0 || draft.attachments.length > 0
+const plain = ({ folderId: _folder, updatedAt: _time, ...draft }: StoredDraft): ChatDraft => draft
+
+function validDraft(draft: StoredDraft): boolean {
   if (!draft || typeof draft.text !== 'string' || draft.text.length > DRAFT_TEXT_LIMIT ||
     !Number.isSafeInteger(draft.revision) || draft.revision < 0 ||
+    (draft.folderId !== undefined && !/^fld_[\w-]{1,64}$/.test(draft.folderId)) ||
+    (draft.updatedAt !== undefined && !Number.isFinite(draft.updatedAt)) ||
     !Array.isArray(draft.attachments) || draft.attachments.length > 10) return false
   const ids = new Set<string>()
   let size = 0
@@ -28,11 +50,16 @@ function validDraft(draft: ChatDraft): boolean {
 
 /** Private, atomic storage for unsent prompts; file names never become storage paths. */
 export class InboxDraftStore {
-  private drafts: Record<string, ChatDraft> = {}
+  private drafts: Record<string, StoredDraft> = {}
   private queue: Promise<unknown> = Promise.resolve()
   private loaded = false
   private readonly previews = new Map<string, string | undefined>()
-  constructor(private readonly directory: string, private readonly thumbnail: (bytes: Buffer) => string | undefined = () => undefined, private readonly validOwner: (key: string) => boolean = () => true) {}
+  constructor(
+    private readonly directory: string,
+    private readonly thumbnail: (bytes: Buffer) => string | undefined = () => undefined,
+    private readonly validOwner: (key: string) => boolean = () => true,
+    private readonly now: () => number = Date.now,
+  ) {}
 
   private async load(): Promise<void> {
     if (this.loaded) return
@@ -42,17 +69,24 @@ export class InboxDraftStore {
       const raw = JSON.parse(await fs.readFile(join(this.directory, 'index.json'), 'utf8'))
       if (raw.version !== 1 || !raw.drafts || typeof raw.drafts !== 'object' || Array.isArray(raw.drafts)) throw new Error('Invalid draft index')
       for (const [key, value] of Object.entries(raw.drafts)) {
-        const draft = value as ChatDraft
-        if (!/^(thread:ses_[\w-]+|folder:fld_[\w-]+)$/.test(key) || !validDraft(draft)) {
+        const draft = value as StoredDraft
+        if (!/^(thread:ses_[\w-]+|draft:drf_[\w-]+|folder:fld_[\w-]+)$/.test(key) || !validDraft(draft)) {
           throw new Error('Invalid draft index')
         }
         // Preview data is regenerated from the copy; never trust stored HTML or URLs.
-        this.drafts[key] = { ...draft, attachments: draft.attachments.map(({ thumbnail: _preview, ...file }) => file) }
+        const kept = { ...draft, attachments: draft.attachments.map(({ thumbnail: _preview, ...file }) => file) }
+        // The one draft a folder used to have is now a new-thread draft of its own, so it is listed too.
+        if (key.startsWith('folder:')) this.drafts[`draft:drf_${randomUUID()}`] = { ...kept, folderId: key.slice('folder:'.length), updatedAt: this.now() }
+        else this.drafts[key] = kept
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error('Could not load saved Inbox drafts. The saved files have been kept.')
     }
-    for (const key of Object.keys(this.drafts)) if (!this.validOwner(key)) delete this.drafts[key]
+    for (const [key, draft] of Object.entries(this.drafts)) {
+      // A new-thread draft with nothing in it is not kept: the box was cleared, or the page never got a word.
+      const gone = isNewThread(key) ? !hasContent(draft) || !draft.folderId : false
+      if (gone || !this.validOwner(key)) delete this.drafts[key]
+    }
     await this.persist()
     const referenced = new Set(Object.values(this.drafts).flatMap((draft) => draft.attachments.map((file) => file.id)))
     for (const name of await fs.readdir(join(this.directory, 'attachments'))) {
@@ -84,7 +118,7 @@ export class InboxDraftStore {
 
   get(key: ChatDraftKey): Promise<ChatDraft> {
     return this.run(async () => {
-      const draft = structuredClone(this.drafts[key] ?? empty())
+      const draft = structuredClone(plain(this.drafts[key] ?? empty()))
       for (const file of draft.attachments) {
         try {
           if (!this.previews.has(file.id)) this.previews.set(file.id, this.thumbnail(await fs.readFile(join(this.directory, 'attachments', file.id))))
@@ -95,10 +129,26 @@ export class InboxDraftStore {
     })
   }
 
-  text(key: ChatDraftKey, text: string): Promise<void> {
+  /** The draft after a change to it; a new-thread one also notes its folder and the time. */
+  private changed(key: ChatDraftKey, draft: StoredDraft, meta?: DraftMeta): StoredDraft {
+    if (!isNewThread(key)) return draft
+    return { ...draft, ...(meta?.folderId ? { folderId: meta.folderId } : {}), updatedAt: this.now() }
+  }
+
+  /** Keeps a new-thread draft only while it holds something. */
+  private settle(key: ChatDraftKey): void {
+    const draft = this.drafts[key]
+    if (draft && isNewThread(key) && !hasContent(draft)) delete this.drafts[key]
+  }
+
+  text(key: ChatDraftKey, text: string, meta?: DraftMeta): Promise<void> {
     return this.run(async () => {
       const draft = this.drafts[key] ?? empty()
-      this.drafts[key] = { ...draft, text, revision: draft.revision + 1 }
+      const kept = key in this.drafts
+      this.drafts[key] = this.changed(key, { ...draft, text, revision: draft.revision + 1 }, meta)
+      this.settle(key)
+      // A new-thread draft that is still empty was never kept, so there is nothing to write.
+      if (!kept && !(key in this.drafts)) return
       await this.persist()
     })
   }
@@ -108,18 +158,18 @@ export class InboxDraftStore {
    * keystroke saved at the same moment is not lost. A draft that would grow past the limit is left
    * as it was.
    */
-  prepend(key: ChatDraftKey, text: string): Promise<void> {
+  prepend(key: ChatDraftKey, text: string, meta?: DraftMeta): Promise<void> {
     return this.run(async () => {
       if (!text.trim()) return
       const draft = this.drafts[key] ?? empty()
       const merged = draft.text.trim() ? `${text}\n\n${draft.text}` : text
       if (merged.length > DRAFT_TEXT_LIMIT) throw new Error('The text is too long to add to this draft.')
-      this.drafts[key] = { ...draft, text: merged, revision: draft.revision + 1 }
+      this.drafts[key] = this.changed(key, { ...draft, text: merged, revision: draft.revision + 1 }, meta)
       await this.persist()
     })
   }
 
-  add(key: ChatDraftKey, name: string, mime: string, bytes: Uint8Array): Promise<void> {
+  add(key: ChatDraftKey, name: string, mime: string, bytes: Uint8Array, meta?: DraftMeta): Promise<void> {
     return this.run(async () => {
       const draft = this.drafts[key] ?? empty()
       const total = draft.attachments.reduce((sum, file) => sum + file.size, 0)
@@ -128,7 +178,7 @@ export class InboxDraftStore {
       if (stored + bytes.byteLength > DRAFT_STORAGE_LIMIT) throw new Error('Saved attachments exceed 200 MiB. Remove files from other drafts and try again.')
       const id = randomUUID()
       await fs.writeFile(join(this.directory, 'attachments', id), bytes, { flag: 'wx', mode: 0o600 })
-      this.drafts[key] = { ...draft, revision: draft.revision + 1, attachments: [...draft.attachments, { id, name, mime, size: bytes.byteLength }] }
+      this.drafts[key] = this.changed(key, { ...draft, revision: draft.revision + 1, attachments: [...draft.attachments, { id, name, mime, size: bytes.byteLength }] }, meta)
       try { await this.persist() } catch (error) {
         await fs.unlink(join(this.directory, 'attachments', id)).catch(() => {})
         throw error
@@ -141,8 +191,10 @@ export class InboxDraftStore {
       const draft = this.drafts[key]
       if (!draft || (revision !== undefined && draft.revision !== revision)) return
       const removed = draft.attachments.filter((file) => !id || file.id === id)
-      if (id) this.drafts[key] = { ...draft, revision: draft.revision + 1, attachments: draft.attachments.filter((file) => file.id !== id) }
-      else delete this.drafts[key]
+      if (id) {
+        this.drafts[key] = this.changed(key, { ...draft, revision: draft.revision + 1, attachments: draft.attachments.filter((file) => file.id !== id) })
+        this.settle(key)
+      } else delete this.drafts[key]
       await this.persist()
       for (const file of removed) this.previews.delete(file.id)
       for (const file of removed) await fs.unlink(join(this.directory, 'attachments', file.id)).catch(() => {})
@@ -151,7 +203,36 @@ export class InboxDraftStore {
 
   move(from: ChatDraftKey, to: ChatDraftKey): Promise<void> {
     return this.run(async () => {
-      if (this.drafts[from]) { this.drafts[to] = this.drafts[from]; delete this.drafts[from]; await this.persist() }
+      const draft = this.drafts[from]
+      if (draft) { this.drafts[to] = isNewThread(to) ? draft : plain(draft); delete this.drafts[from]; await this.persist() }
+    })
+  }
+
+  /** The new-thread drafts that hold something, most recently changed first. */
+  list(): Promise<ChatDraftSummary[]> {
+    return this.run(async () => Object.entries(this.drafts)
+      .flatMap(([key, draft]) => {
+        if (!isNewThread(key) || !draft.folderId || !hasContent(draft)) return []
+        const first = draft.attachments[0]
+        return [{
+          id: key.slice('draft:'.length),
+          folderId: draft.folderId,
+          preview: draft.text.trimStart().slice(0, DRAFT_PREVIEW_LIMIT),
+          attachments: draft.attachments.length,
+          ...(first ? { attachmentName: first.name } : {}),
+          updatedAt: draft.updatedAt ?? 0,
+        }]
+      })
+      .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id)))
+  }
+
+  /** Moves a new-thread draft to another folder, as when the page's folder is changed. A draft that is not there, or already there, is left alone. */
+  setFolder(key: ChatDraftKey, folderId: string): Promise<void> {
+    return this.run(async () => {
+      const draft = this.drafts[key]
+      if (!draft || !isNewThread(key) || draft.folderId === folderId) return
+      this.drafts[key] = this.changed(key, draft, { folderId })
+      await this.persist()
     })
   }
 

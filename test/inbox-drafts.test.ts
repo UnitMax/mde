@@ -2,16 +2,21 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { InboxDraftStore, ATTACHMENT_LIMIT } from '../src/main/inbox/drafts'
+import { InboxDraftStore, ATTACHMENT_LIMIT, DRAFT_PREVIEW_LIMIT } from '../src/main/inbox/drafts'
 
 const directories: string[] = []
 afterEach(async () => { for (const path of directories.splice(0)) await fs.rm(path, { recursive: true, force: true }) })
+/** `clock.now` is what the store takes for the time; tests move it by hand. */
+const clock = { now: 1_000 }
 async function setup() {
   const path = await fs.mkdtemp(join(tmpdir(), 'mde-drafts-test-'))
   directories.push(path)
-  return { path, store: new InboxDraftStore(path, () => 'data:image/png;base64,eA==') }
+  return { path, store: new InboxDraftStore(path, () => 'data:image/png;base64,eA==', undefined, () => clock.now) }
 }
-const key = 'folder:fld_one' as const
+const key = 'thread:ses_one' as const
+/** A new thread that was started and not sent. */
+const draftKey = 'draft:drf_one' as const
+const folder = { folderId: 'fld_one' }
 
 describe('Inbox saved drafts', () => {
   it('restores copied contents and text after restarting, independently of the original', async () => {
@@ -70,9 +75,10 @@ describe('Inbox saved drafts', () => {
 
   it('moves a new-chat draft into its created thread and cleans copies on successful send', async () => {
     const { path, store } = await setup()
-    await store.add(key, 'file.txt', 'text/plain', new Uint8Array([4]))
-    await store.move(key, 'thread:ses_new')
-    expect((await store.get(key)).attachments).toEqual([])
+    await store.add(draftKey, 'file.txt', 'text/plain', new Uint8Array([4]), folder)
+    await store.move(draftKey, 'thread:ses_new')
+    expect((await store.get(draftKey)).attachments).toEqual([])
+    expect(await store.list()).toEqual([])
     const draft = await store.get('thread:ses_new')
     await store.remove('thread:ses_new', undefined, draft.revision)
     expect(await fs.readdir(join(path, 'attachments'))).toEqual([])
@@ -104,5 +110,119 @@ describe('Inbox saved drafts', () => {
     await fs.writeFile(join(path, 'index.json'), '{broken')
     await expect(new InboxDraftStore(path).get(key)).rejects.toThrow('saved files have been kept')
     expect(await fs.readFile(join(path, 'index.json'), 'utf8')).toBe('{broken')
+  })
+})
+
+describe('Inbox new-thread drafts', () => {
+  const other = 'draft:drf_two' as const
+
+  it('lists the new threads that hold something, the newest change first, with what a row shows', async () => {
+    const { store } = await setup()
+    clock.now = 1_000
+    await store.text(draftKey, '\n  Fix the login redirect\nthen add a test', folder)
+    clock.now = 2_000
+    await store.add(other, 'screen.png', 'image/png', new Uint8Array([1]), { folderId: 'fld_two' })
+    await store.add(other, 'second.png', 'image/png', new Uint8Array([2]), { folderId: 'fld_two' })
+    // A thread's own draft is not a new thread, however much it holds.
+    await store.text(key, 'A follow-up I was typing')
+    expect(await store.list()).toEqual([
+      { id: 'drf_two', folderId: 'fld_two', preview: '', attachments: 2, attachmentName: 'screen.png', updatedAt: 2_000 },
+      { id: 'drf_one', folderId: 'fld_one', preview: 'Fix the login redirect\nthen add a test', attachments: 0, updatedAt: 1_000 },
+    ])
+    // Changing the older one puts it first.
+    clock.now = 3_000
+    await store.text(draftKey, 'Fix the login redirect, and add a test', folder)
+    expect((await store.list()).map((draft) => draft.id)).toEqual(['drf_one', 'drf_two'])
+  })
+
+  it('sends only the start of a long text to the list', async () => {
+    const { store } = await setup()
+    await store.text(draftKey, 'x'.repeat(DRAFT_PREVIEW_LIMIT + 500), folder)
+    expect((await store.list())[0]!.preview).toHaveLength(DRAFT_PREVIEW_LIMIT)
+    // The draft itself is whole.
+    expect((await store.get(draftKey)).text).toHaveLength(DRAFT_PREVIEW_LIMIT + 500)
+  })
+
+  it('does not keep a new thread that was emptied, or one that never had a word', async () => {
+    const { path, store } = await setup()
+    await store.text(draftKey, '', folder)
+    expect(await store.list()).toEqual([])
+    expect(JSON.parse(await fs.readFile(join(path, 'index.json'), 'utf8')).drafts).toEqual({})
+    await store.text(draftKey, 'Something', folder)
+    await store.text(draftKey, '   \n', folder)
+    expect(await store.list()).toEqual([])
+    expect(JSON.parse(await fs.readFile(join(path, 'index.json'), 'utf8')).drafts).toEqual({})
+    // Taking the last file off leaves it empty too, and the copy goes.
+    await store.add(draftKey, 'a.txt', 'text/plain', new Uint8Array([1]), folder)
+    const { attachments } = await store.get(draftKey)
+    await store.remove(draftKey, attachments[0]!.id)
+    expect(await store.list()).toEqual([])
+    expect(await fs.readdir(join(path, 'attachments'))).toEqual([])
+    // A thread's draft is not given the same treatment: it keeps its revision count.
+    await store.text(key, '')
+    expect((await store.get(key)).revision).toBe(1)
+  })
+
+  it('remembers the folder and the time through a restart, and gives the composer only the draft', async () => {
+    const { path, store } = await setup()
+    clock.now = 5_000
+    await store.text(draftKey, 'Carry on', folder)
+    expect(await store.get(draftKey)).toEqual({ revision: 1, text: 'Carry on', attachments: [] })
+    const restarted = new InboxDraftStore(path, undefined, undefined, () => 9_000)
+    expect(await restarted.list()).toEqual([{ id: 'drf_one', folderId: 'fld_one', preview: 'Carry on', attachments: 0, updatedAt: 5_000 }])
+  })
+
+  it('moves a draft to another folder, and leaves a missing one or one already there alone', async () => {
+    const { path, store } = await setup()
+    clock.now = 1_000
+    await store.setFolder(draftKey, 'fld_two')
+    expect(await store.list()).toEqual([])
+    await store.text(draftKey, 'Hello', folder)
+    clock.now = 2_000
+    await store.setFolder(draftKey, 'fld_one')
+    expect((await store.list())[0]).toMatchObject({ folderId: 'fld_one', updatedAt: 1_000 })
+    await store.setFolder(draftKey, 'fld_two')
+    expect((await store.list())[0]).toMatchObject({ folderId: 'fld_two', updatedAt: 2_000 })
+    expect((await new InboxDraftStore(path).list())[0]).toMatchObject({ folderId: 'fld_two' })
+    // A thread's draft has no folder to move.
+    await store.text(key, 'Hi')
+    await store.setFolder(key, 'fld_two')
+    expect(JSON.parse(await fs.readFile(join(path, 'index.json'), 'utf8')).drafts[key]).not.toHaveProperty('folderId')
+  })
+
+  it('keeps a draft whose folder has gone, since its owner is not a place any more', async () => {
+    const { path, store } = await setup()
+    await store.text(draftKey, 'Still mine', folder)
+    const asked: string[] = []
+    const restarted = new InboxDraftStore(path, undefined, (owner) => { asked.push(owner); return !owner.startsWith('thread:') })
+    expect((await restarted.list()).map((draft) => draft.id)).toEqual(['drf_one'])
+    expect(asked).toEqual(['draft:drf_one'])
+  })
+
+  it('lists the one draft a folder used to have as a new thread of its own, and drops an empty one', async () => {
+    const { path, store } = await setup()
+    await store.add('thread:ses_one', 'kept.txt', 'text/plain', new Uint8Array([7]))
+    const { attachments } = await store.get('thread:ses_one')
+    const index = JSON.parse(await fs.readFile(join(path, 'index.json'), 'utf8'))
+    index.drafts['folder:fld_old'] = { revision: 3, text: 'Written before drafts were listed', attachments }
+    index.drafts['folder:fld_blank'] = { revision: 1, text: '  ', attachments: [] }
+    delete index.drafts['thread:ses_one']
+    await fs.writeFile(join(path, 'index.json'), JSON.stringify(index))
+    const restarted = new InboxDraftStore(path, undefined, undefined, () => 7_000)
+    const [converted, ...rest] = await restarted.list()
+    expect(rest).toEqual([])
+    expect(converted).toMatchObject({ folderId: 'fld_old', preview: 'Written before drafts were listed', attachments: 1, updatedAt: 7_000 })
+    // Its file is still there, and the old key is gone from storage.
+    expect(await fs.readdir(join(path, 'attachments'))).toEqual([attachments[0]!.id])
+    expect(Object.keys(JSON.parse(await fs.readFile(join(path, 'index.json'), 'utf8')).drafts)).toEqual([`draft:${converted!.id}`])
+  })
+
+  it('refuses a folder that is not a folder id', async () => {
+    const { path, store } = await setup()
+    await store.text(draftKey, 'Hello', folder)
+    const index = JSON.parse(await fs.readFile(join(path, 'index.json'), 'utf8'))
+    index.drafts[draftKey].folderId = '../outside'
+    await fs.writeFile(join(path, 'index.json'), JSON.stringify(index))
+    await expect(new InboxDraftStore(path).list()).rejects.toThrow('saved files have been kept')
   })
 })

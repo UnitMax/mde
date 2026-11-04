@@ -163,6 +163,7 @@ const api: RendererApi = {
   },
   chat: {
     draft: (req) => ipcRenderer.invoke(IpcChannels.chatDraft, req),
+    drafts: () => ipcRenderer.invoke(IpcChannels.chatDrafts),
     configure: (req) => ipcRenderer.invoke(IpcChannels.chatConfigure, req),
     options: (req) => ipcRenderer.invoke(IpcChannels.chatOptions, req),
     create: (req) => ipcRenderer.invoke(IpcChannels.chatCreate, req),
