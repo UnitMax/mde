@@ -14,6 +14,9 @@ export const SERVICE_OPERATIONS = {
   'session.update': { method: 'PATCH', path: '/api/session/{sessionID}' },
   'session.message.list': { method: 'GET', path: '/api/session/{sessionID}/message' },
   'session.prompt': { method: 'POST', path: '/api/session/{sessionID}/prompt' },
+  // What the service holds for the agent while it is busy: listed, and taken back.
+  'session.inbox.list': { method: 'GET', path: '/api/session/{sessionID}/inbox' },
+  'session.inbox.cancel': { method: 'DELETE', path: '/api/session/{sessionID}/inbox/{inboxID}' },
   'session.interrupt': { method: 'POST', path: '/api/session/{sessionID}/interrupt' },
   'session.revert.stage': { method: 'POST', path: '/api/session/{sessionID}/revert/stage' },
   'session.revert.clear': { method: 'DELETE', path: '/api/session/{sessionID}/revert' },
@@ -31,6 +34,7 @@ export type ServiceOperation = keyof typeof SERVICE_OPERATIONS
 const PATH_PARAMETERS: Record<string, RegExp> = {
   sessionID: /^ses_[A-Za-z0-9_-]{1,200}$/,
   requestID: /^per_[A-Za-z0-9_-]{1,200}$/,
+  inboxID: /^msg_[A-Za-z0-9_-]{1,200}$/,
   formID: /^frm_[A-Za-z0-9_-]{1,200}$/,
 }
 const QUERY_PARAMETERS: Record<string, RegExp> = {
@@ -217,7 +221,7 @@ export class OpenCodeServiceClient {
       redirect: 'error',
       signal: AbortSignal.timeout(this.options.timeoutMs ?? SERVICE_REQUEST_TIMEOUT_MS),
     })
-    const text = await readLimitedText(response, this.options.maxResponseBytes ?? ((operation === 'session.message.list' || operation === 'session.prompt') ? 32 * 1024 * 1024 : SERVICE_MAX_RESPONSE_BYTES))
+    const text = await readLimitedText(response, this.options.maxResponseBytes ?? ((operation === 'session.message.list' || operation === 'session.prompt' || operation === 'session.inbox.list') ? 32 * 1024 * 1024 : SERVICE_MAX_RESPONSE_BYTES))
     if (!response.ok) {
       const { message, tag } = errorMessage(text, response.status)
       throw new OpenCodeServiceError(message, response.status, tag)

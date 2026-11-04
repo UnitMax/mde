@@ -93,6 +93,7 @@ const validPayloads = {
   [IpcChannels.chatSend]: { threadId: 'ses_thread', text: 'Next step', agent: 'plan', model },
   [IpcChannels.chatInterrupt]: { threadId: 'ses_thread' },
   [IpcChannels.chatRedo]: { threadId: 'ses_thread' },
+  [IpcChannels.chatDiscardPending]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a' },
   [IpcChannels.chatRevert]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a', files: false },
   [IpcChannels.chatFork]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a' },
   [IpcChannels.chatRegenerateTitle]: { threadId: 'ses_thread' },
@@ -184,6 +185,18 @@ describe('IPC payload boundary', () => {
     // A fork of the whole conversation names no message.
     expect(() => assertIpcPayload(IpcChannels.chatFork, { threadId: 'ses_thread' })).not.toThrow()
     expect(() => assertIpcPayload(IpcChannels.chatFork, { threadId: 'ses_thread', messageId: 'msg_1' })).not.toThrow()
+    // Taking back a held message names the thread and the message, and nothing else.
+    for (const bad of [
+      {},
+      { threadId: 'ses_thread' },
+      { messageId: 'msg_1' },
+      { threadId: 'ses_../escape', messageId: 'msg_1' },
+      { threadId: 'ses_thread', messageId: 'ses_thread' },
+      { threadId: 'ses_thread', messageId: 'msg_../escape' },
+      { threadId: 'ses_thread', messageId: 'msg_' },
+      { threadId: 'ses_thread', messageId: 'msg_1', delivery: 'steer' },
+    ]) rejects(IpcChannels.chatDiscardPending, bad)
+    expect(() => assertIpcPayload(IpcChannels.chatDiscardPending, { threadId: 'ses_thread', messageId: 'msg_1' })).not.toThrow()
     rejects(IpcChannels.chatRegenerateTitle, { threadId: 'ses_../escape' })
     rejects(IpcChannels.chatRegenerateTitle, { threadId: 'ses_thread', title: 'Injected' })
     expect(() => assertIpcPayload(IpcChannels.chatCreate, { folderId: 'fld_1234', text: '', attachmentIds: ['a'], draftRevision: 1, agent: 'build', model })).not.toThrow()

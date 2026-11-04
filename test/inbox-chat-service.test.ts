@@ -402,7 +402,7 @@ describe('Inbox chat service', () => {
     expect(page.messages).toHaveLength(50)
     expect(page.messages[0]).toEqual({ kind: 'user', id: 'msg_1', time: 1, text: 'Hi' })
     expect(page).toMatchObject({ older: 'older-1', running: true })
-    expect(calls[0]?.request.query).toEqual({ limit: '50', order: 'desc' })
+    expect(calls.find((call) => call.operation === 'session.message.list')?.request.query).toEqual({ limit: '50', order: 'desc' })
     calls.length = 0
     await service.messages({ threadId: 'ses_new', cursor: 'older-1' })
     // An older page needs neither the running state's session lookup nor the thread's totals again.
@@ -486,6 +486,117 @@ describe('Inbox chat service', () => {
       { type: 'messages', threadId: 'ses_new' },
     ])
     service.stop()
+  })
+
+  describe('messages held for the agent', () => {
+    /** An item of the session inbox, as the service sends it. */
+    const inboxItem = (id: string, text: string, delivery: 'steer' | 'queue' = 'steer', type = 'user') =>
+      ({ id, sessionID: 'ses_new', time: { created: 7 }, type, delivery, payload: { text } })
+    const emit = (service: InboxChatService, type: string, data: Record<string, unknown>) =>
+      (service as unknown as { onEvent(event: { type: string; data: Record<string, unknown> }): void }).onEvent({ type, data })
+
+    it('adds what the service holds to the newest page, after reading it, and not to older pages', async () => {
+      const { service, folder, calls } = setup({
+        'session.create': { data: { id: 'ses_new' } },
+        'session.message.list': { data: [{ id: 'msg_1', type: 'user', text: 'Hi', time: { created: 1 } }], cursor: { next: 'older-1' } },
+        'session.active': { data: {} },
+        'session.inbox.list': { data: [inboxItem('msg_p1', 'Also add a test'), inboxItem('msg_p2', 'Then lint', 'queue'), inboxItem('msg_p3', 'Agent note', 'steer', 'synthetic')] },
+      })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      calls.length = 0
+      const page = await service.messages({ threadId: 'ses_new' })
+      expect(page.pending).toEqual([
+        { id: 'msg_p1', delivery: 'steer', message: { kind: 'user', id: 'msg_p1', time: 7, text: 'Also add a test' } },
+        { id: 'msg_p2', delivery: 'queue', message: { kind: 'user', id: 'msg_p2', time: 7, text: 'Then lint' } },
+      ])
+      // The inbox first: a message delivered between the two reads is then in both, never in neither.
+      const operations = calls.map((call) => call.operation)
+      expect(operations[0]).toBe('session.inbox.list')
+      expect(operations.indexOf('session.inbox.list')).toBeLessThan(operations.indexOf('session.message.list'))
+      expect(calls[0]?.request).toEqual({ params: { sessionID: 'ses_new' } })
+      calls.length = 0
+      const older = await service.messages({ threadId: 'ses_new', cursor: 'older-1' })
+      expect(older).not.toHaveProperty('pending')
+      expect(calls.map((call) => call.operation)).not.toContain('session.inbox.list')
+      service.stop()
+    })
+
+    it('says an empty inbox is empty, and an inbox it could not read is unknown', async () => {
+      const read = (answer: unknown) => {
+        const { service, folder } = setup({
+          'session.create': { data: { id: 'ses_new' } },
+          'session.message.list': { data: [{ id: 'msg_1', type: 'user', text: 'Hi', time: { created: 1 } }] },
+          'session.active': { data: {} },
+          'session.inbox.list': answer,
+        })
+        return service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model }).then(() => service.messages({ threadId: 'ses_new' }))
+      }
+      expect((await read({ data: [] })).pending).toEqual([])
+      // The conversation still loads when the inbox answers with something else, or does not answer.
+      for (const answer of [null, { data: 'no' }, new OpenCodeServiceError('Not found', 404), new Error('The OpenCode service sent an invalid answer.')]) {
+        const page = await read(answer)
+        expect(page.messages).toHaveLength(1)
+        expect(page).not.toHaveProperty('pending')
+      }
+    })
+
+    it('returns the message as OpenCode took it, so that a busy agent\'s holding of it can be shown', async () => {
+      const { service, folder, calls } = setup({
+        'session.create': { data: { id: 'ses_new' } },
+        'session.prompt': { data: inboxItem('msg_p1', 'Also add a test') },
+      })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      calls.length = 0
+      await expect(service.send({ threadId: 'ses_new', text: 'Also add a test' })).resolves.toEqual({
+        id: 'msg_p1', delivery: 'steer', message: { kind: 'user', id: 'msg_p1', time: 7, text: 'Also add a test' },
+      })
+      // The way of delivery is the service's to choose; nothing about it is sent.
+      expect(calls.map((call) => call.operation)).toEqual(['session.prompt'])
+      expect(calls[0]?.request.body).toEqual({ text: 'Also add a test' })
+      service.stop()
+    })
+
+    it('still sends when the answer to the prompt cannot be read', async () => {
+      const { service, folder } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'session.prompt': null })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      await expect(service.send({ threadId: 'ses_new', text: 'Hello' })).resolves.toBeNull()
+      service.stop()
+    })
+
+    it('takes a held message back with one DELETE on the recorded session and message', async () => {
+      const { service, folder, calls, disable } = setup({ 'session.create': { data: { id: 'ses_new' } } })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      calls.length = 0
+      await service.discardPending({ threadId: 'ses_new', messageId: 'msg_p1' })
+      expect(calls).toEqual([{ operation: 'session.inbox.cancel', request: { params: { sessionID: 'ses_new', inboxID: 'msg_p1' } } }])
+      // A thread the Inbox does not hold is not the service's to ask about, and neither is any when the Inbox is off.
+      await expect(service.discardPending({ threadId: 'ses_unknown', messageId: 'msg_p1' })).rejects.toThrow()
+      disable()
+      calls.length = 0
+      await expect(service.discardPending({ threadId: 'ses_new', messageId: 'msg_p1' })).rejects.toThrow()
+      expect(calls).toEqual([])
+      service.stop()
+    })
+
+    it('passes on why the service would not take a message back', async () => {
+      const { service, folder } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'session.inbox.cancel': new OpenCodeServiceError('Session not found', 404, 'SessionNotFoundError') })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      await expect(service.discardPending({ threadId: 'ses_new', messageId: 'msg_p1' })).rejects.toThrow('Session not found')
+      service.stop()
+    })
+
+    it('refetches the conversation when a message is held, changes how it is delivered, is taken back or is delivered', async () => {
+      const { service, folder, events } = setup({ 'session.create': { data: { id: 'ses_new' } } })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      service.subscribe('ses_new')
+      emit(service, 'session.inbox.enqueued', { sessionID: 'ses_new', inboxID: 'msg_p1', item: { type: 'user', delivery: 'steer', payload: { text: 'x' } } })
+      emit(service, 'session.inbox.delivery.changed', { sessionID: 'ses_new', inboxID: 'msg_p1', delivery: 'queue' })
+      emit(service, 'session.inbox.cancelled', { sessionID: 'ses_new', inboxID: 'msg_p1' })
+      emit(service, 'session.inbox.delivered', { sessionID: 'ses_new', inboxID: 'msg_p2' })
+      emit(service, 'session.inbox.enqueued', { sessionID: 'ses_other', inboxID: 'msg_p3', item: { type: 'user', delivery: 'steer', payload: { text: 'y' } } })
+      expect(events).toEqual(Array.from({ length: 4 }, () => ({ type: 'messages', threadId: 'ses_new' })))
+      service.stop()
+    })
   })
 
   it('redoes a staged revert with one DELETE on the recorded session', async () => {

@@ -622,6 +622,24 @@
   }
 }
 
+/* A message held for the agent (ChatPendingView) settles in rather than appearing with a jolt. */
+.chat-pending {
+  animation: mde-pending-in 180ms ease-out;
+}
+
+@keyframes mde-pending-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-pending {
+    animation: none;
+  }
+}
+
 /* The rule beside "Working for…" (ChatTurnTime): a short bright stretch of accent travels along a faint line. */
 .working-rule {
   background:

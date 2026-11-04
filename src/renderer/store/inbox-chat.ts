@@ -4,6 +4,7 @@ import type {
   ChatFormValue,
   ChatMessage,
   ChatOptions,
+  ChatPendingMessage,
   ChatRequests,
   ChatRevert,
   ChatUsage,
@@ -13,7 +14,7 @@ import type {
   InboxThread,
   OpenCodeModelRef,
 } from '@shared/types'
-import { appendLive, pruneLive, type LivePart } from '@/lib/chat'
+import { appendLive, mergePending, pruneLive, type LivePart } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { getTerminalSettings, subscribeTerminalSettings } from '@/terminal/terminal-settings'
 import { useWorkspace } from '@/store/workspace'
@@ -37,6 +38,11 @@ export interface ChatThreadState {
   revert: ChatRevert | null
   /** Something to tell the reader about the thread that is not an error of loading it; null for nothing. */
   notice: string | null
+  /**
+   * Messages OpenCode has accepted but holds for the agent, oldest first. They are not in `messages`
+   * until delivered, and then they leave this list. Kept when a refetch cannot say.
+   */
+  pending: ChatPendingMessage[]
 }
 
 export type OptionsState =
@@ -61,6 +67,7 @@ const emptyThread = (): ChatThreadState => ({
   usage: null,
   revert: null,
   notice: null,
+  pending: [],
 })
 
 /** Keeps the newest page when a refetch arrives: earlier pages stay loaded. */
@@ -106,6 +113,11 @@ interface InboxChatStore {
   loadOlder: (threadId: string) => Promise<void>
   send: (threadId: string, text: string, choice?: { agent?: string; model?: OpenCodeModelRef; attachmentIds?: string[]; draftRevision?: number }) => Promise<void>
   interrupt: (threadId: string) => Promise<void>
+  /**
+   * Takes back a message OpenCode holds for the agent. It leaves the list at once; a rejection puts it
+   * back and tells the reader why. One the agent took up in the meantime stays in the conversation.
+   */
+  discardPending: (threadId: string, messageId: string) => Promise<void>
   /** Undoes a staged revert; the messages and files come back. A rejection leaves the thread as it was. */
   redo: (threadId: string) => Promise<void>
   /**
@@ -136,6 +148,11 @@ function quietly(call: () => PromiseLike<unknown>): void {
 
 const refreshTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const refreshing = new Map<string, Promise<void>>()
+/**
+ * When this app last changed the messages held for a thread's agent (sent one, took one back). A read
+ * of the service that began before then cannot know of the change, so it does not get to undo it.
+ */
+const pendingChangedAt = new Map<string, number>()
 
 export const useInboxChat = create<InboxChatStore>((set, get) => {
   const patchThread = (threadId: string, patch: Partial<ChatThreadState> | ((thread: ChatThreadState) => Partial<ChatThreadState>)): void => {
@@ -283,8 +300,11 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
         return pending
       }
       const run = (async () => {
+        const startedAt = Date.now()
         try {
           const page = await window.api.chat.messages({ threadId })
+          // What was held when this read began is old news if this app changed it since.
+          const read = (pendingChangedAt.get(threadId) ?? 0) >= startedAt ? undefined : page.pending
           patchThread(threadId, (thread) => {
             const messages = mergeNewest(thread.messages, page.messages)
             const keptOlder = thread.messages.length > 0 && messages.length > page.messages.length
@@ -297,6 +317,7 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
               live: page.running ? pruneLive(messages, thread.live) : [],
               usage: page.usage ?? thread.usage,
               revert: page.revert === undefined ? thread.revert : page.revert,
+              pending: mergePending(thread.pending, read, messages),
             }
           })
         } catch (error) {
@@ -339,15 +360,46 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
     },
 
     send: async (threadId, text, choice = {}) => {
-      await window.api.chat.send({ threadId, text, ...choice })
+      // Only a message sent to a busy agent is held; to an idle one it goes straight into the conversation.
+      const busy = get().threads[threadId]?.running === true
+      const held = await window.api.chat.send({ threadId, text, ...choice })
       const workspace = useWorkspace.getState()
       const record = workspace.inboxThreads.find((thread) => thread.id === threadId)
       if (record?.sendError) workspace.upsertInboxThread({ ...record, sendError: undefined })
       if (choice.agent || choice.model) {
         set((state) => ({ composer: { ...state.composer, ...choice } }))
       }
-      patchThread(threadId, { running: true, notice: null })
+      // Shown at once, so it does not vanish from the box and reappear when the next refetch finds it.
+      if (busy && held) pendingChangedAt.set(threadId, Date.now())
+      patchThread(threadId, (thread) => ({
+        running: true,
+        notice: null,
+        ...(busy && held && !thread.pending.some((entry) => entry.id === held.id) && !thread.messages.some((message) => message.id === held.id)
+          ? { pending: [...thread.pending, held] }
+          : {}),
+      }))
       scheduleRefresh(threadId)
+    },
+
+    discardPending: async (threadId, messageId) => {
+      const at = get().threads[threadId]?.pending.findIndex((entry) => entry.id === messageId) ?? -1
+      const entry = at >= 0 ? get().threads[threadId]!.pending[at]! : undefined
+      if (!entry) return
+      pendingChangedAt.set(threadId, Date.now())
+      patchThread(threadId, (thread) => ({ pending: thread.pending.filter((item) => item.id !== messageId) }))
+      try {
+        await window.api.chat.discardPending({ threadId, messageId })
+      } catch (error) {
+        pendingChangedAt.set(threadId, Date.now())
+        patchThread(threadId, (thread) => ({
+          pending: thread.pending.some((item) => item.id === messageId)
+            ? thread.pending
+            : [...thread.pending.slice(0, at), entry, ...thread.pending.slice(at)],
+          notice: `The message could not be taken back: ${ipcErrorMessage(error, 'OpenCode did not answer.')}`,
+        }))
+      } finally {
+        scheduleRefresh(threadId)
+      }
     },
 
     interrupt: async (threadId) => {

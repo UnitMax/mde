@@ -8,6 +8,7 @@ import type {
   ChatMessagesPage,
   ChatModel,
   ChatPart,
+  ChatPendingMessage,
   ChatPermission,
   ChatRevert,
   ChatRevertFile,
@@ -415,6 +416,38 @@ export function parseMessagesPage(value: unknown, running: boolean, limit: numbe
   const next = record(response.cursor)?.next
   const older = typeof next === 'string' && /^[A-Za-z0-9_=.-]{1,2048}$/.test(next) && response.data.length >= limit ? next : null
   return { messages, older, running }
+}
+
+/** The most messages held for the agent that are shown; there is no sensible number past a handful. */
+const MAX_PENDING = 50
+
+/**
+ * One item of the session inbox, which is what the service gives for a message it accepted: the answer
+ * to a prompt, and each entry of the inbox list. Only the user's own messages are returned; the inbox
+ * also holds work the agent queued for itself, which is not the reader's to see. The message keeps the
+ * item's ID once it is delivered, so the two can be matched.
+ */
+export function parseInboxItem(value: unknown, thumbnail?: (bytes: Buffer) => string | undefined): ChatPendingMessage | null {
+  const item = record(value)
+  const payload = record(item?.payload)
+  const delivery = item?.delivery
+  // The ID is what a message is taken back by, so one that could not be sent back is not worth showing.
+  if (!item || item.type !== 'user' || !payload || (delivery !== 'steer' && delivery !== 'queue')) return null
+  if (typeof item.id !== 'string' || !/^msg_[A-Za-z0-9_-]{1,200}$/.test(item.id)) return null
+  const message = parseMessage({ ...payload, id: item.id, time: item.time, type: 'user' }, thumbnail)
+  return message?.kind === 'user' ? { id: message.id, delivery, message } : null
+}
+
+/** The answer to a prompt: the message as the service took it, or null when the answer is not one. */
+export function parsePromptAnswer(value: unknown, thumbnail?: (bytes: Buffer) => string | undefined): ChatPendingMessage | null {
+  return parseInboxItem(record(value)?.data, thumbnail)
+}
+
+/** The session inbox: what the service holds for the agent, oldest first. */
+export function parsePendingMessages(value: unknown, thumbnail?: (bytes: Buffer) => string | undefined): ChatPendingMessage[] {
+  const response = record(value)
+  if (!response || !Array.isArray(response.data)) throw new ServiceShapeError('an inbox list')
+  return response.data.flatMap((item) => parseInboxItem(item, thumbnail) ?? []).slice(0, MAX_PENDING)
 }
 
 /** What a message list says about where turns begin and end, newest first. */

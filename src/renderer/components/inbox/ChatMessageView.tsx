@@ -129,6 +129,34 @@ function ReasoningView({ text, active }: { text: string; active: boolean }): JSX
   )
 }
 
+/**
+ * The bubble of one of the user's messages: its text, files and skills. `pending` draws it as a message
+ * the agent has not taken up yet, with a dashed outline; the size is the same, so that it does not
+ * move when the real message takes its place.
+ */
+export function UserBubble({ message, pending = false }: { message: Extract<ChatMessage, { kind: 'user' }>; pending?: boolean }): JSX.Element {
+  return (
+    <div
+      className={cn(
+        'max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md border px-3.5 py-2 text-[14px] leading-relaxed',
+        pending ? 'border-dashed border-line-strong bg-active/40 text-fg-muted' : 'border-transparent bg-active text-fg',
+      )}
+    >
+      {message.attachments?.length ? <div className="flex flex-wrap gap-2 pb-2">{message.attachments.map((file) => <div key={file.id} className="max-w-48 rounded border border-line p-2 text-xs" title={`${file.name} (${file.size.toLocaleString()} bytes)`}>
+        {file.thumbnail && <img src={file.thumbnail} alt={file.name} className="mb-1 h-24 w-32 object-contain" />}
+        <span className="block truncate">{file.name}</span><span className="text-fg-subtle">{Math.ceil(file.size / 1024)} KB</span>
+      </div>)}</div> : null}
+      {message.skills?.length ? <div className="flex flex-wrap gap-1.5 pb-2" aria-label="Skills used">
+        {message.skills.map((skill) => <span key={skill.id} data-testid={`chat-skill-${skill.id}`} title={`$${skill.id}`} className="inline-flex max-w-full items-center gap-1 rounded-full border border-line-strong px-2 py-0.5 text-xs text-fg-muted">
+          <BookOpen aria-hidden className="h-3 w-3 shrink-0 text-accent" />
+          <span className="truncate">{skill.name}</span>
+        </span>)}
+      </div> : null}
+      {message.text}
+    </div>
+  )
+}
+
 /** One message of the conversation. */
 /** The small buttons beside one of the user's messages, which show while the message is hovered or has focus. */
 const MESSAGE_ACTION =
@@ -174,19 +202,7 @@ export const ChatMessageView = memo(function ChatMessageView({
             <Undo2 aria-hidden className="h-3.5 w-3.5" />
           </button>
         )}
-        <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-active px-3.5 py-2 text-[14px] leading-relaxed text-fg">
-          {message.attachments?.length ? <div className="flex flex-wrap gap-2 pb-2">{message.attachments.map((file) => <div key={file.id} className="max-w-48 rounded border border-line p-2 text-xs" title={`${file.name} (${file.size.toLocaleString()} bytes)`}>
-            {file.thumbnail && <img src={file.thumbnail} alt={file.name} className="mb-1 h-24 w-32 object-contain" />}
-            <span className="block truncate">{file.name}</span><span className="text-fg-subtle">{Math.ceil(file.size / 1024)} KB</span>
-          </div>)}</div> : null}
-          {message.skills?.length ? <div className="flex flex-wrap gap-1.5 pb-2" aria-label="Skills used">
-            {message.skills.map((skill) => <span key={skill.id} data-testid={`chat-skill-${skill.id}`} title={`$${skill.id}`} className="inline-flex max-w-full items-center gap-1 rounded-full border border-line-strong px-2 py-0.5 text-xs text-fg-muted">
-              <BookOpen aria-hidden className="h-3 w-3 shrink-0 text-accent" />
-              <span className="truncate">{skill.name}</span>
-            </span>)}
-          </div> : null}
-          {message.text}
-        </div>
+        <UserBubble message={message} />
       </div>
     )
   }

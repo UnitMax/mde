@@ -3,6 +3,7 @@ import { AlertTriangle, LoaderCircle, RefreshCw } from 'lucide-react'
 import type { ChatMessage, InboxThread, OpenCodeModelRef } from '@shared/types'
 import { ChatComposer } from '@/components/inbox/ChatComposer'
 import { ChatMessageView } from '@/components/inbox/ChatMessageView'
+import { ChatPendingView } from '@/components/inbox/ChatPendingView'
 import { PermissionCard, QuestionCard } from '@/components/inbox/ChatRequestCards'
 import { ChatRevertBanner } from '@/components/inbox/ChatRevertBanner'
 import { ChatRevertDialog } from '@/components/inbox/ChatRevertDialog'
@@ -38,6 +39,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const refresh = useInboxChat((store) => store.refresh)
   const send = useInboxChat((store) => store.send)
   const interrupt = useInboxChat((store) => store.interrupt)
+  const discardPending = useInboxChat((store) => store.discardPending)
   const redo = useInboxChat((store) => store.redo)
   const revertTo = useInboxChat((store) => store.revert)
   const forkThread = useInboxChat((store) => store.forkThread)
@@ -140,10 +142,11 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   }, [state?.older, state?.loadingOlder, loadOlder, thread.id])
 
   const requests = state?.requests
+  const pending = state?.pending
   useLayoutEffect(() => {
     const element = scrollRef.current
     if (element && stickRef.current) element.scrollTop = element.scrollHeight
-  }, [messages, requests])
+  }, [messages, requests, pending])
 
   const running = state?.running ?? thread.status === 'working'
   // The time under each turn comes from the service's clock; the count for the turn in progress prefers
@@ -192,6 +195,10 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
               </Fragment>
             )
           })}
+          {/* Held for the agent: where the conversation will put them once it takes them up. */}
+          {pending?.map((held) => (
+            <ChatPendingView key={held.id} pending={held} running={running} onDiscard={(id) => void discardPending(thread.id, id)} />
+          ))}
           {revert && <ChatRevertBanner revert={revert} messages={revertedCount} directory={thread.directory} onRedo={() => redo(thread.id)} />}
           {running && <WorkingFor since={busySince ?? turns.openSince} />}
           {requests?.permissions.map((permission) => (

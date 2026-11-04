@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ChatForm, ChatMessage, ChatPart, ChatTokens } from '../src/shared/types'
+import type { ChatForm, ChatMessage, ChatPart, ChatPendingMessage, ChatTokens } from '../src/shared/types'
 import {
   appendLive,
   contextTone,
@@ -17,6 +17,7 @@ import {
   latestStepTokens,
   messageBlocks,
   mergeLive,
+  mergePending,
   modelName,
   orderAgents,
   pruneLive,
@@ -379,5 +380,41 @@ describe('staged revert', () => {
     expect(revertedMessageCount(messages, revert('msg_4'))).toBe(1)
     expect(revertedMessageCount(messages, revert('msg_9'))).toBe(0)
     expect(revertedMessageCount(messages, null)).toBe(0)
+  })
+})
+
+describe('mergePending', () => {
+  const held = (id: string, delivery: ChatPendingMessage['delivery'] = 'steer'): ChatPendingMessage =>
+    ({ id, delivery, message: { kind: 'user', id, time: 1, text: id } })
+  const user = (id: string): ChatMessage => ({ kind: 'user', id, time: 1, text: id })
+  const ids = (list: readonly ChatPendingMessage[]): string[] => list.map((entry) => entry.id)
+
+  it('takes what the service said it holds, in its order', () => {
+    expect(ids(mergePending([held('msg_a')], [held('msg_b'), held('msg_c', 'queue')], []))).toEqual(['msg_b', 'msg_c'])
+    expect(mergePending([held('msg_a')], [held('msg_a', 'queue')], [])[0]?.delivery).toBe('queue')
+  })
+
+  it('says nothing is held when the service holds nothing', () => {
+    expect(mergePending([held('msg_a')], [], [])).toEqual([])
+  })
+
+  it('keeps what it had when the service could not say, or when the read cannot be trusted about it', () => {
+    const current = [held('msg_a'), held('msg_b')]
+    expect(ids(mergePending(current, undefined, []))).toEqual(['msg_a', 'msg_b'])
+  })
+
+  it('drops a message that has reached the conversation, whichever way the read saw it', () => {
+    // Listed as held by a read that came before the delivery, yet already in the conversation read after it.
+    expect(ids(mergePending([], [held('msg_a'), held('msg_b')], [user('msg_a')]))).toEqual(['msg_b'])
+    // Held according to what the thread had, and delivered since.
+    expect(ids(mergePending([held('msg_a'), held('msg_b')], undefined, [user('msg_b')]))).toEqual(['msg_a'])
+  })
+
+  it('does not change what it is given', () => {
+    const current = [held('msg_a')]
+    const read = [held('msg_b')]
+    mergePending(current, read, [user('msg_b')])
+    expect(ids(current)).toEqual(['msg_a'])
+    expect(ids(read)).toEqual(['msg_b'])
   })
 })

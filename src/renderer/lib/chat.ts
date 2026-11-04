@@ -6,6 +6,7 @@ import type {
   ChatMessage,
   ChatModel,
   ChatPart,
+  ChatPendingMessage,
   ChatRevert,
   ChatTokens,
   ChatUsage,
@@ -364,6 +365,21 @@ export function hideReverted(messages: ChatMessage[], revert: ChatRevert | null 
 export function revertedMessageCount(messages: readonly ChatMessage[], revert: ChatRevert | null | undefined): number {
   if (!revert) return 0
   return messages.reduce((total, message) => total + (message.kind === 'user' && message.id >= revert.messageId ? 1 : 0), 0)
+}
+
+/**
+ * The messages held for the agent after a read of the service. The read is the truth about what the
+ * service held when it began, except that a message which has reached the conversation is no longer
+ * held, because the read and the conversation are not one snapshot. A read that could not say
+ * (`undefined`), or that began before this app changed what is held itself, leaves the rest as it is.
+ */
+export function mergePending(
+  current: readonly ChatPendingMessage[],
+  read: readonly ChatPendingMessage[] | undefined,
+  messages: readonly ChatMessage[],
+): ChatPendingMessage[] {
+  const delivered = new Set(messages.map((message) => message.id))
+  return (read ?? current).filter((entry) => !delivered.has(entry.id))
 }
 
 /** A path shown relative to the thread's folder when it lies inside it. */

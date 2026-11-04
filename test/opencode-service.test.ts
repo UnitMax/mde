@@ -8,6 +8,7 @@ import { turnStats } from '../src/renderer/lib/chat'
 import {
   OpenCodeServiceClient,
   OpenCodeServiceError,
+  SERVICE_OPERATIONS,
   SERVICE_UNREACHABLE,
   serviceUrl,
 } from '../src/main/opencode/service/client'
@@ -31,11 +32,14 @@ import {
   parseCreatedSession,
   parseDefaultModel,
   parseForms,
+  parseInboxItem,
   parseMessage,
   parseMessagesPage,
   parseModels,
+  parsePendingMessages,
   parsePermissions,
   parseProviderNames,
+  parsePromptAnswer,
   parseSessionRevert,
   parseSessionUsage,
   parseStagedRevert,
@@ -228,6 +232,21 @@ describe('OpenCode service client', () => {
     expect(() => serviceUrl('http://127.0.0.1:1', 'session.revert.clear', { params: { sessionID: '../x' } })).toThrow('Invalid OpenCode sessionID.')
     expect(() => serviceUrl('http://127.0.0.1:1', 'session.revert.clear', { params: { sessionID: 'ses_a', messageID: 'msg_1' } })).toThrow()
     expect(() => serviceUrl('http://127.0.0.1:1', 'session.revert.clear')).toThrow('Invalid OpenCode sessionID.')
+  })
+
+  it('keeps the routes for held messages tied to checked session and message IDs', () => {
+    expect(serviceUrl('http://127.0.0.1:1', 'session.inbox.list', { params: { sessionID: 'ses_a' } }))
+      .toBe('http://127.0.0.1:1/api/session/ses_a/inbox')
+    expect(serviceUrl('http://127.0.0.1:1', 'session.inbox.cancel', { params: { sessionID: 'ses_a', inboxID: 'msg_1a3f33' } }))
+      .toBe('http://127.0.0.1:1/api/session/ses_a/inbox/msg_1a3f33')
+    expect(SERVICE_OPERATIONS['session.inbox.list'].method).toBe('GET')
+    expect(SERVICE_OPERATIONS['session.inbox.cancel'].method).toBe('DELETE')
+    for (const inboxID of ['../x', 'ses_a', 'msg_', 'msg_a/b', 'msg_a?b', '']) {
+      expect(() => serviceUrl('http://127.0.0.1:1', 'session.inbox.cancel', { params: { sessionID: 'ses_a', inboxID } })).toThrow('Invalid OpenCode inboxID.')
+    }
+    expect(() => serviceUrl('http://127.0.0.1:1', 'session.inbox.cancel', { params: { sessionID: 'ses_a' } })).toThrow('Invalid OpenCode inboxID.')
+    // The list takes no message ID.
+    expect(() => serviceUrl('http://127.0.0.1:1', 'session.inbox.list', { params: { sessionID: 'ses_a', inboxID: 'msg_1' } })).toThrow()
   })
 
   it('builds URLs only from the fixed operation table and checked parameters', () => {
@@ -681,4 +700,81 @@ it('returns attachment metadata and bounded previews without forwarding file byt
     { id: 'msg_image-1', name: 'notes.txt', mime: 'text/plain', size: 5 },
   ])
   expect(JSON.stringify(message)).not.toContain('aGVsbG8=')
+})
+
+describe('messages the service holds for the agent', () => {
+  /** An item of the session inbox, as the service sends it. */
+  const item = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    id: 'msg_p1', sessionID: 'ses_a', time: { created: 1_700_000_000_000 }, type: 'user', delivery: 'steer',
+    payload: { text: 'Also add a test' },
+    ...overrides,
+  })
+
+  it('reads an item as the user message it will become, with its way of delivery', () => {
+    expect(parseInboxItem(item())).toEqual({
+      id: 'msg_p1', delivery: 'steer',
+      message: { kind: 'user', id: 'msg_p1', time: 1_700_000_000_000, text: 'Also add a test' },
+    })
+    expect(parseInboxItem(item({ delivery: 'queue' }))?.delivery).toBe('queue')
+  })
+
+  it('reads skills and files the way the delivered message will show them', () => {
+    const png = Buffer.from('not really a png').toString('base64')
+    const thumbnail = vi.fn(() => 'data:image/png;base64,AAAA')
+    const held = parseInboxItem(item({
+      payload: {
+        text: 'Use $demo on this',
+        skills: [{ id: 'demo', name: 'Demo', text: 'x', mention: { start: 4, end: 9, text: '$demo' } }],
+        files: [{ data: png, mime: 'image/png', name: 'notes.png', source: { type: 'inline' } }],
+      },
+    }), thumbnail)
+    expect(held?.message).toEqual({
+      kind: 'user', id: 'msg_p1', time: 1_700_000_000_000, text: 'Use $demo on this',
+      skills: [{ id: 'demo', name: 'Demo' }],
+      attachments: [{ id: 'msg_p1-0', name: 'notes.png', mime: 'image/png', size: Buffer.from(png, 'base64').length, thumbnail: 'data:image/png;base64,AAAA' }],
+    })
+    expect(thumbnail).toHaveBeenCalledOnce()
+  })
+
+  it('has no message for work the agent queued for itself, or for an item it cannot read', () => {
+    expect(parseInboxItem(item({ type: 'synthetic' }))).toBeNull()
+    expect(parseInboxItem(item({ type: 'compaction' }))).toBeNull()
+    expect(parseInboxItem(item({ type: 'move' }))).toBeNull()
+    expect(parseInboxItem(item({ delivery: 'later' }))).toBeNull()
+    expect(parseInboxItem(item({ delivery: undefined }))).toBeNull()
+    expect(parseInboxItem(item({ id: 'not a message' }))).toBeNull()
+    expect(parseInboxItem(item({ payload: undefined }))).toBeNull()
+    expect(parseInboxItem(null)).toBeNull()
+    expect(parseInboxItem('msg_p1')).toBeNull()
+  })
+
+  it('reads the inbox in the order the service gives, keeping only the user\'s messages', () => {
+    const list = {
+      data: [
+        item({ id: 'msg_p1', payload: { text: 'First' } }),
+        item({ id: 'msg_p2', type: 'synthetic', payload: { text: 'Agent note' } }),
+        item({ id: 'msg_p3', delivery: 'queue', payload: { text: 'Third' } }),
+        'junk',
+      ],
+    }
+    expect(parsePendingMessages(list).map((held) => [held.id, held.delivery, held.message.text])).toEqual([
+      ['msg_p1', 'steer', 'First'],
+      ['msg_p3', 'queue', 'Third'],
+    ])
+    expect(parsePendingMessages({ data: [] })).toEqual([])
+  })
+
+  it('shows a bounded number, and refuses an answer that is not a list', () => {
+    const many = { data: Array.from({ length: 80 }, (_, index) => item({ id: `msg_p${index}` })) }
+    expect(parsePendingMessages(many)).toHaveLength(50)
+    expect(() => parsePendingMessages(null)).toThrow('inbox list')
+    expect(() => parsePendingMessages({ data: {} })).toThrow('inbox list')
+  })
+
+  it('reads the answer to a prompt, which is one item', () => {
+    expect(parsePromptAnswer({ data: item({ delivery: 'queue' }) })).toMatchObject({ id: 'msg_p1', delivery: 'queue' })
+    expect(parsePromptAnswer({ data: { id: 'msg_p1' } })).toBeNull()
+    expect(parsePromptAnswer({})).toBeNull()
+    expect(parsePromptAnswer(null)).toBeNull()
+  })
 })

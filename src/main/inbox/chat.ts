@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import type {
   ChatAgent,
   ChatCreateRequest,
+  ChatDiscardPendingRequest,
   ChatEvent,
   ChatForkRequest,
   ChatForkResult,
@@ -13,6 +14,7 @@ import type {
   ChatMessagesRequest,
   ChatOptions,
   ChatOptionsRequest,
+  ChatPendingMessage,
   ChatPermissionReplyRequest,
   ChatRequests,
   ChatRevert,
@@ -44,7 +46,9 @@ import {
   parseForms,
   parseMessagesPage,
   parseModels,
+  parsePendingMessages,
   parsePermissions,
+  parsePromptAnswer,
   parseProviderNames,
   parseSessionInfo,
   parseSessionRevert,
@@ -116,6 +120,11 @@ function sameModel(a: OpenCodeModelRef | null, b: OpenCodeModelRef): boolean {
 
 /** Event types that change what the conversation shows. */
 const MESSAGE_EVENTS = new Set([
+  // A message the agent has not taken up yet is shown apart from the conversation, so it changes too
+  // when one is held, changes its way of delivery, is taken back, or is delivered.
+  'session.inbox.enqueued',
+  'session.inbox.delivery.changed',
+  'session.inbox.cancelled',
   'session.inbox.delivered',
   'session.step.started',
   'session.step.ended',
@@ -386,6 +395,13 @@ export class InboxChatService {
         return loadPage()
       }
     }
+    // Read before the conversation: a message delivered in between is then in both, which the reader
+    // sorts out by ID, and not in neither. The newest page only; and a service that cannot say leaves it unknown.
+    const pending = request.cursor
+      ? undefined
+      : await this.dependencies.client.request(thread.target, 'session.inbox.list', { params: { sessionID: thread.id } })
+        .then((answer) => parsePendingMessages(answer, this.dependencies.thumbnail))
+        .catch(() => undefined)
     const [page, active, session] = await Promise.all([
       loadPage(),
       this.dependencies.client.request(thread.target, 'session.active'),
@@ -398,10 +414,14 @@ export class InboxChatService {
     const usage = session ? parseSessionUsage(session) : null
     // Only an answer from the service says whether a revert is staged; without one it stays unknown.
     const revert = session ? parseSessionRevert(session) : undefined
-    return { ...result, ...(usage ? { usage } : {}), ...(revert !== undefined ? { revert } : {}) }
+    return { ...result, ...(usage ? { usage } : {}), ...(revert !== undefined ? { revert } : {}), ...(pending ? { pending } : {}) }
   }
 
-  async send(request: ChatSendRequest): Promise<void> {
+  /**
+   * Sends a message to a thread. Returns the message as OpenCode took it, which is how the reader learns,
+   * when the agent was busy, that it is being held; null when OpenCode's answer cannot be read.
+   */
+  async send(request: ChatSendRequest): Promise<ChatPendingMessage | null> {
     this.assertEnabled()
     const thread = this.thread(request.threadId)
     const text = this.promptText(request.text, request.attachmentIds)
@@ -428,12 +448,25 @@ export class InboxChatService {
         ...(request.model !== undefined ? { model: request.model } : {}),
       })
     }
-    await this.dependencies.client.request(thread.target, 'session.prompt', {
+    const answer = await this.dependencies.client.request(thread.target, 'session.prompt', {
       params: { sessionID: thread.id },
       body: await this.promptBody(thread, text, files),
     })
     await this.dependencies.drafts?.remove(`thread:${thread.id}`, undefined, request.draftRevision)
     this.dependencies.recorder.markStatus(thread.id, 'working')
+    return parsePromptAnswer(answer, this.dependencies.thumbnail)
+  }
+
+  /**
+   * Takes back a message OpenCode holds for the agent. A message it delivered in the meantime is part of
+   * the conversation by then, and the service leaves it be and says nothing.
+   */
+  async discardPending(request: ChatDiscardPendingRequest): Promise<void> {
+    this.assertEnabled()
+    const thread = this.thread(request.threadId)
+    await this.dependencies.client.request(thread.target, 'session.inbox.cancel', {
+      params: { sessionID: thread.id, inboxID: request.messageId },
+    })
   }
 
   async interrupt(threadId: string): Promise<void> {

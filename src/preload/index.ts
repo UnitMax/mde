@@ -168,6 +168,7 @@ const api: RendererApi = {
     create: (req) => ipcRenderer.invoke(IpcChannels.chatCreate, req),
     messages: (req) => ipcRenderer.invoke(IpcChannels.chatMessages, req),
     send: (req) => ipcRenderer.invoke(IpcChannels.chatSend, req),
+    discardPending: (req) => ipcRenderer.invoke(IpcChannels.chatDiscardPending, req),
     interrupt: (req) => ipcRenderer.invoke(IpcChannels.chatInterrupt, req),
     redo: (req) => ipcRenderer.invoke(IpcChannels.chatRedo, req),
     revert: (req) => ipcRenderer.invoke(IpcChannels.chatRevert, req),

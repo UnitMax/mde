@@ -53,7 +53,8 @@ OpenCode's `service.json` state file from the command's standard output, on the 
 WSL distro. That file holds the service's local address and the password OpenCode generated for
 it. MDE keeps the password in the main process's memory only, sends it only to that loopback
 address as HTTP Basic auth, and never writes it to disk, logs it or passes it to the renderer.
-Conversations, tool input and output, permission requests and questions are fetched from the
+Conversations, the messages the service is holding for a busy agent, tool input and output, permission
+requests and questions are fetched from the
 service when a thread is opened and are kept in memory only (the renderer keeps the last ten
 opened threads); MDE does not write them to disk. Prompts and answers you send go to the service,
 which stores them in OpenCode's own data and forwards them to the model provider you chose, as

@@ -322,6 +322,31 @@ follow-up switches the session's agent or model first only when you changed them
 keeps the last ten opened threads in memory so going back to one is instant; MDE never writes
 messages to disk.
 
+**Messages held for the agent.** A message sent while the agent is working is not added to the
+conversation at once. OpenCode accepts it into the session's *inbox* and hands it to the agent later:
+a `steer` message at the agent's next step, a `queue` message when the agent would otherwise stop. MDE
+sends no `delivery`, so OpenCode's default (`steer`) applies; one queued from OpenCode's own interface is
+shown as queued. Until it is delivered the message is not in the message list, so the thread shows it
+apart, after the conversation and above the "Working for" line, which is where the delivered message
+lands (`ChatPendingView`). It is drawn like the user's message it will become (text, files, skills) with a
+dashed outline and a line saying what happens to it (Steering, Queued), and **Remove** takes it back
+(`chat:discard-pending`, `DELETE /api/session/{id}/inbox/{id}`; one already delivered stays, and the next
+read shows it in the conversation). A message keeps its ID when it is delivered, so the delivered one
+replaces the pending one in the same place. After a Stop nothing is running, but OpenCode keeps the held
+messages until the next message starts the agent again and then delivers them all; the line then says
+"Not sent yet" and Remove is the way to drop them.
+
+The held messages come with the newest page of messages as `pending` (`GET /api/session/{id}/inbox`,
+`parsePendingMessages`, user messages only, at most 50, read *before* the message list so that a message
+delivered between the two reads is in both rather than in neither). A page without `pending` means the
+service did not say and the thread keeps what it had; `pending: []` means none. The
+`session.inbox.enqueued`, `.delivery.changed`, `.cancelled` and `.delivered` events make the thread
+refetch. A message sent to a busy thread is shown at once from the prompt's own answer (`chat:send` returns
+the held message, `parsePromptAnswer`), not after the next refetch; one sent to an idle thread is not set
+aside, since it goes straight into the conversation. The store notes when it last changed what is held
+(`pendingChangedAt`), and a refetch that began before that is not allowed to undo the change, so a message
+neither blinks out when a read from just before the send comes back, nor returns after being removed.
+
 **Skills.** A skill is a folder of instructions (a `SKILL.md`) that OpenCode finds in the project
 (for example `.claude/skills/<name>/SKILL.md` in the folder) and in the user's own configuration, plus a
 few it ships with; where OpenCode looks is up to OpenCode, and MDE shows whatever it lists. A word that starts with `$` in either composer

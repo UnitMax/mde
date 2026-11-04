@@ -503,6 +503,21 @@ export interface ChatForkResult {
   text?: string
 }
 
+/**
+ * A message of the user that OpenCode has accepted but not yet handed to the agent, because the agent
+ * was busy. It is not in the conversation until it is delivered, and then it keeps its `id`.
+ */
+export interface ChatPendingMessage {
+  id: string
+  /**
+   * `steer`: the agent reads it at its next step. `queue`: it waits until the agent is done. OpenCode
+   * keeps either one until the agent next runs, so after a Stop a message can wait with nothing running.
+   */
+  delivery: 'steer' | 'queue'
+  /** The message as the conversation will show it. */
+  message: Extract<ChatMessage, { kind: 'user' }>
+}
+
 export interface ChatMessagesPage {
   /** Oldest first. */
   messages: ChatMessage[]
@@ -518,6 +533,11 @@ export interface ChatMessagesPage {
    * The messages are all of them: hiding the reverted ones is up to the reader.
    */
   revert?: ChatRevert | null
+  /**
+   * The user's messages OpenCode holds for the agent, oldest first. Like `usage` it comes with the
+   * newest page only, and is absent when OpenCode did not answer, which means "unknown", not "none".
+   */
+  pending?: ChatPendingMessage[]
 }
 
 export interface ChatPermission {
@@ -601,6 +621,12 @@ export interface ChatSendRequest {
   text: string
   agent?: string
   model?: OpenCodeModelRef
+}
+
+export interface ChatDiscardPendingRequest {
+  threadId: string
+  /** The `id` of a {@link ChatPendingMessage}. */
+  messageId: string
 }
 
 export interface ChatPermissionReplyRequest {

@@ -50,6 +50,7 @@ import type {
   InboxSetReadRequest,
   InboxThread,
   ChatConfigureRequest,
+  ChatDiscardPendingRequest,
   ChatCreateRequest,
   ChatEvent,
   ChatFormReplyRequest,
@@ -67,6 +68,7 @@ import type {
   ChatForkRequest,
   ChatForkResult,
   ChatRevertRequest,
+  ChatPendingMessage,
   ChatSendRequest,
   ChatThreadRequest,
   ChatDraft,
@@ -173,6 +175,7 @@ export const IpcChannels = {
   inboxChangeDiff: 'inbox:change-diff',
   chatMessages: 'chat:messages',
   chatSend: 'chat:send',
+  chatDiscardPending: 'chat:discard-pending',
   chatDraft: 'chat:draft',
   chatInterrupt: 'chat:interrupt',
   chatRedo: 'chat:redo',
@@ -560,7 +563,13 @@ export interface RendererApi {
     options(req: ChatOptionsRequest): Promise<ChatOptions>
     create(req: ChatCreateRequest): Promise<InboxThread>
     messages(req: ChatMessagesRequest): Promise<ChatMessagesPage>
-    send(req: ChatSendRequest): Promise<void>
+    /**
+     * Sends a message. When the agent was busy, OpenCode holds it instead of showing it in the conversation;
+     * the answer is that held message, or null when OpenCode's answer could not be read.
+     */
+    send(req: ChatSendRequest): Promise<ChatPendingMessage | null>
+    /** Takes back a message OpenCode still holds for the agent. One it has already delivered stays. */
+    discardPending(req: ChatDiscardPendingRequest): Promise<void>
     interrupt(req: ChatThreadRequest): Promise<void>
     redo(req: ChatThreadRequest): Promise<void>
     revert(req: ChatRevertRequest): Promise<ChatRevert>
