@@ -213,6 +213,11 @@ on an empty item it leaves the list.
 markers rather than rendering HTML, so pasted HTML, links and images remain literal text.
 Code fences stay literal, and drafts, skill positions and sent messages keep plain Markdown
 without converting it through HTML. Clipboard images still go through the attachment controls.
+In an existing thread, Up in an empty message box recalls the user's earlier nonempty messages,
+newest first; Down moves forward and returns to the empty box after the newest recalled message.
+Editing a recalled message ends history navigation. Recall uses this thread's visible conversation
+and pending messages, loads older pages when needed, and restores only text, leaving attachments
+as they are. Recalled text uses the normal draft saving path; there is no separate stored history.
 The model picker shows the selected provider and model as “Provider / Model”, with a muted provider prefix.
 The folder, model and agent last used are remembered in `inbox.json`; otherwise the composer
 starts with OpenCode's default model and the Build agent. Sending creates the OpenCode session in

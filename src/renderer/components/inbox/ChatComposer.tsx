@@ -198,6 +198,8 @@ function SkillPicker({
 
 export interface ChatComposerProps {
   draftKey?: ChatDraftKey
+  /** The preceding nonempty user message in this thread; older pages are loaded as needed. */
+  onPreviousMessage?: (beforeId?: string) => Promise<{ id: string; text: string } | null>
   /**
    * Set when text was added to the draft from outside: the box reads the draft again, takes focus and
    * puts the caret at `caret`. It is applied whenever it is seen, including when the box appears
@@ -235,6 +237,7 @@ export interface ChatComposerProps {
 /** The prompt box with model and agent pickers and a round send (or stop) button. */
 export function ChatComposer({
   draftKey,
+  onPreviousMessage,
   draftReload,
   onDraftReloaded,
   options,
@@ -259,12 +262,19 @@ export function ChatComposer({
   const [loaded, setLoaded] = useState(!draftKey)
   const [adding, setAdding] = useState(false)
   const [dragging, setDragging] = useState(false)
+  // Newest to oldest, with an identity that lets an edit cancel a pending history read.
+  const recalled = useRef<{ messages: { id: string; text: string }[]; loading: boolean }>({ messages: [], loading: false })
+  const resetHistory = (): void => { recalled.current = { messages: [], loading: false } }
   const inputRef = useRef<HTMLInputElement>(null)
   const currentKey = useRef(draftKey)
   currentKey.current = draftKey
   const mutate = (request: ChatDraftRequest): Promise<ChatDraft> => {
     return window.api.chat.draft(request)
   }
+  useEffect(() => {
+    resetHistory()
+    return resetHistory
+  }, [draftKey, disabled])
   useEffect(() => {
     setLoaded(!draftKey)
     setText('')
@@ -304,6 +314,7 @@ export function ChatComposer({
     // Once it is let go of the next one may start counting again.
     if (!draftReload) appliedReload.current = 0
     if (!draftKey || !draftReload || draftReload.id === appliedReload.current) return
+    resetHistory()
     appliedReload.current = draftReload.id
     onDraftReloaded?.(draftReload.id)
     void mutate({ key: draftKey, action: 'load' }).then((value) => {
@@ -359,6 +370,7 @@ export function ChatComposer({
   })
   const pickSkill = (skill: ChatSkill): void => {
     if (!trigger) return
+    resetHistory()
     const next = applySkill(text, trigger, skill)
     pendingCaret.current = next.caret
     setText(next.text)
@@ -367,8 +379,44 @@ export function ChatComposer({
     setCursor({ text: next.text, at: next.caret })
   }
 
+  const recallText = (next: string): void => {
+    pendingCaret.current = next.length
+    setText(next)
+    setCursor({ text: next, at: next.length })
+    // A recalled message ending in $word is ready to edit or send, without opening the skill list.
+    setDismissed(skillTriggerAt(next, next.length)?.start ?? null)
+    persist(next)
+  }
+  const recallMessage = (event: KeyboardEvent): void => {
+    const history = recalled.current
+    if (event.key === 'ArrowDown') {
+      if (history.messages.length === 0 && !history.loading) return
+      event.preventDefault()
+      const messages = history.messages.slice(0, -1)
+      recalled.current = { messages, loading: false }
+      recallText(messages[messages.length - 1]?.text ?? '')
+      return
+    }
+    if (!onPreviousMessage || (history.messages.length === 0 && text !== '')) return
+    event.preventDefault()
+    if (history.loading) return
+    history.loading = true
+    void onPreviousMessage(history.messages[history.messages.length - 1]?.id).then((message) => {
+      if (recalled.current !== history) return
+      history.loading = false
+      if (!message) return
+      history.messages.push(message)
+      recallText(message.text)
+    }).catch((reason) => {
+      if (recalled.current !== history) return
+      history.loading = false
+      setError(ipcErrorMessage(reason, 'Could not recall the message.'))
+    })
+  }
+
   const send = async (): Promise<void> => {
     if (!canSend) return
+    resetHistory()
     setSending(true)
     setError(null)
     try {
@@ -413,6 +461,10 @@ export function ChatComposer({
         setDismissed(trigger.start)
         return
       }
+    }
+    if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      recallMessage(event)
+      if (event.defaultPrevented) return
     }
     if ((event.key === 'Enter' && event.shiftKey) || (event.key.toLowerCase() === 'j' && event.ctrlKey && !event.shiftKey && !event.metaKey && !event.altKey)) {
       event.preventDefault()
@@ -470,6 +522,7 @@ export function ChatComposer({
           disabled={disabled || sending || !loaded}
           placeholder={placeholder}
           onChange={(next, caret) => {
+            resetHistory()
             setText(next)
             setCursor({ text: next, at: caret })
             setActiveSkill(0)

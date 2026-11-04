@@ -167,6 +167,25 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const turns = useMemo(() => turnStats(messages), [messages])
   const busySince = thread.status === 'working' || thread.status === 'attention' ? thread.workingSince : undefined
 
+  const previousMessage = useCallback(async (beforeId?: string): Promise<{ id: string; text: string } | null> => {
+    for (;;) {
+      const current = useInboxChat.getState().threads[thread.id]
+      if (!current) return null
+      const history = [...hideReverted(current.messages, current.revert), ...current.pending.map((held) => held.message)]
+      for (let index = history.length - 1; index >= 0; index -= 1) {
+        const message = history[index]!
+        if (message.kind === 'user' && message.text.trim() && (!beforeId || message.id < beforeId)) {
+          return { id: message.id, text: message.text }
+        }
+      }
+      if (!current.older || current.loadingOlder) return null
+      const cursor = current.older
+      await loadOlder(thread.id)
+      // A failed read keeps its cursor; do not retry it in a loop.
+      if (useInboxChat.getState().threads[thread.id]?.older === cursor) return null
+    }
+  }, [loadOlder, thread.id])
+
   return (
     <McpServerNamesContext.Provider value={mcpNames}>
     <div
@@ -258,6 +277,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
         <ChatComposer
           key={thread.id}
           draftKey={`thread:${thread.id}`}
+          onPreviousMessage={previousMessage}
           draftReload={draftReload}
           onDraftReloaded={(id) => clearDraftReload(thread.id, id)}
           options={options}

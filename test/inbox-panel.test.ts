@@ -8,6 +8,7 @@ import { InboxPanel } from '../src/renderer/components/InboxPanel'
 import { InboxThreadView } from '../src/renderer/components/InboxThreadView'
 import { useInboxChat } from '../src/renderer/store/inbox-chat'
 import { useWorkspace } from '../src/renderer/store/workspace'
+import { messageInput, pressMessageKey } from './helpers/chat-input'
 
 const roots: Root[] = []
 const setRead = vi.fn(async () => null)
@@ -84,6 +85,83 @@ afterEach(async () => {
   await act(async () => roots.splice(0).forEach((root) => root.unmount()))
   document.body.innerHTML = ''
   vi.unstubAllGlobals()
+})
+
+describe('Inbox chat message history', () => {
+  it('recalls only nonempty user text from this conversation and pending messages', async () => {
+    vi.mocked(window.api.chat.messages).mockResolvedValue({
+      messages: [
+        { kind: 'user', id: 'msg_1', time: 1, text: 'First message' },
+        { kind: 'assistant', id: 'msg_2', time: 2, agent: 'build', model: { id: 'm', providerId: 'p' }, completed: true, parts: [{ kind: 'text', text: 'Reply' }] },
+        { kind: 'user', id: 'msg_3', time: 3, text: ' \n ' },
+        { kind: 'user', id: 'msg_4', time: 4, text: 'Second message', attachments: [{ id: 'file_1', name: 'notes.txt', mime: 'text/plain', size: 10 }] },
+        { kind: 'user', id: 'msg_8', time: 8, text: 'Reverted message' },
+      ],
+      older: null,
+      running: false,
+      revert: { messageId: 'msg_8', files: [] },
+      pending: [{ id: 'msg_9', delivery: 'queue', message: { kind: 'user', id: 'msg_9', time: 9, text: 'Queued message' } }],
+    })
+    useWorkspace.setState({ inboxThreads: [thread()], selectedInboxThreadId: 'ses_one' })
+    const main = await render(createElement(InboxThreadView))
+    const input = messageInput(main)
+    await pressMessageKey(input, 'ArrowUp')
+    expect(input.state.doc.toString()).toBe('Queued message')
+    await pressMessageKey(input, 'ArrowUp')
+    expect(input.state.doc.toString()).toBe('Second message')
+    expect(main.querySelector('[aria-label="Attachments"]')).toBeNull()
+    await pressMessageKey(input, 'ArrowUp')
+    expect(input.state.doc.toString()).toBe('First message')
+    await pressMessageKey(input, 'ArrowUp')
+    expect(input.state.doc.toString()).toBe('First message')
+    expect(draft).toHaveBeenLastCalledWith({ key: 'thread:ses_one', action: 'text', text: 'First message' })
+  })
+
+  it('loads earlier pages when Up reaches the oldest loaded user message', async () => {
+    vi.mocked(window.api.chat.messages).mockImplementation(async ({ cursor }) => {
+      if (cursor === 'earliest') return { messages: [{ kind: 'user', id: 'msg_1', time: 1, text: 'First message' }], older: null, running: false }
+      if (cursor === 'earlier') return {
+        messages: [{ kind: 'assistant', id: 'msg_4', time: 4, agent: 'build', model: { id: 'm', providerId: 'p' }, completed: true, parts: [{ kind: 'text', text: 'Reply' }] }],
+        older: 'earliest', running: false,
+      }
+      return { messages: [{ kind: 'user', id: 'msg_5', time: 5, text: 'Latest message' }], older: 'earlier', running: false }
+    })
+    useWorkspace.setState({ inboxThreads: [thread()], selectedInboxThreadId: 'ses_one' })
+    const main = await render(createElement(InboxThreadView))
+    const input = messageInput(main)
+    await pressMessageKey(input, 'ArrowUp')
+    expect(input.state.doc.toString()).toBe('Latest message')
+    expect(window.api.chat.messages).toHaveBeenCalledTimes(1)
+    await pressMessageKey(input, 'ArrowUp')
+    expect(input.state.doc.toString()).toBe('First message')
+    expect(window.api.chat.messages).toHaveBeenCalledWith({ threadId: 'ses_one', cursor: 'earlier' })
+    expect(window.api.chat.messages).toHaveBeenCalledWith({ threadId: 'ses_one', cursor: 'earliest' })
+    await pressMessageKey(input, 'ArrowUp')
+    expect(input.state.doc.toString()).toBe('First message')
+    expect(window.api.chat.messages).toHaveBeenCalledTimes(3)
+    await pressMessageKey(input, 'ArrowDown')
+    expect(input.state.doc.toString()).toBe('Latest message')
+    await pressMessageKey(input, 'ArrowDown')
+    expect(input.state.doc.toString()).toBe('')
+  })
+
+  it('keeps recalled text after a page fails and allows another Up to retry', async () => {
+    vi.mocked(window.api.chat.messages)
+      .mockResolvedValueOnce({ messages: [{ kind: 'user', id: 'msg_5', time: 5, text: 'Latest message' }], older: 'earlier', running: false })
+      .mockRejectedValueOnce(new Error('Service unavailable'))
+      .mockResolvedValueOnce({ messages: [{ kind: 'user', id: 'msg_1', time: 1, text: 'First message' }], older: null, running: false })
+    useWorkspace.setState({ inboxThreads: [thread()], selectedInboxThreadId: 'ses_one' })
+    const main = await render(createElement(InboxThreadView))
+    const input = messageInput(main)
+    await pressMessageKey(input, 'ArrowUp')
+    await pressMessageKey(input, 'ArrowUp')
+    expect(input.state.doc.toString()).toBe('Latest message')
+    expect(main.textContent).toContain('Service unavailable')
+    expect(window.api.chat.messages).toHaveBeenCalledTimes(2)
+    await pressMessageKey(input, 'ArrowUp')
+    expect(input.state.doc.toString()).toBe('First message')
+    expect(window.api.chat.messages).toHaveBeenCalledTimes(3)
+  })
 })
 
 describe('Inbox', () => {

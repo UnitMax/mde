@@ -17,7 +17,7 @@ const skills: ChatSkill[] = [
   { id: 'deploy', name: 'Deploy', description: 'Ship it' },
 ]
 
-async function setup({ initial = '', list = skills, disabled = false }: { initial?: string; list?: ChatSkill[]; disabled?: boolean } = {}) {
+async function setup({ initial = '', list = skills, disabled = false, onPreviousMessage }: { initial?: string; list?: ChatSkill[]; disabled?: boolean; onPreviousMessage?: () => Promise<{ id: string; text: string } | null> } = {}) {
   let draft: ChatDraft = { text: initial, revision: 0, attachments: [] }
   const request = vi.fn(async (input: ChatDraftRequest) => {
     if (input.action === 'text') draft = { ...draft, text: input.text, revision: draft.revision + 1 }
@@ -30,7 +30,7 @@ async function setup({ initial = '', list = skills, disabled = false }: { initia
   const root = createRoot(container)
   dispose = () => root.unmount()
   await act(async () => root.render(createElement(ChatComposer, {
-    draftKey: 'thread:ses_one', agent: 'build', model: { id: 'm', providerId: 'p' }, disabled,
+    draftKey: 'thread:ses_one', agent: 'build', model: { id: 'm', providerId: 'p' }, disabled, onPreviousMessage,
     options: { status: 'ready', value: { agents: [], models: [], defaultModel: null, defaultAgent: null, skills: list } },
     onAgentChange: () => {}, onModelChange: () => {}, onSend: send,
   })))
@@ -51,6 +51,15 @@ const list = (container: HTMLElement) => container.querySelector('[data-testid="
 const options = (container: HTMLElement) => Array.from(container.querySelectorAll('[role="option"]')).map((option) => option.getAttribute('data-testid')?.replace('skill-option-', ''))
 
 describe('the $ skill picker in the message box', () => {
+  it('keeps the skill list closed for recalled text, so Enter sends it as written', async () => {
+    const { container, box, send } = await setup({ onPreviousMessage: async () => ({ id: 'msg_1', text: 'Use $de' }) })
+    await press(box, 'ArrowUp')
+    expect(box.state.doc.toString()).toBe('Use $de')
+    expect(list(container)).toBeNull()
+    await press(box, 'Enter')
+    expect(send).toHaveBeenCalledWith('Use $de', expect.anything())
+  })
+
   it('stays closed until a word starts with $', async () => {
     const { container, box } = await setup()
     await type(box, 'review the diff')
