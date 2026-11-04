@@ -7,6 +7,7 @@ import type { ChatMessage, ChatMessagesPage, ChatPendingMessage, InboxFolder, In
 import { InboxThreadView } from '../src/renderer/components/InboxThreadView'
 import { CHAT_REFRESH_DELAY_MS, useInboxChat } from '../src/renderer/store/inbox-chat'
 import { useWorkspace } from '../src/renderer/store/workspace'
+import { messageInput, setMessageText } from './helpers/chat-input'
 
 const roots: Root[] = []
 
@@ -241,6 +242,69 @@ describe('sending while the agent is busy', () => {
     await render()
     expect(shownPending()).toEqual([])
     expect(document.body.textContent?.match(/Also add a test/g)).toHaveLength(1)
+  })
+})
+
+describe('choosing how to send to a busy agent', () => {
+  // The box sends only once OpenCode has said which agents and models there are.
+  beforeEach(() => {
+    api.chat.options.mockImplementation(async () => ({
+      agents: [{ id: 'build', name: 'Build' }],
+      models: [{ ...model, providerName: 'OpenCode', name: 'Free 1' }],
+      defaultModel: model,
+      defaultAgent: 'build',
+      skills: [],
+    }))
+  })
+  afterEach(() => { api.chat.options.mockImplementation(() => new Promise(() => {})) })
+
+  const typeAndSend = async (container: HTMLElement, text: string, queue = false): Promise<void> => {
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="chat-model-picker"]')).not.toBeNull())
+    await setMessageText(messageInput(container), text)
+    if (queue) {
+      await act(async () => { byId('chat-send-menu')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+      await act(async () => byId('chat-send-mode-queue')!.click())
+    }
+    await act(async () => byId('chat-send')!.click())
+  }
+
+  it('steers by default and shows the message as steering', async () => {
+    const container = await render()
+    accepted = held('msg_p1', 'Also add a test')
+    await typeAndSend(container, 'Also add a test')
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'ses_one', text: 'Also add a test', delivery: 'steer' }))
+    expect(byId('chat-pending-status-msg_p1')!.textContent).toMatch(/^Steering/)
+  })
+
+  it('queues when Queue was chosen, and shows the message as queued', async () => {
+    const container = await render()
+    accepted = held('msg_p1', 'Then run the linter', 'queue')
+    await typeAndSend(container, 'Then run the linter', true)
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ text: 'Then run the linter', delivery: 'queue' }))
+    expect(byId('chat-pending-status-msg_p1')!.textContent).toMatch(/^Queued/)
+    // What is held shows the way that OpenCode took it, not the one the button said.
+    expect(store().threads.ses_one!.pending.map((entry) => entry.delivery)).toEqual(['queue'])
+  })
+
+  it('leaves the choice out when the agent is idle', async () => {
+    page = { ...page, running: false }
+    const container = await render()
+    accepted = held('msg_p1', 'Next thing')
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="chat-model-picker"]')).not.toBeNull())
+    await setMessageText(messageInput(container), 'Next thing')
+    expect(byId('chat-send-pill')).toBeNull()
+    await act(async () => byId('chat-send')!.click())
+    expect(send).toHaveBeenCalledOnce()
+    expect(send.mock.calls[0]![0]).not.toHaveProperty('delivery')
+  })
+
+  it('remembers the agent and model that were chosen with a send, but not the way of delivery', async () => {
+    await render()
+    accepted = held('msg_p1', 'Then run the linter', 'queue')
+    await act(async () => { await store().send('ses_one', 'Then run the linter', { agent: 'plan', model, delivery: 'queue' }) })
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ agent: 'plan', delivery: 'queue' }))
+    expect(store().composer).toMatchObject({ agent: 'plan', model })
+    expect(store().composer).not.toHaveProperty('delivery')
   })
 })
 

@@ -1,6 +1,7 @@
 import { Clock3, CornerDownRight, ListEnd, X } from 'lucide-react'
-import type { ChatPendingMessage } from '@shared/types'
+import type { ChatDelivery, ChatPendingMessage } from '@shared/types'
 import { UserBubble } from '@/components/inbox/ChatMessageView'
+import { DELIVERY_HINT } from '@/lib/chat'
 
 const ICON = 'h-3 w-3 shrink-0'
 
@@ -9,13 +10,13 @@ const ICON = 'h-3 w-3 shrink-0'
  * keeps it until the agent can take it up: a steered one at its next step, a queued one when it is done.
  * After a Stop nothing is running, and OpenCode keeps both until the next message starts the agent again.
  */
-function describe(delivery: ChatPendingMessage['delivery'], running: boolean): { label: string; hint: string; icon: JSX.Element } {
+function describe(delivery: ChatDelivery, running: boolean): { label: string; hint: string; icon: JSX.Element } {
   if (!running) {
     return { label: 'Not sent yet', hint: 'goes out with your next message', icon: <Clock3 aria-hidden className={ICON} /> }
   }
   return delivery === 'steer'
-    ? { label: 'Steering', hint: 'the agent reads it at its next step', icon: <CornerDownRight aria-hidden className={ICON} /> }
-    : { label: 'Queued', hint: 'sent when the agent is done', icon: <ListEnd aria-hidden className={ICON} /> }
+    ? { label: 'Steering', hint: DELIVERY_HINT.steer, icon: <CornerDownRight aria-hidden className={ICON} /> }
+    : { label: 'Queued', hint: DELIVERY_HINT.queue, icon: <ListEnd aria-hidden className={ICON} /> }
 }
 
 /**
@@ -23,10 +24,10 @@ function describe(delivery: ChatPendingMessage['delivery'], running: boolean): {
  * and its text says what the message would do then. Offered only while the agent runs, because with
  * nothing running the two are the same: the message waits for the next run either way.
  */
-function otherDelivery(delivery: ChatPendingMessage['delivery']): { to: ChatPendingMessage['delivery']; label: string; title: string; icon: JSX.Element } {
+function otherDelivery(delivery: ChatDelivery): { to: ChatDelivery; label: string; title: string; icon: JSX.Element } {
   return delivery === 'steer'
-    ? { to: 'queue', label: 'Queue instead', title: 'Queue it: sent when the agent is done', icon: <ListEnd aria-hidden className={ICON} /> }
-    : { to: 'steer', label: 'Steer now', title: 'Steer: the agent reads it at its next step', icon: <CornerDownRight aria-hidden className={ICON} /> }
+    ? { to: 'queue', label: 'Queue instead', title: `Queue it: ${DELIVERY_HINT.queue}`, icon: <ListEnd aria-hidden className={ICON} /> }
+    : { to: 'steer', label: 'Steer now', title: `Steer: ${DELIVERY_HINT.steer}`, icon: <CornerDownRight aria-hidden className={ICON} /> }
 }
 
 const ACTION = 'inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-fg-muted transition-colors hover:bg-hover hover:text-fg'

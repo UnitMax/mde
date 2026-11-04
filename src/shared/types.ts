@@ -504,16 +504,19 @@ export interface ChatForkResult {
 }
 
 /**
+ * How a message sent to a busy agent reaches it. `steer`: the agent reads it at its next step. `queue`:
+ * it waits until the agent is done.
+ */
+export type ChatDelivery = 'steer' | 'queue'
+
+/**
  * A message of the user that OpenCode has accepted but not yet handed to the agent, because the agent
  * was busy. It is not in the conversation until it is delivered, and then it keeps its `id`.
  */
 export interface ChatPendingMessage {
   id: string
-  /**
-   * `steer`: the agent reads it at its next step. `queue`: it waits until the agent is done. OpenCode
-   * keeps either one until the agent next runs, so after a Stop a message can wait with nothing running.
-   */
-  delivery: 'steer' | 'queue'
+  /** OpenCode keeps either one until the agent next runs, so after a Stop a message can wait with nothing running. */
+  delivery: ChatDelivery
   /** The message as the conversation will show it. */
   message: Extract<ChatMessage, { kind: 'user' }>
 }
@@ -621,6 +624,8 @@ export interface ChatSendRequest {
   text: string
   agent?: string
   model?: OpenCodeModelRef
+  /** How the message reaches an agent that is busy; an idle agent takes it up at once either way. OpenCode steers when this is left out. */
+  delivery?: ChatDelivery
 }
 
 export interface ChatDiscardPendingRequest {
@@ -633,7 +638,7 @@ export interface ChatSetDeliveryRequest {
   threadId: string
   /** The `id` of a {@link ChatPendingMessage}. */
   messageId: string
-  delivery: ChatPendingMessage['delivery']
+  delivery: ChatDelivery
 }
 
 export interface ChatPermissionReplyRequest {

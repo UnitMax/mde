@@ -317,16 +317,27 @@ renderer as replies; each tool call is a row with a status icon and a summary su
 Subagent calls (OpenCode's `subagent` tool) are shown as cards instead: the agent type, the title, its state (Working, Done, Stopped, Failed) and a one-line preview of the task. Subagents started together are grouped under one heading, and a card expands to the full task and the answer rendered as Markdown. The subagent's own steps are not shown, since MDE only follows sessions it recorded. Agent and model switches, failures and stops appear as small notes. Text streams in as OpenCode
 produces it. Permission requests (Allow once, Always allow, Reject) and questions (option buttons,
 checkboxes, free text) are answered inline as cards; a question with field types MDE cannot show
-asks you to answer it in a terminal. While the thread works, the send button becomes Stop. A
+asks you to answer it in a terminal. While the thread works and the box is empty, the send button becomes Stop. A
 follow-up switches the session's agent or model first only when you changed them. The renderer
 keeps the last ten opened threads in memory so going back to one is instant; MDE never writes
 messages to disk.
 
+**Steering or queueing a message.** With the agent working and something typed, the round send
+button grows into a pill (`ChatSendButton`): an arrow and **Steer**, and a chevron that opens a menu
+with **Steer** (the agent reads it at its next step) and **Queue** (sent when the agent is done).
+Choosing in the menu does not send; it changes what the button says and what Enter does, so the box is
+given the focus back. The choice holds for the rest of that run and starts as Steer again with the next.
+Send with the agent idle is the plain round button and sends no choice, since an idle agent takes the
+message up at once either way. The choice goes with the message as `delivery` on `chat:send`, which puts
+it in the prompt body (`POST /api/session/{id}/prompt`); the first message of a thread has none. In a box
+narrower than 30rem the word is left to screen readers and the tooltip, so the pickers keep their room.
+(There is no keyboard shortcut for the other way; a held message can be switched afterwards, below.)
+
 **Messages held for the agent.** A message sent while the agent is working is not added to the
 conversation at once. OpenCode accepts it into the session's *inbox* and hands it to the agent later:
-a `steer` message at the agent's next step, a `queue` message when the agent would otherwise stop. MDE
-sends no `delivery`, so OpenCode's default (`steer`) applies; one queued from OpenCode's own interface is
-shown as queued. Until it is delivered the message is not in the message list, so the thread shows it
+a `steer` message at the agent's next step, a `queue` message when the agent would otherwise stop. The
+send button chooses which (below); a message queued from OpenCode's own interface is shown as queued
+too. Until it is delivered the message is not in the message list, so the thread shows it
 apart, after the conversation and above the "Working for" line, which is where the delivered message
 lands (`ChatPendingView`). It is drawn like the user's message it will become (text, files, skills) with a
 dashed outline and a line saying what happens to it (Steering, Queued), and **Remove** takes it back

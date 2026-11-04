@@ -830,8 +830,9 @@ describe('Inbox conversation', () => {
 
     await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-agent-picker"]')?.textContent).toContain('Build'))
     await type(messageInput(view), 'Thanks')
-    await act(async () => button(view, 'Send').click())
-    await vi.waitFor(() => expect(api.chat.send).toHaveBeenCalledWith({ threadId: 'ses_one', text: 'Thanks', attachmentIds: [], draftRevision: 1 }))
+    // This mock still reports the thread as working after the Stop, so the follow-up is a steering one.
+    await act(async () => button(view, 'Steer').click())
+    await vi.waitFor(() => expect(api.chat.send).toHaveBeenCalledWith({ threadId: 'ses_one', text: 'Thanks', attachmentIds: [], draftRevision: 1, delivery: 'steer' }))
   })
 
   describe('file changes', () => {

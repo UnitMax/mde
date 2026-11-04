@@ -153,7 +153,8 @@ the validated `chat:*` channels.
   taken back. The `chat:set-delivery` channel accepts the same two IDs and a `delivery` from the fixed set
   `steer`, `queue`, and sends `PATCH /api/session/{sessionID}/inbox/{inboxID}` with the body
   `{ delivery }`; nothing else can be put in the body. `chat:send` returns the message as the service
-  accepted it, and sends no `delivery` of its own. The `chat:fork` channel accepts only a recorded thread ID and an optional message ID
+  accepted it. Its payload may carry a `delivery` from the same fixed set (anything else is refused),
+  which is added to the prompt body as the one extra field `delivery`; left out, nothing is sent. The `chat:fork` channel accepts only a recorded thread ID and an optional message ID
   of the same `msg_` form, and sends `POST /api/session/{sessionID}/fork` with the body
   `{ before }`, where `before` is that message ID or `null`. For a fork of the whole conversation the
   main process, not the renderer, decides what `before` is (see "Forking a thread" in

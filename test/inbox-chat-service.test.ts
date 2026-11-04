@@ -550,9 +550,33 @@ describe('Inbox chat service', () => {
       await expect(service.send({ threadId: 'ses_new', text: 'Also add a test' })).resolves.toEqual({
         id: 'msg_p1', delivery: 'steer', message: { kind: 'user', id: 'msg_p1', time: 7, text: 'Also add a test' },
       })
-      // The way of delivery is the service's to choose; nothing about it is sent.
+      // Left alone, the way of delivery is the service's to choose; nothing about it is sent.
       expect(calls.map((call) => call.operation)).toEqual(['session.prompt'])
       expect(calls[0]?.request.body).toEqual({ text: 'Also add a test' })
+      service.stop()
+    })
+
+    it('sends the chosen way of delivery with the prompt, along with the rest of it', async () => {
+      const { service, folder, calls } = setup({
+        'session.create': { data: { id: 'ses_new' } },
+        'session.prompt': { data: inboxItem('msg_p1', 'Then lint', 'queue') },
+      })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      for (const delivery of ['queue', 'steer'] as const) {
+        calls.length = 0
+        const held = await service.send({ threadId: 'ses_new', text: 'Then lint', delivery })
+        expect(calls.map((call) => call.operation)).toEqual(['session.prompt'])
+        expect(calls[0]?.request.body).toEqual({ text: 'Then lint', delivery })
+        expect(held).toMatchObject({ id: 'msg_p1', delivery: 'queue' })
+      }
+      service.stop()
+    })
+
+    it('does not send a way of delivery with the first message of a thread', async () => {
+      const { service, folder, calls } = setup({ 'session.create': { data: { id: 'ses_new' } } })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      const prompt = calls.find((call) => call.operation === 'session.prompt')
+      expect(prompt?.request.body).toEqual({ text: 'Hi' })
       service.stop()
     })
 

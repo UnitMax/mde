@@ -216,6 +216,13 @@ describe('IPC payload boundary', () => {
     for (const delivery of ['steer', 'queue']) {
       expect(() => assertIpcPayload(IpcChannels.chatSetDelivery, { threadId: 'ses_thread', messageId: 'msg_1', delivery })).not.toThrow()
     }
+    // A send may say how it reaches a busy agent; anything but the two ways is refused.
+    for (const delivery of ['steer', 'queue']) {
+      expect(() => assertIpcPayload(IpcChannels.chatSend, { threadId: 'ses_thread', text: 'Hi', delivery })).not.toThrow()
+    }
+    for (const delivery of ['later', 'STEER', '', null, 1, ['queue'], { mode: 'queue' }]) {
+      rejects(IpcChannels.chatSend, { threadId: 'ses_thread', text: 'Hi', delivery })
+    }
     rejects(IpcChannels.chatRegenerateTitle, { threadId: 'ses_../escape' })
     rejects(IpcChannels.chatRegenerateTitle, { threadId: 'ses_thread', title: 'Injected' })
     expect(() => assertIpcPayload(IpcChannels.chatCreate, { folderId: 'fld_1234', text: '', attachmentIds: ['a'], draftRevision: 1, agent: 'build', model })).not.toThrow()

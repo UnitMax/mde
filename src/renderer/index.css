@@ -640,6 +640,31 @@
   }
 }
 
+/*
+ * The send button while the agent works (ChatSendButton) grows out of the round one into Steer / Queue.
+ * It is clipped only while it grows: a focus ring on either half must not be cut off afterwards.
+ */
+.chat-send-pill {
+  animation: mde-send-expand 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes mde-send-expand {
+  from {
+    max-width: 2rem;
+    overflow: hidden;
+  }
+  to {
+    max-width: 10rem;
+    overflow: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-send-pill {
+    animation: none;
+  }
+}
+
 /* The rule beside "Working for…" (ChatTurnTime): a short bright stretch of accent travels along a faint line. */
 .working-rule {
   background:

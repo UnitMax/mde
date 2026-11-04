@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Paperclip, X, File as FileIcon, ArrowUp, Bot, ChevronDown, Hammer, ListChecks, LoaderCircle, Search, Sparkles, Square } from 'lucide-react'
+import { Paperclip, X, File as FileIcon, Bot, ChevronDown, Hammer, ListChecks, LoaderCircle, Search, Sparkles, Square } from 'lucide-react'
 import { readFileTreeDrop, isFileDrop } from '@/terminal/drop'
-import type { ChatDraft, ChatDraftKey, ChatDraftRequest, ChatAgent, ChatModel, ChatSkill, OpenCodeModelRef } from '@shared/types'
+import type { ChatDelivery, ChatDraft, ChatDraftKey, ChatDraftRequest, ChatAgent, ChatModel, ChatSkill, OpenCodeModelRef } from '@shared/types'
 import { skillTriggerAt } from '@shared/skills'
 import { applySkill, filterSkills } from '@/lib/skills'
 import {
@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ContextMeter } from '@/components/inbox/ContextMeter'
 import { ChatInput, type ChatInputHandle } from '@/components/inbox/ChatInput'
+import { ChatSendButton } from '@/components/inbox/ChatSendButton'
 import { findModel, groupModels, modelKey, modelName, orderAgents, sameModelRef, type ContextUsage } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { cn } from '@/lib/utils'
@@ -209,9 +210,12 @@ export interface ChatComposerProps {
   model: OpenCodeModelRef | null
   onAgentChange: (agent: string) => void
   onModelChange: (model: OpenCodeModelRef) => void
-  /** Sends the text; a rejection keeps the text and shows the error. */
-  onSend: (text: string, attachments?: { attachmentIds: string[]; draftRevision: number }) => Promise<void>
-  /** Shown as a Stop button while the agent is working. */
+  /**
+   * Sends the text; a rejection keeps the text and shows the error. `delivery` is set while the agent is
+   * working: how the message should reach it.
+   */
+  onSend: (text: string, options?: { attachmentIds?: string[]; draftRevision?: number; delivery?: ChatDelivery }) => Promise<void>
+  /** Shown as a Stop button while the agent is working and the box is empty; the send button then says how it will send. */
   running?: boolean
   onStop?: () => void
   onRetryOptions?: () => void
@@ -288,6 +292,9 @@ export function ChatComposer({
   }
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // How a message reaches an agent that is working. It holds for the rest of the run and starts as steering again with the next.
+  const [delivery, setDelivery] = useState<ChatDelivery>('steer')
+  useEffect(() => { if (!running) setDelivery('steer') }, [running])
   const messageRef = useRef<ChatInputHandle>(null)
   const appliedReload = useRef(0)
   useEffect(() => {
@@ -366,7 +373,11 @@ export function ChatComposer({
       if (draftKey) {
         value = await mutate({ key: draftKey, action: 'text', text })
       }
-      await onSend(text, value ? { attachmentIds: value.attachments.map((file) => file.id), draftRevision: value.revision } : undefined)
+      const options = {
+        ...(value ? { attachmentIds: value.attachments.map((file) => file.id), draftRevision: value.revision } : {}),
+        ...(running ? { delivery } : {}),
+      }
+      await onSend(text, Object.keys(options).length > 0 ? options : undefined)
       setText('')
       setDraft({ text: '', revision: 0, attachments: [] })
     } catch (reason) {
@@ -507,16 +518,15 @@ export function ChatComposer({
               <Square className="h-3 w-3 fill-current" />
             </button>
           ) : (
-            <button
-              type="button"
-              aria-label="Send"
-              title="Send (Enter)"
+            <ChatSendButton
+              running={running}
+              delivery={delivery}
+              onDeliveryChange={setDelivery}
               disabled={!canSend}
-              onClick={() => void send()}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-accent-fg transition-colors hover:bg-accent-hover disabled:opacity-35"
-            >
-              {sending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
-            </button>
+              sending={sending}
+              onSend={() => void send()}
+              onMenuClosed={() => messageRef.current?.focus()}
+            />
           )}
         </div>
       </div>

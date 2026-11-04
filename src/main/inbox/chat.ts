@@ -451,7 +451,7 @@ export class InboxChatService {
     }
     const answer = await this.dependencies.client.request(thread.target, 'session.prompt', {
       params: { sessionID: thread.id },
-      body: await this.promptBody(thread, text, files),
+      body: { ...await this.promptBody(thread, text, files), ...(request.delivery ? { delivery: request.delivery } : {}) },
     })
     await this.dependencies.drafts?.remove(`thread:${thread.id}`, undefined, request.draftRevision)
     this.dependencies.recorder.markStatus(thread.id, 'working')

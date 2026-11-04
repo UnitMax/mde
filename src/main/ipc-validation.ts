@@ -264,7 +264,7 @@ export const ipcPayloadValidators = {
   },
   [IpcChannels.chatCreate]: object({ attachmentIds: optional(array(string(64), 10)), draftRevision: optional((v) => Number.isSafeInteger(v) && Number(v) >= 0), folderId: inboxFolderId, text: promptText, agent: agentId, model: modelRef, worktree: optional(object({ base: worktreeBase, branch: optional(worktreeBranch) })) }),
   [IpcChannels.chatMessages]: object({ threadId: opencodeSessionId, cursor: optional((value) => typeof value === 'string' && /^[A-Za-z0-9_=.-]{1,2048}$/.test(value)) }),
-  [IpcChannels.chatSend]: object({ attachmentIds: optional(array(string(64), 10)), draftRevision: optional((v) => Number.isSafeInteger(v) && Number(v) >= 0), threadId: opencodeSessionId, text: promptText, agent: optional(agentId), model: optional(modelRef) }),
+  [IpcChannels.chatSend]: object({ attachmentIds: optional(array(string(64), 10)), draftRevision: optional((v) => Number.isSafeInteger(v) && Number(v) >= 0), threadId: opencodeSessionId, text: promptText, agent: optional(agentId), model: optional(modelRef), delivery: optional(oneOf('steer', 'queue')) }),
   [IpcChannels.chatDiscardPending]: object({ threadId: opencodeSessionId, messageId }),
   [IpcChannels.chatSetDelivery]: object({ threadId: opencodeSessionId, messageId, delivery: oneOf('steer', 'queue') }),
   [IpcChannels.chatInterrupt]: chatThread,

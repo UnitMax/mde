@@ -1,5 +1,6 @@
 import type {
   ChatAgent,
+  ChatDelivery,
   ChatForm,
   ChatFormField,
   ChatFormValue,
@@ -365,6 +366,12 @@ export function hideReverted(messages: ChatMessage[], revert: ChatRevert | null 
 export function revertedMessageCount(messages: readonly ChatMessage[], revert: ChatRevert | null | undefined): number {
   if (!revert) return 0
   return messages.reduce((total, message) => total + (message.kind === 'user' && message.id >= revert.messageId ? 1 : 0), 0)
+}
+
+/** What each way of delivering a message to a busy agent does, as a phrase to follow a name or a dash. */
+export const DELIVERY_HINT: Record<ChatDelivery, string> = {
+  steer: 'the agent reads it at its next step',
+  queue: 'sent when the agent is done',
 }
 
 /**

@@ -4,6 +4,7 @@ import type {
   ChatFormValue,
   ChatMessage,
   ChatOptions,
+  ChatDelivery,
   ChatPendingMessage,
   ChatRequests,
   ChatRevert,
@@ -111,7 +112,7 @@ interface InboxChatStore {
   refresh: (threadId: string) => Promise<void>
   refreshRequests: (threadId: string) => Promise<void>
   loadOlder: (threadId: string) => Promise<void>
-  send: (threadId: string, text: string, choice?: { agent?: string; model?: OpenCodeModelRef; attachmentIds?: string[]; draftRevision?: number }) => Promise<void>
+  send: (threadId: string, text: string, choice?: { agent?: string; model?: OpenCodeModelRef; attachmentIds?: string[]; draftRevision?: number; delivery?: ChatDelivery }) => Promise<void>
   interrupt: (threadId: string) => Promise<void>
   /**
    * Takes back a message OpenCode holds for the agent. It leaves the list at once; a rejection puts it
@@ -375,7 +376,9 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
       const record = workspace.inboxThreads.find((thread) => thread.id === threadId)
       if (record?.sendError) workspace.upsertInboxThread({ ...record, sendError: undefined })
       if (choice.agent || choice.model) {
-        set((state) => ({ composer: { ...state.composer, ...choice } }))
+        set((state) => ({
+          composer: { ...state.composer, ...(choice.agent ? { agent: choice.agent } : {}), ...(choice.model ? { model: choice.model } : {}) },
+        }))
       }
       // Shown at once, so it does not vanish from the box and reappear when the next refetch finds it.
       if (busy && held) pendingChangedAt.set(threadId, Date.now())
