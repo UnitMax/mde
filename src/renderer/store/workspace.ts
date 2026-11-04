@@ -230,6 +230,7 @@ interface WorkspaceState {
   /** Counts the open thread as seen when the window comes back to the front, unless it was marked unread by hand. */
   markOpenInboxThreadSeen: () => void
   setInboxThreadArchived: (id: string, archived: boolean) => Promise<void>
+  setInboxThreadPinned: (id: string, pinned: boolean) => Promise<void>
   /** Removes a thread from the Inbox; with `removeWorktree`, its Git worktree goes too, or nothing does. */
   removeInboxThread: (id: string, options?: { removeWorktree?: boolean }) => Promise<void>
   /** Applies a thread pushed by the main process. */
@@ -957,6 +958,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   setInboxThreadArchived: async (id, archived) => {
     const thread = await window.api.inbox.setArchived({ id, archived })
+    if (thread) get().upsertInboxThread(thread)
+  },
+
+  setInboxThreadPinned: async (id, pinned) => {
+    const thread = await window.api.inbox.setPinned({ id, pinned })
     if (thread) get().upsertInboxThread(thread)
   },
 

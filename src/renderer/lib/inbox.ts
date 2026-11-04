@@ -107,7 +107,7 @@ export function inboxStatusChip(thread: InboxThread): InboxStatusChip | null {
 }
 
 /**
- * Whether a thread belongs in the Working section: it is working and not parked. A thread that is
+ * Whether a thread is working and not parked. A thread that is
  * done, failed, waiting for an answer or a permission, or not started is not working.
  */
 export function inboxThreadWorking(thread: InboxThread): boolean {
@@ -117,7 +117,7 @@ export function inboxThreadWorking(thread: InboxThread): boolean {
 function matchesFilter(thread: InboxThread, filter: InboxFilter, workingElsewhere: boolean): boolean {
   if (filter === 'archived') return thread.archived
   if (thread.archived) return false
-  if (workingElsewhere && inboxThreadWorking(thread)) return false
+  if (workingElsewhere && !thread.pinned && inboxThreadWorking(thread)) return false
   if (filter === 'unread') return isInboxThreadUnread(thread)
   if (filter === 'attention') return thread.status === 'attention'
   return true
@@ -134,9 +134,9 @@ function matchesQuery(thread: InboxThread, tokens: readonly string[]): boolean {
 }
 
 /**
- * Filters, then searches title, folder, branch and model; newest activity first. With
- * `workingElsewhere` the threads that are working are left out, because the Working section shows
- * them instead; a parked one is not working and stays under Parked.
+ * Filters, then searches title, folder, branch and model; pinned threads first, then newest activity
+ * within each group. With `workingElsewhere` unpinned working threads are left out, because the
+ * Working section shows them instead; a parked one stays under Parked.
  */
 export function visibleInboxThreads(
   threads: readonly InboxThread[],
@@ -148,19 +148,19 @@ export function visibleInboxThreads(
   return threads
     .filter((thread) => matchesFilter(thread, filter, workingElsewhere))
     .filter((thread) => matchesQuery(thread, tokens))
-    .sort((a, b) => b.lastActivityAt - a.lastActivityAt || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
+    .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) ||
+      b.lastActivityAt - a.lastActivityAt || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
 }
 
 /**
- * The threads that are working right now, for the Working section: the newest run first. The
- * section ignores the filter tabs but not the search, since a working thread is nowhere else in
- * the Inbox to be searched for.
+ * Unpinned threads that are working right now, for the Working section: the newest run first. The
+ * section ignores the filter tabs but not the search. Pinned threads stay in the main list.
  */
 export function workingInboxThreads(threads: readonly InboxThread[], query = ''): InboxThread[] {
   const started = (thread: InboxThread): number => thread.workingSince ?? thread.lastActivityAt
   const tokens = queryTokens(query)
   return threads
-    .filter((thread) => inboxThreadWorking(thread) && matchesQuery(thread, tokens))
+    .filter((thread) => !thread.pinned && inboxThreadWorking(thread) && matchesQuery(thread, tokens))
     .sort((a, b) => started(b) - started(a) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
 }
 

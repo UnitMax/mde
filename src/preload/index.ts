@@ -153,6 +153,7 @@ const api: RendererApi = {
     list: () => ipcRenderer.invoke(IpcChannels.inboxList),
     setRead: (req) => ipcRenderer.invoke(IpcChannels.inboxSetRead, req),
     setArchived: (req) => ipcRenderer.invoke(IpcChannels.inboxSetArchived, req),
+    setPinned: (req) => ipcRenderer.invoke(IpcChannels.inboxSetPinned, req),
     remove: (req) => ipcRenderer.invoke(IpcChannels.inboxRemove, req),
     onChanged: (listener) => subscribe<InboxThread>(IpcEvents.inboxChanged, listener),
     folders: () => ipcRenderer.invoke(IpcChannels.inboxFolders),

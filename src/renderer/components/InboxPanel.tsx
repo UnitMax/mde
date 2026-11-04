@@ -13,6 +13,8 @@ import {
   MailOpen,
   PenLine,
   PenSquare,
+  Pin,
+  PinOff,
   Search,
   Trash2,
   X
@@ -172,6 +174,9 @@ function InboxThreadRow({
 }): JSX.Element {
   const setRead = useWorkspace((state) => state.setInboxThreadRead)
   const setArchived = useWorkspace((state) => state.setInboxThreadArchived)
+  const setPinned = useWorkspace((state) => state.setInboxThreadPinned)
+  const pinLabel = thread.pinned ? 'Unpin thread' : 'Pin thread'
+  const PinIcon = thread.pinned ? PinOff : Pin
   const parkLabel = thread.archived ? 'Move to Inbox' : 'Park'
   const ParkIcon = thread.archived ? Inbox : Car
   const removeThread = useWorkspace((state) => state.removeInboxThread)
@@ -223,6 +228,13 @@ function InboxThreadRow({
                   role="img"
                   aria-label="Forked thread"
                   data-testid={`inbox-thread-fork-mark-${thread.id}`}
+                  className="h-3 w-3 shrink-0 text-fg-subtle"
+                />
+              )}
+              {thread.pinned && (
+                <Pin
+                  role="img"
+                  aria-label="Pinned thread"
                   className="h-3 w-3 shrink-0 text-fg-subtle"
                 />
               )}
@@ -301,6 +313,10 @@ function InboxThreadRow({
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
+          <ContextMenuItem onSelect={() => void setPinned(thread.id, !thread.pinned)}>
+            <PinIcon aria-hidden="true" className="h-3.5 w-3.5" />
+            {pinLabel}
+          </ContextMenuItem>
           <ContextMenuItem onSelect={() => void setRead(thread.id, unread)}>
             {unread ? <MailOpen className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />}
             {unread ? 'Mark as read' : 'Mark as unread'}
@@ -396,7 +412,7 @@ function emptyMessage(filter: InboxFilter, query: string, workingShown: boolean)
 }
 
 /**
- * The threads that are working, in a section under the list that folds up to its header. They are
+ * Unpinned threads that are working, in a section under the list that folds up to its header. They are
  * here and not in the list, and go back to the list when they stop. The filter tabs do not apply,
  * so a glance tells what is running; the search does, since this is the only place to find them by it.
  */
@@ -476,7 +492,7 @@ function InboxWorkingSection({
   )
 }
 
-/** The Inbox tab of the sidebar: OpenCode threads, most recent activity first. */
+/** The Inbox tab of the sidebar: pinned threads first, then most recent activity. */
 export function InboxPanel(): JSX.Element {
   const threads = useWorkspace((state) => state.inboxThreads)
   useEffect(() => useInboxChanges.getState().prune(threads.map((thread) => thread.id)), [threads])
@@ -504,10 +520,10 @@ export function InboxPanel(): JSX.Element {
   const listedDrafts = visibleDrafts(drafts, onNewThread ? page.id : null, folders)
   const shownDrafts = query.trim() ? visibleDrafts(drafts, onNewThread ? page.id : null, folders, query) : listedDrafts
   const showWorking = useInboxView((state) => state.workingSection)
-  // With the section on, the threads that are working are in it and not in the list.
+  // With the section on, unpinned working threads move into it; pinned ones stay in the list.
   const visible = visibleInboxThreads(threads, filter, query, showWorking)
   const working = showWorking ? workingInboxThreads(threads, query) : []
-  const workingShown = showWorking && threads.some(inboxThreadWorking)
+  const workingShown = showWorking && threads.some((thread) => !thread.pinned && inboxThreadWorking(thread))
   const startFork = (thread: InboxThread): void => {
     if (fork.pending) return
     setFork({ pending: true, error: null })

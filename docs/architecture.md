@@ -70,16 +70,21 @@ the model, and a status chip: Needs input or Needs permission, Done, Failed, or 
 with activity you have not opened are bold with a dot, and the tab shows how many there are. The
 list can be searched by title, folder, branch and model, and filtered to All, Unread, Needs input
 or Parked. Hovering or focusing a row shows a car icon and a "Park" label; parked threads offer
-"Move to Inbox" instead. The context menu marks a thread read or unread, parks it, or deletes it.
+"Move to Inbox" instead. The context menu pins or unpins a thread, marks it read or unread, parks
+it, forks it, or deletes it. Pinned threads appear first in the same list with a small pin icon and
+no separate heading; each group keeps the most recent activity first. Pins respect the search and
+filter tabs, so parked pinned threads stay under Parked. The optional `pinned` flag is saved in
+`inbox.json` through `inbox:set-pinned`; older records without it are unpinned.
 
 The gear at the end of the filters opens the Inbox's display settings. One of them adds a
 **Working** section to the sidebar, under the list rather than as another filter tab. Turned on, the
-threads that are working right now move out of the list into it, the run that began last first, each
+unpinned threads that are working right now move out of the list into it, the run that began last first, each
 with the same row, menu and elapsed time, and they go back to the list (at the place their last
 activity gives them) as soon as they stop. A thread that is done, failed, waiting for an answer or a
 permission, not yet started or parked is not in it. A parked thread that is still working therefore
-stays under Parked. The section ignores the filter tabs, so it always shows what is running, but the
-search narrows it along with the list, since it is the only place a working thread can be found. Its
+stays under Parked. Pinned working threads stay at the top of the main list and are left out of the
+Working section and its count. Unpinning one moves it into Working while that section is enabled.
+The section ignores the filter tabs, but the search narrows it along with the list. Its
 header (an arrow, the name and a count) folds it up, leaving the count; while it is folded those
 threads are not listed anywhere else. It takes at most 45% of the sidebar's height and scrolls beyond
 that, and the list above keeps a small minimum height. Both choices are kept in the renderer's

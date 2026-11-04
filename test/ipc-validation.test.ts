@@ -77,6 +77,7 @@ const validPayloads = {
   [IpcChannels.inboxList]: undefined,
   [IpcChannels.inboxSetRead]: { id: 'ses_thread', read: true },
   [IpcChannels.inboxSetArchived]: { id: 'ses_thread', archived: false },
+  [IpcChannels.inboxSetPinned]: { id: 'ses_thread', pinned: true },
   [IpcChannels.inboxRemove]: { id: 'ses_thread' },
   [IpcChannels.inboxFolders]: undefined,
   [IpcChannels.inboxFoldersAdd]: { kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/app' },
@@ -155,6 +156,9 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.inboxSetRead, { id: 'thread', read: true })
     rejects(IpcChannels.inboxSetRead, { id: 'ses_thread', read: 'yes' })
     rejects(IpcChannels.inboxSetArchived, { id: 'ses_../escape', archived: true })
+    rejects(IpcChannels.inboxSetPinned, { id: 'thread', pinned: true })
+    rejects(IpcChannels.inboxSetPinned, { id: 'ses_thread', pinned: 'yes' })
+    rejects(IpcChannels.inboxSetPinned, { id: 'ses_thread' })
     rejects(IpcChannels.inboxRemove, { id: '' })
     expect(() => assertIpcPayload(IpcChannels.inboxRemove, { id: 'ses_thread', removeWorktree: true })).not.toThrow()
     rejects(IpcChannels.inboxRemove, { id: 'ses_thread', removeWorktree: 'yes' })

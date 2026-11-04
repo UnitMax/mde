@@ -90,6 +90,15 @@ describe('inbox thread validation', () => {
     }
   })
 
+  it('keeps boolean pins and treats missing or malformed pins as unpinned without losing the thread', () => {
+    for (const pinned of [true, false]) {
+      expect(validateInboxThread(thread({ pinned }))).toEqual(thread({ pinned }))
+    }
+    for (const pinned of [undefined, null, 'true', 1, {}]) {
+      expect(validateInboxThread({ ...thread(), pinned })).toEqual(thread())
+    }
+  })
+
   it('normalizes the file: drops bad and duplicate records, settles working threads, sorts and caps', () => {
     const threads = normalizeInboxFile({
       version: 1,
@@ -154,7 +163,7 @@ describe('inbox store', () => {
     const directory = await temporaryDirectory()
     const file = join(directory, 'inbox.json')
     const store = new InboxStore(file)
-    store.put(thread())
+    store.put(thread({ pinned: true }))
     store.put(thread({ id: 'ses_two', status: 'working', lastActivityAt: 50 }))
     expect(store.remove('ses_missing')).toBe(false)
     await store.flush()
@@ -162,7 +171,7 @@ describe('inbox store', () => {
 
     const reloaded = new InboxStore(file)
     await reloaded.load()
-    expect(reloaded.list()).toEqual([thread(), thread({ id: 'ses_two', status: 'idle', lastActivityAt: 50 })])
+    expect(reloaded.list()).toEqual([thread({ pinned: true }), thread({ id: 'ses_two', status: 'idle', lastActivityAt: 50 })])
   })
 
   it('drops the oldest threads beyond the cap', () => {

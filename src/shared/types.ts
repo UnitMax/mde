@@ -260,6 +260,8 @@ export interface InboxThread {
   workingSince?: number
   readAt: number
   archived: boolean
+  /** Keeps the thread at the top of the sidebar list, including while it is working. */
+  pinned?: boolean
   /** The Inbox folder the thread was started in. */
   folderId: string
   /** The thread this one was forked from, which may since have been removed. */
@@ -720,6 +722,11 @@ export interface InboxSetReadRequest {
 export interface InboxSetArchivedRequest {
   id: string
   archived: boolean
+}
+
+export interface InboxSetPinnedRequest {
+  id: string
+  pinned: boolean
 }
 
 export interface InboxRemoveRequest {

@@ -96,6 +96,7 @@ function sameThread(a: InboxThread, b: InboxThread): boolean {
     a.workingSince === b.workingSince &&
     a.readAt === b.readAt &&
     a.archived === b.archived &&
+    Boolean(a.pinned) === Boolean(b.pinned) &&
     a.folderId === b.folderId
 }
 
@@ -133,6 +134,12 @@ export class InboxRecorder {
     const thread = this.store.get(id)
     if (!thread) return null
     return this.save(thread, { ...thread, archived })
+  }
+
+  setPinned(id: string, pinned: boolean): InboxThread | null {
+    const thread = this.store.get(id)
+    if (!thread) return null
+    return this.save(thread, { ...thread, pinned })
   }
 
   /** Forgets MDE's record only; later events for the removed thread are ignored. */

@@ -58,6 +58,36 @@ describe('inbox list helpers', () => {
     expect(ids('nothing-matches')).toEqual([])
   })
 
+  it('puts pinned threads first, then sorts each group by activity with a stable tie break', () => {
+    const list = [
+      thread({ id: 'ses_new', lastActivityAt: 100 }),
+      thread({ id: 'ses_pin_a', lastActivityAt: 10, pinned: true }),
+      thread({ id: 'ses_old', lastActivityAt: 5, pinned: false }),
+      thread({ id: 'ses_pin_b', lastActivityAt: 10, pinned: true }),
+      thread({ id: 'ses_pin_new', lastActivityAt: 20, pinned: true }),
+    ]
+    const expected = ['ses_pin_new', 'ses_pin_b', 'ses_pin_a', 'ses_new', 'ses_old']
+    expect(visibleInboxThreads(list, 'all', '').map((item) => item.id)).toEqual(expected)
+    expect(visibleInboxThreads([...list].reverse(), 'all', '').map((item) => item.id)).toEqual(expected)
+    expect(list[0]?.id).toBe('ses_new')
+  })
+
+  it('keeps pins subject to search, read status, attention and parked filters', () => {
+    const list = [
+      thread({ id: 'ses_read', pinned: true, readAt: 20 }),
+      thread({ id: 'ses_question', pinned: true, status: 'attention', attentionReason: 'question' }),
+      thread({ id: 'ses_parked', pinned: true, archived: true }),
+      thread({ id: 'ses_match', pinned: true, title: 'Parser' }),
+    ]
+    const ids = (filter: Parameters<typeof visibleInboxThreads>[1], query = '') =>
+      visibleInboxThreads(list, filter, query, true).map((item) => item.id)
+    expect(ids('all')).toEqual(['ses_read', 'ses_question', 'ses_match'])
+    expect(ids('unread')).toEqual(['ses_question', 'ses_match'])
+    expect(ids('attention')).toEqual(['ses_question'])
+    expect(ids('archived')).toEqual(['ses_parked'])
+    expect(ids('all', 'parser')).toEqual(['ses_match'])
+  })
+
   it('counts unread threads outside the archive', () => {
     expect(countUnreadInboxThreads(threads)).toBe(2)
   })
@@ -145,6 +175,13 @@ describe('working threads and the list', () => {
     expect(ids(visibleInboxThreads(threads, 'all', ''))).toEqual(['ses_run', 'ses_done', 'ses_ask'])
     expect(ids(visibleInboxThreads(threads, 'all', '', true))).toEqual(['ses_done', 'ses_ask'])
     expect(ids(visibleInboxThreads(threads, 'all', '', false))).toEqual(['ses_run', 'ses_done', 'ses_ask'])
+  })
+
+  it('keeps a pinned working thread at the top of the list and out of the Working section', () => {
+    const pinned = threads.map((item) => item.id === 'ses_run' ? { ...item, pinned: true, lastActivityAt: 1 } : item)
+    expect(ids(visibleInboxThreads(pinned, 'all', '', true))).toEqual(['ses_run', 'ses_done', 'ses_ask'])
+    expect(ids(visibleInboxThreads(pinned, 'all', '', false))).toEqual(['ses_run', 'ses_done', 'ses_ask'])
+    expect(workingInboxThreads(pinned)).toEqual([])
   })
 
   it('leaves them out of every tab but Parked, where a parked one stays', () => {

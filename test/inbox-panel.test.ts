@@ -360,7 +360,7 @@ describe('Inbox thread fork', () => {
     const panel = await render(createElement(InboxPanel))
     await openMenu(panel)
     const labels = Array.from(document.body.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent?.trim())
-    expect(labels).toEqual(['Mark as read', 'Park', 'Fork thread', 'Delete from Inbox'])
+    expect(labels).toEqual(['Pin thread', 'Mark as read', 'Park', 'Fork thread', 'Delete from Inbox'])
     expect(fork).not.toHaveBeenCalled()
   })
 

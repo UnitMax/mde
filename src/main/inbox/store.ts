@@ -110,6 +110,7 @@ export function validateInboxThread(raw: unknown): InboxThread | null {
     lastActivityAt: record.lastActivityAt,
     readAt: record.readAt,
     archived: record.archived,
+    ...(typeof record.pinned === 'boolean' ? { pinned: record.pinned } : {}),
     folderId: record.folderId,
     // Only a pointer for the header, so a bad one is dropped instead of losing the thread.
     ...(isInboxThreadId(record.forkedFrom) ? { forkedFrom: record.forkedFrom } : {}),

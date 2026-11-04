@@ -225,6 +225,26 @@ describe('inbox recorder', () => {
     expect(recorder.setRead('ses_missing', true)).toBeNull()
   })
 
+  it('pins and unpins without changing activity or read state, and keeps pins through service updates', () => {
+    const { start, emit, recorder, thread, advance, changed } = setup()
+    const original = start()
+    changed.length = 0
+    advance(5_000)
+    const pinned = recorder.setPinned('ses_one', true)
+    expect(pinned).toEqual({ ...original, pinned: true })
+    expect(changed).toEqual([pinned])
+    recorder.setPinned('ses_one', true)
+    expect(changed).toHaveLength(1)
+    emit('ses_one', 'session.renamed', { title: 'Renamed' })
+    emit('ses_one', 'session.execution.succeeded')
+    recorder.setRead('ses_one', true)
+    recorder.setArchived('ses_one', true)
+    expect(thread()).toMatchObject({ pinned: true, title: 'Renamed', status: 'completed', archived: true })
+    const beforeUnpin = thread()!
+    expect(recorder.setPinned('ses_one', false)).toEqual({ ...beforeUnpin, pinned: false })
+    expect(recorder.setPinned('ses_missing', true)).toBeNull()
+  })
+
   it('keeps the title and model when a later event omits them', () => {
     const { start, emit, thread } = setup()
     start()

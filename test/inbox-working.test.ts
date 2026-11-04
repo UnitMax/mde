@@ -38,6 +38,10 @@ let root: Root
 let container: HTMLDivElement
 const setRead = vi.fn(async () => null)
 const setArchived = vi.fn(async () => null)
+const setPinned = vi.fn(async ({ id, pinned }: { id: string; pinned: boolean }) => {
+  const current = useWorkspace.getState().inboxThreads.find((item) => item.id === id)
+  return current ? { ...current, pinned } : null
+})
 const q = (testId: string): HTMLElement | null => container.querySelector<HTMLElement>(`[data-testid="${testId}"]`)
 const section = (): HTMLElement | null => q('inbox-working-section')
 const gear = (): HTMLElement => q('inbox-settings')!
@@ -56,15 +60,27 @@ const openMenu = async (): Promise<void> => {
   await act(async () => { gear().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
 }
 const render = async (): Promise<void> => { await act(async () => root.render(createElement(InboxPanel))) }
+const openThreadMenu = async (id: string): Promise<void> => {
+  const row = q(`inbox-thread-${id}`)!.parentElement!
+  await act(async () => {
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 20, button: 2 }))
+  })
+}
+const chooseThreadAction = async (label: string): Promise<void> => {
+  const item = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+    .find((entry) => entry.textContent?.trim() === label)!
+  await act(async () => item.click())
+}
 
 describe('Inbox Working section', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     vi.stubGlobal('IntersectionObserver', undefined)
-    vi.stubGlobal('api', { inbox: { changes: vi.fn(), setRead, setArchived, remove: vi.fn(), folders: vi.fn() } })
+    vi.stubGlobal('api', { inbox: { changes: vi.fn(), setRead, setArchived, setPinned, remove: vi.fn(), folders: vi.fn() } })
     setRead.mockClear()
     setArchived.mockClear()
+    setPinned.mockClear()
     useWorkspace.setState({
       platform: { platform: 'darwin', isWindows: false },
       inboxThreads: threads,
@@ -227,6 +243,56 @@ describe('Inbox Working section', () => {
     await act(async () => q('inbox-thread-park-ses_run')!.click())
     expect(setArchived).toHaveBeenCalledWith({ id: 'ses_run', archived: true })
     expect(useWorkspace.getState().selectedInboxThreadId).toBeNull()
+  })
+
+  it('pins and unpins from the list menu with a pin icon and no extra heading', async () => {
+    useWorkspace.setState({ inboxThreads: [
+      thread({ id: 'ses_new', lastActivityAt: 200 }),
+      thread({ id: 'ses_old', lastActivityAt: 100 }),
+    ] })
+    await render()
+    expect(listIds()).toEqual(['ses_new', 'ses_old'])
+    await openThreadMenu('ses_old')
+    await chooseThreadAction('Pin thread')
+    expect(setPinned).toHaveBeenCalledWith({ id: 'ses_old', pinned: true })
+    expect(listIds()).toEqual(['ses_old', 'ses_new'])
+    expect(q('inbox-thread-ses_old')?.querySelector('[role="img"][aria-label="Pinned thread"]')).not.toBeNull()
+    expect(q('inbox-thread-list')?.textContent).not.toContain('Pinned')
+    expect(q('inbox-thread-list')?.querySelector('h1, h2, h3, [role="heading"]')).toBeNull()
+    expect(useWorkspace.getState().selectedInboxThreadId).toBeNull()
+    await openThreadMenu('ses_old')
+    await chooseThreadAction('Unpin thread')
+    expect(setPinned).toHaveBeenLastCalledWith({ id: 'ses_old', pinned: false })
+    expect(listIds()).toEqual(['ses_new', 'ses_old'])
+    expect(q('inbox-thread-ses_old')?.querySelector('[aria-label="Pinned thread"]')).toBeNull()
+  })
+
+  it('moves a pinned working thread into the main list and keeps it there when Working is folded', async () => {
+    useInboxView.setState({ workingSection: true })
+    await render()
+    expect(rowIds()).toEqual(['ses_run', 'ses_run2'])
+    await openThreadMenu('ses_run2')
+    await chooseThreadAction('Pin thread')
+    expect(listIds()[0]).toBe('ses_run2')
+    expect(rowIds()).toEqual(['ses_run'])
+    expect(q('inbox-working-count')?.textContent).toBe('1')
+    expect(q('inbox-thread-ses_run2')?.textContent).toContain('Working')
+    await act(async () => toggle().click())
+    expect(listIds()[0]).toBe('ses_run2')
+    // Finishing and starting again keeps its place and pin.
+    for (const status of ['completed', 'working'] as const) {
+      await act(async () => {
+        const current = useWorkspace.getState().inboxThreads.find((item) => item.id === 'ses_run2')!
+        useWorkspace.getState().upsertInboxThread({ ...current, status })
+      })
+      expect(listIds()[0]).toBe('ses_run2')
+    }
+    await openThreadMenu('ses_run2')
+    await chooseThreadAction('Unpin thread')
+    expect(listIds()).not.toContain('ses_run2')
+    expect(q('inbox-working-count')?.textContent).toBe('2')
+    await act(async () => toggle().click())
+    expect(rowIds()).toEqual(['ses_run', 'ses_run2'])
   })
 
   it('ignores the filter tabs, so it always shows what is running', async () => {
