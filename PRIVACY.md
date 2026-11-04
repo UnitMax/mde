@@ -109,6 +109,13 @@ Forking a conversation makes OpenCode copy its messages, attachments included, i
 data; MDE does not handle that content. MDE does not send unsent drafts automatically. Conversation history retains attachment metadata
 and small raster thumbnails in memory; MDE does not persist conversation attachment downloads.
 
+## The clipboard
+
+The Inbox right-click menus write to the system clipboard only when you choose Copy, Cut, or one of
+the "Copy …" items, and the terminal does the same when you copy a selection. Paste asks the
+operating system to paste the clipboard into the message box. MDE does not read, store, or send the
+clipboard's contents anywhere itself; what you paste is an unsent draft like any other text you type.
+
 ## Network behavior in the released application
 
 MDE does not make automatic network requests. It reads local files and invokes local commands to support terminal sessions and file actions: Git for repository status (and, when you start an Inbox conversation in a new worktree or delete one with its worktree, to create or remove that worktree; MDE never runs `git fetch` or any other Git network command), `wsl.exe` on Windows, and the configured OpenCode executable for the session picker and to find the OpenCode background service.

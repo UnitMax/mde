@@ -149,7 +149,7 @@ export const ChatMessageView = memo(function ChatMessageView({
 }): JSX.Element | null {
   if (message.kind === 'user') {
     return (
-      <div className="group flex items-start justify-end gap-1.5" data-testid={`chat-message-${message.id}`}>
+      <div className="group flex items-start justify-end gap-1.5" data-testid={`chat-message-${message.id}`} data-chat-message={message.id}>
         {onFork && (
           <button
             type="button"
@@ -196,7 +196,7 @@ export const ChatMessageView = memo(function ChatMessageView({
       : <Info className="h-3.5 w-3.5 shrink-0" />
     if (message.detail) {
       return (
-        <div data-testid={`chat-message-${message.id}`} className={message.tone === 'error' ? 'text-danger' : undefined}>
+        <div data-testid={`chat-message-${message.id}`} data-chat-message={message.id} className={message.tone === 'error' ? 'text-danger' : undefined}>
           <Disclosure icon={icon} summary={message.text} tone={message.tone === 'error' ? 'danger' : 'muted'}>
             <CodeBlock label="Details" text={message.detail} />
           </Disclosure>
@@ -206,6 +206,7 @@ export const ChatMessageView = memo(function ChatMessageView({
     return (
       <div
         data-testid={`chat-message-${message.id}`}
+        data-chat-message={message.id}
         className={cn('flex items-center gap-1.5 px-1.5 text-[12px]', message.tone === 'error' ? 'text-danger' : 'text-fg-subtle')}
       >
         {icon}
@@ -216,7 +217,7 @@ export const ChatMessageView = memo(function ChatMessageView({
 
   const lastIndex = message.parts.length - 1
   return (
-    <div className="flex min-w-0 flex-col gap-1.5" data-testid={`chat-message-${message.id}`}>
+    <div className="flex min-w-0 flex-col gap-1.5" data-testid={`chat-message-${message.id}`} data-chat-message={message.id}>
       {messageBlocks(message.parts).map((block) => {
         if (block.kind === 'subagents') return <SubagentGroup key={`subagents-${block.index}`} parts={block.parts} />
         const { part, index } = block

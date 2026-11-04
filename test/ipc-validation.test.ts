@@ -48,6 +48,7 @@ const validPayloads = {
   [IpcChannels.ptyDirectories]: undefined,
   [IpcChannels.ptyDropFiles]: { terminalId: 'pane', files: [{ name: 'test.txt', nativePath: '/tmp/test.txt' }], mode: 'shell', treeEntry: undefined },
   [IpcChannels.clipboardWriteText]: 'copied\ntext',
+  [IpcChannels.clipboardPaste]: undefined,
   [IpcChannels.wslAvailable]: undefined,
   [IpcChannels.wslDistros]: undefined,
   [IpcChannels.pathBrowse]: undefined,

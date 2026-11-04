@@ -122,6 +122,7 @@ export const IpcChannels = {
   ptyDropFiles: 'pty:drop-files',
 
   clipboardWriteText: 'clipboard:write-text',
+  clipboardPaste: 'clipboard:paste',
 
   wslAvailable: 'wsl:available',
   wslDistros: 'wsl:distros',
@@ -439,6 +440,11 @@ export interface RemoveSessionTabRequest {
 export interface RendererApi {
   clipboard: {
     writeText(text: string): Promise<void>
+    /**
+     * Pastes the system clipboard into the focused field, as Ctrl/Cmd+V would. The page never
+     * reads the clipboard itself; the content arrives as an ordinary paste event.
+     */
+    paste(): Promise<void>
   }
   app: {
     info(): Promise<AppInfo>

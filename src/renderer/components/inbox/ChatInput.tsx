@@ -1,9 +1,17 @@
-import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef } from 'react'
-import { standardKeymap, history, historyKeymap } from '@codemirror/commands'
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
+import { ClipboardPaste, Copy, Scissors, TextSelect } from 'lucide-react'
+import { selectAll, standardKeymap, history, historyKeymap } from '@codemirror/commands'
 import { syntaxTree } from '@codemirror/language'
 import { commonmarkLanguage, deleteMarkupBackward, insertNewlineContinueMarkupCommand } from '@codemirror/lang-markdown'
 import { Annotation, Compartment, EditorState, Prec, StateField, Transaction } from '@codemirror/state'
 import { Decoration, EditorView, WidgetType, keymap, placeholder as editorPlaceholder, type DecorationSet } from '@codemirror/view'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu'
 
 const externalChange = Annotation.define<boolean>()
 const continueList = insertNewlineContinueMarkupCommand({ nonTightLists: false })
@@ -89,6 +97,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   const latest = useRef(props)
   latest.current = props
   const config = useRef(new Compartment())
+  // What was selected when the menu opened, which decides which of its items can be used.
+  const [selected, setSelected] = useState(false)
+  // Paste waits for the menu to close: the editor has to have the focus when the clipboard arrives.
+  const pasteAfterClose = useRef(false)
 
   useLayoutEffect(() => {
     const view = new EditorView({
@@ -180,5 +192,86 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     },
   }), [])
 
-  return <div ref={hostRef} data-testid="chat-input" />
+  const selectedText = (): string => {
+    const view = viewRef.current
+    if (!view) return ''
+    const { from, to } = view.state.selection.main
+    return view.state.sliceDoc(from, to)
+  }
+  // The page may not write the clipboard itself; the main process does. A failure leaves the clipboard as it was.
+  const copyToClipboard = (text: string): Promise<boolean> =>
+    window.api.clipboard.writeText(text).then(
+      () => true,
+      () => false,
+    )
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild onContextMenuCapture={() => setSelected(selectedText() !== '')}>
+        <div ref={hostRef} data-testid="chat-input" />
+      </ContextMenuTrigger>
+      <ContextMenuContent
+        data-testid="chat-input-menu"
+        onCloseAutoFocus={(event) => {
+          event.preventDefault()
+          viewRef.current?.focus()
+          if (pasteAfterClose.current) {
+            pasteAfterClose.current = false
+            void window.api.clipboard.paste().catch(() => undefined)
+          }
+        }}
+      >
+        <ContextMenuItem
+          data-testid="chat-input-menu-cut"
+          disabled={props.disabled || !selected}
+          onSelect={() => {
+            const view = viewRef.current
+            const text = selectedText()
+            if (!view || !text) return
+            // The text is removed only once it is safely on the clipboard.
+            void copyToClipboard(text).then((copied) => {
+              if (!copied) return
+              const { from, to } = view.state.selection.main
+              if (view.state.sliceDoc(from, to) === text) view.dispatch({ changes: { from, to, insert: '' }, userEvent: 'delete.cut', scrollIntoView: true })
+            })
+          }}
+        >
+          <Scissors aria-hidden className="h-3.5 w-3.5" />
+          Cut
+        </ContextMenuItem>
+        <ContextMenuItem
+          data-testid="chat-input-menu-copy"
+          disabled={!selected}
+          onSelect={() => {
+            const text = selectedText()
+            if (text) void copyToClipboard(text)
+          }}
+        >
+          <Copy aria-hidden className="h-3.5 w-3.5" />
+          Copy
+        </ContextMenuItem>
+        <ContextMenuItem
+          data-testid="chat-input-menu-paste"
+          disabled={props.disabled}
+          onSelect={() => {
+            pasteAfterClose.current = true
+          }}
+        >
+          <ClipboardPaste aria-hidden className="h-3.5 w-3.5" />
+          Paste
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          data-testid="chat-input-menu-select-all"
+          onSelect={() => {
+            const view = viewRef.current
+            if (view) selectAll(view)
+          }}
+        >
+          <TextSelect aria-hidden className="h-3.5 w-3.5" />
+          Select all
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  )
 })

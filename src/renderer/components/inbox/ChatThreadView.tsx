@@ -6,6 +6,7 @@ import { ChatMessageView } from '@/components/inbox/ChatMessageView'
 import { PermissionCard, QuestionCard } from '@/components/inbox/ChatRequestCards'
 import { ChatRevertBanner } from '@/components/inbox/ChatRevertBanner'
 import { ChatRevertDialog } from '@/components/inbox/ChatRevertDialog'
+import { ChatTranscriptMenu } from '@/components/inbox/ChatTranscriptMenu'
 import { TurnDuration, WorkingFor } from '@/components/inbox/ChatTurnTime'
 import { contextUsage, findModel, hideReverted, initialChoice, mergeLive, revertedMessageCount, turnStats } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
@@ -75,6 +76,10 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
       },
     )
   }, [forkThread, thread.id])
+
+  // A copy from the right-click menu can fail (a conversation past the clipboard limit); the failure is told here.
+  const [copyError, setCopyError] = useState<string | null>(null)
+  useEffect(() => setCopyError(null), [thread.id])
 
   useEffect(() => subscribeTerminalSettings(() => setCodeFamily(getTerminalSettings().codeFamily)), [])
 
@@ -152,6 +157,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
       data-testid="chat-thread"
       style={{ '--inbox-code-font': codeViewerFontFamily(codeFamily) } as CSSProperties}
     >
+      <ChatTranscriptMenu messages={messages} complete={!state?.older} transcriptRef={scrollRef} onCopyError={setCopyError}>
       <div ref={scrollRef} onScroll={onScroll} className="chat-selectable min-h-0 flex-1 overflow-y-auto" data-testid="chat-transcript">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-6 py-5">
           {state?.older && (
@@ -207,6 +213,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
             </p>
           )}
           {fork.error && <p role="alert" className="text-xs text-danger" data-testid="chat-fork-error">{fork.error}</p>}
+          {copyError && <p role="alert" className="text-xs text-danger" data-testid="chat-copy-error">{copyError}</p>}
           {state?.error && (
             <div role="alert" className="flex items-center gap-2 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
@@ -219,6 +226,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
           )}
         </div>
       </div>
+      </ChatTranscriptMenu>
       <div className="mx-auto w-full max-w-3xl shrink-0 px-6 pb-5 pt-2">
         <ChatComposer
           key={thread.id}

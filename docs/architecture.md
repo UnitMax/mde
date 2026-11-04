@@ -219,6 +219,29 @@ starts with OpenCode's default model and the Build agent. Sending creates the Op
 the folder (or in a new worktree, below), records it as a chat thread, selects it, and sends the
 prompt.
 
+**Right-click menus.** Right-clicking the conversation opens a menu that depends on what is under
+the cursor. **Copy** copies the selected text, but only when the click lands on the selection;
+right-clicking elsewhere does not copy text the pointer has left. **Copy code** appears over a
+code block or the input and output of an opened tool call. **Copy link address** and **Open link**
+appear over a link; Open link is offered only for `http:` and `https:` links and uses the same
+`noopener,noreferrer` window as clicking one, and the main process still decides what may be
+opened. **Copy message as Markdown** appears over a message that has text. For a reply it copies
+the text parts as Markdown source, so code fences and lists survive, and leaves out reasoning and
+tool calls. **Select all** selects the conversation, and **Copy conversation as Markdown** copies it
+as `## You` and `## Assistant` sections (notes, reasoning and tool calls are left out); while
+earlier messages have not been loaded the item reads "Copy loaded messages as Markdown". One menu
+serves the whole transcript, so a selection that runs across several messages can be copied. What
+was clicked is recorded when the menu opens, so a reply that is still streaming cannot change what
+is copied. A copy that fails (the clipboard channel accepts 2 Mi code units) shows a message under
+the conversation until the next copy works.
+
+Right-clicking the message box offers **Cut**, **Copy**, **Paste** and **Select all**. Cut removes
+the text only after it is on the clipboard. Paste asks the main process (`clipboard:paste`) to paste
+into the focused field, exactly as Ctrl/Cmd+V does, so pasted images take the usual attachment path.
+The menu closes first and the box gets the focus back before the paste is requested. The page never
+reads the clipboard. Cut and Paste are unavailable while the box is disabled. The menus add no
+shortcut of their own, so the shortcut list has no entry for them.
+
 **Git worktrees for threads.** When the folder is a Git repository, a strip under the composer
 chooses where the thread runs (`WorktreeBar`). **Current directory**, the default, runs it in the
 folder as it is and shows the folder's current branch (or "Detached HEAD"), read-only; MDE never

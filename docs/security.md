@@ -65,6 +65,17 @@ bounded keys, strings, numbers, booleans and string lists. `files:list` and `fil
 existence, session/source ownership, filesystem containment and platform
 constraints after the central validation.
 
+The clipboard has two channels. `clipboard:write-text` carries the text to write (up to 2 Mi code
+units). `clipboard:paste` carries nothing and returns nothing: the main process calls
+`webContents.paste()` on the window that asked, which pastes the system clipboard into whatever
+field has the focus, as Ctrl/Cmd+V would. The renderer's own clipboard access stays denied (see
+`src/main/permissions.ts`), and no clipboard content is ever returned to it. The Inbox right-click
+menu uses `clipboard:paste` for its Paste item. Script that runs in the renderer could call it
+after focusing a field and read the field, which is a way to read the clipboard without a
+keypress. That adds no authority script does not already have, since the renderer can write to the
+terminals through `pty:write`, but it is recorded here so that a future change to the renderer's
+trust does not overlook it.
+
 Errors identify the rejected channel or sender without including the payload,
 which may contain terminal input or secrets. The boundary rejects oversized
 requests rather than silently truncating them. Electron deserializes messages

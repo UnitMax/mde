@@ -256,4 +256,17 @@ describe('registered IPC security boundary', () => {
     await expect(invoke(trustedEvent, undefined)).resolves.toMatchObject({ version: '0.0.1' })
     expect(electronMock.app.getVersion).toHaveBeenCalledOnce()
   })
+
+  it('pastes into the sender that asked and hands nothing back', async () => {
+    const paste = vi.fn()
+    const invoke = handler(IpcChannels.clipboardPaste) as (...args: unknown[]) => Promise<unknown>
+    Object.assign(trustedEvent.sender, { paste })
+    await expect(invoke(trustedEvent, undefined)).resolves.toBeUndefined()
+    expect(paste).toHaveBeenCalledOnce()
+    // Another window is not trusted, and a payload is not accepted.
+    await expect(invoke(trustedIpcSender().event, undefined)).rejects.toThrow('Unauthorized IPC sender.')
+    await expect(invoke(trustedEvent, 'text')).rejects.toThrow('Invalid IPC payload for clipboard:paste.')
+    expect(paste).toHaveBeenCalledOnce()
+    expect(electronMock.clipboard.writeText).not.toHaveBeenCalled()
+  })
 })

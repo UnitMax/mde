@@ -103,6 +103,7 @@
     "src/renderer/components/SettingsDialog.tsx",
     "src/renderer/components/inbox/*.tsx",
     "src/renderer/lib/chat.ts",
+    "src/renderer/lib/chat-menu.ts",
     "src/renderer/lib/duration.ts",
     "src/renderer/lib/diff.ts",
     "src/renderer/lib/diff-highlight.ts",

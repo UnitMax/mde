@@ -456,6 +456,12 @@ export function registerIpcHandlers(
     clipboard.writeText(text)
   })
 
+  // The same paste Ctrl/Cmd+V does, into whatever the sender has focused. Nothing is returned, so the
+  // page cannot read the clipboard through this; it only receives the paste event a keypress would give.
+  handle<void, void>(IpcChannels.clipboardPaste, (_req, event) => {
+    event.sender.paste()
+  })
+
   handle<void, WorkspaceData>(IpcChannels.workspaceList, () => loadWorkspace())
   handle<NewProject, Project>(IpcChannels.projectsCreate, (input) => createProject(input))
   handle<UpdateProjectRequest, Project | null>(IpcChannels.projectsUpdate, (req) =>

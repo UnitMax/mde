@@ -213,6 +213,7 @@ export const ipcPayloadValidators = {
     mode: oneOf('shell', 'tui'),
   }),
   [IpcChannels.clipboardWriteText]: text,
+  [IpcChannels.clipboardPaste]: noPayload,
   [IpcChannels.wslAvailable]: noPayload,
   [IpcChannels.wslDistros]: noPayload,
   [IpcChannels.pathBrowse]: noPayload,
