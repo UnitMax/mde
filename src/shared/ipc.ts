@@ -60,6 +60,9 @@ import type {
   InboxChangeDiff,
   ChatMessagesPage,
   ChatMessagesRequest,
+  ChatMcpRequest,
+  ChatMcpSetRequest,
+  ChatMcpState,
   ChatOptions,
   ChatOptionsRequest,
   ChatPermissionReplyRequest,
@@ -178,6 +181,8 @@ export const IpcChannels = {
   chatSend: 'chat:send',
   chatDiscardPending: 'chat:discard-pending',
   chatSetDelivery: 'chat:set-delivery',
+  chatMcp: 'chat:mcp',
+  chatMcpSet: 'chat:mcp-set',
   chatDraft: 'chat:draft',
   chatInterrupt: 'chat:interrupt',
   chatRedo: 'chat:redo',
@@ -574,6 +579,10 @@ export interface RendererApi {
     discardPending(req: ChatDiscardPendingRequest): Promise<void>
     /** Changes a held message between steering (read at the agent's next step) and queued (sent when it is done). */
     setDelivery(req: ChatSetDeliveryRequest): Promise<void>
+    /** The MCP servers OpenCode has for a folder or thread, with how each stands. Never cached. */
+    mcp(req: ChatMcpRequest): Promise<ChatMcpState>
+    /** Connects or disconnects one MCP server for the running OpenCode; its configuration is not changed. */
+    setMcp(req: ChatMcpSetRequest): Promise<void>
     interrupt(req: ChatThreadRequest): Promise<void>
     redo(req: ChatThreadRequest): Promise<void>
     revert(req: ChatRevertRequest): Promise<ChatRevert>

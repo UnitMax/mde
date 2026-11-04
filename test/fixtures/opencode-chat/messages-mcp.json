@@ -1,0 +1,612 @@
+{
+  "data": [
+    {
+      "id": "msg_1a7f3c0017",
+      "time": {
+        "created": 1700000017800,
+        "streamed": 1700000018600,
+        "completed": 1700000018700
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "model-1",
+        "providerID": "provider-1",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "tool",
+          "id": "call_cut",
+          "name": "execute",
+          "executed": false,
+          "state": {
+            "status": "completed",
+            "input": {
+              "code": "return \"x\".repeat(100000)"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "xxxx"
+              }
+            ],
+            "metadata": {
+              "toolCalls": [
+                {
+                  "tool": "demo_math.add",
+                  "status": "weird",
+                  "input": {
+                    "a": 1,
+                    "b": 2
+                  }
+                },
+                {
+                  "notATool": true
+                },
+                {
+                  "tool": "demo_math.add"
+                }
+              ],
+              "truncated": true
+            }
+          },
+          "time": {
+            "created": 1700000016800,
+            "ran": 1700000017200,
+            "completed": 1700000017211
+          }
+        }
+      ],
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+        "input": 20,
+        "output": 10,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_1a7f3c0016",
+      "time": {
+        "created": 1700000016700
+      },
+      "text": "A script with calls but no readable server.",
+      "files": [],
+      "agents": [],
+      "type": "user"
+    },
+    {
+      "id": "msg_1a7f3c0015",
+      "time": {
+        "created": 1700000015700,
+        "streamed": 1700000016500,
+        "completed": 1700000016600
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "model-1",
+        "providerID": "provider-1",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "tool",
+          "id": "call_stream",
+          "name": "execute",
+          "executed": false,
+          "state": {
+            "status": "streaming",
+            "input": "{\"code\":\"const r = await tools.demo_ma"
+          },
+          "time": {
+            "created": 1700000014700,
+            "ran": 1700000015100,
+            "completed": 1700000015111
+          }
+        }
+      ],
+      "cost": 0,
+      "tokens": {
+        "input": 20,
+        "output": 10,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_1a7f3c0014",
+      "time": {
+        "created": 1700000014600
+      },
+      "text": "Run something long.",
+      "files": [],
+      "agents": [],
+      "type": "user"
+    },
+    {
+      "id": "msg_1a7f3c0013",
+      "time": {
+        "created": 1700000013600,
+        "streamed": 1700000014400,
+        "completed": 1700000014500
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "model-1",
+        "providerID": "provider-1",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "tool",
+          "id": "call_search",
+          "name": "search",
+          "executed": false,
+          "state": {
+            "status": "completed",
+            "input": {
+              "namespace": "demo_math"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "demo_math.add({ a: number, b: number }): Promise<{ sum: number }>"
+              }
+            ]
+          },
+          "time": {
+            "created": 1700000012600,
+            "ran": 1700000013000,
+            "completed": 1700000013011
+          }
+        }
+      ],
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+        "input": 20,
+        "output": 10,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_1a7f3c0012",
+      "time": {
+        "created": 1700000012500
+      },
+      "text": "What can demo_math do?",
+      "files": [],
+      "agents": [],
+      "type": "user"
+    },
+    {
+      "id": "msg_1a7f3c0011",
+      "time": {
+        "created": 1700000011500,
+        "streamed": 1700000012300,
+        "completed": 1700000012400
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "model-1",
+        "providerID": "provider-1",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "tool",
+          "id": "call_browser",
+          "name": "execute",
+          "executed": false,
+          "state": {
+            "status": "completed",
+            "input": {
+              "code": "return await tools.browser.open({ url: \"https://example.com/\" });"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "opened"
+              }
+            ],
+            "metadata": {
+              "toolCalls": [
+                {
+                  "tool": "browser.open",
+                  "status": "completed",
+                  "input": {
+                    "url": "https://example.com/"
+                  }
+                }
+              ],
+              "truncated": false
+            }
+          },
+          "time": {
+            "created": 1700000010500,
+            "ran": 1700000010900,
+            "completed": 1700000010911
+          }
+        }
+      ],
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+        "input": 20,
+        "output": 10,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_1a7f3c0010",
+      "time": {
+        "created": 1700000010400
+      },
+      "text": "Open a page.",
+      "files": [],
+      "agents": [],
+      "type": "user"
+    },
+    {
+      "id": "msg_1a7f3c0009",
+      "time": {
+        "created": 1700000009400,
+        "streamed": 1700000010200,
+        "completed": 1700000010300
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "model-1",
+        "providerID": "provider-1",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "tool",
+          "id": "call_error",
+          "name": "execute",
+          "executed": false,
+          "state": {
+            "status": "error",
+            "input": {
+              "code": "return await tools.demo_display.sample({ kind: \"error\" });"
+            },
+            "error": {
+              "type": "tool",
+              "message": "demo_display.sample failed: intentional fixture error"
+            },
+            "metadata": {
+              "toolCalls": [
+                {
+                  "tool": "demo_display.sample",
+                  "status": "error",
+                  "input": {
+                    "kind": "error"
+                  }
+                }
+              ]
+            }
+          },
+          "time": {
+            "created": 1700000008400,
+            "ran": 1700000008800,
+            "completed": 1700000008807
+          }
+        }
+      ],
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+        "input": 20,
+        "output": 10,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_1a7f3c0008",
+      "time": {
+        "created": 1700000008300
+      },
+      "text": "Fail on purpose.",
+      "files": [],
+      "agents": [],
+      "type": "user"
+    },
+    {
+      "id": "msg_1a7f3c0007",
+      "time": {
+        "created": 1700000007300,
+        "streamed": 1700000008100,
+        "completed": 1700000008200
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "model-1",
+        "providerID": "provider-1",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "tool",
+          "id": "call_running",
+          "name": "execute",
+          "executed": false,
+          "state": {
+            "status": "running",
+            "input": {
+              "code": "return await tools.demo_display.sample({ kind: \"plain\", delayMs: 3000 });"
+            },
+            "metadata": {
+              "toolCalls": [
+                {
+                  "tool": "demo_display.sample",
+                  "status": "running",
+                  "input": {
+                    "kind": "plain",
+                    "delayMs": 3000
+                  }
+                }
+              ]
+            }
+          },
+          "time": {
+            "created": 1700000006300,
+            "ran": 1700000006700,
+            "completed": 1700000006711
+          }
+        }
+      ],
+      "cost": 0,
+      "tokens": {
+        "input": 20,
+        "output": 10,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_1a7f3c0006",
+      "time": {
+        "created": 1700000006200
+      },
+      "text": "Now wait three seconds.",
+      "files": [],
+      "agents": [],
+      "type": "user"
+    },
+    {
+      "id": "msg_1a7f3c0005",
+      "time": {
+        "created": 1700000005200,
+        "streamed": 1700000006000,
+        "completed": 1700000006100
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "model-1",
+        "providerID": "provider-1",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "tool",
+          "id": "call_two",
+          "name": "execute",
+          "executed": false,
+          "state": {
+            "status": "completed",
+            "input": {
+              "code": "const doc = await tools.demo_display.sample({ kind: \"markdown\" });\nconst sum = await tools.demo_math.add({ a: 20, b: 22 });\nreturn { doc, sum };"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "# Local MCP display demo\n\nThis includes **bold**.\n\n- First item\n- Second item"
+              }
+            ],
+            "metadata": {
+              "toolCalls": [
+                {
+                  "tool": "demo_display.sample",
+                  "status": "completed",
+                  "input": {
+                    "kind": "markdown"
+                  }
+                },
+                {
+                  "tool": "demo_math.add",
+                  "status": "completed",
+                  "input": {
+                    "a": 20,
+                    "b": 22
+                  }
+                }
+              ],
+              "truncated": false
+            }
+          },
+          "time": {
+            "created": 1700000004200,
+            "ran": 1700000004600,
+            "completed": 1700000005240
+          }
+        }
+      ],
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+        "input": 20,
+        "output": 10,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_1a7f3c0004",
+      "time": {
+        "created": 1700000004100
+      },
+      "text": "Show the markdown sample, then add 20 and 22.",
+      "files": [],
+      "agents": [],
+      "type": "user"
+    },
+    {
+      "id": "msg_1a7f3c0003",
+      "time": {
+        "created": 1700000003100,
+        "streamed": 1700000003900,
+        "completed": 1700000004000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "model-1",
+        "providerID": "provider-1",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "The sum is **12**."
+        }
+      ],
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+        "input": 20,
+        "output": 10,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_1a7f3c0002",
+      "time": {
+        "created": 1700000002100,
+        "streamed": 1700000002900,
+        "completed": 1700000003000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "model-1",
+        "providerID": "provider-1",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "reasoning",
+          "text": "Use the add tool.",
+          "time": {
+            "created": 1700000001000,
+            "completed": 1700000001005
+          }
+        },
+        {
+          "type": "tool",
+          "id": "call_one",
+          "name": "execute",
+          "executed": false,
+          "state": {
+            "status": "completed",
+            "input": {
+              "code": "const result = await tools.demo_math.add({\n  a: 7,\n  b: 5\n});\nreturn result;"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "{\n  \"sum\": 12\n}"
+              }
+            ],
+            "metadata": {
+              "toolCalls": [
+                {
+                  "tool": "demo_math.add",
+                  "status": "completed",
+                  "input": {
+                    "a": 7,
+                    "b": 5
+                  }
+                }
+              ],
+              "truncated": false
+            }
+          },
+          "time": {
+            "created": 1700000001100,
+            "ran": 1700000001500,
+            "completed": 1700000001511
+          }
+        }
+      ],
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+        "input": 20,
+        "output": 10,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_1a7f3c0001",
+      "time": {
+        "created": 1700000001000
+      },
+      "text": "Call demo_math's add with a=7 and b=5.",
+      "files": [],
+      "agents": [],
+      "type": "user"
+    }
+  ],
+  "cursor": {
+    "previous": "eyJpZCI6Im1zZ18xIn0",
+    "next": "eyJpZCI6Im1zZ18yIn0"
+  }
+}

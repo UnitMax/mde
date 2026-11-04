@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { AddInboxFolderDialog } from '@/components/inbox/AddInboxFolderDialog'
 import { ChatComposer } from '@/components/inbox/ChatComposer'
+import { McpChip } from '@/components/inbox/McpChip'
 import { WorktreeBar, useInboxGit, type WorktreeMode } from '@/components/inbox/WorktreeBar'
 import { initialChoice } from '@/lib/chat'
 import { defaultWorktreeBase, inboxWorktreeSource } from '@/lib/inbox'
@@ -213,6 +214,8 @@ export function NewThreadView(): JSX.Element {
             onRetryOptions={() => void loadOptions({ folderId: folder.id }, true)}
             placeholder="Describe what you want to build or change"
             sendBlocked={Boolean(branchProblem)}
+            // The servers of the folder itself: a new worktree loads its own, so then they are shown but not switched.
+            extraPickers={<McpChip place={{ request: { folderId: folder.id }, target: folder.target, directory: folder.directory }} readOnly={choosing} />}
             footer={git && (
               <WorktreeBar
                 info={git}

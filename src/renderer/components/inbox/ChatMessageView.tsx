@@ -1,12 +1,15 @@
-import { memo, useMemo, useState } from 'react'
+import { memo, useContext, useMemo, useState } from 'react'
 import { AlertTriangle, BookOpen, Brain, ChevronRight, GitFork, Info, LoaderCircle, Undo2, Wrench } from 'lucide-react'
 import type { ChatMessage, ChatPart } from '@shared/types'
 import { FileChangeView } from '@/components/inbox/ChatFileChange'
+import { McpCallView } from '@/components/inbox/ChatMcpCall'
 import { ChatMarkdown } from '@/components/inbox/ChatMarkdown'
+import { McpServerNamesContext } from '@/components/inbox/mcp-context'
 import { SubagentGroup } from '@/components/inbox/ChatSubagents'
 import { ToolIcon } from '@/components/inbox/ToolIcon'
 import { messageBlocks, skillCall, toolSummary } from '@/lib/chat'
 import { toolFileChanges } from '@/lib/diff'
+import { mcpCalls } from '@/lib/mcp'
 import { cn } from '@/lib/utils'
 
 function Disclosure({
@@ -89,9 +92,17 @@ export function ToolCallView({ part, directory }: { part: Extract<ChatPart, { ki
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [part.name, part.status, part.input, patches, part.existed],
   )
+  // Which of a script's calls went to an MCP server is told by the server names; the card does not wait for them.
+  const servers = useContext(McpServerNamesContext)
+  const calls = useMemo(
+    () => mcpCalls(part, servers),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [part.name, part.status, part.input, part.calls, servers],
+  )
   // A failed edit keeps the plain row, which carries OpenCode's reason.
   if (changes && part.status !== 'error') return <FileChangeView part={part} changes={changes} directory={directory} />
   if (part.name === 'skill') return <SkillCallView part={part} directory={directory} />
+  if (calls.length > 0) return <McpCallView part={part} calls={calls} />
   return (
     <Disclosure
       testId={`chat-tool-${part.id}`}

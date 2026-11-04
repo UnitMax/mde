@@ -10,6 +10,10 @@ import type {
   ChatForkRequest,
   ChatForkResult,
   ChatFormReplyRequest,
+  ChatMcpRequest,
+  ChatMcpServer,
+  ChatMcpSetRequest,
+  ChatMcpState,
   ChatMessagesPage,
   ChatMessagesRequest,
   ChatOptions,
@@ -45,6 +49,7 @@ import {
   parseCreatedSession,
   parseDefaultModel,
   parseForms,
+  parseMcpServers,
   parseMessagesPage,
   parseModels,
   parsePendingMessages,
@@ -79,6 +84,13 @@ const AGENT_RETRY_MS = 250
  * folder has not loaded yet. Unlike agents, an empty list at the end is not an error; skills are optional.
  */
 const SKILL_ATTEMPTS = 4
+/**
+ * MCP servers behave the same way, but slower: a folder OpenCode has not loaded yet lists none, and the real list
+ * took about three seconds to appear. A folder with no servers also lists none, so the wait is only paid for the
+ * first answer of a place; after that an empty list is believed.
+ */
+const MCP_ATTEMPTS = 6
+const MCP_RETRY_MS = 750
 /**
  * OpenCode refuses to revert a conversation that is running, and an interrupt takes a moment to
  * land, so staging is tried again for a while: this many tries, this far apart (about ten seconds).
@@ -168,15 +180,20 @@ export class InboxChatService {
   private readonly streams: ServiceEventStreams
   private readonly subscribed = new Map<string, number>()
   private readonly options = new Map<string, { at: number; value: Promise<ChatOptions> }>()
+  /** Places (service + directory) whose MCP list has been answered once, so an empty one is believed. */
+  private readonly mcpSettled = new Set<string>()
+  private readonly mcpListing = new Map<string, Promise<ChatMcpState>>()
   private configuredExecutable = 'opencode'
   private readonly titleRegenerations = new Map<string, Promise<void>>()
   private readonly titleReads = new Map<string, { renamed: boolean }>()
 
   constructor(private readonly dependencies: InboxChatDependencies) {
     this.streams = new ServiceEventStreams(dependencies.client, {
-      onEvent: (_target, event) => this.onEvent(event),
+      onEvent: (target, event) => this.onEvent(event, target),
       onConnected: (target, reconnected) => {
         if (!reconnected) return
+        // Servers may have changed while the stream was down, whether or not a thread is open.
+        this.dependencies.send({ type: 'mcp', target })
         for (const threadId of this.subscribed.keys()) {
           const thread = this.dependencies.store.get(threadId)
           if (thread && serviceTargetKey(thread.target) === serviceTargetKey(target)) {
@@ -214,6 +231,7 @@ export class InboxChatService {
     this.configuredExecutable = executable
     this.dependencies.client.reset()
     this.options.clear()
+    this.mcpSettled.clear()
   }
 
   folders(): InboxFoldersState {
@@ -256,7 +274,7 @@ export class InboxChatService {
 
   /** Agents and models where a folder or thread lives; cached for a minute per place. */
   async chatOptions(request: ChatOptionsRequest): Promise<ChatOptions> {
-    const place = request.threadId ? this.thread(request.threadId) : this.folder(request.folderId ?? '')
+    const place = this.place(request)
     const key = `${serviceTargetKey(place.target)}\n${place.directory}`
     const cached = this.options.get(key)
     const now = this.dependencies.now()
@@ -267,6 +285,77 @@ export class InboxChatService {
       if (this.options.get(key)?.value === value) this.options.delete(key)
     })
     return value
+  }
+
+  /**
+   * The MCP servers OpenCode has for a folder or thread, and how each stands. Not cached: a server connects,
+   * fails and is switched while the app is open. Asks at once are shared, because opening a thread, the window
+   * gaining focus and an event can arrive together.
+   */
+  async mcpList(request: ChatMcpRequest): Promise<ChatMcpState> {
+    this.assertEnabled()
+    const place = this.place(request)
+    const key = `${serviceTargetKey(place.target)}\n${place.directory}`
+    const running = this.mcpListing.get(key)
+    if (running) return running
+    const listing: Promise<ChatMcpState> = this.loadMcp(place, key).finally(() => {
+      if (this.mcpListing.get(key) === listing) this.mcpListing.delete(key)
+    })
+    this.mcpListing.set(key, listing)
+    return listing
+  }
+
+  private async loadMcp(place: { target: OpenCodePluginTarget; directory: string }, key: string): Promise<ChatMcpState> {
+    // MCP changes carry no session, so the stream that tells the app about them must run even with no thread open.
+    this.streams.ensure(place.target)
+    for (let attempt = 1; ; attempt += 1) {
+      let servers: ChatMcpServer[]
+      try {
+        servers = parseMcpServers(await this.dependencies.client.request(place.target, 'mcp.list', {
+          query: { 'location[directory]': place.directory },
+        }))
+      } catch (error) {
+        // An OpenCode older than the MCP routes answers 404 without one of its own error types.
+        if (error instanceof OpenCodeServiceError && error.status === 404 && !error.tag) return { servers: [], supported: false }
+        throw error
+      }
+      if (servers.length > 0 || this.mcpSettled.has(key) || attempt >= MCP_ATTEMPTS) {
+        this.mcpSettled.add(key)
+        return { servers, supported: true }
+      }
+      await this.pause(MCP_RETRY_MS)
+    }
+  }
+
+  /**
+   * Connects or disconnects one MCP server for the running OpenCode, like the OpenCode TUI's list. OpenCode keeps
+   * neither across a restart and MDE changes no configuration. Only a server OpenCode lists can be named, and one
+   * waiting for a sign-in is left alone: connecting it could start a browser login on the OpenCode host.
+   */
+  async mcpSetEnabled(request: ChatMcpSetRequest): Promise<void> {
+    this.assertEnabled()
+    const place = this.place(request)
+    const state = await this.mcpList(request)
+    if (!state.supported) throw new Error('This OpenCode cannot turn MCP servers on or off. Update OpenCode.')
+    const server = state.servers.find((entry) => entry.name === request.server)
+    if (!server) throw new Error('That MCP server is not configured any more.')
+    if (server.status === 'needs-auth') throw new Error('This MCP server needs a sign-in. Run `opencode mcp auth` for it in a terminal.')
+    if (server.status === 'unknown') throw new Error('MDE does not know this MCP server’s state, so it leaves it alone.')
+    const already = request.enabled ? server.status === 'connected' || server.status === 'connecting' : server.status === 'disabled'
+    if (already) return
+    try {
+      await this.dependencies.client.request(place.target, request.enabled ? 'mcp.connect' : 'mcp.disconnect', {
+        params: { server: server.name },
+        query: { 'location[directory]': place.directory },
+      })
+    } catch (error) {
+      if (error instanceof OpenCodeServiceError && error.status === 404) {
+        throw new Error(error.tag === 'McpServerNotFoundError'
+          ? 'That MCP server is not configured any more.'
+          : 'This OpenCode cannot turn MCP servers on or off. Update OpenCode.')
+      }
+      throw error
+    }
   }
 
   async draft(request: ChatDraftRequest, sourceSession?: Session) {
@@ -697,8 +786,13 @@ export class InboxChatService {
     else this.subscribed.delete(threadId)
   }
 
-  private onEvent(event: ServiceEvent): void {
+  private onEvent(event: ServiceEvent, target: OpenCodePluginTarget): void {
     this.dependencies.recorder.applyServiceEvent(event)
+    // An MCP server changed. It belongs to no session, so it is passed on before the thread checks below.
+    if (event.type === 'mcp.status.changed' || event.type === 'mcp.tools.changed') {
+      this.dependencies.send({ type: 'mcp', target })
+      return
+    }
     const threadId = serviceEventSessionId(event)
     if (threadId && event.type === 'session.renamed') {
       const read = this.titleReads.get(threadId)
@@ -829,6 +923,11 @@ export class InboxChatService {
     const folder = this.dependencies.store.folder(id)
     if (!folder) throw new Error('This folder is no longer in the Inbox.')
     return folder
+  }
+
+  /** The service and directory a folder (new thread) or an existing thread works in; the request names one. */
+  private place(request: ChatOptionsRequest): { target: OpenCodePluginTarget; directory: string } {
+    return request.threadId ? this.thread(request.threadId) : this.folder(request.folderId ?? '')
   }
 
   private thread(id: string): InboxThread {

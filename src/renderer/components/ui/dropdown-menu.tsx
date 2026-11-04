@@ -68,6 +68,48 @@ export const DropdownMenuCheckboxItem = React.forwardRef<
 ))
 DropdownMenuCheckboxItem.displayName = DropdownMenuPrimitive.CheckboxItem.displayName
 
+/**
+ * A menu row that is an on/off switch. It is a checkbox item, so it is announced as a menu item that is checked or
+ * not, and the arrow keys, Space and Enter work as in any menu; the switch drawn on the right is decoration. Choosing
+ * it does not close the menu, so several rows can be switched in a row. `trailing` replaces the switch, e.g. by a
+ * spinner while the change is made.
+ */
+export const DropdownMenuSwitchItem = React.forwardRef<
+  React.ElementRef<typeof DropdownMenuPrimitive.CheckboxItem>,
+  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.CheckboxItem> & { trailing?: React.ReactNode }
+>(({ className, children, checked, onSelect, trailing, ...props }, ref) => (
+  <DropdownMenuPrimitive.CheckboxItem
+    ref={ref}
+    checked={checked}
+    onSelect={(event) => {
+      event.preventDefault()
+      onSelect?.(event)
+    }}
+    className={cn(
+      'flex cursor-default select-none items-center gap-2.5 rounded px-2 py-1.5 text-[13px] text-fg outline-none',
+      'data-[highlighted]:bg-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-60',
+      className
+    )}
+    {...props}
+  >
+    {children}
+    {trailing ?? (
+      <span
+        aria-hidden="true"
+        className={cn('relative h-4 w-7 shrink-0 rounded-full transition-colors', checked === true ? 'bg-accent' : 'bg-line-strong')}
+      >
+        <span
+          className={cn(
+            'absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform motion-reduce:transition-none',
+            checked === true && 'translate-x-3'
+          )}
+        />
+      </span>
+    )}
+  </DropdownMenuPrimitive.CheckboxItem>
+))
+DropdownMenuSwitchItem.displayName = 'DropdownMenuSwitchItem'
+
 export const DropdownMenuLabel = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Label>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Label>

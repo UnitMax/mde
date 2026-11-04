@@ -95,6 +95,8 @@ const validPayloads = {
   [IpcChannels.chatRedo]: { threadId: 'ses_thread' },
   [IpcChannels.chatDiscardPending]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a' },
   [IpcChannels.chatSetDelivery]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a', delivery: 'queue' },
+  [IpcChannels.chatMcp]: { threadId: 'ses_thread' },
+  [IpcChannels.chatMcpSet]: { folderId: 'fld_1234', server: 'context 7', enabled: false },
   [IpcChannels.chatRevert]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a', files: false },
   [IpcChannels.chatFork]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a' },
   [IpcChannels.chatRegenerateTitle]: { threadId: 'ses_thread' },
@@ -260,6 +262,25 @@ describe('IPC payload boundary', () => {
     expect(() => assertIpcPayload(IpcChannels.chatOptions, { threadId: 'ses_thread' })).not.toThrow()
     rejects(IpcChannels.chatOptions, {})
     rejects(IpcChannels.chatOptions, { folderId: 'fld_1234', threadId: 'ses_thread' })
+  })
+
+  it('names exactly one place and a plain server name in the MCP requests', () => {
+    expect(() => assertIpcPayload(IpcChannels.chatMcp, { folderId: 'fld_1234' })).not.toThrow()
+    rejects(IpcChannels.chatMcp, {})
+    rejects(IpcChannels.chatMcp, { folderId: 'fld_1234', threadId: 'ses_thread' })
+    rejects(IpcChannels.chatMcp, { threadId: 'ses_../escape' })
+    const set = { threadId: 'ses_thread', enabled: true }
+    for (const server of ['demo_math', 'context 7', 'a.b', 'a/b', 'é', '.well-known', 'x'.repeat(200)]) {
+      expect(() => assertIpcPayload(IpcChannels.chatMcpSet, { ...set, server })).not.toThrow()
+    }
+    // Names that would leave the URL path, or are not a name at all.
+    for (const server of ['', '.', '..', '...', 'x'.repeat(201), 'a\nb', 'a\u0000b', 'a\u007fb', 3, null, ['a']]) {
+      rejects(IpcChannels.chatMcpSet, { ...set, server })
+    }
+    rejects(IpcChannels.chatMcpSet, { threadId: 'ses_thread', server: 'demo_math' })
+    rejects(IpcChannels.chatMcpSet, { threadId: 'ses_thread', server: 'demo_math', enabled: 'yes' })
+    rejects(IpcChannels.chatMcpSet, { server: 'demo_math', enabled: true })
+    rejects(IpcChannels.chatMcpSet, { folderId: 'fld_1234', threadId: 'ses_thread', server: 'demo_math', enabled: true })
   })
 
   it('rejects getters without executing them and inherited/unknown nested fields', () => {

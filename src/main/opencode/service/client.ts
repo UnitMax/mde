@@ -1,3 +1,4 @@
+import { MCP_SERVER_NAME } from '@shared/mcp'
 import type { OpenCodePluginTarget } from '@shared/types'
 import { serviceTargetKey, type OpenCodeServiceDiscover, type OpenCodeServiceEndpoint } from './discovery'
 
@@ -28,6 +29,11 @@ export const SERVICE_OPERATIONS = {
   'session.permission.reply': { method: 'POST', path: '/api/session/{sessionID}/permission/{requestID}/reply' },
   'session.form.list': { method: 'GET', path: '/api/session/{sessionID}/form' },
   'session.form.reply': { method: 'POST', path: '/api/session/{sessionID}/form/{formID}/reply' },
+  // MCP servers: the list, and turning one on or off for the running service (OpenCode keeps neither across a restart
+  // and changes no configuration). The two toggles are OpenCode's experimental routes.
+  'mcp.list': { method: 'GET', path: '/api/mcp' },
+  'mcp.connect': { method: 'POST', path: '/api/experimental/mcp/{server}/connect' },
+  'mcp.disconnect': { method: 'POST', path: '/api/experimental/mcp/{server}/disconnect' },
 } as const satisfies Record<string, { method: 'GET' | 'POST' | 'PATCH' | 'DELETE'; path: string }>
 
 export type ServiceOperation = keyof typeof SERVICE_OPERATIONS
@@ -37,6 +43,8 @@ const PATH_PARAMETERS: Record<string, RegExp> = {
   requestID: /^per_[A-Za-z0-9_-]{1,200}$/,
   inboxID: /^msg_[A-Za-z0-9_-]{1,200}$/,
   formID: /^frm_[A-Za-z0-9_-]{1,200}$/,
+  // Whatever the user wrote in the OpenCode configuration; see MCP_SERVER_NAME.
+  server: MCP_SERVER_NAME,
 }
 const QUERY_PARAMETERS: Record<string, RegExp> = {
   limit: /^\d{1,4}$/,
@@ -76,7 +84,8 @@ export function serviceUrl(origin: string, operation: ServiceOperation, request:
     const value = params[name]
     const pattern = PATH_PARAMETERS[name]
     if (typeof value !== 'string' || !pattern?.test(value)) throw new Error(`Invalid OpenCode ${name}.`)
-    return value
+    // The IDs above never need it; a server name can hold `/`, `?`, `#`, `%` or a space.
+    return encodeURIComponent(value)
   })
   for (const name of Object.keys(params)) {
     if (!spec.path.includes(`{${name}}`)) throw new Error('Unsupported OpenCode service parameter.')

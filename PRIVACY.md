@@ -66,6 +66,16 @@ about a minute. When you send a message that names a skill, MDE tells the servic
 service gives the skill's text to the model, as OpenCode does in a terminal. MDE stores nothing more
 for skills, and a skill the model loads is shown from the conversation the service returns.
 
+The Inbox's MCP list asks the same local service which MCP servers OpenCode has for the folder or
+thread and how each stands: name, title, connected, failed or needs a sign-in, and a short error with
+credentials and paths removed. MDE drops everything else in the answer (commands, URLs, headers and
+environment variables), keeps the list in memory only and stores nothing. Switching a server off or on
+there tells the service to disconnect or connect it until OpenCode restarts. MDE does not start,
+contact or configure MCP servers itself and writes nothing to OpenCode's configuration; OpenCode starts
+and contacts them, and may send them what the model passes to their tools, as it does in a terminal.
+What a tool is called with and returns is part of the conversation, which is fetched from the service,
+kept in memory only and not written to disk by MDE.
+
 The Inbox's Changes tab for the open thread, and the changes line under each visible thread
 (when you turn that on in the Inbox's gear menu; it is off by default) with the file list and
 diff review they open, run read-only local Git commands for that thread's checkout. They show staged,

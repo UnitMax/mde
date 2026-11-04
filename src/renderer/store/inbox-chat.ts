@@ -17,6 +17,8 @@ import type {
 } from '@shared/types'
 import { appendLive, mergePending, pruneLive, type LivePart } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
+import { mcpTargetKey } from '@/lib/mcp'
+import { useInboxMcp } from '@/store/inbox-mcp'
 import { getTerminalSettings, subscribeTerminalSettings } from '@/terminal/terminal-settings'
 import { useWorkspace } from '@/store/workspace'
 
@@ -513,6 +515,11 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
     },
 
     applyEvent: (event) => {
+      // An MCP server changed. It belongs to no thread, so it is passed on before the thread is looked up.
+      if (event.type === 'mcp') {
+        useInboxMcp.getState().refreshTarget(mcpTargetKey(event.target))
+        return
+      }
       if (!get().threads[event.threadId]) return
       switch (event.type) {
         case 'delta':

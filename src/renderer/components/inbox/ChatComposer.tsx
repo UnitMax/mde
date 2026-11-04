@@ -228,6 +228,8 @@ export interface ChatComposerProps {
   sendBlocked?: boolean
   /** Shown directly under the box, above any error; the new-thread page puts its Git bar here. */
   footer?: ReactNode
+  /** More pills for the toolbar, after the model and agent pickers; the MCP servers go here. */
+  extraPickers?: ReactNode
 }
 
 /** The prompt box with model and agent pickers and a round send (or stop) button. */
@@ -250,6 +252,7 @@ export function ChatComposer({
   disabled = false,
   sendBlocked = false,
   footer,
+  extraPickers,
 }: ChatComposerProps): JSX.Element {
   const [text, setText] = useState('')
   const [draft, setDraft] = useState<ChatDraft>({ text: '', revision: 0, attachments: [] })
@@ -489,6 +492,7 @@ export function ChatComposer({
               <ModelPicker models={options.value.models} value={model} onChange={onModelChange} disabled={disabled} />
               <span aria-hidden className="h-4 w-px bg-line-strong" />
               <AgentPicker agents={options.value.agents} value={agent} onChange={onAgentChange} disabled={disabled} />
+              {extraPickers}
             </>
           ) : options?.status === 'error' ? (
             <span className="flex min-w-0 items-center gap-2 px-2 text-[12px] text-danger">

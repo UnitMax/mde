@@ -2,6 +2,8 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { AlertTriangle, LoaderCircle, RefreshCw } from 'lucide-react'
 import type { ChatMessage, InboxThread, OpenCodeModelRef } from '@shared/types'
 import { ChatComposer } from '@/components/inbox/ChatComposer'
+import { McpChip } from '@/components/inbox/McpChip'
+import { McpServerNamesContext } from '@/components/inbox/mcp-context'
 import { ChatMessageView } from '@/components/inbox/ChatMessageView'
 import { ChatPendingView } from '@/components/inbox/ChatPendingView'
 import { PermissionCard, QuestionCard } from '@/components/inbox/ChatRequestCards'
@@ -11,8 +13,12 @@ import { ChatTranscriptMenu } from '@/components/inbox/ChatTranscriptMenu'
 import { TurnDuration, WorkingFor } from '@/components/inbox/ChatTurnTime'
 import { contextUsage, findModel, hideReverted, initialChoice, mergeLive, revertedMessageCount, turnStats } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
+import { mcpKey } from '@/lib/mcp'
 import { optionsKey, useInboxChat, type ChatThreadState } from '@/store/inbox-chat'
+import { useInboxMcp, type McpPlace } from '@/store/inbox-mcp'
 import { codeViewerFontFamily, getTerminalSettings, subscribeTerminalSettings } from '@/terminal/terminal-settings'
+
+const NO_SERVERS: readonly string[] = []
 
 /** Within this distance of the bottom, new content keeps the view pinned to it. */
 const STICK_THRESHOLD_PX = 80
@@ -150,12 +156,19 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   }, [messages, requests, pending])
 
   const running = state?.running ?? thread.status === 'working'
+  // The MCP servers of the folder the thread runs in; the chip in the composer keeps this list current.
+  const mcpPlace = useMemo<McpPlace>(
+    () => ({ request: { threadId: thread.id }, target: thread.target, directory: thread.directory }),
+    [thread.id, thread.target, thread.directory],
+  )
+  const mcpNames = useInboxMcp((store) => store.entries[mcpKey(thread.target, thread.directory)]?.names) ?? NO_SERVERS
   // The time under each turn comes from the service's clock; the count for the turn in progress prefers
   // this computer's own, which the sidebar's pill also counts from, so a clock that is off cannot skew it.
   const turns = useMemo(() => turnStats(messages), [messages])
   const busySince = thread.status === 'working' || thread.status === 'attention' ? thread.workingSince : undefined
 
   return (
+    <McpServerNamesContext.Provider value={mcpNames}>
     <div
       className="flex min-h-0 flex-1 flex-col"
       data-testid="chat-thread"
@@ -255,6 +268,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
           onRetryOptions={() => void loadOptions({ threadId: thread.id }, true)}
           running={running}
           context={context}
+          extraPickers={<McpChip place={mcpPlace} running={running} messages={shown} complete={!state?.older} />}
           onStop={() => void interrupt(thread.id)}
           onSend={async (text, attachments) => {
             stickRef.current = true
@@ -279,5 +293,6 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
         }}
       />
     </div>
+    </McpServerNamesContext.Provider>
   )
 }

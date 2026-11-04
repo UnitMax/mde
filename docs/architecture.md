@@ -411,7 +411,59 @@ there is no such diff yet, so the diff is worked out in the renderer from the ca
 `oldString` and `newString` (`lib/diff.ts`), without line numbers. A write has no diff in
 OpenCode's metadata, so its content is shown as additions, and only whether the file already
 existed is known (once the tool has finished). A failed edit keeps the plain row with OpenCode's
-reason, and every other tool is unchanged.
+reason. A script's calls to MCP servers get a card of their own (see **MCP servers**), and every other
+tool is unchanged.
+
+**MCP servers.** OpenCode can be given MCP servers (programs or remote services that offer tools to the
+model) in its configuration. MDE shows the ones OpenCode lists for the folder or thread, and connects or
+disconnects them as OpenCode's terminal UI does; it never reads, writes or starts one itself. A pill
+after the agent picker in the composer's toolbar (`McpChip`, on the new-thread page and in a thread)
+shows "MCP" and how many servers are connected (`1/2` when some are not), with a dot for the worst
+state: a failed server or one that needs a sign-in (both with a warning icon), one still connecting, or
+all well. It is not there when OpenCode lists no server, or is too old to have the list. It opens a
+list with a switch for each server and its state: Connected, Connecting…, Disabled, Failed (with
+OpenCode's error, shortened and stripped of credentials and paths), or Sign-in needed. A switch calls
+OpenCode's runtime connect or disconnect (`POST /api/experimental/mcp/{server}/connect` or
+`/disconnect`), which lasts until OpenCode restarts; nothing in OpenCode's configuration changes, and a
+server disabled in the configuration reads "Disabled" like one disconnected here. MDE does not guess
+the result: the row shows a spinner while the change is made, and when OpenCode has answered the list
+is read again and shown as it is. A server that needs a sign-in, or whose state MDE does not know, has
+no switch (a connect could start a sign-in on the machine running OpenCode); its row says to run
+`opencode mcp auth <name>` in a terminal. While the agent works a change is allowed and applies from its
+next step. On the new-thread page with a new worktree chosen the list is the folder's and is shown
+but cannot be switched, because the worktree loads its own servers. In a thread each row also counts the
+calls the shown conversation made to that server ("3 calls", or "3+ calls" when older messages that are
+not loaded may hold more).
+
+The list is kept in `store/inbox-mcp.ts` for each service and directory. It is read when the chip
+appears and when the list is opened, when the window gets the focus back (at most every five
+seconds), when OpenCode reports that a server changed (`mcp.status.changed` or `mcp.tools.changed`,
+which carry no session, so they reach the store as a `mcp` chat event for the service) and when the
+event stream reconnects, after a switch, and every 1.5 seconds (at most 20 times) while a server is
+connecting, because the stream may not be open. A read that began before a switch is thrown away
+and made again, so an older answer never undoes the change. In the main process `mcpList` is never
+cached. OpenCode answers the first request for a folder it has not loaded with an empty list, so
+until a place has answered once, an empty answer is asked for again a few times (six times, 0.75
+seconds apart); a place that answers empty after that is taken to have no servers.
+
+By default OpenCode does not give the model one tool per MCP tool. It gives it a single `execute` tool
+that takes a JavaScript snippet calling `tools.<server>.<tool>({…})` (Code Mode), and lists the calls the
+script made (`server.tool`, status, arguments) in the tool part's metadata. `parse.ts` keeps up to 20
+of them, each with its arguments cut at 4 KB, and the time from the tool starting to finishing. The
+conversation draws any `execute` with calls as a card (`ChatMcpCall.tsx`), whether or not the server
+list has loaded. Closed, a single call is one line: a badge with the server (a plug on the accent colour
+for a listed MCP server, a neutral badge for OpenCode's own tool groups such as `browser`), the tool, its
+arguments in short and, for a small result, the answer (`→ sum: 12`), with the script's time at the
+right; several calls read "Called 2 tools" and the servers. Opened, it shows each call with its
+arguments, one result for the whole script (OpenCode reports no result or time per call), the error,
+and the generated script behind a "Script" button. The result is laid out and coloured when it is
+JSON, shown through the same safe Markdown renderer as replies when it is plainly Markdown (and only
+while the card is open), and otherwise as text, cut after twelve lines with a button for the rest. A
+tool's output is untrusted: it is only ever text or safe Markdown, with no raw HTML or remote images.
+A server whose Code Mode is off exposes direct tools named `<server>_<tool>`; those are recognised by
+the longest listed server name they start with and drawn the same way (that form has not been observed
+against a live OpenCode). An `execute` without calls, such as one still being written, stays a plain
+row, and a lookup of a server's tools reads "Looked up demo_math tools".
 
 **Context usage.** Once a step of the conversation has finished, a pill in the composer's bottom
 row, left of the send button, shows how full the model's context window is: a five-segment gauge
@@ -594,7 +646,8 @@ after a reconnect, open threads refetch. Events are matched to threads by sessio
 reasoning deltas, message and request changes, and run state go to the renderer for threads that
 are open (`chat:subscribe`), and run starts, finishes, failures, renames and pending permissions
 or questions update the thread's status in the Inbox. Events for sessions the Inbox does not
-hold are ignored.
+hold are ignored, except that a change to an MCP server, which names no session, makes the renderer
+read that service's server list again.
 
 ### Window chrome
 

@@ -409,6 +409,18 @@ export interface ChatFilePatch {
   patch: string
 }
 
+/**
+ * One tool a Code Mode script called, as OpenCode lists it in the tool part's metadata. `tool` is
+ * `<namespace>.<name>`: the namespace is an MCP server's name (normalised) or a built-in group such as `browser`.
+ * OpenCode reports no result or time per call, only for the whole script.
+ */
+export interface ChatToolCall {
+  tool: string
+  status: ChatToolStatus
+  /** The call's arguments as compact JSON, possibly truncated. */
+  input: string
+}
+
 export type ChatPart =
   | { kind: 'text'; text: string }
   | { kind: 'reasoning'; text: string }
@@ -423,6 +435,10 @@ export type ChatPart =
       output?: string
       error?: string
       truncated?: boolean
+      /** The tools a Code Mode script (`execute`) called, in order. */
+      calls?: ChatToolCall[]
+      /** How long the tool ran, in milliseconds, once it has finished. */
+      durationMs?: number
       /** What an edit changed, once the tool has finished. */
       patches?: ChatFilePatch[]
       /** For a file write: whether the file was already there. Known once the tool has finished. */
@@ -593,6 +609,34 @@ export interface ChatOptionsRequest {
   threadId?: string
 }
 
+/**
+ * How an MCP server stands, as far as MDE tells apart. OpenCode's `pending` is `connecting`, `needs_auth` is
+ * `needs-auth`, and anything it adds later is `unknown`.
+ */
+export type ChatMcpStatus = 'connected' | 'connecting' | 'disabled' | 'failed' | 'needs-auth' | 'unknown'
+
+/** One MCP server OpenCode has configured for a folder. Commands, URLs, headers and environment are never sent. */
+export interface ChatMcpServer {
+  name: string
+  /** A display name the server gave itself, when it differs from `name`. */
+  title?: string
+  status: ChatMcpStatus
+  /** Why a `failed` or `needs-auth` server is not usable: one line, with paths and secrets removed. */
+  error?: string
+}
+
+export interface ChatMcpState {
+  servers: ChatMcpServer[]
+  /** False when this OpenCode has no MCP list at all, so there is nothing to show. */
+  supported: boolean
+}
+
+/** The MCP servers of a folder (new thread) or of an existing thread; exactly one is given. */
+export type ChatMcpRequest = ChatOptionsRequest
+
+/** Connects (`enabled`) or disconnects one server for the running OpenCode. Nothing is written to its configuration. */
+export type ChatMcpSetRequest = ChatOptionsRequest & { server: string; enabled: boolean }
+
 export interface ChatCreateRequest {
   attachmentIds?: string[]
   draftRevision?: number
@@ -663,6 +707,8 @@ export type ChatEvent =
   | { type: 'running'; threadId: string; running: boolean }
   /** The service connection was lost and restored; refetch everything. */
   | { type: 'reconnected'; threadId: string }
+  /** An MCP server of this target changed (connected, failed, lost its tools); not tied to one thread. */
+  | { type: 'mcp'; target: OpenCodePluginTarget }
 
 export interface InboxSetReadRequest {
   id: string

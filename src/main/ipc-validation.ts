@@ -8,6 +8,7 @@ import {
 import { IpcChannels } from '@shared/ipc'
 import { isSessionColor } from '@shared/session-colors'
 import { isSessionIcon } from '@shared/session-icons'
+import { MCP_SERVER_NAME } from '@shared/mcp'
 import { worktreeBranchProblem } from '@shared/worktree-branch'
 import type { TerminalLayout } from '@shared/types'
 
@@ -150,6 +151,10 @@ const modelRef = object({ id: string(512), providerId: string(512), variant: opt
 const promptText: Validator = (value) => typeof value === 'string' && value.length <= 100_000 &&
   !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value)
 const chatThread = object({ threadId: opencodeSessionId })
+/** A request about a folder (new thread) or a thread names exactly one of them. */
+const exactlyOnePlace: Validator = (value) =>
+  ((value as { folderId?: unknown }).folderId === undefined) !== ((value as { threadId?: unknown }).threadId === undefined)
+const mcpServerName: Validator = (value) => typeof value === 'string' && MCP_SERVER_NAME.test(value)
 const messageId: Validator = (value) => typeof value === 'string' && /^msg_[A-Za-z0-9_-]{1,200}$/.test(value)
 const formValue: Validator = (value) =>
   (typeof value === 'string' && value.length <= 20_000) ||
@@ -252,7 +257,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.inboxChanges]: object({ threadId: opencodeSessionId, details: optional(boolean) }),
   [IpcChannels.chatConfigure]: object({ executable: path }),
   [IpcChannels.chatOptions]: (value) => object({ folderId: optional(inboxFolderId), threadId: optional(opencodeSessionId) })(value) &&
-    ((value as { folderId?: string }).folderId === undefined) !== ((value as { threadId?: string }).threadId === undefined),
+    exactlyOnePlace(value),
   [IpcChannels.chatDraft]: (value) => {
     const key: Validator = (v) => typeof v === 'string' && /^(?:thread:ses_[A-Za-z0-9_-]{1,200}|folder:fld_[A-Za-z0-9-]{1,64})$/.test(v)
     return object({ key, action: oneOf('load', 'flush', 'clear') })(value) ||
@@ -267,6 +272,10 @@ export const ipcPayloadValidators = {
   [IpcChannels.chatSend]: object({ attachmentIds: optional(array(string(64), 10)), draftRevision: optional((v) => Number.isSafeInteger(v) && Number(v) >= 0), threadId: opencodeSessionId, text: promptText, agent: optional(agentId), model: optional(modelRef), delivery: optional(oneOf('steer', 'queue')) }),
   [IpcChannels.chatDiscardPending]: object({ threadId: opencodeSessionId, messageId }),
   [IpcChannels.chatSetDelivery]: object({ threadId: opencodeSessionId, messageId, delivery: oneOf('steer', 'queue') }),
+  [IpcChannels.chatMcp]: (value) => object({ folderId: optional(inboxFolderId), threadId: optional(opencodeSessionId) })(value) &&
+    exactlyOnePlace(value),
+  [IpcChannels.chatMcpSet]: (value) => object({ folderId: optional(inboxFolderId), threadId: optional(opencodeSessionId), server: mcpServerName, enabled: boolean })(value) &&
+    exactlyOnePlace(value),
   [IpcChannels.chatInterrupt]: chatThread,
   [IpcChannels.chatRedo]: chatThread,
   [IpcChannels.chatRevert]: object({ threadId: opencodeSessionId, messageId, files: optional(boolean) }),

@@ -425,6 +425,9 @@ export function toolSummary(part: Extract<ChatPart, { kind: 'tool' }>, directory
     case 'glob':
     case 'grep':
     case 'search': {
+      // Code Mode's `search` looks up the tools of a group (an MCP server); it does not search files.
+      const group = part.name === 'search' ? text('namespace') : null
+      if (group) return `${done ? 'Looked up' : 'Looking up'} ${firstLine(group, 60)} tools`
       const pattern = text('pattern') ?? text('query')
       return pattern ? `Searched for ${firstLine(pattern, 60)}` : 'Searched files'
     }
@@ -442,6 +445,14 @@ export function toolSummary(part: Extract<ChatPart, { kind: 'tool' }>, directory
       return 'Updated the to-do list'
     case 'subagent':
       return text('description') ? `Subagent: ${firstLine(text('description')!, 70)}` : 'Ran a subagent'
+    case 'execute': {
+      // A Code Mode script. What it called is in the metadata; the script itself is code nobody wants as a title.
+      const calls = part.calls ?? []
+      if (calls.length === 0) return done ? 'Ran a script' : 'Running a script'
+      const [only] = calls
+      if (only && calls.length === 1) return `${done ? 'Called' : 'Calling'} ${only.tool}`
+      return `${done ? 'Called' : 'Calling'} ${calls.length} tools`
+    }
     case 'skill': {
       const name = skillCall(part).name
       if (part.status === 'error') return name ? `Could not load the ${name} skill` : 'Could not load a skill'

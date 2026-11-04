@@ -105,6 +105,9 @@ import type {
   ChatSendRequest,
   ChatPendingMessage,
   ChatDiscardPendingRequest,
+  ChatMcpRequest,
+  ChatMcpSetRequest,
+  ChatMcpState,
   ChatSetDeliveryRequest,
   ChatThreadRequest,
   ChatDraftRequest,
@@ -626,6 +629,8 @@ export function registerIpcHandlers(
   handle<ChatSendRequest, ChatPendingMessage | null>(IpcChannels.chatSend, (req) => chat.send(req))
   handle<ChatDiscardPendingRequest, void>(IpcChannels.chatDiscardPending, (req) => chat.discardPending(req))
   handle<ChatSetDeliveryRequest, void>(IpcChannels.chatSetDelivery, (req) => chat.setDelivery(req))
+  handle<ChatMcpRequest, ChatMcpState>(IpcChannels.chatMcp, (req) => chat.mcpList(req))
+  handle<ChatMcpSetRequest, void>(IpcChannels.chatMcpSet, (req) => chat.mcpSetEnabled(req))
   handle<ChatThreadRequest, void>(IpcChannels.chatInterrupt, (req) => chat.interrupt(req.threadId))
   handle<ChatThreadRequest, void>(IpcChannels.chatRedo, (req) => chat.redo(req.threadId))
   handle<ChatRevertRequest, ChatRevert>(IpcChannels.chatRevert, (req) => chat.revert(req))

@@ -126,11 +126,12 @@ the validated `chat:*` channels.
 - **Secrets.** The password is held in memory per target, sent only as HTTP
   Basic auth to that loopback origin, and never logged, stored or put in an
   error message. A 401 or connection failure drops it and rediscovers once.
-- **Operations.** `SERVICE_OPERATIONS` is a fixed allowlist of twenty-one method
-  and path pairs (agents, skills, providers, models, session create/get/active, message
+- **Operations.** `SERVICE_OPERATIONS` is a fixed allowlist of twenty-seven method
+  and path pairs (agents, skills, MCP servers, providers, models, session create/get/active, message
   list, prompt, interrupt, agent and model switch, permission and form
-  list/reply, session update, staging or clearing a revert, fork, and listing or cancelling the inbox items
-  the service holds for a busy agent, and changing their delivery). The skill list (`GET /api/skill`)
+  list/reply, session update, staging or clearing a revert, fork, listing or cancelling the inbox items
+  the service holds for a busy agent, changing their delivery, and listing, connecting and disconnecting
+  MCP servers). The skill list (`GET /api/skill`)
   takes only the `location[directory]` query. OpenCode answers with each skill's full text and file path;
   the main process keeps the id, name and a one-line description and drops the rest, so neither reaches
   the renderer. A prompt can carry `skills` ids, but only ones the main process found by exact match in
@@ -162,14 +163,29 @@ the validated `chat:*` channels.
   it also reads pages of messages, keeping only the ID and text of the message the turn began with.
   OpenCode copies the messages and attachments inside the service, so the copy itself does not pass
   through MDE or the renderer, and the answer is reduced to the new session's ID, title and model.
-  Path parameters must match `ses_`, `per_` or `frm_` ID patterns,
+  The MCP list (`GET /api/mcp`) takes only the `location[directory]` query. OpenCode's answer also says
+  how each server is started or reached; the main process keeps a server's name, an optional title, its
+  state and a short error, and drops everything else (commands, URLs, headers, environment), so none of it
+  reaches the renderer. The error is cut to one line of at most 300 characters, with credentials in URLs,
+  query strings, `Bearer` tokens, `key=`, `token=`, `secret=` and `password=` values, long opaque tokens
+  and home-directory paths taken out (`redactMcpError`). A server whose name could not be put in a URL
+  safely is not listed. The `chat:mcp` channel accepts exactly one of a folder ID and a thread ID. The
+  `chat:mcp-set` channel adds a server name (1–200 characters, no control characters, not only dots) and
+  a boolean, and sends `POST /api/experimental/mcp/{server}/connect` or `/disconnect` with no body. The
+  main process acts only on a name OpenCode lists at that moment (exact match) and refuses a server that
+  needs a sign-in or whose state is unknown, so a connect cannot start a sign-in flow on the machine
+  running OpenCode; the renderer cannot add, change or remove a server, and no configuration file is
+  written (the change lasts until OpenCode restarts). The name is percent-encoded as a path segment, and a
+  name made only of dots is refused because `fetch` would normalise it out of the path.
+  Path parameters must match `ses_`, `per_` or `frm_` ID patterns (an MCP server name, the rule above),
   only the query keys `limit`, `order`, `cursor` and `location[directory]` are
   allowed, request bodies are capped at 1 MB, responses at 16 MB, and each
   request times out after 30 seconds.
 - **Responses.** Every response and event is parsed into MDE's own types; unknown
   fields are dropped, tool input and output are cut at 64 KB, and control
   characters are stripped. Events for sessions the Inbox does not already hold
-  are ignored. Assistant replies and reasoning share the read-only Markdown renderer:
+  are ignored; the exception is an MCP server change (`mcp.status.changed`, `mcp.tools.changed`), which
+  names no session and only tells the renderer to read the server list again. Assistant replies and reasoning share the read-only Markdown renderer:
   only registered schema nodes and attributes are rendered, with no arbitrary HTML,
   scripts, embedded frames or remote images. Links open only for HTTP(S) URLs and
   go through the same main-process URL validator as other external links.

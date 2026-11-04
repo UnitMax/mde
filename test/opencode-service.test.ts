@@ -254,6 +254,31 @@ describe('OpenCode service client', () => {
     expect(() => serviceUrl('http://127.0.0.1:1', 'session.inbox.list', { params: { sessionID: 'ses_a', inboxID: 'msg_1' } })).toThrow()
   })
 
+  it('reaches the MCP routes only with a checked, encoded server name', () => {
+    const origin = 'http://127.0.0.1:1'
+    expect(SERVICE_OPERATIONS['mcp.list']).toEqual({ method: 'GET', path: '/api/mcp' })
+    expect(serviceUrl(origin, 'mcp.list', { query: { 'location[directory]': '/home/me/app' } }))
+      .toBe(`${origin}/api/mcp?location%5Bdirectory%5D=%2Fhome%2Fme%2Fapp`)
+    expect(SERVICE_OPERATIONS['mcp.connect'].method).toBe('POST')
+    expect(SERVICE_OPERATIONS['mcp.disconnect'].method).toBe('POST')
+    expect(serviceUrl(origin, 'mcp.connect', { params: { server: 'demo_math' } })).toBe(`${origin}/api/experimental/mcp/demo_math/connect`)
+    expect(serviceUrl(origin, 'mcp.disconnect', { params: { server: 'demo_math' } })).toBe(`${origin}/api/experimental/mcp/demo_math/disconnect`)
+    // A name may hold anything a path step can not, so it is encoded and stays one step.
+    expect(serviceUrl(origin, 'mcp.connect', { params: { server: 'context 7' } })).toBe(`${origin}/api/experimental/mcp/context%207/connect`)
+    expect(serviceUrl(origin, 'mcp.connect', { params: { server: 'a/b?c#d%2e' } })).toBe(`${origin}/api/experimental/mcp/a%2Fb%3Fc%23d%252e/connect`)
+    expect(serviceUrl(origin, 'mcp.connect', { params: { server: 'v1.2' } })).toBe(`${origin}/api/experimental/mcp/v1.2/connect`)
+    // Dot steps would be resolved by the URL parser and leave the route.
+    for (const server of ['.', '..', '...', '', 'x'.repeat(201), 'a\nb']) {
+      expect(() => serviceUrl(origin, 'mcp.connect', { params: { server } })).toThrow('Invalid OpenCode server.')
+    }
+    expect(() => serviceUrl(origin, 'mcp.connect')).toThrow('Invalid OpenCode server.')
+    // The list takes no name.
+    expect(() => serviceUrl(origin, 'mcp.list', { params: { server: 'demo_math' } })).toThrow()
+    // Resolving the finished URL keeps it under the route, even for the nastiest names allowed.
+    expect(new URL(serviceUrl(origin, 'mcp.disconnect', { params: { server: '..%2f..' } })).pathname)
+      .toBe('/api/experimental/mcp/..%252f../disconnect')
+  })
+
   it('builds URLs only from the fixed operation table and checked parameters', () => {
     expect(serviceUrl('http://127.0.0.1:1', 'session.permission.reply', { params: { sessionID: 'ses_a', requestID: 'per_b' } }))
       .toBe('http://127.0.0.1:1/api/session/ses_a/permission/per_b/reply')

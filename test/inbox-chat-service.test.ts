@@ -339,6 +339,178 @@ describe('Inbox chat service', () => {
     })
   })
 
+  describe('MCP servers', () => {
+    const listing = (...servers: Array<[string, string, Record<string, unknown>?]>) => ({
+      data: servers.map(([name, status, extra]) => ({ name, status: { status, ...extra } })),
+    })
+    const emit = (service: InboxChatService, type: string, data: Record<string, unknown> = {}) =>
+      (service as unknown as { onEvent(event: { type: string; data: Record<string, unknown> }, target: unknown): void }).onEvent({ type, data }, wsl)
+
+    it('lists the servers for the folder’s directory in name order, and asks again every time', async () => {
+      const { service, folder, calls } = setup({ 'mcp.list': listing(['demo_math', 'connected'], ['Alpha', 'pending'], ['demo_display', 'disabled']) })
+      const first = await service.mcpList({ folderId: folder.id })
+      expect(first).toEqual({
+        supported: true,
+        servers: [
+          { name: 'Alpha', status: 'connecting' },
+          { name: 'demo_display', status: 'disabled' },
+          { name: 'demo_math', status: 'connected' },
+        ],
+      })
+      await service.mcpList({ folderId: folder.id })
+      expect(calls.map((call) => call.operation)).toEqual(['mcp.list', 'mcp.list'])
+      expect(calls[0]?.request.query).toEqual({ 'location[directory]': '/home/me/app' })
+      service.stop()
+    })
+
+    it('keeps only the name, title and state, and takes secrets out of an error', async () => {
+      const { service, folder } = setup({
+        'mcp.list': { data: [
+          {
+            name: 'remote',
+            title: 'Remote tools',
+            integrationID: 'int_1',
+            command: ['node', '/home/me/secret.mjs'],
+            environment: { TOKEN: 'abc' },
+            status: { status: 'failed', error: 'GET https://user:pw@example.com/mcp?access_token=abcdef failed; see /home/me/.cache/log; Authorization: Bearer abcdef' },
+          },
+          { name: 'login', status: { status: 'needs_auth', error: 'Sign in' } },
+          { name: 'odd', status: { status: 'something-new' } },
+          { name: '..', status: { status: 'connected' } },
+          { name: 'remote', status: { status: 'connected' } },
+        ] },
+      })
+      const { servers } = await service.mcpList({ folderId: folder.id })
+      expect(servers.map((server) => server.name)).toEqual(['login', 'odd', 'remote'])
+      expect(servers.find((server) => server.name === 'odd')?.status).toBe('unknown')
+      const remote = servers.find((server) => server.name === 'remote')!
+      expect(remote).toEqual({ name: 'remote', title: 'Remote tools', status: 'failed', error: expect.any(String) })
+      expect(remote.error).not.toMatch(/user:pw|abcdef|access_token=|\/home\/me|int_1/)
+      expect(remote.error).toContain('example.com/mcp')
+      expect(JSON.stringify(servers)).not.toMatch(/secret\.mjs|TOKEN/)
+      service.stop()
+    })
+
+    it('asks again while a folder that has not loaded yet lists nothing, but only for the first answer of a place', async () => {
+      const { service, folder, request } = setup()
+      let asked = 0
+      request.mockImplementation(async (_target, operation) => {
+        if (operation !== 'mcp.list') return null
+        asked += 1
+        return asked < 3 ? { data: [] } : listing(['demo_math', 'connected'])
+      })
+      expect((await service.mcpList({ folderId: folder.id })).servers).toHaveLength(1)
+      expect(asked).toBe(3)
+      // The place has answered, so a later empty list (every server removed) is believed at once.
+      request.mockImplementation(async () => { asked += 1; return { data: [] } })
+      asked = 0
+      expect(await service.mcpList({ folderId: folder.id })).toEqual({ servers: [], supported: true })
+      expect(asked).toBe(1)
+      // Another executable means another OpenCode: its first answer is waited for again.
+      service.configure('/opt/opencode')
+      asked = 0
+      await service.mcpList({ folderId: folder.id })
+      expect(asked).toBe(6)
+      service.stop()
+    })
+
+    it('shares the request when several asks arrive together', async () => {
+      const { service, folder, calls } = setup({ 'mcp.list': listing(['demo_math', 'connected']) })
+      const [a, b] = await Promise.all([service.mcpList({ folderId: folder.id }), service.mcpList({ folderId: folder.id })])
+      expect(a).toBe(b)
+      expect(calls).toHaveLength(1)
+      service.stop()
+    })
+
+    it('says an OpenCode without MCP routes is unsupported, but reports other failures', async () => {
+      const old = setup({ 'mcp.list': new OpenCodeServiceError('Not found', 404) })
+      await expect(old.service.mcpList({ folderId: old.folder.id })).resolves.toEqual({ servers: [], supported: false })
+      const missing = setup({ 'mcp.list': new OpenCodeServiceError('No such folder', 404, 'LocationNotFoundError') })
+      await expect(missing.service.mcpList({ folderId: missing.folder.id })).rejects.toThrow('No such folder')
+      await expect(missing.service.mcpList({ folderId: 'fld_gone' })).rejects.toThrow('no longer in the Inbox')
+      old.service.stop()
+      missing.service.stop()
+    })
+
+    it('opens the event stream so that status changes arrive without a thread', async () => {
+      const { service, folder, openEvents } = setup({ 'mcp.list': listing(['demo_math', 'connected']) })
+      await service.mcpList({ folderId: folder.id })
+      expect(openEvents).toHaveBeenCalledWith(wsl, expect.any(AbortSignal))
+      service.stop()
+    })
+
+    it('connects a disabled server and disconnects a connected one, in the thread’s directory', async () => {
+      const { service, folder, calls, store } = setup({
+        'mcp.list': listing(['demo_math', 'connected'], ['context 7', 'disabled']),
+        'session.create': { data: { id: 'ses_new' } },
+      })
+      await service.mcpSetEnabled({ folderId: folder.id, server: 'context 7', enabled: true })
+      await service.mcpSetEnabled({ folderId: folder.id, server: 'demo_math', enabled: false })
+      expect(calls.filter((call) => call.operation !== 'mcp.list')).toEqual([
+        { operation: 'mcp.connect', request: { params: { server: 'context 7' }, query: { 'location[directory]': '/home/me/app' } } },
+        { operation: 'mcp.disconnect', request: { params: { server: 'demo_math' }, query: { 'location[directory]': '/home/me/app' } } },
+      ])
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      const thread = store.get('ses_new')!
+      calls.length = 0
+      await service.mcpSetEnabled({ threadId: 'ses_new', server: 'demo_math', enabled: false })
+      expect(calls[1]?.request.query).toEqual({ 'location[directory]': thread.directory })
+      service.stop()
+    })
+
+    it('does nothing for a server that is already in the state asked for', async () => {
+      const { service, folder, calls } = setup({ 'mcp.list': listing(['demo_math', 'connected'], ['demo_display', 'disabled'], ['slow', 'pending']) })
+      await service.mcpSetEnabled({ folderId: folder.id, server: 'demo_math', enabled: true })
+      await service.mcpSetEnabled({ folderId: folder.id, server: 'demo_display', enabled: false })
+      await service.mcpSetEnabled({ folderId: folder.id, server: 'slow', enabled: true })
+      expect(calls.map((call) => call.operation)).toEqual(['mcp.list', 'mcp.list', 'mcp.list'])
+      service.stop()
+    })
+
+    it('retries a failed server by connecting it', async () => {
+      const { service, folder, calls } = setup({ 'mcp.list': listing(['broken', 'failed', { error: 'exit 1' }]) })
+      await service.mcpSetEnabled({ folderId: folder.id, server: 'broken', enabled: true })
+      expect(calls.at(-1)?.operation).toBe('mcp.connect')
+      service.stop()
+    })
+
+    it('only touches servers OpenCode lists, and leaves one that waits for a sign-in alone', async () => {
+      const { service, folder, calls } = setup({ 'mcp.list': listing(['login', 'needs_auth', { error: 'Sign in' }], ['odd', 'something-new']) })
+      await expect(service.mcpSetEnabled({ folderId: folder.id, server: 'gone', enabled: true })).rejects.toThrow('not configured any more')
+      await expect(service.mcpSetEnabled({ folderId: folder.id, server: 'login', enabled: true })).rejects.toThrow('sign-in')
+      await expect(service.mcpSetEnabled({ folderId: folder.id, server: 'odd', enabled: false })).rejects.toThrow('does not know')
+      expect(calls.every((call) => call.operation === 'mcp.list')).toBe(true)
+      service.stop()
+    })
+
+    it('tells a vanished server from an OpenCode that cannot toggle', async () => {
+      const gone = setup({ 'mcp.list': listing(['demo_math', 'connected']), 'mcp.disconnect': new OpenCodeServiceError('x', 404, 'McpServerNotFoundError') })
+      await expect(gone.service.mcpSetEnabled({ folderId: gone.folder.id, server: 'demo_math', enabled: false })).rejects.toThrow('not configured any more')
+      const old = setup({ 'mcp.list': listing(['demo_math', 'connected']), 'mcp.disconnect': new OpenCodeServiceError('Not found', 404) })
+      await expect(old.service.mcpSetEnabled({ folderId: old.folder.id, server: 'demo_math', enabled: false })).rejects.toThrow('Update OpenCode')
+      const down = setup({ 'mcp.list': listing(['demo_math', 'connected']), 'mcp.disconnect': new OpenCodeServiceError('Boom', 500) })
+      await expect(down.service.mcpSetEnabled({ folderId: down.folder.id, server: 'demo_math', enabled: false })).rejects.toThrow('Boom')
+      for (const each of [gone, old, down]) each.service.stop()
+    })
+
+    it('passes MCP changes on without any thread, and ignores the ones that change nothing visible', () => {
+      const { service, events } = setup()
+      emit(service, 'mcp.status.changed', { server: 'demo_math' })
+      emit(service, 'mcp.tools.changed', { server: 'demo_math' })
+      emit(service, 'mcp.resources.changed', { server: 'demo_math' })
+      expect(events).toEqual([{ type: 'mcp', target: wsl }, { type: 'mcp', target: wsl }])
+      service.stop()
+    })
+
+    it('refuses where the Inbox is unavailable', async () => {
+      const { service, folder, disable, calls } = setup()
+      disable()
+      await expect(service.mcpList({ folderId: folder.id })).rejects.toThrow('only available')
+      await expect(service.mcpSetEnabled({ folderId: folder.id, server: 'demo_math', enabled: false })).rejects.toThrow('only available')
+      expect(calls).toEqual([])
+    })
+  })
+
   it('creates a session in the folder, records it, and sends the first message', async () => {
     const { service, store, folder, calls, openEvents } = setup({ 'session.create': { data: { id: 'ses_new', title: 'New session' } } })
     const thread = await service.create({ folderId: folder.id, text: 'Fix the login', agent: 'plan', model })

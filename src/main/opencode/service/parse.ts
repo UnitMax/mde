@@ -1,3 +1,4 @@
+import { MCP_SERVER_NAME } from '@shared/mcp'
 import type {
   ChatAgent,
   ChatForm,
@@ -5,6 +6,8 @@ import type {
   ChatFormOption,
   ChatMessage,
   ChatFilePatch,
+  ChatMcpServer,
+  ChatMcpStatus,
   ChatMessagesPage,
   ChatModel,
   ChatPart,
@@ -15,6 +18,7 @@ import type {
   ChatSkill,
   ChatSkillUse,
   ChatTokens,
+  ChatToolCall,
   ChatToolStatus,
   ChatUsage,
   OpenCodeModelRef,
@@ -139,6 +143,58 @@ export function parseSkills(value: unknown): ChatSkill[] {
   return skills
 }
 
+const MCP_STATUSES: Record<string, ChatMcpStatus> = {
+  connected: 'connected',
+  pending: 'connecting',
+  disabled: 'disabled',
+  failed: 'failed',
+  needs_auth: 'needs-auth',
+}
+
+/** More MCP servers than this are not listed. */
+const MCP_LIMIT = 100
+
+/**
+ * A server's own error text, made fit to show: one line, with what could identify the user or let someone
+ * in (credentials in a URL or header, long opaque tokens, the home directory) taken out. Cut to 300 characters.
+ */
+export function redactMcpError(value: unknown): string | undefined {
+  const text = line(value, 2000)
+  if (!text) return undefined
+  return text
+    .replace(/\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@]*@/gi, '$1')
+    .replace(/(\b[a-z][a-z0-9+.-]*:\/\/[^\s?#]*)[?#]\S*/gi, '$1')
+    .replace(/\b(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|token|secret|passwd|password|authorization)(\s*[=:]\s*)(?:Bearer\s+)?\S+/gi, '$1$2…')
+    .replace(/\bBearer\s+\S+/gi, 'Bearer …')
+    .replace(/(?:\/home|\/Users)\/[^/\s]+/g, '~')
+    .replace(/\b[A-Za-z]:\\Users\\[^\\\s]+/gi, '~')
+    .replace(/\b[A-Za-z0-9_-]{32,}\b/g, '…')
+    .slice(0, 300)
+}
+
+/**
+ * The MCP servers OpenCode has for a folder. Only the name, the display title and how it stands are kept:
+ * the answer holds nothing else of use, and a server's command, URL, headers and environment are never asked for.
+ * A name the OpenCode client would refuse to put in a URL is skipped, so every listed server can be switched.
+ */
+export function parseMcpServers(value: unknown): ChatMcpServer[] {
+  const servers: ChatMcpServer[] = []
+  const seen = new Set<string>()
+  for (const item of list(data(value, 'an MCP server list'))) {
+    const server = record(item)
+    const name = server?.name
+    if (!server || typeof name !== 'string' || !MCP_SERVER_NAME.test(name) || seen.has(name)) continue
+    seen.add(name)
+    const state = record(server.status)
+    const status = (typeof state?.status === 'string' ? MCP_STATUSES[state.status] : undefined) ?? 'unknown'
+    const error = status === 'failed' || status === 'needs-auth' ? redactMcpError(state?.error) : undefined
+    const title = line(server.title, 200)
+    servers.push({ name, ...(title && title !== name ? { title } : {}), status, ...(error ? { error } : {}) })
+    if (servers.length >= MCP_LIMIT) break
+  }
+  return servers.sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }) || (a.name < b.name ? -1 : 1))
+}
+
 /** The skills a user message invoked, by id and display name. */
 function parseSkillUses(value: unknown): ChatSkillUse[] {
   const uses: ChatSkillUse[] = []
@@ -255,6 +311,55 @@ function parsePatches(metadata: Json | null): { patches: ChatFilePatch[]; trunca
   return { patches, truncated }
 }
 
+/** A Code Mode script makes at most 20 tool calls; each call's arguments and all of them together are cut. */
+const MAX_TOOL_CALLS = 20
+const MAX_CALL_INPUT = 4 * 1024
+const MAX_CALLS_INPUT = 32 * 1024
+const CALL_STATUSES: Record<string, ChatToolStatus> = {
+  pending: 'pending',
+  streaming: 'pending',
+  running: 'running',
+  completed: 'completed',
+  success: 'completed',
+  error: 'error',
+  failed: 'error',
+}
+
+/**
+ * The tools a Code Mode script called, from the tool part's metadata (`{ tool: 'server.name', status, input }`).
+ * OpenCode reports no result or time per call. A call without a usable status takes the script's own.
+ */
+function parseToolCalls(metadata: Json | null, fallback: ChatToolStatus): ChatToolCall[] | undefined {
+  const calls: ChatToolCall[] = []
+  let budget = MAX_CALLS_INPUT
+  for (const entry of list(metadata?.toolCalls).slice(0, MAX_TOOL_CALLS)) {
+    const call = record(entry)
+    const tool = short(call?.tool, 200)
+    if (!call || !tool) continue
+    let input = ''
+    try {
+      input = call.input === undefined ? '' : JSON.stringify(call.input) ?? ''
+    } catch {
+      input = ''
+    }
+    input = input.slice(0, Math.max(0, Math.min(MAX_CALL_INPUT, budget)))
+    budget -= input.length
+    const status = typeof call.status === 'string' ? CALL_STATUSES[call.status] : undefined
+    calls.push({ tool, status: status ?? fallback, input })
+  }
+  return calls.length > 0 ? calls : undefined
+}
+
+/** How long a tool ran: from when it started running to when it finished. */
+function toolDuration(value: unknown): number | undefined {
+  const times = record(value)
+  const ran = times?.ran
+  const completed = times?.completed
+  if (typeof ran !== 'number' || typeof completed !== 'number' || !Number.isFinite(ran) || !Number.isFinite(completed)) return undefined
+  const duration = completed - ran
+  return duration >= 0 && duration <= 7 * 24 * 60 * 60 * 1000 ? Math.round(duration) : undefined
+}
+
 function parsePart(value: unknown): ChatPart | null {
   const part = record(value)
   if (!part) return null
@@ -279,6 +384,10 @@ function parsePart(value: unknown): ChatPart | null {
   const error = status === 'error' ? errorText(state.error) : undefined
   const metadata = record(state.metadata)
   const changes = status === 'completed' ? parsePatches(metadata) : { patches: [], truncated: false }
+  const calls = parseToolCalls(metadata, status)
+  const durationMs = status === 'completed' || status === 'error' ? toolDuration(part.time) : undefined
+  // OpenCode cuts a script's output itself and says so in the metadata.
+  const cutByOpenCode = calls !== undefined && metadata?.truncated === true
   return {
     kind: 'tool',
     id,
@@ -287,7 +396,9 @@ function parsePart(value: unknown): ChatPart | null {
     input: input.text,
     ...(output.text ? { output: output.text } : {}),
     ...(error ? { error } : {}),
-    ...(input.truncated || output.truncated || changes.truncated ? { truncated: true } : {}),
+    ...(input.truncated || output.truncated || changes.truncated || cutByOpenCode ? { truncated: true } : {}),
+    ...(calls ? { calls } : {}),
+    ...(durationMs !== undefined ? { durationMs } : {}),
     ...(changes.patches.length > 0 ? { patches: changes.patches } : {}),
     ...(status === 'completed' && typeof metadata?.exists === 'boolean' ? { existed: metadata.exists } : {}),
   }
