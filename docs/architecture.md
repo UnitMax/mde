@@ -72,6 +72,20 @@ list can be searched by title, folder, branch and model, and filtered to All, Un
 or Parked. Hovering or focusing a row shows a car icon and a "Park" label; parked threads offer
 "Move to Inbox" instead. The context menu marks a thread read or unread, parks it, or deletes it.
 
+The gear at the end of the filters opens the Inbox's display settings. One of them adds a
+**Working** section to the sidebar, under the list rather than as another filter tab. Turned on, the
+threads that are working right now move out of the list into it, the run that began last first, each
+with the same row, menu and elapsed time, and they go back to the list (at the place their last
+activity gives them) as soon as they stop. A thread that is done, failed, waiting for an answer or a
+permission, not yet started or parked is not in it. A parked thread that is still working therefore
+stays under Parked. The section ignores the filter tabs, so it always shows what is running, but the
+search narrows it along with the list, since it is the only place a working thread can be found. Its
+header (an arrow, the name and a count) folds it up, leaving the count; while it is folded those
+threads are not listed anywhere else. It takes at most 45% of the sidebar's height and scrolls beyond
+that, and the list above keeps a small minimum height. Both choices are kept in the renderer's
+`localStorage` (`mde.inbox-working-section`, off by default, and `mde.inbox-working-collapsed`, open
+by default; `store/inbox-view.ts`).
+
 Opening a thread counts it as read, and so does something new happening in the thread you are
 looking at (the Inbox showing and the window in front), as with an open mail. Since that leaves no
 dot to see, the row glows and its status chip, in the list and in the thread's header, pops for

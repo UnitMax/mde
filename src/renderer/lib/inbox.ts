@@ -106,9 +106,18 @@ export function inboxStatusChip(thread: InboxThread): InboxStatusChip | null {
   }
 }
 
-function matchesFilter(thread: InboxThread, filter: InboxFilter): boolean {
+/**
+ * Whether a thread belongs in the Working section: it is working and not parked. A thread that is
+ * done, failed, waiting for an answer or a permission, or not started is not working.
+ */
+export function inboxThreadWorking(thread: InboxThread): boolean {
+  return thread.status === 'working' && !thread.archived
+}
+
+function matchesFilter(thread: InboxThread, filter: InboxFilter, workingElsewhere: boolean): boolean {
   if (filter === 'archived') return thread.archived
   if (thread.archived) return false
+  if (workingElsewhere && inboxThreadWorking(thread)) return false
   if (filter === 'unread') return isInboxThreadUnread(thread)
   if (filter === 'attention') return thread.status === 'attention'
   return true
@@ -119,20 +128,40 @@ function searchFields(thread: InboxThread): string[] {
   return [thread.title, thread.directory, thread.branch ?? '', model]
 }
 
-/** Filters, then searches title, folder, branch and model; newest activity first. */
+function matchesQuery(thread: InboxThread, tokens: readonly string[]): boolean {
+  const fields = searchFields(thread)
+  return tokens.every((token) => fields.some((field) => matchSubsequence(token, field)))
+}
+
+/**
+ * Filters, then searches title, folder, branch and model; newest activity first. With
+ * `workingElsewhere` the threads that are working are left out, because the Working section shows
+ * them instead; a parked one is not working and stays under Parked.
+ */
 export function visibleInboxThreads(
   threads: readonly InboxThread[],
   filter: InboxFilter,
-  query: string
+  query: string,
+  workingElsewhere = false
 ): InboxThread[] {
   const tokens = queryTokens(query)
   return threads
-    .filter((thread) => matchesFilter(thread, filter))
-    .filter((thread) => {
-      const fields = searchFields(thread)
-      return tokens.every((token) => fields.some((field) => matchSubsequence(token, field)))
-    })
+    .filter((thread) => matchesFilter(thread, filter, workingElsewhere))
+    .filter((thread) => matchesQuery(thread, tokens))
     .sort((a, b) => b.lastActivityAt - a.lastActivityAt || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
+}
+
+/**
+ * The threads that are working right now, for the Working section: the newest run first. The
+ * section ignores the filter tabs but not the search, since a working thread is nowhere else in
+ * the Inbox to be searched for.
+ */
+export function workingInboxThreads(threads: readonly InboxThread[], query = ''): InboxThread[] {
+  const started = (thread: InboxThread): number => thread.workingSince ?? thread.lastActivityAt
+  const tokens = queryTokens(query)
+  return threads
+    .filter((thread) => inboxThreadWorking(thread) && matchesQuery(thread, tokens))
+    .sort((a, b) => started(b) - started(a) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
 }
 
 /**

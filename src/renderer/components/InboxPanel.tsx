@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import {
   Car,
+  ChevronDown,
+  ChevronRight,
   Folder,
   GitBranch,
   GitFork,
@@ -42,11 +44,13 @@ import {
   inboxThreadHome,
   inboxWorktreeShared,
   inboxLocked,
+  inboxThreadWorking,
   inboxCueActive,
   inboxModelLabel,
   inboxStatusChip,
   isInboxThreadUnread,
   visibleInboxThreads,
+  workingInboxThreads,
   type InboxFilter,
   type InboxStatusChip
 } from '@/lib/inbox'
@@ -55,6 +59,7 @@ import { sessionAge, sessionDate } from '@/lib/opencode-sessions'
 import { cn } from '@/lib/utils'
 import { useInboxChat } from '@/store/inbox-chat'
 import { useInboxChanges, inboxChangesKey } from '@/store/inbox-changes'
+import { useInboxView } from '@/store/inbox-view'
 import { useWorkspace } from '@/store/workspace'
 
 /** Re-renders on an interval so "5m ago" labels stay current. */
@@ -365,12 +370,94 @@ function InboxThreadRow({
   )
 }
 
-function emptyMessage(filter: InboxFilter, query: string): string {
+/** `workingShown`: the Working section has the threads that are working, so the list does not. */
+function emptyMessage(filter: InboxFilter, query: string, workingShown: boolean): string {
   if (query.trim()) return 'No threads match your search.'
   if (filter === 'unread') return 'No unread threads.'
   if (filter === 'attention') return 'No threads need your input.'
   if (filter === 'archived') return 'No parked threads.'
-  return 'No threads yet.'
+  return workingShown ? 'No other threads.' : 'No threads yet.'
+}
+
+/**
+ * The threads that are working, in a section under the list that folds up to its header. They are
+ * here and not in the list, and go back to the list when they stop. The filter tabs do not apply,
+ * so a glance tells what is running; the search does, since this is the only place to find them by it.
+ */
+function InboxWorkingSection({
+  threads,
+  searching,
+  selectedId,
+  now,
+  forking,
+  onSelect,
+  onFork
+}: {
+  threads: InboxThread[]
+  /** A search is narrowing the threads. */
+  searching: boolean
+  selectedId: string | null
+  now: number
+  forking: boolean
+  onSelect: (thread: InboxThread) => void
+  onFork: (thread: InboxThread) => void
+}): JSX.Element {
+  const collapsed = useInboxView((state) => state.workingCollapsed)
+  const setCollapsed = useInboxView((state) => state.setWorkingCollapsed)
+  const Chevron = collapsed ? ChevronRight : ChevronDown
+  return (
+    <section
+      data-testid="inbox-working-section"
+      aria-label="Working threads"
+      // A direct child of the panel, so the percentage is of the panel; the list above keeps its own minimum.
+      className="flex max-h-[45%] min-h-0 shrink flex-col border-t border-line pt-1"
+    >
+      <button
+        type="button"
+        data-testid="inbox-working-toggle"
+        aria-expanded={!collapsed}
+        aria-controls="inbox-working-list"
+        onClick={() => setCollapsed(!collapsed)}
+        className="flex h-6 w-full shrink-0 items-center gap-1 rounded px-1 text-left text-[11px] font-medium uppercase tracking-wide text-fg-subtle transition-colors hover:bg-hover hover:text-fg"
+      >
+        <Chevron aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+        <span>Working</span>
+        <span
+          data-testid="inbox-working-count"
+          className="rounded bg-elevated px-1.5 py-px text-[10px] font-medium normal-case tracking-normal text-fg-muted"
+        >
+          {threads.length}
+        </span>
+      </button>
+      {!collapsed && (
+        <div
+          id="inbox-working-list"
+          data-testid="inbox-working-list"
+          className="mt-0.5 min-h-0 flex-1 overflow-y-auto"
+        >
+          {threads.length === 0 ? (
+            <p className="px-2 py-1 text-xs text-fg-subtle">
+              {searching ? 'No working threads match your search.' : 'No threads are working.'}
+            </p>
+          ) : (
+            <div className="flex flex-col gap-0.5">
+              {threads.map((thread) => (
+                <InboxThreadRow
+                  key={thread.id}
+                  thread={thread}
+                  selected={thread.id === selectedId}
+                  now={now}
+                  forking={forking}
+                  onSelect={() => onSelect(thread)}
+                  onFork={() => onFork(thread)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  )
 }
 
 /** The Inbox tab of the sidebar: OpenCode threads, most recent activity first. */
@@ -386,7 +473,11 @@ export function InboxPanel(): JSX.Element {
   const [query, setQuery] = useState('')
   // A fork is a request to the service and can fail; the menu has no place to say so.
   const [fork, setFork] = useState<{ pending: boolean; error: string | null }>({ pending: false, error: null })
-  const visible = visibleInboxThreads(threads, filter, query)
+  const showWorking = useInboxView((state) => state.workingSection)
+  // With the section on, the threads that are working are in it and not in the list.
+  const visible = visibleInboxThreads(threads, filter, query, showWorking)
+  const working = showWorking ? workingInboxThreads(threads, query) : []
+  const workingShown = showWorking && threads.some(inboxThreadWorking)
   const startFork = (thread: InboxThread): void => {
     if (fork.pending) return
     setFork({ pending: true, error: null })
@@ -471,10 +562,10 @@ export function InboxPanel(): JSX.Element {
           </button>
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto" data-testid="inbox-thread-list">
+      <div className="min-h-16 flex-1 overflow-y-auto" data-testid="inbox-thread-list">
         {visible.length === 0 ? (
           <div className="px-2 py-1 text-xs text-fg-subtle">
-            <p>{emptyMessage(filter, query)}</p>
+            <p>{emptyMessage(filter, query, workingShown)}</p>
             {threads.length === 0 && (
               <p className="mt-1">
                 Start one with New thread.
@@ -497,6 +588,17 @@ export function InboxPanel(): JSX.Element {
           </div>
         )}
       </div>
+      {showWorking && (
+        <InboxWorkingSection
+          threads={working}
+          searching={query.trim() !== ''}
+          selectedId={selectedId}
+          now={now}
+          forking={fork.pending}
+          onSelect={(thread) => selectThread(thread.id)}
+          onFork={startFork}
+        />
+      )}
     </div>
   )
 }

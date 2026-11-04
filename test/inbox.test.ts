@@ -9,8 +9,10 @@ import {
   inboxModelLabel,
   inboxStatusChip,
   inboxThreadHome,
+  inboxThreadWorking,
   inboxWorktreeShared,
-  visibleInboxThreads
+  visibleInboxThreads,
+  workingInboxThreads
 } from '../src/renderer/lib/inbox'
 
 function thread(overrides: Partial<InboxThread> = {}): InboxThread {
@@ -82,6 +84,86 @@ describe('inbox list helpers', () => {
     expect(inboxLocked(windows, false)).toBe(true)
     expect(inboxLocked(windows, true)).toBe(false)
     expect(inboxLocked(mac, false)).toBe(false)
+  })
+})
+
+describe('workingInboxThreads', () => {
+  const ids = (list: InboxThread[]): string[] => workingInboxThreads(list).map((item) => item.id)
+
+  it('keeps the threads that are working, and none that are done, failed, waiting or not started', () => {
+    expect(ids([
+      thread({ id: 'ses_working', status: 'working' }),
+      thread({ id: 'ses_done', status: 'completed' }),
+      thread({ id: 'ses_failed', status: 'error' }),
+      thread({ id: 'ses_idle', status: 'idle' }),
+      thread({ id: 'ses_question', status: 'attention', attentionReason: 'question' }),
+      thread({ id: 'ses_permission', status: 'attention', attentionReason: 'permission' }),
+      thread({ id: 'ses_asking', status: 'attention' })
+    ])).toEqual(['ses_working'])
+  })
+
+  it('leaves out a parked thread, as the list does', () => {
+    expect(ids([thread({ id: 'ses_parked', status: 'working', archived: true }), thread({ id: 'ses_open', status: 'working' })]))
+      .toEqual(['ses_open'])
+  })
+
+  it('puts the run that began last first, falling back to the last activity when the start is not known', () => {
+    expect(ids([
+      thread({ id: 'ses_old', status: 'working', workingSince: 100, lastActivityAt: 900 }),
+      thread({ id: 'ses_new', status: 'working', workingSince: 300, lastActivityAt: 1 }),
+      thread({ id: 'ses_unknown', status: 'working', lastActivityAt: 200 }),
+    ])).toEqual(['ses_new', 'ses_unknown', 'ses_old'])
+  })
+
+  it('orders runs that began together the same way every time, and does not touch the list it was given', () => {
+    const list = [
+      thread({ id: 'ses_a', status: 'working', workingSince: 5 }),
+      thread({ id: 'ses_b', status: 'working', workingSince: 5 }),
+      thread({ id: 'ses_c', status: 'completed' }),
+    ]
+    expect(ids(list)).toEqual(['ses_b', 'ses_a'])
+    expect(ids([...list].reverse())).toEqual(['ses_b', 'ses_a'])
+    expect(list.map((item) => item.id)).toEqual(['ses_a', 'ses_b', 'ses_c'])
+    expect(workingInboxThreads([])).toEqual([])
+  })
+})
+
+describe('working threads and the list', () => {
+  const threads = [
+    thread({ id: 'ses_run', title: 'Refactor parser', status: 'working', lastActivityAt: 50 }),
+    thread({ id: 'ses_done', title: 'Parser notes', status: 'completed', lastActivityAt: 40 }),
+    thread({ id: 'ses_parked', title: 'Parked run', status: 'working', archived: true, lastActivityAt: 60 }),
+    thread({ id: 'ses_ask', title: 'Question', status: 'attention', attentionReason: 'question', lastActivityAt: 30 }),
+  ]
+  const ids = (list: InboxThread[]): string[] => list.map((item) => item.id)
+
+  it('says which threads belong in the Working section', () => {
+    expect(threads.map(inboxThreadWorking)).toEqual([true, false, false, false])
+  })
+
+  it('keeps working threads in the list unless the section has them', () => {
+    expect(ids(visibleInboxThreads(threads, 'all', ''))).toEqual(['ses_run', 'ses_done', 'ses_ask'])
+    expect(ids(visibleInboxThreads(threads, 'all', '', true))).toEqual(['ses_done', 'ses_ask'])
+    expect(ids(visibleInboxThreads(threads, 'all', '', false))).toEqual(['ses_run', 'ses_done', 'ses_ask'])
+  })
+
+  it('leaves them out of every tab but Parked, where a parked one stays', () => {
+    const unread = threads.map((item) => ({ ...item, readAt: 0 }))
+    expect(ids(visibleInboxThreads(unread, 'unread', '', true))).toEqual(['ses_done', 'ses_ask'])
+    expect(ids(visibleInboxThreads(unread, 'archived', '', true))).toEqual(['ses_parked'])
+    expect(ids(visibleInboxThreads(threads, 'attention', '', true))).toEqual(['ses_ask'])
+  })
+
+  it('searches what is left, and the working threads with the same words', () => {
+    expect(ids(visibleInboxThreads(threads, 'all', 'parser', true))).toEqual(['ses_done'])
+    expect(ids(workingInboxThreads(threads, 'parser'))).toEqual(['ses_run'])
+    expect(ids(workingInboxThreads(threads, 'notes'))).toEqual([])
+    expect(ids(workingInboxThreads(threads, '  '))).toEqual(['ses_run'])
+    // Every thread is in the list or in the section, never both.
+    for (const query of ['', 'parser', 'question', 'zzz']) {
+      const listed = ids(visibleInboxThreads(threads, 'all', query, true))
+      expect(listed.filter((id) => ids(workingInboxThreads(threads, query)).includes(id))).toEqual([])
+    }
   })
 })
 

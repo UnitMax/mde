@@ -20,6 +20,9 @@ MDE stores data only on the local machine:
   centered column or fills the page (the word `centered` or `full`).
 - The renderer's local storage (`mde.inbox-sidebar-changes`): whether the Inbox's thread list shows
   each thread's Git changes (the word `on` or `off`).
+- The renderer's local storage (`mde.inbox-working-section` and `mde.inbox-working-collapsed`):
+  whether the Inbox lists the threads that are working in a section of its own, and whether that
+  section is folded up (the word `on` or `off` for each).
 - Small preference files in the user-data directory for the OpenCode status integration and
   notifications.
 - `inbox.json` under Electron's user-data directory, once you use the Inbox: one record for each
