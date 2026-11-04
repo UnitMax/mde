@@ -276,6 +276,116 @@ describe('The new-thread page and its draft', () => {
 
 const withSidebar = (): ReturnType<typeof createElement> => createElement('div', null, createElement(InboxPanel), createElement(InboxThreadView))
 
+describe('Starting threads in the background', () => {
+  it('creates successive threads with fresh drafts and keeps the composer focused with the same choices', async () => {
+    useInboxChat.setState({ composer: { folderId: 'fld_docs', agent: 'plan', model: paid } })
+    for (const id of ['ses_background_one', 'ses_background_two']) {
+      create.mockImplementationOnce(async (request) => {
+        kept.delete(`draft:${request.draftId}`)
+        return { ...created, id, folderId: 'fld_docs', status: 'working' }
+      })
+    }
+    await render(withSidebar())
+    await vi.waitFor(() => expect(q('[data-testid="chat-model-picker"]')?.textContent).toContain('Paid'))
+    const usedDrafts: string[] = []
+    for (const [index, message] of ['Fix the login', 'Add a dark theme'].entries()) {
+      const id = page_().id
+      usedDrafts.push(id)
+      await setMessageText(messageInput(document.body), message)
+      await pressMessageKey(messageInput(document.body), 'Enter', index === 0 ? { ctrlKey: true } : { metaKey: true })
+      await vi.waitFor(() => expect(page_().id).not.toBe(id))
+      await vi.waitFor(() => expect(text()).toBe(''))
+      expect(useWorkspace.getState().selectedInboxThreadId).toBeNull()
+      expect(q('[data-testid="inbox-new-thread"]')).not.toBeNull()
+      expect(q('[data-testid="inbox-folder-picker"]')?.textContent).toContain('docs')
+      expect(q('[data-testid="chat-agent-picker"]')?.textContent).toContain('Plan')
+      expect(q('[data-testid="chat-model-picker"]')?.textContent).toContain('Paid')
+      await vi.waitFor(() => expect(document.activeElement).toBe(messageInput(document.body).contentDOM))
+      expect(create).toHaveBeenNthCalledWith(index + 1, {
+        folderId: 'fld_docs', text: message, agent: 'plan', model: paid, draftId: id, attachmentIds: [], draftRevision: 1,
+      })
+    }
+    expect(new Set(usedDrafts).size).toBe(2)
+    expect(useWorkspace.getState().inboxThreads.map((thread) => thread.id)).toEqual(expect.arrayContaining(['ses_background_one', 'ses_background_two']))
+    expect(q('[data-testid="inbox-thread-ses_background_one"]')).not.toBeNull()
+    expect(q('[data-testid="inbox-thread-ses_background_two"]')).not.toBeNull()
+    expect(useInboxDrafts.getState().drafts).toEqual([])
+    expect(usedDrafts.every((id) => !kept.has(`draft:${id}`))).toBe(true)
+  })
+
+  it('consumes a reopened draft and keeps worktree settings ready with a fresh branch name', async () => {
+    git = repo
+    kept.set('draft:drf_tree', { text: 'Try it on a branch', folderId: 'fld_app', choice: { agent: 'build', model, worktree: { base: 'feature/login', branch: 'topic/x' } }, updatedAt: 900 })
+    await render(withSidebar())
+    await vi.waitFor(() => expect(q('[data-testid="inbox-draft-drf_tree"]')).not.toBeNull())
+    await act(async () => q('[data-testid="inbox-draft-drf_tree"]')!.click())
+    await vi.waitFor(() => expect(text()).toBe('Try it on a branch'))
+    await pickersReady()
+    await pressMessageKey(messageInput(document.body), 'Enter', { ctrlKey: true })
+    await vi.waitFor(() => expect(page_().id).not.toBe('drf_tree'))
+    await vi.waitFor(() => expect(text()).toBe(''))
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ draftId: 'drf_tree', worktree: { base: 'feature/login', branch: 'topic/x' } }))
+    expect(page_().opened).toBe(false)
+    expect(q('[data-testid="inbox-draft-drf_tree"]')).toBeNull()
+    expect(q('[data-testid="worktree-mode-picker"]')?.textContent).toBe('New worktree')
+    expect(q('[data-testid="worktree-branch-picker"]')?.textContent).toBe('From feature/login')
+    expect((q('[data-testid="worktree-branch-name"]') as HTMLInputElement).value).toBe('')
+    await setMessageText(messageInput(document.body), 'Another task')
+    expect(kept.get(keyOf())?.choice?.worktree).toEqual({ base: 'feature/login' })
+  })
+
+  it('keeps the draft and shows the error if creation fails', async () => {
+    create.mockRejectedValueOnce(new Error('Model unavailable'))
+    await render(createElement(InboxThreadView))
+    await pickersReady()
+    await setMessageText(messageInput(document.body), 'Keep this task')
+    const id = page_().id
+    await pressMessageKey(messageInput(document.body), 'Enter', { ctrlKey: true })
+    await vi.waitFor(() => expect(q('[role="alert"]')?.textContent).toContain('Model unavailable'))
+    expect(text()).toBe('Keep this task')
+    expect(page_().id).toBe(id)
+    expect(kept.get(keyOf())?.text).toBe('Keep this task')
+    expect(useWorkspace.getState().selectedInboxThreadId).toBeNull()
+  })
+
+  it('opens a thread whose first message could not be sent so its draft can be retried', async () => {
+    create.mockImplementationOnce(async (request) => {
+      kept.delete(`draft:${request.draftId}`)
+      kept.set('thread:ses_new', { text: request.text, updatedAt: clock })
+      return { ...created, sendError: 'Could not send the first message. Your draft has been kept; try sending again.' }
+    })
+    await render(createElement(InboxThreadView))
+    await pickersReady()
+    await setMessageText(messageInput(document.body), 'Retry this task')
+    await pressMessageKey(messageInput(document.body), 'Enter', { ctrlKey: true })
+    await vi.waitFor(() => expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_new'))
+    await vi.waitFor(() => expect(text()).toBe('Retry this task'))
+    expect(q('[role="alert"]')?.textContent).toContain('Could not send the first message')
+  })
+
+  it('leaves a different draft opened while creation is pending alone', async () => {
+    let finish!: (thread: InboxThread) => void
+    create.mockImplementationOnce((request) => new Promise((resolve) => {
+      finish = (thread) => { kept.delete(`draft:${request.draftId}`); resolve(thread) }
+    }))
+    kept.set('draft:drf_other', { text: 'Another idea', folderId: 'fld_app', updatedAt: 900 })
+    await render(withSidebar())
+    await pickersReady()
+    await setMessageText(messageInput(document.body), 'Start this task')
+    await pressMessageKey(messageInput(document.body), 'Enter', { ctrlKey: true })
+    await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(1))
+    await pressMessageKey(messageInput(document.body), 'Enter', { ctrlKey: true })
+    expect(create).toHaveBeenCalledTimes(1)
+    await act(async () => q('[data-testid="inbox-draft-drf_other"]')!.click())
+    await vi.waitFor(() => expect(text()).toBe('Another idea'))
+    await act(async () => finish(created))
+    expect(page_().id).toBe('drf_other')
+    expect(text()).toBe('Another idea')
+    expect(useWorkspace.getState().selectedInboxThreadId).toBeNull()
+    expect(useWorkspace.getState().inboxThreads.some((thread) => thread.id === created.id)).toBe(true)
+  })
+})
+
 describe('How a draft would start', () => {
   it('is told to the draft once the agent and model are known, and not before', async () => {
     await render(createElement(InboxThreadView))

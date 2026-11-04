@@ -272,6 +272,7 @@ export function NewThreadView(): JSX.Element {
             draftKey={`draft:${page.id}`}
             draftMeta={draftMeta}
             onSaveDraft={saveDraft}
+            allowBackgroundSend
             autoFocus
             options={options}
             agent={agent}
@@ -297,9 +298,15 @@ export function NewThreadView(): JSX.Element {
                 onBranchNameChange={(next) => setHere({ branch: next })}
               />
             )}
-            onSend={async (text, attachments) => {
+            onSend={async (text, { background, ...attachments } = {}) => {
               if (!agent || !model) return
-              await createThread({ folderId: folder.id, text, agent, model, draftId: page.id, ...attachments, ...(worktree ? { worktree } : {}) })
+              await createThread({ folderId: folder.id, text, agent, model, draftId: page.id, ...attachments, ...(worktree ? { worktree } : {}) }, { background })
+              const drafts = useInboxDrafts.getState()
+              if (background && drafts.page.id === page.id) {
+                drafts.leave()
+                // Keep where the next thread runs, but give its worktree a fresh branch name.
+                setWhere({ ...here, pageId: useInboxDrafts.getState().page.id, branch: '' })
+              }
             }}
           />
         )}

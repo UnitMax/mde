@@ -4,6 +4,7 @@ import type { EditorView } from '@codemirror/view'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChatComposer, type ChatComposerProps } from '../src/renderer/components/inbox/ChatComposer'
+import { useWorkspace } from '../src/renderer/store/workspace'
 import type { ChatDraft, ChatDraftRequest } from '../src/shared/types'
 import { messageInput, pressMessageKey, setMessageText } from './helpers/chat-input'
 
@@ -61,6 +62,38 @@ async function click(button: HTMLElement | null): Promise<void> {
 }
 
 describe('the send button', () => {
+  it.each([
+    ['win32', 'Ctrl+Enter'],
+    ['darwin', 'Cmd+Enter'],
+  ] as const)('shows the background shortcut on the new-thread page on %s', async (platform, shortcut) => {
+    useWorkspace.setState({ platform: { platform, isWindows: platform === 'win32' } })
+    const { box, onSend } = await setup({ allowBackgroundSend: true })
+    expect(send()?.title).toContain(`Start in background and keep creating threads (${shortcut})`)
+    await setMessageText(box, 'Start this thread')
+    await pressMessageKey(box, 'Enter', { ctrlKey: true })
+    expect(onSend).toHaveBeenCalledWith('Start this thread', expect.objectContaining({ background: true }))
+  })
+
+  it('keeps Ctrl+Enter as a normal send in an existing thread', async () => {
+    const { box, onSend } = await setup()
+    expect(send()?.title).toBe('Send (Enter)')
+    await setMessageText(box, 'A follow-up')
+    await pressMessageKey(box, 'Enter', { ctrlKey: true })
+    expect(onSend).toHaveBeenCalledTimes(1)
+    expect(onSend.mock.calls[0]![1]).not.toHaveProperty('background')
+  })
+
+  it('does not start a background thread with an empty, blocked or composing input', async () => {
+    const { box, onSend, render } = await setup({ allowBackgroundSend: true })
+    await pressMessageKey(box, 'Enter', { ctrlKey: true })
+    await setMessageText(box, 'Keep this')
+    await pressMessageKey(box, 'Enter', { ctrlKey: true, isComposing: true })
+    await render({ sendBlocked: true })
+    await pressMessageKey(box, 'Enter', { ctrlKey: true })
+    expect(onSend).not.toHaveBeenCalled()
+    expect((box as EditorView).state.doc.toString()).toBe('Keep this')
+  })
+
   it('is the plain round button while the agent is idle', async () => {
     const { box, onSend } = await setup()
     await setMessageText(box, 'Hello')

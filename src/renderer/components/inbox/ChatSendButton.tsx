@@ -25,19 +25,21 @@ export interface ChatSendButtonProps {
   disabled: boolean
   sending: boolean
   onSend: () => void
+  /** The new-thread page can start a thread without opening it and keep the composer ready. */
+  backgroundShortcut?: string
   /** The menu has closed; the caret goes back to the text. */
   onMenuClosed?: () => void
 }
 
 /** The way out of the prompt box: round when the agent is idle, a Steer / Queue button while it works. */
-export function ChatSendButton({ running, delivery, onDeliveryChange, disabled, sending, onSend, onMenuClosed }: ChatSendButtonProps): JSX.Element {
+export function ChatSendButton({ running, delivery, onDeliveryChange, disabled, sending, onSend, backgroundShortcut, onMenuClosed }: ChatSendButtonProps): JSX.Element {
   const icon = sending ? <LoaderCircle aria-hidden className="h-4 w-4 animate-spin" /> : <ArrowUp aria-hidden className="h-4 w-4" />
   if (!running) {
     return (
       <button
         type="button"
         aria-label="Send"
-        title="Send (Enter)"
+        title={backgroundShortcut ? `Send (Enter). Start in background and keep creating threads (${backgroundShortcut})` : 'Send (Enter)'}
         disabled={disabled}
         onClick={onSend}
         data-testid="chat-send"

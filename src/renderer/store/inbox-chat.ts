@@ -109,7 +109,7 @@ interface InboxChatStore {
   reloadFolders: () => Promise<void>
   setComposer: (patch: InboxComposerState) => void
   loadOptions: (key: { folderId: string } | { threadId: string }, force?: boolean) => Promise<void>
-  createThread: (input: { folderId: string; text: string; agent: string; model: OpenCodeModelRef; draftId?: string; attachmentIds?: string[]; draftRevision?: number; worktree?: { base: string; branch?: string } }) => Promise<InboxThread>
+  createThread: (input: { folderId: string; text: string; agent: string; model: OpenCodeModelRef; draftId?: string; attachmentIds?: string[]; draftRevision?: number; worktree?: { base: string; branch?: string } }, options?: { background?: boolean }) => Promise<InboxThread>
   openThread: (threadId: string) => () => void
   refresh: (threadId: string) => Promise<void>
   refreshRequests: (threadId: string) => Promise<void>
@@ -272,7 +272,7 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
       }
     },
 
-    createThread: async (input) => {
+    createThread: async (input, options) => {
       const thread = await window.api.chat.create(input)
       set((state) => ({
         composer: { folderId: input.folderId, agent: input.agent, model: input.model },
@@ -280,7 +280,8 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
       }))
       const workspace = useWorkspace.getState()
       workspace.upsertInboxThread(thread)
-      workspace.selectInboxThread(thread.id)
+      // A failed first prompt keeps its draft in the thread; open it so the error and retry are visible.
+      if (!options?.background || thread.sendError) workspace.selectInboxThread(thread.id)
       // A new worktree was added to the folder list by main, so that more threads can be started in it.
       if (input.worktree) void get().reloadFolders()
       return thread

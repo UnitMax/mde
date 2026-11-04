@@ -226,9 +226,11 @@ export interface ChatComposerProps {
   onModelChange: (model: OpenCodeModelRef) => void
   /**
    * Sends the text; a rejection keeps the text and shows the error. `delivery` is set while the agent is
-   * working: how the message should reach it.
+   * working: how the message should reach it. `background` starts a new thread without opening it.
    */
-  onSend: (text: string, options?: { attachmentIds?: string[]; draftRevision?: number; delivery?: ChatDelivery }) => Promise<void>
+  onSend: (text: string, options?: { attachmentIds?: string[]; draftRevision?: number; delivery?: ChatDelivery; background?: boolean }) => Promise<void>
+  /** On the new-thread page, Ctrl+Enter (also Cmd+Enter on macOS) starts a thread and keeps the page open. */
+  allowBackgroundSend?: boolean
   /** Shown as a Stop button while the agent is working and the box is empty; the send button then says how it will send. */
   running?: boolean
   onStop?: () => void
@@ -260,6 +262,7 @@ export function ChatComposer({
   onAgentChange,
   onModelChange,
   onSend,
+  allowBackgroundSend = false,
   running = false,
   onStop,
   onRetryOptions,
@@ -441,7 +444,7 @@ export function ChatComposer({
     })
   }
 
-  const send = async (): Promise<void> => {
+  const send = async (background = false): Promise<void> => {
     if (!canSend) return
     resetHistory()
     setSending(true)
@@ -454,6 +457,7 @@ export function ChatComposer({
       const options = {
         ...(value ? { attachmentIds: value.attachments.map((file) => file.id), draftRevision: value.revision } : {}),
         ...(running ? { delivery } : {}),
+        ...(background ? { background: true } : {}),
       }
       await onSend(text, Object.keys(options).length > 0 ? options : undefined)
       setText('')
@@ -473,7 +477,12 @@ export function ChatComposer({
       if (canSave) onSaveDraft()
       return
     }
-    // The open list gets the keys first, so Enter chooses the skill instead of sending half a message.
+    if (allowBackgroundSend && event.key === 'Enter' && (event.ctrlKey || (mac && event.metaKey)) && !event.shiftKey && !event.altKey) {
+      event.preventDefault()
+      void send(true)
+      return
+    }
+    // Plain Enter chooses from the open list instead of sending half a message.
     if (pickerOpen && trigger) {
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault()
@@ -626,6 +635,7 @@ export function ChatComposer({
               onDeliveryChange={setDelivery}
               disabled={!canSend}
               sending={sending}
+              backgroundShortcut={allowBackgroundSend ? `${mac ? 'Cmd' : 'Ctrl'}+Enter` : undefined}
               onSend={() => void send()}
               onMenuClosed={() => messageRef.current?.focus()}
             />

@@ -238,6 +238,11 @@ build in ‹folder›?". The folder name opens a menu of the Inbox folders with 
 remove buttons. Changing the folder keeps what was typed; the draft moves to the new folder. Below it is the composer: a prompt box, a model picker (searchable, grouped by
 provider, enabled and non-deprecated models only), an agent picker (Build, Plan, then any other
 primary agent that is not hidden), and a send button. Enter sends; Shift+Enter and Ctrl+J add a newline.
+On the new-thread page, Ctrl+Enter (also Cmd+Enter on macOS) starts the thread in the background
+and leaves a blank, focused composer for the next thread. The folder, agent, model and worktree
+mode and base stay selected; a custom worktree branch name is cleared for the next thread.
+The send button's hover hint shows the shortcut. Enter and clicking Send open the created thread.
+If the first message cannot be sent after creation, the thread opens with its saved draft and an error for retry.
 Both the new-thread and follow-up inputs show Markdown bullet markers (`-`, `*`, or `+` followed
 by a space) as formatted bullets while typing. A newline continues the current bullet list;
 on an empty item it leaves the list.

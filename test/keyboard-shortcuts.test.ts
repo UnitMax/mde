@@ -44,7 +44,7 @@ describe('KeyboardShortcutsSettings', () => {
     const section = container.querySelector<HTMLElement>('[data-testid="keyboard-shortcuts-settings"]')
 
     expect(section).not.toBeNull()
-    expect(section?.querySelectorAll('[data-testid^="keyboard-shortcut-row-"]')).toHaveLength(44)
+    expect(section?.querySelectorAll('[data-testid^="keyboard-shortcut-row-"]')).toHaveLength(45)
     expect(section?.querySelectorAll('button')).toHaveLength(0)
     const rows = Array.from(section?.querySelectorAll<HTMLElement>('[data-testid^="keyboard-shortcut-row-"]') ?? [])
     expect(rows.every((row) => row.classList.contains('grid-cols-[12rem_minmax(0,1fr)]'))).toBe(true)
@@ -58,6 +58,7 @@ describe('KeyboardShortcutsSettings', () => {
     expect(section?.textContent).toContain('Ctrl+Shift+1–9')
     expect(section?.textContent).toContain('Ctrl+Insert')
     expect(section?.textContent).toContain('Ctrl+Enter')
+    expect(section?.querySelector('[data-testid="keyboard-shortcut-row-inbox-send-background"]')?.textContent).toContain('keep the composer open')
     expect(section?.textContent).toContain('Tab')
     expect(section?.textContent).toContain('Home')
     expect(section?.textContent).toContain('Search in the open code file.')
@@ -75,6 +76,7 @@ describe('KeyboardShortcutsSettings', () => {
     expect(section?.textContent).toContain('Cmd+F')
     expect(section?.textContent).toContain('Cmd+C')
     expect(section?.textContent).toContain('Cmd+V')
+    expect(section?.textContent).toContain('Cmd+Enter')
     expect(section?.textContent).toContain('Ctrl+Shift+F')
     expect(section?.textContent).toContain('Enabled in Terminal settings; ignored while a dialog is open.')
 
