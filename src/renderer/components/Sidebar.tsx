@@ -6,16 +6,15 @@ import {
   type MouseEvent as ReactMouseEvent
 } from 'react'
 import {
-  ChevronDown,
   ChevronRight,
   Check,
   Copy,
-  Folder,
-  FolderPlus,
   GripVertical,
   Inbox,
   ListTodo,
   MoreHorizontal,
+  Monitor,
+  Terminal,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
@@ -25,7 +24,6 @@ import {
   Trash2
 } from 'lucide-react'
 import type {
-  Project,
   Session,
   SessionTab,
   TodoProject
@@ -50,27 +48,11 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger
 } from '@/components/ui/context-menu'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle
-} from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import {
   useWorkspace,
   type WorkspaceView
 } from '@/store/workspace'
-import { SessionEnvironmentPanel } from '@/components/SessionEnvironmentPanel'
 import {
   DEFAULT_SESSION_COLOR,
   SESSION_COLORS,
@@ -91,7 +73,7 @@ import {
 } from '@/terminal/terminal-settings'
 
 const SIDEBAR_SECTIONS = [
-  { id: 'projects' as const, label: 'Projects', Icon: Folder },
+  { id: 'sessions' as const, label: 'Sessions', Icon: Terminal },
   { id: 'todo' as const, label: 'To Do', Icon: ListTodo },
   { id: 'inbox' as const, label: 'Inbox', Icon: Inbox }
 ]
@@ -179,6 +161,27 @@ function customSessionColor(color: Session['color']): Session['color'] {
 function sessionBackgroundStyle(color: Session['color']): { backgroundColor: string } | undefined {
   const customColor = customSessionColor(color)
   return customColor ? { backgroundColor: sessionColorHex(customColor) } : undefined
+}
+
+function sessionEnvironmentLabel(session: Session): string {
+  return session.kind === 'wsl' ? `WSL · ${session.distro ?? 'Distribution unavailable'}` : 'Native'
+}
+
+function SessionEnvironment({ session }: { session: Session }): JSX.Element {
+  const Icon = session.kind === 'wsl' ? Terminal : Monitor
+  return (
+    <div
+      data-testid="session-environment"
+      className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] leading-tight text-fg-subtle"
+      title={sessionEnvironmentLabel(session)}
+    >
+      <span className="inline-flex shrink-0 items-center gap-1 rounded border border-line-strong bg-bg/30 px-1 py-0.5 text-[10px] font-medium text-fg-muted">
+        <Icon className="h-2.5 w-2.5" aria-hidden="true" />
+        {session.kind === 'wsl' ? 'WSL' : 'Native'}
+      </span>
+      {session.kind === 'wsl' && <span className="min-w-0 truncate">{session.distro ?? 'Distribution unavailable'}</span>}
+    </div>
+  )
 }
 
 function TerminalInstances({
@@ -271,16 +274,12 @@ function SessionRow({
   const renameSession = useWorkspace((state) => state.renameSession)
   const duplicateSession = useWorkspace((state) => state.duplicateSession)
   const setSessionColor = useWorkspace((state) => state.setSessionColor)
-  const moveSession = useWorkspace((state) => state.moveSession)
   const removeSession = useWorkspace((state) => state.removeSession)
-  const projects = useWorkspace((state) => state.projects)
 
   const rowRef = useRef<HTMLDivElement>(null)
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState(session.name)
   const [confirmingRemove, setConfirmingRemove] = useState(false)
-  const [moving, setMoving] = useState(false)
-  const [targetProjectId, setTargetProjectId] = useState(session.projectId)
 
   const startRename = (): void => {
     setDraftName(session.name)
@@ -306,15 +305,6 @@ function SessionRow({
     )
   }
 
-  const move = async (): Promise<void> => {
-    if (!targetProjectId || targetProjectId === session.projectId) {
-      setMoving(false)
-      return
-    }
-    await moveSession(session.id, targetProjectId)
-    setMoving(false)
-  }
-
   const sessionColor = session.color ?? DEFAULT_SESSION_COLOR
   const customColor = customSessionColor(session.color)
   const backgroundStyle = sessionBackgroundStyle(session.color)
@@ -322,107 +312,106 @@ function SessionRow({
     <>
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <SessionEnvironmentPanel session={session}>
-            <div
-              ref={rowRef}
-              role="button"
-              tabIndex={0}
-              data-testid="session-row"
-              onClick={onSelect}
-              onDragOver={onDragOver}
-              onDrop={onDrop}
-              onKeyDown={(event) => {
-                if (event.key === 'F2' && event.target === event.currentTarget) {
-                  event.preventDefault()
-                  startRename()
-                  return
-                }
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault()
-                  onSelect()
-                }
+          <div
+            ref={rowRef}
+            role="button"
+            tabIndex={0}
+            data-testid="session-row"
+            onClick={onSelect}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+            onKeyDown={(event) => {
+              if (event.key === 'F2' && event.target === event.currentTarget) {
+                event.preventDefault()
+                startRename()
+                return
+              }
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                onSelect()
+              }
+            }}
+            className={cn(
+              'group relative flex w-full cursor-default items-center gap-2 rounded-md py-2 pl-4 pr-2 text-left',
+              customColor
+                ? 'text-fg transition-[filter] hover:brightness-110'
+                : selected
+                  ? 'bg-active text-fg'
+                  : 'text-fg-muted hover:bg-hover hover:text-fg',
+              dragging && 'opacity-60',
+              dropPosition === 'before' && 'border-t-2 border-accent',
+              dropPosition === 'after' && 'border-b-2 border-accent'
+            )}
+            style={backgroundStyle}
+          >
+            <button
+              type="button"
+              draggable={!dragDisabled}
+              disabled={dragDisabled}
+              aria-label={`Drag to reorder ${session.name}`}
+              title="Drag to reorder"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+              onDragStart={(event) => {
+                event.stopPropagation()
+                event.dataTransfer.effectAllowed = 'move'
+                event.dataTransfer.setData('text/plain', session.id)
+                onDragStart()
+              }}
+              onDragEnd={(event) => {
+                event.stopPropagation()
+                onDragEnd()
               }}
               className={cn(
-                'group relative ml-1 flex w-[calc(100%-0.25rem)] cursor-default items-center gap-2 rounded py-1.5 pl-4 pr-2 text-left',
-                customColor
-                  ? 'text-fg transition-[filter] hover:brightness-110'
-                  : selected
-                    ? 'bg-active text-fg'
-                    : 'text-fg-muted hover:bg-hover hover:text-fg',
-                dragging && 'opacity-60',
-                dropPosition === 'before' && 'border-t-2 border-accent',
-                dropPosition === 'after' && 'border-b-2 border-accent'
+                'absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded text-fg-subtle opacity-0 transition-opacity',
+                'pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100',
+                'group-focus-within:pointer-events-auto group-focus-within:opacity-100',
+                'focus:pointer-events-auto focus:opacity-100 hover:text-fg',
+                dragging && 'pointer-events-auto opacity-100',
+                dragDisabled
+                  ? 'pointer-events-none cursor-default opacity-50'
+                  : 'cursor-grab active:cursor-grabbing'
               )}
-              style={backgroundStyle}
             >
-              <button
-                type="button"
-                draggable={!dragDisabled}
-                disabled={dragDisabled}
-                aria-label={`Drag to reorder ${session.name}`}
-                title="Drag to reorder"
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => event.stopPropagation()}
-                onDragStart={(event) => {
-                  event.stopPropagation()
-                  event.dataTransfer.effectAllowed = 'move'
-                  event.dataTransfer.setData('text/plain', session.id)
-                  onDragStart()
-                }}
-                onDragEnd={(event) => {
-                  event.stopPropagation()
-                  onDragEnd()
-                }}
-                className={cn(
-                  'absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded text-fg-subtle opacity-0 transition-opacity',
-                  'pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100',
-                  'group-focus-within:pointer-events-auto group-focus-within:opacity-100',
-                  'focus:pointer-events-auto focus:opacity-100 hover:text-fg',
-                  dragging && 'pointer-events-auto opacity-100',
-                  dragDisabled
-                    ? 'pointer-events-none cursor-default opacity-50'
-                    : 'cursor-grab active:cursor-grabbing'
-                )}
-              >
-                <GripVertical className="h-3.5 w-3.5" />
-              </button>
-              <div className="min-w-0 flex-1">
-                {renaming ? (
-                  <input
-                    autoFocus
-                    value={draftName}
-                    onChange={(event) => setDraftName(event.target.value)}
-                    onBlur={commitRename}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') commitRename()
-                      if (event.key === 'Escape') {
-                        setDraftName(session.name)
-                        setRenaming(false)
-                      }
-                      event.stopPropagation()
-                    }}
-                    onClick={(event) => event.stopPropagation()}
-                    className="h-5 w-full rounded-sm border border-accent bg-bg px-1 text-[13px] text-fg outline-none"
-                  />
-                ) : (
-                  <div data-testid="session-name" className="truncate text-[13px] leading-tight">
-                    {session.name}
-                  </div>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={openMenuFromButton}
-                title="Session actions"
-                className={cn(
-                  'shrink-0 rounded p-0.5 text-fg-subtle opacity-0 transition-opacity',
-                  'hover:bg-elevated hover:text-fg focus:opacity-100 group-hover:opacity-100'
-                )}
-              >
-                <MoreHorizontal className="h-3.5 w-3.5" />
-              </button>
+              <GripVertical className="h-3.5 w-3.5" />
+            </button>
+            <div className="min-w-0 flex-1">
+              {renaming ? (
+                <input
+                  autoFocus
+                  value={draftName}
+                  onChange={(event) => setDraftName(event.target.value)}
+                  onBlur={commitRename}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') commitRename()
+                    if (event.key === 'Escape') {
+                      setDraftName(session.name)
+                      setRenaming(false)
+                    }
+                    event.stopPropagation()
+                  }}
+                  onClick={(event) => event.stopPropagation()}
+                  className="h-5 w-full rounded-sm border border-accent bg-bg px-1 text-[13px] text-fg outline-none"
+                />
+              ) : (
+                <div data-testid="session-name" className="truncate text-[13px] font-medium leading-tight">
+                  {session.name}
+                </div>
+              )}
+              <SessionEnvironment session={session} />
             </div>
-          </SessionEnvironmentPanel>
+            <button
+              type="button"
+              onClick={openMenuFromButton}
+              title="Session actions"
+              className={cn(
+                'shrink-0 rounded p-0.5 text-fg-subtle opacity-0 transition-opacity',
+                'hover:bg-elevated hover:text-fg focus:opacity-100 group-hover:opacity-100'
+              )}
+            >
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </ContextMenuTrigger>
 
         <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
@@ -464,15 +453,6 @@ function SessionRow({
               ))}
             </ContextMenuSubContent>
           </ContextMenuSub>
-          <ContextMenuItem
-            onSelect={() => {
-              setTargetProjectId(session.projectId)
-              setMoving(true)
-            }}
-          >
-            <Folder className="h-3.5 w-3.5" />
-            Move to project
-          </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem destructive onSelect={() => setConfirmingRemove(true)}>
             <Trash2 className="h-3.5 w-3.5" />
@@ -489,39 +469,6 @@ function SessionRow({
           onFocus={onFocusTerminal}
         />
       )}
-
-      <Dialog open={moving} onOpenChange={setMoving}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Move session</DialogTitle>
-            <DialogDescription>Choose the project label for “{session.name}”.</DialogDescription>
-          </DialogHeader>
-          <Select value={targetProjectId} onValueChange={setTargetProjectId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select a project" />
-            </SelectTrigger>
-            <SelectContent>
-              {projects.map((project) => (
-                <SelectItem key={project.id} value={project.id}>
-                  {project.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <DialogFooter>
-            <Button variant="secondary" size="sm" onClick={() => setMoving(false)}>
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              disabled={targetProjectId === session.projectId}
-              onClick={() => void move()}
-            >
-              Move
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <AlertDialog open={confirmingRemove} onOpenChange={setConfirmingRemove}>
         <AlertDialogContent>
@@ -546,8 +493,7 @@ interface SessionDropTarget {
   position: 'before' | 'after'
 }
 
-interface ProjectGroupProps {
-  project: Project
+interface SessionListProps {
   sessions: Session[]
   terminalDirectories: Record<string, string>
   terminalLayouts: Record<string, Record<string, SessionTerminalLayout>>
@@ -555,27 +501,18 @@ interface ProjectGroupProps {
   selectedSessionId: string | null
   onSelectSession: (id: string) => void
   onFocusTerminal: (sessionId: string, tabId: string, terminalId: string) => void
-  onNewSession: (projectId: string) => void
 }
 
-function ProjectGroup({
-  project,
+function SessionList({
   sessions,
   terminalDirectories,
   terminalLayouts,
   showTerminalInstances,
   selectedSessionId,
   onSelectSession,
-  onFocusTerminal,
-  onNewSession
-}: ProjectGroupProps): JSX.Element {
-  const renameProject = useWorkspace((state) => state.renameProject)
-  const removeProject = useWorkspace((state) => state.removeProject)
+  onFocusTerminal
+}: SessionListProps): JSX.Element {
   const reorderSession = useWorkspace((state) => state.reorderSession)
-  const [collapsed, setCollapsed] = useState(false)
-  const [renaming, setRenaming] = useState(false)
-  const [draftName, setDraftName] = useState(project.name)
-  const [confirmingRemove, setConfirmingRemove] = useState(false)
   const [draggingSessionId, setDraggingSessionId] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<SessionDropTarget | null>(null)
   const [reordering, setReordering] = useState(false)
@@ -661,124 +598,31 @@ function ProjectGroup({
     void commitDrop(sourceId, targetId, position)
   }
 
-  const commitRename = (): void => {
-    setRenaming(false)
-    const name = draftName.trim()
-    if (name && name !== project.name) void renameProject(project.id, name)
-    else setDraftName(project.name)
-  }
-
   return (
-    <>
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <div className="group flex w-full items-center gap-1 rounded px-2 py-1 text-left text-fg-muted hover:bg-hover hover:text-fg">
-            {renaming ? (
-              <input
-                autoFocus
-                value={draftName}
-                onChange={(event) => setDraftName(event.target.value)}
-                onBlur={commitRename}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') commitRename()
-                  if (event.key === 'Escape') {
-                    setDraftName(project.name)
-                    setRenaming(false)
-                  }
-                  event.stopPropagation()
-                }}
-                className="h-6 min-w-0 flex-1 rounded-sm border border-accent bg-bg px-1 text-[13px] text-fg outline-none"
-              />
-            ) : (
-              <button
-                type="button"
-                className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-                onClick={() => setCollapsed((value) => !value)}
-                title={collapsed ? 'Expand project' : 'Collapse project'}
-              >
-                {collapsed ? (
-                  <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-                ) : (
-                  <ChevronDown className="h-3.5 w-3.5 shrink-0" />
-                )}
-                <Folder className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate text-[13px] font-medium">{project.name}</span>
-                <span className="text-[11px] text-fg-subtle">{sessions.length}</span>
-              </button>
-            )}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="ml-auto shrink-0"
-              onClick={(event) => {
-                event.stopPropagation()
-                onNewSession(project.id)
-              }}
-              title="New session in this project"
-              aria-label="New session in this project"
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        </ContextMenuTrigger>
-        <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
-          <ContextMenuItem
-            onSelect={() => {
-              setDraftName(project.name)
-              setRenaming(true)
-            }}
-          >
-            <Pencil className="h-3.5 w-3.5" />
-            Rename project
-          </ContextMenuItem>
-          <ContextMenuSeparator />
-          <ContextMenuItem destructive onSelect={() => setConfirmingRemove(true)}>
-            <Trash2 className="h-3.5 w-3.5" />
-            Remove project
-          </ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
-
-      {!collapsed &&
-        sessions.map((session) => (
-          <SessionRow
-            key={session.id}
-            session={session}
-            terminalDirectories={terminalDirectories}
-            terminalTabs={sessionTabs(session)}
-            terminalLayouts={terminalLayouts[session.id] ?? {}}
-            showTerminalInstances={showTerminalInstances}
-            selected={session.id === selectedSessionId}
-            onSelect={() => onSelectSession(session.id)}
-            onFocusTerminal={(tabId, terminalId) => onFocusTerminal(session.id, tabId, terminalId)}
-            dragging={session.id === draggingSessionId}
-            dragDisabled={reordering}
-            dropPosition={
-              dropTarget?.sessionId === session.id ? dropTarget.position : null
-            }
-            onDragStart={() => handleDragStart(session.id)}
-            onDragEnd={handleDragEnd}
-            onDragOver={(event) => handleDragOver(event, session.id)}
-            onDrop={(event) => handleDrop(event, session.id)}
-          />
-        ))}
-
-      <AlertDialog open={confirmingRemove} onOpenChange={setConfirmingRemove}>
-        <AlertDialogContent>
-          <AlertDialogTitle>Remove “{project.name}”?</AlertDialogTitle>
-          <AlertDialogDescription>
-            This removes the project label, all of its sessions, and their terminal processes.
-            Nothing on disk is deleted.
-          </AlertDialogDescription>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void removeProject(project.id)}>
-              Remove project
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+    <div className="space-y-1">
+      {sessions.map((session) => (
+        <SessionRow
+          key={session.id}
+          session={session}
+          terminalDirectories={terminalDirectories}
+          terminalTabs={sessionTabs(session)}
+          terminalLayouts={terminalLayouts[session.id] ?? {}}
+          showTerminalInstances={showTerminalInstances}
+          selected={session.id === selectedSessionId}
+          onSelect={() => onSelectSession(session.id)}
+          onFocusTerminal={(tabId, terminalId) => onFocusTerminal(session.id, tabId, terminalId)}
+          dragging={session.id === draggingSessionId}
+          dragDisabled={reordering}
+          dropPosition={
+            dropTarget?.sessionId === session.id ? dropTarget.position : null
+          }
+          onDragStart={() => handleDragStart(session.id)}
+          onDragEnd={handleDragEnd}
+          onDragOver={(event) => handleDragOver(event, session.id)}
+          onDrop={(event) => handleDrop(event, session.id)}
+        />
+      ))}
+    </div>
   )
 }
 
@@ -868,8 +712,7 @@ function TodoProjectRow({
         <AlertDialogContent>
           <AlertDialogTitle>Remove “{project.name}”?</AlertDialogTitle>
           <AlertDialogDescription>
-            This removes the To Do project and all of its tasks. Terminal projects, sessions, and
-            files are unaffected.
+            This removes the To Do project and all of its tasks. Terminal sessions and files are unaffected.
           </AlertDialogDescription>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -886,7 +729,6 @@ function TodoProjectRow({
 interface SidebarCreateActionsProps {
   activeSection: WorkspaceView
   collapsed: boolean
-  onNewProject: () => void
   onNewSession: () => void
   onNewTodoTask: () => void
   todoTaskAvailable: boolean
@@ -895,7 +737,6 @@ interface SidebarCreateActionsProps {
 function SidebarCreateActions({
   activeSection,
   collapsed,
-  onNewProject,
   onNewSession,
   onNewTodoTask,
   todoTaskAvailable
@@ -920,59 +761,35 @@ function SidebarCreateActions({
   }
 
   return (
-    <div className={cn('flex', collapsed ? 'flex-col gap-1' : 'w-full')}>
-      <Button
-        variant="secondary"
-        size={collapsed ? 'icon' : 'sm'}
-        className={cn(!collapsed && 'min-w-0 flex-1 rounded-r-none')}
-        onClick={onNewSession}
-        title="New session"
-        aria-label="New session"
-      >
-        <Plus className="h-3.5 w-3.5" />
-        {!collapsed && <span>New session</span>}
-      </Button>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="secondary"
-            size="icon"
-            className={cn(!collapsed && 'rounded-l-none border-l-0')}
-            title="More creation actions"
-            aria-label="More creation actions"
-          >
-            <ChevronDown className="h-3.5 w-3.5" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent side={collapsed ? 'right' : 'top'} align="end">
-          <DropdownMenuItem onSelect={() => onNewProject()}>
-            <FolderPlus className="h-3.5 w-3.5" />
-            New project
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
+    <Button
+      variant="secondary"
+      size={collapsed ? 'icon' : 'sm'}
+      className={cn(!collapsed && 'w-full')}
+      onClick={onNewSession}
+      title="New session"
+      aria-label="New session"
+    >
+      <Plus className="h-3.5 w-3.5" />
+      {!collapsed && <span>New session</span>}
+    </Button>
   )
 }
 
 interface SidebarProps {
-  onNewProject: () => void
   onNewTodoProject: () => void
   onNewTodoTask: () => void
-  onNewSession: (projectId?: string) => void
+  onNewSession: () => void
   terminalLayouts: Record<string, Record<string, SessionTerminalLayout>>
   onFocusTerminal: (sessionId: string, tabId: string, terminalId: string) => void
 }
 
 export function Sidebar({
-  onNewProject,
   onNewTodoProject,
   onNewTodoTask,
   onNewSession,
   terminalLayouts,
   onFocusTerminal
 }: SidebarProps): JSX.Element {
-  const projects = useWorkspace((state) => state.projects)
   const todoProjects = useWorkspace((state) => state.todoProjects)
   const sessions = useWorkspace((state) => state.sessions)
   const terminalDirectories = useWorkspace((state) => state.terminalDirectories)
@@ -990,23 +807,18 @@ export function Sidebar({
 
   useEffect(() => subscribeTerminalSettings(() => setTerminalSettings(getTerminalSettings())), [])
 
-  const projectSessionList = projects.length === 0 ? (
-    <p className="px-2 py-1 text-xs text-fg-subtle">No projects yet.</p>
+  const sessionList = sessions.length === 0 ? (
+    <p className="px-2 py-1 text-xs text-fg-subtle">No sessions yet.</p>
   ) : (
-    projects.map((project) => (
-      <ProjectGroup
-        key={project.id}
-        project={project}
-        sessions={sessions.filter((session) => session.projectId === project.id)}
-        terminalDirectories={terminalDirectories}
-        terminalLayouts={terminalLayouts}
-        showTerminalInstances={terminalSettings.showTerminalInstances}
-        selectedSessionId={selectedSessionId}
-        onSelectSession={selectSession}
-        onFocusTerminal={onFocusTerminal}
-        onNewSession={(projectId) => onNewSession(projectId)}
-      />
-    ))
+    <SessionList
+      sessions={sessions}
+      terminalDirectories={terminalDirectories}
+      terminalLayouts={terminalLayouts}
+      showTerminalInstances={terminalSettings.showTerminalInstances}
+      selectedSessionId={selectedSessionId}
+      onSelectSession={selectSession}
+      onFocusTerminal={onFocusTerminal}
+    />
   )
 
   if (collapsed) {
@@ -1024,83 +836,67 @@ export function Sidebar({
           />
         </div>
         <div className="mt-2 min-h-0 w-full flex-1 overflow-y-auto">
-          {activeSection === 'projects' && (
+          {activeSection === 'sessions' && (
             <div className="flex flex-col items-center gap-1">
-              {projects.map((project) => {
-                const projectSessions = sessions.filter((session) => session.projectId === project.id)
-                return projectSessions.length > 0 ? (
-                  projectSessions.map((session) => {
-                    const customColor = customSessionColor(session.color)
-                    return (
-                      <ContextMenu key={session.id}>
-                        <ContextMenuTrigger asChild>
-                          <SessionEnvironmentPanel session={session}>
-                            <button
-                              type="button"
-                              aria-label={`${project.name}: ${session.name}`}
-                              onClick={() => selectSession(session.id)}
-                              className={cn(
-                                'flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase',
-                                customColor
-                                  ? 'text-fg transition-[filter] hover:brightness-110'
-                                  : session.id === selectedSessionId
-                                    ? 'bg-active text-fg'
-                                    : 'text-fg-muted hover:bg-hover hover:text-fg'
-                              )}
-                              style={sessionBackgroundStyle(session.color)}
+              {sessions.map((session) => {
+                const customColor = customSessionColor(session.color)
+                return (
+                  <ContextMenu key={session.id}>
+                    <ContextMenuTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={`${session.name} · ${sessionEnvironmentLabel(session)}`}
+                        title={`${session.name} · ${sessionEnvironmentLabel(session)}`}
+                        onClick={() => selectSession(session.id)}
+                        className={cn(
+                          'flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase',
+                          customColor
+                            ? 'text-fg transition-[filter] hover:brightness-110'
+                            : session.id === selectedSessionId
+                              ? 'bg-active text-fg'
+                              : 'text-fg-muted hover:bg-hover hover:text-fg'
+                        )}
+                        style={sessionBackgroundStyle(session.color)}
+                      >
+                        <span data-testid="collapsed-session-label">
+                          {sessionIconOption(session.icon)?.emoji ?? session.name.slice(0, 2)}
+                        </span>
+                      </button>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
+                      <ContextMenuSub>
+                        <ContextMenuSubTrigger>
+                          <Smile className="h-3.5 w-3.5" />
+                          <span className="flex-1">Change icon</span>
+                          <ChevronRight className="h-3.5 w-3.5 text-fg-subtle" />
+                        </ContextMenuSubTrigger>
+                        <ContextMenuSubContent>
+                          {SESSION_ICONS.map((option) => (
+                            <ContextMenuItem
+                              key={option.id}
+                              onSelect={() => void setSessionIcon(session.id, option.id)}
                             >
-                              <span data-testid="collapsed-session-label">
-                                {sessionIconOption(session.icon)?.emoji ?? session.name.slice(0, 2)}
+                              <span
+                                className="w-5 text-center text-base leading-none"
+                                role="img"
+                                aria-label={option.label}
+                              >
+                                {option.emoji}
                               </span>
-                            </button>
-                          </SessionEnvironmentPanel>
-                        </ContextMenuTrigger>
-                        <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
-                          <ContextMenuSub>
-                            <ContextMenuSubTrigger>
-                              <Smile className="h-3.5 w-3.5" />
-                              <span className="flex-1">Change icon</span>
-                              <ChevronRight className="h-3.5 w-3.5 text-fg-subtle" />
-                            </ContextMenuSubTrigger>
-                            <ContextMenuSubContent>
-                              {SESSION_ICONS.map((option) => (
-                                <ContextMenuItem
-                                  key={option.id}
-                                  onSelect={() => void setSessionIcon(session.id, option.id)}
-                                >
-                                  <span
-                                    className="w-5 text-center text-base leading-none"
-                                    role="img"
-                                    aria-label={option.label}
-                                  >
-                                    {option.emoji}
-                                  </span>
-                                  <span className="flex-1">{option.label}</span>
-                                  {session.icon === option.id && <Check className="h-3.5 w-3.5" />}
-                                </ContextMenuItem>
-                              ))}
-                              <ContextMenuSeparator />
-                              <ContextMenuItem onSelect={() => void setSessionIcon(session.id, null)}>
-                                <RotateCcw className="h-3.5 w-3.5" />
-                                <span className="flex-1">Use initials</span>
-                                {!session.icon && <Check className="h-3.5 w-3.5" />}
-                              </ContextMenuItem>
-                            </ContextMenuSubContent>
-                          </ContextMenuSub>
-                        </ContextMenuContent>
-                      </ContextMenu>
-                    )
-                  })
-                ) : (
-                  <button
-                    key={project.id}
-                    type="button"
-                    onClick={() => onNewSession(project.id)}
-                    title={`${project.name} · New session`}
-                    className="flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase text-fg-muted hover:bg-hover hover:text-fg"
-                  >
-                    {project.name.slice(0, 2)}
-                  </button>
+                              <span className="flex-1">{option.label}</span>
+                              {session.icon === option.id && <Check className="h-3.5 w-3.5" />}
+                            </ContextMenuItem>
+                          ))}
+                          <ContextMenuSeparator />
+                          <ContextMenuItem onSelect={() => void setSessionIcon(session.id, null)}>
+                            <RotateCcw className="h-3.5 w-3.5" />
+                            <span className="flex-1">Use initials</span>
+                            {!session.icon && <Check className="h-3.5 w-3.5" />}
+                          </ContextMenuItem>
+                        </ContextMenuSubContent>
+                      </ContextMenuSub>
+                    </ContextMenuContent>
+                  </ContextMenu>
                 )
               })}
             </div>
@@ -1130,7 +926,6 @@ export function Sidebar({
           <SidebarCreateActions
             activeSection={activeSection}
             collapsed
-            onNewProject={onNewProject}
             onNewSession={() => onNewSession()}
             onNewTodoTask={onNewTodoTask}
             todoTaskAvailable={selectedTodoProjectId !== null}
@@ -1163,14 +958,14 @@ export function Sidebar({
 
       <div className="min-h-0 flex-1 px-2 pb-2">
         <div
-          id="sidebar-section-projects"
+          id="sidebar-section-sessions"
           role="tabpanel"
-          aria-labelledby="sidebar-section-tab-projects"
+          aria-labelledby="sidebar-section-tab-sessions"
           className="flex h-full min-h-0 flex-col"
-          hidden={activeSection !== 'projects'}
+          hidden={activeSection !== 'sessions'}
         >
-          <div className="min-h-0 flex-1 overflow-y-auto" data-testid="sidebar-projects-scroll">
-            {projectSessionList}
+          <div className="min-h-0 flex-1 overflow-y-auto" data-testid="sidebar-sessions-scroll">
+            {sessionList}
           </div>
         </div>
 
@@ -1226,7 +1021,6 @@ export function Sidebar({
         <SidebarCreateActions
           activeSection={activeSection}
           collapsed={false}
-          onNewProject={onNewProject}
           onNewSession={() => onNewSession()}
           onNewTodoTask={onNewTodoTask}
           todoTaskAvailable={selectedTodoProjectId !== null}

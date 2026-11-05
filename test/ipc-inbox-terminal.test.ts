@@ -21,10 +21,10 @@ const electronMock = vi.hoisted(() => {
 })
 
 const workspaceMock = vi.hoisted(() => ({
-  createProject: vi.fn(), createTodoProject: vi.fn(), createTodoTask: vi.fn(), createSession: vi.fn(), duplicateSession: vi.fn(),
-  getSession: vi.fn(), loadWorkspace: vi.fn(), moveSession: vi.fn(), moveTodoTask: vi.fn(), removeProject: vi.fn(), removeTodoProject: vi.fn(),
+  createTodoProject: vi.fn(), createTodoTask: vi.fn(), createSession: vi.fn(), duplicateSession: vi.fn(),
+  getSession: vi.fn(), loadWorkspace: vi.fn(), moveTodoTask: vi.fn(), removeTodoProject: vi.fn(),
   removeTodoTask: vi.fn(), removeSession: vi.fn(), reorderSession: vi.fn(), createSessionTab: vi.fn(), removeSessionTab: vi.fn(),
-  selectSessionTab: vi.fn(), updateProject: vi.fn(), updateTodoProject: vi.fn(), updateTodoTask: vi.fn(), updateSession: vi.fn(), updateSessionTab: vi.fn(),
+  selectSessionTab: vi.fn(), updateTodoProject: vi.fn(), updateTodoTask: vi.fn(), updateSession: vi.fn(), updateSessionTab: vi.fn(),
 }))
 
 vi.mock('electron', () => electronMock)
@@ -69,7 +69,7 @@ describe('the Inbox terminal over IPC', () => {
   })
 
   it('still resolves an ordinary session from the workspace', async () => {
-    const session: Session = { id: 'ses-1', projectId: 'p', name: 'App', kind: 'native', createdAt: '' }
+    const session: Session = { id: 'ses-1', name: 'App', kind: 'native', createdAt: '' }
     workspaceMock.getSession.mockResolvedValue(session)
     await handler(IpcChannels.ptyEnsure)(trustedEvent, { terminalId: 't1', sessionId: 'ses-1', size, palette })
     expect((ptyManager.ensure.mock.calls[0] as unknown as [string, Session])[1]).toBe(session)
@@ -94,8 +94,8 @@ describe('Inbox terminal chat launches over IPC', () => {
     directory = await fs.mkdtemp(join(tmpdir(), 'mde-thread-terminal-'))
     vi.clearAllMocks()
     electronMock.handlers.clear()
-    chat.fileRoot.mockImplementation(() => ({ id: 'ses_chat', projectId: '', name: 'Chat', kind: 'native', path: directory, createdAt: '' }))
-    chat.terminalSession.mockImplementation(() => ({ id: terminalId, projectId: '', name: 'Chat', kind: 'native', createdAt: '' }))
+    chat.fileRoot.mockImplementation(() => ({ id: 'ses_chat', name: 'Chat', kind: 'native', path: directory, createdAt: '' }))
+    chat.terminalSession.mockImplementation(() => ({ id: terminalId, name: 'Chat', kind: 'native', createdAt: '' }))
     registerIpcHandlers(security, pty as never, {} as never, {} as never, { chat, recorder } as never)
   })
 
@@ -130,8 +130,8 @@ describe('Inbox terminal chat launches over IPC', () => {
   it('uses the thread’s recorded WSL distro and worktree directory', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     const path = '/home/me/worktrees/task'
-    chat.fileRoot.mockImplementation(() => ({ id: 'ses_chat', projectId: '', name: 'Chat', kind: 'wsl', distro: 'Ubuntu-24.04', path, createdAt: '' }))
-    chat.terminalSession.mockImplementation(() => ({ id: terminalId, projectId: '', name: 'Chat', kind: 'wsl', distro: 'Ubuntu-24.04', createdAt: '' }))
+    chat.fileRoot.mockImplementation(() => ({ id: 'ses_chat', name: 'Chat', kind: 'wsl', distro: 'Ubuntu-24.04', path, createdAt: '' }))
+    chat.terminalSession.mockImplementation(() => ({ id: terminalId, name: 'Chat', kind: 'wsl', distro: 'Ubuntu-24.04', createdAt: '' }))
     vi.mocked(canonicalizeWslPath).mockResolvedValue(path)
     vi.mocked(runWslCommand).mockResolvedValue({ stdout: '', stderr: '', code: 0 })
     await handler(IpcChannels.ptyEnsure)(trustedEvent, request())
@@ -141,7 +141,7 @@ describe('Inbox terminal chat launches over IPC', () => {
   })
 
   it('rejects a thread removed while its directory is being checked', async () => {
-    chat.terminalSession.mockImplementationOnce(() => ({ id: terminalId, projectId: '', name: 'Chat', kind: 'native', path: directory, createdAt: '' }))
+    chat.terminalSession.mockImplementationOnce(() => ({ id: terminalId, name: 'Chat', kind: 'native', path: directory, createdAt: '' }))
       .mockImplementationOnce(() => { throw new Error('Thread no longer exists') })
     await expect(handler(IpcChannels.ptyEnsure)(trustedEvent, request())).rejects.toThrow('no longer exists')
     expect(pty.ensure).not.toHaveBeenCalled()

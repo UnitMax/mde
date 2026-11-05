@@ -66,7 +66,7 @@ export async function runWindowsExecutableCheck(): Promise<void> {
     assert.equal(bytes.stdout.toString(), 'WINDOWS_LOOKUP_WSL_BYTES')
 
     const wslSession: Session = {
-      id: 'wsl-fixture', projectId: 'fixture', name: 'Fixture', kind: 'wsl',
+      id: 'wsl-fixture', name: 'Fixture', kind: 'wsl',
       distro, createdAt: new Date(0).toISOString(),
     }
     const terminalOutput = new Map<string, string>()

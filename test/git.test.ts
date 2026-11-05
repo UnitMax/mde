@@ -62,7 +62,6 @@ function hardened(...args: string[]): string[] {
 
 const nativeSession = {
   id: 'native-1',
-  projectId: 'project-1',
   name: 'Native app',
   kind: 'native' as const,
   path: '/workspace/native',

@@ -16,7 +16,7 @@ async function repository(): Promise<DirectoryContext> {
   const root = await mkdtemp(join(tmpdir(), 'mde-terminal-git-'))
   roots.push(root)
   await run('git', ['init', '--quiet', '--initial-branch=main', root])
-  return { id: 'session', projectId: 'project', name: 'App', kind: 'native', path: root, createdAt: '2026-01-01' }
+  return { id: 'session', name: 'App', kind: 'native', path: root, createdAt: '2026-01-01' }
 }
 
 async function git(session: DirectoryContext, args: string[]): Promise<void> {

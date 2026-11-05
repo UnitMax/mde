@@ -26,16 +26,13 @@ const electronMock = vi.hoisted(() => {
 })
 
 const workspaceMock = vi.hoisted(() => ({
-  createProject: vi.fn(),
   createTodoProject: vi.fn(),
   createTodoTask: vi.fn(),
   createSession: vi.fn(),
   duplicateSession: vi.fn(),
   getSession: vi.fn(),
   loadWorkspace: vi.fn(),
-  moveSession: vi.fn(),
   moveTodoTask: vi.fn(),
-  removeProject: vi.fn(),
   removeTodoProject: vi.fn(),
   removeTodoTask: vi.fn(),
   removeSession: vi.fn(),
@@ -43,7 +40,6 @@ const workspaceMock = vi.hoisted(() => ({
   createSessionTab: vi.fn(),
   removeSessionTab: vi.fn(),
   selectSessionTab: vi.fn(),
-  updateProject: vi.fn(),
   updateTodoProject: vi.fn(),
   updateTodoTask: vi.fn(),
   updateSession: vi.fn(),
@@ -78,7 +74,6 @@ const { security, event: trustedEvent } = trustedIpcSender()
 function nativeSession(): Session {
   return {
     id: 'session-1',
-    projectId: 'project-1',
     name: 'App',
     kind: 'native',
     createdAt: '2026-01-01T00:00:00.000Z'

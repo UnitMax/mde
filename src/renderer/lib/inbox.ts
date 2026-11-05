@@ -184,7 +184,6 @@ export function inboxFileRoot(
 ): DirectoryContext {
   return {
     id: source.id,
-    projectId: '',
     name: source.name ?? inboxFolderLabel(source.worktree?.repository ?? source.directory),
     kind: source.target.kind,
     ...(source.target.kind === 'wsl' ? { distro: source.target.distro } : {}),

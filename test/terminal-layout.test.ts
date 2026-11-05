@@ -94,7 +94,7 @@ describe('dynamic terminal layouts', () => {
   it('round trips a mixed arrangement through IPC validation and the workspace store', () => {
     const layout = persistRuntimeLayout(split(split(split(single(), 1, 'top'), 2, 'left'), 1, 'bottom'))
     expect(() => assertIpcPayload(IpcChannels.tabsUpdate, { sessionId: 's', tabId: 't', patch: { layout } })).not.toThrow()
-    expect(validateSession({ id: 's', projectId: 'p', name: 'App', kind: 'native', path: '/workspace/app', createdAt: '2026-01-01T00:00:00.000Z', tabs: [{ id: 't', name: 'Tab', layout }] }, new Set(['p']))?.tabs?.[0]?.layout).toEqual(layout)
+    expect(validateSession({ id: 's', name: 'App', kind: 'native', path: '/workspace/app', createdAt: '2026-01-01T00:00:00.000Z', tabs: [{ id: 't', name: 'Tab', layout }] })?.tabs?.[0]?.layout).toEqual(layout)
   })
 
   it('allows any existing pane to close while another pane remains', () => {

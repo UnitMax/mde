@@ -4,12 +4,12 @@ import { terminalSessionResolver } from '../src/main/inbox/terminal'
 import type { Distro, Session } from '../src/shared/types'
 
 const distro = (name: string, isDefault = false): Distro => ({ name, state: 'Running', version: 2, isDefault })
-const stored: Session = { id: 'ses-1', projectId: 'p', name: 'App', kind: 'native', createdAt: '' }
+const stored: Session = { id: 'ses-1', name: 'App', kind: 'native', createdAt: '' }
 
 describe('the Inbox terminal session', () => {
   it('uses a native shell environment off Windows', () => {
     expect(inboxTerminalSession('darwin', [])).toEqual({
-      id: INBOX_TERMINAL_SESSION_ID, projectId: '', name: 'Terminal', createdAt: '', kind: 'native',
+      id: INBOX_TERMINAL_SESSION_ID, name: 'Terminal', createdAt: '', kind: 'native',
     })
     expect(inboxTerminalSession('linux', [])?.kind).toBe('native')
   })

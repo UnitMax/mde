@@ -176,7 +176,7 @@ const REQUEST_EVENTS = new Set(['permission.asked', 'permission.replied', 'form.
  * The Inbox chat GUI's main-process half. It owns the Inbox folders, talks to
  * the OpenCode background service of each folder's target, and keeps the
  * inbox record of chat threads current from the service's events. It never
- * reads or changes workspace projects or sessions.
+ * reads or changes workspace sessions.
  */
 export class InboxChatService {
   private readonly streams: ServiceEventStreams
@@ -953,7 +953,6 @@ export class InboxChatService {
     const target = source.target
     return {
       id,
-      projectId: '',
       name: 'name' in source ? source.name : folderName(source.directory),
       kind: target.kind,
       ...(target.kind === 'wsl' ? { distro: target.distro } : {}),

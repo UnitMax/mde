@@ -38,7 +38,7 @@ afterEach(async () => {
 it('opens the terminal launcher from a focused native Mac terminal with Cmd+N', async () => {
   await act(async () => root.render(createElement(TerminalView, {
     session: {
-      id: 'workspace-1', projectId: 'project-1', name: 'App', kind: 'native',
+      id: 'workspace-1', name: 'App', kind: 'native',
       createdAt: '2026-01-01T00:00:00Z',
     },
     activeTab: { id: 'tab-1', name: 'Tab 1', layout: testLayout([{ id: 'pane-1' }]) },

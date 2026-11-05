@@ -121,9 +121,7 @@ boundary with a trusted sender fixture. Native Windows/WSL smoke testing is
 still required before claiming platform-specific release verification.
 
 On 2026-10-03 the built application also passed an isolated Linux Electron
-smoke test with sandboxing enabled: main-frame app/workspace requests and a
-project create/remove succeeded, malformed project payloads were rejected,
-and another sandboxed window loading the same app URL could not invoke
+smoke test with sandboxing enabled: main-frame app/workspace requests succeeded, and another sandboxed window loading the same app URL could not invoke
 `app:info`. The fixture used temporary userData and left the user's workspace
 untouched. This was an unpackaged Linux check, not Windows/WSL verification.
 
@@ -211,7 +209,7 @@ the validated `chat:*` channels.
   scripts, embedded frames or remote images. Links open only for HTTP(S) URLs and
   go through the same main-process URL validator as other external links.
 
-Inbox folders are separate from workspace projects and sessions; adding one
+Inbox folders are separate from workspace sessions; adding one
 resolves and validates its target-native path before storing the folder.
 
 The Inbox message input is a plain-text CodeMirror editor with decorations for Markdown bullet

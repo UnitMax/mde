@@ -49,7 +49,7 @@ const listFiles = vi.fn()
 
 function session(id: string, name: string, paneCount: number): Session {
   return {
-    id, projectId: 'project-1', name, kind: 'native',
+    id, name, kind: 'native',
     createdAt: '2026-01-01T00:00:00.000Z',
     tabs: [{
       id: `${id}-tab`, name: 'Tab 1',
@@ -85,10 +85,9 @@ describe('switching sessions with a file open', () => {
       init: async () => undefined,
       ready: true,
       platform: { platform: 'linux', isWindows: false },
-      projects: [{ id: 'project-1', name: 'Demo', createdAt: '2026-01-01T00:00:00.000Z' }],
       sessions: [alpha, beta],
       selectedSessionId: 'alpha',
-      activeWorkspaceView: 'projects',
+      activeWorkspaceView: 'sessions',
       windowMode: 'normal',
       inboxThreads: [],
       selectedInboxThreadId: null,
@@ -119,7 +118,7 @@ describe('switching sessions with a file open', () => {
     expect(viewerPath()).toBe('README.md')
   })
 
-  it('opens an Inbox thread from F12 without selecting a Projects terminal', async () => {
+  it('opens an Inbox thread from F12 without selecting a Sessions terminal', async () => {
     const thread: InboxThread = {
       id: 'ses_inbox', title: 'Inbox conversation', directory: '/workspace/inbox', target: { kind: 'native' },
       folderId: 'fld_inbox', branch: 'main', status: 'working', createdAt: 1, lastActivityAt: 1, readAt: 1, archived: false,

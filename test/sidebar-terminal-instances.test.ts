@@ -10,8 +10,8 @@ import { TERMINAL_SETTINGS_STORAGE_KEY } from '../src/renderer/terminal/terminal
 import { testLayout } from './helpers/terminal-layout'
 
 const session: Session = {
-  id: 'session-1', projectId: 'project-1', name: 'Frontend', kind: 'native',
-   createdAt: '2026-01-01T00:00:00.000Z',
+  id: 'session-1', name: 'Frontend', kind: 'native',
+  createdAt: '2026-01-01T00:00:00.000Z',
 }
 const terminals = ['pane-first', 'pane-second', 'pane-third']
 const tab = sessionTabs(session)[0]!
@@ -21,7 +21,7 @@ const onFocusTerminal = vi.fn()
 
 function render(): void {
   act(() => root.render(createElement(Sidebar, {
-    onNewProject: vi.fn(), onNewTodoProject: vi.fn(), onNewTodoTask: vi.fn(), onNewSession: vi.fn(), onFocusTerminal,
+    onNewTodoProject: vi.fn(), onNewTodoTask: vi.fn(), onNewSession: vi.fn(), onFocusTerminal,
     terminalLayouts: { [session.id]: { [tab.id]: testLayout(terminals.map((terminalId) => ({ terminalId }))) } },
   })))
 }
@@ -32,8 +32,7 @@ describe('sidebar terminal instances', () => {
     localStorage.clear()
     onFocusTerminal.mockClear()
     useWorkspace.setState({
-      projects: [{ id: 'project-1', name: 'Workspace', createdAt: '2026-01-01T00:00:00.000Z' }],
-      sessions: [session], activeWorkspaceView: 'projects', selectedSessionId: null, sidebarCollapsed: false,
+      sessions: [session], activeWorkspaceView: 'sessions', selectedSessionId: null, sidebarCollapsed: false,
       terminalDirectories: {},
     })
     container = document.createElement('div')

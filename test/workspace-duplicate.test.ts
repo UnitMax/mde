@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
-  createProject,
   createSession,
   duplicateSession,
   initWorkspaceStore,
@@ -24,9 +23,7 @@ describe('workspace session duplication', () => {
   })
 
   it('copies terminal launch configuration and appearance', async () => {
-    const project = await createProject({ name: 'Work' })
     const source = await createSession({
-      projectId: project.id,
       name: 'App',
       kind: 'wsl',
       distro: 'Ubuntu-24.04',
@@ -44,7 +41,6 @@ describe('workspace session duplication', () => {
     if (!duplicate) throw new Error('Expected a terminal session duplicate')
 
     expect(duplicate).toMatchObject({
-      projectId: project.id,
       name: 'App (copy)',
       color: 'teal',
       icon: 'robot',
@@ -60,9 +56,7 @@ describe('workspace session duplication', () => {
   })
 
   it('clears a persisted session icon when requested', async () => {
-    const project = await createProject({ name: 'Work' })
     const source = await createSession({
-      projectId: project.id,
       name: 'App',
       kind: 'native',
 

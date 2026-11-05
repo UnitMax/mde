@@ -5,7 +5,6 @@ import type { Session } from '@shared/types'
 function session(overrides: Partial<Session> = {}): Session {
   return {
     id: 'session-1',
-    projectId: 'project-1',
     name: 'app',
     kind: 'wsl',
     distro: 'Ubuntu-24.04',

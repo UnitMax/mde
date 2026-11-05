@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
-  createProject,
+  createSession,
   createTodoTask,
   createTodoProject,
   initWorkspaceStore,
@@ -28,7 +28,7 @@ describe('To Do project persistence', () => {
   })
 
   it('creates, renames, and removes To Do projects independently', async () => {
-    const terminalProject = await createProject({ name: 'Terminal work' })
+    const session = await createSession({ name: 'Terminal work', kind: 'native' })
     const todoProject = await createTodoProject({ name: '  Release plan  ', shorthand: 'REL' })
 
     expect(todoProject.name).toBe('Release plan')
@@ -41,7 +41,7 @@ describe('To Do project persistence', () => {
 
     const workspace = await loadWorkspace()
     expect(workspace.todoProjects).toEqual([])
-    expect(workspace.projects).toEqual([terminalProject])
+    expect(workspace.sessions).toEqual([session])
   })
 
   it('persists To Do projects across store reloads', async () => {

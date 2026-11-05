@@ -1,21 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import type { Project, Session } from '../src/shared/types'
+import type { Session } from '../src/shared/types'
 import {
   isSessionSwitcherShortcut,
   searchSessions,
   type SessionSearchItem
 } from '../src/renderer/lib/session-switcher'
 
-const project: Project = {
-  id: 'project-1',
-  name: 'Workspace',
-  createdAt: '2026-01-01T00:00:00.000Z'
-}
-
 function session(overrides: Partial<Session> = {}): Session {
   return {
     id: 'session-1',
-    projectId: project.id,
     name: 'Frontend',
     kind: 'native',
     createdAt: '2026-01-01T00:00:00.000Z',
@@ -24,7 +17,7 @@ function session(overrides: Partial<Session> = {}): Session {
 }
 
 function item(value: Session, order: number): SessionSearchItem {
-  return { session: value, project, order }
+  return { session: value, order }
 }
 
 describe('session search', () => {
@@ -35,12 +28,12 @@ describe('session search', () => {
     expect(results[0]?.matches.name).toEqual([0, 5, 7])
   })
 
-  it('matches project and distro fields', () => {
+  it('matches runtime and distro fields', () => {
     const results = searchSessions(
       [item(session({ id: 'wsl-session', name: 'Agent', kind: 'wsl', distro: 'Ubuntu-24.04' }), 0)],
       'ubuntu'
     )
-    expect(searchSessions([item(session(), 0)], 'worksp')[0]?.item.session.id).toBe('session-1')
+    expect(searchSessions([item(session(), 0)], 'native')[0]?.item.session.id).toBe('session-1')
     expect(results[0]?.item.session.id).toBe('wsl-session')
   })
 

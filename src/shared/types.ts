@@ -1,6 +1,6 @@
 import type { FileRoot } from './ipc'
 
-export type ProjectKind = 'native' | 'wsl'
+export type SessionKind = 'native' | 'wsl'
 
 export type CodingAgent = 'opencode' | 'codex' | 'claude'
 
@@ -47,12 +47,6 @@ export type WindowMode = 'normal' | 'mini'
 
 /** Narrow platform union so the renderer does not need Node's types. */
 export type HostPlatform = 'win32' | 'linux' | 'darwin' | 'other'
-
-export interface Project {
-  id: string
-  name: string
-  createdAt: string
-}
 
 export interface TodoProject {
   id: string
@@ -113,13 +107,12 @@ export interface SessionTab {
 
 export interface Session {
   id: string
-  projectId: string
   name: string
   /** Optional predefined sidebar color; absent means the default Slate color. */
   color?: SessionColor
   /** Optional predefined collapsed-sidebar icon; absent means the session initials. */
   icon?: SessionIcon
-  kind: ProjectKind
+  kind: SessionKind
   /** Required when kind === 'wsl', e.g. "Ubuntu-24.04". */
   distro?: string
   /** Optional shell override; default is resolved per platform. */
@@ -134,7 +127,6 @@ export interface Session {
 /** Runtime filesystem root resolved from a live terminal or an Inbox folder. Never stored as a session. */
 export type DirectoryContext = Session & { path: string }
 
-export type NewProject = Omit<Project, 'id' | 'createdAt'>
 export interface NewTodoProject {
   name: string
   shorthand: string
@@ -236,7 +228,7 @@ export interface InboxGitInfo {
 
 /**
  * A folder the Inbox can start chat threads in. Inbox folders are separate
- * from the Projects view and never change workspace projects or sessions.
+ * from the Sessions view and never change workspace sessions.
  */
 export interface InboxFolder {
   id: string
@@ -267,7 +259,7 @@ export interface InboxFoldersState {
 }
 
 export interface InboxAddFolderRequest {
-  kind: ProjectKind
+  kind: SessionKind
   distro?: string
   path: string
 }

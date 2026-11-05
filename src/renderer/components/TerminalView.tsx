@@ -1051,7 +1051,7 @@ export function TerminalView({
   const [terminalSettings, setTerminalSettings] = useState<TerminalSettings>(() => getTerminalSettings())
   const rootRef = useRef<HTMLDivElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
-  /** Whether a key press is this view's to act on: any, in the Projects view; only ones typed inside it, when embedded. */
+  /** Whether a key press is this view's to act on: any, in the Sessions view; only ones typed inside it, when embedded. */
   const handlesKey = useCallback(
     (event: KeyboardEvent): boolean =>
       !embedded || (event.target instanceof Node && rootRef.current?.contains(event.target) === true),
@@ -1455,10 +1455,6 @@ export function TerminalView({
     setFullscreenTerminalId((current) => current === terminalId ? null : terminalId)
   }
 
-  const location =
-    selectedSession.kind === 'wsl'
-      ? selectedSession.distro ?? 'WSL'
-      : 'Native'
   const renderedPanes = terminalLayout.panes
   const fullscreenPane = terminalFullscreenPane(renderedPanes, fullscreenTerminalId)
   const isFullscreen = fullscreenPane !== null
@@ -1519,26 +1515,6 @@ export function TerminalView({
           onClose={onCloseTab}
         />
       )}
-      <header className={`flex h-8 shrink-0 items-center gap-2 border-b border-line bg-panel ${embedded ? 'px-2.5' : 'px-3'}`}>
-        {!embedded && (
-          <>
-            <span
-              className="min-w-0 max-w-[40%] truncate text-xs font-semibold text-fg"
-              title={selectedSession.name}
-            >
-              {selectedSession.name}
-            </span>
-            <span aria-hidden="true" className="h-3 w-px shrink-0 bg-line-strong" />
-          </>
-        )}
-        <span
-          className="min-w-0 flex-1 truncate font-mono text-xs text-fg-muted"
-          title={location}
-        >
-          {location}
-        </span>
-      </header>
-
       <div
         ref={gridRef}
         className="relative h-full min-h-0 flex-1 bg-line"

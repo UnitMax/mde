@@ -18,9 +18,6 @@ const validPayloads = {
   [IpcChannels.appInfo]: undefined,
   [IpcChannels.platformInfo]: undefined,
   [IpcChannels.workspaceList]: undefined,
-  [IpcChannels.projectsCreate]: { name: 'Project' },
-  [IpcChannels.projectsUpdate]: { id: 'project', patch: { name: 'Renamed' } },
-  [IpcChannels.projectsRemove]: 'project',
   [IpcChannels.todoProjectsCreate]: { name: 'Tasks', shorthand: 'APP' },
   [IpcChannels.todoProjectsUpdate]: { id: 'project', patch: { shorthand: 'NEW' } },
   [IpcChannels.todoProjectsRemove]: 'project',
@@ -28,10 +25,9 @@ const validPayloads = {
   [IpcChannels.todoTasksUpdate]: { id: 'task', patch: { description: '' } },
   [IpcChannels.todoTasksMove]: { id: 'task', columnId: 'done', beforeId: null },
   [IpcChannels.todoTasksRemove]: 'task',
-  [IpcChannels.sessionsCreate]: { projectId: 'project', name: 'Shell', kind: 'wsl', distro: 'Ubuntu-24.04', shell: undefined },
+  [IpcChannels.sessionsCreate]: { name: 'Shell', kind: 'wsl', distro: 'Ubuntu-24.04', shell: undefined },
   [IpcChannels.sessionsDuplicate]: 'session',
   [IpcChannels.sessionsUpdate]: { id: 'session', patch: { shell: '', icon: null, color: 'blue' } },
-  [IpcChannels.sessionsMove]: { id: 'session', projectId: 'project' },
   [IpcChannels.sessionsReorder]: { id: 'session', beforeId: null },
   [IpcChannels.sessionsRemove]: 'session',
   [IpcChannels.tabsCreate]: sessionId,
@@ -283,12 +279,12 @@ describe('IPC payload boundary', () => {
   it('rejects getters without executing them and inherited/unknown nested fields', () => {
     let accessed = false
     const payload = Object.defineProperty({}, 'name', { get: () => { accessed = true; return 'Project' } })
-    rejects(IpcChannels.projectsCreate, payload)
+    rejects(IpcChannels.sessionsCreate, payload)
     expect(accessed).toBe(false)
     rejects(IpcChannels.sessionsUpdate, { id: 'session', patch: { kind: 'wsl' } })
     rejects(IpcChannels.todoTasksUpdate, { id: 'task', patch: Object.create({ title: 'Inherited' }) })
-    rejects(IpcChannels.projectsUpdate, { id: 'project', patch: JSON.parse('{"constructor":{}}') })
-    rejects(IpcChannels.projectsCreate, { name: 'Project', [Symbol('extra')]: true })
+    rejects(IpcChannels.sessionsUpdate, { id: 'project', patch: JSON.parse('{"constructor":{}}') })
+    rejects(IpcChannels.sessionsCreate, { name: 'Shell', kind: 'native', [Symbol('extra')]: true })
   })
 
   it.each([NaN, Infinity, -Infinity, 0, -1, 1.5, IPC_LIMITS.terminalDimension + 1, '80'])('rejects invalid terminal dimensions: %s', (cols) => {
@@ -297,7 +293,7 @@ describe('IPC payload boundary', () => {
   })
 
   it('bounds labels, IDs, paths and text without logging the payload', () => {
-    rejects(IpcChannels.projectsCreate, { name: 'x'.repeat(IPC_LIMITS.label + 1) })
+    rejects(IpcChannels.sessionsCreate, { name: 'x'.repeat(IPC_LIMITS.label + 1), kind: 'native' })
     rejects(IpcChannels.sessionsRemove, 'x'.repeat(IPC_LIMITS.id + 1))
     rejects(IpcChannels.pathValidate, { kind: 'native', path: 'x'.repeat(IPC_LIMITS.path + 1) })
     rejects(IpcChannels.ptyWrite, { terminalId: 'pane', data: 'private'.repeat(IPC_LIMITS.text) })

@@ -19,7 +19,6 @@ const openInVsCode = vi.fn(async () => undefined)
 
 const session: DirectoryContext = {
   id: 'session-1',
-  projectId: 'project-1',
   name: 'App',
   kind: 'native',
   path: '/home/me/app',

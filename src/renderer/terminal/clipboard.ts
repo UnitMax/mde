@@ -1,4 +1,4 @@
-import type { HostPlatform, ProjectKind } from '@shared/types'
+import type { HostPlatform, SessionKind } from '@shared/types'
 
 export type TerminalClipboardAction = 'copy' | 'native-paste'
 
@@ -16,7 +16,7 @@ export interface TerminalPrimarySelectionStore {
 
 export function terminalPrimarySelectionMode(
   platform: HostPlatform,
-  sessionKind: ProjectKind
+  sessionKind: SessionKind
 ): TerminalPrimarySelectionMode {
   if (platform === 'linux') return 'native'
   if (platform === 'win32' && sessionKind === 'wsl') return 'local'

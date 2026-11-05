@@ -20,7 +20,7 @@ import { useWorkspace } from '@/store/workspace'
 
 /**
  * Adds a folder to the Inbox only. On Windows the folder is in a WSL distro,
- * where OpenCode runs; on macOS it is a local folder. Workspace projects are
+ * where OpenCode runs; on macOS it is a local folder. Workspace sessions are
  * not touched.
  */
 export function AddInboxFolderDialog({
@@ -93,7 +93,7 @@ export function AddInboxFolderDialog({
           <DialogHeader>
             <DialogTitle>Add a folder to the Inbox</DialogTitle>
             <DialogDescription>
-              New threads start OpenCode in this folder. Inbox folders are separate from your projects.
+              New threads start OpenCode in this folder. Inbox folders are separate from your terminal sessions.
             </DialogDescription>
           </DialogHeader>
           <form

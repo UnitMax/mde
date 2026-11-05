@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { PictureInPicture2, Plus, Settings2, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { AddSessionDialog } from '@/components/AddProjectDialog'
+import { AddSessionDialog } from '@/components/AddSessionDialog'
 import { MiniInboxWindow } from '@/components/MiniInboxWindow'
 import { FileTreePanel } from '@/components/FileTreePanel'
 import { FileViewer } from '@/components/FileViewer'
 import { InboxChangeViewer, InboxSidebar } from '@/components/inbox/InboxChanges'
-import { NewProjectDialog } from '@/components/NewProjectDialog'
 import { NewTodoProjectDialog } from '@/components/NewTodoProjectDialog'
 import { Sidebar } from '@/components/Sidebar'
 import { SessionSwitcher } from '@/components/SessionSwitcher'
@@ -94,7 +93,6 @@ export function App(): JSX.Element {
   const updateTabLayoutAction = useWorkspace((state) => state.updateTabLayout)
   const removeTabAction = useWorkspace((state) => state.removeTab)
   const [newSessionOpen, setNewSessionOpen] = useState(false)
-  const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [newTodoProjectOpen, setNewTodoProjectOpen] = useState(false)
   const [todoProjectSettingsOpen, setTodoProjectSettingsOpen] = useState(false)
   const [todoTaskDialogOpen, setTodoTaskDialogOpen] = useState(false)
@@ -102,7 +100,6 @@ export function App(): JSX.Element {
   const [todoTaskDialogColumnId, setTodoTaskDialogColumnId] = useState<string | null>(null)
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false)
   const [todoSearchOpen, setTodoSearchOpen] = useState(false)
-  const [defaultProjectId, setDefaultProjectId] = useState<string | undefined>(undefined)
   const [terminalLayouts, setTerminalLayouts] = useState<RuntimeLayouts>({})
   const [pendingTerminalFocus, setPendingTerminalFocus] = useState<{
     sessionId: string
@@ -212,7 +209,7 @@ export function App(): JSX.Element {
     const current = useWorkspace.getState()
     const session = current.sessions.find((candidate) => candidate.id === sessionId)
     if (
-      current.activeWorkspaceView !== 'projects' ||
+      current.activeWorkspaceView !== 'sessions' ||
       current.selectedSessionId !== sessionId ||
       !session ||
       activeSessionTab(session).id !== tabId
@@ -312,7 +309,6 @@ export function App(): JSX.Element {
         sessionSwitcherOpen ||
         todoSearchOpen ||
         newSessionOpen ||
-        newProjectOpen ||
         newTodoProjectOpen ||
         todoProjectSettingsOpen ||
         todoTaskDialogOpen
@@ -328,7 +324,6 @@ export function App(): JSX.Element {
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [
-    newProjectOpen,
     newSessionOpen,
     newTodoProjectOpen,
     sessionSwitcherOpen,
@@ -346,7 +341,6 @@ export function App(): JSX.Element {
         todoSearchOpen ||
         sessionSwitcherOpen ||
         newSessionOpen ||
-        newProjectOpen ||
         newTodoProjectOpen ||
         todoProjectSettingsOpen ||
         todoTaskDialogOpen
@@ -362,7 +356,6 @@ export function App(): JSX.Element {
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [
-    newProjectOpen,
     newSessionOpen,
     newTodoProjectOpen,
     sessionSwitcherOpen,
@@ -382,8 +375,7 @@ export function App(): JSX.Element {
     todoTasks.find((task) => task.id === todoTaskDialogTaskId) ?? null
   const activeTab = selected ? activeSessionTab(selected) : null
 
-  const openNewSession = (projectId?: string): void => {
-    setDefaultProjectId(projectId)
+  const openNewSession = (): void => {
     setNewSessionOpen(true)
   }
 
@@ -619,14 +611,14 @@ export function App(): JSX.Element {
   const activeTerminalId = layoutForSession?.panes.find((pane) => pane.terminalId === focusedTerminalId)?.terminalId
     ?? layoutForSession?.panes[0]?.terminalId
   const terminalDirectory = useWorkspace((state) => activeTerminalId ? state.terminalDirectories[activeTerminalId] : undefined)
-  const projectFileRoot = useMemo<TerminalDirectoryRequest | null>(
+  const terminalFileRoot = useMemo<TerminalDirectoryRequest | null>(
     () => selected && activeTerminalId && terminalDirectory
       ? { terminalId: activeTerminalId, directory: terminalDirectory }
       : null,
     [activeTerminalId, terminalDirectory, selected?.id]
   )
-  const projectFileRootId = projectFileRoot ? fileRootKey(projectFileRoot) : null
-  const openFilePath = projectFileRootId ? openFiles[projectFileRootId] : undefined
+  const terminalFileRootId = terminalFileRoot ? fileRootKey(terminalFileRoot) : null
+  const openFilePath = terminalFileRootId ? openFiles[terminalFileRootId] : undefined
   const terminalLayoutsForSidebar = terminalLayouts
 
   // The main process has already shrunk the window. Terminals are not mounted here,
@@ -673,7 +665,6 @@ export function App(): JSX.Element {
       </TitleBar>
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <Sidebar
-          onNewProject={() => setNewProjectOpen(true)}
           onNewTodoProject={() => setNewTodoProjectOpen(true)}
           onNewTodoTask={() => openNewTodoTask()}
           onNewSession={openNewSession}
@@ -731,17 +722,17 @@ export function App(): JSX.Element {
                   renameTerminalPane(selected.id, activeTab.id, terminalId, title)
                 }
               />
-              {openFilePath !== undefined && projectFileRoot && projectFileRootId && (
+              {openFilePath !== undefined && terminalFileRoot && terminalFileRootId && (
                 // Layered over the terminals so they stay mounted at their size. Its key must differ
                 // from the terminal view's: siblings that share one leave the previous session's
                 // terminals mounted after a switch.
                 <FileViewer
-                  key={`viewer:${projectFileRootId}`}
+                  key={`viewer:${terminalFileRootId}`}
                   session={selected}
-                  root={projectFileRoot}
+                  root={terminalFileRoot}
                   path={openFilePath}
-                  onOpenFile={(path) => openFileAction(projectFileRootId, path)}
-                  onClose={() => closeOpenFile(selected.id, projectFileRootId)}
+                  onOpenFile={(path) => openFileAction(terminalFileRootId, path)}
+                  onClose={() => closeOpenFile(selected.id, terminalFileRootId)}
                 />
               )}
             </>
@@ -750,7 +741,7 @@ export function App(): JSX.Element {
           )}
         </main>
 
-        {ready && activeWorkspaceView === 'projects' && selected && projectFileRoot && <FileTreePanel session={{ ...selected, path: projectFileRoot.directory }} root={projectFileRoot} />}
+        {ready && activeWorkspaceView === 'sessions' && selected && terminalFileRoot && <FileTreePanel session={{ ...selected, path: terminalFileRoot.directory }} root={terminalFileRoot} />}
         {ready && inboxRoot && <InboxSidebar session={inboxRoot} threadId={selectedInboxThreadId ?? undefined} />}
 
         <SettingsDialog terminalIds={layoutForSession?.panes.map((pane) => pane.terminalId) ?? []} />
@@ -758,9 +749,7 @@ export function App(): JSX.Element {
         <AddSessionDialog
           open={newSessionOpen}
           onOpenChange={setNewSessionOpen}
-          defaultProjectId={defaultProjectId}
         />
-        <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
         <NewTodoProjectDialog
           open={newTodoProjectOpen}
           onOpenChange={setNewTodoProjectOpen}

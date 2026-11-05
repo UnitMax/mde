@@ -16,10 +16,10 @@ src/
 Every renderer-to-main call is authenticated and validated centrally; see
 [`security.md`](security.md).
 
-## Projects and terminal sessions
+## Terminal sessions
 
-Projects are groups that contain sessions. Sessions own the name, platform, distro and
-optional shell override. Each session persists an ordered set of terminal tabs. Every tab owns an
+Sessions own the name, platform, distro and optional shell override. Each session persists an
+ordered set of terminal tabs. Every tab owns an
 independent layout built by splitting individual panes; new tabs start with one fresh terminal.
 Hold Ctrl to reveal + controls on the left, right, top and bottom of each pane. Clicking an edge
 splits that pane in half and focuses a fresh shell on the chosen side. Each split has its own
@@ -31,7 +31,7 @@ Switching sessions or tabs re-parents terminal containers rather than disposing 
 process, its scrollback and its cursor position survive. Unvisited persisted tabs create their PTYs
 lazily; the PTYs themselves do not survive application restart.
 
-Creating a session requires a project, name and environment. New shells start in the user's home
+Creating a session requires a name and environment. New shells start in the user's home
 directory: the native home directory or `~` in the chosen WSL distro. Each terminal pane remembers
 its own last reported directory across MDE restarts. The main process stores these records in
 `terminal-directories.json` under Electron's user-data directory, keyed by terminal identity, owning
@@ -47,7 +47,9 @@ remembered. Bash, Zsh, Fish and Windows PowerShell have built-in reporting hooks
 Session-level directories remain removed. Old workspace path fields are ignored and omitted on the
 next save; existing layouts need no migration and start at home until a pane directory is recorded.
 
-The Projects sidebar shows session names, or icons and initials when collapsed.
+The Sessions sidebar lists all sessions in one reorderable list. Each row shows its name with a
+compact Native or WSL badge below it; WSL rows also show the distribution. Collapsed rows show
+icons or initials, with environment details in their tooltip.
 Optional terminal entries show pane names, tabs and current folders.
 
 Each pane has a header (`TerminalPaneHeader`) that puts its name first. The title is the pane's
@@ -60,13 +62,15 @@ appear over the right edge of a hovered or focused pane (and always in fullscree
 title. The menu holds Rename, Split right and Split down,
 Open in VS Code and Show in File Explorer (WSL on Windows),
 and Restart, which still asks for confirmation. When a tab has several panes, the focused one gets an
-accent line under its header. The bar above the panes is a single line with the session name and
-native/WSL environment.
+accent line under its header. The tab strip sits directly above the panes; session and environment
+details live in the sidebar.
 
 The workspace is stored as `workspace.json` in Electron's user-data directory with separate
-`projects`, `todoProjects`, `todoTasks` and `sessions` arrays. Session array order is the persistent
-sidebar order within each project; tab names, order, active tab, pane order, layouts and resize
-ratios are stored inside each session. A layout contains an ordered pane list and a binary tree of
+`todoProjects`, `todoTasks` and `sessions` arrays. Session array order is the persistent
+sidebar order; tab names, order, active tab, pane order, layouts and resize
+ratios are stored inside each session. On load, old project links are discarded while sessions keep
+their former sidebar order and tab identities. Project groups are omitted on the next save; there
+is no versioned migration. A layout contains an ordered pane list and a binary tree of
 pane identities and splits (stable split ID, axis, ratio and two children). IPC and stored layouts
 share strict validation of that tree, including unique IDs, matching pane order and bounded node
 counts. The renderer positions panes in flat slots derived from the tree, keeping existing terminal
@@ -99,7 +103,7 @@ given section. The Settings button in the title bar, next to the mini Inbox butt
 
 ### Inbox
 
-The Inbox is the third sidebar tab, beside Projects and To Do. It lists OpenCode conversations
+The Inbox is the third sidebar tab, beside Sessions and To Do. It lists OpenCode conversations
 ("threads") like a mail inbox, the most recent agent action first. Each row shows the time since
 that action ("5m ago"), the title, the folder name with the full path as a tooltip, the Git branch,
 the model, and a status chip: Needs input or Needs permission, Done, Failed, or Working. Threads
@@ -191,7 +195,7 @@ about 1.5 seconds. New activity can repeat the animation even if the status name
 title, branch, pin and read updates stay quiet, as does the first report of a thread. Each thread
 keeps its own brief animation in renderer memory, so switching threads does not replay an expired
 one. Under the OS reduced-motion setting the streak is replaced by a still fade. These animations
-use Inbox API metadata only; they do not run in Projects, GUI chat, or the shared Inbox shell.
+use Inbox API metadata only; they do not run in Sessions, GUI chat, or the shared Inbox shell.
 
 Only new terminal threads store `mode: "terminal"`; older threads continue in GUI mode. Drafts
 remember the chosen interface and forks inherit it. Each terminal thread has one reserved
@@ -287,9 +291,8 @@ are kept per thread in memory. The main process coalesces concurrent requests, f
 Newer rename events take precedence over an in-flight readback; deleted threads stay deleted.
 Updating a title preserves the thread's status, activity time, read state and parked flag (`archived`).
 
-MDE has two modes that do not touch each other. The Projects tab ("legacy" mode) works with
-projects, sessions and terminals in `workspace.json`. Inbox mode keeps its own list of folders in
-`inbox.json` and never reads or changes projects or sessions. An Inbox folder is a directory and a
+The Sessions tab works with terminal sessions in `workspace.json`. Inbox mode keeps its own list
+of folders in `inbox.json` and never reads or changes workspace sessions. An Inbox folder is a directory and a
 target: the Mac, or a WSL distro on Windows, where only WSL paths are accepted because OpenCode
 runs there. In the Add folder dialog the path can be typed or chosen with Browse. On the Mac that
 opens the system folder dialog. On Windows it opens MDE's own folder browser, which lists only the
@@ -298,11 +301,11 @@ browser opens in the folder already typed when it exists, otherwise in the distr
 home and parent buttons, a breadcrumb, and a "Show hidden folders" switch, and it hands back a plain
 Linux path.
 
-The Inbox also shows a right-hand sidebar with three tabs, Files, Changes and Terminal (a new thread, which has no changes yet, offers Files and Terminal). The Files tab shows the open thread's folder, or the folder a new thread starts in. It is the same tree and viewer as in Projects mode, but browse-only: the VS Code and File Explorer buttons are hidden. The renderer passes the thread's or folder's own ID to `files:list` and `files:read`; the main process looks it up in the Inbox store when no workspace session has that ID.
+The Inbox also shows a right-hand sidebar with three tabs, Files, Changes and Terminal (a new thread, which has no changes yet, offers Files and Terminal). The Files tab shows the open thread's folder, or the folder a new thread starts in. It is the same tree and viewer as in Sessions mode, but browse-only: the VS Code and File Explorer buttons are hidden. The renderer passes the thread's or folder's own ID to `files:list` and `files:read`; the main process looks it up in the Inbox store when no workspace session has that ID.
 
 **Resizing.** Dragging the sidebar's left edge makes it wider (up to 70% of the window) or narrower (never under 260 px). The edge is a keyboard-operable separator: Left and Right arrows change the width by 16 px (64 with Shift), Home and End go to the limits, and a double-click restores 260 px. One width serves all three tabs and is kept in the renderer's `localStorage` (`mde.inbox-sidebar-width`).
 
-**Terminal tab.** The Inbox has one terminal, shared by every thread: it is the same whichever thread (or the new-thread page) is open, and it keeps running while the sidebar shows another tab or the Projects view is open. It reuses the project view's terminal layout (`TerminalView` in its embedded mode: no tab strip, a location header, and Ctrl split controls, Ctrl+Shift+F and the pane-switch shortcuts acting only while the keyboard is inside it, so typing in the composer is never intercepted). Splitting any pane on any side, resizing the dividers, reordering panes, pane titles, fullscreen, restart, and the terminal launcher work as in Projects. Each pane reopens in its last reported directory, falling back to home: `~` in the default WSL distro on Windows, the home directory on the Mac. The layout and its dividers are kept in `localStorage` (`mde.inbox-terminal-layout`) and come back as fresh shells on the next run; the shell processes themselves are not restored. Directories are saved separately in the main-process terminal records. The layout edits shared with the project view live in `src/renderer/terminal/layout-edits.ts`, and the Inbox's copy of the state in `src/renderer/store/inbox-terminal.ts`.
+**Terminal tab.** The Inbox has one terminal, shared by every thread: it is the same whichever thread (or the new-thread page) is open, and it keeps running while the sidebar shows another tab or the Sessions view is open. It reuses the Sessions view's terminal layout (`TerminalView` in its embedded mode: no tab strip or session header, and Ctrl split controls, Ctrl+Shift+F and the pane-switch shortcuts acting only while the keyboard is inside it, so typing in the composer is never intercepted). Splitting any pane on any side, resizing the dividers, reordering panes, pane titles, fullscreen, restart, and the terminal launcher work as in Sessions. Each pane reopens in its last reported directory, falling back to home: `~` in the default WSL distro on Windows, the home directory on the Mac. The layout and its dividers are kept in `localStorage` (`mde.inbox-terminal-layout`) and come back as fresh shells on the next run; the shell processes themselves are not restored. Directories are saved separately in the main-process terminal records. The layout edits shared with the Sessions view live in `src/renderer/terminal/layout-edits.ts`, and the Inbox's copy of the state in `src/renderer/store/inbox-terminal.ts`.
 
 The terminal is not a workspace session and is never stored. Terminal requests name it with the reserved session ID `inbox-terminal` (`src/shared/inbox-terminal.ts`), which the main process resolves on demand (`src/main/inbox/terminal.ts`) for terminal requests. File and Git requests can also name a live terminal ID and its expected directory; naming `inbox-terminal` as a saved file-root session still fails.
 
@@ -799,7 +802,7 @@ Inbox folder, with a status summary and a restore button; F12 again restores the
 It shows GUI and Terminal chat threads using the same titles, branch names, unread state and
 API-driven status as the Inbox. Parked threads are hidden; pins and recent activity determine
 the list order. Threads whose folder was removed still appear under the directory name, and
-worktrees fall back to the original repository name. It uses Inbox metadata independently of Projects sessions and terminal layouts. New activity stays unread while only the mini Inbox is
+worktrees fall back to the original repository name. It uses Inbox metadata independently of workspace sessions and terminal layouts. New activity stays unread while only the mini Inbox is
 visible. It is the
 same `BrowserWindow` and renderer, not a second window, so the IPC sender policy is unchanged and
 every terminal keeps running. The main process (`src/main/mini-window.ts`) owns the geometry: it
@@ -850,7 +853,7 @@ workflow within MDE using an in-app transient selection; native Windows terminal
 
 ### Files and drag and drop
 
-In Projects mode, the Files tree follows the selected terminal’s current directory. Selecting another
+In Sessions mode, the Files tree follows the selected terminal’s current directory. Selecting another
 pane or changing directory resets the tree to that root. File previews belong to that terminal and
 directory, so the same relative filename in another root cannot reuse an earlier preview.
 

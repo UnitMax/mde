@@ -3,13 +3,11 @@ import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import type {
-  MoveSessionRequest,
   MoveTodoTaskRequest,
   ReorderSessionRequest,
   CreateSessionTabRequest,
   RemoveSessionTabRequest,
   SelectSessionTabRequest,
-  UpdateProjectRequest,
   UpdateTodoProjectRequest,
   UpdateTodoTaskRequest,
   UpdateSessionRequest,
@@ -17,12 +15,10 @@ import type {
   WorkspaceData
 } from '@shared/ipc'
 import type {
-  NewProject,
   NewTodoProject,
   NewTodoTask,
   NewSession,
   PersistedTerminalLayout,
-  Project,
   TodoProject,
   TodoColumn,
   TodoTask,
@@ -128,26 +124,6 @@ function nextTabName(tabs: readonly SessionTab[]): string {
   let index = 1
   while (names.has(`Tab ${index}`)) index += 1
   return `Tab ${index}`
-}
-
-export function validateProject(raw: unknown): Project | null {
-  if (typeof raw !== 'object' || raw === null) return null
-  const r = raw as Record<string, unknown>
-  if (!isNonEmptyString(r.id) || !isNonEmptyString(r.name)) return null
-
-  return {
-    id: r.id,
-    name: r.name,
-    createdAt: isNonEmptyString(r.createdAt) ? r.createdAt : new Date(0).toISOString()
-  }
-}
-
-export function validateProjectList(raw: unknown): Project[] {
-  if (!Array.isArray(raw)) return []
-  return uniqueEntries(
-    raw.map(validateProject).filter((project): project is Project => project !== null),
-    'project'
-  )
 }
 
 export function validateTodoProject(raw: unknown): TodoProject | null {
@@ -259,13 +235,11 @@ export function validateTodoTaskList(
   )
 }
 
-export function validateSession(raw: unknown, projectIds: Set<string>): Session | null {
+export function validateSession(raw: unknown): Session | null {
   if (typeof raw !== 'object' || raw === null) return null
   const r = raw as Record<string, unknown>
   if (
     !isNonEmptyString(r.id) ||
-    !isNonEmptyString(r.projectId) ||
-    !projectIds.has(r.projectId) ||
     !isNonEmptyString(r.name) ||
     (r.kind !== 'native' && r.kind !== 'wsl')
   ) {
@@ -276,7 +250,6 @@ export function validateSession(raw: unknown, projectIds: Set<string>): Session 
   const normalizedTabs = sessionTabs(r.tabs, r.id)
   const session: Session = {
     id: r.id,
-    projectId: r.projectId,
     name: r.name,
     kind: r.kind,
     createdAt: isNonEmptyString(r.createdAt) ? r.createdAt : new Date(0).toISOString(),
@@ -292,11 +265,11 @@ export function validateSession(raw: unknown, projectIds: Set<string>): Session 
   return session
 }
 
-export function validateSessionList(raw: unknown, projectIds: Set<string>): Session[] {
+export function validateSessionList(raw: unknown): Session[] {
   if (!Array.isArray(raw)) return []
   return uniqueEntries(
     raw
-      .map((entry) => validateSession(entry, projectIds))
+      .map((entry) => validateSession(entry))
       .filter((session): session is Session => session !== null),
     'session'
   )
@@ -304,16 +277,31 @@ export function validateSessionList(raw: unknown, projectIds: Set<string>): Sess
 
 export function validateWorkspace(raw: unknown): WorkspaceData {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    return { projects: [], todoProjects: [], todoTasks: [], sessions: [] }
+    return { todoProjects: [], todoTasks: [], sessions: [] }
   }
   const record = raw as Record<string, unknown>
-  const projects = validateProjectList(record.projects)
   const todoProjects = validateTodoProjectList(record.todoProjects)
   const todoProjectMap = new Map(todoProjects.map((project) => [project.id, project]))
   const todoTasks = validateTodoTaskList(record.todoTasks, todoProjectMap)
-  const projectIds = new Set(projects.map((project) => project.id))
-  const sessions = validateSessionList(record.sessions, projectIds)
-  return { projects, todoProjects, todoTasks, sessions }
+  // Keep the former sidebar order while discarding legacy project links.
+  const projectRanks = new Map<string, number>()
+  if (Array.isArray(record.projects)) {
+    for (const project of record.projects) {
+      if (project && typeof project === 'object' && typeof project.id === 'string' && !projectRanks.has(project.id)) {
+        projectRanks.set(project.id, projectRanks.size)
+      }
+    }
+  }
+  const rawSessions = Array.isArray(record.sessions) ? [...record.sessions] : []
+  const rank = (value: unknown): number => {
+    if (!value || typeof value !== 'object' || !('projectId' in value) || typeof value.projectId !== 'string') {
+      return projectRanks.size
+    }
+    return projectRanks.get(value.projectId) ?? projectRanks.size
+  }
+  if (projectRanks.size) rawSessions.sort((left, right) => rank(left) - rank(right))
+  const sessions = validateSessionList(rawSessions)
+  return { todoProjects, todoTasks, sessions }
 }
 
 export async function loadWorkspace(): Promise<WorkspaceData> {
@@ -327,7 +315,7 @@ export async function loadWorkspace(): Promise<WorkspaceData> {
     if (code !== 'ENOENT') {
       console.warn('[workspace] could not read workspace.json, starting empty:', error)
     }
-    cache = { projects: [], todoProjects: [], todoTasks: [], sessions: [] }
+    cache = { todoProjects: [], todoTasks: [], sessions: [] }
     return cache
   }
 
@@ -336,7 +324,7 @@ export async function loadWorkspace(): Promise<WorkspaceData> {
     parsed = JSON.parse(text)
   } catch (error) {
     console.warn('[workspace] workspace.json is not valid JSON, starting empty:', error)
-    cache = { projects: [], todoProjects: [], todoTasks: [], sessions: [] }
+    cache = { todoProjects: [], todoTasks: [], sessions: [] }
     return cache
   }
 
@@ -355,49 +343,6 @@ function enqueueWrite(workspace: WorkspaceData): Promise<void> {
 
 function persist(workspace: WorkspaceData): Promise<void> {
   return writeJsonAtomic(storeFile(), workspace)
-}
-
-export async function createProject(input: NewProject): Promise<Project> {
-  const workspace = await loadWorkspace()
-  const name = input.name.trim()
-  if (!name) throw new Error('Project name cannot be empty')
-
-  const project: Project = { id: randomUUID(), name, createdAt: new Date().toISOString() }
-  cache = { ...workspace, projects: [...workspace.projects, project] }
-  await enqueueWrite(cache)
-  return project
-}
-
-export async function updateProject(
-  req: UpdateProjectRequest
-): Promise<Project | null> {
-  const workspace = await loadWorkspace()
-  const index = workspace.projects.findIndex((project) => project.id === req.id)
-  const existing = workspace.projects[index]
-  if (!existing) return null
-
-  const name = req.patch.name?.trim()
-  if (!name) return existing
-  const updated = { ...existing, name }
-  const projects = [...workspace.projects]
-  projects[index] = updated
-  cache = { ...workspace, projects }
-  await enqueueWrite(cache)
-  return updated
-}
-
-export async function removeProject(id: string): Promise<string[]> {
-  const workspace = await loadWorkspace()
-  const removedSessionIds = workspace.sessions
-    .filter((session) => session.projectId === id)
-    .map((session) => session.id)
-  cache = {
-    ...workspace,
-    projects: workspace.projects.filter((project) => project.id !== id),
-    sessions: workspace.sessions.filter((session) => session.projectId !== id)
-  }
-  await enqueueWrite(cache)
-  return removedSessionIds
 }
 
 export async function createTodoProject(input: NewTodoProject): Promise<TodoProject> {
@@ -564,9 +509,6 @@ export async function removeTodoTask(id: string): Promise<void> {
 
 export async function createSession(input: NewSession): Promise<Session> {
   const workspace = await loadWorkspace()
-  if (!workspace.projects.some((project) => project.id === input.projectId)) {
-    throw new Error('Cannot create a session without a valid project')
-  }
   if (!input.name.trim()) throw new Error('Session name is required')
   if (input.kind === 'wsl' && !input.distro?.trim()) {
     throw new Error('WSL sessions require a distro')
@@ -574,7 +516,6 @@ export async function createSession(input: NewSession): Promise<Session> {
 
   const session: Session = {
     id: randomUUID(),
-    projectId: input.projectId,
     name: input.name.trim(),
     kind: input.kind,
     createdAt: new Date().toISOString(),
@@ -606,12 +547,10 @@ export async function duplicateSession(id: string): Promise<Session | null> {
 
   const existingNames = new Set(
     workspace.sessions
-      .filter((session) => session.projectId === source.projectId)
       .map((session) => session.name)
   )
   const session: Session = {
     id: randomUUID(),
-    projectId: source.projectId,
     name: duplicateSessionName(source.name, existingNames),
     ...(source.color ? { color: source.color } : {}),
     ...(source.icon ? { icon: source.icon } : {}),
@@ -750,66 +689,21 @@ export async function removeSessionTab(req: RemoveSessionTabRequest): Promise<Se
   return updated
 }
 
-export async function moveSession(req: MoveSessionRequest): Promise<Session | null> {
-  const workspace = await loadWorkspace()
-  if (!workspace.projects.some((project) => project.id === req.projectId)) return null
-  const index = workspace.sessions.findIndex((session) => session.id === req.id)
-  const existing = workspace.sessions[index]
-  if (!existing) return null
-
-  const updated = { ...existing, projectId: req.projectId }
-  const sessions = [...workspace.sessions]
-  sessions[index] = updated
-  cache = { ...workspace, sessions }
-  await enqueueWrite(cache)
-  return updated
-}
-
-/**
- * Reorders a session within its current project while leaving other projects'
- * positions in the flat persisted array untouched.
- */
+/** Reorders sessions while preserving every other session's relative order. */
 export function reorderSessionList(
   sessions: readonly Session[],
   req: ReorderSessionRequest
 ): Session[] | null {
-  if (
-    !req ||
-    typeof req.id !== 'string' ||
-    (req.beforeId !== null && typeof req.beforeId !== 'string')
-  ) {
+  if (!req || typeof req.id !== 'string' || (req.beforeId !== null && typeof req.beforeId !== 'string')) {
     return null
   }
-
   const source = sessions.find((session) => session.id === req.id)
   if (!source) return null
-
-  const projectEntries = sessions
-    .map((session, index) => ({ session, index }))
-    .filter(({ session }) => session.projectId === source.projectId)
-
-  const remaining = projectEntries
-    .filter(({ session }) => session.id !== source.id)
-    .map(({ session }) => session)
-
-  let insertionIndex = remaining.length
-  if (req.beforeId !== null) {
-    insertionIndex = remaining.findIndex((session) => session.id === req.beforeId)
-    if (insertionIndex < 0) return null
-  }
-
-  const reordered = [...remaining]
-  reordered.splice(insertionIndex, 0, source)
-  const currentOrder = projectEntries.map(({ session }) => session.id)
-  const nextOrder = reordered.map((session) => session.id)
-  if (currentOrder.every((id, index) => id === nextOrder[index])) return [...sessions]
-
-  const result = [...sessions]
-  projectEntries.forEach(({ index }, position) => {
-    const session = reordered[position]
-    if (session) result[index] = session
-  })
-  return result
+  const remaining = sessions.filter((session) => session.id !== req.id)
+  const index = req.beforeId === null ? remaining.length : remaining.findIndex((session) => session.id === req.beforeId)
+  if (index < 0) return null
+  remaining.splice(index, 0, source)
+  return remaining
 }
 
 export async function reorderSession(req: ReorderSessionRequest): Promise<Session[] | null> {

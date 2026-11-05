@@ -7,7 +7,7 @@ import { inboxTerminalSession } from '../src/shared/inbox-terminal'
 import { TerminalDirectoryStore, TERMINAL_DIRECTORIES_FILE } from '../src/main/pty/directories'
 
 const session: Session = {
-  id: 'session-1', projectId: 'project-1', name: 'Work', kind: 'native', createdAt: '',
+  id: 'session-1', name: 'Work', kind: 'native', createdAt: '',
 }
 let directory: string
 const stores: TerminalDirectoryStore[] = []

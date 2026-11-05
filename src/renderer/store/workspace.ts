@@ -3,11 +3,9 @@ import type { PlatformInfo, WorkspaceData } from '@shared/ipc'
 import type {
   Distro,
   InboxThread,
-  NewProject,
   NewTodoProject,
   NewTodoTask,
   NewSession,
-  Project,
   TodoProject,
   TodoTask,
   PersistedTerminalLayout,
@@ -31,7 +29,7 @@ import {
 
 let eventBridgeReady = false
 
-export type WorkspaceView = 'projects' | 'todo' | 'inbox'
+export type WorkspaceView = 'sessions' | 'todo' | 'inbox'
 
 export type SettingsSection =
   | 'appearance'
@@ -62,7 +60,6 @@ function belongsToSession(runtimeId: string, sessionId: string): boolean {
 }
 
 interface WorkspaceState {
-  projects: Project[]
   todoProjects: TodoProject[]
   todoTasks: TodoTask[]
   sessions: Session[]
@@ -102,10 +99,6 @@ interface WorkspaceState {
   openFile: (rootId: string, path: string) => void
   closeFile: (rootId: string) => void
 
-  addProject: (input: NewProject) => Promise<Project>
-  renameProject: (id: string, name: string) => Promise<void>
-  removeProject: (id: string) => Promise<void>
-
   addTodoProject: (input: NewTodoProject) => Promise<TodoProject>
   renameTodoProject: (id: string, name: string) => Promise<void>
   updateTodoProject: (
@@ -132,7 +125,6 @@ interface WorkspaceState {
   renameSession: (id: string, name: string) => Promise<void>
   setSessionColor: (id: string, color: SessionColor) => Promise<void>
   setSessionIcon: (id: string, icon: SessionIcon | null) => Promise<void>
-  moveSession: (id: string, projectId: string) => Promise<void>
   reorderSession: (id: string, beforeId: string | null) => Promise<void>
   removeSession: (id: string) => Promise<void>
 
@@ -158,13 +150,12 @@ interface WorkspaceState {
 }
 
 export const useWorkspace = create<WorkspaceState>((set, get) => ({
-  projects: [],
   todoProjects: [],
   todoTasks: [],
   sessions: [],
   selectedSessionId: null,
   selectedTodoProjectId: null,
-  activeWorkspaceView: 'projects',
+  activeWorkspaceView: 'sessions',
   statuses: {},
   terminalDirectories: {},
   exits: {},
@@ -214,11 +205,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       window.api.inbox.list().catch(() => [] as InboxThread[])
     ])
 
-    const { projects, todoProjects, todoTasks, sessions } = workspace as WorkspaceData
+    const { todoProjects, todoTasks, sessions } = workspace as WorkspaceData
     set({
       platform,
       windowMode,
-      projects,
       todoProjects,
       todoTasks,
       sessions,
@@ -231,14 +221,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       wslAvailable,
       selectedSessionId: null,
       selectedTodoProjectId: todoProjects[0]?.id ?? null,
-      activeWorkspaceView: 'projects',
+      activeWorkspaceView: 'sessions',
       ready: true
     })
 
     if (wslAvailable) void get().refreshDistros()
   },
 
-  selectSession: (id) => set({ selectedSessionId: id, ...(id ? { activeWorkspaceView: 'projects' as const } : {}) }),
+  selectSession: (id) => set({ selectedSessionId: id, ...(id ? { activeWorkspaceView: 'sessions' as const } : {}) }),
 
   setWorkspaceView: (view) => {
     set((state) => ({
@@ -274,52 +264,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       delete openFiles[rootId]
       return { openFiles }
     }),
-
-  addProject: async (input) => {
-    const project = await window.api.projects.create(input)
-    set((state) => ({ projects: [...state.projects, project] }))
-    return project
-  },
-
-  renameProject: async (id, name) => {
-    const updated = await window.api.projects.update({ id, patch: { name } })
-    if (!updated) return
-    set((state) => ({ projects: state.projects.map((project) => (project.id === id ? updated : project)) }))
-  },
-
-  removeProject: async (id) => {
-    const childIds = get()
-      .sessions.filter((session) => session.projectId === id)
-      .map((session) => session.id)
-    await window.api.projects.remove(id)
-    childIds.forEach(disposeSession)
-    set((state) => {
-      const statuses = { ...state.statuses }
-      const openFiles = { ...state.openFiles }
-      const terminalDirectories = { ...state.terminalDirectories }
-      const exits = { ...state.exits }
-      childIds.forEach((sessionId) => {
-        Object.keys(openFiles)
-          .filter((key) => belongsToSession(fileRootTerminalId(key) ?? key, sessionId))
-          .forEach((key) => delete openFiles[key])
-        Object.keys(statuses).filter((id) => belongsToSession(id, sessionId)).forEach((id) => delete statuses[id])
-        Object.keys(terminalDirectories).filter((id) => belongsToSession(id, sessionId)).forEach((id) => delete terminalDirectories[id])
-        Object.keys(exits).filter((id) => belongsToSession(id, sessionId)).forEach((id) => delete exits[id])
-      })
-      return {
-        projects: state.projects.filter((project) => project.id !== id),
-        sessions: state.sessions.filter((session) => session.projectId !== id),
-        selectedSessionId:
-          state.selectedSessionId && childIds.includes(state.selectedSessionId)
-            ? null
-            : state.selectedSessionId,
-        statuses,
-        openFiles,
-        terminalDirectories,
-        exits,
-      }
-    })
-  },
 
   addTodoProject: async (input) => {
     const project = await window.api.todoProjects.create(input)
@@ -404,7 +348,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     set((state) => ({
       sessions: [...state.sessions, session],
       selectedSessionId: session.id,
-      activeWorkspaceView: 'projects'
+      activeWorkspaceView: 'sessions'
     }))
     return session
   },
@@ -415,7 +359,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     set((state) => ({
       sessions: [...state.sessions, session],
       selectedSessionId: session.id,
-      activeWorkspaceView: 'projects'
+      activeWorkspaceView: 'sessions'
     }))
     return session
   },
@@ -469,12 +413,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   setSessionIcon: async (id, icon) => {
     const updated = await window.api.sessions.update({ id, patch: { icon } })
-    if (!updated) return
-    set((state) => ({ sessions: state.sessions.map((session) => (session.id === id ? updated : session)) }))
-  },
-
-  moveSession: async (id, projectId) => {
-    const updated = await window.api.sessions.move({ id, projectId })
     if (!updated) return
     set((state) => ({ sessions: state.sessions.map((session) => (session.id === id ? updated : session)) }))
   },

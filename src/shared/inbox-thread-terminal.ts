@@ -16,7 +16,6 @@ export function inboxTerminalThreadId(terminalId: string): string | null {
 export function inboxThreadTerminalSession(thread: InboxThread): Session {
   return {
     id: inboxThreadTerminalId(thread.id),
-    projectId: '',
     name: thread.title,
     kind: thread.target.kind,
     ...(thread.target.kind === 'wsl' ? { distro: thread.target.distro } : {}),

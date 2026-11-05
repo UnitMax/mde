@@ -30,21 +30,17 @@ const electronMock = vi.hoisted(() => {
 })
 
 const workspaceMock = vi.hoisted(() => ({
-  createProject: vi.fn(),
   createTodoProject: vi.fn(),
   createTodoTask: vi.fn(),
   createSession: vi.fn(),
   duplicateSession: vi.fn(),
   getSession: vi.fn(),
   loadWorkspace: vi.fn(),
-  moveSession: vi.fn(),
   moveTodoTask: vi.fn(),
-  removeProject: vi.fn(),
   removeTodoProject: vi.fn(),
   removeTodoTask: vi.fn(),
   removeSession: vi.fn(),
   reorderSession: vi.fn(),
-  updateProject: vi.fn(),
   updateTodoProject: vi.fn(),
   updateTodoTask: vi.fn(),
   updateSession: vi.fn()
@@ -88,7 +84,6 @@ const { security, event: trustedEvent } = trustedIpcSender()
 function wslSession(overrides: Partial<Session> = {}): Session {
   return {
     id: 'session-1',
-    projectId: 'project-1',
     name: 'App',
     kind: 'wsl',
     distro: 'Ubuntu-24.04',

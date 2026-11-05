@@ -93,7 +93,6 @@ describeUntrustedRepository('Automatic Git queries against an untrusted working 
 
     session = {
       id: 'untrusted-1',
-      projectId: 'project-1',
       name: 'Untrusted tree',
       kind: 'native',
       path: repository,

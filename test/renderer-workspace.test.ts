@@ -32,7 +32,7 @@ describe('renderer workspace event bridge', () => {
     },
     platform: { info: vi.fn(async () => ({ platform: 'linux', arch: 'x64' })) },
     workspace: {
-      list: vi.fn(async () => ({ projects: [], todoProjects: [], todoTasks: [], sessions: [] }))
+      list: vi.fn(async () => ({ todoProjects: [], todoTasks: [], sessions: [] }))
     },
     todoProjects: {
       create: vi.fn(),
@@ -50,7 +50,6 @@ describe('renderer workspace event bridge', () => {
       duplicate: vi.fn(),
       update: vi.fn(async ({ id, patch }: { id: string; patch: Partial<Session> }) => ({
         id,
-        projectId: 'project-1',
         name: 'App',
         kind: 'native' as const,
         createdAt: '2026-01-01T00:00:00.000Z',
@@ -99,7 +98,7 @@ describe('renderer workspace event bridge', () => {
       todoTasks: [],
       selectedSessionId: null,
       selectedTodoProjectId: null,
-      activeWorkspaceView: 'projects',
+      activeWorkspaceView: 'sessions',
       windowMode: 'normal',
       inboxThreads: [],
       selectedInboxThreadId: null,
@@ -161,27 +160,24 @@ describe('renderer workspace event bridge', () => {
   it('creates and selects a terminal session', async () => {
     api.sessions.create.mockResolvedValue({
       id: 'terminal-session',
-      projectId: 'project-1',
       name: 'App',
       kind: 'native',
       createdAt: '2026-01-01T00:00:00.000Z'
     })
 
     const session = await useWorkspace.getState().addSession({
-      projectId: 'project-1',
       name: 'App',
       kind: 'native',
 
     })
 
     expect(api.sessions.create).toHaveBeenCalledWith({
-      projectId: 'project-1',
       name: 'App',
       kind: 'native'
     })
     expect(session.id).toBe('terminal-session')
     expect(useWorkspace.getState().selectedSessionId).toBe('terminal-session')
-    expect(useWorkspace.getState().activeWorkspaceView).toBe('projects')
+    expect(useWorkspace.getState().activeWorkspaceView).toBe('sessions')
   })
 
   it('creates, selects, renames, and removes independent To Do projects', async () => {
@@ -251,7 +247,7 @@ describe('renderer workspace event bridge', () => {
       }],
       selectedTodoProjectId: 'todo-1',
       selectedSessionId: 'session-1',
-      activeWorkspaceView: 'projects'
+      activeWorkspaceView: 'sessions'
     })
 
     useWorkspace.getState().setWorkspaceView('todo')
@@ -262,7 +258,7 @@ describe('renderer workspace event bridge', () => {
     })
 
     useWorkspace.getState().selectSession('session-1')
-    expect(useWorkspace.getState().activeWorkspaceView).toBe('projects')
+    expect(useWorkspace.getState().activeWorkspaceView).toBe('sessions')
   })
 
   it('creates, updates, moves, and removes To Do tasks', async () => {
@@ -304,7 +300,6 @@ describe('renderer workspace event bridge', () => {
   it('appends and selects a duplicated session returned by the main process', async () => {
     const source: Session = {
       id: 'terminal-1',
-      projectId: 'project-1',
       name: 'App',
       color: 'teal',
       kind: 'wsl',
@@ -338,7 +333,6 @@ describe('renderer workspace event bridge', () => {
     const secondTab = { ...firstTab, id: 'tab-2', name: 'Tab 2' }
     const session: Session = {
       id: 'session-1',
-      projectId: 'project-1',
       name: 'App',
       kind: 'native',
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -366,7 +360,6 @@ describe('renderer workspace event bridge', () => {
   it('persists and updates a session color', async () => {
     const session: Session = {
       id: 'session-1',
-      projectId: 'project-1',
       name: 'App',
       kind: 'native',
       createdAt: '2026-01-01T00:00:00.000Z'
@@ -386,7 +379,6 @@ describe('renderer workspace event bridge', () => {
   it('persists and updates a session icon', async () => {
     const session: Session = {
       id: 'session-1',
-      projectId: 'project-1',
       name: 'App',
       kind: 'native',
       createdAt: '2026-01-01T00:00:00.000Z'
@@ -415,15 +407,14 @@ describe('renderer workspace event bridge', () => {
   it('persists and applies a reordered session list without changing selection', async () => {
     const first: Session = {
       id: 'session-1',
-      projectId: 'project-1',
       name: 'First',
       kind: 'native',
       createdAt: '2026-01-01T00:00:00.000Z'
     }
     const second: Session = { ...first, id: 'session-2', name: 'Second' }
-    const otherProject: Session = { ...first, id: 'session-3', projectId: 'project-2', name: 'Other' }
-    const reordered = [second, otherProject, first]
-    useWorkspace.setState({ sessions: [first, second, otherProject], selectedSessionId: first.id })
+    const third: Session = { ...first, id: 'session-3', name: 'Other' }
+    const reordered = [second, third, first]
+    useWorkspace.setState({ sessions: [first, second, third], selectedSessionId: first.id })
     api.sessions.reorder.mockResolvedValue(reordered)
 
     await useWorkspace.getState().reorderSession(first.id, second.id)
@@ -436,7 +427,6 @@ describe('renderer workspace event bridge', () => {
   it('leaves the session list unchanged when reorder is rejected', async () => {
     const session: Session = {
       id: 'session-1',
-      projectId: 'project-1',
       name: 'App',
       kind: 'native',
       createdAt: '2026-01-01T00:00:00.000Z'
@@ -633,7 +623,7 @@ describe('renderer workspace event bridge', () => {
     })
 
     it('only counts the open thread, and only in the Inbox', async () => {
-      useWorkspace.setState({ activeWorkspaceView: 'projects' })
+      useWorkspace.setState({ activeWorkspaceView: 'sessions' })
       useWorkspace.getState().upsertInboxThread(inboxThread({ lastActivityAt: 300, readAt: 200 }))
       useWorkspace.getState().markOpenInboxThreadSeen()
       await new Promise((resolve) => setTimeout(resolve, 5))

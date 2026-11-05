@@ -10,7 +10,7 @@ MDE is local-only for its own application traffic. The released application cont
 
 MDE stores data only on the local machine:
 
-- `workspace.json` under Electron's user-data directory: project labels, terminal session names,
+- `workspace.json` under Electron's user-data directory: terminal session names and order,
   platform and distro details, shell overrides, tab and terminal layout, and To Do projects
   with their task titles and descriptions.
 - `terminal-directories.json` under Electron's user-data directory: the last reported directory of
@@ -135,7 +135,7 @@ clipboard's contents anywhere itself; what you paste is an unsent draft like any
 
 ## Network behavior in the released application
 
-In Projects mode, the Files sidebar reads the selected terminal’s current directory.
+In Sessions mode, the Files sidebar reads the selected terminal’s current directory.
 Each terminal header reads local Git metadata for that
 terminal’s checkout; opening it reads changes and diffs there. Directory reports update the local
 per-terminal records described above. File previews and Git snapshots are held in memory and are

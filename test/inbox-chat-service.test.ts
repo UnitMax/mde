@@ -198,7 +198,7 @@ describe('Inbox chat service', () => {
   it('resolves a folder or thread ID to its directory for the file tree', async () => {
     const { service, folder } = setup({ 'session.create': { data: { id: 'ses_new', title: 'New session' } } })
     expect(service.fileRoot(folder.id)).toEqual({
-      id: 'fld_abc', projectId: '', name: 'app', kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/app', createdAt: '',
+      id: 'fld_abc', name: 'app', kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/app', createdAt: '',
     })
     await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
     expect(service.fileRoot('ses_new')).toMatchObject({ id: 'ses_new', kind: 'wsl', path: '/home/me/app' })

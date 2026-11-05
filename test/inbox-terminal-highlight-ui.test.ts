@@ -33,7 +33,7 @@ describe('Inbox Terminal chat border animation', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-    useWorkspace.setState({ inboxThreads: [], inboxTerminalHighlights: {}, activeWorkspaceView: 'projects' })
+    useWorkspace.setState({ inboxThreads: [], inboxTerminalHighlights: {}, activeWorkspaceView: 'sessions' })
     container = document.createElement('div')
     document.body.append(container)
     root = createRoot(container)

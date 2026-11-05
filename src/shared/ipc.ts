@@ -4,17 +4,15 @@ import type {
   GitInfoResponse,
   GitTerminalInfoResponse,
   HostPlatform,
-  NewProject,
   NewTodoProject,
   NewTodoTask,
   NewSession,
   PathCheckResult,
   PathResolution,
   WslDirectoryListing,
-  Project,
   TodoProject,
   TodoTask,
-  ProjectKind,
+  SessionKind,
   Session,
   SessionTab,
   FileReadResponse,
@@ -70,7 +68,6 @@ import type {
 } from './types'
 
 export interface WorkspaceData {
-  projects: Project[]
   todoProjects: TodoProject[]
   todoTasks: TodoTask[]
   sessions: Session[]
@@ -82,9 +79,6 @@ export interface WorkspaceData {
  */
 export const IpcChannels = {
   workspaceList: 'workspace:list',
-  projectsCreate: 'projects:create',
-  projectsUpdate: 'projects:update',
-  projectsRemove: 'projects:remove',
 
   todoProjectsCreate: 'todo-projects:create',
   todoProjectsUpdate: 'todo-projects:update',
@@ -98,7 +92,6 @@ export const IpcChannels = {
   sessionsCreate: 'sessions:create',
   sessionsDuplicate: 'sessions:duplicate',
   sessionsUpdate: 'sessions:update',
-  sessionsMove: 'sessions:move',
   sessionsReorder: 'sessions:reorder',
   sessionsRemove: 'sessions:remove',
 
@@ -202,14 +195,14 @@ export interface AppInfo {
 }
 
 export interface ResolvePathRequest {
-  kind: ProjectKind
+  kind: SessionKind
   distro?: string
   /** Raw path as it came out of the picker or the text field. */
   rawPath: string
 }
 
 export interface ValidatePathRequest {
-  kind: ProjectKind
+  kind: SessionKind
   distro?: string
   path: string
 }
@@ -357,11 +350,6 @@ export interface WindowChromeColors {
   symbolColor: string
 }
 
-export interface UpdateProjectRequest {
-  id: string
-  patch: Partial<Pick<Project, 'name'>>
-}
-
 export interface UpdateTodoProjectRequest {
   id: string
   patch: Partial<Pick<TodoProject, 'name'>> & { shorthand?: string }
@@ -386,14 +374,9 @@ export interface UpdateSessionRequest {
   }
 }
 
-export interface MoveSessionRequest {
-  id: string
-  projectId: string
-}
-
 export interface ReorderSessionRequest {
   id: string
-  /** Session to insert before; null appends to the end of the current project. */
+  /** Session to insert before; null appends to the end of the session list. */
   beforeId: string | null
 }
 
@@ -436,11 +419,6 @@ export interface RendererApi {
   platform: {
     info(): Promise<PlatformInfo>
   }
-  projects: {
-    create(input: NewProject): Promise<Project>
-    update(req: UpdateProjectRequest): Promise<Project | null>
-    remove(id: string): Promise<void>
-  }
   todoProjects: {
     create(input: NewTodoProject): Promise<TodoProject>
     update(req: UpdateTodoProjectRequest): Promise<TodoProject | null>
@@ -459,7 +437,6 @@ export interface RendererApi {
     create(input: NewSession): Promise<Session>
     duplicate(id: string): Promise<Session | null>
     update(req: UpdateSessionRequest): Promise<Session | null>
-    move(req: MoveSessionRequest): Promise<Session | null>
     reorder(req: ReorderSessionRequest): Promise<Session[] | null>
     remove(id: string): Promise<void>
   }

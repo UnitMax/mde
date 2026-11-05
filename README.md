@@ -1,7 +1,7 @@
 # mde
 
-Cross-platform desktop shell for an agentic dev environment: grouped projects containing
-persistent terminal sessions, with first-class WSL support on Windows.
+Cross-platform desktop shell for an agentic dev environment: named, persistent terminal
+sessions, with first-class WSL support on Windows.
 
 It is a desktop shell focused on persistent terminal workflows: tabbed multi-pane terminals per
 session, Git changes in each terminal header, a file tree that follows the selected terminal,
@@ -14,7 +14,9 @@ Build terminal layouts by holding Ctrl and clicking + on a pane’s left, right,
 Drag dividers to resize; closing a pane expands its sibling and preserves the rest of the layout.
 Select a terminal to browse its current folder in Files. Click its branch and change counts in the
 terminal header to review Git changes and history. Sessions group terminals by name and environment;
-each terminal remembers its own last reported folder across app restarts. Restored shells fall back
+the Sessions sidebar shows each session’s runtime and WSL distribution below its name. Create a
+session with a name and environment, then drag its sidebar handle to reorder it. Each terminal
+remembers its own last reported folder across app restarts. Restored shells fall back
 to the user’s home directory if their saved folder is unavailable.
 
 ## Removing the old OpenCode plugin

@@ -26,11 +26,6 @@ const api: RendererApi = {
   platform: {
     info: () => ipcRenderer.invoke(IpcChannels.platformInfo)
   },
-  projects: {
-    create: (input) => ipcRenderer.invoke(IpcChannels.projectsCreate, input),
-    update: (req) => ipcRenderer.invoke(IpcChannels.projectsUpdate, req),
-    remove: (id) => ipcRenderer.invoke(IpcChannels.projectsRemove, id)
-  },
   todoProjects: {
     create: (input) => ipcRenderer.invoke(IpcChannels.todoProjectsCreate, input),
     update: (req) => ipcRenderer.invoke(IpcChannels.todoProjectsUpdate, req),
@@ -49,7 +44,6 @@ const api: RendererApi = {
     create: (input) => ipcRenderer.invoke(IpcChannels.sessionsCreate, input),
     duplicate: (id) => ipcRenderer.invoke(IpcChannels.sessionsDuplicate, id),
     update: (req) => ipcRenderer.invoke(IpcChannels.sessionsUpdate, req),
-    move: (req) => ipcRenderer.invoke(IpcChannels.sessionsMove, req),
     reorder: (req) => ipcRenderer.invoke(IpcChannels.sessionsReorder, req),
     remove: (id) => ipcRenderer.invoke(IpcChannels.sessionsRemove, id)
   },

@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
-  createProject,
   createSession,
   createSessionTab,
   initWorkspaceStore,
@@ -27,9 +26,7 @@ describe('workspace session tabs', () => {
   })
 
   it('creates, selects, updates, and persists independent tabs', async () => {
-    const project = await createProject({ name: 'Work' })
     const session = await createSession({
-      projectId: project.id,
       name: 'App',
       kind: 'native',
 
@@ -81,9 +78,7 @@ describe('workspace session tabs', () => {
   })
 
   it('selects the neighboring tab when removing the active tab and protects the final tab', async () => {
-    const project = await createProject({ name: 'Work' })
     const session = await createSession({
-      projectId: project.id,
       name: 'App',
       kind: 'native',
 
@@ -100,8 +95,7 @@ describe('workspace session tabs', () => {
   })
 
   it('persists a nested arrangement and all divider ratios across a reload', async () => {
-    const project = await createProject({ name: 'Work' })
-    const session = await createSession({ projectId: project.id, name: 'App', kind: 'native' })
+    const session = await createSession({ name: 'App', kind: 'native' })
     const layout = testLayout(Array.from({ length: 12 }, (_, index) => ({ id: `pane-${index}` })), 0.3)
     const updated = await updateSessionTab({ sessionId: session.id, tabId: session.tabs![0]!.id, patch: { layout } })
     expect(updated?.tabs?.[0]?.layout).toEqual(layout)

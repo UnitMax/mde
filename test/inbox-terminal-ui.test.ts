@@ -33,7 +33,7 @@ vi.mock('../src/renderer/terminal/sessions', () => {
   }
 })
 
-const session: Session = { id: 'ses-1', projectId: 'p', name: 'My project', kind: 'native', createdAt: '' }
+const session: Session = { id: 'ses-1', name: 'My session', kind: 'native', createdAt: '' }
 let root: Root
 let container: HTMLDivElement
 const render = (element: ReactElement): Promise<void> => act(async () => root.render(element))
@@ -87,11 +87,11 @@ const release = () => act(async () => {
 })
 
 describe('TerminalView dynamic splits', () => {
-  it('keeps the project tabs, session and environment, with no preset picker', async () => {
+  it('shows the session tabs directly above its panes', async () => {
     await render(createElement(TerminalView, props(initial())))
     expect(container.querySelector('[role="tablist"]')).not.toBeNull()
-    expect(container.textContent).toContain('My project')
-    expect(container.textContent).toContain('Native')
+    expect(container.querySelector('header:not([data-testid="terminal-pane-title-bar"])')).toBeNull()
+    expect(container.querySelectorAll('.terminal-host')).toHaveLength(1)
     expect(layoutButtons()).toHaveLength(0)
     expect(controls()).toHaveLength(0)
   })
@@ -194,11 +194,11 @@ describe('TerminalView dynamic splits', () => {
 describe('TerminalView embedded in the Inbox sidebar', () => {
   const embedded = (overrides: Record<string, unknown> = {}) => createElement(TerminalView, props(initial(), { embedded: true, ...overrides }))
 
-  it('shows the environment above its panes', async () => {
+  it('embeds the panes without session chrome', async () => {
     await render(embedded())
     expect(container.querySelector('[role="tablist"]')).toBeNull()
-    expect(container.textContent).not.toContain('My project')
-    expect(container.textContent).toContain('Native')
+    expect(container.querySelector('header:not([data-testid="terminal-pane-title-bar"])')).toBeNull()
+    expect(container.querySelectorAll('.terminal-host')).toHaveLength(1)
     expect(layoutButtons()).toHaveLength(0)
   })
 
@@ -230,7 +230,6 @@ describe('InboxTerminal', () => {
 
   it('uses the Inbox session and follows the split store', async () => {
     await render(createElement(InboxTerminal))
-    expect(container.textContent).toContain('Native')
     expect(container.querySelector('[role="tablist"]')).toBeNull()
     await vi.waitFor(() => expect(window.api.pty.ensure).toHaveBeenCalled())
     expect(vi.mocked(window.api.pty.ensure).mock.calls[0]![0]).toMatchObject({ sessionId: 'inbox-terminal' })

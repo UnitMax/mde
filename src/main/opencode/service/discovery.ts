@@ -32,7 +32,6 @@ export function serviceTargetKey(target: OpenCodeTarget): string {
 export function targetSession(target: OpenCodeTarget): Session {
   return {
     id: 'inbox',
-    projectId: 'inbox',
     name: 'Inbox',
     kind: target.kind,
     ...(target.kind === 'wsl' ? { distro: target.distro } : {}),

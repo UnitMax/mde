@@ -2,7 +2,7 @@
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { AddSessionDialog } from '../src/renderer/components/AddProjectDialog'
+import { AddSessionDialog } from '../src/renderer/components/AddSessionDialog'
 import { useWorkspace } from '../src/renderer/store/workspace'
 
 let root: Root
@@ -15,7 +15,6 @@ beforeEach(() => {
   onOpenChange.mockClear()
   useWorkspace.setState({
     platform: { platform: 'darwin', isWindows: false },
-    projects: [{ id: 'project-1', name: 'Work', createdAt: '' }],
     wslAvailable: false, distros: [], addSession,
     refreshDistros: vi.fn(async () => undefined),
   })
@@ -41,13 +40,13 @@ async function enterName(): Promise<void> {
   })
 }
 
-it('creates a native session with only a project and name', async () => {
+it('creates a native session with only a name', async () => {
   await render()
   expect(createButton().disabled).toBe(true)
   await enterName()
   expect(createButton().disabled).toBe(false)
   await act(async () => createButton().click())
-  expect(addSession).toHaveBeenCalledWith({ projectId: 'project-1', name: 'Tools', kind: 'native' })
+  expect(addSession).toHaveBeenCalledWith({ name: 'Tools', kind: 'native' })
   expect(onOpenChange).toHaveBeenCalledWith(false)
 })
 
@@ -61,5 +60,5 @@ it('creates a WSL session in the selected distribution', async () => {
   await act(async () => wsl.click())
   await enterName()
   await act(async () => createButton().click())
-  expect(addSession).toHaveBeenCalledWith({ projectId: 'project-1', name: 'Tools', kind: 'wsl', distro: 'Ubuntu-24.04' })
+  expect(addSession).toHaveBeenCalledWith({ name: 'Tools', kind: 'wsl', distro: 'Ubuntu-24.04' })
 })

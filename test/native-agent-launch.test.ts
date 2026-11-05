@@ -8,7 +8,7 @@ import type { Session } from '../src/shared/types'
 
 const directories: string[] = []
 const native: Session = {
-  id: 'native', projectId: 'project', name: 'Mac', kind: 'native',
+  id: 'native', name: 'Mac', kind: 'native',
   shell: '/bin/sh', createdAt: '2026-01-01T00:00:00Z',
 }
 

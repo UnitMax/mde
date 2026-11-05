@@ -19,7 +19,6 @@ import {
   type FilesListRequest,
   type FilesReadRequest,
   type PtyLaunchRequest,
-  type MoveSessionRequest,
   type MoveTodoTaskRequest,
   type PlatformInfo,
   type ReorderSessionRequest,
@@ -33,7 +32,6 @@ import {
   type PtyDropRejection,
   type TerminalDropMode,
   type UpdatePtyPaletteRequest,
-  type UpdateProjectRequest,
   type UpdateTodoProjectRequest,
   type UpdateTodoTaskRequest,
   type UpdateSessionRequest,
@@ -52,7 +50,6 @@ import type {
   HostPlatform,
   GitInfoResponse,
   GitTerminalInfoResponse,
-  NewProject,
   NewTodoProject,
   NewTodoTask,
   NewSession,
@@ -60,7 +57,6 @@ import type {
   PathCheckResult,
   PathResolution,
   WslDirectoryListing,
-  Project,
   TodoProject,
   TodoTask,
   Session,
@@ -135,15 +131,12 @@ import { readInboxGitChanges, readInboxGitDiff } from './inbox/changes'
 import { terminalSessionResolver } from './inbox/terminal'
 import { isSafeRelativePath, listSessionDirectory, readSessionFile } from './files/tree'
 import {
-  createProject,
   createTodoProject,
   createTodoTask,
   createSession,
   duplicateSession,
   getSession,
   loadWorkspace,
-  moveSession,
-  removeProject,
   removeTodoProject,
   removeTodoTask,
   removeSession,
@@ -151,7 +144,6 @@ import {
   createSessionTab,
   removeSessionTab,
   selectSessionTab,
-  updateProject,
   updateTodoProject,
   updateTodoTask,
   moveTodoTask,
@@ -458,21 +450,6 @@ export function registerIpcHandlers(
   })
 
   handle<void, WorkspaceData>(IpcChannels.workspaceList, () => loadWorkspace())
-  handle<NewProject, Project>(IpcChannels.projectsCreate, (input) => createProject(input))
-  handle<UpdateProjectRequest, Project | null>(IpcChannels.projectsUpdate, (req) =>
-    updateProject(req)
-  )
-  handle<string, void>(IpcChannels.projectsRemove, async (id) => {
-    // Removing a project must not leave any child shell running.
-    const workspace = await loadWorkspace()
-    for (const session of workspace.sessions) {
-      if (session.projectId === id) {
-        ptyManager.disposeForSourceSession(session.id)
-      }
-    }
-    await removeProject(id)
-  })
-
   handle<NewTodoProject, TodoProject>(IpcChannels.todoProjectsCreate, (input) =>
     createTodoProject(input)
   )
@@ -495,7 +472,6 @@ export function registerIpcHandlers(
   handle<UpdateSessionRequest, Session | null>(IpcChannels.sessionsUpdate, (req) =>
     updateSession(req)
   )
-  handle<MoveSessionRequest, Session | null>(IpcChannels.sessionsMove, (req) => moveSession(req))
   handle<ReorderSessionRequest, Session[] | null>(IpcChannels.sessionsReorder, (req) =>
     reorderSession(req)
   )

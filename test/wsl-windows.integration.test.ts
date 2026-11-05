@@ -88,7 +88,6 @@ describeWindowsWsl('SEC-002 Windows/WSL direct execution', () => {
 
     session = {
       id: 'sec-002-wsl',
-      projectId: 'sec-002-project',
       name: 'SEC-002 fixture',
       kind: 'wsl',
       distro,

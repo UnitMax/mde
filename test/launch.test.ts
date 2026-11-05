@@ -19,7 +19,6 @@ const wslExecutable = { file: 'D:\\Windows\\System32\\wsl.exe', cwd: 'D:\\Window
 function session(overrides: Partial<Session> = {}): Session {
   return {
     id: 'p1',
-    projectId: 'project-1',
     name: 'app',
     kind: 'native',
     createdAt: '2026-01-01T00:00:00.000Z',
@@ -112,7 +111,7 @@ describe('buildLaunchSpec', () => {
     expect(command).toContain('rm -rf -- "$mde_zdotdir"')
   })
 
-  it('honours a shell override for WSL projects', () => {
+  it('honours a shell override for WSL sessions', () => {
     const spec = buildLaunchSpec(
       session({ kind: 'wsl', distro: 'Ubuntu-24.04', shell: 'zsh' }),
       { platform: 'win32', windowsExecutable: wslExecutable }
