@@ -207,8 +207,6 @@ export interface OpenCodeTuiStatusSnapshot {
   protocol: 1
   status: OpenCodeTuiStatus
   attentionReason?: OpenCodeTuiAttentionReason
-  /** Current top-level OpenCode conversation title, when reported by the plugin. */
-  title?: string
   revision: number
   updatedAt: number
   /** Process identity used only by the main-process liveness check. */
@@ -747,7 +745,6 @@ export interface OpenCodeTuiInstanceStatus {
   terminalId: string
   status: OpenCodeTuiStatus
   attentionReason?: OpenCodeTuiAttentionReason
-  title?: string
   revision: number
 }
 

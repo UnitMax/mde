@@ -237,7 +237,6 @@ describe('renderer workspace event bridge', () => {
         {
           terminalId: 'session-1',
           status: 'working',
-          title: 'Checkout flow',
           revision: 2
         },
         {
@@ -252,7 +251,6 @@ describe('renderer workspace event bridge', () => {
       {
         terminalId: 'session-1',
         status: 'working',
-        title: 'Checkout flow',
         revision: 2
       },
       {

@@ -18,7 +18,6 @@ import {
   TUI_STATUS_PROTOCOL,
   TUI_STATUS_SERVER_SOURCE,
   TUI_STATUS_STALE_MS,
-  TUI_STATUS_TITLE_MAX_LENGTH,
   TUI_STATUS_TUI_SOURCE,
   tuiProcessProbeCommand
 } from '../src/main/opencode/tui-status'
@@ -59,6 +58,7 @@ describe('OpenCode TUI status protocol', () => {
           protocol: TUI_STATUS_PROTOCOL,
           status: 'attention',
           attentionReason: 'question',
+          title: 'Title from an older installed plugin',
           revision: 4,
           updatedAt: 10_000
         },
@@ -71,24 +71,6 @@ describe('OpenCode TUI status protocol', () => {
       revision: 4,
       updatedAt: 10_000
     })
-  })
-
-  it('normalizes and bounds optional session titles', () => {
-    const title = `  Checkout\n${'x'.repeat(TUI_STATUS_TITLE_MAX_LENGTH * 2)}  `
-    expect(
-      parseTuiStatusSnapshot(
-        { protocol: 1, status: 'working', title, revision: 2, updatedAt: 10_000 },
-        10_000
-      )
-    ).toMatchObject({
-      title: `Checkout ${'x'.repeat(TUI_STATUS_TITLE_MAX_LENGTH - 'Checkout '.length)}`
-    })
-    expect(
-      parseTuiStatusSnapshot(
-        { protocol: 1, status: 'working', title: { unsafe: true }, revision: 2, updatedAt: 10_000 },
-        10_000
-      )
-    ).toBeNull()
   })
 
   it('rejects stale, malformed, and incomplete snapshots', () => {
@@ -128,7 +110,6 @@ describe('OpenCode TUI status protocol', () => {
             snapshot: {
               protocol: 1,
               status: 'working',
-              title: 'Checkout flow',
               revision: 2,
               updatedAt: 10
             }
@@ -150,7 +131,6 @@ describe('OpenCode TUI status protocol', () => {
       {
         terminalId: 'session-1',
         status: 'working',
-        title: 'Checkout flow',
         revision: 2
       },
       {
@@ -192,8 +172,6 @@ describe('OpenCode TUI status protocol', () => {
     expect(TUI_STATUS_TUI_SOURCE).toContain('context.data.session.root')
     expect(TUI_STATUS_TUI_SOURCE).toContain('context.ui?.router?.current')
     expect(TUI_STATUS_TUI_SOURCE).not.toContain('tabs.list')
-    expect(TUI_STATUS_TUI_SOURCE).toContain('title')
-    expect(TUI_STATUS_TUI_SOURCE).toContain("value.replace(/\\s+/g, ' ')")
     expect(TUI_STATUS_TUI_SOURCE).not.toContain('prompt')
   })
 

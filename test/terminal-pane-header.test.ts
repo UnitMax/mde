@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TerminalPaneHeader } from '../src/renderer/components/TerminalPaneHeader'
 import { MAX_TERMINAL_COUNT } from '../src/renderer/terminal/layout'
 import { useWorkspace } from '../src/renderer/store/workspace'
-import type { OpenCodeTuiInstanceStatus, Session } from '../src/shared/types'
+import type { Session } from '../src/shared/types'
 import { testLayout } from './helpers/terminal-layout'
 import {
   choosePaneMenuItem,
@@ -115,14 +115,6 @@ describe('TerminalPaneHeader', () => {
       expect(titleText().textContent).toBe('terminal')
       await act(async () => useWorkspace.getState().setTerminalDirectory({ terminalId: ID, directory: '/srv/www' }))
       expect(titleText().textContent).toBe('www')
-    })
-
-    it('keeps the OpenCode label for an agent pane', async () => {
-      useWorkspace.setState({ terminalDirectories: { [ID]: '/home/me/app' } })
-      const openCodeInstance = { terminalId: ID, status: 'working', title: 'Validate tax rules' } as OpenCodeTuiInstanceStatus
-      await render(props({ openCodeInstance }))
-      expect(titleText().textContent).toBe('Validate tax rules')
-      expect(q('terminal-opencode-status')?.getAttribute('data-status')).toBe('working')
     })
   })
 

@@ -37,7 +37,6 @@ import {
   TUI_STATUS_PLUGIN_VERSION_MARKER,
   TUI_STATUS_SERVER_FILE,
   TUI_STATUS_SERVER_SOURCE,
-  TUI_STATUS_TITLE_MAX_LENGTH,
   TUI_STATUS_TUI_FILE,
   TUI_STATUS_TUI_SOURCE
 } from './tui-status-plugin'
@@ -51,7 +50,6 @@ export {
   TUI_STATUS_PLUGIN_VERSION_MARKER,
   TUI_STATUS_SERVER_FILE,
   TUI_STATUS_SERVER_SOURCE,
-  TUI_STATUS_TITLE_MAX_LENGTH,
   TUI_STATUS_TUI_FILE,
   TUI_STATUS_TUI_SOURCE
 }
@@ -105,7 +103,6 @@ export function collectTuiInstanceStatuses(
         terminalId: runtime.terminalId,
         status: snapshot.status,
         ...(snapshot.attentionReason ? { attentionReason: snapshot.attentionReason } : {}),
-        ...(snapshot.title ? { title: snapshot.title } : {}),
         revision: snapshot.revision
       }
     })
@@ -161,17 +158,10 @@ export function decodeTuiStatusSnapshot(value: unknown, now = Date.now()): OpenC
   if (hasProcessStartTicks && (!Number.isSafeInteger(record.processStartTicks) || (record.processStartTicks as number) < 0)) return null
   if (hasProcessStartedAt && (typeof record.processStartedAt !== 'string' ||
     !/^[A-Za-z]{3} [A-Za-z]{3} \d{1,2} \d{2}:\d{2}:\d{2} \d{4}$/.test(record.processStartedAt))) return null
-  if (record.title !== undefined && typeof record.title !== 'string') return null
-  const title = record.title
-    ?.replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, TUI_STATUS_TITLE_MAX_LENGTH)
-
   return {
     protocol: TUI_STATUS_PROTOCOL,
     status: record.status,
     ...(record.status === 'attention' ? { attentionReason: parsedAttentionReason } : {}),
-    ...(title ? { title } : {}),
     revision,
     updatedAt,
     ...(hasProcessId
@@ -304,7 +294,6 @@ function sameInstances(
       instance.terminalId === other.terminalId &&
       instance.status === other.status &&
       instance.attentionReason === other.attentionReason &&
-      instance.title === other.title &&
       instance.revision === other.revision
   })
 }
@@ -721,7 +710,6 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
       previous?.revision === snapshot.revision &&
       previous.status === snapshot.status &&
       previous.attentionReason === snapshot.attentionReason &&
-      previous.title === snapshot.title &&
       sameTuiProcess(previous, snapshot)
     ) {
       runtime.snapshot = snapshot

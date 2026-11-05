@@ -128,7 +128,7 @@ describe('switching sessions with a file open', () => {
     useWorkspace.setState({
       windowMode: 'mini',
       inboxThreads: [thread],
-      opencodeTuiInstances: { alpha: [{ terminalId: 'alpha', title: 'Projects agent', status: 'attention', revision: 1 }] },
+      opencodeTuiInstances: { alpha: [{ terminalId: 'alpha', status: 'attention', revision: 1 }] },
     })
     const container = await render()
     const rows = container.querySelectorAll<HTMLButtonElement>('[data-testid="mini-inbox-row"]')

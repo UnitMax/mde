@@ -79,10 +79,7 @@ import {
 } from '@/store/workspace'
 import { OpenCodeNotificationBadge } from '@/components/OpenCodeNotificationBadge'
 import { SessionEnvironmentPanel } from '@/components/SessionEnvironmentPanel'
-import {
-  OPENCODE_STATUS_ICON_SLOT_CLASS,
-  openCodeStatusLabel
-} from '@/lib/opencode-tui-status'
+import { openCodeStatusLabel } from '@/lib/opencode-tui-status'
 import {
   DEFAULT_SESSION_COLOR,
   SESSION_COLORS,
@@ -545,7 +542,7 @@ function SessionRow({
               >
                 <GripVertical className="h-3.5 w-3.5" />
               </button>
-              <span className={OPENCODE_STATUS_ICON_SLOT_CLASS}>
+              <span className="flex h-2.5 w-2.5 shrink-0 items-center justify-center">
                 <StatusDot indicator={indicator} />
               </span>
 

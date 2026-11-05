@@ -32,11 +32,11 @@ process, its scrollback and its cursor position survive. Unvisited persisted tab
 lazily; the PTYs themselves do not survive application restart.
 
 Each pane has a header (`TerminalPaneHeader`) that puts its name first. The title is the pane's
-custom name, else the OpenCode conversation title, else the last folder of the terminal's current
+custom name, else the last folder of the terminal's current
 directory (so four shells in four folders read differently), else `terminal`; hovering it shows the
 full path. Double-clicking the title, or Rename in the menu, edits it, and keeping the derived name
-stores nothing so it goes on following the folder. The header also carries the OpenCode status dot
-and the Git chip described below. The actions stay out of the way: fullscreen, the ⋯ menu and Close
+stores nothing so it goes on following the folder. The header also carries the Git chip described
+below. The actions stay out of the way: fullscreen, the ⋯ menu and Close
 appear over the right edge of a hovered or focused pane (and always in fullscreen) without moving the
 title. The menu holds Rename, Split right and Split down, OpenCode sessions (Ctrl+Shift+O),
 Open in VS Code and Show in File Explorer (WSL on Windows),
@@ -991,10 +991,10 @@ All integrations are optional and read-only with respect to prompts and project 
   writes only a short runtime snapshot under `/tmp/mde-opencode` in WSL or a private `mde-opencode`
   directory beneath the macOS user temporary directory, and does not modify project files
   or OpenCode configuration. MDE reads that snapshot locally on Mac or through the distro's `\\wsl.localhost\...`
-  path and falls back to normal shell status when it is absent. Terminal pane headers use the
-  current top-level OpenCode session title, with numbered labels when no title is available;
-  prompts, messages, tool data, credentials, and
-  filesystem contents are never included in the snapshot.
+  path and falls back to normal shell status when it is absent. The bundled plugin reports
+  status only; conversation titles, prompts, messages, tool data, credentials, and filesystem
+  contents are never included in its snapshot. Titles from older installed plugins are ignored;
+  reinstalling the plugin and restarting OpenCode stops those plugins from writing titles too.
   Snapshots carry a PID and process start identity: Linux `/proc` start ticks for WSL, or
   `/bin/ps` start time with a fixed locale on Mac. After missed heartbeats, MDE checks this identity
   before clearing an exited instance; an inconclusive probe preserves the last status. Mac status
@@ -1007,8 +1007,8 @@ All integrations are optional and read-only with respect to prompts and project 
   runs again; `permission.asked`/`replied` and `form.created`/`replied`/`cancelled` (OpenCode's
   question prompts) mark attention. The feed carries every session of the shared background service,
   including those of other terminals in the same directory, so only sessions this terminal has
-  displayed, and their subagents, count. The session shown in the terminal also supplies the
-  title. The tab list is deliberately not used, because it holds every root session of a directory.
+  displayed, and their subagents, count. The tab list is deliberately not used, because it holds
+  every root session of a directory.
   Once a second the plugin drops work, permission and question entries that OpenCode's own state no
   longer shows, so a missed event cannot leave a pane stuck.
 - **Notifications**: session rows and the Ctrl+O session switcher show a count for OpenCode

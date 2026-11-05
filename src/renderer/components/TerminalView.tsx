@@ -11,7 +11,6 @@ import {
 import { FolderOpen, Plus, X } from 'lucide-react'
 import type { FileTreeDropEntry } from '@shared/ipc'
 import type {
-  OpenCodeTuiInstanceStatus,
   OpenCodeResumeLaunch,
   PtySize,
   Session,
@@ -556,7 +555,6 @@ function TerminalPane({
   session,
   pane,
   terminalLayout,
-  openCodeInstance,
   onClose,
   onFocus,
   isFullscreen,
@@ -573,7 +571,6 @@ function TerminalPane({
   session: Session
   pane: TerminalPaneState
   terminalLayout: SessionTerminalLayout
-  openCodeInstance?: OpenCodeTuiInstanceStatus
   onClose: () => void
   onFocus: () => void
   isFullscreen: boolean
@@ -640,7 +637,6 @@ function TerminalPane({
         session={session}
         pane={pane}
         terminalLayout={terminalLayout}
-        openCodeInstance={openCodeInstance}
         focused={paneOverlayActive}
         isFullscreen={isFullscreen}
         onToggleFullscreen={onToggleFullscreen}
@@ -1050,9 +1046,6 @@ export function TerminalView({
 }: TerminalViewProps): JSX.Element {
   const platform = useWorkspace((state) => state.platform)
   const wslAvailable = useWorkspace((state) => state.wslAvailable)
-  const opencodeTuiInstances = useWorkspace(
-    (state) => state.opencodeTuiInstances[selectedSession.id]
-  )
   const terminalDirectories = useWorkspace((state) => state.terminalDirectories)
   const [splitModifierHeld, setSplitModifierHeld] = useState(false)
   const [reorderModifierHeld, setReorderModifierHeld] = useState(false)
@@ -1528,9 +1521,6 @@ export function TerminalView({
         session={selectedSession}
         pane={pane}
         terminalLayout={terminalLayout}
-        openCodeInstance={opencodeTuiInstances?.find(
-          (instance) => instance.terminalId === pane.terminalId
-        )}
         onFocus={() => {
           focusedTerminalIdRef.current = pane.terminalId
           setFocusedTerminalId(pane.terminalId)

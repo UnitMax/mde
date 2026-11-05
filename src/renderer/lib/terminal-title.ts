@@ -1,6 +1,6 @@
 /**
- * The last folder of a terminal's working directory, for titling a shell that has no custom or
- * OpenCode title. Accepts `/` and `\` separators because a Windows session can report either, and
+ * The last folder of a terminal's working directory, for titling a shell that has no custom
+ * title. Accepts `/` and `\` separators because a Windows session can report either, and
  * returns null when there is nothing to show so the caller falls back to a fixed label.
  */
 export function directoryLeafName(directory: string | null | undefined): string | null {

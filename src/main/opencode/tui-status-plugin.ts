@@ -6,7 +6,6 @@ export const TUI_STATUS_TICK_MS = 1_000
 export const TUI_STATUS_PLUGIN_MARKER = 'mde-opencode-tui-status-plugin-v1'
 export const TUI_STATUS_PLUGIN_VERSION = '2.0.0'
 export const TUI_STATUS_PLUGIN_VERSION_MARKER = 'mde-opencode-tui-status-plugin-version:'
-export const TUI_STATUS_TITLE_MAX_LENGTH = 160
 
 /** Directory under the OpenCode config's `plugins/` that holds both entrypoints. */
 export const TUI_STATUS_PLUGIN_DIRECTORY = 'mde-status'
@@ -50,8 +49,6 @@ export default {
     let revision = 0
     let status = 'idle'
     let attentionReason
-    let title
-    let currentSessionId
     let processStartTicks
     let processStartedAt
     const active = new Map()
@@ -80,7 +77,6 @@ export default {
       protocol: 1,
       status,
       ...(attentionReason ? { attentionReason } : {}),
-      ...(title ? { title } : {}),
       revision,
       ...(processStartTicks === undefined ? {} : { processId: process.pid, processStartTicks }),
       ...(processStartedAt === undefined ? {} : { processId: process.pid, processStartedAt }),
@@ -134,12 +130,6 @@ export default {
 
     const idOf = (value) => (typeof value === 'string' && value ? value : undefined)
 
-    const cleanTitle = (value) => {
-      if (typeof value !== 'string') return undefined
-      const cleaned = value.replace(/\\s+/g, ' ').trim().slice(0, ${TUI_STATUS_TITLE_MAX_LENGTH})
-      return cleaned || undefined
-    }
-
     const rootOf = (sessionId) => {
       try {
         return idOf(context.data.session.root(sessionId)) ?? sessionId
@@ -156,20 +146,8 @@ export default {
         const sessionId = route?.type === 'session' ? idOf(route.sessionID) : undefined
         if (sessionId) {
           shown.add(sessionId)
-          currentSessionId = sessionId
         }
       } catch {}
-    }
-
-    const refreshTitle = () => {
-      if (!currentSessionId) return
-      let next
-      try {
-        next = cleanTitle(context.data.session.get(rootOf(currentSessionId))?.title)
-      } catch {}
-      if (title === next) return
-      title = next
-      write()
     }
 
     const forget = (sessionId) => {
@@ -181,7 +159,6 @@ export default {
 
     const derive = () => {
       claimShown()
-      refreshTitle()
       const roots = new Set([...shown].map(rootOf))
       const owned = (sessionId) => roots.has(rootOf(sessionId))
       const ownsAny = (sessionIds) => {
@@ -291,10 +268,8 @@ export default {
     on('form.cancelled', formSettled)
 
     on('session.created', () => derive())
-    on('session.renamed', () => derive())
 
     claimShown()
-    refreshTitle()
     write()
     const heartbeat = setInterval(write, ${TUI_STATUS_HEARTBEAT_MS})
     heartbeat.unref?.()

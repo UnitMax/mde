@@ -115,7 +115,7 @@ interface PluginHarness {
 }
 
 /** Runs the real plugin source against a stand-in for OpenCode's terminal plugin context. */
-async function startStatusPlugin(sessions: Record<string, { parentID?: string; title?: string }>): Promise<PluginHarness> {
+async function startStatusPlugin(sessions: Record<string, { parentID?: string }>): Promise<PluginHarness> {
   const root = await temporaryDirectory()
   const file = join(root, 'status.json')
   const module = join(await temporaryDirectory(), 'tui.mjs')
@@ -139,7 +139,6 @@ async function startStatusPlugin(sessions: Record<string, { parentID?: string; t
       },
       session: {
         root: rootOf,
-        get: (id: string) => sessions[id] && { id, ...sessions[id] },
         status: () => 'running',
         permission: { list: () => undefined },
         form: { list: () => undefined },
@@ -164,13 +163,13 @@ describe('native status plugin management', () => {
   afterEach(() => vi.unstubAllEnvs())
 
   it.skipIf(process.platform === 'win32')('publishes real plugin events, heartbeat identity, and shutdown without leaking event contents', async () => {
-    const plugin = await startStatusPlugin({ ses_root: { title: '  Task\n title ' }, ses_child: { parentID: 'ses_root' } })
+    const plugin = await startStatusPlugin({ ses_root: {}, ses_child: { parentID: 'ses_root' } })
     const { read } = plugin
     try {
       await vi.waitFor(async () => expect(await read()).toMatchObject({ status: 'idle' }))
       plugin.setRoute('ses_root')
       plugin.emit('session.execution.started', { sessionID: 'ses_root', secret: 'private prompt' })
-      await vi.waitFor(async () => expect(await read()).toMatchObject({ status: 'working', title: 'Task title' }))
+      await vi.waitFor(async () => expect(await read()).toMatchObject({ status: 'working' }))
       plugin.emit('permission.asked', { id: 'request', sessionID: 'ses_child', metadata: { secret: 'private prompt' } })
       await vi.waitFor(async () => expect(await read()).toMatchObject({ status: 'attention', attentionReason: 'permission' }))
       plugin.emit('permission.replied', { requestID: 'request', sessionID: 'ses_child' })
@@ -183,6 +182,7 @@ describe('native status plugin management', () => {
       plugin.emit('session.execution.started', { sessionID: 'ses_root' })
       plugin.emit('session.execution.failed', { sessionID: 'ses_root', error: { message: 'private prompt' } })
       await vi.waitFor(async () => expect(await read()).toMatchObject({ status: 'error' }))
+      expect(await read()).not.toHaveProperty('title')
       expect(await fs.readFile(plugin.file, 'utf8')).not.toContain('private prompt')
       expect((await fs.stat(plugin.file)).mode & 0o777).toBe(0o600)
     } finally {
@@ -308,7 +308,7 @@ describe('native status plugin management', () => {
     const startedAt = 'Wed Oct 14 12:00:00 2026'
     for (const env of [first, second]) {
       await fs.writeFile(env.MDE_OPENCODE_STATUS_FILE!, JSON.stringify({
-        protocol: 1, status: 'working', title: 'A task', revision: 1, updatedAt: now,
+        protocol: 1, status: 'working', revision: 1, updatedAt: now,
         processId: 42, processStartedAt: startedAt,
       }))
     }

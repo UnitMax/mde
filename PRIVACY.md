@@ -38,11 +38,12 @@ MDE stores data only on the local machine:
   most 1,000 conversations; deleting a conversation from the Inbox removes only MDE's record.
 - If you enable the optional OpenCode integrations, a short status snapshot under
   `/tmp/mde-opencode` in the WSL distro, or a private `mde-opencode` directory under the
-  macOS user temporary directory (state, current session title, timestamps, and a process ID
+  macOS user temporary directory (state, timestamps, and a process ID
   with its start identity; never prompts, messages or tool data), plus the plugin files MDE
   installs into the target's OpenCode configuration directory (`plugins/mde-status/`). The plugin runs inside the OpenCode terminal
   process and edits no OpenCode configuration file. Disabling an integration does not uninstall
-  its plugin.
+  its plugin. Older installed plugins can still include conversation titles until reinstalled
+  and OpenCode is restarted; MDE ignores those titles.
   On Mac the snapshot directory is accessible only by the current user (0700), with files
   restricted to that user (0600). MDE removes snapshots when terminals close and matching
   artifacts older than 24 hours on startup. Abrupt termination may leave these temporary files.

@@ -13,7 +13,7 @@ import {
   X
 } from 'lucide-react'
 import { supportsAgentIntegration } from '@shared/agent-support'
-import type { OpenCodeTuiInstanceStatus, Session } from '@shared/types'
+import type { Session } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -22,10 +22,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
-import { OpenCodeStatusIcon } from '@/components/OpenCodeStatusIcon'
 import { TerminalFullscreenIndicator } from '@/components/TerminalFullscreenIndicator'
 import { TerminalGitInfo } from '@/components/TerminalGitInfo'
-import { terminalPaneDefaultTitle, terminalPaneTitle } from '@/lib/opencode-tui-instances'
+import { directoryLeafName } from '@/lib/terminal-title'
 import { cn } from '@/lib/utils'
 import { useWorkspace } from '@/store/workspace'
 import {
@@ -45,7 +44,6 @@ export interface TerminalPaneHeaderProps {
   session: Session
   pane: TerminalPaneState
   terminalLayout: SessionTerminalLayout
-  openCodeInstance?: OpenCodeTuiInstanceStatus
   /** The pane that last took focus; only singled out when there is another pane to tell it from. */
   focused: boolean
   isFullscreen: boolean
@@ -58,7 +56,7 @@ export interface TerminalPaneHeaderProps {
 }
 
 /**
- * The bar above a terminal pane: what the pane is (status, title, Git state) on the left, and on the
+ * The bar above a terminal pane: its title and Git state on the left, and on the
  * right the actions, which stay out of sight until the pane is hovered, focused or holding an open menu
  * so the title keeps the whole width. The actions overlay the bar instead of sitting in its flow, so
  * showing them never moves the title. The bar is also the container that the Git chip's narrow-pane
@@ -68,7 +66,6 @@ export function TerminalPaneHeader({
   session,
   pane,
   terminalLayout,
-  openCodeInstance,
   focused,
   isFullscreen,
   onToggleFullscreen,
@@ -88,8 +85,8 @@ export function TerminalPaneHeader({
   // What the open menu was closed by, so focus goes where the choice needs it (see onCloseAutoFocus).
   const menuChoiceRef = useRef<'rename' | 'action' | null>(null)
 
-  const defaultTitle = terminalPaneDefaultTitle(openCodeInstance, terminalLayout, directory)
-  const title = terminalPaneTitle(openCodeInstance, terminalLayout, pane.title, directory)
+  const defaultTitle = directoryLeafName(directory) ?? 'terminal'
+  const title = pane.title?.trim() || defaultTitle
   const paneCount = terminalLayout.panes.length
   const showFocus = focused && paneCount > 1
   const closable = isTerminalPaneClosable(terminalLayout.panes, terminalId)
@@ -115,7 +112,7 @@ export function TerminalPaneHeader({
   const commitRename = (): void => {
     if (!renaming) return
     const normalized = draftTitle.trim()
-    // Keeping the derived name stores nothing, so the title goes on following the folder or OpenCode.
+    // Keeping the derived name stores nothing, so the title goes on following the folder.
     onTitleChange(normalized && normalized !== defaultTitle ? normalized : null)
     setRenaming(false)
   }
@@ -136,13 +133,6 @@ export function TerminalPaneHeader({
       data-testid="terminal-pane-title-bar"
     >
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        {openCodeInstance && (
-          <OpenCodeStatusIcon
-            status={openCodeInstance.status}
-            attentionReason={openCodeInstance.attentionReason}
-            testId="terminal-opencode-status"
-          />
-        )}
         {renaming ? (
           <input
             ref={titleInputRef}
