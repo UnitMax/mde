@@ -50,7 +50,7 @@ function overviewLayout(sessionId: string, tabId: string): SessionTerminalLayout
   ])
 }
 
-describe('OpenCode TUI instance sidebar helpers', () => {
+describe('OpenCode TUI instance helpers', () => {
   it('orders instances by the visible terminal pane order', () => {
     expect(orderOpenCodeTuiInstances(instances, layout).map((instance) => instance.terminalId)).toEqual([
       'session-1:split:2',

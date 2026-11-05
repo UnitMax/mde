@@ -619,7 +619,7 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
                 <SettingsToggle
                   checked={settings.showTerminalInstances}
                   label="Show terminal instances"
-                  description="List ordinary terminal panes beneath their session."
+                  description="List terminal panes beneath their session."
                   testId="sidebar-terminal-instances"
                   onClick={() => updateSettings({ showTerminalInstances: !settings.showTerminalInstances })}
                 />

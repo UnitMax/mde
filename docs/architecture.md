@@ -63,7 +63,7 @@ in `src/renderer/terminal/keyboard-shortcuts.ts`.
 
 The Settings dialog's Terminal section controls terminal behavior, including whether Escape exits
 the temporary fullscreen view; it is enabled by default. Ctrl+Shift+F toggles fullscreen for the
-focused terminal pane. The Sidebar section controls whether ordinary terminal pane entries appear
+focused terminal pane. The Sidebar section controls whether terminal pane entries appear
 beneath each session; this preference is global and stored with the local terminal settings. The
 Agents section configures the launcher commands described below. The application theme (Slate,
 Ember, Frost, High contrast) and zoom are also adjustable. The Appearance section sets the terminal
@@ -73,10 +73,6 @@ its first entry. The code preview font family also applies to Inbox tool input, 
 blocks, edit/write diffs (including line numbers and change markers), and their file paths and
 change counts. Changes take effect immediately in the open conversation, including content
 expanded or streamed afterward; code preview font selection is independent of the terminal font.
-
-The expanded Projects sidebar includes a collapsible Agents overview below the sessions, combining
-currently reported OpenCode instances from every session with their originating session, tab, and
-status.
 
 The Settings dialog is a single dialog mounted by `App` (`src/renderer/components/SettingsDialog.tsx`)
 and opened through the workspace store's `openSettings(section)`, so any view can open it at a
@@ -772,7 +768,7 @@ button keeps its fixed red.
 
 ### Mini agents window
 
-F12 shrinks the main window into a small always-on-top list of the same OpenCode agents, grouped by
+F12 shrinks the main window into a small always-on-top list of reported OpenCode agents, grouped by
 session, with a status summary and a restore button; F12 again restores the full window. It is the
 same `BrowserWindow` and renderer, not a second window, so the IPC sender policy is unchanged and
 every terminal keeps running. The main process (`src/main/mini-window.ts`) owns the geometry: it
@@ -981,7 +977,7 @@ All integrations are optional and read-only with respect to prompts and project 
   directory beneath the macOS user temporary directory, and does not modify project files
   or OpenCode configuration. MDE reads that snapshot locally on Mac or through the distro's `\\wsl.localhost\...`
   path and falls back to normal shell status when it is absent. Each terminal pane with a live
-  OpenCode TUI appears in the global Agents overview below the Projects sessions, with its
+  OpenCode TUI appears in the F12 mini agents window, with its
   originating session, tab, and current status. Instance labels can use privacy-safe numbering or
   the current top-level OpenCode session title; prompts, messages, tool data, credentials, and
   filesystem contents are never included in the snapshot.
@@ -1033,7 +1029,7 @@ MDE supports OpenCode 2 and newer; OpenCode 1 no longer shows status or session 
 ### Removing previously installed Codex hooks
 
 Codex hook reporting has been removed. The Codex launcher and its command settings remain
-available, but status, Agents overview entries, notifications, and desktop alerts are provided
+available, but status, mini agents window entries, notifications, and desktop alerts are provided
 only by OpenCode. Existing workspace and launcher settings remain compatible.
 
 Previously installed hooks are not removed automatically. Restart MDE after upgrading; new

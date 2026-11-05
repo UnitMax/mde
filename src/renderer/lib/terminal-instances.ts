@@ -1,13 +1,5 @@
 import type { SessionTerminalLayout, TerminalPaneState } from '@/terminal/layout'
 
-/** Returns panes that should be represented by the general terminal switcher. */
-export function terminalPanesForSidebar(
-  layout: SessionTerminalLayout,
-  openCodeTerminalIds: ReadonlySet<string>
-): TerminalPaneState[] {
-  return layout.panes.filter((pane) => !openCodeTerminalIds.has(pane.terminalId))
-}
-
 /** Labels a terminal by its current visible pane position. */
 export function terminalPaneLabel(
   pane: TerminalPaneState,

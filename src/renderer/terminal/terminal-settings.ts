@@ -19,7 +19,7 @@ export interface TerminalSettings {
   theme: ApplicationThemeId
   /** Whether Escape exits the temporary fullscreen terminal view. */
   escapeExitsFullscreen: boolean
-  /** Whether individual non-OpenCode terminal panes appear in the sidebar. */
+  /** Whether individual terminal panes appear in the sidebar. */
   showTerminalInstances: boolean
   /**
    * How much confirmation a program needs before OSC 52 may set the host

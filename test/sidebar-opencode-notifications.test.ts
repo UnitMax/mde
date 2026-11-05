@@ -9,6 +9,7 @@ import { Sidebar } from '../src/renderer/components/Sidebar'
 import { SessionSwitcher } from '../src/renderer/components/SessionSwitcher'
 import { useWorkspace } from '../src/renderer/store/workspace'
 import { sessionTabs } from '../src/renderer/terminal/tabs'
+import { TERMINAL_SETTINGS_STORAGE_KEY } from '../src/renderer/terminal/terminal-settings'
 
 const roots: Root[] = []
 const containers: HTMLDivElement[] = []
@@ -49,7 +50,6 @@ function resetWorkspace(sidebarCollapsed = false): void {
     opencodeTuiStatuses: {},
     opencodeTuiInstances: { [session.id]: instances },
     opencodeTuiReadRevisions: {},
-    opencodeTuiInstanceLabelMode: 'numbered',
     sidebarCollapsed,
     ready: false
   })
@@ -80,6 +80,7 @@ function sidebar(overrides: Partial<React.ComponentProps<typeof Sidebar>> = {}):
 describe('OpenCode notification badges in navigation', () => {
   beforeEach(() => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    localStorage.clear()
     resetWorkspace()
   })
 
@@ -89,6 +90,7 @@ describe('OpenCode notification badges in navigation', () => {
     })
     containers.splice(0).forEach((container) => container.remove())
     document.body.replaceChildren()
+    localStorage.clear()
     vi.unstubAllGlobals()
   })
 
@@ -171,19 +173,12 @@ describe('OpenCode notification badges in navigation', () => {
 
     expect(container.querySelector('[data-testid="session-status"]')?.getAttribute('data-status')).toBe('running')
     expect(container.querySelector('[data-testid="opencode-notification-count"]')).toBeNull()
-    expect(container.querySelector('[data-testid="opencode-agents-section"]')?.textContent).toContain('No agents reported.')
   })
 
-  it('orders overview entries by pane, retains titles and focuses the originating terminal', () => {
+  it('includes OpenCode panes in the terminal list when terminal instances are enabled', () => {
     const tab = sessionTabs(session)[0]!
     const onFocusTerminal = vi.fn()
-    useWorkspace.setState({
-      opencodeTuiInstances: {
-        [session.id]: instances.map((instance, index) => index === 0
-          ? { ...instance, title: 'Fix checkout' }
-          : instance)
-      }
-    })
+    localStorage.setItem(TERMINAL_SETTINGS_STORAGE_KEY, JSON.stringify({ showTerminalInstances: true }))
     const container = render(sidebar({
       onFocusTerminal,
       terminalLayouts: {
@@ -192,17 +187,15 @@ describe('OpenCode notification badges in navigation', () => {
         }
       }
     }))
-    const rows = container.querySelectorAll<HTMLButtonElement>('[data-testid="opencode-agent-row"]')
+    const rows = container.querySelectorAll<HTMLButtonElement>('[data-testid="terminal-instances"] button')
 
     expect(rows).toHaveLength(3)
-    expect(rows[0]?.textContent).toContain('OpenCode 1')
-    expect(rows[0]?.textContent).toContain('Working')
-    expect(rows[1]?.textContent).toContain('Frontend · Tab 1')
+    expect(Array.from(rows, (row) => row.textContent)).toEqual([
+      'Terminal 1Tab 1',
+      'Terminal 2Tab 1',
+      'Terminal 3Tab 1',
+    ])
     act(() => rows[1]!.click())
     expect(onFocusTerminal).toHaveBeenCalledWith(session.id, tab.id, instances[0]!.terminalId)
-
-    act(() => useWorkspace.setState({ opencodeTuiInstanceLabelMode: 'title' }))
-    expect(rows[1]?.textContent).toContain('Fix checkout')
-    expect(rows[0]?.textContent).toContain('OpenCode 1')
   })
 })
