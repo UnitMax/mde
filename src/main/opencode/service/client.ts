@@ -23,6 +23,9 @@ export const SERVICE_OPERATIONS = {
   // One-off text from the session's context. It reads the conversation and writes nothing to it, so it is
   // the answer to a side question (`/btw`); it can run while the agent works.
   'session.generate': { method: 'POST', path: '/api/session/{sessionID}/generate' },
+  // Summarizes the conversation to free up context. The service answers at once with the request it holds and
+  // does the work in the background: a `compaction` message that is running, then completed or failed.
+  'session.compact': { method: 'POST', path: '/api/session/{sessionID}/compact' },
   'session.revert.stage': { method: 'POST', path: '/api/session/{sessionID}/revert/stage' },
   'session.revert.clear': { method: 'DELETE', path: '/api/session/{sessionID}/revert' },
   'session.fork': { method: 'POST', path: '/api/session/{sessionID}/fork' },

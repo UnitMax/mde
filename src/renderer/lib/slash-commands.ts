@@ -88,6 +88,8 @@ export interface SlashActions {
   ask: (question: string) => void | Promise<void>
   /** Forks the whole conversation into a new thread, which is opened. */
   fork: () => void | Promise<void>
+  /** Compacts the conversation: it is summarized to free up context. */
+  compact: () => void | Promise<void>
 }
 
 /** Every command of the Inbox message box. A new one is another entry here, with what it needs added to {@link SlashActions}. */
@@ -103,6 +105,12 @@ export function slashCommands(actions: SlashActions): SlashCommand[] {
       name: 'fork',
       description: 'Fork this thread. A new thread starts with a copy of the conversation, and this one stays as it is.',
       run: () => actions.fork(),
+    },
+    {
+      name: 'compact',
+      aliases: ['summarize'],
+      description: 'Compact the conversation. It is summarized to free up context.',
+      run: () => actions.compact(),
     },
   ]
 }

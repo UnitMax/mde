@@ -472,8 +472,32 @@ export function parseMessage(value: unknown, thumbnail?: (bytes: Buffer) => stri
       const model = parseModelRef(message.model)
       return model ? { kind: 'note', id, time: at, tone: 'info', text: `Switched to ${modelLabel(model)}` } : null
     }
-    case 'compaction':
-      return { kind: 'note', id, time: at, tone: 'info', text: 'Conversation compacted' }
+    case 'compaction': {
+      const reason = message.reason === 'auto' ? 'auto' : 'manual'
+      const automatic = reason === 'auto'
+      if (message.status === 'running') {
+        return {
+          kind: 'note', id, time: at, tone: 'info', compaction: { status: 'running', reason },
+          text: automatic ? 'Compacting the conversation automatically…' : 'Compacting the conversation…',
+        }
+      }
+      if (message.status === 'failed') {
+        const error = errorText(message.error)
+        return {
+          kind: 'note', id, time: at, tone: 'error', compaction: { status: 'failed', reason },
+          text: error ? `Could not compact the conversation: ${error}` : 'Could not compact the conversation',
+        }
+      }
+      const summary = body(message.summary, CHAT_TOOL_TEXT_LIMIT).text.trim()
+      const written = message.status === 'completed' ? count(record(message.tokens)?.output) : undefined
+      return {
+        kind: 'note', id, time: at, tone: 'info',
+        text: automatic ? 'Conversation compacted automatically' : 'Conversation compacted',
+        ...(summary ? { detail: summary } : {}),
+        // A status MDE does not know still shows the note, without the parts that depend on it.
+        ...(message.status === 'completed' ? { compaction: { status: 'completed' as const, reason, ...(written ? { summaryTokens: written } : {}) } } : {}),
+      }
+    }
     case 'shell': {
       const command = body(message.command, 2000).text.trim()
       const output = body(record(message.output)?.output, CHAT_TOOL_TEXT_LIMIT).text
@@ -563,6 +587,15 @@ export function parseGeneratedText(value: unknown): string {
   const generated = record(data(value, 'an answer'))
   if (!generated || typeof generated.text !== 'string') throw new ServiceShapeError('an answer')
   return body(generated.text, CHAT_TEXT_LIMIT).text.trim()
+}
+
+/**
+ * Whether the session inbox holds a compaction, which is asked for while the agent is busy and runs when it is
+ * done. It is not one of the user's messages, so the list above leaves it out.
+ */
+export function holdsCompaction(value: unknown): boolean {
+  const response = record(value)
+  return Array.isArray(response?.data) && response.data.some((item) => record(item)?.type === 'compaction')
 }
 
 /** The session inbox: what the service holds for the agent, oldest first. */

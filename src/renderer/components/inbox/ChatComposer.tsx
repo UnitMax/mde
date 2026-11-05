@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { CompletionPicker, type CompletionItem } from '@/components/inbox/CompletionPicker'
-import { ContextMeter } from '@/components/inbox/ContextMeter'
+import { ContextMeter, type ContextCompact } from '@/components/inbox/ContextMeter'
 import { ChatInput, type ChatInputHandle } from '@/components/inbox/ChatInput'
 import { ChatSendButton } from '@/components/inbox/ChatSendButton'
 import { SlashCommandIcon } from '@/components/inbox/SlashCommandIcon'
@@ -200,6 +200,8 @@ export interface ChatComposerProps {
   onRetryOptions?: () => void
   /** How full the model's context window is; the pill is left out when there is nothing to show. */
   context?: ContextUsage | null
+  /** Offers compacting in the context pill's menu; without it the menu only shows the breakdown. */
+  compact?: ContextCompact
   placeholder?: string
   autoFocus?: boolean
   disabled?: boolean
@@ -237,6 +239,7 @@ export function ChatComposer({
   onStop,
   onRetryOptions,
   context = null,
+  compact,
   placeholder = 'Ask for changes or send follow-ups',
   autoFocus = false,
   disabled = false,
@@ -680,7 +683,7 @@ export function ChatComposer({
             </span>
           )}
           <span className="flex-1" />
-          {context && <ContextMeter usage={context} running={running} />}
+          {context && <ContextMeter usage={context} running={running} compact={compact} />}
           {onSaveDraft && (
             <button
               type="button"

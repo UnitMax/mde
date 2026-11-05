@@ -47,6 +47,8 @@ export interface ChatThreadState {
    * until delivered, and then they leave this list. Kept when a refetch cannot say.
    */
   pending: ChatPendingMessage[]
+  /** Whether OpenCode holds a compaction until the agent is done. Kept when a refetch cannot say. */
+  compactionHeld: boolean
 }
 
 export type OptionsState =
@@ -72,6 +74,7 @@ const emptyThread = (): ChatThreadState => ({
   revert: null,
   notice: null,
   pending: [],
+  compactionHeld: false,
 })
 
 /** Keeps the newest page when a refetch arrives: earlier pages stay loaded. */
@@ -143,6 +146,12 @@ interface InboxChatStore {
    * A rejection means no thread was made.
    */
   forkThread: (threadId: string, input?: { messageId: string; text: string }, options?: { focus?: boolean }) => Promise<InboxThread>
+  /**
+   * Asks OpenCode to compact the conversation: it summarizes it to free up context, in the background, and
+   * writes the result into the conversation. A request while the agent is busy waits for it to finish. A
+   * rejection means the request was not taken; the work failing shows up as a note in the conversation.
+   */
+  compactThread: (threadId: string) => Promise<void>
   replyPermission: (threadId: string, requestId: string, decision: 'once' | 'always' | 'reject') => Promise<void>
   replyForm: (threadId: string, formId: string, answer: Record<string, ChatFormValue>) => Promise<void>
   applyEvent: (event: ChatEvent) => void
@@ -332,6 +341,7 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
               usage: page.usage ?? thread.usage,
               revert: page.revert === undefined ? thread.revert : page.revert,
               pending: mergePending(thread.pending, read, messages),
+              compactionHeld: page.compactionHeld ?? thread.compactionHeld,
             }
           })
         } catch (error) {
@@ -507,6 +517,12 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
         set((state) => ({ threads: { ...state.threads, [forkId]: { ...(state.threads[forkId] ?? emptyThread()), notice: `The thread was forked, but the message could not be put in its box: ${ipcErrorMessage(error, 'the draft could not be saved.')}` } } }))
       }
       return result.thread
+    },
+
+    compactThread: async (threadId) => {
+      await window.api.chat.compact({ threadId })
+      // The service says a request was taken by events too; reading now shows a waiting one without them.
+      void get().refresh(threadId)
     },
 
     replyPermission: async (threadId, requestId, decision) => {

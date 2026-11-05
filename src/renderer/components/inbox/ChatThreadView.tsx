@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { AlertTriangle, LoaderCircle, RefreshCw } from 'lucide-react'
+import { AlertTriangle, FoldVertical, LoaderCircle, RefreshCw } from 'lucide-react'
 import type { ChatMessage, InboxThread, OpenCodeModelRef } from '@shared/types'
 import { ChatAside } from '@/components/inbox/ChatAside'
 import { ChatComposer } from '@/components/inbox/ChatComposer'
@@ -16,7 +16,7 @@ import { ChatTranscriptMenu } from '@/components/inbox/ChatTranscriptMenu'
 import { TurnDuration, WorkingFor } from '@/components/inbox/ChatTurnTime'
 import { scrollBehavior, TIMELINE_MIN_PROMPTS, timelineEntries } from '@/lib/chat-timeline'
 import { cn } from '@/lib/utils'
-import { contextUsage, findModel, hideReverted, initialChoice, mergeLive, revertedMessageCount, turnStats } from '@/lib/chat'
+import { compactionState, contextUsage, findModel, hideReverted, initialChoice, mergeLive, revertedMessageCount, turnStats } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { mcpKey } from '@/lib/mcp'
 import { slashCommands } from '@/lib/slash-commands'
@@ -60,6 +60,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const redo = useInboxChat((store) => store.redo)
   const revertTo = useInboxChat((store) => store.revert)
   const forkThread = useInboxChat((store) => store.forkThread)
+  const compactThread = useInboxChat((store) => store.compactThread)
   const draftReload = useInboxChat((store) => store.draftReloads[thread.id])
   const clearDraftReload = useInboxChat((store) => store.clearDraftReload)
   const replyPermission = useInboxChat((store) => store.replyPermission)
@@ -209,7 +210,6 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
     const element = scrollRef.current
     if (element && stickRef.current) element.scrollTop = element.scrollHeight
   }, [asideId, asideStatus])
-  const commands = useMemo(() => slashCommands({ ask: (question) => askAside(thread.id, question), fork: forkAll }), [askAside, forkAll, thread.id])
   // Closed from inside itself (Escape, a button reached by keyboard), the caret goes back to the box instead of nowhere.
   const closeAside = useCallback(() => {
     const inside = document.activeElement?.closest('[data-testid="chat-aside"]') != null
@@ -218,6 +218,37 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   }, [dismissAside, thread.id])
 
   const running = state?.running ?? thread.status === 'working'
+
+  // Compacting summarizes the conversation to free up context. OpenCode does it in the background and writes it
+  // into the conversation as a note, so this only asks, and refuses what would make a second, failing note:
+  // one already going or waiting for the agent, nothing finished to summarize, or nothing since the last one.
+  const compaction = useMemo(() => compactionState(shown, { running, held: state?.compactionHeld ?? false }), [shown, running, state?.compactionHeld])
+  const requestingCompaction = useRef(false)
+  const compactAll = useCallback(async (): Promise<void> => {
+    if (requestingCompaction.current) throw new Error('A compaction is already being asked for.')
+    if (compaction === 'running') throw new Error('The conversation is already being compacted.')
+    if (compaction === 'held') throw new Error('A compaction is already waiting for the agent to finish.')
+    if (!context) throw new Error('There is nothing to compact yet.')
+    if (context.compacted) throw new Error('The conversation was just compacted. It has nothing new to compact yet.')
+    requestingCompaction.current = true
+    try {
+      await compactThread(thread.id)
+    } finally {
+      requestingCompaction.current = false
+    }
+  }, [compaction, compactThread, context, thread.id])
+  // From the context menu there is no box to give the failure back to, so it is told here, in the thread.
+  const [compactError, setCompactError] = useState<string | null>(null)
+  useEffect(() => setCompactError(null), [thread.id])
+  const compactFromMenu = useCallback(() => {
+    setCompactError(null)
+    compactAll().catch((error: unknown) => setCompactError(ipcErrorMessage(error, 'Could not compact the conversation.')))
+  }, [compactAll])
+  const compactMenu = useMemo(() => ({ state: compaction, onRun: compactFromMenu }), [compaction, compactFromMenu])
+  const commands = useMemo(
+    () => slashCommands({ ask: (question) => askAside(thread.id, question), fork: forkAll, compact: compactAll }),
+    [askAside, forkAll, compactAll, thread.id],
+  )
   // The MCP servers of the folder the thread runs in; the chip in the composer keeps this list current.
   const mcpPlace = useMemo<McpPlace>(
     () => ({ request: { threadId: thread.id }, target: thread.target, directory: thread.directory }),
@@ -322,6 +353,13 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
             </p>
           )}
           {fork.error && <p role="alert" className="text-xs text-danger" data-testid="chat-fork-error">{fork.error}</p>}
+          {compaction === 'held' && (
+            <p role="status" className="flex items-center gap-1.5 text-xs text-fg-muted" data-testid="chat-compaction-held">
+              <FoldVertical aria-hidden className="h-3 w-3 text-accent" />
+              Compaction is waiting for the agent. It starts when the agent finishes.
+            </p>
+          )}
+          {compactError && <p role="alert" className="text-xs text-danger" data-testid="chat-compact-error">{compactError}</p>}
           {copyError && <p role="alert" className="text-xs text-danger" data-testid="chat-copy-error">{copyError}</p>}
           {state?.error && (
             <div role="alert" className="flex items-center gap-2 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
@@ -355,6 +393,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
           onRetryOptions={() => void loadOptions({ threadId: thread.id }, true)}
           running={running}
           context={context}
+          compact={compactMenu}
           commands={commands}
           onEscape={() => {
             if (!aside) return false

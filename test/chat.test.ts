@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { ChatForm, ChatMessage, ChatPart, ChatPendingMessage, ChatTokens } from '../src/shared/types'
 import {
   appendLive,
+  compactionState,
   contextTone,
   contextUsage,
   displayPath,
@@ -231,6 +232,76 @@ describe('context usage', () => {
       used: 42, limit: null, ratio: null, tone: 'normal', outputLimit: null, modelName: null, thread: null,
     })
     expect(contextUsage({ messages: [step('a', tokens({ input: 42 }))], model: { ...windowed, contextLimit: undefined } })?.ratio).toBeNull()
+  })
+
+  describe('after a compaction', () => {
+    const note = (id: string, compaction: Extract<ChatMessage, { kind: 'note' }>['compaction'], tone: 'info' | 'error' = 'info'): ChatMessage =>
+      ({ kind: 'note', id, time: 1, tone, text: 'note', ...(compaction ? { compaction } : {}) })
+    const completed = (id = 'c', summaryTokens?: number): ChatMessage => note(id, { status: 'completed', reason: 'manual', ...(summaryTokens ? { summaryTokens } : {}) })
+    const before = tokens({ input: 2000, output: 500, cacheRead: 137_500 })
+
+    it('does not know the size until the next reply: it keeps the old count, drops the ratio and stays calm', () => {
+      const usage = contextUsage({ messages: [user, step('a', before), completed('c', 724)], model: windowed })
+      expect(usage).toMatchObject({ used: 140_000, step: before, limit: 200_000, ratio: null, tone: 'normal', compacted: { summaryTokens: 724 } })
+      // The same conversation, not compacted, is at 70% and amber.
+      expect(contextUsage({ messages: [user, step('a', before)], model: windowed })).toMatchObject({ ratio: 0.7, tone: 'warn', compacted: null })
+    })
+
+    it('says so when it does not know how big the summary is', () => {
+      expect(contextUsage({ messages: [step('a', before), completed()], model: windowed })?.compacted).toEqual({ summaryTokens: null })
+    })
+
+    it('measures again from the first finished reply after it', () => {
+      const after = tokens({ input: 9000, output: 500 })
+      expect(contextUsage({ messages: [step('a', before), completed(), user, step('b', after)], model: windowed }))
+        .toMatchObject({ used: 9500, ratio: 9500 / 200_000, tone: 'normal', compacted: null })
+      // A reply still being written has no count yet, so it is still the compacted conversation.
+      expect(contextUsage({ messages: [step('a', before), completed(), user, step('b', undefined, false)], model: windowed })?.compacted).not.toBeNull()
+    })
+
+    it('is not changed by a compaction that failed or is still running, or by a note that is no compaction', () => {
+      for (const other of [note('c', { status: 'failed', reason: 'manual' }, 'error'), note('c', { status: 'running', reason: 'manual' }), note('c', undefined)]) {
+        expect(contextUsage({ messages: [user, step('a', before), other], model: windowed })).toMatchObject({ used: 140_000, ratio: 0.7, tone: 'warn', compacted: null })
+      }
+    })
+
+    it('uses the newest compaction when there are several', () => {
+      expect(contextUsage({ messages: [step('a', before), completed('c1', 100), completed('c2', 200)], model: windowed })?.compacted).toEqual({ summaryTokens: 200 })
+    })
+
+    it('has nothing to show when no step ever finished, however many compactions there are', () => {
+      expect(contextUsage({ messages: [user, completed()], model: windowed })).toBeNull()
+    })
+  })
+
+  describe('compaction state', () => {
+    const note = (status: 'running' | 'completed' | 'failed'): ChatMessage =>
+      ({ kind: 'note', id: `c-${status}`, time: 1, tone: 'info', text: 'note', compaction: { status, reason: 'manual' } })
+    const idle = { running: false, held: false }
+
+    it('is running while the newest compaction says so and the thread is working', () => {
+      expect(compactionState([user, note('running')], { running: true, held: false })).toBe('running')
+    })
+
+    it('is not running for a note the service left behind when it stopped', () => {
+      expect(compactionState([user, note('running')], idle)).toBeNull()
+    })
+
+    it('is over once the newest compaction has completed or failed, whatever came before', () => {
+      expect(compactionState([note('running'), note('completed')], { running: true, held: false })).toBeNull()
+      expect(compactionState([note('running'), note('failed')], { running: true, held: false })).toBeNull()
+    })
+
+    it('is held when the service holds a request for the agent, and running wins over held', () => {
+      expect(compactionState([user], { running: true, held: true })).toBe('held')
+      expect(compactionState([user, note('running')], { running: true, held: true })).toBe('running')
+      expect(compactionState([user, note('completed')], { running: true, held: true })).toBe('held')
+    })
+
+    it('is nothing otherwise', () => {
+      expect(compactionState([], idle)).toBeNull()
+      expect(compactionState([user], { running: true, held: false })).toBeNull()
+    })
   })
 
   it('turns amber at 70% and red at 90%', () => {

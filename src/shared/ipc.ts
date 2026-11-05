@@ -160,6 +160,7 @@ export const IpcChannels = {
   chatDraft: 'chat:draft',
   chatDrafts: 'chat:drafts',
   chatInterrupt: 'chat:interrupt',
+  chatCompact: 'chat:compact',
   chatRedo: 'chat:redo',
   chatRevert: 'chat:revert',
   chatFork: 'chat:fork',
@@ -529,6 +530,11 @@ export interface RendererApi {
     /** Connects or disconnects one MCP server for the running OpenCode; its configuration is not changed. */
     setMcp(req: ChatMcpSetRequest): Promise<void>
     interrupt(req: ChatThreadRequest): Promise<void>
+    /**
+     * Summarizes the conversation to free up context. OpenCode does it in the background and writes the
+     * result into the conversation; a request while the agent is busy waits for it to finish.
+     */
+    compact(req: ChatThreadRequest): Promise<void>
     redo(req: ChatThreadRequest): Promise<void>
     revert(req: ChatRevertRequest): Promise<ChatRevert>
     fork(req: ChatForkRequest): Promise<ChatForkResult>

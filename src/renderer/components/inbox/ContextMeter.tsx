@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react'
-import { Gauge } from 'lucide-react'
+import { FoldVertical, Gauge, LoaderCircle } from 'lucide-react'
 import type { ChatTokens } from '@shared/types'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import {
   CONTEXT_SEGMENTS,
   formatCost,
@@ -10,6 +10,7 @@ import {
   formatTokens,
   segmentFill,
   stepContext,
+  type CompactionState,
   type ContextTone,
   type ContextUsage,
 } from '@/lib/chat'
@@ -30,7 +31,14 @@ const KINDS: { key: keyof ChatTokens; label: string; color: string }[] = [
   { key: 'reasoning', label: 'Reasoning', color: 'color-mix(in srgb, var(--color-syntax-keyword) 55%, transparent)' },
 ]
 
+/** What the menu needs to offer compacting: whether it is under way, and how to ask for it. */
+export interface ContextCompact {
+  state: CompactionState
+  onRun: () => void
+}
+
 function describe(usage: ContextUsage): string {
+  if (usage.compacted) return 'Context: compacted. Its new size shows after the next reply'
   const used = formatTokens(usage.used)
   return usage.limit && usage.ratio !== null
     ? `Context: ${used} of ${formatTokens(usage.limit)} tokens used (${formatPercent(usage.ratio)})`
@@ -93,6 +101,39 @@ function Row({ dot, label, value, title }: { dot?: string; label: string; value:
   )
 }
 
+/** The action under the breakdown: summarizes the conversation to free up context. */
+function CompactAction({ compact, usage, running }: { compact: ContextCompact; usage: ContextUsage; running: boolean }): JSX.Element {
+  const busy = compact.state === 'running'
+  const waiting = compact.state === 'held'
+  // A second one straight after the first has nothing new to summarize, and would only fail.
+  const disabled = compact.state !== null || usage.compacted !== null
+  const title = busy ? 'Compacting…' : waiting ? 'Compaction waiting' : 'Compact conversation'
+  const hint = busy ? 'Summarizing the conversation.'
+    : waiting ? 'It starts when the agent finishes.'
+      : usage.compacted ? 'Just compacted. Nothing new to compact yet.'
+        : running ? 'The agent is working. It compacts when the agent finishes.'
+          : 'Summarize it to free up context.'
+  return (
+    <div className="border-t border-line p-1">
+      <DropdownMenuItem
+        disabled={disabled}
+        onSelect={() => compact.onRun()}
+        data-testid="chat-context-compact"
+        data-state-of-compaction={compact.state ?? (usage.compacted ? 'done' : 'idle')}
+        className="items-start gap-2.5 px-2 py-2 data-[disabled]:opacity-70"
+      >
+        {busy
+          ? <LoaderCircle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-accent motion-reduce:animate-none" />
+          : <FoldVertical aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-fg-muted" />}
+        <span className="flex min-w-0 flex-col gap-0.5">
+          <span className="text-[13px] leading-tight">{title}</span>
+          <span className="text-[11px] leading-snug text-fg-subtle">{hint}</span>
+        </span>
+      </DropdownMenuItem>
+    </div>
+  )
+}
+
 function Details({ usage }: { usage: ContextUsage }): JSX.Element {
   const facts = [
     usage.modelName,
@@ -104,10 +145,17 @@ function Details({ usage }: { usage: ContextUsage }): JSX.Element {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[10px] font-medium uppercase tracking-wide text-fg-subtle">Context window</p>
-          <p className="mt-1 flex items-baseline gap-1.5" title={`${formatExactTokens(usage.used)} tokens`}>
-            <span className="text-[22px] font-semibold leading-none tabular-nums text-fg">{formatTokens(usage.used)}</span>
-            {usage.limit ? <span className="text-xs text-fg-muted">of {formatTokens(usage.limit)} tokens</span> : <span className="text-xs text-fg-muted">tokens</span>}
-          </p>
+          {usage.compacted ? (
+            <>
+              <p className="mt-1 text-[22px] font-semibold leading-none text-fg" data-testid="chat-context-compacted">Compacted</p>
+              <p className="mt-1.5 text-xs text-fg-muted">The new size shows after the next reply.</p>
+            </>
+          ) : (
+            <p className="mt-1 flex items-baseline gap-1.5" title={`${formatExactTokens(usage.used)} tokens`}>
+              <span className="text-[22px] font-semibold leading-none tabular-nums text-fg">{formatTokens(usage.used)}</span>
+              {usage.limit ? <span className="text-xs text-fg-muted">of {formatTokens(usage.limit)} tokens</span> : <span className="text-xs text-fg-muted">tokens</span>}
+            </p>
+          )}
         </div>
         {usage.ratio !== null && (
           <span
@@ -119,16 +167,31 @@ function Details({ usage }: { usage: ContextUsage }): JSX.Element {
         )}
       </div>
 
-      <Composition usage={usage} />
+      {usage.compacted ? (
+        <div>
+          <Row label="Before compacting" value={formatTokens(usage.used)} title={`${formatExactTokens(usage.used)} tokens`} />
+          {usage.compacted.summaryTokens !== null && (
+            <Row
+              label="Summary"
+              value={`about ${formatTokens(usage.compacted.summaryTokens)}`}
+              title={`${formatExactTokens(usage.compacted.summaryTokens)} tokens written, which is about what the summary takes`}
+            />
+          )}
+        </div>
+      ) : (
+        <>
+          <Composition usage={usage} />
 
-      <div>
-        {KINDS.map((kind) => {
-          const value = usage.step[kind.key]
-          return value > 0
-            ? <Row key={kind.key} dot={kind.color} label={kind.label} value={formatTokens(value)} title={`${formatExactTokens(value)} tokens`} />
-            : null
-        })}
-      </div>
+          <div>
+            {KINDS.map((kind) => {
+              const value = usage.step[kind.key]
+              return value > 0
+                ? <Row key={kind.key} dot={kind.color} label={kind.label} value={formatTokens(value)} title={`${formatExactTokens(value)} tokens`} />
+                : null
+            })}
+          </div>
+        </>
+      )}
 
       {usage.thread && (
         <div className="border-t border-line pt-2">
@@ -150,7 +213,7 @@ function Details({ usage }: { usage: ContextUsage }): JSX.Element {
  * A pill for the composer's toolbar showing how full the model's context window is, as a gauge and
  * a token count. It turns amber and then red as the window fills; clicking it opens the breakdown.
  */
-export function ContextMeter({ usage, running = false }: { usage: ContextUsage; running?: boolean }): JSX.Element {
+export function ContextMeter({ usage, running = false, compact }: { usage: ContextUsage; running?: boolean; compact?: ContextCompact }): JSX.Element {
   const label = describe(usage)
   const style = { '--meter': TONE_COLOR[usage.tone] } as CSSProperties
   return (
@@ -177,12 +240,13 @@ export function ContextMeter({ usage, running = false }: { usage: ContextUsage; 
             style={usage.tone === 'normal' ? undefined : { color: 'var(--meter)' }}
           />
           <span className="font-medium" style={usage.tone === 'normal' ? undefined : { color: 'var(--meter)' }}>
-            {formatTokens(usage.used)}
+            {usage.compacted ? 'Compacted' : formatTokens(usage.used)}
           </span>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="end" sideOffset={8} className="w-80 p-0" style={style}>
         <Details usage={usage} />
+        {compact && <CompactAction compact={compact} usage={usage} running={running} />}
       </DropdownMenuContent>
     </DropdownMenu>
   )

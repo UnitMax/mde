@@ -577,6 +577,45 @@ call over the whole conversation takes longer than a read of the service, so thi
 three minutes instead of thirty seconds. A service without the route says to update OpenCode, and an
 empty answer says that OpenCode gave none.
 
+**Compaction.** Compacting summarizes the conversation so far to free up context: OpenCode replaces
+the older messages, from the model's point of view, with a summary and keeps the latest ones as they
+were. It is asked for in two places: the `/compact` command (alias `/summarize`, no argument) and a
+**Compact conversation** button under the breakdown in the context pill's menu. Both end in
+`compactThread` in the Inbox store and the `chat:compact` channel (`InboxChatService.compact`), which
+sends OpenCode's `POST /api/session/{sessionID}/compact` with `{ delivery: 'queue' }`. OpenCode answers
+at once and does the work in the background (about ten seconds for a small conversation, as a model call
+over the whole of it), so the request only says whether it was taken; the work shows up in the
+conversation. `queue` means that a request made while the agent is working waits for the turn to end
+(OpenCode holds it in the session inbox, where it is not one of the user's messages), so a turn is not cut
+in the middle; an idle thread starts at once. A route the service lacks says to update OpenCode.
+
+OpenCode writes the compaction into the conversation as a message that goes from *running* to
+*completed* (with the summary, which is Markdown, the model, and the tokens the summarizing call used)
+or *failed* (with the reason: nothing to compact yet, a provider error). `parseMessage` maps these to
+notes that carry a `compaction` status, and the service events `session.compaction.started`, `ended` and
+`failed` refetch the conversation so the note changes as it goes. A running note shows a spinner
+("Compacting the conversation…"); a completed one is a row that opens to the summary rendered as
+Markdown, with the size of the summary beside it (the tokens the call wrote, which is about what the
+summary takes); a failed one is an error row with the reason, without the provider's response body.
+A compaction OpenCode starts itself when the window is full is told the same way ("automatically").
+
+A compaction asked for while the agent works is held by the service, and the newest page of messages says
+so (`compactionHeld`, read from the same inbox list as the held messages), which shows as a line under
+the conversation: "Compaction is waiting for the agent. It starts when the agent finishes." The renderer
+refuses to ask for one that would only fail: while one is running (the newest compaction note says
+running and the thread is working; a note left running by a service that stopped does not count), while
+one is held, while no step has finished yet, and straight after one completed with nothing new since
+(`compactAll` in `ChatThreadView`; OpenCode would write a failed note for each of these, such as "Nothing to
+compact yet", and also for a second request made while the first runs). The refusal is a reason: under the
+box for `/compact`, which gets its text back like any failed command, and under the conversation for the
+menu button. The menu button says what it will do (waiting for the agent, compacting, just compacted) and
+is switched off in those states.
+
+What the context holds after a compaction is not known until the next reply reports its tokens, and the
+old count would be wrong, so `contextUsage` marks it `compacted`: the pill reads "Compacted" with the gauge
+dark and calm, and the breakdown shows the size before and the summary's size instead of the old
+composition. The first finished reply after the compaction measures it again.
+
 The question and its answer are held per thread in `store/inbox-aside.ts` (memory only: nothing is
 stored, and they are gone when the app is closed). A thread shows one side question; asking another
 replaces it, and an answer that arrives for a question that has since been replaced or dismissed is
@@ -673,9 +712,9 @@ breakdown: the count against the window, one bar split by kind of token, the thr
 and the cost OpenCode reports (many providers report $0), and the model's window and reply limit.
 The thread totals come from `session.get`, requested with the newest page of messages only, so
 they stay right however many older pages are loaded; if that request fails, the conversation
-still loads and the totals are left out. After a compaction the count stays at its old value until
-the next step finishes. The pill does not appear in the new-thread composer, where nothing has
-been measured yet.
+still loads and the totals are left out. After a compaction the size is not known until the next
+step finishes, so until then the pill reads "Compacted" (see "Compaction" below). The pill does not
+appear in the new-thread composer, where nothing has been measured yet.
 
 **Time worked.** A line under each turn says how long the agent worked on it (`TurnDuration`,
 `ChatTurnTime.tsx`), such as `Worked for 1m 30s`, and while the turn is still going the same line

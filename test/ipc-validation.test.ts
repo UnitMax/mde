@@ -79,6 +79,7 @@ const validPayloads = {
   [IpcChannels.chatMessages]: { threadId: 'ses_thread', cursor: 'eyJpZCI6Im1zZyJ9' },
   [IpcChannels.chatSend]: { threadId: 'ses_thread', text: 'Next step', agent: 'plan', model },
   [IpcChannels.chatInterrupt]: { threadId: 'ses_thread' },
+  [IpcChannels.chatCompact]: { threadId: 'ses_thread' },
   [IpcChannels.chatRedo]: { threadId: 'ses_thread' },
   [IpcChannels.chatDiscardPending]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a' },
   [IpcChannels.chatSetDelivery]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a', delivery: 'queue' },

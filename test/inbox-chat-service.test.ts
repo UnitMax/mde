@@ -920,6 +920,75 @@ describe('Inbox chat service', () => {
       })
     })
 
+    describe('compaction', () => {
+      it('asks the service to compact the session, to wait for the agent if it is busy, and does nothing else', async () => {
+        const { service, folder, calls } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'session.compact': { data: { id: 'msg_c1', type: 'compaction', delivery: 'queue', payload: {} } } })
+        await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+        calls.length = 0
+        await expect(service.compact('ses_new')).resolves.toBeUndefined()
+        // Queued, not steered: a turn is not cut in the middle by a summary of what came before it.
+        expect(calls).toEqual([{ operation: 'session.compact', request: { params: { sessionID: 'ses_new' }, body: { delivery: 'queue' } } }])
+        service.stop()
+      })
+
+      it('refuses a thread the Inbox does not hold, and every request when the Inbox is off, without asking the service', async () => {
+        const { service, folder, calls, disable } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'session.compact': { data: {} } })
+        await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+        calls.length = 0
+        await expect(service.compact('ses_unknown')).rejects.toThrow()
+        disable()
+        await expect(service.compact('ses_new')).rejects.toThrow()
+        expect(calls).toEqual([])
+        service.stop()
+      })
+
+      it('says to update OpenCode when the service has no such route, and passes on any other refusal as it is', async () => {
+        const old = setup({ 'session.create': { data: { id: 'ses_new' } }, 'session.compact': new OpenCodeServiceError('OpenCode answered with status 404.', 404) })
+        await old.service.create({ folderId: old.folder.id, text: 'Hi', agent: 'build', model })
+        await expect(old.service.compact('ses_new')).rejects.toThrow('Update OpenCode and try again')
+        old.service.stop()
+        const gone = setup({ 'session.create': { data: { id: 'ses_new' } }, 'session.compact': new OpenCodeServiceError('Session not found: ses_new', 404, 'SessionNotFoundError') })
+        await gone.service.create({ folderId: gone.folder.id, text: 'Hi', agent: 'build', model })
+        await expect(gone.service.compact('ses_new')).rejects.toThrow('Session not found')
+        gone.service.stop()
+        const busy = setup({ 'session.create': { data: { id: 'ses_new' } }, 'session.compact': new OpenCodeServiceError('Conflict', 409, 'ConflictError') })
+        await busy.service.create({ folderId: busy.folder.id, text: 'Hi', agent: 'build', model })
+        await expect(busy.service.compact('ses_new')).rejects.toThrow('Conflict')
+        busy.service.stop()
+      })
+
+      it('says on the newest page whether a compaction is waiting for the agent, and leaves it out when the inbox cannot be read or the page is an older one', async () => {
+        const read = (inbox: unknown, cursor?: string) => {
+          const { service, folder } = setup({
+            'session.create': { data: { id: 'ses_new' } },
+            'session.message.list': { data: [{ id: 'msg_1', type: 'user', text: 'Hi', time: { created: 1 } }], cursor: { next: 'older-1' } },
+            'session.active': { data: {} },
+            'session.inbox.list': inbox,
+          })
+          return service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model }).then(() => service.messages({ threadId: 'ses_new', ...(cursor ? { cursor } : {}) }))
+        }
+        const held = await read({ data: [{ id: 'msg_c1', sessionID: 'ses_new', time: { created: 7 }, type: 'compaction', delivery: 'queue', payload: {} }] })
+        expect(held.compactionHeld).toBe(true)
+        // It is not one of the user's messages, so it is not shown as one.
+        expect(held.pending).toEqual([])
+        expect((await read({ data: [] })).compactionHeld).toBe(false)
+        expect((await read(new OpenCodeServiceError('Not found', 404))).compactionHeld).toBeUndefined()
+        expect(await read({ data: [] }, 'older-1')).not.toHaveProperty('compactionHeld')
+      })
+
+      it('refetches the conversation when the service starts, ends or fails a compaction, so that its note appears and changes', async () => {
+        const { service, folder, events } = setup({ 'session.create': { data: { id: 'ses_new' } } })
+        await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+        service.subscribe('ses_new')
+        const emit = (type: string, sessionID: string) =>
+          (service as unknown as { onEvent(event: { type: string; data: Record<string, unknown> }): void }).onEvent({ type, data: { sessionID } })
+        for (const type of ['session.compaction.started', 'session.compaction.ended', 'session.compaction.failed']) emit(type, 'ses_new')
+        emit('session.compaction.started', 'ses_other')
+        expect(events).toEqual(Array.from({ length: 3 }, () => ({ type: 'messages', threadId: 'ses_new' })))
+        service.stop()
+      })
+    })
+
     it('passes on why the service would not take a message back', async () => {
       const { service, folder } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'session.inbox.cancel': new OpenCodeServiceError('Session not found', 404, 'SessionNotFoundError') })
       await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })

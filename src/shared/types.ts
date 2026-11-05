@@ -396,7 +396,19 @@ export type ChatMessage =
       tokens?: ChatTokens
     }
   /** Agent or model switches, compaction, shell commands, and other notes. */
-  | { kind: 'note'; id: string; time: number; tone: 'info' | 'error'; text: string; detail?: string }
+  | { kind: 'note'; id: string; time: number; tone: 'info' | 'error'; text: string; detail?: string; compaction?: ChatCompaction }
+
+/**
+ * What a note says about a compaction, which OpenCode writes into the conversation when it summarizes it
+ * to free up context: it is running, done (the note's detail is the summary) or failed.
+ */
+export interface ChatCompaction {
+  status: 'running' | 'completed' | 'failed'
+  /** `auto` when OpenCode did it because the window was full, `manual` when it was asked for. */
+  reason: 'auto' | 'manual'
+  /** About how many tokens the summary takes, when OpenCode reported it. */
+  summaryTokens?: number
+}
 
 /** One file a staged revert restored, as OpenCode summarizes it (without the diff). */
 export interface ChatRevertFile {
@@ -486,6 +498,11 @@ export interface ChatMessagesPage {
    * newest page only, and is absent when OpenCode did not answer, which means "unknown", not "none".
    */
   pending?: ChatPendingMessage[]
+  /**
+   * Whether OpenCode holds a compaction for when the agent is done (asked for while it was busy). Like
+   * `pending` it comes with the newest page only, and is absent when OpenCode did not answer.
+   */
+  compactionHeld?: boolean
 }
 
 export interface ChatPermission {

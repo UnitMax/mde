@@ -142,39 +142,63 @@ describe('parseInvocation', () => {
 })
 
 describe('the Inbox commands', () => {
-  const actions = () => ({ ask: vi.fn(async (_question: string) => undefined), fork: vi.fn(async () => undefined) })
+  const actions = () => ({ ask: vi.fn(async (_question: string) => undefined), fork: vi.fn(async () => undefined), compact: vi.fn(async () => undefined) })
   const named = (name: string, list: SlashCommand[]): SlashCommand => list.find((command) => command.name === name)!
 
   it('has /btw, which takes a question and asks it', async () => {
-    const { ask, fork } = actions()
-    const command = named('btw', slashCommands({ ask, fork }))
+    const { ask, fork, compact } = actions()
+    const command = named('btw', slashCommands({ ask, fork, compact }))
     expect(command).toMatchObject({ name: 'btw', argument: { required: true } })
     expect(command.description).toMatch(/side question/)
     await command.run('why SQLite?')
     expect(ask).toHaveBeenCalledWith('why SQLite?')
     expect(fork).not.toHaveBeenCalled()
+    expect(compact).not.toHaveBeenCalled()
   })
 
   it('has /fork, which takes nothing and forks the whole conversation', async () => {
-    const { ask, fork } = actions()
-    const command = named('fork', slashCommands({ ask, fork }))
+    const { ask, fork, compact } = actions()
+    const command = named('fork', slashCommands({ ask, fork, compact }))
     expect(command.argument).toBeUndefined()
     expect(command.description).toMatch(/fork/i)
     await command.run('')
     expect(fork).toHaveBeenCalledOnce()
     expect(fork).toHaveBeenCalledWith()
     expect(ask).not.toHaveBeenCalled()
+    expect(compact).not.toHaveBeenCalled()
+  })
+
+  it('has /compact, which takes nothing, answers to /summarize too and compacts the conversation', async () => {
+    const { ask, fork, compact } = actions()
+    const list = slashCommands({ ask, fork, compact })
+    const command = named('compact', list)
+    expect(command.argument).toBeUndefined()
+    expect(command.aliases).toEqual(['summarize'])
+    expect(command.description).toMatch(/summarized/)
+    expect(parseInvocation(list, '/summarize')?.command).toBe(command)
+    await command.run('')
+    expect(compact).toHaveBeenCalledOnce()
+    expect(compact).toHaveBeenCalledWith()
+    expect(ask).not.toHaveBeenCalled()
+    expect(fork).not.toHaveBeenCalled()
+  })
+
+  it('gives a failed compaction back to the box, which shows the reason', async () => {
+    const command = named('compact', slashCommands({ ...actions(), compact: async () => { throw new Error('No service.') } }))
+    await expect(command.run('')).rejects.toThrow('No service.')
   })
 
   it('gives a failed fork back to the box, which shows the reason', async () => {
     const { ask } = actions()
-    const command = named('fork', slashCommands({ ask, fork: async () => { throw new Error('No service.') } }))
+    const command = named('fork', slashCommands({ ...actions(), ask, fork: async () => { throw new Error('No service.') } }))
     await expect(command.run('')).rejects.toThrow('No service.')
   })
 
-  it('lists /btw and /fork, and finds /fork by typing its name or a word of its description', () => {
+  it('lists /btw, /fork and /compact, and finds each by typing its name or a word of its description', () => {
     const list = slashCommands(actions())
-    expect(list.map((command) => command.name)).toEqual(['btw', 'fork'])
+    expect(list.map((command) => command.name)).toEqual(['btw', 'fork', 'compact'])
+    expect(filterCommands(list, 'comp').map((command) => command.name)).toEqual(['compact'])
+    expect(filterCommands(list, 'sum').map((command) => command.name)).toEqual(['compact'])
     expect(filterCommands(list, 'for').map((command) => command.name)).toEqual(['fork'])
     expect(filterCommands(list, 'copy').map((command) => command.name)).toEqual(['fork'])
     expect(parseInvocation(list, '/fork')).toMatchObject({ command: { name: 'fork' }, args: '' })

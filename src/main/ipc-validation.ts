@@ -239,6 +239,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.chatMcpSet]: (value) => object({ folderId: optional(inboxFolderId), threadId: optional(opencodeSessionId), server: mcpServerName, enabled: boolean })(value) &&
     exactlyOnePlace(value),
   [IpcChannels.chatInterrupt]: chatThread,
+  [IpcChannels.chatCompact]: chatThread,
   [IpcChannels.chatRedo]: chatThread,
   [IpcChannels.chatRevert]: object({ threadId: opencodeSessionId, messageId, files: optional(boolean) }),
   [IpcChannels.chatFork]: object({ threadId: opencodeSessionId, messageId: optional(messageId) }),

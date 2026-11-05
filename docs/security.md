@@ -145,12 +145,12 @@ the validated `chat:*` channels.
 - **Secrets.** The password is held in memory per target, sent only as HTTP
   Basic auth to that loopback origin, and never logged, stored or put in an
   error message. A 401 or connection failure drops it and rediscovers once.
-- **Operations.** `SERVICE_OPERATIONS` is a fixed allowlist of twenty-seven method
+- **Operations.** `SERVICE_OPERATIONS` is a fixed allowlist of twenty-nine method
   and path pairs (agents, skills, MCP servers, providers, models, session create/get/active, message
   list, prompt, interrupt, agent and model switch, permission and form
-  list/reply, session update, staging or clearing a revert, fork, listing or cancelling the inbox items
-  the service holds for a busy agent, changing their delivery, and listing, connecting and disconnecting
-  MCP servers). The skill list (`GET /api/skill`)
+  list/reply, session update, staging or clearing a revert, fork, compact, one-off text generation for a
+  side question, listing or cancelling the inbox items the service holds for a busy agent, changing their
+  delivery, and listing, connecting and disconnecting MCP servers). The skill list (`GET /api/skill`)
   takes only the `location[directory]` query. OpenCode answers with each skill's full text and file path;
   the main process keeps the id, name and a one-line description and drops the rest, so neither reaches
   the renderer. A prompt can carry `skills` ids, but only ones the main process found by exact match in
@@ -191,6 +191,14 @@ the validated `chat:*` channels.
   it also reads pages of messages, keeping only the ID and text of the message the turn began with.
   OpenCode copies the messages and attachments inside the service, so the copy itself does not pass
   through MDE or the renderer, and the answer is reduced to the new session's ID, title and model.
+  The `chat:compact` channel accepts only a recorded thread ID and sends
+  `POST /api/session/{sessionID}/compact` with the fixed body `{ delivery: 'queue' }`; the renderer cannot
+  supply the delivery or any other field. OpenCode answers at once and summarizes in the background, so
+  nothing in the answer is used beyond its success. The summary reaches MDE only as a note in the
+  conversation, read like every message (text capped, control characters stripped), and a failure is shown
+  by its message only, never the provider's response body, which can carry request headers. The
+  message page also says whether the session inbox holds a compaction, which is a yes or no read from the
+  inbox list that was already requested for the held messages.
   The MCP list (`GET /api/mcp`) takes only the `location[directory]` query. OpenCode's answer also says
   how each server is started or reached; the main process keeps a server's name, an optional title, its
   state and a short error, and drops everything else (commands, URLs, headers, environment), so none of it

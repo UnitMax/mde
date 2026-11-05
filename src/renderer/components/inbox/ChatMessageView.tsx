@@ -1,5 +1,5 @@
 import { memo, useContext, useMemo, useState } from 'react'
-import { AlertTriangle, BookOpen, Brain, ChevronRight, GitFork, Info, LoaderCircle, Undo2, Wrench } from 'lucide-react'
+import { AlertTriangle, BookOpen, Brain, ChevronRight, FoldVertical, GitFork, Info, LoaderCircle, Undo2, Wrench } from 'lucide-react'
 import type { ChatMessage, ChatPart } from '@shared/types'
 import { FileChangeView } from '@/components/inbox/ChatFileChange'
 import { McpCallView } from '@/components/inbox/ChatMcpCall'
@@ -7,7 +7,7 @@ import { ChatMarkdown } from '@/components/inbox/ChatMarkdown'
 import { McpServerNamesContext } from '@/components/inbox/mcp-context'
 import { SubagentGroup } from '@/components/inbox/ChatSubagents'
 import { ToolIcon } from '@/components/inbox/ToolIcon'
-import { messageBlocks, skillCall, toolSummary } from '@/lib/chat'
+import { formatTokens, messageBlocks, skillCall, toolSummary } from '@/lib/chat'
 import { toolFileChanges } from '@/lib/diff'
 import { mcpCalls } from '@/lib/mcp'
 import { cn } from '@/lib/utils'
@@ -214,6 +214,41 @@ export const ChatMessageView = memo(function ChatMessageView({
           </button>
         )}
         <UserBubble message={message} />
+      </div>
+    )
+  }
+  if (message.kind === 'note' && message.compaction?.status === 'running') {
+    return (
+      <div
+        role="status"
+        data-testid={`chat-message-${message.id}`}
+        data-chat-message={message.id}
+        data-compaction="running"
+        className="flex items-center gap-1.5 px-1.5 text-[12px] text-fg-muted"
+      >
+        <LoaderCircle aria-hidden className="h-3.5 w-3.5 shrink-0 animate-spin text-accent motion-reduce:animate-none" />
+        <span className="min-w-0">{message.text}</span>
+      </div>
+    )
+  }
+  if (message.kind === 'note' && message.compaction?.status === 'completed' && message.detail) {
+    // The summary is what the agent now remembers of the conversation; it is Markdown, so it is shown as such.
+    const { summaryTokens } = message.compaction
+    return (
+      <div data-testid={`chat-message-${message.id}`} data-chat-message={message.id} data-compaction="completed">
+        <Disclosure
+          icon={<FoldVertical aria-hidden className="h-3.5 w-3.5 shrink-0" />}
+          summary={(
+            <>
+              {message.text}
+              {summaryTokens ? <span className="text-fg-subtle"> · summary of about {formatTokens(summaryTokens)} tokens</span> : null}
+            </>
+          )}
+        >
+          <div className="max-h-96 min-w-0 overflow-auto rounded-md border border-line bg-bg px-3 py-2 text-[13px]" data-testid="chat-compaction-summary">
+            <ChatMarkdown text={message.detail} label="Summary of the conversation" />
+          </div>
+        </Disclosure>
       </div>
     )
   }

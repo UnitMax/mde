@@ -62,6 +62,7 @@ const api = {
     redo: vi.fn(async (): Promise<void> => undefined),
     revert: vi.fn(async (request: ChatRevertRequest): Promise<ChatRevert> => ({ messageId: request.messageId, files: [] })),
     fork: vi.fn(async (_request: ChatForkRequest): Promise<ChatForkResult> => ({ thread: forkedThread() })),
+    compact: vi.fn(async (_request: { threadId: string }): Promise<void> => undefined),
     regenerateTitle: vi.fn(async (): Promise<void> => undefined),
     replyPermission: vi.fn(async () => undefined),
     replyForm: vi.fn(async () => undefined),
@@ -126,6 +127,7 @@ afterEach(async () => {
   api.chat.draft.mockImplementation(async (req: { text?: string }) => ({ text: req.text ?? '', revision: 1, attachments: [] }))
   api.chat.revert.mockImplementation(async (request: ChatRevertRequest) => ({ messageId: request.messageId, files: [] }))
   api.chat.fork.mockImplementation(async () => ({ thread: forkedThread() }))
+  api.chat.compact.mockImplementation(async () => undefined)
   await act(async () => roots.splice(0).forEach((root) => root.unmount()))
   document.body.innerHTML = ''
   vi.unstubAllGlobals()
@@ -1864,12 +1866,12 @@ describe('Inbox /fork command', () => {
     expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_fork')
   })
 
-  it('is listed with /btw when a slash is typed, and a fork from a message still works beside it', async () => {
+  it('is listed with the other commands when a slash is typed, and a fork from a message still works beside it', async () => {
     draftStore('')
     const view = await showConversation()
     await setMessageText(messageInput(view), '/')
     expect(Array.from(view.querySelectorAll('[data-testid="slash-picker"] [role="option"]')).map((option) => option.getAttribute('data-testid')))
-      .toEqual(['slash-option-btw', 'slash-option-fork'])
+      .toEqual(['slash-option-btw', 'slash-option-fork', 'slash-option-compact'])
     await act(async () => view.querySelector<HTMLButtonElement>('[data-testid="chat-fork-from-msg_1"]')!.click())
     expect(api.chat.fork).toHaveBeenCalledWith({ threadId: 'ses_one', messageId: 'msg_1' })
   })
@@ -1882,6 +1884,257 @@ describe('Inbox /fork command', () => {
     expect(api.chat.fork).not.toHaveBeenCalled()
     expect(api.chat.send).not.toHaveBeenCalled()
     expect(messageInput(view).state.doc.toString()).toBe('/fork and fix the login')
+  })
+})
+
+
+describe('Inbox compaction', () => {
+  const windowed: ChatOptions = {
+    ...options,
+    models: [{ id: 'free-1', providerId: 'opencode', providerName: 'OpenCode', name: 'Flint Free', contextLimit: 200_000, outputLimit: 64_000 }],
+  }
+  beforeEach(() => {
+    api.chat.options.mockResolvedValue(windowed)
+    useWorkspace.setState({ inboxThreads: [thread()], selectedInboxThreadId: 'ses_one' })
+    draftStore('')
+  })
+  afterEach(() => { api.chat.options.mockImplementation(async () => options) })
+
+  const user: ChatMessage = { kind: 'user', id: 'msg_1', time: 1, text: 'Fix the login' }
+  const step = (input: number, id = `msg_s${input}`): ChatMessage => ({
+    kind: 'assistant', id, time: 2, agent: 'build', model: options.defaultModel!, completed: true, parts: [],
+    tokens: { input, output: 500, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+  })
+  type Note = Extract<ChatMessage, { kind: 'note' }>
+  const running: Note = { kind: 'note', id: 'msg_c1', time: 3, tone: 'info', text: 'Compacting the conversation…', compaction: { status: 'running', reason: 'manual' } }
+  const done: Note = {
+    kind: 'note', id: 'msg_c1', time: 3, tone: 'info', text: 'Conversation compacted', detail: '## Objective\n- Fix the login',
+    compaction: { status: 'completed', reason: 'manual', summaryTokens: 724 },
+  }
+  const failed: Note = {
+    kind: 'note', id: 'msg_c1', time: 3, tone: 'error', text: 'Could not compact the conversation: Nothing to compact yet',
+    compaction: { status: 'failed', reason: 'manual' },
+  }
+  const meter = (view: HTMLElement): HTMLElement | null => view.querySelector('[data-testid="chat-context-meter"]')
+  const action = (): HTMLElement | null => document.querySelector('[data-testid="chat-context-compact"]')
+  const open = async (view: HTMLElement): Promise<HTMLElement> => {
+    await act(async () => { meter(view)!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+    return vi.waitFor(() => {
+      const found = action()
+      expect(found).not.toBeNull()
+      return found!
+    })
+  }
+  const show = async (messages: ChatMessage[], extra: Partial<ChatMessagesPage> = {}): Promise<HTMLElement> => {
+    page = { running: false, older: null, messages, ...extra }
+    const view = await render()
+    await vi.waitFor(() => expect(meter(view)).not.toBeNull())
+    return view
+  }
+  const run = async (view: HTMLElement, value = '/compact'): Promise<void> => {
+    const box = messageInput(view)
+    await setMessageText(box, value)
+    await pressMessageKey(box, 'Enter')
+  }
+  const disabled = (element: HTMLElement): boolean => element.hasAttribute('data-disabled')
+  /** What is said under the box, as opposed to in the conversation above it. */
+  const boxAlert = (view: HTMLElement): string | undefined =>
+    Array.from(view.querySelectorAll('[role="alert"]')).find((alert) => !alert.closest('[data-testid="chat-transcript"]'))?.textContent ?? undefined
+
+  describe('from the context menu', () => {
+    it('offers Compact conversation under the breakdown, and asks for it without touching the conversation', async () => {
+      const view = await show([user, step(9000)])
+      const item = await open(view)
+      expect(item.textContent).toContain('Compact conversation')
+      expect(item.textContent).toContain('Summarize it to free up context.')
+      expect(disabled(item)).toBe(false)
+      // Under the breakdown, in the same menu.
+      expect(document.querySelector('[data-testid="chat-context-details"]')!.compareDocumentPosition(item) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      await act(async () => item.click())
+      expect(api.chat.compact).toHaveBeenCalledTimes(1)
+      expect(api.chat.compact).toHaveBeenCalledWith({ threadId: 'ses_one' })
+      expect(api.chat.send).not.toHaveBeenCalled()
+      expect(api.chat.fork).not.toHaveBeenCalled()
+      // The menu closes, and nothing is shown as an error.
+      await vi.waitFor(() => expect(action()).toBeNull())
+      expect(view.querySelector('[data-testid="chat-compact-error"]')).toBeNull()
+    })
+
+    it('says that it waits for the agent when the agent is working, and then shows that it is waiting', async () => {
+      const view = await show([user, step(9000)], { running: true })
+      const item = await open(view)
+      expect(item.textContent).toContain('The agent is working. It compacts when the agent finishes.')
+      await act(async () => item.click())
+      expect(api.chat.compact).toHaveBeenCalledOnce()
+      expect(view.querySelector('[data-testid="chat-compaction-held"]')).toBeNull()
+      // The service now holds it, which the next read of the conversation says.
+      page = { ...page, compactionHeld: true }
+      await act(async () => { useInboxChat.getState().applyEvent({ type: 'messages', threadId: 'ses_one' }) })
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-compaction-held"]')?.textContent).toContain('It starts when the agent finishes.'))
+      const again = await open(view)
+      expect(disabled(again)).toBe(true)
+      expect(again.textContent).toContain('Compaction waiting')
+    })
+
+    it('shows that it is compacting, with the action switched off, while the work runs', async () => {
+      const view = await show([user, step(9000), running], { running: true })
+      const note = view.querySelector('[data-compaction="running"]')
+      expect(note?.textContent).toBe('Compacting the conversation…')
+      expect(note?.getAttribute('role')).toBe('status')
+      const item = await open(view)
+      expect(disabled(item)).toBe(true)
+      expect(item.textContent).toContain('Compacting…')
+      expect(item.textContent).toContain('Summarizing the conversation.')
+      await act(async () => item.click())
+      expect(api.chat.compact).not.toHaveBeenCalled()
+    })
+
+    it('ignores a note that says running when the thread is not working, as the service may have stopped', async () => {
+      const view = await show([user, step(9000), running], { running: false })
+      const item = await open(view)
+      expect(disabled(item)).toBe(false)
+      expect(item.textContent).toContain('Compact conversation')
+    })
+
+    it('says why under the conversation when the service would not take the request, and lets it be asked again', async () => {
+      api.chat.compact.mockRejectedValueOnce(new Error("Error invoking remote method 'chat:compact': Error: This OpenCode service cannot compact conversations. Update OpenCode and try again."))
+      const view = await show([user, step(9000)])
+      const first = await open(view)
+      await act(async () => first.click())
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-compact-error"]')?.textContent)
+        .toBe('This OpenCode service cannot compact conversations. Update OpenCode and try again.'))
+      await vi.waitFor(() => expect(action()).toBeNull())
+      const second = await open(view)
+      await act(async () => second.click())
+      expect(api.chat.compact).toHaveBeenCalledTimes(2)
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-compact-error"]')).toBeNull())
+    })
+  })
+
+  describe('with /compact', () => {
+    it('asks for it from the box, empties the box and sends nothing', async () => {
+      const view = await show([user, step(9000)])
+      await run(view)
+      expect(api.chat.compact).toHaveBeenCalledOnce()
+      expect(api.chat.compact).toHaveBeenCalledWith({ threadId: 'ses_one' })
+      expect(api.chat.send).not.toHaveBeenCalled()
+      expect(messageInput(view).state.doc.toString()).toBe('')
+      expect(boxAlert(view)).toBeUndefined()
+    })
+
+    it('is found by /summarize too, and by a word of its description', async () => {
+      const view = await show([user, step(9000)])
+      await run(view, '/summarize')
+      expect(api.chat.compact).toHaveBeenCalledOnce()
+      await setMessageText(messageInput(view), '/summ')
+      expect(Array.from(view.querySelectorAll('[data-testid="slash-picker"] [role="option"]')).map((option) => option.getAttribute('data-testid'))).toEqual(['slash-option-compact'])
+    })
+
+    it('gives the command back with the reason under the box when the service would not take it', async () => {
+      api.chat.compact.mockRejectedValueOnce(new Error("Error invoking remote method 'chat:compact': Error: Session not found: ses_one"))
+      const view = await show([user, step(9000)])
+      await run(view)
+      await vi.waitFor(() => expect(boxAlert(view)).toBe('Session not found: ses_one'))
+      expect(messageInput(view).state.doc.toString()).toBe('/compact')
+      // Told once, where it was asked.
+      expect(view.querySelector('[data-testid="chat-compact-error"]')).toBeNull()
+    })
+
+    it('refuses while a compaction runs or waits, rather than ask for a second one that would fail', async () => {
+      const working = await show([user, step(9000), running], { running: true })
+      await run(working)
+      await vi.waitFor(() => expect(boxAlert(working)).toBe('The conversation is already being compacted.'))
+      expect(messageInput(working).state.doc.toString()).toBe('/compact')
+      expect(api.chat.compact).not.toHaveBeenCalled()
+    })
+
+    it('refuses while one waits for the agent', async () => {
+      const view = await show([user, step(9000)], { running: true, compactionHeld: true })
+      await run(view)
+      await vi.waitFor(() => expect(boxAlert(view)).toBe('A compaction is already waiting for the agent to finish.'))
+      expect(api.chat.compact).not.toHaveBeenCalled()
+    })
+
+    it('refuses with nothing finished to summarize, and with nothing new since the last compaction', async () => {
+      page = { running: false, older: null, messages: [user] }
+      const fresh = await render()
+      await vi.waitFor(() => expect(fresh.textContent).toContain('Fix the login'))
+      expect(meter(fresh)).toBeNull()
+      await run(fresh)
+      await vi.waitFor(() => expect(boxAlert(fresh)).toBe('There is nothing to compact yet.'))
+      expect(api.chat.compact).not.toHaveBeenCalled()
+    })
+
+    it('refuses straight after a compaction, when there is nothing new to summarize', async () => {
+      const view = await show([user, step(9000), done])
+      await run(view)
+      await vi.waitFor(() => expect(boxAlert(view)).toBe('The conversation was just compacted. It has nothing new to compact yet.'))
+      expect(api.chat.compact).not.toHaveBeenCalled()
+    })
+
+    it('does not ask twice when it is pressed again before the first request is answered', async () => {
+      let answer!: () => void
+      api.chat.compact.mockImplementationOnce(() => new Promise<void>((resolve) => { answer = resolve }))
+      const view = await show([user, step(9000)])
+      await run(view)
+      await run(view)
+      await vi.waitFor(() => expect(boxAlert(view)).toBe('A compaction is already being asked for.'))
+      expect(api.chat.compact).toHaveBeenCalledOnce()
+      await act(async () => answer())
+    })
+  })
+
+  describe('in the conversation', () => {
+    it('says compacted, instead of a stale count, until the next reply tells the new size', async () => {
+      const view = await show([user, step(149_500), done])
+      expect(meter(view)?.textContent).toBe('Compacted')
+      expect(meter(view)?.getAttribute('aria-label')).toBe('Context: compacted. Its new size shows after the next reply')
+      expect(meter(view)?.getAttribute('data-tone')).toBe('normal')
+      const item = await open(view)
+      const details = document.querySelector('[data-testid="chat-context-details"]')!
+      expect(details.querySelector('[data-testid="chat-context-compacted"]')?.textContent).toBe('Compacted')
+      expect(details.textContent).toContain('The new size shows after the next reply.')
+      expect(details.textContent).toContain('Before compacting150K')
+      expect(details.textContent).toContain('Summaryabout 724')
+      // The breakdown of the old step is not shown as if it still held.
+      expect(details.querySelector('[data-testid="chat-context-composition"]')).toBeNull()
+      expect(details.textContent).not.toContain('Cache read')
+      expect(disabled(item)).toBe(true)
+      expect(item.textContent).toContain('Just compacted. Nothing new to compact yet.')
+    })
+
+    it('measures again from the first reply after the compaction, and offers compacting again', async () => {
+      const view = await show([user, step(149_500), done, { kind: 'user', id: 'msg_2', time: 4, text: 'Go on' }, step(12_000)])
+      expect(meter(view)?.textContent).toBe('12.5K')
+      expect(meter(view)?.getAttribute('aria-label')).toBe('Context: 12.5K of 200K tokens used (6%)')
+      const item = await open(view)
+      expect(disabled(item)).toBe(false)
+      expect(document.querySelector('[data-testid="chat-context-details"]')?.textContent).not.toContain('Compacted')
+    })
+
+    it('does not change the count for a compaction that failed or is still running', async () => {
+      const failing = await show([user, step(9000), failed])
+      expect(meter(failing)?.textContent).toBe('9.5K')
+      expect(failing.querySelector('[data-testid="chat-message-msg_c1"]')?.textContent).toContain('Could not compact the conversation: Nothing to compact yet')
+      const item = await open(failing)
+      expect(disabled(item)).toBe(false)
+    })
+
+    it('shows the summary as Markdown when the note is opened', async () => {
+      const view = await show([user, step(9000), done])
+      const note = view.querySelector('[data-compaction="completed"]')!
+      expect(note.textContent).toContain('Conversation compacted')
+      expect(note.textContent).toContain('summary of about 724 tokens')
+      expect(view.querySelector('[data-testid="chat-compaction-summary"]')).toBeNull()
+      await act(async () => note.querySelector<HTMLButtonElement>('button')!.click())
+      const summary = await vi.waitFor(() => {
+        const found = view.querySelector('[data-testid="chat-compaction-summary"]')
+        expect(found).not.toBeNull()
+        return found!
+      })
+      await vi.waitFor(() => expect(summary.querySelector('h2')?.textContent).toBe('Objective'))
+      expect(summary.querySelector('li')?.textContent).toBe('Fix the login')
+    })
   })
 })
 

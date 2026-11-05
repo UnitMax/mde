@@ -75,6 +75,13 @@ you chose, as it does for any message. It does not add either to the conversatio
 and the answer in memory only, for each thread until you dismiss them or the app closes, and never
 writes them to disk.
 
+Compacting a conversation (the `/compact` command or the context pill's Compact conversation button) asks
+the same local service to summarize the conversation, which sends the conversation to the model provider
+you chose, as any message does. OpenCode writes the summary into the conversation it stores for the
+session, so it is part of that history from then on and is shown in the conversation like any other note.
+MDE stores nothing more for it, and shows only the summary, its approximate size and the reason when
+it fails, with credentials and the provider's response removed.
+
 The Inbox's MCP list asks the same local service which MCP servers OpenCode has for the folder or
 thread and how each stands: name, title, connected, failed or needs a sign-in, and a short error with
 credentials and paths removed. MDE drops everything else in the answer (commands, URLs, headers and

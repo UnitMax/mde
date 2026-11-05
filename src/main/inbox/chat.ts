@@ -57,6 +57,7 @@ import {
   parseMcpServers,
   parseMessagesPage,
   parseModels,
+  holdsCompaction,
   parsePendingMessages,
   parsePermissions,
   parsePromptAnswer,
@@ -544,10 +545,10 @@ export class InboxChatService {
     }
     // Read before the conversation: a message delivered in between is then in both, which the reader
     // sorts out by ID, and not in neither. The newest page only; and a service that cannot say leaves it unknown.
-    const pending = request.cursor
+    const inbox = request.cursor
       ? undefined
       : await this.dependencies.client.request(thread.target, 'session.inbox.list', { params: { sessionID: thread.id } })
-        .then((answer) => parsePendingMessages(answer, this.dependencies.thumbnail))
+        .then((answer) => ({ pending: parsePendingMessages(answer, this.dependencies.thumbnail), compactionHeld: holdsCompaction(answer) }))
         .catch(() => undefined)
     const [page, active, session] = await Promise.all([
       loadPage(),
@@ -561,7 +562,7 @@ export class InboxChatService {
     const usage = session ? parseSessionUsage(session) : null
     // Only an answer from the service says whether a revert is staged; without one it stays unknown.
     const revert = session ? parseSessionRevert(session) : undefined
-    return { ...result, ...(usage ? { usage } : {}), ...(revert !== undefined ? { revert } : {}), ...(pending ? { pending } : {}) }
+    return { ...result, ...(usage ? { usage } : {}), ...(revert !== undefined ? { revert } : {}), ...(inbox ?? {}) }
   }
 
   /**
@@ -665,6 +666,30 @@ export class InboxChatService {
     const text = parseGeneratedText(answer)
     if (!text) throw new Error('OpenCode gave no answer. Try asking again.')
     return { text }
+  }
+
+  /**
+   * Summarizes the conversation to free up context. OpenCode answers at once and does the work in the
+   * background, so a failure of the work itself (nothing to compact yet, the model not answering) shows up as
+   * a note in the conversation, not here. It is asked to wait for the agent when the agent is busy, so that
+   * a turn is not cut in the middle; it then runs when the agent is done.
+   */
+  async compact(threadId: string): Promise<void> {
+    this.assertEnabled()
+    const thread = this.thread(threadId)
+    this.streams.ensure(thread.target)
+    try {
+      await this.dependencies.client.request(thread.target, 'session.compact', {
+        params: { sessionID: thread.id },
+        body: { delivery: 'queue' },
+      })
+    } catch (error) {
+      // A route the service does not know answers 404 with no body; a missing session says so by name.
+      if (error instanceof OpenCodeServiceError && error.status === 404 && error.tag === undefined) {
+        throw new Error('This OpenCode service cannot compact conversations. Update OpenCode and try again.')
+      }
+      throw error
+    }
   }
 
   async interrupt(threadId: string): Promise<void> {

@@ -32,6 +32,7 @@ import {
   parseCreatedSession,
   parseDefaultModel,
   parseForms,
+  holdsCompaction,
   parseInboxItem,
   parseMessage,
   parseMessagesPage,
@@ -630,6 +631,59 @@ describe('OpenCode service parsing', () => {
       .toMatchObject({ tone: 'error', text: 'Rate limited' })
     expect(parseMessage({ id: 'msg_3', type: 'idle', outcome: 'succeeded', time: { created: 3 } })).toBeNull()
     expect(parseMessage({ id: 'msg_4', type: 'future-type', time: { created: 4 } })).toBeNull()
+  })
+
+  describe('compaction notes', () => {
+    const compaction = (extra: Record<string, unknown>) => parseMessage({ id: 'msg_c1', type: 'compaction', reason: 'manual', time: { created: 5 }, ...extra })
+
+    it('says that it is running, with nothing to open', () => {
+      expect(compaction({ status: 'running', summary: '' }))
+        .toEqual({ kind: 'note', id: 'msg_c1', time: 5, tone: 'info', text: 'Compacting the conversation…', compaction: { status: 'running', reason: 'manual' } })
+      expect(compaction({ status: 'running', reason: 'auto' })).toMatchObject({ text: 'Compacting the conversation automatically…', compaction: { status: 'running', reason: 'auto' } })
+    })
+
+    it('shows the summary as the detail of a completed one, with how many tokens it took', () => {
+      expect(compaction({ status: 'completed', summary: '## Objective\n- Fix login\n', tokens: { input: 580, output: 724, cache: { read: 8192, write: 0 } } }))
+        .toEqual({
+          kind: 'note', id: 'msg_c1', time: 5, tone: 'info', text: 'Conversation compacted', detail: '## Objective\n- Fix login',
+          compaction: { status: 'completed', reason: 'manual', summaryTokens: 724 },
+        })
+      expect(compaction({ status: 'completed', reason: 'auto', summary: 'S' })).toMatchObject({ text: 'Conversation compacted automatically', compaction: { status: 'completed', reason: 'auto' } })
+      // No summary or token count to show: nothing is made up for them.
+      const bare = compaction({ status: 'completed' })
+      expect(bare).not.toHaveProperty('detail')
+      expect((bare as { compaction: object }).compaction).toEqual({ status: 'completed', reason: 'manual' })
+    })
+
+    it('reports a failure as an error with its reason, and keeps credentials out of it', () => {
+      const failed = compaction({
+        status: 'failed',
+        error: { type: 'provider.auth', message: 'API key expired.', status: 401, response: { body: '{"headers":{"Authorization":"Bearer sk-secret"}}' } },
+      })
+      expect(failed).toEqual({
+        kind: 'note', id: 'msg_c1', time: 5, tone: 'error', text: 'Could not compact the conversation: API key expired.',
+        compaction: { status: 'failed', reason: 'manual' },
+      })
+      expect(JSON.stringify(failed)).not.toContain('sk-secret')
+      expect(compaction({ status: 'failed', error: { type: 'compaction.unavailable', message: 'Nothing to compact yet' } }))
+        .toMatchObject({ text: 'Could not compact the conversation: Nothing to compact yet' })
+      expect(compaction({ status: 'failed' })).toMatchObject({ tone: 'error', text: 'Could not compact the conversation' })
+    })
+
+    it('still shows a compaction whose status it does not know, as plain compacted', () => {
+      const odd = compaction({ status: 'paused', summary: 'S' })
+      expect(odd).toMatchObject({ kind: 'note', tone: 'info', text: 'Conversation compacted' })
+      expect(odd).not.toHaveProperty('compaction')
+    })
+  })
+
+  it('sees a compaction in the inbox, which is not one of the user\'s messages', () => {
+    const inbox = (...types: string[]) => ({ data: types.map((type, index) => ({ id: `msg_p${index}`, type, delivery: 'queue', payload: {} })) })
+    expect(holdsCompaction(inbox('compaction'))).toBe(true)
+    expect(holdsCompaction(inbox('user', 'compaction'))).toBe(true)
+    expect(holdsCompaction(inbox('user', 'synthetic'))).toBe(false)
+    expect(holdsCompaction(inbox())).toBe(false)
+    for (const odd of [null, {}, { data: 'compaction' }, { data: [null, 'compaction', 3] }, 'compaction']) expect(holdsCompaction(odd)).toBe(false)
   })
 
   it('truncates huge tool output and strips control characters', () => {

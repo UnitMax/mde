@@ -111,6 +111,11 @@ export interface ContextUsage {
   modelName: string | null
   /** The thread's totals, when OpenCode reported them. */
   thread: ChatUsage | null
+  /**
+   * Set when the conversation was compacted after that step. What it holds now is not known until the next
+   * reply reports it, so `used` is what it held before, `ratio` is null and the tone stays normal.
+   */
+  compacted: { summaryTokens: number | null } | null
 }
 
 /** What one step added up to: its whole prompt (cached or not) plus what the model wrote. */
@@ -127,6 +132,39 @@ export function latestStepTokens(messages: readonly ChatMessage[]): ChatTokens |
     }
   }
   return null
+}
+
+/**
+ * The compaction that came after the newest finished step, if one did: the summary has taken the place of
+ * the conversation, but only a later reply says how big the context is now. A compaction that is running or
+ * failed changes nothing about it.
+ */
+function compactedSinceLastStep(messages: readonly ChatMessage[]): { summaryTokens: number | null } | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!
+    if (message.kind === 'assistant' && message.completed && message.tokens && stepContext(message.tokens) > 0) return null
+    if (message.kind === 'note' && message.compaction?.status === 'completed') return { summaryTokens: message.compaction.summaryTokens ?? null }
+  }
+  return null
+}
+
+/** What compacting is doing: the work is under way, or it is asked for and waits for the agent to finish; null for neither. */
+export type CompactionState = 'running' | 'held' | null
+
+/**
+ * Whether a compaction is under way. It is running when the newest compaction note says so and the thread is
+ * working (a note left "running" by a service that stopped is not), and held when the service holds a request
+ * until the agent is done.
+ */
+export function compactionState(messages: readonly ChatMessage[], input: { running: boolean; held: boolean }): CompactionState {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!
+    if (message.kind === 'note' && message.compaction) {
+      if (message.compaction.status === 'running' && input.running) return 'running'
+      break
+    }
+  }
+  return input.held ? 'held' : null
 }
 
 export function contextTone(ratio: number | null): ContextTone {
@@ -148,12 +186,14 @@ export function contextUsage(input: {
   if (!step) return null
   const used = stepContext(step)
   const limit = input.model?.contextLimit ?? null
-  const ratio = limit ? used / limit : null
+  const compacted = compactedSinceLastStep(input.messages)
+  const ratio = limit && !compacted ? used / limit : null
   return {
     used,
     step,
     limit,
     ratio,
+    compacted,
     tone: contextTone(ratio),
     outputLimit: input.model?.outputLimit ?? null,
     modelName: input.model?.name ?? null,
