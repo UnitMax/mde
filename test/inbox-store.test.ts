@@ -47,6 +47,19 @@ function thread(overrides: Partial<InboxThread> = {}): InboxThread {
 }
 
 describe('inbox thread validation', () => {
+  it('preserves terminal mode and keeps older threads in GUI mode', async () => {
+    const path = join(await temporaryDirectory(), 'inbox.json')
+    const store = new InboxStore(path)
+    store.put(thread({ mode: 'terminal' }))
+    store.put(thread({ id: 'ses_legacy' }))
+    await store.flush()
+    const reloaded = new InboxStore(path)
+    await reloaded.load()
+    expect(reloaded.get('ses_one')).toEqual(thread({ mode: 'terminal' }))
+    expect(reloaded.get('ses_legacy')).toEqual(thread({ id: 'ses_legacy' }))
+    expect(validateInboxThread({ ...thread(), mode: 'shell' })).toBeNull()
+  })
+
   it('keeps a well-formed thread and drops unknown fields', () => {
     expect(validateInboxThread({ ...thread(), prompt: 'private' })).toEqual(thread())
     expect(validateInboxThread(thread({ status: 'attention', attentionReason: 'question' })))

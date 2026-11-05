@@ -123,6 +123,7 @@ const modelRef = object({ id: string(512), providerId: string(512), variant: opt
  * for a real branch name while it is being typed; creating the thread checks it as it does any other.
  */
 const draftChoice = object({
+  mode: optional(oneOf('gui', 'terminal')),
   agent: optional(agentId),
   model: optional(modelRef),
   worktree: optional(object({ base: worktreeBase, branch: optional(string(256)) })),
@@ -251,7 +252,7 @@ export const ipcPayloadValidators = {
       object({ key, action: oneOf('remove'), attachmentId: string(64), folderId, choice })(value)
   },
   [IpcChannels.chatDrafts]: noPayload,
-  [IpcChannels.chatCreate]: object({ attachmentIds: optional(array(string(64), 10)), draftRevision: optional((v) => Number.isSafeInteger(v) && Number(v) >= 0), draftId: optional((v) => typeof v === 'string' && /^drf_[A-Za-z0-9-]{1,64}$/.test(v)), folderId: inboxFolderId, text: promptText, agent: agentId, model: modelRef, worktree: optional(object({ base: worktreeBase, branch: optional(worktreeBranch) })) }),
+  [IpcChannels.chatCreate]: object({ mode: optional(oneOf('gui', 'terminal')), attachmentIds: optional(array(string(64), 10)), draftRevision: optional((v) => Number.isSafeInteger(v) && Number(v) >= 0), draftId: optional((v) => typeof v === 'string' && /^drf_[A-Za-z0-9-]{1,64}$/.test(v)), folderId: inboxFolderId, text: promptText, agent: agentId, model: modelRef, worktree: optional(object({ base: worktreeBase, branch: optional(worktreeBranch) })) }),
   [IpcChannels.chatMessages]: object({ threadId: opencodeSessionId, cursor: optional((value) => typeof value === 'string' && /^[A-Za-z0-9_=.-]{1,2048}$/.test(value)) }),
   [IpcChannels.chatSend]: object({ attachmentIds: optional(array(string(64), 10)), draftRevision: optional((v) => Number.isSafeInteger(v) && Number(v) >= 0), threadId: opencodeSessionId, text: promptText, agent: optional(agentId), model: optional(modelRef), delivery: optional(oneOf('steer', 'queue')) }),
   [IpcChannels.chatDiscardPending]: object({ threadId: opencodeSessionId, messageId }),

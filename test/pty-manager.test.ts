@@ -143,6 +143,29 @@ describe('PtyManager runtime terminal identities', () => {
     expect(integration.dispose).toHaveBeenCalledWith('pane-a')
   })
 
+  it.each(['darwin', 'win32'] as const)('keeps terminal service credentials out of argv on %s', (platform) => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
+    const previousWslEnv = process.env.WSLENV
+    process.env.WSLENV = 'KEEP/u:OPENCODE_PASSWORD/p'
+    try {
+      const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() })
+      manager.ensure('inbox-thread:ses_one', platform === 'win32' ? wslSession() : sourceSession(), { cols: 80, rows: 24 }, palette, {
+        agent: { executable: 'opencode', args: ['--server', 'http://127.0.0.1:49374', '--session', 'ses_one'] },
+        environment: { OPENCODE_PASSWORD: 'test-password' },
+      })
+      const [, args, options] = ptyMock.spawn.mock.calls[0] as [string, string[], { env: Record<string, string> }]
+      expect(args.join(' ')).not.toContain('test-password')
+      expect(args.join(' ')).not.toContain('OPENCODE_PASSWORD')
+      expect(options.env.OPENCODE_PASSWORD).toBe('test-password')
+      if (platform === 'win32') expect(options.env.WSLENV).toBe('KEEP/u:OPENCODE_PASSWORD/u')
+      expect(process.env.OPENCODE_PASSWORD).not.toBe('test-password')
+      manager.disposeAll()
+    } finally {
+      if (previousWslEnv === undefined) delete process.env.WSLENV
+      else process.env.WSLENV = previousWslEnv
+    }
+  })
+
   it('restarts and disposes panes independently', () => {
     const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() })
     const source = sourceSession()

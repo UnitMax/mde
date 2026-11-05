@@ -19,6 +19,15 @@ const draftKey = 'draft:drf_one' as const
 const folder = { folderId: 'fld_one' }
 
 describe('Inbox saved drafts', () => {
+  it('restores a new thread draft with its chosen chat interface', async () => {
+    const { path, store } = await setup()
+    await store.text(draftKey, 'Review this', { ...folder, choice: { mode: 'terminal', agent: 'plan', model: { id: 'm', providerId: 'p' } } })
+    const restarted = new InboxDraftStore(path)
+    expect((await restarted.list())[0]?.choice).toMatchObject({ mode: 'terminal', agent: 'plan' })
+    await restarted.setMeta(draftKey, { ...folder, choice: { mode: 'gui', agent: 'plan' } })
+    expect((await new InboxDraftStore(path).list())[0]?.choice).toEqual({ mode: 'gui', agent: 'plan' })
+  })
+
   it('restores copied contents and text after restarting, independently of the original', async () => {
     const { path, store } = await setup()
     const bytes = new Uint8Array([1, 2, 3])

@@ -9,6 +9,7 @@ import {
 } from '@/components/InboxPanel'
 import { ChatThreadView } from '@/components/inbox/ChatThreadView'
 import { NewThreadView } from '@/components/inbox/NewThreadView'
+import { TerminalThreadView } from '@/components/inbox/TerminalThreadView'
 import { inboxModelLabel, inboxThreadHome } from '@/lib/inbox'
 import { sessionAge, sessionDate } from '@/lib/opencode-sessions'
 import { useWorkspace } from '@/store/workspace'
@@ -140,7 +141,9 @@ export function InboxThreadView(): JSX.Element {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <ThreadHeader thread={thread} />
-      <ChatThreadView key={thread.id} thread={thread} />
+      {thread.mode === 'terminal'
+        ? <TerminalThreadView key={thread.id} thread={thread} />
+        : <ChatThreadView key={thread.id} thread={thread} />}
     </div>
   )
 }

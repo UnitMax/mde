@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import { supportsAgentIntegration } from '@shared/agent-support'
 import { isFileRoot } from '@shared/file-root'
+import { inboxTerminalThreadId, inboxThreadTerminalId } from '@shared/inbox-thread-terminal'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import {
   type AppInfo,
@@ -443,8 +444,29 @@ export function registerIpcHandlers(
   const inboxRecorder = inbox.recorder
   const chat = inbox.chat
   const pendingEnsures = new Map<string, symbol>()
-  // Terminals belong to a workspace session or to the Inbox's one global terminal; nothing else may name the latter.
-  const getTerminalSession = terminalSessionResolver({ getSession, listDistros, platform: process.platform, home: homedir })
+  // Inbox shells and conversation terminals have reserved identities, resolved from main-owned state.
+  const getShellSession = terminalSessionResolver({ getSession, listDistros, platform: process.platform, home: homedir })
+  const getTerminalSession = async (id: string): Promise<Session | null> => {
+    const threadId = inboxTerminalThreadId(id)
+    return threadId ? chat.terminalSession(threadId) : getShellSession(id)
+  }
+  const threadTerminalLaunch = async (req: EnsurePtyRequest, session: Session): Promise<PtyLaunchOptions | null> => {
+    const threadId = inboxTerminalThreadId(session.id)
+    if (!threadId) {
+      if (inboxTerminalThreadId(req.terminalId)) throw new Error('Invalid Inbox thread terminal.')
+      return null
+    }
+    if (req.terminalId !== session.id || req.launch !== undefined) throw new Error('Invalid Inbox thread terminal launch.')
+    const directory = await verifiedDirectory(session, session.path)
+    if (!directory) throw new Error('The thread directory is not available.')
+    const launch = await chat.terminalLaunch(threadId)
+    // Recheck after filesystem work: removing a thread must not leave a late launch behind.
+    const current = chat.terminalSession(threadId)
+    if (current.path !== session.path || current.kind !== session.kind || current.distro !== session.distro) {
+      throw new Error('The thread directory has changed.')
+    }
+    return { directory, ...launch }
+  }
   // The renderer names a terminal and an expected cwd, never an arbitrary filesystem root.
   const terminalDirectory = async (req: TerminalDirectoryRequest): Promise<Session> => {
     if (!isFileRoot(req) || !req.terminalId) throw new Error('Invalid terminal directory request.')
@@ -629,6 +651,9 @@ export function registerIpcHandlers(
     if (req.removeWorktree) await chat.removeThreadWorktree(req.id)
     await chat.removeDraft(`thread:${req.id}`)
     inboxRecorder.remove(req.id)
+    const terminalId = inboxThreadTerminalId(req.id)
+    pendingEnsures.delete(terminalId)
+    ptyManager.dispose(terminalId)
   })
   handle<void, InboxFoldersState>(IpcChannels.inboxFolders, () => chat.folders())
   handle<InboxAddFolderRequest, InboxFolder>(IpcChannels.inboxFoldersAdd, async (req) => {
@@ -710,7 +735,8 @@ export function registerIpcHandlers(
       // still existing, or on the terminal that originally opened the picker.
       const reattaching = req.launch && 'opencodeSessionId' in req.launch &&
         ptyManager.terminalInfo(req.terminalId)?.sessionId === session.id
-      const launch = reattaching ? undefined : await resolvePtyLaunchOptions(ptyManager, session, req.launch)
+      const launch = await threadTerminalLaunch(req, session) ??
+        (reattaching ? undefined : await resolvePtyLaunchOptions(ptyManager, session, req.launch))
       if (pendingEnsures.get(req.terminalId) !== pending) return 'none'
       return ptyManager.ensure(
         req.terminalId,
@@ -729,7 +755,7 @@ export function registerIpcHandlers(
     try {
       const session = await getTerminalSession(req.sessionId)
       if (!session) return 'none'
-      const launch = await resolvePtyReplacementOptions(ptyManager, session, req)
+      const launch = await threadTerminalLaunch(req, session) ?? await resolvePtyReplacementOptions(ptyManager, session, req)
       if (pendingEnsures.get(req.terminalId) !== pending) return 'none'
       return ptyManager.restart(
         req.terminalId,

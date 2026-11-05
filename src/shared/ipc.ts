@@ -283,7 +283,7 @@ export type FilesReadRequest = FileRoot & {
 export interface EnsurePtyRequest {
   /** Runtime terminal identity, unique even when panes share a session. */
   terminalId: string
-  /** Persisted workspace session used as the launch source. */
+  /** Workspace session or reserved Inbox terminal identity resolved by the main process. */
   sessionId: string
   size: PtySize
   palette: TerminalPalette

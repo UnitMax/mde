@@ -37,6 +37,8 @@ export interface PtyTerminalInfo {
 }
 
 export interface PtyLaunchOptions {
+  /** Main-owned values passed in the child environment, never as command-line arguments. */
+  environment?: Record<string, string>
   directory?: string
   agent?: AgentCommand
   /** Hand the terminal back to the shell when the agent exits. */
@@ -178,7 +180,15 @@ export class PtyManager {
 
     // Resolve before preparing integrations, which can start status timers.
     const context = launchContext(session)
+    const forwardedKeys = Object.keys(options?.environment ?? {})
+    if (forwardedKeys.some((key) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key))) throw new Error('Invalid terminal environment variable.')
     const environment = this.prepareIntegrations(terminalId, session)
+    const processEnvironment = ptyEnv({ ...environment, ...options?.environment })
+    if (session.kind === 'wsl' && options?.environment) {
+      // WSLENV forwards these from Windows into WSL without putting their values in wsl.exe argv.
+      const inherited = (processEnvironment.WSLENV ?? '').split(':').filter((entry) => entry && !forwardedKeys.includes(entry.split('/')[0]!))
+      processEnvironment.WSLENV = [...inherited, ...forwardedKeys.map((key) => `${key}/u`)].join(':')
+    }
     const spec = buildLaunchSpec(session, {
       ...context,
       environment,
@@ -196,7 +206,7 @@ export class PtyManager {
         cols,
         rows,
         cwd: spec.cwd ?? homedir(),
-        env: ptyEnv(environment),
+        env: processEnvironment,
       }, process.platform)
     } catch (error) {
       this.disposeIntegrations(terminalId)

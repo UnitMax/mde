@@ -149,7 +149,7 @@ function osc52NoticeMessage(notice: Osc52Notice): string {
   return 'Blocked a clipboard write from a terminal that was not in the foreground.'
 }
 
-function TerminalSurface({
+export function TerminalSurface({
   session: sourceSession,
   pane,
   onFocus,

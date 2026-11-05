@@ -154,6 +154,30 @@ background service directly (see Inbox chat). It is locked, with an explanation,
 cannot reach that service: everywhere except macOS and Windows with WSL. The main area shows the
 selected thread's conversation, or the new-thread page when nothing is selected.
 
+The new-thread composer offers **GUI** (the default for every fresh page) and **Terminal**. Both
+create the same OpenCode API session with the selected folder or worktree, agent, model and variant,
+then submit the same first message, attachments and skill mentions through the API. Terminal mode
+opens the native OpenCode TUI in the main conversation area using `--session` and that session ID,
+with `--server` pointing explicitly to the service Inbox uses. Its password stays in the main process
+and the child environment; WSL receives it through `WSLENV`, never command-line arguments.
+The Inbox sidebar, statuses, unread activity, pinning, parking, forks, Files and Changes continue to
+use the same thread record and APIs. Background creation starts the agent through the API immediately;
+the terminal attaches when the thread is opened. Switching away detaches the terminal view while its
+PTY and scrollback stay alive. **Reopen OpenCode** reattaches to the same conversation after the TUI
+exits; restarting MDE creates a fresh terminal for the saved conversation. Removing the thread disposes
+its terminal too. An unfinished message preserved by a sidebar fork is shown above the terminal as
+a saved draft, with an explicit send action; it is never submitted automatically. A failed first
+message can likewise be retried without creating another session. The shared shell in the right
+sidebar remains independent.
+
+Only new terminal threads store `mode: "terminal"`; older threads continue in GUI mode. Drafts
+remember the chosen interface and forks inherit it. Each terminal thread has one reserved
+`inbox-thread:<sessionID>` terminal/session identity. Main resolves its folder, target and configured
+OpenCode executable from trusted Inbox state and refuses renderer launch overrides. These terminals
+skip the optional status plugin integration: sidebar activity comes from OpenCode service events.
+The association follows the conversation the thread was created for; switching to another conversation
+inside OpenCode's TUI does not relink the Inbox thread.
+
 Threads are only the ones started in the Inbox; conversations run in terminals, and OpenCode's
 history, are never imported. In the main process `src/main/inbox/recorder.ts` records each new
 thread and applies the OpenCode service events of the threads it holds:

@@ -30,7 +30,8 @@ MDE stores data only on the local machine:
 - Small preference files in the user-data directory for the OpenCode status integration and
   notifications.
 - `inbox.json` under Electron's user-data directory, once you use the Inbox: one record for each
-  OpenCode conversation you started in the Inbox, with its session ID, title, folder, target (Mac
+  OpenCode conversation you started in the Inbox, with its session ID, title, folder, terminal chat mode
+  when chosen (older threads use GUI chat), target (Mac
   or WSL distro), Git branch, model and provider identifiers, last status, timestamps (including,
   while a conversation is working, when its current run began), read, archived and pinned flags, and for a forked conversation the session ID of the one it was forked from. For a conversation started in a Git worktree it also holds that worktree's root path, the repository's path, and the names of the new branch and the branch it was cut from. It also holds the Inbox folders you add (path, target, name, timestamps; at most 200), the worktrees MDE created for you (the same record and a name made from the folder and branch; at most 100, so that more conversations can be started in them) and the folder, model and agent
   you last chose in the Inbox composer. It never holds prompts, messages or tool data. It keeps at
@@ -55,8 +56,11 @@ The Inbox chat view talks to the same OpenCode background service directly. To f
 `opencode service start` (which does nothing when the service is already running) and reads
 OpenCode's `service.json` state file from the command's standard output, on the Mac or in the
 WSL distro. That file holds the service's local address and the password OpenCode generated for
-it. MDE keeps the password in the main process's memory only, sends it only to that loopback
+it. MDE keeps the password in the main process's memory, sends it only to that loopback
 address as HTTP Basic auth, and never writes it to disk, logs it or passes it to the renderer.
+Terminal chat passes the same password to its OpenCode child process through the environment
+(`WSLENV` forwards it into WSL), so the terminal attaches to the same service. It is never placed
+in command-line arguments.
 Conversations, the messages the service is holding for a busy agent, tool input and output, permission
 requests and questions are fetched from the
 service when a thread is opened and are kept in memory only (the renderer keeps the last ten
@@ -114,7 +118,7 @@ Electron's user-data directory. `index.json` stores unsent prompt text, filename
 sizes, revisions and generated attachment IDs; `attachments/` holds the copied contents.
 These local drafts are not encrypted. They survive app restarts and changes to the original
 files. Each thread has its own draft, and any number of unsent new threads are kept as drafts of
-their own, each noting the folder it was written for, how it would start (agent, model, and the
+their own, each noting the folder it was written for, how it would start (GUI or Terminal, agent, model, and the
 worktree branch and name if a new worktree was chosen) and when it last changed; the Inbox lists them
 in its sidebar and marks the threads that have an unsent message. Removing an attachment, successfully sending its draft, deleting a new-thread
 draft from the sidebar, or removing a thread deletes the relevant copies. Removing a folder from the
@@ -144,7 +148,7 @@ continues to use the selected thread or folder.
 
 MDE does not make automatic network requests. It reads local files and invokes local commands to support terminal sessions and file actions: Git for repository status (and, when you start an Inbox conversation in a new worktree or delete one with its worktree, to create or remove that worktree; MDE never runs `git fetch` or any other Git network command), `wsl.exe` on Windows, and the configured OpenCode executable for the session picker and to find the OpenCode background service.
 
-The Inbox chat view makes HTTP requests, and holds an event stream open, to the OpenCode background service on a loopback address (`127.0.0.1`, `localhost` or `[::1]`) only; MDE refuses any other address in the service's state file. On Windows these reach the service inside WSL through WSL's localhost forwarding. MDE starts these connections only while OpenCode status reporting is on and a chat thread is in use. Any internet traffic that follows, such as calls to a model provider, is made by OpenCode, not by MDE.
+The Inbox makes HTTP requests, and holds an event stream open, to the OpenCode background service on a loopback address (`127.0.0.1`, `localhost` or `[::1]`) only; MDE refuses any other address in the service's state file. On Windows these reach the service inside WSL through WSL's localhost forwarding. These connections support Inbox options, conversations and background thread activity in either GUI or Terminal mode, independently of the optional terminal status plugin and status reporting setting. Any internet traffic that follows, such as calls to a model provider, is made by OpenCode, not by MDE.
 
 MDE also disables Chromium's DNS-over-HTTPS upgrade at startup, with `app.configureHostResolver({ secureDnsMode: 'off' })`. Chromium's default mode would otherwise route name resolution through a DoH provider whenever the system resolver is a recognized one, without any application code asking it to. Because MDE resolves no hostnames of its own, the result is no DNS traffic rather than a fallback to plaintext DNS, and the statement above holds regardless of how the user's machine is configured to resolve names.
 

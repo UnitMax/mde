@@ -81,6 +81,7 @@ export function validateInboxThread(raw: unknown): InboxThread | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   const record = raw as Record<string, unknown>
   if (!isInboxThreadId(record.id)) return null
+  if (record.mode !== undefined && record.mode !== 'gui' && record.mode !== 'terminal') return null
   if (!text(record.title, INBOX_TITLE_MAX_LENGTH)) return null
   if (!text(record.directory, INBOX_DIRECTORY_MAX_LENGTH)) return null
   const target = validateTarget(record.target)
@@ -99,6 +100,7 @@ export function validateInboxThread(raw: unknown): InboxThread | null {
   const worktree = validateWorktree(record.worktree)
   return {
     id: record.id,
+    ...(record.mode === 'terminal' ? { mode: 'terminal' as const } : {}),
     title: record.title,
     directory: record.directory,
     target,

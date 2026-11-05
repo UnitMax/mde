@@ -39,7 +39,7 @@ function setup(responses: Partial<Record<ServiceOperation, unknown>> = {}, draft
   const service = new InboxChatService({
     drafts,
     worktrees,
-    client: { request, openEvents, reset: vi.fn() },
+    client: { request, openEvents, reset: vi.fn(), endpoint: async () => ({ url: 'http://127.0.0.1:49374', password: 'test-password' }) },
     store,
     recorder,
     send: (event) => events.push(event),
@@ -58,6 +58,44 @@ function setup(responses: Partial<Record<ServiceOperation, unknown>> = {}, draft
 }
 
 describe('Inbox chat service', () => {
+  it('creates terminal chats with the same API choices and records their status without a plugin', async () => {
+    const { service, folder, calls, store, advance, disable } = setup({
+      'session.create': { data: { id: 'ses_terminal', title: 'Terminal task' } },
+    })
+    const chosen = { ...model, variant: 'high' }
+    const thread = await service.create({ folderId: folder.id, text: 'Review the tests', agent: 'plan', model: chosen, mode: 'terminal' })
+    expect(thread).toMatchObject({ id: 'ses_terminal', mode: 'terminal', directory: folder.directory, model: chosen })
+    expect(calls).toEqual([
+      { operation: 'session.create', request: { body: { agent: 'plan', model: { id: model.id, providerID: model.providerId, variant: 'high' }, location: { directory: folder.directory } } } },
+      { operation: 'session.prompt', request: { params: { sessionID: thread.id }, body: { text: 'Review the tests' } } },
+    ])
+    expect(service.terminalSession(thread.id)).toMatchObject({ id: 'inbox-thread:ses_terminal', kind: 'wsl', distro: 'Ubuntu-24.04', path: folder.directory })
+    expect(await service.terminalLaunch(thread.id)).toEqual({
+      agent: { executable: 'opencode', args: ['--server', 'http://127.0.0.1:49374', '--session', thread.id] },
+      environment: { OPENCODE_PASSWORD: 'test-password' },
+    })
+    const emit = service as unknown as { onEvent(event: { type: string; data: Record<string, unknown> }): void }
+    advance(100)
+    emit.onEvent({ type: 'permission.asked', data: { sessionID: thread.id, id: 'per_one' } })
+    expect(store.get(thread.id)).toMatchObject({ mode: 'terminal', status: 'attention', attentionReason: 'permission' })
+    expect(isInboxThreadUnread(store.get(thread.id)!)).toBe(true)
+    emit.onEvent({ type: 'session.renamed', data: { sessionID: thread.id, title: 'Reviewed tests' } })
+    emit.onEvent({ type: 'session.execution.succeeded', data: { sessionID: thread.id } })
+    expect(store.get(thread.id)).toMatchObject({ title: 'Reviewed tests', status: 'completed', mode: 'terminal' })
+    store.remove(thread.id)
+    expect(() => service.terminalSession(thread.id)).toThrow('no longer in the Inbox')
+    disable()
+    expect(() => service.terminalSession(thread.id)).toThrow('only available on macOS')
+    service.stop()
+  })
+
+  it('does not allow a GUI thread to be launched through the terminal thread route', async () => {
+    const { service, folder } = setup({ 'session.create': { data: { id: 'ses_gui' } } })
+    await service.create({ folderId: folder.id, text: 'Hello', agent: 'build', model })
+    expect(() => service.terminalSession('ses_gui')).toThrow('GUI chat')
+    service.stop()
+  })
+
   it('regenerates natively and reconciles the title when no event arrives, preserving metadata', async () => {
     const { service, folder, calls, store, request } = setup({
       'session.create': { data: { id: 'ses_new', title: 'Original' } },

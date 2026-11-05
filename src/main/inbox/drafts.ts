@@ -40,8 +40,9 @@ const short = (value: unknown, max: number): value is string => typeof value ===
  */
 function cleanChoice(value: unknown): ChatDraftChoice | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
-  const { agent, model, worktree } = value as Record<string, unknown>
+  const { agent, model, worktree, mode } = value as Record<string, unknown>
   const choice: ChatDraftChoice = {}
+  if (mode === 'gui' || mode === 'terminal') choice.mode = mode
   if (short(agent, 128)) choice.agent = agent
   if (model && typeof model === 'object') {
     const { id, providerId, variant } = model as Record<string, unknown>

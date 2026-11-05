@@ -39,6 +39,12 @@ function setup(options: { branch?: () => Promise<string | null> } = {}) {
 }
 
 describe('inbox recorder: forked threads', () => {
+  it('keeps terminal mode when forking a terminal thread', () => {
+    const { recorder, start } = setup()
+    const source = { ...start(), mode: 'terminal' as const }
+    expect(recorder.recordForkedThread({ id: 'ses_fork', source })).toMatchObject({ mode: 'terminal', forkedFrom: source.id, status: 'idle' })
+  })
+
   it('records a fork as an idle, read thread in the source\'s folder, pointing back at the source', () => {
     const { start, recorder, thread, changed, advance, store } = setup()
     start('ses_one', 'Fix login')

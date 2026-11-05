@@ -27,6 +27,7 @@ import type {
 } from '@shared/types'
 import { fileRootTerminalId } from '@/lib/file-root'
 import { disposeSession } from '@/terminal/sessions'
+import { inboxThreadTerminalId } from '@shared/inbox-thread-terminal'
 import { viewportSettle } from '@/terminal/viewport-settle'
 import { isInboxThreadUnread } from '@/lib/inbox'
 import type { TerminalTaskLinks } from '@/lib/terminal-task-links'
@@ -887,6 +888,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   removeInboxThread: async (id, options) => {
     await window.api.inbox.remove({ id, ...(options?.removeWorktree ? { removeWorktree: true } : {}) })
+    const terminalId = inboxThreadTerminalId(id)
+    disposeSession(terminalId)
+    get().setStatus(terminalId, 'none')
+    get().clearExit(terminalId)
+    get().setTerminalDirectory({ terminalId, directory: null })
     set((state) => {
       const { [id]: _marked, ...inboxMarkedUnread } = state.inboxMarkedUnread
       const { [id]: _cue, ...inboxCues } = state.inboxCues

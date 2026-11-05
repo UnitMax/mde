@@ -300,6 +300,7 @@ describe('native status plugin management', () => {
     managers.push(manager)
     await manager.configure(config)
     await manager.setEnabled(true)
+    expect(manager.prepare('inbox-thread:ses_chat', { ...native, id: 'inbox-thread:ses_chat' })).toBeUndefined()
     const first = manager.prepare('first', native)!
     const second = manager.prepare('second', native)!
     expect(first.MDE_OPENCODE_STATUS_FILE).not.toBe(second.MDE_OPENCODE_STATUS_FILE)

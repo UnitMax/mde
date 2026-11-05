@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, FolderPlus, Trash2 } from 'lucide-react'
-import type { ChatDraftChoice, InboxFolder, InboxGitBranch, OpenCodeModelRef } from '@shared/types'
+import type { ChatDraftChoice, InboxFolder, InboxGitBranch, InboxThreadMode, OpenCodeModelRef } from '@shared/types'
 import { worktreeBranchConflict, worktreeBranchProblem } from '@shared/worktree-branch'
 import { Button } from '@/components/ui/button'
 import {
@@ -13,6 +13,7 @@ import {
 import { AddInboxFolderDialog } from '@/components/inbox/AddInboxFolderDialog'
 import { ChatComposer } from '@/components/inbox/ChatComposer'
 import { McpChip } from '@/components/inbox/McpChip'
+import { ThreadModeSwitch } from '@/components/inbox/ThreadModeSwitch'
 import { WorktreeBar, useInboxGit, type WorktreeMode } from '@/components/inbox/WorktreeBar'
 import { findModel, initialChoice } from '@/lib/chat'
 import { defaultWorktreeBase, inboxWorktreeSource } from '@/lib/inbox'
@@ -85,11 +86,13 @@ function FolderItem({
 /** The agent and model picked on one page; what was not picked follows the last choice made anywhere. */
 interface Picked {
   pageId: string
+  mode?: InboxThreadMode
   agent?: string
   model?: OpenCodeModelRef
 }
 
-const pickedFrom = (choice: ChatDraftChoice | undefined): { agent?: string; model?: OpenCodeModelRef } => ({
+const pickedFrom = (choice: ChatDraftChoice | undefined): Omit<Picked, 'pageId'> => ({
+  ...(choice?.mode ? { mode: choice.mode } : {}),
   ...(choice?.agent ? { agent: choice.agent } : {}),
   ...(choice?.model ? { model: choice.model } : {}),
 })
@@ -136,6 +139,7 @@ export function NewThreadView(): JSX.Element {
   // picked nothing, and follows the last choice made anywhere. Kept per page, so another page starts over.
   const [picked, setPicked] = useState<Picked>(() => ({ pageId: page.id, ...pickedFrom(page.choice) }))
   const pick: Picked = picked.pageId === page.id ? picked : { pageId: page.id, ...pickedFrom(page.choice) }
+  const mode = pick.mode ?? 'gui'
   // Where the thread runs. Every blank page starts in the folder itself, so a worktree is always a choice; a
   // draft that had one chosen has it again, and changing the folder takes it away, since the branches differ.
   const [where, setWhere] = useState<Where>(() => ({ pageId: page.id, folderId, ...whereFrom(page.folderId === folderId ? page.choice : undefined) }))
@@ -182,6 +186,7 @@ export function NewThreadView(): JSX.Element {
     ? {
         agent,
         model,
+        ...(mode === 'terminal' ? { mode } : {}),
         ...(!locked && here.mode === 'worktree' && savedBase ? { worktree: { base: savedBase, ...(chosenBranch ? { branch: chosenBranch } : {}) } } : {}),
       }
     : undefined
@@ -283,7 +288,12 @@ export function NewThreadView(): JSX.Element {
             placeholder="Describe what you want to build or change"
             sendBlocked={Boolean(branchProblem)}
             // The servers of the folder itself: a new worktree loads its own, so then they are shown but not switched.
-            extraPickers={<McpChip place={{ request: { folderId: folder.id }, target: folder.target, directory: folder.directory }} readOnly={choosing} />}
+            extraPickers={(
+              <>
+                <McpChip place={{ request: { folderId: folder.id }, target: folder.target, directory: folder.directory }} readOnly={choosing} />
+                <ThreadModeSwitch value={mode} onChange={(next) => setPicked({ ...pick, mode: next })} />
+              </>
+            )}
             footer={git && (
               <WorktreeBar
                 info={git}
@@ -300,7 +310,7 @@ export function NewThreadView(): JSX.Element {
             )}
             onSend={async (text, { background, ...attachments } = {}) => {
               if (!agent || !model) return
-              await createThread({ folderId: folder.id, text, agent, model, draftId: page.id, ...attachments, ...(worktree ? { worktree } : {}) }, { background })
+              await createThread({ folderId: folder.id, text, agent, model, draftId: page.id, ...attachments, ...(mode === 'terminal' ? { mode } : {}), ...(worktree ? { worktree } : {}) }, { background })
               const drafts = useInboxDrafts.getState()
               if (background && drafts.page.id === page.id) {
                 drafts.leave()

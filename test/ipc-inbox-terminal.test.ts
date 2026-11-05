@@ -1,6 +1,9 @@
 import { homedir } from 'node:os'
+import { promises as fs } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { trustedIpcSender } from './helpers/ipc-sender'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Session } from '../src/shared/types'
 
 type Handler = (event: unknown, request: unknown) => Promise<unknown> | unknown
@@ -27,11 +30,16 @@ const workspaceMock = vi.hoisted(() => ({
 
 vi.mock('electron', () => electronMock)
 vi.mock('../src/main/store/workspace', () => workspaceMock)
-vi.mock('../src/main/wsl/paths', () => ({ canonicalizeWslPath: vi.fn(), resolveForTarget: vi.fn(), toWindows: vi.fn(), uncPathFor: vi.fn() }))
+vi.mock('../src/main/wsl/paths', async () => ({
+  ...await vi.importActual('../src/main/wsl/paths'),
+  canonicalizeWslPath: vi.fn(), resolveForTarget: vi.fn(), toWindows: vi.fn(), uncPathFor: vi.fn(),
+}))
 vi.mock('../src/main/wsl/distros', () => ({ isWslAvailable: vi.fn(), listDistros: vi.fn(), runWslCommand: vi.fn() }))
 
 import { IpcChannels } from '../src/shared/ipc'
 import { registerIpcHandlers } from '../src/main/ipc'
+import { canonicalizeWslPath } from '../src/main/wsl/paths'
+import { runWslCommand } from '../src/main/wsl/distros'
 
 const { security, event: trustedEvent } = trustedIpcSender()
 const size = { cols: 80, rows: 24 }
@@ -72,5 +80,80 @@ describe('the Inbox terminal over IPC', () => {
   it('does not let anything but a terminal request name it: session file access is not available', async () => {
     await expect(handler(IpcChannels.filesList)(trustedEvent, { sessionId: 'inbox-terminal', path: '' })).rejects.toThrow()
     expect(workspaceMock.getSession).toHaveBeenCalledWith('inbox-terminal')
+  })
+})
+
+describe('Inbox terminal chat launches over IPC', () => {
+  const terminalId = 'inbox-thread:ses_chat'
+  let directory: string
+  const pty = { ensure: vi.fn(() => 'running'), restart: vi.fn(() => 'running'), terminalInfo: vi.fn(), dispose: vi.fn() }
+  const launch = { agent: { executable: 'custom-opencode', args: ['--server', 'http://127.0.0.1:49374', '--session', 'ses_chat'] }, environment: { OPENCODE_PASSWORD: 'test-password' } }
+  const chat = { terminalSession: vi.fn(), terminalLaunch: vi.fn(async () => launch), removeDraft: vi.fn(), removeThreadWorktree: vi.fn() }
+  const recorder = { remove: vi.fn() }
+  const request = () => ({ terminalId, sessionId: terminalId, size, palette })
+
+  beforeEach(async () => {
+    directory = await fs.mkdtemp(join(tmpdir(), 'mde-thread-terminal-'))
+    vi.clearAllMocks()
+    electronMock.handlers.clear()
+    chat.terminalSession.mockImplementation(() => ({ id: terminalId, projectId: '', name: 'Chat', kind: 'native', path: directory, createdAt: '' }))
+    registerIpcHandlers(security, pty as never, {} as never, {} as never, {} as never, {} as never, { chat, recorder } as never)
+  })
+
+  afterEach(async () => {
+    vi.restoreAllMocks()
+    await fs.rm(directory, { recursive: true, force: true })
+  })
+
+  it('attaches to the recorded API conversation and uses the configured executable on ensure and reopen', async () => {
+    for (const channel of [IpcChannels.ptyEnsure, IpcChannels.ptyRestart]) {
+      await expect(handler(channel)(trustedEvent, request())).resolves.toBe('running')
+    }
+    for (const fn of [pty.ensure, pty.restart]) {
+      expect(fn).toHaveBeenCalledWith(terminalId, expect.objectContaining({ path: directory }), size, palette, {
+        directory,
+        ...launch,
+      })
+    }
+    expect(workspaceMock.getSession).not.toHaveBeenCalled()
+  })
+
+  it('rejects other pane identities, launch overrides, missing threads and removed folders', async () => {
+    await expect(handler(IpcChannels.ptyEnsure)(trustedEvent, { ...request(), terminalId: 'another-pane' })).rejects.toThrow('Invalid Inbox')
+    await expect(handler(IpcChannels.ptyEnsure)(trustedEvent, { ...request(), launch: { sourceTerminalId: 'pane', directory: 'terminal' } })).rejects.toThrow('Invalid Inbox')
+    await fs.rm(directory, { recursive: true })
+    await expect(handler(IpcChannels.ptyEnsure)(trustedEvent, request())).rejects.toThrow('directory is not available')
+    chat.terminalSession.mockImplementation(() => { throw new Error('Thread no longer exists') })
+    await expect(handler(IpcChannels.ptyEnsure)(trustedEvent, request())).rejects.toThrow('no longer exists')
+    expect(pty.ensure).not.toHaveBeenCalled()
+  })
+
+  it('uses the thread’s recorded WSL distro and worktree directory', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    const path = '/home/me/worktrees/task'
+    chat.terminalSession.mockImplementation(() => ({ id: terminalId, projectId: '', name: 'Chat', kind: 'wsl', distro: 'Ubuntu-24.04', path, createdAt: '' }))
+    vi.mocked(canonicalizeWslPath).mockResolvedValue(path)
+    vi.mocked(runWslCommand).mockResolvedValue({ stdout: '', stderr: '', code: 0 })
+    await handler(IpcChannels.ptyEnsure)(trustedEvent, request())
+    expect(pty.ensure).toHaveBeenCalledWith(terminalId, expect.objectContaining({ kind: 'wsl', distro: 'Ubuntu-24.04', path }), size, palette, {
+      directory: path, ...launch,
+    })
+  })
+
+  it('rejects a thread removed while its directory is being checked', async () => {
+    chat.terminalSession.mockImplementationOnce(() => ({ id: terminalId, projectId: '', name: 'Chat', kind: 'native', path: directory, createdAt: '' }))
+      .mockImplementationOnce(() => { throw new Error('Thread no longer exists') })
+    await expect(handler(IpcChannels.ptyEnsure)(trustedEvent, request())).rejects.toThrow('no longer exists')
+    expect(pty.ensure).not.toHaveBeenCalled()
+  })
+
+  it('disposes the associated terminal only after removing the thread succeeds', async () => {
+    await handler(IpcChannels.inboxRemove)(trustedEvent, { id: 'ses_chat' })
+    expect(recorder.remove).toHaveBeenCalledWith('ses_chat')
+    expect(pty.dispose).toHaveBeenCalledWith(terminalId)
+    pty.dispose.mockClear()
+    chat.removeThreadWorktree.mockRejectedValueOnce(new Error('Worktree is dirty'))
+    await expect(handler(IpcChannels.inboxRemove)(trustedEvent, { id: 'ses_chat', removeWorktree: true })).rejects.toThrow('dirty')
+    expect(pty.dispose).not.toHaveBeenCalled()
   })
 })

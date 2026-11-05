@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { nativeOpenCodeConfigDirectory } from '../native-environment'
+import { inboxTerminalThreadId } from '@shared/inbox-thread-terminal'
 import type {
   OpenCodeTuiAttentionReason,
   OpenCodeTuiInstanceLabelMode,
@@ -498,6 +499,8 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
   }
 
   prepare(terminalId: string, session: Session): Record<string, string> | undefined {
+    // Inbox owns the API session ID and receives its status directly from the service.
+    if (inboxTerminalThreadId(session.id)) return undefined
     const native = this.dependencies.platform === 'darwin' && session.kind === 'native'
     const wsl = this.dependencies.platform === 'win32' && session.kind === 'wsl' && session.distro
     if (!this.enabled || (!native && !wsl) || (native && !this.nativeStatusRoot)) {
