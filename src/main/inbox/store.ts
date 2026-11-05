@@ -5,8 +5,8 @@ import type {
   InboxThread,
   InboxWorktree,
   OpenCodeModelRef,
-  OpenCodePluginTarget,
-  OpenCodeTuiStatus
+  OpenCodeTarget,
+  InboxThreadStatus
 } from '@shared/types'
 import { writeJsonAtomic } from '../store/atomic-json'
 
@@ -48,12 +48,12 @@ function timestamp(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
 }
 
-function isStatus(value: unknown): value is OpenCodeTuiStatus {
+function isStatus(value: unknown): value is InboxThreadStatus {
   return value === 'idle' || value === 'working' || value === 'attention' ||
     value === 'completed' || value === 'error'
 }
 
-function validateTarget(value: unknown): OpenCodePluginTarget | null {
+function validateTarget(value: unknown): OpenCodeTarget | null {
   if (!value || typeof value !== 'object') return null
   const record = value as Record<string, unknown>
   if (record.kind === 'native') return { kind: 'native' }

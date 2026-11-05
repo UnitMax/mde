@@ -18,10 +18,6 @@ export interface LaunchContext {
   windowsExecutable?: HostExecutable
   /** process.env.SHELL on the host, if set. */
   defaultShell?: string
-  /** Environment variables that should be inherited by native target shells. */
-  environment?: Record<string, string>
-  /** Environment variables that should be inherited by commands inside WSL. */
-  wslEnvironment?: Record<string, string>
   /** Validated runtime directory override, used by a pane cloned from another terminal. */
   workingDirectory?: string
   /** Direct command to run after the target shell has loaded its login environment. */
@@ -248,15 +244,6 @@ exit $?
 `.trim()
 }
 
-function wslEnvironmentArgs(environment: Record<string, string> | undefined): string[] {
-  if (!environment) return []
-  return Object.entries(environment)
-    .filter(([key]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key))
-    // These are argv entries to `env`, not shell source. Keeping each value as
-    // one entry preserves spaces, quotes, and other path characters exactly.
-    .map(([key, value]) => `${key}=${value}`)
-}
-
 /**
  * Builds the spawn command for a session. This is the seam a future remote
  * integration slots into — nothing else needs to know how a shell is started.
@@ -274,11 +261,7 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
     const executable = context.windowsExecutable
     if (!executable?.cwd) throw new Error('A resolved Windows WSL executable and host directory are required.')
 
-    const environment = wslEnvironmentArgs({
-      ...context.environment,
-      ...context.wslEnvironment,
-      ...WSL_TERMINAL_ENVIRONMENT
-    })
+    const environment = Object.entries(WSL_TERMINAL_ENVIRONMENT).map(([key, value]) => `${key}=${value}`)
     return {
       file: assertWindowsExecutablePath(executable.file),
       cwd: assertWindowsExecutablePath(executable.cwd, 'Windows host directory'),

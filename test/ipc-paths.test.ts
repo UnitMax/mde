@@ -109,8 +109,6 @@ function registerForTest(
     { terminalInfo, ensure } as never,
     {} as never,
     {} as never,
-    {} as never,
-    {} as never,
     { chat: { fileRoot: () => null }, recorder: {} } as never
   )
 }

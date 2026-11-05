@@ -9,7 +9,6 @@ import {
   ChevronDown,
   ChevronRight,
   Check,
-  CircleAlert,
   Code,
   Copy,
   Folder,
@@ -17,7 +16,6 @@ import {
   FolderPlus,
   GripVertical,
   Inbox,
-  LoaderCircle,
   ListTodo,
   MoreHorizontal,
   PanelLeftClose,
@@ -29,7 +27,6 @@ import {
   Trash2
 } from 'lucide-react'
 import type {
-  OpenCodeTuiInstanceStatus,
   Project,
   PtyStatus,
   Session,
@@ -74,12 +71,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { cn } from '@/lib/utils'
 import {
   useWorkspace,
-  type OpenCodeTuiStatusState,
   type WorkspaceView
 } from '@/store/workspace'
-import { OpenCodeNotificationBadge } from '@/components/OpenCodeNotificationBadge'
 import { SessionEnvironmentPanel } from '@/components/SessionEnvironmentPanel'
-import { openCodeStatusLabel } from '@/lib/opencode-tui-status'
 import {
   DEFAULT_SESSION_COLOR,
   SESSION_COLORS,
@@ -88,7 +82,6 @@ import {
 import { SESSION_ICONS, sessionIconOption } from '@shared/session-icons'
 import type { SessionTerminalLayout } from '@/terminal/layout'
 import { sessionTabs } from '@/terminal/tabs'
-import { countOpenCodeTuiNotifications } from '@/lib/opencode-tui-notifications'
 import { InboxPanel } from '@/components/InboxPanel'
 import { countUnreadInboxThreads } from '@/lib/inbox'
 import {
@@ -105,8 +98,6 @@ const STATUS_STYLE: Record<PtyStatus, { dot: string; label: string }> = {
   running: { dot: 'bg-ok', label: 'Shell running' },
   exited: { dot: 'bg-danger', label: 'Shell exited' }
 }
-
-type OpenCodeIndicatorStatus = 'idle' | 'working' | 'attention' | 'completed' | 'error'
 
 const SIDEBAR_SECTIONS = [
   { id: 'projects' as const, label: 'Projects', Icon: Folder },
@@ -191,46 +182,12 @@ function SidebarSectionNavigation({
 }
 
 interface SessionIndicator {
-  status: PtyStatus | OpenCodeIndicatorStatus
+  status: PtyStatus
   dot: string
   label: string
-  row?: string
 }
 
-const OPENCODE_STATUS_STYLE: Record<OpenCodeIndicatorStatus, Omit<SessionIndicator, 'status'>> = {
-  idle: { dot: 'bg-fg-subtle', label: 'OpenCode idle' },
-  working: { dot: 'text-accent', label: 'OpenCode is working' },
-  attention: { dot: 'text-accent', label: 'OpenCode needs input', row: 'bg-accent/10' },
-  completed: { dot: 'bg-ok', label: 'OpenCode finished', row: 'bg-ok/10' },
-  error: { dot: 'bg-danger', label: 'OpenCode request failed', row: 'bg-danger/10' }
-}
-
-function attentionIndicator(reason: 'permission' | 'question'): SessionIndicator {
-  return {
-    status: 'attention',
-    dot: 'text-accent',
-    label: openCodeStatusLabel('attention', reason),
-    row: 'bg-accent/10'
-  }
-}
-
-function sessionIndicator(
-  status: PtyStatus,
-  tuiStatus?: OpenCodeTuiStatusState
-): SessionIndicator {
-  if (tuiStatus) {
-    const visualStatus = (tuiStatus.status === 'completed' || tuiStatus.status === 'error') && !tuiStatus.unread
-      ? 'idle'
-      : tuiStatus.status
-    if (visualStatus === 'attention') {
-      return attentionIndicator(tuiStatus.attentionReason ?? 'permission')
-    }
-    return {
-      status: visualStatus,
-      ...OPENCODE_STATUS_STYLE[visualStatus],
-      label: openCodeStatusLabel(visualStatus, tuiStatus.attentionReason)
-    }
-  }
+function sessionIndicator(status: PtyStatus): SessionIndicator {
   return { status, ...STATUS_STYLE[status] }
 }
 
@@ -238,43 +195,9 @@ function customSessionColor(color: Session['color']): Session['color'] {
   return color && color !== DEFAULT_SESSION_COLOR ? color : undefined
 }
 
-function sessionStatusTint(status: SessionIndicator['status']): string | undefined {
-  switch (status) {
-    case 'attention':
-      return 'linear-gradient(color-mix(in srgb, var(--color-accent) 12%, transparent), color-mix(in srgb, var(--color-accent) 12%, transparent))'
-    case 'completed':
-      return 'linear-gradient(color-mix(in srgb, var(--color-ok) 12%, transparent), color-mix(in srgb, var(--color-ok) 12%, transparent))'
-    case 'error':
-      return 'linear-gradient(color-mix(in srgb, var(--color-danger) 14%, transparent), color-mix(in srgb, var(--color-danger) 14%, transparent))'
-    default:
-      return undefined
-  }
-}
-
-function customSessionStatusRing(status: SessionIndicator['status']): string | undefined {
-  switch (status) {
-    case 'attention':
-      return 'ring-1 ring-inset ring-accent/70'
-    case 'completed':
-      return 'ring-1 ring-inset ring-ok/70'
-    case 'error':
-      return 'ring-1 ring-inset ring-danger/70'
-    default:
-      return undefined
-  }
-}
-
-function sessionBackgroundStyle(
-  color: Session['color'],
-  indicator: SessionIndicator
-): { backgroundColor: string; backgroundImage?: string } | undefined {
+function sessionBackgroundStyle(color: Session['color']): { backgroundColor: string } | undefined {
   const customColor = customSessionColor(color)
-  if (!customColor) return undefined
-  const tint = sessionStatusTint(indicator.status)
-  return {
-    backgroundColor: sessionColorHex(customColor),
-    ...(tint ? { backgroundImage: tint } : {})
-  }
+  return customColor ? { backgroundColor: sessionColorHex(customColor) } : undefined
 }
 
 function StatusDot({
@@ -290,20 +213,6 @@ function StatusDot({
     'data-testid': testId,
     'data-status': indicator.status,
     title: indicator.label
-  }
-
-  if (indicator.status === 'working' || indicator.status === 'attention') {
-    const Icon = indicator.status === 'attention' ? CircleAlert : LoaderCircle
-    return (
-      <Icon
-        {...sharedProps}
-        className={cn(
-          'h-2.5 w-2.5 shrink-0 text-accent',
-          indicator.status === 'working' && 'animate-spin',
-          className
-        )}
-      />
-    )
   }
 
   return (
@@ -376,8 +285,6 @@ interface SessionRowProps {
   status: PtyStatus
   terminalStatuses: Record<string, PtyStatus>
   terminalDirectories: Record<string, string>
-  tuiStatus?: OpenCodeTuiStatusState
-  opencodeNotificationCount: number
   terminalTabs: readonly SessionTab[]
   terminalLayouts: Record<string, SessionTerminalLayout>
   showTerminalInstances: boolean
@@ -398,8 +305,6 @@ function SessionRow({
   status,
   terminalStatuses,
   terminalDirectories,
-  tuiStatus,
-  opencodeNotificationCount,
   terminalTabs,
   terminalLayouts,
   showTerminalInstances,
@@ -465,10 +370,10 @@ function SessionRow({
     setMoving(false)
   }
 
-  const indicator = sessionIndicator(status, tuiStatus)
+  const indicator = sessionIndicator(status)
   const sessionColor = session.color ?? DEFAULT_SESSION_COLOR
   const customColor = customSessionColor(session.color)
-  const backgroundStyle = sessionBackgroundStyle(session.color, indicator)
+  const backgroundStyle = sessionBackgroundStyle(session.color)
   const canOpenInVsCode =
     platform?.isWindows === true && wslAvailable && session.kind === 'wsl' && Boolean(session.distro)
   return (
@@ -498,13 +403,10 @@ function SessionRow({
               className={cn(
                 'group relative ml-1 flex w-[calc(100%-0.25rem)] cursor-default items-center gap-2 rounded py-1.5 pl-4 pr-2 text-left',
                 customColor
-                  ? cn('text-fg transition-[filter] hover:brightness-110', customSessionStatusRing(indicator.status))
+                  ? 'text-fg transition-[filter] hover:brightness-110'
                   : selected
-                    ? cn(
-                        'bg-active text-fg',
-                        indicator.status === 'attention' && 'ring-1 ring-inset ring-accent/60'
-                      )
-                    : cn('text-fg-muted hover:bg-hover hover:text-fg', indicator.row),
+                    ? 'bg-active text-fg'
+                    : 'text-fg-muted hover:bg-hover hover:text-fg',
                 dragging && 'opacity-60',
                 dropPosition === 'before' && 'border-t-2 border-accent',
                 dropPosition === 'after' && 'border-b-2 border-accent'
@@ -575,8 +477,6 @@ function SessionRow({
                   </span>
                 </div>
               </div>
-
-              <OpenCodeNotificationBadge count={opencodeNotificationCount} />
               <button
                 type="button"
                 onClick={openMenuFromButton}
@@ -729,9 +629,6 @@ interface ProjectGroupProps {
   sessions: Session[]
   statuses: Record<string, PtyStatus>
   terminalDirectories: Record<string, string>
-  opencodeTuiStatuses: Record<string, OpenCodeTuiStatusState>
-  opencodeTuiInstances: Record<string, OpenCodeTuiInstanceStatus[]>
-  opencodeTuiReadRevisions: Readonly<Record<string, number>>
   terminalLayouts: Record<string, Record<string, SessionTerminalLayout>>
   showTerminalInstances: boolean
   selectedSessionId: string | null
@@ -758,9 +655,6 @@ function ProjectGroup({
   sessions,
   statuses,
   terminalDirectories,
-  opencodeTuiStatuses,
-  opencodeTuiInstances,
-  opencodeTuiReadRevisions,
   terminalLayouts,
   showTerminalInstances,
   selectedSessionId,
@@ -946,11 +840,6 @@ function ProjectGroup({
             status={sessionTerminalStatus(session, terminalLayouts[session.id], statuses)}
             terminalStatuses={statuses}
             terminalDirectories={terminalDirectories}
-            tuiStatus={opencodeTuiStatuses[session.id]}
-            opencodeNotificationCount={countOpenCodeTuiNotifications(
-              opencodeTuiInstances[session.id] ?? [],
-              opencodeTuiReadRevisions,
-            )}
             terminalTabs={sessionTabs(session)}
             terminalLayouts={terminalLayouts[session.id] ?? {}}
             showTerminalInstances={showTerminalInstances}
@@ -1183,9 +1072,6 @@ export function Sidebar({
   const sessions = useWorkspace((state) => state.sessions)
   const statuses = useWorkspace((state) => state.statuses)
   const terminalDirectories = useWorkspace((state) => state.terminalDirectories)
-  const opencodeTuiStatuses = useWorkspace((state) => state.opencodeTuiStatuses)
-  const opencodeTuiInstances = useWorkspace((state) => state.opencodeTuiInstances)
-  const opencodeTuiReadRevisions = useWorkspace((state) => state.opencodeTuiReadRevisions)
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
   const selectedTodoProjectId = useWorkspace((state) => state.selectedTodoProjectId)
   const selectSession = useWorkspace((state) => state.selectSession)
@@ -1210,9 +1096,6 @@ export function Sidebar({
         sessions={sessions.filter((session) => session.projectId === project.id)}
         statuses={statuses}
         terminalDirectories={terminalDirectories}
-        opencodeTuiStatuses={opencodeTuiStatuses}
-        opencodeTuiInstances={opencodeTuiInstances}
-        opencodeTuiReadRevisions={opencodeTuiReadRevisions}
         terminalLayouts={terminalLayouts}
         showTerminalInstances={terminalSettings.showTerminalInstances}
         selectedSessionId={selectedSessionId}
@@ -1244,15 +1127,8 @@ export function Sidebar({
                 const projectSessions = sessions.filter((session) => session.projectId === project.id)
                 return projectSessions.length > 0 ? (
                   projectSessions.map((session) => {
-                    const indicator = sessionIndicator(
-                      statuses[session.id] ?? 'none',
-                      opencodeTuiStatuses[session.id],
-                    )
+                    const indicator = sessionIndicator(sessionTerminalStatus(session, terminalLayouts[session.id], statuses))
                     const customColor = customSessionColor(session.color)
-                    const opencodeNotificationCount = countOpenCodeTuiNotifications(
-                      opencodeTuiInstances[session.id] ?? [],
-                      opencodeTuiReadRevisions,
-                    )
                     return (
                       <ContextMenu key={session.id}>
                         <ContextMenuTrigger asChild>
@@ -1264,26 +1140,16 @@ export function Sidebar({
                               className={cn(
                                 'relative flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase',
                                 customColor
-                                  ? cn(
-                                      'text-fg transition-[filter] hover:brightness-110',
-                                      customSessionStatusRing(indicator.status)
-                                    )
+                                  ? 'text-fg transition-[filter] hover:brightness-110'
                                   : session.id === selectedSessionId
-                                    ? cn(
-                                        'bg-active text-fg',
-                                        indicator.status === 'attention' && 'ring-1 ring-inset ring-accent/60'
-                                      )
-                                    : cn('text-fg-muted hover:bg-hover hover:text-fg', indicator.row)
+                                    ? 'bg-active text-fg'
+                                    : 'text-fg-muted hover:bg-hover hover:text-fg'
                               )}
-                              style={sessionBackgroundStyle(session.color, indicator)}
+                              style={sessionBackgroundStyle(session.color)}
                             >
                               <span data-testid="collapsed-session-label">
                                 {sessionIconOption(session.icon)?.emoji ?? session.name.slice(0, 2)}
                               </span>
-                              <OpenCodeNotificationBadge
-                                count={opencodeNotificationCount}
-                                className="absolute -right-1 -top-1 h-3.5 min-w-3.5 px-0 text-[9px] ring-2 ring-panel"
-                              />
                               <StatusDot
                                 indicator={indicator}
                                 className="absolute -bottom-0.5 right-0.5 ring-2 ring-panel"

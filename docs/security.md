@@ -75,7 +75,7 @@ The service password is passed only in the child environment (`WSLENV` forwards 
 through renderer IPC or command-line arguments. Renderer-provided launch overrides, alternate pane
 identities, GUI threads and removed threads are rejected. The thread is checked again after the
 directory check. Removing a thread cancels pending launches and disposes its PTY. These terminals use
-the existing API event stream for status and receive no status-plugin environment variables.
+the existing API event stream for status.
 
 The clipboard has two channels. `clipboard:write-text` carries the text to write (up to 2 Mi code
 units). `clipboard:paste` carries nothing and returns nothing: the main process calls

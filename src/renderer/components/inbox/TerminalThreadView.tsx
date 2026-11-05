@@ -25,7 +25,7 @@ export function TerminalThreadView({ thread }: { thread: InboxThread }): JSX.Ele
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState<ChatDraft | null>(null)
 
-  // Keep the existing API subscription and reconnect behavior. The terminal needs no status plugin.
+  // Keep the thread's API subscription and reconnect behavior while its terminal is displayed.
   useEffect(() => openThread(thread.id), [openThread, thread.id])
   useEffect(() => {
     let cancelled = false

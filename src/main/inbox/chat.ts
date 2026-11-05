@@ -33,7 +33,7 @@ import type {
   InboxGitInfoRequest,
   InboxThread,
   OpenCodeModelRef,
-  OpenCodePluginTarget,
+  OpenCodeTarget,
   Session,
 } from '@shared/types'
 import { OpenCodeServiceError, type OpenCodeServiceClient } from '../opencode/service/client'
@@ -208,7 +208,7 @@ export class InboxChatService {
   /** Starts event streams for targets that have working threads, once the Inbox is usable. */
   start(): void {
     if (!this.dependencies.enabled()) return
-    const targets = new Map<string, OpenCodePluginTarget>()
+    const targets = new Map<string, OpenCodeTarget>()
     for (const thread of this.dependencies.store.list()) {
       if (thread.status === 'working' || thread.status === 'attention') {
         targets.set(serviceTargetKey(thread.target), thread.target)
@@ -261,7 +261,7 @@ export class InboxChatService {
   }
 
   /** Adds a folder the IPC layer already resolved and checked, or reuses the same one. */
-  addFolder({ directory, target }: { directory: string; target: OpenCodePluginTarget }): InboxFolder {
+  addFolder({ directory, target }: { directory: string; target: OpenCodeTarget }): InboxFolder {
     const now = this.dependencies.now()
     const existing = this.dependencies.store.folders().find((folder) =>
       folder.directory === directory && serviceTargetKey(folder.target) === serviceTargetKey(target))
@@ -327,7 +327,7 @@ export class InboxChatService {
     return listing
   }
 
-  private async loadMcp(place: { target: OpenCodePluginTarget; directory: string }, key: string): Promise<ChatMcpState> {
+  private async loadMcp(place: { target: OpenCodeTarget; directory: string }, key: string): Promise<ChatMcpState> {
     // MCP changes carry no session, so the stream that tells the app about them must run even with no thread open.
     this.streams.ensure(place.target)
     for (let attempt = 1; ; attempt += 1) {
@@ -828,7 +828,7 @@ export class InboxChatService {
     else this.subscribed.delete(threadId)
   }
 
-  private onEvent(event: ServiceEvent, target: OpenCodePluginTarget): void {
+  private onEvent(event: ServiceEvent, target: OpenCodeTarget): void {
     this.dependencies.recorder.applyServiceEvent(event)
     // An MCP server changed. It belongs to no session, so it is passed on before the thread checks below.
     if (event.type === 'mcp.status.changed' || event.type === 'mcp.tools.changed') {
@@ -868,7 +868,7 @@ export class InboxChatService {
     if (REQUEST_EVENTS.has(event.type)) this.dependencies.send({ type: 'requests', threadId })
   }
 
-  private async loadOptions(folder: { target: OpenCodePluginTarget; directory: string }): Promise<ChatOptions> {
+  private async loadOptions(folder: { target: OpenCodeTarget; directory: string }): Promise<ChatOptions> {
     const query = { 'location[directory]': folder.directory }
     const [providers, models, defaultModel] = await Promise.all([
       this.dependencies.client.request(folder.target, 'provider.list', { query }).catch(() => ({ data: [] })),
@@ -888,7 +888,7 @@ export class InboxChatService {
     }
   }
 
-  private async loadSkills(place: { target: OpenCodePluginTarget; directory: string }): Promise<ChatSkill[]> {
+  private async loadSkills(place: { target: OpenCodeTarget; directory: string }): Promise<ChatSkill[]> {
     for (let attempt = 1; ; attempt += 1) {
       const skills = parseSkills(await this.dependencies.client.request(place.target, 'skill.list', {
         query: { 'location[directory]': place.directory },
@@ -906,7 +906,7 @@ export class InboxChatService {
    * listing that fails sends the message as plain text rather than losing it.
    */
   private async promptBody(
-    place: { target: OpenCodePluginTarget; directory: string },
+    place: { target: OpenCodeTarget; directory: string },
     text: string,
     files: unknown[] | undefined,
   ): Promise<Record<string, unknown>> {
@@ -924,7 +924,7 @@ export class InboxChatService {
   }
 
   private async loadAgents(
-    folder: { target: OpenCodePluginTarget },
+    folder: { target: OpenCodeTarget },
     query: Record<string, string>,
   ): Promise<ChatAgent[]> {
     for (let attempt = 1; ; attempt += 1) {
@@ -968,7 +968,7 @@ export class InboxChatService {
   }
 
   /** The service and directory a folder (new thread) or an existing thread works in; the request names one. */
-  private place(request: ChatOptionsRequest): { target: OpenCodePluginTarget; directory: string } {
+  private place(request: ChatOptionsRequest): { target: OpenCodeTarget; directory: string } {
     return request.threadId ? this.thread(request.threadId) : this.folder(request.folderId ?? '')
   }
 

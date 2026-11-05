@@ -8,11 +8,9 @@ const palette = { foreground: '#ffffff', background: '#000000' }
 const size = { cols: 80, rows: 24 }
 const ensure = { terminalId: 'pane', sessionId: 'session', palette, size }
 const layout = testLayout([{ id: 'pane' }])
-const enabled = { enabled: true }
 const sessionId = { sessionId: 'session' }
 const terminalId = { terminalId: 'pane' }
 const tab = { sessionId: 'session', tabId: 'tab' }
-const plugin = { target: { kind: 'wsl', distro: 'Ubuntu-24.04' } }
 const model = { id: 'model-1', providerId: 'provider-1' }
 
 /** Explicit legitimate fixtures prevent an exhaustive registry that rejects normal use. */
@@ -67,13 +65,6 @@ const validPayloads = {
   [IpcChannels.filesList]: { sessionId: 'session', path: '' },
   [IpcChannels.filesRead]: { sessionId: 'session', path: 'src/file.ts' },
   [IpcChannels.opencodeSessionsList]: { sessionId: 'session', sourceTerminalId: 'pane', executable: '/usr/bin/opencode' },
-  [IpcChannels.opencodeTuiPluginState]: plugin,
-  [IpcChannels.opencodeTuiPluginInstall]: plugin,
-  [IpcChannels.opencodeTuiPluginRemove]: plugin,
-  [IpcChannels.opencodeTuiSettings]: undefined,
-  [IpcChannels.opencodeTuiSetEnabled]: enabled,
-  [IpcChannels.opencodeAlertsSettings]: undefined,
-  [IpcChannels.opencodeAlertsSetEnabled]: enabled,
   [IpcChannels.inboxList]: undefined,
   [IpcChannels.inboxSetRead]: { id: 'ses_thread', read: true },
   [IpcChannels.inboxSetArchived]: { id: 'ses_thread', archived: false },
@@ -323,7 +314,6 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.sessionsCreate, { ...validPayloads[IpcChannels.sessionsCreate], kind: 'remote' })
     rejects(IpcChannels.sessionsUpdate, { id: 'session', patch: { color: 'anything' } })
     rejects(IpcChannels.sessionsUpdate, { id: 'session', patch: { icon: 'anything' } })
-    rejects(IpcChannels.opencodeTuiSetEnabled, { enabled: 'true' })
     rejects(IpcChannels.windowModeSet, { mode: 'fullscreen' })
     rejects(IpcChannels.windowModeSet, { mode: undefined })
     for (const color of ['red', 'rgb(0,0,0)', 'url(x)', '#12', '#12345', '#1234567', '#gggggg', '10141b', '#10141b;', ' #10141b', '']) {
@@ -332,10 +322,6 @@ describe('IPC payload boundary', () => {
     }
     rejects(IpcChannels.windowChromeSet, { color: '#ffffff' })
     expect(() => assertIpcPayload(IpcChannels.windowChromeSet, { color: '#FFF', symbolColor: '#aBc123' })).not.toThrow()
-    for (const distro of ['../other', 'Ubuntu\n', ' '.repeat(129) + 'Ubuntu']) {
-      rejects(IpcChannels.opencodeTuiPluginInstall, { target: { kind: 'wsl', distro } })
-    }
-    rejects(IpcChannels.opencodeTuiPluginInstall, { target: { kind: 'native', distro: 'Ubuntu' } })
     rejects(IpcChannels.opencodeSessionsList, { ...validPayloads[IpcChannels.opencodeSessionsList], executable: 'opencode\nunsafe' })
     rejects(IpcChannels.pathResolve, { kind: 'native', rawPath: '/tmp/a\0b' })
     rejects(IpcChannels.sessionsRemove, 'session\r')

@@ -1,14 +1,14 @@
 import { formatDuration } from '@/lib/duration'
-import type { ChatMcpServer, ChatMessage, ChatPart, ChatToolStatus, OpenCodePluginTarget } from '@shared/types'
+import type { ChatMcpServer, ChatMessage, ChatPart, ChatToolStatus, OpenCodeTarget } from '@shared/types'
 
 type ToolPart = Extract<ChatPart, { kind: 'tool' }>
 
 /** The key of a place MCP servers belong to: the OpenCode service and the directory it works in. */
-export function mcpKey(target: OpenCodePluginTarget, directory: string): string {
+export function mcpKey(target: OpenCodeTarget, directory: string): string {
   return `${mcpTargetKey(target)}\n${directory}`
 }
 
-export function mcpTargetKey(target: OpenCodePluginTarget): string {
+export function mcpTargetKey(target: OpenCodeTarget): string {
   return target.kind === 'native' ? 'native' : `wsl:${target.distro}`
 }
 

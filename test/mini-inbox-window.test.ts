@@ -46,7 +46,7 @@ describe('MiniInboxWindow', () => {
     vi.unstubAllGlobals()
   })
 
-  it('shows Inbox titles and folders for both chat modes without terminal or plugin data', async () => {
+  it('shows Inbox titles and folders for both chat modes using thread metadata', async () => {
     await render()
     expect(container.querySelector('[data-testid="mini-inbox-group"]')?.getAttribute('aria-label')).toBe('Application')
     expect(rows().map((row) => row.dataset.status)).toEqual(['working', 'attention', 'error'])

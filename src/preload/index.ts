@@ -3,8 +3,6 @@ import { IpcChannels, IpcEvents, type RendererApi } from '@shared/ipc'
 import type {
   ChatEvent,
   InboxThread,
-  OpenCodeTuiInstancesUpdate,
-  OpenCodeTuiStatusUpdate,
   PtyDataChunk,
   PtyDirectoryUpdate,
   PtyExitInfo,
@@ -129,20 +127,6 @@ const api: RendererApi = {
   },
   opencodeSessions: {
     list: (req) => ipcRenderer.invoke(IpcChannels.opencodeSessionsList, req)
-  },
-  opencodeTui: {
-    settings: () => ipcRenderer.invoke(IpcChannels.opencodeTuiSettings),
-    setEnabled: (req) => ipcRenderer.invoke(IpcChannels.opencodeTuiSetEnabled, req),
-    pluginState: (req) => ipcRenderer.invoke(IpcChannels.opencodeTuiPluginState, req),
-    install: (req) => ipcRenderer.invoke(IpcChannels.opencodeTuiPluginInstall, req),
-    remove: (req) => ipcRenderer.invoke(IpcChannels.opencodeTuiPluginRemove, req),
-    onStatus: (listener) => subscribe<OpenCodeTuiStatusUpdate>(IpcEvents.opencodeTuiStatus, listener),
-    onInstances: (listener) =>
-      subscribe<OpenCodeTuiInstancesUpdate>(IpcEvents.opencodeTuiInstances, listener)
-  },
-  opencodeAlerts: {
-    settings: () => ipcRenderer.invoke(IpcChannels.opencodeAlertsSettings),
-    setEnabled: (req) => ipcRenderer.invoke(IpcChannels.opencodeAlertsSetEnabled, req)
   },
   inbox: {
     changes: (req) => ipcRenderer.invoke(IpcChannels.inboxChanges, req),

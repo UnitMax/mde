@@ -2,19 +2,14 @@ import { testLayout } from './helpers/terminal-layout'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   InboxThread,
-  OpenCodeTuiInstancesUpdate,
-  OpenCodeTuiStatusUpdate,
   Session
 } from '../src/shared/types'
 
 vi.mock('../src/renderer/terminal/sessions', () => ({ disposeSession: vi.fn() }))
 
 import { useWorkspace } from '../src/renderer/store/workspace'
-import { countOpenCodeTuiNotifications } from '../src/renderer/lib/opencode-tui-notifications'
 
 describe('renderer workspace event bridge', () => {
-  const tuiStatusListeners: Array<(update: OpenCodeTuiStatusUpdate) => void> = []
-  const tuiInstanceListeners: Array<(update: OpenCodeTuiInstancesUpdate) => void> = []
   const directoryListeners: Array<(update: { terminalId: string; directory: string | null }) => void> = []
   const windowModeListeners: Array<(mode: 'normal' | 'mini') => void> = []
   const inboxListeners: Array<(thread: InboxThread) => void> = []
@@ -91,54 +86,14 @@ describe('renderer workspace event bridge', () => {
         return vi.fn()
       })
     },
-    opencodeTui: {
-      settings: vi.fn(async () => ({
-        enabled: false,
-        currentPluginVersion: '1.1.0'
-      })),
-      setEnabled: vi.fn(async ({ enabled }: { enabled: boolean }) => ({
-        enabled,
-        currentPluginVersion: '1.1.0'
-      })),
-      pluginState: vi.fn(async ({ distro }: { distro: string }) => ({
-        distro,
-        status: 'not-installed' as const,
-        installedVersion: null,
-        currentVersion: '1.0.0'
-      })),
-      install: vi.fn(async ({ distro }: { distro: string }) => ({
-        distro,
-        status: 'installed' as const,
-        installedVersion: '1.0.0',
-        currentVersion: '1.0.0'
-      })),
-      remove: vi.fn(async ({ distro }: { distro: string }) => ({
-        distro,
-        status: 'not-installed' as const,
-        installedVersion: null,
-        currentVersion: '1.0.0'
-      })),
-      onStatus: vi.fn((listener: (update: OpenCodeTuiStatusUpdate) => void) => {
-        tuiStatusListeners.push(listener)
-        return vi.fn()
-      }),
-      onInstances: vi.fn((listener: (update: OpenCodeTuiInstancesUpdate) => void) => {
-        tuiInstanceListeners.push(listener)
-        return vi.fn()
-      })
-    },
+
   }
 
   beforeEach(() => {
-    tuiStatusListeners.length = 0
-    tuiInstanceListeners.length = 0
     directoryListeners.length = 0
     windowModeListeners.length = 0
     vi.stubGlobal('window', { api })
     useWorkspace.setState({
-      opencodeTuiStatuses: {},
-      opencodeTuiInstances: {},
-      opencodeTuiReadRevisions: {},
       inboxTerminalHighlights: {},
       sessions: [],
       todoProjects: [],
@@ -174,8 +129,6 @@ describe('renderer workspace event bridge', () => {
     api.tabs.select.mockReset()
     api.tabs.update.mockReset()
     api.tabs.remove.mockReset()
-    api.opencodeTui.onStatus.mockClear()
-    api.opencodeTui.onInstances.mockClear()
   })
 
   it('tracks exits by runtime terminal ID, including split panes', () => {
@@ -204,138 +157,6 @@ describe('renderer workspace event bridge', () => {
       'session-1': 'running',
       'session-1:split:1': 'running'
     })
-  })
-
-  it('tracks TUI completion as unread until the session is selected', () => {
-    useWorkspace.setState({ selectedSessionId: 'other-session', opencodeTuiStatuses: {} })
-
-    useWorkspace.getState().appendOpenCodeTuiStatus({
-      sessionId: 'terminal-1',
-      status: 'completed',
-      revision: 1
-    })
-    expect(useWorkspace.getState().opencodeTuiStatuses['terminal-1']).toMatchObject({
-      status: 'completed',
-      unread: true
-    })
-
-    useWorkspace.getState().selectSession('terminal-1')
-    expect(useWorkspace.getState().opencodeTuiStatuses['terminal-1']?.unread).toBe(false)
-
-    useWorkspace.getState().appendOpenCodeTuiStatus({
-      sessionId: 'terminal-1',
-      status: null,
-      revision: 0
-    })
-    expect(useWorkspace.getState().opencodeTuiStatuses['terminal-1']).toBeUndefined()
-  })
-
-  it('tracks and removes independent OpenCode TUI pane instances', () => {
-    useWorkspace.getState().appendOpenCodeTuiInstances({
-      sessionId: 'session-1',
-      instances: [
-        {
-          terminalId: 'session-1',
-          status: 'working',
-          revision: 2
-        },
-        {
-          terminalId: 'session-1:split:1',
-          status: 'completed',
-          revision: 4
-        }
-      ]
-    })
-
-    expect(useWorkspace.getState().opencodeTuiInstances['session-1']).toEqual([
-      {
-        terminalId: 'session-1',
-        status: 'working',
-        revision: 2
-      },
-      {
-        terminalId: 'session-1:split:1',
-        status: 'completed',
-        revision: 4
-      }
-    ])
-
-    useWorkspace.getState().appendOpenCodeTuiInstances({
-      sessionId: 'session-1',
-      instances: []
-    })
-    expect(useWorkspace.getState().opencodeTuiInstances['session-1']).toBeUndefined()
-  })
-
-  it('tracks completed agents as read independently while retaining attention agents', () => {
-    const completedOne = {
-      terminalId: 'session-1:split:1',
-      status: 'completed' as const,
-      revision: 3
-    }
-    const completedTwo = {
-      terminalId: 'session-1:split:2',
-      status: 'completed' as const,
-      revision: 5
-    }
-    const attention = {
-      terminalId: 'session-1:split:3',
-      status: 'attention' as const,
-      attentionReason: 'question' as const,
-      revision: 2
-    }
-    useWorkspace.setState({
-      selectedSessionId: 'other-session',
-      opencodeTuiStatuses: {
-        'session-1': { status: 'working', revision: 7, unread: false }
-      }
-    })
-    useWorkspace.getState().appendOpenCodeTuiInstances({
-      sessionId: 'session-1',
-      instances: [completedOne, completedTwo, attention]
-    })
-
-    const count = (): number => {
-      const state = useWorkspace.getState()
-      return countOpenCodeTuiNotifications(
-        state.opencodeTuiInstances['session-1'] ?? [],
-        state.opencodeTuiReadRevisions
-      )
-    }
-    expect(count()).toBe(3)
-
-    useWorkspace.getState().selectSession('session-1')
-    expect(count()).toBe(1)
-    expect(useWorkspace.getState().opencodeTuiReadRevisions).toMatchObject({
-      'session-1:split:1': 3,
-      'session-1:split:2': 5
-    })
-
-    useWorkspace.getState().appendOpenCodeTuiInstances({
-      sessionId: 'session-1',
-      instances: [
-        { ...completedOne, revision: 4 },
-        completedTwo,
-        attention
-      ]
-    })
-    expect(count()).toBe(1)
-
-    useWorkspace.getState().selectSession('other-session')
-    expect(count()).toBe(1)
-
-    useWorkspace.getState().appendOpenCodeTuiInstances({
-      sessionId: 'session-1',
-      instances: [
-        { ...completedOne, revision: 5 },
-        completedTwo,
-        attention
-      ]
-    })
-    expect(count()).toBe(2)
-
-    useWorkspace.getState().appendOpenCodeTuiInstances({ sessionId: 'session-1', instances: [] })
-    expect(useWorkspace.getState().opencodeTuiReadRevisions).not.toHaveProperty('session-1:split:1')
   })
 
   it('creates and selects a terminal session', async () => {
@@ -637,30 +458,6 @@ describe('renderer workspace event bridge', () => {
     expect(useWorkspace.getState().sessions).toEqual([session])
   })
 
-  it('keeps session colors unchanged when OpenCode status events arrive', () => {
-    const session: Session = {
-      id: 'session-1',
-      projectId: 'project-1',
-      name: 'App',
-      color: 'teal',
-      kind: 'native',
-      path: '/workspace/app',
-      createdAt: '2026-01-01T00:00:00.000Z'
-    }
-    useWorkspace.setState({ sessions: [session], selectedSessionId: 'other-session' })
-
-    useWorkspace.getState().appendOpenCodeTuiStatus({
-      sessionId: 'session-1',
-      status: 'attention',
-      revision: 1
-    })
-
-    expect(useWorkspace.getState().sessions).toEqual([session])
-    expect(useWorkspace.getState().opencodeTuiStatuses['session-1']).toMatchObject({
-      status: 'attention'
-    })
-  })
-
   it('registers process-lifetime push listeners only once', async () => {
     api.pty.directories.mockResolvedValueOnce({
       'session-1:snapshot': '/home/me/snapshot'
@@ -669,8 +466,6 @@ describe('renderer workspace event bridge', () => {
 
     expect(api.pty.onExit).toHaveBeenCalledTimes(1)
     expect(api.pty.onDirectory).toHaveBeenCalledTimes(1)
-    expect(api.opencodeTui.onStatus).toHaveBeenCalledTimes(1)
-    expect(api.opencodeTui.onInstances).toHaveBeenCalledTimes(1)
     expect(api.windowMode.onChanged).toHaveBeenCalledTimes(1)
     expect(api.inbox.onChanged).toHaveBeenCalledTimes(1)
     windowModeListeners[0]?.('mini')
@@ -722,7 +517,7 @@ describe('renderer workspace event bridge', () => {
     ...overrides
   })
 
-  it('loads the inbox without querying plugin settings, keeping pushes that arrived first', async () => {
+  it('loads the inbox at startup, keeping pushes that arrived first', async () => {
     api.inbox.list.mockResolvedValueOnce([
       inboxThread({ id: 'ses_old', lastActivityAt: 100 }),
       inboxThread({ id: 'ses_new', lastActivityAt: 300 })
@@ -730,7 +525,6 @@ describe('renderer workspace event bridge', () => {
     useWorkspace.setState({ inboxThreads: [inboxThread({ id: 'ses_old', title: 'Renamed', lastActivityAt: 400 })] })
     await useWorkspace.getState().init()
     const state = useWorkspace.getState()
-    expect(api.opencodeTui.settings).not.toHaveBeenCalled()
     expect(state.inboxThreads.map((thread) => [thread.id, thread.title])).toEqual([
       ['ses_old', 'Renamed'],
       ['ses_new', 'Fix login']
@@ -880,10 +674,10 @@ describe('renderer workspace event bridge', () => {
   })
 
   it('opens the shared settings dialog at a requested section', () => {
-    useWorkspace.getState().openSettings('opencode')
-    expect(useWorkspace.getState().settingsDialog).toEqual({ open: true, section: 'opencode' })
+    useWorkspace.getState().openSettings('agents')
+    expect(useWorkspace.getState().settingsDialog).toEqual({ open: true, section: 'agents' })
     useWorkspace.getState().closeSettings()
-    expect(useWorkspace.getState().settingsDialog).toEqual({ open: false, section: 'opencode' })
+    expect(useWorkspace.getState().settingsDialog).toEqual({ open: false, section: 'agents' })
     useWorkspace.getState().openSettings()
     expect(useWorkspace.getState().settingsDialog.section).toBe('appearance')
   })

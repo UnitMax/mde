@@ -7,11 +7,6 @@ import type {
   NewTodoProject,
   NewTodoTask,
   NewSession,
-  OpenCodeTuiAttentionReason,
-  OpenCodeTuiInstanceStatus,
-  OpenCodeTuiInstancesUpdate,
-  OpenCodeTuiStatus,
-  OpenCodeTuiStatusUpdate,
   Project,
   TodoProject,
   TodoTask,
@@ -29,18 +24,10 @@ import { disposeSession } from '@/terminal/sessions'
 import { inboxThreadTerminalId } from '@shared/inbox-thread-terminal'
 import { viewportSettle } from '@/terminal/viewport-settle'
 import { isInboxThreadUnread } from '@/lib/inbox'
-import type { OpenCodeTuiReadRevisions } from '@/lib/opencode-tui-notifications'
 import {
   inboxTerminalHighlightTone,
   type InboxTerminalHighlight,
 } from '@/lib/inbox-terminal-highlight'
-
-export interface OpenCodeTuiStatusState {
-  status: OpenCodeTuiStatus
-  attentionReason?: OpenCodeTuiAttentionReason
-  revision: number
-  unread: boolean
-}
 
 let eventBridgeReady = false
 
@@ -52,7 +39,6 @@ export type SettingsSection =
   | 'shortcuts'
   | 'agents'
   | 'sidebar'
-  | 'opencode'
   | 'about'
 
 export interface SettingsDialogState {
@@ -75,31 +61,6 @@ function belongsToSession(runtimeId: string, sessionId: string): boolean {
   return runtimeId === sessionId || runtimeId.startsWith(`${sessionId}:`)
 }
 
-function markCompletedOpenCodeTuiInstancesRead(
-  readRevisions: Record<string, number>,
-  instances: readonly OpenCodeTuiInstanceStatus[]
-): void {
-  instances.forEach((instance) => {
-    if (instance.status === 'completed') {
-      readRevisions[instance.terminalId] = instance.revision
-    }
-  })
-}
-
-function clearOpenCodeTuiReadRevisions(
-  readRevisions: Record<string, number>,
-  sessionId: string,
-  instances: readonly { terminalId: string }[] = []
-): void {
-  const instanceTerminalIds = new Set(instances.map((instance) => instance.terminalId))
-  Object.keys(readRevisions)
-    .filter(
-      (terminalId) =>
-        belongsToSession(terminalId, sessionId) || instanceTerminalIds.has(terminalId)
-    )
-    .forEach((terminalId) => delete readRevisions[terminalId])
-}
-
 interface WorkspaceState {
   projects: Project[]
   todoProjects: TodoProject[]
@@ -111,9 +72,6 @@ interface WorkspaceState {
   statuses: Record<string, PtyStatus>
   terminalDirectories: Record<string, string>
   exits: Record<string, PtyExitInfo>
-  opencodeTuiStatuses: Record<string, OpenCodeTuiStatusState>
-  opencodeTuiInstances: Record<string, OpenCodeTuiInstanceStatus[]>
-  opencodeTuiReadRevisions: OpenCodeTuiReadRevisions
   /** MDE's own record of OpenCode threads, newest activity first. */
   inboxThreads: InboxThread[]
   selectedInboxThreadId: string | null
@@ -184,8 +142,6 @@ interface WorkspaceState {
   setTerminalDirectory: (update: PtyDirectoryUpdate) => void
   noteExit: (info: PtyExitInfo) => void
   clearExit: (id: string) => void
-  appendOpenCodeTuiStatus: (update: OpenCodeTuiStatusUpdate) => void
-  appendOpenCodeTuiInstances: (update: OpenCodeTuiInstancesUpdate) => void
   clearInboxTerminalHighlight: (threadId: string, token: number) => void
   openSettings: (section?: SettingsSection) => void
   closeSettings: () => void
@@ -214,9 +170,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   statuses: {},
   terminalDirectories: {},
   exits: {},
-  opencodeTuiStatuses: {},
-  opencodeTuiInstances: {},
-  opencodeTuiReadRevisions: {},
   inboxThreads: [],
   selectedInboxThreadId: null,
   inboxMarkedUnread: {},
@@ -239,8 +192,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       eventBridgeReady = true
       window.api.pty.onExit((info) => get().noteExit(info))
       window.api.pty.onDirectory((update) => get().setTerminalDirectory(update))
-      window.api.opencodeTui.onStatus((update) => get().appendOpenCodeTuiStatus(update))
-      window.api.opencodeTui.onInstances((update) => get().appendOpenCodeTuiInstances(update))
       window.api.inbox.onChanged((thread) => get().upsertInboxThread(thread))
       window.api.windowMode.onChanged((windowMode) => set({ windowMode }))
     }
@@ -277,8 +228,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       // The event bridge may receive a report while these startup requests
       // are in flight. Preserve that newer event over the initial snapshot.
       terminalDirectories: { ...directories, ...get().terminalDirectories },
-      opencodeTuiStatuses: {},
-      opencodeTuiReadRevisions: {},
       // Pushes that arrived during startup are newer than the listed snapshot.
       inboxThreads: get().inboxThreads.reduce(withInboxThread, sortInboxThreads(inboxThreads)),
       wslAvailable,
@@ -291,24 +240,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     if (wslAvailable) void get().refreshDistros()
   },
 
-  selectSession: (id) =>
-    set((state) => {
-      const tuiStatus = id ? state.opencodeTuiStatuses[id] : undefined
-      const opencodeTuiReadRevisions = { ...state.opencodeTuiReadRevisions }
-      const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
-      if (id) {
-        markCompletedOpenCodeTuiInstancesRead(
-          opencodeTuiReadRevisions,
-          state.opencodeTuiInstances[id] ?? []
-        )
-        if (tuiStatus?.unread) opencodeTuiStatuses[id] = { ...tuiStatus, unread: false }
-      }
-      return {
-        selectedSessionId: id,
-        ...(id ? { activeWorkspaceView: 'projects' as const } : {}),
-        ...(id ? { opencodeTuiStatuses, opencodeTuiReadRevisions } : {}),
-      }
-    }),
+  selectSession: (id) => set({ selectedSessionId: id, ...(id ? { activeWorkspaceView: 'projects' as const } : {}) }),
 
   setWorkspaceView: (view) => {
     set((state) => ({
@@ -368,9 +300,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const openFiles = { ...state.openFiles }
       const terminalDirectories = { ...state.terminalDirectories }
       const exits = { ...state.exits }
-      const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
-      const opencodeTuiInstances = { ...state.opencodeTuiInstances }
-      const opencodeTuiReadRevisions = { ...state.opencodeTuiReadRevisions }
       childIds.forEach((sessionId) => {
         Object.keys(openFiles)
           .filter((key) => belongsToSession(fileRootTerminalId(key) ?? key, sessionId))
@@ -378,13 +307,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         Object.keys(statuses).filter((id) => belongsToSession(id, sessionId)).forEach((id) => delete statuses[id])
         Object.keys(terminalDirectories).filter((id) => belongsToSession(id, sessionId)).forEach((id) => delete terminalDirectories[id])
         Object.keys(exits).filter((id) => belongsToSession(id, sessionId)).forEach((id) => delete exits[id])
-        clearOpenCodeTuiReadRevisions(
-          opencodeTuiReadRevisions,
-          sessionId,
-          opencodeTuiInstances[sessionId] ?? []
-        )
-        delete opencodeTuiStatuses[sessionId]
-        delete opencodeTuiInstances[sessionId]
       })
       return {
         projects: state.projects.filter((project) => project.id !== id),
@@ -397,9 +319,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         openFiles,
         terminalDirectories,
         exits,
-        opencodeTuiStatuses,
-        opencodeTuiInstances,
-        opencodeTuiReadRevisions,
       }
     })
   },
@@ -575,19 +494,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const statuses = { ...state.statuses }
       const terminalDirectories = { ...state.terminalDirectories }
       const exits = { ...state.exits }
-      const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
-      const opencodeTuiInstances = { ...state.opencodeTuiInstances }
-      const opencodeTuiReadRevisions = { ...state.opencodeTuiReadRevisions }
       Object.keys(statuses).filter((runtimeId) => belongsToSession(runtimeId, id)).forEach((runtimeId) => delete statuses[runtimeId])
       Object.keys(terminalDirectories).filter((runtimeId) => belongsToSession(runtimeId, id)).forEach((runtimeId) => delete terminalDirectories[runtimeId])
       Object.keys(exits).filter((runtimeId) => belongsToSession(runtimeId, id)).forEach((runtimeId) => delete exits[runtimeId])
-      clearOpenCodeTuiReadRevisions(
-        opencodeTuiReadRevisions,
-        id,
-        opencodeTuiInstances[id] ?? []
-      )
-      delete opencodeTuiStatuses[id]
-      delete opencodeTuiInstances[id]
       const openFiles = { ...state.openFiles }
       Object.keys(openFiles)
         .filter((key) => belongsToSession(fileRootTerminalId(key) ?? key, id))
@@ -599,9 +508,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         statuses,
         terminalDirectories,
         exits,
-        opencodeTuiStatuses,
-        opencodeTuiInstances,
-        opencodeTuiReadRevisions,
       }
     })
   },
@@ -641,77 +547,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const exits = { ...state.exits }
       delete exits[id]
       return { exits }
-    }),
-
-  appendOpenCodeTuiStatus: ({ sessionId, status, attentionReason, revision }) =>
-    set((state) => {
-      if (status === null) {
-        if (!state.opencodeTuiStatuses[sessionId]) return state
-        const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
-        delete opencodeTuiStatuses[sessionId]
-        return { opencodeTuiStatuses }
-      }
-
-      const previous = state.opencodeTuiStatuses[sessionId]
-      if (previous?.revision === revision && previous.status === status && previous.attentionReason === attentionReason) {
-        return state
-      }
-      return {
-        opencodeTuiStatuses: {
-          ...state.opencodeTuiStatuses,
-          [sessionId]: {
-            status,
-            ...(attentionReason ? { attentionReason } : {}),
-            revision,
-            unread:
-              status === 'completed' || status === 'error'
-                ? state.selectedSessionId !== sessionId
-                : previous?.unread ?? false
-          }
-        }
-      }
-    }),
-
-  appendOpenCodeTuiInstances: ({ sessionId, instances }) =>
-    set((state) => {
-      const previous = state.opencodeTuiInstances[sessionId]
-      const opencodeTuiReadRevisions = { ...state.opencodeTuiReadRevisions }
-      const currentTerminalIds = new Set(instances.map((instance) => instance.terminalId))
-      const previousTerminalIds = new Set(
-        (previous ?? []).map((instance) => instance.terminalId)
-      )
-      Object.keys(opencodeTuiReadRevisions)
-        .filter((terminalId) =>
-          (belongsToSession(terminalId, sessionId) || previousTerminalIds.has(terminalId)) &&
-          !currentTerminalIds.has(terminalId)
-        )
-        .forEach((terminalId) => delete opencodeTuiReadRevisions[terminalId])
-      instances.forEach((instance) => {
-        if (instance.status !== 'completed') {
-          delete opencodeTuiReadRevisions[instance.terminalId]
-        } else if (state.selectedSessionId === sessionId) {
-          opencodeTuiReadRevisions[instance.terminalId] = instance.revision
-        }
-      })
-      if (instances.length === 0) {
-        if (
-          !previous &&
-          Object.keys(opencodeTuiReadRevisions).length ===
-            Object.keys(state.opencodeTuiReadRevisions).length
-        ) {
-          return state
-        }
-        const opencodeTuiInstances = { ...state.opencodeTuiInstances }
-        delete opencodeTuiInstances[sessionId]
-        return { opencodeTuiInstances, opencodeTuiReadRevisions }
-      }
-      return {
-        opencodeTuiInstances: {
-          ...state.opencodeTuiInstances,
-          [sessionId]: instances
-        },
-        opencodeTuiReadRevisions,
-      }
     }),
 
   clearInboxTerminalHighlight: (threadId, token) =>

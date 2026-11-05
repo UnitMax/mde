@@ -331,36 +331,6 @@ describe('buildLaunchSpec', () => {
     }
   )
 
-  it('passes MDE status variables into the WSL login shell', () => {
-    const spec = buildLaunchSpec(
-      session({ kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/src/app' }),
-      {
-        platform: 'win32', windowsExecutable: wslExecutable,
-        wslEnvironment: {
-          MDE_OPENCODE_STATUS_FILE: "/tmp/mde-opencode/status's file.json",
-          MDE_OPENCODE_STATUS_PROTOCOL: '1'
-        }
-      }
-    )
-
-    expect(spec.args.slice(0, 13)).toEqual([
-      '-d',
-      'Ubuntu-24.04',
-      '--cd',
-      '/home/me/src/app',
-      '-e',
-      'env',
-      "MDE_OPENCODE_STATUS_FILE=/tmp/mde-opencode/status's file.json",
-      'MDE_OPENCODE_STATUS_PROTOCOL=1',
-      'TERM=xterm-256color',
-      'COLORTERM=truecolor',
-      '/bin/sh',
-      '-c',
-      expect.any(String)
-    ])
-    expect(spec.args[12]).toContain('MDE_CWD_PROMPT_COMMAND=')
-  })
-
   it('refuses to launch a WSL project off Windows', () => {
     expect(() =>
       buildLaunchSpec(session({ kind: 'wsl', distro: 'Ubuntu-24.04' }), { platform: 'linux' })

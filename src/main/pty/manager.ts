@@ -45,11 +45,6 @@ export interface PtyLaunchOptions {
   returnToShell?: boolean
 }
 
-export interface PtyLaunchIntegration {
-  prepare(terminalId: string, session: Session): Record<string, string> | undefined
-  dispose(terminalId: string): void
-}
-
 function clampSize(size: PtySize): PtySize {
   return {
     cols: Math.max(1, Math.floor(size.cols) || 80),
@@ -110,30 +105,8 @@ function spawnPty(
  */
 export class PtyManager {
   private readonly sessions = new Map<string, PtySession>()
-  private readonly integrations: PtyLaunchIntegration[]
 
-  constructor(
-    private readonly events: PtyEvents,
-    integration?: PtyLaunchIntegration | PtyLaunchIntegration[]
-  ) {
-    this.integrations = integration
-      ? Array.isArray(integration)
-        ? integration
-        : [integration]
-      : []
-  }
-
-  private prepareIntegrations(terminalId: string, session: Session): Record<string, string> {
-    const environment: Record<string, string> = {}
-    for (const integration of this.integrations) {
-      Object.assign(environment, integration.prepare(terminalId, session))
-    }
-    return environment
-  }
-
-  private disposeIntegrations(terminalId: string): void {
-    for (const integration of this.integrations) integration.dispose(terminalId)
-  }
+  constructor(private readonly events: PtyEvents) {}
 
   status(terminalId: string): PtyStatus {
     return this.sessions.get(terminalId)?.status ?? 'none'
@@ -178,12 +151,10 @@ export class PtyManager {
       return existing.status
     }
 
-    // Resolve before preparing integrations, which can start status timers.
     const context = launchContext(session)
     const forwardedKeys = Object.keys(options?.environment ?? {})
     if (forwardedKeys.some((key) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key))) throw new Error('Invalid terminal environment variable.')
-    const environment = this.prepareIntegrations(terminalId, session)
-    const processEnvironment = ptyEnv({ ...environment, ...options?.environment })
+    const processEnvironment = ptyEnv(options?.environment)
     if (session.kind === 'wsl' && options?.environment) {
       // WSLENV forwards these from Windows into WSL without putting their values in wsl.exe argv.
       const inherited = (processEnvironment.WSLENV ?? '').split(':').filter((entry) => entry && !forwardedKeys.includes(entry.split('/')[0]!))
@@ -191,27 +162,19 @@ export class PtyManager {
     }
     const spec = buildLaunchSpec(session, {
       ...context,
-      environment,
-      wslEnvironment: environment,
       workingDirectory: options?.directory,
       agent: options?.agent,
       returnToShell: options?.returnToShell
     })
     const { cols, rows } = clampSize(size)
 
-    let child: IPty
-    try {
-      child = spawnPty(spec.file, spec.args, {
-        name: 'xterm-256color',
-        cols,
-        rows,
-        cwd: spec.cwd ?? homedir(),
-        env: processEnvironment,
-      }, process.platform)
-    } catch (error) {
-      this.disposeIntegrations(terminalId)
-      throw error
-    }
+    const child = spawnPty(spec.file, spec.args, {
+      name: 'xterm-256color',
+      cols,
+      rows,
+      cwd: spec.cwd ?? homedir(),
+      env: processEnvironment,
+    }, process.platform)
 
     const queryResponder = new TerminalQueryResponder(palette)
     // WSL's --cd gives us a reliable initial directory even before the shell has
@@ -236,7 +199,6 @@ export class PtyManager {
       if (pending) this.events.onData({ terminalId, data: pending })
       const current = this.sessions.get(terminalId)
       if (current) current.status = 'exited'
-      this.disposeIntegrations(terminalId)
       const info: PtyExitInfo = { sessionId: session.id, terminalId, exitCode }
       if (signal !== undefined) info.signal = signal
       this.events.onExit(info)
@@ -298,7 +260,6 @@ export class PtyManager {
     if (!session) return
     this.sessions.delete(terminalId)
     this.events.onDirectory({ terminalId, directory: null })
-    this.disposeIntegrations(terminalId)
     session.disposeListeners()
     if (session.status === 'running') {
       try {

@@ -1,12 +1,12 @@
 import { create } from 'zustand'
-import type { ChatMcpRequest, ChatMcpServer, OpenCodePluginTarget } from '@shared/types'
+import type { ChatMcpRequest, ChatMcpServer, OpenCodeTarget } from '@shared/types'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { mcpKey, mcpTargetKey } from '@/lib/mcp'
 
 /** Where MCP servers are asked about: a folder (new thread) or a thread, and the service and directory behind it. */
 export interface McpPlace {
   request: ChatMcpRequest
-  target: OpenCodePluginTarget
+  target: OpenCodeTarget
   directory: string
 }
 

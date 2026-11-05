@@ -1,4 +1,4 @@
-import type { OpenCodePluginTarget } from '@shared/types'
+import type { OpenCodeTarget } from '@shared/types'
 import type { OpenCodeServiceClient } from './client'
 import { serviceTargetKey } from './discovery'
 
@@ -71,10 +71,10 @@ export function serviceEventSessionId(event: ServiceEvent): string | null {
 }
 
 export interface ServiceEventStreamsOptions {
-  onEvent(target: OpenCodePluginTarget, event: ServiceEvent): void
+  onEvent(target: OpenCodeTarget, event: ServiceEvent): void
   /** Called on every successful (re)connect; `reconnected` is false for the first one. */
-  onConnected?(target: OpenCodePluginTarget, reconnected: boolean): void
-  onFailure?(target: OpenCodePluginTarget, error: unknown): void
+  onConnected?(target: OpenCodeTarget, reconnected: boolean): void
+  onFailure?(target: OpenCodeTarget, error: unknown): void
   /** Delay before the next attempt after `failures` consecutive failures. */
   backoffMs?(failures: number): number
   maxFailures?: number
@@ -83,7 +83,7 @@ export interface ServiceEventStreamsOptions {
 const defaultBackoff = (failures: number): number => Math.min(30_000, 1_000 * 2 ** Math.max(0, failures - 1))
 
 interface StreamState {
-  target: OpenCodePluginTarget
+  target: OpenCodeTarget
   controller: AbortController
   failures: number
   connectedBefore: boolean
@@ -102,11 +102,11 @@ export class ServiceEventStreams {
     private readonly options: ServiceEventStreamsOptions,
   ) {}
 
-  isOpen(target: OpenCodePluginTarget): boolean {
+  isOpen(target: OpenCodeTarget): boolean {
     return this.streams.has(serviceTargetKey(target))
   }
 
-  ensure(target: OpenCodePluginTarget): void {
+  ensure(target: OpenCodeTarget): void {
     const key = serviceTargetKey(target)
     if (this.streams.has(key)) return
     const state: StreamState = {
@@ -120,7 +120,7 @@ export class ServiceEventStreams {
     void this.run(key, state)
   }
 
-  stop(target: OpenCodePluginTarget): void {
+  stop(target: OpenCodeTarget): void {
     const key = serviceTargetKey(target)
     const state = this.streams.get(key)
     if (!state) return

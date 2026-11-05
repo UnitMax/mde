@@ -57,7 +57,7 @@ describe('the Inbox terminal over IPC', () => {
     electronMock.handlers.clear()
     workspaceMock.getSession.mockReset().mockResolvedValue(null)
     ptyManager.ensure.mockClear()
-    registerIpcHandlers(security, ptyManager as never, {} as never, {} as never, {} as never, {} as never, {} as never)
+    registerIpcHandlers(security, ptyManager as never, {} as never, {} as never, {} as never)
   })
 
   it('starts a shell for the reserved session ID in the home directory, without consulting the workspace', async () => {
@@ -97,7 +97,7 @@ describe('Inbox terminal chat launches over IPC', () => {
     vi.clearAllMocks()
     electronMock.handlers.clear()
     chat.terminalSession.mockImplementation(() => ({ id: terminalId, projectId: '', name: 'Chat', kind: 'native', path: directory, createdAt: '' }))
-    registerIpcHandlers(security, pty as never, {} as never, {} as never, {} as never, {} as never, { chat, recorder } as never)
+    registerIpcHandlers(security, pty as never, {} as never, {} as never, { chat, recorder } as never)
   })
 
   afterEach(async () => {

@@ -95,7 +95,7 @@ beforeEach(() => {
   terminalFocus.mockReset()
   useWorkspace.setState({
     platform: { platform: 'win32', isWindows: true }, wslAvailable: true,
-    opencodeTuiInstances: {}, terminalDirectories: {},
+    terminalDirectories: {},
     statuses: { 'source-pane': 'running' }, exits: {}
   })
 })

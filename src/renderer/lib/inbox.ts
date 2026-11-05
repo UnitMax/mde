@@ -1,4 +1,4 @@
-import type { InboxFolder, InboxGitInfo, InboxThread, InboxWorktree, OpenCodeModelRef, OpenCodePluginTarget, Session } from '@shared/types'
+import type { InboxFolder, InboxGitInfo, InboxThread, InboxWorktree, OpenCodeModelRef, OpenCodeTarget, Session } from '@shared/types'
 import { matchSubsequence, queryTokens } from '@/lib/fuzzy-search'
 
 export type InboxFilter = 'all' | 'unread' | 'attention' | 'archived'
@@ -50,7 +50,7 @@ export function inboxThreadHome(thread: Pick<InboxThread, 'directory' | 'worktre
   return thread.worktree?.repository ?? thread.directory
 }
 
-function sameInboxTarget(a: OpenCodePluginTarget, b: OpenCodePluginTarget): boolean {
+function sameInboxTarget(a: OpenCodeTarget, b: OpenCodeTarget): boolean {
   return a.kind === b.kind && (a.kind === 'native' || (b.kind === 'wsl' && a.distro === b.distro))
 }
 
@@ -67,7 +67,7 @@ export function inboxWorktreeShared(thread: InboxThread, threads: readonly Inbox
  * repository's directory, and falls back to that directory's last segment when the folder has since
  * been removed from the Inbox.
  */
-export function inboxWorktreeSource(worktree: InboxWorktree, target: OpenCodePluginTarget, folders: readonly InboxFolder[]): string {
+export function inboxWorktreeSource(worktree: InboxWorktree, target: OpenCodeTarget, folders: readonly InboxFolder[]): string {
   const source = folders.find((folder) => !folder.worktree && folder.directory === worktree.repository && sameInboxTarget(folder.target, target))
   return source?.name ?? inboxFolderLabel(worktree.repository)
 }
@@ -180,7 +180,7 @@ export function inboxLocked(
  * viewer can show it. The ID is the thread's or folder's own; the main process resolves it.
  */
 export function inboxFileRoot(
-  source: { id: string; directory: string; target: OpenCodePluginTarget; worktree?: { repository: string } } & { name?: string }
+  source: { id: string; directory: string; target: OpenCodeTarget; worktree?: { repository: string } } & { name?: string }
 ): Session {
   return {
     id: source.id,

@@ -1,18 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import type {
-  OpenCodeTuiPluginState,
-  OpenCodeTuiSettings,
-  OpenCodePluginTarget,
-  OpenCodeAlertSettings,
-  CodingAgent
-} from '@shared/types'
-import { Button } from '@/components/ui/button'
+import type { CodingAgent } from '@shared/types'
 import { Input } from '@/components/ui/input'
 import { AboutSettingsPanel } from '@/components/AboutSettingsPanel'
 import { KeyboardShortcutsSettings } from '@/components/KeyboardShortcutsSettings'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ipcErrorMessage } from '@/lib/ipc-error'
 import { useWorkspace, type SettingsSection } from '@/store/workspace'
 import { applyTerminalSettings, fitSession, getSession } from '@/terminal/sessions'
 import { isOsc52Policy, OSC52_POLICIES, type Osc52Policy } from '@/terminal/osc52'
@@ -34,31 +26,12 @@ const OSC52_POLICY_LABELS: Record<Osc52Policy, string> = {
   never: 'Never allow'
 }
 
-function pluginStatusLabel(state: OpenCodeTuiPluginState | undefined): string {
-  if (!state) return 'Checking…'
-  if (state.status === 'installed') return `Installed · v${state.installedVersion}`
-  if (state.status === 'outdated') {
-    return `Update available · v${state.installedVersion ?? 'unknown'} → v${state.currentVersion}`
-  }
-  if (state.status === 'conflict') return 'Another plugin owns the MDE plugin files'
-  return 'Not installed'
-}
-
-function pluginTargetKey(target: OpenCodePluginTarget): string {
-  return target.kind === 'native' ? 'native' : 'wsl:' + target.distro
-}
-
-function pluginTargetLabel(target: OpenCodePluginTarget, platform?: string): string {
-  return target.kind === 'native' ? (platform === 'darwin' ? 'This Mac' : 'Native Linux') : target.distro + ' (WSL 2)'
-}
-
 const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: 'appearance', label: 'Appearance' },
   { id: 'terminal', label: 'Terminal' },
   { id: 'shortcuts', label: 'Shortcuts' },
   { id: 'agents', label: 'Agents' },
   { id: 'sidebar', label: 'Sidebar' },
-  { id: 'opencode', label: 'OpenCode' },
   { id: 'about', label: 'About' }
 ]
 
@@ -118,27 +91,6 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
   const [settings, setSettings] = useState<TerminalSettings>(() => getTerminalSettings())
   const [availableFonts] = useState(() => listTerminalFonts())
   const platform = useWorkspace((state) => state.platform)
-  const wslAvailable = useWorkspace((state) => state.wslAvailable)
-  const distros = useWorkspace((state) => state.distros)
-  const refreshDistros = useWorkspace((state) => state.refreshDistros)
-  const [tuiSettings, setTuiSettings] = useState<OpenCodeTuiSettings>({
-    enabled: false,
-    currentPluginVersion: ''
-  })
-  const [pluginStates, setPluginStates] = useState<Record<string, OpenCodeTuiPluginState>>({})
-  const [tuiLoading, setTuiLoading] = useState(false)
-  const [tuiBusyDistro, setTuiBusyDistro] = useState<string | null>(null)
-  const [tuiError, setTuiError] = useState<string | null>(null)
-  const [alertSettings, setAlertSettings] = useState<OpenCodeAlertSettings>({ enabled: true })
-  const [alertLoading, setAlertLoading] = useState(false)
-  const [alertError, setAlertError] = useState<string | null>(null)
-
-  const canManageTui = platform?.platform === 'darwin' || (platform?.isWindows === true && wslAvailable)
-  const pluginTargets: OpenCodePluginTarget[] =
-    platform?.platform === 'darwin'
-      ? [{ kind: 'native' }]
-      : distros.map((distro) => ({ kind: 'wsl', distro: distro.name }))
-
   useEffect(() => {
     if (open) setActiveSection(requestedSection)
   }, [open, requestedSection])
@@ -180,10 +132,6 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
     }
   }
 
-  useEffect(() => {
-    if (open && platform?.isWindows && wslAvailable) void refreshDistros()
-  }, [platform?.isWindows, wslAvailable, open, refreshDistros])
-
   const updateSettings = (patch: Partial<TerminalSettings>): void => {
     const next = { ...settings, ...patch }
     setSettings(next)
@@ -211,115 +159,13 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
     })
   }
 
-  useEffect(() => {
-    if (!open || !canManageTui) return
-    let cancelled = false
-    setTuiLoading(true)
-    setTuiError(null)
-    const targets: OpenCodePluginTarget[] = platform?.platform === 'darwin'
-      ? [{ kind: 'native' }]
-      : distros.map((distro) => ({ kind: 'wsl', distro: distro.name }))
-    void Promise.all([
-      window.api.opencodeTui.settings(),
-      Promise.allSettled(
-        targets.map((target) => window.api.opencodeTui.pluginState({ target }))
-      )
-    ])
-      .then(([nextSettings, stateResults]) => {
-        if (cancelled) return
-        const nextStates: Record<string, OpenCodeTuiPluginState> = {}
-        const failures: string[] = []
-        stateResults.forEach((result) => {
-          if (result.status === 'fulfilled') {
-            nextStates[pluginTargetKey(result.value.target)] = result.value
-          } else {
-            failures.push(ipcErrorMessage(result.reason, 'Could not inspect this OpenCode target.'))
-          }
-        })
-        setTuiSettings(nextSettings)
-        setPluginStates(nextStates)
-        if (failures.length > 0) setTuiError(failures[0] ?? 'Could not inspect one or more OpenCode targets.')
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setTuiError(ipcErrorMessage(error, 'Could not update the OpenCode status plugin.'))
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setTuiLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [canManageTui, distros, open, platform?.platform])
-
-  useEffect(() => {
-    if (!open) return
-    let cancelled = false
-    setAlertLoading(true)
-    setAlertError(null)
-    void window.api.opencodeAlerts
-      .settings()
-      .then((next) => {
-        if (!cancelled) setAlertSettings(next)
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setAlertError(ipcErrorMessage(error, 'Could not update OpenCode alerts.'))
-      })
-      .finally(() => {
-        if (!cancelled) setAlertLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [open])
-
-  const setTuiEnabled = async (): Promise<void> => {
-    setTuiError(null)
-    try {
-      const next = await window.api.opencodeTui.setEnabled({ enabled: !tuiSettings.enabled })
-      setTuiSettings(next)
-    } catch (error) {
-      setTuiError(ipcErrorMessage(error, 'Could not update the OpenCode status plugin.'))
-    }
-  }
-
-  const setAlertsEnabled = async (): Promise<void> => {
-    setAlertError(null)
-    setAlertLoading(true)
-    try {
-      const next = await window.api.opencodeAlerts.setEnabled({ enabled: !alertSettings.enabled })
-      setAlertSettings(next)
-    } catch (error) {
-      setAlertError(ipcErrorMessage(error, 'Could not update OpenCode alerts.'))
-    } finally {
-      setAlertLoading(false)
-    }
-  }
-
-  const changePlugin = async (target: OpenCodePluginTarget, action: 'install' | 'remove'): Promise<void> => {
-    setTuiBusyDistro(pluginTargetKey(target))
-    setTuiError(null)
-    try {
-      const state =
-        action === 'install'
-          ? await window.api.opencodeTui.install({ target })
-          : await window.api.opencodeTui.remove({ target })
-      setPluginStates((current) => ({ ...current, [pluginTargetKey(target)]: state }))
-    } catch (error) {
-      setTuiError(ipcErrorMessage(error, 'Could not update the OpenCode status plugin.'))
-    } finally {
-      setTuiBusyDistro(null)
-    }
-  }
-
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="flex h-[min(42rem,85vh)] max-w-3xl flex-col">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
-            Appearance changes apply immediately. Plugin changes apply after OpenCode is restarted.
+            Appearance changes apply immediately.
           </DialogDescription>
         </DialogHeader>
 
@@ -603,158 +449,6 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
                   testId="sidebar-terminal-instances"
                   onClick={() => updateSettings({ showTerminalInstances: !settings.showTerminalInstances })}
                 />
-              </section>
-            )}
-
-            {activeSection === 'opencode' && (
-              <section className="space-y-6" aria-labelledby="opencode-settings">
-                <div>
-                  <h3 id="opencode-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
-                    OpenCode
-                  </h3>
-                  <p className="mt-1 text-xs text-fg-subtle">
-                    Configure desktop alerts and session status reporting.
-                  </p>
-                </div>
-
-                <section className="space-y-3" aria-labelledby="opencode-alert-settings">
-                  <div>
-                    <h4 id="opencode-alert-settings" className="text-xs font-medium text-fg">
-                      Alerts
-                    </h4>
-                    <p className="mt-1 text-xs text-fg-subtle">
-                      {platform?.platform === 'darwin' ? 'Request Dock attention' : 'Flash the taskbar'} and play a sound when OpenCode finishes, needs input, or encounters an error while MDE is unfocused.
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={alertSettings.enabled}
-                    data-testid="opencode-alerts-enabled"
-                    disabled={alertLoading}
-                    onClick={() => void setAlertsEnabled()}
-                    className="flex w-full items-center justify-between rounded border border-line bg-panel px-3 py-2 text-left text-xs text-fg-muted hover:bg-hover disabled:pointer-events-none disabled:opacity-50"
-                  >
-                    <span>
-                      <span className="block font-medium text-fg">Enable OpenCode alerts</span>
-                      <span className="mt-0.5 block text-fg-subtle">
-                        {alertSettings.enabled ? 'Alerts are enabled.' : 'Alerts are disabled.'}
-                      </span>
-                    </span>
-                    <span
-                      className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
-                        alertSettings.enabled ? 'bg-accent' : 'bg-line-strong'
-                      }`}
-                    >
-                      <span
-                        className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-                          alertSettings.enabled ? 'translate-x-4' : 'translate-x-0.5'
-                        }`}
-                      />
-                    </span>
-                  </button>
-                  {alertError && <p className="text-xs text-danger">{alertError}</p>}
-                </section>
-
-                <section
-                  className="space-y-3 border-t border-line pt-5"
-                  aria-labelledby="opencode-tui-settings"
-                >
-                  <div>
-                    <h4 id="opencode-tui-settings" className="text-xs font-medium text-fg">
-                      Session status
-                    </h4>
-                    <p className="mt-1 text-xs text-fg-subtle">
-                      Install the status plugin (OpenCode 2 or newer) for this Mac or a WSL distro and control reporting across new sessions.
-                    </p>
-                  </div>
-
-                  {!canManageTui ? (
-                    <p className="rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
-                      This integration is available on macOS and Windows with WSL 2.
-                    </p>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={tuiSettings.enabled}
-                        data-testid="opencode-tui-enabled"
-                        disabled={tuiLoading || !tuiSettings.currentPluginVersion}
-                        onClick={() => void setTuiEnabled()}
-                        className="flex w-full items-center justify-between rounded border border-line bg-panel px-3 py-2 text-left text-xs text-fg-muted hover:bg-hover disabled:pointer-events-none disabled:opacity-50"
-                      >
-                        <span>
-                          <span className="block font-medium text-fg">Enable status reporting</span>
-                          <span className="mt-0.5 block text-fg-subtle">
-                            {tuiSettings.enabled
-                              ? 'New and restarted terminals will report OpenCode TUI status.'
-                              : 'Status reporting is disabled until you enable it.'}
-                          </span>
-                        </span>
-                        <span
-                          className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
-                            tuiSettings.enabled ? 'bg-accent' : 'bg-line-strong'
-                          }`}
-                        >
-                          <span
-                            className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-                              tuiSettings.enabled ? 'translate-x-4' : 'translate-x-0.5'
-                            }`}
-                          />
-                        </span>
-                      </button>
-
-                      <div className="space-y-2">
-                        {pluginTargets.length === 0 ? (
-                          <p className="text-xs text-fg-subtle">No WSL 2 distros found.</p>
-                        ) : (
-                          pluginTargets.map((target) => {
-                            const key = pluginTargetKey(target)
-                            const state = pluginStates[key]
-                            const busy = tuiBusyDistro === key
-                            const action = state?.status === 'installed' ? 'remove' : 'install'
-                            const actionLabel =
-                              state?.status === 'outdated'
-                                ? 'Replace'
-                                : state?.status === 'installed'
-                                  ? 'Uninstall'
-                                  : state?.status === 'conflict'
-                                    ? 'Unavailable'
-                                    : 'Install'
-                            return (
-                              <div
-                                key={key}
-                                className="flex items-center gap-3 rounded border border-line bg-panel px-3 py-2"
-                              >
-                                <div className="min-w-0 flex-1">
-                                  <div className="truncate text-xs font-medium text-fg">{pluginTargetLabel(target, platform?.platform)}</div>
-                                  <div className="truncate text-[11px] text-fg-subtle">
-                                    {pluginStatusLabel(state)}
-                                  </div>
-                                </div>
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  disabled={busy || state?.status === 'conflict' || !state}
-                                  onClick={() => void changePlugin(target, action)}
-                                >
-                                  {busy ? 'Working…' : actionLabel}
-                                </Button>
-                              </div>
-                            )
-                          })
-                        )}
-                      </div>
-                      <p className="text-[11px] text-fg-subtle">
-                        Current plugin version: v{tuiSettings.currentPluginVersion || '…'}. Restart OpenCode after installing,
-                        replacing, or uninstalling the plugin.
-                      </p>
-                    </>
-                  )}
-                  {tuiError && <p className="text-xs text-danger">{tuiError}</p>}
-                </section>
               </section>
             )}
 

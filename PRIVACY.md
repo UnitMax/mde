@@ -27,8 +27,6 @@ MDE stores data only on the local machine:
   the Inbox's right-hand sidebar is (a number of pixels), and the arrangement of the Inbox terminal
   (a tree of pane IDs, split IDs, horizontal or vertical directions, and numeric divider ratios).
   Neither holds terminal content or pane titles; the terminal's shells are not restored on the next run.
-- Small preference files in the user-data directory for the OpenCode status integration and
-  notifications.
 - `inbox.json` under Electron's user-data directory, once you use the Inbox: one record for each
   OpenCode conversation you started in the Inbox, with its session ID, title, folder, terminal chat mode
   when chosen (older threads use GUI chat), target (Mac
@@ -36,17 +34,10 @@ MDE stores data only on the local machine:
   while a conversation is working, when its current run began), read, archived and pinned flags, and for a forked conversation the session ID of the one it was forked from. For a conversation started in a Git worktree it also holds that worktree's root path, the repository's path, and the names of the new branch and the branch it was cut from. It also holds the Inbox folders you add (path, target, name, timestamps; at most 200), the worktrees MDE created for you (the same record and a name made from the folder and branch; at most 100, so that more conversations can be started in them) and the folder, model and agent
   you last chose in the Inbox composer. It never holds prompts, messages or tool data. It keeps at
   most 1,000 conversations; deleting a conversation from the Inbox removes only MDE's record.
-- If you enable the optional OpenCode integrations, a short status snapshot under
-  `/tmp/mde-opencode` in the WSL distro, or a private `mde-opencode` directory under the
-  macOS user temporary directory (state, timestamps, and a process ID
-  with its start identity; never prompts, messages or tool data), plus the plugin files MDE
-  installs into the target's OpenCode configuration directory (`plugins/mde-status/`). The plugin runs inside the OpenCode terminal
-  process and edits no OpenCode configuration file. Disabling an integration does not uninstall
-  its plugin. Older installed plugins can still include conversation titles until reinstalled
-  and OpenCode is restarted; MDE ignores those titles.
-  On Mac the snapshot directory is accessible only by the current user (0700), with files
-  restricted to that user (0600). MDE removes snapshots when terminals close and matching
-  artifacts older than 24 hours on startup. Abrupt termination may leave these temporary files.
+
+Older versions may have left status-plugin files, temporary snapshots and reporting/alert preference
+files on disk. MDE no longer reads or writes them; removal is manual (see the upgrade notes in
+`docs/architecture.md`).
 
 Apart from explicitly added Inbox draft attachments described below, MDE does not copy file contents or terminal output into these stores. Terminal scrollback is held
 in memory only. The OpenCode session picker asks the configured OpenCode executable for session metadata on demand
@@ -149,13 +140,12 @@ continues to use the selected thread or folder.
 
 MDE does not make automatic network requests. It reads local files and invokes local commands to support terminal sessions and file actions: Git for repository status (and, when you start an Inbox conversation in a new worktree or delete one with its worktree, to create or remove that worktree; MDE never runs `git fetch` or any other Git network command), `wsl.exe` on Windows, and the configured OpenCode executable for the session picker and to find the OpenCode background service.
 
-The Inbox makes HTTP requests, and holds an event stream open, to the OpenCode background service on a loopback address (`127.0.0.1`, `localhost` or `[::1]`) only; MDE refuses any other address in the service's state file. On Windows these reach the service inside WSL through WSL's localhost forwarding. These connections support Inbox options, conversations and background thread activity in either GUI or Terminal mode, independently of the optional terminal status plugin and status reporting setting. Any internet traffic that follows, such as calls to a model provider, is made by OpenCode, not by MDE.
+The Inbox makes HTTP requests, and holds an event stream open, to the OpenCode background service on a loopback address (`127.0.0.1`, `localhost` or `[::1]`) only; MDE refuses any other address in the service's state file. On Windows these reach the service inside WSL through WSL's localhost forwarding. These connections support Inbox options, conversations and background thread activity in either GUI or Terminal mode. Any internet traffic that follows, such as calls to a model provider, is made by OpenCode, not by MDE.
 
 MDE also disables Chromium's DNS-over-HTTPS upgrade at startup, with `app.configureHostResolver({ secureDnsMode: 'off' })`. Chromium's default mode would otherwise route name resolution through a DoH provider whenever the system resolver is a recognized one, without any application code asking it to. Because MDE resolves no hostnames of its own, the result is no DNS traffic rather than a fallback to plaintext DNS, and the statement above holds regardless of how the user's machine is configured to resolve names.
 
-On Mac MDE also reads integration-related environment values through the user's login shell and
-uses `/bin/ps` to check OpenCode process liveness. Shell startup configuration can execute
-user-configured commands, as it does in normal terminal sessions.
+On Mac, agent and metadata commands run through the user's login shell. Shell startup configuration
+can execute user-configured commands, as it does in normal terminal sessions.
 
 ## User-initiated external actions
 

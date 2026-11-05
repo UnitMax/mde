@@ -62,12 +62,6 @@ import type {
   Project,
   TodoProject,
   TodoTask,
-  OpenCodeTuiPluginRequest,
-  OpenCodeTuiPluginState,
-  OpenCodeTuiSetEnabledRequest,
-  OpenCodeTuiSettings,
-  OpenCodeAlertSetEnabledRequest,
-  OpenCodeAlertSettings,
   OpenCodeSessionsRequest,
   OpenCodeSessionSummary,
   Session,
@@ -121,8 +115,6 @@ import { assertIpcSender, type IpcSecurityContext } from './ipc-security'
 import { assertIpcPayload, type IpcChannel } from './ipc-validation'
 import type { PtyLaunchOptions, PtyManager } from './pty/manager'
 import { fileTreeDropFile, resolveTerminalDrop } from './pty/drop'
-import type { OpenCodeTuiStatusManager } from './opencode/tui-status'
-import type { OpenCodeAlertManager } from './opencode/alerts'
 import type { InboxRecorder } from './inbox/recorder'
 import type { InboxChatService } from './inbox/chat'
 import type { MiniWindowController } from './mini-window'
@@ -434,8 +426,6 @@ async function revealSession(session: Session): Promise<void> {
 export function registerIpcHandlers(
   security: IpcSecurityContext,
   ptyManager: PtyManager,
-  opencodeTuiStatusManager: OpenCodeTuiStatusManager,
-  opencodeAlertManager: OpenCodeAlertManager,
   miniWindow: MiniWindowController,
   titleBar: TitleBarController,
   inbox: { recorder: InboxRecorder; chat: InboxChatService }
@@ -584,45 +574,6 @@ export function registerIpcHandlers(
   )
   handle<RemoveSessionTabRequest, Session | null>(IpcChannels.tabsRemove, (req) =>
     removeSessionTab(req)
-  )
-
-  handle<OpenCodeTuiPluginRequest, OpenCodeTuiPluginState>(
-    IpcChannels.opencodeTuiPluginState,
-    async (req) => {
-      return opencodeTuiStatusManager.pluginState(req.target)
-    }
-  )
-  handle<OpenCodeTuiPluginRequest, OpenCodeTuiPluginState>(
-    IpcChannels.opencodeTuiPluginInstall,
-    (req) => opencodeTuiStatusManager.installPlugin(req.target)
-  )
-  handle<OpenCodeTuiPluginRequest, OpenCodeTuiPluginState>(
-    IpcChannels.opencodeTuiPluginRemove,
-    (req) => opencodeTuiStatusManager.removePlugin(req.target)
-  )
-  handle<void, OpenCodeTuiSettings>(IpcChannels.opencodeTuiSettings, () =>
-    opencodeTuiStatusManager.settings()
-  )
-  handle<OpenCodeTuiSetEnabledRequest, OpenCodeTuiSettings>(
-    IpcChannels.opencodeTuiSetEnabled,
-    (req) => {
-      if (typeof req?.enabled !== 'boolean') {
-        throw new Error('Invalid OpenCode TUI enabled setting.')
-      }
-      return opencodeTuiStatusManager.setEnabled(req.enabled)
-    }
-  )
-  handle<void, OpenCodeAlertSettings>(IpcChannels.opencodeAlertsSettings, () =>
-    opencodeAlertManager.settings()
-  )
-  handle<OpenCodeAlertSetEnabledRequest, OpenCodeAlertSettings>(
-    IpcChannels.opencodeAlertsSetEnabled,
-    (req) => {
-      if (typeof req?.enabled !== 'boolean') {
-        throw new Error('Invalid OpenCode alerts enabled setting.')
-      }
-      return opencodeAlertManager.setEnabled(req.enabled)
-    }
   )
 
   handle<void, InboxThread[]>(IpcChannels.inboxList, () => inboxRecorder.list())

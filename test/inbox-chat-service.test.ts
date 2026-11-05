@@ -58,7 +58,7 @@ function setup(responses: Partial<Record<ServiceOperation, unknown>> = {}, draft
 }
 
 describe('Inbox chat service', () => {
-  it('creates terminal chats with the same API choices and records their status without a plugin', async () => {
+  it('creates terminal chats with the same API choices and records their API status', async () => {
     const { service, folder, calls, store, advance, disable } = setup({
       'session.create': { data: { id: 'ses_terminal', title: 'Terminal task' } },
     })

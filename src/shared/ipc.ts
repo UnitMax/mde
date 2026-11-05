@@ -17,16 +17,8 @@ import type {
   ProjectKind,
   Session,
   SessionTab,
-  OpenCodeTuiSetEnabledRequest,
-  OpenCodeTuiSettings,
-  OpenCodeTuiPluginRequest,
-  OpenCodeTuiPluginState,
-  OpenCodeTuiStatusUpdate,
-  OpenCodeTuiInstancesUpdate,
   FileReadResponse,
   FileTreeListResponse,
-  OpenCodeAlertSetEnabledRequest,
-  OpenCodeAlertSettings,
   PtyDataChunk,
   PtyDirectoryUpdate,
   PtyExitInfo,
@@ -151,14 +143,7 @@ export const IpcChannels = {
 
   opencodeSessionsList: 'opencode-sessions:list',
 
-  opencodeTuiPluginState: 'opencode-tui:plugin-state',
-  opencodeTuiPluginInstall: 'opencode-tui:plugin-install',
-  opencodeTuiPluginRemove: 'opencode-tui:plugin-remove',
-  opencodeTuiSettings: 'opencode-tui:settings',
-  opencodeTuiSetEnabled: 'opencode-tui:set-enabled',
 
-  opencodeAlertsSettings: 'opencode-alerts:settings',
-  opencodeAlertsSetEnabled: 'opencode-alerts:set-enabled',
 
   inboxList: 'inbox:list',
   inboxSetRead: 'inbox:set-read',
@@ -208,8 +193,6 @@ export const IpcEvents = {
   ptyData: 'pty:data',
   ptyExit: 'pty:exit',
   ptyDirectory: 'pty:directory',
-  opencodeTuiStatus: 'opencode-tui:status',
-  opencodeTuiInstances: 'opencode-tui:instances',
   inboxChanged: 'inbox:changed',
   chatEvent: 'chat:event',
   windowModeChanged: 'window-mode:changed',
@@ -533,19 +516,6 @@ export interface RendererApi {
   }
   opencodeSessions: {
     list(req: OpenCodeSessionsRequest): Promise<OpenCodeSessionSummary[]>
-  }
-  opencodeTui: {
-    settings(): Promise<OpenCodeTuiSettings>
-    setEnabled(req: OpenCodeTuiSetEnabledRequest): Promise<OpenCodeTuiSettings>
-    pluginState(req: OpenCodeTuiPluginRequest): Promise<OpenCodeTuiPluginState>
-    install(req: OpenCodeTuiPluginRequest): Promise<OpenCodeTuiPluginState>
-    remove(req: OpenCodeTuiPluginRequest): Promise<OpenCodeTuiPluginState>
-    onStatus(listener: (update: OpenCodeTuiStatusUpdate) => void): () => void
-    onInstances(listener: (update: OpenCodeTuiInstancesUpdate) => void): () => void
-  }
-  opencodeAlerts: {
-    settings(): Promise<OpenCodeAlertSettings>
-    setEnabled(req: OpenCodeAlertSetEnabledRequest): Promise<OpenCodeAlertSettings>
   }
   inbox: {
     changes(req: InboxChangesRequest): Promise<InboxChangesResponse>

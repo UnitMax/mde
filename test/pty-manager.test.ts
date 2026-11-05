@@ -127,22 +127,6 @@ describe('PtyManager runtime terminal identities', () => {
     expect(child?.resize).toHaveBeenCalledWith(140, 42)
   })
 
-  it('applies launch integration environment to native shells and disposes it', () => {
-    const integration = {
-      prepare: vi.fn(() => ({ MDE_TEST_INTEGRATION: '1' })),
-      dispose: vi.fn()
-    }
-    const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() }, integration)
-
-    manager.ensure('pane-a', sourceSession(), { cols: 80, rows: 24 }, palette)
-
-    expect(ptyMock.spawn.mock.calls[0]?.[2]).toMatchObject({
-      env: expect.objectContaining({ MDE_TEST_INTEGRATION: '1' })
-    })
-    manager.dispose('pane-a')
-    expect(integration.dispose).toHaveBeenCalledWith('pane-a')
-  })
-
   it.each(['darwin', 'win32'] as const)('keeps terminal service credentials out of argv on %s', (platform) => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
     const previousWslEnv = process.env.WSLENV
@@ -327,16 +311,14 @@ describe('PtyManager runtime terminal identities', () => {
     })
   })
 
-  it('rejects unavailable host executables before creating PTYs or integration timers', () => {
+  it('rejects unavailable host executables before creating PTYs', () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     vi.mocked(hostExecutables.resolveWslExecutable).mockImplementation(() => {
       throw new Error('Windows WSL executable is unavailable')
     })
-    const integration = { prepare: vi.fn(), dispose: vi.fn() }
-    const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() }, integration)
+    const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() })
     expect(() => manager.ensure('pane-a', wslSession(), { cols: 80, rows: 24 }, palette)).toThrow('WSL executable is unavailable')
     expect(ptyMock.spawn).not.toHaveBeenCalled()
-    expect(integration.prepare).not.toHaveBeenCalled()
   })
 
   it.each(['linux', 'darwin'] as const)('does not request a Windows backend on %s', (platform) => {

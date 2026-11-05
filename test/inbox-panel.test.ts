@@ -165,7 +165,7 @@ describe('Inbox chat message history', () => {
 })
 
 describe('Inbox', () => {
-  it('is locked where OpenCode’s service is not reachable, and works without status reporting elsewhere', async () => {
+  it('is locked where OpenCode’s service is not reachable, and works elsewhere', async () => {
     useWorkspace.setState({ platform: { platform: 'linux', isWindows: false }, inboxThreads: [thread()] })
     const panel = await render(createElement(InboxPanel))
     expect(panel.querySelector('[data-testid="inbox-locked"]')).not.toBeNull()

@@ -198,26 +198,9 @@ export interface Distro {
 /** Lifecycle of the PTY belonging to a session, as tracked by the main process. */
 export type PtyStatus = 'none' | 'running' | 'exited'
 
-export type OpenCodeTuiStatus = 'idle' | 'working' | 'attention' | 'completed' | 'error'
+export type InboxThreadStatus = 'idle' | 'working' | 'attention' | 'completed' | 'error'
 
-export type OpenCodeTuiAttentionReason = 'permission' | 'question'
-
-/** A local status snapshot written by the optional OpenCode plugin. */
-export interface OpenCodeTuiStatusSnapshot {
-  protocol: 1
-  status: OpenCodeTuiStatus
-  attentionReason?: OpenCodeTuiAttentionReason
-  revision: number
-  updatedAt: number
-  /** Process identity used only by the main-process liveness check. */
-  processId?: number
-  /** Linux /proc start-time tick, paired with processId to reject PID reuse. */
-  processStartTicks?: number
-  /** macOS process start time from ps, paired with processId. */
-  processStartedAt?: string
-  /** Explicit plugin shutdown marker; distinct from a completed task. */
-  closed?: true
-}
+export type InboxAttentionReason = 'permission' | 'question'
 
 /** The model an OpenCode conversation uses; identifiers only. */
 export interface OpenCodeModelRef {
@@ -240,12 +223,12 @@ export interface InboxThread {
   id: string
   title: string
   directory: string
-  target: OpenCodePluginTarget
+  target: OpenCodeTarget
   /** Branch of `directory` at the last recorded activity; null when unknown or detached. */
   branch: string | null
   model?: OpenCodeModelRef
-  status: OpenCodeTuiStatus
-  attentionReason?: OpenCodeTuiAttentionReason
+  status: InboxThreadStatus
+  attentionReason?: InboxAttentionReason
   createdAt: number
   /** Last time the agent finished, failed, or asked for input (or first seen). */
   lastActivityAt: number
@@ -306,7 +289,7 @@ export interface InboxFolder {
   name: string
   /** Absolute directory in the target's own format. */
   directory: string
-  target: OpenCodePluginTarget
+  target: OpenCodeTarget
   createdAt: number
   lastUsedAt: number
   /**
@@ -709,7 +692,7 @@ export type ChatEvent =
   /** The service connection was lost and restored; refetch everything. */
   | { type: 'reconnected'; threadId: string }
   /** An MCP server of this target changed (connected, failed, lost its tools); not tied to one thread. */
-  | { type: 'mcp'; target: OpenCodePluginTarget }
+  | { type: 'mcp'; target: OpenCodeTarget }
 
 export interface InboxSetReadRequest {
   id: string
@@ -732,65 +715,9 @@ export interface InboxRemoveRequest {
   removeWorktree?: boolean
 }
 
-/** Main-process status transition for one MDE workspace session. */
-export interface OpenCodeTuiStatusUpdate {
-  sessionId: string
-  status: OpenCodeTuiStatus | null
-  attentionReason?: OpenCodeTuiAttentionReason
-  revision: number
-}
-
-/** Status of one OpenCode TUI process, identified by its owning terminal pane. */
-export interface OpenCodeTuiInstanceStatus {
-  terminalId: string
-  status: OpenCodeTuiStatus
-  attentionReason?: OpenCodeTuiAttentionReason
-  revision: number
-}
-
-/** Complete live OpenCode TUI instance list for one MDE workspace session. */
-export interface OpenCodeTuiInstancesUpdate {
-  sessionId: string
-  instances: OpenCodeTuiInstanceStatus[]
-}
-
-export type OpenCodeTuiPluginInstallStatus =
-  | 'not-installed'
-  | 'installed'
-  | 'outdated'
-  | 'conflict'
-
-export interface OpenCodeTuiSettings {
-  enabled: boolean
-  currentPluginVersion: string
-}
-
-export interface OpenCodeTuiSetEnabledRequest {
-  enabled: boolean
-}
-
-export interface OpenCodeTuiPluginRequest {
-  target: OpenCodePluginTarget
-}
-
-export interface OpenCodeTuiPluginState {
-  target: OpenCodePluginTarget
-  status: OpenCodeTuiPluginInstallStatus
-  installedVersion: string | null
-  currentVersion: string
-}
-
-export type OpenCodePluginTarget =
+export type OpenCodeTarget =
   | { kind: 'native' }
   | { kind: 'wsl'; distro: string }
-
-export interface OpenCodeAlertSettings {
-  enabled: boolean
-}
-
-export interface OpenCodeAlertSetEnabledRequest {
-  enabled: boolean
-}
 
 export interface PtySize {
   cols: number

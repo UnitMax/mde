@@ -80,7 +80,6 @@ const terminalId = object({ terminalId: id })
 const terminalDirectory = { terminalId: id, directory: path }
 const rooted = (fields: Record<string, Validator>): Validator => (value) =>
   object({ sessionId: id, ...fields })(value) || object({ ...terminalDirectory, ...fields })(value)
-const enabled = object({ enabled: boolean })
 const palette = object({
   foreground: (value) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value),
   background: (value) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value),
@@ -104,10 +103,6 @@ const resumeLaunch = object({
 })
 const launch: Validator = (value) => commandLaunch(value) || resumeLaunch(value)
 const ensure = object({ terminalId: id, sessionId: id, size, palette, launch: optional(launch) })
-const nativeTarget = object({ kind: oneOf('native') })
-const wslTarget = object({ kind: oneOf('wsl'), distro })
-const pluginTarget: Validator = (value) => nativeTarget(value) || wslTarget(value)
-const pluginRequest = object({ target: pluginTarget })
 const relativePath: Validator = (value) => path(value) && !(value as string).startsWith('/') &&
   !(value as string).includes('\\') && (value as string).split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..')
 const listPath: Validator = (value) => value === '' || relativePath(value)
@@ -216,13 +211,6 @@ export const ipcPayloadValidators = {
   [IpcChannels.filesList]: rooted({ path: listPath }),
   [IpcChannels.filesRead]: rooted({ path: relativePath }),
   [IpcChannels.opencodeSessionsList]: object({ sessionId: id, sourceTerminalId: id, executable: path }),
-  [IpcChannels.opencodeTuiPluginState]: pluginRequest,
-  [IpcChannels.opencodeTuiPluginInstall]: pluginRequest,
-  [IpcChannels.opencodeTuiPluginRemove]: pluginRequest,
-  [IpcChannels.opencodeTuiSettings]: noPayload,
-  [IpcChannels.opencodeTuiSetEnabled]: enabled,
-  [IpcChannels.opencodeAlertsSettings]: noPayload,
-  [IpcChannels.opencodeAlertsSetEnabled]: enabled,
   [IpcChannels.inboxList]: noPayload,
   [IpcChannels.inboxSetRead]: object({ id: opencodeSessionId, read: boolean }),
   [IpcChannels.inboxSetArchived]: object({ id: opencodeSessionId, archived: boolean }),

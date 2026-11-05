@@ -4,8 +4,8 @@ import type {
   InboxThreadMode,
   InboxWorktree,
   OpenCodeModelRef,
-  OpenCodeTuiAttentionReason,
-  OpenCodeTuiStatus,
+  InboxAttentionReason,
+  InboxThreadStatus,
   Session
 } from '@shared/types'
 import { targetSession } from '../opencode/service/discovery'
@@ -24,7 +24,7 @@ export interface InboxRecorderDependencies {
 }
 
 /** Statuses that count as the agent doing something the user should look at. */
-export function isInboxActivity(status: OpenCodeTuiStatus): boolean {
+export function isInboxActivity(status: InboxThreadStatus): boolean {
   return status === 'completed' || status === 'attention' || status === 'error'
 }
 
@@ -32,7 +32,7 @@ export function isInboxThreadUnread(thread: InboxThread): boolean {
   return thread.lastActivityAt > thread.readAt
 }
 
-function isBusy(status: OpenCodeTuiStatus): boolean {
+function isBusy(status: InboxThreadStatus): boolean {
   return status === 'working' || status === 'attention'
 }
 
@@ -41,8 +41,8 @@ function sameModel(a: InboxThread['model'], b: InboxThread['model']): boolean {
 }
 
 interface ThreadReport {
-  status?: OpenCodeTuiStatus
-  attentionReason?: OpenCodeTuiAttentionReason
+  status?: InboxThreadStatus
+  attentionReason?: InboxAttentionReason
   title?: string
   model?: OpenCodeModelRef
 }

@@ -1,5 +1,5 @@
 import { MCP_SERVER_NAME } from '@shared/mcp'
-import type { OpenCodePluginTarget } from '@shared/types'
+import type { OpenCodeTarget } from '@shared/types'
 import { serviceTargetKey, type OpenCodeServiceDiscover, type OpenCodeServiceEndpoint } from './discovery'
 
 /** The only OpenCode service operations MDE calls, each with a fixed method and path. */
@@ -170,7 +170,7 @@ export class OpenCodeServiceClient {
     this.fetch = options.fetch ?? globalThis.fetch.bind(globalThis)
   }
 
-  endpoint(target: OpenCodePluginTarget): Promise<OpenCodeServiceEndpoint> {
+  endpoint(target: OpenCodeTarget): Promise<OpenCodeServiceEndpoint> {
     const key = serviceTargetKey(target)
     let pending = this.endpoints.get(key)
     if (!pending) {
@@ -185,7 +185,7 @@ export class OpenCodeServiceClient {
   }
 
   /** Drops a cached endpoint, but only the one a failed request used. */
-  private forget(target: OpenCodePluginTarget, stale: Promise<OpenCodeServiceEndpoint>): void {
+  private forget(target: OpenCodeTarget, stale: Promise<OpenCodeServiceEndpoint>): void {
     const key = serviceTargetKey(target)
     if (this.endpoints.get(key) === stale) this.endpoints.delete(key)
   }
@@ -195,7 +195,7 @@ export class OpenCodeServiceClient {
     this.endpoints.clear()
   }
 
-  async request(target: OpenCodePluginTarget, operation: ServiceOperation, request: ServiceRequest = {}): Promise<unknown> {
+  async request(target: OpenCodeTarget, operation: ServiceOperation, request: ServiceRequest = {}): Promise<unknown> {
     for (let attempt = 0; ; attempt += 1) {
       const pending = this.endpoint(target)
       const endpoint = await pending
@@ -246,7 +246,7 @@ export class OpenCodeServiceClient {
 
   /** Opens the service's event stream; the caller reads and cancels the body. */
   async openEvents(
-    target: OpenCodePluginTarget,
+    target: OpenCodeTarget,
     signal: AbortSignal,
   ): Promise<ReadableStream<Uint8Array>> {
     for (let attempt = 0; ; attempt += 1) {

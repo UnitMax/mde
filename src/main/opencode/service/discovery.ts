@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { OpenCodePluginTarget, Session } from '@shared/types'
+import type { OpenCodeTarget, Session } from '@shared/types'
 import { resolveWslExecutable, type HostExecutable } from '../../windows-executable'
 import {
   loginShellScriptLaunch,
@@ -16,7 +16,7 @@ export interface OpenCodeServiceEndpoint {
   password: string
 }
 
-export type OpenCodeServiceDiscover = (target: OpenCodePluginTarget, executable: string) => Promise<OpenCodeServiceEndpoint>
+export type OpenCodeServiceDiscover = (target: OpenCodeTarget, executable: string) => Promise<OpenCodeServiceEndpoint>
 
 /** Starting a cold service can take a while; reading its file afterwards is instant. */
 const DISCOVERY_TIMEOUT_MS = 45_000
@@ -27,12 +27,12 @@ const PASSWORD = /^[\x21-\x7e]{1,256}$/
 export const SERVICE_UNAVAILABLE =
   'Could not start the OpenCode background service. Check the OpenCode executable in Settings (OpenCode 2 or newer is required).'
 
-export function serviceTargetKey(target: OpenCodePluginTarget): string {
+export function serviceTargetKey(target: OpenCodeTarget): string {
   return target.kind === 'native' ? 'native' : `wsl:${target.distro}`
 }
 
 /** A stand-in session that only carries the target's transport (native or a WSL distro). */
-export function targetSession(target: OpenCodePluginTarget, path = '/'): Session {
+export function targetSession(target: OpenCodeTarget, path = '/'): Session {
   return {
     id: 'inbox',
     projectId: 'inbox',
@@ -50,7 +50,7 @@ export function targetSession(target: OpenCodePluginTarget, path = '/'): Session
  * URL and the password the CLI itself uses.
  */
 export function serviceDiscoveryLaunch(
-  target: OpenCodePluginTarget,
+  target: OpenCodeTarget,
   executable: string,
   marker: string,
   hostExecutable?: HostExecutable,

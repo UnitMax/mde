@@ -145,8 +145,7 @@ mark unread by hand stays unread, even while it is the open one and after the wi
 regains focus, until you open it again (its row, or returning to the Inbox) or something new
 happens in it (`inboxMarkedUnread`).
 
-The Inbox works without the OpenCode status plugin or status reporting: it talks to OpenCode's
-background service directly (see Inbox chat). It is locked, with an explanation, anywhere MDE
+The Inbox talks to OpenCode's background service directly (see Inbox chat). It is locked, with an explanation, anywhere MDE
 cannot reach that service: everywhere except macOS and Windows with WSL. The main area shows the
 selected thread's conversation, or the new-thread page when nothing is selected.
 
@@ -178,8 +177,7 @@ use Inbox API metadata only; they do not run in Projects, GUI chat, or the share
 Only new terminal threads store `mode: "terminal"`; older threads continue in GUI mode. Drafts
 remember the chosen interface and forks inherit it. Each terminal thread has one reserved
 `inbox-thread:<sessionID>` terminal/session identity. Main resolves its folder, target and configured
-OpenCode executable from trusted Inbox state and refuses renderer launch overrides. These terminals
-skip the optional status plugin integration: sidebar activity comes from OpenCode service events.
+OpenCode executable from trusted Inbox state and refuses renderer launch overrides. Sidebar activity for these terminals comes from OpenCode service events.
 The association follows the conversation the thread was created for; switching to another conversation
 inside OpenCode's TUI does not relink the Inbox thread.
 
@@ -782,8 +780,7 @@ Inbox folder, with a status summary and a restore button; F12 again restores the
 It shows GUI and Terminal chat threads using the same titles, branch names, unread state and
 API-driven status as the Inbox. Parked threads are hidden; pins and recent activity determine
 the list order. Threads whose folder was removed still appear under the directory name, and
-worktrees fall back to the original repository name. It requires no terminal status plugin,
-Projects session, or terminal layout. New activity stays unread while only the mini Inbox is
+worktrees fall back to the original repository name. It uses Inbox metadata independently of Projects sessions and terminal layouts. New activity stays unread while only the mini Inbox is
 visible. It is the
 same `BrowserWindow` and renderer, not a second window, so the IPC sender policy is unchanged and
 every terminal keeps running. The main process (`src/main/mini-window.ts`) owns the geometry: it
@@ -845,9 +842,7 @@ with `--session`. Only a fixed set of operations and parameters is ever passed, 
 literal argument. Both require OpenCode 2 or newer; an older OpenCode reports that instead. If
 optional metadata is unavailable it is omitted. The selected history and resume command remain runtime-only.
 On Mac, agent and metadata commands run through the selected login shell with literal arguments.
-Plugin management reads PATH, `OPENCODE_CONFIG_DIR`, and `XDG_CONFIG_HOME` from the native login
-shell so Finder launches resolve the same global configuration as terminal launches. The default
-config directory is `~/.config/opencode`. These operations have bounded timeouts and output sizes.
+These operations have bounded timeouts and output sizes.
 
 ### Clipboard
 
@@ -976,70 +971,23 @@ bare names fail with a configuration error. Native shells still start in the
 project directory. Linux shell overrides and agent commands inside WSL retain
 their existing target-shell behavior.
 
-## OpenCode integration
-
-All integrations are optional and read-only with respect to prompts and project files.
-
-- **TUI status** is disabled by default for Mac and WSL terminal sessions. Open Settings → OpenCode, enable
-  global status reporting, and install MDE's small plugin for the native Mac target or each WSL distro;
-  restart OpenCode after installing or updating it. It requires OpenCode 2 or newer. The plugin is
-  an OpenCode 2 terminal (CLI) plugin installed as `plugins/mde-status/` in the OpenCode
-  configuration directory, with `tui.js` holding the logic and a no-op `index.js` completing the
-  directory. It is discovered automatically, so no OpenCode configuration file is edited, and it runs
-  inside the terminal's own `opencode` process, which is why it sees the `MDE_OPENCODE_STATUS_*`
-  variables (OpenCode's shared background service does not). It is inert outside MDE terminals,
-  writes only a short runtime snapshot under `/tmp/mde-opencode` in WSL or a private `mde-opencode`
-  directory beneath the macOS user temporary directory, and does not modify project files
-  or OpenCode configuration. MDE reads that snapshot locally on Mac or through the distro's `\\wsl.localhost\...`
-  path and falls back to normal shell status when it is absent. The bundled plugin reports
-  status only; conversation titles, prompts, messages, tool data, credentials, and filesystem
-  contents are never included in its snapshot. Titles from older installed plugins are ignored;
-  reinstalling the plugin and restarting OpenCode stops those plugins from writing titles too.
-  Snapshots carry a PID and process start identity: Linux `/proc` start ticks for WSL, or
-  `/bin/ps` start time with a fixed locale on Mac. After missed heartbeats, MDE checks this identity
-  before clearing an exited instance; an inconclusive probe preserves the last status. Mac status
-  directories have mode 0700 and snapshots mode 0600. Disposal removes a pane's snapshot;
-  startup removes matching artifacts older than 24 hours. Plugin protocol 1 is unchanged, so older
-  snapshots stay readable; plugin version 2.0.0 is the first for OpenCode 2.
-
-  The plugin subscribes to the terminal's event feed: `session.execution.started` marks work,
-  `succeeded`/`interrupted` marks completion and `failed` marks an error that stays until that session
-  runs again; `permission.asked`/`replied` and `form.created`/`replied`/`cancelled` (OpenCode's
-  question prompts) mark attention. The feed carries every session of the shared background service,
-  including those of other terminals in the same directory, so only sessions this terminal has
-  displayed, and their subagents, count. The tab list is deliberately not used, because it holds
-  every root session of a directory.
-  Once a second the plugin drops work, permission and question entries that OpenCode's own state no
-  longer shows, so a missed event cannot leave a pane stuck.
-- **Notifications**: session rows and the Ctrl+O session switcher show a count for OpenCode
-  agents that finished with unread results, or are waiting for permission or an answer;
-  selecting the session clears completed-result counts while unresolved requests remain visible.
-- **Desktop alerts** request Dock attention on macOS or flash the taskbar on Windows, and play
-  the system sound when an agent completes, needs input, or fails while MDE is unfocused.
-  Focusing MDE or disabling alerts clears attention. Native notification banners are not used.
-
 ## Upgrade notes
 
-### Upgrading to OpenCode 2
+### Removed OpenCode status integration
 
-MDE supports OpenCode 2 and newer; OpenCode 1 no longer shows status or session history.
-
-- **Status plugin.** OpenCode 2 cannot load the old loose `plugins/mde-status.js` and logs a load
-  error for it on every start. Settings → OpenCode shows "Update available" for it; installing
-  replaces it with `plugins/mde-status/` and removes the old file, but only if it carries MDE's
-  marker. A file of the same name from anyone else is left alone.
-- **Token rate.** The separate token-rate plugin has been removed, because OpenCode 2 shows tokens per
-  second itself. MDE no longer installs, updates, or removes it, and does not clean up after it.
-  If it was installed, delete `plugins/mde-token-rate.tsx` from the OpenCode configuration directory
-  and remove its `file://` entry from the `plugins` list in `cli.json` (and from `plugin` in the old
-  `tui.json`, if you keep OpenCode 1 around). Until then OpenCode 2 reports a plugin that fails to load.
+MDE no longer installs or runs an OpenCode status plugin, tracks terminal agents, or requests
+Dock/taskbar attention and sound. Inbox status and the mini Inbox use the OpenCode API.
+Previously installed `plugins/mde-status/` directories (or the older `plugins/mde-status.js` file)
+can be removed from each target's OpenCode configuration after closing old MDE terminals.
+The unused `opencode-tui.json` and `opencode-notifications.json` files in MDE's user-data directory
+and old `mde-opencode` temporary snapshots are no longer read or written. They are not removed
+automatically; workspace and Inbox data are unchanged.
 
 ### Removing previously installed Codex hooks
 
 Codex hook reporting has been removed. The Codex launcher and its command settings remain
-available, but terminal status, notifications, and desktop alerts are provided only by OpenCode.
-Existing workspace and launcher settings remain compatible. The mini Inbox uses Inbox threads
-and their API events independently of terminal reporting.
+available. Existing workspace and launcher settings remain compatible. The mini Inbox uses
+Inbox threads and their API events.
 
 Previously installed hooks are not removed automatically. Restart MDE after upgrading; new
 terminals no longer receive the `MDE_CODEX_STATUS_*` environment variables, so the old MDE hook

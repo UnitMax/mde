@@ -5,7 +5,7 @@ import type {
   InboxGitInfo,
   InboxThread,
   InboxWorktree,
-  OpenCodePluginTarget,
+  OpenCodeTarget,
 } from '@shared/types'
 import {
   createGitCommandRunner,
@@ -27,11 +27,11 @@ const MESSAGE_MAX_LENGTH = 200
 
 export interface InboxWorktreeDependencies {
   /** A read-only runner for queries about the folder's repository. */
-  read(target: OpenCodePluginTarget, directory: string): GitCommandRunner
+  read(target: OpenCodeTarget, directory: string): GitCommandRunner
   /** A runner for commands that create or remove a worktree. */
-  mutate(target: OpenCodePluginTarget, directory: string): GitCommandRunner
+  mutate(target: OpenCodeTarget, directory: string): GitCommandRunner
   /** The home directory of the target, in the target's own format. */
-  home(target: OpenCodePluginTarget): Promise<string>
+  home(target: OpenCodeTarget): Promise<string>
   /** A fresh eight-character lowercase hex id for a worktree and its branch. */
   randomId(): string
 }
@@ -79,7 +79,7 @@ function inside(root: string, path: string): boolean {
   return path === root || path.startsWith(`${root}/`)
 }
 
-function sameTarget(a: OpenCodePluginTarget, b: OpenCodePluginTarget): boolean {
+function sameTarget(a: OpenCodeTarget, b: OpenCodeTarget): boolean {
   return a.kind === b.kind && (a.kind === 'native' || (b.kind === 'wsl' && a.distro === b.distro))
 }
 
@@ -161,7 +161,7 @@ export class InboxWorktrees {
    * that was to use it could not be started. Nothing has run in it, so nothing can be lost, and it
    * never fails: whatever cannot be undone is left for the user.
    */
-  async discard(target: OpenCodePluginTarget, worktree: InboxWorktree): Promise<void> {
+  async discard(target: OpenCodeTarget, worktree: InboxWorktree): Promise<void> {
     try {
       const run = this.dependencies.mutate(target, worktree.repository)
       await run(['worktree', 'remove', '--force', '--', worktree.root])

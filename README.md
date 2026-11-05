@@ -5,10 +5,9 @@ persistent terminal sessions, with first-class WSL support on Windows.
 
 It is a desktop shell focused on persistent terminal workflows: tabbed multi-pane terminals per
 session, Git changes in each terminal header, a file tree that follows the selected terminal,
-Markdown and Mermaid preview, an OpenCode session picker, and To Do boards. An optional OpenCode 2 terminal plugin provides agent status,
-alerts and instance labels without replacing the terminal experience. The Inbox is a separate
+Markdown and Mermaid preview, an OpenCode session picker, and To Do boards. The Inbox is a separate
 view for starting and continuing OpenCode conversations in GUI chat or a direct OpenCode terminal;
-neither Inbox interface needs a plugin. Choose GUI (the default) or Terminal in the new-thread composer. See
+both use OpenCode's API for thread activity. Choose GUI (the default) or Terminal in the new-thread composer. See
 [`docs/architecture.md`](docs/architecture.md) for how each part behaves.
 
 Build terminal layouts by holding Ctrl and clicking + on a pane’s left, right, top or bottom edge.
@@ -63,11 +62,7 @@ notarization requires overriding `mac.identity` and supplying release credential
 and configuration. The Mac
 package includes only the rebuilt PTY binding and spawn helper outside `app.asar`,
 with compiler debug paths stripped before signing. Native Mac terminals support
-the agent launcher, OpenCode history/resume, status reporting, the F12 mini Inbox window,
-and Dock attention and sound. Enable status reporting and install the optional plugin
-under Settings → OpenCode, then restart OpenCode.
-Mac plugin management resolves the config directory and executable environment
-through the user’s login shell, including when MDE is launched from Finder.
+the agent launcher, OpenCode history/resume, and the F12 mini Inbox window.
 WSL-specific actions remain Windows-only.
 
 Cross-building for Windows from Linux is not supported; build on Windows, or from WSL with
