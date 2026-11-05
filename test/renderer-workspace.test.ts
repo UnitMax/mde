@@ -139,7 +139,7 @@ describe('renderer workspace event bridge', () => {
       opencodeTuiStatuses: {},
       opencodeTuiInstances: {},
       opencodeTuiReadRevisions: {},
-      terminalHighlights: {},
+      inboxTerminalHighlights: {},
       sessions: [],
       todoProjects: [],
       todoTasks: [],
@@ -338,41 +338,6 @@ describe('renderer workspace event bridge', () => {
 
     useWorkspace.getState().appendOpenCodeTuiInstances({ sessionId: 'session-1', instances: [] })
     expect(useWorkspace.getState().opencodeTuiReadRevisions).not.toHaveProperty('session-1:split:1')
-  })
-
-  it('flashes a pane when its OpenCode agent starts waiting, finishes, or fails', () => {
-    const working = { terminalId: 'session-1', status: 'working' as const, revision: 1 }
-    const append = (instances: OpenCodeTuiInstancesUpdate['instances']): void =>
-      useWorkspace.getState().appendOpenCodeTuiInstances({ sessionId: 'session-1', instances })
-    const highlights = (): ReturnType<typeof useWorkspace.getState>['terminalHighlights'] =>
-      useWorkspace.getState().terminalHighlights
-
-    append([working])
-    expect(highlights()).toEqual({})
-
-    append([{ ...working, status: 'attention', attentionReason: 'permission', revision: 2 }])
-    expect(highlights()['session-1']).toMatchObject({ tone: 'attention', token: 1 })
-
-    append([{ ...working, status: 'working', revision: 3 }])
-    expect(highlights()['session-1']).toMatchObject({ tone: 'attention', token: 1 })
-
-    append([{ ...working, status: 'completed', revision: 4 }])
-    expect(highlights()['session-1']).toMatchObject({ tone: 'done', token: 2 })
-
-    append([{ ...working, status: 'error', revision: 5 }])
-    expect(highlights()['session-1']).toMatchObject({ tone: 'error', token: 3 })
-  })
-
-  it('does not flash for a title-only update or an agent seen for the first time', () => {
-    const completed = { terminalId: 'session-1', status: 'completed' as const, revision: 4 }
-    const append = (instances: OpenCodeTuiInstancesUpdate['instances']): void =>
-      useWorkspace.getState().appendOpenCodeTuiInstances({ sessionId: 'session-1', instances })
-
-    append([completed])
-    append([{ ...completed, title: 'Checkout flow' }])
-    append([completed, { terminalId: 'session-1:split:1', status: 'attention', revision: 1 }])
-
-    expect(useWorkspace.getState().terminalHighlights).toEqual({})
   })
 
   it('creates and selects a terminal session', async () => {

@@ -120,7 +120,7 @@ describe('switching sessions with a file open', () => {
     expect(viewerPath()).toBe('README.md')
   })
 
-  it('opens an Inbox thread from F12 without selecting or highlighting a Projects terminal', async () => {
+  it('opens an Inbox thread from F12 without selecting a Projects terminal', async () => {
     const thread: InboxThread = {
       id: 'ses_inbox', title: 'Inbox conversation', directory: '/workspace/inbox', target: { kind: 'native' },
       folderId: 'fld_inbox', branch: 'main', status: 'working', createdAt: 1, lastActivityAt: 1, readAt: 1, archived: false,
@@ -128,7 +128,6 @@ describe('switching sessions with a file open', () => {
     useWorkspace.setState({
       windowMode: 'mini',
       inboxThreads: [thread],
-      terminalHighlights: {},
       opencodeTuiInstances: { alpha: [{ terminalId: 'alpha', title: 'Projects agent', status: 'attention', revision: 1 }] },
     })
     const container = await render()
@@ -142,7 +141,6 @@ describe('switching sessions with a file open', () => {
     expect(useWorkspace.getState().activeWorkspaceView).toBe('inbox')
     expect(useWorkspace.getState().selectedInboxThreadId).toBe(thread.id)
     expect(useWorkspace.getState().selectedSessionId).toBe('alpha')
-    expect(useWorkspace.getState().terminalHighlights).toEqual({})
   })
   it('follows pane selection and directory reports, with previews scoped to each root', async () => {
     const first = terminalIdForPane('alpha', 'alpha-tab', 'pane-1')

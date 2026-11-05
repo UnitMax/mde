@@ -31,10 +31,9 @@ import { viewportSettle } from '@/terminal/viewport-settle'
 import { isInboxThreadUnread } from '@/lib/inbox'
 import type { OpenCodeTuiReadRevisions } from '@/lib/opencode-tui-notifications'
 import {
-  detectInstanceHighlights,
-  type TerminalHighlight,
-  type TerminalHighlightTone
-} from '@/lib/terminal-highlight'
+  inboxTerminalHighlightTone,
+  type InboxTerminalHighlight,
+} from '@/lib/inbox-terminal-highlight'
 
 export interface OpenCodeTuiStatusState {
   status: OpenCodeTuiStatus
@@ -87,18 +86,6 @@ function markCompletedOpenCodeTuiInstancesRead(
   })
 }
 
-function withTerminalHighlights(
-  current: Record<string, TerminalHighlight>,
-  flashes: readonly { terminalId: string; tone: TerminalHighlightTone }[]
-): Record<string, TerminalHighlight> {
-  const next = { ...current }
-  const at = Date.now()
-  flashes.forEach(({ terminalId, tone }) => {
-    next[terminalId] = { tone, token: (current[terminalId]?.token ?? 0) + 1, at }
-  })
-  return next
-}
-
 function clearOpenCodeTuiReadRevisions(
   readRevisions: Record<string, number>,
   sessionId: string,
@@ -135,8 +122,8 @@ interface WorkspaceState {
   /** When something new last happened in a thread being read, by thread; drives a brief cue. */
   inboxCues: Record<string, number>
   settingsDialog: SettingsDialogState
-  /** One-shot pane highlights by terminal id; kept here because TerminalView remounts. */
-  terminalHighlights: Record<string, TerminalHighlight>
+  /** Brief border animations for Inbox Terminal chats, keyed by thread ID and never persisted. */
+  inboxTerminalHighlights: Record<string, InboxTerminalHighlight>
   platform: PlatformInfo | null
   /** Owned by the main process, which resizes the window; mirrored here to pick the UI. */
   windowMode: WindowMode
@@ -199,7 +186,7 @@ interface WorkspaceState {
   clearExit: (id: string) => void
   appendOpenCodeTuiStatus: (update: OpenCodeTuiStatusUpdate) => void
   appendOpenCodeTuiInstances: (update: OpenCodeTuiInstancesUpdate) => void
-  clearTerminalHighlight: (terminalId: string, token: number) => void
+  clearInboxTerminalHighlight: (threadId: string, token: number) => void
   openSettings: (section?: SettingsSection) => void
   closeSettings: () => void
   selectInboxThread: (id: string | null) => void
@@ -235,7 +222,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   inboxMarkedUnread: {},
   inboxCues: {},
   settingsDialog: { open: false, section: 'appearance' },
-  terminalHighlights: {},
+  inboxTerminalHighlights: {},
   platform: null,
   windowMode: 'normal',
   wslAvailable: false,
@@ -718,25 +705,21 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         delete opencodeTuiInstances[sessionId]
         return { opencodeTuiInstances, opencodeTuiReadRevisions }
       }
-      const highlights = detectInstanceHighlights(previous, instances)
       return {
         opencodeTuiInstances: {
           ...state.opencodeTuiInstances,
           [sessionId]: instances
         },
         opencodeTuiReadRevisions,
-        ...(highlights.length > 0
-          ? { terminalHighlights: withTerminalHighlights(state.terminalHighlights, highlights) }
-          : {})
       }
     }),
 
-  clearTerminalHighlight: (terminalId, token) =>
+  clearInboxTerminalHighlight: (threadId, token) =>
     set((state) => {
-      if (state.terminalHighlights[terminalId]?.token !== token) return state
-      const terminalHighlights = { ...state.terminalHighlights }
-      delete terminalHighlights[terminalId]
-      return { terminalHighlights }
+      if (state.inboxTerminalHighlights[threadId]?.token !== token) return state
+      const inboxTerminalHighlights = { ...state.inboxTerminalHighlights }
+      delete inboxTerminalHighlights[threadId]
+      return { inboxTerminalHighlights }
     }),
 
   openSettings: (section = 'appearance') => set({ settingsDialog: { open: true, section } }),
@@ -787,11 +770,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     set((state) => {
       const { [id]: _marked, ...inboxMarkedUnread } = state.inboxMarkedUnread
       const { [id]: _cue, ...inboxCues } = state.inboxCues
+      const { [id]: _highlight, ...inboxTerminalHighlights } = state.inboxTerminalHighlights
       return {
         inboxThreads: state.inboxThreads.filter((thread) => thread.id !== id),
         selectedInboxThreadId: state.selectedInboxThreadId === id ? null : state.selectedInboxThreadId,
         inboxMarkedUnread,
-        inboxCues
+        inboxCues,
+        inboxTerminalHighlights,
       }
     })
   },
@@ -799,7 +784,16 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   upsertInboxThread: (thread) => {
     const state = get()
     const previous = state.inboxThreads.find((item) => item.id === thread.id)
-    set({ inboxThreads: withInboxThread(state.inboxThreads, thread) })
+    const tone = inboxTerminalHighlightTone(previous, thread)
+    set({
+      inboxThreads: withInboxThread(state.inboxThreads, thread),
+      ...(tone ? {
+        inboxTerminalHighlights: {
+          ...state.inboxTerminalHighlights,
+          [thread.id]: { tone, token: (state.inboxTerminalHighlights[thread.id]?.token ?? 0) + 1, at: Date.now() },
+        },
+      } : {}),
+    })
     // New activity on the thread being read is seen immediately, like an open mail. Only new activity
     // counts: a thread that was just marked unread is still the open one, and has to stay unread.
     const activity = !previous || thread.lastActivityAt > previous.lastActivityAt

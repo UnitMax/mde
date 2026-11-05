@@ -166,6 +166,15 @@ a saved draft, with an explicit send action; it is never submitted automatically
 message can likewise be retried without creating another session. The shared shell in the right
 sidebar remains independent.
 
+The OpenCode surface of a Terminal chat plays a one-shot border animation when its API status
+starts waiting for permission or an answer (accent color), finishes (green), or fails (red).
+A bright streak travels once around the border while a soft inner glow fades in and out, for
+about 1.5 seconds. New activity can repeat the animation even if the status name stays the same;
+title, branch, pin and read updates stay quiet, as does the first report of a thread. Each thread
+keeps its own brief animation in renderer memory, so switching threads does not replay an expired
+one. Under the OS reduced-motion setting the streak is replaced by a still fade. These animations
+use Inbox API metadata only; they do not run in Projects, GUI chat, or the shared Inbox shell.
+
 Only new terminal threads store `mode: "terminal"`; older threads continue in GUI mode. Drafts
 remember the chosen interface and forks inherit it. Each terminal thread has one reserved
 `inbox-thread:<sessionID>` terminal/session identity. Main resolves its folder, target and configured
@@ -1005,12 +1014,6 @@ All integrations are optional and read-only with respect to prompts and project 
 - **Notifications**: session rows and the Ctrl+O session switcher show a count for OpenCode
   agents that finished with unread results, or are waiting for permission or an answer;
   selecting the session clears completed-result counts while unresolved requests remain visible.
-  The terminal pane itself also plays a one-shot highlight, about 1.5 seconds long, when its agent
-  starts waiting for permission or an answer (accent color), finishes (green), or fails (red): a
-  bright streak travels once around the pane's border while a soft inner glow fades in and out. It
-  is triggered by a changed per-pane status revision, so title updates and the first report after
-  launch stay quiet, and it is drawn from the theme colors. Under the OS reduced-motion setting
-  the streak is replaced by a still fade. The state is renderer-only and is never persisted.
 - **Desktop alerts** request Dock attention on macOS or flash the taskbar on Windows, and play
   the system sound when an agent completes, needs input, or fails while MDE is unfocused.
   Focusing MDE or disabling alerts clears attention. Native notification banners are not used.

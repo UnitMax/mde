@@ -55,7 +55,7 @@ beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('ResizeObserver', class { observe(): void {} disconnect(): void {} })
   vi.stubGlobal('api', api)
-  useWorkspace.setState({ activeWorkspaceView: 'inbox', platform: { platform: 'darwin', isWindows: false }, inboxThreads: [], selectedInboxThreadId: null, statuses: {}, exits: {}, terminalDirectories: {} })
+  useWorkspace.setState({ activeWorkspaceView: 'inbox', platform: { platform: 'darwin', isWindows: false }, inboxThreads: [], selectedInboxThreadId: null, inboxTerminalHighlights: {}, statuses: {}, exits: {}, terminalDirectories: {} })
   useInboxChat.setState({ folders: [folder], composer: { folderId: folder.id }, foldersLoaded: true, threads: {}, options: {}, recent: [], titleRegenerations: {}, draftReloads: {} })
   useInboxDrafts.setState({ page: { id: 'drf_terminal', opened: false }, drafts: [], threadDrafts: [] })
   container = document.createElement('div')
@@ -110,6 +110,29 @@ describe('Inbox terminal chat', () => {
     expect(useWorkspace.getState().statuses[terminalId]).toBe('running')
   })
 
+  it.each([
+    ['attention', 'attention'], ['completed', 'done'], ['error', 'error'],
+  ] as const)('animates only the OpenCode surface when the API reports %s', async (status, tone) => {
+    useWorkspace.setState({ inboxThreads: [thread()], selectedInboxThreadId: 'ses_one' })
+    await render()
+    expect(container.querySelector('[data-testid="inbox-terminal-highlight"]')).toBeNull()
+    await act(async () => useWorkspace.getState().upsertInboxThread({ ...thread(), status, lastActivityAt: 2 }))
+    const surface = container.querySelector('[data-testid="inbox-terminal-surface"]')
+    const highlight = surface?.querySelector<HTMLElement>('[data-testid="inbox-terminal-highlight"]')
+    expect(highlight?.dataset.tone).toBe(tone)
+    expect(surface?.querySelector('.terminal-host')).not.toBeNull()
+    expect(container.querySelectorAll('[data-testid="inbox-terminal-highlight"]')).toHaveLength(1)
+  })
+
+  it('does not animate a terminal when a GUI thread completes', async () => {
+    const gui = thread('ses_gui', 'gui')
+    useWorkspace.setState({ inboxThreads: [thread(), gui], selectedInboxThreadId: 'ses_one' })
+    await render()
+    await act(async () => useWorkspace.getState().upsertInboxThread({ ...gui, status: 'completed', lastActivityAt: 2 }))
+    expect(container.querySelector('[data-testid="inbox-terminal-highlight"]')).toBeNull()
+    expect(useWorkspace.getState().inboxTerminalHighlights).toEqual({})
+  })
+
   it('restores a terminal draft and resets fresh pages to GUI', async () => {
     useInboxDrafts.setState({ page: { id: 'drf_restored', opened: true, folderId: folder.id, choice: { mode: 'terminal', agent: 'build', model } } })
     await render()
@@ -122,10 +145,13 @@ describe('Inbox terminal chat', () => {
     useWorkspace.setState({ inboxThreads: [thread()], selectedInboxThreadId: 'ses_one' })
     await render()
     await vi.waitFor(() => expect(api.pty.ensure).toHaveBeenCalled())
+    await act(async () => useWorkspace.getState().upsertInboxThread({ ...thread(), status: 'completed', lastActivityAt: 2 }))
+    expect(useWorkspace.getState().inboxTerminalHighlights.ses_one).toBeDefined()
     await act(async () => useWorkspace.getState().removeInboxThread('ses_one'))
     expect(disposeSession).toHaveBeenCalledWith(terminalId)
     expect(useWorkspace.getState().statuses[terminalId]).toBe('none')
     expect(useWorkspace.getState().selectedInboxThreadId).toBeNull()
+    expect(useWorkspace.getState().inboxTerminalHighlights).toEqual({})
   })
 
   it('keeps an unfinished message from a sidebar fork available without submitting it automatically', async () => {

@@ -3,6 +3,7 @@ import { LoaderCircle, RotateCw, Terminal } from 'lucide-react'
 import type { ChatDraft, InboxThread } from '@shared/types'
 import { inboxThreadTerminalId, inboxThreadTerminalSession } from '@shared/inbox-thread-terminal'
 import { TerminalSurface } from '@/components/TerminalView'
+import { TerminalThreadHighlight } from '@/components/inbox/TerminalThreadHighlight'
 import { Button } from '@/components/ui/button'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { useInboxChat } from '@/store/inbox-chat'
@@ -87,7 +88,10 @@ export function TerminalThreadView({ thread }: { thread: InboxThread }): JSX.Ele
         </div>
       )}
       {error && <p role="alert" className="px-4 py-2 text-xs text-danger">{error}</p>}
-      <TerminalSurface session={session} pane={pane} onFocus={() => {}} isFullscreen={false} />
+      <div className="relative flex min-h-0 flex-1 overflow-hidden" data-testid="inbox-terminal-surface">
+        <TerminalSurface session={session} pane={pane} onFocus={() => {}} isFullscreen={false} />
+        <TerminalThreadHighlight threadId={thread.id} />
+      </div>
     </div>
   )
 }

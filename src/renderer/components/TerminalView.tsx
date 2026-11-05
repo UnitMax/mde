@@ -81,7 +81,6 @@ import {
 import { terminalPrimarySelectionMode } from '@/terminal/clipboard'
 import { sessionTabs } from '@/terminal/tabs'
 import { TerminalPaneHeader } from '@/components/TerminalPaneHeader'
-import { TerminalPaneHighlight } from '@/components/TerminalPaneHighlight'
 import { TerminalPaneOverlay } from '@/components/TerminalPaneOverlay'
 import { TerminalLauncher } from '@/components/TerminalLauncher'
 import { OpenCodeSessionsDialog } from '@/components/OpenCodeSessionsDialog'
@@ -709,7 +708,6 @@ function TerminalPane({
           ))}
         </div>
       )}
-      <TerminalPaneHighlight terminalId={pane.terminalId} />
       {reorderState === 'target' && (
         <div
           aria-hidden="true"
