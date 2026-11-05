@@ -7,7 +7,6 @@ import { nativeOpenCodeConfigDirectory } from '../native-environment'
 import { inboxTerminalThreadId } from '@shared/inbox-thread-terminal'
 import type {
   OpenCodeTuiAttentionReason,
-  OpenCodeTuiInstanceLabelMode,
   OpenCodeTuiInstanceStatus,
   OpenCodeTuiInstancesUpdate,
   OpenCodeTuiPluginInstallStatus,
@@ -414,7 +413,6 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
   private settingsDirectory: string | null = null
   private nativeStatusRoot: string | null = null
   private enabled = false
-  private instanceLabelMode: OpenCodeTuiInstanceLabelMode = 'numbered'
 
   private readonly dependencies: TuiStatusManagerDependencies
 
@@ -452,21 +450,18 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
         ? parsed as Record<string, unknown>
         : {}
       this.enabled = record.enabled === true
-      this.instanceLabelMode = record.instanceLabelMode === 'title' ? 'title' : 'numbered'
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         console.warn('[opencode-tui] could not read settings; defaulting to disabled:', error)
       }
       this.enabled = false
-      this.instanceLabelMode = 'numbered'
     }
   }
 
   settings(): OpenCodeTuiSettings {
     return {
       enabled: this.enabled,
-      currentPluginVersion: TUI_STATUS_PLUGIN_VERSION,
-      instanceLabelMode: this.instanceLabelMode
+      currentPluginVersion: TUI_STATUS_PLUGIN_VERSION
     }
   }
 
@@ -480,21 +475,6 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
       throw error
     }
     if (!enabled) this.disposeAll()
-    return this.settings()
-  }
-
-  async setInstanceLabelMode(mode: OpenCodeTuiInstanceLabelMode): Promise<OpenCodeTuiSettings> {
-    if (mode !== 'numbered' && mode !== 'title') {
-      throw new Error('Invalid OpenCode TUI instance label mode.')
-    }
-    const previous = this.instanceLabelMode
-    this.instanceLabelMode = mode
-    try {
-      await this.persistSettings()
-    } catch (error) {
-      this.instanceLabelMode = previous
-      throw error
-    }
     return this.settings()
   }
 
@@ -598,8 +578,7 @@ export class OpenCodeTuiStatusManager implements PtyLaunchIntegration {
     const target = join(this.settingsDirectory, TUI_STATUS_SETTINGS_FILE)
     const temporary = `${target}.tmp-${randomUUID()}`
     await fs.writeFile(temporary, `${JSON.stringify({
-      enabled: this.enabled,
-      instanceLabelMode: this.instanceLabelMode
+      enabled: this.enabled
     })}\n`, 'utf8')
     await fs.rename(temporary, target)
   }

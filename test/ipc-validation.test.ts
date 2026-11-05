@@ -72,7 +72,6 @@ const validPayloads = {
   [IpcChannels.opencodeTuiPluginRemove]: plugin,
   [IpcChannels.opencodeTuiSettings]: undefined,
   [IpcChannels.opencodeTuiSetEnabled]: enabled,
-  [IpcChannels.opencodeTuiSetInstanceLabelMode]: { mode: 'numbered' },
   [IpcChannels.opencodeAlertsSettings]: undefined,
   [IpcChannels.opencodeAlertsSetEnabled]: enabled,
   [IpcChannels.inboxList]: undefined,
@@ -325,7 +324,6 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.sessionsUpdate, { id: 'session', patch: { color: 'anything' } })
     rejects(IpcChannels.sessionsUpdate, { id: 'session', patch: { icon: 'anything' } })
     rejects(IpcChannels.opencodeTuiSetEnabled, { enabled: 'true' })
-    rejects(IpcChannels.opencodeTuiSetInstanceLabelMode, { mode: 'unknown' })
     rejects(IpcChannels.windowModeSet, { mode: 'fullscreen' })
     rejects(IpcChannels.windowModeSet, { mode: undefined })
     for (const color of ['red', 'rgb(0,0,0)', 'url(x)', '#12', '#12345', '#1234567', '#gggggg', '10141b', '#10141b;', ' #10141b', '']) {

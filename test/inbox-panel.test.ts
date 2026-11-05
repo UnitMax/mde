@@ -174,7 +174,7 @@ describe('Inbox', () => {
     expect(main.querySelector('[data-testid="inbox-locked"]')).not.toBeNull()
     expect(main.querySelector('[aria-label="Regenerate title"]')).toBeNull()
 
-    useWorkspace.setState({ platform: { platform: 'win32', isWindows: true }, opencodeTuiEnabled: false })
+    useWorkspace.setState({ platform: { platform: 'win32', isWindows: true } })
     const open = await render(createElement(InboxPanel))
     expect(open.querySelector('[data-testid="inbox-locked"]')).toBeNull()
     expect(open.querySelector('[data-testid="inbox-thread-ses_one"]')).not.toBeNull()

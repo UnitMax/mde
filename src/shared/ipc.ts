@@ -18,7 +18,6 @@ import type {
   Session,
   SessionTab,
   OpenCodeTuiSetEnabledRequest,
-  OpenCodeTuiSetInstanceLabelModeRequest,
   OpenCodeTuiSettings,
   OpenCodeTuiPluginRequest,
   OpenCodeTuiPluginState,
@@ -157,7 +156,6 @@ export const IpcChannels = {
   opencodeTuiPluginRemove: 'opencode-tui:plugin-remove',
   opencodeTuiSettings: 'opencode-tui:settings',
   opencodeTuiSetEnabled: 'opencode-tui:set-enabled',
-  opencodeTuiSetInstanceLabelMode: 'opencode-tui:set-instance-label-mode',
 
   opencodeAlertsSettings: 'opencode-alerts:settings',
   opencodeAlertsSetEnabled: 'opencode-alerts:set-enabled',
@@ -539,7 +537,6 @@ export interface RendererApi {
   opencodeTui: {
     settings(): Promise<OpenCodeTuiSettings>
     setEnabled(req: OpenCodeTuiSetEnabledRequest): Promise<OpenCodeTuiSettings>
-    setInstanceLabelMode(req: OpenCodeTuiSetInstanceLabelModeRequest): Promise<OpenCodeTuiSettings>
     pluginState(req: OpenCodeTuiPluginRequest): Promise<OpenCodeTuiPluginState>
     install(req: OpenCodeTuiPluginRequest): Promise<OpenCodeTuiPluginState>
     remove(req: OpenCodeTuiPluginRequest): Promise<OpenCodeTuiPluginState>

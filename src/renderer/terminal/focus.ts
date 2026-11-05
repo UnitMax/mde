@@ -1,4 +1,3 @@
-import { useWorkspace } from '@/store/workspace'
 import { getSession } from './sessions'
 
 const ATTEMPTS = 8
@@ -9,7 +8,7 @@ const ATTEMPTS = 8
  */
 export function focusTerminalWhenReady(
   terminalId: string,
-  options: { highlight?: boolean; done?: () => void } = {}
+  options: { done?: () => void } = {}
 ): () => void {
   let attempts = 0
   let frame: number | undefined
@@ -17,7 +16,6 @@ export function focusTerminalWhenReady(
     const terminal = getSession(terminalId)
     if (terminal?.container.isConnected) {
       terminal.term.focus()
-      if (options.highlight) useWorkspace.getState().flashTerminal(terminalId)
       options.done?.()
       return
     }

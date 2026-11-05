@@ -14,18 +14,10 @@ export interface TerminalHighlight {
 /** Length of the CSS animation, and how long a flash stays worth replaying. */
 export const TERMINAL_HIGHLIGHT_MS = 1600
 
-export function highlightToneForStatus(
-  status: OpenCodeTuiStatus | undefined
-): TerminalHighlightTone {
+function highlightTone(status: OpenCodeTuiStatus): TerminalHighlightTone | null {
   if (status === 'completed') return 'done'
   if (status === 'error') return 'error'
-  return 'attention'
-}
-
-function highlightTone(status: OpenCodeTuiStatus): TerminalHighlightTone | null {
-  return status === 'attention' || status === 'completed' || status === 'error'
-    ? highlightToneForStatus(status)
-    : null
+  return status === 'attention' ? 'attention' : null
 }
 
 /**

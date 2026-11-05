@@ -9,9 +9,19 @@ vi.mock('../src/renderer/terminal/sessions', () => ({ disposeSession: vi.fn() })
 import { TerminalPaneHighlight } from '../src/renderer/components/TerminalPaneHighlight'
 import { TERMINAL_HIGHLIGHT_MS } from '../src/renderer/lib/terminal-highlight'
 import { useWorkspace } from '../src/renderer/store/workspace'
+import type { OpenCodeTuiStatus } from '../src/shared/types'
 
 const roots: Root[] = []
 const containers: HTMLDivElement[] = []
+
+function reportStatus(terminalId: string, status: OpenCodeTuiStatus): void {
+  const store = useWorkspace.getState()
+  const previous = store.opencodeTuiInstances.s?.[0]
+  if (!previous) {
+    store.appendOpenCodeTuiInstances({ sessionId: 's', instances: [{ terminalId, status: 'working', revision: 1 }] })
+  }
+  store.appendOpenCodeTuiInstances({ sessionId: 's', instances: [{ terminalId, status, revision: (previous?.revision ?? 1) + 1 }] })
+}
 
 function renderHighlight(terminalId: string): HTMLDivElement {
   const container = document.createElement('div')
@@ -34,7 +44,7 @@ describe('TerminalPaneHighlight', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-    useWorkspace.setState({ terminalHighlights: {} })
+    useWorkspace.setState({ terminalHighlights: {}, opencodeTuiInstances: {} })
   })
 
   afterEach(() => {
@@ -53,7 +63,7 @@ describe('TerminalPaneHighlight', () => {
   })
 
   it('draws a decorative overlay in the flash tone', () => {
-    useWorkspace.getState().flashTerminal('s:1', 'done')
+    reportStatus('s:1', 'completed')
     const container = renderHighlight('s:1')
     const overlay = highlight(container)
 
@@ -64,14 +74,14 @@ describe('TerminalPaneHighlight', () => {
   })
 
   it('only draws the pane it was asked for', () => {
-    useWorkspace.getState().flashTerminal('s:2', 'error')
+    reportStatus('s:2', 'error')
     const container = renderHighlight('s:1')
 
     expect(highlight(container)).toBeNull()
   })
 
   it('clears the flash once the animation is over', () => {
-    useWorkspace.getState().flashTerminal('s:1', 'attention')
+    reportStatus('s:1', 'attention')
     const container = renderHighlight('s:1')
     expect(highlight(container)).not.toBeNull()
 
@@ -84,13 +94,13 @@ describe('TerminalPaneHighlight', () => {
   })
 
   it('restarts the animation for a repeat flash without the first timer cancelling it', () => {
-    useWorkspace.getState().flashTerminal('s:1', 'attention')
+    reportStatus('s:1', 'attention')
     const container = renderHighlight('s:1')
     const first = highlight(container)
 
     act(() => {
       vi.advanceTimersByTime(1000)
-      useWorkspace.getState().flashTerminal('s:1', 'done')
+      reportStatus('s:1', 'completed')
     })
     const second = highlight(container)
     expect(second).not.toBe(first)
@@ -108,7 +118,7 @@ describe('TerminalPaneHighlight', () => {
   })
 
   it('drops a flash left behind by an unmounted pane instead of replaying it', () => {
-    useWorkspace.getState().flashTerminal('s:1', 'done')
+    reportStatus('s:1', 'completed')
     vi.advanceTimersByTime(TERMINAL_HIGHLIGHT_MS + 500)
 
     const container = renderHighlight('s:1')

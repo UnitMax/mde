@@ -221,7 +221,6 @@ export const ipcPayloadValidators = {
   [IpcChannels.opencodeTuiPluginRemove]: pluginRequest,
   [IpcChannels.opencodeTuiSettings]: noPayload,
   [IpcChannels.opencodeTuiSetEnabled]: enabled,
-  [IpcChannels.opencodeTuiSetInstanceLabelMode]: object({ mode: oneOf('numbered', 'title') }),
   [IpcChannels.opencodeAlertsSettings]: noPayload,
   [IpcChannels.opencodeAlertsSetEnabled]: enabled,
   [IpcChannels.inboxList]: noPayload,

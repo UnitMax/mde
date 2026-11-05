@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type {
   OpenCodeTuiPluginState,
-  OpenCodeTuiInstanceLabelMode,
   OpenCodeTuiSettings,
   OpenCodePluginTarget,
   OpenCodeAlertSettings,
@@ -110,7 +109,6 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
   const requestedSection = useWorkspace((state) => state.settingsDialog.section)
   const openSettings = useWorkspace((state) => state.openSettings)
   const closeSettings = useWorkspace((state) => state.closeSettings)
-  const setOpenCodeTuiEnabled = useWorkspace((state) => state.setOpenCodeTuiEnabled)
   const setOpen = (value: boolean): void => {
     if (value) openSettings()
     else closeSettings()
@@ -123,14 +121,9 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
   const wslAvailable = useWorkspace((state) => state.wslAvailable)
   const distros = useWorkspace((state) => state.distros)
   const refreshDistros = useWorkspace((state) => state.refreshDistros)
-  const opencodeTuiInstanceLabelMode = useWorkspace((state) => state.opencodeTuiInstanceLabelMode)
-  const setOpenCodeTuiInstanceLabelMode = useWorkspace(
-    (state) => state.setOpenCodeTuiInstanceLabelMode
-  )
   const [tuiSettings, setTuiSettings] = useState<OpenCodeTuiSettings>({
     enabled: false,
-    currentPluginVersion: '',
-    instanceLabelMode: 'numbered'
+    currentPluginVersion: ''
   })
   const [pluginStates, setPluginStates] = useState<Record<string, OpenCodeTuiPluginState>>({})
   const [tuiLoading, setTuiLoading] = useState(false)
@@ -286,19 +279,6 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
     try {
       const next = await window.api.opencodeTui.setEnabled({ enabled: !tuiSettings.enabled })
       setTuiSettings(next)
-      setOpenCodeTuiEnabled(next.enabled)
-    } catch (error) {
-      setTuiError(ipcErrorMessage(error, 'Could not update the OpenCode status plugin.'))
-    }
-  }
-
-  const changeTuiInstanceLabelMode = async (
-    mode: OpenCodeTuiInstanceLabelMode
-  ): Promise<void> => {
-    setTuiError(null)
-    try {
-      await setOpenCodeTuiInstanceLabelMode(mode)
-      setTuiSettings((current) => ({ ...current, instanceLabelMode: mode }))
     } catch (error) {
       setTuiError(ipcErrorMessage(error, 'Could not update the OpenCode status plugin.'))
     }
@@ -725,29 +705,6 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
                           />
                         </span>
                       </button>
-
-                      <label className="block text-xs font-medium text-fg-muted">
-                        Instance labels
-                        <Select
-                          value={opencodeTuiInstanceLabelMode}
-                          onValueChange={(value) => {
-                            if (value === 'numbered' || value === 'title') {
-                              void changeTuiInstanceLabelMode(value)
-                            }
-                          }}
-                        >
-                          <SelectTrigger className="mt-1" data-testid="opencode-tui-instance-labels">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="numbered">OpenCode 1, 2, …</SelectItem>
-                            <SelectItem value="title">OpenCode session titles</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <span className="mt-1 block text-[11px] font-normal text-fg-subtle">
-                          Session titles stay in MDE's local runtime status snapshot. Numbered labels are used when a title is unavailable.
-                        </span>
-                      </label>
 
                       <div className="space-y-2">
                         {pluginTargets.length === 0 ? (

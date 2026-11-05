@@ -76,7 +76,7 @@ expanded or streamed afterward; code preview font selection is independent of th
 
 The Settings dialog is a single dialog mounted by `App` (`src/renderer/components/SettingsDialog.tsx`)
 and opened through the workspace store's `openSettings(section)`, so any view can open it at a
-given section. The Settings button in the title bar, next to the mini agents button, opens it at Appearance and is available in every mode.
+given section. The Settings button in the title bar, next to the mini Inbox button, opens it at Appearance and is available in every mode.
 
 ### Inbox
 
@@ -766,24 +766,30 @@ setting. On a dark bar under a light OS theme the wash is black and the hover is
 main process sets `nativeTheme.themeSource` to match the brightness of the bar color. The close
 button keeps its fixed red.
 
-### Mini agents window
+### Mini Inbox window
 
-F12 shrinks the main window into a small always-on-top list of reported OpenCode agents, grouped by
-session, with a status summary and a restore button; F12 again restores the full window. It is the
+F12 shrinks the main window into a small always-on-top list of Inbox threads, grouped by their
+Inbox folder, with a status summary and a restore button; F12 again restores the full window.
+It shows GUI and Terminal chat threads using the same titles, branch names, unread state and
+API-driven status as the Inbox. Parked threads are hidden; pins and recent activity determine
+the list order. Threads whose folder was removed still appear under the directory name, and
+worktrees fall back to the original repository name. It requires no terminal status plugin,
+Projects session, or terminal layout. New activity stays unread while only the mini Inbox is
+visible. It is the
 same `BrowserWindow` and renderer, not a second window, so the IPC sender policy is unchanged and
 every terminal keeps running. The main process (`src/main/mini-window.ts`) owns the geometry: it
 catches F12 in `before-input-event` while MDE is focused (there is no global hotkey, and the key
 never reaches the terminal), remembers the previous bounds and maximized or fullscreen state in
 memory, lowers the minimum size, and sets always-on-top. It then tells the renderer the new mode
-over `window-mode:changed`, and `App` renders `MiniAgentWindow` instead of the sidebar and
+over `window-mode:changed`, and `App` renders `MiniInboxWindow` instead of the sidebar and
 terminals. Unmounting the terminals also stops their resize observers, so shrinking the window
 never reflows a running TUI; they reattach and refit on restore. The mode event can reach the
 renderer before the window has finished growing, so terminals hold off measuring until the
 viewport has been quiet for 150 ms (`src/renderer/terminal/viewport-settle.ts`); otherwise a
-live TUI would be shrunk to a few columns and straight back, leaving it half repainted. Clicking an agent restores the
-full window, focuses that terminal, and plays the pane highlight on it (described under
-Notifications) so you can see which one you picked. The mini window uses the same title bar as the full window,
-with its title, agent count and restore button in it, and is not maximizable on Windows and macOS
+live TUI would be shrunk to a few columns and straight back, leaving it half repainted. Clicking a thread restores the
+full window and opens that conversation in the Inbox, marking it read through the normal Inbox
+selection action. The mini window uses the same title bar as the full window,
+with its title, thread count and restore button in it, and is not maximizable on Windows and macOS
 (Linux has no such control). Its position is remembered only until MDE quits and nothing about it is
 written to disk.
 
@@ -976,10 +982,9 @@ All integrations are optional and read-only with respect to prompts and project 
   writes only a short runtime snapshot under `/tmp/mde-opencode` in WSL or a private `mde-opencode`
   directory beneath the macOS user temporary directory, and does not modify project files
   or OpenCode configuration. MDE reads that snapshot locally on Mac or through the distro's `\\wsl.localhost\...`
-  path and falls back to normal shell status when it is absent. Each terminal pane with a live
-  OpenCode TUI appears in the F12 mini agents window, with its
-  originating session, tab, and current status. Instance labels can use privacy-safe numbering or
-  the current top-level OpenCode session title; prompts, messages, tool data, credentials, and
+  path and falls back to normal shell status when it is absent. Terminal pane headers use the
+  current top-level OpenCode session title, with numbered labels when no title is available;
+  prompts, messages, tool data, credentials, and
   filesystem contents are never included in the snapshot.
   Snapshots carry a PID and process start identity: Linux `/proc` start ticks for WSL, or
   `/bin/ps` start time with a fixed locale on Mac. After missed heartbeats, MDE checks this identity
@@ -1029,8 +1034,9 @@ MDE supports OpenCode 2 and newer; OpenCode 1 no longer shows status or session 
 ### Removing previously installed Codex hooks
 
 Codex hook reporting has been removed. The Codex launcher and its command settings remain
-available, but status, mini agents window entries, notifications, and desktop alerts are provided
-only by OpenCode. Existing workspace and launcher settings remain compatible.
+available, but terminal status, notifications, and desktop alerts are provided only by OpenCode.
+Existing workspace and launcher settings remain compatible. The mini Inbox uses Inbox threads
+and their API events independently of terminal reporting.
 
 Previously installed hooks are not removed automatically. Restart MDE after upgrading; new
 terminals no longer receive the `MDE_CODEX_STATUS_*` environment variables, so the old MDE hook

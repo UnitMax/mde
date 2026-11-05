@@ -94,18 +94,11 @@ describe('renderer workspace event bridge', () => {
     opencodeTui: {
       settings: vi.fn(async () => ({
         enabled: false,
-        currentPluginVersion: '1.1.0',
-        instanceLabelMode: 'numbered' as const
+        currentPluginVersion: '1.1.0'
       })),
       setEnabled: vi.fn(async ({ enabled }: { enabled: boolean }) => ({
         enabled,
-        currentPluginVersion: '1.1.0',
-        instanceLabelMode: 'numbered' as const
-      })),
-      setInstanceLabelMode: vi.fn(async ({ mode }: { mode: 'numbered' | 'title' }) => ({
-        enabled: false,
-        currentPluginVersion: '1.1.0',
-        instanceLabelMode: mode
+        currentPluginVersion: '1.1.0'
       })),
       pluginState: vi.fn(async ({ distro }: { distro: string }) => ({
         distro,
@@ -146,7 +139,6 @@ describe('renderer workspace event bridge', () => {
       opencodeTuiStatuses: {},
       opencodeTuiInstances: {},
       opencodeTuiReadRevisions: {},
-      opencodeTuiInstanceLabelMode: 'numbered',
       terminalHighlights: {},
       sessions: [],
       todoProjects: [],
@@ -157,7 +149,6 @@ describe('renderer workspace event bridge', () => {
       windowMode: 'normal',
       inboxThreads: [],
       selectedInboxThreadId: null,
-      opencodeTuiEnabled: false,
       settingsDialog: { open: false, section: 'appearance' }
     })
     api.inbox.list.mockClear()
@@ -185,7 +176,6 @@ describe('renderer workspace event bridge', () => {
     api.tabs.remove.mockReset()
     api.opencodeTui.onStatus.mockClear()
     api.opencodeTui.onInstances.mockClear()
-    api.opencodeTui.setInstanceLabelMode.mockClear()
   })
 
   it('tracks exits by runtime terminal ID, including split panes', () => {
@@ -383,44 +373,6 @@ describe('renderer workspace event bridge', () => {
     append([completed, { terminalId: 'session-1:split:1', status: 'attention', revision: 1 }])
 
     expect(useWorkspace.getState().terminalHighlights).toEqual({})
-  })
-
-  it('flashes a focused terminal in the color of its current agent status', () => {
-    useWorkspace.getState().appendOpenCodeTuiInstances({
-      sessionId: 'session-1',
-      instances: [
-        { terminalId: 'session-1', status: 'completed', revision: 2 },
-        { terminalId: 'session-1:split:1', status: 'working', revision: 1 }
-      ]
-    })
-
-    useWorkspace.getState().flashTerminal('session-1')
-    useWorkspace.getState().flashTerminal('session-1:split:1')
-    useWorkspace.getState().flashTerminal('session-2', 'error')
-
-    const highlights = useWorkspace.getState().terminalHighlights
-    expect(highlights['session-1']).toMatchObject({ tone: 'done', token: 1 })
-    expect(highlights['session-1:split:1']).toMatchObject({ tone: 'attention', token: 1 })
-    expect(highlights['session-2']).toMatchObject({ tone: 'error', token: 1 })
-  })
-
-  it('restarts a repeated flash and ignores a stale clear of an earlier one', () => {
-    useWorkspace.getState().flashTerminal('session-1', 'done')
-    useWorkspace.getState().flashTerminal('session-1', 'done')
-    expect(useWorkspace.getState().terminalHighlights['session-1']?.token).toBe(2)
-
-    useWorkspace.getState().clearTerminalHighlight('session-1', 1)
-    expect(useWorkspace.getState().terminalHighlights['session-1']?.token).toBe(2)
-
-    useWorkspace.getState().clearTerminalHighlight('session-1', 2)
-    expect(useWorkspace.getState().terminalHighlights).toEqual({})
-  })
-
-  it('persists the global OpenCode TUI instance label mode', async () => {
-    await useWorkspace.getState().setOpenCodeTuiInstanceLabelMode('title')
-
-    expect(api.opencodeTui.setInstanceLabelMode).toHaveBeenCalledWith({ mode: 'title' })
-    expect(useWorkspace.getState().opencodeTuiInstanceLabelMode).toBe('title')
   })
 
   it('creates and selects a terminal session', async () => {
@@ -807,18 +759,15 @@ describe('renderer workspace event bridge', () => {
     ...overrides
   })
 
-  it('loads the inbox and the reporting switch at startup, keeping pushes that arrived first', async () => {
+  it('loads the inbox without querying plugin settings, keeping pushes that arrived first', async () => {
     api.inbox.list.mockResolvedValueOnce([
       inboxThread({ id: 'ses_old', lastActivityAt: 100 }),
       inboxThread({ id: 'ses_new', lastActivityAt: 300 })
     ])
-    api.opencodeTui.settings.mockResolvedValueOnce({
-      enabled: true, currentPluginVersion: '2.0.0', instanceLabelMode: 'numbered'
-    })
     useWorkspace.setState({ inboxThreads: [inboxThread({ id: 'ses_old', title: 'Renamed', lastActivityAt: 400 })] })
     await useWorkspace.getState().init()
     const state = useWorkspace.getState()
-    expect(state.opencodeTuiEnabled).toBe(true)
+    expect(api.opencodeTui.settings).not.toHaveBeenCalled()
     expect(state.inboxThreads.map((thread) => [thread.id, thread.title])).toEqual([
       ['ses_old', 'Renamed'],
       ['ses_new', 'Fix login']
@@ -876,6 +825,19 @@ describe('renderer workspace event bridge', () => {
       await new Promise((resolve) => setTimeout(resolve, 5))
       expect(useWorkspace.getState().inboxCues.ses_one).toBe(cue)
       expect(readCalls(true)).toBe(1)
+    })
+
+    it('keeps new activity unread while only the mini Inbox is visible', async () => {
+      useWorkspace.setState({ windowMode: 'mini' })
+      useWorkspace.getState().upsertInboxThread(inboxThread({ lastActivityAt: 300, readAt: 200 }))
+      useWorkspace.getState().markOpenInboxThreadSeen()
+      expect(readCalls(true)).toBe(0)
+      expect(thread().readAt).toBe(200)
+      expect(useWorkspace.getState().inboxCues).toEqual({})
+
+      useWorkspace.setState({ windowMode: 'normal' })
+      useWorkspace.getState().selectInboxThread('ses_one')
+      await vi.waitFor(() => expect(thread().readAt).toBe(300))
     })
 
     it('keeps a thread marked unread by hand unread while it stays open', async () => {

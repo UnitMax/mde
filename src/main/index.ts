@@ -30,7 +30,7 @@ let inboxChat: InboxChatService | null = null
 let quitPrepared = false
 const rendererUrl = rendererEntryUrl(app.isPackaged, process.env.ELECTRON_RENDERER_URL)
 
-// Shrinks this window into the always-on-top agents list; the screen module is only
+// Shrinks this window into the always-on-top Inbox list; the screen module is only
 // touched when F12 is pressed, which is always after `ready`.
 const miniWindow = new MiniWindowController({
   getWindow: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),

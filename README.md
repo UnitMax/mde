@@ -63,7 +63,7 @@ notarization requires overriding `mac.identity` and supplying release credential
 and configuration. The Mac
 package includes only the rebuilt PTY binding and spawn helper outside `app.asar`,
 with compiler debug paths stripped before signing. Native Mac terminals support
-the agent launcher, OpenCode history/resume, status reporting, the F12 mini agents window,
+the agent launcher, OpenCode history/resume, status reporting, the F12 mini Inbox window,
 and Dock attention and sound. Enable status reporting and install the optional plugin
 under Settings → OpenCode, then restart OpenCode.
 Mac plugin management resolves the config directory and executable environment

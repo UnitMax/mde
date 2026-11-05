@@ -6,7 +6,7 @@ import { testLayout } from './helpers/terminal-layout'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Session } from '../src/shared/types'
+import type { InboxThread, Session } from '../src/shared/types'
 import { App } from '../src/renderer/App'
 import { useWorkspace } from '../src/renderer/store/workspace'
 
@@ -29,6 +29,7 @@ vi.mock('../src/renderer/components/TerminalGitInfo', () => ({ TerminalGitInfo: 
 function stubApi(): unknown {
   const answers: Record<string, unknown> = {
     'pty.ensure': 'running',
+    'windowMode.set': 'normal',
     'files.list': { entries: [], truncated: false },
     'files.read': { path: 'README.md', content: '# Notes\n', size: 8, binary: false, tooLarge: false }
   }
@@ -88,6 +89,9 @@ describe('switching sessions with a file open', () => {
       sessions: [alpha, beta],
       selectedSessionId: 'alpha',
       activeWorkspaceView: 'projects',
+      windowMode: 'normal',
+      inboxThreads: [],
+      selectedInboxThreadId: null,
       openFiles: { [fileRootKey({ terminalId: terminalIdForPane('alpha', 'alpha-tab', 'pane-1'), directory: alpha.path })]: 'README.md' },
       statuses: {}, exits: {}, terminalDirectories: {},
       opencodeTuiInstances: {}, opencodeTuiStatuses: {}
@@ -114,6 +118,31 @@ describe('switching sessions with a file open', () => {
     await select('alpha')
     expect(paneCount()).toBe(4)
     expect(viewerPath()).toBe('README.md')
+  })
+
+  it('opens an Inbox thread from F12 without selecting or highlighting a Projects terminal', async () => {
+    const thread: InboxThread = {
+      id: 'ses_inbox', title: 'Inbox conversation', directory: '/workspace/inbox', target: { kind: 'native' },
+      folderId: 'fld_inbox', branch: 'main', status: 'working', createdAt: 1, lastActivityAt: 1, readAt: 1, archived: false,
+    }
+    useWorkspace.setState({
+      windowMode: 'mini',
+      inboxThreads: [thread],
+      terminalHighlights: {},
+      opencodeTuiInstances: { alpha: [{ terminalId: 'alpha', title: 'Projects agent', status: 'attention', revision: 1 }] },
+    })
+    const container = await render()
+    const rows = container.querySelectorAll<HTMLButtonElement>('[data-testid="mini-inbox-row"]')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.textContent).toContain('Inbox conversation')
+    expect(paneCount()).toBe(0)
+
+    await act(async () => rows[0]?.click())
+    expect(useWorkspace.getState().windowMode).toBe('normal')
+    expect(useWorkspace.getState().activeWorkspaceView).toBe('inbox')
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe(thread.id)
+    expect(useWorkspace.getState().selectedSessionId).toBe('alpha')
+    expect(useWorkspace.getState().terminalHighlights).toEqual({})
   })
   it('follows pane selection and directory reports, with previews scoped to each root', async () => {
     const first = terminalIdForPane('alpha', 'alpha-tab', 'pane-1')

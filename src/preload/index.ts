@@ -133,8 +133,6 @@ const api: RendererApi = {
   opencodeTui: {
     settings: () => ipcRenderer.invoke(IpcChannels.opencodeTuiSettings),
     setEnabled: (req) => ipcRenderer.invoke(IpcChannels.opencodeTuiSetEnabled, req),
-    setInstanceLabelMode: (req) =>
-      ipcRenderer.invoke(IpcChannels.opencodeTuiSetInstanceLabelMode, req),
     pluginState: (req) => ipcRenderer.invoke(IpcChannels.opencodeTuiPluginState, req),
     install: (req) => ipcRenderer.invoke(IpcChannels.opencodeTuiPluginInstall, req),
     remove: (req) => ipcRenderer.invoke(IpcChannels.opencodeTuiPluginRemove, req),

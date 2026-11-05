@@ -28,16 +28,3 @@ export function openCodeStatusLabel(
   if (status === 'error') return 'OpenCode request failed'
   return 'OpenCode idle'
 }
-
-export function openCodeOverviewStatusLabel(
-  status: OpenCodeTuiStatus,
-  attentionReason?: OpenCodeTuiAttentionReason
-): string {
-  if (status === 'working') return 'Working'
-  if (status === 'attention') {
-    return attentionReason === 'question' ? 'Waiting for an answer' : 'Needs input'
-  }
-  if (status === 'completed') return 'Done'
-  if (status === 'error') return 'Failed'
-  return 'Idle'
-}

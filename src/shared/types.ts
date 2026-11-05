@@ -84,7 +84,7 @@ export type SessionColor =
   | 'green'
   | 'teal'
 
-/** The main window is either its normal self or the always-on-top mini agents list. */
+/** The main window is either its normal self or the always-on-top mini Inbox. */
 export type WindowMode = 'normal' | 'mini'
 
 /** Narrow platform union so the renderer does not need Node's types. */
@@ -763,20 +763,13 @@ export type OpenCodeTuiPluginInstallStatus =
   | 'outdated'
   | 'conflict'
 
-export type OpenCodeTuiInstanceLabelMode = 'numbered' | 'title'
-
 export interface OpenCodeTuiSettings {
   enabled: boolean
   currentPluginVersion: string
-  instanceLabelMode: OpenCodeTuiInstanceLabelMode
 }
 
 export interface OpenCodeTuiSetEnabledRequest {
   enabled: boolean
-}
-
-export interface OpenCodeTuiSetInstanceLabelModeRequest {
-  mode: OpenCodeTuiInstanceLabelMode
 }
 
 export interface OpenCodeTuiPluginRequest {

@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { OpenCodeTuiInstanceStatus } from '../src/shared/types'
-import {
-  detectInstanceHighlights,
-  highlightToneForStatus
-} from '../src/renderer/lib/terminal-highlight'
+import { detectInstanceHighlights } from '../src/renderer/lib/terminal-highlight'
 
 function instance(
   terminalId: string,
@@ -12,17 +9,6 @@ function instance(
 ): OpenCodeTuiInstanceStatus {
   return { terminalId, status, revision }
 }
-
-describe('highlightToneForStatus', () => {
-  it('maps finished and failed agents to their own tones and everything else to attention', () => {
-    expect(highlightToneForStatus('completed')).toBe('done')
-    expect(highlightToneForStatus('error')).toBe('error')
-    expect(highlightToneForStatus('attention')).toBe('attention')
-    expect(highlightToneForStatus('working')).toBe('attention')
-    expect(highlightToneForStatus('idle')).toBe('attention')
-    expect(highlightToneForStatus(undefined)).toBe('attention')
-  })
-})
 
 describe('detectInstanceHighlights', () => {
   it('flashes a pane that starts waiting, finishes, or fails after a revision change', () => {

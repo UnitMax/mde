@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { PictureInPicture2, Plus, Settings2, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AddSessionDialog } from '@/components/AddProjectDialog'
-import { MiniAgentWindow } from '@/components/MiniAgentWindow'
+import { MiniInboxWindow } from '@/components/MiniInboxWindow'
 import { FileTreePanel } from '@/components/FileTreePanel'
 import { FileViewer } from '@/components/FileViewer'
 import { InboxChangeViewer, InboxSidebar } from '@/components/inbox/InboxChanges'
@@ -78,8 +78,6 @@ export function App(): JSX.Element {
   const sessions = useWorkspace((state) => state.sessions)
   const todoProjects = useWorkspace((state) => state.todoProjects)
   const todoTasks = useWorkspace((state) => state.todoTasks)
-  const opencodeTuiInstances = useWorkspace((state) => state.opencodeTuiInstances)
-  const opencodeTuiInstanceLabelMode = useWorkspace((state) => state.opencodeTuiInstanceLabelMode)
   const windowMode = useWorkspace((state) => state.windowMode)
   const setWindowMode = useWorkspace((state) => state.setWindowMode)
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
@@ -110,8 +108,6 @@ export function App(): JSX.Element {
     sessionId: string
     tabId: string
     terminalId: string
-    /** Play the pane highlight once the terminal is focused. */
-    highlight?: boolean
   } | null>(null)
   const terminalFocusRequestId = useRef(0)
   const [focusedTerminalId, setFocusedTerminalId] = useState<string | null>(null)
@@ -305,7 +301,6 @@ export function App(): JSX.Element {
     }
 
     return focusTerminalWhenReady(pendingTerminalFocus.terminalId, {
-      highlight: pendingTerminalFocus.highlight,
       done: () => setPendingTerminalFocus(null)
     })
   }, [pendingTerminalFocus, selectedSessionId, sessions])
@@ -422,8 +417,7 @@ export function App(): JSX.Element {
   const focusTerminal = (
     sessionId: string,
     tabId: string,
-    terminalId: string,
-    options?: { highlight?: boolean }
+    terminalId: string
   ): void => {
     terminalFocusRequestId.current += 1
     focusedTerminalIdRef.current = terminalId
@@ -435,7 +429,6 @@ export function App(): JSX.Element {
       sessionId,
       tabId,
       terminalId,
-      ...(options?.highlight ? { highlight: true } : {})
     })
   }
 
@@ -640,16 +633,16 @@ export function App(): JSX.Element {
   // so nothing resizes their PTYs; they stay alive and reattach when restored.
   if (windowMode === 'mini') {
     return (
-      <MiniAgentWindow
-        sessions={sessions}
-        opencodeTuiInstances={opencodeTuiInstances}
-        terminalLayouts={terminalLayouts}
-        labelMode={opencodeTuiInstanceLabelMode}
+      <MiniInboxWindow
+        threads={inboxThreads}
+        folders={inboxFolders}
         onRestore={() => void setWindowMode('normal')}
-        onFocusAgent={(sessionId, tabId, terminalId) => {
-          void setWindowMode('normal').then(() =>
-            focusTerminal(sessionId, tabId, terminalId, { highlight: true })
-          )
+        onOpenThread={(threadId) => {
+          void setWindowMode('normal').then(() => {
+            if (useWorkspace.getState().inboxThreads.some((thread) => thread.id === threadId)) {
+              useWorkspace.getState().selectInboxThread(threadId)
+            }
+          })
         }}
       />
     )
@@ -664,8 +657,8 @@ export function App(): JSX.Element {
         <TitleBarButton
           data-testid="mini-window-open"
           onClick={() => void setWindowMode('mini')}
-          title="Mini agents window (F12)"
-          aria-label="Open the mini agents window"
+          title="Mini Inbox window (F12)"
+          aria-label="Open the mini Inbox window"
         >
           <PictureInPicture2 className="h-3.5 w-3.5" />
         </TitleBarButton>

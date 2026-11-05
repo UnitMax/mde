@@ -8,7 +8,6 @@ import type {
   NewTodoTask,
   NewSession,
   OpenCodeTuiAttentionReason,
-  OpenCodeTuiInstanceLabelMode,
   OpenCodeTuiInstanceStatus,
   OpenCodeTuiInstancesUpdate,
   OpenCodeTuiStatus,
@@ -33,7 +32,6 @@ import { isInboxThreadUnread } from '@/lib/inbox'
 import type { OpenCodeTuiReadRevisions } from '@/lib/opencode-tui-notifications'
 import {
   detectInstanceHighlights,
-  highlightToneForStatus,
   type TerminalHighlight,
   type TerminalHighlightTone
 } from '@/lib/terminal-highlight'
@@ -129,9 +127,6 @@ interface WorkspaceState {
   opencodeTuiStatuses: Record<string, OpenCodeTuiStatusState>
   opencodeTuiInstances: Record<string, OpenCodeTuiInstanceStatus[]>
   opencodeTuiReadRevisions: OpenCodeTuiReadRevisions
-  opencodeTuiInstanceLabelMode: OpenCodeTuiInstanceLabelMode
-  /** Global OpenCode status reporting. */
-  opencodeTuiEnabled: boolean
   /** MDE's own record of OpenCode threads, newest activity first. */
   inboxThreads: InboxThread[]
   selectedInboxThreadId: string | null
@@ -204,11 +199,7 @@ interface WorkspaceState {
   clearExit: (id: string) => void
   appendOpenCodeTuiStatus: (update: OpenCodeTuiStatusUpdate) => void
   appendOpenCodeTuiInstances: (update: OpenCodeTuiInstancesUpdate) => void
-  /** Plays the pane highlight; without a tone it follows the terminal's current agent status. */
-  flashTerminal: (terminalId: string, tone?: TerminalHighlightTone) => void
   clearTerminalHighlight: (terminalId: string, token: number) => void
-  setOpenCodeTuiInstanceLabelMode: (mode: OpenCodeTuiInstanceLabelMode) => Promise<void>
-  setOpenCodeTuiEnabled: (enabled: boolean) => void
   openSettings: (section?: SettingsSection) => void
   closeSettings: () => void
   selectInboxThread: (id: string | null) => void
@@ -239,8 +230,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   opencodeTuiStatuses: {},
   opencodeTuiInstances: {},
   opencodeTuiReadRevisions: {},
-  opencodeTuiInstanceLabelMode: 'numbered',
-  opencodeTuiEnabled: false,
   inboxThreads: [],
   selectedInboxThreadId: null,
   inboxMarkedUnread: {},
@@ -275,7 +264,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       statuses,
       directories,
       wslAvailable,
-      opencodeTuiSettings,
       windowMode,
       inboxThreads
     ] = await Promise.all([
@@ -284,7 +272,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       window.api.pty.statuses(),
       window.api.pty.directories(),
       window.api.wsl.available(),
-      window.api.opencodeTui.settings(),
       // A renderer reload can happen while the window is still in mini mode.
       window.api.windowMode.get(),
       // A local file read; the inbox must never hold up the rest of the workspace.
@@ -305,8 +292,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       terminalDirectories: { ...directories, ...get().terminalDirectories },
       opencodeTuiStatuses: {},
       opencodeTuiReadRevisions: {},
-      opencodeTuiInstanceLabelMode: opencodeTuiSettings.instanceLabelMode,
-      opencodeTuiEnabled: opencodeTuiSettings.enabled,
       // Pushes that arrived during startup are newer than the listed snapshot.
       inboxThreads: get().inboxThreads.reduce(withInboxThread, sortInboxThreads(inboxThreads)),
       wslAvailable,
@@ -746,18 +731,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       }
     }),
 
-  flashTerminal: (terminalId, tone) =>
-    set((state) => {
-      const instance = Object.values(state.opencodeTuiInstances)
-        .flat()
-        .find((candidate) => candidate.terminalId === terminalId)
-      return {
-        terminalHighlights: withTerminalHighlights(state.terminalHighlights, [
-          { terminalId, tone: tone ?? highlightToneForStatus(instance?.status) }
-        ])
-      }
-    }),
-
   clearTerminalHighlight: (terminalId, token) =>
     set((state) => {
       if (state.terminalHighlights[terminalId]?.token !== token) return state
@@ -765,13 +738,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       delete terminalHighlights[terminalId]
       return { terminalHighlights }
     }),
-
-  setOpenCodeTuiInstanceLabelMode: async (mode) => {
-    const settings = await window.api.opencodeTui.setInstanceLabelMode({ mode })
-    set({ opencodeTuiInstanceLabelMode: settings.instanceLabelMode })
-  },
-
-  setOpenCodeTuiEnabled: (enabled) => set({ opencodeTuiEnabled: enabled }),
 
   openSettings: (section = 'appearance') => set({ settingsDialog: { open: true, section } }),
 
@@ -795,8 +761,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   },
 
   markOpenInboxThreadSeen: () => {
-    const { activeWorkspaceView, selectedInboxThreadId, inboxThreads, inboxMarkedUnread } = get()
-    if (activeWorkspaceView !== 'inbox' || !selectedInboxThreadId || inboxMarkedUnread[selectedInboxThreadId]) return
+    const { activeWorkspaceView, windowMode, selectedInboxThreadId, inboxThreads, inboxMarkedUnread } = get()
+    if (windowMode !== 'normal' || activeWorkspaceView !== 'inbox' || !selectedInboxThreadId || inboxMarkedUnread[selectedInboxThreadId]) return
     const thread = inboxThreads.find((item) => item.id === selectedInboxThreadId)
     if (thread && isInboxThreadUnread(thread)) void get().setInboxThreadRead(thread.id, true)
   },
@@ -839,6 +805,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     const activity = !previous || thread.lastActivityAt > previous.lastActivityAt
     if (
       activity &&
+      state.windowMode === 'normal' &&
       state.activeWorkspaceView === 'inbox' &&
       state.selectedInboxThreadId === thread.id &&
       isInboxThreadUnread(thread) &&

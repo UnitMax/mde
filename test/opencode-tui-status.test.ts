@@ -23,7 +23,6 @@ import {
   tuiProcessProbeCommand
 } from '../src/main/opencode/tui-status'
 import {
-  openCodeOverviewStatusLabel,
   openCodeStatusLabel
 } from '../src/renderer/lib/opencode-tui-status'
 
@@ -467,18 +466,15 @@ describe('OpenCode TUI status protocol', () => {
       const first = new OpenCodeTuiStatusManager({ onStatus: vi.fn(), onInstances: vi.fn() })
       await first.configure(directory)
       expect(first.settings()).toMatchObject({
-        enabled: false,
-        instanceLabelMode: 'numbered'
+        enabled: false
       })
 
       await first.setEnabled(true)
-      await first.setInstanceLabelMode('title')
       const second = new OpenCodeTuiStatusManager({ onStatus: vi.fn(), onInstances: vi.fn() })
       await second.configure(directory)
       expect(second.settings()).toMatchObject({
         enabled: true,
-        currentPluginVersion: TUI_STATUS_PLUGIN_VERSION,
-        instanceLabelMode: 'title'
+        currentPluginVersion: TUI_STATUS_PLUGIN_VERSION
       })
     } finally {
       await fs.rm(directory, { recursive: true, force: true })
@@ -494,12 +490,4 @@ describe('OpenCode TUI status protocol', () => {
     expect(openCodeStatusLabel('error')).toBe('OpenCode request failed')
   })
 
-  it('provides the readable status labels used by the agent overview', () => {
-    expect(openCodeOverviewStatusLabel('working')).toBe('Working')
-    expect(openCodeOverviewStatusLabel('attention', 'permission')).toBe('Needs input')
-    expect(openCodeOverviewStatusLabel('attention', 'question')).toBe('Waiting for an answer')
-    expect(openCodeOverviewStatusLabel('completed')).toBe('Done')
-    expect(openCodeOverviewStatusLabel('idle')).toBe('Idle')
-    expect(openCodeOverviewStatusLabel('error')).toBe('Failed')
-  })
 })
