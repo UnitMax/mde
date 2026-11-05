@@ -273,6 +273,25 @@ describe('running a command', () => {
     expect(compact.run).toHaveBeenCalledWith('')
   })
 
+  it('does not run a command that takes nothing when text follows it, which would be dropped without a word', async () => {
+    const { clear, all } = makeCommands()
+    const { container, box, send } = await setup({ commands: all })
+    await type(box, '/clear and then fix the bug')
+    expect(sendButton(container).dataset.command).toBe('clear')
+    expect(sendButton(container).disabled).toBe(true)
+    await press(box, 'Enter')
+    expect(alert(container)).toBe('/clear takes nothing after it.')
+    expect(clear.run).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
+    expect(text(box)).toBe('/clear and then fix the bug')
+    // Once the extra text is gone it runs, and the notice with it.
+    await type(box, '/clear ')
+    expect(sendButton(container).disabled).toBe(false)
+    await press(box, 'Enter')
+    expect(alert(container)).toBeUndefined()
+    expect(clear.run).toHaveBeenCalledWith('')
+  })
+
   it('says what is missing when a required argument is, and keeps the text and runs nothing', async () => {
     const { ask, all } = makeCommands()
     const { container, box, send } = await setup({ commands: all })

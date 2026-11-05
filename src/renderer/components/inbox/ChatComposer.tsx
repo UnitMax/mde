@@ -372,6 +372,8 @@ export function ChatComposer({
   }, [commands])
   const canRun = !disabled && !sending && !adding && loaded
   const missingArgument = Boolean(invocation?.command.argument?.required && !invocation.args)
+  // Text after a command that takes none: Enter says so instead of running it.
+  const strayArgument = Boolean(invocation && !invocation.command.argument && invocation.args)
 
   const persist = (next: string): void => {
     if (draftKey) void mutate({ key: draftKey, action: 'text', text: next }).catch((reason) => setError(ipcErrorMessage(reason, 'Could not save the draft.')))
@@ -411,6 +413,10 @@ export function ChatComposer({
     if (!canRun) return
     if (command.argument?.required && !args) {
       setError(`Add ${command.argument.hint} after /${command.name}.`)
+      return
+    }
+    if (!command.argument && args) {
+      setError(`/${command.name} takes nothing after it.`)
       return
     }
     resetHistory()
@@ -703,7 +709,7 @@ export function ChatComposer({
               running={running}
               delivery={delivery}
               onDeliveryChange={setDelivery}
-              disabled={invocation ? !canRun || missingArgument : !canSend}
+              disabled={invocation ? !canRun || missingArgument || strayArgument : !canSend}
               sending={sending}
               backgroundShortcut={allowBackgroundSend ? `${mac ? 'Cmd' : 'Ctrl'}+Enter` : undefined}
               command={invocation ? { name: invocation.command.name, icon: <SlashCommandIcon name={invocation.command.name} className="h-4 w-4" /> } : undefined}

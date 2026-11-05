@@ -2,7 +2,7 @@
 
 import { act, createElement } from 'react'
 import type { EditorView } from '@codemirror/view'
-import { messageInput, setMessageText } from './helpers/chat-input'
+import { messageInput, pressMessageKey, setMessageText } from './helpers/chat-input'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -1760,6 +1760,128 @@ describe('Inbox fork from a message', () => {
     expect(forkButton(view, 'msg_3')).toBeNull()
     await act(async () => forkButton(view, 'msg_1')!.click())
     expect(api.chat.fork).toHaveBeenCalledWith({ threadId: 'ses_one', messageId: 'msg_1' })
+  })
+})
+
+
+describe('Inbox /fork command', () => {
+  beforeEach(() => {
+    useWorkspace.setState({ inboxThreads: [thread()], selectedInboxThreadId: 'ses_one' })
+  })
+
+  const user = (id: string, text: string): ChatMessage => ({ kind: 'user', id, time: 1, text })
+  const reply = (id: string, text: string): ChatMessage => ({
+    kind: 'assistant', id, time: 2, agent: 'build', model: options.defaultModel!, completed: true, parts: [{ kind: 'text', text }],
+  })
+  const showConversation = async (): Promise<HTMLElement> => {
+    page = { running: false, older: null, messages: [user('msg_1', 'First request'), reply('msg_2', 'First answer')] }
+    const view = await render()
+    await vi.waitFor(() => expect(view.textContent).toContain('First answer'))
+    return view
+  }
+  const run = async (view: HTMLElement, value = '/fork'): Promise<void> => {
+    const box = messageInput(view)
+    await setMessageText(box, value)
+    await pressMessageKey(box, 'Enter')
+  }
+  const boxAlert = (view: HTMLElement): string | undefined =>
+    Array.from(view.querySelectorAll('[role="alert"]')).map((element) => element.textContent ?? '').find((value) => value.includes('/fork') || value.includes('fork'))
+
+  it('forks the whole conversation and opens the new thread, without sending anything', async () => {
+    const draft = draftStore('')
+    const view = await showConversation()
+    await run(view)
+    expect(api.chat.fork).toHaveBeenCalledTimes(1)
+    // No message ID: the whole conversation, as the sidebar's Fork thread does.
+    expect(api.chat.fork).toHaveBeenCalledWith({ threadId: 'ses_one' })
+    expect(api.chat.send).not.toHaveBeenCalled()
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_fork')
+    expect(useWorkspace.getState().inboxThreads.map((item) => item.id).sort()).toEqual(['ses_fork', 'ses_one'])
+    // The command is not left behind in either box, and the new box is empty.
+    expect(draft.saved()).toBe('')
+    expect(draft.saved('thread:ses_fork')).toBe('')
+    expect(api.chat.draft).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'prepend' }))
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-fork-status"]')).toBeNull())
+    expect(view.querySelector('[data-testid="chat-fork-error"]')).toBeNull()
+  })
+
+  it('leaves the caret in the new thread\'s box, so typing goes on there', async () => {
+    draftStore('')
+    const view = await showConversation()
+    await run(view)
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_fork')
+    const input = messageInput(view)
+    await vi.waitFor(() => expect(document.activeElement).toBe(input.contentDOM))
+    expect(input.state.doc.toString()).toBe('')
+    // The box took the instruction, so a thread opened later is not told again.
+    expect(useInboxChat.getState().draftReloads.ses_fork).toBeUndefined()
+  })
+
+  it('puts the text of the unfinished turn in the new box when the fork was cut before it', async () => {
+    const draft = draftStore('')
+    api.chat.fork.mockImplementationOnce(async () => ({ thread: forkedThread(), text: 'Still working on this' }))
+    const view = await showConversation()
+    await run(view)
+    expect(api.chat.draft).toHaveBeenCalledWith({ key: 'thread:ses_fork', action: 'prepend', text: 'Still working on this' })
+    expect(draft.saved('thread:ses_fork')).toBe('Still working on this')
+    await vi.waitFor(() => expect(messageInput(view).state.doc.toString()).toBe('Still working on this'))
+  })
+
+  it('shows that it is forking, and a second /fork meanwhile makes no second fork and gets its text back', async () => {
+    draftStore('')
+    let finish!: (result: ChatForkResult) => void
+    api.chat.fork.mockImplementationOnce(() => new Promise<ChatForkResult>((resolve) => { finish = resolve }))
+    const view = await showConversation()
+    await run(view)
+    expect(view.querySelector('[data-testid="chat-fork-status"]')?.textContent).toContain('Forking thread…')
+    await run(view)
+    await vi.waitFor(() => expect(boxAlert(view)).toBe('A fork is still being made.'))
+    expect(api.chat.fork).toHaveBeenCalledTimes(1)
+    expect(messageInput(view).state.doc.toString()).toBe('/fork')
+    await act(async () => finish({ thread: forkedThread() }))
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_fork')
+    expect(view.querySelector('[data-testid="chat-fork-status"]')).toBeNull()
+  })
+
+  it('says why it failed under the box, which gets the command back, and stays in the thread', async () => {
+    const draft = draftStore('')
+    api.chat.fork.mockRejectedValueOnce(new Error("Error invoking remote method 'chat:fork': Error: This OpenCode service does not support forking. Update OpenCode and try again."))
+    const view = await showConversation()
+    await run(view)
+    await vi.waitFor(() => expect(boxAlert(view)).toBe('This OpenCode service does not support forking. Update OpenCode and try again.'))
+    expect(view.querySelector('[data-testid="chat-fork-status"]')).toBeNull()
+    // Told once, in the one place the command was given.
+    expect(view.querySelector('[data-testid="chat-fork-error"]')).toBeNull()
+    expect(messageInput(view).state.doc.toString()).toBe('/fork')
+    expect(draft.saved()).toBe('/fork')
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_one')
+    expect(useWorkspace.getState().inboxThreads.map((item) => item.id)).toEqual(['ses_one'])
+
+    // Enter again tries again, and the reason goes.
+    await pressMessageKey(messageInput(view), 'Enter')
+    expect(api.chat.fork).toHaveBeenCalledTimes(2)
+    expect(boxAlert(view)).toBeUndefined()
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_fork')
+  })
+
+  it('is listed with /btw when a slash is typed, and a fork from a message still works beside it', async () => {
+    draftStore('')
+    const view = await showConversation()
+    await setMessageText(messageInput(view), '/')
+    expect(Array.from(view.querySelectorAll('[data-testid="slash-picker"] [role="option"]')).map((option) => option.getAttribute('data-testid')))
+      .toEqual(['slash-option-btw', 'slash-option-fork'])
+    await act(async () => view.querySelector<HTMLButtonElement>('[data-testid="chat-fork-from-msg_1"]')!.click())
+    expect(api.chat.fork).toHaveBeenCalledWith({ threadId: 'ses_one', messageId: 'msg_1' })
+  })
+
+  it('does not fork for /fork with text after it, which is not a fork request', async () => {
+    draftStore('')
+    const view = await showConversation()
+    await run(view, '/fork and fix the login')
+    await vi.waitFor(() => expect(boxAlert(view)).toBe('/fork takes nothing after it.'))
+    expect(api.chat.fork).not.toHaveBeenCalled()
+    expect(api.chat.send).not.toHaveBeenCalled()
+    expect(messageInput(view).state.doc.toString()).toBe('/fork and fix the login')
   })
 })
 

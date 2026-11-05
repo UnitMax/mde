@@ -86,6 +86,8 @@ export function parseInvocation(commands: readonly SlashCommand[], text: string)
 export interface SlashActions {
   /** Asks a side question about the conversation; the answer is shown apart from it. */
   ask: (question: string) => void | Promise<void>
+  /** Forks the whole conversation into a new thread, which is opened. */
+  fork: () => void | Promise<void>
 }
 
 /** Every command of the Inbox message box. A new one is another entry here, with what it needs added to {@link SlashActions}. */
@@ -96,6 +98,11 @@ export function slashCommands(actions: SlashActions): SlashCommand[] {
       description: 'Ask a side question. It is answered from this conversation and not added to it.',
       argument: { hint: 'your question', required: true },
       run: (question) => actions.ask(question),
+    },
+    {
+      name: 'fork',
+      description: 'Fork this thread. A new thread starts with a copy of the conversation, and this one stays as it is.',
+      run: () => actions.fork(),
     },
   ]
 }

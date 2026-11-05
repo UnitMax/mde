@@ -555,9 +555,10 @@ and the send button becomes the command's own round button ("Run /btw") instead 
 Queue while the agent works: a command is not delivered to the agent. Enter runs it with what follows
 the name (trimmed, over several lines if need be): the box empties at once and the command works on its
 own, so the person can go on typing; a command that fails gives the text back with the reason under
-the box, and one whose required argument is missing says what to add and runs nothing. The name is read
-in any case, as a whole word at the very start. Everything else that starts with a slash, such as
-`/etc/hosts is wrong` or `/btwx`, is an ordinary message and is sent as written. The commands are MDE's
+the box, and one whose required argument is missing says what to add and runs nothing. So does text
+after a command that takes none (`/fork and fix it`), which would otherwise be dropped unread. The name
+is read in any case, as a whole word at the very start. Everything else that starts with a slash, such
+as `/etc/hosts is wrong` or `/btwx`, is an ordinary message and is sent as written. The commands are MDE's
 own and are defined in one place, `slashCommands()` in `lib/slash-commands.ts`: a name, aliases, a
 description, an optional argument (a hint and whether it is required) and `run`. A new command is one
 more entry there, with whatever it needs from the thread added to `SlashActions`. The entry points
@@ -768,12 +769,14 @@ conversation and try another way, fork it instead (below).
 
 **Forking a thread.** A fork is a new Inbox thread that starts with a copy of another's
 conversation and goes on from there; the original is not stopped, reverted or otherwise changed.
-It is offered in two places. The sidebar's right-click menu has **Fork thread**, which forks the
-whole conversation. Each of your own messages has a fork button beside the revert button, which
-forks from just before that message and puts its text in the new thread's box, so you can say it
-differently without losing the original; there is no confirmation because nothing is deleted. A
-sidebar fork that fails shows its reason in the panel and a message fork in the thread, and each
-ignores a second click while its own fork is in progress.
+It is offered in three places. The sidebar's right-click menu has **Fork thread**, which forks the
+whole conversation, and so does typing `/fork` in the thread's message box. Each of your own messages
+has a fork button beside the revert button, which forks from just before that message and puts its text
+in the new thread's box, so you can say it differently without losing the original; there is no
+confirmation because nothing is deleted. A sidebar fork that fails shows its reason in the panel, a
+message fork in the thread, and a `/fork` under the box, which gets the command back. Each ignores a
+second request while its own fork is in progress (a second `/fork` is refused with a reason and gets
+its text back).
 
 `chat:fork` (`InboxChatService.fork`) sends `POST /api/session/{sessionID}/fork` with
 `{ before: <message ID> | null }`. OpenCode 2.1.4 copies the messages under new IDs inside the

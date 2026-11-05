@@ -139,9 +139,10 @@ interface InboxChatStore {
    * Forks a thread into a new one and opens it. Given a user message, the new thread starts from just
    * before it with its text in the box; otherwise it starts from the whole conversation, with the
    * text of an unfinished turn in the box when the fork was cut before one. The original is not
-   * touched. A rejection means no thread was made.
+   * touched. With `focus`, the new thread's box takes the caret even when there is no text to put in it.
+   * A rejection means no thread was made.
    */
-  forkThread: (threadId: string, input?: { messageId: string; text: string }) => Promise<InboxThread>
+  forkThread: (threadId: string, input?: { messageId: string; text: string }, options?: { focus?: boolean }) => Promise<InboxThread>
   replyPermission: (threadId: string, requestId: string, decision: 'once' | 'always' | 'reject') => Promise<void>
   replyForm: (threadId: string, formId: string, answer: Record<string, ChatFormValue>) => Promise<void>
   applyEvent: (event: ChatEvent) => void
@@ -481,14 +482,20 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
       })
     },
 
-    forkThread: async (threadId, input) => {
+    forkThread: async (threadId, input, options) => {
       const result = await window.api.chat.fork({ threadId, ...(input ? { messageId: input.messageId } : {}) })
       const forkId = result.thread.id
       const workspace = useWorkspace.getState()
       workspace.upsertInboxThread(result.thread)
       workspace.selectInboxThread(forkId)
       const text = input?.text ?? result.text
-      if (!text?.trim()) return result.thread
+      if (!text?.trim()) {
+        // With no text to put in, the new box still takes the caret when the person was typing (`/fork`).
+        if (options?.focus) {
+          set((state) => ({ draftReloads: { ...state.draftReloads, [forkId]: { id: (state.draftReloads[forkId]?.id ?? 0) + 1, caret: 0 } } }))
+        }
+        return result.thread
+      }
       // The new thread's box is shown by now, so it reads the draft again once the text is in it. The
       // fork has happened either way, so a draft that cannot take the text is told to the reader.
       try {

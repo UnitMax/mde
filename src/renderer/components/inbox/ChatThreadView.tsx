@@ -86,21 +86,29 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
     forking.current = false
     setFork({ pending: false, error: null })
   }, [thread.id])
-  const forkFrom = useCallback((message: UserMessage) => {
-    if (forking.current) return
+  // Makes the fork and shows that it is being made; a failure goes back to whoever asked, to tell where it was asked.
+  const runFork = useCallback(async (input?: { messageId: string; text: string }, options?: { focus?: boolean }): Promise<void> => {
     forking.current = true
     setFork({ pending: true, error: null })
-    forkThread(thread.id, { messageId: message.id, text: message.text }).then(
-      () => {
-        forking.current = false
-        setFork({ pending: false, error: null })
-      },
-      (error: unknown) => {
-        forking.current = false
-        setFork({ pending: false, error: ipcErrorMessage(error, 'Could not fork the thread.') })
-      },
-    )
+    try {
+      await forkThread(thread.id, input, options)
+    } finally {
+      forking.current = false
+      setFork({ pending: false, error: null })
+    }
   }, [forkThread, thread.id])
+  const forkFrom = useCallback((message: UserMessage) => {
+    if (forking.current) return
+    runFork({ messageId: message.id, text: message.text }).catch((error: unknown) => {
+      setFork({ pending: false, error: ipcErrorMessage(error, 'Could not fork the thread.') })
+    })
+  }, [runFork])
+  // `/fork`: the whole conversation, and the caret goes on in the new thread's box. A failure is told under
+  // the box, which gets the command back.
+  const forkAll = useCallback(async (): Promise<void> => {
+    if (forking.current) throw new Error('A fork is still being made.')
+    await runFork(undefined, { focus: true })
+  }, [runFork])
 
   // A copy from the right-click menu can fail (a conversation past the clipboard limit); the failure is told here.
   const [copyError, setCopyError] = useState<string | null>(null)
@@ -201,7 +209,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
     const element = scrollRef.current
     if (element && stickRef.current) element.scrollTop = element.scrollHeight
   }, [asideId, asideStatus])
-  const commands = useMemo(() => slashCommands({ ask: (question) => askAside(thread.id, question) }), [askAside, thread.id])
+  const commands = useMemo(() => slashCommands({ ask: (question) => askAside(thread.id, question), fork: forkAll }), [askAside, forkAll, thread.id])
   // Closed from inside itself (Escape, a button reached by keyboard), the caret goes back to the box instead of nowhere.
   const closeAside = useCallback(() => {
     const inside = document.activeElement?.closest('[data-testid="chat-aside"]') != null

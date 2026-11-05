@@ -142,18 +142,46 @@ describe('parseInvocation', () => {
 })
 
 describe('the Inbox commands', () => {
+  const actions = () => ({ ask: vi.fn(async (_question: string) => undefined), fork: vi.fn(async () => undefined) })
+  const named = (name: string, list: SlashCommand[]): SlashCommand => list.find((command) => command.name === name)!
+
   it('has /btw, which takes a question and asks it', async () => {
-    const ask = vi.fn(async (_question: string) => undefined)
-    const [command, ...others] = slashCommands({ ask })
-    expect(others).toEqual([])
+    const { ask, fork } = actions()
+    const command = named('btw', slashCommands({ ask, fork }))
     expect(command).toMatchObject({ name: 'btw', argument: { required: true } })
-    expect(command!.description).toMatch(/side question/)
-    await command!.run('why SQLite?')
+    expect(command.description).toMatch(/side question/)
+    await command.run('why SQLite?')
     expect(ask).toHaveBeenCalledWith('why SQLite?')
+    expect(fork).not.toHaveBeenCalled()
+  })
+
+  it('has /fork, which takes nothing and forks the whole conversation', async () => {
+    const { ask, fork } = actions()
+    const command = named('fork', slashCommands({ ask, fork }))
+    expect(command.argument).toBeUndefined()
+    expect(command.description).toMatch(/fork/i)
+    await command.run('')
+    expect(fork).toHaveBeenCalledOnce()
+    expect(fork).toHaveBeenCalledWith()
+    expect(ask).not.toHaveBeenCalled()
+  })
+
+  it('gives a failed fork back to the box, which shows the reason', async () => {
+    const { ask } = actions()
+    const command = named('fork', slashCommands({ ask, fork: async () => { throw new Error('No service.') } }))
+    await expect(command.run('')).rejects.toThrow('No service.')
+  })
+
+  it('lists /btw and /fork, and finds /fork by typing its name or a word of its description', () => {
+    const list = slashCommands(actions())
+    expect(list.map((command) => command.name)).toEqual(['btw', 'fork'])
+    expect(filterCommands(list, 'for').map((command) => command.name)).toEqual(['fork'])
+    expect(filterCommands(list, 'copy').map((command) => command.name)).toEqual(['fork'])
+    expect(parseInvocation(list, '/fork')).toMatchObject({ command: { name: 'fork' }, args: '' })
   })
 
   it('uses lower-case names without spaces or slashes, none twice, so that each can be typed and found', () => {
-    const names = slashCommands({ ask: () => undefined }).flatMap((command) => [command.name, ...(command.aliases ?? [])])
+    const names = slashCommands(actions()).flatMap((command) => [command.name, ...(command.aliases ?? [])])
     for (const name of names) expect(name).toMatch(/^[a-z][a-z0-9-]*$/)
     expect(new Set(names).size).toBe(names.length)
   })
