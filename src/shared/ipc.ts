@@ -127,9 +127,7 @@ export const IpcChannels = {
   pathResolve: 'path:resolve',
   pathValidate: 'path:validate',
   pathListWslDirectories: 'path:list-wsl-directories',
-  pathReveal: 'path:reveal',
   pathRevealTerminal: 'path:reveal-terminal',
-  pathOpenInVsCode: 'path:open-in-vscode',
   pathOpenTerminalInVsCode: 'path:open-terminal-in-vscode',
 
   gitInfo: 'git:info',
@@ -230,6 +228,7 @@ export interface TerminalDirectoryRequest {
   directory: string
 }
 
+/** An Inbox folder/thread ID or a live terminal with its expected directory. */
 export type FileRoot =
   | { sessionId: string; terminalId?: never; directory?: never }
   | (TerminalDirectoryRequest & { sessionId?: never })
@@ -382,7 +381,7 @@ export interface MoveTodoTaskRequest {
 
 export interface UpdateSessionRequest {
   id: string
-  patch: Partial<Pick<Session, 'name' | 'path' | 'shell' | 'color'>> & {
+  patch: Partial<Pick<Session, 'name' | 'shell' | 'color'>> & {
     icon?: Session['icon'] | null
   }
 }
@@ -493,9 +492,7 @@ export interface RendererApi {
     resolve(req: ResolvePathRequest): Promise<PathResolution>
     validate(req: ValidatePathRequest): Promise<PathCheckResult>
     listWslDirectories(req: ListWslDirectoriesRequest): Promise<WslDirectoryListing>
-    reveal(sessionId: string): Promise<void>
     revealTerminal(terminalId: string): Promise<void>
-    openInVsCode(sessionId: string): Promise<void>
     openTerminalInVsCode(terminalId: string): Promise<void>
   }
   git: {

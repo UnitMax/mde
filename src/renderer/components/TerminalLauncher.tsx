@@ -2,7 +2,7 @@ import { supportsAgentIntegration } from '@shared/agent-support'
 import { useEffect, useRef, useState } from 'react'
 import { Bot, Code2, Terminal as TerminalIcon } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import type { Session, CodingAgent, TerminalLaunchDirectory } from '@shared/types'
+import type { Session, CodingAgent } from '@shared/types'
 import {
   Dialog,
   DialogContent,
@@ -11,12 +11,6 @@ import {
   DialogTitle
 } from '@/components/ui/dialog'
 import { resolveAgentCommand, agentCommandSettingError, AGENT_COMMAND_OPTIONS } from '@/lib/agent-commands'
-import {
-  defaultTerminalLaunchDirectory,
-  terminalLaunchDirectoryDisabled,
-  terminalLaunchDirectoryPath,
-  toggleTerminalLaunchDirectory
-} from '@/lib/terminal-launcher'
 import { useWorkspace } from '@/store/workspace'
 import { getTerminalSettings, subscribeTerminalSettings } from '@/terminal/terminal-settings'
 import { MAX_TERMINAL_COUNT, type RuntimeTerminalLaunch } from '@/terminal/layout'
@@ -39,16 +33,11 @@ interface LauncherItem {
   kind?: CodingAgent
 }
 
-const DIRECTORY_OPTIONS: readonly { id: TerminalLaunchDirectory; label: string }[] = [
-  { id: 'terminal', label: 'Current terminal directory' },
-  { id: 'session', label: 'Session directory' }
-]
-
 const LAUNCHER_ITEMS: readonly LauncherItem[] = [
   {
     id: 'terminal',
     label: 'New terminal',
-    description: 'Open a shell in the selected directory',
+    description: 'Open a shell in the current terminal directory',
     icon: TerminalIcon
   },
   ...AGENT_COMMAND_OPTIONS.map((option) => ({
@@ -72,37 +61,12 @@ export function TerminalLauncher({
   const platform = useWorkspace((state) => state.platform)
   const [settings, setSettings] = useState(() => getTerminalSettings())
   const [activeIndex, setActiveIndex] = useState(0)
-  const [directorySource, setDirectorySource] = useState<TerminalLaunchDirectory>('terminal')
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([])
-  const sessionDirectory = session.path
-  const selectedDirectorySource = terminalLaunchDirectoryDisabled(
-    directorySource,
-    directory,
-    sessionDirectory
-  )
-    ? defaultTerminalLaunchDirectory(directory)
-    : directorySource
-  const selectedDirectory = terminalLaunchDirectoryPath(
-    selectedDirectorySource,
-    directory,
-    sessionDirectory
-  )
-  const available = Boolean(selectedDirectory?.trim())
+  const available = Boolean(directory?.trim())
   const capacityAvailable = paneCount < MAX_TERMINAL_COUNT
   const supported = supportsAgentIntegration(platform?.platform, session)
 
   useEffect(() => subscribeTerminalSettings(() => setSettings(getTerminalSettings())), [])
-
-  useEffect(() => {
-    if (!open) return
-    setDirectorySource(defaultTerminalLaunchDirectory(directory))
-  }, [open, sourceTerminalId])
-
-  const directoryOptionDisabled = (option: TerminalLaunchDirectory): boolean =>
-    terminalLaunchDirectoryDisabled(option, directory, sessionDirectory)
-
-  const directoryOptionPath = (option: TerminalLaunchDirectory): string | undefined =>
-    terminalLaunchDirectoryPath(option, directory, sessionDirectory)
 
   const itemDisabled = (item: LauncherItem): boolean => {
     if (!supported || !available || !capacityAvailable) return true
@@ -123,7 +87,7 @@ export function TerminalLauncher({
     if (itemDisabled(item)) return
     if (!available) return
     if (!item.kind) {
-      onSelect({ sourceTerminalId, directory: selectedDirectorySource })
+      onSelect({ sourceTerminalId })
       return
     }
 
@@ -131,7 +95,6 @@ export function TerminalLauncher({
     if (!command) return
     onSelect({
       sourceTerminalId,
-      directory: selectedDirectorySource,
       agent: { kind: item.kind, command }
     })
   }
@@ -148,7 +111,7 @@ export function TerminalLauncher({
   const statusMessage = !supported
     ? 'This launcher is available on macOS and Windows/WSL sessions.'
     : !available
-      ? 'The selected directory is not available.'
+      ? 'Waiting for the terminal’s current directory.'
       : !capacityAvailable
         ? 'This tab already has the maximum of ' + MAX_TERMINAL_COUNT + ' terminals.'
         : null
@@ -158,18 +121,7 @@ export function TerminalLauncher({
       <DialogContent
         className="max-w-xl p-3"
         onKeyDown={(event) => {
-          if (event.key === 'Tab') {
-            const next = toggleTerminalLaunchDirectory(
-              selectedDirectorySource,
-              directory,
-              sessionDirectory
-            )
-            if (next !== selectedDirectorySource) {
-              event.preventDefault()
-              event.stopPropagation()
-              setDirectorySource(next)
-            }
-          } else if (event.key === 'ArrowDown') {
+          if (event.key === 'ArrowDown') {
             event.preventDefault()
             moveActive(1)
           } else if (event.key === 'ArrowUp') {
@@ -196,50 +148,12 @@ export function TerminalLauncher({
       >
         <DialogHeader className="mb-3 px-1">
           <DialogTitle>
-            Open in {selectedDirectorySource === 'terminal' ? 'current terminal' : 'session'} directory
+            Open in current terminal directory
           </DialogTitle>
-          <DialogDescription className="truncate font-mono" title={selectedDirectory ?? 'Unavailable'}>
-            {selectedDirectory ?? 'Directory unavailable'}
+          <DialogDescription className="truncate font-mono" title={directory ?? 'Unavailable'}>
+            {directory ?? 'Directory unavailable'}
           </DialogDescription>
         </DialogHeader>
-
-        <div
-          role="tablist"
-          aria-label="Launch directory"
-          className="mb-3 grid grid-cols-2 gap-1 rounded border border-line bg-panel p-1"
-        >
-          {DIRECTORY_OPTIONS.map((option) => {
-            const optionDisabled = directoryOptionDisabled(option.id)
-            const optionPath = directoryOptionPath(option.id)
-            const selected = option.id === selectedDirectorySource
-            return (
-              <button
-                key={option.id}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                disabled={optionDisabled}
-                onClick={() => setDirectorySource(option.id)}
-                className={
-                  'min-w-0 rounded px-2 py-1.5 text-left transition-colors ' +
-                  (selected ? 'bg-active text-fg' : 'text-fg-muted hover:bg-hover hover:text-fg') +
-                  ' disabled:cursor-not-allowed disabled:opacity-40'
-                }
-                data-testid={'terminal-launch-directory-' + option.id}
-              >
-                <span className="block truncate text-xs font-medium">{option.label}</span>
-                <span
-                  className="mt-0.5 block truncate font-mono text-[10px] text-fg-subtle"
-                  title={optionPath ?? 'Unavailable'}
-                >
-                  {optionPath ?? (option.id === 'terminal'
-                    ? 'Not reported yet'
-                    : 'Session directory unavailable')}
-                </span>
-              </button>
-            )
-          })}
-        </div>
 
         <div
           role="listbox"
@@ -299,7 +213,7 @@ export function TerminalLauncher({
         </div>
 
         <p className="mt-2 px-1 text-[11px] text-fg-subtle">
-          Press Tab to switch directories when both are available. Use Ctrl+N or Cmd+N from a focused terminal to open this selector.
+          Use Ctrl+N or Cmd+N from a focused terminal to open this selector.
         </p>
       </DialogContent>
     </Dialog>

@@ -34,6 +34,7 @@ import type {
   InboxThread,
   OpenCodeModelRef,
   OpenCodeTarget,
+  DirectoryContext,
   Session,
 } from '@shared/types'
 import { OpenCodeServiceError, type OpenCodeServiceClient } from '../opencode/service/client'
@@ -380,7 +381,7 @@ export class InboxChatService {
     }
   }
 
-  async draft(request: ChatDraftRequest, sourceSession?: Session) {
+  async draft(request: ChatDraftRequest, sourceSession?: DirectoryContext) {
     this.assertEnabled()
     const [kind, id = ''] = request.key.split(':')
     const store = this.dependencies.drafts
@@ -944,7 +945,7 @@ export class InboxChatService {
    * The directory behind a folder or thread ID, shaped like a session so the file tree and viewer
    * can list and read it. Only the directory fields are meaningful; null for anything else.
    */
-  fileRoot(id: string): Session | null {
+  fileRoot(id: string): DirectoryContext | null {
     const source = id.startsWith('fld_')
       ? this.dependencies.store.folder(id)
       : id.startsWith('ses_') ? this.dependencies.store.get(id) : null

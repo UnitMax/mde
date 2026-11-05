@@ -279,7 +279,7 @@ export class InboxRecorder {
   private refreshBranch(thread: InboxThread): void {
     const { id, directory, target } = thread
     void (async () => {
-      const branch = await this.dependencies.readBranch(targetSession(target, directory), directory)
+      const branch = await this.dependencies.readBranch(targetSession(target), directory)
       const current = this.store.get(id)
       // The thread may have moved or been deleted while Git was running.
       if (!current || current.directory !== directory) return

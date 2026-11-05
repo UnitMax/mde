@@ -29,14 +29,13 @@ export function serviceTargetKey(target: OpenCodeTarget): string {
 }
 
 /** A stand-in session that only carries the target's transport (native or a WSL distro). */
-export function targetSession(target: OpenCodeTarget, path = '/'): Session {
+export function targetSession(target: OpenCodeTarget): Session {
   return {
     id: 'inbox',
     projectId: 'inbox',
     name: 'Inbox',
     kind: target.kind,
     ...(target.kind === 'wsl' ? { distro: target.distro } : {}),
-    path,
     createdAt: new Date(0).toISOString(),
   }
 }

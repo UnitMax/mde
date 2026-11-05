@@ -109,10 +109,8 @@ const api: RendererApi = {
     resolve: (req) => ipcRenderer.invoke(IpcChannels.pathResolve, req),
     validate: (req) => ipcRenderer.invoke(IpcChannels.pathValidate, req),
     listWslDirectories: (req) => ipcRenderer.invoke(IpcChannels.pathListWslDirectories, req),
-    reveal: (sessionId) => ipcRenderer.invoke(IpcChannels.pathReveal, sessionId),
     revealTerminal: (terminalId) =>
       ipcRenderer.invoke(IpcChannels.pathRevealTerminal, terminalId),
-    openInVsCode: (sessionId) => ipcRenderer.invoke(IpcChannels.pathOpenInVsCode, sessionId),
     openTerminalInVsCode: (terminalId) =>
       ipcRenderer.invoke(IpcChannels.pathOpenTerminalInVsCode, terminalId)
   },

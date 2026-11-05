@@ -244,7 +244,7 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
       throw new Error(`WSL session "${session.name}" has no distro`)
     }
 
-    const workingDirectory = context.workingDirectory ?? session.path
+    const workingDirectory = context.workingDirectory ?? '~'
     const executable = context.windowsExecutable
     if (!executable?.cwd) throw new Error('A resolved Windows WSL executable and host directory are required.')
 
@@ -284,7 +284,7 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
         file: '/bin/sh',
         args: ['-c', wslAgentShellCommand(), 'mde-agent',
           session.shell ?? context.defaultShell ?? '/bin/zsh', context.agent.executable, ...context.agent.args],
-        cwd: context.workingDirectory ?? session.path
+        cwd: context.workingDirectory
       }
     }
     throw new Error('Coding agents can only be launched in WSL sessions on Windows')
@@ -297,14 +297,14 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
       return {
         file: shell,
         args: ['-NoExit', '-Command', powershellStartupCommand()],
-        cwd: context.workingDirectory ?? session.path
+        cwd: context.workingDirectory
       }
     }
 
     return {
       file: shell,
       args: [],
-      cwd: context.workingDirectory ?? session.path
+      cwd: context.workingDirectory
     }
   }
 
@@ -313,7 +313,7 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
     return {
       file: '/bin/bash',
       args: ['-c', nativeBashShellCommand(), 'mde-shell', shell],
-      cwd: context.workingDirectory ?? session.path
+      cwd: context.workingDirectory
     }
   }
 
@@ -321,7 +321,7 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
     return {
       file: shell,
       args: ['-l', '-i', '-C', fishStartupCommand()],
-      cwd: context.workingDirectory ?? session.path
+      cwd: context.workingDirectory
     }
   }
 
@@ -329,9 +329,9 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
     return {
       file: '/bin/sh',
       args: ['-c', nativeZshShellCommand(), 'mde-shell', shell],
-      cwd: context.workingDirectory ?? session.path
+      cwd: context.workingDirectory
     }
   }
 
-  return { file: shell, args: ['-l'], cwd: context.workingDirectory ?? session.path }
+  return { file: shell, args: ['-l'], cwd: context.workingDirectory }
 }

@@ -13,7 +13,7 @@ export interface SessionSearchMatch {
   matches: Partial<Record<SessionSearchField, number[]>>
 }
 
-export type SessionSearchField = 'name' | 'project' | 'path' | 'distro'
+export type SessionSearchField = 'name' | 'project' | 'distro'
 
 interface SearchField {
   key: SessionSearchField
@@ -37,7 +37,6 @@ function fieldsFor(item: SessionSearchItem): SearchField[] {
   return [
     { key: 'name', value: session.name, weight: 100 },
     { key: 'project', value: project?.name ?? '', weight: 65 },
-    { key: 'path', value: session.path, weight: 45 },
     { key: 'distro', value: session.distro ?? '', weight: 40 }
   ]
 }

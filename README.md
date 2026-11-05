@@ -13,7 +13,8 @@ both use OpenCode's API for thread activity. Choose GUI (the default) or Termina
 Build terminal layouts by holding Ctrl and clicking + on a pane’s left, right, top or bottom edge.
 Drag dividers to resize; closing a pane expands its sibling and preserves the rest of the layout.
 Select a terminal to browse its current folder in Files. Click its branch and change counts in the
-terminal header to review Git changes and history.
+terminal header to review Git changes and history. Sessions group terminals by name and environment;
+new shells start in the user’s home directory, and each terminal tracks its own current folder.
 
 ## Removing the old OpenCode plugin
 

@@ -174,10 +174,9 @@ export class PtyManager {
     }, process.platform)
 
     const queryResponder = new TerminalQueryResponder(palette)
-    // WSL's --cd gives us a reliable initial directory even before the shell has
-    // displayed its first prompt. OSC 7 then keeps this value current after
-    // every directory change.
-    let currentDirectory: string | null = options?.directory ?? (session.kind === 'wsl' ? session.path : null)
+    // Native homes and explicit launch directories are known before the first
+    // prompt. WSL's default home is learned from OSC 7, which tracks later changes.
+    let currentDirectory: string | null = options?.directory ?? (session.kind === 'native' ? homedir() : null)
     // Answer palette probes beside the PTY so latency-sensitive TUIs do not
     // have to wait for a main -> renderer -> main IPC round trip.
     const dataListener = child.onData((data) => {

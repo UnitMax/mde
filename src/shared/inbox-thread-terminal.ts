@@ -20,7 +20,6 @@ export function inboxThreadTerminalSession(thread: InboxThread): Session {
     name: thread.title,
     kind: thread.target.kind,
     ...(thread.target.kind === 'wsl' ? { distro: thread.target.distro } : {}),
-    path: thread.directory,
     createdAt: new Date(thread.createdAt).toISOString(),
   }
 }

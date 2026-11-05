@@ -15,7 +15,6 @@ function session(overrides: Partial<Session> = {}): Session {
     projectId: 'project-1',
     name: 'Frontend',
     kind: 'native',
-    path: '/workspace/frontend',
     createdAt: '2026-01-01T00:00:00.000Z',
     ...overrides
   }
@@ -76,7 +75,7 @@ describe('SessionEnvironmentPanel', () => {
     expect(panel()).toBeNull()
   })
 
-  it('shows runtime, distribution, and full directory on WSL hover', () => {
+  it('shows runtime and distribution on WSL hover', () => {
     const value = session({ kind: 'wsl', distro: 'Ubuntu-24.04' })
     const container = renderPanel(value)
     const trigger = container.querySelector<HTMLElement>('[data-testid="session-trigger"]')
@@ -96,7 +95,6 @@ describe('SessionEnvironmentPanel', () => {
     expect(environmentPanel?.getAttribute('role')).toBe('tooltip')
     expect(environmentPanel?.textContent).toContain('WSL')
     expect(environmentPanel?.textContent).toContain('Ubuntu-24.04')
-    expect(environmentPanel?.textContent).toContain('/workspace/frontend')
     expect(trigger.getAttribute('aria-describedby')).toBe(environmentPanel?.id)
     expect(environmentPanel?.getAttribute('title')).toBeNull()
   })
@@ -114,7 +112,6 @@ describe('SessionEnvironmentPanel', () => {
     const environmentPanel = panel()
     expect(environmentPanel?.textContent).toContain('Native')
     expect(environmentPanel?.textContent).not.toContain('Distribution')
-    expect(environmentPanel?.textContent).toContain(value.path)
   })
 
   it('closes after the focused trigger loses focus', () => {

@@ -26,7 +26,6 @@ const session = {
   name: 'App',
   kind: 'wsl',
   distro: 'Ubuntu-24.04',
-  path: '/home/me/src/app',
   createdAt: '2026-01-01T00:00:00.000Z'
 }
 
@@ -126,14 +125,14 @@ describe('workspace validation', () => {
     expect(validateTodoTask({ ...task, updatedAt: undefined }, projects)).toBeNull()
   })
 
-  it('requires sessions to reference a project and retain their own path', () => {
+  it('requires sessions to reference a project and validates their environment', () => {
     const projectIds = new Set([project.id])
     expect(validateSession(session, projectIds)).toEqual(normalizedSession)
     expect(validateSession({ ...session, color: 'teal' }, projectIds)).toMatchObject({ color: 'teal' })
     expect(validateSession({ ...session, color: 'not-a-color' }, projectIds)).toEqual(normalizedSession)
     expect(validateSession({ ...session, icon: 'robot' }, projectIds)).toMatchObject({ icon: 'robot' })
     expect(validateSession({ ...session, icon: 'not-an-icon' }, projectIds)).toEqual(normalizedSession)
-    expect(validateSession({ ...session, obsolete: true }, projectIds)).toEqual(normalizedSession)
+    expect(validateSession({ ...session, obsolete: true, path: '/unused' }, projectIds)).toEqual(normalizedSession)
     expect(validateSession({ ...session, projectId: 'missing' }, projectIds)).toBeNull()
     expect(validateSession({ ...session, kind: 'wsl', distro: undefined }, projectIds)).toBeNull()
     expect(validateSessionList([session, session], projectIds)).toHaveLength(1)
@@ -186,7 +185,6 @@ describe('session ordering', () => {
     name: 'First',
     kind: 'wsl',
     distro: 'Ubuntu-24.04',
-    path: '/home/me/src/first',
     createdAt: '2026-01-01T00:00:00.000Z'
   }
   const otherProject: Session = { ...first, id: 'session-2', projectId: 'project-2' }

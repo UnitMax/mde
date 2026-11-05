@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TerminalDirectoryRequest } from '../src/shared/ipc'
 import { fileRootKey } from '../src/renderer/lib/file-root'
-import type { Session } from '../src/shared/types'
+import type { DirectoryContext } from '../src/shared/types'
 import { FILE_TREE_DROP_TYPE, readFileTreeDrop } from '../src/renderer/terminal/drop'
 import { FileTreePanel } from '../src/renderer/components/FileTreePanel'
 import { useWorkspace } from '../src/renderer/store/workspace'
@@ -17,7 +17,7 @@ const list = vi.fn()
 const reveal = vi.fn(async () => undefined)
 const openInVsCode = vi.fn(async () => undefined)
 
-const session: Session = {
+const session: DirectoryContext = {
   id: 'session-1',
   projectId: 'project-1',
   name: 'App',
@@ -26,7 +26,7 @@ const session: Session = {
   createdAt: '2026-01-01T00:00:00.000Z'
 }
 
-async function renderPanel(target: Session = session, fileRoot?: TerminalDirectoryRequest): Promise<HTMLElement> {
+async function renderPanel(target: DirectoryContext = session, fileRoot?: TerminalDirectoryRequest): Promise<HTMLElement> {
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
@@ -51,7 +51,7 @@ describe('FileTreePanel', () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     Object.defineProperty(window, 'api', {
       configurable: true,
-      value: { files: { list }, paths: { reveal, openInVsCode } }
+      value: { files: { list }, paths: { revealTerminal: reveal, openTerminalInVsCode: openInVsCode } }
     })
     list.mockReset()
     reveal.mockClear()
@@ -191,9 +191,9 @@ describe('FileTreePanel', () => {
   })
 
   it('shows listing errors without the IPC prefix', async () => {
-    list.mockRejectedValueOnce(new Error("Error invoking remote method 'files:list': Error: Session folder not found."))
+    list.mockRejectedValueOnce(new Error("Error invoking remote method 'files:list': Error: DirectoryContext folder not found."))
     const container = await renderPanel()
-    expect(container.textContent).toContain('Session folder not found.')
+    expect(container.textContent).toContain('DirectoryContext folder not found.')
     expect(container.textContent).not.toContain('invoking remote method')
   })
 
@@ -212,24 +212,24 @@ describe('FileTreePanel', () => {
     expect(container.querySelector('[role="tree"]')).not.toBeNull()
   })
 
-  it('labels the panel Files and opens the root in File Explorer', async () => {
-    const container = await renderPanel()
+  it('labels the panel Files and opens the terminal folder in File Explorer', async () => {
+    const container = await renderPanel(session, { terminalId: 'pane-1', directory: '/home/me/current' })
     expect(container.querySelector('[data-testid="file-tree-panel"]')?.textContent).toContain('Files')
     expect(container.querySelector('[aria-label="Open folder in VS Code"]')).toBeNull()
 
     await act(async () => {
       container.querySelector<HTMLButtonElement>('[aria-label="Open folder in File Explorer"]')?.click()
     })
-    expect(reveal).toHaveBeenCalledWith('session-1')
+    expect(reveal).toHaveBeenCalledWith('pane-1')
   })
 
-  it('opens a WSL session root in VS Code on Windows', async () => {
+  it('opens a WSL terminal folder in VS Code on Windows', async () => {
     useWorkspace.setState({ platform: { platform: 'win32', isWindows: true }, wslAvailable: true })
-    const container = await renderPanel({ ...session, kind: 'wsl', distro: 'Ubuntu-24.04' })
+    const container = await renderPanel({ ...session, kind: 'wsl', distro: 'Ubuntu-24.04' }, { terminalId: 'pane-1', directory: '/home/me/current' })
 
     await act(async () => {
       container.querySelector<HTMLButtonElement>('[aria-label="Open folder in VS Code"]')?.click()
     })
-    expect(openInVsCode).toHaveBeenCalledWith('session-1')
+    expect(openInVsCode).toHaveBeenCalledWith('pane-1')
   })
 })

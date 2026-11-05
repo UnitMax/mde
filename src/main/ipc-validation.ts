@@ -94,7 +94,7 @@ const args: Validator = (value) => argsShape(value) &&
   (value as string[]).reduce((length, entry) => length + entry.length, 0) <= IPC_LIMITS.argumentText
 const command = object({ executable: path, args })
 const agent = object({ kind: oneOf('opencode', 'codex', 'claude'), command })
-const commandLaunch = object({ sourceTerminalId: id, directory: oneOf('terminal', 'session'), agent: optional(agent) })
+const commandLaunch = object({ sourceTerminalId: id, agent: optional(agent) })
 const opencodeSessionId: Validator = (value) => id(value) && /^ses_[A-Za-z0-9_-]+$/.test(value as string)
 const ptyRequest = { terminalId: id, sessionId: id, size, palette }
 const ensure = object({ ...ptyRequest, launch: optional(commandLaunch) })
@@ -161,10 +161,10 @@ export const ipcPayloadValidators = {
   [IpcChannels.todoTasksUpdate]: object({ id, patch: object({ title: optional(label), description: optional(text), columnId: optional(id) }) }),
   [IpcChannels.todoTasksMove]: object({ id, columnId: id, beforeId: nullable(id) }),
   [IpcChannels.todoTasksRemove]: id,
-  [IpcChannels.sessionsCreate]: object({ projectId: id, name: label, kind, path, distro: optional(distro), shell: optional(optionalPath) }),
+  [IpcChannels.sessionsCreate]: object({ projectId: id, name: label, kind, distro: optional(distro), shell: optional(optionalPath) }),
   [IpcChannels.sessionsDuplicate]: id,
   [IpcChannels.sessionsUpdate]: object({ id, patch: object({
-    name: optional(label), path: optional(path), shell: optional(optionalPath),
+    name: optional(label), shell: optional(optionalPath),
     color: optional(isSessionColor), icon: optional(nullable(isSessionIcon)),
   }) }),
   [IpcChannels.sessionsMove]: object({ id, projectId: id }),
@@ -196,9 +196,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.pathResolve]: object({ kind, distro: optional(distro), rawPath: optionalPath }),
   [IpcChannels.pathValidate]: object({ kind, distro: optional(distro), path: optionalPath }),
   [IpcChannels.pathListWslDirectories]: object({ distro, path: optional(path), hidden: optional(boolean) }),
-  [IpcChannels.pathReveal]: id,
   [IpcChannels.pathRevealTerminal]: id,
-  [IpcChannels.pathOpenInVsCode]: id,
   [IpcChannels.pathOpenTerminalInVsCode]: id,
   [IpcChannels.gitInfo]: object(terminalDirectory),
   [IpcChannels.gitTerminalInfo]: terminalId,

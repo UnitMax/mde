@@ -92,7 +92,7 @@ describe('inbox recorder: forked threads', () => {
     expect(created).toMatchObject({ directory: worktree.root, folderId: 'fld_app', worktree })
     expect(thread('ses_wt')).toEqual(created)
     // The branch comes from the worktree's own directory.
-    expect(readBranch).toHaveBeenCalledWith(expect.objectContaining({ path: worktree.root }), worktree.root)
+    expect(readBranch).toHaveBeenCalledWith(expect.objectContaining({ kind: 'wsl', distro: 'Ubuntu-24.04' }), worktree.root)
     const fork = recorder.recordForkedThread({ id: 'ses_fork', source: thread('ses_wt')! })
     expect(fork).toMatchObject({ directory: worktree.root, forkedFrom: 'ses_wt', worktree })
     // An ordinary thread has neither.
@@ -304,7 +304,7 @@ describe('inbox recorder', () => {
     expect(isInboxThreadUnread(created)).toBe(false)
     // Git runs through a stand-in session for the folder's target.
     await vi.waitFor(() => expect(readBranch).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/app' }), '/home/me/app'))
+      expect.objectContaining({ kind: 'wsl', distro: 'Ubuntu-24.04' }), '/home/me/app'))
 
     advance(1_000)
     for (const event of events) recorder.applyServiceEvent(event)

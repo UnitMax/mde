@@ -4,24 +4,24 @@ import { terminalSessionResolver } from '../src/main/inbox/terminal'
 import type { Distro, Session } from '../src/shared/types'
 
 const distro = (name: string, isDefault = false): Distro => ({ name, state: 'Running', version: 2, isDefault })
-const stored: Session = { id: 'ses-1', projectId: 'p', name: 'App', kind: 'native', path: '/home/me/app', createdAt: '' }
+const stored: Session = { id: 'ses-1', projectId: 'p', name: 'App', kind: 'native', createdAt: '' }
 
 describe('the Inbox terminal session', () => {
-  it('starts a native shell in the home directory off Windows', () => {
-    expect(inboxTerminalSession('darwin', [], '/Users/me')).toEqual({
-      id: INBOX_TERMINAL_SESSION_ID, projectId: '', name: 'Terminal', createdAt: '', kind: 'native', path: '/Users/me',
+  it('uses a native shell environment off Windows', () => {
+    expect(inboxTerminalSession('darwin', [])).toEqual({
+      id: INBOX_TERMINAL_SESSION_ID, projectId: '', name: 'Terminal', createdAt: '', kind: 'native',
     })
-    expect(inboxTerminalSession('linux', [], '/home/me')?.kind).toBe('native')
+    expect(inboxTerminalSession('linux', [])?.kind).toBe('native')
   })
 
-  it('starts in the home directory of the default WSL distro on Windows, `~` to wsl.exe', () => {
-    const session = inboxTerminalSession('win32', [distro('Debian'), distro('Ubuntu', true)], 'C:\\Users\\Me')
-    expect(session).toMatchObject({ kind: 'wsl', distro: 'Ubuntu', path: '~' })
-    expect(inboxTerminalSession('win32', [distro('Debian'), distro('Ubuntu')], 'C:\\Users\\Me')).toMatchObject({ distro: 'Debian' })
+  it('uses the default WSL distro on Windows', () => {
+    const session = inboxTerminalSession('win32', [distro('Debian'), distro('Ubuntu', true)])
+    expect(session).toMatchObject({ kind: 'wsl', distro: 'Ubuntu' })
+    expect(inboxTerminalSession('win32', [distro('Debian'), distro('Ubuntu')])).toMatchObject({ distro: 'Debian' })
   })
 
-  it('has no session on Windows without a distro, and never uses the Windows home directory there', () => {
-    expect(inboxTerminalSession('win32', [], 'C:\\Users\\Me')).toBeNull()
+  it('has no session on Windows without a distro', () => {
+    expect(inboxTerminalSession('win32', [])).toBeNull()
   })
 })
 
@@ -31,7 +31,6 @@ describe('the terminal session lookup', () => {
       getSession: vi.fn(async (id: string) => id === stored.id ? stored : null),
       listDistros: vi.fn(async () => [distro('Ubuntu', true)]),
       platform: 'darwin',
-      home: () => '/Users/me',
       ...overrides,
     }
     return { dependencies, resolve: terminalSessionResolver(dependencies) }
@@ -41,7 +40,7 @@ describe('the terminal session lookup', () => {
     const { resolve, dependencies } = resolver()
     expect(await resolve('ses-1')).toBe(stored)
     expect(await resolve('missing')).toBeNull()
-    expect(await resolve(INBOX_TERMINAL_SESSION_ID)).toMatchObject({ kind: 'native', path: '/Users/me' })
+    expect(await resolve(INBOX_TERMINAL_SESSION_ID)).toMatchObject({ kind: 'native' })
     expect(dependencies.getSession).not.toHaveBeenCalledWith(INBOX_TERMINAL_SESSION_ID)
   })
 
@@ -53,7 +52,7 @@ describe('the terminal session lookup', () => {
     const windows = resolver({ platform: 'win32' })
     const [first, second] = await Promise.all([windows.resolve(INBOX_TERMINAL_SESSION_ID), windows.resolve(INBOX_TERMINAL_SESSION_ID)])
     await windows.resolve(INBOX_TERMINAL_SESSION_ID)
-    expect(first).toMatchObject({ kind: 'wsl', distro: 'Ubuntu', path: '~' })
+    expect(first).toMatchObject({ kind: 'wsl', distro: 'Ubuntu' })
     expect(second).toBe(first)
     expect(windows.dependencies.listDistros).toHaveBeenCalledTimes(1)
   })

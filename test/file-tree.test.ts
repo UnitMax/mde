@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { FileTreeEntry, Session } from '../src/shared/types'
+import type { FileTreeEntry, DirectoryContext } from '../src/shared/types'
 import {
   MAX_FILE_TREE_ENTRIES,
   MAX_FILE_VIEW_BYTES,
@@ -22,7 +22,7 @@ import {
   type FileTreeDirectoryState
 } from '../src/renderer/lib/file-tree'
 
-function session(overrides: Partial<Session> = {}): Session {
+function session(overrides: Partial<DirectoryContext> = {}): DirectoryContext {
   return {
     id: 'session-1',
     projectId: 'project-1',
@@ -39,7 +39,6 @@ function deps(overrides: Partial<FileTreeDependencies> = {}): FileTreeDependenci
     readNativeDirectory: vi.fn(async () => []),
     runWsl: vi.fn(async () => ({ stdout: '', stderr: '', code: 0 })),
     runWslBuffer: vi.fn(async () => ({ stdout: Buffer.alloc(0), stderr: '', code: 0 })),
-    resolveWslPath: vi.fn(async (_distro: string, path: string) => path),
     ...overrides
   }
 }
@@ -148,13 +147,13 @@ describe('native file tree listing', () => {
   it('reports a missing session folder readably', async () => {
     root = await mkdtemp(join(tmpdir(), 'mde-file-tree-'))
     await expect(listSessionDirectory(session({ path: join(root, 'missing') }), '')).rejects.toThrow(
-      'Session folder not found.'
+      'Folder not found.'
     )
   })
 })
 
 describe('WSL file tree listing', () => {
-  const wsl = (overrides: Partial<Session> = {}): Session =>
+  const wsl = (overrides: Partial<DirectoryContext> = {}): DirectoryContext =>
     session({ kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/app', ...overrides })
 
   it('runs find directly inside the distro against the joined directory', async () => {
@@ -174,24 +173,12 @@ describe('WSL file tree listing', () => {
       '-printf',
       '%y\\t%f\\n'
     ])
-    expect(dependencies.resolveWslPath).not.toHaveBeenCalled()
     expect(result.entries).toEqual([
       { name: 'lib', kind: 'directory' },
       { name: 'index.ts', kind: 'file' }
     ])
   })
 
-  it('normalizes a shorthand session path and rejects a non-absolute result', async () => {
-    const runWsl = vi.fn(async (_distro: string, _command: readonly string[]) => ({ stdout: '', stderr: '', code: 0 }))
-    const resolveWslPath = vi.fn(async () => '/home/me/app')
-    await listSessionDirectory(wsl({ path: '~/app' }), '', 'win32', deps({ runWsl, resolveWslPath }))
-    expect(resolveWslPath).toHaveBeenCalledWith('Ubuntu-24.04', '~/app')
-    expect(runWsl.mock.calls[0]?.[1][2]).toBe('/home/me/app')
-
-    await expect(
-      listSessionDirectory(wsl({ path: '~/gone' }), '', 'win32', deps({ resolveWslPath: vi.fn(async () => '~/gone') }))
-    ).rejects.toThrow('Session folder not found.')
-  })
 
   it('surfaces find errors and refuses to run off Windows', async () => {
     const runWsl = vi.fn(async () => ({
@@ -268,7 +255,7 @@ describe('native file reads', () => {
     outside = ''
   })
 
-  async function fixture(): Promise<Session> {
+  async function fixture(): Promise<DirectoryContext> {
     root = await mkdtemp(join(tmpdir(), 'mde-file-read-'))
     outside = await mkdtemp(join(tmpdir(), 'mde-file-outside-'))
     await mkdir(join(root, 'src'))

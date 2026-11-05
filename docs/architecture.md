@@ -18,7 +18,7 @@ Every renderer-to-main call is authenticated and validated centrally; see
 
 ## Projects and terminal sessions
 
-Projects are groups that contain sessions. Sessions own the name, path, platform, distro and
+Projects are groups that contain sessions. Sessions own the name, platform, distro and
 optional shell override. Each session persists an ordered set of terminal tabs. Every tab owns an
 independent layout built by splitting individual panes; new tabs start with one fresh terminal.
 Hold Ctrl to reveal + controls on the left, right, top and bottom of each pane. Clicking an edge
@@ -31,7 +31,12 @@ Switching sessions or tabs re-parents terminal containers rather than disposing 
 process, its scrollback and its cursor position survive. Unvisited persisted tabs create their PTYs
 lazily; the PTYs themselves do not survive application restart.
 
-The Projects sidebar shows session names and paths, or icons and initials when collapsed.
+Creating a session requires a project, name and environment. Fresh shells start in the user's home
+directory: the native home directory or `~` in the chosen WSL distro. Session directories are not
+stored; terminal directories are tracked separately at runtime. Old workspace path fields are ignored
+and omitted on the next save, without a migration.
+
+The Projects sidebar shows session names, or icons and initials when collapsed.
 Optional terminal entries show pane names, tabs and current folders.
 
 Each pane has a header (`TerminalPaneHeader`) that puts its name first. The title is the pane's
@@ -45,7 +50,7 @@ title. The menu holds Rename, Split right and Split down,
 Open in VS Code and Show in File Explorer (WSL on Windows),
 and Restart, which still asks for confirmation. When a tab has several panes, the focused one gets an
 accent line under its header. The bar above the panes is a single line with the session name and
-location.
+native/WSL environment.
 
 The workspace is stored as `workspace.json` in Electron's user-data directory with separate
 `projects`, `todoProjects`, `todoTasks` and `sessions` arrays. Session array order is the persistent
@@ -812,10 +817,8 @@ drag and drop. Ctrl+F (Cmd+F on macOS) searches tasks in the open To Do project.
 ### Terminal launcher
 
 In a focused Mac or Windows/WSL terminal, Ctrl+N or Cmd+N opens a launcher for a new shell, OpenCode, Codex, or
-Claude pane. It defaults to that terminal's current directory and can switch to the session
-directory with Tab; the two directory choices are also clickable. If the terminal has not reported
-its current directory yet, the session directory remains available. The session choice is disabled
-when both paths are identical. New launcher panes split their source pane to its right,
+Claude pane. It uses that terminal's current directory and waits for the shell to report it
+before enabling commands. New launcher panes split their source pane to its right,
 preserving the surrounding arrangement and its divider ratios. The per-tab resource limit is 64 panes.
 Configure each executable and its shell-style arguments in the Settings dialog's Agents section.
 Arguments are passed as literal argv values; shell expansion and command chaining are not supported.
@@ -926,27 +929,19 @@ worktree.
   re-parses it and mangles anything containing quotes, `$`, or `;`. The login shell is required
   because nvm/mise/bun/asdf put their shims on `PATH` from the login profile.
 - The per-terminal Open in VS Code and File Explorer buttons follow the terminal's current
-  directory. They start out pointing at the session's configured path, and supported shells then
-  correct them at every prompt by reporting their working directory through OSC 7. MDE installs
+  directory. They become available once the shell reports it through OSC 7. MDE installs
   process-local prompt hooks for Bash, Zsh, and Fish; other custom shells need to emit OSC 7
-  themselves or those buttons keep opening the configured path.
-- Session paths are stored in the target's own format. `wslpath` is used only at the UI
-  boundary — when the Windows folder picker returns a `\\wsl$\` / `\\wsl.localhost\` UNC path,
-  when translating a dropped file, and when revealing a folder in Explorer.
-- Choosing a folder for a WSL location (the New session dialog with WSL selected, and the Inbox's
-  Add folder dialog on Windows) opens MDE's folder browser (`WslFolderBrowser`, backed by
-  `path:list-wsl-directories` in `src/main/wsl/browse.ts`) instead of the Windows file dialog, so
-  only folders of the chosen distro can be picked. The Windows file dialog remains for Windows
-  folders. Folders under `/mnt/c` are listed like any other; in the New session dialog the chosen
-  path still goes through `path:resolve`, which adds the 9p performance warning.
-- A session whose files sit under `/mnt/c` gets an inline warning about 9p performance. It is
-  a warning, not a block.
+  themselves. Native terminals initially report their home directory.
+- Choosing a WSL Inbox folder on Windows opens MDE's folder browser (`WslFolderBrowser`, backed
+  by `path:list-wsl-directories` in `src/main/wsl/browse.ts`). Inbox folders and runtime terminal
+  directories use the target's own path format. `wslpath` is used when translating dropped paths
+  or revealing a folder in Explorer.
 
 Native Windows shells also resolve before PTY creation: the default PowerShell
 and built-in PowerShell/cmd aliases use system locations. Custom Windows shells,
 including PowerShell 7, need a full drive-qualified `.exe`/`.com` path; ambiguous
 bare names fail with a configuration error. Native shells still start in the
-project directory. Linux shell overrides and agent commands inside WSL retain
+home directory unless a terminal launch supplies its current folder. Linux shell overrides and agent commands inside WSL retain
 their existing target-shell behavior.
 
 ## Upgrade notes

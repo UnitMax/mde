@@ -10,7 +10,7 @@ import {
   readGitInfoWithRunner,
   readGitStatusWithRunner
 } from '../src/main/git'
-import type { Session } from '../src/shared/types'
+import type { DirectoryContext } from '../src/shared/types'
 
 const run = promisify(execFile)
 
@@ -37,7 +37,7 @@ describeUntrustedRepository('Automatic Git queries against an untrusted working 
   let root = ''
   let repository = ''
   let sentinels = ''
-  let session: Session
+  let session: DirectoryContext
 
   async function firedSentinels(): Promise<string[]> {
     return (await readdir(sentinels)).sort()

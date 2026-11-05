@@ -1457,8 +1457,8 @@ export function TerminalView({
 
   const location =
     selectedSession.kind === 'wsl'
-      ? `${selectedSession.distro ?? 'WSL'} · ${selectedSession.path}`
-      : selectedSession.path
+      ? selectedSession.distro ?? 'WSL'
+      : 'Native'
   const renderedPanes = terminalLayout.panes
   const fullscreenPane = terminalFullscreenPane(renderedPanes, fullscreenTerminalId)
   const isFullscreen = fullscreenPane !== null

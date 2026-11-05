@@ -6,7 +6,6 @@ interface Dependencies {
   getSession: (id: string) => Promise<Session | null>
   listDistros: () => Promise<Distro[]>
   platform: string
-  home: () => string
 }
 
 /**
@@ -14,8 +13,8 @@ interface Dependencies {
  * terminal is not stored anywhere, so it is built on demand. It is kept once it has been built, which spares
  * every later request a `wsl.exe` call, but a failed lookup (no distro yet) is tried again.
  *
- * Only requests that start or look after a terminal use this. File browsing, Git status and the like keep
- * asking for stored sessions, so the home directory never becomes something those can read.
+ * Only terminal requests use this lookup. Files and Git require a live terminal directory or an Inbox
+ * folder, so a reserved terminal identity alone never grants access to a filesystem root.
  */
 export function terminalSessionResolver(dependencies: Dependencies): (id: string) => Promise<Session | null> {
   let inbox: Promise<Session | null> | null = null
@@ -23,8 +22,7 @@ export function terminalSessionResolver(dependencies: Dependencies): (id: string
     if (!inbox) {
       const attempt = (async () => inboxTerminalSession(
         dependencies.platform,
-        dependencies.platform === 'win32' ? await dependencies.listDistros() : [],
-        dependencies.home()
+        dependencies.platform === 'win32' ? await dependencies.listDistros() : []
       ))()
       inbox = attempt
       void attempt.then((session) => { if (!session && inbox === attempt) inbox = null }, () => { if (inbox === attempt) inbox = null })

@@ -89,7 +89,7 @@ describe('the Inbox terminal store', () => {
 
   it('adds a pane for a terminal started from the launcher, and puts the keyboard there', async () => {
     const store = await load()
-    const launch = { sourceTerminalId: ID(1), directory: 'terminal', agent: 'opencode' } as never
+    const launch = { sourceTerminalId: ID(1), agent: 'opencode' } as never
     store.getState().addPane('elsewhere', launch)
     expect(store.getState().layout.panes).toHaveLength(1)
     store.getState().addPane(ID(1), launch)

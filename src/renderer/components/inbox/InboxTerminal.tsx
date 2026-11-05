@@ -33,7 +33,7 @@ export function InboxTerminal(): JSX.Element {
   const platform = useWorkspace((state) => state.platform)
   const distros = useWorkspace((state) => state.distros)
   // The main process builds the real session; this one only says what kind of shell it is, and shows "~".
-  const session = useMemo(() => inboxTerminalSession(platform?.platform ?? '', distros, '~'), [platform?.platform, distros])
+  const session = useMemo(() => inboxTerminalSession(platform?.platform ?? '', distros), [platform?.platform, distros])
   const firstTerminalId = layout.panes[0]?.terminalId
 
   useEffect(() => {

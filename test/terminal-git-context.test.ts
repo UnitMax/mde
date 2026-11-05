@@ -5,21 +5,21 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, describe, expect, it } from 'vitest'
 import { readGitDiff, readGitInfo, readGitTerminalInfo } from '../src/main/git'
-import type { Session } from '../src/shared/types'
+import type { DirectoryContext } from '../src/shared/types'
 
 const run = promisify(execFile)
 const roots: string[] = []
 const hasGit = process.platform !== 'win32' && await run('git', ['--version']).then(() => true, () => false)
 const gitTests = hasGit ? describe : describe.skip
 
-async function repository(): Promise<Session> {
+async function repository(): Promise<DirectoryContext> {
   const root = await mkdtemp(join(tmpdir(), 'mde-terminal-git-'))
   roots.push(root)
   await run('git', ['init', '--quiet', '--initial-branch=main', root])
   return { id: 'session', projectId: 'project', name: 'App', kind: 'native', path: root, createdAt: '2026-01-01' }
 }
 
-async function git(session: Session, args: string[]): Promise<void> {
+async function git(session: DirectoryContext, args: string[]): Promise<void> {
   await run('git', ['-C', session.path, ...args])
 }
 

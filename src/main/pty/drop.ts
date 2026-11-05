@@ -8,14 +8,13 @@ import type {
   TerminalDropMode,
   TerminalDropRejectionCode
 } from '@shared/ipc'
-import type { Session } from '@shared/types'
+import type { DirectoryContext, Session } from '@shared/types'
 import { isSafeRelativePath } from '../files/tree'
 import { runWslCommand } from '../wsl/distros'
 import {
   isPlainAbsolutePath,
   isWindowsDrivePath,
   parseWslUncPath,
-  resolveForTarget,
   toWsl,
 } from '../wsl/paths'
 
@@ -26,7 +25,7 @@ const unsafePathCharacters = /[\u0000-\u001f\u007f]/
 
 /** Resolves tree entries in main, using a main-process-resolved root. */
 export async function fileTreeDropFile(
-  source: Session,
+  source: DirectoryContext,
   relativePath: string,
   platform: NodeJS.Platform
 ): Promise<DropPtyFile> {
@@ -38,9 +37,7 @@ export async function fileTreeDropFile(
     return { name, nativePath: paths.join(source.path, ...relativePath.split('/')) }
   }
   if (platform !== 'win32' || !source.distro) throw new Error('WSL is unavailable.')
-  const root = isPlainAbsolutePath(source.path)
-    ? source.path
-    : (await resolveForTarget('wsl', source.distro, source.path)).path
+  const root = source.path
   if (!isPlainAbsolutePath(root)) throw new Error('Invalid session folder.')
   const path = posix.join(root, relativePath)
   return { name, nativePath: `\\\\wsl.localhost\\${source.distro}${path.replaceAll('/', '\\')}` }

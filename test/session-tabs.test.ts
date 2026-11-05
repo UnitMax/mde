@@ -17,7 +17,6 @@ const session: Session = {
   projectId: 'project-1',
   name: 'App',
   kind: 'native',
-  path: '/workspace/app',
   createdAt: '2026-01-01T00:00:00.000Z',
   tabs: [
     {
@@ -42,7 +41,6 @@ describe('session tab runtime helpers', () => {
     const layout = createRuntimeLayout(session.id, session.tabs![0]!)
     const launch = {
       sourceTerminalId: layout.panes[0]!.terminalId,
-      directory: 'terminal' as const,
       agent: { kind: 'codex' as const, command: { executable: 'codex', args: [] } },
     }
     const next = appendRuntimePane(session.id, 'tab-1', layout, launch)!

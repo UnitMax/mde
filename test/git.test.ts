@@ -173,7 +173,7 @@ describe('Git process concurrency', () => {
 })
 
 describe('Git history queries', () => {
-  it('uses the native session path as the Git cwd', async () => {
+  it('uses the explicit native folder as the Git cwd', async () => {
     const calls: Array<{ file: string; args: string[]; cwd?: string }> = []
     mocks.execFile.mockImplementation(
       (file: string, args: string[], options: { cwd?: string }, callback: (error: null, stdout: string, stderr: string) => void) => {
@@ -234,7 +234,7 @@ describe('Git history queries', () => {
     expect(mocks.execFile).not.toHaveBeenCalled()
   })
 
-  it('uses the WSL distro and session path for Git commands', async () => {
+  it('uses the WSL distro and explicit folder for Git commands', async () => {
     const calls: Array<{ distro: string; command: readonly string[]; cwd?: string }> = []
     mocks.runWslCommand.mockImplementation(async (
       distro: string,
@@ -561,7 +561,7 @@ describe('terminal Git identity queries', () => {
     })
   })
 
-  it('uses the live WSL terminal directory instead of the configured session path', async () => {
+  it('uses the live WSL terminal directory for Git commands', async () => {
     const calls: Array<{ cwd?: string; command: readonly string[] }> = []
     mocks.runWslCommand.mockImplementation(async (
       _distro: string,

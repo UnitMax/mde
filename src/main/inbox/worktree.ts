@@ -43,8 +43,8 @@ export interface CreatedWorktree {
 }
 
 const defaults: InboxWorktreeDependencies = {
-  read: (target, directory) => createGitCommandRunner(targetSession(target, directory), process.platform, directory, 'interactive'),
-  mutate: (target, directory) => createGitMutationRunner(targetSession(target, directory), directory),
+  read: (target, directory) => createGitCommandRunner({ ...targetSession(target), path: directory }, process.platform, directory, 'interactive'),
+  mutate: (target, directory) => createGitMutationRunner({ ...targetSession(target), path: directory }, directory),
   home: async (target) => {
     if (target.kind === 'native') return homedir()
     const value = await readWslShellValue(target.distro, '"$HOME"')

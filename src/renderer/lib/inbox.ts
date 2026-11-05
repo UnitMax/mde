@@ -1,4 +1,4 @@
-import type { InboxFolder, InboxGitInfo, InboxThread, InboxWorktree, OpenCodeModelRef, OpenCodeTarget, Session } from '@shared/types'
+import type { InboxFolder, InboxGitInfo, InboxThread, InboxWorktree, OpenCodeModelRef, OpenCodeTarget, DirectoryContext } from '@shared/types'
 import { matchSubsequence, queryTokens } from '@/lib/fuzzy-search'
 
 export type InboxFilter = 'all' | 'unread' | 'attention' | 'archived'
@@ -181,7 +181,7 @@ export function inboxLocked(
  */
 export function inboxFileRoot(
   source: { id: string; directory: string; target: OpenCodeTarget; worktree?: { repository: string } } & { name?: string }
-): Session {
+): DirectoryContext {
   return {
     id: source.id,
     projectId: '',

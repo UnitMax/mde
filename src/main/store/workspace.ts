@@ -267,8 +267,7 @@ export function validateSession(raw: unknown, projectIds: Set<string>): Session 
     !isNonEmptyString(r.projectId) ||
     !projectIds.has(r.projectId) ||
     !isNonEmptyString(r.name) ||
-    (r.kind !== 'native' && r.kind !== 'wsl') ||
-    !isNonEmptyString(r.path)
+    (r.kind !== 'native' && r.kind !== 'wsl')
   ) {
     return null
   }
@@ -280,7 +279,6 @@ export function validateSession(raw: unknown, projectIds: Set<string>): Session 
     projectId: r.projectId,
     name: r.name,
     kind: r.kind,
-    path: r.path,
     createdAt: isNonEmptyString(r.createdAt) ? r.createdAt : new Date(0).toISOString(),
     tabs: normalizedTabs.tabs,
     activeTabId: typeof r.activeTabId === 'string' && normalizedTabs.tabs.some((tab) => tab.id === r.activeTabId)
@@ -569,7 +567,7 @@ export async function createSession(input: NewSession): Promise<Session> {
   if (!workspace.projects.some((project) => project.id === input.projectId)) {
     throw new Error('Cannot create a session without a valid project')
   }
-  if (!input.name.trim() || !input.path.trim()) throw new Error('Session name and path are required')
+  if (!input.name.trim()) throw new Error('Session name is required')
   if (input.kind === 'wsl' && !input.distro?.trim()) {
     throw new Error('WSL sessions require a distro')
   }
@@ -579,7 +577,6 @@ export async function createSession(input: NewSession): Promise<Session> {
     projectId: input.projectId,
     name: input.name.trim(),
     kind: input.kind,
-    path: input.path.trim(),
     createdAt: new Date().toISOString(),
     tabs: []
   }
@@ -620,7 +617,6 @@ export async function duplicateSession(id: string): Promise<Session | null> {
     ...(source.icon ? { icon: source.icon } : {}),
     kind: source.kind,
     ...(source.distro ? { distro: source.distro } : {}),
-    path: source.path,
     ...(source.shell ? { shell: source.shell } : {}),
     createdAt: new Date().toISOString(),
     tabs: []
@@ -641,7 +637,6 @@ export async function updateSession(req: UpdateSessionRequest): Promise<Session 
 
   const updated: Session = { ...existing }
   if (req.patch.name?.trim()) updated.name = req.patch.name.trim()
-  if (req.patch.path?.trim()) updated.path = req.patch.path.trim()
   if (isSessionColor(req.patch.color)) updated.color = req.patch.color
   if (req.patch.icon === null) delete updated.icon
   else if (isSessionIcon(req.patch.icon)) updated.icon = req.patch.icon

@@ -11,11 +11,11 @@ import { focusInboxTerminalWhenShown } from '../src/renderer/components/inbox/In
 import { CHANGES_LIST_LIMIT, InboxChangesBadge, InboxChangeViewer, InboxSidebar } from '../src/renderer/components/inbox/InboxChanges'
 import { useInboxChanges, inboxChangesKey } from '../src/renderer/store/inbox-changes'
 import { useWorkspace } from '../src/renderer/store/workspace'
-import type { InboxChangeDiff, InboxChangesResponse, InboxThread, Session } from '../src/shared/types'
+import type { InboxChangeDiff, InboxChangesResponse, InboxThread, DirectoryContext } from '../src/shared/types'
 
 const thread: InboxThread = { id: 'ses_one', title: 'Fix', directory: '/home/me/app', target: { kind: 'native' }, branch: 'main', folderId: 'fld_app', createdAt: 1, lastActivityAt: 1, readAt: 0, archived: false, status: 'completed' }
 const value: InboxChangesResponse = { available: true, branch: 'main', worktree: '/home/me/app', additions: 2, deletions: 1, fileCount: 1, files: [{ path: 'src/a.ts', status: 'modified', additions: 2, deletions: 1 }] }
-const session: Session = { id: thread.id, projectId: '', name: 'app', path: thread.directory, kind: 'native', createdAt: '' }
+const session: DirectoryContext = { id: thread.id, projectId: '', name: 'app', path: thread.directory, kind: 'native', createdAt: '' }
 const diff: InboxChangeDiff = { path: 'src/a.ts', diff: '@@ -1 +1,2 @@\n-old\n+new\n+more', binary: false, truncated: false }
 let root: Root
 let container: HTMLDivElement

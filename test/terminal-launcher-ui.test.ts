@@ -24,7 +24,7 @@ beforeEach(() => {
   root = createRoot(container)
   useWorkspace.setState({
     platform: { platform: 'darwin', isWindows: false }, wslAvailable: false,
-    terminalDirectories: {}, statuses: {}, exits: {},
+    terminalDirectories: { 'source-pane': '/workspace/current' }, statuses: {}, exits: {},
   })
 })
 
@@ -39,7 +39,7 @@ it('opens the terminal launcher from a focused native Mac terminal with Cmd+N', 
   await act(async () => root.render(createElement(TerminalView, {
     session: {
       id: 'workspace-1', projectId: 'project-1', name: 'App', kind: 'native',
-      path: '/workspace/current', createdAt: '2026-01-01T00:00:00Z',
+      createdAt: '2026-01-01T00:00:00Z',
     },
     activeTab: { id: 'tab-1', name: 'Tab 1', layout: testLayout([{ id: 'pane-1' }]) },
     terminalLayout: testLayout([{ terminalId: 'source-pane' }]),

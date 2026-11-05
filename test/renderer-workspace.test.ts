@@ -53,7 +53,6 @@ describe('renderer workspace event bridge', () => {
         projectId: 'project-1',
         name: 'App',
         kind: 'native' as const,
-        path: '/workspace/app',
         createdAt: '2026-01-01T00:00:00.000Z',
         ...patch
       })),
@@ -165,7 +164,6 @@ describe('renderer workspace event bridge', () => {
       projectId: 'project-1',
       name: 'App',
       kind: 'native',
-      path: '/workspace/app',
       createdAt: '2026-01-01T00:00:00.000Z'
     })
 
@@ -173,14 +171,13 @@ describe('renderer workspace event bridge', () => {
       projectId: 'project-1',
       name: 'App',
       kind: 'native',
-      path: '/workspace/app'
+
     })
 
     expect(api.sessions.create).toHaveBeenCalledWith({
       projectId: 'project-1',
       name: 'App',
-      kind: 'native',
-      path: '/workspace/app'
+      kind: 'native'
     })
     expect(session.id).toBe('terminal-session')
     expect(useWorkspace.getState().selectedSessionId).toBe('terminal-session')
@@ -312,7 +309,6 @@ describe('renderer workspace event bridge', () => {
       color: 'teal',
       kind: 'wsl',
       distro: 'Ubuntu-24.04',
-      path: '/home/me/src/app',
       shell: '/bin/zsh',
       createdAt: '2026-01-01T00:00:00.000Z'
     }
@@ -345,7 +341,6 @@ describe('renderer workspace event bridge', () => {
       projectId: 'project-1',
       name: 'App',
       kind: 'native',
-      path: '/workspace/app',
       createdAt: '2026-01-01T00:00:00.000Z',
       tabs: [firstTab],
       activeTabId: firstTab.id
@@ -374,7 +369,6 @@ describe('renderer workspace event bridge', () => {
       projectId: 'project-1',
       name: 'App',
       kind: 'native',
-      path: '/workspace/app',
       createdAt: '2026-01-01T00:00:00.000Z'
     }
     useWorkspace.setState({ sessions: [session] })
@@ -395,7 +389,6 @@ describe('renderer workspace event bridge', () => {
       projectId: 'project-1',
       name: 'App',
       kind: 'native',
-      path: '/workspace/app',
       createdAt: '2026-01-01T00:00:00.000Z'
     }
     useWorkspace.setState({ sessions: [session] })
@@ -425,7 +418,6 @@ describe('renderer workspace event bridge', () => {
       projectId: 'project-1',
       name: 'First',
       kind: 'native',
-      path: '/workspace/first',
       createdAt: '2026-01-01T00:00:00.000Z'
     }
     const second: Session = { ...first, id: 'session-2', name: 'Second' }
@@ -447,7 +439,6 @@ describe('renderer workspace event bridge', () => {
       projectId: 'project-1',
       name: 'App',
       kind: 'native',
-      path: '/workspace/app',
       createdAt: '2026-01-01T00:00:00.000Z'
     }
     useWorkspace.setState({ sessions: [session] })

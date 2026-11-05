@@ -25,15 +25,14 @@ function setRef<T>(ref: React.ForwardedRef<T>, value: T | null): void {
   else if (ref) (ref as React.MutableRefObject<T | null>).current = value
 }
 
-function EnvironmentDetail({ label, value, mono = false }: {
+function EnvironmentDetail({ label, value }: {
   label: string
   value: string
-  mono?: boolean
 }): JSX.Element {
   return (
     <div className="min-w-0">
       <dt className="text-[10px] font-medium uppercase tracking-wide text-fg-subtle">{label}</dt>
-      <dd className={cn('mt-0.5 min-w-0 text-[12px] text-fg', mono && 'break-all font-mono')}>
+      <dd className="mt-0.5 min-w-0 text-[12px] text-fg">
         {value}
       </dd>
     </div>
@@ -180,8 +179,6 @@ export const SessionEnvironmentPanel = React.forwardRef<
         {isWsl && (
           <EnvironmentDetail label="Distribution" value={session.distro ?? 'Not configured'} />
         )}
-        <EnvironmentDetail label="Working directory" value={session.path} mono />
-
       </dl>
     </div>,
     document.body

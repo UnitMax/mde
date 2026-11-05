@@ -222,12 +222,6 @@ export function getKeyboardShortcutGroups(
           description: 'Close the To Do search.'
         },
         {
-          id: 'terminal-launcher-source',
-          keys: ['Tab'],
-          description: 'Switch between terminal and session directories in the terminal launcher.',
-          note: 'Available when both directory choices are available.'
-        },
-        {
           id: 'terminal-launcher-move',
           keys: ['↑', '↓'],
           description: 'Move through terminal launcher commands.'

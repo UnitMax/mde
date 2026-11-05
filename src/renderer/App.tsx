@@ -61,7 +61,7 @@ function EmptyState({ onNewSession }: { onNewSession: () => void }): JSX.Element
       <div>
         <p className="text-[13px] text-fg-muted">No session selected</p>
         <p className="mt-1 text-xs text-fg-subtle">
-          Pick a session in the sidebar, or add a folder to work in.
+          Pick a session in the sidebar, or create one to group your terminals.
         </p>
       </div>
       <Button size="sm" onClick={onNewSession}>
@@ -620,10 +620,10 @@ export function App(): JSX.Element {
     ?? layoutForSession?.panes[0]?.terminalId
   const terminalDirectory = useWorkspace((state) => activeTerminalId ? state.terminalDirectories[activeTerminalId] : undefined)
   const projectFileRoot = useMemo<TerminalDirectoryRequest | null>(
-    () => selected && activeTerminalId
-      ? { terminalId: activeTerminalId, directory: terminalDirectory ?? selected.path }
+    () => selected && activeTerminalId && terminalDirectory
+      ? { terminalId: activeTerminalId, directory: terminalDirectory }
       : null,
-    [activeTerminalId, terminalDirectory, selected?.path]
+    [activeTerminalId, terminalDirectory, selected?.id]
   )
   const projectFileRootId = projectFileRoot ? fileRootKey(projectFileRoot) : null
   const openFilePath = projectFileRootId ? openFiles[projectFileRootId] : undefined
@@ -750,7 +750,7 @@ export function App(): JSX.Element {
           )}
         </main>
 
-        {ready && activeWorkspaceView === 'projects' && selected && projectFileRoot && <FileTreePanel session={selected} root={projectFileRoot} />}
+        {ready && activeWorkspaceView === 'projects' && selected && projectFileRoot && <FileTreePanel session={{ ...selected, path: projectFileRoot.directory }} root={projectFileRoot} />}
         {ready && inboxRoot && <InboxSidebar session={inboxRoot} threadId={selectedInboxThreadId ?? undefined} />}
 
         <SettingsDialog terminalIds={layoutForSession?.panes.map((pane) => pane.terminalId) ?? []} />

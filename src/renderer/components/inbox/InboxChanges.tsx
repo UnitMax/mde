@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { AlertCircle, FileDiff, GitBranch, LoaderCircle, PanelRightClose, RefreshCw, X } from 'lucide-react'
-import type { GitChangeStatus, InboxChangeDiff, InboxChangedFile, InboxChangesResponse, Session } from '@shared/types'
+import type { GitChangeStatus, InboxChangeDiff, InboxChangedFile, InboxChangesResponse, DirectoryContext } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { FileTreePanel } from '@/components/FileTreePanel'
 import { DiffBody } from './ChatFileChange'
@@ -596,7 +596,7 @@ function TerminalAside({ threadId }: { threadId?: string }): JSX.Element {
  * starts in), the thread's Git changes, and the terminal. A new thread has no changes yet, so it offers
  * only the other two. It can be dragged wider, which the terminal in particular wants.
  */
-export function InboxSidebar({ session, threadId }: { session: Session; threadId?: string }): JSX.Element {
+export function InboxSidebar({ session, threadId }: { session: DirectoryContext; threadId?: string }): JSX.Element {
   const stored = useInboxChanges((s) => s.tab)
   const collapsed = useWorkspace((s) => s.fileTreeCollapsed)
   // Changes belong to a thread. Without one, that tab is not offered and Files shows in its place.

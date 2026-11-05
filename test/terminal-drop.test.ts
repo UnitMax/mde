@@ -4,7 +4,7 @@ import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DropPtyFile } from '../src/shared/ipc'
-import type { Session } from '../src/shared/types'
+import type { DirectoryContext } from '../src/shared/types'
 
 const wslMock = vi.hoisted(() => ({
   runWslCommand: vi.fn(),
@@ -45,7 +45,7 @@ import {
   terminalDropQuotingNotice
 } from '../src/renderer/terminal/drop'
 
-function session(overrides: Partial<Session> = {}): Session {
+function session(overrides: Partial<DirectoryContext> = {}): DirectoryContext {
   return {
     id: 'session-1',
     projectId: 'project-1',

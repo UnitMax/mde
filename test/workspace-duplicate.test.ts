@@ -30,7 +30,6 @@ describe('workspace session duplication', () => {
       name: 'App',
       kind: 'wsl',
       distro: 'Ubuntu-24.04',
-      path: '/home/me/src/app',
       shell: '/bin/zsh'
     })
     await updateSession({
@@ -51,7 +50,6 @@ describe('workspace session duplication', () => {
       icon: 'robot',
       kind: 'wsl',
       distro: 'Ubuntu-24.04',
-      path: '/home/me/src/app',
       shell: '/bin/zsh'
     })
     expect(duplicate.id).not.toBe(source.id)
@@ -67,7 +65,7 @@ describe('workspace session duplication', () => {
       projectId: project.id,
       name: 'App',
       kind: 'native',
-      path: '/workspace/app'
+
     })
 
     await updateSession({ id: source.id, patch: { icon: 'robot' } })

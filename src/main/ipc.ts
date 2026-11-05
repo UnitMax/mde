@@ -1,5 +1,4 @@
 import { promises as fs } from 'node:fs'
-import { homedir } from 'node:os'
 import { supportsAgentIntegration } from '@shared/agent-support'
 import { isFileRoot } from '@shared/file-root'
 import { inboxTerminalThreadId, inboxThreadTerminalId } from '@shared/inbox-thread-terminal'
@@ -57,6 +56,7 @@ import type {
   NewTodoProject,
   NewTodoTask,
   NewSession,
+  DirectoryContext,
   PathCheckResult,
   PathResolution,
   WslDirectoryListing,
@@ -67,7 +67,6 @@ import type {
   PtyStatus,
   AgentCommand,
   CodingAgent,
-  TerminalLaunchDirectory,
   WindowMode,
   InboxAddFolderRequest,
   InboxComposerState,
@@ -275,26 +274,8 @@ async function verifiedDirectory(session: Session, directory: string): Promise<s
   return result.code === 0 ? canonical : reject(`not a directory in ${distro}`)
 }
 
-/**
- * The session's own folder, verified like a terminal-reported directory.
- * Sessions saved by older versions can still hold a target-native shorthand
- * such as `~`, or a path copied from the Windows folder picker; those are
- * normalized first, since neither wslpath nor a VS Code URI understands them.
- */
-async function verifiedSessionDirectory(session: Session): Promise<string | null> {
-  if (session.kind === 'wsl' && session.distro && !isPlainAbsolutePath(session.path)) {
-    const resolved = await resolveForTarget('wsl', session.distro, session.path)
-    return verifiedDirectory(session, resolved.path)
-  }
-  return verifiedDirectory(session, session.path)
-}
-
 function isCodingAgent(value: unknown): value is CodingAgent {
   return value === 'opencode' || value === 'codex' || value === 'claude'
-}
-
-function isTerminalLaunchDirectory(value: unknown): value is TerminalLaunchDirectory {
-  return value === 'terminal' || value === 'session'
 }
 
 function isSafeLaunchArgument(value: unknown): value is string {
@@ -304,9 +285,6 @@ function isSafeLaunchArgument(value: unknown): value is string {
 function validatePtyLaunchRequest(launch: PtyLaunchRequest): void {
   if (!launch || typeof launch.sourceTerminalId !== 'string' || !launch.sourceTerminalId.trim()) {
     throw new Error('Invalid terminal launch source.')
-  }
-  if (!isTerminalLaunchDirectory(launch.directory)) {
-    throw new Error('Invalid terminal launch directory.')
   }
   if (launch.agent === undefined) return
   if (!launch.agent || typeof launch.agent !== 'object' || !isCodingAgent(launch.agent.kind)) {
@@ -341,19 +319,9 @@ async function resolvePtyLaunchOptions(
     throw new Error('The source terminal is not available.')
   }
 
-  const requestedDirectory = launch.directory === 'session' ? session.path : source.directory
-  if (!requestedDirectory) {
-    throw new Error(
-      launch.directory === 'session'
-        ? 'The session directory is not available.'
-        : 'The source terminal directory is not available.'
-    )
-  }
-
-  const directory = launch.directory === 'session'
-    ? await verifiedSessionDirectory(session)
-    : await verifiedDirectory(session, requestedDirectory)
-  if (!directory) throw new Error('The selected launch directory is not available.')
+  if (!source.directory) throw new Error('The source terminal directory is not available.')
+  const directory = await verifiedDirectory(session, source.directory)
+  if (!directory) throw new Error('The source terminal directory is not available.')
 
   return {
     directory,
@@ -374,11 +342,6 @@ async function revealDirectory(session: Session, directory: string): Promise<voi
   await shell.openPath(windowsPath)
 }
 
-async function revealSession(session: Session): Promise<void> {
-  const directory = await verifiedSessionDirectory(session)
-  if (directory) await revealDirectory(session, directory)
-}
-
 export function registerIpcHandlers(
   security: IpcSecurityContext,
   ptyManager: PtyManager,
@@ -390,7 +353,7 @@ export function registerIpcHandlers(
   const chat = inbox.chat
   const pendingEnsures = new Map<string, symbol>()
   // Inbox shells and conversation terminals have reserved identities, resolved from main-owned state.
-  const getShellSession = terminalSessionResolver({ getSession, listDistros, platform: process.platform, home: homedir })
+  const getShellSession = terminalSessionResolver({ getSession, listDistros, platform: process.platform })
   const getTerminalSession = async (id: string): Promise<Session | null> => {
     const threadId = inboxTerminalThreadId(id)
     return threadId ? chat.terminalSession(threadId) : getShellSession(id)
@@ -402,37 +365,39 @@ export function registerIpcHandlers(
       return null
     }
     if (req.terminalId !== session.id || req.launch !== undefined) throw new Error('Invalid Inbox thread terminal launch.')
-    const directory = await verifiedDirectory(session, session.path)
+    const threadDirectory = chat.fileRoot(threadId)?.path
+    if (!threadDirectory) throw new Error('The thread directory is not available.')
+    const directory = await verifiedDirectory(session, threadDirectory)
     if (!directory) throw new Error('The thread directory is not available.')
     const launch = await chat.terminalLaunch(threadId)
     // Recheck after filesystem work: removing a thread must not leave a late launch behind.
     const current = chat.terminalSession(threadId)
-    if (current.path !== session.path || current.kind !== session.kind || current.distro !== session.distro) {
+    if (chat.fileRoot(threadId)?.path !== threadDirectory || current.kind !== session.kind || current.distro !== session.distro) {
       throw new Error('The thread directory has changed.')
     }
     return { directory, ...launch }
   }
   // The renderer names a terminal and an expected cwd, never an arbitrary filesystem root.
-  const terminalDirectory = async (req: TerminalDirectoryRequest): Promise<Session> => {
+  const terminalDirectory = async (req: TerminalDirectoryRequest): Promise<DirectoryContext> => {
     if (!isFileRoot(req) || !req.terminalId) throw new Error('Invalid terminal directory request.')
     const terminal = ptyManager.terminalInfo(req.terminalId)
     if (!terminal) throw new Error('Terminal no longer exists.')
     const session = await getTerminalSession(terminal.sessionId)
     if (!session) throw new Error('Session no longer exists.')
-    const candidate = terminal.directory ?? session.path
-    if (candidate !== req.directory) throw new Error('The terminal directory has changed.')
+    const candidate = terminal.directory
+    if (!candidate || candidate !== req.directory) throw new Error('The terminal directory has changed.')
     const directory = await verifiedDirectory(session, candidate)
     if (!directory) throw new Error('Terminal folder not found.')
     const current = ptyManager.terminalInfo(req.terminalId)
-    if (!current || current.sessionId !== terminal.sessionId || (current.directory ?? session.path) !== candidate) {
+    if (!current || current.sessionId !== terminal.sessionId || current.directory !== candidate) {
       throw new Error('The terminal directory has changed.')
     }
     return { ...session, path: directory }
   }
-  const fileRoot = async (root: FileRoot): Promise<Session> => {
+  const fileRoot = async (root: FileRoot): Promise<DirectoryContext> => {
     if (!isFileRoot(root)) throw new Error('Invalid file root.')
     if (root.terminalId) return terminalDirectory(root)
-    const session = (await getSession(root.sessionId!)) ?? chat.fileRoot(root.sessionId!)
+    const session = chat.fileRoot(root.sessionId!)
     if (!session) throw new Error('Session no longer exists.')
     return session
   }
@@ -499,14 +464,7 @@ export function registerIpcHandlers(
   )
   handle<string, void>(IpcChannels.todoTasksRemove, (id) => removeTodoTask(id))
 
-  handle<NewSession, Session>(IpcChannels.sessionsCreate, async (input) => {
-    const resolution = await resolveForTarget(input.kind, input.distro, input.path)
-    return createSession({
-      ...input,
-      path: resolution.path,
-      ...(resolution.distro ? { distro: resolution.distro } : {})
-    })
-  })
+  handle<NewSession, Session>(IpcChannels.sessionsCreate, (input) => createSession(input))
   handle<string, Session | null>(IpcChannels.sessionsDuplicate, (id) => duplicateSession(id))
   handle<UpdateSessionRequest, Session | null>(IpcChannels.sessionsUpdate, (req) =>
     updateSession(req)
@@ -572,7 +530,7 @@ export function registerIpcHandlers(
   handle<ChatConfigureRequest, void>(IpcChannels.chatConfigure, (req) => chat.configure(req.executable))
   handle<ChatOptionsRequest, ChatOptions>(IpcChannels.chatOptions, (req) => chat.chatOptions(req))
   handle<ChatCreateRequest, InboxThread>(IpcChannels.chatCreate, (req) => chat.create(req))
-  const inboxGitRoot = (threadId: string): Session => {
+  const inboxGitRoot = (threadId: string): DirectoryContext => {
     const session = chat.fileRoot(threadId)
     if (!session) throw new Error('This thread is no longer in the Inbox.')
     return session
@@ -717,10 +675,6 @@ export function registerIpcHandlers(
   )
   handle<ValidatePathRequest, PathCheckResult>(IpcChannels.pathValidate, (req) => validatePath(req))
   handle<ListWslDirectoriesRequest, WslDirectoryListing>(IpcChannels.pathListWslDirectories, (req) => listWslDirectories(req))
-  handle<string, void>(IpcChannels.pathReveal, async (sessionId) => {
-    const session = await getSession(sessionId)
-    if (session) await revealSession(session)
-  })
   handle<string, void>(IpcChannels.pathRevealTerminal, async (terminalId) => {
     const terminal = ptyManager.terminalInfo(terminalId)
     if (!terminal?.directory) return
@@ -732,25 +686,6 @@ export function registerIpcHandlers(
     if (!directory) return
 
     await revealDirectory(session, directory)
-  })
-  handle<string, void>(IpcChannels.pathOpenInVsCode, async (sessionId) => {
-    const session = await getSession(sessionId)
-    if (!session || process.platform !== 'win32' || session.kind !== 'wsl' || !session.distro) return
-
-    const directory = await verifiedSessionDirectory(session)
-    if (!directory) return
-
-    try {
-      const url = safeVsCodeRemoteUrl(buildVsCodeRemoteUri(session, process.platform, directory))
-      if (!url) throw new Error('Refusing to open an unexpected VS Code URL.')
-      await shell.openExternal(url)
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error)
-      dialog.showErrorBox(
-        'Could not open VS Code',
-        `Could not hand the WSL folder to the registered Windows VS Code installation. Make sure VS Code is installed and the Remote - WSL extension is available locally.\n\n${detail}`
-      )
-    }
   })
   handle<string, void>(IpcChannels.pathOpenTerminalInVsCode, async (terminalId) => {
     const terminal = ptyManager.terminalInfo(terminalId)
@@ -792,7 +727,8 @@ export function registerIpcHandlers(
       const session = await getTerminalSession(terminal.sessionId)
       if (!session) return null
 
-      const candidateDirectory = terminal.directory ?? session.path
+      const candidateDirectory = terminal.directory
+      if (!candidateDirectory) return null
       const directory = await verifiedDirectory(session, candidateDirectory)
       if (!directory) return null
 

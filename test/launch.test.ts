@@ -22,7 +22,6 @@ function session(overrides: Partial<Session> = {}): Session {
     projectId: 'project-1',
     name: 'app',
     kind: 'native',
-    path: '/home/me/src/app',
     createdAt: '2026-01-01T00:00:00.000Z',
     ...overrides
   }
@@ -55,8 +54,8 @@ async function waitFor(condition: () => boolean, timeout = 2_000): Promise<void>
 describe('buildLaunchSpec', () => {
   it('launches a WSL project inside the distro with a login+interactive shell', () => {
     const spec = buildLaunchSpec(
-      session({ kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/src/app' }),
-      { platform: 'win32', windowsExecutable: wslExecutable }
+      session({ kind: 'wsl', distro: 'Ubuntu-24.04' }),
+      { workingDirectory: '/home/me/src/app', platform: 'win32', windowsExecutable: wslExecutable }
     )
 
     expect(spec.file).toBe(wslExecutable.file)
@@ -193,7 +192,7 @@ describe('buildLaunchSpec', () => {
 
   it('uses a validated WSL directory override for a normal shell', () => {
     const spec = buildLaunchSpec(
-      session({ kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/src/app' }),
+      session({ kind: 'wsl', distro: 'Ubuntu-24.04' }),
       { platform: 'win32', windowsExecutable: wslExecutable, workingDirectory: '/home/me/src/other' }
     )
 
@@ -260,8 +259,8 @@ describe('buildLaunchSpec', () => {
 
       try {
         const spec = buildLaunchSpec(
-          session({ shell: fakeZsh, path: home }),
-          { platform: process.platform }
+          session({ shell: fakeZsh }),
+          { workingDirectory: home, platform: process.platform }
         )
         const child = spawn(spec.file, spec.args, {
           cwd: spec.cwd,
@@ -297,8 +296,9 @@ describe('buildLaunchSpec', () => {
     )
   })
 
-  it('spawns powershell in the project directory for native Windows projects', () => {
-    const spec = buildLaunchSpec(session({ kind: 'native', path: 'C:\\src\\app' }), {
+  it('spawns powershell in the requested directory on Windows', () => {
+    const spec = buildLaunchSpec(session({ kind: 'native' }), {
+      workingDirectory: 'C:\\src\\app',
       platform: 'win32', windowsExecutable: { file: 'D:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' }
     })
     expect(spec.file).toBe('D:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe')
@@ -307,8 +307,8 @@ describe('buildLaunchSpec', () => {
     expect(spec.cwd).toBe('C:\\src\\app')
   })
 
-  it('spawns a directory-reporting Fish shell in the project directory on Linux', () => {
-    const spec = buildLaunchSpec(session(), { platform: 'linux', defaultShell: '/usr/bin/fish' })
+  it('spawns a directory-reporting Fish shell in the requested directory on Linux', () => {
+    const spec = buildLaunchSpec(session(), { platform: 'linux', workingDirectory: '/home/me/src/app', defaultShell: '/usr/bin/fish' })
     expect(spec.file).toBe('/usr/bin/fish')
     expect(spec.args.slice(0, 3)).toEqual(['-l', '-i', '-C'])
     expect(spec.args[3]).toContain('fish_prompt')
@@ -338,7 +338,7 @@ describe('buildLaunchSpec', () => {
     expect(spec.args.at(-1)).toBe('/bin/zsh')
     expect(spec.args[1]).toContain('bindkey -M main')
     expect(spec.args[1]).toContain('__mde_report_cwd')
-    expect(spec.cwd).toBe('/home/me/src/app')
+    expect(spec.cwd).toBeUndefined()
   })
 
   it.skipIf(spawnSync('zsh', ['--version'], { timeout: 3_000, killSignal: 'SIGKILL' }).status !== 0)(
@@ -355,8 +355,8 @@ describe('buildLaunchSpec', () => {
           ].join('\n')
         )
         const spec = buildLaunchSpec(
-          session({ shell: process.platform === 'darwin' ? '/bin/zsh' : '/usr/bin/zsh', path: home }),
-          { platform: 'linux', defaultShell: '/bin/bash' }
+          session({ shell: process.platform === 'darwin' ? '/bin/zsh' : '/usr/bin/zsh' }),
+          { workingDirectory: home, platform: 'linux', defaultShell: '/bin/bash' }
         )
         const result = await runLaunchProcess(spec.file, spec.args, {
           env: { ...process.env, HOME: home, ZDOTDIR: home, EDITOR: 'emacs' },
@@ -380,8 +380,8 @@ describe('buildLaunchSpec', () => {
       try {
         writeFileSync(join(home, '.zshrc'), 'bindkey -v\n')
         const spec = buildLaunchSpec(
-          session({ shell: process.platform === 'darwin' ? '/bin/zsh' : '/usr/bin/zsh', path: home }),
-          { platform: 'linux' }
+          session({ shell: process.platform === 'darwin' ? '/bin/zsh' : '/usr/bin/zsh' }),
+          { workingDirectory: home, platform: 'linux' }
         )
         const result = await runLaunchProcess(spec.file, spec.args, {
           env: { ...process.env, HOME: home, ZDOTDIR: home },
@@ -398,19 +398,21 @@ describe('buildLaunchSpec', () => {
     }
   )
 
-  it('uses a resolved custom Windows executable while preserving the project directory', () => {
-    const spec = buildLaunchSpec(session({ shell: 'D:\\Tools\\zsh.exe', path: 'C:\\src\\app' }), {
+  it('uses a resolved custom Windows executable while preserving the requested terminal directory', () => {
+    const spec = buildLaunchSpec(session({ shell: 'D:\\Tools\\zsh.exe' }), {
+      workingDirectory: 'C:\\src\\app',
       platform: 'win32', windowsExecutable: { file: 'D:\\Tools\\zsh.exe' }
     })
     expect(spec).toEqual({ file: 'D:\\Tools\\zsh.exe', args: [], cwd: 'C:\\src\\app' })
   })
 
   it('refuses Windows launches without resolved absolute host executables', () => {
-    expect(() => buildLaunchSpec(session({ path: 'C:\\src\\app' }), { platform: 'win32' }))
+    expect(() => buildLaunchSpec(session(), { workingDirectory: 'C:\\src\\app', platform: 'win32' }))
       .toThrow('resolved Windows shell')
     expect(() => buildLaunchSpec(session({ kind: 'wsl', distro: 'Ubuntu-24.04' }), { platform: 'win32' }))
       .toThrow('resolved Windows WSL')
-    expect(() => buildLaunchSpec(session({ path: 'C:\\src\\app' }), {
+    expect(() => buildLaunchSpec(session(), {
+      workingDirectory: 'C:\\src\\app',
       platform: 'win32', windowsExecutable: { file: 'powershell.exe' }
     })).toThrow('full Windows drive path')
   })

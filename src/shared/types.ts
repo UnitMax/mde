@@ -4,8 +4,6 @@ export type ProjectKind = 'native' | 'wsl'
 
 export type CodingAgent = 'opencode' | 'codex' | 'claude'
 
-export type TerminalLaunchDirectory = 'terminal' | 'session'
-
 /** Parsed argv for a coding-agent command; no shell syntax is represented. */
 export interface AgentCommand {
   executable: string
@@ -14,7 +12,6 @@ export interface AgentCommand {
 
 export interface TerminalLaunch {
   sourceTerminalId: string
-  directory: TerminalLaunchDirectory
   agent?: {
     kind: CodingAgent
     command: AgentCommand
@@ -125,13 +122,6 @@ export interface Session {
   kind: ProjectKind
   /** Required when kind === 'wsl', e.g. "Ubuntu-24.04". */
   distro?: string
-  /**
-   * Absolute path in the TARGET's own format:
-   *   native on Windows -> "C:\\src\\app"
-   *   native on Linux   -> "/home/me/src/app"
-   *   wsl               -> "/home/me/src/app"
-   */
-  path: string
   /** Optional shell override; default is resolved per platform. */
   shell?: string
   createdAt: string
@@ -140,6 +130,9 @@ export interface Session {
   /** The tab to restore when this session is selected. */
   activeTabId?: string
 }
+
+/** Runtime filesystem root resolved from a live terminal or an Inbox folder. Never stored as a session. */
+export type DirectoryContext = Session & { path: string }
 
 export type NewProject = Omit<Project, 'id' | 'createdAt'>
 export interface NewTodoProject {
@@ -803,7 +796,7 @@ export interface GitDiffResponse {
 
 export type FileTreeEntryKind = 'directory' | 'file' | 'symlink' | 'other'
 
-/** One child of a listed session directory. Symlinks are reported, never followed. */
+/** One child of a listed directory. Symlinks are reported, never followed. */
 export interface FileTreeEntry {
   name: string
   kind: FileTreeEntryKind

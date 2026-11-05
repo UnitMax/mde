@@ -56,16 +56,16 @@ change MDE's own `inbox.json` and never reach OpenCode, except that
 `inbox:git-info` accepts only an `fld_` folder ID.
 Inbox folder requests (`inbox:folders-add`, `inbox:folders-remove`,
 `inbox:composer-set`) accept a target and a path, which the handler resolves and
-validates like a session path (WSL only on Windows, native elsewhere), or an
+validates in the selected target (WSL only on Windows, native elsewhere), or an
 `fld_` folder ID, an OpenCode model reference and an agent ID. Chat requests
 (`chat:*`) accept `ses_`, `per_` and `frm_` IDs by pattern, prompts of at most
 100,000 code units without controls other than newline and tab, permission
 decisions from the fixed set `once`, `always`, `reject`, and form answers of
-bounded keys, strings, numbers, booleans and string lists. `files:list` and `files:read` also accept an Inbox `fld_` folder ID or `ses_` thread ID in place of a session ID; the main process resolves it to that folder's directory, and the usual containment checks apply. Domain handlers still verify resource
+bounded keys, strings, numbers, booleans and string lists. `files:list` and `files:read` accept an Inbox `fld_` folder ID or `ses_` thread ID, or a live terminal with its expected directory; the main process resolves it to that folder's directory, and the usual containment checks apply. Domain handlers still verify resource
 existence, session/source ownership, filesystem containment and platform
 constraints after the central validation.
 
-The Inbox terminal belongs to no workspace session. Terminal requests accept the reserved session ID `inbox-terminal`; the main process builds its launch session on demand, as a shell in the home directory (`~` in the default WSL distro on Windows), and the reserved ID always wins over a stored session. File browsing, previews, tree drops and attachments accept either a saved workspace/Inbox folder identity or a live terminal ID with its expected directory. For a terminal root, main resolves the launch environment and current directory from the PTY, verifies the directory on disk, and rejects a mismatch or a terminal that moves during verification. The renderer’s directory is a consistency check, not an arbitrary filesystem root. Relative-path and symlink containment checks still apply below the resolved root. Git changes and diffs likewise require a live terminal and expected directory, and run from its checkout root. Mixed root selectors are rejected at the IPC boundary. Naming `inbox-terminal` as a saved file-root session still fails. This adds no authority the renderer does not already have through `pty:write`.
+The Inbox terminal belongs to no workspace session. Terminal requests accept the reserved session ID `inbox-terminal`; the main process builds its launch session on demand, as a shell in the home directory (`~` in the default WSL distro on Windows), and the reserved ID always wins over a stored session. File browsing, previews, tree drops and attachments accept either an Inbox folder/thread identity or a live terminal ID with its expected directory. For a terminal root, main resolves the launch environment and current directory from the PTY, verifies the directory on disk, and rejects a mismatch or a terminal that moves during verification. The renderer’s directory is a consistency check, not an arbitrary filesystem root. Relative-path and symlink containment checks still apply below the resolved root. Git changes and diffs likewise require a live terminal and expected directory, and run from its checkout root. Mixed root selectors are rejected at the IPC boundary. Naming `inbox-terminal` as a saved file-root session still fails. This adds no authority the renderer does not already have through `pty:write`.
 
 Inbox terminal chat threads use the reserved `inbox-thread:<sessionID>` identity for both the terminal
 and its launch session. Main resolves a recorded terminal-mode thread, its native/WSL target, and its
@@ -203,7 +203,7 @@ the validated `chat:*` channels.
   go through the same main-process URL validator as other external links.
 
 Inbox folders are separate from workspace projects and sessions; adding one
-resolves and validates the path through the same checks as a session path.
+resolves and validates its target-native path before storing the folder.
 
 The Inbox message input is a plain-text CodeMirror editor with decorations for Markdown bullet
 markers. It never renders prompt HTML, links or image embeds. Text paste reads only `text/plain`;
@@ -313,8 +313,8 @@ The resolver reads `SystemRoot` case-insensitively, canonicalizes paths, checks
 regular-file type and rejects system programs redirected outside the Windows
 installation tree. It resolves only the program being used and caches successful
 results, so missing WSL does not disable native shells. Missing/invalid paths
-fail without a bare-name fallback. Native PTYs retain their project working
-directory; WSL `--cd` still selects the Linux working directory separately.
+fail without a bare-name fallback. Native PTYs start in the user's home directory, or in the explicit directory of a launcher request;
+WSL `--cd` selects the Linux directory, defaulting to `~`.
 Launch-spec construction receives resolved host paths and remains free of
 filesystem lookup. These changes add no renderer or preload capabilities.
 

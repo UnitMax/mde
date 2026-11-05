@@ -9,10 +9,8 @@ import {
   ChevronDown,
   ChevronRight,
   Check,
-  Code,
   Copy,
   Folder,
-  FolderOpen,
   FolderPlus,
   GripVertical,
   Inbox,
@@ -275,11 +273,7 @@ function SessionRow({
   const setSessionColor = useWorkspace((state) => state.setSessionColor)
   const moveSession = useWorkspace((state) => state.moveSession)
   const removeSession = useWorkspace((state) => state.removeSession)
-  const revealSession = useWorkspace((state) => state.revealSession)
-  const openSessionInVsCode = useWorkspace((state) => state.openSessionInVsCode)
   const projects = useWorkspace((state) => state.projects)
-  const platform = useWorkspace((state) => state.platform)
-  const wslAvailable = useWorkspace((state) => state.wslAvailable)
 
   const rowRef = useRef<HTMLDivElement>(null)
   const [renaming, setRenaming] = useState(false)
@@ -324,8 +318,6 @@ function SessionRow({
   const sessionColor = session.color ?? DEFAULT_SESSION_COLOR
   const customColor = customSessionColor(session.color)
   const backgroundStyle = sessionBackgroundStyle(session.color)
-  const canOpenInVsCode =
-    platform?.isWindows === true && wslAvailable && session.kind === 'wsl' && Boolean(session.distro)
   return (
     <>
       <ContextMenu>
@@ -417,11 +409,6 @@ function SessionRow({
                     {session.name}
                   </div>
                 )}
-                <div className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight text-fg-subtle">
-                  <span data-testid="session-directory" className="min-w-0 truncate font-mono">
-                    {session.path}
-                  </span>
-                </div>
               </div>
               <button
                 type="button"
@@ -477,16 +464,6 @@ function SessionRow({
               ))}
             </ContextMenuSubContent>
           </ContextMenuSub>
-          <ContextMenuItem onSelect={() => void revealSession(session.id)}>
-            <FolderOpen className="h-3.5 w-3.5" />
-            Reveal in file manager
-          </ContextMenuItem>
-          {canOpenInVsCode && (
-            <ContextMenuItem onSelect={() => void openSessionInVsCode(session.id)}>
-              <Code className="h-3.5 w-3.5" />
-              Open in VS Code
-            </ContextMenuItem>
-          )}
           <ContextMenuItem
             onSelect={() => {
               setTargetProjectId(session.projectId)

@@ -23,7 +23,7 @@ vi.mock('../src/renderer/terminal/sessions', () => ({
 vi.mock('../src/renderer/components/TerminalGitInfo', () => ({ TerminalGitInfo: () => null }))
 
 const session: Session = {
-  id: 'ses-1', projectId: 'p', name: 'Project', kind: 'native', path: '/home/me/app', createdAt: ''
+  id: 'ses-1', projectId: 'p', name: 'Project', kind: 'native', createdAt: ''
 }
 const wslSession: Session = { ...session, kind: 'wsl', distro: 'Debian' }
 const ID = 'pane-1'

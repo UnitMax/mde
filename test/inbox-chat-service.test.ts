@@ -69,7 +69,7 @@ describe('Inbox chat service', () => {
       { operation: 'session.create', request: { body: { agent: 'plan', model: { id: model.id, providerID: model.providerId, variant: 'high' }, location: { directory: folder.directory } } } },
       { operation: 'session.prompt', request: { params: { sessionID: thread.id }, body: { text: 'Review the tests' } } },
     ])
-    expect(service.terminalSession(thread.id)).toMatchObject({ id: 'inbox-thread:ses_terminal', kind: 'wsl', distro: 'Ubuntu-24.04', path: folder.directory })
+    expect(service.terminalSession(thread.id)).toMatchObject({ id: 'inbox-thread:ses_terminal', kind: 'wsl', distro: 'Ubuntu-24.04' })
     expect(await service.terminalLaunch(thread.id)).toEqual({
       agent: { executable: 'opencode', args: ['--server', 'http://127.0.0.1:49374', '--session', thread.id] },
       environment: { OPENCODE_PASSWORD: 'test-password' },

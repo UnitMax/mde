@@ -4,7 +4,6 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { InboxFolder } from '../src/shared/types'
-import { AddSessionDialog } from '../src/renderer/components/AddProjectDialog'
 import { AddInboxFolderDialog } from '../src/renderer/components/inbox/AddInboxFolderDialog'
 import { useInboxChat } from '../src/renderer/store/inbox-chat'
 import { useWorkspace } from '../src/renderer/store/workspace'
@@ -15,7 +14,6 @@ const resolve = vi.fn()
 const validate = vi.fn()
 const listWslDirectories = vi.fn()
 const addFolder = vi.fn()
-const addSession = vi.fn()
 const onOpenChange = vi.fn()
 const onAdded = vi.fn()
 
@@ -65,7 +63,6 @@ beforeEach(() => {
       ? { path: '/home/me/src', directories: ['app'], truncated: false }
       : { path: '/home/me', directories: ['src'], truncated: false })
   addFolder.mockReset().mockImplementation(async () => folder())
-  addSession.mockReset().mockResolvedValue({})
   onOpenChange.mockReset()
   onAdded.mockReset()
   Object.defineProperty(window, 'api', {
@@ -180,48 +177,5 @@ describe('Inbox add-folder dialog on macOS', () => {
     expect(browser()).toBeNull()
     expect(listWslDirectories).not.toHaveBeenCalled()
     expect(document.querySelector<HTMLInputElement>('#inbox-folder-path')!.value).toBe('/Users/me/src/app')
-  })
-})
-
-describe('New session dialog on Windows', () => {
-  beforeEach(() => {
-    useWorkspace.setState({
-      platform: { platform: 'win32', isWindows: true },
-      wslAvailable: true,
-      distros: [ubuntu, debian],
-      projects: [{ id: 'project-1', name: 'Work', createdAt: '2026-01-01T00:00:00.000Z' }],
-      refreshDistros: vi.fn(async () => undefined),
-      addSession,
-    })
-  })
-
-  it('keeps the Windows file dialog for a Windows folder', async () => {
-    nativeBrowse.mockResolvedValue('C:\\src\\app')
-    await mount(createElement(AddSessionDialog, { open: true, onOpenChange }))
-
-    await click(button('Browse'))
-
-    expect(nativeBrowse).toHaveBeenCalledTimes(1)
-    expect(browser()).toBeNull()
-    expect(listWslDirectories).not.toHaveBeenCalled()
-  })
-
-  it('browses the distro’s own folders for a WSL folder and uses the chosen one', async () => {
-    await mount(createElement(AddSessionDialog, { open: true, onOpenChange }))
-    await click(document.querySelector('[role="radio"][value="wsl"]')!)
-
-    await click(button('Browse'))
-
-    expect(nativeBrowse).not.toHaveBeenCalled()
-    expect(document.body.textContent).toContain('Choose a folder in Ubuntu-24.04')
-
-    await click(document.querySelector('[data-testid="wsl-folder-row"]')!)
-    await click(button('Choose this folder'))
-
-    expect(browser()).toBeNull()
-    expect(resolve).toHaveBeenCalledWith({ kind: 'wsl', distro: 'Ubuntu-24.04', rawPath: '/home/me/src' })
-    expect(document.querySelector<HTMLInputElement>('#session-path')!.value).toBe('/home/me/src')
-    // The session name follows the folder, as it does for the Windows file dialog.
-    expect(document.querySelector<HTMLInputElement>('#session-name')!.value).toBe('src')
   })
 })

@@ -28,7 +28,7 @@ const validPayloads = {
   [IpcChannels.todoTasksUpdate]: { id: 'task', patch: { description: '' } },
   [IpcChannels.todoTasksMove]: { id: 'task', columnId: 'done', beforeId: null },
   [IpcChannels.todoTasksRemove]: 'task',
-  [IpcChannels.sessionsCreate]: { projectId: 'project', name: 'Shell', kind: 'wsl', path: '/home/me/project', distro: 'Ubuntu-24.04', shell: undefined },
+  [IpcChannels.sessionsCreate]: { projectId: 'project', name: 'Shell', kind: 'wsl', distro: 'Ubuntu-24.04', shell: undefined },
   [IpcChannels.sessionsDuplicate]: 'session',
   [IpcChannels.sessionsUpdate]: { id: 'session', patch: { shell: '', icon: null, color: 'blue' } },
   [IpcChannels.sessionsMove]: { id: 'session', projectId: 'project' },
@@ -55,9 +55,7 @@ const validPayloads = {
   [IpcChannels.pathResolve]: { kind: 'wsl', distro: undefined, rawPath: '' },
   [IpcChannels.pathValidate]: { kind: 'native', path: 'C:\\src\\project' },
   [IpcChannels.pathListWslDirectories]: { distro: 'Ubuntu-24.04', path: '/home/me', hidden: true },
-  [IpcChannels.pathReveal]: 'session',
   [IpcChannels.pathRevealTerminal]: 'pane',
-  [IpcChannels.pathOpenInVsCode]: 'session',
   [IpcChannels.pathOpenTerminalInVsCode]: 'pane',
   [IpcChannels.gitInfo]: { terminalId: 'pane', directory: '/workspace' },
   [IpcChannels.gitTerminalInfo]: terminalId,
@@ -326,7 +324,7 @@ describe('IPC payload boundary', () => {
   })
 
   it('validates new-pane launches, nested arguments and aggregate bounds', () => {
-    const launch = { sourceTerminalId: 'source', directory: 'terminal', agent: { kind: 'codex', command: { executable: 'codex', args: ['--model', 'example'] } } }
+    const launch = { sourceTerminalId: 'source', agent: { kind: 'codex', command: { executable: 'codex', args: ['--model', 'example'] } } }
     expect(() => assertIpcPayload(IpcChannels.ptyEnsure, { ...ensure, launch })).not.toThrow()
     rejects(IpcChannels.ptyRestart, { ...ensure, launch })
     for (const bad of ['invalid', { ...launch, directory: 'invalid' },

@@ -18,7 +18,6 @@ function session(overrides: Partial<Session> = {}): Session {
     projectId: project.id,
     name: 'Frontend',
     kind: 'native',
-    path: '/workspace/frontend',
     createdAt: '2026-01-01T00:00:00.000Z',
     ...overrides
   }
@@ -36,20 +35,19 @@ describe('session search', () => {
     expect(results[0]?.matches.name).toEqual([0, 5, 7])
   })
 
-  it('matches across project, path, and distro fields', () => {
+  it('matches project and distro fields', () => {
     const results = searchSessions(
       [item(session({ id: 'wsl-session', name: 'Agent', kind: 'wsl', distro: 'Ubuntu-24.04' }), 0)],
       'ubuntu'
     )
     expect(searchSessions([item(session(), 0)], 'worksp')[0]?.item.session.id).toBe('session-1')
-    expect(searchSessions([item(session(), 0)], 'frontend')[0]?.item.session.id).toBe('session-1')
     expect(results[0]?.item.session.id).toBe('wsl-session')
   })
 
   it('ranks stronger fuzzy matches first and preserves input order for ties', () => {
     const results = searchSessions(
       [
-        item(session({ id: 'later', name: 'Backend' }), 1),
+        item(session({ id: 'later', name: 'Frontend library' }), 1),
         item(session({ id: 'first', name: 'Front' }), 0)
       ],
       'fr'

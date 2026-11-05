@@ -9,7 +9,7 @@ import type { Session } from '../src/shared/types'
 const directories: string[] = []
 const native: Session = {
   id: 'native', projectId: 'project', name: 'Mac', kind: 'native',
-  path: '/tmp', shell: '/bin/sh', createdAt: '2026-01-01T00:00:00Z',
+  shell: '/bin/sh', createdAt: '2026-01-01T00:00:00Z',
 }
 
 async function temporaryDirectory(): Promise<string> {
@@ -27,8 +27,8 @@ describe.skipIf(process.platform === 'win32')('native agent command transport', 
     const directory = await temporaryDirectory()
     const executable = join(directory, 'agent with spaces')
     await fs.writeFile(executable, '#!/bin/sh\nprintf "%s\\n" "$PWD" "$@"\n', { mode: 0o700 })
-    const spec = buildLaunchSpec({ ...native, path: directory }, {
-      platform: 'darwin', agent: { executable, args: ['$(touch sentinel)', 'a; b', ''] },
+    const spec = buildLaunchSpec(native, {
+      platform: 'darwin', workingDirectory: directory, agent: { executable, args: ['$(touch sentinel)', 'a; b', ''] },
     })
     const result = await runLaunchProcess(spec.file, spec.args, { cwd: spec.cwd })
     expect(result.status).toBe(0)

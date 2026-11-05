@@ -11,7 +11,7 @@ import {
   RefreshCw
 } from 'lucide-react'
 import { FILE_TREE_DROP_TYPE } from '@/terminal/drop'
-import type { Session } from '@shared/types'
+import type { DirectoryContext } from '@shared/types'
 import type { FileRoot } from '@shared/ipc'
 import { fileRootKey } from '@/lib/file-root'
 import { Button } from '@/components/ui/button'
@@ -59,7 +59,7 @@ function FileTree({
   heading,
   fill
 }: {
-  session: Session
+  session: DirectoryContext
   root: FileRoot
   onCollapse: () => void
   browseOnly: boolean
@@ -79,12 +79,10 @@ function FileTree({
   const rootId = fileRootKey(root)
   const openFilePath = useWorkspace((state) => state.openFiles[rootId])
   const openFile = useWorkspace((state) => state.openFile)
-  const revealSession = useWorkspace((state) => state.revealSession)
-  const openSessionInVsCode = useWorkspace((state) => state.openSessionInVsCode)
   const isWindows = useWorkspace((state) => state.platform?.isWindows === true)
   const wslAvailable = useWorkspace((state) => state.wslAvailable)
   // Main only hands WSL folders to VS Code, matching the terminal header button.
-  const canOpenInVsCode = !browseOnly && isWindows && wslAvailable && session.kind === 'wsl' && Boolean(session.distro)
+  const canOpenInVsCode = Boolean(root.terminalId) && !browseOnly && isWindows && wslAvailable && session.kind === 'wsl' && Boolean(session.distro)
 
   const load = useCallback(
     async (path: string): Promise<void> => {
@@ -212,19 +210,19 @@ function FileTree({
             variant="ghost"
             size="icon-sm"
             className="shrink-0"
-            onClick={() => void (root.terminalId ? window.api.paths.openTerminalInVsCode(root.terminalId) : openSessionInVsCode(session.id))}
+            onClick={() => void window.api.paths.openTerminalInVsCode(root.terminalId!)}
             title="Open folder in VS Code"
             aria-label="Open folder in VS Code"
           >
             <Code className="h-3.5 w-3.5" />
           </Button>
         )}
-        {!browseOnly && (
+        {!browseOnly && root.terminalId && (
           <Button
             variant="ghost"
             size="icon-sm"
             className="shrink-0"
-            onClick={() => void (root.terminalId ? window.api.paths.revealTerminal(root.terminalId) : revealSession(session.id))}
+            onClick={() => void window.api.paths.revealTerminal(root.terminalId!)}
             title="Open folder in File Explorer"
             aria-label="Open folder in File Explorer"
           >
@@ -360,7 +358,7 @@ export function FileTreePanel({
   heading,
   fill = false
 }: {
-  session: Session
+  session: DirectoryContext
   root?: FileRoot
   browseOnly?: boolean
   /** Replaces the "Files" title in the header, for a host that offers other tabs beside the files. */

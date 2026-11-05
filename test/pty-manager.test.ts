@@ -1,3 +1,4 @@
+import { homedir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Session } from '@shared/types'
 
@@ -52,7 +53,6 @@ function sourceSession(): Session {
     projectId: 'project-1',
     name: 'App',
     kind: 'native',
-    path: '/tmp/app',
     createdAt: '2026-01-01T00:00:00.000Z'
   }
 }
@@ -62,7 +62,7 @@ function wslSession(): Session {
     ...sourceSession(),
     kind: 'wsl',
     distro: 'Ubuntu-24.04',
-    path: '/home/me/app'
+
   }
 }
 
@@ -234,6 +234,8 @@ describe('PtyManager runtime terminal identities', () => {
     manager.ensure('pane-a', source, { cols: 80, rows: 24 }, palette)
     manager.ensure('pane-b', source, { cols: 80, rows: 24 }, palette)
 
+    expect(manager.terminalInfo('pane-a')?.directory).toBe(homedir())
+    events.onDirectory.mockClear()
     ptyMock.children.get('pane-1')?.dataListener?.('\u001b]7;file://localhost/home/me/a\u0007')
     ptyMock.children.get('pane-2')?.dataListener?.('\u001b]7;file:///tmp/b\u001b\\')
 
@@ -264,17 +266,18 @@ describe('PtyManager runtime terminal identities', () => {
     expect(manager.directories()).toEqual({ 'pane-b': '/tmp/b' })
   })
 
-  it('reports the WSL launch directory before the first prompt', () => {
+  it('waits for a WSL shell to report its home directory', () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     const events = { onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() }
     const manager = new PtyManager(events)
 
     manager.ensure('pane-a', wslSession(), { cols: 80, rows: 24 }, palette)
 
-    expect(events.onDirectory).toHaveBeenCalledWith({
-      terminalId: 'pane-a',
-      directory: '/home/me/app'
-    })
+    expect(ptyMock.spawn.mock.calls[0]?.[1]?.slice(2, 4)).toEqual(['--cd', '~'])
+    expect(events.onDirectory).not.toHaveBeenCalled()
+    expect(manager.directories()).toEqual({})
+    ptyMock.children.get('pane-1')?.dataListener?.('\u001b]7;file://localhost/home/me/app\u0007')
+    expect(events.onDirectory).toHaveBeenCalledWith({ terminalId: 'pane-a', directory: '/home/me/app' })
     expect(manager.directories()).toEqual({ 'pane-a': '/home/me/app' })
   })
 

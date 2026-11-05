@@ -30,7 +30,7 @@ function encodeWslPath(path: string): string {
 export function buildVsCodeRemoteUri(
   session: Session,
   platform: NodeJS.Platform,
-  directory = session.path
+  directory: string
 ): string {
   const distro = validateVsCodeSession(session, platform, directory)
 

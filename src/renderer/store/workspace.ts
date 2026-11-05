@@ -135,8 +135,6 @@ interface WorkspaceState {
   moveSession: (id: string, projectId: string) => Promise<void>
   reorderSession: (id: string, beforeId: string | null) => Promise<void>
   removeSession: (id: string) => Promise<void>
-  revealSession: (id: string) => Promise<void>
-  openSessionInVsCode: (id: string) => Promise<void>
 
   setStatus: (id: string, status: PtyStatus) => void
   setTerminalDirectory: (update: PtyDirectoryUpdate) => void
@@ -510,14 +508,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         exits,
       }
     })
-  },
-
-  revealSession: async (id) => {
-    await window.api.paths.reveal(id)
-  },
-
-  openSessionInVsCode: async (id) => {
-    await window.api.paths.openInVsCode(id)
   },
 
   setStatus: (id, status) =>

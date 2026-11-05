@@ -46,7 +46,7 @@ function SessionResult({
   onHover: () => void
 }): JSX.Element {
   const { session, project } = result.item
-  const location = session.kind === 'wsl' ? `${session.distro ?? 'WSL'} · ${session.path}` : session.path
+  const location = session.kind === 'wsl' ? session.distro ?? 'WSL' : 'Native'
   return (
     <button
       type="button"
@@ -71,7 +71,7 @@ function SessionResult({
           {project && ' · '}
           <HighlightedText
             value={location}
-            positions={result.matches.path ?? result.matches.distro}
+            positions={result.matches.distro}
           />
         </span>
       </span>

@@ -1,6 +1,6 @@
 import type { FileRoot } from './ipc'
 
-/** Reject mixed roots so a terminal request cannot fall back to a saved session. */
+/** Reject mixed roots so a terminal request cannot fall back to an Inbox folder. */
 export function isFileRoot(value: unknown): value is FileRoot {
   if (!value || typeof value !== 'object') return false
   const root = value as Record<string, unknown>

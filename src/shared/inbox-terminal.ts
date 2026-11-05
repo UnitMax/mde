@@ -7,21 +7,16 @@ import type { Distro, Session } from './types'
  */
 export const INBOX_TERMINAL_SESSION_ID = 'inbox-terminal'
 
-/** Where the Inbox terminal starts: the home directory, which `wsl.exe --cd` understands as `~`. */
-export const INBOX_TERMINAL_WSL_DIRECTORY = '~'
-
 /**
  * The Inbox terminal as a session: a Windows shell inside the default WSL distro, or a native shell
- * everywhere else. `nativeHome` is the home directory a native shell starts in; the renderer, which does not
- * know it, shows `~` and never sends the path anywhere.
+ * everywhere else. The PTY layer starts fresh shells in the target user’s home directory.
  */
 export function inboxTerminalSession(
   platform: string,
   distros: readonly Pick<Distro, 'name' | 'isDefault'>[],
-  nativeHome: string
 ): Session | null {
   const base = { id: INBOX_TERMINAL_SESSION_ID, projectId: '', name: 'Terminal', createdAt: '' }
-  if (platform !== 'win32') return { ...base, kind: 'native', path: nativeHome }
+  if (platform !== 'win32') return { ...base, kind: 'native' }
   const distro = distros.find((item) => item.isDefault) ?? distros[0]
-  return distro ? { ...base, kind: 'wsl', distro: distro.name, path: INBOX_TERMINAL_WSL_DIRECTORY } : null
+  return distro ? { ...base, kind: 'wsl', distro: distro.name } : null
 }

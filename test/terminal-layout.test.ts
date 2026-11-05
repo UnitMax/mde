@@ -54,7 +54,7 @@ describe('dynamic terminal layouts', () => {
 
   it('adds a launcher terminal next to its source without rearranging other panes or persisting the launch', () => {
     const two = split(single(), 1, 'bottom')
-    const launch = { sourceTerminalId: id(1), directory: 'terminal' as const }
+    const launch = { sourceTerminalId: id(1) }
     const next = appendRuntimePane('s', 's:tab:default', two, launch)!
     expect(next.panes.map((pane) => pane.paneId)).toEqual(['pane-1', 'pane-3', 'pane-2'])
     expect(next.panes[1]?.launch).toBe(launch)

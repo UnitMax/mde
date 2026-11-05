@@ -49,7 +49,7 @@ const listFiles = vi.fn()
 
 function session(id: string, name: string, paneCount: number): Session {
   return {
-    id, projectId: 'project-1', name, kind: 'native', path: `/home/me/${name.toLowerCase()}`,
+    id, projectId: 'project-1', name, kind: 'native',
     createdAt: '2026-01-01T00:00:00.000Z',
     tabs: [{
       id: `${id}-tab`, name: 'Tab 1',
@@ -92,8 +92,8 @@ describe('switching sessions with a file open', () => {
       windowMode: 'normal',
       inboxThreads: [],
       selectedInboxThreadId: null,
-      openFiles: { [fileRootKey({ terminalId: terminalIdForPane('alpha', 'alpha-tab', 'pane-1'), directory: alpha.path })]: 'README.md' },
-      statuses: {}, exits: {}, terminalDirectories: {},
+      openFiles: { [fileRootKey({ terminalId: terminalIdForPane('alpha', 'alpha-tab', 'pane-1'), directory: '/workspace/alpha' })]: 'README.md' },
+      statuses: {}, exits: {}, terminalDirectories: { [terminalIdForPane(alpha.id, 'alpha-tab', 'pane-1')]: '/workspace/alpha' },
     })
   })
 

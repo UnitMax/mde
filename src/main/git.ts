@@ -10,6 +10,7 @@ import type {
   GitStatusResponse,
   GitTerminalInfoResponse,
   GitCommit,
+  DirectoryContext,
   Session
 } from '@shared/types'
 import { resolveWindowsGitExecutable } from './git-executable'
@@ -136,7 +137,7 @@ async function runWindowsGit(
 }
 
 function createTransportRunner(
-  session: Session,
+  session: DirectoryContext,
   workspaceDirectory: string,
   platform: NodeJS.Platform,
   timeoutMs?: number
@@ -182,7 +183,7 @@ function attrSourceKey(session: Session, workspaceDirectory: string): string {
  * requests such as opening the Git dialog.
  */
 export function createGitCommandRunner(
-  session: Session,
+  session: DirectoryContext,
   platform: NodeJS.Platform = process.platform,
   workspaceDirectory = session.path,
   priority: SpawnPriority = 'interactive'
@@ -211,7 +212,7 @@ export function createGitCommandRunner(
  * The timeout is long because a checkout writes a whole working tree.
  */
 export function createGitMutationRunner(
-  session: Session,
+  session: DirectoryContext,
   workspaceDirectory = session.path,
   timeoutMs = GIT_MUTATION_TIMEOUT_MS,
   platform: NodeJS.Platform = process.platform
@@ -477,8 +478,8 @@ export async function readGitInfoWithRunner(run: GitCommandRunner): Promise<GitI
   }
 }
 
-export async function readGitInfo(session: Session): Promise<GitInfoResponse> {
-  const checkout = await checkoutRunner(createGitCommandRunner(session))
+export async function readGitInfo(session: DirectoryContext): Promise<GitInfoResponse> {
+  const checkout = await checkoutRunner(createGitCommandRunner(session, process.platform, session.path))
   return checkout ? readGitInfoWithRunner(checkout.run) : { repository: false, branch: null, commits: [], changes: [] }
 }
 
@@ -497,7 +498,7 @@ export async function readGitTerminalInfo(
   directory: string
 ): Promise<GitTerminalInfoResponse> {
   const info = await readGitTerminalInfoWithRunner(
-    createGitCommandRunner(session, process.platform, directory, 'background')
+    createGitCommandRunner({ ...session, path: directory }, process.platform, directory, 'background')
   )
   return { ...info, directory }
 }
@@ -608,9 +609,9 @@ export async function readGitDiffWithRunner(
   }
 }
 
-export async function readGitDiff(session: Session, path: string): Promise<GitDiffResponse> {
+export async function readGitDiff(session: DirectoryContext, path: string): Promise<GitDiffResponse> {
   const nullDevice = session.kind === 'wsl' || process.platform !== 'win32' ? '/dev/null' : 'NUL'
-  const checkout = await checkoutRunner(createGitCommandRunner(session))
+  const checkout = await checkoutRunner(createGitCommandRunner(session, process.platform, session.path))
   if (!checkout) throw new Error('This terminal folder is not a Git repository.')
   return readGitDiffWithRunner(checkout.run, path, nullDevice)
 }

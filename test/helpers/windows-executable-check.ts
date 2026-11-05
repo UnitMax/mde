@@ -67,7 +67,7 @@ export async function runWindowsExecutableCheck(): Promise<void> {
 
     const wslSession: Session = {
       id: 'wsl-fixture', projectId: 'fixture', name: 'Fixture', kind: 'wsl',
-      distro, path: '/tmp', createdAt: new Date(0).toISOString(),
+      distro, createdAt: new Date(0).toISOString(),
     }
     const terminalOutput = new Map<string, string>()
     manager = new PtyManager({
@@ -77,8 +77,8 @@ export async function runWindowsExecutableCheck(): Promise<void> {
     })
     const nativePath = join(root, 'project with spaces')
     await mkdir(nativePath)
-    const nativeSession: Session = { ...wslSession, id: 'native-fixture', kind: 'native', path: nativePath }
-    const nativeSpec = buildLaunchSpec(nativeSession, { platform: 'win32', windowsExecutable: { file: powershell } })
+    const nativeSession: Session = { ...wslSession, id: 'native-fixture', kind: 'native' }
+    const nativeSpec = buildLaunchSpec(nativeSession, { platform: 'win32', workingDirectory: nativePath, windowsExecutable: { file: powershell } })
     const native = await run(nativeSpec.file, ['-NoProfile', '-NonInteractive', '-Command',
       `${nativeSpec.args[2]}; [Console]::WriteLine("WINDOWS_LOOKUP_NATIVE_OK:" + (Get-Location).Path)`], {
       cwd: nativeSpec.cwd, timeout: 30_000, windowsHide: true,

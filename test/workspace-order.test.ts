@@ -29,19 +29,19 @@ describe('workspace session ordering persistence', () => {
       projectId: firstProject.id,
       name: 'First session',
       kind: 'native',
-      path: '/workspace/first'
+
     })
     const other = await createSession({
       projectId: secondProject.id,
       name: 'Other session',
       kind: 'native',
-      path: '/workspace/other'
+
     })
     const last = await createSession({
       projectId: firstProject.id,
       name: 'Last session',
       kind: 'native',
-      path: '/workspace/last'
+
     })
 
     const reordered = await reorderSession({ id: last.id, beforeId: first.id })

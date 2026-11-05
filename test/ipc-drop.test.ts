@@ -81,7 +81,6 @@ function nativeSession(): Session {
     projectId: 'project-1',
     name: 'App',
     kind: 'native',
-    path: '/tmp',
     createdAt: '2026-01-01T00:00:00.000Z'
   }
 }
@@ -154,20 +153,6 @@ describe('terminal file-drop IPC', () => {
     expect(dropMock.resolveTerminalDrop).not.toHaveBeenCalled()
   })
 
-  it('resolves a tree entry using its saved source session and the receiving terminal', async () => {
-    const target = nativeSession()
-    const source = { ...target, id: 'source', path: '/tmp/another-project' }
-    workspaceMock.getSession.mockImplementation(async (id) => id === 'source' ? source : target)
-    const descriptor = { name: 'src', nativePath: '/tmp/another-project/src' }
-    dropMock.fileTreeDropFile.mockResolvedValue(descriptor)
-    dropMock.resolveTerminalDrop.mockResolvedValue({ insertions: [], acceptedCount: 0, rejections: [] })
-    registerForTest({ terminalInfo: vi.fn(() => ({ sessionId: target.id })), status: vi.fn(() => 'running') })
-    await handler(IpcChannels.ptyDropFiles)(trustedEvent, {
-      terminalId: 'pane-1', files: [], mode: 'shell', treeEntry: { sessionId: 'source', path: 'src' },
-    })
-    expect(dropMock.fileTreeDropFile).toHaveBeenCalledWith(source, 'src', process.platform)
-    expect(dropMock.resolveTerminalDrop).toHaveBeenCalledWith(target, process.platform, [descriptor], 'shell')
-  })
 
   it('resolves a tree drag from the source terminal directory', async () => {
     const target = nativeSession()

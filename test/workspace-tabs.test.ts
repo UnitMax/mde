@@ -32,7 +32,7 @@ describe('workspace session tabs', () => {
       projectId: project.id,
       name: 'App',
       kind: 'native',
-      path: '/workspace/app'
+
     })
 
     expect(session.tabs).toHaveLength(1)
@@ -86,7 +86,7 @@ describe('workspace session tabs', () => {
       projectId: project.id,
       name: 'App',
       kind: 'native',
-      path: '/workspace/app'
+
     })
     const withTabs = await createSessionTab({ sessionId: session.id })
     const tabs = withTabs?.tabs ?? []
@@ -101,7 +101,7 @@ describe('workspace session tabs', () => {
 
   it('persists a nested arrangement and all divider ratios across a reload', async () => {
     const project = await createProject({ name: 'Work' })
-    const session = await createSession({ projectId: project.id, name: 'App', kind: 'native', path: '/workspace/app' })
+    const session = await createSession({ projectId: project.id, name: 'App', kind: 'native' })
     const layout = testLayout(Array.from({ length: 12 }, (_, index) => ({ id: `pane-${index}` })), 0.3)
     const updated = await updateSessionTab({ sessionId: session.id, tabId: session.tabs![0]!.id, patch: { layout } })
     expect(updated?.tabs?.[0]?.layout).toEqual(layout)

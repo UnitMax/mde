@@ -32,7 +32,6 @@ const session: Session = {
   projectId: 'project-1',
   name: 'App',
   kind: 'native',
-  path: '/home/me/app',
   createdAt: '2026-01-01T00:00:00.000Z'
 }
 
