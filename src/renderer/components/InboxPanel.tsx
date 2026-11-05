@@ -3,7 +3,6 @@ import {
   Car,
   ChevronDown,
   ChevronRight,
-  Folder,
   GitBranch,
   GitFork,
   Inbox,
@@ -23,7 +22,9 @@ import type { InboxThread } from '@shared/types'
 import { ElapsedTime } from '@/components/ElapsedTime'
 import { InboxChangesBadge } from '@/components/inbox/InboxChanges'
 import { InboxDraftsSection } from '@/components/inbox/InboxDrafts'
+import { InboxProjectsButton } from '@/components/inbox/InboxProjectsButton'
 import { InboxSettingsMenu } from '@/components/inbox/InboxSettingsMenu'
+import { ProjectIcon } from '@/components/inbox/ProjectIcon'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog'
@@ -47,6 +48,7 @@ import {
   INBOX_CLOCK_MS,
   INBOX_FILTERS,
   inboxFolderLabel,
+  inboxThreadFolder,
   inboxThreadHome,
   inboxWorktreeShared,
   inboxLocked,
@@ -208,6 +210,8 @@ function InboxThreadRow({
   // A worktree another thread (a fork of this one, say) still runs in is not offered for removal.
   const ownsWorktree = useWorkspace((state) => Boolean(thread.worktree) && !inboxWorktreeShared(thread, state.inboxThreads))
   const unread = isInboxThreadUnread(thread)
+  // The project's own name and icon; once it has been removed from the Inbox, the folder's name and the plain folder.
+  const project = useInboxChat((state) => inboxThreadFolder(thread, state.folders))
   const model = inboxModelLabel(thread.model)
   const showChanges = useInboxChanges((state) => state.sidebarChanges)
   const checkout = useInboxChanges((state) => state.entries[inboxChangesKey(thread.id)]?.value)
@@ -275,9 +279,9 @@ function InboxThreadRow({
               </time>
             </span>
             <span className="flex w-full min-w-0 items-center gap-1 text-[11px] text-fg-subtle">
-              <Folder className="h-3 w-3 shrink-0" />
-              <span className="min-w-0 truncate" title={thread.directory}>
-                {inboxFolderLabel(inboxThreadHome(thread))}
+              <ProjectIcon icon={project?.icon} />
+              <span className="min-w-0 truncate" title={thread.directory} data-testid={`inbox-thread-project-${thread.id}`}>
+                {project?.name ?? inboxFolderLabel(inboxThreadHome(thread))}
               </span>
               {branch && (
                 <>
@@ -644,7 +648,10 @@ export function InboxPanel(): JSX.Element {
             </button>
           ))}
         </div>
-        <InboxSettingsMenu />
+        <div className="ml-auto flex shrink-0 items-center">
+          <InboxProjectsButton />
+          <InboxSettingsMenu />
+        </div>
       </div>
       {fork.pending && (
         <p role="status" data-testid="inbox-fork-status" className="mx-1 flex items-center gap-1.5 rounded bg-elevated px-2 py-1 text-[11px] text-fg-muted">

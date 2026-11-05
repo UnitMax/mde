@@ -111,7 +111,7 @@ describe('Inbox add-folder dialog on Windows', () => {
     expect(onOpenChange).not.toHaveBeenCalled()
     expect(document.querySelector<HTMLInputElement>('#inbox-folder-path')!.value).toBe('/home/me/src')
 
-    await click(button('Add folder'))
+    await click(button('Add project'))
     expect(addFolder).toHaveBeenCalledWith({ kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/src' })
     expect(onAdded).toHaveBeenCalled()
   })

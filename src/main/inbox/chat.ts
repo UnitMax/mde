@@ -30,10 +30,12 @@ import type {
   ChatSkill,
   InboxComposerState,
   InboxFolder,
+  InboxFolderIcon,
   InboxFoldersState,
   InboxGitInfo,
   InboxGitInfoRequest,
   InboxThread,
+  InboxUpdateFolderRequest,
   OpenCodeModelRef,
   OpenCodeTarget,
   DirectoryContext,
@@ -42,6 +44,7 @@ import type {
 import { OpenCodeServiceError, type OpenCodeServiceClient } from '../opencode/service/client'
 import { serviceTargetKey } from '../opencode/service/discovery'
 import { inboxThreadTerminalSession } from '@shared/inbox-thread-terminal'
+import { normalizeInboxFolderIcon } from '@shared/inbox-folder-icons'
 import {
   ServiceEventStreams,
   serviceEventSessionId,
@@ -276,12 +279,20 @@ export class InboxChatService {
     return { folders: this.dependencies.store.folders(), composer: this.dependencies.store.composer() }
   }
 
-  /** Adds a folder the IPC layer already resolved and checked, or reuses the same one. */
-  addFolder({ directory, target }: { directory: string; target: OpenCodeTarget }): InboxFolder {
+  /**
+   * Adds a folder the IPC layer already resolved and checked, or reuses the same one. A name or an icon
+   * that comes with it is applied either way: the person has just chosen it for this project.
+   */
+  addFolder({ directory, target, name, icon }: {
+    directory: string
+    target: OpenCodeTarget
+    name?: string
+    icon?: InboxFolderIcon
+  }): InboxFolder {
     const now = this.dependencies.now()
     const existing = this.dependencies.store.folders().find((folder) =>
       folder.directory === directory && serviceTargetKey(folder.target) === serviceTargetKey(target))
-    const folder: InboxFolder = existing
+    const base: InboxFolder = existing
       ? { ...existing, lastUsedAt: now }
       : {
           id: `fld_${(this.dependencies.createId ?? randomUUID)()}`,
@@ -291,9 +302,32 @@ export class InboxChatService {
           createdAt: now,
           lastUsedAt: now,
         }
+    const label = name?.trim()
+    const clean = icon ? normalizeInboxFolderIcon(icon) : undefined
+    if (icon && !clean) throw new Error('That icon is not available.')
+    const folder: InboxFolder = { ...base, ...(label ? { name: label } : {}), ...(clean ? { icon: clean } : {}) }
     this.dependencies.store.putFolder(folder)
     this.dependencies.store.setComposer({ ...this.dependencies.store.composer(), folderId: folder.id })
     return folder
+  }
+
+  /**
+   * Renames a project or changes its icon. The folder, its target and when it was last used stay as
+   * they are, so editing does not move it in the chooser or touch the threads started in it.
+   */
+  updateFolder({ id, name, icon }: InboxUpdateFolderRequest): InboxFolder {
+    const folder = this.dependencies.store.folder(id)
+    if (!folder) throw new Error('That project is no longer in the Inbox.')
+    const label = name?.trim()
+    if (name !== undefined && !label) throw new Error('Give the project a name.')
+    const clean = icon ? normalizeInboxFolderIcon(icon) : undefined
+    if (icon && !clean) throw new Error('That icon is not available.')
+    const next: InboxFolder = { ...folder }
+    if (label) next.name = label
+    if (icon === null) delete next.icon
+    else if (clean) next.icon = clean
+    this.dependencies.store.putFolder(next)
+    return next
   }
 
   removeFolder(id: string): void {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, FolderPlus, Trash2 } from 'lucide-react'
+import { ChevronDown, FolderCog, FolderPlus, Trash2 } from 'lucide-react'
 import type { ChatDraftChoice, InboxFolder, InboxGitBranch, InboxThreadMode, OpenCodeModelRef } from '@shared/types'
 import { worktreeBranchConflict, worktreeBranchProblem } from '@shared/worktree-branch'
 import { Button } from '@/components/ui/button'
@@ -13,11 +13,13 @@ import {
 import { AddInboxFolderDialog } from '@/components/inbox/AddInboxFolderDialog'
 import { ChatComposer } from '@/components/inbox/ChatComposer'
 import { ComposerBar } from '@/components/inbox/ComposerBar'
+import { InboxProjectsDialog } from '@/components/inbox/InboxProjectsDialog'
 import { McpChip } from '@/components/inbox/McpChip'
+import { ProjectIcon } from '@/components/inbox/ProjectIcon'
 import { ThreadModePicker } from '@/components/inbox/ThreadModePicker'
 import { WorktreeBar, useInboxGit, type WorktreeMode } from '@/components/inbox/WorktreeBar'
 import { findModel, initialChoice } from '@/lib/chat'
-import { defaultWorktreeBase, inboxWorktreeSource } from '@/lib/inbox'
+import { defaultWorktreeBase, inboxThreadFolder, inboxWorktreeSource } from '@/lib/inbox'
 import { optionsKey, useInboxChat } from '@/store/inbox-chat'
 import { useInboxDrafts } from '@/store/inbox-drafts'
 
@@ -53,6 +55,7 @@ function FolderItem({
       title={folderTitle(item, folders)}
       data-testid={worktree ? 'inbox-worktree-folder' : 'inbox-folder-item'}
     >
+      {!worktree && <ProjectIcon icon={item.icon} size="md" className="mt-0.5 text-fg-muted" />}
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">
           <span className="block truncate">{worktree ? worktree.branch : item.name}</span>
@@ -128,12 +131,16 @@ export function NewThreadView(): JSX.Element {
   const startFresh = useInboxDrafts((state) => state.startFresh)
   useEffect(() => () => useInboxDrafts.getState().leave(), [])
   const [adding, setAdding] = useState(false)
+  const [managing, setManaging] = useState(false)
   const plainFolders = useMemo(() => folders.filter((item) => !item.worktree), [folders])
   const worktreeFolders = useMemo(() => folders.filter((item) => item.worktree), [folders])
   // Without a remembered choice, a real folder comes first: a worktree is something to pick on purpose.
   const folder = folders.find((item) => item.id === composer.folderId) ?? plainFolders[0] ?? folders[0] ?? null
   const options = useInboxChat((state) => (folder ? state.options[optionsKey({ folderId: folder.id })] : undefined))
   const folderId = folder?.id
+  const headingIcon = folder
+    ? (folder.worktree ? inboxThreadFolder({ folderId: folder.id, worktree: folder.worktree, target: folder.target }, folders) : folder)?.icon
+    : undefined
   const git = useInboxGit(folderId)
 
   // What was picked on this page. A draft taken from the list brings back how it was left; a blank page has
@@ -230,6 +237,8 @@ export function NewThreadView(): JSX.Element {
                         title={folderTitle(folder, folders)}
                         className="inline-flex max-w-[min(28rem,70vw)] items-baseline gap-1 rounded align-bottom underline decoration-fg-subtle decoration-dotted decoration-2 underline-offset-[6px] outline-none hover:decoration-fg-muted focus-visible:ring-2 focus-visible:ring-accent/60"
                       >
+                        {/* A worktree's entry has no picture of its own; the project it was cut from has. */}
+                        <ProjectIcon icon={headingIcon} size="lg" className="self-center text-fg-muted" />
                         <span className="truncate">{folder.name}</span>
                         <ChevronDown className="h-4 w-4 shrink-0 self-center text-fg-subtle" />
                       </button>
@@ -250,9 +259,13 @@ export function NewThreadView(): JSX.Element {
                         )}
                       </div>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem onSelect={() => setAdding(true)}>
+                      <DropdownMenuItem data-testid="inbox-folder-add" onSelect={() => setAdding(true)}>
                         <FolderPlus className="h-3.5 w-3.5" />
-                        Add folder…
+                        Add project…
+                      </DropdownMenuItem>
+                      <DropdownMenuItem data-testid="inbox-folder-manage" onSelect={() => setManaging(true)}>
+                        <FolderCog className="h-3.5 w-3.5" />
+                        Manage projects…
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -265,10 +278,10 @@ export function NewThreadView(): JSX.Element {
           </h1>
           {loaded && !folder && (
             <div className="mt-4 flex flex-col items-center gap-3">
-              <p className="text-[13px] text-fg-muted">Add a folder for OpenCode to work in.</p>
+              <p className="text-[13px] text-fg-muted">Add a project, a folder for OpenCode to work in.</p>
               <Button onClick={() => setAdding(true)}>
                 <FolderPlus className="h-3.5 w-3.5" />
-                Add a folder
+                Add a project
               </Button>
             </div>
           )}
@@ -333,6 +346,7 @@ export function NewThreadView(): JSX.Element {
         )}
       </div>
       <AddInboxFolderDialog open={adding} onOpenChange={setAdding} />
+      <InboxProjectsDialog open={managing} onOpenChange={setManaging} />
     </div>
   )
 }

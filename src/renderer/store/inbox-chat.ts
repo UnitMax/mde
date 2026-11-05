@@ -14,6 +14,7 @@ import type {
   InboxComposerState,
   InboxFolder,
   InboxThread,
+  InboxUpdateFolderRequest,
   OpenCodeModelRef,
 } from '@shared/types'
 import { appendLive, mergePending, pruneLive, type LivePart } from '@/lib/chat'
@@ -108,6 +109,8 @@ interface InboxChatStore {
   clearDraftReload: (threadId: string, id: number) => void
   init: () => () => void
   addFolder: (request: InboxAddFolderRequest) => Promise<InboxFolder>
+  /** Renames a project or changes its icon. */
+  updateFolder: (request: InboxUpdateFolderRequest) => Promise<InboxFolder>
   removeFolder: (id: string) => Promise<void>
   /** Reads the folders again, after main added or dropped one itself (a worktree was created or removed). */
   reloadFolders: () => Promise<void>
@@ -241,6 +244,13 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
         folders: [folder, ...state.folders.filter((item) => item.id !== folder.id)],
         composer: { ...state.composer, folderId: folder.id },
       }))
+      return folder
+    },
+
+    updateFolder: async (request) => {
+      const folder = await window.api.inbox.updateFolder(request)
+      // In place: renaming a project must not move it, and the chooser's order follows when it was last used.
+      set((state) => ({ folders: state.folders.map((item) => (item.id === folder.id ? folder : item)) }))
       return folder
     },
 

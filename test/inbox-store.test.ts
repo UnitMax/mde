@@ -242,6 +242,52 @@ describe('inbox folders', () => {
     expect(validateComposer(null)).toEqual({})
   })
 
+  describe('project icons', () => {
+    it('keeps a built-in icon with its tint and an emoji, and leaves out anything else', () => {
+      for (const icon of [
+        { kind: 'symbol', id: 'rocket' },
+        { kind: 'symbol', id: 'rocket', color: 'blue' },
+        { kind: 'emoji', emoji: '🚀' },
+        { kind: 'emoji', emoji: '👩‍💻' },
+      ] as const) {
+        expect(validateInboxFolder(folder({ icon }))).toEqual(folder({ icon }))
+      }
+      // Extra fields on the icon are dropped, the folder itself is not.
+      expect(validateInboxFolder({ ...folder(), icon: { kind: 'symbol', id: 'bug', extra: 1 } })).toEqual(folder({ icon: { kind: 'symbol', id: 'bug' } }))
+      // A bad icon costs the folder its picture, not its place in the Inbox.
+      for (const bad of [
+        { kind: 'symbol', id: 'nope' },
+        { kind: 'symbol', id: 'bug', color: '#ff0000' },
+        { kind: 'emoji', emoji: 'text' },
+        { kind: 'emoji', emoji: '🚀🚀' },
+        { kind: 'image', data: 'data:image/png;base64,AAAA' },
+        'bug',
+        7,
+        [],
+        null,
+      ]) {
+        const loaded = validateInboxFolder({ ...folder(), icon: bad })
+        expect(loaded).toEqual(folder())
+        expect(loaded).not.toHaveProperty('icon')
+      }
+    })
+
+    it('saves the icon and reads it back from the file', async () => {
+      const directory = await temporaryDirectory()
+      const file = join(directory, 'inbox.json')
+      const store = new InboxStore(file, { writeDelayMs: 60_000 })
+      store.putFolder(folder({ icon: { kind: 'symbol', id: 'database', color: 'orange' } }))
+      store.putFolder(folder({ id: 'fld_two', name: 'docs', directory: '/home/me/docs', icon: { kind: 'emoji', emoji: '📚' } }))
+      store.putFolder(folder({ id: 'fld_three', name: 'plain', directory: '/home/me/plain' }))
+      await store.flush()
+      const reloaded = new InboxStore(file)
+      await reloaded.load()
+      expect(reloaded.folder('fld_one')?.icon).toEqual({ kind: 'symbol', id: 'database', color: 'orange' })
+      expect(reloaded.folder('fld_two')?.icon).toEqual({ kind: 'emoji', emoji: '📚' })
+      expect(reloaded.folder('fld_three')).not.toHaveProperty('icon')
+    })
+  })
+
   describe('worktree folders', () => {
     const worktree = { repository: '/home/me/app', root: '/home/me/.mde/worktrees/app-abc/1a2b3c4d', branch: 'mde/1a2b3c4d', base: 'origin/main' }
 

@@ -1,4 +1,5 @@
 import type { ChatDraftSummary, InboxFolder } from '@shared/types'
+import { inboxThreadFolder } from '@/lib/inbox'
 import { matchSubsequence, queryTokens } from '@/lib/fuzzy-search'
 
 /** A new id for a draft the new-thread page is about to edit; it is only saved once something is typed. */
@@ -14,6 +15,16 @@ export function draftTitle(draft: ChatDraftSummary): string {
     return draft.attachments > 1 ? `${draft.attachmentName} and ${draft.attachments - 1} more` : draft.attachmentName
   }
   return 'Empty draft'
+}
+
+/**
+ * The project a draft is for, as far as its icon goes: the draft's folder, or for a worktree folder the
+ * project it was cut from. Undefined when the folder is gone from the Inbox.
+ */
+export function draftProject(draft: ChatDraftSummary, folders: readonly InboxFolder[]): InboxFolder | undefined {
+  const own = folders.find((folder) => folder.id === draft.folderId)
+  if (!own?.worktree) return own
+  return inboxThreadFolder({ folderId: own.id, worktree: own.worktree, target: own.target }, folders) ?? own
 }
 
 /** The folder's name in a row, or a note that it is gone from the Inbox (the draft then opens in the page's folder). */

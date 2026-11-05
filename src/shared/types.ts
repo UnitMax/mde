@@ -228,9 +228,27 @@ export interface InboxGitInfo {
   branches: InboxGitBranch[]
 }
 
+/** The built-in pictures a project can have, drawn from MDE's own icon set. */
+export type InboxFolderSymbol =
+  | 'folder' | 'repository' | 'code' | 'terminal' | 'braces' | 'bug' | 'rocket' | 'web' | 'server' | 'database'
+  | 'cloud' | 'chip' | 'package' | 'boxes' | 'layers' | 'wrench' | 'hammer' | 'gear' | 'lab' | 'tests'
+  | 'design' | 'brush' | 'pen' | 'document' | 'book' | 'learning' | 'work' | 'company' | 'shop' | 'mobile'
+  | 'desktop' | 'game' | 'music' | 'camera' | 'video' | 'mail' | 'chat' | 'bot' | 'sparkles' | 'lightning'
+  | 'fire' | 'nature' | 'star' | 'heart' | 'security' | 'key' | 'compass' | 'map' | 'idea' | 'puzzle'
+  | 'target' | 'trophy' | 'chart' | 'home' | 'network'
+
+/** The tints a built-in project picture can have; without one it takes the text color around it. */
+export type InboxFolderColor =
+  | 'blue' | 'indigo' | 'violet' | 'pink' | 'red' | 'orange' | 'yellow' | 'green' | 'teal'
+
+/** What the sidebar shows for a project: one of the built-in pictures, tinted, or a single emoji. */
+export type InboxFolderIcon =
+  | { kind: 'symbol'; id: InboxFolderSymbol; color?: InboxFolderColor }
+  | { kind: 'emoji'; emoji: string }
+
 /**
  * A folder the Inbox can start chat threads in. Inbox folders are separate
- * from the Sessions view and never change workspace sessions.
+ * from the Sessions view and never change workspace sessions. The Inbox calls them projects.
  */
 export interface InboxFolder {
   id: string
@@ -240,6 +258,8 @@ export interface InboxFolder {
   target: OpenCodeTarget
   createdAt: number
   lastUsedAt: number
+  /** Shown next to the project's threads; absent means the plain folder picture. */
+  icon?: InboxFolderIcon
   /**
    * Set when the folder is a Git worktree MDE created for an earlier thread, so that more threads
    * can be started in it. `directory` is then inside `worktree.root`, and every thread started here
@@ -264,6 +284,16 @@ export interface InboxAddFolderRequest {
   kind: SessionKind
   distro?: string
   path: string
+  /** What to call the project; absent means the folder's own name. */
+  name?: string
+  icon?: InboxFolderIcon
+}
+
+/** Changes what the project manager can edit; the folder itself stays. `icon: null` takes the picture away. */
+export interface InboxUpdateFolderRequest {
+  id: string
+  name?: string
+  icon?: InboxFolderIcon | null
 }
 
 export interface InboxRemoveFolderRequest {

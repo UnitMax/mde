@@ -54,10 +54,17 @@ expected (`inbox:remove` also takes an optional `removeWorktree` boolean); they
 change MDE's own `inbox.json` and never reach OpenCode, except that
 `removeWorktree` also runs `git worktree remove` (see "Inbox worktree boundary").
 `inbox:git-info` accepts only an `fld_` folder ID.
-Inbox folder requests (`inbox:folders-add`, `inbox:folders-remove`,
-`inbox:composer-set`) accept a target and a path, which the handler resolves and
+Inbox folder requests (`inbox:folders-add`, `inbox:folders-update`,
+`inbox:folders-remove`, `inbox:composer-set`) accept a target and a path, which the handler resolves and
 validates in the selected target (WSL only on Windows, native elsewhere), or an
-`fld_` folder ID, an OpenCode model reference and an agent ID. Chat requests
+`fld_` folder ID, an OpenCode model reference and an agent ID. A project's name
+(add and update) is a non-blank string of at most 512 code units without controls.
+Its icon is either `{ kind: 'symbol', id, color? }`, whose `id` and `color` must be
+on the built-in lists in `src/shared/inbox-folder-icons.ts`, or `{ kind: 'emoji', emoji }`,
+which must be exactly one grapheme containing an emoji, at most 32 code units and no controls;
+extra keys are rejected, and `inbox:folders-update` takes `icon: null` to clear it. The icon is
+only ever rendered as an SVG chosen from that list or as text, never as a URL, image data or
+markup, and the store validates it again when `inbox.json` is read. Chat requests
 (`chat:*`) accept `ses_`, `per_` and `frm_` IDs by pattern, prompts of at most
 100,000 code units without controls other than newline and tab, permission
 decisions from the fixed set `once`, `always`, `reject`, and form answers of

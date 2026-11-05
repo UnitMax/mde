@@ -129,6 +129,7 @@ const api: RendererApi = {
     onChanged: (listener) => subscribe<InboxThread>(IpcEvents.inboxChanged, listener),
     folders: () => ipcRenderer.invoke(IpcChannels.inboxFolders),
     addFolder: (req) => ipcRenderer.invoke(IpcChannels.inboxFoldersAdd, req),
+    updateFolder: (req) => ipcRenderer.invoke(IpcChannels.inboxFoldersUpdate, req),
     removeFolder: (req) => ipcRenderer.invoke(IpcChannels.inboxFoldersRemove, req),
     setComposer: (req) => ipcRenderer.invoke(IpcChannels.inboxComposerSet, req),
     gitInfo: (req) => ipcRenderer.invoke(IpcChannels.inboxGitInfo, req)

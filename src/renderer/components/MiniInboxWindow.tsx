@@ -1,5 +1,6 @@
-import { Circle, CircleAlert, CircleCheck, CircleX, Folder, Inbox, LoaderCircle, Maximize2 } from 'lucide-react'
+import { Circle, CircleAlert, CircleCheck, CircleX, Inbox, LoaderCircle, Maximize2 } from 'lucide-react'
 import type { InboxFolder, InboxThread } from '@shared/types'
+import { ProjectIcon } from '@/components/inbox/ProjectIcon'
 import { TitleBar, TitleBarButton } from '@/components/TitleBar'
 import { inboxStatusChip, isInboxThreadUnread, visibleInboxThreads } from '@/lib/inbox'
 import { groupThreadsByFolder, miniInboxChips, summarizeThreads, type MiniInboxChipTone } from '@/lib/mini-inbox'
@@ -84,7 +85,7 @@ export function MiniInboxWindow({
         ) : groups.map((group) => (
           <section key={group.folderId} data-testid="mini-inbox-group" aria-label={group.name} className="px-1.5 pb-1">
             <div className="flex items-center gap-1.5 px-1.5 pb-0.5 pt-1.5" title={group.directory}>
-              <Folder className="h-3 w-3 shrink-0 text-fg-subtle" aria-hidden="true" />
+              <ProjectIcon icon={group.icon} className="text-fg-subtle" />
               <h2 className="min-w-0 flex-1 truncate text-[10px] font-medium uppercase tracking-wide text-fg-subtle">{group.name}</h2>
             </div>
             <div className="space-y-0.5">

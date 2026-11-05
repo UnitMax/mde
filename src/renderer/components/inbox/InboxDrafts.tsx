@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, Folder, GitBranch, Paperclip, PenLine, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, GitBranch, Paperclip, PenLine, Trash2 } from 'lucide-react'
 import type { ChatDraftSummary, InboxFolder } from '@shared/types'
 import {
   AlertDialog,
@@ -10,7 +10,8 @@ import {
   AlertDialogFooter,
   AlertDialogTitle
 } from '@/components/ui/alert-dialog'
-import { draftFolderLabel, draftTitle } from '@/lib/inbox-drafts'
+import { ProjectIcon } from '@/components/inbox/ProjectIcon'
+import { draftFolderLabel, draftProject, draftTitle } from '@/lib/inbox-drafts'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { sessionAge, sessionDate } from '@/lib/inbox'
 import { cn } from '@/lib/utils'
@@ -65,7 +66,7 @@ function DraftRow({
             </time>
           </span>
           <span className="flex w-full min-w-0 items-center gap-1 text-[11px] text-fg-subtle">
-            <Folder aria-hidden="true" className="h-3 w-3 shrink-0" />
+            <ProjectIcon icon={draftProject(draft, folders)?.icon} />
             <span className="min-w-0 truncate">{draftFolderLabel(draft, folders)}</span>
             {draft.choice?.worktree && (
               <span

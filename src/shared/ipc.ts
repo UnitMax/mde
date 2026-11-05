@@ -37,6 +37,7 @@ import type {
   InboxSetCustomTitleRequest,
   InboxSetReadRequest,
   InboxThread,
+  InboxUpdateFolderRequest,
   ChatConfigureRequest,
   ChatDiscardPendingRequest,
   ChatCreateRequest,
@@ -142,6 +143,7 @@ export const IpcChannels = {
   inboxFolders: 'inbox:folders',
   inboxFoldersAdd: 'inbox:folders-add',
   inboxFoldersRemove: 'inbox:folders-remove',
+  inboxFoldersUpdate: 'inbox:folders-update',
   inboxComposerSet: 'inbox:composer-set',
   inboxGitInfo: 'inbox:git-info',
 
@@ -499,6 +501,7 @@ export interface RendererApi {
     onChanged(listener: (thread: InboxThread) => void): () => void
     folders(): Promise<InboxFoldersState>
     addFolder(req: InboxAddFolderRequest): Promise<InboxFolder>
+    updateFolder(req: InboxUpdateFolderRequest): Promise<InboxFolder>
     removeFolder(req: InboxRemoveFolderRequest): Promise<void>
     setComposer(req: InboxComposerState): Promise<InboxComposerState>
     gitInfo(req: InboxGitInfoRequest): Promise<InboxGitInfo>

@@ -54,6 +54,21 @@ function sameInboxTarget(a: OpenCodeTarget, b: OpenCodeTarget): boolean {
   return a.kind === b.kind && (a.kind === 'native' || (b.kind === 'wsl' && a.distro === b.distro))
 }
 
+/**
+ * The project a thread belongs to, for its name and icon. A thread in a worktree belongs to the project the
+ * worktree was cut from, found by its directory; the worktree has an entry of its own that is not a project.
+ * Undefined once the project has been removed from the Inbox.
+ */
+export function inboxThreadFolder(
+  thread: Pick<InboxThread, 'folderId' | 'worktree' | 'target'>,
+  folders: readonly InboxFolder[]
+): InboxFolder | undefined {
+  const worktree = thread.worktree
+  if (!worktree) return folders.find((folder) => folder.id === thread.folderId)
+  return folders.find((folder) =>
+    !folder.worktree && folder.directory === worktree.repository && sameInboxTarget(folder.target, thread.target))
+}
+
 /** Whether a thread's worktree is still used by another thread, such as a fork of it. */
 export function inboxWorktreeShared(thread: InboxThread, threads: readonly InboxThread[]): boolean {
   const worktree = thread.worktree

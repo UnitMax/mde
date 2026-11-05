@@ -1,10 +1,12 @@
-import type { InboxFolder, InboxThread } from '@shared/types'
-import { inboxFolderLabel, inboxThreadHome } from '@/lib/inbox'
+import type { InboxFolder, InboxFolderIcon, InboxThread } from '@shared/types'
+import { inboxFolderLabel, inboxThreadFolder, inboxThreadHome } from '@/lib/inbox'
 
 export interface MiniInboxGroup {
   folderId: string
   name: string
   directory: string
+  /** The project's icon, when it has one. */
+  icon?: InboxFolderIcon
   threads: InboxThread[]
 }
 
@@ -34,10 +36,13 @@ export function groupThreadsByFolder(
     if (!group) {
       const folder = folders.find((item) => item.id === thread.folderId)
       const directory = folder?.directory ?? inboxThreadHome(thread)
+      // A worktree's own entry has no icon; its project does.
+      const icon = (inboxThreadFolder(thread, folders) ?? folder)?.icon
       group = {
         folderId: thread.folderId,
         name: folder?.name ?? inboxFolderLabel(directory),
         directory,
+        ...(icon ? { icon } : {}),
         threads: [],
       }
       groups.set(thread.folderId, group)

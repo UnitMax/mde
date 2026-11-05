@@ -309,12 +309,36 @@ Updating a title preserves the thread's status, activity time, read state and pa
 The Sessions tab works with terminal sessions in `workspace.json`. Inbox mode keeps its own list
 of folders in `inbox.json` and never reads or changes workspace sessions. An Inbox folder is a directory and a
 target: the Mac, or a WSL distro on Windows, where only WSL paths are accepted because OpenCode
-runs there. In the Add folder dialog the path can be typed or chosen with Browse. On the Mac that
+runs there. The Inbox calls these folders projects. In the Add a project form the path can be typed or chosen with Browse. On the Mac that
 opens the system folder dialog. On Windows it opens MDE's own folder browser, which lists only the
 folders inside the chosen distro (the Windows file dialog cannot show a distro's filesystem). The
 browser opens in the folder already typed when it exists, otherwise in the distro's home. It has
 home and parent buttons, a breadcrumb, and a "Show hidden folders" switch, and it hands back a plain
 Linux path.
+
+**Projects.** The project manager is a dialog, opened from the folder-with-a-cog button beside the
+Inbox settings gear in the thread list's filter row, or from "Manage projects…" in the new-thread
+page's project menu (`InboxProjectsDialog`). It lists the projects by name with their folder, the WSL
+distro and how many threads each has (a thread in a worktree counts for the project the worktree was
+cut from), and offers Add project, Edit and Remove. Worktrees MDE made for threads are folders too
+(`InboxFolder.worktree`) but are not projects and are not listed; they go with the thread's Delete.
+Adding uses the same form as the new-thread page's "Add project…", with an optional name and icon.
+Editing changes the name and the icon only: the folder, its target and when it was last used stay as
+they are, so a project keeps its place in the new-thread menu (which is ordered by use) and its
+threads are untouched. Another folder is another project. Removing asks first; the project's threads
+stay in the Inbox (their rows then fall back to the folder's own name and the plain folder picture)
+and the folder on disk is not touched.
+
+A project's icon is either one of 55 built-in pictures (`INBOX_FOLDER_SYMBOLS` in
+`src/shared/inbox-folder-icons.ts`, drawn with Lucide icons in `ProjectIcon.tsx`) with an optional tint
+from nine colors, or a single emoji (typed, pasted or chosen from a short list; the system's own picker
+works too). It is stored on the folder as `icon` (`{ kind: 'symbol', id, color? }` or
+`{ kind: 'emoji', emoji }`) and shown in place of the plain folder picture on each thread row in the
+Inbox sidebar (with the project's name, so a rename is seen there), on draft rows, on the mini Inbox
+window's group headings, in the new-thread page's heading and project menu. A worktree thread or draft
+takes the picture of the project it was cut from. There are no image files: nothing is read from disk
+or fetched, an emoji is only ever drawn as text, and a stored icon that does not validate is dropped
+when `inbox.json` is read, leaving the plain folder.
 
 The Inbox also shows a right-hand sidebar with three tabs, Files, Changes and Terminal (a new thread, which has no changes yet, offers Files and Terminal). The Files tab shows the open thread's folder, or the folder a new thread starts in. It is the same tree and viewer as in Sessions mode, but browse-only: the VS Code and File Explorer buttons are hidden. The renderer passes the thread's or folder's own ID to `files:list` and `files:read`; the main process looks it up in the Inbox store when no workspace session has that ID.
 
@@ -325,8 +349,8 @@ The Inbox also shows a right-hand sidebar with three tabs, Files, Changes and Te
 The terminal is not a workspace session and is never stored. Terminal requests name it with the reserved session ID `inbox-terminal` (`src/shared/inbox-terminal.ts`), which the main process resolves on demand (`src/main/inbox/terminal.ts`) for terminal requests. File and Git requests can also name a live terminal ID and its expected directory; naming `inbox-terminal` as a saved file-root session still fails.
 
 **New thread.** "New thread" at the top of the Inbox, or selecting nothing, shows "What should we
-build in ‹folder›?". The folder name opens a menu of the Inbox folders with Add folder… and
-remove buttons. Changing the folder keeps what was typed; the draft moves to the new folder. Below it is the composer: a prompt box, a model picker (searchable, grouped by
+build in ‹project›?". The project name, with its icon, opens a menu of the Inbox projects with
+remove buttons, then Add project… and Manage projects…. Changing the folder keeps what was typed; the draft moves to the new folder. Below it is the composer: a prompt box, a model picker (searchable, grouped by
 provider, enabled and non-deprecated models only), an agent picker (Build, Plan, then any other
 primary agent that is not hidden), and a send button. Enter sends; Shift+Enter and Ctrl+J add a newline.
 On the new-thread page, Ctrl+Enter (also Cmd+Enter on macOS) starts the thread in the background

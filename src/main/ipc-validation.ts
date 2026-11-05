@@ -1,5 +1,6 @@
 import { isPersistedTerminalLayout } from '@shared/terminal-layouts'
 import { IpcChannels } from '@shared/ipc'
+import { isInboxFolderColor, isInboxFolderEmoji, isInboxFolderSymbol } from '@shared/inbox-folder-icons'
 import { isSessionColor } from '@shared/session-colors'
 import { isSessionIcon } from '@shared/session-icons'
 import { MCP_SERVER_NAME } from '@shared/mcp'
@@ -102,6 +103,12 @@ const relativePath: Validator = (value) => path(value) && !(value as string).sta
   !(value as string).includes('\\') && (value as string).split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..')
 const listPath: Validator = (value) => value === '' || relativePath(value)
 const inboxFolderId: Validator = (value) => typeof value === 'string' && /^fld_[A-Za-z0-9-]{1,64}$/.test(value)
+/** What a project is called; the handler trims it and the store holds it to the same length as a thread title. */
+const projectName = string(512)
+/** One of the built-in pictures with an optional tint, or exactly one emoji. Nothing else, and no extra keys. */
+const inboxFolderIcon: Validator = (value) =>
+  object({ kind: oneOf('symbol'), id: isInboxFolderSymbol, color: optional(isInboxFolderColor) })(value) ||
+  object({ kind: oneOf('emoji'), emoji: isInboxFolderEmoji })(value)
 const agentId: Validator = (value) => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value)
 /** A branch name as the picker shows it; main matches it against the refs Git itself lists. */
 const worktreeBase = string(256)
@@ -206,7 +213,8 @@ export const ipcPayloadValidators = {
   [IpcChannels.inboxSetCustomTitle]: object({ id: opencodeSessionId, customTitle: nullable(string(512)) }),
   [IpcChannels.inboxRemove]: object({ id: opencodeSessionId, removeWorktree: optional(boolean) }),
   [IpcChannels.inboxFolders]: noPayload,
-  [IpcChannels.inboxFoldersAdd]: object({ kind, distro: optional(distro), path }),
+  [IpcChannels.inboxFoldersAdd]: object({ kind, distro: optional(distro), path, name: optional(projectName), icon: optional(inboxFolderIcon) }),
+  [IpcChannels.inboxFoldersUpdate]: object({ id: inboxFolderId, name: optional(projectName), icon: optional(nullable(inboxFolderIcon)) }),
   [IpcChannels.inboxFoldersRemove]: object({ id: inboxFolderId }),
   [IpcChannels.inboxComposerSet]: object({ folderId: optional(inboxFolderId), agent: optional(agentId), model: optional(modelRef) }),
   [IpcChannels.inboxGitInfo]: object({ folderId: inboxFolderId }),

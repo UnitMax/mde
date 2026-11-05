@@ -138,7 +138,7 @@ describe('Inbox new thread', () => {
     useInboxChat.setState({ folders: [], composer: {} })
     const view = await render()
     expect(view.querySelector('h1')?.textContent).toBe('What should we build?')
-    expect(button(view, 'Add a folder')).toBeTruthy()
+    expect(button(view, 'Add a project')).toBeTruthy()
     expect(view.querySelector('[data-testid="chat-composer"]')).toBeNull()
   })
 
@@ -296,6 +296,94 @@ describe('Inbox worktree mode', () => {
 
     await send(view, 'Add a dark mode')
     await vi.waitFor(() => expect(api.chat.create).toHaveBeenCalledWith(expect.objectContaining({ folderId: 'fld_app', worktree: { base: 'origin/main' } })))
+  })
+
+  describe('project icons and the project manager', () => {
+    const rocket: InboxFolder = { ...folder, icon: { kind: 'emoji', emoji: '🚀' } }
+    const docs: InboxFolder = { ...folder, id: 'fld_docs', name: 'docs', directory: '/home/me/docs', icon: { kind: 'symbol', id: 'book', color: 'teal' } }
+    const chooser = async (view: HTMLElement): Promise<HTMLElement> => {
+      await open(view.querySelector('[data-testid="inbox-folder-picker"]')!)
+      return vi.waitFor(() => {
+        const found = document.querySelector<HTMLElement>('[role="menu"]')
+        expect(found).not.toBeNull()
+        return found!
+      })
+    }
+    const iconOf = (scope: Element | null | undefined): string | null | undefined =>
+      scope?.querySelector('[data-testid="project-icon"]')?.getAttribute('data-icon')
+
+    it('shows the chosen project’s icon in the heading, and the plain folder when it has none', async () => {
+      useInboxChat.setState({ folders: [rocket, docs], composer: { folderId: 'fld_app' } })
+      const view = await render()
+      const picker = view.querySelector('[data-testid="inbox-folder-picker"]')!
+      expect(iconOf(picker)).toBe('emoji')
+      expect(picker.textContent).toBe('🚀app')
+      await act(async () => useInboxChat.setState({ composer: { folderId: 'fld_docs' } }))
+      expect(iconOf(picker)).toBe('book')
+      await act(async () => useInboxChat.setState({ folders: [folder], composer: { folderId: 'fld_app' } }))
+      expect(iconOf(picker)).toBe('folder')
+    })
+
+    it('shows each project’s icon in the chooser', async () => {
+      useInboxChat.setState({ folders: [rocket, docs], composer: { folderId: 'fld_app' } })
+      const view = await render()
+      const menu = await chooser(view)
+      const rows = Array.from(menu.querySelectorAll('[data-testid="inbox-folder-item"]'))
+      expect(rows.map((row) => iconOf(row))).toEqual(['emoji', 'book'])
+    })
+
+    it('uses the icon of the project a worktree was cut from for the heading, and none in the chooser', async () => {
+      const tree: InboxFolder = {
+        id: 'fld_tree', name: 'app · mde/1a2b3c4d', directory: '/home/me/.mde/worktrees/app-abc/1a2b3c4d', target: folder.target,
+        createdAt: 2, lastUsedAt: 2,
+        worktree: { repository: folder.directory, root: '/home/me/.mde/worktrees/app-abc/1a2b3c4d', branch: 'mde/1a2b3c4d', base: 'main' },
+      }
+      useInboxChat.setState({ folders: [rocket, tree], composer: { folderId: 'fld_tree' } })
+      const view = await render()
+      const picker = view.querySelector('[data-testid="inbox-folder-picker"]')!
+      expect(iconOf(picker)).toBe('emoji')
+      const menu = await chooser(view)
+      expect(menu.querySelector('[data-testid="inbox-worktree-folder"] [data-testid="project-icon"]')).toBeNull()
+    })
+
+    it('offers to add a project and to manage them, below the list', async () => {
+      useInboxChat.setState({ folders: [rocket, docs], composer: { folderId: 'fld_app' } })
+      const view = await render()
+      const menu = await chooser(view)
+      const items = Array.from(menu.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent?.trim())
+      expect(items.slice(-2)).toEqual(['Add project…', 'Manage projects…'])
+    })
+
+    it('opens the project manager from the chooser, with the projects in it', async () => {
+      useInboxChat.setState({ folders: [rocket, docs], composer: { folderId: 'fld_app' } })
+      const view = await render()
+      const menu = await chooser(view)
+      expect(document.querySelector('[data-testid="inbox-projects"]')).toBeNull()
+      await act(async () => menu.querySelector<HTMLElement>('[data-testid="inbox-folder-manage"]')!.click())
+      const manager = await vi.waitFor(() => {
+        const found = document.querySelector<HTMLElement>('[data-testid="inbox-projects"]')
+        expect(found).not.toBeNull()
+        return found!
+      })
+      expect(Array.from(manager.querySelectorAll('[data-testid="inbox-project-name"]')).map((item) => item.textContent)).toEqual(['app', 'docs'])
+    })
+
+    it('opens the add dialog from the chooser as before', async () => {
+      // This file runs as Windows, where the form lists the WSL distros; the others have no use for them here.
+      const refreshDistros = useWorkspace.getState().refreshDistros
+      useWorkspace.setState({ distros: [], refreshDistros: vi.fn(async () => undefined) })
+      try {
+        const view = await render()
+        const menu = await chooser(view)
+        await act(async () => menu.querySelector<HTMLElement>('[data-testid="inbox-folder-add"]')!.click())
+        await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Add a project'))
+        expect(document.querySelector('[data-testid="inbox-projects"]')).toBeNull()
+      } finally {
+        // Unmounted first: the form would run the real one again the moment it is put back.
+        await act(async () => roots.splice(0).forEach((root) => root.unmount()))
+        useWorkspace.setState({ refreshDistros })
+      }
+    })
   })
 
   describe('worktree folders', () => {

@@ -36,6 +36,23 @@ describe('mini Inbox helpers', () => {
     expect(groupThreadsByFolder([worktree], [])[0]).toMatchObject({ name: 'app', directory: '/workspace/app', threads: [worktree] })
   })
 
+  it('gives each group its project’s icon, or none, and a worktree group the icon of its project', () => {
+    const rocket = { kind: 'emoji', emoji: '🚀' } as const
+    const iconed: InboxFolder = { ...folder, icon: rocket }
+    const worktreeFolder: InboxFolder = {
+      id: 'fld_tree', name: 'Application · feature', directory: '/workspace/worktrees/random-id', target: folder.target, createdAt: 2, lastUsedAt: 2,
+      worktree: { repository: folder.directory, root: '/workspace/worktrees/random-id', branch: 'feature', base: 'main' },
+    }
+    const inWorktree = thread('ses_worktree', {
+      folderId: worktreeFolder.id, directory: worktreeFolder.directory, worktree: worktreeFolder.worktree,
+    })
+    const groups = groupThreadsByFolder([thread('ses_one'), inWorktree], [iconed, worktreeFolder])
+    expect(groups.map((group) => [group.name, group.icon])).toEqual([['Application', rocket], ['Application · feature', rocket]])
+    // No project icon, no key at all; a folder that is gone has none either.
+    expect(groupThreadsByFolder([thread('ses_one')], [folder])[0]).not.toHaveProperty('icon')
+    expect(groupThreadsByFolder([thread('ses_one')], [])[0]).not.toHaveProperty('icon')
+  })
+
   it('summarizes thread activity and leaves idle threads out of the chips', () => {
     const summary = summarizeThreads([
       thread('ses_working', { status: 'working' }), thread('ses_attention', { status: 'attention' }),

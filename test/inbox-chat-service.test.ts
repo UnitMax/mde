@@ -195,6 +195,64 @@ describe('Inbox chat service', () => {
     expect(service.folders()).toEqual({ folders: [], composer: {} })
   })
 
+  describe('projects', () => {
+    it('adds a project with the name and icon chosen for it, and applies them when the folder is already one', () => {
+      const { service, store } = setup()
+      const added = service.addFolder({
+        directory: '/home/me/docs',
+        target: wsl,
+        name: '  Documentation  ',
+        icon: { kind: 'symbol', id: 'book', color: 'teal' },
+      })
+      expect(added).toMatchObject({ name: 'Documentation', directory: '/home/me/docs', icon: { kind: 'symbol', id: 'book', color: 'teal' } })
+      expect(store.folder(added.id)?.icon).toEqual({ kind: 'symbol', id: 'book', color: 'teal' })
+      // The same folder again: still one project, with what was chosen this time.
+      const again = service.addFolder({ directory: '/home/me/docs', target: wsl, icon: { kind: 'emoji', emoji: '📚' } })
+      expect(again).toMatchObject({ id: added.id, name: 'Documentation', icon: { kind: 'emoji', emoji: '📚' } })
+      expect(store.folders().filter((item) => item.directory === '/home/me/docs')).toHaveLength(1)
+      // A blank name is the folder's own name, and no icon is the plain folder.
+      expect(service.addFolder({ directory: '/home/me/blank', target: wsl, name: '   ' })).toMatchObject({ name: 'blank' })
+      expect(service.addFolder({ directory: '/home/me/plain', target: wsl })).not.toHaveProperty('icon')
+      expect(() => service.addFolder({ directory: '/home/me/bad', target: wsl, icon: { kind: 'emoji', emoji: 'nope' } }))
+        .toThrow('That icon is not available.')
+      expect(store.folders().some((item) => item.directory === '/home/me/bad')).toBe(false)
+    })
+
+    it('renames a project and changes or clears its icon without moving it or touching its threads', async () => {
+      const { service, store, folder, advance } = setup({ 'session.create': { data: { id: 'ses_new', title: 'New session' } } })
+      const thread = await service.create({ folderId: folder.id, text: 'Hi', agent: 'plan', model })
+      const usedAt = store.folder(folder.id)!.lastUsedAt
+      advance(500)
+      const renamed = service.updateFolder({ id: folder.id, name: '  Main app ', icon: { kind: 'emoji', emoji: '🚀' } })
+      // Editing is not using it: when it was last used, where it is and what it started stay as they were.
+      expect(renamed).toEqual({ ...folder, name: 'Main app', icon: { kind: 'emoji', emoji: '🚀' }, lastUsedAt: usedAt })
+      expect(store.get(thread.id)).toMatchObject({ folderId: folder.id, directory: folder.directory })
+      // Only the name: the icon stays. Only the icon: the name stays.
+      expect(service.updateFolder({ id: folder.id, name: 'Core' })).toMatchObject({ name: 'Core', icon: { kind: 'emoji', emoji: '🚀' } })
+      expect(service.updateFolder({ id: folder.id, icon: { kind: 'symbol', id: 'code' } })).toMatchObject({ name: 'Core', icon: { kind: 'symbol', id: 'code' } })
+      // null takes the icon away.
+      expect(service.updateFolder({ id: folder.id, icon: null })).not.toHaveProperty('icon')
+      expect(store.folder(folder.id)).not.toHaveProperty('icon')
+      expect(service.folders().folders).toHaveLength(1)
+    })
+
+    it('does not change the time a project was last used when it is edited', () => {
+      const { service, folder, advance } = setup()
+      advance(60_000)
+      expect(service.updateFolder({ id: folder.id, name: 'Renamed' }).lastUsedAt).toBe(folder.lastUsedAt)
+    })
+
+    it('refuses a blank name, an icon that is not on offer and a project that is gone, and changes nothing', () => {
+      const { service, store, folder } = setup()
+      const before = store.folder(folder.id)
+      expect(() => service.updateFolder({ id: folder.id, name: '   ' })).toThrow('Give the project a name.')
+      expect(() => service.updateFolder({ id: folder.id, icon: { kind: 'emoji', emoji: 'words' } })).toThrow('That icon is not available.')
+      expect(() => service.updateFolder({ id: folder.id, icon: { kind: 'symbol', id: 'nope' as never } })).toThrow('That icon is not available.')
+      expect(() => service.updateFolder({ id: 'fld_gone', name: 'Ghost' })).toThrow('That project is no longer in the Inbox.')
+      expect(store.folder(folder.id)).toEqual(before)
+    })
+  })
+
   it('resolves a folder or thread ID to its directory for the file tree', async () => {
     const { service, folder } = setup({ 'session.create': { data: { id: 'ses_new', title: 'New session' } } })
     expect(service.fileRoot(folder.id)).toEqual({

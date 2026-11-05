@@ -66,6 +66,7 @@ const validPayloads = {
   [IpcChannels.inboxRemove]: { id: 'ses_thread' },
   [IpcChannels.inboxFolders]: undefined,
   [IpcChannels.inboxFoldersAdd]: { kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/app' },
+  [IpcChannels.inboxFoldersUpdate]: { id: 'fld_1234', name: 'App', icon: { kind: 'symbol', id: 'rocket', color: 'blue' } },
   [IpcChannels.inboxFoldersRemove]: { id: 'fld_1234' },
   [IpcChannels.inboxComposerSet]: { folderId: 'fld_1234', agent: 'plan', model },
   [IpcChannels.inboxGitInfo]: { folderId: 'fld_1234' },
@@ -534,5 +535,55 @@ describe('custom Inbox name validation', () => {
       rejects(channel, { id: 'ses_thread', customTitle })
     }
     rejects(channel, { id: 'invalid', customTitle: 'My task' })
+  })
+})
+
+describe('Inbox project validation', () => {
+  const update = IpcChannels.inboxFoldersUpdate
+  const add = IpcChannels.inboxFoldersAdd
+
+  it('accepts a built-in icon with an optional tint, one emoji, and clearing the icon', () => {
+    for (const icon of [
+      { kind: 'symbol', id: 'folder' },
+      { kind: 'symbol', id: 'rocket', color: 'teal' },
+      { kind: 'emoji', emoji: '🚀' },
+      { kind: 'emoji', emoji: '🛠️' },
+      { kind: 'emoji', emoji: '👩‍💻' },
+      { kind: 'emoji', emoji: '🇩🇪' },
+      { kind: 'emoji', emoji: '1️⃣' },
+      null,
+    ]) expect(() => assertIpcPayload(update, { id: 'fld_1234', icon })).not.toThrow()
+    expect(() => assertIpcPayload(update, { id: 'fld_1234', name: 'Docs' })).not.toThrow()
+    expect(() => assertIpcPayload(add, { kind: 'native', path: '/home/me/app', name: 'App', icon: { kind: 'emoji', emoji: '📦' } })).not.toThrow()
+  })
+
+  it('rejects an unknown icon, a colour that is not on the palette, words, and extra keys', () => {
+    for (const icon of [
+      { kind: 'symbol', id: 'not-an-icon' },
+      { kind: 'symbol', id: 'rocket', color: '#ff0000' },
+      { kind: 'symbol', id: 'rocket', color: 'url(javascript:alert(1))' },
+      { kind: 'symbol', id: 'rocket', extra: true },
+      { kind: 'symbol' },
+      { kind: 'image', data: 'data:image/png;base64,AAAA' },
+      { kind: 'emoji', emoji: 'hello' },
+      { kind: 'emoji', emoji: '🚀🚀' },
+      { kind: 'emoji', emoji: '🚀 ' },
+      { kind: 'emoji', emoji: '' },
+      { kind: 'emoji', emoji: '🚀\n' },
+      { kind: 'emoji', emoji: '<img src=x>' },
+      { kind: 'emoji', emoji: 7 },
+      { kind: 'emoji', emoji: '🚀', extra: true },
+      'rocket',
+      [],
+    ]) rejects(update, { id: 'fld_1234', icon })
+    rejects(add, { kind: 'native', path: '/home/me/app', icon: { kind: 'emoji', emoji: 'abc' } })
+  })
+
+  it('needs a real project id, and a name that is not blank, too long or holding control characters', () => {
+    rejects(update, { id: 'ses_thread', name: 'Docs' })
+    rejects(update, { id: '../fld_1234', name: 'Docs' })
+    rejects(update, { name: 'Docs' })
+    for (const name of ['', '   ', 'x'.repeat(513), 'a\nb', 42, null]) rejects(update, { id: 'fld_1234', name })
+    expect(() => assertIpcPayload(update, { id: 'fld_1234', name: 'x'.repeat(512) })).not.toThrow()
   })
 })

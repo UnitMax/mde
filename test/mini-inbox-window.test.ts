@@ -57,6 +57,22 @@ describe('MiniInboxWindow', () => {
     expect(container.querySelector('[data-testid="mini-inbox-count"]')?.textContent).toBe('3')
   })
 
+  it('draws each group’s project icon in its heading, the plain folder when the project has none', async () => {
+    const icons = (): (string | null | undefined)[] =>
+      Array.from(container.querySelectorAll('[data-testid="mini-inbox-group"]'))
+        .map((group) => group.querySelector('[data-testid="project-icon"]')?.getAttribute('data-icon'))
+    await render()
+    expect(icons()).toEqual(['folder'])
+    await act(async () => root.render(createElement(MiniInboxWindow, {
+      threads, folders: [{ ...folder, icon: { kind: 'symbol', id: 'rocket', color: 'blue' } }], onOpenThread, onRestore,
+    })))
+    expect(icons()).toEqual(['rocket'])
+    await act(async () => root.render(createElement(MiniInboxWindow, {
+      threads, folders: [{ ...folder, icon: { kind: 'emoji', emoji: '🚀' } }], onOpenThread, onRestore,
+    })))
+    expect(container.querySelector('[data-testid="mini-inbox-group"] [data-testid="project-icon"]')?.textContent).toBe('🚀')
+  })
+
   it('excludes parked threads from rows, groups, counts and summary chips', async () => {
     await render([thread('ses_done'), thread('ses_parked', { archived: true, status: 'working', folderId: 'fld_other' })])
     expect(rows()).toHaveLength(1)

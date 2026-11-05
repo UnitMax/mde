@@ -8,6 +8,7 @@ import type {
   OpenCodeTarget,
   InboxThreadStatus
 } from '@shared/types'
+import { normalizeInboxFolderIcon } from '@shared/inbox-folder-icons'
 import { writeJsonAtomic } from '../store/atomic-json'
 
 export const INBOX_FILE = 'inbox.json'
@@ -142,6 +143,8 @@ export function validateInboxFolder(raw: unknown): InboxFolder | null {
   if (!timestamp(record.createdAt) || !timestamp(record.lastUsedAt)) return null
   // Without its record the folder is still a folder; only what says it is a worktree is lost.
   const worktree = validateWorktree(record.worktree)
+  // Only decoration, so a bad one is dropped and the project shows the plain folder picture.
+  const icon = normalizeInboxFolderIcon(record.icon)
   return {
     id: record.id,
     name: record.name,
@@ -149,6 +152,7 @@ export function validateInboxFolder(raw: unknown): InboxFolder | null {
     target,
     createdAt: record.createdAt,
     lastUsedAt: record.lastUsedAt,
+    ...(icon ? { icon } : {}),
     ...(worktree ? { worktree } : {})
   }
 }

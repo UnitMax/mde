@@ -77,6 +77,7 @@ import type {
   InboxSetCustomTitleRequest,
   InboxSetReadRequest,
   InboxThread,
+  InboxUpdateFolderRequest,
   ChatConfigureRequest,
   ChatCreateRequest,
   ChatFormReplyRequest,
@@ -529,8 +530,11 @@ export function registerIpcHandlers(
     return chat.addFolder({
       directory: resolution.path,
       target: req.kind === 'wsl' ? { kind: 'wsl', distro: distro as string } : { kind: 'native' },
+      ...(req.name !== undefined ? { name: req.name } : {}),
+      ...(req.icon ? { icon: req.icon } : {}),
     })
   })
+  handle<InboxUpdateFolderRequest, InboxFolder>(IpcChannels.inboxFoldersUpdate, (req) => chat.updateFolder(req))
   handle<InboxRemoveFolderRequest, void>(IpcChannels.inboxFoldersRemove, (req) => chat.removeFolder(req.id))
   handle<InboxComposerState, InboxComposerState>(IpcChannels.inboxComposerSet, (req) => chat.setComposer(req))
   handle<InboxGitInfoRequest, InboxGitInfo>(IpcChannels.inboxGitInfo, (req) => chat.gitInfo(req))
