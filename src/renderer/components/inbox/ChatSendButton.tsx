@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { ArrowUp, Check, ChevronDown, CornerDownRight, ListEnd, LoaderCircle } from 'lucide-react'
 import type { ChatDelivery } from '@shared/types'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -29,10 +30,32 @@ export interface ChatSendButtonProps {
   backgroundShortcut?: string
   /** The menu has closed; the caret goes back to the text. */
   onMenuClosed?: () => void
+  /**
+   * The text is a slash command, so the button runs it instead of sending: round, with the command's own
+   * picture. A command is not delivered to the agent, so it is never the Steer / Queue button, even while
+   * the agent works.
+   */
+  command?: { name: string; icon: ReactNode }
 }
 
 /** The way out of the prompt box: round when the agent is idle, a Steer / Queue button while it works. */
-export function ChatSendButton({ running, delivery, onDeliveryChange, disabled, sending, onSend, backgroundShortcut, onMenuClosed }: ChatSendButtonProps): JSX.Element {
+export function ChatSendButton({ running, delivery, onDeliveryChange, disabled, sending, onSend, backgroundShortcut, onMenuClosed, command }: ChatSendButtonProps): JSX.Element {
+  if (command) {
+    return (
+      <button
+        type="button"
+        aria-label={`Run /${command.name}`}
+        title={`Run /${command.name} (Enter)`}
+        disabled={disabled}
+        onClick={onSend}
+        data-testid="chat-send"
+        data-command={command.name}
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-accent-fg transition-colors hover:bg-accent-hover disabled:opacity-35"
+      >
+        {command.icon}
+      </button>
+    )
+  }
   const icon = sending ? <LoaderCircle aria-hidden className="h-4 w-4 animate-spin" /> : <ArrowUp aria-hidden className="h-4 w-4" />
   if (!running) {
     return (

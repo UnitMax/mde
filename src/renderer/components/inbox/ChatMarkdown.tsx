@@ -11,9 +11,12 @@ const MARKDOWN_UPDATE_MS = 120
 export const ChatMarkdown = memo(function ChatMarkdown({
   text,
   variant = 'message',
+  label,
 }: {
   text: string
   variant?: 'message' | 'reasoning'
+  /** The accessible name of the text, for Markdown that is neither a message nor reasoning. */
+  label?: string
 }): JSX.Element {
   const editor = useEditor(
     {
@@ -25,7 +28,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
       editorProps: {
         attributes: {
           class: 'markdown-prose chat-markdown',
-          'aria-label': variant === 'reasoning' ? 'Assistant reasoning' : 'Assistant message',
+          'aria-label': label ?? (variant === 'reasoning' ? 'Assistant reasoning' : 'Assistant message'),
         },
       },
       immediatelyRender: true,

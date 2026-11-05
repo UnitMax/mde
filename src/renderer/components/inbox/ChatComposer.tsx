@@ -1,18 +1,21 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Paperclip, PenLine, X, File as FileIcon, Bot, ChevronDown, Hammer, ListChecks, LoaderCircle, Search, Sparkles, Square } from 'lucide-react'
 import { readFileTreeDrop, isFileDrop } from '@/terminal/drop'
 import type { ChatDelivery, ChatDraft, ChatDraftChoice, ChatDraftKey, ChatDraftRequest, ChatAgent, ChatModel, ChatSkill, OpenCodeModelRef } from '@shared/types'
 import { skillTriggerAt } from '@shared/skills'
 import { applySkill, filterSkills } from '@/lib/skills'
+import { applyCommand, filterCommands, parseInvocation, slashTriggerAt, type SlashCommand, type SlashInvocation } from '@/lib/slash-commands'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { CompletionPicker, type CompletionItem } from '@/components/inbox/CompletionPicker'
 import { ContextMeter } from '@/components/inbox/ContextMeter'
 import { ChatInput, type ChatInputHandle } from '@/components/inbox/ChatInput'
 import { ChatSendButton } from '@/components/inbox/ChatSendButton'
+import { SlashCommandIcon } from '@/components/inbox/SlashCommandIcon'
 import { findModel, groupModels, modelKey, modelName, orderAgents, sameModelRef, type ContextUsage } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { cn } from '@/lib/utils'
@@ -146,56 +149,16 @@ export function AgentPicker({
   )
 }
 
-const NO_SKILLS: ChatSkill[] = []
-
-/**
- * The skills that fit what is being typed after a `$`, as a list above the box. It never takes focus
- * (the caret stays in the text), so the box handles the keys and tells the list which row is active.
- */
-function SkillPicker({
-  id,
-  skills,
-  active,
-  onActive,
-  onPick,
-}: {
-  id: string
-  skills: ChatSkill[]
-  active: number
-  onActive: (index: number) => void
-  onPick: (skill: ChatSkill) => void
-}): JSX.Element {
-  useEffect(() => {
-    document.getElementById(`${id}-${active}`)?.scrollIntoView?.({ block: 'nearest' })
-  }, [id, active])
-  return (
-    <div
-      id={id}
-      role="listbox"
-      aria-label="Skills"
-      data-testid="skill-picker"
-      className="absolute inset-x-0 bottom-full z-30 mb-1.5 max-h-64 overflow-y-auto rounded-xl border border-line-strong bg-elevated p-1 shadow-lg shadow-black/30"
-    >
-      {skills.map((skill, index) => (
-        <div
-          key={skill.id}
-          id={`${id}-${index}`}
-          role="option"
-          aria-selected={index === active}
-          data-testid={`skill-option-${skill.id}`}
-          // Keeps the caret in the text: a click on the list must not move focus out of the box.
-          onMouseDown={(event) => event.preventDefault()}
-          onMouseMove={() => { if (index !== active) onActive(index) }}
-          onClick={() => onPick(skill)}
-          className={cn('flex min-w-0 cursor-pointer items-baseline gap-2 rounded-lg px-2.5 py-1.5 text-[13px]', index === active ? 'bg-active' : 'hover:bg-hover')}
-        >
-          <span className="shrink-0 font-medium text-fg">${skill.id}</span>
-          {skill.description && <span className="min-w-0 truncate text-[12px] text-fg-muted">{skill.description}</span>}
-        </div>
-      ))}
-    </div>
-  )
+/** Names the word at the caret that a list would open for, as `dismissed` remembers a list that was closed. */
+function completionKey(text: string, caret: number, hasCommands: boolean): string | null {
+  if (hasCommands && slashTriggerAt(text, caret)) return 'command'
+  const skill = skillTriggerAt(text, caret)
+  return skill ? `skill:${skill.start}` : null
 }
+
+const NO_SKILLS: ChatSkill[] = []
+const NO_COMMANDS: readonly SlashCommand[] = []
+const NO_ITEMS: CompletionItem[] = []
 
 export interface ChatComposerProps {
   draftKey?: ChatDraftKey
@@ -246,6 +209,13 @@ export interface ChatComposerProps {
   footer?: ReactNode
   /** More pills for the toolbar, after the model and agent pickers; the MCP servers go here. */
   extraPickers?: ReactNode
+  /**
+   * The slash commands the box offers: a message that starts with `/` and one of their names is that
+   * command, not a message to send. The new-thread page has none, because a command acts on a thread.
+   */
+  commands?: readonly SlashCommand[]
+  /** Escape was pressed in the box and nothing in the box used it; return true when the page did (it closed something). */
+  onEscape?: () => boolean
 }
 
 /** The prompt box with model and agent pickers and a round send (or stop) button. */
@@ -273,6 +243,8 @@ export function ChatComposer({
   sendBlocked = false,
   footer,
   extraPickers,
+  commands = NO_COMMANDS,
+  onEscape,
 }: ChatComposerProps): JSX.Element {
   const [text, setText] = useState('')
   const [draft, setDraft] = useState<ChatDraft>({ text: '', revision: 0, attachments: [] })
@@ -368,22 +340,38 @@ export function ChatComposer({
   // Saving as a draft needs no agent or model, since nothing is started: only something to keep.
   const canSave = Boolean(onSaveDraft) && !disabled && !sending && !adding && loaded && (text.trim().length > 0 || draft.attachments.length > 0)
 
-  // Skills: a `$word` at the caret offers the skills that fit it. Where the caret is only counts for
-  // the text it was measured in, so text put there from outside (a loaded draft) never opens the list.
+  // Completion: a `/word` at the very start of the message offers the commands that fit it, and a `$word`
+  // at the caret the skills that fit it. Where the caret is only counts for the text it was measured in,
+  // so text put there from outside (a loaded draft) never opens a list.
   const listId = useId()
   const skills = options?.status === 'ready' ? options.value.skills : NO_SKILLS
   const [cursor, setCursor] = useState<{ text: string; at: number } | null>(null)
-  const [activeSkill, setActiveSkill] = useState(0)
-  // The `$` of a list the user closed with Escape; it stays closed until that word is gone.
-  const [dismissed, setDismissed] = useState<number | null>(null)
-  const trigger = useMemo(
-    () => (skills.length > 0 && cursor?.text === text ? skillTriggerAt(text, cursor.at) : null),
-    [skills, cursor, text],
+  const [activeItem, setActiveItem] = useState(0)
+  // The word of a list the user closed with Escape; it stays closed until that word is gone.
+  const [dismissed, setDismissed] = useState<string | null>(null)
+  const slashTrigger = useMemo(
+    () => (commands.length > 0 && cursor?.text === text ? slashTriggerAt(text, cursor.at) : null),
+    [commands, cursor, text],
   )
-  useEffect(() => { if (!trigger) setDismissed(null) }, [trigger])
+  const trigger = useMemo(
+    () => (!slashTrigger && skills.length > 0 && cursor?.text === text ? skillTriggerAt(text, cursor.at) : null),
+    [slashTrigger, skills, cursor, text],
+  )
+  const completionWord = slashTrigger ? 'command' : trigger ? `skill:${trigger.start}` : null
+  useEffect(() => { if (!completionWord) setDismissed(null) }, [completionWord])
+  const commandMatches = useMemo(() => (slashTrigger ? filterCommands(commands, slashTrigger.query) : NO_COMMANDS), [commands, slashTrigger])
   const matches = useMemo(() => (trigger ? filterSkills(skills, trigger.query) : NO_SKILLS), [skills, trigger])
-  const pickerOpen = Boolean(trigger) && matches.length > 0 && trigger?.start !== dismissed && !disabled && !sending && loaded
-  const activeIndex = Math.min(activeSkill, Math.max(matches.length - 1, 0))
+  const listLength = slashTrigger ? commandMatches.length : matches.length
+  const pickerOpen = completionWord !== null && listLength > 0 && completionWord !== dismissed && !disabled && !sending && loaded
+  const activeIndex = Math.min(activeItem, Math.max(listLength - 1, 0))
+  // The message as a command, when it starts with the name of one.
+  const invocation = useMemo(() => parseInvocation(commands, text), [commands, text])
+  const commandToken = useCallback((value: string) => {
+    const found = parseInvocation(commands, value)
+    return found ? { from: 0, to: found.nameEnd } : null
+  }, [commands])
+  const canRun = !disabled && !sending && !adding && loaded
+  const missingArgument = Boolean(invocation?.command.argument?.required && !invocation.args)
 
   const persist = (next: string): void => {
     if (draftKey) void mutate({ key: draftKey, action: 'text', text: next }).catch((reason) => setError(ipcErrorMessage(reason, 'Could not save the draft.')))
@@ -408,13 +396,60 @@ export function ChatComposer({
     // A new object each time, so the box renders and puts the caret in place even when the text is unchanged.
     setCursor({ text: next.text, at: next.caret })
   }
+  const completeCommand = (command: SlashCommand): void => {
+    if (!slashTrigger) return
+    resetHistory()
+    const next = applyCommand(text, slashTrigger, command)
+    pendingCaret.current = next.caret
+    setText(next.text)
+    persist(next.text)
+    setCursor({ text: next.text, at: next.caret })
+  }
+  // The box empties at once and the command works on its own: the person can go on typing while it does.
+  // A command that fails gives the text back, with the reason under it.
+  const runCommand = async ({ command, args }: SlashInvocation): Promise<void> => {
+    if (!canRun) return
+    if (command.argument?.required && !args) {
+      setError(`Add ${command.argument.hint} after /${command.name}.`)
+      return
+    }
+    resetHistory()
+    setError(null)
+    const written = text
+    setText('')
+    setCursor({ text: '', at: 0 })
+    persist('')
+    try {
+      await command.run(args)
+    } catch (reason) {
+      setText(written)
+      setCursor({ text: written, at: written.length })
+      persist(written)
+      setError(ipcErrorMessage(reason, `Could not run /${command.name}.`))
+    } finally {
+      setFocusAt(0)
+    }
+  }
+  // Enter, a click and Tab on a row of the open list. A command that takes an argument is written into the
+  // box to be finished; one that takes nothing runs, unless it is only being completed (Tab).
+  const choose = (index: number, completeOnly = false): void => {
+    if (!slashTrigger) {
+      const skill = matches[index]
+      if (skill) pickSkill(skill)
+      return
+    }
+    const command = commandMatches[index]
+    if (!command) return
+    if (command.argument || completeOnly) completeCommand(command)
+    else void runCommand({ command, args: '', nameEnd: slashTrigger.end })
+  }
 
   const recallText = (next: string): void => {
     pendingCaret.current = next.length
     setText(next)
     setCursor({ text: next, at: next.length })
-    // A recalled message ending in $word is ready to edit or send, without opening the skill list.
-    setDismissed(skillTriggerAt(next, next.length)?.start ?? null)
+    // A recalled message that ends in a $word, or is one slash word, is ready to edit or send, without opening a list.
+    setDismissed(completionKey(next, next.length, commands.length > 0))
     persist(next)
   }
   const recallMessage = (event: KeyboardEvent): void => {
@@ -483,25 +518,30 @@ export function ChatComposer({
       return
     }
     // Plain Enter chooses from the open list instead of sending half a message.
-    if (pickerOpen && trigger) {
+    if (pickerOpen && completionWord) {
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault()
-        setActiveSkill((activeIndex + (event.key === 'ArrowDown' ? 1 : -1) + matches.length) % matches.length)
+        setActiveItem((activeIndex + (event.key === 'ArrowDown' ? 1 : -1) + listLength) % listLength)
         return
       }
       if ((event.key === 'Enter' && !event.shiftKey) || (event.key === 'Tab' && !event.shiftKey)) {
         event.preventDefault()
-        const skill = matches[activeIndex]
-        if (skill) pickSkill(skill)
+        choose(activeIndex, event.key === 'Tab')
         return
       }
       if (event.key === 'Escape') {
         // Closing the list is all Escape does here; it must not also close whatever else Escape closes.
         event.preventDefault()
         event.stopPropagation()
-        setDismissed(trigger.start)
+        setDismissed(completionWord)
         return
       }
+    }
+    // With no list to close, Escape belongs to the page: it closes the side question shown above the box.
+    if (event.key === 'Escape' && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && onEscape?.()) {
+      event.preventDefault()
+      event.stopPropagation()
+      return
     }
     if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
       recallMessage(event)
@@ -514,9 +554,27 @@ export function ChatComposer({
     }
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
-      void send()
+      if (invocation) void runCommand(invocation)
+      else void send()
     }
   }
+
+  const items: CompletionItem[] = !pickerOpen ? NO_ITEMS
+    : slashTrigger
+      ? commandMatches.map((command) => ({
+        key: command.name,
+        label: `/${command.name}`,
+        hint: command.argument ? (command.argument.required ? command.argument.hint : `[${command.argument.hint}]`) : undefined,
+        description: command.description,
+        icon: <SlashCommandIcon name={command.name} className="h-3.5 w-3.5" />,
+        testId: `slash-option-${command.name}`,
+      }))
+      : matches.map((skill) => ({
+        key: skill.id,
+        label: `$${skill.id}`,
+        description: skill.description,
+        testId: `skill-option-${skill.id}`,
+      }))
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -545,7 +603,18 @@ export function ChatComposer({
         style={dragging ? { outline: '2px solid var(--color-accent)' } : undefined}
         className="@container relative rounded-2xl border border-line-strong bg-elevated shadow-lg shadow-black/20 focus-within:border-accent/60"
       >
-        {pickerOpen && <SkillPicker id={listId} skills={matches} active={activeIndex} onActive={setActiveSkill} onPick={pickSkill} />}
+        {pickerOpen && (
+          <CompletionPicker
+            id={listId}
+            label={slashTrigger ? 'Commands' : 'Skills'}
+            testId={slashTrigger ? 'slash-picker' : 'skill-picker'}
+            heading={slashTrigger ? 'Commands' : undefined}
+            items={items}
+            active={activeIndex}
+            onActive={setActiveItem}
+            onPick={(index) => choose(index)}
+          />
+        )}
         <input ref={inputRef} type="file" multiple hidden aria-label="Choose attachments" onChange={(event) => { void addFiles(Array.from(event.target.files ?? [])); event.target.value = '' }} />
         {draft.attachments.length > 0 && <div className="flex flex-wrap gap-2 px-4 pt-3" aria-label="Attachments">
           {draft.attachments.map((file) => <div key={file.id} className="relative flex max-w-48 items-center gap-2 rounded-lg border border-line p-2 text-xs" title={`${file.name} (${file.size.toLocaleString()} bytes)`}>
@@ -566,11 +635,12 @@ export function ChatComposer({
             resetHistory()
             setText(next)
             setCursor({ text: next, at: caret })
-            setActiveSkill(0)
+            setActiveItem(0)
             persist(next)
           }}
           // Moving the caret with the keys or the mouse changes which word it is in.
           onSelect={(next, caret) => setCursor({ text: next, at: caret })}
+          commandToken={commandToken}
           controls={pickerOpen ? listId : undefined}
           activeDescendant={pickerOpen ? `${listId}-${activeIndex}` : undefined}
           onPaste={(event) => {
@@ -633,10 +703,11 @@ export function ChatComposer({
               running={running}
               delivery={delivery}
               onDeliveryChange={setDelivery}
-              disabled={!canSend}
+              disabled={invocation ? !canRun || missingArgument : !canSend}
               sending={sending}
               backgroundShortcut={allowBackgroundSend ? `${mac ? 'Cmd' : 'Ctrl'}+Enter` : undefined}
-              onSend={() => void send()}
+              command={invocation ? { name: invocation.command.name, icon: <SlashCommandIcon name={invocation.command.name} className="h-4 w-4" /> } : undefined}
+              onSend={() => void (invocation ? runCommand(invocation) : send())}
               onMenuClosed={() => messageRef.current?.focus()}
             />
           )}

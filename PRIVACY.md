@@ -69,6 +69,12 @@ about a minute. When you send a message that names a skill, MDE tells the servic
 service gives the skill's text to the model, as OpenCode does in a terminal. MDE stores nothing more
 for skills, and a skill the model loads is shown from the conversation the service returns.
 
+The message box's `/btw` side question sends the question to the same local service, which answers it
+from the conversation as it stands and may send that conversation and the question to the model provider
+you chose, as it does for any message. It does not add either to the conversation. MDE keeps the question
+and the answer in memory only, for each thread until you dismiss them or the app closes, and never
+writes them to disk.
+
 The Inbox's MCP list asks the same local service which MCP servers OpenCode has for the folder or
 thread and how each stands: name, title, connected, failed or needs a sign-in, and a short error with
 credentials and paths removed. MDE drops everything else in the answer (commands, URLs, headers and

@@ -7,7 +7,8 @@ export const SKILL_MATCH_LIMIT = 50
 /** A description only counts for a query long enough to mean something, and only where a word starts. */
 const DESCRIPTION_MIN_QUERY = 3
 
-function describes(description: string | undefined, needle: string): boolean {
+/** Whether a word of the description starts with the needle; short needles match nothing. */
+export function describes(description: string | undefined, needle: string): boolean {
   if (!description || needle.length < DESCRIPTION_MIN_QUERY) return false
   const text = description.toLowerCase()
   for (let at = text.indexOf(needle); at >= 0; at = text.indexOf(needle, at + 1)) {

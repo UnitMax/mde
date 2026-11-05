@@ -542,6 +542,53 @@ come with it, without OpenCode's wrapper and its note about the skill's director
 found says so on that row. A skill activated by other means appears as a note whose details are the
 skill's text, and the `session.skill.activated` event refreshes the conversation.
 
+**Slash commands.** In a conversation's message box, a message that starts with `/` and the name of a
+command is that command, not a message for the agent. (The new-thread page has no commands, because a
+command acts on a thread, so a slash there is plain text.) Typing a `/` as the first character opens a
+list of the commands that fit (`CompletionPicker`, the same list the `$` skills use; the rules are in
+`lib/slash-commands.ts`): Up and Down move, Tab writes `/name ` over the word (without the space for a
+command that takes nothing), Enter does the same, or runs a command that takes nothing more, Escape closes
+the list until that word is gone, and a click does what Enter does without moving the caret. Names match
+by prefix, then by containing the text, then by a word of the description, and an alias counts as the
+name. Once the message is a command its name is marked in the text (a CodeMirror mark in `ChatInput`),
+and the send button becomes the command's own round button ("Run /btw") instead of Send, or Steer /
+Queue while the agent works: a command is not delivered to the agent. Enter runs it with what follows
+the name (trimmed, over several lines if need be): the box empties at once and the command works on its
+own, so the person can go on typing; a command that fails gives the text back with the reason under
+the box, and one whose required argument is missing says what to add and runs nothing. The name is read
+in any case, as a whole word at the very start. Everything else that starts with a slash, such as
+`/etc/hosts is wrong` or `/btwx`, is an ordinary message and is sent as written. The commands are MDE's
+own and are defined in one place, `slashCommands()` in `lib/slash-commands.ts`: a name, aliases, a
+description, an optional argument (a hint and whether it is required) and `run`. A new command is one
+more entry there, with whatever it needs from the thread added to `SlashActions`. The entry points
+(typing `/`, the list keys, Escape) are in the keyboard shortcut list.
+
+**Side questions (`/btw`).** `/btw <question>` asks something about the conversation without becoming
+part of it, as OpenCode's own `/btw` does: the answer is written from the conversation as it stands, no
+message is added to the thread, and the agent is neither interrupted nor told, so it also works while the
+agent is busy, which is what it is for. The main process (`InboxChatService.aside`, the `chat:aside`
+channel) sends OpenCode's `POST /api/session/{sessionID}/generate`, which generates text from the session's
+context without writing to its history, with OpenCode's own preamble in front of the question ("a quick
+side question about the conversation so far; answer directly and concisely in markdown; do not call any
+tools and do not take any actions"). The model that answers is the one set on the session, not the
+service's default (a session whose model is unavailable fails with that model's own error). A model
+call over the whole conversation takes longer than a read of the service, so this request waits up to
+three minutes instead of thirty seconds. A service without the route says to update OpenCode, and an
+empty answer says that OpenCode gave none.
+
+The question and its answer are held per thread in `store/inbox-aside.ts` (memory only: nothing is
+stored, and they are gone when the app is closed). A thread shows one side question; asking another
+replaces it, and an answer that arrives for a question that has since been replaced or dismissed is
+dropped. It is shown as a card of its own above the message box (`ChatAside`), not in the conversation:
+a `btw` mark and the question (two lines, the rest in the tooltip), a thinking state while the answer is on
+its way, then the answer as Markdown with the same renderer as the agent's messages (it scrolls when it is
+long), a Copy button and a dismiss button, and a line saying that it is not added to the conversation. A
+failure shows the reason and a Retry that asks the same question again. The card stays until it is
+dismissed or replaced, and an answer that arrives while another thread is open is there when the thread is.
+Escape dismisses it (the first Escape only closes an open command list; from inside the card, the caret
+goes back to the box), and a conversation that is following its end stays at its end when the card
+appears.
+
 **File changes.** The `edit` and `write` tools are drawn as diffs instead of raw JSON, one card per
 file (`ChatFileChange`): a header with the verb ("Edited", "Created", "Overwrote"), the path
 relative to the thread's folder, and `+added −removed` counts, then the lines with a line-number

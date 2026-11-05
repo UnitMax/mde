@@ -554,6 +554,17 @@ export function parsePromptAnswer(value: unknown, thumbnail?: (bytes: Buffer) =>
   return parseInboxItem(record(value)?.data, thumbnail)
 }
 
+/**
+ * The text `session.generate` wrote: the answer to a side question. It is trimmed and, like any text from
+ * the service, stripped of control characters and cut at the chat text limit. An answer with no `text` is
+ * not one, and an empty text is returned empty so that the caller can say so.
+ */
+export function parseGeneratedText(value: unknown): string {
+  const generated = record(data(value, 'an answer'))
+  if (!generated || typeof generated.text !== 'string') throw new ServiceShapeError('an answer')
+  return body(generated.text, CHAT_TEXT_LIMIT).text.trim()
+}
+
 /** The session inbox: what the service holds for the agent, oldest first. */
 export function parsePendingMessages(value: unknown, thumbnail?: (bytes: Buffer) => string | undefined): ChatPendingMessage[] {
   const response = record(value)

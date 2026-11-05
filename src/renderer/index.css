@@ -634,8 +634,14 @@
   }
 }
 
+/* The answer to a side question (ChatAside) settles in the same way. */
+.chat-aside {
+  animation: mde-pending-in 180ms ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .chat-pending {
+  .chat-pending,
+  .chat-aside {
     animation: none;
   }
 }

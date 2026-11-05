@@ -617,6 +617,20 @@ export interface ChatSetDeliveryRequest {
   delivery: ChatDelivery
 }
 
+/**
+ * A side question about a thread: OpenCode answers it from the conversation so far, and neither the
+ * question nor the answer becomes part of the conversation. It can be asked while the agent works.
+ */
+export interface ChatAsideRequest {
+  threadId: string
+  question: string
+}
+
+export interface ChatAsideAnswer {
+  /** The answer, in Markdown. */
+  text: string
+}
+
 export interface ChatPermissionReplyRequest {
   threadId: string
   requestId: string

@@ -62,6 +62,8 @@ import type {
   ChatPendingMessage,
   ChatSendRequest,
   ChatSetDeliveryRequest,
+  ChatAsideRequest,
+  ChatAsideAnswer,
   ChatThreadRequest,
   ChatDraft,
   ChatDraftRequest,
@@ -152,6 +154,7 @@ export const IpcChannels = {
   chatSend: 'chat:send',
   chatDiscardPending: 'chat:discard-pending',
   chatSetDelivery: 'chat:set-delivery',
+  chatAside: 'chat:aside',
   chatMcp: 'chat:mcp',
   chatMcpSet: 'chat:mcp-set',
   chatDraft: 'chat:draft',
@@ -516,6 +519,11 @@ export interface RendererApi {
     discardPending(req: ChatDiscardPendingRequest): Promise<void>
     /** Changes a held message between steering (read at the agent's next step) and queued (sent when it is done). */
     setDelivery(req: ChatSetDeliveryRequest): Promise<void>
+    /**
+     * Asks a side question about a thread (the `/btw` command). The answer comes from the conversation as it
+     * stands and is not added to it; the agent is neither interrupted nor told.
+     */
+    aside(req: ChatAsideRequest): Promise<ChatAsideAnswer>
     /** The MCP servers OpenCode has for a folder or thread, with how each stands. Never cached. */
     mcp(req: ChatMcpRequest): Promise<ChatMcpState>
     /** Connects or disconnects one MCP server for the running OpenCode; its configuration is not changed. */

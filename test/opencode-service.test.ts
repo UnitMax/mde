@@ -254,6 +254,15 @@ describe('OpenCode service client', () => {
     expect(() => serviceUrl('http://127.0.0.1:1', 'session.inbox.list', { params: { sessionID: 'ses_a', inboxID: 'msg_1' } })).toThrow()
   })
 
+  it('reaches the side-question route only with a checked session ID', () => {
+    expect(SERVICE_OPERATIONS['session.generate']).toEqual({ method: 'POST', path: '/api/session/{sessionID}/generate' })
+    expect(serviceUrl('http://127.0.0.1:1', 'session.generate', { params: { sessionID: 'ses_a' } })).toBe('http://127.0.0.1:1/api/session/ses_a/generate')
+    for (const sessionID of ['../x', 'msg_1', 'ses_', 'ses_a/b', '']) {
+      expect(() => serviceUrl('http://127.0.0.1:1', 'session.generate', { params: { sessionID } })).toThrow('Invalid OpenCode sessionID.')
+    }
+    expect(() => serviceUrl('http://127.0.0.1:1', 'session.generate', { params: { sessionID: 'ses_a', inboxID: 'msg_1' } })).toThrow()
+  })
+
   it('reaches the MCP routes only with a checked, encoded server name', () => {
     const origin = 'http://127.0.0.1:1'
     expect(SERVICE_OPERATIONS['mcp.list']).toEqual({ method: 'GET', path: '/api/mcp' })
@@ -347,6 +356,15 @@ describe('OpenCode service client', () => {
     const url = await serve(() => {})
     const client = new OpenCodeServiceClient({ discover: async () => ({ url, password: 'p' }), executable: () => 'opencode', timeoutMs: 50 })
     await expect(client.request(wsl, 'agent.list')).rejects.toThrow('did not answer in time')
+  })
+
+  it('lets one request wait longer than the client\'s usual limit, as a model call must, and no other', async () => {
+    const url = await serve((_request, response) => {
+      setTimeout(() => response.writeHead(200, { 'content-type': 'application/json' }).end('{"data":{"text":"late"}}'), 150)
+    })
+    const client = new OpenCodeServiceClient({ discover: async () => ({ url, password: 'p' }), executable: () => 'opencode', timeoutMs: 50 })
+    await expect(client.request(wsl, 'session.generate', { params: { sessionID: 'ses_a' }, body: { prompt: 'x' }, timeoutMs: 2_000 })).resolves.toEqual({ data: { text: 'late' } })
+    await expect(client.request(wsl, 'session.generate', { params: { sessionID: 'ses_a' }, body: { prompt: 'x' } })).rejects.toThrow('did not answer in time')
   })
 
   it('does not cache a failed discovery', async () => {

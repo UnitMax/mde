@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { AlertTriangle, LoaderCircle, RefreshCw } from 'lucide-react'
 import type { ChatMessage, InboxThread, OpenCodeModelRef } from '@shared/types'
+import { ChatAside } from '@/components/inbox/ChatAside'
 import { ChatComposer } from '@/components/inbox/ChatComposer'
 import { McpChip } from '@/components/inbox/McpChip'
 import { McpServerNamesContext } from '@/components/inbox/mcp-context'
@@ -18,6 +19,8 @@ import { cn } from '@/lib/utils'
 import { contextUsage, findModel, hideReverted, initialChoice, mergeLive, revertedMessageCount, turnStats } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { mcpKey } from '@/lib/mcp'
+import { slashCommands } from '@/lib/slash-commands'
+import { useInboxAside } from '@/store/inbox-aside'
 import { optionsKey, useInboxChat, type ChatThreadState } from '@/store/inbox-chat'
 import { useInboxMcp, type McpPlace } from '@/store/inbox-mcp'
 import { codeViewerFontFamily, getTerminalSettings, subscribeTerminalSettings } from '@/terminal/terminal-settings'
@@ -61,7 +64,11 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const clearDraftReload = useInboxChat((store) => store.clearDraftReload)
   const replyPermission = useInboxChat((store) => store.replyPermission)
   const replyForm = useInboxChat((store) => store.replyForm)
+  const aside = useInboxAside((store) => store.asides[thread.id])
+  const askAside = useInboxAside((store) => store.ask)
+  const dismissAside = useInboxAside((store) => store.dismiss)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const composerSlot = useRef<HTMLDivElement>(null)
   const stickRef = useRef(true)
   // Whether the view is scrolled up from the newest message, which is when the way back is offered.
   const [away, setAway] = useState(false)
@@ -187,6 +194,21 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
     scroller.scrollTo({ top: scroller.scrollHeight, behavior: scrollBehavior() })
   }, [])
 
+  // The side question takes room from the conversation, so a conversation that is following its end keeps doing so.
+  const asideId = aside?.id
+  const asideStatus = aside?.status
+  useLayoutEffect(() => {
+    const element = scrollRef.current
+    if (element && stickRef.current) element.scrollTop = element.scrollHeight
+  }, [asideId, asideStatus])
+  const commands = useMemo(() => slashCommands({ ask: (question) => askAside(thread.id, question) }), [askAside, thread.id])
+  // Closed from inside itself (Escape, a button reached by keyboard), the caret goes back to the box instead of nowhere.
+  const closeAside = useCallback(() => {
+    const inside = document.activeElement?.closest('[data-testid="chat-aside"]') != null
+    dismissAside(thread.id)
+    if (inside) requestAnimationFrame(() => composerSlot.current?.querySelector<HTMLElement>('[data-testid="chat-input"] .cm-content')?.focus())
+  }, [dismissAside, thread.id])
+
   const running = state?.running ?? thread.status === 'working'
   // The MCP servers of the folder the thread runs in; the chip in the composer keeps this list current.
   const mcpPlace = useMemo<McpPlace>(
@@ -309,7 +331,8 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
       <ChatTimeline entries={prompts} scrollRef={scrollRef} onJump={jumpToPrompt} />
       {away && <ChatScrollToBottom onClick={scrollToBottom} />}
       </div>
-      <div className={cn('mx-auto w-full max-w-3xl shrink-0 px-6 pb-5 pt-2', railGutter)}>
+      <div ref={composerSlot} className={cn('mx-auto w-full max-w-3xl shrink-0 px-6 pb-5 pt-2', railGutter)}>
+        {aside && <ChatAside aside={aside} onDismiss={closeAside} onRetry={() => void askAside(thread.id, aside.question)} />}
         <ChatComposer
           key={thread.id}
           draftKey={`thread:${thread.id}`}
@@ -324,6 +347,12 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
           onRetryOptions={() => void loadOptions({ threadId: thread.id }, true)}
           running={running}
           context={context}
+          commands={commands}
+          onEscape={() => {
+            if (!aside) return false
+            closeAside()
+            return true
+          }}
           extraPickers={<McpChip place={mcpPlace} running={running} messages={shown} complete={!state?.older} />}
           onStop={() => void interrupt(thread.id)}
           onSend={async (text, attachments) => {

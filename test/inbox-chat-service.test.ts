@@ -4,11 +4,11 @@ import { join } from 'node:path'
 import { InboxDraftStore } from '../src/main/inbox/drafts'
 import { describe, expect, it, vi } from 'vitest'
 import type { ChatEvent } from '../src/shared/types'
-import { InboxChatService, type InboxChatDependencies } from '../src/main/inbox/chat'
+import { ASIDE_PREAMBLE, ASIDE_TIMEOUT_MS, InboxChatService, type InboxChatDependencies } from '../src/main/inbox/chat'
 import { InboxRecorder, isInboxThreadUnread } from '../src/main/inbox/recorder'
 import { InboxStore } from '../src/main/inbox/store'
 import type { ServiceOperation, ServiceRequest } from '../src/main/opencode/service/client'
-import { OpenCodeServiceError } from '../src/main/opencode/service/client'
+import { OpenCodeServiceError, SERVICE_REQUEST_TIMEOUT_MS } from '../src/main/opencode/service/client'
 
 const wsl = { kind: 'wsl' as const, distro: 'Ubuntu-24.04' }
 const model = { id: 'model-1', providerId: 'provider-1' }
@@ -849,6 +849,75 @@ describe('Inbox chat service', () => {
       await down.service.create({ folderId: down.folder.id, text: 'Hi', agent: 'build', model })
       await expect(down.service.setDelivery({ threadId: 'ses_new', messageId: 'msg_p1', delivery: 'queue' })).rejects.toThrow('Session not found')
       down.service.stop()
+    })
+
+    describe('side questions', () => {
+      it('asks the session for text with the question behind OpenCode\'s side-question preamble, and returns the answer trimmed', async () => {
+        const { service, folder, calls } = setup({
+          'session.create': { data: { id: 'ses_new' } },
+          'session.generate': { data: { text: '\n  **SQLite**, because it needs no server.  \n' } },
+        })
+        await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+        calls.length = 0
+        await expect(service.aside({ threadId: 'ses_new', question: '  Why SQLite?\nAnd the index?  ' })).resolves.toEqual({ text: '**SQLite**, because it needs no server.' })
+        expect(calls).toEqual([{
+          operation: 'session.generate',
+          request: {
+            params: { sessionID: 'ses_new' },
+            body: { prompt: `${ASIDE_PREAMBLE}\nWhy SQLite?\nAnd the index?` },
+            timeoutMs: ASIDE_TIMEOUT_MS,
+          },
+        }])
+        // The question never touches the conversation: no prompt, no message, no interrupt.
+        expect(calls.map((call) => call.operation)).toEqual(['session.generate'])
+        service.stop()
+      })
+
+      it('tells the model not to use tools or act, and gives it more time than a read of the service', () => {
+        expect(ASIDE_PREAMBLE).toMatch(/side question/)
+        expect(ASIDE_PREAMBLE).toMatch(/Do not call any tools and do not take any actions\./)
+        expect(ASIDE_TIMEOUT_MS).toBeGreaterThan(SERVICE_REQUEST_TIMEOUT_MS)
+      })
+
+      it('refuses an empty question, a thread the Inbox does not hold, and every question when the Inbox is off, without asking the service', async () => {
+        const { service, folder, calls, disable } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'session.generate': { data: { text: 'x' } } })
+        await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+        calls.length = 0
+        await expect(service.aside({ threadId: 'ses_new', question: ' \n ' })).rejects.toThrow('Ask a question.')
+        await expect(service.aside({ threadId: 'ses_unknown', question: 'Why?' })).rejects.toThrow()
+        disable()
+        await expect(service.aside({ threadId: 'ses_new', question: 'Why?' })).rejects.toThrow()
+        expect(calls).toEqual([])
+        service.stop()
+      })
+
+      it('says so when the model answers with nothing, and when the answer is not one', async () => {
+        const empty = setup({ 'session.create': { data: { id: 'ses_new' } }, 'session.generate': { data: { text: ' \n ' } } })
+        await empty.service.create({ folderId: empty.folder.id, text: 'Hi', agent: 'build', model })
+        await expect(empty.service.aside({ threadId: 'ses_new', question: 'Why?' })).rejects.toThrow('OpenCode gave no answer')
+        empty.service.stop()
+        for (const answer of [null, {}, { data: null }, { data: { text: 7 } }, { data: [] }]) {
+          const odd = setup({ 'session.create': { data: { id: 'ses_new' } }, 'session.generate': answer })
+          await odd.service.create({ folderId: odd.folder.id, text: 'Hi', agent: 'build', model })
+          await expect(odd.service.aside({ threadId: 'ses_new', question: 'Why?' })).rejects.toThrow('MDE does not understand')
+          odd.service.stop()
+        }
+      })
+
+      it('says to update OpenCode when the service has no such route, and passes on any other refusal as it is', async () => {
+        const old = setup({ 'session.create': { data: { id: 'ses_new' } }, 'session.generate': new OpenCodeServiceError('OpenCode answered with status 404.', 404) })
+        await old.service.create({ folderId: old.folder.id, text: 'Hi', agent: 'build', model })
+        await expect(old.service.aside({ threadId: 'ses_new', question: 'Why?' })).rejects.toThrow('Update OpenCode and try again')
+        old.service.stop()
+        const gone = setup({ 'session.create': { data: { id: 'ses_new' } }, 'session.generate': new OpenCodeServiceError('Session not found: ses_new', 404, 'SessionNotFoundError') })
+        await gone.service.create({ folderId: gone.folder.id, text: 'Hi', agent: 'build', model })
+        await expect(gone.service.aside({ threadId: 'ses_new', question: 'Why?' })).rejects.toThrow('Session not found')
+        gone.service.stop()
+        const down = setup({ 'session.create': { data: { id: 'ses_new' } }, 'session.generate': new OpenCodeServiceError('No model is available.', 503, 'ServiceUnavailableError') })
+        await down.service.create({ folderId: down.folder.id, text: 'Hi', agent: 'build', model })
+        await expect(down.service.aside({ threadId: 'ses_new', question: 'Why?' })).rejects.toThrow('No model is available.')
+        down.service.stop()
+      })
     })
 
     it('passes on why the service would not take a message back', async () => {

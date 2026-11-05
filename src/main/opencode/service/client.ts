@@ -20,6 +20,9 @@ export const SERVICE_OPERATIONS = {
   'session.inbox.cancel': { method: 'DELETE', path: '/api/session/{sessionID}/inbox/{inboxID}' },
   'session.inbox.update': { method: 'PATCH', path: '/api/session/{sessionID}/inbox/{inboxID}' },
   'session.interrupt': { method: 'POST', path: '/api/session/{sessionID}/interrupt' },
+  // One-off text from the session's context. It reads the conversation and writes nothing to it, so it is
+  // the answer to a side question (`/btw`); it can run while the agent works.
+  'session.generate': { method: 'POST', path: '/api/session/{sessionID}/generate' },
   'session.revert.stage': { method: 'POST', path: '/api/session/{sessionID}/revert/stage' },
   'session.revert.clear': { method: 'DELETE', path: '/api/session/{sessionID}/revert' },
   'session.fork': { method: 'POST', path: '/api/session/{sessionID}/fork' },
@@ -61,6 +64,8 @@ export interface ServiceRequest {
   params?: Record<string, string>
   query?: Record<string, string>
   body?: unknown
+  /** How long to wait for the answer, for a request that makes the service call a model; the default is for quick reads. */
+  timeoutMs?: number
 }
 
 /** A non-2xx answer from the service; `message` is safe to show. */
@@ -229,7 +234,7 @@ export class OpenCodeServiceClient {
       },
       body,
       redirect: 'error',
-      signal: AbortSignal.timeout(this.options.timeoutMs ?? SERVICE_REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(request.timeoutMs ?? this.options.timeoutMs ?? SERVICE_REQUEST_TIMEOUT_MS),
     })
     const text = await readLimitedText(response, this.options.maxResponseBytes ?? ((operation === 'session.message.list' || operation === 'session.prompt' || operation === 'session.inbox.list') ? 32 * 1024 * 1024 : SERVICE_MAX_RESPONSE_BYTES))
     if (!response.ok) {

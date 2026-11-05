@@ -174,7 +174,16 @@ the validated `chat:*` channels.
   `steer`, `queue`, and sends `PATCH /api/session/{sessionID}/inbox/{inboxID}` with the body
   `{ delivery }`; nothing else can be put in the body. `chat:send` returns the message as the service
   accepted it. Its payload may carry a `delivery` from the same fixed set (anything else is refused),
-  which is added to the prompt body as the one extra field `delivery`; left out, nothing is sent. The `chat:fork` channel accepts only a recorded thread ID and an optional message ID
+  which is added to the prompt body as the one extra field `delivery`; left out, nothing is sent. The
+  `chat:aside` channel (the `/btw` side question) accepts only a recorded thread ID and a `question` of
+  ordinary prompt text: at most 100,000 characters, no control characters other than tab and line breaks,
+  and not blank; any other field is refused. The main process, not the renderer, builds the prompt: it puts
+  OpenCode's own side-question preamble (answer from what you already know; call no tools and take no
+  actions) in front of the question and sends `POST /api/session/{sessionID}/generate` with the body
+  `{ prompt }`, with a longer timeout than the service's other calls because it is a model call. The service
+  writes nothing to the conversation for it. The answer is reduced to its text, stripped of control
+  characters and cut at the chat text limit, and the renderer shows it with the same read-only Markdown as
+  assistant messages (raw HTML stays off). The `chat:fork` channel accepts only a recorded thread ID and an optional message ID
   of the same `msg_` form, and sends `POST /api/session/{sessionID}/fork` with the body
   `{ before }`, where `before` is that message ID or `null`. For a fork of the whole conversation the
   main process, not the renderer, decides what `before` is (see "Forking a thread" in

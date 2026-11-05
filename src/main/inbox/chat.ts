@@ -5,6 +5,8 @@ import { randomUUID } from 'node:crypto'
 import type {
   ChatAgent,
   ChatCreateRequest,
+  ChatAsideAnswer,
+  ChatAsideRequest,
   ChatDiscardPendingRequest,
   ChatEvent,
   ChatForkRequest,
@@ -51,6 +53,7 @@ import {
   parseCreatedSession,
   parseDefaultModel,
   parseForms,
+  parseGeneratedText,
   parseMcpServers,
   parseMessagesPage,
   parseModels,
@@ -101,6 +104,17 @@ const REVERT_ATTEMPTS = 40
 const REVERT_RETRY_MS = 250
 /** Pages of messages read to find where the agent's current turn began, at most. */
 const TURN_SCAN_PAGES = 10
+/**
+ * What OpenCode's own `/btw` puts before the question: it keeps the answer short and keeps the model from
+ * using tools, which a side question must never do while the agent is at work in the same folder.
+ */
+export const ASIDE_PREAMBLE = [
+  'The user is asking a quick side question about the conversation so far.',
+  'Answer directly and concisely in markdown from what you already know.',
+  'Do not call any tools and do not take any actions.',
+].join(' ')
+/** A side question is a model call over the whole conversation, which takes longer than a read of the service. */
+export const ASIDE_TIMEOUT_MS = 180_000
 
 export interface InboxChatDependencies {
   drafts?: InboxDraftStore
@@ -622,6 +636,35 @@ export class InboxChatService {
       }
       throw error
     }
+  }
+
+  /**
+   * Answers a side question from the thread's conversation as it stands, without adding anything to it:
+   * the service writes no message and does not wake or disturb the agent, so this also works while the
+   * agent is busy. The answer is the thread's current model's, and it is Markdown.
+   */
+  async aside(request: ChatAsideRequest): Promise<ChatAsideAnswer> {
+    this.assertEnabled()
+    const thread = this.thread(request.threadId)
+    const question = request.question.trim()
+    if (!question) throw new Error('Ask a question.')
+    let answer: unknown
+    try {
+      answer = await this.dependencies.client.request(thread.target, 'session.generate', {
+        params: { sessionID: thread.id },
+        body: { prompt: `${ASIDE_PREAMBLE}\n${question}` },
+        timeoutMs: ASIDE_TIMEOUT_MS,
+      })
+    } catch (error) {
+      // A route the service does not know answers 404 with no body; a missing session says so by name.
+      if (error instanceof OpenCodeServiceError && error.status === 404 && error.tag === undefined) {
+        throw new Error('This OpenCode service cannot answer side questions. Update OpenCode and try again.')
+      }
+      throw error
+    }
+    const text = parseGeneratedText(answer)
+    if (!text) throw new Error('OpenCode gave no answer. Try asking again.')
+    return { text }
   }
 
   async interrupt(threadId: string): Promise<void> {

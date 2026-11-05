@@ -82,6 +82,7 @@ const validPayloads = {
   [IpcChannels.chatRedo]: { threadId: 'ses_thread' },
   [IpcChannels.chatDiscardPending]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a' },
   [IpcChannels.chatSetDelivery]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a', delivery: 'queue' },
+  [IpcChannels.chatAside]: { threadId: 'ses_thread', question: 'Why did we pick SQLite?' },
   [IpcChannels.chatMcp]: { threadId: 'ses_thread' },
   [IpcChannels.chatMcpSet]: { folderId: 'fld_1234', server: 'context 7', enabled: false },
   [IpcChannels.chatRevert]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a', files: false },
@@ -215,6 +216,22 @@ describe('IPC payload boundary', () => {
     for (const delivery of ['later', 'STEER', '', null, 1, ['queue'], { mode: 'queue' }]) {
       rejects(IpcChannels.chatSend, { threadId: 'ses_thread', text: 'Hi', delivery })
     }
+    // A side question names a recorded thread and has a question of ordinary prompt text; it takes nothing else.
+    expect(() => assertIpcPayload(IpcChannels.chatAside, { threadId: 'ses_thread', question: 'Why SQLite?\nAnd why not Postgres?' })).not.toThrow()
+    for (const bad of [
+      {},
+      { threadId: 'ses_thread' },
+      { question: 'Why?' },
+      { threadId: 'ses_thread', question: '' },
+      { threadId: 'ses_thread', question: ' \n\t ' },
+      { threadId: 'ses_thread', question: 7 },
+      { threadId: 'ses_thread', question: null },
+      { threadId: 'ses_thread', question: 'bell\u0007' },
+      { threadId: 'ses_thread', question: 'x'.repeat(100_001) },
+      { threadId: 'ses_../escape', question: 'Why?' },
+      { threadId: 'msg_1', question: 'Why?' },
+      { threadId: 'ses_thread', question: 'Why?', prompt: 'Injected preamble' },
+    ]) rejects(IpcChannels.chatAside, bad)
     rejects(IpcChannels.chatRegenerateTitle, { threadId: 'ses_../escape' })
     rejects(IpcChannels.chatRegenerateTitle, { threadId: 'ses_thread', title: 'Injected' })
     expect(() => assertIpcPayload(IpcChannels.chatCreate, { folderId: 'fld_1234', text: '', attachmentIds: ['a'], draftRevision: 1, agent: 'build', model })).not.toThrow()

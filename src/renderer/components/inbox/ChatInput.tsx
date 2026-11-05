@@ -3,7 +3,7 @@ import { ClipboardPaste, Copy, Scissors, TextSelect } from 'lucide-react'
 import { selectAll, standardKeymap, history, historyKeymap } from '@codemirror/commands'
 import { syntaxTree } from '@codemirror/language'
 import { commonmarkLanguage, deleteMarkupBackward, insertNewlineContinueMarkupCommand } from '@codemirror/lang-markdown'
-import { Annotation, Compartment, EditorState, Prec, StateField, Transaction } from '@codemirror/state'
+import { Annotation, Compartment, EditorState, Prec, StateEffect, StateField, Transaction } from '@codemirror/state'
 import { Decoration, EditorView, WidgetType, keymap, placeholder as editorPlaceholder, type DecorationSet } from '@codemirror/view'
 import {
   ContextMenu,
@@ -51,6 +51,16 @@ const bulletField = StateField.define<DecorationSet>({
   ],
 })
 
+/** Asks the command mark to be worked out again for text that did not change, when the commands did. */
+const refreshCommandToken = StateEffect.define<null>()
+
+/** The name of a command the message starts with, marked so that the text can be seen to be a command. */
+function commandMarks(state: EditorState, token: ChatInputProps['commandToken']): DecorationSet {
+  const range = token?.(state.doc.toString())
+  if (!range || range.to <= range.from || range.to > state.doc.length) return Decoration.none
+  return Decoration.set([Decoration.mark({ class: 'chat-input-command' }).range(range.from, range.to)])
+}
+
 const inputTheme = EditorView.theme({
   '&': { color: 'var(--color-fg)', fontSize: '14px', backgroundColor: 'transparent' },
   '&.cm-focused': { outline: 'none' },
@@ -59,6 +69,12 @@ const inputTheme = EditorView.theme({
   '.cm-line': { padding: '0' },
   '.cm-line.chat-input-list-line': { paddingLeft: '1.25em', textIndent: '-1.25em' },
   '.chat-input-bullet': { display: 'inline-block', width: '1em', textAlign: 'center', textIndent: '0' },
+  '.chat-input-command': {
+    color: 'var(--color-accent)',
+    fontWeight: '500',
+    backgroundColor: 'color-mix(in srgb, var(--color-accent) 15%, transparent)',
+    borderRadius: '4px',
+  },
   '.cm-placeholder': { color: 'var(--color-fg-subtle)' },
   '.cm-selectionBackground': { backgroundColor: 'var(--color-active)' },
 })
@@ -88,6 +104,11 @@ interface ChatInputProps {
   onSelect: (text: string, caret: number) => void
   onKeyDown: (event: KeyboardEvent) => void
   onPaste: (event: ClipboardEvent) => void
+  /**
+   * Where the text starts with the name of a command, if it does. That part is shown as a command. The
+   * function is read as the text changes, and again when a different one is given.
+   */
+  commandToken?: (text: string) => { from: number; to: number } | null
 }
 
 /** Markdown remains plain text, with bullet markers displayed as bullets while editing. */
@@ -110,6 +131,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
         extensions: [
           commonmarkLanguage,
           bulletField,
+          StateField.define<DecorationSet>({
+            create: (state) => commandMarks(state, latest.current.commandToken),
+            update: (value, transaction) =>
+              transaction.docChanged || transaction.effects.some((effect) => effect.is(refreshCommandToken))
+                ? commandMarks(transaction.state, latest.current.commandToken)
+                : value,
+            provide: (field) => EditorView.decorations.from(field),
+          }),
           history(),
           keymap.of([{ key: 'Backspace', run: deleteMarkupBackward }, ...standardKeymap.filter((binding) => binding.key !== 'Enter'), ...historyKeymap]),
           EditorView.lineWrapping,
@@ -162,6 +191,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       editorPlaceholder(props.placeholder),
     ]) })
   }, [props.disabled, props.placeholder, props.controls, props.activeDescendant])
+
+  useLayoutEffect(() => {
+    viewRef.current?.dispatch({ effects: refreshCommandToken.of(null) })
+  }, [props.commandToken])
 
   useLayoutEffect(() => {
     const view = viewRef.current!
