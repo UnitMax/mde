@@ -351,7 +351,8 @@ prompt.
 
 **Right-click menus.** Right-clicking the conversation opens a menu that depends on what is under
 the cursor. **Copy** copies the selected text, but only when the click lands on the selection;
-right-clicking elsewhere does not copy text the pointer has left. **Copy code** appears over a
+right-clicking elsewhere does not copy text the pointer has left. **Quote**, next to it, adds the
+selection to the message box (see Quoting, below). **Copy code** appears over a
 code block or the input and output of an opened tool call. **Copy link address** and **Open link**
 appear over a link; Open link is offered only for `http:` and `https:` links and uses the same
 `noopener,noreferrer` window as clicking one, and the main process still decides what may be
@@ -371,6 +372,47 @@ into the focused field, exactly as Ctrl/Cmd+V does, so pasted images take the us
 The menu closes first and the box gets the focus back before the paste is requested. The page never
 reads the clipboard. Cut and Paste are unavailable while the box is disabled. The menus add no
 shortcut of their own, so the shortcut list has no entry for them.
+
+**Quoting.** Text selected in a conversation can be quoted into the message box, from a **Quote**
+button that shows beside the selection or from **Quote** in the right-click menu (which, like Copy, is
+offered only when the click lands on the selection, and not for a selection of blank space). The button
+(`ChatQuoteButton`) waits until the pointer is let go instead of chasing a selection that is still being
+made. It sits below the end of the selection, centered on where the pointer was let go; for a selection
+made upward, or when there is no room below, it sits above (`quoteButtonPlace`, kept inside the
+visible conversation). It follows the selection as the conversation scrolls, goes when the selection
+collapses or scrolls out of view, and steps aside while a right-click menu is open. Pressing it does not
+take the selection or the focus, and it clears the selection once the quote is asked for. The menu's item
+attaches the quote after the menu has closed, so that the box is free to take the focus.
+
+A quote is attached to the message like a file, not typed into it: it shows as a card above the box
+(`ChatQuoteCard`), and the box stays free for what the person writes, however much was quoted. A card
+is a bar beside the quoted text, cut to two lines (with an ellipsis), with a chevron to open all of a long
+quote (up to a height, then it scrolls) and an X to take it off the message. Whether a quote is long
+is measured, since it depends on the width: a single line that wraps past two lines is long too. Taking
+a card off, or attaching one, gives the focus back to the box. The cards scroll inside a fixed height when
+there are many, and the one just added is brought into view. The same quote is not attached twice. The
+text of the selection is its plain text, tidied (`lib/chat-quote.ts`): no space at the ends of lines, no
+blank lines around it, and no run of more than one blank line. While the draft is still loading or a
+send is under way, a quote waits for the box, since a send empties it; one that would take the message
+past the 100,000 characters the main process accepts is refused with a message under the box. A message
+may be sent with quotes alone.
+
+Written down, a quote is a Markdown block quote: `> ` before each line and a bare `>` for a blank line.
+The draft is kept, and the message is sent, as the quotes written that way, each followed by a blank
+line, and then the text (`joinQuotes`), so the agent reads ordinary Markdown quotes and no main-process
+or IPC change is involved. When the draft is read again (the box opening, a revert or a fork adding text
+to it, Up recalling the last message) the quotes at its start become cards again and the rest is the text
+(`leadingQuotes`); a place in the draft, such as where the caret goes, is moved by the length of what
+was taken. Up does not recall over quotes that are attached. A quote that is not at the start of the text,
+or a `>` typed by hand, stays in the text, and the box draws lines that start with `>` (up to three spaces
+in, not in a code fence) with a bar and muted text; a line without the mark is not part of the quote, so a
+new line (Shift+Enter) ends it. One scanner in `lib/chat-quote.ts` decides what is a quote for all of this.
+
+In the conversation, the quotes of a sent message are shown as quote cards among the text, without
+their marks and in the same style, cut to three lines with **Show more** / **Show less** under a long
+one. **Copy message as Markdown** still copies the message as written, marks included, and the prompt
+timeline names a message by what was written, not by what it quoted. There is no keyboard shortcut for
+quoting, so the shortcut list has no entry for it.
 
 **Git worktrees for threads.** When the folder is a Git repository, a strip under the composer
 chooses where the thread runs (`WorktreeBar`). **Current directory**, the default, runs it in the

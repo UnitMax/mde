@@ -12,6 +12,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
+import { quoteLines } from '@/lib/chat-quote'
 
 const externalChange = Annotation.define<boolean>()
 const continueList = insertNewlineContinueMarkupCommand({ nonTightLists: false })
@@ -51,6 +52,22 @@ const bulletField = StateField.define<DecorationSet>({
   ],
 })
 
+/** Quoted lines (`> ` before the text): a bar beside the line, and the mark itself set back. Code fences are left alone. */
+function quotes(state: EditorState): DecorationSet {
+  const ranges: ReturnType<Decoration['range']>[] = []
+  for (const line of quoteLines(state.doc.toString())) {
+    ranges.push(Decoration.line({ class: 'chat-input-quote-line' }).range(line.from))
+    if (line.markEnd > line.from) ranges.push(Decoration.mark({ class: 'chat-input-quote-mark' }).range(line.from, line.markEnd))
+  }
+  return Decoration.set(ranges, true)
+}
+
+const quoteField = StateField.define<DecorationSet>({
+  create: quotes,
+  update: (value, transaction) => (transaction.docChanged ? quotes(transaction.state) : value),
+  provide: (field) => EditorView.decorations.from(field),
+})
+
 /** Asks the command mark to be worked out again for text that did not change, when the commands did. */
 const refreshCommandToken = StateEffect.define<null>()
 
@@ -69,6 +86,12 @@ const inputTheme = EditorView.theme({
   '.cm-line': { padding: '0' },
   '.cm-line.chat-input-list-line': { paddingLeft: '1.25em', textIndent: '-1.25em' },
   '.chat-input-bullet': { display: 'inline-block', width: '1em', textAlign: 'center', textIndent: '0' },
+  '.cm-line.chat-input-quote-line': {
+    paddingLeft: '10px',
+    color: 'var(--color-fg-muted)',
+    borderLeft: '2px solid color-mix(in srgb, var(--color-accent) 60%, transparent)',
+  },
+  '.chat-input-quote-mark': { color: 'var(--color-fg-subtle)' },
   '.chat-input-command': {
     color: 'var(--color-accent)',
     fontWeight: '500',
@@ -131,6 +154,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
         extensions: [
           commonmarkLanguage,
           bulletField,
+          quoteField,
           StateField.define<DecorationSet>({
             create: (state) => commandMarks(state, latest.current.commandToken),
             update: (value, transaction) =>

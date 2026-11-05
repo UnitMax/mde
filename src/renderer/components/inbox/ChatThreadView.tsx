@@ -2,11 +2,12 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { AlertTriangle, FoldVertical, LoaderCircle, RefreshCw } from 'lucide-react'
 import type { ChatMessage, InboxThread, OpenCodeModelRef } from '@shared/types'
 import { ChatAside } from '@/components/inbox/ChatAside'
-import { ChatComposer } from '@/components/inbox/ChatComposer'
+import { ChatComposer, type ChatComposerHandle } from '@/components/inbox/ChatComposer'
 import { McpChip } from '@/components/inbox/McpChip'
 import { McpServerNamesContext } from '@/components/inbox/mcp-context'
 import { ChatMessageView } from '@/components/inbox/ChatMessageView'
 import { ChatPendingView } from '@/components/inbox/ChatPendingView'
+import { ChatQuoteButton } from '@/components/inbox/ChatQuoteButton'
 import { PermissionCard, QuestionCard } from '@/components/inbox/ChatRequestCards'
 import { ChatRevertBanner } from '@/components/inbox/ChatRevertBanner'
 import { ChatRevertDialog } from '@/components/inbox/ChatRevertDialog'
@@ -70,6 +71,9 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const dismissAside = useInboxAside((store) => store.dismiss)
   const scrollRef = useRef<HTMLDivElement>(null)
   const composerSlot = useRef<HTMLDivElement>(null)
+  const composer = useRef<ChatComposerHandle>(null)
+  // Text selected in the conversation goes into the message box as a quote, from the button by the selection or the right-click menu.
+  const quote = useCallback((text: string) => composer.current?.quote(text), [])
   const stickRef = useRef(true)
   // Whether the view is scrolled up from the newest message, which is when the way back is offered.
   const [away, setAway] = useState(false)
@@ -287,7 +291,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
       style={{ '--inbox-code-font': codeViewerFontFamily(codeFamily) } as CSSProperties}
     >
       <div className="relative flex min-h-0 flex-1 flex-col">
-      <ChatTranscriptMenu messages={messages} complete={!state?.older} transcriptRef={scrollRef} onCopyError={setCopyError}>
+      <ChatTranscriptMenu messages={messages} complete={!state?.older} transcriptRef={scrollRef} onCopyError={setCopyError} onQuote={quote}>
       <div ref={scrollRef} onScroll={onScroll} className="chat-selectable min-h-0 flex-1 overflow-y-auto" data-testid="chat-transcript">
         <div className={cn('mx-auto flex w-full max-w-3xl flex-col gap-4 px-6 py-5', railGutter)}>
           {state?.older && (
@@ -375,11 +379,13 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
       </div>
       </ChatTranscriptMenu>
       <ChatTimeline entries={prompts} scrollRef={scrollRef} onJump={jumpToPrompt} />
+      <ChatQuoteButton transcriptRef={scrollRef} onQuote={quote} />
       {away && <ChatScrollToBottom onClick={scrollToBottom} />}
       </div>
       <div ref={composerSlot} className={cn('mx-auto w-full max-w-3xl shrink-0 px-6 pb-5 pt-2', railGutter)}>
         {aside && <ChatAside aside={aside} onDismiss={closeAside} onRetry={() => void askAside(thread.id, aside.question)} />}
         <ChatComposer
+          ref={composer}
           key={thread.id}
           draftKey={`thread:${thread.id}`}
           onPreviousMessage={previousMessage}

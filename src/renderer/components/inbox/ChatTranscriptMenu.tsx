@@ -1,5 +1,5 @@
-import { Fragment, useState, type MouseEvent, type ReactElement, type ReactNode, type RefObject } from 'react'
-import { Code, Copy, ExternalLink, FileText, Link, MessagesSquare, TextSelect } from 'lucide-react'
+import { Fragment, useRef, useState, type MouseEvent, type ReactElement, type ReactNode, type RefObject } from 'react'
+import { Code, Copy, ExternalLink, FileText, Link, MessagesSquare, Quote, TextSelect } from 'lucide-react'
 import type { ChatMessage } from '@shared/types'
 import {
   ContextMenu,
@@ -9,6 +9,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
 import { clickedSelection, conversationMarkdown, menuTarget, messageMarkdown, type MenuTarget } from '@/lib/chat-menu'
+import { quoteBlock } from '@/lib/chat-quote'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 
 /** What the right-click landed on, taken when it happened so that a streaming update cannot change it. */
@@ -29,12 +30,14 @@ function MenuItems({
   complete,
   transcriptRef,
   onCopy,
+  onQuote,
 }: {
   snapshot: Snapshot
   messages: readonly ChatMessage[]
   complete: boolean
   transcriptRef: RefObject<HTMLElement | null>
   onCopy: (text: string) => void
+  onQuote: (text: string) => void
 }): JSX.Element {
   // Only worked out while the menu is open: it is the whole conversation.
   const conversation = conversationMarkdown(messages)
@@ -47,6 +50,15 @@ function MenuItems({
               <Copy aria-hidden className={ICON} />
               Copy
             </ContextMenuItem>,
+            // Only text with something in it to quote: a selection of blank space has no quote.
+            ...(quoteBlock(selection) !== null
+              ? [
+                  <ContextMenuItem key="quote" data-testid="chat-menu-quote" onSelect={() => onQuote(selection)}>
+                    <Quote aria-hidden className={ICON} />
+                    Quote
+                  </ContextMenuItem>,
+                ]
+              : []),
           ]
         : []),
       ...(code
@@ -133,6 +145,7 @@ export function ChatTranscriptMenu({
   complete,
   transcriptRef,
   onCopyError,
+  onQuote,
   children,
 }: {
   messages: readonly ChatMessage[]
@@ -141,9 +154,13 @@ export function ChatTranscriptMenu({
   transcriptRef: RefObject<HTMLElement | null>
   /** Told how a copy went: the reason it failed, or null once one worked. */
   onCopyError: (message: string | null) => void
+  /** Quotes the selected text in the message box. */
+  onQuote: (text: string) => void
   children: ReactNode
 }): JSX.Element {
   const [snapshot, setSnapshot] = useState<Snapshot>(NOTHING)
+  // The quote is added once the menu has closed: the message box has to be free to take the focus.
+  const quoteAfterClose = useRef<string | null>(null)
 
   const take = (event: MouseEvent<HTMLElement>): void => {
     const transcript = transcriptRef.current
@@ -171,8 +188,23 @@ export function ChatTranscriptMenu({
       <ContextMenuTrigger asChild onContextMenuCapture={take}>
         {children}
       </ContextMenuTrigger>
-      <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()} data-testid="chat-menu">
-        <MenuItems snapshot={snapshot} messages={messages} complete={complete} transcriptRef={transcriptRef} onCopy={copy} />
+      <ContextMenuContent
+        data-testid="chat-menu"
+        onCloseAutoFocus={(event) => {
+          event.preventDefault()
+          const quote = quoteAfterClose.current
+          quoteAfterClose.current = null
+          if (quote) onQuote(quote)
+        }}
+      >
+        <MenuItems
+          snapshot={snapshot}
+          messages={messages}
+          complete={complete}
+          transcriptRef={transcriptRef}
+          onCopy={copy}
+          onQuote={(text) => { quoteAfterClose.current = text }}
+        />
       </ContextMenuContent>
     </ContextMenu>
   )

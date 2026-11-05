@@ -99,6 +99,8 @@
     "src/renderer/components/SettingsDialog.tsx",
     "src/renderer/components/inbox/*.tsx",
     "src/renderer/lib/chat.ts",
+    "src/renderer/lib/chat-quote.ts",
+    "src/renderer/lib/quote-button-place.ts",
     "src/renderer/lib/mcp.ts",
     "src/renderer/lib/inbox-drafts.ts",
     "src/renderer/lib/chat-menu.ts",

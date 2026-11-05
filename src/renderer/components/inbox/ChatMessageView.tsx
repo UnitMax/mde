@@ -4,10 +4,12 @@ import type { ChatMessage, ChatPart } from '@shared/types'
 import { FileChangeView } from '@/components/inbox/ChatFileChange'
 import { McpCallView } from '@/components/inbox/ChatMcpCall'
 import { ChatMarkdown } from '@/components/inbox/ChatMarkdown'
+import { ChatQuoteCard } from '@/components/inbox/ChatQuoteCard'
 import { McpServerNamesContext } from '@/components/inbox/mcp-context'
 import { SubagentGroup } from '@/components/inbox/ChatSubagents'
 import { ToolIcon } from '@/components/inbox/ToolIcon'
 import { formatTokens, messageBlocks, skillCall, toolSummary } from '@/lib/chat'
+import { splitQuotes } from '@/lib/chat-quote'
 import { toolFileChanges } from '@/lib/diff'
 import { mcpCalls } from '@/lib/mcp'
 import { cn } from '@/lib/utils'
@@ -140,6 +142,23 @@ function ReasoningView({ text, active }: { text: string; active: boolean }): JSX
   )
 }
 
+/** What the person wrote, with the quotes in it set apart from the rest of the text. */
+function BubbleText({ text }: { text: string }): JSX.Element {
+  const segments = useMemo(() => splitQuotes(text), [text])
+  const [only] = segments
+  // Without a quote, or with only an empty one, the text is shown as it is.
+  if (segments.length === 0 || (segments.length === 1 && only?.kind === 'text')) return <>{text}</>
+  return (
+    <>
+      {segments.map((segment, index) =>
+        segment.kind === 'quote'
+          ? <ChatQuoteCard key={index} text={segment.text} />
+          : <span key={index} className="block">{segment.text}</span>,
+      )}
+    </>
+  )
+}
+
 /**
  * The bubble of one of the user's messages: its text, files and skills. `pending` draws it as a message
  * the agent has not taken up yet, with a dashed outline; the size is the same, so that it does not
@@ -163,7 +182,7 @@ export function UserBubble({ message, pending = false }: { message: Extract<Chat
           <span className="truncate">{skill.name}</span>
         </span>)}
       </div> : null}
-      {message.text}
+      <BubbleText text={message.text} />
     </div>
   )
 }

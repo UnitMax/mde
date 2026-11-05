@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ForwardedRef, type ReactNode } from 'react'
 import { Paperclip, PenLine, X, File as FileIcon, Bot, ChevronDown, Hammer, ListChecks, LoaderCircle, Search, Sparkles, Square } from 'lucide-react'
 import { readFileTreeDrop, isFileDrop } from '@/terminal/drop'
 import type { ChatDelivery, ChatDraft, ChatDraftChoice, ChatDraftKey, ChatDraftRequest, ChatAgent, ChatModel, ChatSkill, OpenCodeModelRef } from '@shared/types'
 import { skillTriggerAt } from '@shared/skills'
+import { addQuote, joinQuotes, leadingQuotes, MESSAGE_TEXT_LIMIT } from '@/lib/chat-quote'
 import { applySkill, filterSkills } from '@/lib/skills'
 import { applyCommand, filterCommands, parseInvocation, slashTriggerAt, type SlashCommand, type SlashInvocation } from '@/lib/slash-commands'
 import {
@@ -14,6 +15,7 @@ import {
 import { CompletionPicker, type CompletionItem } from '@/components/inbox/CompletionPicker'
 import { ContextMeter, type ContextCompact } from '@/components/inbox/ContextMeter'
 import { ChatInput, type ChatInputHandle } from '@/components/inbox/ChatInput'
+import { ChatQuoteCard } from '@/components/inbox/ChatQuoteCard'
 import { ChatSendButton } from '@/components/inbox/ChatSendButton'
 import { SlashCommandIcon } from '@/components/inbox/SlashCommandIcon'
 import { findModel, groupModels, modelKey, modelName, orderAgents, sameModelRef, type ContextUsage } from '@/lib/chat'
@@ -220,8 +222,23 @@ export interface ChatComposerProps {
   onEscape?: () => boolean
 }
 
+/** What the page around the box can ask of it. */
+export interface ChatComposerHandle {
+  /**
+   * Attaches text from the conversation to the message as a quote, and gives the box the focus. While the
+   * draft is still loading or a send is under way, the quote waits for the box to be ready for it.
+   */
+  quote: (text: string) => void
+}
+
+/** A quote attached to the message; the id keeps a card's state with it when another is taken off. */
+interface Quote {
+  id: number
+  text: string
+}
+
 /** The prompt box with model and agent pickers and a round send (or stop) button. */
-export function ChatComposer({
+export const ChatComposer = forwardRef(function ChatComposer({
   draftKey,
   draftMeta,
   onSaveDraft,
@@ -248,8 +265,22 @@ export function ChatComposer({
   extraPickers,
   commands = NO_COMMANDS,
   onEscape,
-}: ChatComposerProps): JSX.Element {
+}: ChatComposerProps, ref: ForwardedRef<ChatComposerHandle>): JSX.Element {
+  // What is typed. The quotes attached to the message are kept apart from it, as cards above the box, and are
+  // joined to it as block quotes where the draft is kept and where the message is sent.
   const [text, setText] = useState('')
+  const [quotes, setQuotes] = useState<Quote[]>([])
+  const quoteIds = useRef(0)
+  // The cards scroll when there are many; a quote just added is brought into view, a draft just loaded starts at the top.
+  const quotesRegion = useRef<HTMLDivElement>(null)
+  const revealQuote = useRef(false)
+  useLayoutEffect(() => {
+    const region = quotesRegion.current
+    if (!revealQuote.current || !region) return
+    revealQuote.current = false
+    region.scrollTop = region.scrollHeight
+  }, [quotes])
+  const asQuotes = (texts: readonly string[]): Quote[] => texts.map((quote) => ({ id: (quoteIds.current += 1), text: quote }))
   const [draft, setDraft] = useState<ChatDraft>({ text: '', revision: 0, attachments: [] })
   const [loaded, setLoaded] = useState(!draftKey)
   const [adding, setAdding] = useState(false)
@@ -278,16 +309,25 @@ export function ChatComposer({
     resetHistory()
     return resetHistory
   }, [draftKey, disabled])
+  // Takes the draft as it was kept: the quotes it starts with become cards and the rest is the text. Gives how
+  // much of the start was taken, which moves a place in the draft to the same place in the text.
+  const applyDraft = (value: ChatDraft): number => {
+    const { quotes: found, body } = leadingQuotes(value.text)
+    setDraft(value)
+    setQuotes(asQuotes(found))
+    setText(body)
+    return value.text.length - body.length
+  }
   useEffect(() => {
     setLoaded(!draftKey)
     setText('')
+    setQuotes([])
     setDraft({ text: '', revision: 0, attachments: [] })
     setError(null)
     if (!draftKey) return
     void mutate({ key: draftKey, action: 'load' }).then((value) => {
       if (currentKey.current !== draftKey) return
-      setDraft(value)
-      setText(value.text)
+      applyDraft(value)
       setLoaded(true)
     }).catch((reason) => setError(ipcErrorMessage(reason, 'Could not restore the draft.')))
   }, [draftKey])
@@ -322,10 +362,9 @@ export function ChatComposer({
     onDraftReloaded?.(draftReload.id)
     void mutate({ key: draftKey, action: 'load' }).then((value) => {
       if (currentKey.current !== draftKey) return
-      setDraft(value)
-      setText(value.text)
+      const taken = applyDraft(value)
       // The added text is at the top; the caret goes to its end, ready for changes.
-      setFocusAt(Math.min(draftReload.caret, value.text.length))
+      setFocusAt(Math.max(0, Math.min(draftReload.caret - taken, value.text.length - taken)))
     }).catch((reason) => setError(ipcErrorMessage(reason, 'Could not restore the draft.')))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftReload, draftKey])
@@ -339,9 +378,9 @@ export function ChatComposer({
     setFocusAt(null)
   }, [focusAt, loaded, disabled, sending, text])
   const ready = options?.status === 'ready'
-  const canSend = ready && !disabled && !sendBlocked && !sending && !adding && loaded && (text.trim().length > 0 || draft.attachments.length > 0) && Boolean(agent) && Boolean(model)
+  const canSend = ready && !disabled && !sendBlocked && !sending && !adding && loaded && (text.trim().length > 0 || draft.attachments.length > 0 || quotes.length > 0) && Boolean(agent) && Boolean(model)
   // Saving as a draft needs no agent or model, since nothing is started: only something to keep.
-  const canSave = Boolean(onSaveDraft) && !disabled && !sending && !adding && loaded && (text.trim().length > 0 || draft.attachments.length > 0)
+  const canSave = Boolean(onSaveDraft) && !disabled && !sending && !adding && loaded && (text.trim().length > 0 || draft.attachments.length > 0 || quotes.length > 0)
 
   // Completion: a `/word` at the very start of the message offers the commands that fit it, and a `$word`
   // at the caret the skills that fit it. Where the caret is only counts for the text it was measured in,
@@ -378,8 +417,48 @@ export function ChatComposer({
   // Text after a command that takes none: Enter says so instead of running it.
   const strayArgument = Boolean(invocation && !invocation.command.argument && invocation.args)
 
-  const persist = (next: string): void => {
-    if (draftKey) void mutate({ key: draftKey, action: 'text', text: next }).catch((reason) => setError(ipcErrorMessage(reason, 'Could not save the draft.')))
+  // Keeps the text with the quotes attached to it, as the draft.
+  const persist = (next: string, attached: readonly Quote[] = quotes): void => {
+    if (draftKey) {
+      const kept = joinQuotes(attached.map((quote) => quote.text), next)
+      void mutate({ key: draftKey, action: 'text', text: kept }).catch((reason) => setError(ipcErrorMessage(reason, 'Could not save the draft.')))
+    }
+  }
+  // A quote is attached once the draft is in the box and no send is under way: a send empties the box when it
+  // ends, and a quote attached before then would go with it.
+  const boxReady = loaded && !sending && !disabled
+  const waitingQuotes = useRef<string[]>([])
+  const attachQuotes = (selections: readonly string[]): void => {
+    const texts = selections.reduce<readonly string[]>(addQuote, quotes.map((quote) => quote.text))
+    if (texts.length > quotes.length) {
+      if (joinQuotes(texts, text).length > MESSAGE_TEXT_LIMIT) {
+        setError('That is too much text to attach as a quote.')
+      } else {
+        const next = [...quotes, ...asQuotes(texts.slice(quotes.length))]
+        revealQuote.current = true
+        setQuotes(next)
+        persist(text, next)
+      }
+    }
+    messageRef.current?.focus()
+  }
+  useImperativeHandle(ref, () => ({
+    quote: (selection) => {
+      if (disabled) return
+      if (boxReady) attachQuotes([selection])
+      else waitingQuotes.current.push(selection)
+    },
+  }))
+  useEffect(() => {
+    if (!boxReady || waitingQuotes.current.length === 0) return
+    attachQuotes(waitingQuotes.current.splice(0))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boxReady])
+  const removeQuote = (id: number): void => {
+    const next = quotes.filter((quote) => quote.id !== id)
+    setQuotes(next)
+    persist(text, next)
+    messageRef.current?.focus()
   }
   // Where the caret goes once the chosen skill is in the box. This is a ref applied right after the
   // text lands, not the `focusAt` state above: that is cleared by a later render, and a key pressed
@@ -453,13 +532,17 @@ export function ChatComposer({
     else void runCommand({ command, args: '', nameEnd: slashTrigger.end })
   }
 
-  const recallText = (next: string): void => {
-    pendingCaret.current = next.length
-    setText(next)
-    setCursor({ text: next, at: next.length })
+  // A recalled message comes back as it was: its quotes are cards again, and the rest is the text.
+  const recallText = (full: string): void => {
+    const { quotes: found, body } = leadingQuotes(full)
+    const attached = asQuotes(found)
+    pendingCaret.current = body.length
+    setQuotes(attached)
+    setText(body)
+    setCursor({ text: body, at: body.length })
     // A recalled message that ends in a $word, or is one slash word, is ready to edit or send, without opening a list.
-    setDismissed(completionKey(next, next.length, commands.length > 0))
-    persist(next)
+    setDismissed(completionKey(body, body.length, commands.length > 0))
+    persist(body, attached)
   }
   const recallMessage = (event: KeyboardEvent): void => {
     const history = recalled.current
@@ -471,7 +554,7 @@ export function ChatComposer({
       recallText(messages[messages.length - 1]?.text ?? '')
       return
     }
-    if (!onPreviousMessage || (history.messages.length === 0 && text !== '')) return
+    if (!onPreviousMessage || (history.messages.length === 0 && (text !== '' || quotes.length > 0))) return
     event.preventDefault()
     if (history.loading) return
     history.loading = true
@@ -494,17 +577,19 @@ export function ChatComposer({
     setSending(true)
     setError(null)
     try {
+      const message = joinQuotes(quotes.map((quote) => quote.text), text)
       let value: ChatDraft | undefined
       if (draftKey) {
-        value = await mutate({ key: draftKey, action: 'text', text })
+        value = await mutate({ key: draftKey, action: 'text', text: message })
       }
       const options = {
         ...(value ? { attachmentIds: value.attachments.map((file) => file.id), draftRevision: value.revision } : {}),
         ...(running ? { delivery } : {}),
         ...(background ? { background: true } : {}),
       }
-      await onSend(text, Object.keys(options).length > 0 ? options : undefined)
+      await onSend(message, Object.keys(options).length > 0 ? options : undefined)
       setText('')
+      setQuotes([])
       setDraft({ text: '', revision: 0, attachments: [] })
     } catch (reason) {
       setError(ipcErrorMessage(reason, 'Could not send the message.'))
@@ -633,6 +718,13 @@ export function ChatComposer({
           </div>)}
         </div>}
         {adding && <p role="status" className="px-4 pt-2 text-xs text-fg-muted">Adding attachments…</p>}
+        {quotes.length > 0 && (
+          <div ref={quotesRegion} role="group" aria-label="Quotes" data-testid="chat-quotes" className="flex max-h-44 flex-col gap-1.5 overflow-y-auto px-3 pt-3">
+            {quotes.map((quote) => (
+              <ChatQuoteCard key={quote.id} text={quote.text} disabled={sending} onRemove={() => removeQuote(quote.id)} />
+            ))}
+          </div>
+        )}
         <ChatInput
           key={draftKey}
           ref={messageRef}
@@ -697,7 +789,7 @@ export function ChatComposer({
               <PenLine aria-hidden="true" className="h-4 w-4" />
             </button>
           )}
-          {running && onStop && !text.trim() && draft.attachments.length === 0 ? (
+          {running && onStop && !text.trim() && draft.attachments.length === 0 && quotes.length === 0 ? (
             <button
               type="button"
               aria-label="Stop"
@@ -727,8 +819,7 @@ export function ChatComposer({
         {error}
         {!loaded && draftKey && <button type="button" className="ml-2 text-accent hover:underline" onClick={() => {
           void mutate({ key: draftKey, action: 'load' }).then((value) => {
-            setDraft(value)
-            setText(value.text)
+            applyDraft(value)
             setLoaded(true)
             setError(null)
           }).catch((reason) => setError(ipcErrorMessage(reason, 'Could not restore the draft.')))
@@ -736,4 +827,4 @@ export function ChatComposer({
       </p>}
     </div>
   )
-}
+})

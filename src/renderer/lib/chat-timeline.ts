@@ -1,4 +1,5 @@
 import type { ChatMessage } from '@shared/types'
+import { splitQuotes } from '@/lib/chat-quote'
 
 type UserMessage = Extract<ChatMessage, { kind: 'user' }>
 
@@ -17,12 +18,21 @@ export const TIMELINE_MAX_MARKS = 18
 
 const LABEL_LIMIT = 160
 
-/** The prompt in one line: its first line of text, or what it carries when it has no text. */
-export function promptLabel(message: UserMessage): string {
-  const line = message.text
+function firstLine(text: string): string | undefined {
+  return text
     .split('\n')
     .map((part) => part.replace(/\s+/g, ' ').trim())
     .find(Boolean)
+}
+
+/**
+ * The prompt in one line: its first line of text, or what it carries when it has no text. What the
+ * person wrote comes before what they quoted, which is only the label when there is nothing else.
+ */
+export function promptLabel(message: UserMessage): string {
+  const segments = splitQuotes(message.text)
+  const written = segments.filter((segment) => segment.kind === 'text').map((segment) => segment.text).join('\n')
+  const line = firstLine(written) ?? firstLine(segments[0]?.text ?? '')
   if (line) return line.length > LABEL_LIMIT ? `${line.slice(0, LABEL_LIMIT - 1)}…` : line
   const files = message.attachments ?? []
   if (files.length === 1) return files[0]!.name

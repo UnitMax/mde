@@ -44,6 +44,14 @@ export function conversationMarkdown(messages: readonly ChatMessage[]): string {
   return sections.map((section) => `## ${section.who}\n\n${section.parts.join('\n\n')}`).join('\n\n')
 }
 
+/** The selected text, when the selection lies inside `transcript` (from where it starts to where it ends). */
+export function selectedTextIn(selection: Selection | null, transcript: Element): string {
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return ''
+  const { anchorNode, focusNode } = selection
+  if (!anchorNode || !focusNode || !transcript.contains(anchorNode) || !transcript.contains(focusNode)) return ''
+  return selection.toString()
+}
+
 /**
  * The selected text, when it lies inside `transcript` and a right-click at (`x`, `y`) landed on it.
  * Right-clicking somewhere else must not offer to copy text the person is no longer pointing at.
@@ -55,11 +63,8 @@ export function clickedSelection(
   x: number,
   y: number,
 ): string {
-  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return ''
-  const { anchorNode, focusNode } = selection
-  if (!anchorNode || !focusNode || !transcript.contains(anchorNode) || !transcript.contains(focusNode)) return ''
-  const text = selection.toString()
-  if (!text) return ''
+  const text = selectedTextIn(selection, transcript)
+  if (!selection || !text) return ''
   const caret = typeof document.caretRangeFromPoint === 'function' ? document.caretRangeFromPoint(x, y) : null
   try {
     for (let index = 0; index < selection.rangeCount; index += 1) {
