@@ -1,4 +1,4 @@
-import { promises as fs } from 'node:fs'
+import { constants, promises as fs } from 'node:fs'
 import { supportsAgentIntegration } from '@shared/agent-support'
 import { isFileRoot } from '@shared/file-root'
 import { inboxTerminalThreadId, inboxThreadTerminalId } from '@shared/inbox-thread-terminal'
@@ -239,9 +239,9 @@ async function validatePath(req: ValidatePathRequest): Promise<PathCheckResult> 
  * on-disk check — repeated here rather than trusted from report time, since the
  * path may have been replaced since — confirms it is still a directory.
  */
-async function verifiedDirectory(session: Session, directory: string): Promise<string | null> {
-  const path = directory.trim()
-  if (!path) return null
+async function verifiedDirectory(session: Session, directory: string, quiet = false): Promise<string | null> {
+  const path = directory
+  if (!path.trim()) return null
 
   if (session.kind === 'native') {
     if (process.platform === 'darwin' && !isPlainAbsolutePath(path)) return null
@@ -261,7 +261,7 @@ async function verifiedDirectory(session: Session, directory: string): Promise<s
   // Rejections are logged: this path fails closed, so a silent return here is
   // indistinguishable from a dead button.
   const reject = (reason: string): null => {
-    console.warn(`[path] not opening ${JSON.stringify(directory)}: ${reason}`)
+    if (!quiet) console.warn(`[path] not opening ${JSON.stringify(directory)}: ${reason}`)
     return null
   }
 
@@ -376,6 +376,32 @@ export function registerIpcHandlers(
       throw new Error('The thread directory has changed.')
     }
     return { directory, ...launch }
+  }
+  const restoredShellLaunch = async (
+    req: EnsurePtyRequest,
+    session: Session,
+    restarting = false,
+  ): Promise<PtyLaunchOptions | undefined> => {
+    const current = ptyManager.terminalInfo(req.terminalId)
+    // Reattaching a live or exited PTY does not relaunch it or recheck its folder.
+    if (current && !restarting) return undefined
+    const saved = (current?.sessionId === session.id ? current.directory : null) ??
+      ptyManager.savedDirectory(req.terminalId, session)
+    if (!saved) return undefined
+    try {
+      const directory = await verifiedDirectory(session, saved, true)
+      if (!directory) return undefined
+      if (session.kind === 'native') {
+        await fs.access(directory, process.platform === 'win32' ? constants.F_OK : constants.X_OK)
+      } else {
+        const accessible = await runWslCommand(session.distro!, ['test', '-x', directory])
+        if (accessible.code !== 0) return undefined
+      }
+      return { directory }
+    } catch {
+      // A missing folder or unavailable target uses the ordinary home-directory launch.
+      return undefined
+    }
   }
   // The renderer names a terminal and an expected cwd, never an arbitrary filesystem root.
   const terminalDirectory = async (req: TerminalDirectoryRequest): Promise<DirectoryContext> => {
@@ -571,7 +597,8 @@ export function registerIpcHandlers(
       const session = await getTerminalSession(req.sessionId)
       if (!session) return 'none'
       const launch = await threadTerminalLaunch(req, session) ??
-        await resolvePtyLaunchOptions(ptyManager, session, req.launch)
+        await resolvePtyLaunchOptions(ptyManager, session, req.launch) ??
+        await restoredShellLaunch(req, session)
       if (pendingEnsures.get(req.terminalId) !== pending) return 'none'
       return ptyManager.ensure(
         req.terminalId,
@@ -590,7 +617,7 @@ export function registerIpcHandlers(
     try {
       const session = await getTerminalSession(req.sessionId)
       if (!session) return 'none'
-      const launch = await threadTerminalLaunch(req, session) ?? undefined
+      const launch = await threadTerminalLaunch(req, session) ?? await restoredShellLaunch(req, session, true)
       if (pendingEnsures.get(req.terminalId) !== pending) return 'none'
       return ptyManager.restart(
         req.terminalId,

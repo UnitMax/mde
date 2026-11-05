@@ -50,7 +50,7 @@ const handler = (channel: string): Handler => {
 }
 
 describe('the Inbox terminal over IPC', () => {
-  const ptyManager = { ensure: vi.fn(() => 'running'), terminalInfo: vi.fn(), status: vi.fn() }
+  const ptyManager = { savedDirectory: vi.fn(), ensure: vi.fn(() => 'running'), terminalInfo: vi.fn(), status: vi.fn() }
 
   beforeEach(() => {
     electronMock.handlers.clear()
@@ -84,7 +84,7 @@ describe('the Inbox terminal over IPC', () => {
 describe('Inbox terminal chat launches over IPC', () => {
   const terminalId = 'inbox-thread:ses_chat'
   let directory: string
-  const pty = { ensure: vi.fn(() => 'running'), restart: vi.fn(() => 'running'), terminalInfo: vi.fn(), dispose: vi.fn() }
+  const pty = { savedDirectory: vi.fn(), ensure: vi.fn(() => 'running'), restart: vi.fn(() => 'running'), terminalInfo: vi.fn(), dispose: vi.fn() }
   const launch = { agent: { executable: 'custom-opencode', args: ['--server', 'http://127.0.0.1:49374', '--session', 'ses_chat'] }, environment: { OPENCODE_PASSWORD: 'test-password' } }
   const chat = { fileRoot: vi.fn(), terminalSession: vi.fn(), terminalLaunch: vi.fn(async () => launch), removeDraft: vi.fn(), removeThreadWorktree: vi.fn() }
   const recorder = { remove: vi.fn() }

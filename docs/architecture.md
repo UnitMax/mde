@@ -31,10 +31,21 @@ Switching sessions or tabs re-parents terminal containers rather than disposing 
 process, its scrollback and its cursor position survive. Unvisited persisted tabs create their PTYs
 lazily; the PTYs themselves do not survive application restart.
 
-Creating a session requires a project, name and environment. Fresh shells start in the user's home
-directory: the native home directory or `~` in the chosen WSL distro. Session directories are not
-stored; terminal directories are tracked separately at runtime. Old workspace path fields are ignored
-and omitted on the next save, without a migration.
+Creating a session requires a project, name and environment. New shells start in the user's home
+directory: the native home directory or `~` in the chosen WSL distro. Each terminal pane remembers
+its own last reported directory across MDE restarts. The main process stores these records in
+`terminal-directories.json` under Electron's user-data directory, keyed by terminal identity, owning
+session and native/WSL target. Layout edits cannot overwrite them. A restored directory is checked
+before launch; missing, invalid or unavailable folders fall back to home. The reopened process is
+a fresh shell; running commands and scrollback are not restored.
+
+The same records cover the shared Inbox terminal. Inbox conversation terminals continue to use
+the API thread's recorded folder. Directory reports are saved during use and flushed before MDE
+quits; removing a pane clears its record. Custom shells must emit OSC 7 for directory changes to be
+remembered. Bash, Zsh, Fish and Windows PowerShell have built-in reporting hooks.
+
+Session-level directories remain removed. Old workspace path fields are ignored and omitted on the
+next save; existing layouts need no migration and start at home until a pane directory is recorded.
 
 The Projects sidebar shows session names, or icons and initials when collapsed.
 Optional terminal entries show pane names, tabs and current folders.
@@ -291,7 +302,7 @@ The Inbox also shows a right-hand sidebar with three tabs, Files, Changes and Te
 
 **Resizing.** Dragging the sidebar's left edge makes it wider (up to 70% of the window) or narrower (never under 260 px). The edge is a keyboard-operable separator: Left and Right arrows change the width by 16 px (64 with Shift), Home and End go to the limits, and a double-click restores 260 px. One width serves all three tabs and is kept in the renderer's `localStorage` (`mde.inbox-sidebar-width`).
 
-**Terminal tab.** The Inbox has one terminal, shared by every thread: it is the same whichever thread (or the new-thread page) is open, and it keeps running while the sidebar shows another tab or the Projects view is open. It reuses the project view's terminal layout (`TerminalView` in its embedded mode: no tab strip, a location header, and Ctrl split controls, Ctrl+Shift+F and the pane-switch shortcuts acting only while the keyboard is inside it, so typing in the composer is never intercepted). Splitting any pane on any side, resizing the dividers, reordering panes, pane titles, fullscreen, restart, and the terminal launcher work as in Projects. Every shell starts in the home directory: `~` in the default WSL distro on Windows, the home directory on the Mac. The layout and its dividers are kept in `localStorage` (`mde.inbox-terminal-layout`) and come back as fresh shells on the next run; the shells themselves are not restored. The layout edits shared with the project view live in `src/renderer/terminal/layout-edits.ts`, and the Inbox's copy of the state in `src/renderer/store/inbox-terminal.ts`.
+**Terminal tab.** The Inbox has one terminal, shared by every thread: it is the same whichever thread (or the new-thread page) is open, and it keeps running while the sidebar shows another tab or the Projects view is open. It reuses the project view's terminal layout (`TerminalView` in its embedded mode: no tab strip, a location header, and Ctrl split controls, Ctrl+Shift+F and the pane-switch shortcuts acting only while the keyboard is inside it, so typing in the composer is never intercepted). Splitting any pane on any side, resizing the dividers, reordering panes, pane titles, fullscreen, restart, and the terminal launcher work as in Projects. Each pane reopens in its last reported directory, falling back to home: `~` in the default WSL distro on Windows, the home directory on the Mac. The layout and its dividers are kept in `localStorage` (`mde.inbox-terminal-layout`) and come back as fresh shells on the next run; the shell processes themselves are not restored. Directories are saved separately in the main-process terminal records. The layout edits shared with the project view live in `src/renderer/terminal/layout-edits.ts`, and the Inbox's copy of the state in `src/renderer/store/inbox-terminal.ts`.
 
 The terminal is not a workspace session and is never stored. Terminal requests name it with the reserved session ID `inbox-terminal` (`src/shared/inbox-terminal.ts`), which the main process resolves on demand (`src/main/inbox/terminal.ts`) for terminal requests. File and Git requests can also name a live terminal ID and its expected directory; naming `inbox-terminal` as a saved file-root session still fails.
 
@@ -931,7 +942,7 @@ worktree.
 - The per-terminal Open in VS Code and File Explorer buttons follow the terminal's current
   directory. They become available once the shell reports it through OSC 7. MDE installs
   process-local prompt hooks for Bash, Zsh, and Fish; other custom shells need to emit OSC 7
-  themselves. Native terminals initially report their home directory.
+  themselves. Native terminals initially report their launch directory, including a restored folder.
 - Choosing a WSL Inbox folder on Windows opens MDE's folder browser (`WslFolderBrowser`, backed
   by `path:list-wsl-directories` in `src/main/wsl/browse.ts`). Inbox folders and runtime terminal
   directories use the target's own path format. `wslpath` is used when translating dropped paths

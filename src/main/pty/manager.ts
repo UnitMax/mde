@@ -14,6 +14,7 @@ import type {
 } from '@shared/types'
 import { buildLaunchSpec, type LaunchContext } from './launch'
 import { TerminalQueryResponder } from './terminal-queries'
+import type { TerminalDirectoryStore } from './directories'
 import { resolveWindowsShell, resolveWslExecutable } from '../windows-executable'
 
 interface PtySession {
@@ -104,7 +105,14 @@ function spawnPty(
 export class PtyManager {
   private readonly sessions = new Map<string, PtySession>()
 
-  constructor(private readonly events: PtyEvents) {}
+  constructor(
+    private readonly events: PtyEvents,
+    private readonly directoryStore?: TerminalDirectoryStore,
+  ) {}
+
+  savedDirectory(terminalId: string, session: Session): string | undefined {
+    return this.directoryStore?.get(terminalId, session)
+  }
 
   status(terminalId: string): PtyStatus {
     return this.sessions.get(terminalId)?.status ?? 'none'
@@ -186,6 +194,7 @@ export class PtyManager {
         currentDirectory = result.directory
         const current = this.sessions.get(terminalId)
         if (current) current.currentDirectory = currentDirectory
+        this.directoryStore?.remember(terminalId, session, currentDirectory)
         this.events.onDirectory({ terminalId, directory: currentDirectory })
       }
       if (result.data) this.events.onData({ terminalId, data: result.data })
@@ -212,6 +221,7 @@ export class PtyManager {
       }
     })
     if (currentDirectory) {
+      this.directoryStore?.remember(terminalId, session, currentDirectory)
       this.events.onDirectory({ terminalId, directory: currentDirectory })
     }
 
@@ -225,7 +235,7 @@ export class PtyManager {
     palette: TerminalPalette,
     options?: PtyLaunchOptions,
   ): PtyStatus {
-    this.dispose(terminalId)
+    this.dispose(terminalId, false)
     return this.ensure(terminalId, session, size, palette, options)
   }
 
@@ -251,7 +261,8 @@ export class PtyManager {
     this.sessions.get(terminalId)?.queryResponder.setPalette(palette)
   }
 
-  dispose(terminalId: string): void {
+  dispose(terminalId: string, forgetDirectory = true): void {
+    if (forgetDirectory) this.directoryStore?.forget(terminalId)
     const session = this.sessions.get(terminalId)
     if (!session) return
     this.sessions.delete(terminalId)
@@ -268,12 +279,13 @@ export class PtyManager {
 
   /** Disposes every runtime terminal launched from one persisted session. */
   disposeForSourceSession(sessionId: string): void {
+    this.directoryStore?.forgetSession(sessionId)
     for (const [terminalId, session] of this.sessions) {
       if (session.sourceSessionId === sessionId) this.dispose(terminalId)
     }
   }
 
   disposeAll(): void {
-    for (const sessionId of [...this.sessions.keys()]) this.dispose(sessionId)
+    for (const terminalId of [...this.sessions.keys()]) this.dispose(terminalId, false)
   }
 }

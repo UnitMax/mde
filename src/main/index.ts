@@ -6,6 +6,7 @@ import { rendererEntryUrl } from './ipc-security'
 import { getMiniWindowAction, MiniWindowController } from './mini-window'
 import { TitleBarController } from './window-chrome'
 import { PtyManager } from './pty/manager'
+import { TerminalDirectoryStore } from './pty/directories'
 import { initWorkspaceStore } from './store/workspace'
 import { InboxStore, INBOX_FILE } from './inbox/store'
 import { InboxRecorder } from './inbox/recorder'
@@ -48,6 +49,7 @@ const titleBar = new TitleBarController({
   }
 })
 
+const terminalDirectories = new TerminalDirectoryStore()
 const ptyManager = new PtyManager({
   onData: (chunk) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -64,7 +66,7 @@ const ptyManager = new PtyManager({
       mainWindow.webContents.send(IpcEvents.ptyExit, info)
     }
   }
-})
+}, terminalDirectories)
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -152,6 +154,7 @@ if (!app.requestSingleInstanceLock()) {
     installPermissionPolicy(session.defaultSession)
     installRendererProtocol(session.defaultSession, join(__dirname, '../renderer'))
     initWorkspaceStore(app.getPath('userData'))
+    await terminalDirectories.configure(app.getPath('userData'))
     inboxStore = new InboxStore(join(app.getPath('userData'), INBOX_FILE))
     await inboxStore.load()
     inboxRecorder = new InboxRecorder(inboxStore, {
@@ -223,11 +226,10 @@ if (!app.requestSingleInstanceLock()) {
     quitPrepared = true
     ptyManager.disposeAll()
     inboxChat?.stop()
-    // Closing the terminals settles their inbox threads; save them before exiting.
-    if (inboxStore) {
-      const store = inboxStore
-      event.preventDefault()
-      void Promise.all([store.flush(), inboxDrafts?.flush()]).finally(() => app.quit())
-    }
+    // Save the last pane directories and Inbox state before exiting.
+    event.preventDefault()
+    void Promise.all([terminalDirectories.flush(), inboxStore?.flush(), inboxDrafts?.flush()])
+      .catch(() => console.warn('[app] Could not finish saving local state.'))
+      .finally(() => app.quit())
   })
 }

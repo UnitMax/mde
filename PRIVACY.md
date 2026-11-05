@@ -13,6 +13,11 @@ MDE stores data only on the local machine:
 - `workspace.json` under Electron's user-data directory: project labels, terminal session names,
   platform and distro details, shell overrides, tab and terminal layout, and To Do projects
   with their task titles and descriptions.
+- `terminal-directories.json` under Electron's user-data directory: the last reported directory of
+  each terminal pane, its terminal and owning session IDs, and its native/WSL target (including the
+  distro name). These plain-text records reopen fresh shells in the same folders after restarting
+  MDE. Removed panes are forgotten. Commands, terminal output and conversation content are not saved
+  in these records.
 - The renderer's local storage (`mde.terminal-settings`): appearance and terminal preferences,
   including the executable and argument strings configured for the shell, OpenCode, Codex and
   Claude launchers. Any secret typed into an argument string is stored there in plain text.
@@ -132,8 +137,9 @@ clipboard's contents anywhere itself; what you paste is an unsent draft like any
 
 In Projects mode, the Files sidebar reads the selected terminal’s current directory.
 Each terminal header reads local Git metadata for that
-terminal’s checkout; opening it reads changes and diffs there. Directory reports, file previews and
-Git snapshots are held in memory and are not added to the saved workspace. Inbox file browsing
+terminal’s checkout; opening it reads changes and diffs there. Directory reports update the local
+per-terminal records described above. File previews and Git snapshots are held in memory and are
+not added to the saved workspace. Inbox file browsing
 continues to use the selected thread or folder.
 
 MDE does not make automatic network requests. It reads local files and invokes local commands to support terminal sessions and file actions: Git for repository status (and, when you start an Inbox conversation in a new worktree or delete one with its worktree, to create or remove that worktree; MDE never runs `git fetch` or any other Git network command), `wsl.exe` on Windows, and the configured OpenCode executable to find the OpenCode background service.

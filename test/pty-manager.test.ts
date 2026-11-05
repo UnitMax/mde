@@ -1,4 +1,6 @@
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Session } from '@shared/types'
 
@@ -22,6 +24,7 @@ const ptyMock = vi.hoisted(() => ({
 vi.mock('node-pty', () => ({ spawn: ptyMock.spawn }))
 
 import { PtyManager } from '../src/main/pty/manager'
+import { TerminalDirectoryStore } from '../src/main/pty/directories'
 
 import * as hostExecutables from '../src/main/windows-executable'
 
@@ -279,6 +282,28 @@ describe('PtyManager runtime terminal identities', () => {
     ptyMock.children.get('pane-1')?.dataListener?.('\u001b]7;file://localhost/home/me/app\u0007')
     expect(events.onDirectory).toHaveBeenCalledWith({ terminalId: 'pane-a', directory: '/home/me/app' })
     expect(manager.directories()).toEqual({ 'pane-a': '/home/me/app' })
+  })
+
+  it('retains reported directories at shutdown and forgets panes explicitly removed later', async () => {
+    const saved = new TerminalDirectoryStore()
+    const events = { onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() }
+    const manager = new PtyManager(events, saved)
+    const source = sourceSession()
+    manager.ensure('pane-a', source, { cols: 80, rows: 24 }, palette)
+    manager.ensure('pane-b', source, { cols: 80, rows: 24 }, palette)
+    const first = join(tmpdir(), 'mde-first')
+    const second = join(tmpdir(), 'mde-second')
+    ptyMock.children.get('pane-1')?.dataListener?.(`\u001b]7;${pathToFileURL(first).href}\u0007`)
+    ptyMock.children.get('pane-2')?.dataListener?.(`\u001b]7;${pathToFileURL(second).href}\u0007`)
+    manager.disposeAll()
+
+    const nextRun = new PtyManager(events, saved)
+    expect(nextRun.savedDirectory('pane-a', source)).toBe(first)
+    expect(nextRun.savedDirectory('pane-b', source)).toBe(second)
+    nextRun.dispose('pane-a')
+    expect(nextRun.savedDirectory('pane-a', source)).toBeUndefined()
+    expect(nextRun.savedDirectory('pane-b', source)).toBe(second)
+    await saved.flush()
   })
 
   it('updates the stored WSL directory after a prompt reports cd', () => {
