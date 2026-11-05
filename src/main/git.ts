@@ -26,10 +26,8 @@ const GIT_MAX_BUFFER = 8 * 1024 * 1024
 const GIT_EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 
 /**
- * Git processes allowed at once, across every session and terminal. The sidebar refreshes all
- * sessions together every ten seconds and each refresh starts several processes, one `wsl.exe`
- * apiece for a WSL session. A few slots keep that burst from crowding out requests the user made
- * themselves, and a whole refresh still finishes in about a second.
+ * Git processes allowed at once across terminal headers and Inbox changes. Background
+ * refreshes yield to requests the user makes, such as opening a changes dialog.
  */
 const GIT_SPAWN_LIMIT = 3
 const gitSpawns = createSpawnLimiter(GIT_SPAWN_LIMIT)
@@ -410,7 +408,7 @@ const gitStatusSummaryArgs = [
   '--porcelain=v2',
   '--branch',
   '-z',
-  '--untracked-files=no'
+  '--untracked-files=normal'
 ]
 
 async function ensureRepository(run: GitCommandRunner): Promise<boolean> {
@@ -468,7 +466,7 @@ export async function readGitInfoWithRunner(run: GitCommandRunner): Promise<GitI
   ])
 
   if (branch.code !== 0) throw commandError('branch', branch)
-  if (history.code !== 0) throw commandError('history', history)
+  if (history.code !== 0 && !/does not have any commits yet/i.test(history.stderr)) throw commandError('history', history)
   if (status.code !== 0) throw commandError('status', status)
 
   return {
@@ -479,51 +477,43 @@ export async function readGitInfoWithRunner(run: GitCommandRunner): Promise<GitI
   }
 }
 
-export function readGitInfo(session: Session): Promise<GitInfoResponse> {
-  return readGitInfoWithRunner(createGitCommandRunner(session))
+export async function readGitInfo(session: Session): Promise<GitInfoResponse> {
+  const checkout = await checkoutRunner(createGitCommandRunner(session))
+  return checkout ? readGitInfoWithRunner(checkout.run) : { repository: false, branch: null, commits: [], changes: [] }
 }
 
 export async function readGitTerminalInfoWithRunner(
   run: GitCommandRunner
-): Promise<GitTerminalInfoResponse> {
-  const repository = await ensureRepository(run)
-  if (!repository) {
-    return { repository: false, branch: null, worktree: null }
+): Promise<Omit<GitTerminalInfoResponse, 'directory'>> {
+  const checkout = await checkoutRunner(run)
+  if (!checkout) {
+    return { repository: false, branch: null, worktree: null, additions: 0, deletions: 0, commitsAhead: null, changedFiles: 0 }
   }
-
-  const [branch, worktree] = await Promise.all([
-    run(['--no-pager', 'branch', '--show-current']),
-    run(['--no-pager', 'rev-parse', '--show-toplevel'])
-  ])
-
-  if (branch.launchError || branch.code !== 0) throw commandError('branch', branch)
-  if (worktree.launchError || worktree.code !== 0) throw commandError('worktree', worktree)
-
-  return {
-    repository: true,
-    branch: branch.stdout.trim() || null,
-    worktree: worktree.stdout.trim() || null
-  }
+  return { ...await readGitStatusWithRunner(checkout.run, true), worktree: checkout.root }
 }
 
-export function readGitTerminalInfo(
+export async function readGitTerminalInfo(
   session: Session,
   directory: string
 ): Promise<GitTerminalInfoResponse> {
-  return readGitTerminalInfoWithRunner(
+  const info = await readGitTerminalInfoWithRunner(
     createGitCommandRunner(session, process.platform, directory, 'background')
   )
+  return { ...info, directory }
 }
 
-export async function readGitStatusWithRunner(run: GitCommandRunner): Promise<GitStatusResponse> {
-  const repository = await ensureRepository(run)
-  if (!repository) {
+export async function readGitStatusWithRunner(
+  run: GitCommandRunner,
+  repositoryKnown = false
+): Promise<GitStatusResponse & { changedFiles: number }> {
+  if (!repositoryKnown && !(await ensureRepository(run))) {
     return {
       repository: false,
       branch: null,
       additions: 0,
       deletions: 0,
-      commitsAhead: null
+      commitsAhead: null,
+      changedFiles: 0,
     }
   }
 
@@ -558,14 +548,9 @@ export async function readGitStatusWithRunner(run: GitCommandRunner): Promise<Gi
     repository: true,
     branch: branch.stdout.trim() || null,
     ...counts,
-    commitsAhead: parseGitAheadCount(status.stdout)
+    commitsAhead: parseGitAheadCount(status.stdout),
+    changedFiles: parseGitStatus(status.stdout).length,
   }
-}
-
-export function readGitStatus(session: Session): Promise<GitStatusResponse> {
-  return readGitStatusWithRunner(
-    createGitCommandRunner(session, process.platform, session.path, 'background')
-  )
 }
 
 export async function readGitDiffWithRunner(
@@ -574,7 +559,7 @@ export async function readGitDiffWithRunner(
   nullDevice = '/dev/null'
 ): Promise<GitDiffResponse> {
   if (!path) throw new Error('Invalid Git diff path.')
-  if (!(await ensureRepository(run))) throw new Error('This session folder is not a Git repository.')
+  if (!(await ensureRepository(run))) throw new Error('This folder is not a Git repository.')
 
   const changes = await readGitChangesAfterRepository(run)
   const change = changes.find((entry) => entry.path === path)
@@ -623,9 +608,11 @@ export async function readGitDiffWithRunner(
   }
 }
 
-export function readGitDiff(session: Session, path: string): Promise<GitDiffResponse> {
+export async function readGitDiff(session: Session, path: string): Promise<GitDiffResponse> {
   const nullDevice = session.kind === 'wsl' || process.platform !== 'win32' ? '/dev/null' : 'NUL'
-  return readGitDiffWithRunner(createGitCommandRunner(session), path, nullDevice)
+  const checkout = await checkoutRunner(createGitCommandRunner(session))
+  if (!checkout) throw new Error('This terminal folder is not a Git repository.')
+  return readGitDiffWithRunner(checkout.run, path, nullDevice)
 }
 
 /** Untracked files whose line counts are read; the rest are listed without counts. */

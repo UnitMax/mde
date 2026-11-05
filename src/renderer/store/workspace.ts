@@ -2,7 +2,6 @@ import { create } from 'zustand'
 import type { PlatformInfo, WorkspaceData } from '@shared/ipc'
 import type {
   Distro,
-  GitStatusResponse,
   InboxThread,
   NewProject,
   NewTodoProject,
@@ -26,6 +25,7 @@ import type {
   SessionIcon,
   WindowMode
 } from '@shared/types'
+import { fileRootTerminalId } from '@/lib/file-root'
 import { disposeSession } from '@/terminal/sessions'
 import { viewportSettle } from '@/terminal/viewport-settle'
 import { isInboxThreadUnread } from '@/lib/inbox'
@@ -45,15 +45,7 @@ export interface OpenCodeTuiStatusState {
   unread: boolean
 }
 
-export interface GitSessionStatus {
-  response: GitStatusResponse | null
-  error: string | null
-  loading: boolean
-}
-
 let eventBridgeReady = false
-let gitStatusRefreshPromise: Promise<void> | null = null
-let gitStatusRefreshQueued = false
 
 export type WorkspaceView = 'projects' | 'todo' | 'inbox'
 
@@ -135,7 +127,6 @@ interface WorkspaceState {
   terminalDirectories: Record<string, string>
   exits: Record<string, PtyExitInfo>
   terminalTaskLinks: TerminalTaskLinks
-  gitStatuses: Record<string, GitSessionStatus>
   opencodeTuiStatuses: Record<string, OpenCodeTuiStatusState>
   opencodeTuiInstances: Record<string, OpenCodeTuiInstanceStatus[]>
   opencodeTuiReadRevisions: OpenCodeTuiReadRevisions
@@ -169,8 +160,8 @@ interface WorkspaceState {
   selectTodoProject: (id: string) => void
   toggleSidebar: () => void
   toggleFileTree: () => void
-  openFile: (sessionId: string, path: string) => void
-  closeFile: (sessionId: string) => void
+  openFile: (rootId: string, path: string) => void
+  closeFile: (rootId: string) => void
 
   addProject: (input: NewProject) => Promise<Project>
   renameProject: (id: string, name: string) => Promise<void>
@@ -207,7 +198,6 @@ interface WorkspaceState {
   removeSession: (id: string) => Promise<void>
   revealSession: (id: string) => Promise<void>
   openSessionInVsCode: (id: string) => Promise<void>
-  refreshGitStatuses: () => Promise<void>
 
   setStatus: (id: string, status: PtyStatus) => void
   linkTerminalToTodoTask: (terminalId: string, taskId: string) => void
@@ -251,7 +241,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   terminalDirectories: {},
   exits: {},
   terminalTaskLinks: {},
-  gitStatuses: {},
   opencodeTuiStatuses: {},
   opencodeTuiInstances: {},
   opencodeTuiReadRevisions: {},
@@ -319,7 +308,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       // The event bridge may receive a report while these startup requests
       // are in flight. Preserve that newer event over the initial snapshot.
       terminalDirectories: { ...directories, ...get().terminalDirectories },
-      gitStatuses: {},
       opencodeTuiStatuses: {},
       opencodeTuiReadRevisions: {},
       opencodeTuiInstanceLabelMode: opencodeTuiSettings.instanceLabelMode,
@@ -380,13 +368,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
   toggleFileTree: () => set((state) => ({ fileTreeCollapsed: !state.fileTreeCollapsed })),
-  openFile: (sessionId, path) =>
-    set((state) => ({ openFiles: { ...state.openFiles, [sessionId]: path } })),
-  closeFile: (sessionId) =>
+  openFile: (rootId, path) =>
+    set((state) => ({ openFiles: { ...state.openFiles, [rootId]: path } })),
+  closeFile: (rootId) =>
     set((state) => {
-      if (!(sessionId in state.openFiles)) return {}
+      if (!(rootId in state.openFiles)) return {}
       const openFiles = { ...state.openFiles }
-      delete openFiles[sessionId]
+      delete openFiles[rootId]
       return { openFiles }
     }),
 
@@ -410,21 +398,23 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     childIds.forEach(disposeSession)
     set((state) => {
       const statuses = { ...state.statuses }
+      const openFiles = { ...state.openFiles }
       const terminalDirectories = { ...state.terminalDirectories }
       const exits = { ...state.exits }
       const terminalTaskLinks = { ...state.terminalTaskLinks }
-      const gitStatuses = { ...state.gitStatuses }
       const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
       const opencodeTuiInstances = { ...state.opencodeTuiInstances }
       const opencodeTuiReadRevisions = { ...state.opencodeTuiReadRevisions }
       childIds.forEach((sessionId) => {
+        Object.keys(openFiles)
+          .filter((key) => belongsToSession(fileRootTerminalId(key) ?? key, sessionId))
+          .forEach((key) => delete openFiles[key])
         Object.keys(statuses).filter((id) => belongsToSession(id, sessionId)).forEach((id) => delete statuses[id])
         Object.keys(terminalDirectories).filter((id) => belongsToSession(id, sessionId)).forEach((id) => delete terminalDirectories[id])
         Object.keys(exits).filter((id) => belongsToSession(id, sessionId)).forEach((id) => delete exits[id])
         Object.keys(terminalTaskLinks)
           .filter((id) => belongsToSession(id, sessionId))
           .forEach((id) => delete terminalTaskLinks[id])
-        delete gitStatuses[sessionId]
         clearOpenCodeTuiReadRevisions(
           opencodeTuiReadRevisions,
           sessionId,
@@ -441,10 +431,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
             ? null
             : state.selectedSessionId,
         statuses,
+        openFiles,
         terminalDirectories,
         exits,
         terminalTaskLinks,
-        gitStatuses,
         opencodeTuiStatuses,
         opencodeTuiInstances,
         opencodeTuiReadRevisions,
@@ -644,7 +634,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const terminalDirectories = { ...state.terminalDirectories }
       const exits = { ...state.exits }
       const terminalTaskLinks = { ...state.terminalTaskLinks }
-      const gitStatuses = { ...state.gitStatuses }
       const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
       const opencodeTuiInstances = { ...state.opencodeTuiInstances }
       const opencodeTuiReadRevisions = { ...state.opencodeTuiReadRevisions }
@@ -654,7 +643,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       Object.keys(terminalTaskLinks)
         .filter((runtimeId) => belongsToSession(runtimeId, id))
         .forEach((runtimeId) => delete terminalTaskLinks[runtimeId])
-      delete gitStatuses[id]
       clearOpenCodeTuiReadRevisions(
         opencodeTuiReadRevisions,
         id,
@@ -663,7 +651,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       delete opencodeTuiStatuses[id]
       delete opencodeTuiInstances[id]
       const openFiles = { ...state.openFiles }
-      delete openFiles[id]
+      Object.keys(openFiles)
+        .filter((key) => belongsToSession(fileRootTerminalId(key) ?? key, id))
+        .forEach((key) => delete openFiles[key])
       return {
         openFiles,
         sessions: state.sessions.filter((session) => session.id !== id),
@@ -672,7 +662,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         terminalDirectories,
         exits,
         terminalTaskLinks,
-        gitStatuses,
         opencodeTuiStatuses,
         opencodeTuiInstances,
         opencodeTuiReadRevisions,
@@ -688,85 +677,15 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     await window.api.paths.openInVsCode(id)
   },
 
-  refreshGitStatuses: async () => {
-    if (gitStatusRefreshPromise) {
-      gitStatusRefreshQueued = true
-      return gitStatusRefreshPromise
-    }
-
-    const sessions = get().sessions
-    if (sessions.length === 0) {
-      set({ gitStatuses: {} })
-      return
-    }
-
-    set((state) => {
-      const gitStatuses = { ...state.gitStatuses }
-      const sessionIds = new Set(sessions.map((session) => session.id))
-      Object.keys(gitStatuses)
-        .filter((sessionId) => !sessionIds.has(sessionId))
-        .forEach((sessionId) => delete gitStatuses[sessionId])
-      sessions.forEach((session) => {
-        const previous = gitStatuses[session.id]
-        gitStatuses[session.id] = {
-          response: previous?.response ?? null,
-          error: null,
-          loading: true
-        }
-      })
-      return { gitStatuses }
-    })
-
-    const refresh = (async (): Promise<void> => {
-      const results = await Promise.all(
-        sessions.map(async (session) => {
-          try {
-            const response = await window.api.git.status({ sessionId: session.id })
-            return {
-              id: session.id,
-              value: { response, error: null, loading: false } satisfies GitSessionStatus
-            }
-          } catch (reason) {
-            return {
-              id: session.id,
-              value: {
-                response: null,
-                error: reason instanceof Error ? reason.message : 'Could not load Git status.',
-                loading: false
-              } satisfies GitSessionStatus
-            }
-          }
-        })
-      )
-
-      set((state) => {
-        const activeIds = new Set(state.sessions.map((session) => session.id))
-        const gitStatuses: Record<string, GitSessionStatus> = {}
-        results.forEach(({ id, value }) => {
-          if (activeIds.has(id)) gitStatuses[id] = value
-        })
-        return { gitStatuses }
-      })
-    })()
-
-    gitStatusRefreshPromise = refresh
-    try {
-      await refresh
-    } finally {
-      if (gitStatusRefreshPromise === refresh) gitStatusRefreshPromise = null
-      if (gitStatusRefreshQueued) {
-        gitStatusRefreshQueued = false
-        void get().refreshGitStatuses()
-      }
-    }
-  },
-
   setStatus: (id, status) =>
     set((state) => {
       const terminalTaskLinks = { ...state.terminalTaskLinks }
       if (status !== 'running') delete terminalTaskLinks[id]
       return {
         statuses: { ...state.statuses, [id]: status },
+        openFiles: status === 'none'
+          ? Object.fromEntries(Object.entries(state.openFiles).filter(([key]) => fileRootTerminalId(key) !== id))
+          : state.openFiles,
         terminalTaskLinks
       }
     }),

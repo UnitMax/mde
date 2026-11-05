@@ -606,6 +606,7 @@ describe('terminal Git IPC', () => {
     ) => {
       if (command[0] === 'test') return { stdout: '', stderr: '', code: 0 }
       if (command.includes('--is-inside-work-tree')) return { stdout: 'true\n', stderr: '', code: 0 }
+      if (command.includes('status') || command.includes('diff')) return { stdout: '', stderr: '', code: 0 }
       if (command.includes('branch')) return { stdout: 'feature/live\n', stderr: '', code: 0 }
       return { stdout: '/home/me/repo\n', stderr: '', code: 0 }
     })
@@ -614,14 +615,16 @@ describe('terminal Git IPC', () => {
     await expect(handler(IpcChannels.gitTerminalInfo)(trustedEvent, { terminalId: 'pane-1' })).resolves.toEqual({
       repository: true,
       branch: 'feature/live',
-      worktree: '/home/me/repo'
+      worktree: '/home/me/repo',
+      directory: '/home/me/current',
+      additions: 0, deletions: 0, commitsAhead: null, changedFiles: 0
     })
 
     expect(terminalInfo).toHaveBeenCalledWith('pane-1')
     const gitCalls = wslDistrosMock.runWslCommand.mock.calls.filter(
       ([, command]) => command[0] === 'git'
     )
-    expect(gitCalls).toHaveLength(3)
+    expect(gitCalls).toHaveLength(6)
     expect(gitCalls.every(([, , options]) => options.cwd === '/home/me/current')).toBe(true)
   })
 
@@ -709,6 +712,44 @@ describe('file tree IPC', () => {
       handler(IpcChannels.filesRead)(trustedEvent, { sessionId: 'session-1', path: 'README.md' })
     ).resolves.toEqual({ path: 'README.md', content: 'hi\n', size: 3, binary: false, tooLarge: false })
     expect(wslDistrosMock.runWslCommandBuffer.mock.calls[0]?.[1]).toContain('/home/me/configured/README.md')
+  })
+
+  it('lists and reads relative to the live terminal, outside its launch folder', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    workspaceMock.getSession.mockResolvedValue(wslSession())
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/current')
+    wslDistrosMock.runWslCommand.mockImplementation(async (_distro: string, command: string[]) => ({
+      stdout: command[0] === 'find' ? 'f\tREADME.md\n' : '', stderr: '', code: 0,
+    }))
+    wslDistrosMock.runWslCommandBuffer.mockResolvedValue({ stdout: Buffer.from('3\nhi\n'), stderr: '', code: 0 })
+    registerForTest(vi.fn(() => ({ sessionId: 'session-1', directory: '/home/me/current' })))
+    const root = { terminalId: 'pane-1', directory: '/home/me/current' }
+    await expect(handler(IpcChannels.filesList)(trustedEvent, { ...root, path: '' })).resolves.toMatchObject({ entries: [{ name: 'README.md' }] })
+    expect(wslDistrosMock.runWslCommand).toHaveBeenCalledWith('Ubuntu-24.04', expect.arrayContaining(['/home/me/current']))
+    await expect(handler(IpcChannels.filesRead)(trustedEvent, { ...root, path: 'README.md' })).resolves.toMatchObject({ content: 'hi\n' })
+    expect(wslDistrosMock.runWslCommandBuffer.mock.calls[0]?.[1]).toContain('/home/me/current/README.md')
+  })
+
+  it.each([IpcChannels.filesList, IpcChannels.filesRead, IpcChannels.gitInfo, IpcChannels.gitDiff])('rejects a stale or invented terminal directory for %s', async (channel) => {
+    workspaceMock.getSession.mockResolvedValue(wslSession())
+    const terminalInfo = vi.fn(() => ({ sessionId: 'session-1', directory: '/home/me/current' }))
+    registerForTest(terminalInfo)
+    await expect(handler(channel)(trustedEvent, { terminalId: 'pane-1', directory: '/home/me/other', ...(channel === IpcChannels.gitInfo ? {} : { path: 'README.md' }) })).rejects.toThrow('The terminal directory has changed.')
+    expect(wslDistrosMock.runWslCommand).not.toHaveBeenCalled()
+  })
+
+  it('rechecks the terminal after directory verification finishes', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    workspaceMock.getSession.mockResolvedValue(wslSession())
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/current')
+    const terminal = { sessionId: 'session-1', directory: '/home/me/current' }
+    wslDistrosMock.runWslCommand.mockImplementation(async () => {
+      terminal.directory = '/home/me/new'
+      return { stdout: '', stderr: '', code: 0 }
+    })
+    registerForTest(vi.fn(() => ({ ...terminal })))
+    await expect(handler(IpcChannels.filesList)(trustedEvent, { terminalId: 'pane-1', directory: '/home/me/current', path: '' })).rejects.toThrow('The terminal directory has changed.')
+    expect(wslDistrosMock.runWslCommand.mock.calls.every(([, command]) => command[0] === 'test')).toBe(true)
   })
 
   it('lists WSL folders through the browser channel, starting at the distro home', async () => {

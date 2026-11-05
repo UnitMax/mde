@@ -16,7 +16,6 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
-  GitBranch,
   GripVertical,
   Inbox,
   LoaderCircle,
@@ -77,13 +76,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { cn } from '@/lib/utils'
 import {
   useWorkspace,
-  type GitSessionStatus,
   type OpenCodeTuiStatusState,
   type WorkspaceView
 } from '@/store/workspace'
 import { OpenCodeStatusIcon } from '@/components/OpenCodeStatusIcon'
 import { OpenCodeNotificationBadge } from '@/components/OpenCodeNotificationBadge'
-import { SessionGitStatus } from '@/components/SessionGitStatus'
 import { SessionEnvironmentPanel } from '@/components/SessionEnvironmentPanel'
 import {
   OPENCODE_STATUS_ICON_SLOT_CLASS,
@@ -502,7 +499,6 @@ function TerminalInstances({
 
 interface SessionRowProps {
   session: Session
-  gitStatus?: GitSessionStatus
   status: PtyStatus
   terminalStatuses: Record<string, PtyStatus>
   terminalDirectories: Record<string, string>
@@ -515,7 +511,6 @@ interface SessionRowProps {
   selected: boolean
   onSelect: () => void
   onFocusTerminal: (tabId: string, terminalId: string) => void
-  onOpenGit: () => void
   dragging: boolean
   dragDisabled: boolean
   dropPosition: 'before' | 'after' | null
@@ -527,7 +522,6 @@ interface SessionRowProps {
 
 function SessionRow({
   session,
-  gitStatus,
   status,
   terminalStatuses,
   terminalDirectories,
@@ -540,7 +534,6 @@ function SessionRow({
   selected,
   onSelect,
   onFocusTerminal,
-  onOpenGit,
   dragging,
   dragDisabled,
   dropPosition,
@@ -610,7 +603,7 @@ function SessionRow({
     <>
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <SessionEnvironmentPanel session={session} gitStatus={gitStatus}>
+          <SessionEnvironmentPanel session={session}>
             <div
               ref={rowRef}
               role="button"
@@ -705,13 +698,9 @@ function SessionRow({
                   </div>
                 )}
                 <div className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight text-fg-subtle">
-                  {gitStatus?.response?.repository || gitStatus?.error ? (
-                    <SessionGitStatus status={gitStatus} className="flex-1" />
-                  ) : (
-                    <span data-testid="session-directory" className="min-w-0 truncate font-mono">
-                      {session.path}
-                    </span>
-                  )}
+                  <span data-testid="session-directory" className="min-w-0 truncate font-mono">
+                    {session.path}
+                  </span>
                 </div>
               </div>
 
@@ -732,10 +721,6 @@ function SessionRow({
         </ContextMenuTrigger>
 
         <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
-          <ContextMenuItem onSelect={onOpenGit}>
-            <GitBranch className="h-3.5 w-3.5" />
-            Git history
-          </ContextMenuItem>
           <ContextMenuItem
             onSelect={startRename}
           >
@@ -871,7 +856,6 @@ interface SessionDropTarget {
 interface ProjectGroupProps {
   project: Project
   sessions: Session[]
-  gitStatuses: Record<string, GitSessionStatus>
   statuses: Record<string, PtyStatus>
   terminalDirectories: Record<string, string>
   opencodeTuiStatuses: Record<string, OpenCodeTuiStatusState>
@@ -882,7 +866,6 @@ interface ProjectGroupProps {
   selectedSessionId: string | null
   onSelectSession: (id: string) => void
   onFocusTerminal: (sessionId: string, tabId: string, terminalId: string) => void
-  onOpenGit: (id: string) => void
   onNewSession: (projectId: string) => void
 }
 
@@ -902,7 +885,6 @@ function sessionTerminalStatus(
 function ProjectGroup({
   project,
   sessions,
-  gitStatuses,
   statuses,
   terminalDirectories,
   opencodeTuiStatuses,
@@ -913,7 +895,6 @@ function ProjectGroup({
   selectedSessionId,
   onSelectSession,
   onFocusTerminal,
-  onOpenGit,
   onNewSession
 }: ProjectGroupProps): JSX.Element {
   const renameProject = useWorkspace((state) => state.renameProject)
@@ -1091,7 +1072,6 @@ function ProjectGroup({
           <SessionRow
             key={session.id}
             session={session}
-            gitStatus={gitStatuses[session.id]}
             status={sessionTerminalStatus(session, terminalLayouts[session.id], statuses)}
             terminalStatuses={statuses}
             terminalDirectories={terminalDirectories}
@@ -1107,7 +1087,6 @@ function ProjectGroup({
             selected={session.id === selectedSessionId}
             onSelect={() => onSelectSession(session.id)}
             onFocusTerminal={(tabId, terminalId) => onFocusTerminal(session.id, tabId, terminalId)}
-            onOpenGit={() => onOpenGit(session.id)}
             dragging={session.id === draggingSessionId}
             dragDisabled={reordering}
             dropPosition={
@@ -1317,7 +1296,6 @@ interface SidebarProps {
   onNewTodoProject: () => void
   onNewTodoTask: () => void
   onNewSession: (projectId?: string) => void
-  onOpenGit: (sessionId: string) => void
   terminalLayouts: Record<string, Record<string, SessionTerminalLayout>>
   onFocusTerminal: (sessionId: string, tabId: string, terminalId: string) => void
 }
@@ -1327,15 +1305,12 @@ export function Sidebar({
   onNewTodoProject,
   onNewTodoTask,
   onNewSession,
-  onOpenGit,
   terminalLayouts,
   onFocusTerminal
 }: SidebarProps): JSX.Element {
-  const ready = useWorkspace((state) => state.ready)
   const projects = useWorkspace((state) => state.projects)
   const todoProjects = useWorkspace((state) => state.todoProjects)
   const sessions = useWorkspace((state) => state.sessions)
-  const gitStatuses = useWorkspace((state) => state.gitStatuses)
   const statuses = useWorkspace((state) => state.statuses)
   const terminalDirectories = useWorkspace((state) => state.terminalDirectories)
   const opencodeTuiStatuses = useWorkspace((state) => state.opencodeTuiStatuses)
@@ -1347,7 +1322,6 @@ export function Sidebar({
   const selectSession = useWorkspace((state) => state.selectSession)
   const selectTodoProject = useWorkspace((state) => state.selectTodoProject)
   const setSessionIcon = useWorkspace((state) => state.setSessionIcon)
-  const refreshGitStatuses = useWorkspace((state) => state.refreshGitStatuses)
   const collapsed = useWorkspace((state) => state.sidebarCollapsed)
   const toggleSidebar = useWorkspace((state) => state.toggleSidebar)
   const activeSection = useWorkspace((state) => state.activeWorkspaceView)
@@ -1355,27 +1329,11 @@ export function Sidebar({
   const inboxUnread = useWorkspace((state) => countUnreadInboxThreads(state.inboxThreads))
   const [terminalSettings, setTerminalSettings] = useState(() => getTerminalSettings())
   const [agentsCollapsed, setAgentsCollapsed] = useState(false)
-  const gitSessionKey = sessions.map((session) => `${session.id}:${session.path}`).join('\u0000')
   const orderedSessions = projects.flatMap((project) =>
     sessions.filter((session) => session.projectId === project.id)
   )
 
   useEffect(() => subscribeTerminalSettings(() => setTerminalSettings(getTerminalSettings())), [])
-
-  useEffect(() => {
-    if (!ready) return
-
-    void refreshGitStatuses()
-    const interval = window.setInterval(() => void refreshGitStatuses(), 10_000)
-    const refreshOnFocus = (): void => {
-      void refreshGitStatuses()
-    }
-    window.addEventListener('focus', refreshOnFocus)
-    return () => {
-      window.clearInterval(interval)
-      window.removeEventListener('focus', refreshOnFocus)
-    }
-  }, [gitSessionKey, ready, refreshGitStatuses])
 
   const projectSessionList = projects.length === 0 ? (
     <p className="px-2 py-1 text-xs text-fg-subtle">No projects yet.</p>
@@ -1385,7 +1343,6 @@ export function Sidebar({
         key={project.id}
         project={project}
         sessions={sessions.filter((session) => session.projectId === project.id)}
-        gitStatuses={gitStatuses}
         statuses={statuses}
         terminalDirectories={terminalDirectories}
         opencodeTuiStatuses={opencodeTuiStatuses}
@@ -1396,7 +1353,6 @@ export function Sidebar({
         selectedSessionId={selectedSessionId}
         onSelectSession={selectSession}
         onFocusTerminal={onFocusTerminal}
-        onOpenGit={onOpenGit}
         onNewSession={(projectId) => onNewSession(projectId)}
       />
     ))
@@ -1447,7 +1403,7 @@ export function Sidebar({
                     return (
                       <ContextMenu key={session.id}>
                         <ContextMenuTrigger asChild>
-                          <SessionEnvironmentPanel session={session} gitStatus={gitStatuses[session.id]}>
+                          <SessionEnvironmentPanel session={session}>
                             <button
                               type="button"
                               aria-label={`${project.name}: ${session.name}`}
@@ -1514,11 +1470,6 @@ export function Sidebar({
                               </ContextMenuItem>
                             </ContextMenuSubContent>
                           </ContextMenuSub>
-                          <ContextMenuSeparator />
-                          <ContextMenuItem onSelect={() => onOpenGit(session.id)}>
-                            <GitBranch className="h-3.5 w-3.5" />
-                            Git history
-                          </ContextMenuItem>
                         </ContextMenuContent>
                       </ContextMenu>
                     )

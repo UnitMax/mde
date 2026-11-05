@@ -2,7 +2,6 @@ import type {
   Distro,
   GitDiffResponse,
   GitInfoResponse,
-  GitStatusResponse,
   GitTerminalInfoResponse,
   HostPlatform,
   NewProject,
@@ -145,7 +144,6 @@ export const IpcChannels = {
   pathOpenTerminalInVsCode: 'path:open-terminal-in-vscode',
 
   gitInfo: 'git:info',
-  gitStatus: 'git:status',
   gitTerminalInfo: 'git:terminal-info',
   gitDiff: 'git:diff',
 
@@ -251,32 +249,34 @@ export interface ListWslDirectoriesRequest {
   hidden?: boolean
 }
 
-export interface GitInfoRequest {
-  sessionId: string
+/** A live terminal root; directory is an expected value, never renderer-granted authority. */
+export interface TerminalDirectoryRequest {
+  terminalId: string
+  directory: string
 }
 
-export interface GitStatusRequest {
-  sessionId: string
-}
+export type FileRoot =
+  | { sessionId: string; terminalId?: never; directory?: never }
+  | (TerminalDirectoryRequest & { sessionId?: never })
+
+export type GitInfoRequest = TerminalDirectoryRequest
 
 export interface GitTerminalInfoRequest {
   terminalId: string
 }
 
-export interface GitDiffRequest {
-  sessionId: string
+export interface GitDiffRequest extends TerminalDirectoryRequest {
+  /** Path relative to the current checkout root. */
   path: string
 }
 
-export interface FilesListRequest {
-  sessionId: string
-  /** Directory relative to the session root, '/'-separated; '' lists the root. */
+export type FilesListRequest = FileRoot & {
+  /** Directory relative to the root, '/'-separated; '' lists the root. */
   path: string
 }
 
-export interface FilesReadRequest {
-  sessionId: string
-  /** File relative to the session root, '/'-separated. */
+export type FilesReadRequest = FileRoot & {
+  /** File relative to the root, '/'-separated. */
   path: string
 }
 
@@ -329,11 +329,8 @@ export interface DropPtyFile {
   fileUri?: string
 }
 
-/** A tree entry relative to its owning session root. */
-export interface FileTreeDropEntry {
-  sessionId: string
-  path: string
-}
+/** A tree entry relative to its verified file root. */
+export type FileTreeDropEntry = FileRoot & { path: string }
 
 /** Files resolved by preload from a renderer file drop. */
 export interface DropPtyFilesRequest {
@@ -529,7 +526,6 @@ export interface RendererApi {
   }
   git: {
     info(req: GitInfoRequest): Promise<GitInfoResponse>
-    status(req: GitStatusRequest): Promise<GitStatusResponse>
     terminalInfo(req: GitTerminalInfoRequest): Promise<GitTerminalInfoResponse | null>
     diff(req: GitDiffRequest): Promise<GitDiffResponse>
   }

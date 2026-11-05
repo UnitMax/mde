@@ -375,7 +375,7 @@ export class InboxChatService {
     if (request.action === 'prepend') await store.prepend(request.key, request.text, meta)
     if (request.action === 'add') await store.add(request.key, request.name, request.mime, request.data, meta)
     if (request.action === 'tree') {
-      const source = sourceSession ?? this.fileRoot(request.sessionId)
+      const source = sourceSession ?? (request.sessionId ? this.fileRoot(request.sessionId) : null)
       if (!source) throw new Error('Source folder no longer exists.')
       await store.add(request.key, request.path.split('/').at(-1)!, 'application/octet-stream', await readSessionAttachment(source, request.path), meta)
     }

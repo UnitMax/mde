@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import { supportsAgentIntegration } from '@shared/agent-support'
+import { isFileRoot } from '@shared/file-root'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import {
   type AppInfo,
@@ -9,7 +10,8 @@ import {
   type DropPtyFilesRequest,
   type GitDiffRequest,
   type GitInfoRequest,
-  type GitStatusRequest,
+  type TerminalDirectoryRequest,
+  type FileRoot,
   type GitTerminalInfoRequest,
   IpcChannels,
   type EnsurePtyRequest,
@@ -48,7 +50,6 @@ import type {
   GitDiffResponse,
   HostPlatform,
   GitInfoResponse,
-  GitStatusResponse,
   GitTerminalInfoResponse,
   NewProject,
   NewTodoProject,
@@ -145,7 +146,7 @@ import {
   validateOpenCodeExecutable,
   validateOpenCodeSessionId
 } from './opencode/sessions'
-import { readGitDiff, readGitInfo, readGitStatus, readGitTerminalInfo } from './git'
+import { readGitDiff, readGitInfo, readGitTerminalInfo } from './git'
 import { readInboxGitChanges, readInboxGitDiff } from './inbox/changes'
 import { terminalSessionResolver } from './inbox/terminal'
 import { isSafeRelativePath, listSessionDirectory, readSessionFile } from './files/tree'
@@ -444,6 +445,30 @@ export function registerIpcHandlers(
   const pendingEnsures = new Map<string, symbol>()
   // Terminals belong to a workspace session or to the Inbox's one global terminal; nothing else may name the latter.
   const getTerminalSession = terminalSessionResolver({ getSession, listDistros, platform: process.platform, home: homedir })
+  // The renderer names a terminal and an expected cwd, never an arbitrary filesystem root.
+  const terminalDirectory = async (req: TerminalDirectoryRequest): Promise<Session> => {
+    if (!isFileRoot(req) || !req.terminalId) throw new Error('Invalid terminal directory request.')
+    const terminal = ptyManager.terminalInfo(req.terminalId)
+    if (!terminal) throw new Error('Terminal no longer exists.')
+    const session = await getTerminalSession(terminal.sessionId)
+    if (!session) throw new Error('Session no longer exists.')
+    const candidate = terminal.directory ?? session.path
+    if (candidate !== req.directory) throw new Error('The terminal directory has changed.')
+    const directory = await verifiedDirectory(session, candidate)
+    if (!directory) throw new Error('Terminal folder not found.')
+    const current = ptyManager.terminalInfo(req.terminalId)
+    if (!current || current.sessionId !== terminal.sessionId || (current.directory ?? session.path) !== candidate) {
+      throw new Error('The terminal directory has changed.')
+    }
+    return { ...session, path: directory }
+  }
+  const fileRoot = async (root: FileRoot): Promise<Session> => {
+    if (!isFileRoot(root)) throw new Error('Invalid file root.')
+    if (root.terminalId) return terminalDirectory(root)
+    const session = (await getSession(root.sessionId!)) ?? chat.fileRoot(root.sessionId!)
+    if (!session) throw new Error('Session no longer exists.')
+    return session
+  }
   const handle = <Req, Res>(
     channel: IpcChannel,
     handler: (req: Req, event: Electron.IpcMainInvokeEvent) => Promise<Res> | Res
@@ -635,7 +660,7 @@ export function registerIpcHandlers(
   handle<InboxChangeDiffRequest, InboxChangeDiff>(IpcChannels.inboxChangeDiff, (req) => readInboxGitDiff(inboxGitRoot(req.threadId), req.path))
   handle<ChatMessagesRequest, ChatMessagesPage>(IpcChannels.chatMessages, (req) => chat.messages(req))
   handle<void, ChatDraftList>(IpcChannels.chatDrafts, () => chat.drafts())
-  handle<ChatDraftRequest, ChatDraft>(IpcChannels.chatDraft, async (req) => chat.draft(req, req.action === 'tree' ? (await getSession(req.sessionId)) ?? undefined : undefined))
+  handle<ChatDraftRequest, ChatDraft>(IpcChannels.chatDraft, async (req) => chat.draft(req, req.action === 'tree' ? await fileRoot(req) : undefined))
   handle<ChatSendRequest, ChatPendingMessage | null>(IpcChannels.chatSend, (req) => chat.send(req))
   handle<ChatDiscardPendingRequest, void>(IpcChannels.chatDiscardPending, (req) => chat.discardPending(req))
   handle<ChatSetDeliveryRequest, void>(IpcChannels.chatSetDelivery, (req) => chat.setDelivery(req))
@@ -740,8 +765,7 @@ export function registerIpcHandlers(
       !req.files.every(isDropPtyFile) ||
       (req.treeEntry !== undefined && (
         !req.treeEntry ||
-        typeof req.treeEntry.sessionId !== 'string' ||
-        req.treeEntry.sessionId.length === 0 ||
+        !isFileRoot(req.treeEntry) ||
         typeof req.treeEntry.path !== 'string' ||
         req.treeEntry.path.length === 0 ||
         !isSafeRelativePath(req.treeEntry.path)
@@ -764,8 +788,7 @@ export function registerIpcHandlers(
 
     const files = [...req.files]
     if (req.treeEntry) {
-      const source = await getSession(req.treeEntry.sessionId)
-      if (!source) throw new Error('The source session is no longer available.')
+      const source = await fileRoot(req.treeEntry)
       files.push(await fileTreeDropFile(source, req.treeEntry.path, process.platform))
     }
     return resolveTerminalDrop(session, process.platform, files, req.mode)
@@ -800,7 +823,7 @@ export function registerIpcHandlers(
     if (!terminal?.directory) return
 
     const session = await getTerminalSession(terminal.sessionId)
-    if (!session || process.platform !== 'win32' || session.kind !== 'wsl' || !session.distro) return
+    if (!session || (session.kind === 'wsl' && (process.platform !== 'win32' || !session.distro))) return
 
     const directory = await verifiedDirectory(session, terminal.directory)
     if (!directory) return
@@ -850,21 +873,7 @@ export function registerIpcHandlers(
   })
 
   handle<GitInfoRequest, GitInfoResponse>(IpcChannels.gitInfo, async (req) => {
-    if (!req || typeof req.sessionId !== 'string' || !req.sessionId) {
-      throw new Error('Invalid Git session request.')
-    }
-    const session = await getSession(req.sessionId)
-    if (!session) throw new Error('Session no longer exists.')
-    return readGitInfo(session)
-  })
-
-  handle<GitStatusRequest, GitStatusResponse>(IpcChannels.gitStatus, async (req) => {
-    if (!req || typeof req.sessionId !== 'string' || !req.sessionId) {
-      throw new Error('Invalid Git session request.')
-    }
-    const session = await getSession(req.sessionId)
-    if (!session) throw new Error('Session no longer exists.')
-    return readGitStatus(session)
+    return readGitInfo(await terminalDirectory(req))
   })
 
   handle<GitTerminalInfoRequest, GitTerminalInfoResponse | null>(
@@ -885,7 +894,7 @@ export function registerIpcHandlers(
       if (!directory) return null
 
       try {
-        return await readGitTerminalInfo(session, directory)
+        return { ...await readGitTerminalInfo(session, directory), directory: candidateDirectory }
       } catch {
         // Terminal metadata is intentionally best-effort. The header should
         // disappear when Git cannot read the current directory.
@@ -895,29 +904,17 @@ export function registerIpcHandlers(
   )
 
   handle<GitDiffRequest, GitDiffResponse>(IpcChannels.gitDiff, async (req) => {
-    if (!req || typeof req.sessionId !== 'string' || !req.sessionId || typeof req.path !== 'string' || !req.path) {
-      throw new Error('Invalid Git diff request.')
-    }
-    const session = await getSession(req.sessionId)
-    if (!session) throw new Error('Session no longer exists.')
-    return readGitDiff(session, req.path)
+    if (!req || typeof req.path !== 'string' || !req.path) throw new Error('Invalid Git diff request.')
+    return readGitDiff(await terminalDirectory(req), req.path)
   })
 
   handle<FilesListRequest, FileTreeListResponse>(IpcChannels.filesList, async (req) => {
-    if (!req || typeof req.sessionId !== 'string' || !req.sessionId || typeof req.path !== 'string') {
-      throw new Error('Invalid file tree request.')
-    }
-    const session = (await getSession(req.sessionId)) ?? chat.fileRoot(req.sessionId)
-    if (!session) throw new Error('Session no longer exists.')
-    return listSessionDirectory(session, req.path)
+    if (!isFileRoot(req) || typeof req.path !== 'string') throw new Error('Invalid file request.')
+    return listSessionDirectory(await fileRoot(req), req.path)
   })
 
   handle<FilesReadRequest, FileReadResponse>(IpcChannels.filesRead, async (req) => {
-    if (!req || typeof req.sessionId !== 'string' || !req.sessionId || typeof req.path !== 'string') {
-      throw new Error('Invalid file read request.')
-    }
-    const session = (await getSession(req.sessionId)) ?? chat.fileRoot(req.sessionId)
-    if (!session) throw new Error('Session no longer exists.')
-    return readSessionFile(session, req.path)
+    if (!isFileRoot(req) || typeof req.path !== 'string') throw new Error('Invalid file request.')
+    return readSessionFile(await fileRoot(req), req.path)
   })
 }

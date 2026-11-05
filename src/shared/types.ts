@@ -1,3 +1,5 @@
+import type { FileRoot } from './ipc'
+
 export type ProjectKind = 'native' | 'wsl'
 
 export type CodingAgent = 'opencode' | 'codex' | 'claude'
@@ -887,7 +889,7 @@ export interface GitInfoResponse {
   changes: GitChange[]
 }
 
-/** Lightweight Git state used by session lists. */
+/** Lightweight Git state for a checkout. */
 export interface GitStatusResponse {
   repository: boolean
   /** Null when the repository is in a detached HEAD state. */
@@ -901,10 +903,11 @@ export interface GitStatusResponse {
 }
 
 /** Lightweight Git identity for one live terminal working directory. */
-export interface GitTerminalInfoResponse {
-  repository: boolean
-  /** Null when the repository is in a detached HEAD state. */
-  branch: string | null
+export interface GitTerminalInfoResponse extends GitStatusResponse {
+  /** Changed entries, including untracked files and directories. */
+  changedFiles: number
+  /** Current directory used for this snapshot. */
+  directory: string
   /** Absolute root of the Git worktree containing the terminal directory. */
   worktree: string | null
 }
@@ -964,7 +967,7 @@ export type ChatDraftRequest = (
   /** Puts text above what the draft already holds. */
   | { key: ChatDraftKey; action: 'prepend'; text: string }
   | { key: ChatDraftKey; action: 'add'; name: string; mime: string; data: Uint8Array }
-  | { key: ChatDraftKey; action: 'tree'; sessionId: string; path: string }
+  | (FileRoot & { key: ChatDraftKey; action: 'tree'; path: string })
   | { key: ChatDraftKey; action: 'remove'; attachmentId: string }
 ) & {
   /** The folder a new-thread draft is for. Every change to such a draft names it, so the draft can be listed and reopened there. */

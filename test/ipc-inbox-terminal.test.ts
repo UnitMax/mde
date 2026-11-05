@@ -69,9 +69,8 @@ describe('the Inbox terminal over IPC', () => {
     expect((ptyManager.ensure.mock.calls[0] as unknown as [string, Session])[1]).toBe(session)
   })
 
-  it('does not let anything but a terminal request name it: its files and Git status are not available', async () => {
+  it('does not let anything but a terminal request name it: session file access is not available', async () => {
     await expect(handler(IpcChannels.filesList)(trustedEvent, { sessionId: 'inbox-terminal', path: '' })).rejects.toThrow()
-    await expect(handler(IpcChannels.gitStatus)(trustedEvent, { sessionId: 'inbox-terminal' })).rejects.toThrow(/no longer exists/)
     expect(workspaceMock.getSession).toHaveBeenCalledWith('inbox-terminal')
   })
 })

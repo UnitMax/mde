@@ -47,7 +47,6 @@ function resetWorkspace(sidebarCollapsed = false): void {
     terminalDirectories: {},
     exits: {},
     terminalTaskLinks: {},
-    gitStatuses: {},
     opencodeTuiStatuses: {},
     opencodeTuiInstances: { [session.id]: instances },
     opencodeTuiReadRevisions: {},
@@ -73,7 +72,6 @@ function sidebar(overrides: Partial<React.ComponentProps<typeof Sidebar>> = {}):
     onNewTodoProject: vi.fn(),
     onNewTodoTask: vi.fn(),
     onNewSession: vi.fn(),
-    onOpenGit: vi.fn(),
     terminalLayouts: {},
     onFocusTerminal: vi.fn(),
     ...overrides

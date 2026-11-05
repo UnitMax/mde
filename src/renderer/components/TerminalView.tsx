@@ -690,6 +690,8 @@ function TerminalPane({
 
   return (
     <div
+      onPointerDown={onFocus}
+      onFocusCapture={onFocus}
       className={`relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden border ${borderClass} bg-bg ${
         reorderState === 'active' ? 'opacity-45' : ''
       }`}

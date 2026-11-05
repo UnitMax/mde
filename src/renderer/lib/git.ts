@@ -34,11 +34,6 @@ export function gitStatusBranchLabel(status: GitStatusResponse): string {
   return status.branch ?? 'Detached HEAD'
 }
 
-export function gitStatusChangesLabel(status: GitStatusResponse): string {
-  if (status.additions === 0 && status.deletions === 0) return 'Clean'
-  return `+${status.additions} −${status.deletions}`
-}
-
 export function gitStatusAccessibleLabel(status: GitStatusResponse): string {
   const details = [`Branch ${gitStatusBranchLabel(status)}`]
   if (status.additions > 0 || status.deletions > 0) {

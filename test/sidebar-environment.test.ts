@@ -5,7 +5,6 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Session } from '../src/shared/types'
 import { SessionEnvironmentPanel } from '../src/renderer/components/SessionEnvironmentPanel'
-import type { GitSessionStatus } from '../src/renderer/store/workspace'
 
 const roots: Root[] = []
 const containers: HTMLDivElement[] = []
@@ -22,7 +21,7 @@ function session(overrides: Partial<Session> = {}): Session {
   }
 }
 
-function renderPanel(value: Session, gitStatus?: GitSessionStatus): HTMLElement {
+function renderPanel(value: Session): HTMLElement {
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
@@ -35,7 +34,6 @@ function renderPanel(value: Session, gitStatus?: GitSessionStatus): HTMLElement 
         SessionEnvironmentPanel,
         {
           session: value,
-          gitStatus,
           children: createElement(
             'button',
             { type: 'button', 'data-testid': 'session-trigger' },
@@ -117,29 +115,6 @@ describe('SessionEnvironmentPanel', () => {
     expect(environmentPanel?.textContent).toContain('Native')
     expect(environmentPanel?.textContent).not.toContain('Distribution')
     expect(environmentPanel?.textContent).toContain(value.path)
-  })
-
-  it('shows Git details in the environment hover for repositories', () => {
-    const container = renderPanel(session(), {
-      response: {
-        repository: true,
-        branch: 'feature/sidebar',
-        additions: 12,
-        deletions: 3,
-        commitsAhead: 2
-      },
-      error: null,
-      loading: false
-    })
-    const trigger = container.querySelector<HTMLElement>('[data-testid="session-trigger"]')
-    if (!trigger) throw new Error('Session trigger was not rendered')
-
-    act(() => trigger.focus())
-
-    const environmentPanel = panel()
-    expect(environmentPanel?.textContent).toContain('feature/sidebar')
-    expect(environmentPanel?.textContent).toContain('+12 −3')
-    expect(environmentPanel?.textContent).toContain('2 commits')
   })
 
   it('closes after the focused trigger loses focus', () => {

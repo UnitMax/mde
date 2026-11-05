@@ -61,10 +61,9 @@ const validPayloads = {
   [IpcChannels.pathRevealTerminal]: 'pane',
   [IpcChannels.pathOpenInVsCode]: 'session',
   [IpcChannels.pathOpenTerminalInVsCode]: 'pane',
-  [IpcChannels.gitInfo]: sessionId,
-  [IpcChannels.gitStatus]: sessionId,
+  [IpcChannels.gitInfo]: { terminalId: 'pane', directory: '/workspace' },
   [IpcChannels.gitTerminalInfo]: terminalId,
-  [IpcChannels.gitDiff]: { sessionId: 'session', path: 'src/file.ts' },
+  [IpcChannels.gitDiff]: { terminalId: 'pane', directory: '/workspace', path: 'src/file.ts' },
   [IpcChannels.filesList]: { sessionId: 'session', path: '' },
   [IpcChannels.filesRead]: { sessionId: 'session', path: 'src/file.ts' },
   [IpcChannels.opencodeSessionsList]: { sessionId: 'session', sourceTerminalId: 'pane', executable: '/usr/bin/opencode' },
@@ -366,6 +365,24 @@ describe('IPC payload boundary', () => {
       rejects(IpcChannels.filesRead, { sessionId: 'session', path })
       rejects(IpcChannels.filesList, { sessionId: 'session', path })
     }
+  })
+
+  it('accepts terminal directory roots and rejects mixed or unsafe selectors', () => {
+    const root = { terminalId: 'pane', directory: '/workspace/current' }
+    expect(() => assertIpcPayload(IpcChannels.filesList, { ...root, path: '' })).not.toThrow()
+    expect(() => assertIpcPayload(IpcChannels.filesRead, { ...root, path: 'src/main.ts' })).not.toThrow()
+    expect(() => assertIpcPayload(IpcChannels.gitInfo, root)).not.toThrow()
+    expect(() => assertIpcPayload(IpcChannels.gitDiff, { ...root, path: 'src/main.ts' })).not.toThrow()
+    expect(() => assertIpcPayload(IpcChannels.ptyDropFiles, { terminalId: 'target', files: [], mode: 'shell', treeEntry: { ...root, path: 'src' } })).not.toThrow()
+    expect(() => assertIpcPayload(IpcChannels.chatDraft, { key: 'draft:drf_one', action: 'tree', ...root, path: 'src/main.ts' })).not.toThrow()
+    for (const channel of [IpcChannels.filesList, IpcChannels.filesRead]) {
+      rejects(channel, { ...root, sessionId: 'session', path: 'src/main.ts' })
+      rejects(channel, { terminalId: 'pane', path: 'src/main.ts' })
+      rejects(channel, { ...root, directory: '', path: 'src/main.ts' })
+      rejects(channel, { ...root, path: '../outside' })
+    }
+    rejects(IpcChannels.gitInfo, { sessionId: 'session' })
+    rejects(IpcChannels.gitInfo, { ...root, sessionId: 'session' })
   })
 
   it('rejects malformed trees, unmatched pane references and invalid ratios', () => {

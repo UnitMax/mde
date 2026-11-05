@@ -120,7 +120,6 @@ const api: RendererApi = {
   },
   git: {
     info: (req) => ipcRenderer.invoke(IpcChannels.gitInfo, req),
-    status: (req) => ipcRenderer.invoke(IpcChannels.gitStatus, req),
     terminalInfo: (req) => ipcRenderer.invoke(IpcChannels.gitTerminalInfo, req),
     diff: (req) => ipcRenderer.invoke(IpcChannels.gitDiff, req)
   },

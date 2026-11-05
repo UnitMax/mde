@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os'
 import { trustedIpcSender } from './helpers/ipc-sender'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Session } from '../src/shared/types'
@@ -166,6 +167,33 @@ describe('terminal file-drop IPC', () => {
     })
     expect(dropMock.fileTreeDropFile).toHaveBeenCalledWith(source, 'src', process.platform)
     expect(dropMock.resolveTerminalDrop).toHaveBeenCalledWith(target, process.platform, [descriptor], 'shell')
+  })
+
+  it('resolves a tree drag from the source terminal directory', async () => {
+    const target = nativeSession()
+    const source = { ...target, id: 'source', path: '/workspace/launch' }
+    const directory = tmpdir()
+    workspaceMock.getSession.mockImplementation(async (id) => id === source.id ? source : target)
+    const descriptor = { name: 'src', nativePath: '/workspace/current/src' }
+    dropMock.fileTreeDropFile.mockResolvedValue(descriptor)
+    registerForTest({
+      terminalInfo: vi.fn((id) => ({ sessionId: id === 'source-pane' ? source.id : target.id, directory })),
+      status: vi.fn(() => 'running'),
+    })
+    await handler(IpcChannels.ptyDropFiles)(trustedEvent, {
+      terminalId: 'target-pane', files: [], mode: 'shell', treeEntry: { terminalId: 'source-pane', directory, path: 'src' },
+    })
+    expect(dropMock.fileTreeDropFile).toHaveBeenCalledWith({ ...source, path: directory }, 'src', process.platform)
+    expect(dropMock.resolveTerminalDrop).toHaveBeenCalledWith(target, process.platform, [descriptor], 'shell')
+  })
+
+  it('rejects a tree drag when the source terminal has changed directory', async () => {
+    workspaceMock.getSession.mockResolvedValue(nativeSession())
+    registerForTest({ terminalInfo: vi.fn(() => ({ sessionId: 'session-1', directory: '/workspace/new' })), status: vi.fn(() => 'running') })
+    await expect(handler(IpcChannels.ptyDropFiles)(trustedEvent, {
+      terminalId: 'target-pane', files: [], mode: 'shell', treeEntry: { terminalId: 'source-pane', directory: '/workspace/old', path: 'src' },
+    })).rejects.toThrow('The terminal directory has changed.')
+    expect(dropMock.fileTreeDropFile).not.toHaveBeenCalled()
   })
 
   it('reports a tree drop onto a stopped terminal', async () => {

@@ -4,14 +4,16 @@ Cross-platform desktop shell for an agentic dev environment: grouped projects co
 persistent terminal sessions, with first-class WSL support on Windows.
 
 It is a desktop shell focused on persistent terminal workflows: tabbed multi-pane terminals per
-session, Git status in the sidebar, a file tree with Markdown and Mermaid preview, an OpenCode
-session picker, and To Do boards. An optional OpenCode 2 terminal plugin provides agent status,
+session, Git changes in each terminal header, a file tree that follows the selected terminal,
+Markdown and Mermaid preview, an OpenCode session picker, and To Do boards. An optional OpenCode 2 terminal plugin provides agent status,
 alerts and instance labels without replacing the terminal experience. The Inbox is a separate
 chat view for starting and continuing OpenCode conversations; it needs no plugin. See
 [`docs/architecture.md`](docs/architecture.md) for how each part behaves.
 
 Build terminal layouts by holding Ctrl and clicking + on a pane’s left, right, top or bottom edge.
 Drag dividers to resize; closing a pane expands its sibling and preserves the rest of the layout.
+Select a terminal to browse its current folder in Files. Click its branch and change counts in the
+terminal header to review Git changes and history.
 
 ## Requirements
 

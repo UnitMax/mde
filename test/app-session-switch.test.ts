@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
 
+import { terminalIdForPane } from '../src/renderer/terminal/tabs'
+import { fileRootKey } from '../src/renderer/lib/file-root'
 import { testLayout } from './helpers/terminal-layout'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -26,10 +28,12 @@ vi.mock('../src/renderer/components/TerminalGitInfo', () => ({ TerminalGitInfo: 
 /** A `window.api` whose every call resolves to nothing, with the calls the screen reads answered. */
 function stubApi(): unknown {
   const answers: Record<string, unknown> = {
+    'pty.ensure': 'running',
     'files.list': { entries: [], truncated: false },
     'files.read': { path: 'README.md', content: '# Notes\n', size: 8, binary: false, tooLarge: false }
   }
-  const call = (name: string) => () => {
+  const call = (name: string) => (...args: unknown[]) => {
+    if (name === 'files.list') listFiles(...args)
     const result = (() => undefined) as unknown as { then: (resolve: (value: unknown) => unknown) => Promise<unknown> }
     result.then = (resolve) => Promise.resolve(answers[name]).then(resolve)
     return result
@@ -40,6 +44,7 @@ function stubApi(): unknown {
 }
 
 const roots: Root[] = []
+const listFiles = vi.fn()
 
 function session(id: string, name: string, paneCount: number): Session {
   return {
@@ -72,6 +77,7 @@ const viewerPath = (): string | null =>
 
 describe('switching sessions with a file open', () => {
   beforeEach(() => {
+    listFiles.mockClear()
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     Object.defineProperty(window, 'api', { configurable: true, value: stubApi() })
     useWorkspace.setState({
@@ -82,7 +88,7 @@ describe('switching sessions with a file open', () => {
       sessions: [alpha, beta],
       selectedSessionId: 'alpha',
       activeWorkspaceView: 'projects',
-      openFiles: { alpha: 'README.md' },
+      openFiles: { [fileRootKey({ terminalId: terminalIdForPane('alpha', 'alpha-tab', 'pane-1'), directory: alpha.path })]: 'README.md' },
       statuses: {}, exits: {}, terminalDirectories: {}, terminalTaskLinks: {},
       opencodeTuiInstances: {}, opencodeTuiStatuses: {}
     })
@@ -109,4 +115,22 @@ describe('switching sessions with a file open', () => {
     expect(paneCount()).toBe(4)
     expect(viewerPath()).toBe('README.md')
   })
+  it('follows pane selection and directory reports, with previews scoped to each root', async () => {
+    const first = terminalIdForPane('alpha', 'alpha-tab', 'pane-1')
+    const second = terminalIdForPane('alpha', 'alpha-tab', 'pane-2')
+    useWorkspace.setState({ statuses: { [first]: 'running', [second]: 'running' }, openFiles: {}, terminalDirectories: { [first]: '/workspace/first', [second]: '/workspace/second' } })
+    const container = await render()
+    expect(listFiles).toHaveBeenLastCalledWith({ terminalId: first, directory: '/workspace/first', path: '' })
+    const titleBars = container.querySelectorAll('[data-testid="terminal-pane-title-bar"]')
+    await act(async () => titleBars[1]?.dispatchEvent(new Event('pointerdown', { bubbles: true })))
+    expect(listFiles).toHaveBeenLastCalledWith({ terminalId: second, directory: '/workspace/second', path: '' })
+    await act(async () => useWorkspace.getState().openFile(fileRootKey({ terminalId: second, directory: '/workspace/second' }), 'README.md'))
+    expect(viewerPath()).toBe('README.md')
+    await act(async () => useWorkspace.getState().setTerminalDirectory({ terminalId: second, directory: '/workspace/new' }))
+    expect(listFiles).toHaveBeenLastCalledWith({ terminalId: second, directory: '/workspace/new', path: '' })
+    expect(viewerPath()).toBeNull()
+    await act(async () => titleBars[0]?.dispatchEvent(new Event('pointerdown', { bubbles: true })))
+    expect(listFiles).toHaveBeenLastCalledWith({ terminalId: first, directory: '/workspace/first', path: '' })
+  })
+
 })

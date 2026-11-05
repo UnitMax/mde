@@ -12,6 +12,8 @@ import {
 } from 'lucide-react'
 import { FILE_TREE_DROP_TYPE } from '@/terminal/drop'
 import type { Session } from '@shared/types'
+import type { FileRoot } from '@shared/ipc'
+import { fileRootKey } from '@/lib/file-root'
 import { Button } from '@/components/ui/button'
 import { useWorkspace } from '@/store/workspace'
 import { cn } from '@/lib/utils'
@@ -51,12 +53,14 @@ function statusText(row: Exclude<FileTreeRow, FileTreeEntryRow>): string {
 
 function FileTree({
   session,
+  root,
   onCollapse,
   browseOnly,
   heading,
   fill
 }: {
   session: Session
+  root: FileRoot
   onCollapse: () => void
   browseOnly: boolean
   heading?: ReactNode
@@ -71,7 +75,9 @@ function FileTree({
   const expandedRef = useRef(expanded)
   expandedRef.current = expanded
   const treeRef = useRef<HTMLDivElement>(null)
-  const openFilePath = useWorkspace((state) => state.openFiles[session.id])
+  const terminalReady = useWorkspace((state) => !root.terminalId || (state.statuses[root.terminalId] ?? 'none') !== 'none')
+  const rootId = fileRootKey(root)
+  const openFilePath = useWorkspace((state) => state.openFiles[rootId])
   const openFile = useWorkspace((state) => state.openFile)
   const revealSession = useWorkspace((state) => state.revealSession)
   const openSessionInVsCode = useWorkspace((state) => state.openSessionInVsCode)
@@ -84,9 +90,10 @@ function FileTree({
     async (path: string): Promise<void> => {
       const requestGeneration = generation.current
       setCache((current) => new Map(current).set(path, { status: 'loading' }))
+      if (!terminalReady) return
       let next: FileTreeDirectoryState
       try {
-        const response = await window.api.files.list({ sessionId: session.id, path })
+        const response = await window.api.files.list({ ...root, path })
         next = { status: 'ready', entries: response.entries, truncated: response.truncated }
       } catch (error) {
         next = { status: 'error', error: ipcErrorMessage(error, 'Could not list folder.') }
@@ -94,7 +101,7 @@ function FileTree({
       if (generation.current !== requestGeneration) return
       setCache((current) => new Map(current).set(path, next))
     },
-    [session.id]
+    [root, terminalReady]
   )
 
   const refresh = useCallback((): void => {
@@ -175,7 +182,7 @@ function FileTree({
       }
     } else if (event.key === 'Enter' || event.key === ' ') {
       if (isDirectory) setDirectoryExpanded(row.path, !row.expanded)
-      else openFile(session.id, row.path)
+      else openFile(rootId, row.path)
     } else {
       handled = false
     }
@@ -196,7 +203,7 @@ function FileTree({
     >
       <div className="flex items-center gap-1 px-3 pb-2 pt-3">
         {heading ?? (
-          <span className="min-w-0 flex-1 truncate text-[11px] font-medium uppercase tracking-wide text-fg-muted" title={session.path}>
+          <span className="min-w-0 flex-1 truncate text-[11px] font-medium uppercase tracking-wide text-fg-muted" title={root.directory ?? session.path}>
             Files
           </span>
         )}
@@ -205,7 +212,7 @@ function FileTree({
             variant="ghost"
             size="icon-sm"
             className="shrink-0"
-            onClick={() => void openSessionInVsCode(session.id)}
+            onClick={() => void (root.terminalId ? window.api.paths.openTerminalInVsCode(root.terminalId) : openSessionInVsCode(session.id))}
             title="Open folder in VS Code"
             aria-label="Open folder in VS Code"
           >
@@ -217,7 +224,7 @@ function FileTree({
             variant="ghost"
             size="icon-sm"
             className="shrink-0"
-            onClick={() => void revealSession(session.id)}
+            onClick={() => void (root.terminalId ? window.api.paths.revealTerminal(root.terminalId) : revealSession(session.id))}
             title="Open folder in File Explorer"
             aria-label="Open folder in File Explorer"
           >
@@ -246,10 +253,15 @@ function FileTree({
         </Button>
       </div>
 
+      {root.directory && (
+        <div data-testid="terminal-file-root" className="truncate px-3 pb-2 font-mono text-[10px] text-fg-subtle" title={root.directory}>
+          {root.directory}
+        </div>
+      )}
       <div
         ref={treeRef}
         role="tree"
-        aria-label={`Files in ${session.name}`}
+        aria-label={`Files in ${root.directory ?? session.path}`}
         className="min-h-0 flex-1 overflow-y-auto px-1 pb-2 text-[12px]"
       >
         {rows.map((row) => {
@@ -292,7 +304,7 @@ function FileTree({
               onDragStart={(event) => {
                 event.dataTransfer.effectAllowed = 'copy'
                 event.dataTransfer.setData(FILE_TREE_DROP_TYPE, JSON.stringify({
-                  sessionId: session.id,
+                  ...root,
                   path: row.path,
                 }))
                 const preview = document.createElement('div')
@@ -315,7 +327,7 @@ function FileTree({
               onFocus={() => setFocusedPath(row.path)}
               onClick={() => {
                 if (isDirectory) setDirectoryExpanded(row.path, !row.expanded)
-                else openFile(session.id, row.path)
+                else openFile(rootId, row.path)
               }}
               onKeyDown={(event) => onRowKeyDown(event, row)}
             >
@@ -338,22 +350,30 @@ function FileTree({
 }
 
 /**
- * The files of a session. `browseOnly` is for folders MDE does not manage as sessions (the Inbox):
+ * Files of a live terminal root or an Inbox folder. `browseOnly` is for Inbox folders:
  * the tree and viewer work, but opening the folder in VS Code or the file manager does not.
  */
 export function FileTreePanel({
   session,
+  root: requestedRoot,
   browseOnly = false,
   heading,
   fill = false
 }: {
   session: Session
+  root?: FileRoot
   browseOnly?: boolean
   /** Replaces the "Files" title in the header, for a host that offers other tabs beside the files. */
   heading?: ReactNode
   /** Takes the width of its container instead of its own 260px, for a host whose sidebar can be resized. */
   fill?: boolean
 }): JSX.Element {
+  const root = useMemo<FileRoot>(
+    () => requestedRoot?.terminalId
+      ? { terminalId: requestedRoot.terminalId, directory: requestedRoot.directory }
+      : { sessionId: session.id },
+    [requestedRoot?.terminalId, requestedRoot?.directory, session.id]
+  )
   const collapsed = useWorkspace((state) => state.fileTreeCollapsed)
   const toggleFileTree = useWorkspace((state) => state.toggleFileTree)
 
@@ -373,5 +393,5 @@ export function FileTreePanel({
     )
   }
 
-  return <FileTree key={session.id} session={session} onCollapse={toggleFileTree} browseOnly={browseOnly} heading={heading} fill={fill} />
+  return <FileTree key={fileRootKey(root)} session={session} root={root} onCollapse={toggleFileTree} browseOnly={browseOnly} heading={heading} fill={fill} />
 }

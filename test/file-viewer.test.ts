@@ -4,7 +4,9 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { EditorView } from '@codemirror/view'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { TerminalDirectoryRequest } from '../src/shared/ipc'
 import type { FileReadResponse, Session } from '../src/shared/types'
+import { useWorkspace } from '../src/renderer/store/workspace'
 import { FileViewer } from '../src/renderer/components/FileViewer'
 import { languageForPath } from '../src/renderer/lib/code-languages'
 import {
@@ -40,7 +42,7 @@ function file(overrides: Partial<FileReadResponse> = {}): FileReadResponse {
 
 async function renderViewer(
   path: string,
-  handlers: { onOpenFile?: (path: string) => void; onClose?: () => void } = {}
+  handlers: { onOpenFile?: (path: string) => void; onClose?: () => void; root?: TerminalDirectoryRequest } = {}
 ): Promise<HTMLElement> {
   const container = document.createElement('div')
   document.body.append(container)
@@ -52,6 +54,7 @@ async function renderViewer(
     root.render(
       createElement(FileViewer, {
         session,
+        root: handlers.root,
         path,
         onOpenFile: handlers.onOpenFile ?? (() => undefined),
         onClose: handlers.onClose ?? (() => undefined)
@@ -84,6 +87,7 @@ async function choose(label: string): Promise<void> {
 }
 
 describe('file viewer helpers', () => {
+
   it('resolves relative Markdown links inside the session only', () => {
     expect(resolveRelativeLink('docs/guide.md', 'setup.md')).toBe('docs/setup.md')
     expect(resolveRelativeLink('docs/guide.md', './img/../api.md#auth')).toBe('docs/api.md')
@@ -169,6 +173,15 @@ describe('FileViewer', () => {
     Reflect.deleteProperty(window, 'api')
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
+  })
+
+  it('reads the selected terminal root instead of the session launch folder', async () => {
+    read.mockResolvedValue(file({ content: '# Current folder' }))
+    useWorkspace.setState({ statuses: { 'pane-2': 'running' } })
+    const root = { terminalId: 'pane-2', directory: '/workspace/current' }
+    const container = await renderViewer('README.md', { root })
+    expect(read).toHaveBeenCalledWith({ ...root, path: 'README.md' })
+    expect(container.textContent).toContain('Current folder')
   })
 
   it('previews Markdown with tables and task lists, and toggles to the source', async () => {

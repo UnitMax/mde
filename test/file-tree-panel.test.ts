@@ -3,6 +3,8 @@
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { TerminalDirectoryRequest } from '../src/shared/ipc'
+import { fileRootKey } from '../src/renderer/lib/file-root'
 import type { Session } from '../src/shared/types'
 import { FILE_TREE_DROP_TYPE, readFileTreeDrop } from '../src/renderer/terminal/drop'
 import { FileTreePanel } from '../src/renderer/components/FileTreePanel'
@@ -24,7 +26,7 @@ const session: Session = {
   createdAt: '2026-01-01T00:00:00.000Z'
 }
 
-async function renderPanel(target: Session = session): Promise<HTMLElement> {
+async function renderPanel(target: Session = session, fileRoot?: TerminalDirectoryRequest): Promise<HTMLElement> {
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
@@ -32,7 +34,7 @@ async function renderPanel(target: Session = session): Promise<HTMLElement> {
   containers.push(container)
 
   await act(async () => {
-    root.render(createElement(FileTreePanel, { session: target }))
+    root.render(createElement(FileTreePanel, { session: target, root: fileRoot }))
   })
 
   return container
@@ -70,7 +72,7 @@ describe('FileTreePanel', () => {
       }
       throw new Error("Error invoking remote method 'files:list': Error: Folder not found.")
     })
-    useWorkspace.setState({ openFiles: {}, fileTreeCollapsed: false, platform: null, wslAvailable: false })
+    useWorkspace.setState({ statuses: { 'pane-1': 'running', 'pane-2': 'running' }, openFiles: {}, fileTreeCollapsed: false, platform: null, wslAvailable: false })
   })
 
   afterEach(() => {
@@ -144,6 +146,48 @@ describe('FileTreePanel', () => {
     await act(async () => { item.dispatchEvent(new Event('dragend', { bubbles: true })) })
     expect(document.querySelector('.file-tree-drag-preview')).toBeNull()
     expect(item.className).not.toContain('opacity-40')
+  })
+
+  it('waits for terminal startup before reading its directory', async () => {
+    useWorkspace.setState({ statuses: {} })
+    const root = { terminalId: 'pane-1', directory: '/workspace/current' }
+    const container = await renderPanel(session, root)
+    expect(list).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Loading')
+    await act(async () => useWorkspace.getState().setStatus('pane-1', 'running'))
+    expect(list).toHaveBeenCalledWith({ ...root, path: '' })
+    expect(container.textContent).toContain('README.md')
+  })
+
+  it('lists, opens and drags files from the selected terminal directory', async () => {
+    const root = { terminalId: 'pane-2', directory: '/workspace/other' }
+    const container = await renderPanel(session, root)
+    expect(list).toHaveBeenCalledWith({ ...root, path: '' })
+    expect(container.querySelector('[role="tree"]')?.getAttribute('aria-label')).toBe('Files in /workspace/other')
+    await act(async () => treeItem(container, 'README.md').click())
+    expect(useWorkspace.getState().openFiles).toEqual({ [fileRootKey(root)]: 'README.md' })
+    const values = new Map<string, string>()
+    const transfer = { setData: (key: string, value: string) => values.set(key, value), getData: (key: string) => values.get(key) ?? '', setDragImage: vi.fn() }
+    const drag = new Event('dragstart', { bubbles: true })
+    Object.defineProperty(drag, 'dataTransfer', { value: transfer })
+    await act(async () => treeItem(container, 'README.md').dispatchEvent(drag))
+    expect(readFileTreeDrop(transfer)).toEqual({ ...root, path: 'README.md' })
+  })
+
+  it('resets expansion and ignores stale listings when the selected terminal changes directory', async () => {
+    let finish: (value: unknown) => void = () => undefined
+    const oldRoot = { terminalId: 'pane-1', directory: '/workspace/old' }
+    const container = await renderPanel(session, oldRoot)
+    list.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    await act(async () => treeItem(container, 'src').click())
+    const next = { terminalId: 'pane-2', directory: '/workspace/new' }
+    list.mockResolvedValueOnce({ entries: [{ name: 'new.ts', kind: 'file' }], truncated: false })
+    await act(async () => roots.at(-1)!.render(createElement(FileTreePanel, { session, root: next })))
+    await act(async () => finish({ entries: [{ name: 'old.ts', kind: 'file' }], truncated: false }))
+    expect(list).toHaveBeenLastCalledWith({ ...next, path: '' })
+    expect(container.textContent).toContain('new.ts')
+    expect(container.textContent).not.toContain('old.ts')
+    expect(container.querySelector('[data-path="src"]')).toBeNull()
   })
 
   it('shows listing errors without the IPC prefix', async () => {

@@ -3,8 +3,6 @@ import * as React from 'react'
 import { Monitor, Terminal } from 'lucide-react'
 import type { Session } from '@shared/types'
 import { cn } from '@/lib/utils'
-import type { GitSessionStatus } from '@/store/workspace'
-import { gitStatusBranchLabel, gitStatusChangesLabel } from '@/lib/git'
 
 const PANEL_WIDTH = 256
 const VIEWPORT_PADDING = 8
@@ -14,7 +12,6 @@ const CLOSE_DELAY_MS = 120
 
 interface SessionEnvironmentPanelProps extends React.HTMLAttributes<HTMLDivElement> {
   session: Session
-  gitStatus?: Pick<GitSessionStatus, 'response' | 'error'>
   children: React.ReactElement
 }
 
@@ -46,7 +43,7 @@ function EnvironmentDetail({ label, value, mono = false }: {
 export const SessionEnvironmentPanel = React.forwardRef<
   HTMLDivElement,
   SessionEnvironmentPanelProps
->(function SessionEnvironmentPanel({ session, gitStatus, children, className, ...props }, forwardedRef) {
+>(function SessionEnvironmentPanel({ session, children, className, ...props }, forwardedRef) {
   const anchorRef = React.useRef<HTMLDivElement | null>(null)
   const panelRef = React.useRef<HTMLDivElement>(null)
   const openTimerRef = React.useRef<number | undefined>(undefined)
@@ -184,20 +181,7 @@ export const SessionEnvironmentPanel = React.forwardRef<
           <EnvironmentDetail label="Distribution" value={session.distro ?? 'Not configured'} />
         )}
         <EnvironmentDetail label="Working directory" value={session.path} mono />
-        {gitStatus?.response?.repository && (
-          <>
-            <EnvironmentDetail label="Branch" value={gitStatusBranchLabel(gitStatus.response)} mono />
-            <EnvironmentDetail label="Changes" value={gitStatusChangesLabel(gitStatus.response)} mono />
-            {gitStatus.response.commitsAhead !== null && gitStatus.response.commitsAhead > 0 && (
-              <EnvironmentDetail
-                label="Ahead"
-                value={`${gitStatus.response.commitsAhead} commit${gitStatus.response.commitsAhead === 1 ? '' : 's'}`}
-                mono
-              />
-            )}
-          </>
-        )}
-        {gitStatus?.error && <EnvironmentDetail label="Git" value={gitStatus.error} />}
+
       </dl>
     </div>,
     document.body

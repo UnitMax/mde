@@ -5,8 +5,8 @@ import type {
   GitChangeStatus,
   GitDiffResponse,
   GitInfoResponse,
-  Session
 } from '@shared/types'
+import type { TerminalDirectoryRequest } from '@shared/ipc'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -16,6 +16,7 @@ import {
   DialogTitle
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
+import { ipcErrorMessage } from '@/lib/ipc-error'
 import {
   formatGitTimestamp,
   parseGitDiff,
@@ -25,7 +26,7 @@ import {
 
 interface GitDialogProps {
   open: boolean
-  session: Session | null
+  terminal: TerminalDirectoryRequest | null
   onOpenChange: (open: boolean) => void
 }
 
@@ -82,7 +83,7 @@ function changePathLabel(change: GitChange): string {
   return change.oldPath ? `${change.oldPath} → ${change.path}` : change.path
 }
 
-export function GitDialog({ open, session, onOpenChange }: GitDialogProps): JSX.Element {
+export function GitDialog({ open, terminal, onOpenChange }: GitDialogProps): JSX.Element {
   const [info, setInfo] = useState<GitInfoResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -95,7 +96,7 @@ export function GitDialog({ open, session, onOpenChange }: GitDialogProps): JSX.
   const diffRequestSequence = useRef(0)
 
   const load = useCallback(async (): Promise<void> => {
-    if (!session) return
+    if (!terminal) return
     const sequence = ++requestSequence.current
     diffRequestSequence.current += 1
     setLoading(true)
@@ -106,40 +107,40 @@ export function GitDialog({ open, session, onOpenChange }: GitDialogProps): JSX.
     setDiffError(null)
     setDiffLoading(false)
     try {
-      const result = await window.api.git.info({ sessionId: session.id })
+      const result = await window.api.git.info(terminal)
       if (sequence !== requestSequence.current) return
       setInfo(result)
     } catch (reason) {
       if (sequence !== requestSequence.current) return
-      setError(reason instanceof Error ? reason.message : 'Could not load Git status and history.')
+      setError(ipcErrorMessage(reason, 'Could not load Git status and history.'))
     } finally {
       if (sequence === requestSequence.current) setLoading(false)
     }
-  }, [session])
+  }, [terminal])
 
   const loadDiff = useCallback(
     async (path: string): Promise<void> => {
-      if (!session) return
+      if (!terminal) return
       const sequence = ++diffRequestSequence.current
       setDiffLoading(true)
       setDiff(null)
       setDiffError(null)
       try {
-        const result = await window.api.git.diff({ sessionId: session.id, path })
+        const result = await window.api.git.diff({ ...terminal, path })
         if (sequence !== diffRequestSequence.current) return
         setDiff(result)
       } catch (reason) {
         if (sequence !== diffRequestSequence.current) return
-        setDiffError(reason instanceof Error ? reason.message : 'Could not load the selected Git diff.')
+        setDiffError(ipcErrorMessage(reason, 'Could not load the selected Git diff.'))
       } finally {
         if (sequence === diffRequestSequence.current) setDiffLoading(false)
       }
     },
-    [session]
+    [terminal]
   )
 
   useEffect(() => {
-    if (!open || !session) {
+    if (!open || !terminal) {
       requestSequence.current += 1
       diffRequestSequence.current += 1
       setLoading(false)
@@ -153,10 +154,10 @@ export function GitDialog({ open, session, onOpenChange }: GitDialogProps): JSX.
       requestSequence.current += 1
       diffRequestSequence.current += 1
     }
-  }, [load, open, session])
+  }, [load, open, terminal])
 
   useEffect(() => {
-    if (!open || !session || !info?.repository) {
+    if (!open || !terminal || !info?.repository) {
       diffRequestSequence.current += 1
       setDiffLoading(false)
       return
@@ -174,7 +175,7 @@ export function GitDialog({ open, session, onOpenChange }: GitDialogProps): JSX.
     return () => {
       diffRequestSequence.current += 1
     }
-  }, [info, loadDiff, open, selectedPath, session])
+  }, [info, loadDiff, open, selectedPath, terminal])
 
   const branchLabel = info?.repository ? info.branch ?? 'Detached HEAD' : '—'
   const selectedChange = info?.changes.find((change) => change.path === selectedPath) ?? null
@@ -184,9 +185,9 @@ export function GitDialog({ open, session, onOpenChange }: GitDialogProps): JSX.
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[90vh] max-w-6xl flex-col overflow-x-hidden overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Git history</DialogTitle>
+          <DialogTitle>Git changes and history</DialogTitle>
           <DialogDescription>
-            {session ? `${session.name} · ${session.path}` : 'Session Git history'}
+            {terminal?.directory ?? 'Terminal Git changes'}
           </DialogDescription>
         </DialogHeader>
 
@@ -202,7 +203,7 @@ export function GitDialog({ open, session, onOpenChange }: GitDialogProps): JSX.
             variant="secondary"
             size="sm"
             data-testid="git-refresh"
-            disabled={!session || loading}
+            disabled={!terminal || loading}
             onClick={() => void load()}
           >
             <RefreshCw className="h-3.5 w-3.5" />
@@ -228,13 +229,13 @@ export function GitDialog({ open, session, onOpenChange }: GitDialogProps): JSX.
             <section className="shrink-0">
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-subtle">Changes</h3>
               <p data-testid="git-no-changes" className="rounded border border-line bg-panel p-4 text-xs text-fg-muted">
-                This session folder is not a Git repository.
+                This terminal folder is not a Git repository.
               </p>
             </section>
             <section>
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-subtle">Recent commits</h3>
               <p data-testid="git-non-repository" className="rounded border border-line bg-panel p-4 text-xs text-fg-muted">
-                This session folder is not a Git repository.
+                This terminal folder is not a Git repository.
               </p>
             </section>
           </div>

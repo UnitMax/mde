@@ -24,7 +24,7 @@ export type TerminalDropResult = PtyDropResult
 
 const unsafePathCharacters = /[\u0000-\u001f\u007f]/
 
-/** Resolves tree entries in main, using the saved session rather than a supplied root. */
+/** Resolves tree entries in main, using a main-process-resolved root. */
 export async function fileTreeDropFile(
   source: Session,
   relativePath: string,

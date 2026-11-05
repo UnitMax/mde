@@ -77,6 +77,9 @@ const distro: Validator = (value) => typeof value === 'string' && value.length <
 const kind = oneOf('native', 'wsl')
 const sessionId = object({ sessionId: id })
 const terminalId = object({ terminalId: id })
+const terminalDirectory = { terminalId: id, directory: path }
+const rooted = (fields: Record<string, Validator>): Validator => (value) =>
+  object({ sessionId: id, ...fields })(value) || object({ ...terminalDirectory, ...fields })(value)
 const enabled = object({ enabled: boolean })
 const palette = object({
   foreground: (value) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value),
@@ -191,7 +194,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.ptyDropFiles]: object({
     terminalId: id,
     files: array(object({ name: optionalPath, nativePath: optional(path), fileUri: optional(path) }), IPC_LIMITS.droppedFiles),
-    treeEntry: optional(object({ sessionId: id, path: relativePath })),
+    treeEntry: optional(rooted({ path: relativePath })),
     mode: oneOf('shell', 'tui'),
   }),
   [IpcChannels.clipboardWriteText]: text,
@@ -206,12 +209,11 @@ export const ipcPayloadValidators = {
   [IpcChannels.pathRevealTerminal]: id,
   [IpcChannels.pathOpenInVsCode]: id,
   [IpcChannels.pathOpenTerminalInVsCode]: id,
-  [IpcChannels.gitInfo]: sessionId,
-  [IpcChannels.gitStatus]: sessionId,
+  [IpcChannels.gitInfo]: object(terminalDirectory),
   [IpcChannels.gitTerminalInfo]: terminalId,
-  [IpcChannels.gitDiff]: object({ sessionId: id, path }),
-  [IpcChannels.filesList]: object({ sessionId: id, path: listPath }),
-  [IpcChannels.filesRead]: object({ sessionId: id, path: relativePath }),
+  [IpcChannels.gitDiff]: object({ ...terminalDirectory, path }),
+  [IpcChannels.filesList]: rooted({ path: listPath }),
+  [IpcChannels.filesRead]: rooted({ path: relativePath }),
   [IpcChannels.opencodeSessionsList]: object({ sessionId: id, sourceTerminalId: id, executable: path }),
   [IpcChannels.opencodeTuiPluginState]: pluginRequest,
   [IpcChannels.opencodeTuiPluginInstall]: pluginRequest,
@@ -245,7 +247,7 @@ export const ipcPayloadValidators = {
       object({ key, action: oneOf('text'), text: promptText, folderId, choice })(value) ||
       object({ key, action: oneOf('prepend'), text: promptText, folderId, choice })(value) ||
       object({ key, action: oneOf('add'), name: string(512), mime: string(200), data: (v) => v instanceof Uint8Array && v.byteLength <= 20 * 1024 * 1024, folderId, choice })(value) ||
-      object({ key, action: oneOf('tree'), sessionId: id, path: relativePath, folderId, choice })(value) ||
+      rooted({ key, action: oneOf('tree'), path: relativePath, folderId, choice })(value) ||
       object({ key, action: oneOf('remove'), attachmentId: string(64), folderId, choice })(value)
   },
   [IpcChannels.chatDrafts]: noPayload,

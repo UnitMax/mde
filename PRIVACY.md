@@ -136,6 +136,12 @@ clipboard's contents anywhere itself; what you paste is an unsent draft like any
 
 ## Network behavior in the released application
 
+In Projects mode, the Files sidebar reads the selected terminal’s current directory, which may be
+outside the session’s original folder. Each terminal header reads local Git metadata for that
+terminal’s checkout; opening it reads changes and diffs there. Directory reports, file previews and
+Git snapshots are held in memory and are not added to the saved workspace. Inbox file browsing
+continues to use the selected thread or folder.
+
 MDE does not make automatic network requests. It reads local files and invokes local commands to support terminal sessions and file actions: Git for repository status (and, when you start an Inbox conversation in a new worktree or delete one with its worktree, to create or remove that worktree; MDE never runs `git fetch` or any other Git network command), `wsl.exe` on Windows, and the configured OpenCode executable for the session picker and to find the OpenCode background service.
 
 The Inbox chat view makes HTTP requests, and holds an event stream open, to the OpenCode background service on a loopback address (`127.0.0.1`, `localhost` or `[::1]`) only; MDE refuses any other address in the service's state file. On Windows these reach the service inside WSL through WSL's localhost forwarding. MDE starts these connections only while OpenCode status reporting is on and a chat thread is in use. Any internet traffic that follows, such as calls to a model provider, is made by OpenCode, not by MDE.

@@ -245,7 +245,7 @@ The Inbox also shows a right-hand sidebar with three tabs, Files, Changes and Te
 
 **Terminal tab.** The Inbox has one terminal, shared by every thread: it is the same whichever thread (or the new-thread page) is open, and it keeps running while the sidebar shows another tab or the Projects view is open. It reuses the project view's terminal layout (`TerminalView` in its embedded mode: no tab strip, a location header, and Ctrl split controls, Ctrl+Shift+F and the pane-switch shortcuts acting only while the keyboard is inside it, so typing in the composer is never intercepted). Splitting any pane on any side, resizing the dividers, reordering panes, pane titles, fullscreen, restart, the terminal launcher and the OpenCode history work as in Projects; only linking a terminal to a To Do task is not offered. Every shell starts in the home directory: `~` in the default WSL distro on Windows, the home directory on the Mac. The layout and its dividers are kept in `localStorage` (`mde.inbox-terminal-layout`) and come back as fresh shells on the next run; the shells themselves are not restored. The layout edits shared with the project view live in `src/renderer/terminal/layout-edits.ts`, and the Inbox's copy of the state in `src/renderer/store/inbox-terminal.ts`.
 
-The terminal is not a workspace session and is never stored. Terminal requests name it with the reserved session ID `inbox-terminal` (`src/shared/inbox-terminal.ts`), which the main process resolves on demand (`src/main/inbox/terminal.ts`) for requests that start or look after a terminal only; file browsing and Git status never accept it.
+The terminal is not a workspace session and is never stored. Terminal requests name it with the reserved session ID `inbox-terminal` (`src/shared/inbox-terminal.ts`), which the main process resolves on demand (`src/main/inbox/terminal.ts`) for terminal requests. File and Git requests can also name a live terminal ID and its expected directory; naming `inbox-terminal` as a saved file-root session still fails.
 
 **New thread.** "New thread" at the top of the Inbox, or selecting nothing, shows "What should we
 build in ‹folder›?". The folder name opens a menu of the Inbox folders with Add folder… and
@@ -817,9 +817,16 @@ workflow within MDE using an in-app transient selection; native Windows terminal
 
 ### Files and drag and drop
 
+In Projects mode, the Files tree follows the selected terminal’s current directory. Selecting another
+pane or changing directory resets the tree to that root. File previews belong to that terminal and
+directory, so the same relative filename in another root cannot reuse an earlier preview.
+
 Drag a file or folder from the Files tree on the right into any terminal to paste its full path.
 A floating preview follows the drag, and the receiving terminal highlights where the path will land.
-Paths use the source session's folder even when the terminal is in a different working directory.
+Paths use the source tree’s root. The main process resolves a terminal root from the live PTY and
+checks the expected directory before listing, previewing, attaching, or resolving a drag; stale
+requests fail if that terminal has moved to another directory. Inbox folder roots still use their
+saved folder or thread identity.
 
 Files can also be dragged from Finder, Explorer, or another file manager into any terminal pane. In a
 normal shell MDE inserts target-shell-escaped paths without submitting them. In an alternate-screen
@@ -844,17 +851,18 @@ and 200 edges; invalid or oversized diagrams show their source instead.
 
 ## Git
 
-Sessions whose folder is a repository show their branch, line change counts and commits ahead in
-the sidebar. Each terminal header also shows the branch and worktree root for that terminal's
-current directory when Git can read them. MDE polls that automatically through `src/main/git.ts`,
-which runs read-only Git commands over the native, Windows and WSL transports. The one exception
-is the Inbox's worktrees (see "Git worktrees for threads"), which create and remove a worktree on
-request through a separate runner.
+Each terminal header shows the branch, worktree root, tracked line changes and commits ahead for
+its current directory. Changes without line counts, including untracked entries and binary changes,
+show a changed-entry count. Clicking the header opens changes, diffs and recent history for that
+checkout. Queries run from the checkout root, so a terminal inside a subfolder still reviews the
+whole repository. Changing directory closes an open Git dialog and clears the old metadata. The
+session sidebar shows the launch directory and environment; it has no Git view or Git polling.
 
-Every Git process goes through one shared pool of three slots (`src/main/spawn-limiter.ts`), and the
-polled readers queue behind requests you make yourself, such as opening the Git dialog. The sidebar
-refreshes every session at once, and each refresh starts several processes (one `wsl.exe` each for
-WSL sessions).
+MDE polls terminal metadata every ten seconds, on directory changes and on window focus through
+`src/main/git.ts`, using read-only native, Windows and WSL commands. It never overlaps a header’s
+refreshes. The Inbox’s worktrees create and remove a worktree on request through a separate runner.
+Every Git process goes through a shared pool of three slots (`src/main/spawn-limiter.ts`), where
+polled readers queue behind requests such as opening the Git dialog.
 
 Git and `wsl.exe` processes are started on a worker thread (`src/main/exec-host.ts`), not on the main
 thread. Starting a process is a blocking call, and on Windows it occasionally takes over 100 ms (about

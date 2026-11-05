@@ -11,7 +11,6 @@ import {
   parseGitLog,
   readGitInfo,
   readGitInfoWithRunner,
-  readGitStatus,
   readGitTerminalInfo,
   readGitTerminalInfoWithRunner,
   readGitStatusWithRunner,
@@ -157,7 +156,7 @@ describe('Git process concurrency', () => {
 
     // Queued behind the blockers in this order: two pollers, then the dialog's reader.
     const queued = [
-      readGitStatus({ ...nativeSession, path: '/workspace/status-poll' }),
+      readGitTerminalInfo(nativeSession, '/workspace/status-poll'),
       readGitTerminalInfo(nativeSession, '/workspace/terminal-poll'),
       readGitInfo({ ...nativeSession, path: '/workspace/dialog' })
     ]
@@ -190,7 +189,7 @@ describe('Git history queries', () => {
 
     await readGitInfo(nativeSession)
 
-    expect(calls).toHaveLength(4)
+    expect(calls).toHaveLength(6)
     expect(calls.every((call) => call.file === 'git' && call.cwd === nativeSession.path)).toBe(true)
   })
 
@@ -413,20 +412,21 @@ describe('Git status summaries', () => {
     const run = async (args: string[]): Promise<GitCommandResult> => {
       calls.push(args)
       if (args.includes('--is-inside-work-tree')) return result('true\n')
-      if (args.includes('branch')) return result('feature/sidebar\n')
+      if (args.includes('branch')) return result('feature/terminal\n')
       if (args.includes('--verify')) return result('0123456\n')
       if (args.includes('status')) {
-        return result('# branch.head feature/sidebar\u0000# branch.upstream origin/feature/sidebar\u0000# branch.ab +2 -1\u0000')
+        return result('# branch.head feature/terminal\u0000# branch.upstream origin/feature/terminal\u0000# branch.ab +2 -1\u0000')
       }
       return result('12\t3\tsrc/changed.ts\u0000-\t-\timage.png\u0000')
     }
 
     await expect(readGitStatusWithRunner(run)).resolves.toEqual({
       repository: true,
-      branch: 'feature/sidebar',
+      branch: 'feature/terminal',
       additions: 12,
       deletions: 3,
-      commitsAhead: 2
+      commitsAhead: 2,
+      changedFiles: 0,
     })
     expect(calls).toContainEqual([
       '--no-pager',
@@ -434,7 +434,7 @@ describe('Git status summaries', () => {
       '--porcelain=v2',
       '--branch',
       '-z',
-      '--untracked-files=no'
+      '--untracked-files=normal'
     ])
     expect(calls).toContainEqual([
       '--no-pager',
@@ -466,7 +466,8 @@ describe('Git status summaries', () => {
       branch: 'main',
       additions: 5,
       deletions: 0,
-      commitsAhead: null
+      commitsAhead: null,
+      changedFiles: 0,
     })
     expect(calls.at(-1)).toContain('4b825dc642cb6eb9a060e54bf8d69288fbee4904')
   })
@@ -480,7 +481,8 @@ describe('Git status summaries', () => {
       branch: null,
       additions: 0,
       deletions: 0,
-      commitsAhead: null
+      commitsAhead: null,
+      changedFiles: 0,
     })
   })
 })
@@ -491,7 +493,7 @@ describe('terminal Git identity queries', () => {
     mocks.execFile.mockImplementation(
       (_file: string, args: string[], options: { cwd?: string }, callback: (error: null, stdout: string, stderr: string) => void) => {
         calls.push({ args, cwd: options.cwd })
-        const stdout = args.includes('--is-inside-work-tree')
+        const stdout = args.includes('status') || args.includes('diff') ? '' : args.includes('--is-inside-work-tree')
           ? 'true\n'
           : args.includes('branch')
             ? 'feature/native\n'
@@ -503,9 +505,11 @@ describe('terminal Git identity queries', () => {
     await expect(readGitTerminalInfo(nativeSession, '/workspace/other-repo')).resolves.toEqual({
       repository: true,
       branch: 'feature/native',
-      worktree: '/workspace/other-repo'
+      worktree: '/workspace/other-repo',
+      directory: '/workspace/other-repo',
+      additions: 0, deletions: 0, commitsAhead: null, changedFiles: 0
     })
-    expect(calls).toHaveLength(3)
+    expect(calls).toHaveLength(6)
     expect(calls.every((call) => call.cwd === '/workspace/other-repo')).toBe(true)
   })
 
@@ -522,15 +526,17 @@ describe('terminal Git identity queries', () => {
     await expect(readGitTerminalInfoWithRunner(run)).resolves.toEqual({
       repository: true,
       branch: 'feature/terminal',
-      worktree: '/workspace/other-repo'
+      worktree: '/workspace/other-repo',
+      additions: 0, deletions: 0, commitsAhead: null, changedFiles: 0
     })
-    expect(calls).toContainEqual(['--no-pager', 'branch', '--show-current'])
+    expect(calls).toContainEqual(['--literal-pathspecs', '-C', '/workspace/other-repo', '--no-pager', 'branch', '--show-current'])
     expect(calls).toContainEqual(['--no-pager', 'rev-parse', '--show-toplevel'])
   })
 
   it('keeps the worktree when HEAD is detached', async () => {
     const run = async (args: string[]): Promise<GitCommandResult> => {
       if (args.includes('--is-inside-work-tree')) return result('true\n')
+      if (args.includes('status') || args.includes('diff')) return result('')
       if (args.includes('branch')) return result('\n')
       return result('/workspace/repo\n')
     }
@@ -538,7 +544,8 @@ describe('terminal Git identity queries', () => {
     await expect(readGitTerminalInfoWithRunner(run)).resolves.toEqual({
       repository: true,
       branch: null,
-      worktree: '/workspace/repo'
+      worktree: '/workspace/repo',
+      additions: 0, deletions: 0, commitsAhead: null, changedFiles: 0
     })
   })
 
@@ -549,7 +556,8 @@ describe('terminal Git identity queries', () => {
     await expect(readGitTerminalInfoWithRunner(run)).resolves.toEqual({
       repository: false,
       branch: null,
-      worktree: null
+      worktree: null,
+      additions: 0, deletions: 0, commitsAhead: null, changedFiles: 0
     })
   })
 
@@ -562,6 +570,7 @@ describe('terminal Git identity queries', () => {
     ) => {
       calls.push({ cwd: options.cwd, command })
       if (command.includes('--is-inside-work-tree')) return { stdout: 'true\n', stderr: '', code: 0 }
+      if (command.includes('status') || command.includes('diff')) return { stdout: '', stderr: '', code: 0 }
       if (command.includes('branch')) return { stdout: 'feature/live\n', stderr: '', code: 0 }
       return { stdout: '/home/me/other-repo\n', stderr: '', code: 0 }
     })
@@ -573,10 +582,11 @@ describe('terminal Git identity queries', () => {
     ).resolves.toEqual({
       repository: true,
       branch: 'feature/live',
-      worktree: '/home/me/other-repo'
+      worktree: '/home/me/other-repo',
+      additions: 0, deletions: 0, commitsAhead: null, changedFiles: 0
     })
 
-    expect(calls).toHaveLength(3)
+    expect(calls).toHaveLength(6)
     expect(calls.every((call) => call.cwd === '/home/me/other-repo')).toBe(true)
   })
 })
@@ -710,7 +720,7 @@ describe('Git command hardening (SEC-008)', () => {
     expect(calls).not.toHaveLength(0)
     for (const args of calls) {
       expect(args.slice(0, safetyArgs.length)).toEqual(safetyArgs)
-      expect(args.indexOf('--no-pager')).toBe(safetyArgs.length)
+      expect(args.indexOf('--no-pager')).toBeGreaterThanOrEqual(safetyArgs.length)
     }
   })
 
