@@ -12,8 +12,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { AddInboxFolderDialog } from '@/components/inbox/AddInboxFolderDialog'
 import { ChatComposer } from '@/components/inbox/ChatComposer'
+import { ComposerBar } from '@/components/inbox/ComposerBar'
 import { McpChip } from '@/components/inbox/McpChip'
-import { ThreadModeSwitch } from '@/components/inbox/ThreadModeSwitch'
+import { ThreadModePicker } from '@/components/inbox/ThreadModePicker'
 import { WorktreeBar, useInboxGit, type WorktreeMode } from '@/components/inbox/WorktreeBar'
 import { findModel, initialChoice } from '@/lib/chat'
 import { defaultWorktreeBase, inboxWorktreeSource } from '@/lib/inbox'
@@ -178,6 +179,8 @@ export function NewThreadView(): JSX.Element {
     setPicked({ ...pick, model: next })
     setComposer({ model: next })
   }
+  // How the thread is shown is picked for this page only: the next fresh page starts as GUI again.
+  const chooseMode = (next: InboxThreadMode): void => setPicked({ ...pick, mode: next })
 
   // What the draft remembers of how it would start: the agent and model once they are known, and a worktree
   // when one is chosen, whether or not Git has answered yet. Left out until then, so a draft keeps what it had.
@@ -288,13 +291,10 @@ export function NewThreadView(): JSX.Element {
             placeholder="Describe what you want to build or change"
             sendBlocked={Boolean(branchProblem)}
             // The servers of the folder itself: a new worktree loads its own, so then they are shown but not switched.
-            extraPickers={(
-              <>
-                <McpChip place={{ request: { folderId: folder.id }, target: folder.target, directory: folder.directory }} readOnly={choosing} />
-                <ThreadModeSwitch value={mode} onChange={(next) => setPicked({ ...pick, mode: next })} />
-              </>
-            )}
-            footer={git && (
+            extraPickers={<McpChip place={{ request: { folderId: folder.id }, target: folder.target, directory: folder.directory }} readOnly={choosing} />}
+            // The strip under the box is there for every folder: how the thread is shown, and in a Git folder where it runs.
+            // The interface comes first so that it keeps its place when Git's answer adds the rest.
+            footer={git ? (
               <WorktreeBar
                 info={git}
                 locked={locked}
@@ -306,7 +306,13 @@ export function NewThreadView(): JSX.Element {
                 onModeChange={(next) => setHere({ mode: next, ...(next === 'worktree' ? { base: here.base ?? base } : {}) })}
                 onBaseChange={(next) => setHere({ base: next })}
                 onBranchNameChange={(next) => setHere({ branch: next })}
-              />
+              >
+                <ThreadModePicker value={mode} onChange={chooseMode} />
+              </WorktreeBar>
+            ) : (
+              <ComposerBar testId="thread-bar" className="justify-start">
+                <ThreadModePicker value={mode} onChange={chooseMode} />
+              </ComposerBar>
             )}
             onSend={async (text, { background, ...attachments } = {}) => {
               if (!agent || !model) return

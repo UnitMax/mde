@@ -177,7 +177,10 @@ The Inbox talks to OpenCode's background service directly (see Inbox chat). It i
 cannot reach that service: everywhere except macOS and Windows with WSL. The main area shows the
 selected thread's conversation, or the new-thread page when nothing is selected.
 
-The new-thread composer offers **GUI** (the default for every fresh page) and **Terminal**. Both
+The new-thread page offers **GUI** (the default for every fresh page) and **Terminal**, as a menu chip
+in the strip under the message box (`ThreadModePicker`), the first chip of the strip, in front of the
+choice of where to run (see Git worktrees below); it is there for every folder, Git or not. The
+choice belongs to the page, so a fresh page starts as GUI again and a draft remembers it. Both
 create the same OpenCode API session with the selected folder or worktree, agent, model and variant,
 then submit the same first message, attachments and skill mentions through the API. Terminal mode
 opens the native OpenCode TUI in the main conversation area using `--session` and that session ID,
@@ -414,8 +417,11 @@ one. **Copy message as Markdown** still copies the message as written, marks inc
 timeline names a message by what was written, not by what it quoted. There is no keyboard shortcut for
 quoting, so the shortcut list has no entry for it.
 
-**Git worktrees for threads.** When the folder is a Git repository, a strip under the composer
-chooses where the thread runs (`WorktreeBar`). **Current directory**, the default, runs it in the
+**Git worktrees for threads.** The strip under the new-thread composer (`ComposerBar`) always holds the
+GUI / Terminal chip. When the folder is a Git repository it also chooses where the thread runs
+(`WorktreeBar`, which puts that chip first and a divider after it, so the chip keeps its place when Git's
+answer arrives; for a folder without Git, or when Git cannot be asked, the strip holds the chip alone).
+**Current directory**, the default, runs it in the
 folder as it is and shows the folder's current branch (or "Detached HEAD"), read-only; MDE never
 switches a branch. **New worktree** replaces the branch label with a "From ‹branch›" picker: a
 searchable list of local branches and then remote-tracking branches that already exist (for example

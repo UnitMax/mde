@@ -234,6 +234,43 @@ describe('Inbox worktree mode', () => {
     expect(api.chat.create.mock.calls[0]?.[0]).not.toHaveProperty('worktree')
   })
 
+  it('has the GUI / Terminal chip in the same strip, ahead of the choice of where to run, and keeps it for a new worktree', async () => {
+    api.inbox.gitInfo.mockResolvedValue(repo)
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="worktree-bar"]')).not.toBeNull())
+    const strip = view.querySelector('[data-testid="worktree-bar"]')!
+    const how = view.querySelector('[data-testid="thread-mode-picker"]')!
+    const where = view.querySelector('[data-testid="worktree-mode-picker"]')!
+    expect(strip.contains(how)).toBe(true)
+    expect(how.textContent).toBe('GUI')
+    expect(how.compareDocumentPosition(where) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // One strip: the one that holds only the chip, for a folder without Git, is gone once Git answered.
+    expect(view.querySelector('[data-testid="thread-bar"]')).toBeNull()
+    await open(how)
+    await choose('Terminal')
+    await open(where)
+    await choose('New worktree')
+    expect(view.querySelector('[data-testid="thread-mode-picker"]')?.textContent).toBe('Terminal')
+    await send(view, 'Add a dark mode')
+    await vi.waitFor(() => expect(api.chat.create).toHaveBeenCalledWith(expect.objectContaining({ mode: 'terminal', worktree: { base: 'main' } })))
+  })
+
+  it('has the strip, with only the GUI / Terminal chip in it, for a folder without Git, and keeps the chip where it is when Git answers', async () => {
+    let answer!: (info: typeof repo) => void
+    api.inbox.gitInfo.mockImplementation(() => new Promise((resolve) => { answer = resolve as typeof answer }))
+    const view = await render()
+    await vi.waitFor(() => expect(api.inbox.gitInfo).toHaveBeenCalled())
+    expect(view.querySelector('[data-testid="thread-bar"] [data-testid="thread-mode-picker"]')).not.toBeNull()
+    expect(view.querySelector('[data-testid="worktree-mode-picker"]')).toBeNull()
+    // It leads the strip both times, so it does not move when the Git choices arrive after it. (happy-dom has no layout.)
+    const first = (id: string): string | null => view.querySelector(`[data-testid="${id}"] button`)?.getAttribute('data-testid') ?? null
+    expect(first('thread-bar')).toBe('thread-mode-picker')
+    await act(async () => answer(repo))
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="worktree-mode-picker"]')).not.toBeNull())
+    expect(view.querySelector('[data-testid="worktree-bar"] [data-testid="thread-mode-picker"]')).not.toBeNull()
+    expect(first('worktree-bar')).toBe('thread-mode-picker')
+  })
+
   it('names a detached HEAD', async () => {
     api.inbox.gitInfo.mockResolvedValue({ ...repo, branch: null })
     const view = await render()
@@ -335,6 +372,8 @@ describe('Inbox worktree mode', () => {
       expect(view.querySelector('[data-testid="worktree-branch-name"]')).toBeNull()
       expect(view.querySelector('[data-testid="worktree-fixed"]')?.textContent).toBe('Worktree')
       expect(view.querySelector('[data-testid="worktree-current-branch"]')?.textContent).toBe('main')
+      // How the thread is shown is still a choice there.
+      expect(view.querySelector('[data-testid="worktree-bar"] [data-testid="thread-mode-picker"]')?.textContent).toBe('GUI')
       await send(view, 'More work')
       await vi.waitFor(() => expect(api.chat.create).toHaveBeenCalledTimes(1))
       expect(api.chat.create.mock.calls[0]?.[0]).toMatchObject({ folderId: 'fld_tree', text: 'More work' })

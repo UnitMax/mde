@@ -7,7 +7,7 @@ It is a desktop shell focused on persistent terminal workflows: tabbed multi-pan
 session, Git changes in each terminal header, a file tree that follows the selected terminal,
 Markdown and Mermaid preview, and To Do boards. The Inbox is a separate
 view for starting and continuing OpenCode conversations in GUI chat or a direct OpenCode terminal;
-both use OpenCode's API for thread activity. Choose GUI (the default) or Terminal in the new-thread composer. See
+both use OpenCode's API for thread activity. Choose GUI (the default) or Terminal from the menu under the new-thread message box. See
 [`docs/architecture.md`](docs/architecture.md) for how each part behaves.
 
 Build terminal layouts by holding Ctrl and clicking + on a pane’s left, right, top or bottom edge.

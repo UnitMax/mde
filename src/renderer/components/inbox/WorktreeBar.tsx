@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Check, ChevronDown, Folder, FolderGit2, GitBranch, Search } from 'lucide-react'
 import type { InboxGitBranch, InboxGitInfo } from '@shared/types'
 import {
@@ -7,6 +7,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { barTrigger as trigger, ComposerBar } from '@/components/inbox/ComposerBar'
 import { cn } from '@/lib/utils'
 
 export type WorktreeMode = 'current' | 'worktree'
@@ -32,10 +33,6 @@ export function useInboxGit(folderId: string | undefined): InboxGitInfo | null {
   if (!state || state.folderId !== folderId || !state.info.repository) return null
   return state.info
 }
-
-const trigger =
-  'flex h-6 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-[12px] text-fg-muted transition-colors ' +
-  'hover:bg-hover hover:text-fg disabled:pointer-events-none disabled:opacity-50 data-[state=open]:bg-hover data-[state=open]:text-fg'
 
 const MODES: ReadonlyArray<{ id: WorktreeMode; label: string; description: string }> = [
   { id: 'current', label: 'Current directory', description: 'Work in the folder as it is, on its current branch.' },
@@ -163,9 +160,11 @@ function ModePicker({
 
 /**
  * The strip under the new-thread composer for a Git folder: run in the folder as it is, or in a new
- * worktree cut from a branch. In the folder the branch is only shown; MDE never switches it.
+ * worktree cut from a branch. In the folder the branch is only shown; MDE never switches it. `children`
+ * are chips that go before the choice of where to run, set apart from it by a divider.
  */
 export function WorktreeBar({
+  children,
   info,
   mode,
   base,
@@ -177,6 +176,7 @@ export function WorktreeBar({
   onBranchNameChange,
   disabled,
 }: {
+  children?: ReactNode
   info: InboxGitInfo
   mode: WorktreeMode
   /** The branch a new worktree starts from; null when the repository has none yet. */
@@ -196,22 +196,27 @@ export function WorktreeBar({
   const canBranch = info.branches.length > 0
 
   return (
-    <div
-      data-testid="worktree-bar"
-      className="-mt-1.5 mx-5 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 rounded-b-xl border border-t-0 border-line bg-elevated/50 px-1.5 pb-1 pt-2"
-    >
-      {locked ? (
-        <span
-          className="flex h-6 min-w-0 items-center gap-1.5 px-1.5 text-[12px] text-fg-muted"
-          data-testid="worktree-fixed"
-          title="This folder is a worktree. Threads started here run in it."
-        >
-          <FolderGit2 className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">Worktree</span>
-        </span>
-      ) : (
-        <ModePicker mode={mode} canBranch={canBranch} onModeChange={onModeChange} disabled={disabled} />
-      )}
+    <ComposerBar testId="worktree-bar">
+      <div className="flex min-w-0 items-center gap-1">
+        {children && (
+          <>
+            {children}
+            <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-line-strong" />
+          </>
+        )}
+        {locked ? (
+          <span
+            className="flex h-6 min-w-0 items-center gap-1.5 px-1.5 text-[12px] text-fg-muted"
+            data-testid="worktree-fixed"
+            title="This folder is a worktree. Threads started here run in it."
+          >
+            <FolderGit2 className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">Worktree</span>
+          </span>
+        ) : (
+          <ModePicker mode={mode} canBranch={canBranch} onModeChange={onModeChange} disabled={disabled} />
+        )}
+      </div>
       {mode === 'worktree' ? (
         <div className="ml-auto flex min-w-0 items-center gap-1">
           <input
@@ -251,6 +256,6 @@ export function WorktreeBar({
           {branchProblem}
         </p>
       )}
-    </div>
+    </ComposerBar>
   )
 }

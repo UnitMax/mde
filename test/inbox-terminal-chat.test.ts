@@ -48,6 +48,12 @@ let root: Root
 let container: HTMLDivElement
 const render = () => act(async () => root.render(createElement(InboxThreadView)))
 const button = (label: string) => Array.from(container.querySelectorAll('button')).find((item) => item.textContent?.trim() === label || item.getAttribute('aria-label') === label)!
+/** The chip that says how a new thread is shown. Radix opens its menus on a keyboard press in happy-dom. */
+const modePicker = () => container.querySelector<HTMLElement>('[data-testid="thread-mode-picker"]')!
+const chooseMode = async (id: 'gui' | 'terminal') => {
+  await act(async () => { modePicker().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+  await act(async () => document.body.querySelector<HTMLElement>(`[data-testid="thread-mode-${id}"]`)!.click())
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -72,9 +78,9 @@ afterEach(async () => {
 describe('Inbox terminal chat', () => {
   it('defaults to GUI and starts a selected terminal thread with the same composer choices', async () => {
     await render()
-    expect(button('GUI').getAttribute('aria-pressed')).toBe('true')
-    await act(async () => button('Terminal').click())
-    expect(button('Terminal').getAttribute('aria-pressed')).toBe('true')
+    expect(modePicker().textContent).toBe('GUI')
+    await chooseMode('terminal')
+    expect(modePicker().textContent).toBe('Terminal')
     await setMessageText(messageInput(container), 'Review the tests')
     await act(async () => button('Send').click())
     expect(api.chat.create).toHaveBeenCalledWith(expect.objectContaining({ mode: 'terminal', folderId: folder.id, agent: 'build', model, text: 'Review the tests' }))
@@ -136,9 +142,41 @@ describe('Inbox terminal chat', () => {
   it('restores a terminal draft and resets fresh pages to GUI', async () => {
     useInboxDrafts.setState({ page: { id: 'drf_restored', opened: true, folderId: folder.id, choice: { mode: 'terminal', agent: 'build', model } } })
     await render()
-    expect(button('Terminal').getAttribute('aria-pressed')).toBe('true')
+    expect(modePicker().textContent).toBe('Terminal')
     await act(async () => useInboxDrafts.setState({ page: { id: 'drf_fresh', opened: false } }))
-    expect(button('GUI').getAttribute('aria-pressed')).toBe('true')
+    expect(modePicker().textContent).toBe('GUI')
+  })
+
+  it('has the interface chip in the strip under the box and no longer in the box\'s toolbar, for a folder that is not a Git repository', async () => {
+    await render()
+    const strip = container.querySelector('[data-testid="thread-bar"]')!
+    expect(strip.contains(modePicker())).toBe(true)
+    expect(container.querySelector('[data-testid="chat-composer"]')!.contains(modePicker())).toBe(false)
+    expect(container.querySelector('[data-testid="chat-composer"]')!.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(container.querySelector('[data-testid="worktree-bar"]')).toBeNull()
+    expect(container.querySelector('[data-testid="thread-mode-switch"]')).toBeNull()
+  })
+
+  it('lists GUI and Terminal in the menu, with what each does, and marks the one in use', async () => {
+    await render()
+    await act(async () => { modePicker().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+    const items = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+    expect(items.map((item) => item.getAttribute('data-testid'))).toEqual(['thread-mode-gui', 'thread-mode-terminal'])
+    expect(items[0]!.textContent).toBe('GUIFollow the conversation in MDE.')
+    expect(items[1]!.textContent).toBe('TerminalWork in the OpenCode terminal.')
+    expect(items[0]!.querySelector('svg.lucide-check')).not.toBeNull()
+    expect(items[1]!.querySelector('svg.lucide-check')).toBeNull()
+  })
+
+  it('goes back to GUI by choosing it in the menu, and starts a GUI thread without a mode', async () => {
+    await render()
+    await chooseMode('terminal')
+    await chooseMode('gui')
+    expect(modePicker().textContent).toBe('GUI')
+    await setMessageText(messageInput(container), 'Review the tests')
+    await act(async () => button('Send').click())
+    expect(api.chat.create).toHaveBeenCalledOnce()
+    expect(api.chat.create.mock.calls[0]![0]).not.toHaveProperty('mode')
   })
 
   it('releases terminal resources when the thread is removed', async () => {
