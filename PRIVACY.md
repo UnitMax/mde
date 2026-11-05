@@ -40,11 +40,9 @@ files on disk. MDE no longer reads or writes them; removal is manual (see the up
 `docs/architecture.md`).
 
 Apart from explicitly added Inbox draft attachments described below, MDE does not copy file contents or terminal output into these stores. Terminal scrollback is held
-in memory only. The OpenCode session picker asks the configured OpenCode executable for session metadata on demand
-(`opencode api`, which reads OpenCode's own local background service: session
-titles, directories, models, token usage and cost) and keeps the result in memory only. The query output passes through a private temporary file on the native Mac host or in the distro, which is deleted when the query ends.
+in memory only.
 
-The Inbox chat view talks to the same OpenCode background service directly. To find it, MDE runs
+The Inbox chat view talks to OpenCode's local background service directly. To find it, MDE runs
 `opencode service start` (which does nothing when the service is already running) and reads
 OpenCode's `service.json` state file from the command's standard output, on the Mac or in the
 WSL distro. That file holds the service's local address and the password OpenCode generated for
@@ -138,13 +136,13 @@ terminal’s checkout; opening it reads changes and diffs there. Directory repor
 Git snapshots are held in memory and are not added to the saved workspace. Inbox file browsing
 continues to use the selected thread or folder.
 
-MDE does not make automatic network requests. It reads local files and invokes local commands to support terminal sessions and file actions: Git for repository status (and, when you start an Inbox conversation in a new worktree or delete one with its worktree, to create or remove that worktree; MDE never runs `git fetch` or any other Git network command), `wsl.exe` on Windows, and the configured OpenCode executable for the session picker and to find the OpenCode background service.
+MDE does not make automatic network requests. It reads local files and invokes local commands to support terminal sessions and file actions: Git for repository status (and, when you start an Inbox conversation in a new worktree or delete one with its worktree, to create or remove that worktree; MDE never runs `git fetch` or any other Git network command), `wsl.exe` on Windows, and the configured OpenCode executable to find the OpenCode background service.
 
 The Inbox makes HTTP requests, and holds an event stream open, to the OpenCode background service on a loopback address (`127.0.0.1`, `localhost` or `[::1]`) only; MDE refuses any other address in the service's state file. On Windows these reach the service inside WSL through WSL's localhost forwarding. These connections support Inbox options, conversations and background thread activity in either GUI or Terminal mode. Any internet traffic that follows, such as calls to a model provider, is made by OpenCode, not by MDE.
 
 MDE also disables Chromium's DNS-over-HTTPS upgrade at startup, with `app.configureHostResolver({ secureDnsMode: 'off' })`. Chromium's default mode would otherwise route name resolution through a DoH provider whenever the system resolver is a recognized one, without any application code asking it to. Because MDE resolves no hostnames of its own, the result is no DNS traffic rather than a fallback to plaintext DNS, and the statement above holds regardless of how the user's machine is configured to resolve names.
 
-On Mac, agent and metadata commands run through the user's login shell. Shell startup configuration
+On Mac, agent commands and service discovery run through the user's login shell. Shell startup configuration
 can execute user-configured commands, as it does in normal terminal sessions.
 
 ## User-initiated external actions

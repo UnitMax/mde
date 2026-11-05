@@ -11,6 +11,7 @@ import {
   inboxThreadHome,
   inboxThreadWorking,
   inboxWorktreeShared,
+  sessionAge,
   visibleInboxThreads,
   workingInboxThreads
 } from '../src/renderer/lib/inbox'
@@ -33,6 +34,15 @@ function thread(overrides: Partial<InboxThread> = {}): InboxThread {
 }
 
 describe('inbox list helpers', () => {
+  it('shows compact ages while retaining full dates separately', () => {
+    const now = Date.UTC(2026, 0, 1)
+    expect(sessionAge(now, now)).toBe('Just now')
+    expect(sessionAge(now - 120_000, now)).toBe('2m ago')
+    expect(sessionAge(now - 7_200_000, now)).toBe('2h ago')
+    expect(sessionAge(now - 172_800_000, now)).toBe('2d ago')
+    expect(sessionAge(NaN, now)).toBe('Unknown')
+  })
+
   const threads = [
     thread({ id: 'ses_read', title: 'Read work', readAt: 20, lastActivityAt: 15 }),
     thread({ id: 'ses_unread', title: 'Unread work', lastActivityAt: 30, branch: 'feature/login' }),

@@ -96,13 +96,8 @@ const command = object({ executable: path, args })
 const agent = object({ kind: oneOf('opencode', 'codex', 'claude'), command })
 const commandLaunch = object({ sourceTerminalId: id, directory: oneOf('terminal', 'session'), agent: optional(agent) })
 const opencodeSessionId: Validator = (value) => id(value) && /^ses_[A-Za-z0-9_-]+$/.test(value as string)
-const resumeLaunch = object({
-  sourceTerminalId: id,
-  executable: path,
-  opencodeSessionId,
-})
-const launch: Validator = (value) => commandLaunch(value) || resumeLaunch(value)
-const ensure = object({ terminalId: id, sessionId: id, size, palette, launch: optional(launch) })
+const ptyRequest = { terminalId: id, sessionId: id, size, palette }
+const ensure = object({ ...ptyRequest, launch: optional(commandLaunch) })
 const relativePath: Validator = (value) => path(value) && !(value as string).startsWith('/') &&
   !(value as string).includes('\\') && (value as string).split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..')
 const listPath: Validator = (value) => value === '' || relativePath(value)
@@ -180,7 +175,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.tabsUpdate]: object({ sessionId: id, tabId: id, patch: object({ name: optional(label), layout: optional(layout) }) }),
   [IpcChannels.tabsRemove]: tab,
   [IpcChannels.ptyEnsure]: ensure,
-  [IpcChannels.ptyRestart]: ensure,
+  [IpcChannels.ptyRestart]: object(ptyRequest),
   [IpcChannels.ptyWrite]: object({ terminalId: id, data: text }),
   [IpcChannels.ptyResize]: object({ terminalId: id, size }),
   [IpcChannels.ptyPalette]: object({ terminalId: id, palette }),
@@ -210,7 +205,6 @@ export const ipcPayloadValidators = {
   [IpcChannels.gitDiff]: object({ ...terminalDirectory, path }),
   [IpcChannels.filesList]: rooted({ path: listPath }),
   [IpcChannels.filesRead]: rooted({ path: relativePath }),
-  [IpcChannels.opencodeSessionsList]: object({ sessionId: id, sourceTerminalId: id, executable: path }),
   [IpcChannels.inboxList]: noPayload,
   [IpcChannels.inboxSetRead]: object({ id: opencodeSessionId, read: boolean }),
   [IpcChannels.inboxSetArchived]: object({ id: opencodeSessionId, archived: boolean }),

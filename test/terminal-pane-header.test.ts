@@ -49,7 +49,6 @@ function props(overrides: Partial<HeaderProps> & { paneCount?: number; title?: s
     isFullscreen: false,
     onToggleFullscreen: vi.fn(),
     onTitleChange: vi.fn(),
-    onOpenCodeSessions: vi.fn(),
     onRestart: vi.fn(),
     onClose: vi.fn(),
     onSplit: vi.fn(),
@@ -178,17 +177,6 @@ describe('TerminalPaneHeader', () => {
       await openPaneMenu(ID)
       const labels = Array.from(document.body.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent?.trim())
       expect(labels).toEqual(['Rename…', 'Split right', 'Split down', 'Restart terminal'])
-    })
-
-    it('offers OpenCode sessions with its shortcut where agents are supported', async () => {
-      const next = props({ session: wslSession })
-      useWorkspace.setState({ platform: { platform: 'win32', isWindows: true } })
-      await render(next)
-      await openPaneMenu(ID)
-      expect(paneMenuItem(`terminal-opencode-sessions-${ID}`)?.textContent).toContain('Ctrl+Shift+O')
-      await closePaneMenu()
-      await choosePaneMenuItem(ID, `terminal-opencode-sessions-${ID}`)
-      expect(next.onOpenCodeSessions).toHaveBeenCalledOnce()
     })
 
     it('offers VS Code and File Explorer only for a WSL session on Windows, once the folder is known', async () => {

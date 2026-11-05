@@ -131,7 +131,7 @@ Remove-Item Env:MDE_WINDOWS_EXECUTABLE_INTEGRATION
 Optionally set `MDE_WSL_DISTRO` to select a particular installed distro. The
 check compiles harmless sentinel executables in a fresh temporary directory,
 puts that directory in both cwd and `PATH`, and verifies real WSL queries,
-history transport, PowerShell and native/WSL ConPTY do not select the sentinels.
+PowerShell and native/WSL ConPTY do not select the sentinels.
 It restores cwd/environment and removes its fixtures. It does not access the
 user's OpenCode sessions or type commands into the user's existing terminals.
 Also start the extracted app from that fixture-style directory and verify

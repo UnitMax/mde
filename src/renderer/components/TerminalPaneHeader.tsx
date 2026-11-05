@@ -4,7 +4,6 @@ import {
   Columns2,
   Ellipsis,
   FolderOpen,
-  History,
   Maximize2,
   Minimize2,
   Pencil,
@@ -12,7 +11,6 @@ import {
   Rows2,
   X
 } from 'lucide-react'
-import { supportsAgentIntegration } from '@shared/agent-support'
 import type { Session } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import {
@@ -49,7 +47,6 @@ export interface TerminalPaneHeaderProps {
   isFullscreen: boolean
   onToggleFullscreen: () => void
   onTitleChange: (title: string | null) => void
-  onOpenCodeSessions: () => void
   onRestart: () => void
   onClose: () => void
   onSplit: (side: TerminalSplitSide) => void
@@ -70,7 +67,6 @@ export function TerminalPaneHeader({
   isFullscreen,
   onToggleFullscreen,
   onTitleChange,
-  onOpenCodeSessions,
   onRestart,
   onClose,
   onSplit
@@ -91,7 +87,6 @@ export function TerminalPaneHeader({
   const showFocus = focused && paneCount > 1
   const closable = isTerminalPaneClosable(terminalLayout.panes, terminalId)
   const canSplit = paneCount < MAX_TERMINAL_COUNT
-  const canBrowseSessions = supportsAgentIntegration(platform?.platform, session)
   const canOpenExternally =
     platform?.isWindows === true && wslAvailable && session.kind === 'wsl' && Boolean(session.distro)
 
@@ -256,18 +251,6 @@ export function TerminalPaneHeader({
                   Split down
                 </DropdownMenuItem>
               </>
-            )}
-
-            {canBrowseSessions && <DropdownMenuSeparator />}
-            {canBrowseSessions && (
-              <DropdownMenuItem
-                data-testid={`terminal-opencode-sessions-${terminalId}`}
-                onSelect={choose(onOpenCodeSessions)}
-              >
-                <History className={MENU_ICON_CLASS} aria-hidden="true" />
-                OpenCode sessions…
-                <span className="ml-auto pl-3 text-[11px] text-fg-subtle">Ctrl+Shift+O</span>
-              </DropdownMenuItem>
             )}
 
             {canOpenExternally && (

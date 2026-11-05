@@ -64,7 +64,6 @@ const validPayloads = {
   [IpcChannels.gitDiff]: { terminalId: 'pane', directory: '/workspace', path: 'src/file.ts' },
   [IpcChannels.filesList]: { sessionId: 'session', path: '' },
   [IpcChannels.filesRead]: { sessionId: 'session', path: 'src/file.ts' },
-  [IpcChannels.opencodeSessionsList]: { sessionId: 'session', sourceTerminalId: 'pane', executable: '/usr/bin/opencode' },
   [IpcChannels.inboxList]: undefined,
   [IpcChannels.inboxSetRead]: { id: 'ses_thread', read: true },
   [IpcChannels.inboxSetArchived]: { id: 'ses_thread', archived: false },
@@ -322,17 +321,15 @@ describe('IPC payload boundary', () => {
     }
     rejects(IpcChannels.windowChromeSet, { color: '#ffffff' })
     expect(() => assertIpcPayload(IpcChannels.windowChromeSet, { color: '#FFF', symbolColor: '#aBc123' })).not.toThrow()
-    rejects(IpcChannels.opencodeSessionsList, { ...validPayloads[IpcChannels.opencodeSessionsList], executable: 'opencode\nunsafe' })
     rejects(IpcChannels.pathResolve, { kind: 'native', rawPath: '/tmp/a\0b' })
     rejects(IpcChannels.sessionsRemove, 'session\r')
   })
 
-  it('validates both launch variants, nested arguments and aggregate bounds', () => {
+  it('validates new-pane launches, nested arguments and aggregate bounds', () => {
     const launch = { sourceTerminalId: 'source', directory: 'terminal', agent: { kind: 'codex', command: { executable: 'codex', args: ['--model', 'example'] } } }
     expect(() => assertIpcPayload(IpcChannels.ptyEnsure, { ...ensure, launch })).not.toThrow()
-    const resume = { sourceTerminalId: 'source', executable: 'opencode', opencodeSessionId: 'ses_example' }
-    expect(() => assertIpcPayload(IpcChannels.ptyEnsure, { ...ensure, launch: resume })).not.toThrow()
-    for (const bad of ['invalid', { ...resume, opencodeSessionId: "ses_x' OR 1=1" }, { ...resume, directory: 'terminal' },
+    rejects(IpcChannels.ptyRestart, { ...ensure, launch })
+    for (const bad of ['invalid', { ...launch, directory: 'invalid' },
       { ...launch, agent: { kind: 'codex', command: { executable: 'codex', args: Array(2) } } },
       { ...launch, agent: { kind: 'codex', command: { executable: 'codex', args: Object.setPrototypeOf(['a'], { reduce: () => 0 }) } } },
       { ...launch, agent: { kind: 'codex', command: { executable: 'codex', args: Array(129).fill('a') } } },

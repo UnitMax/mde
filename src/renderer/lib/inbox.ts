@@ -192,3 +192,22 @@ export function inboxFileRoot(
     createdAt: ''
   }
 }
+
+export function sessionAge(value: number, now = Date.now()): string {
+  if (!Number.isFinite(new Date(value).getTime())) return 'Unknown'
+  const minutes = Math.max(0, Math.floor((now - value) / 60_000))
+  if (minutes < 1) return 'Just now'
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 365) return `${days}d ago`
+  return `${Math.floor(days / 365)}y ago`
+}
+
+export function sessionDate(value: number): string {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? 'Unknown date' : date.toLocaleString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+  })
+}

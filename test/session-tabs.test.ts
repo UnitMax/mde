@@ -38,14 +38,18 @@ const session: Session = {
 }
 
 describe('session tab runtime helpers', () => {
-  it('keeps OpenCode resume metadata runtime-only when adding a pane', () => {
+  it('keeps agent launch metadata runtime-only when adding a pane', () => {
     const layout = createRuntimeLayout(session.id, session.tabs![0]!)
-    const launch = { sourceTerminalId: layout.panes[0]!.terminalId, opencodeSessionId: 'ses_saved', executable: 'opencode' }
+    const launch = {
+      sourceTerminalId: layout.panes[0]!.terminalId,
+      directory: 'terminal' as const,
+      agent: { kind: 'codex' as const, command: { executable: 'codex', args: [] } },
+    }
     const next = appendRuntimePane(session.id, 'tab-1', layout, launch)!
     expect(next.panes.find((pane) => pane.launch)?.launch).toEqual(launch)
     expect(persistRuntimeLayout(next).panes).toHaveLength(3)
-    expect(JSON.stringify(persistRuntimeLayout(next))).not.toContain('ses_saved')
-    expect(JSON.stringify(persistRuntimeLayout(next))).not.toContain('opencode')
+    expect(JSON.stringify(persistRuntimeLayout(next))).not.toContain('sourceTerminalId')
+    expect(JSON.stringify(persistRuntimeLayout(next))).not.toContain('codex')
   })
   it('uses stable tab and pane identities without sharing terminal IDs', () => {
     expect(terminalIdForPane(session.id, 'tab-1', 'pane-1')).toBe('session-1:tab:tab-1:pane:pane-1')

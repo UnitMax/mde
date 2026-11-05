@@ -41,8 +41,6 @@ export interface PtyLaunchOptions {
   environment?: Record<string, string>
   directory?: string
   agent?: AgentCommand
-  /** Hand the terminal back to the shell when the agent exits. */
-  returnToShell?: boolean
 }
 
 function clampSize(size: PtySize): PtySize {
@@ -163,8 +161,7 @@ export class PtyManager {
     const spec = buildLaunchSpec(session, {
       ...context,
       workingDirectory: options?.directory,
-      agent: options?.agent,
-      returnToShell: options?.returnToShell
+      agent: options?.agent
     })
     const { cols, rows } = clampSize(size)
 

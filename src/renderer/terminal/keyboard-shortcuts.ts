@@ -64,12 +64,6 @@ export function getKeyboardShortcutGroups(
           note: 'Available from a focused Mac or Windows/WSL terminal.'
         },
         {
-          id: 'opencode-sessions-open',
-          keys: ['Ctrl+Shift+O'],
-          description: 'Browse OpenCode sessions from every directory on this Mac or in the current WSL distro.',
-          note: 'Available from a focused Mac or Windows/WSL terminal.'
-        },
-        {
           id: 'mini-window-toggle',
           keys: ['F12'],
           description: 'Toggle the always-on-top mini Inbox window.',
@@ -211,27 +205,6 @@ export function getKeyboardShortcutGroups(
           id: 'session-switcher-close',
           keys: ['Esc'],
           description: 'Close the session switcher.'
-        },
-        {
-          id: 'opencode-sessions-move',
-          keys: ['↑', '↓'],
-          description: 'Move through OpenCode sessions across directory groups.'
-        },
-        {
-          id: 'opencode-sessions-select',
-          keys: ['Enter'],
-          description: 'Resume the selected OpenCode session in a new terminal.'
-        },
-        {
-          id: 'opencode-sessions-replace',
-          keys: ['Shift+Enter'],
-          description: 'Resume the selected OpenCode session in the terminal the picker was opened from.',
-          note: 'Asks first when that terminal is running, since it interrupts the current command or task.'
-        },
-        {
-          id: 'opencode-sessions-close',
-          keys: ['Esc'],
-          description: 'Close the OpenCode session picker.'
         },
         {
           id: 'todo-search-move',

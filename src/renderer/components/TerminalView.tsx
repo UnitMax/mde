@@ -11,7 +11,6 @@ import {
 import { FolderOpen, Plus, X } from 'lucide-react'
 import type { FileTreeDropEntry } from '@shared/ipc'
 import type {
-  OpenCodeResumeLaunch,
   PtySize,
   Session,
   SessionTab
@@ -82,8 +81,6 @@ import { sessionTabs } from '@/terminal/tabs'
 import { TerminalPaneHeader } from '@/components/TerminalPaneHeader'
 import { TerminalPaneOverlay } from '@/components/TerminalPaneOverlay'
 import { TerminalLauncher } from '@/components/TerminalLauncher'
-import { OpenCodeSessionsDialog } from '@/components/OpenCodeSessionsDialog'
-import { isOpenCodeSessionsShortcut } from '@/lib/opencode-sessions'
 import { isTerminalLauncherShortcut } from '@/lib/terminal-launcher'
 
 const FALLBACK_SIZE: PtySize = { cols: 80, rows: 24 }
@@ -560,7 +557,6 @@ function TerminalPane({
   isFullscreen,
   onToggleFullscreen,
   onTitleChange,
-  onOpenCodeSessions,
   reorderState = 'none',
   paneOverlayVisible = false,
   paneOverlayNumber = null,
@@ -576,7 +572,6 @@ function TerminalPane({
   isFullscreen: boolean
   onToggleFullscreen: () => void
   onTitleChange: (title: string | null) => void
-  onOpenCodeSessions: () => void
   reorderState?: 'none' | 'candidate' | 'active' | 'target'
   paneOverlayVisible?: boolean
   paneOverlayNumber?: number | null
@@ -641,7 +636,6 @@ function TerminalPane({
         isFullscreen={isFullscreen}
         onToggleFullscreen={onToggleFullscreen}
         onTitleChange={onTitleChange}
-        onOpenCodeSessions={onOpenCodeSessions}
         onRestart={requestRestart}
         onClose={onClose}
         onSplit={onSplit}
@@ -1045,7 +1039,6 @@ export function TerminalView({
   onPaneTitleChange
 }: TerminalViewProps): JSX.Element {
   const platform = useWorkspace((state) => state.platform)
-  const wslAvailable = useWorkspace((state) => state.wslAvailable)
   const terminalDirectories = useWorkspace((state) => state.terminalDirectories)
   const [splitModifierHeld, setSplitModifierHeld] = useState(false)
   const [reorderModifierHeld, setReorderModifierHeld] = useState(false)
@@ -1055,9 +1048,6 @@ export function TerminalView({
   const [fullscreenTerminalId, setFullscreenTerminalId] = useState<string | null>(null)
   const [terminalLauncherOpen, setTerminalLauncherOpen] = useState(false)
   const [terminalLauncherSourceId, setTerminalLauncherSourceId] = useState<string | null>(null)
-  const [openCodeSessionsOpen, setOpenCodeSessionsOpen] = useState(false)
-  const [openCodeSessionsSourceId, setOpenCodeSessionsSourceId] = useState<string | null>(null)
-  const openCodeSessionsSourceStatus = useWorkspace((state) => state.statuses[openCodeSessionsSourceId ?? ''])
   const [terminalSettings, setTerminalSettings] = useState<TerminalSettings>(() => getTerminalSettings())
   const rootRef = useRef<HTMLDivElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
@@ -1091,10 +1081,8 @@ export function TerminalView({
     const onKeyDown = (event: KeyboardEvent): void => {
       const target = event.target
       if (target instanceof Element && target.closest('[role="dialog"]')) return
-      const openHistory = isOpenCodeSessionsShortcut(event)
-      if (!openHistory && !isTerminalLauncherShortcut(event)) return
+      if (!isTerminalLauncherShortcut(event)) return
       if (!supportsAgentIntegration(platform?.platform, selectedSession)) return
-      if (openHistory && platform?.isWindows && !wslAvailable) return
       if (!(target instanceof Element) || !target.closest('.terminal-host')) return
 
       const sourceTerminalId = focusedTerminalIdRef.current
@@ -1103,18 +1091,13 @@ export function TerminalView({
       event.preventDefault()
       event.stopPropagation()
       hidePaneOverlay()
-      if (openHistory) {
-        setOpenCodeSessionsSourceId(sourceTerminalId)
-        setOpenCodeSessionsOpen(true)
-      } else {
-        setTerminalLauncherSourceId(sourceTerminalId)
-        setTerminalLauncherOpen(true)
-      }
+      setTerminalLauncherSourceId(sourceTerminalId)
+      setTerminalLauncherOpen(true)
     }
 
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [selectedSession.kind, terminalLayout.panes, platform?.platform, platform?.isWindows, wslAvailable, selectedSession.distro, hidePaneOverlay])
+  }, [selectedSession.kind, terminalLayout.panes, platform?.platform, selectedSession.distro, hidePaneOverlay])
 
   useEffect(() => {
     focusedTerminalIdRef.current = null
@@ -1123,35 +1106,7 @@ export function TerminalView({
     setFullscreenTerminalId(null)
     setTerminalLauncherOpen(false)
     setTerminalLauncherSourceId(null)
-    setOpenCodeSessionsOpen(false)
-    setOpenCodeSessionsSourceId(null)
   }, [activeTab.id, selectedSession.id])
-
-  // Replaces the picker's source pane in place: the process restarts there and no pane is added.
-  const replaceOpenCodeSessionProcess = async (launch: OpenCodeResumeLaunch): Promise<void> => {
-    const terminalId = launch.sourceTerminalId
-    const terminal = getSession(terminalId)
-    const size = (terminal && fitSession(terminal)) || FALLBACK_SIZE
-    try {
-      const status = await window.api.pty.restart({
-        terminalId,
-        sessionId: selectedSession.id,
-        size,
-        palette: getTerminalPalette(terminal?.themeId ?? getTerminalSettings().theme),
-        launch
-      })
-      if (status === 'none') throw new Error('This terminal is no longer available.')
-      // The old process's output all arrives before this reply, so clearing here cannot drop new output.
-      getSession(terminalId)?.term.reset()
-      useWorkspace.getState().clearExit(terminalId)
-      useWorkspace.getState().setStatus(terminalId, status)
-    } catch (error) {
-      // A failure after the old process was stopped leaves the pane without one; reflect that.
-      const statuses = await window.api.pty.statuses().catch(() => null)
-      if (statuses) useWorkspace.getState().setStatus(terminalId, statuses[terminalId] ?? 'none')
-      throw error
-    }
-  }
 
   const requestClosePane = (terminalId: string): void => {
     if (!isTerminalPaneClosable(terminalLayout.panes, terminalId)) return
@@ -1527,11 +1482,6 @@ export function TerminalView({
           onPaneFocus(pane.terminalId)
         }}
         onTitleChange={(title) => onPaneTitleChange(pane.terminalId, title)}
-        onOpenCodeSessions={() => {
-          hidePaneOverlay()
-          setOpenCodeSessionsSourceId(pane.terminalId)
-          setOpenCodeSessionsOpen(true)
-        }}
         isFullscreen={isFullscreen}
         onToggleFullscreen={() => toggleFullscreen(pane.terminalId)}
         reorderState={
@@ -1547,7 +1497,7 @@ export function TerminalView({
         paneOverlayNumber={isFullscreen ? null : index + 1}
         paneOverlayActive={pane.terminalId === focusedTerminalId}
         onClose={() => requestClosePane(pane.terminalId)}
-        splitControlsVisible={splitModifierHeld && !reorderSourceId && !terminalLauncherOpen && !openCodeSessionsOpen && terminalLayout.panes.length < MAX_TERMINAL_COUNT}
+        splitControlsVisible={splitModifierHeld && !reorderSourceId && !terminalLauncherOpen && terminalLayout.panes.length < MAX_TERMINAL_COUNT}
         onSplit={(side) => {
           setFullscreenTerminalId(null)
           onSplitPane(pane.terminalId, side)
@@ -1616,25 +1566,6 @@ export function TerminalView({
           />
         ))}
       </div>
-
-      <OpenCodeSessionsDialog
-        open={openCodeSessionsOpen}
-        onOpenChange={setOpenCodeSessionsOpen}
-        session={selectedSession}
-        sourceTerminalId={openCodeSessionsSourceId ?? ''}
-        sourceRunning={openCodeSessionsSourceStatus === 'running'}
-        currentDirectory={openCodeSessionsSourceId ? terminalDirectories[openCodeSessionsSourceId] : undefined}
-        paneCount={terminalLayout.panes.length}
-        onRestoreFocus={() => {
-          if (openCodeSessionsSourceId) getSession(openCodeSessionsSourceId)?.term.focus()
-        }}
-        onSelect={(launch) => {
-          setFullscreenTerminalId(null)
-          onAddPane(launch.sourceTerminalId, launch)
-          setOpenCodeSessionsOpen(false)
-        }}
-        onReplace={replaceOpenCodeSessionProcess}
-      />
 
       <TerminalLauncher
         open={terminalLauncherOpen}

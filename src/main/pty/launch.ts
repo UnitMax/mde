@@ -22,8 +22,6 @@ export interface LaunchContext {
   workingDirectory?: string
   /** Direct command to run after the target shell has loaded its login environment. */
   agent?: AgentCommand
-  /** Start the normal shell once the agent exits, instead of ending the terminal with it. */
-  returnToShell?: boolean
 }
 
 const DEFAULT_POSIX_SHELL = '/bin/bash'
@@ -177,18 +175,7 @@ esac
 `.trim()
 }
 
-/**
- * With returnToShell the agent runs as a child instead of replacing the
- * process, and the normal interactive shell startup takes over once it exits.
- */
-function wslAgentShellCommand(returnToShell = false): string {
-  const run = returnToShell ? '' : 'exec '
-  // A handler (not '' / ignore) is reset to default in exec'd children, so the
-  // agent still receives SIGINT while this wrapper survives it.
-  const preamble = returnToShell ? 'trap : INT\n' : ''
-  const handOff = returnToShell
-    ? `\nexec /bin/sh -c ${shellQuote(wslShellCommand())} mde-shell "$shell"`
-    : ''
+function wslAgentShellCommand(): string {
   return `
 if [ "$#" -lt 2 ]; then exit 2; fi
 shell=$1
@@ -208,14 +195,14 @@ if [ -z "$shell" ] || [ ! -x "$shell" ]; then
   shell=/bin/bash
 fi
 export SHELL="$shell"
-${preamble}case "\${shell##*/}" in
+case "\${shell##*/}" in
   fish)
-    ${run}"$shell" -l -i -c 'exec $argv' -- "$agent" "$@"
+    exec "$shell" -l -i -c 'exec $argv' -- "$agent" "$@"
     ;;
   *)
-    ${run}"$shell" -lic 'exec "$@"' mde-agent "$agent" "$@"
+    exec "$shell" -lic 'exec "$@"' mde-agent "$agent" "$@"
     ;;
-esac${handOff}
+esac
 `.trim()
 }
 
@@ -279,7 +266,7 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
         ...(environment.length > 0 ? ['env', ...environment] : []),
         '/bin/sh',
         '-c',
-        context.agent ? wslAgentShellCommand(context.returnToShell) : wslShellCommand(),
+        context.agent ? wslAgentShellCommand() : wslShellCommand(),
         context.agent ? 'mde-agent' : 'mde-shell',
         ...(context.agent
           ? [session.shell ?? WSL_DEFAULT_SHELL_MARKER, context.agent.executable, ...context.agent.args]
@@ -295,7 +282,7 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
     if (context.platform === 'darwin') {
       return {
         file: '/bin/sh',
-        args: ['-c', wslAgentShellCommand(context.returnToShell), 'mde-agent',
+        args: ['-c', wslAgentShellCommand(), 'mde-agent',
           session.shell ?? context.defaultShell ?? '/bin/zsh', context.agent.executable, ...context.agent.args],
         cwd: context.workingDirectory ?? session.path
       }

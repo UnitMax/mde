@@ -53,6 +53,8 @@ import {
   inboxModelLabel,
   inboxStatusChip,
   isInboxThreadUnread,
+  sessionAge,
+  sessionDate,
   visibleInboxThreads,
   workingInboxThreads,
   type InboxFilter,
@@ -60,7 +62,6 @@ import {
 } from '@/lib/inbox'
 import { visibleDrafts } from '@/lib/inbox-drafts'
 import { ipcErrorMessage } from '@/lib/ipc-error'
-import { sessionAge, sessionDate } from '@/lib/opencode-sessions'
 import { cn } from '@/lib/utils'
 import { useInboxChat } from '@/store/inbox-chat'
 import { useInboxChanges, inboxChangesKey } from '@/store/inbox-changes'

@@ -8,7 +8,6 @@ import { createWindowsExecutableResolver } from '../../src/main/windows-executab
 import { runWslCommand, runWslCommandBuffer, listDistros } from '../../src/main/wsl/distros'
 import { PtyManager } from '../../src/main/pty/manager'
 import { buildLaunchSpec } from '../../src/main/pty/launch'
-import { metadataQueryLaunch } from '../../src/main/opencode/sessions'
 import type { Session } from '../../src/shared/types'
 
 const run = promisify(execFile)
@@ -70,14 +69,6 @@ export async function runWindowsExecutableCheck(): Promise<void> {
       id: 'wsl-fixture', projectId: 'fixture', name: 'Fixture', kind: 'wsl',
       distro, path: '/tmp', createdAt: new Date(0).toISOString(),
     }
-    // Exercise the actual history launch specification without touching an agent.
-    const query = metadataQueryLaunch(wslSession, '/usr/bin/printf', { operation: 'session.list', params: { limit: '1' } }, 'fixture', wsl)
-    const history = await run(query.spec.file, query.spec.args, {
-      cwd: query.spec.cwd, timeout: 30_000, windowsHide: true, encoding: 'utf8',
-      env: { ...process.env, WSL_UTF8: '1' },
-    })
-    assert.ok(history.stdout.includes(query.begin) && history.stdout.includes(query.end))
-
     const terminalOutput = new Map<string, string>()
     manager = new PtyManager({
       onData: ({ terminalId, data }) => terminalOutput.set(terminalId, (terminalOutput.get(terminalId) ?? '') + data),

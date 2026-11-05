@@ -38,7 +38,7 @@ full path. Double-clicking the title, or Rename in the menu, edits it, and keepi
 stores nothing so it goes on following the folder. The header also carries the Git chip described
 below. The actions stay out of the way: fullscreen, the ⋯ menu and Close
 appear over the right edge of a hovered or focused pane (and always in fullscreen) without moving the
-title. The menu holds Rename, Split right and Split down, OpenCode sessions (Ctrl+Shift+O),
+title. The menu holds Rename, Split right and Split down,
 Open in VS Code and Show in File Explorer (WSL on Windows),
 and Restart, which still asks for confirmation. When a tab has several panes, the focused one gets an
 accent line under its header. The bar above the panes is a single line with the session name and
@@ -283,7 +283,7 @@ The Inbox also shows a right-hand sidebar with three tabs, Files, Changes and Te
 
 **Resizing.** Dragging the sidebar's left edge makes it wider (up to 70% of the window) or narrower (never under 260 px). The edge is a keyboard-operable separator: Left and Right arrows change the width by 16 px (64 with Shift), Home and End go to the limits, and a double-click restores 260 px. One width serves all three tabs and is kept in the renderer's `localStorage` (`mde.inbox-sidebar-width`).
 
-**Terminal tab.** The Inbox has one terminal, shared by every thread: it is the same whichever thread (or the new-thread page) is open, and it keeps running while the sidebar shows another tab or the Projects view is open. It reuses the project view's terminal layout (`TerminalView` in its embedded mode: no tab strip, a location header, and Ctrl split controls, Ctrl+Shift+F and the pane-switch shortcuts acting only while the keyboard is inside it, so typing in the composer is never intercepted). Splitting any pane on any side, resizing the dividers, reordering panes, pane titles, fullscreen, restart, the terminal launcher and the OpenCode history work as in Projects. Every shell starts in the home directory: `~` in the default WSL distro on Windows, the home directory on the Mac. The layout and its dividers are kept in `localStorage` (`mde.inbox-terminal-layout`) and come back as fresh shells on the next run; the shells themselves are not restored. The layout edits shared with the project view live in `src/renderer/terminal/layout-edits.ts`, and the Inbox's copy of the state in `src/renderer/store/inbox-terminal.ts`.
+**Terminal tab.** The Inbox has one terminal, shared by every thread: it is the same whichever thread (or the new-thread page) is open, and it keeps running while the sidebar shows another tab or the Projects view is open. It reuses the project view's terminal layout (`TerminalView` in its embedded mode: no tab strip, a location header, and Ctrl split controls, Ctrl+Shift+F and the pane-switch shortcuts acting only while the keyboard is inside it, so typing in the composer is never intercepted). Splitting any pane on any side, resizing the dividers, reordering panes, pane titles, fullscreen, restart, and the terminal launcher work as in Projects. Every shell starts in the home directory: `~` in the default WSL distro on Windows, the home directory on the Mac. The layout and its dividers are kept in `localStorage` (`mde.inbox-terminal-layout`) and come back as fresh shells on the next run; the shells themselves are not restored. The layout edits shared with the project view live in `src/renderer/terminal/layout-edits.ts`, and the Inbox's copy of the state in `src/renderer/store/inbox-terminal.ts`.
 
 The terminal is not a workspace session and is never stored. Terminal requests name it with the reserved session ID `inbox-terminal` (`src/shared/inbox-terminal.ts`), which the main process resolves on demand (`src/main/inbox/terminal.ts`) for terminal requests. File and Git requests can also name a live terminal ID and its expected directory; naming `inbox-terminal` as a saved file-root session still fails.
 
@@ -722,7 +722,7 @@ still in the Inbox, and the sidebar row shows a small fork icon. `forkedFrom` is
 **Transport.** OpenCode 2 runs one background service per machine, which its terminal UI also
 uses, so a thread can be continued in a terminal (`opencode --session ses_…`) and both stay in
 sync. `src/main/opencode/service/discovery.ts` finds the service for a target by running a fixed
-script through the same login-shell launch as the session picker: `opencode service start`
+script through the target's login shell: `opencode service start`
 (which does nothing when the service is already running), then printing
 `${XDG_STATE_HOME:-~/.local/state}/opencode/service.json` between random markers on standard
 output. The file's `url` must be plain HTTP on a loopback address with a port, and its password
@@ -812,37 +812,12 @@ In a focused Mac or Windows/WSL terminal, Ctrl+N or Cmd+N opens a launcher for a
 Claude pane. It defaults to that terminal's current directory and can switch to the session
 directory with Tab; the two directory choices are also clickable. If the terminal has not reported
 its current directory yet, the session directory remains available. The session choice is disabled
-when both paths are identical. New launcher and history panes split their source pane to its right,
+when both paths are identical. New launcher panes split their source pane to its right,
 preserving the surrounding arrangement and its divider ratios. The per-tab resource limit is 64 panes.
 Configure each executable and its shell-style arguments in the Settings dialog's Agents section.
 Arguments are passed as literal argv values; shell expansion and command chaining are not supported.
 Agent launch identity is runtime-only, so reopening the app restores ordinary shells rather than
 relaunching an agent.
-
-### OpenCode session picker
-
-The history button above each Mac or Windows/WSL terminal, or Ctrl+Shift+O
-in a focused terminal, opens the OpenCode session picker. It shows the native Mac account's or current distro's complete
-history across all directories in compact rows grouped by folder. The terminal's current directory
-comes first, with sessions ordered by most recent activity within each folder.
-Search by title, directory, session ID, model, or agent. Archived sessions and subagent conversations
-are included and labelled; the selected session's details show full dates, token usage,
-and reported cost when available.
-
-Click a session or use the arrow keys and Enter to resume it in a new pane in its saved directory.
-Shift+Enter resumes it in the terminal the picker was opened from instead. That terminal's running
-command or OpenCode task is interrupted, so the picker asks first unless the terminal has exited.
-Shift+Enter also works on a full tab, because no pane is added. Escape closes the picker. At nine
-panes the picker reports that the tab is full and disables Enter.
-
-History uses the configured OpenCode executable's `opencode api` command, which answers from
-OpenCode's local background service: `session.list` is read one page of 120 at a time by following
-the opaque cursor (up to 100 pages), and `session.get` re-checks a session before it is resumed
-with `--session`. Only a fixed set of operations and parameters is ever passed, each as its own
-literal argument. Both require OpenCode 2 or newer; an older OpenCode reports that instead. If
-optional metadata is unavailable it is omitted. The selected history and resume command remain runtime-only.
-On Mac, agent and metadata commands run through the selected login shell with literal arguments.
-These operations have bounded timeouts and output sizes.
 
 ### Clipboard
 
@@ -936,7 +911,7 @@ worktree.
 
 - On Windows, `src/main/windows-executable.ts` resolves WSL to the canonical
   absolute executable under the Windows installation directory. Short-lived
-  queries, PTYs and history queries share this resolver and an explicit host
+  queries, PTYs and OpenCode service discovery share this resolver and an explicit host
   working directory; WSL's `--cd` selects the Linux working directory separately.
   Lookup is lazy and missing WSL never prevents native terminals from opening.
 - Short-lived `wsl.exe` queries and path conversions go through `runWslCommand()` in

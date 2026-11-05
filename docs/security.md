@@ -107,7 +107,7 @@ Regression coverage includes `test/ipc-security.test.ts`,
 Git, including hostile base and branch names and a branch that already exists), and the
 registered-handler tests in
 `test/ipc-drop.test.ts`. Every shared channel must have a validator and a normal
-request fixture. Existing path/drop/history tests exercise the same real
+request fixture. Existing path/drop tests exercise the same real
 boundary with a trusted sender fixture. Native Windows/WSL smoke testing is
 still required before claiming platform-specific release verification.
 
@@ -300,7 +300,7 @@ absolute Linux path and a flag for hidden folders.
 ## Windows executable selection
 
 `src/main/windows-executable.ts` resolves Windows host programs before launch.
-WSL commands, WSL PTYs and OpenCode history queries use the canonical absolute
+WSL commands, WSL PTYs and OpenCode service discovery use the canonical absolute
 `SystemRoot\System32\wsl.exe` path and an explicit host working directory.
 Native Windows sessions use the system PowerShell by default; `powershell` /
 `powershell.exe` and `cmd` / `cmd.exe` overrides map to their system locations.
@@ -330,9 +330,9 @@ host executable lookup.
 launch, PTY, WSL buffer and OpenCode transport tests cover consumers and failed
 resolution before side effects. The opt-in native Windows integration test
 plants runnable harmless executables in both cwd and `PATH`, verifies the
-sentinel itself works, and exercises real distro queries, history transport,
-PowerShell and native/WSL ConPTY. See the Windows release checklist for running
-it. It uses scratch data rather than a user's OpenCode sessions.
+sentinel itself works, and exercises real distro queries, PowerShell and
+native/WSL ConPTY. See the Windows release checklist for running
+it. It uses only scratch data and terminals.
 
 ## Dependency security maintenance
 

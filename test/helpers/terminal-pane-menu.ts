@@ -13,7 +13,7 @@ export async function openPaneMenu(terminalId: string): Promise<void> {
   await act(async () => { trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
 }
 
-/** The menu's items by test id, e.g. `terminal-opencode-sessions-<id>`; null while the menu is closed. */
+/** The menu's items by test id, e.g. `terminal-restart-<id>`; null while the menu is closed. */
 export const paneMenuItem = (testId: string): HTMLElement | null =>
   document.body.querySelector<HTMLElement>(`[role="menuitem"][data-testid="${testId}"]`)
 

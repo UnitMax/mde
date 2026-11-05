@@ -16,6 +16,7 @@ import {
   type GitTerminalInfoRequest,
   IpcChannels,
   type EnsurePtyRequest,
+  type RestartPtyRequest,
   type FilesListRequest,
   type FilesReadRequest,
   type PtyLaunchRequest,
@@ -62,8 +63,6 @@ import type {
   Project,
   TodoProject,
   TodoTask,
-  OpenCodeSessionsRequest,
-  OpenCodeSessionSummary,
   Session,
   PtyStatus,
   AgentCommand,
@@ -132,12 +131,6 @@ import {
 import { listWslDirectories } from './wsl/browse'
 import { buildVsCodeRemoteUri } from './vscode'
 import { safeVsCodeRemoteUrl } from './external-links'
-import {
-  listOpenCodeSessions,
-  readOpenCodeSession,
-  validateOpenCodeExecutable,
-  validateOpenCodeSessionId
-} from './opencode/sessions'
 import { readGitDiff, readGitInfo, readGitTerminalInfo } from './git'
 import { readInboxGitChanges, readInboxGitDiff } from './inbox/changes'
 import { terminalSessionResolver } from './inbox/terminal'
@@ -312,11 +305,6 @@ function validatePtyLaunchRequest(launch: PtyLaunchRequest): void {
   if (!launch || typeof launch.sourceTerminalId !== 'string' || !launch.sourceTerminalId.trim()) {
     throw new Error('Invalid terminal launch source.')
   }
-  if ('opencodeSessionId' in launch) {
-    validateOpenCodeSessionId(launch.opencodeSessionId)
-    validateOpenCodeExecutable(launch.executable)
-    return
-  }
   if (!isTerminalLaunchDirectory(launch.directory)) {
     throw new Error('Invalid terminal launch directory.')
   }
@@ -353,19 +341,6 @@ async function resolvePtyLaunchOptions(
     throw new Error('The source terminal is not available.')
   }
 
-  if ('opencodeSessionId' in launch) {
-    const saved = await readOpenCodeSession(session, launch.executable, launch.opencodeSessionId)
-    const directory = await verifiedDirectory(session, saved.directory)
-    if (!directory) throw new Error('The saved OpenCode session directory is not available.')
-    if (ptyManager.terminalInfo(launch.sourceTerminalId)?.sessionId !== session.id) {
-      throw new Error('The source terminal is not available.')
-    }
-    return {
-      directory,
-      agent: { executable: launch.executable, args: ['--session', saved.id] }
-    }
-  }
-
   const requestedDirectory = launch.directory === 'session' ? session.path : source.directory
   if (!requestedDirectory) {
     throw new Error(
@@ -384,25 +359,6 @@ async function resolvePtyLaunchOptions(
     directory,
     ...(launch.agent ? { agent: launch.agent.command } : {})
   }
-}
-
-/**
- * Replacing a pane's process accepts only an OpenCode resume for that same pane.
- * It resolves through the new-pane path, so the saved record and directory are
- * verified before the running process is stopped. Quitting the agent returns
- * to the pane's shell rather than ending the terminal.
- */
-async function resolvePtyReplacementOptions(
-  ptyManager: PtyManager,
-  session: Session,
-  req: EnsurePtyRequest
-): Promise<PtyLaunchOptions | undefined> {
-  if (req.launch === undefined) return undefined
-  if (!('opencodeSessionId' in req.launch) || req.launch.sourceTerminalId !== req.terminalId) {
-    throw new Error('Invalid terminal replacement request.')
-  }
-  const options = await resolvePtyLaunchOptions(ptyManager, session, req.launch)
-  return options && { ...options, returnToShell: true }
 }
 
 async function revealDirectory(session: Session, directory: string): Promise<void> {
@@ -650,33 +606,14 @@ export function registerIpcHandlers(
 
   handle<WindowChromeColors, void>(IpcChannels.windowChromeSet, (req) => titleBar.setColors(req))
 
-  handle<OpenCodeSessionsRequest, OpenCodeSessionSummary[]>(IpcChannels.opencodeSessionsList, async (req) => {
-    if (!req || typeof req.sessionId !== 'string' || typeof req.sourceTerminalId !== 'string') {
-      throw new Error('Invalid OpenCode session history request.')
-    }
-    validateOpenCodeExecutable(req.executable)
-    const session = await getTerminalSession(req.sessionId)
-    if (!session || !supportsAgentIntegration(process.platform, session)) {
-      throw new Error('Session history requires macOS or a Windows/WSL terminal.')
-    }
-    const source = ptyManager.terminalInfo(req.sourceTerminalId)
-    if (!source || source.sessionId !== session.id) throw new Error('The source terminal is not available.')
-    return listOpenCodeSessions(session, req.executable)
-  })
-
   handle<EnsurePtyRequest, PtyStatus>(IpcChannels.ptyEnsure, async (req) => {
     const pending = Symbol()
     pendingEnsures.set(req.terminalId, pending)
     try {
       const session = await getTerminalSession(req.sessionId)
       if (!session) return 'none'
-      if (req.launch !== undefined) validatePtyLaunchRequest(req.launch)
-      // Reattaching an existing resumed TUI must not depend on its saved record
-      // still existing, or on the terminal that originally opened the picker.
-      const reattaching = req.launch && 'opencodeSessionId' in req.launch &&
-        ptyManager.terminalInfo(req.terminalId)?.sessionId === session.id
       const launch = await threadTerminalLaunch(req, session) ??
-        (reattaching ? undefined : await resolvePtyLaunchOptions(ptyManager, session, req.launch))
+        await resolvePtyLaunchOptions(ptyManager, session, req.launch)
       if (pendingEnsures.get(req.terminalId) !== pending) return 'none'
       return ptyManager.ensure(
         req.terminalId,
@@ -689,13 +626,13 @@ export function registerIpcHandlers(
       if (pendingEnsures.get(req.terminalId) === pending) pendingEnsures.delete(req.terminalId)
     }
   })
-  handle<EnsurePtyRequest, PtyStatus>(IpcChannels.ptyRestart, async (req) => {
+  handle<RestartPtyRequest, PtyStatus>(IpcChannels.ptyRestart, async (req) => {
     const pending = Symbol()
     pendingEnsures.set(req.terminalId, pending)
     try {
       const session = await getTerminalSession(req.sessionId)
       if (!session) return 'none'
-      const launch = await threadTerminalLaunch(req, session) ?? await resolvePtyReplacementOptions(ptyManager, session, req)
+      const launch = await threadTerminalLaunch(req, session) ?? undefined
       if (pendingEnsures.get(req.terminalId) !== pending) return 'none'
       return ptyManager.restart(
         req.terminalId,

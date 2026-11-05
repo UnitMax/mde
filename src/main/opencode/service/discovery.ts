@@ -1,13 +1,10 @@
+import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import type { OpenCodeTarget, Session } from '@shared/types'
 import { resolveWslExecutable, type HostExecutable } from '../../windows-executable'
-import {
-  loginShellScriptLaunch,
-  parseMetadataOutput,
-  runLoginShellScript,
-  validateOpenCodeExecutable,
-} from '../sessions'
-import type { LaunchSpec } from '../../pty/launch'
+import { buildLaunchSpec, type LaunchSpec } from '../../pty/launch'
+import { nativeLoginShell } from '../../native-environment'
+import { decodeWslOutput, wslEnv } from '../../wsl/distros'
 
 /** Where and how to reach one OpenCode background service. The password stays in the main process. */
 export interface OpenCodeServiceEndpoint {
@@ -55,7 +52,9 @@ export function serviceDiscoveryLaunch(
   marker: string,
   hostExecutable?: HostExecutable,
 ): { spec: LaunchSpec; begin: string; end: string } {
-  validateOpenCodeExecutable(executable)
+  if (typeof executable !== 'string' || !executable.trim() || /[\u0000-\u001f\u007f-\u009f]/.test(executable)) {
+    throw new Error('Invalid OpenCode executable.')
+  }
   const begin = `__MDE_OPENCODE_SERVICE_BEGIN_${marker}__`
   const end = `__MDE_OPENCODE_SERVICE_END_${marker}__`
   const script = [
@@ -68,7 +67,14 @@ export function serviceDiscoveryLaunch(
     'cat -- "$mde_state" || exit 70',
     'printf "\\n%s\\n" "$mde_end"',
   ].join('\n')
-  const spec = loginShellScriptLaunch(targetSession(target), script, 'mde-opencode-service', [executable, begin, end], hostExecutable)
+  const native = target.kind === 'native'
+  const spec = buildLaunchSpec(targetSession(target), {
+    platform: native ? 'darwin' : 'win32',
+    windowsExecutable: hostExecutable,
+    defaultShell: native ? nativeLoginShell() : undefined,
+    workingDirectory: '/',
+    agent: { executable: '/bin/sh', args: ['-c', script, 'mde-opencode-service', executable, begin, end] },
+  })
   return { spec, begin, end }
 }
 
@@ -93,17 +99,36 @@ export function parseServiceState(value: unknown): OpenCodeServiceEndpoint {
 }
 
 export const discoverOpenCodeService: OpenCodeServiceDiscover = async (target, executable) => {
-  const session = targetSession(target)
   const native = target.kind === 'native'
   const { spec, begin, end } = serviceDiscoveryLaunch(target, executable, randomUUID(), native ? undefined : resolveWslExecutable('win32'))
-  const { stdout, error } = await runLoginShellScript(session, spec, { timeout: DISCOVERY_TIMEOUT_MS, maxBuffer: DISCOVERY_MAX_BYTES })
+  const { stdout, error } = await new Promise<{
+    stdout: string
+    error: (Error & { killed?: boolean }) | null
+  }>((resolve) => {
+    execFile(spec.file, spec.args, {
+      env: native ? process.env : wslEnv(),
+      cwd: spec.cwd,
+      encoding: 'buffer',
+      timeout: DISCOVERY_TIMEOUT_MS,
+      maxBuffer: DISCOVERY_MAX_BYTES,
+      windowsHide: true,
+    }, (error, rawStdout) => {
+      resolve({
+        stdout: native ? rawStdout.toString('utf8') : decodeWslOutput(rawStdout),
+        error,
+      })
+    })
+  })
   if (error) {
     if (error.killed) throw new Error('Starting the OpenCode background service timed out.')
     throw new Error(SERVICE_UNAVAILABLE)
   }
   let state: unknown
   try {
-    state = parseMetadataOutput(stdout, begin, end)
+    const start = stdout.indexOf(begin)
+    const finish = stdout.indexOf(end, start + begin.length)
+    if (start < 0 || finish < 0) throw new Error(SERVICE_UNAVAILABLE)
+    state = JSON.parse(stdout.slice(start + begin.length, finish).trim())
   } catch {
     throw new Error(SERVICE_UNAVAILABLE)
   }

@@ -125,9 +125,6 @@ const api: RendererApi = {
     list: (req) => ipcRenderer.invoke(IpcChannels.filesList, req),
     read: (req) => ipcRenderer.invoke(IpcChannels.filesRead, req)
   },
-  opencodeSessions: {
-    list: (req) => ipcRenderer.invoke(IpcChannels.opencodeSessionsList, req)
-  },
   inbox: {
     changes: (req) => ipcRenderer.invoke(IpcChannels.inboxChanges, req),
     changeDiff: (req) => ipcRenderer.invoke(IpcChannels.inboxChangeDiff, req),

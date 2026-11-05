@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { draftFolderLabel, draftTitle } from '@/lib/inbox-drafts'
 import { ipcErrorMessage } from '@/lib/ipc-error'
-import { sessionAge, sessionDate } from '@/lib/opencode-sessions'
+import { sessionAge, sessionDate } from '@/lib/inbox'
 import { cn } from '@/lib/utils'
 import { useInboxDrafts } from '@/store/inbox-drafts'
 import { useInboxView } from '@/store/inbox-view'

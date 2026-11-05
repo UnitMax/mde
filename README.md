@@ -5,7 +5,7 @@ persistent terminal sessions, with first-class WSL support on Windows.
 
 It is a desktop shell focused on persistent terminal workflows: tabbed multi-pane terminals per
 session, Git changes in each terminal header, a file tree that follows the selected terminal,
-Markdown and Mermaid preview, an OpenCode session picker, and To Do boards. The Inbox is a separate
+Markdown and Mermaid preview, and To Do boards. The Inbox is a separate
 view for starting and continuing OpenCode conversations in GUI chat or a direct OpenCode terminal;
 both use OpenCode's API for thread activity. Choose GUI (the default) or Terminal in the new-thread composer. See
 [`docs/architecture.md`](docs/architecture.md) for how each part behaves.
@@ -14,6 +14,14 @@ Build terminal layouts by holding Ctrl and clicking + on a pane’s left, right,
 Drag dividers to resize; closing a pane expands its sibling and preserves the rest of the layout.
 Select a terminal to browse its current folder in Files. Click its branch and change counts in the
 terminal header to review Git changes and history.
+
+## Removing the old OpenCode plugin
+
+Close MDE and OpenCode, then delete `~/.config/opencode/plugins/mde-status/` and
+the older `~/.config/opencode/plugins/mde-status.js`, if present. On macOS, use
+`$OPENCODE_CONFIG_DIR/plugins/` if configured, otherwise `$XDG_CONFIG_HOME/opencode/plugins/`
+if configured. On Windows, repeat inside each WSL distro where you installed the plugin.
+Restart MDE and OpenCode afterward.
 
 ## Requirements
 
@@ -62,7 +70,7 @@ notarization requires overriding `mac.identity` and supplying release credential
 and configuration. The Mac
 package includes only the rebuilt PTY binding and spawn helper outside `app.asar`,
 with compiler debug paths stripped before signing. Native Mac terminals support
-the agent launcher, OpenCode history/resume, and the F12 mini Inbox window.
+the agent launcher and the F12 mini Inbox window.
 WSL-specific actions remain Windows-only.
 
 Cross-building for Windows from Linux is not supported; build on Windows, or from WSL with

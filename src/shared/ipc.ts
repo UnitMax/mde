@@ -25,8 +25,6 @@ import type {
   PtySize,
   PtyStatus,
   TerminalLaunch,
-  OpenCodeSessionsRequest,
-  OpenCodeSessionSummary,
   WindowMode,
   InboxAddFolderRequest,
   InboxComposerState,
@@ -140,10 +138,6 @@ export const IpcChannels = {
 
   filesList: 'files:list',
   filesRead: 'files:read',
-
-  opencodeSessionsList: 'opencode-sessions:list',
-
-
 
   inboxList: 'inbox:list',
   inboxSetRead: 'inbox:set-read',
@@ -268,12 +262,11 @@ export interface EnsurePtyRequest {
   sessionId: string
   size: PtySize
   palette: TerminalPalette
-  /**
-   * Optional runtime-only launch override: a new WSL terminal pane, or, for
-   * restart, an OpenCode session that replaces this terminal's process.
-   */
+  /** Optional runtime-only launch override for a new terminal pane. */
   launch?: PtyLaunchRequest
 }
+
+export type RestartPtyRequest = Omit<EnsurePtyRequest, 'launch'>
 
 export type PtyLaunchRequest = TerminalLaunch
 
@@ -482,7 +475,7 @@ export interface RendererApi {
     write(req: WritePtyRequest): Promise<void>
     resize(req: ResizePtyRequest): Promise<void>
     setPalette(req: UpdatePtyPaletteRequest): Promise<void>
-    restart(req: EnsurePtyRequest): Promise<PtyStatus>
+    restart(req: RestartPtyRequest): Promise<PtyStatus>
     dispose(terminalId: string): Promise<void>
     statuses(): Promise<Record<string, PtyStatus>>
     directories(): Promise<Record<string, string>>
@@ -513,9 +506,6 @@ export interface RendererApi {
   files: {
     list(req: FilesListRequest): Promise<FileTreeListResponse>
     read(req: FilesReadRequest): Promise<FileReadResponse>
-  }
-  opencodeSessions: {
-    list(req: OpenCodeSessionsRequest): Promise<OpenCodeSessionSummary[]>
   }
   inbox: {
     changes(req: InboxChangesRequest): Promise<InboxChangesResponse>
