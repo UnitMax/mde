@@ -441,6 +441,22 @@ follow-up switches the session's agent or model first only when you changed them
 keeps the last ten opened threads in memory so going back to one is instant; MDE never writes
 messages to disk.
 
+**Timeline and scrolling.** From the second prompt on, a slim rail at the right edge of the
+conversation has one short mark for each of the user's prompts (`ChatTimeline`, with the pure
+logic in `lib/chat-timeline.ts`). The marks follow the reading position: the turn being read, the
+last prompt to reach about a third of the way down the view (the last one once scrolled to the
+end), is brightest, other prompts on screen are lit, and the rest are dim. A long conversation draws
+the 18 marks around the turn being read and fades the ends. Hovering the rail grows it into a card
+listing the prompts (their first line, or the attachment or skill names when there is no text), opened
+on the turn being read; clicking one scrolls the conversation to it, smoothly unless the system asks
+for reduced motion, and a prompt near the end stops at the end. From the keyboard the rail is one tab
+stop (Shift+Tab from the message box reaches it): Up, Down or Enter opens the card and focuses the
+current prompt, Up, Down, Home and End move, Enter jumps, Escape closes it. Only the loaded
+messages are listed, and held (steered or queued) messages are not prompts yet. While the view is
+scrolled up (more than 80 px from the newest message), a **Scroll to bottom** button floats above the
+message box; it takes the reader to the newest message and following new output again. In a pane narrower than 50 rem the conversation and the message box keep a wider
+right margin while the rail is there, so that it does not touch the text.
+
 **Steering or queueing a message.** With the agent working and something typed, the round send
 button grows into a pill (`ChatSendButton`): an arrow and **Steer**, and a chevron that opens a menu
 with **Steer** (the agent reads it at its next step) and **Queue** (sent when the agent is done).

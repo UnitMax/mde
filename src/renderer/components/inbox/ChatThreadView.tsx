@@ -9,8 +9,12 @@ import { ChatPendingView } from '@/components/inbox/ChatPendingView'
 import { PermissionCard, QuestionCard } from '@/components/inbox/ChatRequestCards'
 import { ChatRevertBanner } from '@/components/inbox/ChatRevertBanner'
 import { ChatRevertDialog } from '@/components/inbox/ChatRevertDialog'
+import { ChatScrollToBottom } from '@/components/inbox/ChatScrollToBottom'
+import { ChatTimeline } from '@/components/inbox/ChatTimeline'
 import { ChatTranscriptMenu } from '@/components/inbox/ChatTranscriptMenu'
 import { TurnDuration, WorkingFor } from '@/components/inbox/ChatTurnTime'
+import { scrollBehavior, TIMELINE_MIN_PROMPTS, timelineEntries } from '@/lib/chat-timeline'
+import { cn } from '@/lib/utils'
 import { contextUsage, findModel, hideReverted, initialChoice, mergeLive, revertedMessageCount, turnStats } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { mcpKey } from '@/lib/mcp'
@@ -22,6 +26,9 @@ const NO_SERVERS: readonly string[] = []
 
 /** Within this distance of the bottom, new content keeps the view pinned to it. */
 const STICK_THRESHOLD_PX = 80
+
+/** A prompt the timeline jumps to is left this far below the top edge, so that its bubble is not cut off. */
+const JUMP_MARGIN_PX = 16
 
 function lastAssistant(messages: ChatThreadState['messages'] | undefined): { agent: string; model: OpenCodeModelRef } | null {
   if (!messages) return null
@@ -56,6 +63,8 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const replyForm = useInboxChat((store) => store.replyForm)
   const scrollRef = useRef<HTMLDivElement>(null)
   const stickRef = useRef(true)
+  // Whether the view is scrolled up from the newest message, which is when the way back is offered.
+  const [away, setAway] = useState(false)
   const [agent, setAgent] = useState<string | null>(null)
   const [model, setModel] = useState<OpenCodeModelRef | null>(null)
   const [codeFamily, setCodeFamily] = useState(() => getTerminalSettings().codeFamily)
@@ -137,6 +146,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
     const element = scrollRef.current
     if (!element) return
     stickRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < STICK_THRESHOLD_PX
+    setAway(!stickRef.current)
     if (element.scrollTop < 40 && state?.older && !state.loadingOlder) {
       const before = element.scrollHeight
       void loadOlder(thread.id).then(() => {
@@ -154,6 +164,28 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
     const element = scrollRef.current
     if (element && stickRef.current) element.scrollTop = element.scrollHeight
   }, [messages, requests, pending])
+
+  const prompts = useMemo(() => timelineEntries(messages), [messages])
+  // In a narrow pane the timeline's rail would touch the text, so the conversation and the composer both leave room for it.
+  const railGutter = prompts.length >= TIMELINE_MIN_PROMPTS && '@max-[50rem]:pr-9'
+  const jumpToPrompt = useCallback((id: string) => {
+    const scroller = scrollRef.current
+    const target = scroller && Array.from(scroller.querySelectorAll<HTMLElement>('[data-chat-message]')).find((element) => element.dataset.chatMessage === id)
+    if (!scroller || !target) return
+    const wanted = scroller.scrollTop + target.getBoundingClientRect().top - scroller.getBoundingClientRect().top - JUMP_MARGIN_PX
+    const last = scroller.scrollHeight - scroller.clientHeight
+    const top = Math.min(Math.max(wanted, 0), last)
+    // Landing near the end follows new messages again; anywhere else leaves the view where it is put.
+    if (Math.abs(top - scroller.scrollTop) < 1) return
+    stickRef.current = last - top < STICK_THRESHOLD_PX
+    scroller.scrollTo({ top, behavior: scrollBehavior() })
+  }, [])
+  const scrollToBottom = useCallback(() => {
+    const scroller = scrollRef.current
+    if (!scroller) return
+    stickRef.current = true
+    scroller.scrollTo({ top: scroller.scrollHeight, behavior: scrollBehavior() })
+  }, [])
 
   const running = state?.running ?? thread.status === 'working'
   // The MCP servers of the folder the thread runs in; the chip in the composer keeps this list current.
@@ -189,13 +221,14 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   return (
     <McpServerNamesContext.Provider value={mcpNames}>
     <div
-      className="flex min-h-0 flex-1 flex-col"
+      className="@container flex min-h-0 flex-1 flex-col"
       data-testid="chat-thread"
       style={{ '--inbox-code-font': codeViewerFontFamily(codeFamily) } as CSSProperties}
     >
+      <div className="relative flex min-h-0 flex-1 flex-col">
       <ChatTranscriptMenu messages={messages} complete={!state?.older} transcriptRef={scrollRef} onCopyError={setCopyError}>
       <div ref={scrollRef} onScroll={onScroll} className="chat-selectable min-h-0 flex-1 overflow-y-auto" data-testid="chat-transcript">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-6 py-5">
+        <div className={cn('mx-auto flex w-full max-w-3xl flex-col gap-4 px-6 py-5', railGutter)}>
           {state?.older && (
             <button
               type="button"
@@ -273,7 +306,10 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
         </div>
       </div>
       </ChatTranscriptMenu>
-      <div className="mx-auto w-full max-w-3xl shrink-0 px-6 pb-5 pt-2">
+      <ChatTimeline entries={prompts} scrollRef={scrollRef} onJump={jumpToPrompt} />
+      {away && <ChatScrollToBottom onClick={scrollToBottom} />}
+      </div>
+      <div className={cn('mx-auto w-full max-w-3xl shrink-0 px-6 pb-5 pt-2', railGutter)}>
         <ChatComposer
           key={thread.id}
           draftKey={`thread:${thread.id}`}

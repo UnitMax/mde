@@ -35,6 +35,7 @@ export function getKeyboardShortcutGroups(
         { id: 'inbox-paste-image', keys: [`${primaryModifier}+V`], description: 'Paste clipboard images as attachments in the message box; text pastes normally.' },
         { id: 'inbox-skill-picker', keys: ['$'], description: 'Start a word with $ in the message box to pick a skill; keep typing to narrow the list.' },
         { id: 'inbox-skill-picker-keys', keys: ['Up', 'Down', 'Tab', 'Enter', 'Escape'], description: 'In the skill list: Up and Down move, Tab or Enter insert the skill, Escape closes the list.' },
+        { id: 'inbox-timeline', keys: ['Up', 'Down', 'Enter', 'Escape'], description: 'On the prompt timeline beside a conversation: Up or Down opens it, Up, Down, Home and End move between prompts, Enter jumps to one, Escape closes it.' },
         { id: 'inbox-send', keys: ['Enter'], description: 'Send the message and attachments.' },
         { id: 'inbox-send-background', keys: platform === 'darwin' ? ['Cmd+Enter', 'Ctrl+Enter'] : ['Ctrl+Enter'], description: 'On the new-thread page, start a thread in the background and keep the composer open for the next thread.' },
         { id: 'inbox-save-draft', keys: [`${primaryModifier}+S`], description: 'On the new-thread page, save what you typed as a draft and start a blank page.' },
