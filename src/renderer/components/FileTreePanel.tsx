@@ -199,7 +199,7 @@ function FileTree({
         fill ? 'w-full min-w-0' : 'w-[260px] shrink-0'
       )}
     >
-      <div className="flex items-center gap-1 px-3 pb-2 pt-3">
+      <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
         {heading ?? (
           <span className="min-w-0 flex-1 truncate text-[11px] font-medium uppercase tracking-wide text-fg-muted" title={root.directory ?? session.path}>
             Files
@@ -229,16 +229,18 @@ function FileTree({
             <FolderOpen className="h-3.5 w-3.5" />
           </Button>
         )}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="shrink-0"
-          onClick={refresh}
-          title="Refresh files"
-          aria-label="Refresh files"
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-        </Button>
+        {!browseOnly && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="shrink-0"
+            onClick={refresh}
+            title="Refresh files"
+            aria-label="Refresh files"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon-sm"
@@ -343,6 +345,14 @@ function FileTree({
           )
         })}
       </div>
+      {browseOnly && (
+        <div className="flex shrink-0 justify-end border-t border-line px-2 py-1">
+          <Button variant="ghost" size="sm" onClick={refresh} title="Refresh files" aria-label="Refresh files">
+            <RefreshCw className="h-3.5 w-3.5" />
+            Refresh
+          </Button>
+        </div>
+      )}
     </aside>
   )
 }

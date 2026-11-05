@@ -477,7 +477,7 @@ function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
       ref={strip}
       role="tablist"
       aria-label="Thread sidebar"
-      className="flex min-w-0 flex-1 items-center gap-4"
+      className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-3"
       onKeyDown={(event) => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
         event.preventDefault()
@@ -503,7 +503,7 @@ function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
             tabIndex={selected ? 0 : -1}
             onClick={(event) => choose(item, event.detail > 0)}
             className={cn(
-              'relative flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide transition-colors',
+              'relative flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[11px] font-medium uppercase tracking-wide transition-colors',
               selected
                 ? 'text-fg after:absolute after:inset-x-0 after:-bottom-1.5 after:h-0.5 after:rounded-full after:bg-accent'
                 : 'text-fg-subtle hover:text-fg-muted'
@@ -531,19 +531,8 @@ function ChangesAside({ threadId }: { threadId: string }): JSX.Element {
   }, [threadId])
   return (
     <aside data-testid="inbox-changes-panel" className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-line bg-panel">
-      <div className="flex items-center gap-1 px-3 pb-2 pt-3">
+      <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
         <SidebarTabs threadId={threadId} />
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="shrink-0"
-          title="Refresh changes"
-          aria-label="Refresh changes"
-          disabled={state?.loading}
-          onClick={() => void useInboxChanges.getState().load(threadId, true, true)}
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-        </Button>
         <Button variant="ghost" size="icon-sm" className="shrink-0" title="Collapse sidebar" aria-label="Collapse sidebar" onClick={toggle}>
           <PanelRightClose className="h-3.5 w-3.5" />
         </Button>
@@ -561,6 +550,19 @@ function ChangesAside({ threadId }: { threadId: string }): JSX.Element {
           <ListMessage role="status">Loading changes…</ListMessage>
         )}
       </div>
+      <div className="flex shrink-0 justify-end border-t border-line px-2 py-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          title="Refresh changes"
+          aria-label="Refresh changes"
+          disabled={state?.loading}
+          onClick={() => void useInboxChanges.getState().load(threadId, true, true)}
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+          Refresh
+        </Button>
+      </div>
     </aside>
   )
 }
@@ -573,7 +575,7 @@ function TerminalAside({ threadId }: { threadId?: string }): JSX.Element {
   const toggle = useWorkspace((s) => s.toggleFileTree)
   return (
     <aside data-testid="inbox-terminal-panel" className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-line bg-panel">
-      <div className="flex items-center gap-1 px-3 pb-2 pt-3">
+      <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
         <SidebarTabs threadId={threadId} />
         <Button variant="ghost" size="icon-sm" className="shrink-0" title="Collapse sidebar" aria-label="Collapse sidebar" onClick={toggle}>
           <PanelRightClose className="h-3.5 w-3.5" />
