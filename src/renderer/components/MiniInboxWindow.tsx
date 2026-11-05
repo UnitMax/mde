@@ -99,7 +99,7 @@ export function MiniInboxWindow({
                     data-testid="mini-inbox-row"
                     data-status={thread.status}
                     data-unread={unread || undefined}
-                    title={`${thread.title} · ${group.directory} · ${status}`}
+                    title={`${thread.customTitle ?? thread.title} · ${group.directory} · ${status}`}
                     onClick={() => onOpenThread(thread.id)}
                     className={cn(
                       'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12px] text-fg-muted hover:bg-hover hover:text-fg',
@@ -111,7 +111,7 @@ export function MiniInboxWindow({
                       className={cn('h-3 w-3 shrink-0', thread.status === 'working' && 'animate-spin motion-reduce:animate-none')}
                     />
                     <div className="min-w-0 flex-1">
-                      <div className={cn('truncate text-fg', unread && 'font-semibold')}>{thread.title}</div>
+                      <div className={cn('truncate text-fg', unread && 'font-semibold')}>{thread.customTitle ?? thread.title}</div>
                       {thread.branch && <div className="truncate text-[10px] text-fg-subtle">{thread.branch}</div>}
                     </div>
                     <span className="shrink-0 text-[10px] text-fg-subtle">{status}</span>

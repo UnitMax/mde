@@ -102,6 +102,7 @@ export function validateInboxThread(raw: unknown): InboxThread | null {
     id: record.id,
     ...(record.mode === 'terminal' ? { mode: 'terminal' as const } : {}),
     title: record.title,
+    ...(text(record.customTitle, INBOX_TITLE_MAX_LENGTH) ? { customTitle: record.customTitle.trim() } : {}),
     directory: record.directory,
     target,
     branch: record.branch as string | null,

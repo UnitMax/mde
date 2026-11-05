@@ -203,6 +203,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.inboxSetRead]: object({ id: opencodeSessionId, read: boolean }),
   [IpcChannels.inboxSetArchived]: object({ id: opencodeSessionId, archived: boolean }),
   [IpcChannels.inboxSetPinned]: object({ id: opencodeSessionId, pinned: boolean }),
+  [IpcChannels.inboxSetCustomTitle]: object({ id: opencodeSessionId, customTitle: nullable(string(512)) }),
   [IpcChannels.inboxRemove]: object({ id: opencodeSessionId, removeWorktree: optional(boolean) }),
   [IpcChannels.inboxFolders]: noPayload,
   [IpcChannels.inboxFoldersAdd]: object({ kind, distro: optional(distro), path }),

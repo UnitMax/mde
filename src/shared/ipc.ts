@@ -34,6 +34,7 @@ import type {
   InboxRemoveRequest,
   InboxSetArchivedRequest,
   InboxSetPinnedRequest,
+  InboxSetCustomTitleRequest,
   InboxSetReadRequest,
   InboxThread,
   ChatConfigureRequest,
@@ -134,6 +135,7 @@ export const IpcChannels = {
   inboxSetRead: 'inbox:set-read',
   inboxSetArchived: 'inbox:set-archived',
   inboxSetPinned: 'inbox:set-pinned',
+  inboxSetCustomTitle: 'inbox:set-custom-title',
   inboxRemove: 'inbox:remove',
   inboxFolders: 'inbox:folders',
   inboxFoldersAdd: 'inbox:folders-add',
@@ -488,6 +490,7 @@ export interface RendererApi {
     setRead(req: InboxSetReadRequest): Promise<InboxThread | null>
     setArchived(req: InboxSetArchivedRequest): Promise<InboxThread | null>
     setPinned(req: InboxSetPinnedRequest): Promise<InboxThread | null>
+    setCustomTitle(req: InboxSetCustomTitleRequest): Promise<InboxThread | null>
     remove(req: InboxRemoveRequest): Promise<void>
     onChanged(listener: (thread: InboxThread) => void): () => void
     folders(): Promise<InboxFoldersState>

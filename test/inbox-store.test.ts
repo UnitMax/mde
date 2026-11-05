@@ -47,6 +47,19 @@ function thread(overrides: Partial<InboxThread> = {}): InboxThread {
 }
 
 describe('inbox thread validation', () => {
+  it('persists custom names and safely ignores invalid optional overrides', async () => {
+    const path = join(await temporaryDirectory(), 'inbox.json')
+    const store = new InboxStore(path)
+    store.put(thread({ customTitle: 'My task' }))
+    await store.flush()
+    const reloaded = new InboxStore(path)
+    await reloaded.load()
+    expect(reloaded.get('ses_one')).toEqual(thread({ customTitle: 'My task' }))
+    for (const customTitle of ['', 'x'.repeat(513), 'a\nb', 42]) {
+      expect(validateInboxThread({ ...thread(), customTitle })).toEqual(thread())
+    }
+  })
+
   it('preserves terminal mode and keeps older threads in GUI mode', async () => {
     const path = join(await temporaryDirectory(), 'inbox.json')
     const store = new InboxStore(path)

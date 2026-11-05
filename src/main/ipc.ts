@@ -74,6 +74,7 @@ import type {
   InboxRemoveRequest,
   InboxSetArchivedRequest,
   InboxSetPinnedRequest,
+  InboxSetCustomTitleRequest,
   InboxSetReadRequest,
   InboxThread,
   ChatConfigureRequest,
@@ -501,6 +502,9 @@ export function registerIpcHandlers(
   )
   handle<InboxSetPinnedRequest, InboxThread | null>(IpcChannels.inboxSetPinned, (req) =>
     inboxRecorder.setPinned(req.id, req.pinned)
+  )
+  handle<InboxSetCustomTitleRequest, InboxThread | null>(IpcChannels.inboxSetCustomTitle, (req) =>
+    inboxRecorder.setCustomTitle(req.id, req.customTitle)
   )
   handle<InboxRemoveRequest, void>(IpcChannels.inboxRemove, async (req) => {
     // First, so that Git refusing (uncommitted changes) leaves the thread in place to try again.

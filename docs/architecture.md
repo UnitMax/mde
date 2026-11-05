@@ -285,6 +285,13 @@ The file tree keeps its open folders while Changes is showing.
 
 ### Inbox chat
 
+Right-click a thread and choose **Rename thread** to set a custom Inbox name, or
+**Clear custom name** to restore its current OpenCode title. The optional `customTitle`
+is saved in `inbox.json` through `inbox:set-custom-title`. It overrides the title in the
+Inbox list, header and mini inbox; search matches both names. OpenCode title updates
+continue independently, including title regeneration. Setting or clearing the custom
+name preserves activity, unread status, pinning and parking and sends nothing to OpenCode.
+
 The open thread's header has a **Regenerate title** button. It asks OpenCode's native title
 agent to regenerate the current title (`PATCH /api/session/{sessionID}` with `title: ""`),
 including while the conversation is running or parked. OpenCode chooses the title model

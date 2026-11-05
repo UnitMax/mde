@@ -360,8 +360,39 @@ describe('Inbox thread fork', () => {
     const panel = await render(createElement(InboxPanel))
     await openMenu(panel)
     const labels = Array.from(document.body.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent?.trim())
-    expect(labels).toEqual(['Pin thread', 'Mark as read', 'Park', 'Fork thread', 'Delete from Inbox'])
+    expect(labels).toEqual(['Rename thread', 'Clear custom name', 'Pin thread', 'Mark as read', 'Park', 'Fork thread', 'Delete from Inbox'])
     expect(fork).not.toHaveBeenCalled()
+  })
+
+  it('renames a thread and clears the override using the context menu', async () => {
+    useWorkspace.setState({ inboxThreads: [thread()] })
+    const setCustomTitle = vi.fn(async ({ customTitle }: { id: string; customTitle: string | null }) => {
+      const current = useWorkspace.getState().inboxThreads[0]!
+      const { customTitle: _old, ...rest } = current
+      return { ...rest, ...(customTitle ? { customTitle } : {}) }
+    })
+    window.api.inbox.setCustomTitle = setCustomTitle
+    const panel = await render(createElement(InboxPanel))
+    await openMenu(panel)
+    expect(menuItem('Clear custom name')?.getAttribute('data-disabled')).not.toBeNull()
+    await choose('Rename thread')
+    const input = document.body.querySelector<HTMLInputElement>('input[id="inbox-thread-name-ses_one"]')!
+    expect(input.value).toBe('Fix login')
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+      setter.call(input, 'My task')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => input.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+    expect(setCustomTitle).toHaveBeenLastCalledWith({ id: 'ses_one', customTitle: 'My task' })
+    expect(panel.textContent).toContain('My task')
+    await act(async () => useWorkspace.getState().upsertInboxThread({ ...useWorkspace.getState().inboxThreads[0]!, title: 'Updated OpenCode title' }))
+    expect(panel.querySelector('[data-testid="inbox-thread-ses_one"]')?.textContent).toContain('My task')
+    await openMenu(panel)
+    await choose('Clear custom name')
+    expect(setCustomTitle).toHaveBeenLastCalledWith({ id: 'ses_one', customTitle: null })
+    expect(panel.textContent).toContain('Updated OpenCode title')
+    expect(panel.textContent).not.toContain('My task')
   })
 
   it('forks the whole thread, adds the new thread to the list and opens it', async () => {

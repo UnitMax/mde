@@ -25,6 +25,8 @@ import { InboxChangesBadge } from '@/components/inbox/InboxChanges'
 import { InboxDraftsSection } from '@/components/inbox/InboxDrafts'
 import { InboxSettingsMenu } from '@/components/inbox/InboxSettingsMenu'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -176,6 +178,23 @@ function InboxThreadRow({
   const setRead = useWorkspace((state) => state.setInboxThreadRead)
   const setArchived = useWorkspace((state) => state.setInboxThreadArchived)
   const setPinned = useWorkspace((state) => state.setInboxThreadPinned)
+  const setCustomTitle = useWorkspace((state) => state.setInboxThreadCustomTitle)
+  const [renaming, setRenaming] = useState(false)
+  const [name, setName] = useState('')
+  const [savingName, setSavingName] = useState(false)
+  const [nameError, setNameError] = useState<string | null>(null)
+  const saveName = async (value: string | null): Promise<void> => {
+    setSavingName(true)
+    setNameError(null)
+    try {
+      await setCustomTitle(thread.id, value)
+      setRenaming(false)
+    } catch (reason) {
+      setNameError(ipcErrorMessage(reason, 'Could not change the thread name.'))
+    } finally {
+      setSavingName(false)
+    }
+  }
   const pinLabel = thread.pinned ? 'Unpin thread' : 'Pin thread'
   const PinIcon = thread.pinned ? PinOff : Pin
   const parkLabel = thread.archived ? 'Move to Inbox' : 'Park'
@@ -245,7 +264,7 @@ function InboxThreadRow({
                   unread ? 'font-semibold text-fg' : selected ? 'text-fg' : 'text-fg-muted'
                 )}
               >
-                {thread.title}
+                {thread.customTitle ?? thread.title}
               </span>
               <time
                 dateTime={new Date(thread.lastActivityAt).toISOString()}
@@ -314,6 +333,19 @@ function InboxThreadRow({
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
+          <ContextMenuItem disabled={savingName} onSelect={() => {
+            setName(thread.customTitle ?? thread.title)
+            setNameError(null)
+            setRenaming(true)
+          }}>
+            <PenLine aria-hidden="true" className="h-3.5 w-3.5" />
+            Rename thread
+          </ContextMenuItem>
+          <ContextMenuItem disabled={!thread.customTitle || savingName} onSelect={() => void saveName(null)}>
+            <X aria-hidden="true" className="h-3.5 w-3.5" />
+            Clear custom name
+          </ContextMenuItem>
+          <ContextMenuSeparator />
           <ContextMenuItem onSelect={() => void setPinned(thread.id, !thread.pinned)}>
             <PinIcon aria-hidden="true" className="h-3.5 w-3.5" />
             {pinLabel}
@@ -338,6 +370,29 @@ function InboxThreadRow({
         </ContextMenuContent>
       </ContextMenu>
 
+      {nameError && !renaming && <p role="alert" className="px-2 text-xs text-danger">{nameError}</p>}
+      <Dialog open={renaming} onOpenChange={(open) => { if (!savingName) setRenaming(open) }}>
+        <DialogContent onOpenAutoFocus={(event) => {
+          event.preventDefault()
+          const input = document.getElementById(`inbox-thread-name-${thread.id}`) as HTMLInputElement | null
+          input?.focus()
+          input?.select()
+        }}>
+          <form onSubmit={(event) => { event.preventDefault(); if (name.trim() && !savingName) void saveName(name.trim()) }}>
+            <DialogTitle>Rename thread</DialogTitle>
+            <DialogDescription className="mt-1">
+              Use a custom name in the Inbox. Clear it from the right-click menu to use OpenCode’s title again.
+            </DialogDescription>
+            <label htmlFor={`inbox-thread-name-${thread.id}`} className="mb-1 mt-4 block text-xs text-fg-muted">Custom name</label>
+            <Input id={`inbox-thread-name-${thread.id}`} value={name} maxLength={512} disabled={savingName} onChange={(event) => setName(event.target.value)} />
+            {nameError && <p role="alert" className="mt-2 text-xs text-danger">{nameError}</p>}
+            <DialogFooter>
+              <Button type="button" variant="secondary" disabled={savingName} onClick={() => setRenaming(false)}>Cancel</Button>
+              <Button type="submit" disabled={!name.trim() || savingName}>{savingName ? 'Saving…' : 'Save'}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       <AlertDialog
         open={confirmingRemove}
         onOpenChange={(open) => {
@@ -349,7 +404,7 @@ function InboxThreadRow({
         }}
       >
         <AlertDialogContent>
-          <AlertDialogTitle>Delete “{thread.title}” from the Inbox?</AlertDialogTitle>
+          <AlertDialogTitle>Delete “{thread.customTitle ?? thread.title}” from the Inbox?</AlertDialogTitle>
           <AlertDialogDescription>
             This removes the thread and any unsent draft from MDE’s Inbox. The OpenCode conversation is kept, and
             later activity will not restore it to the Inbox.

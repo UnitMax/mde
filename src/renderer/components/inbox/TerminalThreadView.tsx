@@ -15,7 +15,7 @@ import { getTerminalPalette } from '@/theme/themes'
 /** The native OpenCode TUI attached to the same API session the Inbox sidebar follows. */
 export function TerminalThreadView({ thread }: { thread: InboxThread }): JSX.Element {
   const terminalId = inboxThreadTerminalId(thread.id)
-  const session = useMemo(() => inboxThreadTerminalSession(thread), [thread.id, thread.directory, thread.target, thread.title, thread.createdAt])
+  const session = useMemo(() => inboxThreadTerminalSession(thread), [thread.id, thread.directory, thread.target, thread.title, thread.customTitle, thread.createdAt])
   const pane = useMemo(() => ({ terminalId }), [terminalId])
   const status = useWorkspace((state) => state.statuses[terminalId] ?? 'none')
   const openThread = useInboxChat((state) => state.openThread)

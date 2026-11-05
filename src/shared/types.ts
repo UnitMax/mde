@@ -168,6 +168,8 @@ export interface InboxThread {
   sendError?: string
   id: string
   title: string
+  /** Local display override; the OpenCode title continues to update separately. */
+  customTitle?: string
   directory: string
   target: OpenCodeTarget
   /** Branch of `directory` at the last recorded activity; null when unknown or detached. */
@@ -648,6 +650,12 @@ export interface InboxSetReadRequest {
 export interface InboxSetArchivedRequest {
   id: string
   archived: boolean
+}
+
+export interface InboxSetCustomTitleRequest {
+  id: string
+  /** null restores the current OpenCode title. */
+  customTitle: string | null
 }
 
 export interface InboxSetPinnedRequest {

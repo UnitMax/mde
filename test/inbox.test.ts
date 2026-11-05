@@ -34,6 +34,12 @@ function thread(overrides: Partial<InboxThread> = {}): InboxThread {
 }
 
 describe('inbox list helpers', () => {
+  it('finds threads by their custom name or their current OpenCode title', () => {
+    const custom = thread({ customTitle: 'Release checklist' })
+    expect(visibleInboxThreads([custom], 'all', 'checklist')).toEqual([custom])
+    expect(visibleInboxThreads([custom], 'all', 'login')).toEqual([custom])
+  })
+
   it('shows compact ages while retaining full dates separately', () => {
     const now = Date.UTC(2026, 0, 1)
     expect(sessionAge(now, now)).toBe('Just now')

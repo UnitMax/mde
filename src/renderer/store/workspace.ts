@@ -141,6 +141,7 @@ interface WorkspaceState {
   markOpenInboxThreadSeen: () => void
   setInboxThreadArchived: (id: string, archived: boolean) => Promise<void>
   setInboxThreadPinned: (id: string, pinned: boolean) => Promise<void>
+  setInboxThreadCustomTitle: (id: string, customTitle: string | null) => Promise<void>
   /** Removes a thread from the Inbox; with `removeWorktree`, its Git worktree goes too, or nothing does. */
   removeInboxThread: (id: string, options?: { removeWorktree?: boolean }) => Promise<void>
   /** Applies a thread pushed by the main process. */
@@ -515,6 +516,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   setInboxThreadArchived: async (id, archived) => {
     const thread = await window.api.inbox.setArchived({ id, archived })
+    if (thread) get().upsertInboxThread(thread)
+  },
+
+  setInboxThreadCustomTitle: async (id, customTitle) => {
+    const thread = await window.api.inbox.setCustomTitle({ id, customTitle })
     if (thread) get().upsertInboxThread(thread)
   },
 

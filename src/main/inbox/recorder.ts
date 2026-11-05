@@ -87,6 +87,7 @@ export function serviceEventReport(event: ServiceEvent): ThreadReport | null {
 
 function sameThread(a: InboxThread, b: InboxThread): boolean {
   return a.title === b.title &&
+    a.customTitle === b.customTitle &&
     a.directory === b.directory &&
     JSON.stringify(a.target) === JSON.stringify(b.target) &&
     a.branch === b.branch &&
@@ -135,6 +136,15 @@ export class InboxRecorder {
     const thread = this.store.get(id)
     if (!thread) return null
     return this.save(thread, { ...thread, archived })
+  }
+
+  setCustomTitle(id: string, value: string | null): InboxThread | null {
+    const customTitle = value === null ? null : threadTitle(value)
+    if (value !== null && !customTitle) throw new Error('Enter a name of up to 512 characters without control characters.')
+    const thread = this.store.get(id)
+    if (!thread) return null
+    const { customTitle: _previous, ...rest } = thread
+    return this.save(thread, { ...rest, ...(customTitle ? { customTitle } : {}) })
   }
 
   setPinned(id: string, pinned: boolean): InboxThread | null {

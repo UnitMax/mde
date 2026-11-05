@@ -33,7 +33,7 @@ MDE stores data only on the local machine:
   (a tree of pane IDs, split IDs, horizontal or vertical directions, and numeric divider ratios).
   Neither holds terminal content or pane titles; the terminal's shells are not restored on the next run.
 - `inbox.json` under Electron's user-data directory, once you use the Inbox: one record for each
-  OpenCode conversation you started in the Inbox, with its session ID, title, folder, terminal chat mode
+  OpenCode conversation you started in the Inbox, with its session ID, OpenCode title, optional custom name, folder, terminal chat mode
   when chosen (older threads use GUI chat), target (Mac
   or WSL distro), Git branch, model and provider identifiers, last status, timestamps (including,
   while a conversation is working, when its current run began), read, archived and pinned flags, and for a forked conversation the session ID of the one it was forked from. For a conversation started in a Git worktree it also holds that worktree's root path, the repository's path, and the names of the new branch and the branch it was cut from. It also holds the Inbox folders you add (path, target, name, timestamps; at most 200), the worktrees MDE created for you (the same record and a name made from the folder and branch; at most 100, so that more conversations can be started in them) and the folder, model and agent

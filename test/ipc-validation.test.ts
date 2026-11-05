@@ -62,6 +62,7 @@ const validPayloads = {
   [IpcChannels.inboxSetRead]: { id: 'ses_thread', read: true },
   [IpcChannels.inboxSetArchived]: { id: 'ses_thread', archived: false },
   [IpcChannels.inboxSetPinned]: { id: 'ses_thread', pinned: true },
+  [IpcChannels.inboxSetCustomTitle]: { id: 'ses_thread', customTitle: 'My task' },
   [IpcChannels.inboxRemove]: { id: 'ses_thread' },
   [IpcChannels.inboxFolders]: undefined,
   [IpcChannels.inboxFoldersAdd]: { kind: 'wsl', distro: 'Ubuntu-24.04', path: '/home/me/app' },
@@ -503,4 +504,17 @@ it('accepts prepending prompt text to a draft, and nothing else with it', () => 
     { ...valid, key: 'thread:../outside' },
     { key: 'thread:ses_one', action: 'prepend' },
   ]) expect(() => assertIpcPayload(IpcChannels.chatDraft, payload)).toThrow()
+})
+
+
+describe('custom Inbox name validation', () => {
+  it('accepts names and clearing, and rejects malformed requests', () => {
+    const channel = IpcChannels.inboxSetCustomTitle
+    expect(() => assertIpcPayload(channel, { id: 'ses_thread', customTitle: null })).not.toThrow()
+    expect(() => assertIpcPayload(channel, { id: 'ses_thread', customTitle: 'My task' })).not.toThrow()
+    for (const customTitle of ['', '   ', 'x'.repeat(513), 'a\nb', 42, undefined]) {
+      rejects(channel, { id: 'ses_thread', customTitle })
+    }
+    rejects(channel, { id: 'invalid', customTitle: 'My task' })
+  })
 })

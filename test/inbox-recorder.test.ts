@@ -357,3 +357,21 @@ describe('inbox recorder', () => {
   })
 })
 
+
+
+describe('custom Inbox names', () => {
+  it('keeps the override through OpenCode updates and restores the latest title when cleared', () => {
+    const { recorder, start, thread, emit, advance } = setup()
+    const original = start()
+    advance(1000)
+    expect(recorder.setCustomTitle(original.id, '  My task  ')).toMatchObject({ customTitle: 'My task' })
+    emit(original.id, 'session.renamed', { title: 'New OpenCode title' })
+    expect(thread()).toMatchObject({ customTitle: 'My task', title: 'New OpenCode title', lastActivityAt: original.lastActivityAt, readAt: original.readAt })
+    recorder.updateTitle(original.id, 'Regenerated title')
+    expect(thread()?.customTitle).toBe('My task')
+    recorder.setCustomTitle(original.id, null)
+    expect(thread()).toEqual({ ...original, title: 'Regenerated title' })
+    expect(recorder.setCustomTitle('ses_missing', 'Name')).toBeNull()
+    expect(() => recorder.setCustomTitle(original.id, '  ')).toThrow()
+  })
+})

@@ -125,7 +125,7 @@ function matchesFilter(thread: InboxThread, filter: InboxFilter, workingElsewher
 
 function searchFields(thread: InboxThread): string[] {
   const model = thread.model ? `${thread.model.providerId}/${thread.model.id}` : ''
-  return [thread.title, thread.directory, thread.branch ?? '', model]
+  return [thread.customTitle ?? '', thread.title, thread.directory, thread.branch ?? '', model]
 }
 
 function matchesQuery(thread: InboxThread, tokens: readonly string[]): boolean {

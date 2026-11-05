@@ -33,9 +33,9 @@ function ForkedFrom({ source }: { source: string }): JSX.Element {
             type="button"
             onClick={() => select(original.id)}
             className="text-accent hover:underline"
-            title={`Open ${original.title}`}
+            title={`Open ${original.customTitle ?? original.title}`}
           >
-            {original.title}
+            {original.customTitle ?? original.title}
           </button>
         ) : (
           'a thread that is no longer in the Inbox'
@@ -55,7 +55,7 @@ function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
   return (
     <header className="shrink-0 border-b border-line px-5 py-3" data-testid="inbox-thread-view">
       <div className="flex min-w-0 items-center gap-2">
-        <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-fg">{thread.title}</h2>
+        <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-fg">{thread.customTitle ?? thread.title}</h2>
         <InboxStatusBadge thread={thread} />
         <Button
           variant="ghost"
