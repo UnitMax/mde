@@ -62,8 +62,13 @@ appear over the right edge of a hovered or focused pane (and always in fullscree
 title. The menu holds Rename, Split right and Split down,
 Open in VS Code and Show in File Explorer (WSL on Windows),
 and Restart, which still asks for confirmation. When a tab has several panes, the focused one gets an
-accent line under its header. The tab strip sits directly above the panes; session and environment
-details live in the sidebar.
+accent line under its header. The tab strip sits directly above the panes (`SessionTabStrip`); session and
+environment details live in the sidebar. A tab is a quiet pill, and the one being shown is lifted off the
+bar. A tab's close button appears when the pointer or
+focus is on it (always on the tab being shown) in a slot the tab keeps for it, so tabs never change width
+under the pointer; the only tab of a session has none. Double-click or F2 renames a tab. When there are
+more tabs than fit, they scroll sideways (the mouse wheel included) under a fade at the ends that have
+more, and the tab being shown is brought into view, so a new tab is never added out of sight.
 
 The workspace is stored as `workspace.json` in Electron's user-data directory with separate
 `todoProjects`, `todoTasks` and `sessions` arrays. Session array order is the persistent

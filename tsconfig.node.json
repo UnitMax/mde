@@ -17,6 +17,7 @@
     "src/renderer/components/AboutSettingsPanel.tsx",
     "src/renderer/components/TerminalFullscreenIndicator.tsx",
     "src/renderer/components/TerminalPaneHeader.tsx",
+    "src/renderer/components/SessionTabStrip.tsx",
     "src/renderer/components/TerminalPaneOverlay.tsx",
     "src/renderer/components/inbox/TerminalThreadHighlight.tsx",
     "src/renderer/components/KeyboardShortcutsSettings.tsx",

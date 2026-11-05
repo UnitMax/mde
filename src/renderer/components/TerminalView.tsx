@@ -8,7 +8,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type CSSProperties
 } from 'react'
-import { FolderOpen, Plus, X } from 'lucide-react'
+import { FolderOpen, Plus } from 'lucide-react'
 import type { FileTreeDropEntry } from '@shared/ipc'
 import type {
   PtySize,
@@ -77,7 +77,7 @@ import {
   terminalDropQuotingNotice
 } from '@/terminal/drop'
 import { terminalPrimarySelectionMode } from '@/terminal/clipboard'
-import { sessionTabs } from '@/terminal/tabs'
+import { SessionTabStrip } from '@/components/SessionTabStrip'
 import { TerminalPaneHeader } from '@/components/TerminalPaneHeader'
 import { TerminalPaneOverlay } from '@/components/TerminalPaneOverlay'
 import { TerminalLauncher } from '@/components/TerminalLauncher'
@@ -890,132 +890,6 @@ function TerminalResizeHandle({
       >
         <span className={`bg-transparent transition-colors group-hover:bg-accent group-focus-visible:bg-accent ${lineClass}`} />
       </div>
-    </div>
-  )
-}
-
-function SessionTabStrip({
-  session,
-  activeTab,
-  onSelect,
-  onAdd,
-  onRenameStart,
-  onRename,
-  onClose
-}: {
-  session: Session
-  activeTab: SessionTab
-  onSelect: (tabId: string) => void
-  onAdd: () => void
-  onRenameStart: () => void
-  onRename: (tabId: string, name: string) => void
-  onClose: (tabId: string) => void
-}): JSX.Element {
-  const tabs = sessionTabs(session)
-  const [renamingTabId, setRenamingTabId] = useState<string | null>(null)
-  const [draftName, setDraftName] = useState('')
-  const renameInputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    if (!renamingTabId) return
-    const frame = window.requestAnimationFrame(() => {
-      renameInputRef.current?.focus()
-      renameInputRef.current?.select()
-    })
-    return () => window.cancelAnimationFrame(frame)
-  }, [renamingTabId])
-
-  const beginRename = (tab: SessionTab): void => {
-    onRenameStart()
-    setRenamingTabId(tab.id)
-    setDraftName(tab.name)
-  }
-
-  const commitRename = (): void => {
-    if (!renamingTabId) return
-    const name = draftName.trim()
-    if (name) onRename(renamingTabId, name)
-    setRenamingTabId(null)
-  }
-
-  return (
-    <div className="flex h-9 shrink-0 items-center gap-1 border-b border-line bg-panel px-2">
-      <div
-        role="tablist"
-        aria-label={`${session.name} terminal tabs`}
-        className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
-      >
-        {tabs.map((tab) => {
-          const selected = tab.id === activeTab.id
-          const renaming = tab.id === renamingTabId
-          return (
-            <div
-              key={tab.id}
-              className={`group flex min-w-[7rem] max-w-[13rem] items-center rounded-t border border-b-0 ${
-                selected ? 'border-line bg-bg text-fg' : 'border-transparent text-fg-subtle hover:bg-hover hover:text-fg'
-              }`}
-            >
-              {renaming ? (
-                <input
-                  ref={renameInputRef}
-                  value={draftName}
-                  onChange={(event) => setDraftName(event.target.value)}
-                  onBlur={commitRename}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') commitRename()
-                    if (event.key === 'Escape') setRenamingTabId(null)
-                    event.stopPropagation()
-                  }}
-                  className="h-7 w-full min-w-0 flex-1 rounded-sm border border-accent bg-bg px-2 text-xs text-fg outline-none"
-                />
-              ) : (
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={selected}
-                  tabIndex={selected ? 0 : -1}
-                  onClick={() => onSelect(tab.id)}
-                  onMouseDown={(event) => {
-                    if (event.detail > 1) event.preventDefault()
-                  }}
-                  onDoubleClick={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    if (!selected) onSelect(tab.id)
-                    beginRename(tab)
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === 'F2') {
-                      event.preventDefault()
-                      beginRename(tab)
-                    }
-                  }}
-                  className="min-w-0 flex-1 truncate px-2 py-1.5 text-left text-xs"
-                  title={`${tab.name} · Double-click or press F2 to rename`}
-                >
-                  {tab.name}
-                </button>
-              )}
-              <button
-                type="button"
-                aria-label={`Close ${tab.name}`}
-                title={tabs.length <= 1 ? 'A session must keep one tab' : `Close ${tab.name}`}
-                disabled={tabs.length <= 1}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  onClose(tab.id)
-                }}
-                className="mr-1 rounded p-1 text-fg-subtle hover:bg-hover hover:text-fg disabled:cursor-not-allowed disabled:opacity-30"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          )
-        })}
-      </div>
-      <Button variant="ghost" size="icon-sm" onClick={onAdd} title="New terminal tab" aria-label="New terminal tab">
-        <Plus className="h-3.5 w-3.5" />
-      </Button>
     </div>
   )
 }
