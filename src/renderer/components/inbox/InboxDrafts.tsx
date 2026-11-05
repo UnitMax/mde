@@ -41,6 +41,8 @@ function DraftRow({
   const [removing, setRemoving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const title = draftTitle(draft)
+  const project = draftProject(draft, folders)
+  const titleIcons = useInboxView((state) => state.titleIcons)
 
   return (
     <>
@@ -53,6 +55,14 @@ function DraftRow({
           className="flex w-full min-w-0 flex-col gap-0.5 rounded px-2 py-1.5 text-left"
         >
           <span className="flex w-full min-w-0 items-center gap-1.5 group-hover:pr-28 group-focus-within:pr-28">
+            {titleIcons && (
+              <ProjectIcon
+                icon={project?.icon}
+                size="title"
+                testId={`inbox-draft-title-icon-${draft.id}`}
+                className="text-fg-muted"
+              />
+            )}
             <PenLine aria-hidden="true" className="h-3 w-3 shrink-0 text-fg-subtle" />
             <span className={cn('min-w-0 flex-1 truncate text-[13px]', selected ? 'text-fg' : 'text-fg-muted')}>
               {title}
@@ -65,8 +75,9 @@ function DraftRow({
               {sessionAge(draft.updatedAt, now)}
             </time>
           </span>
-          <span className="flex w-full min-w-0 items-center gap-1 text-[11px] text-fg-subtle">
-            <ProjectIcon icon={draftProject(draft, folders)?.icon} />
+          {/* With the icon in front of the title, the line below starts under the pen mark. */}
+          <span className={cn('flex w-full min-w-0 items-center gap-1 text-[11px] text-fg-subtle', titleIcons && 'pl-5')}>
+            {!titleIcons && <ProjectIcon icon={project?.icon} />}
             <span className="min-w-0 truncate">{draftFolderLabel(draft, folders)}</span>
             {draft.choice?.worktree && (
               <span

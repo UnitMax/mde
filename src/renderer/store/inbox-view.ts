@@ -3,10 +3,12 @@ import {
   clampInboxSidebarWidth,
   getInboxDraftsCollapsed,
   getInboxSidebarWidth,
+  getInboxTitleIcons,
   getInboxWorkingCollapsed,
   getInboxWorkingSection,
   saveInboxDraftsCollapsed,
   saveInboxSidebarWidth,
+  saveInboxTitleIcons,
   saveInboxWorkingCollapsed,
   saveInboxWorkingSection,
 } from '@/lib/inbox-settings'
@@ -15,6 +17,12 @@ interface Store {
   /** List the working threads in a section under the thread list (a preference, off by default). */
   workingSection: boolean
   setWorkingSection: (on: boolean) => void
+  /**
+   * Show each row's project icon in front of its title, instead of beside the project's name on the line
+   * below (a preference, off by default).
+   */
+  titleIcons: boolean
+  setTitleIcons: (on: boolean) => void
   /** That section is folded up, leaving only its header. */
   workingCollapsed: boolean
   setWorkingCollapsed: (collapsed: boolean) => void
@@ -33,6 +41,11 @@ export const useInboxView = create<Store>((set) => ({
   setWorkingSection: (on) => {
     saveInboxWorkingSection(on)
     set({ workingSection: on })
+  },
+  titleIcons: getInboxTitleIcons(),
+  setTitleIcons: (on) => {
+    saveInboxTitleIcons(on)
+    set({ titleIcons: on })
   },
   workingCollapsed: getInboxWorkingCollapsed(),
   setWorkingCollapsed: (collapsed) => {

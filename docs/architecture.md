@@ -136,6 +136,14 @@ that, and the list above keeps a small minimum height. Both choices are kept in 
 `localStorage` (`mde.inbox-working-section`, off by default, and `mde.inbox-working-collapsed`, open
 by default; `store/inbox-view.ts`).
 
+The same menu has a **Project icons** switch (`mde.inbox-title-icons`, off by default, also in
+`store/inbox-view.ts`). Off, a row shows its project's icon beside the project's name on the line
+below the title. On, the icon moves in front of the title, ahead of the unread, fork and pin marks, and
+the lines below start under the title instead. It applies to every row of the thread list, to the rows
+of the Working section, and to draft rows (where the icon comes before the pen mark). A project
+without an icon, or one removed from the Inbox, shows the plain folder, so every row has something in
+front and the titles stay lined up. The switch takes effect at once.
+
 **Drafts.** A new thread that was started and not sent is a draft, listed in a **Drafts** section
 directly above Working. The section is not there at all while there are no drafts. A draft joins it
 when its page is left with something in it, whether by choosing New thread, opening a thread or

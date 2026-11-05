@@ -122,6 +122,8 @@ export const PROJECT_SYMBOLS: Record<InboxFolderSymbol, LucideIcon> = {
 const SIZES = {
   /** Next to a thread's folder line in the sidebar. */
   sm: { box: 'h-3 w-3', emoji: 'text-[10px]' },
+  /** In front of a thread's title, which is 13px text. */
+  title: { box: 'h-3.5 w-3.5', emoji: 'text-[12px]' },
   md: { box: 'h-4 w-4', emoji: 'text-[13px]' },
   lg: { box: 'h-5 w-5', emoji: 'text-[16px]' },
 } as const
@@ -134,17 +136,20 @@ export function ProjectIcon({
   icon,
   size = 'sm',
   className,
+  testId = 'project-icon',
 }: {
   icon?: InboxFolderIcon
   size?: keyof typeof SIZES
   className?: string
+  /** Where the picture is used, for tests and tools that need to tell two of them in a row apart. */
+  testId?: string
 }): JSX.Element {
   const dimensions = SIZES[size]
   if (icon?.kind === 'emoji') {
     return (
       <span
         aria-hidden="true"
-        data-testid="project-icon"
+        data-testid={testId}
         data-icon="emoji"
         className={cn('inline-flex shrink-0 items-center justify-center leading-none', dimensions.box, dimensions.emoji, className)}
       >
@@ -157,7 +162,7 @@ export function ProjectIcon({
   return (
     <Picture
       aria-hidden="true"
-      data-testid="project-icon"
+      data-testid={testId}
       data-icon={icon?.id ?? 'folder'}
       className={cn('shrink-0', dimensions.box, className)}
       {...(color ? { style: { color } } : {})}

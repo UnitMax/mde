@@ -212,6 +212,7 @@ function InboxThreadRow({
   const unread = isInboxThreadUnread(thread)
   // The project's own name and icon; once it has been removed from the Inbox, the folder's name and the plain folder.
   const project = useInboxChat((state) => inboxThreadFolder(thread, state.folders))
+  const titleIcons = useInboxView((state) => state.titleIcons)
   const model = inboxModelLabel(thread.model)
   const showChanges = useInboxChanges((state) => state.sidebarChanges)
   const checkout = useInboxChanges((state) => state.entries[inboxChangesKey(thread.id)]?.value)
@@ -241,6 +242,14 @@ function InboxThreadRow({
                   : 'group-hover:pr-14 group-focus-within:pr-14',
               )}
             >
+              {titleIcons && (
+                <ProjectIcon
+                  icon={project?.icon}
+                  size="title"
+                  testId={`inbox-thread-title-icon-${thread.id}`}
+                  className="text-fg-muted"
+                />
+              )}
               {unread && (
                 <span
                   aria-label="Unread"
@@ -278,8 +287,9 @@ function InboxThreadRow({
                 {sessionAge(thread.lastActivityAt, now)}
               </time>
             </span>
-            <span className="flex w-full min-w-0 items-center gap-1 text-[11px] text-fg-subtle">
-              <ProjectIcon icon={project?.icon} />
+            {/* With the icon in front of the title, the lines below start where the title does. */}
+            <span className={cn('flex w-full min-w-0 items-center gap-1 text-[11px] text-fg-subtle', titleIcons && 'pl-5')}>
+              {!titleIcons && <ProjectIcon icon={project?.icon} />}
               <span className="min-w-0 truncate" title={thread.directory} data-testid={`inbox-thread-project-${thread.id}`}>
                 {project?.name ?? inboxFolderLabel(inboxThreadHome(thread))}
               </span>
@@ -293,7 +303,7 @@ function InboxThreadRow({
               )}
             </span>
             {(model || hasDraft || inboxStatusChip(thread)) && (
-              <span className="flex w-full min-w-0 items-center gap-1.5 text-[11px]">
+              <span className={cn('flex w-full min-w-0 items-center gap-1.5 text-[11px]', titleIcons && 'pl-5')}>
                 <span
                   className="min-w-0 flex-1 truncate text-fg-subtle"
                   title={thread.model ? `${thread.model.providerId}/${thread.model.id}` : undefined}

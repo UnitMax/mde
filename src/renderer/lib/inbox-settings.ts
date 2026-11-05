@@ -5,6 +5,7 @@ export const INBOX_SIDEBAR_CHANGES_STORAGE_KEY = 'mde.inbox-sidebar-changes'
 export const INBOX_WORKING_SECTION_STORAGE_KEY = 'mde.inbox-working-section'
 export const INBOX_WORKING_COLLAPSED_STORAGE_KEY = 'mde.inbox-working-collapsed'
 export const INBOX_DRAFTS_COLLAPSED_STORAGE_KEY = 'mde.inbox-drafts-collapsed'
+export const INBOX_TITLE_ICONS_STORAGE_KEY = 'mde.inbox-title-icons'
 export const INBOX_SIDEBAR_WIDTH_STORAGE_KEY = 'mde.inbox-sidebar-width'
 export const INBOX_TERMINAL_LAYOUT_STORAGE_KEY = 'mde.inbox-terminal-layout'
 
@@ -46,6 +47,15 @@ export function getInboxWorkingSection(): boolean {
 
 export function saveInboxWorkingSection(on: boolean): void {
   writeSwitch(INBOX_WORKING_SECTION_STORAGE_KEY, on)
+}
+
+/** Whether each row of the thread list shows its project's icon in front of the title. Off unless turned on. */
+export function getInboxTitleIcons(): boolean {
+  return readSwitch(INBOX_TITLE_ICONS_STORAGE_KEY)
+}
+
+export function saveInboxTitleIcons(on: boolean): void {
+  writeSwitch(INBOX_TITLE_ICONS_STORAGE_KEY, on)
 }
 
 /** Whether that section is folded up. Open unless it was folded, and open when unreadable. */

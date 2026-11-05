@@ -15,6 +15,8 @@ export function InboxSettingsMenu(): JSX.Element {
   const setSidebarChanges = useInboxChanges((state) => state.setSidebarChanges)
   const workingSection = useInboxView((state) => state.workingSection)
   const setWorkingSection = useInboxView((state) => state.setWorkingSection)
+  const titleIcons = useInboxView((state) => state.titleIcons)
+  const setTitleIcons = useInboxView((state) => state.setTitleIcons)
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -51,6 +53,18 @@ export function InboxSettingsMenu(): JSX.Element {
             <span className="block">Working section</span>
             <span className="mt-0.5 block text-[11px] leading-snug text-fg-subtle">
               Threads that are working move from the list to a section below it, and come back when they stop.
+            </span>
+          </span>
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem
+          data-testid="inbox-setting-title-icons"
+          checked={titleIcons}
+          onCheckedChange={(checked) => setTitleIcons(checked === true)}
+        >
+          <span className="min-w-0">
+            <span className="block">Project icons</span>
+            <span className="mt-0.5 block text-[11px] leading-snug text-fg-subtle">
+              Shows each project&rsquo;s icon in front of the thread title, instead of beside the project name.
             </span>
           </span>
         </DropdownMenuCheckboxItem>

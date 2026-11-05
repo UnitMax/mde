@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { InboxPanel } from '../src/renderer/components/InboxPanel'
 import { InboxProjectsDialog } from '../src/renderer/components/inbox/InboxProjectsDialog'
 import { ProjectIcon } from '../src/renderer/components/inbox/ProjectIcon'
+import { getInboxTitleIcons, INBOX_TITLE_ICONS_STORAGE_KEY, saveInboxTitleIcons } from '../src/renderer/lib/inbox-settings'
 import { INBOX_FOLDER_SYMBOLS } from '../src/shared/inbox-folder-icons'
 import { useInboxChanges } from '../src/renderer/store/inbox-changes'
 import { useInboxChat } from '../src/renderer/store/inbox-chat'
@@ -13,6 +14,7 @@ import { useInboxDrafts } from '../src/renderer/store/inbox-drafts'
 import { useInboxView } from '../src/renderer/store/inbox-view'
 import { useWorkspace } from '../src/renderer/store/workspace'
 import type {
+  ChatDraftSummary,
   InboxAddFolderRequest,
   InboxFolder,
   InboxFolderIcon,
@@ -471,5 +473,180 @@ describe('Inbox sidebar with projects', () => {
     await act(async () => button.click())
     expect(document.body.querySelector('[data-testid="inbox-projects"]')).not.toBeNull()
     expect(document.body.querySelectorAll('[data-testid="inbox-project-row"]')).toHaveLength(2)
+  })
+})
+
+describe('Inbox project icons in front of the titles', () => {
+  let root: Root
+  let container: HTMLDivElement
+  let storedDrafts: ChatDraftSummary[]
+  const scratch = folder('fld_scratch', 'scratch')
+  const q = (testId: string): HTMLElement | null => container.querySelector<HTMLElement>(`[data-testid="${testId}"]`)
+  const render = async (): Promise<void> => {
+    await act(async () => root.render(createElement(InboxPanel)))
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  }
+  const titleIcon = (id: string): HTMLElement | null => q(`inbox-thread-title-icon-${id}`)
+  /** The icon on the line with the project's name, which is where it is until the setting moves it. */
+  const nameLineIcon = (id: string): Element | null => q(`inbox-thread-${id}`)?.querySelector('[data-testid="project-icon"]') ?? null
+  const gear = (): HTMLElement => q('inbox-settings')!
+  const menuItem = (): HTMLElement | null => document.body.querySelector('[data-testid="inbox-setting-title-icons"]')
+  const openMenu = async (): Promise<void> => {
+    await act(async () => { gear().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+  }
+  const turnOn = async (): Promise<void> => { await act(async () => useInboxView.getState().setTitleIcons(true)) }
+
+  beforeEach(() => {
+    localStorage.clear()
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    vi.stubGlobal('IntersectionObserver', undefined)
+    storedDrafts = []
+    vi.stubGlobal('api', {
+      inbox: { changes: vi.fn(), setRead: vi.fn(async () => null), setArchived: vi.fn(async () => null), remove: vi.fn(), folders: vi.fn(), setComposer: vi.fn(async (value: unknown) => value) },
+      chat: {
+        drafts: vi.fn(async () => ({ drafts: storedDrafts.map((draft) => ({ ...draft })), threads: [] })),
+        draft: vi.fn(async () => ({ text: '', revision: 0, attachments: [] })),
+      },
+    })
+    useWorkspace.setState({
+      platform: { platform: 'darwin', isWindows: false },
+      inboxThreads: [
+        thread('ses_a'),
+        thread('ses_unread', { readAt: 0 }),
+        thread('ses_c', { folderId: 'fld_docs', directory: '/home/me/docs' }),
+        thread('ses_d', { folderId: 'fld_tree', directory: worktree.root, worktree }),
+        thread('ses_plain', { folderId: 'fld_scratch', directory: '/home/me/scratch' }),
+        thread('ses_gone', { folderId: 'fld_removed', directory: '/home/me/removed' }),
+        thread('ses_run', { folderId: 'fld_docs', directory: '/home/me/docs', status: 'working', workingSince: Date.now() - 5_000 }),
+      ],
+      selectedInboxThreadId: null,
+      inboxMarkedUnread: {},
+      inboxCues: {},
+      activeWorkspaceView: 'inbox',
+    })
+    useInboxChanges.setState({ entries: {}, selectedPath: null, tab: 'files', sidebarChanges: false })
+    useInboxView.setState({ workingSection: false, workingCollapsed: false, draftsCollapsed: false, titleIcons: false })
+    useInboxDrafts.setState({ drafts: [], page: { id: 'drf_page', opened: false } })
+    useInboxChat.setState({
+      folders: [folder('fld_app', 'app', { icon: { kind: 'emoji', emoji: '🚀' } }), docs, scratch, tree],
+      composer: { folderId: 'fld_app' },
+      foldersLoaded: true,
+    })
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+  })
+  afterEach(async () => {
+    await act(async () => root.unmount())
+    document.body.innerHTML = ''
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  it('is off until it is turned on, and an unknown or unreadable stored value is off too', () => {
+    expect(getInboxTitleIcons()).toBe(false)
+    saveInboxTitleIcons(true)
+    expect(localStorage.getItem(INBOX_TITLE_ICONS_STORAGE_KEY)).toBe('on')
+    expect(getInboxTitleIcons()).toBe(true)
+    saveInboxTitleIcons(false)
+    expect(localStorage.getItem(INBOX_TITLE_ICONS_STORAGE_KEY)).toBe('off')
+    expect(getInboxTitleIcons()).toBe(false)
+    localStorage.setItem(INBOX_TITLE_ICONS_STORAGE_KEY, 'yes')
+    expect(getInboxTitleIcons()).toBe(false)
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked') })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked') })
+    expect(getInboxTitleIcons()).toBe(false)
+    expect(() => useInboxView.getState().setTitleIcons(true)).not.toThrow()
+    // The choice still holds for this session.
+    expect(useInboxView.getState().titleIcons).toBe(true)
+  })
+
+  it('leaves the icon beside the project name, and nothing in front of the title, until it is turned on', async () => {
+    await render()
+    expect(titleIcon('ses_a')).toBeNull()
+    expect(nameLineIcon('ses_a')?.getAttribute('data-icon')).toBe('emoji')
+    const lines = q('inbox-thread-ses_a')!.querySelectorAll(':scope > span')
+    expect(Array.from(lines).some((line) => line.classList.contains('pl-5'))).toBe(false)
+  })
+
+  it('puts each project’s icon in front of the thread title and takes it from the line below', async () => {
+    await turnOn()
+    await render()
+    const drawn = (id: string): string | null | undefined => titleIcon(id)?.getAttribute('data-icon')
+    expect(drawn('ses_a')).toBe('emoji')
+    expect(titleIcon('ses_a')?.textContent).toBe('🚀')
+    expect(drawn('ses_c')).toBe('book')
+    // A worktree thread has its project's icon; a project without one, or one that was removed, the plain folder.
+    expect(drawn('ses_d')).toBe('emoji')
+    expect(drawn('ses_plain')).toBe('folder')
+    expect(drawn('ses_gone')).toBe('folder')
+    // In front of the title: first in its line, before the title itself.
+    const line = q('inbox-thread-ses_a')!.querySelector(':scope > span')!
+    expect(line.firstElementChild).toBe(titleIcon('ses_a'))
+    expect(line.querySelector('.truncate')?.textContent).toBe('Thread ses_a')
+    // The line with the project's name keeps the name and the branch, without the icon.
+    for (const id of ['ses_a', 'ses_c', 'ses_d', 'ses_plain', 'ses_gone']) expect(nameLineIcon(id)).toBeNull()
+    expect(q('inbox-thread-project-ses_a')?.textContent).toBe('app')
+    expect(q('inbox-thread-project-ses_a')?.parentElement?.textContent).toContain('main')
+  })
+
+  it('keeps the icon first, ahead of the unread mark, and starts the lines below where the title does', async () => {
+    await turnOn()
+    await render()
+    const row = q('inbox-thread-ses_unread')!
+    const unread = row.querySelector('[aria-label="Unread"]')!
+    expect(titleIcon('ses_unread')!.compareDocumentPosition(unread) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const lines = Array.from(row.querySelectorAll(':scope > span'))
+    expect(lines.length).toBeGreaterThanOrEqual(2)
+    expect(lines.slice(1).every((line) => line.classList.contains('pl-5'))).toBe(true)
+  })
+
+  it('shows them on the rows of the Working section too', async () => {
+    useInboxView.setState({ workingSection: true })
+    await turnOn()
+    await render()
+    const working = q('inbox-working-section')!
+    expect(working.querySelector('[data-testid="inbox-thread-title-icon-ses_run"]')?.getAttribute('data-icon')).toBe('book')
+    expect(working.querySelector('[data-testid="inbox-thread-ses_run"] [data-testid="project-icon"]')).toBeNull()
+  })
+
+  it('shows them on draft rows, ahead of the pen mark, taking a worktree draft’s from its project', async () => {
+    storedDrafts = [
+      { id: 'drf_app', folderId: 'fld_app', preview: 'Add a dark theme', attachments: 0, updatedAt: Date.now() - 60_000 },
+      { id: 'drf_tree', folderId: 'fld_tree', preview: 'Try it in a worktree', attachments: 0, updatedAt: Date.now() - 120_000 },
+    ]
+    await render()
+    expect(q('inbox-draft-title-icon-drf_app')).toBeNull()
+    expect(q('inbox-draft-drf_app')?.querySelector('[data-testid="project-icon"]')?.getAttribute('data-icon')).toBe('emoji')
+    await turnOn()
+    expect(q('inbox-draft-title-icon-drf_app')?.getAttribute('data-icon')).toBe('emoji')
+    expect(q('inbox-draft-title-icon-drf_tree')?.getAttribute('data-icon')).toBe('emoji')
+    expect(q('inbox-draft-drf_app')?.querySelector('[data-testid="project-icon"]')).toBeNull()
+    const line = q('inbox-draft-drf_app')!.querySelector(':scope > span')!
+    expect(line.firstElementChild).toBe(q('inbox-draft-title-icon-drf_app'))
+    expect(line.children[1]?.tagName.toLowerCase()).toBe('svg')
+  })
+
+  it('is a switch in the gear menu, after Git changes and Working section, and takes effect at once', async () => {
+    await render()
+    await openMenu()
+    const item = menuItem()!
+    expect(item.getAttribute('role')).toBe('menuitemcheckbox')
+    expect(item.getAttribute('aria-checked')).toBe('false')
+    expect(item.textContent).toContain('Project icons')
+    const order = Array.from(document.body.querySelectorAll('[role="menuitemcheckbox"]')).map((entry) => entry.getAttribute('data-testid'))
+    expect(order).toEqual(['inbox-setting-changes', 'inbox-setting-working', 'inbox-setting-title-icons'])
+
+    await act(async () => item.click())
+    expect(titleIcon('ses_a')).not.toBeNull()
+    expect(nameLineIcon('ses_a')).toBeNull()
+    expect(localStorage.getItem(INBOX_TITLE_ICONS_STORAGE_KEY)).toBe('on')
+
+    await openMenu()
+    expect(menuItem()?.getAttribute('aria-checked')).toBe('true')
+    await act(async () => menuItem()!.click())
+    expect(titleIcon('ses_a')).toBeNull()
+    expect(nameLineIcon('ses_a')?.getAttribute('data-icon')).toBe('emoji')
+    expect(localStorage.getItem(INBOX_TITLE_ICONS_STORAGE_KEY)).toBe('off')
   })
 })
