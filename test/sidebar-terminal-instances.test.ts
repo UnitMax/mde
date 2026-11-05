@@ -34,7 +34,7 @@ describe('sidebar terminal instances', () => {
     useWorkspace.setState({
       projects: [{ id: 'project-1', name: 'Workspace', createdAt: '2026-01-01T00:00:00.000Z' }],
       sessions: [session], activeWorkspaceView: 'projects', selectedSessionId: null, sidebarCollapsed: false,
-      statuses: { 'pane-first': 'running' }, terminalDirectories: {},
+      terminalDirectories: {},
     })
     container = document.createElement('div')
     document.body.append(container)
@@ -47,9 +47,8 @@ describe('sidebar terminal instances', () => {
     vi.unstubAllGlobals()
   })
 
-  it('shows the ordinary shell process status and hides individual panes by default', () => {
+  it('hides individual panes by default', () => {
     render()
-    expect(container.querySelector('[data-testid="session-status"]')?.getAttribute('data-status')).toBe('running')
     expect(container.querySelector('[data-testid="terminal-instances"]')).toBeNull()
   })
 

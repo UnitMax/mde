@@ -28,7 +28,6 @@ import {
 } from 'lucide-react'
 import type {
   Project,
-  PtyStatus,
   Session,
   SessionTab,
   TodoProject
@@ -92,12 +91,6 @@ import {
   getTerminalSettings,
   subscribeTerminalSettings
 } from '@/terminal/terminal-settings'
-
-const STATUS_STYLE: Record<PtyStatus, { dot: string; label: string }> = {
-  none: { dot: 'bg-fg-subtle', label: 'No shell running' },
-  running: { dot: 'bg-ok', label: 'Shell running' },
-  exited: { dot: 'bg-danger', label: 'Shell exited' }
-}
 
 const SIDEBAR_SECTIONS = [
   { id: 'projects' as const, label: 'Projects', Icon: Folder },
@@ -181,16 +174,6 @@ function SidebarSectionNavigation({
   )
 }
 
-interface SessionIndicator {
-  status: PtyStatus
-  dot: string
-  label: string
-}
-
-function sessionIndicator(status: PtyStatus): SessionIndicator {
-  return { status, ...STATUS_STYLE[status] }
-}
-
 function customSessionColor(color: Session['color']): Session['color'] {
   return color && color !== DEFAULT_SESSION_COLOR ? color : undefined
 }
@@ -200,39 +183,14 @@ function sessionBackgroundStyle(color: Session['color']): { backgroundColor: str
   return customColor ? { backgroundColor: sessionColorHex(customColor) } : undefined
 }
 
-function StatusDot({
-  indicator,
-  className,
-  testId = 'session-status'
-}: {
-  indicator: SessionIndicator
-  className?: string
-  testId?: string
-}): JSX.Element {
-  const sharedProps = {
-    'data-testid': testId,
-    'data-status': indicator.status,
-    title: indicator.label
-  }
-
-  return (
-    <span
-      {...sharedProps}
-      className={cn('h-1.5 w-1.5 shrink-0 rounded-full', indicator.dot, className)}
-    />
-  )
-}
-
 function TerminalInstances({
   tabs,
   layouts,
-  statuses,
   directories,
   onFocus
 }: {
   tabs: readonly SessionTab[]
   layouts: Record<string, SessionTerminalLayout>
-  statuses: Record<string, PtyStatus>
   directories: Record<string, string>
   onFocus: (tabId: string, terminalId: string) => void
 }): JSX.Element | null {
@@ -251,8 +209,6 @@ function TerminalInstances({
     <div className="mb-0.5 ml-10 mr-2 mt-0.5" data-testid="terminal-instances">
       <div className="space-y-0.5">
         {entries.map(({ tab, layout, pane }) => {
-          const status = statuses[pane.terminalId] ?? (pane.exited ? 'exited' : 'none')
-          const indicator: SessionIndicator = { status, ...STATUS_STYLE[status] }
           const label = terminalPaneLabel(pane, layout)
           const directory = directories[pane.terminalId]
           const directoryLabel = terminalDirectoryLabel(directory)
@@ -260,11 +216,10 @@ function TerminalInstances({
             <button
               key={pane.terminalId}
               type="button"
-              title={`${label} · ${tab.name} · ${directory ?? 'Directory unavailable'} · ${indicator.label}`}
+              title={`${label} · ${tab.name} · ${directory ?? 'Directory unavailable'}`}
               onClick={() => onFocus(tab.id, pane.terminalId)}
               className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[12px] text-fg-muted hover:bg-hover hover:text-fg"
             >
-              <StatusDot indicator={indicator} testId="terminal-instance-status" />
               <span className="min-w-0 flex-1 truncate">{label}</span>
               <span className="max-w-[35%] shrink truncate text-[10px] text-fg-subtle">{tab.name}</span>
               {directoryLabel && (
@@ -282,8 +237,6 @@ function TerminalInstances({
 
 interface SessionRowProps {
   session: Session
-  status: PtyStatus
-  terminalStatuses: Record<string, PtyStatus>
   terminalDirectories: Record<string, string>
   terminalTabs: readonly SessionTab[]
   terminalLayouts: Record<string, SessionTerminalLayout>
@@ -302,8 +255,6 @@ interface SessionRowProps {
 
 function SessionRow({
   session,
-  status,
-  terminalStatuses,
   terminalDirectories,
   terminalTabs,
   terminalLayouts,
@@ -370,7 +321,6 @@ function SessionRow({
     setMoving(false)
   }
 
-  const indicator = sessionIndicator(status)
   const sessionColor = session.color ?? DEFAULT_SESSION_COLOR
   const customColor = customSessionColor(session.color)
   const backgroundStyle = sessionBackgroundStyle(session.color)
@@ -444,10 +394,6 @@ function SessionRow({
               >
                 <GripVertical className="h-3.5 w-3.5" />
               </button>
-              <span className="flex h-2.5 w-2.5 shrink-0 items-center justify-center">
-                <StatusDot indicator={indicator} />
-              </span>
-
               <div className="min-w-0 flex-1">
                 {renaming ? (
                   <input
@@ -562,7 +508,6 @@ function SessionRow({
         <TerminalInstances
           tabs={terminalTabs}
           layouts={terminalLayouts}
-          statuses={terminalStatuses}
           directories={terminalDirectories}
           onFocus={onFocusTerminal}
         />
@@ -627,7 +572,6 @@ interface SessionDropTarget {
 interface ProjectGroupProps {
   project: Project
   sessions: Session[]
-  statuses: Record<string, PtyStatus>
   terminalDirectories: Record<string, string>
   terminalLayouts: Record<string, Record<string, SessionTerminalLayout>>
   showTerminalInstances: boolean
@@ -637,23 +581,9 @@ interface ProjectGroupProps {
   onNewSession: (projectId: string) => void
 }
 
-function sessionTerminalStatus(
-  session: Session,
-  layouts: Record<string, SessionTerminalLayout> | undefined,
-  statuses: Record<string, PtyStatus>
-): PtyStatus {
-  const values = sessionTabs(session)
-    .flatMap((tab) => layouts?.[tab.id]?.panes ?? [])
-    .map((pane) => statuses[pane.terminalId] ?? (pane.exited ? 'exited' : 'none'))
-  if (values.includes('running')) return 'running'
-  if (values.includes('exited')) return 'exited'
-  return 'none'
-}
-
 function ProjectGroup({
   project,
   sessions,
-  statuses,
   terminalDirectories,
   terminalLayouts,
   showTerminalInstances,
@@ -837,8 +767,6 @@ function ProjectGroup({
           <SessionRow
             key={session.id}
             session={session}
-            status={sessionTerminalStatus(session, terminalLayouts[session.id], statuses)}
-            terminalStatuses={statuses}
             terminalDirectories={terminalDirectories}
             terminalTabs={sessionTabs(session)}
             terminalLayouts={terminalLayouts[session.id] ?? {}}
@@ -1070,7 +998,6 @@ export function Sidebar({
   const projects = useWorkspace((state) => state.projects)
   const todoProjects = useWorkspace((state) => state.todoProjects)
   const sessions = useWorkspace((state) => state.sessions)
-  const statuses = useWorkspace((state) => state.statuses)
   const terminalDirectories = useWorkspace((state) => state.terminalDirectories)
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
   const selectedTodoProjectId = useWorkspace((state) => state.selectedTodoProjectId)
@@ -1094,7 +1021,6 @@ export function Sidebar({
         key={project.id}
         project={project}
         sessions={sessions.filter((session) => session.projectId === project.id)}
-        statuses={statuses}
         terminalDirectories={terminalDirectories}
         terminalLayouts={terminalLayouts}
         showTerminalInstances={terminalSettings.showTerminalInstances}
@@ -1127,7 +1053,6 @@ export function Sidebar({
                 const projectSessions = sessions.filter((session) => session.projectId === project.id)
                 return projectSessions.length > 0 ? (
                   projectSessions.map((session) => {
-                    const indicator = sessionIndicator(sessionTerminalStatus(session, terminalLayouts[session.id], statuses))
                     const customColor = customSessionColor(session.color)
                     return (
                       <ContextMenu key={session.id}>
@@ -1138,7 +1063,7 @@ export function Sidebar({
                               aria-label={`${project.name}: ${session.name}`}
                               onClick={() => selectSession(session.id)}
                               className={cn(
-                                'relative flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase',
+                                'flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase',
                                 customColor
                                   ? 'text-fg transition-[filter] hover:brightness-110'
                                   : session.id === selectedSessionId
@@ -1150,10 +1075,6 @@ export function Sidebar({
                               <span data-testid="collapsed-session-label">
                                 {sessionIconOption(session.icon)?.emoji ?? session.name.slice(0, 2)}
                               </span>
-                              <StatusDot
-                                indicator={indicator}
-                                className="absolute -bottom-0.5 right-0.5 ring-2 ring-panel"
-                              />
                             </button>
                           </SessionEnvironmentPanel>
                         </ContextMenuTrigger>

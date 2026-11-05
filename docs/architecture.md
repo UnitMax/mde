@@ -31,6 +31,9 @@ Switching sessions or tabs re-parents terminal containers rather than disposing 
 process, its scrollback and its cursor position survive. Unvisited persisted tabs create their PTYs
 lazily; the PTYs themselves do not survive application restart.
 
+The Projects sidebar shows session names and paths, or icons and initials when collapsed.
+Optional terminal entries show pane names, tabs and current folders.
+
 Each pane has a header (`TerminalPaneHeader`) that puts its name first. The title is the pane's
 custom name, else the last folder of the terminal's current
 directory (so four shells in four folders read differently), else `terminal`; hovering it shows the
