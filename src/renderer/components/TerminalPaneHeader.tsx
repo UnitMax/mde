@@ -5,7 +5,6 @@ import {
   Ellipsis,
   FolderOpen,
   History,
-  ListTodo,
   Maximize2,
   Minimize2,
   Pencil,
@@ -52,7 +51,6 @@ export interface TerminalPaneHeaderProps {
   isFullscreen: boolean
   onToggleFullscreen: () => void
   onTitleChange: (title: string | null) => void
-  onLinkTask?: (terminalId: string) => void
   onOpenCodeSessions: () => void
   onRestart: () => void
   onClose: () => void
@@ -75,7 +73,6 @@ export function TerminalPaneHeader({
   isFullscreen,
   onToggleFullscreen,
   onTitleChange,
-  onLinkTask,
   onOpenCodeSessions,
   onRestart,
   onClose,
@@ -85,8 +82,6 @@ export function TerminalPaneHeader({
   const platform = useWorkspace((state) => state.platform)
   const wslAvailable = useWorkspace((state) => state.wslAvailable)
   const directory = useWorkspace((state) => state.terminalDirectories[terminalId])
-  const linkedTaskId = useWorkspace((state) => state.terminalTaskLinks[terminalId])
-  const terminalStatus = useWorkspace((state) => state.statuses[terminalId] ?? (pane.exited ? 'exited' : 'none'))
   const [renaming, setRenaming] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
   const titleInputRef = useRef<HTMLInputElement>(null)
@@ -99,7 +94,6 @@ export function TerminalPaneHeader({
   const showFocus = focused && paneCount > 1
   const closable = isTerminalPaneClosable(terminalLayout.panes, terminalId)
   const canSplit = paneCount < MAX_TERMINAL_COUNT
-  const canLinkTask = onLinkTask !== undefined && terminalStatus === 'running'
   const canBrowseSessions = supportsAgentIntegration(platform?.platform, session)
   const canOpenExternally =
     platform?.isWindows === true && wslAvailable && session.kind === 'wsl' && Boolean(session.distro)
@@ -274,16 +268,7 @@ export function TerminalPaneHeader({
               </>
             )}
 
-            {(canLinkTask || canBrowseSessions) && <DropdownMenuSeparator />}
-            {canLinkTask && (
-              <DropdownMenuItem
-                data-testid={`terminal-task-link-${terminalId}`}
-                onSelect={choose(() => onLinkTask?.(terminalId))}
-              >
-                <ListTodo className={MENU_ICON_CLASS} aria-hidden="true" />
-                {linkedTaskId ? 'Change linked To Do task…' : 'Link to To Do task…'}
-              </DropdownMenuItem>
-            )}
+            {canBrowseSessions && <DropdownMenuSeparator />}
             {canBrowseSessions && (
               <DropdownMenuItem
                 data-testid={`terminal-opencode-sessions-${terminalId}`}

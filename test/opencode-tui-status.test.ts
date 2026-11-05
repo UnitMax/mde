@@ -24,8 +24,7 @@ import {
 } from '../src/main/opencode/tui-status'
 import {
   openCodeOverviewStatusLabel,
-  openCodeStatusLabel,
-  openCodeStatusShortLabel
+  openCodeStatusLabel
 } from '../src/renderer/lib/opencode-tui-status'
 
 function managerInternals(manager: OpenCodeTuiStatusManager): {
@@ -493,14 +492,6 @@ describe('OpenCode TUI status protocol', () => {
     expect(openCodeStatusLabel('attention', 'question')).toBe('OpenCode is asking a question')
     expect(openCodeStatusLabel('completed')).toBe('OpenCode finished')
     expect(openCodeStatusLabel('error')).toBe('OpenCode request failed')
-  })
-
-  it('provides the compact status label used by the sidebar', () => {
-    expect(openCodeStatusShortLabel('idle')).toBe('idle')
-    expect(openCodeStatusShortLabel('working')).toBe('working')
-    expect(openCodeStatusShortLabel('attention')).toBe('needs input')
-    expect(openCodeStatusShortLabel('completed')).toBe('done')
-    expect(openCodeStatusShortLabel('error')).toBe('failed')
   })
 
   it('provides the readable status labels used by the agent overview', () => {

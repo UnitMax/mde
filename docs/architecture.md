@@ -38,8 +38,8 @@ full path. Double-clicking the title, or Rename in the menu, edits it, and keepi
 stores nothing so it goes on following the folder. The header also carries the OpenCode status dot
 and the Git chip described below. The actions stay out of the way: fullscreen, the ⋯ menu and Close
 appear over the right edge of a hovered or focused pane (and always in fullscreen) without moving the
-title. The menu holds Rename, Split right and Split down, linking a To Do task (running terminals
-only), OpenCode sessions (Ctrl+Shift+O), Open in VS Code and Show in File Explorer (WSL on Windows),
+title. The menu holds Rename, Split right and Split down, OpenCode sessions (Ctrl+Shift+O),
+Open in VS Code and Show in File Explorer (WSL on Windows),
 and Restart, which still asks for confirmation. When a tab has several panes, the focused one gets an
 accent line under its header. The bar above the panes is a single line with the session name and
 location.
@@ -280,7 +280,7 @@ The Inbox also shows a right-hand sidebar with three tabs, Files, Changes and Te
 
 **Resizing.** Dragging the sidebar's left edge makes it wider (up to 70% of the window) or narrower (never under 260 px). The edge is a keyboard-operable separator: Left and Right arrows change the width by 16 px (64 with Shift), Home and End go to the limits, and a double-click restores 260 px. One width serves all three tabs and is kept in the renderer's `localStorage` (`mde.inbox-sidebar-width`).
 
-**Terminal tab.** The Inbox has one terminal, shared by every thread: it is the same whichever thread (or the new-thread page) is open, and it keeps running while the sidebar shows another tab or the Projects view is open. It reuses the project view's terminal layout (`TerminalView` in its embedded mode: no tab strip, a location header, and Ctrl split controls, Ctrl+Shift+F and the pane-switch shortcuts acting only while the keyboard is inside it, so typing in the composer is never intercepted). Splitting any pane on any side, resizing the dividers, reordering panes, pane titles, fullscreen, restart, the terminal launcher and the OpenCode history work as in Projects; only linking a terminal to a To Do task is not offered. Every shell starts in the home directory: `~` in the default WSL distro on Windows, the home directory on the Mac. The layout and its dividers are kept in `localStorage` (`mde.inbox-terminal-layout`) and come back as fresh shells on the next run; the shells themselves are not restored. The layout edits shared with the project view live in `src/renderer/terminal/layout-edits.ts`, and the Inbox's copy of the state in `src/renderer/store/inbox-terminal.ts`.
+**Terminal tab.** The Inbox has one terminal, shared by every thread: it is the same whichever thread (or the new-thread page) is open, and it keeps running while the sidebar shows another tab or the Projects view is open. It reuses the project view's terminal layout (`TerminalView` in its embedded mode: no tab strip, a location header, and Ctrl split controls, Ctrl+Shift+F and the pane-switch shortcuts acting only while the keyboard is inside it, so typing in the composer is never intercepted). Splitting any pane on any side, resizing the dividers, reordering panes, pane titles, fullscreen, restart, the terminal launcher and the OpenCode history work as in Projects. Every shell starts in the home directory: `~` in the default WSL distro on Windows, the home directory on the Mac. The layout and its dividers are kept in `localStorage` (`mde.inbox-terminal-layout`) and come back as fresh shells on the next run; the shells themselves are not restored. The layout edits shared with the project view live in `src/renderer/terminal/layout-edits.ts`, and the Inbox's copy of the state in `src/renderer/store/inbox-terminal.ts`.
 
 The terminal is not a workspace session and is never stored. Terminal requests name it with the reserved session ID `inbox-terminal` (`src/shared/inbox-terminal.ts`), which the main process resolves on demand (`src/main/inbox/terminal.ts`) for terminal requests. File and Git requests can also name a live terminal ID and its expected directory; naming `inbox-terminal` as a saved file-root session still fails.
 
@@ -796,9 +796,7 @@ written to disk.
 A To Do project is a separate kind of project: a board with a name, an uppercase shorthand
 (2–10 characters, such as `MDE`) and columns, which default to To Do, In Progress and Done. Tasks
 have a title and description, are numbered per project (`MDE-12`), and move between columns by
-drag and drop. Ctrl+F (Cmd+F on macOS) searches tasks in the open To Do project. A live terminal can
-be linked to a task, and the task then shows that terminal's OpenCode status; these links are
-runtime-only and are not saved to `workspace.json`.
+drag and drop. Ctrl+F (Cmd+F on macOS) searches tasks in the open To Do project.
 
 ### Terminal launcher
 

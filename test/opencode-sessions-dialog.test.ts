@@ -96,7 +96,7 @@ beforeEach(() => {
   useWorkspace.setState({
     platform: { platform: 'win32', isWindows: true }, wslAvailable: true,
     opencodeTuiInstances: {}, terminalDirectories: {},
-    statuses: { 'source-pane': 'running' }, exits: {}, terminalTaskLinks: {}
+    statuses: { 'source-pane': 'running' }, exits: {}
   })
 })
 
@@ -256,7 +256,7 @@ async function renderTerminal(target: Session = session) {
     terminalLayout: testLayout([{ terminalId: 'source-pane' }, { terminalId: 'second-pane' }]),
     onAddPane, onSelectTab: vi.fn(), onAddTab: vi.fn(), onTabRenameStart: vi.fn(), onRenameTab: vi.fn(),
     onCloseTab: vi.fn(), onSplitPane: vi.fn(), onLayoutResize: vi.fn(), onPaneOrderChange: vi.fn(),
-    onClosePane: vi.fn(), onPaneFocus: vi.fn(), onPaneTitleChange: vi.fn(), onLinkTask: vi.fn()
+    onClosePane: vi.fn(), onPaneFocus: vi.fn(), onPaneTitleChange: vi.fn()
   })))
   return { onAddPane }
 }

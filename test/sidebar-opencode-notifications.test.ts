@@ -46,7 +46,6 @@ function resetWorkspace(sidebarCollapsed = false): void {
     statuses: {},
     terminalDirectories: {},
     exits: {},
-    terminalTaskLinks: {},
     opencodeTuiStatuses: {},
     opencodeTuiInstances: { [session.id]: instances },
     opencodeTuiReadRevisions: {},

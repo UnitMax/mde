@@ -20,10 +20,6 @@ import { SettingsDialog } from '@/components/SettingsDialog'
 import { TodoSearch } from '@/components/TodoSearch'
 import { TodoProjectSettingsDialog } from '@/components/TodoProjectSettingsDialog'
 import { TodoTaskDialog } from '@/components/TodoTaskDialog'
-import {
-  TerminalTaskLinkDialog,
-  type TerminalTaskLinkTarget
-} from '@/components/TerminalTaskLinkDialog'
 import { isSessionSwitcherShortcut } from '@/lib/session-switcher'
 import { isTodoSearchShortcut } from '@/lib/todo-search'
 import { useWorkspace } from '@/store/workspace'
@@ -55,10 +51,6 @@ import type { TerminalDirectoryRequest } from '@shared/ipc'
 import { fileRootKey } from '@/lib/file-root'
 import { useInboxChat } from '@/store/inbox-chat'
 import { useInboxTerminal } from '@/store/inbox-terminal'
-import {
-  liveTerminalDescriptors,
-  type LiveTerminalDescriptor
-} from '@/lib/terminal-task-links'
 
 type RuntimeLayouts = Record<string, Record<string, SessionTerminalLayout>>
 
@@ -86,7 +78,6 @@ export function App(): JSX.Element {
   const sessions = useWorkspace((state) => state.sessions)
   const todoProjects = useWorkspace((state) => state.todoProjects)
   const todoTasks = useWorkspace((state) => state.todoTasks)
-  const terminalStatuses = useWorkspace((state) => state.statuses)
   const opencodeTuiInstances = useWorkspace((state) => state.opencodeTuiInstances)
   const opencodeTuiInstanceLabelMode = useWorkspace((state) => state.opencodeTuiInstanceLabelMode)
   const windowMode = useWorkspace((state) => state.windowMode)
@@ -113,7 +104,6 @@ export function App(): JSX.Element {
   const [todoTaskDialogColumnId, setTodoTaskDialogColumnId] = useState<string | null>(null)
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false)
   const [todoSearchOpen, setTodoSearchOpen] = useState(false)
-  const [terminalTaskLinkTarget, setTerminalTaskLinkTarget] = useState<TerminalTaskLinkTarget | null>(null)
   const [defaultProjectId, setDefaultProjectId] = useState<string | undefined>(undefined)
   const [terminalLayouts, setTerminalLayouts] = useState<RuntimeLayouts>({})
   const [pendingTerminalFocus, setPendingTerminalFocus] = useState<{
@@ -130,16 +120,6 @@ export function App(): JSX.Element {
   const sessionsRef = useRef(sessions)
   const pendingLayoutPersistence = useRef<Record<string, PersistedTerminalLayout>>({})
   const layoutPersistenceTimers = useRef<Record<string, number>>({})
-
-  const liveTerminals = useMemo<LiveTerminalDescriptor[]>(
-    () => liveTerminalDescriptors({
-      sessions,
-      terminalLayouts,
-      statuses: terminalStatuses,
-      opencodeTuiInstances,
-    }),
-    [opencodeTuiInstances, sessions, terminalLayouts, terminalStatuses]
-  )
 
   useEffect(() => {
     terminalLayoutsRef.current = terminalLayouts
@@ -374,8 +354,7 @@ export function App(): JSX.Element {
         newProjectOpen ||
         newTodoProjectOpen ||
         todoProjectSettingsOpen ||
-        todoTaskDialogOpen ||
-        terminalTaskLinkTarget !== null
+        todoTaskDialogOpen
       ) {
         return
       }
@@ -392,7 +371,6 @@ export function App(): JSX.Element {
     newSessionOpen,
     newTodoProjectOpen,
     sessionSwitcherOpen,
-    terminalTaskLinkTarget,
     todoProjectSettingsOpen,
     todoSearchAvailable,
     todoSearchOpen,
@@ -459,10 +437,6 @@ export function App(): JSX.Element {
       terminalId,
       ...(options?.highlight ? { highlight: true } : {})
     })
-  }
-
-  const focusLiveTerminal = (terminal: LiveTerminalDescriptor): void => {
-    focusTerminal(terminal.sessionId, terminal.tabId, terminal.terminalId)
   }
 
   const selectTab = (sessionId: string, tabId: string): void => {
@@ -733,10 +707,8 @@ export function App(): JSX.Element {
             <TodoProjectView
               project={selectedTodoProject}
               tasks={selectedTodoTasks}
-              terminalCatalog={liveTerminals}
               onNewTask={openNewTodoTask}
               onEditTask={openTodoTask}
-              onFocusTerminal={focusLiveTerminal}
               onOpenSettings={() => setTodoProjectSettingsOpen(true)}
             />
           ) : selected && activeTab && layoutForSession ? (
@@ -765,7 +737,6 @@ export function App(): JSX.Element {
                 onPaneTitleChange={(terminalId, title) =>
                   renameTerminalPane(selected.id, activeTab.id, terminalId, title)
                 }
-                onLinkTask={(terminalId) => setTerminalTaskLinkTarget({ type: 'terminal', terminalId })}
               />
               {openFilePath !== undefined && projectFileRoot && projectFileRootId && (
                 // Layered over the terminals so they stay mounted at their size. Its key must differ
@@ -811,13 +782,11 @@ export function App(): JSX.Element {
             <TodoTaskDialog
               project={selectedTodoProject}
               task={selectedTodoTask}
-              terminalCatalog={liveTerminals}
               defaultColumnId={
                 todoTaskDialogColumnId ?? selectedTodoProject.columns[0]?.id ?? 'todo'
               }
               open={todoTaskDialogOpen}
               onOpenChange={setTodoTaskDialogOpen}
-              onManageTerminalLink={(taskId) => setTerminalTaskLinkTarget({ type: 'task', taskId })}
             />
             <TodoSearch
               open={todoSearchOpen && activeWorkspaceView === 'todo'}
@@ -829,13 +798,6 @@ export function App(): JSX.Element {
           </>
         )}
         <SessionSwitcher open={sessionSwitcherOpen} onOpenChange={setSessionSwitcherOpen} />
-        <TerminalTaskLinkDialog
-          target={terminalTaskLinkTarget}
-          terminals={liveTerminals}
-          onOpenChange={(open) => {
-            if (!open) setTerminalTaskLinkTarget(null)
-          }}
-        />
       </div>
     </div>
   )

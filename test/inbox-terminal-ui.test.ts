@@ -58,7 +58,6 @@ function props(layout: SessionTerminalLayout, overrides: Record<string, unknown>
     onClosePane: vi.fn(),
     onPaneFocus: vi.fn(),
     onPaneTitleChange: vi.fn(),
-    onLinkTask: vi.fn(),
     ...overrides,
   }
 }
@@ -69,7 +68,7 @@ beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('ResizeObserver', class { observe(): void {} disconnect(): void {} unobserve(): void {} })
   vi.stubGlobal('api', { pty: { ensure: vi.fn(async () => 'running'), resize: vi.fn(async () => {}), statuses: vi.fn(async () => ({})) }, git: { terminalInfo: vi.fn(async () => null) } })
-  useWorkspace.setState({ platform: { platform: 'darwin', isWindows: false }, wslAvailable: false, distros: [], statuses: {}, exits: {}, terminalDirectories: {}, terminalTaskLinks: {} })
+  useWorkspace.setState({ platform: { platform: 'darwin', isWindows: false }, wslAvailable: false, distros: [], statuses: {}, exits: {}, terminalDirectories: {} })
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
@@ -193,7 +192,7 @@ describe('TerminalView dynamic splits', () => {
 })
 
 describe('TerminalView embedded in the Inbox sidebar', () => {
-  const embedded = (overrides: Record<string, unknown> = {}) => createElement(TerminalView, props(initial(), { embedded: true, onLinkTask: undefined, ...overrides }))
+  const embedded = (overrides: Record<string, unknown> = {}) => createElement(TerminalView, props(initial(), { embedded: true, ...overrides }))
 
   it('has only the location and split hint above its panes', async () => {
     await render(embedded())
@@ -223,13 +222,6 @@ describe('TerminalView embedded in the Inbox sidebar', () => {
     await act(async () => outside.focus())
     expect(controls()).toHaveLength(0)
     outside.remove()
-  })
-
-  it('offers no To Do link for a running terminal', async () => {
-    const layout = initial()
-    useWorkspace.setState({ statuses: { [layout.panes[0]!.terminalId]: 'running' } })
-    await render(embedded())
-    expect(container.querySelector('[data-testid^="terminal-task-link-"]')).toBeNull()
   })
 })
 

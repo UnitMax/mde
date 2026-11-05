@@ -105,8 +105,7 @@ interface TerminalViewProps {
   terminalLayout: SessionTerminalLayout
   /**
    * Drawn inside another view, as the Inbox does in its sidebar: one tab with no strip, and keyboard
-   * shortcuts that act only while the keyboard is in this view. The tab
-   * callbacks and `onLinkTask` are not needed then.
+   * shortcuts that act only while the keyboard is in this view. The tab callbacks are not needed then.
    */
   embedded?: boolean
   onSelectTab?: (tabId: string) => void
@@ -121,8 +120,6 @@ interface TerminalViewProps {
   onClosePane: (terminalId: string) => void
   onPaneFocus: (terminalId: string) => void
   onPaneTitleChange: (terminalId: string, title: string | null) => void
-  /** Offers to link a terminal to a To Do task; left out where terminals are not tied to a task. */
-  onLinkTask?: (terminalId: string) => void
 }
 
 interface TerminalSurfaceProps {
@@ -566,7 +563,6 @@ function TerminalPane({
   isFullscreen,
   onToggleFullscreen,
   onTitleChange,
-  onLinkTask,
   onOpenCodeSessions,
   reorderState = 'none',
   paneOverlayVisible = false,
@@ -584,7 +580,6 @@ function TerminalPane({
   isFullscreen: boolean
   onToggleFullscreen: () => void
   onTitleChange: (title: string | null) => void
-  onLinkTask?: (terminalId: string) => void
   onOpenCodeSessions: () => void
   reorderState?: 'none' | 'candidate' | 'active' | 'target'
   paneOverlayVisible?: boolean
@@ -597,13 +592,11 @@ function TerminalPane({
   const setStatus = useWorkspace((state) => state.setStatus)
   const exit = useWorkspace((state) => state.exits[pane.terminalId])
   const [restartConfirmationOpen, setRestartConfirmationOpen] = useState(false)
-  const unlinkTerminalTask = useWorkspace((state) => state.unlinkTerminalTask)
 
   const restart = async (): Promise<void> => {
     const terminal = getSession(pane.terminalId)
     terminal?.term.reset()
     const size = (terminal && fitSession(terminal)) || FALLBACK_SIZE
-    unlinkTerminalTask(pane.terminalId)
     clearExit(pane.terminalId)
     try {
       const status = await window.api.pty.restart({
@@ -653,7 +646,6 @@ function TerminalPane({
         isFullscreen={isFullscreen}
         onToggleFullscreen={onToggleFullscreen}
         onTitleChange={onTitleChange}
-        onLinkTask={onLinkTask}
         onOpenCodeSessions={onOpenCodeSessions}
         onRestart={requestRestart}
         onClose={onClose}
@@ -1056,8 +1048,7 @@ export function TerminalView({
   onAddPane,
   onClosePane,
   onPaneFocus,
-  onPaneTitleChange,
-  onLinkTask
+  onPaneTitleChange
 }: TerminalViewProps): JSX.Element {
   const platform = useWorkspace((state) => state.platform)
   const wslAvailable = useWorkspace((state) => state.wslAvailable)
@@ -1161,7 +1152,6 @@ export function TerminalView({
       if (status === 'none') throw new Error('This terminal is no longer available.')
       // The old process's output all arrives before this reply, so clearing here cannot drop new output.
       getSession(terminalId)?.term.reset()
-      useWorkspace.getState().unlinkTerminalTask(terminalId)
       useWorkspace.getState().clearExit(terminalId)
       useWorkspace.getState().setStatus(terminalId, status)
     } catch (error) {
@@ -1549,7 +1539,6 @@ export function TerminalView({
           onPaneFocus(pane.terminalId)
         }}
         onTitleChange={(title) => onPaneTitleChange(pane.terminalId, title)}
-        onLinkTask={onLinkTask}
         onOpenCodeSessions={() => {
           hidePaneOverlay()
           setOpenCodeSessionsSourceId(pane.terminalId)

@@ -85,7 +85,6 @@ describe('TerminalPaneHeader', () => {
       wslAvailable: false,
       statuses: {},
       terminalDirectories: {},
-      terminalTaskLinks: {}
     })
   })
 
@@ -176,7 +175,7 @@ describe('TerminalPaneHeader', () => {
         platform: { platform: 'win32', isWindows: true }, wslAvailable: true,
         statuses: { [ID]: 'running' }, terminalDirectories: { [ID]: '/home/me' }
       })
-      await render(props({ session: wslSession, onLinkTask: vi.fn() }))
+      await render(props({ session: wslSession }))
       expect(bar().querySelectorAll('button')).toHaveLength(3)
     })
   })
@@ -187,28 +186,6 @@ describe('TerminalPaneHeader', () => {
       await openPaneMenu(ID)
       const labels = Array.from(document.body.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent?.trim())
       expect(labels).toEqual(['Rename…', 'Split right', 'Split down', 'Restart terminal'])
-    })
-
-    it('offers the To Do link only for a running terminal that can be linked', async () => {
-      const onLinkTask = vi.fn()
-      await render(props({ onLinkTask }))
-      expect(await paneMenuOffers(ID, `terminal-task-link-${ID}`)).toBe(false)
-
-      useWorkspace.setState({ statuses: { [ID]: 'running' } })
-      await render(props({ onLinkTask }))
-      expect(await paneMenuOffers(ID, `terminal-task-link-${ID}`)).toBe(true)
-      await choosePaneMenuItem(ID, `terminal-task-link-${ID}`)
-      expect(onLinkTask).toHaveBeenCalledWith(ID)
-
-      await render(props())
-      expect(await paneMenuOffers(ID, `terminal-task-link-${ID}`)).toBe(false)
-    })
-
-    it('says whether the terminal is already linked to a task', async () => {
-      useWorkspace.setState({ statuses: { [ID]: 'running' }, terminalTaskLinks: { [ID]: 'task-1' } })
-      await render(props({ onLinkTask: vi.fn() }))
-      await openPaneMenu(ID)
-      expect(paneMenuItem(`terminal-task-link-${ID}`)?.textContent).toContain('Change linked To Do task')
     })
 
     it('offers OpenCode sessions with its shortcut where agents are supported', async () => {

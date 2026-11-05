@@ -29,14 +29,6 @@ export function openCodeStatusLabel(
   return 'OpenCode idle'
 }
 
-export function openCodeStatusShortLabel(status: OpenCodeTuiStatus): string {
-  if (status === 'working') return 'working'
-  if (status === 'attention') return 'needs input'
-  if (status === 'completed') return 'done'
-  if (status === 'error') return 'failed'
-  return 'idle'
-}
-
 export function openCodeOverviewStatusLabel(
   status: OpenCodeTuiStatus,
   attentionReason?: OpenCodeTuiAttentionReason

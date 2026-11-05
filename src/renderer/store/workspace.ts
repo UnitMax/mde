@@ -30,7 +30,6 @@ import { disposeSession } from '@/terminal/sessions'
 import { inboxThreadTerminalId } from '@shared/inbox-thread-terminal'
 import { viewportSettle } from '@/terminal/viewport-settle'
 import { isInboxThreadUnread } from '@/lib/inbox'
-import type { TerminalTaskLinks } from '@/lib/terminal-task-links'
 import type { OpenCodeTuiReadRevisions } from '@/lib/opencode-tui-notifications'
 import {
   detectInstanceHighlights,
@@ -127,7 +126,6 @@ interface WorkspaceState {
   statuses: Record<string, PtyStatus>
   terminalDirectories: Record<string, string>
   exits: Record<string, PtyExitInfo>
-  terminalTaskLinks: TerminalTaskLinks
   opencodeTuiStatuses: Record<string, OpenCodeTuiStatusState>
   opencodeTuiInstances: Record<string, OpenCodeTuiInstanceStatus[]>
   opencodeTuiReadRevisions: OpenCodeTuiReadRevisions
@@ -201,9 +199,6 @@ interface WorkspaceState {
   openSessionInVsCode: (id: string) => Promise<void>
 
   setStatus: (id: string, status: PtyStatus) => void
-  linkTerminalToTodoTask: (terminalId: string, taskId: string) => void
-  unlinkTerminalTask: (terminalId: string) => void
-  unlinkTodoTask: (taskId: string) => void
   setTerminalDirectory: (update: PtyDirectoryUpdate) => void
   noteExit: (info: PtyExitInfo) => void
   clearExit: (id: string) => void
@@ -241,7 +236,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   statuses: {},
   terminalDirectories: {},
   exits: {},
-  terminalTaskLinks: {},
   opencodeTuiStatuses: {},
   opencodeTuiInstances: {},
   opencodeTuiReadRevisions: {},
@@ -402,7 +396,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const openFiles = { ...state.openFiles }
       const terminalDirectories = { ...state.terminalDirectories }
       const exits = { ...state.exits }
-      const terminalTaskLinks = { ...state.terminalTaskLinks }
       const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
       const opencodeTuiInstances = { ...state.opencodeTuiInstances }
       const opencodeTuiReadRevisions = { ...state.opencodeTuiReadRevisions }
@@ -413,9 +406,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         Object.keys(statuses).filter((id) => belongsToSession(id, sessionId)).forEach((id) => delete statuses[id])
         Object.keys(terminalDirectories).filter((id) => belongsToSession(id, sessionId)).forEach((id) => delete terminalDirectories[id])
         Object.keys(exits).filter((id) => belongsToSession(id, sessionId)).forEach((id) => delete exits[id])
-        Object.keys(terminalTaskLinks)
-          .filter((id) => belongsToSession(id, sessionId))
-          .forEach((id) => delete terminalTaskLinks[id])
         clearOpenCodeTuiReadRevisions(
           opencodeTuiReadRevisions,
           sessionId,
@@ -435,7 +425,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         openFiles,
         terminalDirectories,
         exits,
-        terminalTaskLinks,
         opencodeTuiStatuses,
         opencodeTuiInstances,
         opencodeTuiReadRevisions,
@@ -467,10 +456,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   },
 
   removeTodoProject: async (id) => {
-    const removedTaskIds = get()
-      .todoTasks
-      .filter((task) => task.todoProjectId === id)
-      .map((task) => task.id)
     await window.api.todoProjects.remove(id)
     set((state) => {
       const removedIndex = state.todoProjects.findIndex((project) => project.id === id)
@@ -478,17 +463,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const selectedTodoProjectId = state.selectedTodoProjectId === id
         ? todoProjects[Math.min(removedIndex, todoProjects.length - 1)]?.id ?? null
         : state.selectedTodoProjectId
-      const terminalTaskLinks = { ...state.terminalTaskLinks }
-      removedTaskIds.forEach((taskId) => {
-        Object.entries(terminalTaskLinks)
-          .filter(([, linkedTaskId]) => linkedTaskId === taskId)
-          .forEach(([terminalId]) => delete terminalTaskLinks[terminalId])
-      })
       return {
         todoProjects,
         todoTasks: state.todoTasks.filter((task) => task.todoProjectId !== id),
         selectedTodoProjectId,
-        terminalTaskLinks
       }
     })
   },
@@ -529,16 +507,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   removeTodoTask: async (id) => {
     await window.api.todoTasks.remove(id)
-    set((state) => {
-      const terminalTaskLinks = { ...state.terminalTaskLinks }
-      Object.entries(terminalTaskLinks)
-        .filter(([, linkedTaskId]) => linkedTaskId === id)
-        .forEach(([terminalId]) => delete terminalTaskLinks[terminalId])
-      return {
-        todoTasks: state.todoTasks.filter((task) => task.id !== id),
-        terminalTaskLinks
-      }
-    })
+    set((state) => ({ todoTasks: state.todoTasks.filter((task) => task.id !== id) }))
   },
 
   addSession: async (input) => {
@@ -634,16 +603,12 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const statuses = { ...state.statuses }
       const terminalDirectories = { ...state.terminalDirectories }
       const exits = { ...state.exits }
-      const terminalTaskLinks = { ...state.terminalTaskLinks }
       const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
       const opencodeTuiInstances = { ...state.opencodeTuiInstances }
       const opencodeTuiReadRevisions = { ...state.opencodeTuiReadRevisions }
       Object.keys(statuses).filter((runtimeId) => belongsToSession(runtimeId, id)).forEach((runtimeId) => delete statuses[runtimeId])
       Object.keys(terminalDirectories).filter((runtimeId) => belongsToSession(runtimeId, id)).forEach((runtimeId) => delete terminalDirectories[runtimeId])
       Object.keys(exits).filter((runtimeId) => belongsToSession(runtimeId, id)).forEach((runtimeId) => delete exits[runtimeId])
-      Object.keys(terminalTaskLinks)
-        .filter((runtimeId) => belongsToSession(runtimeId, id))
-        .forEach((runtimeId) => delete terminalTaskLinks[runtimeId])
       clearOpenCodeTuiReadRevisions(
         opencodeTuiReadRevisions,
         id,
@@ -662,7 +627,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         statuses,
         terminalDirectories,
         exits,
-        terminalTaskLinks,
         opencodeTuiStatuses,
         opencodeTuiInstances,
         opencodeTuiReadRevisions,
@@ -679,46 +643,12 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   },
 
   setStatus: (id, status) =>
-    set((state) => {
-      const terminalTaskLinks = { ...state.terminalTaskLinks }
-      if (status !== 'running') delete terminalTaskLinks[id]
-      return {
-        statuses: { ...state.statuses, [id]: status },
-        openFiles: status === 'none'
-          ? Object.fromEntries(Object.entries(state.openFiles).filter(([key]) => fileRootTerminalId(key) !== id))
-          : state.openFiles,
-        terminalTaskLinks
-      }
-    }),
-
-  linkTerminalToTodoTask: (terminalId, taskId) =>
-    set((state) => {
-      if (!state.todoTasks.some((task) => task.id === taskId)) return state
-      const terminalTaskLinks = { ...state.terminalTaskLinks }
-      delete terminalTaskLinks[terminalId]
-      Object.entries(terminalTaskLinks)
-        .filter(([, linkedTaskId]) => linkedTaskId === taskId)
-        .forEach(([linkedTerminalId]) => delete terminalTaskLinks[linkedTerminalId])
-      terminalTaskLinks[terminalId] = taskId
-      return { terminalTaskLinks }
-    }),
-
-  unlinkTerminalTask: (terminalId) =>
-    set((state) => {
-      if (!state.terminalTaskLinks[terminalId]) return state
-      const terminalTaskLinks = { ...state.terminalTaskLinks }
-      delete terminalTaskLinks[terminalId]
-      return { terminalTaskLinks }
-    }),
-
-  unlinkTodoTask: (taskId) =>
-    set((state) => {
-      const terminalTaskLinks = { ...state.terminalTaskLinks }
-      Object.entries(terminalTaskLinks)
-        .filter(([, linkedTaskId]) => linkedTaskId === taskId)
-        .forEach(([terminalId]) => delete terminalTaskLinks[terminalId])
-      return { terminalTaskLinks }
-    }),
+    set((state) => ({
+      statuses: { ...state.statuses, [id]: status },
+      openFiles: status === 'none'
+        ? Object.fromEntries(Object.entries(state.openFiles).filter(([key]) => fileRootTerminalId(key) !== id))
+        : state.openFiles,
+    })),
 
   setTerminalDirectory: (update) =>
     set((state) => {
@@ -729,15 +659,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     }),
 
   noteExit: (info) =>
-    set((state) => {
-      const terminalTaskLinks = { ...state.terminalTaskLinks }
-      delete terminalTaskLinks[info.terminalId]
-      return {
-        statuses: { ...state.statuses, [info.terminalId]: 'exited' },
-        exits: { ...state.exits, [info.terminalId]: info },
-        terminalTaskLinks
-      }
-    }),
+    set((state) => ({
+      statuses: { ...state.statuses, [info.terminalId]: 'exited' },
+      exits: { ...state.exits, [info.terminalId]: info },
+    })),
 
   clearExit: (id) =>
     set((state) => {

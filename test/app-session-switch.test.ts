@@ -89,7 +89,7 @@ describe('switching sessions with a file open', () => {
       selectedSessionId: 'alpha',
       activeWorkspaceView: 'projects',
       openFiles: { [fileRootKey({ terminalId: terminalIdForPane('alpha', 'alpha-tab', 'pane-1'), directory: alpha.path })]: 'README.md' },
-      statuses: {}, exits: {}, terminalDirectories: {}, terminalTaskLinks: {},
+      statuses: {}, exits: {}, terminalDirectories: {},
       opencodeTuiInstances: {}, opencodeTuiStatuses: {}
     })
   })

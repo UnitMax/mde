@@ -6,7 +6,6 @@ export function disposeRuntimeTerminal(terminalId: string): void {
   const workspace = useWorkspace.getState()
   workspace.clearExit(terminalId)
   workspace.setStatus(terminalId, 'none')
-  workspace.unlinkTerminalTask(terminalId)
   disposeSession(terminalId)
   void window.api.pty.dispose(terminalId)
 }
