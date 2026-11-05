@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { testLayout } from './helpers/terminal-layout'
+import { choosePaneMenuItem, paneMenuOffers } from './helpers/terminal-pane-menu'
 
 import { act, createElement, type ComponentProps } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -264,7 +265,7 @@ describe('terminal history entry points', () => {
   it('prioritizes the source terminal live directory over the workspace directory', async () => {
     useWorkspace.setState({ terminalDirectories: { 'source-pane': '/workspace/backend' } })
     await renderTerminal()
-    await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="terminal-opencode-sessions-source-pane"]')!.click())
+    await choosePaneMenuItem('source-pane', 'terminal-opencode-sessions-source-pane')
     expect(input().getAttribute('aria-activedescendant')).toBe('opencode-result-ses_old')
     await key(input(), 'Enter')
     expect(document.querySelector('[role="dialog"]')).toBeNull()
@@ -273,7 +274,7 @@ describe('terminal history entry points', () => {
     const { onAddPane } = await renderTerminal()
     await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="terminal-fullscreen-toggle-source-pane"]')!.click())
     expect(document.querySelectorAll('.terminal-host')).toHaveLength(1)
-    await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="terminal-opencode-sessions-source-pane"]')!.click())
+    await choosePaneMenuItem('source-pane', 'terminal-opencode-sessions-source-pane')
     await key(input(), 'Enter')
     expect(onAddPane).toHaveBeenCalledWith('source-pane', { sourceTerminalId: 'source-pane', opencodeSessionId: 'ses_new', executable: 'opencode' })
     expect(document.querySelectorAll('.terminal-host')).toHaveLength(2)
@@ -297,7 +298,7 @@ describe('terminal history entry points', () => {
 
   it('keeps the entry points unavailable for native terminals', async () => {
     await renderTerminal({ ...session, kind: 'native', distro: undefined })
-    expect(document.querySelector('[aria-label="Open OpenCode sessions"]')).toBeNull()
+    expect(await paneMenuOffers('source-pane', 'terminal-opencode-sessions-source-pane')).toBe(false)
     const textarea = document.createElement('textarea')
     document.querySelector('.terminal-host')!.append(textarea)
     await act(async () => textarea.focus())
@@ -309,7 +310,7 @@ describe('terminal history entry points', () => {
   it('opens history and the launcher from a native Mac terminal', async () => {
     useWorkspace.setState({ platform: { platform: 'darwin', isWindows: false }, wslAvailable: false })
     await renderTerminal({ ...session, kind: 'native', distro: undefined })
-    expect(document.querySelector('[aria-label="Open OpenCode sessions"]')).not.toBeNull()
+    expect(await paneMenuOffers('source-pane', 'terminal-opencode-sessions-source-pane')).toBe(true)
     const textarea = document.createElement('textarea')
     document.querySelector('.terminal-host')!.append(textarea)
     await act(async () => textarea.focus())
@@ -326,7 +327,7 @@ describe('terminal history entry points', () => {
 
   it('replaces the source pane from Shift+Enter after confirming, without adding a pane', async () => {
     const { onAddPane } = await renderTerminal()
-    await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="terminal-opencode-sessions-source-pane"]')!.click())
+    await choosePaneMenuItem('source-pane', 'terminal-opencode-sessions-source-pane')
     await key(input(), 'Enter', { shiftKey: true })
     await act(async () => buttonByText(document.querySelector<HTMLElement>('[data-testid="replace-terminal-confirmation"]')!, 'Open session').click())
     await vi.waitFor(() => expect(ptyRestart).toHaveBeenCalledWith({

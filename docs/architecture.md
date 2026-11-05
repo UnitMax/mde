@@ -31,6 +31,19 @@ Switching sessions or tabs re-parents terminal containers rather than disposing 
 process, its scrollback and its cursor position survive. Unvisited persisted tabs create their PTYs
 lazily; the PTYs themselves do not survive application restart.
 
+Each pane has a header (`TerminalPaneHeader`) that puts its name first. The title is the pane's
+custom name, else the OpenCode conversation title, else the last folder of the terminal's current
+directory (so four shells in four folders read differently), else `terminal`; hovering it shows the
+full path. Double-clicking the title, or Rename in the menu, edits it, and keeping the derived name
+stores nothing so it goes on following the folder. The header also carries the OpenCode status dot
+and the Git chip described below. The actions stay out of the way: fullscreen, the ⋯ menu and Close
+appear over the right edge of a hovered or focused pane (and always in fullscreen) without moving the
+title. The menu holds Rename, Split right and Split down, linking a To Do task (running terminals
+only), OpenCode sessions (Ctrl+Shift+O), Open in VS Code and Show in File Explorer (WSL on Windows),
+and Restart, which still asks for confirmation. When a tab has several panes, the focused one gets an
+accent line under its header. The bar above the panes is a single line with the session name and
+location.
+
 The workspace is stored as `workspace.json` in Electron's user-data directory with separate
 `projects`, `todoProjects`, `todoTasks` and `sessions` arrays. Session array order is the persistent
 sidebar order within each project; tab names, order, active tab, pane order, layouts and resize
@@ -851,10 +864,12 @@ and 200 edges; invalid or oversized diagrams show their source instead.
 
 ## Git
 
-Each terminal header shows the branch, worktree root, tracked line changes and commits ahead for
-its current directory. Changes without line counts, including untracked entries and binary changes,
-show a changed-entry count. Clicking the header opens changes, diffs and recent history for that
-checkout. Queries run from the checkout root, so a terminal inside a subfolder still reviews the
+Each terminal header shows a compact chip with the branch and tracked line changes for its current
+directory. Changes without line counts, including untracked entries and binary changes, show a
+changed-entry count, and a clean checkout shows the branch alone. Commits ahead, the worktree root
+and the clean state are in the chip's tooltip. In a pane narrower than 22rem the chip shrinks to the
+branch icon, plus a dot when there are changes, so the title keeps its room. Clicking the chip opens
+changes, diffs and recent history for that checkout. Queries run from the checkout root, so a terminal inside a subfolder still reviews the
 whole repository. Changing directory closes an open Git dialog and clears the old metadata. The
 session sidebar shows the launch directory and environment; it has no Git view or Git polling.
 

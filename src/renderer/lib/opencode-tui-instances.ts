@@ -5,6 +5,7 @@ import type {
 } from '@shared/types'
 import type { SessionTerminalLayout } from '@/terminal/layout'
 import { sessionTabs } from '@/terminal/tabs'
+import { directoryLeafName } from '@/lib/terminal-title'
 
 export interface OpenCodeTuiOverviewEntry {
   sessionId: string
@@ -69,13 +70,26 @@ export function openCodeTuiInstanceLabel(
   return mode === 'title' && instance.title?.trim() ? instance.title.trim() : fallback
 }
 
+/**
+ * What a pane is called until it is renamed: its OpenCode label, else the folder the shell is in,
+ * else a fixed word while the directory is not known yet.
+ */
+export function terminalPaneDefaultTitle(
+  instance: OpenCodeTuiInstanceStatus | undefined,
+  layout: SessionTerminalLayout,
+  directory?: string | null
+): string {
+  if (instance) return openCodeTuiInstanceLabel(instance, 0, 'title', layout)
+  return directoryLeafName(directory) ?? 'terminal'
+}
+
 export function terminalPaneTitle(
   instance: OpenCodeTuiInstanceStatus | undefined,
   layout: SessionTerminalLayout,
-  customTitle?: string
+  customTitle?: string,
+  directory?: string | null
 ): string {
   const trimmedCustomTitle = customTitle?.trim()
   if (trimmedCustomTitle) return trimmedCustomTitle
-  if (!instance) return 'terminal'
-  return openCodeTuiInstanceLabel(instance, 0, 'title', layout)
+  return terminalPaneDefaultTitle(instance, layout, directory)
 }

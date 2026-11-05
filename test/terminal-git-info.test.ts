@@ -48,15 +48,21 @@ describe('TerminalGitInfo', () => {
     vi.unstubAllGlobals()
   })
 
-  it('shows branch, worktree, line changes and commits ahead in a clickable header', async () => {
+  it('shows the branch and line changes in a clickable header, with the rest in its label', async () => {
     const container = await renderInfo()
     const info = container.querySelector('button')
     expect(info?.textContent).toContain('feature/terminal')
-    expect(info?.textContent).toContain('/workspace/repo')
     expect(info?.textContent).toContain('+12')
     expect(info?.textContent).toContain('−3')
-    expect(info?.textContent).toContain('↑2')
-    expect(info?.getAttribute('aria-label')).toContain('Open Git changes and history')
+    // Commits ahead and the worktree would crowd the bar; they stay in the label and the tooltip.
+    expect(info?.textContent).not.toContain('/workspace/repo')
+    expect(info?.textContent).not.toContain('↑2')
+    for (const label of [info?.getAttribute('aria-label'), info?.getAttribute('title')]) {
+      expect(label).toContain('2 commits ahead of upstream')
+      expect(label).toContain('Git worktree /workspace/repo')
+      expect(label).toContain('Open Git changes and history')
+    }
+    expect(info?.querySelector('.bg-warn')).not.toBeNull()
     expect(gitInfo).not.toHaveBeenCalled()
 
     await act(async () => info?.click())
@@ -75,7 +81,7 @@ describe('TerminalGitInfo', () => {
     const container = await renderInfo()
     expect(container.textContent).toContain('Detached HEAD')
     expect(container.textContent).toContain('2 changed')
-    expect(container.textContent).not.toContain('Clean')
+    expect(container.querySelector('button')?.getAttribute('aria-label')).toContain('2 changed entries')
   })
 
   it('clears the dialog and refreshes after changing directory', async () => {
@@ -111,6 +117,9 @@ describe('TerminalGitInfo', () => {
     terminalInfo.mockResolvedValue({ ...snapshot, additions: 0, deletions: 0, changedFiles: 0, commitsAhead: null })
     await act(async () => window.dispatchEvent(new Event('focus')))
     expect(terminalInfo).toHaveBeenCalledTimes(2)
-    expect(container.textContent).toContain('Clean')
+    const info = container.querySelector('button')
+    expect(info?.textContent).toBe('feature/terminal')
+    expect(info?.getAttribute('aria-label')).toContain('Working tree clean')
+    expect(info?.querySelector('.bg-warn')).toBeNull()
   })
 })

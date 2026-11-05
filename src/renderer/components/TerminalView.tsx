@@ -8,18 +8,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type CSSProperties
 } from 'react'
-import {
-  Code,
-  CircleX,
-  FolderOpen,
-  History,
-  ListTodo,
-  Maximize2,
-  Minimize2,
-  Plus,
-  RotateCw,
-  X
-} from 'lucide-react'
+import { FolderOpen, Plus, X } from 'lucide-react'
 import type { FileTreeDropEntry } from '@shared/ipc'
 import type {
   OpenCodeTuiInstanceStatus,
@@ -91,15 +80,12 @@ import {
 } from '@/terminal/drop'
 import { terminalPrimarySelectionMode } from '@/terminal/clipboard'
 import { sessionTabs } from '@/terminal/tabs'
-import { OpenCodeStatusIcon } from '@/components/OpenCodeStatusIcon'
-import { TerminalGitInfo } from '@/components/TerminalGitInfo'
-import { TerminalFullscreenIndicator } from '@/components/TerminalFullscreenIndicator'
+import { TerminalPaneHeader } from '@/components/TerminalPaneHeader'
 import { TerminalPaneHighlight } from '@/components/TerminalPaneHighlight'
 import { TerminalPaneOverlay } from '@/components/TerminalPaneOverlay'
 import { TerminalLauncher } from '@/components/TerminalLauncher'
 import { OpenCodeSessionsDialog } from '@/components/OpenCodeSessionsDialog'
 import { isOpenCodeSessionsShortcut } from '@/lib/opencode-sessions'
-import { openCodeTuiInstanceLabel } from '@/lib/opencode-tui-instances'
 import { isTerminalLauncherShortcut } from '@/lib/terminal-launcher'
 
 const FALLBACK_SIZE: PtySize = { cols: 80, rows: 24 }
@@ -610,30 +596,8 @@ function TerminalPane({
   const clearExit = useWorkspace((state) => state.clearExit)
   const setStatus = useWorkspace((state) => state.setStatus)
   const exit = useWorkspace((state) => state.exits[pane.terminalId])
-  const platform = useWorkspace((state) => state.platform)
-  const wslAvailable = useWorkspace((state) => state.wslAvailable)
-  const currentDirectory = useWorkspace((state) => state.terminalDirectories[pane.terminalId])
-  const terminalStatus = useWorkspace((state) => state.statuses[pane.terminalId] ?? (pane.exited ? 'exited' : 'none'))
-  const linkedTaskId = useWorkspace((state) => state.terminalTaskLinks[pane.terminalId])
-  const unlinkTerminalTask = useWorkspace((state) => state.unlinkTerminalTask)
   const [restartConfirmationOpen, setRestartConfirmationOpen] = useState(false)
-  const [renamingTitle, setRenamingTitle] = useState(false)
-  const [draftTitle, setDraftTitle] = useState('')
-  const titleInputRef = useRef<HTMLInputElement>(null)
-  const title = pane.title?.trim() || (
-    openCodeInstance
-      ? openCodeTuiInstanceLabel(openCodeInstance, 0, 'title', terminalLayout)
-      : 'terminal'
-  )
-
-  useEffect(() => {
-    if (!renamingTitle) return
-    const frame = window.requestAnimationFrame(() => {
-      titleInputRef.current?.focus()
-      titleInputRef.current?.select()
-    })
-    return () => window.cancelAnimationFrame(frame)
-  }, [renamingTitle])
+  const unlinkTerminalTask = useWorkspace((state) => state.unlinkTerminalTask)
 
   const restart = async (): Promise<void> => {
     const terminal = getSession(pane.terminalId)
@@ -664,22 +628,6 @@ function TerminalPane({
     void restart()
   }
 
-  const beginTitleRename = (): void => {
-    setDraftTitle(title)
-    setRenamingTitle(true)
-  }
-
-  const cancelTitleRename = (): void => {
-    setRenamingTitle(false)
-  }
-
-  const commitTitleRename = (): void => {
-    if (!renamingTitle) return
-    const normalizedTitle = draftTitle.trim()
-    onTitleChange(normalizedTitle || null)
-    setRenamingTitle(false)
-  }
-
   const borderClass = reorderState === 'active'
     ? 'border-accent'
     : reorderState === 'candidate' || reorderState === 'target'
@@ -696,148 +644,21 @@ function TerminalPane({
         reorderState === 'active' ? 'opacity-45' : ''
       }`}
     >
-      <header
-        aria-label={title}
-        className="flex h-6 shrink-0 items-center gap-1 border-b border-line bg-panel/50 px-1"
-        data-testid="terminal-pane-title-bar"
-      >
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          {openCodeInstance && (
-            <OpenCodeStatusIcon
-              status={openCodeInstance.status}
-              attentionReason={openCodeInstance.attentionReason}
-              testId="terminal-opencode-status"
-            />
-          )}
-          {renamingTitle ? (
-            <input
-              ref={titleInputRef}
-              value={draftTitle}
-              onChange={(event) => setDraftTitle(event.target.value)}
-              onBlur={commitTitleRename}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') commitTitleRename()
-                if (event.key === 'Escape') cancelTitleRename()
-                event.stopPropagation()
-              }}
-              onClick={(event) => event.stopPropagation()}
-              className="h-5 min-w-0 flex-1 rounded-sm border border-accent bg-bg px-1 text-[11px] text-fg outline-none"
-              data-testid="terminal-pane-title-input"
-              aria-label="Terminal title"
-            />
-          ) : (
-            <span
-              className="min-w-0 truncate text-[11px] font-medium text-fg-muted"
-              data-testid="terminal-pane-title"
-              title={`${title} · Double-click to rename`}
-              onDoubleClick={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                beginTitleRename()
-              }}
-            >
-              {title}
-            </span>
-          )}
-          <TerminalGitInfo terminalId={pane.terminalId} />
-          <TerminalFullscreenIndicator isFullscreen={isFullscreen} />
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {onLinkTask && terminalStatus === 'running' && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-fg-subtle hover:bg-hover hover:text-fg active:bg-active"
-              aria-label={linkedTaskId ? 'Change linked To Do task' : 'Link terminal to a To Do task'}
-              title={linkedTaskId ? 'Change linked To Do task' : 'Link terminal to a To Do task'}
-              data-testid={`terminal-task-link-${pane.terminalId}`}
-              onClick={() => onLinkTask(pane.terminalId)}
-            >
-              <ListTodo className="h-3.5 w-3.5" />
-            </Button>
-          )}
-          {supportsAgentIntegration(platform?.platform, session) && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-fg-subtle hover:bg-hover hover:text-fg active:bg-active"
-              aria-label="Open OpenCode sessions"
-              title="OpenCode sessions (Ctrl+Shift+O)"
-              data-testid={`terminal-opencode-sessions-${pane.terminalId}`}
-              onClick={onOpenCodeSessions}
-            >
-              <History className="h-3.5 w-3.5" />
-            </Button>
-          )}
-          {platform?.isWindows === true &&
-            wslAvailable &&
-            session.kind === 'wsl' &&
-            Boolean(session.distro) && (
-              <>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="text-fg-subtle hover:bg-hover hover:text-fg active:bg-active"
-                  aria-label="Open terminal directory in VS Code"
-                  title={currentDirectory ? 'Open current directory in VS Code' : 'Waiting for terminal directory'}
-                  disabled={!currentDirectory}
-                  onClick={() => void window.api.paths.openTerminalInVsCode(pane.terminalId)}
-                >
-                  <Code className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="text-fg-subtle hover:bg-hover hover:text-fg active:bg-active"
-                  aria-label="Open terminal directory in File Explorer"
-                  title={currentDirectory ? 'Open current directory in File Explorer' : 'Waiting for terminal directory'}
-                  disabled={!currentDirectory}
-                  onClick={() => void window.api.paths.revealTerminal(pane.terminalId)}
-                >
-                  <FolderOpen className="h-3.5 w-3.5" />
-                </Button>
-              </>
-            )}
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-fg-subtle hover:bg-hover hover:text-fg active:bg-active"
-            aria-label={isFullscreen ? 'Exit terminal fullscreen' : 'Enter terminal fullscreen'}
-            aria-pressed={isFullscreen}
-            data-testid={`terminal-fullscreen-toggle-${pane.terminalId}`}
-            title={isFullscreen
-              ? 'Exit terminal fullscreen (Ctrl+Shift+F)'
-              : 'Enter terminal fullscreen (Ctrl+Shift+F)'}
-            onClick={onToggleFullscreen}
-          >
-            {isFullscreen
-              ? <Minimize2 className="h-3.5 w-3.5" />
-              : <Maximize2 className="h-3.5 w-3.5" />}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-fg-subtle hover:bg-hover hover:text-fg active:bg-active"
-            aria-label="Restart terminal"
-            title="Restart terminal"
-            onClick={requestRestart}
-          >
-            <RotateCw className="h-3.5 w-3.5" />
-          </Button>
-          {isTerminalPaneClosable(terminalLayout.panes, pane.terminalId) && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-fg-subtle hover:bg-hover hover:text-fg active:bg-active"
-              aria-label="Close terminal"
-              title="Close terminal"
-              onClick={onClose}
-            >
-              <CircleX className="h-3.5 w-3.5" />
-            </Button>
-          )}
-        </div>
-      </header>
+      <TerminalPaneHeader
+        session={session}
+        pane={pane}
+        terminalLayout={terminalLayout}
+        openCodeInstance={openCodeInstance}
+        focused={paneOverlayActive}
+        isFullscreen={isFullscreen}
+        onToggleFullscreen={onToggleFullscreen}
+        onTitleChange={onTitleChange}
+        onLinkTask={onLinkTask}
+        onOpenCodeSessions={onOpenCodeSessions}
+        onRestart={requestRestart}
+        onClose={onClose}
+        onSplit={onSplit}
+      />
       {exit && (
         <div
           className="flex shrink-0 items-center gap-3 border-b border-danger/30 bg-danger/10 px-3 py-1.5"
@@ -876,7 +697,7 @@ function TerminalPane({
               className={`absolute z-30 flex h-7 w-7 items-center justify-center rounded border border-accent/60 bg-panel text-accent shadow-md hover:bg-accent hover:text-bg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
                 side === 'left' ? 'left-1 top-1/2 -translate-y-1/2'
                   : side === 'right' ? 'right-1 top-1/2 -translate-y-1/2'
-                    : side === 'top' ? 'left-1/2 top-7 -translate-x-1/2'
+                    : side === 'top' ? 'left-1/2 top-8 -translate-x-1/2'
                       : 'bottom-1 left-1/2 -translate-x-1/2'
               }`}
               onPointerDown={(event) => {
@@ -1405,7 +1226,7 @@ export function TerminalView({
     const target = event.target
     if (
       target instanceof Element &&
-      target.closest('button, input, textarea, select, a, [role="separator"]')
+      target.closest('button, input, textarea, select, a, [role="separator"], [role="menu"]')
     ) {
       return
     }
@@ -1771,29 +1592,23 @@ export function TerminalView({
           onClose={onCloseTab}
         />
       )}
-      <header className={`flex shrink-0 items-center border-b border-line bg-panel/50 ${embedded ? 'h-9 gap-2 px-2' : 'h-10 gap-3 px-3'}`}>
-        <div className="flex min-w-0 flex-1 items-baseline gap-2">
-          {!embedded && (
-            <>
-              <span
-                className="min-w-0 max-w-[40%] truncate text-[13px] font-semibold leading-5 text-fg"
-                title={selectedSession.name}
-              >
-                {selectedSession.name}
-              </span>
-              <span aria-hidden="true" className="h-3 w-px shrink-0 self-center bg-line-strong" />
-            </>
-          )}
-          <span
-            className="min-w-0 flex-1 truncate font-mono text-xs leading-5 text-fg-muted"
-            title={location}
-          >
-            {location}
-          </span>
-        </div>
-
-        <span className="shrink-0 text-[10px] text-fg-subtle" title="Hold Ctrl and click a + at a terminal edge to split it">
-          Hold Ctrl to split
+      <header className={`flex h-8 shrink-0 items-center gap-2 border-b border-line bg-panel ${embedded ? 'px-2.5' : 'px-3'}`}>
+        {!embedded && (
+          <>
+            <span
+              className="min-w-0 max-w-[40%] truncate text-xs font-semibold text-fg"
+              title={selectedSession.name}
+            >
+              {selectedSession.name}
+            </span>
+            <span aria-hidden="true" className="h-3 w-px shrink-0 bg-line-strong" />
+          </>
+        )}
+        <span
+          className="min-w-0 flex-1 truncate font-mono text-xs text-fg-muted"
+          title={location}
+        >
+          {location}
         </span>
       </header>
 

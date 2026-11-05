@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FolderGit2, GitBranch } from 'lucide-react'
+import { GitBranch } from 'lucide-react'
 import type { GitTerminalInfoResponse } from '@shared/types'
 import type { TerminalDirectoryRequest } from '@shared/ipc'
 import { useWorkspace } from '@/store/workspace'
@@ -51,18 +51,25 @@ export function TerminalGitInfo({ terminalId }: { terminalId: string }): JSX.Ele
 
   if (!info?.repository) return null
 
+  const dirty = info.changedFiles > 0 || info.additions > 0 || info.deletions > 0
   const accessibleLabel = [
     gitStatusAccessibleLabel(info),
-    `${info.changedFiles} changed ${info.changedFiles === 1 ? 'entry' : 'entries'}`,
+    info.changedFiles > 0
+      ? `${info.changedFiles} changed ${info.changedFiles === 1 ? 'entry' : 'entries'}`
+      : dirty ? null : 'Working tree clean',
     info.worktree ? `Git worktree ${info.worktree}` : null,
     'Open Git changes and history',
   ].filter(Boolean).join(' · ')
 
+  // The chip never shrinks (the title is the one flexible item in the header, so it is the one that
+  // gets an ellipsis). Instead, in a narrow pane (`@container/pane` is the header) the text goes and
+  // only the icon and a dot for uncommitted changes remain. The label and tooltip always carry the
+  // detail the chip leaves out (ahead, worktree, clean).
   return (
     <>
       <button
         type="button"
-        className="flex min-w-0 max-w-[60%] shrink items-center gap-1.5 rounded px-1 text-[10px] text-fg-subtle hover:bg-hover hover:text-fg focus-visible:outline focus-visible:outline-accent"
+        className="flex h-5 shrink-0 items-center gap-1.5 rounded px-1.5 text-[11px] text-fg-muted transition-colors hover:bg-hover hover:text-fg"
         data-testid={`terminal-git-info-${terminalId}`}
         aria-label={accessibleLabel}
         title={accessibleLabel}
@@ -71,25 +78,22 @@ export function TerminalGitInfo({ terminalId }: { terminalId: string }): JSX.Ele
           setOpen(true)
         }}
       >
-        <span className="flex min-w-0 max-w-[45%] shrink-0 items-center gap-0.5">
-          <GitBranch className="h-3 w-3 shrink-0 text-accent" aria-hidden="true" />
-          <span className="truncate">{gitStatusBranchLabel(info)}</span>
-        </span>
-        <span className="flex shrink-0 items-center gap-1 font-mono" data-testid="terminal-git-changes">
-          {info.additions > 0 && <span className="text-ok">+{formatGitCount(info.additions)}</span>}
-          {info.deletions > 0 && <span className="text-danger">−{formatGitCount(info.deletions)}</span>}
-          {info.additions === 0 && info.deletions === 0 && (
-            <span>{info.changedFiles > 0 ? `${formatGitCount(info.changedFiles)} changed` : 'Clean'}</span>
-          )}
-          {info.commitsAhead !== null && info.commitsAhead > 0 && (
-            <span className="text-accent">↑{formatGitCount(info.commitsAhead)}</span>
-          )}
-        </span>
-        {info.worktree && (
-          <span className="flex min-w-0 items-center gap-0.5 font-mono">
-            <FolderGit2 className="h-3 w-3 shrink-0" aria-hidden="true" />
-            <span className="truncate">{info.worktree}</span>
-          </span>
+        <GitBranch className="h-3 w-3 shrink-0 text-accent" aria-hidden="true" />
+        <span className="max-w-[8rem] truncate @max-[22rem]/pane:hidden">{gitStatusBranchLabel(info)}</span>
+        {dirty && (
+          <>
+            <span className="flex shrink-0 items-center gap-1 font-mono @max-[22rem]/pane:hidden" data-testid="terminal-git-changes">
+              {info.additions > 0 && <span className="text-ok">+{formatGitCount(info.additions)}</span>}
+              {info.deletions > 0 && <span className="text-danger">−{formatGitCount(info.deletions)}</span>}
+              {info.additions === 0 && info.deletions === 0 && (
+                <span>{formatGitCount(info.changedFiles)} changed</span>
+              )}
+            </span>
+            <span
+              aria-hidden="true"
+              className="hidden h-1.5 w-1.5 shrink-0 rounded-full bg-warn @max-[22rem]/pane:block"
+            />
+          </>
         )}
       </button>
       <GitDialog open={open} terminal={target} onOpenChange={setOpen} />

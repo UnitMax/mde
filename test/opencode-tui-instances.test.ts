@@ -115,4 +115,13 @@ describe('OpenCode TUI instance sidebar helpers', () => {
     expect(terminalPaneTitle(instances[1], layout, 'Agent task')).toBe('Agent task')
     expect(terminalPaneTitle(instances[1], layout, '   ')).toBe('Validate tax rules')
   })
+
+  it('names a plain shell after its folder, behind a custom title and OpenCode labels', () => {
+    expect(terminalPaneTitle(undefined, layout, undefined, '/home/me/app')).toBe('app')
+    expect(terminalPaneTitle(undefined, layout, '', '/home/me/app/')).toBe('app')
+    expect(terminalPaneTitle(undefined, layout, undefined, null)).toBe('terminal')
+    expect(terminalPaneTitle(undefined, layout, 'API', '/home/me/app')).toBe('API')
+    expect(terminalPaneTitle(instances[1], layout, undefined, '/home/me/app')).toBe('Validate tax rules')
+    expect(terminalPaneTitle(instances[0], layout, undefined, '/home/me/app')).toBe('OpenCode 2')
+  })
 })
