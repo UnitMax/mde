@@ -333,6 +333,7 @@ describe('Inbox', () => {
     await act(async () => filter('All').click())
 
     const search = panel.querySelector<HTMLInputElement>('[aria-label="Search inbox"]')!
+    expect(panel.querySelector('[aria-label="Clear search"]')).toBeNull()
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
       setter.call(search, 'feature')
@@ -340,6 +341,12 @@ describe('Inbox', () => {
     })
     expect(panel.querySelector('[data-testid="inbox-thread-ses_one"]')).not.toBeNull()
     expect(panel.querySelector('[data-testid="inbox-thread-ses_two"]')).toBeNull()
+    await act(async () => panel.querySelector<HTMLButtonElement>('[aria-label="Clear search"]')!.click())
+    expect(search.value).toBe('')
+    expect(document.activeElement).toBe(search)
+    expect(panel.querySelector('[aria-label="Clear search"]')).toBeNull()
+    expect(panel.querySelector('[data-testid="inbox-thread-ses_one"]')).not.toBeNull()
+    expect(panel.querySelector('[data-testid="inbox-thread-ses_two"]')).not.toBeNull()
   })
 })
 

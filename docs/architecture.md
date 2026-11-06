@@ -114,7 +114,8 @@ that action ("5m ago"), the title, the folder name with the full path as a toolt
 the model, and a status chip: Needs input or Needs permission, Done, Failed, or Working. Threads
 with activity you have not opened are bold with a dot, and the tab shows how many there are. The
 list can be searched by title, folder, branch and model, and filtered to All, Unread, Needs input
-or Parked. Hovering or focusing a row shows a car icon and a "Park" label; parked threads offer
+or Parked. A clear button appears inside the search field when it contains text; clicking it clears
+the query and returns focus to the field. Hovering or focusing a row shows a car icon and a "Park" label; parked threads offer
 "Move to Inbox" instead. The context menu pins or unpins a thread, marks it read or unread, parks
 it, forks it, or deletes it. Pinned threads appear first in the same list with a small pin icon and
 no separate heading; each group keeps the most recent activity first. Pins respect the search and

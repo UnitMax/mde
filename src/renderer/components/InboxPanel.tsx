@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Car,
   ChevronDown,
@@ -573,6 +573,7 @@ export function InboxPanel(): JSX.Element {
   const forkThread = useInboxChat((state) => state.forkThread)
   const [filter, setFilter] = useState<InboxFilter>('all')
   const [query, setQuery] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
   // A fork is a request to the service and can fail; the menu has no place to say so.
   const [fork, setFork] = useState<{ pending: boolean; error: string | null }>({ pending: false, error: null })
   const folders = useInboxChat((state) => state.folders)
@@ -626,6 +627,7 @@ export function InboxPanel(): JSX.Element {
       <div className="relative px-1">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-subtle" />
         <Input
+          ref={searchRef}
           aria-label="Search inbox"
           placeholder="Search threads"
           value={query}
@@ -636,8 +638,22 @@ export function InboxPanel(): JSX.Element {
               setQuery('')
             }
           }}
-          className="h-7 pl-7 text-xs"
+          className="h-7 pl-7 pr-7 text-xs"
         />
+        {query.length > 0 && (
+          <button
+            type="button"
+            aria-label="Clear search"
+            title="Clear search"
+            onClick={() => {
+              setQuery('')
+              searchRef.current?.focus()
+            }}
+            className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-fg-subtle transition-colors hover:bg-hover hover:text-fg"
+          >
+            <X aria-hidden="true" className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
       <div className="flex items-center px-1">
         <div role="group" aria-label="Inbox filter" className="flex gap-0.5">
