@@ -386,6 +386,11 @@ function parsePart(value: unknown): ChatPart | null {
   const output = toolOutput(state.content)
   const error = status === 'error' ? errorText(state.error) : undefined
   const metadata = record(state.metadata)
+  const childId = name === 'subagent'
+    ? short(metadata?.sessionID) ?? /^\s*<subagent\b[^>]*\bsessionID="([^"]+)"/i.exec(output.text)?.[1]
+      ?? /\(sessionID: ([^)]+)\)/.exec(error ?? '')?.[1]
+    : undefined
+  const sessionId = childId && /^ses_[A-Za-z0-9_-]{1,200}$/.test(childId) ? childId : undefined
   const changes = status === 'completed' ? parsePatches(metadata) : { patches: [], truncated: false }
   const calls = parseToolCalls(metadata, status)
   const durationMs = status === 'completed' || status === 'error' ? toolDuration(part.time) : undefined
@@ -401,6 +406,7 @@ function parsePart(value: unknown): ChatPart | null {
     ...(error ? { error } : {}),
     ...(input.truncated || output.truncated || changes.truncated || cutByOpenCode ? { truncated: true } : {}),
     ...(calls ? { calls } : {}),
+    ...(sessionId ? { subagent: { sessionId } } : {}),
     ...(durationMs !== undefined ? { durationMs } : {}),
     ...(changes.patches.length > 0 ? { patches: changes.patches } : {}),
     ...(status === 'completed' && typeof metadata?.exists === 'boolean' ? { existed: metadata.exists } : {}),
@@ -801,6 +807,13 @@ export function parseSessionInfo(value: unknown): { agent: string | null; model:
     model: parseModelRef(session?.model),
     title: short(session?.title, 512),
   }
+}
+
+/** Only a confirmed child of the recorded thread may supply a subagent's model. */
+export function parseSubagentModel(value: unknown, sessionId: string, parentId: string): OpenCodeModelRef | null {
+  const session = record(data(value, 'a subagent session'))
+  if (session?.id !== sessionId || session.parentID !== parentId) return null
+  return parseModelRef(session.model)
 }
 
 const GOAL_STATUSES = new Set<ChatGoal['status']>(['active', 'paused', 'complete'])

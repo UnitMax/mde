@@ -22,6 +22,7 @@ import type {
   ChatMessagesRequest,
   ChatOptions,
   ChatOptionsRequest,
+  ChatPart,
   ChatPendingMessage,
   ChatPermissionReplyRequest,
   ChatRequests,
@@ -71,6 +72,7 @@ import {
   parsePromptAnswer,
   parseProviderNames,
   parseSessionInfo,
+  parseSubagentModel,
   parseSessionRevert,
   parseStagedRevert,
   parseSessionUsage,
@@ -206,6 +208,8 @@ const REQUEST_EVENTS = new Set(['permission.asked', 'permission.replied', 'form.
 export class InboxChatService {
   private readonly streams: ServiceEventStreams
   private readonly subscribed = new Map<string, number>()
+  /** Child sessions whose model changes should refresh an open parent conversation. */
+  private readonly subagentParents = new Map<string, string>()
   private readonly options = new Map<string, { at: number; value: Promise<ChatOptions> }>()
   /** Places (service + directory) whose MCP list has been answered once, so an empty one is believed. */
   private readonly mcpSettled = new Set<string>()
@@ -245,6 +249,7 @@ export class InboxChatService {
 
   stop(): void {
     this.streams.stopAll()
+    this.subagentParents.clear()
   }
 
   /** The OpenCode executable from Settings; discovery runs it to find each service. */
@@ -600,10 +605,45 @@ export class InboxChatService {
         : this.dependencies.client.request(thread.target, 'session.get', { params: { sessionID: thread.id } }).catch(() => null),
     ])
     const result = parseMessagesPage(page, parseActiveSessions(active).has(thread.id), pageSize, this.dependencies.thumbnail)
+    await this.loadSubagentModels(thread, result)
     const usage = session ? parseSessionUsage(session) : null
     // Only an answer from the service says whether a revert is staged; without one it stays unknown.
     const revert = session ? parseSessionRevert(session) : undefined
     return { ...result, ...(usage ? { usage } : {}), ...(revert !== undefined ? { revert } : {}), ...(inbox ?? {}) }
+  }
+
+  /** Read only the child sessions named by these calls; a missing child must never hide the chat. */
+  private async loadSubagentModels(thread: InboxThread, page: ChatMessagesPage): Promise<void> {
+    const children = new Map<string, NonNullable<Extract<ChatPart, { kind: 'tool' }>['subagent']>[]>()
+    for (const message of page.messages) {
+      if (message.kind !== 'assistant') continue
+      for (const part of message.parts) {
+        if (part.kind !== 'tool' || !part.subagent) continue
+        const calls = children.get(part.subagent.sessionId) ?? []
+        calls.push(part.subagent)
+        children.set(part.subagent.sessionId, calls)
+      }
+    }
+    const pending = [...children.entries()]
+    // Limit simultaneous requests even when a history page contains many subagents.
+    await Promise.all(Array.from({ length: Math.min(4, pending.length) }, async () => {
+      for (let child = pending.shift(); child; child = pending.shift()) {
+        const [sessionId, calls] = child
+        try {
+          const answer = await this.dependencies.client.request(thread.target, 'session.get', {
+            params: { sessionID: sessionId },
+            timeoutMs: 2_000,
+          })
+          const model = parseSubagentModel(answer, sessionId, thread.id)
+          if (model) {
+            for (const call of calls) call.model = model
+            if (this.subscribed.has(thread.id)) {
+              this.subagentParents.set(`${serviceTargetKey(thread.target)}\n${sessionId}`, thread.id)
+            }
+          }
+        } catch { /* Model details are optional; the conversation still loads. */ }
+      }
+    }))
   }
 
   /**
@@ -991,7 +1031,12 @@ export class InboxChatService {
   unsubscribe(threadId: string): void {
     const count = (this.subscribed.get(threadId) ?? 0) - 1
     if (count > 0) this.subscribed.set(threadId, count)
-    else this.subscribed.delete(threadId)
+    else {
+      this.subscribed.delete(threadId)
+      for (const [child, parent] of this.subagentParents) {
+        if (parent === threadId) this.subagentParents.delete(child)
+      }
+    }
   }
 
   private onEvent(event: ServiceEvent, target: OpenCodeTarget): void {
@@ -1002,6 +1047,10 @@ export class InboxChatService {
       return
     }
     const threadId = serviceEventSessionId(event)
+    if (threadId && (event.type === 'session.model.selected' || event.type === 'session.agent.selected')) {
+      const parent = this.subagentParents.get(`${serviceTargetKey(target)}\n${threadId}`)
+      if (parent && this.subscribed.has(parent)) this.dependencies.send({ type: 'messages', threadId: parent })
+    }
     if (threadId && event.type === 'session.renamed') {
       const read = this.titleReads.get(threadId)
       if (read) read.renamed = true

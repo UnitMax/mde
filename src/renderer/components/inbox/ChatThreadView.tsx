@@ -346,6 +346,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
                 <ChatMessageView
                   message={message}
                   directory={thread.directory}
+                  models={ready?.models}
                   onRevert={message.kind === 'user' ? askRevert : undefined}
                   onFork={message.kind === 'user' ? forkFrom : undefined}
                 />

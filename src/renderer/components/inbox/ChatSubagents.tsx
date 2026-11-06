@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { AlertTriangle, Bot, Check, ChevronRight, CircleSlash, LoaderCircle } from 'lucide-react'
-import type { ChatPart } from '@shared/types'
+import { AlertTriangle, Bot, Check, ChevronRight, CircleSlash, Cpu, LoaderCircle } from 'lucide-react'
+import type { ChatModel, ChatPart } from '@shared/types'
 import { ChatMarkdown } from '@/components/inbox/ChatMarkdown'
-import { subagentInfo, subagentResult, type SubagentInfo } from '@/lib/chat'
+import { modelKey, modelName, subagentInfo, subagentResult, type SubagentInfo } from '@/lib/chat'
 import { cn } from '@/lib/utils'
 
 type ToolPart = Extract<ChatPart, { kind: 'tool' }>
@@ -40,13 +40,16 @@ function StateBadge({ state }: { state: SubagentInfo['state'] }): JSX.Element {
 }
 
 /** One subagent: who it is, what it was asked, and how it went. Opens to the full task and its answer. */
-function SubagentCard({ part }: { part: ToolPart }): JSX.Element {
+function SubagentCard({ part, models }: { part: ToolPart; models: readonly ChatModel[] }): JSX.Element {
   const [open, setOpen] = useState(false)
   const info = subagentInfo(part)
   const active = info.state === 'running' || info.state === 'starting'
   const title = info.title ?? (info.state === 'starting' ? 'Starting a subagent…' : 'Subagent')
   const result = part.output ? subagentResult(part.output) : ''
   const hasMore = Boolean(info.task || result || info.problem)
+  const model = part.subagent?.model
+  const modelLabel = model ? `${modelName(models, model)}${model.variant ? ` · ${model.variant}` : ''}` : null
+  const modelDetails = model ? `${modelKey(model)}${model.variant ? `#${model.variant}` : ''}` : undefined
 
   return (
     <section
@@ -72,12 +75,22 @@ function SubagentCard({ part }: { part: ToolPart }): JSX.Element {
             <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-fg">{title}</span>
             <StateBadge state={info.state} />
           </span>
-          <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[12px] text-fg-subtle">
+          <span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-fg-subtle">
             {info.agent && (
               <span className="shrink-0 rounded bg-active px-1.5 py-px font-mono text-[11px] text-fg-muted">{info.agent}</span>
             )}
-            {!open && info.task && <span className="min-w-0 flex-1 truncate">{info.task.replace(/\s+/g, ' ')}</span>}
+            {part.subagent && (
+              <span
+                className="inline-flex min-w-0 max-w-full items-center gap-1 text-[11px] text-fg-muted"
+                title={modelDetails ?? 'OpenCode did not provide this subagent’s model.'}
+                aria-label={`Model: ${modelLabel ?? 'unavailable'}`}
+              >
+                <Cpu aria-hidden="true" className="h-3 w-3 shrink-0" />
+                <span className="truncate">{modelLabel ?? 'Model unavailable'}</span>
+              </span>
+            )}
           </span>
+          {!open && info.task && <span className="mt-1 block truncate text-[12px] text-fg-subtle">{info.task.replace(/\s+/g, ' ')}</span>}
         </span>
         {hasMore && (
           <ChevronRight className={cn('mt-1 h-3.5 w-3.5 shrink-0 text-fg-subtle transition-transform', open && 'rotate-90')} />
@@ -117,7 +130,7 @@ function SubagentCard({ part }: { part: ToolPart }): JSX.Element {
 }
 
 /** Subagents started together, shown as one block with a count. */
-export function SubagentGroup({ parts }: { parts: ToolPart[] }): JSX.Element {
+export function SubagentGroup({ parts, models = [] }: { parts: ToolPart[]; models?: readonly ChatModel[] }): JSX.Element {
   const states = parts.map((part) => subagentInfo(part).state)
   const running = states.filter((state) => state === 'running' || state === 'starting').length
   const label = parts.length === 1 ? 'Subagent' : `${parts.length} subagents`
@@ -130,7 +143,7 @@ export function SubagentGroup({ parts }: { parts: ToolPart[] }): JSX.Element {
         {label}
         {status && <span className="font-normal normal-case tracking-normal"> · {status}</span>}
       </p>
-      {parts.map((part) => <SubagentCard key={part.id} part={part} />)}
+      {parts.map((part) => <SubagentCard key={part.id} part={part} models={models} />)}
     </div>
   )
 }

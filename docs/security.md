@@ -241,8 +241,13 @@ the validated `chat:*` channels.
   request times out after 30 seconds.
 - **Responses.** Every response and event is parsed into MDE's own types; unknown
   fields are dropped, tool input and output are cut at 64 KB, and control
-  characters are stripped. Events for sessions the Inbox does not already hold
-  are ignored; the exception is an MCP server change (`mcp.status.changed`, `mcp.tools.changed`), which
+  characters are stripped. Subagent model labels use validated child session IDs from the parent
+  conversation's tool metadata or result/error wrapper. Main reads the child session from the same
+  service, verifies its ID and parent ID, and forwards only its selected model. These optional reads
+  time out after two seconds and run at most four at once. Model and agent selection events for a
+  verified child refresh its subscribed parent; no child transcript is read or recorded.
+  Other events for sessions the Inbox does not already hold
+  are ignored; another exception is an MCP server change (`mcp.status.changed`, `mcp.tools.changed`), which
   names no session and only tells the renderer to read the server list again. Assistant replies and reasoning share the read-only Markdown renderer:
   only registered schema nodes and attributes are rendered, with no arbitrary HTML,
   scripts, embedded frames or remote images. Links open only for HTTP(S) URLs and

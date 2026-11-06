@@ -1,6 +1,6 @@
 import { memo, useContext, useMemo, useState } from 'react'
 import { AlertTriangle, BookOpen, Brain, ChevronRight, FoldVertical, GitFork, Info, LoaderCircle, Target, Undo2, Wrench } from 'lucide-react'
-import type { ChatMessage, ChatPart } from '@shared/types'
+import type { ChatMessage, ChatModel, ChatPart } from '@shared/types'
 import { FileChangeView } from '@/components/inbox/ChatFileChange'
 import { McpCallView } from '@/components/inbox/ChatMcpCall'
 import { ChatMarkdown } from '@/components/inbox/ChatMarkdown'
@@ -195,11 +195,13 @@ const MESSAGE_ACTION =
 export const ChatMessageView = memo(function ChatMessageView({
   message,
   directory,
+  models,
   onRevert,
   onFork,
 }: {
   message: ChatMessage
   directory: string
+  models?: readonly ChatModel[]
   /** Offered on the user's own messages: asks to revert the conversation to just before this one. */
   onRevert?: (message: Extract<ChatMessage, { kind: 'user' }>) => void
   /** Offered on the user's own messages: starts a new thread from just before this message. */
@@ -321,7 +323,7 @@ export const ChatMessageView = memo(function ChatMessageView({
   return (
     <div className="flex min-w-0 flex-col gap-1.5" data-testid={`chat-message-${message.id}`} data-chat-message={message.id}>
       {messageBlocks(message.parts).map((block) => {
-        if (block.kind === 'subagents') return <SubagentGroup key={`subagents-${block.index}`} parts={block.parts} />
+        if (block.kind === 'subagents') return <SubagentGroup key={`subagents-${block.index}`} parts={block.parts} models={models} />
         const { part, index } = block
         if (part.kind === 'text') return part.text.trim() ? <ChatMarkdown key={index} text={part.text} /> : null
         if (part.kind === 'reasoning') {

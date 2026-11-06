@@ -679,6 +679,84 @@ describe('Inbox chat service', () => {
     service.stop()
   })
 
+  describe('subagent models', () => {
+    const message = {
+      id: 'msg_agents', type: 'assistant', agent: 'build', model: { id: 'parent-model', providerID: 'provider-1' },
+      content: ['call_a', 'call_b'].map((id) => ({
+        type: 'tool', id, name: 'subagent',
+        state: { status: 'running', input: { agent: 'explore' }, metadata: { sessionID: 'ses_child' } },
+      })),
+    }
+    const start = async () => {
+      const context = setup({
+        'session.create': { data: { id: 'ses_new' } },
+        'session.message.list': { data: [message] },
+        'session.active': { data: {} },
+      })
+      await context.service.create({ folderId: context.folder.id, text: 'Hi', agent: 'build', model })
+      return context
+    }
+    const parts = (page: Awaited<ReturnType<InboxChatService['messages']>>) => page.messages.flatMap((entry) => entry.kind === 'assistant' ? entry.parts : [])
+
+    it('reads the child model and variant once per page, and refreshes after a model switch', async () => {
+      const { service, request, events, store } = await start()
+      const previous = request.getMockImplementation()!
+      let selected = { id: 'child-model', providerID: 'provider-2', variant: 'high' }
+      request.mockImplementation(async (target, operation, input) => {
+        if (operation === 'session.get' && input?.params?.sessionID === 'ses_child') {
+          return { data: { id: 'ses_child', parentID: 'ses_new', model: selected } }
+        }
+        return previous(target, operation, input)
+      })
+      service.subscribe('ses_new')
+      const child = { sessionId: 'ses_child', model: { id: 'child-model', providerId: 'provider-2', variant: 'high' } }
+      expect(parts(await service.messages({ threadId: 'ses_new' }))).toEqual([
+        expect.objectContaining({ subagent: child }), expect.objectContaining({ subagent: child }),
+      ])
+      const childReads = request.mock.calls.filter(([, operation, input]) => operation === 'session.get' && input?.params?.sessionID === 'ses_child')
+      expect(childReads).toHaveLength(1)
+      expect(childReads[0]?.[2]?.timeoutMs).toBe(2_000)
+      expect(store.get('ses_child')).toBeUndefined()
+      const emit = (target = wsl) => (service as unknown as { onEvent(event: { type: string; data: Record<string, unknown> }, target: typeof wsl): void })
+        .onEvent({ type: 'session.model.selected', data: { sessionID: 'ses_child' } }, target)
+      emit({ kind: 'wsl', distro: 'Other' })
+      expect(events).toEqual([])
+      selected = { ...selected, id: 'different-model' }
+      emit()
+      expect(events).toEqual([{ type: 'messages', threadId: 'ses_new' }])
+      expect(parts(await service.messages({ threadId: 'ses_new', cursor: 'older-1' }))[0])
+        .toMatchObject({ subagent: { model: { id: 'different-model' } } })
+      service.unsubscribe('ses_new')
+      events.length = 0
+      emit()
+      expect(events).toEqual([])
+      service.stop()
+    })
+
+    it.each([
+      new Error('Child session unavailable'),
+      null,
+      { data: { id: 'ses_child', parentID: 'ses_other', model: { id: 'wrong', providerID: 'p' } } },
+      { data: { id: 'ses_other', parentID: 'ses_new', model: { id: 'wrong', providerID: 'p' } } },
+      { data: { id: 'ses_child', parentID: 'ses_new', model: { id: 'malformed' } } },
+    ])('keeps the conversation when the child cannot supply a confirmed model (%j)', async (answer) => {
+      const { service, request } = await start()
+      const previous = request.getMockImplementation()!
+      request.mockImplementation(async (target, operation, input) => {
+        if (operation === 'session.get' && input?.params?.sessionID === 'ses_child') {
+          if (answer instanceof Error) throw answer
+          return answer
+        }
+        return previous(target, operation, input)
+      })
+      const page = await service.messages({ threadId: 'ses_new' })
+      expect(parts(page)).toHaveLength(2)
+      expect(parts(page)[0]).toMatchObject({ subagent: { sessionId: 'ses_child' } })
+      expect(parts(page)[0]).not.toHaveProperty('subagent.model')
+      service.stop()
+    })
+  })
+
   it('adds the thread totals to the newest page only, and still loads without them', async () => {
     const totals = { cost: 0.42, tokens: { input: 1200, output: 300, reasoning: 50, cache: { read: 9000, write: 100 } } }
     const withTotals = setup({

@@ -927,7 +927,7 @@ describe('Inbox conversation', () => {
         kind: 'assistant', id: 'msg_2', time: 2, agent: 'build', model: options.defaultModel!, completed: false,
         parts: [
           { kind: 'text', text: 'Launching two subagents.' },
-          { kind: 'tool', id: 'call_a', name: 'subagent', status: 'running', input: input('structure') },
+          { kind: 'tool', id: 'call_a', name: 'subagent', status: 'running', input: input('structure'), subagent: { sessionId: 'ses_a', model: { ...options.defaultModel!, variant: 'high' } } },
           { kind: 'tool', id: 'call_b', name: 'subagent', status: 'completed', input: input('logic'), output: '<subagent sessionID="ses_c" state="completed">\nThe **core** loop is in `main.ts`.\n</subagent>' },
         ],
       }],
@@ -940,6 +940,11 @@ describe('Inbox conversation', () => {
     expect(running.textContent).toContain('structure')
     expect(running.textContent).toContain('Working')
     expect(running.textContent).not.toContain('"agent"')
+    const model = running.querySelector('[aria-label="Model: Flint Free · high"]')!
+    expect(model.textContent).toBe('Flint Free · high')
+    expect(model.getAttribute('title')).toBe('opencode/free-1#high')
+    await act(async () => running.querySelector('button')!.click())
+    expect(running.textContent).toContain('Flint Free · high')
     const done = view.querySelector<HTMLElement>('[data-testid="chat-subagent-call_b"]')!
     expect(done.textContent).toContain('Done')
     expect(done.textContent).not.toContain('core loop')
@@ -947,6 +952,27 @@ describe('Inbox conversation', () => {
     expect(done.textContent).toContain('Do not edit files.')
     await vi.waitFor(() => expect(done.textContent).toContain('The core loop is in main.ts.'))
     expect(done.textContent).not.toContain('sessionID')
+  })
+
+  it('shows raw model IDs when unlisted and leaves unavailable subagent models explicit', async () => {
+    page = {
+      running: true, older: null,
+      messages: [{
+        kind: 'assistant', id: 'msg_2', time: 2, agent: 'build', model: options.defaultModel!, completed: false,
+        parts: [
+          { kind: 'tool', id: 'call_known', name: 'subagent', status: 'running', input: '{}', subagent: { sessionId: 'ses_child', model: { id: 'custom-model', providerId: 'custom' } } },
+          { kind: 'tool', id: 'call_unknown', name: 'subagent', status: 'running', input: '{}', subagent: { sessionId: 'ses_unknown' } },
+          { kind: 'tool', id: 'call_starting', name: 'subagent', status: 'pending', input: '' },
+        ],
+      }],
+    }
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[aria-label="Model: custom-model"]')).not.toBeNull())
+    expect(view.querySelector('[aria-label="Model: custom-model"]')?.getAttribute('title')).toBe('custom/custom-model')
+    const unknown = view.querySelector('[data-testid="chat-subagent-call_unknown"]')!
+    expect(unknown.textContent).toContain('Model unavailable')
+    expect(unknown.textContent).not.toContain('Flint Free')
+    expect(view.querySelector('[data-testid="chat-subagent-call_starting"]')?.textContent).not.toContain('Model unavailable')
   })
 
   it('stops a running thread and sends follow-ups with a changed agent only', async () => {

@@ -65,6 +65,10 @@ opened threads); MDE does not write them to disk. Prompts and answers you send g
 which stores them in OpenCode's own data and forwards them to the model provider you chose, as
 OpenCode does in a terminal.
 
+Subagent cards also read the selected model and variant from their child sessions through the same
+local service. These details stay in memory; MDE does not read the child conversation's messages
+or make a model-provider request to show the label.
+
 The message box's `$` list is filled from the service's list of skills for the folder (their names
 and one-line descriptions only; MDE drops each skill's text and file path) and is kept in memory for
 about a minute. When you send a message that names a skill, MDE tells the service which skill, and the

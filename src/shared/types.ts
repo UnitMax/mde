@@ -396,6 +396,8 @@ export type ChatPart =
       truncated?: boolean
       /** The tools a Code Mode script (`execute`) called, in order. */
       calls?: ChatToolCall[]
+      /** The child session reported by a subagent call, with its selected model when available. */
+      subagent?: { sessionId: string; model?: OpenCodeModelRef }
       /** How long the tool ran, in milliseconds, once it has finished. */
       durationMs?: number
       /** What an edit changed, once the tool has finished. */

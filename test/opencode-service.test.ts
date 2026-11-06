@@ -698,6 +698,27 @@ describe('OpenCode service parsing', () => {
     expect(tool?.kind === 'tool' && tool.output?.includes('\u001b')).toBe(false)
   })
 
+  it('reads validated child session IDs only from subagent metadata, results and errors', () => {
+    const tool = (name: string, state: Record<string, unknown>) => {
+      const message = parseMessage({
+        id: 'msg_1', type: 'assistant', agent: 'build', model: { id: 'm', providerID: 'p' },
+        content: [{ type: 'tool', id: 'call_1', name, state: { status: 'running', input: {}, ...state } }],
+      })
+      return message?.kind === 'assistant' ? message.parts[0] : null
+    }
+    expect(tool('subagent', { metadata: { sessionID: 'ses_child', secret: 'not forwarded' } }))
+      .toMatchObject({ subagent: { sessionId: 'ses_child' } })
+    expect(tool('subagent', { status: 'completed', content: [{ type: 'text', text: '<subagent sessionID="ses_child" state="completed">Done</subagent>' }] }))
+      .toMatchObject({ subagent: { sessionId: 'ses_child' } })
+    expect(tool('subagent', { status: 'error', error: { message: 'Subagent failed (sessionID: ses_child): no credits' } }))
+      .toMatchObject({ subagent: { sessionId: 'ses_child' } })
+    for (const sessionID of ['../ses_child', 'ses_bad/path', 'ses_', 123, null]) {
+      expect(tool('subagent', { metadata: { sessionID } })).not.toHaveProperty('subagent')
+    }
+    expect(tool('shell', { metadata: { sessionID: 'ses_child' } })).not.toHaveProperty('subagent')
+    expect(tool('subagent', {})).not.toHaveProperty('subagent')
+  })
+
   describe('file changes', () => {
     const patch = [
       'Index: /home/me/app/src/a.ts', '='.repeat(67), '--- /home/me/app/src/a.ts', '+++ /home/me/app/src/a.ts',
