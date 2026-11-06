@@ -8,8 +8,10 @@ import type {
 vi.mock('../src/renderer/terminal/sessions', () => ({ disposeSession: vi.fn() }))
 
 import { useWorkspace } from '../src/renderer/store/workspace'
+import { getWorkspaceNavigation, WORKSPACE_NAVIGATION_STORAGE_KEY } from '../src/renderer/lib/workspace-navigation'
 
 describe('renderer workspace event bridge', () => {
+  const navigationStorage = new Map<string, string>()
   const directoryListeners: Array<(update: { terminalId: string; directory: string | null }) => void> = []
   const windowModeListeners: Array<(mode: 'normal' | 'mini') => void> = []
   const inboxListeners: Array<(thread: InboxThread) => void> = []
@@ -91,7 +93,13 @@ describe('renderer workspace event bridge', () => {
     directoryListeners.length = 0
     windowModeListeners.length = 0
     vi.stubGlobal('window', { api })
+    navigationStorage.clear()
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => navigationStorage.get(key) ?? null,
+      setItem: (key: string, value: string) => navigationStorage.set(key, value),
+    })
     useWorkspace.setState({
+      ready: false,
       inboxTerminalHighlights: {},
       sessions: [],
       todoProjects: [],
@@ -496,6 +504,62 @@ describe('renderer workspace event bridge', () => {
     archived: false,
     folderId: 'fld_app',
     ...overrides
+  })
+
+  describe('remembered navigation', () => {
+    it.each(['sessions', 'todo', 'inbox'] as const)('restores the %s tab after startup', async (view) => {
+      navigationStorage.set(WORKSPACE_NAVIGATION_STORAGE_KEY, JSON.stringify({ view, selectedInboxThreadId: null }))
+      await useWorkspace.getState().init()
+      expect(useWorkspace.getState().activeWorkspaceView).toBe(view)
+      expect(useWorkspace.getState().selectedInboxThreadId).toBeNull()
+    })
+
+    it('remembers the selected thread across tab changes and a restart', async () => {
+      api.inbox.list.mockResolvedValueOnce([inboxThread()])
+      await useWorkspace.getState().init()
+      useWorkspace.getState().selectInboxThread('ses_one')
+      expect(getWorkspaceNavigation()).toEqual({ view: 'inbox', selectedInboxThreadId: 'ses_one' })
+      useWorkspace.getState().setWorkspaceView('todo')
+      expect(getWorkspaceNavigation()).toEqual({ view: 'todo', selectedInboxThreadId: 'ses_one' })
+      useWorkspace.getState().setWorkspaceView('inbox')
+      useWorkspace.setState({ ready: false, activeWorkspaceView: 'sessions', selectedInboxThreadId: null, inboxThreads: [] })
+      api.inbox.list.mockResolvedValueOnce([inboxThread()])
+      await useWorkspace.getState().init()
+      expect(useWorkspace.getState()).toMatchObject({ activeWorkspaceView: 'inbox', selectedInboxThreadId: 'ses_one' })
+    })
+
+    it('keeps the Inbox tab with no selection when the saved thread no longer exists', async () => {
+      navigationStorage.set(WORKSPACE_NAVIGATION_STORAGE_KEY, JSON.stringify({ view: 'inbox', selectedInboxThreadId: 'ses_deleted' }))
+      api.inbox.list.mockResolvedValueOnce([inboxThread()])
+      await useWorkspace.getState().init()
+      expect(useWorkspace.getState()).toMatchObject({ activeWorkspaceView: 'inbox', selectedInboxThreadId: null })
+      expect(getWorkspaceNavigation()).toEqual({ view: 'inbox', selectedInboxThreadId: null })
+    })
+
+    it('can restore a thread that arrived as a push while startup was loading', async () => {
+      navigationStorage.set(WORKSPACE_NAVIGATION_STORAGE_KEY, JSON.stringify({ view: 'inbox', selectedInboxThreadId: 'ses_pushed' }))
+      useWorkspace.getState().upsertInboxThread(inboxThread({ id: 'ses_pushed' }))
+      await useWorkspace.getState().init()
+      expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_pushed')
+    })
+
+    it('remembers opening the new-thread page and deleting the selected thread', async () => {
+      api.inbox.list.mockResolvedValueOnce([inboxThread()])
+      await useWorkspace.getState().init()
+      useWorkspace.getState().selectInboxThread('ses_one')
+      useWorkspace.getState().selectInboxThread(null)
+      expect(getWorkspaceNavigation()).toEqual({ view: 'inbox', selectedInboxThreadId: null })
+      useWorkspace.getState().selectInboxThread('ses_one')
+      await useWorkspace.getState().removeInboxThread('ses_one')
+      expect(getWorkspaceNavigation()).toEqual({ view: 'inbox', selectedInboxThreadId: null })
+    })
+
+    it('saves implicit tab changes when a session is selected', async () => {
+      await useWorkspace.getState().init()
+      useWorkspace.getState().setWorkspaceView('inbox')
+      useWorkspace.getState().selectSession('session-1')
+      expect(getWorkspaceNavigation().view).toBe('sessions')
+    })
   })
 
   it('loads the inbox at startup, keeping pushes that arrived first', async () => {

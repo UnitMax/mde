@@ -22,6 +22,7 @@ import { disposeSession } from '@/terminal/sessions'
 import { inboxThreadTerminalId } from '@shared/inbox-thread-terminal'
 import { viewportSettle } from '@/terminal/viewport-settle'
 import { isInboxThreadUnread } from '@/lib/inbox'
+import { getWorkspaceNavigation, saveWorkspaceNavigation, type WorkspaceView } from '@/lib/workspace-navigation'
 import {
   inboxTerminalHighlightTone,
   type InboxTerminalHighlight,
@@ -29,7 +30,7 @@ import {
 
 let eventBridgeReady = false
 
-export type WorkspaceView = 'sessions' | 'todo' | 'inbox'
+export type { WorkspaceView } from '@/lib/workspace-navigation'
 
 export type SettingsSection =
   | 'appearance'
@@ -207,6 +208,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     ])
 
     const { todoProjects, todoTasks, sessions } = workspace as WorkspaceData
+    const navigation = getWorkspaceNavigation()
+    // Pushes that arrived during startup are newer than the listed snapshot.
+    const currentInboxThreads = get().inboxThreads.reduce(withInboxThread, sortInboxThreads(inboxThreads))
     set({
       platform,
       windowMode,
@@ -217,12 +221,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       // The event bridge may receive a report while these startup requests
       // are in flight. Preserve that newer event over the initial snapshot.
       terminalDirectories: { ...directories, ...get().terminalDirectories },
-      // Pushes that arrived during startup are newer than the listed snapshot.
-      inboxThreads: get().inboxThreads.reduce(withInboxThread, sortInboxThreads(inboxThreads)),
+      inboxThreads: currentInboxThreads,
       wslAvailable,
       selectedSessionId: null,
       selectedTodoProjectId: todoProjects[0]?.id ?? null,
-      activeWorkspaceView: 'sessions',
+      activeWorkspaceView: navigation.view,
+      selectedInboxThreadId: currentInboxThreads.some((thread) => thread.id === navigation.selectedInboxThreadId)
+        ? navigation.selectedInboxThreadId
+        : null,
       ready: true
     })
 
@@ -595,4 +601,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 // finished growing back. Their sizing waits for the viewport to stop changing.
 useWorkspace.subscribe((state, previous) => {
   if (previous.windowMode === 'mini' && state.windowMode === 'normal') viewportSettle.begin()
+  if (state.ready && (
+    !previous.ready ||
+    state.activeWorkspaceView !== previous.activeWorkspaceView ||
+    state.selectedInboxThreadId !== previous.selectedInboxThreadId
+  )) {
+    saveWorkspaceNavigation({ view: state.activeWorkspaceView, selectedInboxThreadId: state.selectedInboxThreadId })
+  }
 })

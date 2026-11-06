@@ -23,6 +23,9 @@ MDE stores data only on the local machine:
   Claude launchers. Any secret typed into an argument string is stored there in plain text.
 - The renderer's local storage (`mde.markdown-preview-width`): whether the Markdown preview is a
   centered column or fills the page (the word `centered` or `full`).
+- The renderer's local storage (`mde.workspace-navigation`): the last active tab (Sessions, To Do
+  or Inbox) and the selected Inbox thread's session ID, or `null` for the new-thread page. MDE
+  restores this view on startup and opens the saved thread only if it is still in the Inbox.
 - The renderer's local storage (`mde.inbox-sidebar-changes`): whether the Inbox's thread list shows
   each thread's Git changes (the word `on` or `off`).
 - The renderer's local storage (`mde.inbox-working-section` and `mde.inbox-working-collapsed`):

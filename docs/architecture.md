@@ -84,6 +84,14 @@ are normalized to a single `Tab 1` on load. Older preset layouts reset to one pa
 identities and selection are retained; no layout migration is provided. Terminal and agent-command
 preferences live in the renderer's `localStorage` instead (`mde.terminal-settings`).
 
+The last active top-level tab (Sessions, To Do or Inbox) and selected Inbox thread ID are saved
+in the renderer's `localStorage` (`mde.workspace-navigation`) whenever navigation changes after
+startup. Initialization restores the tab after loading the workspace and Inbox, and restores the
+thread only when it exists in the loaded Inbox (including newer thread events received during
+startup). A missing thread opens the Inbox's new-thread page; that page's empty selection is also
+remembered. Missing, malformed or unavailable storage defaults to Sessions. No existing workspace
+or Inbox records are changed to store this preference.
+
 Keyboard shortcuts are listed in the app under Settings → Keyboard Shortcuts; that list is defined
 in `src/renderer/terminal/keyboard-shortcuts.ts`.
 
