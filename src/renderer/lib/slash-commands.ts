@@ -1,3 +1,4 @@
+import { goalKeyword, goalObjectiveProblem, type GoalKeyword } from '@shared/goal'
 import { describes } from '@/lib/skills'
 
 /**
@@ -90,6 +91,8 @@ export interface SlashActions {
   fork: () => void | Promise<void>
   /** Compacts the conversation: it is summarized to free up context. */
   compact: () => void | Promise<void>
+  /** Sets the thread's goal, or pauses, resumes or clears it. */
+  goal: (change: { action: 'set'; objective: string } | { action: GoalKeyword }) => void | Promise<void>
 }
 
 /** Every command of the Inbox message box. A new one is another entry here, with what it needs added to {@link SlashActions}. */
@@ -111,6 +114,18 @@ export function slashCommands(actions: SlashActions): SlashCommand[] {
       aliases: ['summarize'],
       description: 'Compact the conversation. It is summarized to free up context.',
       run: () => actions.compact(),
+    },
+    {
+      name: 'goal',
+      description: 'Keep working until an objective is met. “/goal pause”, “resume” and “clear” manage the goal.',
+      argument: { hint: 'an objective', required: true },
+      run: (args) => {
+        const keyword = goalKeyword(args)
+        if (keyword) return actions.goal({ action: keyword })
+        const problem = goalObjectiveProblem(args)
+        if (problem) throw new Error(problem)
+        return actions.goal({ action: 'set', objective: args.trim() })
+      },
     },
   ]
 }

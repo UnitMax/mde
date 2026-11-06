@@ -3,6 +3,8 @@ import type {
   ChatEvent,
   ChatCreateRequest,
   ChatFormValue,
+  ChatGoal,
+  ChatGoalRequest,
   ChatMessage,
   ChatOptions,
   ChatDelivery,
@@ -50,6 +52,8 @@ export interface ChatThreadState {
   pending: ChatPendingMessage[]
   /** Whether OpenCode holds a compaction until the agent is done. Kept when a refetch cannot say. */
   compactionHeld: boolean
+  /** The thread's goal (`/goal`), or null for none. Kept up to date by the service's goal events. */
+  goal: ChatGoal | null
 }
 
 export type OptionsState =
@@ -76,6 +80,7 @@ const emptyThread = (): ChatThreadState => ({
   notice: null,
   pending: [],
   compactionHeld: false,
+  goal: null,
 })
 
 /** Keeps the newest page when a refetch arrives: earlier pages stay loaded. */
@@ -155,10 +160,20 @@ interface InboxChatStore {
    * rejection means the request was not taken; the work failing shows up as a note in the conversation.
    */
   compactThread: (threadId: string) => Promise<void>
+  /** Reads the thread's goal from OpenCode. A failed read leaves what is shown; the service's goal events keep it current. */
+  refreshGoal: (threadId: string) => Promise<void>
+  /**
+   * Sets the thread's goal, or pauses, resumes or clears it. The new state arrives as a goal event. A rejection
+   * carries OpenCode's reason (there is no goal to pause, say) and means nothing changed.
+   */
+  setGoal: (threadId: string, request: DistributiveOmit<ChatGoalRequest, 'threadId'>) => Promise<void>
   replyPermission: (threadId: string, requestId: string, decision: 'once' | 'always' | 'reject') => Promise<void>
   replyForm: (threadId: string, formId: string, answer: Record<string, ChatFormValue>) => Promise<void>
   applyEvent: (event: ChatEvent) => void
 }
+
+/** `Omit` that keeps the members of a union apart. */
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
 
 export function optionsKey(key: { folderId: string } | { threadId: string }): string {
   return 'folderId' in key ? `folder:${key.folderId}` : `thread:${key.threadId}`
@@ -178,6 +193,8 @@ const refreshing = new Map<string, Promise<void>>()
 const pendingChangedAt = new Map<string, number>()
 /** Held messages whose way of delivery is being changed; a second change waits for the first to be answered. */
 const switchingDelivery = new Set<string>()
+/** When a thread's goal was last told by an event or changed from here: a read that began earlier cannot know of it. */
+const goalChangedAt = new Map<string, number>()
 
 export const useInboxChat = create<InboxChatStore>((set, get) => {
   const patchThread = (threadId: string, patch: Partial<ChatThreadState> | ((thread: ChatThreadState) => Partial<ChatThreadState>)): void => {
@@ -320,6 +337,7 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
       quietly(() => window.api.chat.subscribe({ threadId }))
       void get().refresh(threadId)
       void get().refreshRequests(threadId)
+      void get().refreshGoal(threadId)
       return () => {
         quietly(() => window.api.chat.unsubscribe({ threadId }))
       }
@@ -535,6 +553,32 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
       void get().refresh(threadId)
     },
 
+    refreshGoal: async (threadId) => {
+      const startedAt = Date.now()
+      try {
+        const goal = await window.api.chat.goal({ threadId })
+        // An event, or a change made from here, since this read began is newer than what it found.
+        if ((goalChangedAt.get(threadId) ?? 0) >= startedAt) return
+        patchThread(threadId, { goal })
+      } catch {
+        // The card on screen stays; the next event or the next time the thread is opened reads it again.
+      }
+    },
+
+    setGoal: async (threadId, request) => {
+      await window.api.chat.setGoal({ threadId, ...request } as ChatGoalRequest)
+      if (request.action === 'set') {
+        set((state) => ({
+          composer: { ...state.composer, ...(request.agent ? { agent: request.agent } : {}), ...(request.model ? { model: request.model } : {}) },
+        }))
+      }
+      // Setting or resuming a goal starts the agent; the events say so too, but not before this returns.
+      if (request.action === 'set' || request.action === 'resume') patchThread(threadId, { running: true, notice: null })
+      scheduleRefresh(threadId)
+      // The goal event normally told the new state already; reading it again covers a stream that was not up.
+      void get().refreshGoal(threadId)
+    },
+
     replyPermission: async (threadId, requestId, decision) => {
       await window.api.chat.replyPermission({ threadId, requestId, decision })
       patchThread(threadId, (thread) => ({
@@ -571,9 +615,14 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
           scheduleRefresh(event.threadId)
           if (!event.running) void get().refreshRequests(event.threadId)
           return
+        case 'goal':
+          goalChangedAt.set(event.threadId, Date.now())
+          patchThread(event.threadId, { goal: event.goal })
+          return
         case 'reconnected':
           scheduleRefresh(event.threadId)
           void get().refreshRequests(event.threadId)
+          void get().refreshGoal(event.threadId)
       }
     },
   }

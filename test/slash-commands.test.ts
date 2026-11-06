@@ -142,12 +142,18 @@ describe('parseInvocation', () => {
 })
 
 describe('the Inbox commands', () => {
-  const actions = () => ({ ask: vi.fn(async (_question: string) => undefined), fork: vi.fn(async () => undefined), compact: vi.fn(async () => undefined) })
+  type GoalChange = Parameters<Parameters<typeof slashCommands>[0]['goal']>[0]
+  const actions = () => ({
+    ask: vi.fn(async (_question: string) => undefined),
+    fork: vi.fn(async () => undefined),
+    compact: vi.fn(async () => undefined),
+    goal: vi.fn(async (_change: GoalChange) => undefined),
+  })
   const named = (name: string, list: SlashCommand[]): SlashCommand => list.find((command) => command.name === name)!
 
   it('has /btw, which takes a question and asks it', async () => {
-    const { ask, fork, compact } = actions()
-    const command = named('btw', slashCommands({ ask, fork, compact }))
+    const { ask, fork, compact, goal } = actions()
+    const command = named('btw', slashCommands({ ask, fork, compact, goal }))
     expect(command).toMatchObject({ name: 'btw', argument: { required: true } })
     expect(command.description).toMatch(/side question/)
     await command.run('why SQLite?')
@@ -157,8 +163,8 @@ describe('the Inbox commands', () => {
   })
 
   it('has /fork, which takes nothing and forks the whole conversation', async () => {
-    const { ask, fork, compact } = actions()
-    const command = named('fork', slashCommands({ ask, fork, compact }))
+    const { ask, fork, compact, goal } = actions()
+    const command = named('fork', slashCommands({ ask, fork, compact, goal }))
     expect(command.argument).toBeUndefined()
     expect(command.description).toMatch(/fork/i)
     await command.run('')
@@ -169,8 +175,8 @@ describe('the Inbox commands', () => {
   })
 
   it('has /compact, which takes nothing, answers to /summarize too and compacts the conversation', async () => {
-    const { ask, fork, compact } = actions()
-    const list = slashCommands({ ask, fork, compact })
+    const { ask, fork, compact, goal } = actions()
+    const list = slashCommands({ ask, fork, compact, goal })
     const command = named('compact', list)
     expect(command.argument).toBeUndefined()
     expect(command.aliases).toEqual(['summarize'])
@@ -194,9 +200,52 @@ describe('the Inbox commands', () => {
     await expect(command.run('')).rejects.toThrow('No service.')
   })
 
-  it('lists /btw, /fork and /compact, and finds each by typing its name or a word of its description', () => {
+  it('has /goal, which takes an objective and sets it as the goal', async () => {
+    const { ask, fork, compact, goal } = actions()
+    const list = slashCommands({ ask, fork, compact, goal })
+    const command = named('goal', list)
+    expect(command).toMatchObject({ name: 'goal', argument: { hint: 'an objective', required: true } })
+    expect(command.description).toMatch(/objective/)
+    expect(parseInvocation(list, '/GOAL make the tests pass')).toMatchObject({ command, args: 'make the tests pass' })
+    await command.run('  Make the tests pass.\nThen the typecheck.  ')
+    expect(goal).toHaveBeenCalledWith({ action: 'set', objective: 'Make the tests pass.\nThen the typecheck.' })
+    expect(ask).not.toHaveBeenCalled()
+    expect(fork).not.toHaveBeenCalled()
+    expect(compact).not.toHaveBeenCalled()
+  })
+
+  it('reads pause, resume and clear after /goal as the actions, in any case and in quotes, as OpenCode does', async () => {
+    const { ask, fork, compact, goal } = actions()
+    const command = named('goal', slashCommands({ ask, fork, compact, goal }))
+    for (const [written, action] of [['pause', 'pause'], ['Resume', 'resume'], [' CLEAR ', 'clear'], ['"pause"', 'pause'], ['\u201Cclear\u201D', 'clear']] as const) {
+      goal.mockClear()
+      await command.run(written)
+      expect(goal).toHaveBeenCalledExactlyOnceWith({ action })
+    }
+    // More words are an objective, as they are to OpenCode.
+    goal.mockClear()
+    await command.run('pause the deploy until QA signs off')
+    expect(goal).toHaveBeenCalledExactlyOnceWith({ action: 'set', objective: 'pause the deploy until QA signs off' })
+  })
+
+  it('refuses an objective OpenCode would refuse, before asking, and gives the reason back to the box', () => {
+    const { ask, fork, compact, goal } = actions()
+    const command = named('goal', slashCommands({ ask, fork, compact, goal }))
+    expect(() => command.run('x'.repeat(4001))).toThrow(/at most 4,000 characters/)
+    expect(() => command.run('   ')).toThrow('Say what the goal is.')
+    expect(goal).not.toHaveBeenCalled()
+  })
+
+  it('gives a failed goal change back to the box, which shows OpenCode\'s reason', async () => {
+    const command = named('goal', slashCommands({ ...actions(), goal: async () => { throw new Error('No active goal to pause.') } }))
+    await expect(command.run('pause')).rejects.toThrow('No active goal to pause.')
+  })
+
+  it('lists /btw, /fork, /compact and /goal, and finds each by typing its name or a word of its description', () => {
     const list = slashCommands(actions())
-    expect(list.map((command) => command.name)).toEqual(['btw', 'fork', 'compact'])
+    expect(list.map((command) => command.name)).toEqual(['btw', 'fork', 'compact', 'goal'])
+    expect(filterCommands(list, 'go').map((command) => command.name)).toEqual(['goal'])
+    expect(filterCommands(list, 'objective').map((command) => command.name)).toEqual(['goal'])
     expect(filterCommands(list, 'comp').map((command) => command.name)).toEqual(['compact'])
     expect(filterCommands(list, 'sum').map((command) => command.name)).toEqual(['compact'])
     expect(filterCommands(list, 'for').map((command) => command.name)).toEqual(['fork'])

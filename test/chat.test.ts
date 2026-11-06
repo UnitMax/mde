@@ -387,6 +387,50 @@ describe('turn stats', () => {
     expect(turnStats([]).finished.size).toBe(0)
   })
 
+  describe('goals', () => {
+    const goalNote = (id: string, time: number, goal: 'set' | 'resume' | 'continue'): ChatMessage => ({
+      kind: 'note', id, time, tone: 'info', text: 'Goal', goal,
+    })
+    const DAY = 86_400_000
+
+    it('times a goal from when it was set, not from the user message a day before it', () => {
+      // The shape of a real thread: a prompt, a day of nothing, then /goal, whose start is not a user message.
+      const stats = turnStats([
+        user('u1', 1_000), step('a1', 1_010, 10_000),
+        goalNote('g1', DAY + 1_000, 'set'), step('a2', DAY + 1_010, DAY + 56_000),
+      ])
+      expect(took(stats)).toEqual([['a1', 9_000], ['a2', 55_000]])
+      expect(stats.openSince).toBeNull()
+    })
+
+    it('gives each round its own time, leaving out the reviewer\'s time between rounds', () => {
+      const stats = turnStats([
+        goalNote('g1', 10_000, 'set'), step('a1', 10_010, 40_000),
+        // The reviewer takes 150 s, then asks the agent to go on.
+        goalNote('g2', 190_000, 'continue'), step('a2', 190_010, 205_000),
+        goalNote('g3', 400_000, 'resume'), step('a3', 400_010, 402_000),
+      ])
+      expect(took(stats)).toEqual([['a1', 30_000], ['a2', 15_000], ['a3', 2_000]])
+    })
+
+    it('says when the round in progress began, including before its first step', () => {
+      const working = turnStats([user('u1', 1_000), step('a1', 1_010, 5_000), goalNote('g1', 9_000, 'set'), step('a2', 9_010)])
+      expect(took(working)).toEqual([['a1', 4_000]])
+      expect(working.openSince).toBe(9_000)
+
+      const justSet = turnStats([user('u1', 1_000), step('a1', 1_010, 5_000), goalNote('g1', 9_000, 'set')])
+      expect(took(justSet)).toEqual([['a1', 4_000]])
+      expect(justSet.openSince).toBe(9_000)
+    })
+
+    it('does not time a goal note that has no time, and leaves other notes alone', () => {
+      expect(turnStats([goalNote('g1', 0, 'set'), step('a1', 10, 5_000)]).finished.size).toBe(0)
+      // A note that is not about a goal does not start a turn.
+      expect(took(turnStats([user('u1', 1_000), step('a1', 1_010, 4_000), note('n1', 5_000, 'Switched model'), step('a2', 5_010, 8_000)])))
+        .toEqual([['a2', 7_000]])
+    })
+  })
+
   it('never reports a negative time', () => {
     expect(turnStats([user('u1', 9_000), step('a1', 9_010, 8_000)]).finished.get('a1')?.ms).toBe(0)
   })

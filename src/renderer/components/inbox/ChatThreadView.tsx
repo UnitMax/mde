@@ -3,6 +3,7 @@ import { AlertTriangle, FoldVertical, LoaderCircle, RefreshCw } from 'lucide-rea
 import type { ChatMessage, InboxThread, OpenCodeModelRef } from '@shared/types'
 import { ChatAside } from '@/components/inbox/ChatAside'
 import { ChatComposer, type ChatComposerHandle } from '@/components/inbox/ChatComposer'
+import { ChatGoalCard, type GoalAction } from '@/components/inbox/ChatGoalCard'
 import { McpChip } from '@/components/inbox/McpChip'
 import { McpServerNamesContext } from '@/components/inbox/mcp-context'
 import { ChatMessageView } from '@/components/inbox/ChatMessageView'
@@ -17,7 +18,7 @@ import { ChatTranscriptMenu } from '@/components/inbox/ChatTranscriptMenu'
 import { TurnDuration, WorkingFor } from '@/components/inbox/ChatTurnTime'
 import { scrollBehavior, TIMELINE_MIN_PROMPTS, timelineEntries } from '@/lib/chat-timeline'
 import { cn } from '@/lib/utils'
-import { compactionState, contextUsage, findModel, hideReverted, initialChoice, mergeLive, revertedMessageCount, turnStats } from '@/lib/chat'
+import { compactionState, contextUsage, findModel, goalPhase, hideReverted, initialChoice, mergeLive, revertedMessageCount, turnStats } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { mcpKey } from '@/lib/mcp'
 import { slashCommands } from '@/lib/slash-commands'
@@ -62,6 +63,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const revertTo = useInboxChat((store) => store.revert)
   const forkThread = useInboxChat((store) => store.forkThread)
   const compactThread = useInboxChat((store) => store.compactThread)
+  const setGoal = useInboxChat((store) => store.setGoal)
   const draftReload = useInboxChat((store) => store.draftReloads[thread.id])
   const clearDraftReload = useInboxChat((store) => store.clearDraftReload)
   const replyPermission = useInboxChat((store) => store.replyPermission)
@@ -207,6 +209,17 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
     scroller.scrollTo({ top: scroller.scrollHeight, behavior: scrollBehavior() })
   }, [])
 
+  // The cards above the box (a side question, the goal) take room from the conversation, and they change height as they
+  // go, so a conversation that is following its end keeps doing so when the room it has changes.
+  useEffect(() => {
+    const element = scrollRef.current
+    if (!element || typeof ResizeObserver === 'undefined') return undefined
+    const observer = new ResizeObserver(() => {
+      if (stickRef.current) element.scrollTop = element.scrollHeight
+    })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
   // The side question takes room from the conversation, so a conversation that is following its end keeps doing so.
   const asideId = aside?.id
   const asideStatus = aside?.status
@@ -249,9 +262,23 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
     compactAll().catch((error: unknown) => setCompactError(ipcErrorMessage(error, 'Could not compact the conversation.')))
   }, [compactAll])
   const compactMenu = useMemo(() => ({ state: compaction, onRun: compactFromMenu }), [compaction, compactFromMenu])
+  // The goal (`/goal`) is OpenCode's; the card above the box shows it and offers pause, resume and clear. A goal set from
+  // the box starts the agent with the agent and model the box shows, as a message would.
+  const goal = state?.goal ?? null
+  const asking = (requests?.permissions.length ?? 0) + (requests?.forms.length ?? 0) > 0
+  const phase = goalPhase(messages, { running, asking })
+  const changeGoal = useCallback((change: { action: 'set'; objective: string } | { action: GoalAction }): Promise<void> => {
+    if (change.action !== 'set') return setGoal(thread.id, { action: change.action })
+    return setGoal(thread.id, {
+      action: 'set',
+      objective: change.objective,
+      ...(agent && agent !== latest?.agent ? { agent } : {}),
+      ...(model && (model.id !== latest?.model.id || model.providerId !== latest?.model.providerId) ? { model } : {}),
+    })
+  }, [agent, latest?.agent, latest?.model, model, setGoal, thread.id])
   const commands = useMemo(
-    () => slashCommands({ ask: (question) => askAside(thread.id, question), fork: forkAll, compact: compactAll }),
-    [askAside, forkAll, compactAll, thread.id],
+    () => slashCommands({ ask: (question) => askAside(thread.id, question), fork: forkAll, compact: compactAll, goal: changeGoal }),
+    [askAside, forkAll, compactAll, changeGoal, thread.id],
   )
   // The MCP servers of the folder the thread runs in; the chip in the composer keeps this list current.
   const mcpPlace = useMemo<McpPlace>(
@@ -383,6 +410,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
       {away && <ChatScrollToBottom onClick={scrollToBottom} />}
       </div>
       <div ref={composerSlot} className={cn('mx-auto w-full max-w-3xl shrink-0 px-6 pb-5 pt-2', railGutter)}>
+        {goal && <ChatGoalCard key={goal.id} goal={goal} phase={phase} running={running} onAction={(action) => setGoal(thread.id, { action })} />}
         {aside && <ChatAside aside={aside} onDismiss={closeAside} onRetry={() => void askAside(thread.id, aside.question)} />}
         <ChatComposer
           ref={composer}

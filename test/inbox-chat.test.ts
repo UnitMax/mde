@@ -1998,7 +1998,7 @@ describe('Inbox /fork command', () => {
     const view = await showConversation()
     await setMessageText(messageInput(view), '/')
     expect(Array.from(view.querySelectorAll('[data-testid="slash-picker"] [role="option"]')).map((option) => option.getAttribute('data-testid')))
-      .toEqual(['slash-option-btw', 'slash-option-fork', 'slash-option-compact'])
+      .toEqual(['slash-option-btw', 'slash-option-fork', 'slash-option-compact', 'slash-option-goal'])
     await act(async () => view.querySelector<HTMLButtonElement>('[data-testid="chat-fork-from-msg_1"]')!.click())
     expect(api.chat.fork).toHaveBeenCalledWith({ threadId: 'ses_one', messageId: 'msg_1' })
   })

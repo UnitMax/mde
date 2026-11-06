@@ -84,6 +84,13 @@ session, so it is part of that history from then on and is shown in the conversa
 MDE stores nothing more for it, and shows only the summary, its approximate size and the reason when
 it fails, with credentials and the provider's response removed.
 
+A goal (the `/goal` command, or its card above the message box) asks the same local service, through OpenCode's
+goal plugin, to keep the agent working on an objective until a reviewer judges it met. The objective, each
+check by the reviewer and the work in between go to the model provider you chose, as any message does, and
+a long goal can make many such requests. OpenCode stores the goal (its objective, status, round count and
+the reviewer's last finding) with the session and writes the goal's messages into the conversation. MDE
+reads that state from the service, keeps it in memory only, and stores nothing more for it.
+
 The Inbox's MCP list asks the same local service which MCP servers OpenCode has for the folder or
 thread and how each stands: name, title, connected, failed or needs a sign-in, and a short error with
 credentials and paths removed. MDE drops everything else in the answer (commands, URLs, headers and

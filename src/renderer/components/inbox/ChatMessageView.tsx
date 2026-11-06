@@ -1,5 +1,5 @@
 import { memo, useContext, useMemo, useState } from 'react'
-import { AlertTriangle, BookOpen, Brain, ChevronRight, FoldVertical, GitFork, Info, LoaderCircle, Undo2, Wrench } from 'lucide-react'
+import { AlertTriangle, BookOpen, Brain, ChevronRight, FoldVertical, GitFork, Info, LoaderCircle, Target, Undo2, Wrench } from 'lucide-react'
 import type { ChatMessage, ChatPart } from '@shared/types'
 import { FileChangeView } from '@/components/inbox/ChatFileChange'
 import { McpCallView } from '@/components/inbox/ChatMcpCall'
@@ -268,6 +268,27 @@ export const ChatMessageView = memo(function ChatMessageView({
             <ChatMarkdown text={message.detail} label="Summary of the conversation" />
           </div>
         </Disclosure>
+      </div>
+    )
+  }
+  if (message.kind === 'note' && message.goal) {
+    // What the goal wrote into the conversation: the objective when it was set or resumed, and what the reviewer found
+    // missing each time it sent the agent back to work. Prose, not code.
+    const icon = <Target aria-hidden className="h-3.5 w-3.5 shrink-0 text-accent" />
+    return (
+      <div data-testid={`chat-message-${message.id}`} data-chat-message={message.id} data-goal-note={message.goal}>
+        {message.detail ? (
+          <Disclosure icon={icon} summary={message.text}>
+            <p className="chat-selectable max-h-60 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-line bg-bg px-2.5 py-2 text-[12.5px] leading-5 text-fg-muted" data-testid="chat-goal-note-detail">
+              {message.detail}
+            </p>
+          </Disclosure>
+        ) : (
+          <div className="flex items-center gap-1.5 px-1.5 text-[12px] text-fg-subtle">
+            {icon}
+            <span className="min-w-0">{message.text}</span>
+          </div>
+        )}
       </div>
     )
   }

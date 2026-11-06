@@ -152,11 +152,11 @@ the validated `chat:*` channels.
 - **Secrets.** The password is held in memory per target, sent only as HTTP
   Basic auth to that loopback origin, and never logged, stored or put in an
   error message. A 401 or connection failure drops it and rediscovers once.
-- **Operations.** `SERVICE_OPERATIONS` is a fixed allowlist of twenty-nine method
+- **Operations.** `SERVICE_OPERATIONS` is a fixed allowlist of thirty-one method
   and path pairs (agents, skills, MCP servers, providers, models, session create/get/active, message
   list, prompt, interrupt, agent and model switch, permission and form
   list/reply, session update, staging or clearing a revert, fork, compact, one-off text generation for a
-  side question, listing or cancelling the inbox items the service holds for a busy agent, changing their
+  side question, running a slash command of the session, reading the goal plugin's state, listing or cancelling the inbox items the service holds for a busy agent, changing their
   delivery, and listing, connecting and disconnecting MCP servers). The skill list (`GET /api/skill`)
   takes only the `location[directory]` query. OpenCode answers with each skill's full text and file path;
   the main process keeps the id, name and a one-line description and drops the rest, so neither reaches
@@ -206,6 +206,21 @@ the validated `chat:*` channels.
   by its message only, never the provider's response body, which can carry request headers. The
   message page also says whether the session inbox holds a compaction, which is a yes or no read from the
   inbox list that was already requested for the held messages.
+  The `chat:goal` channel (read a thread's `/goal`) accepts only a recorded thread ID and sends the plugin's
+  RPC, `POST /api/rpc/opencode.goal/get`, with the body `{ input: { sessionID } }`; the path is fixed and
+  the renderer supplies nothing of it. The `chat:goal-set` channel accepts a recorded thread ID and either
+  `action: 'set'` with an `objective`, or `action: 'pause'`, `'resume'` or `'clear'` and nothing else; a
+  `set` may also carry the agent and model the composer shows, checked like those of `chat:send`. The
+  objective is ordinary prompt text of at most 4,000 characters (OpenCode's limit), not blank and not one of
+  the three action words, which OpenCode would read as that action (`goalObjectiveProblem`, applied in
+  the renderer, the IPC validator and the service). The main process sends `POST
+  /api/session/{sessionID}/command` with the body `{ name: 'goal', text }`: the command name is fixed to
+  `goal`, so the renderer cannot run any other command of OpenCode's, and `text` is the objective or the
+  action word. The answers are read strictly: a goal is kept only with a known status, bounded counts and
+  an ID of the usual form, its objective and reason are capped and stripped of control characters, and the
+  `rpc.opencode.goal.changed` event is passed on only when it parses the same way. The goal's text reaches the
+  renderer as plain text (the objective, the reviewer's reason) or as a note in the conversation, never as
+  HTML.
   The MCP list (`GET /api/mcp`) takes only the `location[directory]` query. OpenCode's answer also says
   how each server is started or reached; the main process keeps a server's name, an optional title, its
   state and a short error, and drops everything else (commands, URLs, headers, environment), so none of it

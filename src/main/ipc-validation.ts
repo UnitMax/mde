@@ -1,5 +1,6 @@
 import { isPersistedTerminalLayout } from '@shared/terminal-layouts'
 import { IpcChannels } from '@shared/ipc'
+import { goalObjectiveProblem } from '@shared/goal'
 import { isInboxFolderColor, isInboxFolderEmoji, isInboxFolderSymbol } from '@shared/inbox-folder-icons'
 import { isSessionColor } from '@shared/session-colors'
 import { isSessionIcon } from '@shared/session-icons'
@@ -129,6 +130,8 @@ const draftChoice = object({
 const promptText: Validator = (value) => typeof value === 'string' && value.length <= 100_000 &&
   !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value)
 const chatThread = object({ threadId: opencodeSessionId })
+/** A goal's objective; OpenCode's own limit and its reserved words are checked here as well as there. */
+const goalObjective: Validator = (value) => promptText(value) && goalObjectiveProblem(String(value)) === null
 /** A request about a folder (new thread) or a thread names exactly one of them. */
 const exactlyOnePlace: Validator = (value) =>
   ((value as { folderId?: unknown }).folderId === undefined) !== ((value as { threadId?: unknown }).threadId === undefined)
@@ -248,6 +251,9 @@ export const ipcPayloadValidators = {
     exactlyOnePlace(value),
   [IpcChannels.chatInterrupt]: chatThread,
   [IpcChannels.chatCompact]: chatThread,
+  [IpcChannels.chatGoal]: chatThread,
+  [IpcChannels.chatGoalSet]: (value) => object({ threadId: opencodeSessionId, action: oneOf('set'), objective: goalObjective, agent: optional(agentId), model: optional(modelRef) })(value) ||
+    object({ threadId: opencodeSessionId, action: oneOf('pause', 'resume', 'clear') })(value),
   [IpcChannels.chatRedo]: chatThread,
   [IpcChannels.chatRevert]: object({ threadId: opencodeSessionId, messageId, files: optional(boolean) }),
   [IpcChannels.chatFork]: object({ threadId: opencodeSessionId, messageId: optional(messageId) }),

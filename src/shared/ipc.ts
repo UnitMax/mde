@@ -65,6 +65,8 @@ import type {
   ChatSetDeliveryRequest,
   ChatAsideRequest,
   ChatAsideAnswer,
+  ChatGoal,
+  ChatGoalRequest,
   ChatThreadRequest,
   ChatDraft,
   ChatDraftRequest,
@@ -163,6 +165,8 @@ export const IpcChannels = {
   chatDrafts: 'chat:drafts',
   chatInterrupt: 'chat:interrupt',
   chatCompact: 'chat:compact',
+  chatGoal: 'chat:goal',
+  chatGoalSet: 'chat:goal-set',
   chatRedo: 'chat:redo',
   chatRevert: 'chat:revert',
   chatFork: 'chat:fork',
@@ -538,6 +542,13 @@ export interface RendererApi {
      * result into the conversation; a request while the agent is busy waits for it to finish.
      */
     compact(req: ChatThreadRequest): Promise<void>
+    /** The goal OpenCode keeps for a thread (`/goal`), or null when it has none. */
+    goal(req: ChatThreadRequest): Promise<ChatGoal | null>
+    /**
+     * Sets a thread's goal, or pauses, resumes or clears it. OpenCode refuses what makes no sense (pausing a
+     * goal that is not active) with a reason, which comes back as the rejection.
+     */
+    setGoal(req: ChatGoalRequest): Promise<void>
     redo(req: ChatThreadRequest): Promise<void>
     revert(req: ChatRevertRequest): Promise<ChatRevert>
     fork(req: ChatForkRequest): Promise<ChatForkResult>

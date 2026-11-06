@@ -81,6 +81,8 @@ const validPayloads = {
   [IpcChannels.chatSend]: { threadId: 'ses_thread', text: 'Next step', agent: 'plan', model },
   [IpcChannels.chatInterrupt]: { threadId: 'ses_thread' },
   [IpcChannels.chatCompact]: { threadId: 'ses_thread' },
+  [IpcChannels.chatGoal]: { threadId: 'ses_thread' },
+  [IpcChannels.chatGoalSet]: { threadId: 'ses_thread', action: 'set', objective: 'Make the tests pass', agent: 'build', model: { id: 'free-1', providerId: 'opencode' } },
   [IpcChannels.chatRedo]: { threadId: 'ses_thread' },
   [IpcChannels.chatDiscardPending]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a' },
   [IpcChannels.chatSetDelivery]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a', delivery: 'queue' },
@@ -234,6 +236,36 @@ describe('IPC payload boundary', () => {
       { threadId: 'msg_1', question: 'Why?' },
       { threadId: 'ses_thread', question: 'Why?', prompt: 'Injected preamble' },
     ]) rejects(IpcChannels.chatAside, bad)
+    // A goal names a recorded thread and either an objective to set or one of the three actions; never both, never anything else.
+    for (const action of ['pause', 'resume', 'clear']) {
+      expect(() => assertIpcPayload(IpcChannels.chatGoalSet, { threadId: 'ses_thread', action })).not.toThrow()
+    }
+    expect(() => assertIpcPayload(IpcChannels.chatGoalSet, { threadId: 'ses_thread', action: 'set', objective: 'Fix the build.\nThen run the tests.' })).not.toThrow()
+    expect(() => assertIpcPayload(IpcChannels.chatGoalSet, { threadId: 'ses_thread', action: 'set', objective: 'x'.repeat(4000) })).not.toThrow()
+    for (const bad of [
+      {},
+      { threadId: 'ses_thread' },
+      { action: 'pause' },
+      { threadId: 'ses_thread', action: 'stop' },
+      { threadId: 'ses_thread', action: 'PAUSE' },
+      { threadId: 'ses_thread', action: 'pause', objective: 'Sneaked in' },
+      { threadId: 'ses_thread', action: 'clear', agent: 'build' },
+      { threadId: 'ses_thread', action: 'set' },
+      { threadId: 'ses_thread', action: 'set', objective: '' },
+      { threadId: 'ses_thread', action: 'set', objective: ' \n ' },
+      { threadId: 'ses_thread', action: 'set', objective: 7 },
+      { threadId: 'ses_thread', action: 'set', objective: 'x'.repeat(4001) },
+      { threadId: 'ses_thread', action: 'set', objective: 'bell\u0007' },
+      // OpenCode would read these as the actions, so they cannot be objectives.
+      { threadId: 'ses_thread', action: 'set', objective: 'pause' },
+      { threadId: 'ses_thread', action: 'set', objective: ' Resume ' },
+      { threadId: 'ses_thread', action: 'set', objective: '"clear"' },
+      { threadId: 'ses_../escape', action: 'pause' },
+      { threadId: 'msg_1', action: 'pause' },
+      { threadId: 'ses_thread', action: 'set', objective: 'Do it', agent: '../build' },
+      { threadId: 'ses_thread', action: 'set', objective: 'Do it', model: { id: 'm' } },
+    ]) rejects(IpcChannels.chatGoalSet, bad)
+    rejects(IpcChannels.chatGoal, { threadId: 'ses_thread', action: 'pause' })
     rejects(IpcChannels.chatRegenerateTitle, { threadId: 'ses_../escape' })
     rejects(IpcChannels.chatRegenerateTitle, { threadId: 'ses_thread', title: 'Injected' })
     expect(() => assertIpcPayload(IpcChannels.chatCreate, { folderId: 'fld_1234', text: '', attachmentIds: ['a'], draftRevision: 1, agent: 'build', model })).not.toThrow()

@@ -1,6 +1,9 @@
+import { GOAL_OBJECTIVE_LIMIT } from '@shared/goal'
 import { MCP_SERVER_NAME } from '@shared/mcp'
 import type {
   ChatAgent,
+  ChatGoal,
+  ChatGoalNote,
   ChatForm,
   ChatFormField,
   ChatFormOption,
@@ -520,6 +523,9 @@ export function parseMessage(value: unknown, thumbnail?: (bytes: Buffer) => stri
     case 'system': {
       const text = body(message.text, CHAT_TOOL_TEXT_LIMIT).text
       const description = short(message.description, 500)
+      // What a goal writes into the conversation reads as its own thing, not as "Added context".
+      const goal = message.type === 'synthetic' && record(message.metadata)?.source === 'goal' ? goalNote(text) : null
+      if (goal) return { kind: 'note', id, time: at, tone: 'info', ...goal }
       return text || description
         ? {
             kind: 'note', id, time: at, tone: 'info',
@@ -795,4 +801,86 @@ export function parseSessionInfo(value: unknown): { agent: string | null; model:
     model: parseModelRef(session?.model),
     title: short(session?.title, 512),
   }
+}
+
+const GOAL_STATUSES = new Set<ChatGoal['status']>(['active', 'paused', 'complete'])
+
+/** Milliseconds since the epoch. Larger than any count, so it has its own bound (year 5138). */
+function timestamp(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1e14 ? Math.floor(value) : undefined
+}
+
+/**
+ * A goal as OpenCode's goal plugin keeps it. A value that is not one (no objective, a status MDE does not
+ * know) is null, so a plugin that changes shape shows no goal instead of a wrong one.
+ */
+export function parseGoal(value: unknown): ChatGoal | null {
+  const goal = record(value)
+  if (!goal) return null
+  const id = short(goal.id, 200)
+  const objective = body(goal.objective, GOAL_OBJECTIVE_LIMIT * 2).text.trim()
+  const status = goal.status
+  if (!id || !objective || typeof status !== 'string' || !GOAL_STATUSES.has(status as ChatGoal['status'])) return null
+  const rounds = count(goal.rounds)
+  const maxRounds = count(goal.maxRounds)
+  const stalls = count(goal.stalls)
+  const updatedAt = timestamp(goal.updatedAt)
+  const reason = body(goal.reason, 4000).text.trim()
+  return {
+    id,
+    objective,
+    status: status as ChatGoal['status'],
+    ...(reason ? { reason } : {}),
+    rounds: rounds ?? 0,
+    maxRounds: maxRounds && maxRounds > 0 ? maxRounds : 50,
+    ...(stalls ? { stalls } : {}),
+    updatedAt: updatedAt ?? 0,
+  }
+}
+
+/** The answer to the goal read: `{ output: goal | null }`. A shape that is neither is an error, not "no goal". */
+export function parseGoalAnswer(value: unknown): ChatGoal | null {
+  const answer = record(value)
+  if (!answer || !('output' in answer)) throw new ServiceShapeError('a goal')
+  return answer.output === null ? null : parseGoal(answer.output)
+}
+
+/** What a goal-change event says: the thread's new goal (null when it was cleared), or null when it is not one. */
+export function parseGoalChange(event: { data: Record<string, unknown> }): { threadId: string; goal: ChatGoal | null } | null {
+  const threadId = event.data.sessionID
+  if (typeof threadId !== 'string' || !('goal' in event.data)) return null
+  const goal = event.data.goal === null ? null : parseGoal(event.data.goal)
+  // A goal MDE cannot read is not told as "cleared".
+  return event.data.goal === null || goal ? { threadId, goal } : null
+}
+
+const OBJECTIVE_BLOCK = /<untrusted_objective>\n?([\s\S]*?)\n?<\/untrusted_objective>/
+
+/** OpenCode escapes `&`, `<` and `>` in the objective it puts into its messages. */
+function unescapeObjective(text: string): string {
+  return text.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&')
+}
+
+/**
+ * The note for a message the goal plugin wrote. Its wording is OpenCode's, so what is read from it is
+ * best effort: a message in a shape this does not know is `null` and shows as the generic note.
+ * - the one that starts a goal carries the objective;
+ * - the one that sends the agent back to work carries what the reviewer found missing, between the
+ *   objective and "Take the next concrete step";
+ * - a resumed goal sends that second kind with the user's resume as the finding.
+ */
+function goalNote(text: string): { text: string; detail?: string; goal: ChatGoalNote } | null {
+  const objective = OBJECTIVE_BLOCK.exec(text)?.[1]
+  const goalObjective = objective ? unescapeObjective(objective).trim() : ''
+  if (text.startsWith('A goal is now active for this session')) {
+    return { text: 'Goal set', ...(goalObjective ? { detail: goalObjective } : {}), goal: 'set' }
+  }
+  if (text.startsWith('Continue working toward the active goal')) {
+    const after = text.slice(text.indexOf('</untrusted_objective>') + '</untrusted_objective>'.length)
+    const found = after.slice(0, after.indexOf('Take the next concrete step') >= 0 ? after.indexOf('Take the next concrete step') : undefined).trim()
+    const resumed = /\bThe user resumed the goal\.?/.test(found)
+    if (resumed) return { text: 'Goal resumed', ...(goalObjective ? { detail: goalObjective } : {}), goal: 'resume' }
+    return { text: 'Goal not met yet, working on it', ...(found ? { detail: found } : {}), goal: 'continue' }
+  }
+  return null
 }

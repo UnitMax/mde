@@ -1806,6 +1806,177 @@ describe('Inbox chat service worktrees', () => {
     })
   })
 
+  describe('goals (/goal)', () => {
+    const active = { id: 'goal-1', objective: 'Make the tests pass', status: 'active', rounds: 2, maxRounds: 50, boot: 'boot-1', updatedAt: 1_700_000_000_000, reason: 'The typecheck still fails.' }
+    const created = { 'session.create': { data: { id: 'ses_new' } } } as const
+    const emit = (service: unknown, type: string, data: Record<string, unknown>) =>
+      (service as { onEvent(event: { type: string; data: Record<string, unknown> }): void }).onEvent({ type, data })
+
+    it('reads the goal from the plugin with the thread and the folder it runs in, and nothing else', async () => {
+      const { service, folder, calls } = setup({ ...created, 'goal.get': { output: active } })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      calls.length = 0
+      await expect(service.goal('ses_new')).resolves.toEqual({
+        id: 'goal-1', objective: 'Make the tests pass', status: 'active', rounds: 2, maxRounds: 50, updatedAt: 1_700_000_000_000, reason: 'The typecheck still fails.',
+      })
+      expect(calls).toEqual([{ operation: 'goal.get', request: { query: { 'location[directory]': folder.directory }, body: { input: { sessionID: 'ses_new' } } } }])
+      service.stop()
+    })
+
+    it('says there is no goal when the plugin has none, or when this OpenCode has no goal plugin, and passes other failures on', async () => {
+      const none = setup({ ...created, 'goal.get': { output: null } })
+      await none.service.create({ folderId: none.folder.id, text: 'Hi', agent: 'build', model })
+      await expect(none.service.goal('ses_new')).resolves.toBeNull()
+      const old = setup({ ...created, 'goal.get': new OpenCodeServiceError('OpenCode answered with status 404.', 404) })
+      await old.service.create({ folderId: old.folder.id, text: 'Hi', agent: 'build', model })
+      await expect(old.service.goal('ses_new')).resolves.toBeNull()
+      const unavailable = setup({ ...created, 'goal.get': new OpenCodeServiceError('RPC is unavailable: opencode.goal', 400, 'RpcError') })
+      await unavailable.service.create({ folderId: unavailable.folder.id, text: 'Hi', agent: 'build', model })
+      await expect(unavailable.service.goal('ses_new')).resolves.toBeNull()
+      const down = setup({ ...created, 'goal.get': new Error('Could not reach the OpenCode background service.') })
+      await down.service.create({ folderId: down.folder.id, text: 'Hi', agent: 'build', model })
+      await expect(down.service.goal('ses_new')).rejects.toThrow('Could not reach')
+      const odd = setup({ ...created, 'goal.get': { data: 'surprise' } })
+      await odd.service.create({ folderId: odd.folder.id, text: 'Hi', agent: 'build', model })
+      await expect(odd.service.goal('ses_new')).rejects.toThrow('does not understand')
+      for (const each of [none, old, unavailable, down, odd]) each.service.stop()
+    })
+
+    it('refuses a thread the Inbox does not hold, and every request when the Inbox is off, without asking the service', async () => {
+      const { service, folder, calls, disable } = setup({ ...created, 'goal.get': { output: null }, 'session.command': null })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      calls.length = 0
+      await expect(service.goal('ses_unknown')).rejects.toThrow()
+      await expect(service.setGoal({ threadId: 'ses_unknown', action: 'pause' })).rejects.toThrow()
+      disable()
+      await expect(service.goal('ses_new')).rejects.toThrow('only available')
+      await expect(service.setGoal({ threadId: 'ses_new', action: 'pause' })).rejects.toThrow('only available')
+      expect(calls).toEqual([])
+      service.stop()
+    })
+
+    it('sets a goal by running /goal with the objective, which starts the thread working', async () => {
+      const { service, folder, calls, store } = setup({ ...created, 'session.command': null })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      store.put({ ...store.get('ses_new')!, status: 'completed' })
+      calls.length = 0
+      await service.setGoal({ threadId: 'ses_new', action: 'set', objective: '  Make the tests pass.\nThen the typecheck.  ' })
+      expect(calls).toEqual([{ operation: 'session.command', request: { params: { sessionID: 'ses_new' }, body: { name: 'goal', text: 'Make the tests pass.\nThen the typecheck.' } } }])
+      expect(store.get('ses_new')?.status).toBe('working')
+      service.stop()
+    })
+
+    it('switches to the agent and model the box shows before it starts the goal, as a message would, and remembers them', async () => {
+      const { service, folder, calls, store } = setup({
+        ...created,
+        'session.get': { data: { id: 'ses_new', agent: 'build', model: { id: 'model-1', providerID: 'provider-1' } } },
+        'session.command': null,
+      })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      calls.length = 0
+      const other = { id: 'free-2', providerId: 'opencode' }
+      await service.setGoal({ threadId: 'ses_new', action: 'set', objective: 'Ship it', agent: 'plan', model: other })
+      expect(calls.map((call) => call.operation)).toEqual(['session.get', 'session.switchAgent', 'session.switchModel', 'session.command'])
+      expect(calls[1]!.request).toEqual({ params: { sessionID: 'ses_new' }, body: { agent: 'plan' } })
+      expect(calls[2]!.request).toEqual({ params: { sessionID: 'ses_new' }, body: { model: { id: 'free-2', providerID: 'opencode' } } })
+      expect(store.composer()).toMatchObject({ agent: 'plan', model: other })
+      service.stop()
+    })
+
+    it('does not touch the agent or model when the box shows the ones the thread has', async () => {
+      const { service, folder, calls } = setup({
+        ...created,
+        'session.get': { data: { id: 'ses_new', agent: 'build', model: { id: 'model-1', providerID: 'provider-1' } } },
+        'session.command': null,
+      })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      calls.length = 0
+      await service.setGoal({ threadId: 'ses_new', action: 'set', objective: 'Ship it', agent: 'build', model })
+      expect(calls.map((call) => call.operation)).toEqual(['session.get', 'session.command'])
+      service.stop()
+    })
+
+    it('pauses, resumes and clears by running /goal with that word and nothing else; only pause and clear leave the thread as it is', async () => {
+      const { service, folder, calls, store } = setup({ ...created, 'session.command': null })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      store.put({ ...store.get('ses_new')!, status: 'completed' })
+      for (const action of ['pause', 'clear'] as const) {
+        calls.length = 0
+        await service.setGoal({ threadId: 'ses_new', action })
+        expect(calls).toEqual([{ operation: 'session.command', request: { params: { sessionID: 'ses_new' }, body: { name: 'goal', text: action } } }])
+      }
+      expect(store.get('ses_new')?.status).toBe('completed')
+      calls.length = 0
+      await service.setGoal({ threadId: 'ses_new', action: 'resume' })
+      expect(calls).toEqual([{ operation: 'session.command', request: { params: { sessionID: 'ses_new' }, body: { name: 'goal', text: 'resume' } } }])
+      expect(store.get('ses_new')?.status).toBe('working')
+      service.stop()
+    })
+
+    it('refuses an objective OpenCode would read as an action, or reject, without asking the service anything', async () => {
+      const { service, folder, calls } = setup({ ...created, 'session.command': null })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      calls.length = 0
+      await expect(service.setGoal({ threadId: 'ses_new', action: 'set', objective: ' Pause ' })).rejects.toThrow('would be read as /goal pause')
+      await expect(service.setGoal({ threadId: 'ses_new', action: 'set', objective: '"clear"' })).rejects.toThrow('would be read as /goal clear')
+      await expect(service.setGoal({ threadId: 'ses_new', action: 'set', objective: '   ' })).rejects.toThrow('Say what the goal is.')
+      await expect(service.setGoal({ threadId: 'ses_new', action: 'set', objective: 'x'.repeat(4001), agent: 'plan' })).rejects.toThrow('at most 4,000 characters')
+      expect(calls).toEqual([])
+      service.stop()
+    })
+
+    it('passes OpenCode’s reason on when it refuses, and says to update OpenCode when it has no goal command', async () => {
+      const refuse = setup({ ...created, 'session.command': new OpenCodeServiceError('No active goal to pause.', 500, 'CommandExecutionError') })
+      await refuse.service.create({ folderId: refuse.folder.id, text: 'Hi', agent: 'build', model })
+      await expect(refuse.service.setGoal({ threadId: 'ses_new', action: 'pause' })).rejects.toThrow('No active goal to pause.')
+      const old = setup({ ...created, 'session.command': new OpenCodeServiceError('Command not found: goal', 404, 'CommandNotFoundError') })
+      await old.service.create({ folderId: old.folder.id, text: 'Hi', agent: 'build', model })
+      await expect(old.service.setGoal({ threadId: 'ses_new', action: 'pause' })).rejects.toThrow('does not support goals. Update OpenCode')
+      const bare = setup({ ...created, 'session.command': new OpenCodeServiceError('OpenCode answered with status 404.', 404) })
+      await bare.service.create({ folderId: bare.folder.id, text: 'Hi', agent: 'build', model })
+      await expect(bare.service.setGoal({ threadId: 'ses_new', action: 'pause' })).rejects.toThrow('does not support goals')
+      const gone = setup({ ...created, 'session.command': new OpenCodeServiceError('Session not found: ses_new', 404, 'SessionNotFoundError') })
+      await gone.service.create({ folderId: gone.folder.id, text: 'Hi', agent: 'build', model })
+      await expect(gone.service.setGoal({ threadId: 'ses_new', action: 'pause' })).rejects.toThrow('Session not found')
+      // A refused start leaves the thread's status alone.
+      refuse.store.put({ ...refuse.store.get('ses_new')!, status: 'completed' })
+      await expect(refuse.service.setGoal({ threadId: 'ses_new', action: 'set', objective: 'Do it' })).rejects.toThrow('No active goal')
+      expect(refuse.store.get('ses_new')?.status).toBe('completed')
+      for (const each of [refuse, old, bare, gone]) each.service.stop()
+    })
+
+    it('tells a subscribed thread when its goal is set, changed or cleared, and ignores other threads and goals it cannot read', async () => {
+      const { service, folder, events } = setup(created)
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      service.subscribe('ses_new')
+      emit(service, 'rpc.opencode.goal.changed', { sessionID: 'ses_new', goal: active })
+      emit(service, 'rpc.opencode.goal.changed', { sessionID: 'ses_new', goal: { ...active, status: 'complete', reason: 'All green.' } })
+      emit(service, 'rpc.opencode.goal.changed', { sessionID: 'ses_new', goal: null })
+      emit(service, 'rpc.opencode.goal.changed', { sessionID: 'ses_other', goal: active })
+      emit(service, 'rpc.opencode.goal.changed', { sessionID: 'ses_new', goal: { ...active, status: 'exploded' } })
+      emit(service, 'rpc.opencode.goal.changed', { sessionID: 'ses_new' })
+      emit(service, 'rpc.opencode.goal.changed', { goal: active })
+      const goals = events.filter((event) => event.type === 'goal')
+      expect(goals).toEqual([
+        { type: 'goal', threadId: 'ses_new', goal: expect.objectContaining({ id: 'goal-1', status: 'active', rounds: 2 }) },
+        { type: 'goal', threadId: 'ses_new', goal: expect.objectContaining({ status: 'complete', reason: 'All green.' }) },
+        { type: 'goal', threadId: 'ses_new', goal: null },
+      ])
+      // A goal change is not a change to the messages; the conversation is not read again for it.
+      expect(events.filter((event) => event.type === 'messages')).toEqual([])
+      service.stop()
+    })
+
+    it('reads the conversation again when the goal writes into it', async () => {
+      const { service, folder, events } = setup(created)
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      service.subscribe('ses_new')
+      emit(service, 'session.synthetic', { sessionID: 'ses_new' })
+      expect(events).toEqual([{ type: 'messages', threadId: 'ses_new' }])
+      service.stop()
+    })
+  })
+
   it('refuses a worktree request when worktrees are unavailable', async () => {
     const { service, folder, calls } = setup()
     await expect(service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model, worktree: { base: 'main' } })).rejects.toThrow('Git worktrees are unavailable.')

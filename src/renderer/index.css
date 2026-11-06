@@ -639,10 +639,37 @@
   animation: mde-pending-in 180ms ease-out;
 }
 
+/* The goal card (ChatGoalCard) settles in too, and a light runs along its top edge while the agent works toward the goal. */
+.chat-goal {
+  animation: mde-pending-in 180ms ease-out;
+}
+
+.chat-goal-sweep {
+  animation: mde-goal-sweep 1800ms cubic-bezier(0.45, 0, 0.35, 1) infinite;
+}
+
+@keyframes mde-goal-sweep {
+  from {
+    left: -34%;
+  }
+  to {
+    left: 100%;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .chat-pending,
-  .chat-aside {
+  .chat-aside,
+  .chat-goal {
     animation: none;
+  }
+
+  /* No movement: the light stays, as a dim line across the edge. */
+  .chat-goal-sweep {
+    animation: none;
+    left: 0;
+    width: 100%;
+    opacity: 0.45;
   }
 }
 

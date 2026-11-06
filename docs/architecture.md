@@ -709,6 +709,58 @@ Escape dismisses it (the first Escape only closes an open command list; from ins
 goes back to the box), and a conversation that is following its end stays at its end when the card
 appears.
 
+**Goals (`/goal`).** A goal keeps the agent working on an objective until a reviewer decides it is met.
+It is OpenCode's own `opencode.goal` plugin; MDE only starts, controls and shows it, and keeps no goal
+state of its own. `/goal <objective>` sets one, and `/goal pause`, `/goal resume` and `/goal clear` (in any
+case, with or without quotes, which is how OpenCode reads them) act on it, so those three words cannot be
+an objective on their own. The objective is checked in the renderer before it is sent
+(`goalObjectiveProblem` in `shared/goal.ts`, which the main process and the IPC validator use too): it must
+not be blank, one of those words, or longer than OpenCode's 4,000 characters, and the reason is shown
+under the box like any failed command. The command is defined in `slashCommands()` and ends in
+`setGoal` in the Inbox store and the `chat:goal-set` channel (`InboxChatService.setGoal`), which runs
+OpenCode's command with `POST /api/session/{sessionID}/command` and `{ name: 'goal', text }`. Setting a goal
+also applies the agent and model the box shows to the session, as a message would (`applyChoice`, shared
+with `send`), so the goal does not run on a model the person did not choose. A service without the
+command says to update OpenCode; OpenCode's own refusals (pausing a goal that is not active, for one) are
+passed on in its words.
+
+The state is read with the plugin's RPC, `POST /api/rpc/opencode.goal/get` (`chat:goal`,
+`InboxChatService.goal`), when a thread is opened and when the event stream reconnects, and is pushed by
+the plugin's `rpc.opencode.goal.changed` event, which `onEvent` forwards as a `goal` chat event. A service
+without the plugin answers 404 or an RPC error, which means "no goal". A goal is `{ id, objective, status
+(active, paused or complete), reason?, rounds, maxRounds (50), stalls?, updatedAt }`; `reason` is the
+reviewer's last finding while it runs, the evidence when it is met, and why it stopped when paused. A read
+that was started before a newer event arrived is dropped (`goalChangedAt`), so a slow answer cannot put an
+old state back.
+
+While a goal exists the thread shows **`ChatGoalCard`** above the message box (in the same slot as the
+`/btw` card, which stacks below it). It has a target mark and the word GOAL, a status line, the round, the
+objective (opening to the whole of a long or multi-line one with "Show all"), the reviewer's reason, and the
+actions that fit: Pause while it is active (Resume while paused, Dismiss once it is met) and a clear
+button. The status line says what an active goal is doing (`goalPhase` in `lib/chat.ts`, from the
+messages and whether the agent runs): "Working toward the goal"; "Checking whether the goal is met…" when
+the agent is idle after a finished reply, which is the reviewer's turn (it runs inside the agent's
+execution, so the thread stays *working*); "Waiting for background work" when nothing runs and no reviewer
+is expected; and, in the warning color, "Waiting for your answer" when a question or permission is open.
+The reviewer and waiting phases are shown only once they have lasted a moment (900 ms and 2.5 s,
+`useSettledPhase`), so the card does not flicker through states that last a blink and does not claim
+"waiting" on a thread that has just been opened. A paused goal says "Paused by you" when the person paused
+it (OpenCode's reason for that, "Paused by the user", is not repeated) or "Paused" with the reason when the
+reviewer stopped it, and its Resume starts the agent again. If the agent is still finishing the step it
+was on when paused, the card says so. When the last round changed nothing (`stalls`), or five rounds or
+fewer are left of the 50, a warning line says that OpenCode will pause the goal. Actions are asked for, not
+assumed: a button is busy until the service answers, a refusal is shown on the card, and the new state is
+the one the service reports. Another goal (a new ID) is a new card, so nothing of the last carries over.
+The card settles in with a short animation, and while the agent works or the reviewer checks, a light runs
+along its top edge and the status dot pulses; under reduced motion the animations stop and the light stays as
+a dim line.
+
+OpenCode writes a message into the conversation when a goal starts, resumes, and each time the reviewer
+sends the agent back to work (a synthetic message marked `source: goal`, told by the `session.synthetic`
+event). `parseMessage` turns these into notes with a target icon instead of a "System note": "Goal set" and
+"Goal resumed" open to the objective, and "Goal not met yet, working on it" opens to what the reviewer
+found missing, as prose. The instructions that OpenCode wraps around them are not shown.
+
 **File changes.** The `edit` and `write` tools are drawn as diffs instead of raw JSON, one card per
 file (`ChatFileChange`): a header with the verb ("Edited", "Created", "Overwrote"), the path
 relative to the thread's folder, and `+added −removed` counts, then the lines with a line-number
@@ -800,7 +852,10 @@ appear in the new-thread composer, where nothing has been measured yet.
 `ChatTurnTime.tsx`), such as `Worked for 1m 30s`, and while the turn is still going the same line
 reads `Working for 1m 30s`, counting up every second, with a spinner and a light moving along its
 rule (`WorkingFor`). A turn is a user message with everything after it up to the next user message
-(`turnStats` in `lib/chat.ts`). It began when the user's message was created and ended when
+(`turnStats` in `lib/chat.ts`); a goal's notes (set, resumed, and each time its reviewer sends the agent
+back to work) begin a turn as well, because a goal starts work with no user message, so a goal set a day
+after the last prompt is timed from the goal, and each round gets its own line without the reviewer's time
+between rounds. It began when the user's message (or the goal's note) was created and ended when
 its last step completed, both from the service's own timestamps, so the difference does not depend
 on this computer's clock; the line sits under the turn's last step and above any note about how the
 run ended. A turn whose user message is in an older, unloaded page, or that has no finished step,

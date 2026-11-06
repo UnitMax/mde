@@ -26,6 +26,10 @@ export const SERVICE_OPERATIONS = {
   // Summarizes the conversation to free up context. The service answers at once with the request it holds and
   // does the work in the background: a `compaction` message that is running, then completed or failed.
   'session.compact': { method: 'POST', path: '/api/session/{sessionID}/compact' },
+  // OpenCode's goal (`/goal`) is a plugin: its state is read from the plugin's RPC, which has this fixed path, and it is
+  // changed by running the plugin's command. Neither route takes anything MDE has not checked.
+  'goal.get': { method: 'POST', path: '/api/rpc/opencode.goal/get' },
+  'session.command': { method: 'POST', path: '/api/session/{sessionID}/command' },
   'session.revert.stage': { method: 'POST', path: '/api/session/{sessionID}/revert/stage' },
   'session.revert.clear': { method: 'DELETE', path: '/api/session/{sessionID}/revert' },
   'session.fork': { method: 'POST', path: '/api/session/{sessionID}/fork' },

@@ -426,7 +426,42 @@ export type ChatMessage =
       tokens?: ChatTokens
     }
   /** Agent or model switches, compaction, shell commands, and other notes. */
-  | { kind: 'note'; id: string; time: number; tone: 'info' | 'error'; text: string; detail?: string; compaction?: ChatCompaction }
+  | { kind: 'note'; id: string; time: number; tone: 'info' | 'error'; text: string; detail?: string; compaction?: ChatCompaction; goal?: ChatGoalNote }
+
+/**
+ * What a note says about a goal: OpenCode writes a message into the conversation when a goal is set, when it
+ * is resumed, and each time its reviewer finds the goal not met yet and asks the agent to go on.
+ */
+export type ChatGoalNote = 'set' | 'resume' | 'continue'
+
+/**
+ * A goal OpenCode keeps for a session (`/goal`): an objective the agent works toward across turns, until a
+ * reviewer finds it met. The state lives in OpenCode; MDE only reads and changes it.
+ */
+export interface ChatGoal {
+  id: string
+  objective: string
+  /** `complete` is a goal the reviewer found met. */
+  status: 'active' | 'paused' | 'complete'
+  /**
+   * Why the goal is in this state: the reviewer's finding while it goes on (what is still missing), the
+   * evidence once it is met, or the reason it stopped. Absent when OpenCode gave none.
+   */
+  reason?: string
+  /** How many times the reviewer has sent the agent back to work. */
+  rounds: number
+  /** OpenCode pauses the goal when `rounds` reaches this. */
+  maxRounds: number
+  /** In a row, the rounds in which the agent made no progress; OpenCode pauses the goal after a few. */
+  stalls?: number
+  /** When the goal last changed, in milliseconds since the epoch, by the service's clock. */
+  updatedAt: number
+}
+
+/** What to do with a thread's goal: set one, or pause, resume or clear the one it has. */
+export type ChatGoalRequest =
+  | { threadId: string; action: 'set'; objective: string; agent?: string; model?: OpenCodeModelRef }
+  | { threadId: string; action: 'pause' | 'resume' | 'clear' }
 
 /**
  * What a note says about a compaction, which OpenCode writes into the conversation when it summarizes it
@@ -698,6 +733,8 @@ export type ChatEvent =
   /** Pending permissions or questions changed; refetch them. */
   | { type: 'requests'; threadId: string }
   | { type: 'running'; threadId: string; running: boolean }
+  /** The thread's goal was set, changed or cleared (null). */
+  | { type: 'goal'; threadId: string; goal: ChatGoal | null }
   /** The service connection was lost and restored; refetch everything. */
   | { type: 'reconnected'; threadId: string }
   /** An MCP server of this target changed (connected, failed, lost its tools); not tied to one thread. */

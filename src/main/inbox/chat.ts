@@ -12,6 +12,8 @@ import type {
   ChatForkRequest,
   ChatForkResult,
   ChatFormReplyRequest,
+  ChatGoal,
+  ChatGoalRequest,
   ChatMcpRequest,
   ChatMcpServer,
   ChatMcpSetRequest,
@@ -45,6 +47,7 @@ import { OpenCodeServiceError, type OpenCodeServiceClient } from '../opencode/se
 import { serviceTargetKey } from '../opencode/service/discovery'
 import { inboxThreadTerminalSession } from '@shared/inbox-thread-terminal'
 import { normalizeInboxFolderIcon } from '@shared/inbox-folder-icons'
+import { goalObjectiveProblem } from '@shared/goal'
 import {
   ServiceEventStreams,
   serviceEventSessionId,
@@ -57,6 +60,8 @@ import {
   parseDefaultModel,
   parseForms,
   parseGeneratedText,
+  parseGoalAnswer,
+  parseGoalChange,
   parseMcpServers,
   parseMessagesPage,
   parseModels,
@@ -174,6 +179,8 @@ const MESSAGE_EVENTS = new Set([
   'session.agent.selected',
   'session.model.selected',
   'session.skill.activated',
+  // What a goal writes into the conversation: the start, and each time it sends the agent back to work.
+  'session.synthetic',
   'session.compaction.started',
   'session.compaction.ended',
   'session.compaction.failed',
@@ -609,27 +616,7 @@ export class InboxChatService {
     const text = this.promptText(request.text, request.attachmentIds)
     const files = request.attachmentIds?.length ? await this.dependencies.drafts?.files(`thread:${thread.id}`, request.attachmentIds, request.draftRevision) : undefined
     this.streams.ensure(thread.target)
-    if (request.agent !== undefined || request.model !== undefined) {
-      const session = parseSessionInfo(await this.dependencies.client.request(thread.target, 'session.get', {
-        params: { sessionID: thread.id },
-      }))
-      if (request.agent !== undefined && request.agent !== session.agent) {
-        if (!isChatAgentId(request.agent)) throw new Error('Choose an agent.')
-        await this.dependencies.client.request(thread.target, 'session.switchAgent', {
-          params: { sessionID: thread.id }, body: { agent: request.agent },
-        })
-      }
-      if (request.model !== undefined && !sameModel(session.model, request.model)) {
-        await this.dependencies.client.request(thread.target, 'session.switchModel', {
-          params: { sessionID: thread.id }, body: { model: modelBody(request.model) },
-        })
-      }
-      this.dependencies.store.setComposer({
-        ...this.dependencies.store.composer(),
-        ...(request.agent !== undefined ? { agent: request.agent } : {}),
-        ...(request.model !== undefined ? { model: request.model } : {}),
-      })
-    }
+    await this.applyChoice(thread, request)
     const answer = await this.dependencies.client.request(thread.target, 'session.prompt', {
       params: { sessionID: thread.id },
       body: { ...await this.promptBody(thread, text, files), ...(request.delivery ? { delivery: request.delivery } : {}) },
@@ -637,6 +624,30 @@ export class InboxChatService {
     await this.dependencies.drafts?.remove(`thread:${thread.id}`, undefined, request.draftRevision)
     this.dependencies.recorder.markStatus(thread.id, 'working')
     return parsePromptAnswer(answer, this.dependencies.thumbnail)
+  }
+
+  /** Switches the thread to the agent and model the composer shows, when it shows others, and remembers them for the next thread. */
+  private async applyChoice(thread: InboxThread, choice: { agent?: string; model?: OpenCodeModelRef }): Promise<void> {
+    if (choice.agent === undefined && choice.model === undefined) return
+    const session = parseSessionInfo(await this.dependencies.client.request(thread.target, 'session.get', {
+      params: { sessionID: thread.id },
+    }))
+    if (choice.agent !== undefined && choice.agent !== session.agent) {
+      if (!isChatAgentId(choice.agent)) throw new Error('Choose an agent.')
+      await this.dependencies.client.request(thread.target, 'session.switchAgent', {
+        params: { sessionID: thread.id }, body: { agent: choice.agent },
+      })
+    }
+    if (choice.model !== undefined && !sameModel(session.model, choice.model)) {
+      await this.dependencies.client.request(thread.target, 'session.switchModel', {
+        params: { sessionID: thread.id }, body: { model: modelBody(choice.model) },
+      })
+    }
+    this.dependencies.store.setComposer({
+      ...this.dependencies.store.composer(),
+      ...(choice.agent !== undefined ? { agent: choice.agent } : {}),
+      ...(choice.model !== undefined ? { model: choice.model } : {}),
+    })
   }
 
   /**
@@ -724,6 +735,58 @@ export class InboxChatService {
       }
       throw error
     }
+  }
+
+  /**
+   * The thread's goal (`/goal`), or null when it has none. The goal is a plugin of OpenCode's, and a service
+   * without it has no such route or does not know the plugin: that is "no goal" and not a failure.
+   */
+  async goal(threadId: string): Promise<ChatGoal | null> {
+    this.assertEnabled()
+    const thread = this.thread(threadId)
+    try {
+      return parseGoalAnswer(await this.dependencies.client.request(thread.target, 'goal.get', {
+        query: { 'location[directory]': thread.directory },
+        body: { input: { sessionID: thread.id } },
+      }))
+    } catch (error) {
+      if (error instanceof OpenCodeServiceError && (error.status === 404 || (error.status === 400 && error.tag === 'RpcError'))) return null
+      throw error
+    }
+  }
+
+  /**
+   * Sets the thread's goal, or pauses, resumes or clears it, by running OpenCode's `/goal` command. Setting
+   * one starts the agent on it (or steers a busy agent to it), with the agent and model the composer shows,
+   * as a message would. OpenCode refuses what makes no sense, such as pausing a goal that is not active, with
+   * a reason in plain words, which is passed on. The new state arrives as a goal event.
+   */
+  async setGoal(request: ChatGoalRequest): Promise<void> {
+    this.assertEnabled()
+    const thread = this.thread(request.threadId)
+    let text: string
+    if (request.action === 'set') {
+      const problem = goalObjectiveProblem(request.objective)
+      if (problem) throw new Error(problem)
+      text = request.objective.trim()
+    } else {
+      text = request.action
+    }
+    this.streams.ensure(thread.target)
+    if (request.action === 'set') await this.applyChoice(thread, request)
+    try {
+      await this.dependencies.client.request(thread.target, 'session.command', {
+        params: { sessionID: thread.id },
+        body: { name: 'goal', text },
+      })
+    } catch (error) {
+      // A command the service does not know answers 404; a missing session says so by name.
+      if (error instanceof OpenCodeServiceError && error.status === 404 && (error.tag === undefined || error.tag === 'CommandNotFoundError')) {
+        throw new Error('This OpenCode service does not support goals. Update OpenCode and try again.')
+      }
+      throw error
+    }
+    if (request.action === 'set' || request.action === 'resume') this.dependencies.recorder.markStatus(thread.id, 'working')
   }
 
   async interrupt(threadId: string): Promise<void> {
@@ -944,6 +1007,12 @@ export class InboxChatService {
       if (read) read.renamed = true
     }
     if (!threadId || !this.subscribed.has(threadId)) return
+    // The goal plugin tells every change of a goal by this event; one MDE cannot read is not passed on.
+    if (event.type === 'rpc.opencode.goal.changed') {
+      const change = parseGoalChange(event)
+      if (change) this.dependencies.send({ type: 'goal', threadId: change.threadId, goal: change.goal })
+      return
+    }
     if ((event.type === 'session.text.delta' || event.type === 'session.reasoning.delta')) {
       const { assistantMessageID: messageId, ordinal, delta } = event.data
       if (typeof messageId === 'string' && /^msg_[A-Za-z0-9_-]{1,200}$/.test(messageId) &&

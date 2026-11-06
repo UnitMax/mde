@@ -167,6 +167,23 @@ export function compactionState(messages: readonly ChatMessage[], input: { runni
   return input.held ? 'held' : null
 }
 
+/**
+ * What an active goal is doing right now.
+ * - `attention`: the agent waits for the person (a permission or a question is open).
+ * - `reviewing`: the agent has finished a step and nothing else is running, but the thread is still busy: OpenCode's
+ *   reviewer is reading the conversation to decide whether the goal is met, which takes a model call.
+ * - `waiting`: nothing is running at all, which for an active goal is the reviewer waiting on a background shell.
+ * - `working`: otherwise.
+ */
+export type GoalPhase = 'working' | 'reviewing' | 'attention' | 'waiting'
+
+export function goalPhase(messages: readonly ChatMessage[], input: { running: boolean; asking: boolean }): GoalPhase {
+  if (input.asking) return 'attention'
+  if (!input.running) return 'waiting'
+  const last = messages[messages.length - 1]
+  return last?.kind === 'assistant' && last.completed && !last.error ? 'reviewing' : 'working'
+}
+
 export function contextTone(ratio: number | null): ContextTone {
   if (ratio === null) return 'normal'
   return ratio >= CONTEXT_DANGER_RATIO ? 'danger' : ratio >= CONTEXT_WARN_RATIO ? 'warn' : 'normal'
@@ -278,6 +295,11 @@ export function tokensPerSecond(steps: readonly Extract<ChatMessage, { kind: 'as
  * step finished, so both times come from the service's clock and the difference is right whatever
  * this computer's clock says.
  *
+ * A goal starts work without a user message: OpenCode writes a note when a goal is set, when it is
+ * resumed, and each time its reviewer sends the agent back to work. Each of those begins a turn too.
+ * Counted from the last user message instead, a goal set a day after it would report a day of work, and
+ * the reviewer's time between rounds would be counted as the agent's.
+ *
  * The line for a turn belongs under its last step, ahead of any note about how the run ended. A turn
  * is left out when its start is not loaded, or when it has no finished step; one with a step still
  * running is the turn in progress.
@@ -297,7 +319,7 @@ export function turnStats(messages: readonly ChatMessage[]): TurnStats {
   }
 
   for (const message of messages) {
-    if (message.kind === 'user') {
+    if (message.kind === 'user' || (message.kind === 'note' && message.goal !== undefined)) {
       close()
       // A message without a time (0) says nothing about when the turn began.
       startedAt = message.time > 0 ? message.time : null
