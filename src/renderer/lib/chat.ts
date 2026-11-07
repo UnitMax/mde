@@ -25,7 +25,13 @@ export function modelKey(model: Pick<OpenCodeModelRef, 'id' | 'providerId'>): st
 }
 
 export function sameModelRef(a: OpenCodeModelRef | null | undefined, b: OpenCodeModelRef | null | undefined): boolean {
-  return Boolean(a && b && a.id === b.id && a.providerId === b.providerId)
+  return Boolean(a && b && a.id === b.id && a.providerId === b.providerId && a.variant === b.variant)
+}
+
+/** Display labels only; the available IDs always come from OpenCode. */
+export function modelVariantLabel(id: string): string {
+  if (id === 'xhigh') return 'Extra high'
+  return id.charAt(0).toUpperCase() + id.slice(1).replace(/[_-]/g, ' ')
 }
 
 export function findModel(models: readonly ChatModel[], ref: OpenCodeModelRef | null | undefined): ChatModel | undefined {
@@ -76,7 +82,12 @@ export function initialChoice(
     : options.defaultAgent ?? orderAgents(options.agents)[0]?.id ?? null
   const rememberedModel = findModel(options.models, remembered.model)
   const model = rememberedModel
-    ? { id: rememberedModel.id, providerId: rememberedModel.providerId }
+    ? {
+        id: rememberedModel.id,
+        providerId: rememberedModel.providerId,
+        ...(remembered.model?.variant && rememberedModel.variants?.includes(remembered.model.variant)
+          ? { variant: remembered.model.variant } : {}),
+      }
     : options.defaultModel ?? (options.models[0] ? { id: options.models[0].id, providerId: options.models[0].providerId } : null)
   return { agent, model }
 }

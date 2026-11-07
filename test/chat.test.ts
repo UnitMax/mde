@@ -20,6 +20,7 @@ import {
   mergeLive,
   mergePending,
   modelName,
+  sameModelRef,
   orderAgents,
   pruneLive,
   revertedMessageCount,
@@ -39,6 +40,25 @@ const models = [
 ]
 
 describe('chat picker helpers', () => {
+  it('treats effort changes and returning to defaults as model selection changes', () => {
+    expect(sameModelRef(model, { ...model })).toBe(true)
+    expect(sameModelRef({ ...model, variant: 'high' }, { ...model, variant: 'high' })).toBe(true)
+    expect(sameModelRef({ ...model, variant: 'high' }, { ...model, variant: 'low' })).toBe(false)
+    expect(sameModelRef({ ...model, variant: 'high' }, model)).toBe(false)
+  })
+
+  it('restores only variants still offered for the remembered model', () => {
+    const options = {
+      agents: [], models: [{ ...models[0]!, variants: ['low', 'deep-review'] }], defaultModel: null, defaultAgent: null,
+    }
+    const ref = { id: 'b-model', providerId: 'zed', variant: 'deep-review' }
+    expect(initialChoice(options, { model: ref }).model).toEqual(ref)
+    expect(initialChoice(options, { model: { ...ref, variant: 'high' } }).model)
+      .toEqual({ id: 'b-model', providerId: 'zed' })
+    expect(initialChoice({ ...options, models: [models[0]!] }, { model: ref }).model)
+      .toEqual({ id: 'b-model', providerId: 'zed' })
+  })
+
   it('orders Build and Plan first', () => {
     expect(orderAgents([
       { id: 'review', name: 'Review' }, { id: 'plan', name: 'Plan' }, { id: 'apply', name: 'Apply' }, { id: 'build', name: 'Build' },

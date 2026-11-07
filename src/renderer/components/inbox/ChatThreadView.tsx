@@ -20,7 +20,7 @@ import { TurnDuration, WorkingFor } from '@/components/inbox/ChatTurnTime'
 import { scrollBehavior, TIMELINE_MIN_PROMPTS, timelineEntries } from '@/lib/chat-timeline'
 import { compactPlans, type RenderBlock } from '@/lib/chat-tools'
 import { cn } from '@/lib/utils'
-import { compactionState, contextUsage, findModel, goalPhase, hideReverted, initialChoice, mergeLive, revertedMessageCount, turnStats } from '@/lib/chat'
+import { compactionState, contextUsage, findModel, goalPhase, hideReverted, initialChoice, mergeLive, revertedMessageCount, sameModelRef, turnStats } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { mcpKey } from '@/lib/mcp'
 import { slashCommands } from '@/lib/slash-commands'
@@ -287,7 +287,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
       action: 'set',
       objective: change.objective,
       ...(agent && agent !== latest?.agent ? { agent } : {}),
-      ...(model && (model.id !== latest?.model.id || model.providerId !== latest?.model.providerId) ? { model } : {}),
+      ...(model && !sameModelRef(model, latest?.model) ? { model } : {}),
     })
   }, [agent, latest?.agent, latest?.model, model, setGoal, thread.id])
   const commands = useMemo(
@@ -460,7 +460,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
             await send(thread.id, text, {
               ...attachments,
               ...(agent && agent !== latest?.agent ? { agent } : {}),
-              ...(model && (model.id !== latest?.model.id || model.providerId !== latest?.model.providerId) ? { model } : {}),
+              ...(model && !sameModelRef(model, latest?.model) ? { model } : {}),
             })
           }}
         />

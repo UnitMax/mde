@@ -1,7 +1,7 @@
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ForwardedRef, type ReactNode } from 'react'
-import { Paperclip, PenLine, X, File as FileIcon, Bot, ChevronDown, Hammer, ListChecks, LoaderCircle, Search, Sparkles, Square } from 'lucide-react'
+import { Paperclip, PenLine, X, File as FileIcon, Bot, ChevronDown, Hammer, ListChecks, LoaderCircle, Square } from 'lucide-react'
 import { readFileTreeDrop, isFileDrop } from '@/terminal/drop'
-import type { ChatDelivery, ChatDraft, ChatDraftChoice, ChatDraftKey, ChatDraftRequest, ChatAgent, ChatModel, ChatSkill, OpenCodeModelRef } from '@shared/types'
+import type { ChatDelivery, ChatDraft, ChatDraftChoice, ChatDraftKey, ChatDraftRequest, ChatAgent, ChatSkill, OpenCodeModelRef } from '@shared/types'
 import { skillTriggerAt } from '@shared/skills'
 import { addQuote, joinQuotes, leadingQuotes, MESSAGE_TEXT_LIMIT } from '@/lib/chat-quote'
 import { applySkill, filterSkills } from '@/lib/skills'
@@ -16,9 +16,10 @@ import { CompletionPicker, type CompletionItem } from '@/components/inbox/Comple
 import { ContextMeter, type ContextCompact } from '@/components/inbox/ContextMeter'
 import { ChatInput, type ChatInputHandle } from '@/components/inbox/ChatInput'
 import { ChatQuoteCard } from '@/components/inbox/ChatQuoteCard'
+import { ModelPicker } from '@/components/inbox/ModelPicker'
 import { ChatSendButton } from '@/components/inbox/ChatSendButton'
 import { SlashCommandIcon } from '@/components/inbox/SlashCommandIcon'
-import { findModel, groupModels, modelKey, modelName, orderAgents, sameModelRef, type ContextUsage } from '@/lib/chat'
+import { orderAgents, type ContextUsage } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { cn } from '@/lib/utils'
 import type { OptionsState } from '@/store/inbox-chat'
@@ -38,75 +39,6 @@ function agentColor(agent: ChatAgent | undefined): string | undefined {
 const pickerButton =
   'flex h-7 min-w-0 items-center gap-1.5 rounded-md px-2 text-[12px] text-fg-muted transition-colors ' +
   'hover:bg-hover hover:text-fg disabled:pointer-events-none disabled:opacity-50 data-[state=open]:bg-hover data-[state=open]:text-fg'
-
-export function ModelPicker({
-  models,
-  value,
-  onChange,
-  disabled,
-}: {
-  models: ChatModel[]
-  value: OpenCodeModelRef | null
-  onChange: (model: OpenCodeModelRef) => void
-  disabled?: boolean
-}): JSX.Element {
-  const [open, setOpen] = useState(false)
-  const [query, setQuery] = useState('')
-  const groups = useMemo(() => groupModels(models, query), [models, query])
-  const current = findModel(models, value)
-
-  return (
-    <DropdownMenu open={open} onOpenChange={(next) => { setOpen(next); if (!next) setQuery('') }}>
-      <DropdownMenuTrigger asChild disabled={disabled}>
-        <button type="button" className={pickerButton} aria-label="Model" data-testid="chat-model-picker">
-          <Sparkles className="h-3.5 w-3.5 shrink-0 text-accent" />
-          <span className="max-w-[16rem] truncate" title={value ? modelKey(value) : undefined}>
-            {value && <span className="text-fg-subtle">{current?.providerName ?? value.providerId} / </span>}
-            {modelName(models, value)}
-          </span>
-          <ChevronDown className="h-3 w-3 shrink-0 opacity-70" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-80 p-0">
-        <div className="relative border-b border-line p-1.5">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-subtle" />
-          <input
-            autoFocus
-            aria-label="Search models"
-            placeholder="Search models"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            // Typing must reach the field, not the menu's type-ahead.
-            onKeyDown={(event) => {
-              if (event.key !== 'Escape' && event.key !== 'ArrowDown' && event.key !== 'ArrowUp') event.stopPropagation()
-            }}
-            className="h-7 w-full rounded bg-panel pl-7 pr-2 text-xs text-fg outline-none placeholder:text-fg-subtle"
-          />
-        </div>
-        <div className="max-h-80 overflow-y-auto p-1" data-testid="chat-model-list">
-          {groups.length === 0 && <p className="px-2 py-1.5 text-xs text-fg-subtle">No models match.</p>}
-          {groups.map((group) => (
-            <div key={group.providerId} role="group" aria-label={group.providerName}>
-              <p className="px-2 pb-0.5 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-fg-subtle">
-                {group.providerName}
-              </p>
-              {group.models.map((model) => (
-                <DropdownMenuItem
-                  key={modelKey(model)}
-                  onSelect={() => onChange({ id: model.id, providerId: model.providerId })}
-                  className={cn(sameModelRef(value, model) && 'bg-active')}
-                  title={modelKey(model)}
-                >
-                  <span className="min-w-0 truncate">{model.name}</span>
-                </DropdownMenuItem>
-              ))}
-            </div>
-          ))}
-        </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
 
 export function AgentPicker({
   agents,

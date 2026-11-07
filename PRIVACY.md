@@ -46,7 +46,7 @@ MDE stores data only on the local machine:
 - `inbox.json` under Electron's user-data directory, once you use the Inbox: one record for each
   OpenCode conversation you started in the Inbox, with its session ID, OpenCode title, optional custom name, folder, terminal chat mode
   when chosen (older threads use GUI chat), target (Mac
-  or WSL distro), Git branch, model and provider identifiers, last status, timestamps (including,
+  or WSL distro), Git branch, model and provider identifiers and the selected model variant (reasoning effort), last status, timestamps (including,
   while a conversation is working, when its current run began), read, archived and pinned flags, and for a forked conversation the session ID of the one it was forked from. For a conversation started in a Git worktree it also holds that worktree's root path, the repository's path, and the names of the new branch and the branch it was cut from. It also holds the Inbox folders (projects) you add (path, target, name, the icon you picked for it — the name of a built-in icon and its color, or one emoji — and timestamps; at most 200), the worktrees MDE created for you (the same record and a name made from the folder and branch; at most 100, so that more conversations can be started in them) and the folder, model and agent
   you last chose in the Inbox composer. It never holds prompts, messages or tool data. It keeps at
   most 1,000 conversations; deleting a conversation from the Inbox removes only MDE's record.

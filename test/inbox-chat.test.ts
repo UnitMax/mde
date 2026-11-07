@@ -134,6 +134,23 @@ afterEach(async () => {
 })
 
 describe('Inbox new thread', () => {
+  it('starts a new thread with the effort chosen in the model menu and remembers it', async () => {
+    api.chat.options.mockResolvedValue({ ...options, models: [{ ...options.models[0]!, variants: ['low', 'high'] }] })
+    try {
+      const view = await render()
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-model-picker"]')).not.toBeNull())
+      await act(async () => button(view, 'Model').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+      const high = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')).find((item) => item.textContent === 'High')!
+      await act(async () => high.click())
+      await type(messageInput(view), 'Review the implementation')
+      await act(async () => button(view, 'Send').click())
+      expect(api.chat.create).toHaveBeenLastCalledWith(expect.objectContaining({ model: { ...options.defaultModel!, variant: 'high' } }))
+      expect(useInboxChat.getState().composer.model).toEqual({ ...options.defaultModel!, variant: 'high' })
+    } finally {
+      api.chat.options.mockResolvedValue(options)
+    }
+  })
+
   it('asks for a folder first', async () => {
     useInboxChat.setState({ folders: [], composer: {} })
     const view = await render()
@@ -658,6 +675,33 @@ describe('Inbox worktree mode', () => {
 })
 
 describe('Inbox conversation', () => {
+  it.each([
+    [undefined, 'high'],
+    ['high', undefined],
+  ] as const)('sends an effort-only change from %s to %s for the same model', async (before, after) => {
+    const previous = { ...options.defaultModel!, ...(before ? { variant: before } : {}) }
+    api.chat.options.mockResolvedValue({ ...options, models: [{ ...options.models[0]!, variants: ['low', 'high'] }] })
+    page = { running: false, older: null, messages: [
+      { kind: 'assistant', id: 'msg_effort', time: 1, agent: 'build', model: previous, completed: true, parts: [{ kind: 'text', text: 'Ready.' }] },
+    ] }
+    useWorkspace.setState({ inboxThreads: [thread({ model: previous })], selectedInboxThreadId: 'ses_one' })
+    try {
+      const view = await render()
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-model-picker"]')).not.toBeNull())
+      await act(async () => button(view, 'Model').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+      const choice = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitemradio"]'))
+        .find((item) => item.textContent === (after ? 'High' : 'DefaultUse model settings'))!
+      await act(async () => choice.click())
+      await type(messageInput(view), 'Continue')
+      await act(async () => button(view, 'Send').click())
+      expect(api.chat.send).toHaveBeenLastCalledWith(expect.objectContaining({
+        threadId: 'ses_one', text: 'Continue', model: { ...options.defaultModel!, ...(after ? { variant: after } : {}) },
+      }))
+    } finally {
+      api.chat.options.mockResolvedValue(options)
+    }
+  })
+
   it('regenerates the selected title, keeps pending state across navigation, and follows title updates', async () => {
     const original = thread({ archived: true })
     useWorkspace.setState({ inboxThreads: [original, thread({ id: 'ses_two', title: 'Other' })], selectedInboxThreadId: original.id })

@@ -155,7 +155,7 @@ function modelBody(model: OpenCodeModelRef): { id: string; providerID: string; v
 }
 
 function sameModel(a: OpenCodeModelRef | null, b: OpenCodeModelRef): boolean {
-  return a?.id === b.id && a.providerId === b.providerId
+  return a?.id === b.id && a.providerId === b.providerId && a.variant === b.variant
 }
 
 /** Event types that change what the conversation shows. */

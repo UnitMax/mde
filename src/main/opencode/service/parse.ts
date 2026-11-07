@@ -238,11 +238,17 @@ export function parseModels(value: unknown, providers: Map<string, string>): Cha
     const limit = record(model.limit)
     const contextLimit = count(limit?.context)
     const outputLimit = count(limit?.output)
+    const variants = [...new Set(list(model.variants).flatMap((value) => {
+      const variant = record(value)
+      const id = short(variant?.id)
+      return id && id !== 'default' && variant?.disabled !== true ? [id] : []
+    }))]
     models.push({
       id,
       providerId,
       providerName: providers.get(providerId) ?? providerId,
       name: short(model.name) ?? id,
+      ...(variants.length ? { variants } : {}),
       ...(contextLimit ? { contextLimit } : {}),
       ...(outputLimit ? { outputLimit } : {}),
     })
@@ -253,7 +259,7 @@ export function parseModels(value: unknown, providers: Map<string, string>): Cha
 export function parseDefaultModel(value: unknown): OpenCodeModelRef | null {
   const model = record(data(value, 'a default model'))
   if (!model) return null
-  return parseModelRef({ id: model.id, providerID: model.providerID })
+  return parseModelRef(model)
 }
 
 function errorText(value: unknown): string | undefined {

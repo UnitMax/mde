@@ -3,7 +3,7 @@
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ChatGoal, ChatGoalRequest, ChatMessage, ChatMessagesPage, ChatRequests, InboxFolder, InboxThread } from '../src/shared/types'
+import type { ChatGoal, ChatGoalRequest, ChatMessage, ChatMessagesPage, ChatOptions, ChatRequests, InboxFolder, InboxThread } from '../src/shared/types'
 import { GOAL_REVIEW_DELAY_MS, GOAL_WAIT_DELAY_MS } from '../src/renderer/components/inbox/ChatGoalCard'
 import { InboxThreadView } from '../src/renderer/components/InboxThreadView'
 import { useInboxAside } from '../src/renderer/store/inbox-aside'
@@ -51,7 +51,7 @@ const api = {
   clipboard: { writeText: vi.fn(async () => undefined), paste: vi.fn(async () => undefined) },
   chat: {
     draft: vi.fn(async (req: { text?: string }) => ({ text: req.text ?? '', revision: 1, attachments: [] })),
-    options: vi.fn(async () => ({ agents: [{ id: 'build', name: 'build' }], models: [], defaultModel: model, defaultAgent: 'build', skills: [] })),
+    options: vi.fn(async (): Promise<ChatOptions> => ({ agents: [{ id: 'build', name: 'build' }], models: [], defaultModel: model, defaultAgent: 'build', skills: [] })),
     messages: vi.fn(async (): Promise<ChatMessagesPage> => page),
     send,
     interrupt: vi.fn(async () => undefined),
@@ -358,6 +358,22 @@ describe('what the goal is doing, as the card says it', () => {
 })
 
 describe('/goal in the message box', () => {
+  it('starts a goal with the effort selected for the same model', async () => {
+    const defaults = await api.chat.options()
+    api.chat.options.mockResolvedValue({ ...defaults, models: [{ ...model, name: 'Reasoner', providerName: 'OpenCode', variants: ['high'] }] })
+    try {
+      const container = await render()
+      await vi.waitFor(() => expect(byId('chat-model-picker')).not.toBeNull())
+      await act(async () => byId('chat-model-picker')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+      const high = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')).find((item) => item.textContent === 'High')!
+      await act(async () => high.click())
+      await submit(container, '/goal finish the migration')
+      expect(setGoal).toHaveBeenCalledExactlyOnceWith({ threadId: 'ses_one', action: 'set', objective: 'finish the migration', model: { ...model, variant: 'high' } })
+    } finally {
+      api.chat.options.mockResolvedValue(defaults)
+    }
+  })
+
   /** Types a message into the box and presses Enter. */
   async function submit(container: HTMLElement, value: string): Promise<void> {
     const box = messageInput(container)

@@ -484,6 +484,23 @@ describe('OpenCode service parsing', () => {
     expect(models[1]).not.toHaveProperty('contextLimit')
   })
 
+  it('keeps the variants OpenCode offers, including custom IDs, without inventing levels', () => {
+    const models = parseModels({ data: [
+      { id: 'reasoner', providerID: 'local', variants: [
+        { id: 'low' }, { id: 'deep-review' }, { id: 'none' }, { id: 'low' },
+        { id: 'default' }, { id: 'disabled', disabled: true },
+        { id: '' }, { id: 'bad\nvalue' }, { id: 'x'.repeat(513) }, null, 'high', {},
+      ] },
+      { id: 'fixed-high', providerID: 'local', capabilities: { reasoning: { supported: true } } },
+      { id: 'empty', providerID: 'local', variants: [] },
+      { id: 'malformed', providerID: 'local', variants: { high: {} } },
+    ] }, new Map())
+    expect(models[0]?.variants).toEqual(['low', 'deep-review', 'none'])
+    for (const model of models.slice(1)) expect(model).not.toHaveProperty('variants')
+    expect(parseDefaultModel({ data: { id: 'reasoner', providerID: 'local', variant: 'deep-review' } }))
+      .toEqual({ id: 'reasoner', providerId: 'local', variant: 'deep-review' })
+  })
+
   it('reads token counts, treating missing or invalid ones as 0', () => {
     expect(parseTokens({ input: 246, output: 13, reasoning: 5, cache: { read: 7808, write: 12 } }))
       .toEqual({ input: 246, output: 13, reasoning: 5, cacheRead: 7808, cacheWrite: 12 })

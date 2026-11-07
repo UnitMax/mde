@@ -176,7 +176,9 @@ export function NewThreadView(): JSX.Element {
   const ready = options?.status === 'ready' ? options.value : null
   const initial = useMemo(() => (ready ? initialChoice(ready, composer) : null), [ready, composer])
   const agent = pick.agent && ready?.agents.some((item) => item.id === pick.agent) ? pick.agent : initial?.agent ?? null
-  const model = pick.model && ready && findModel(ready.models, pick.model) ? pick.model : initial?.model ?? null
+  const model = pick.model && ready && findModel(ready.models, pick.model)
+    ? initialChoice(ready, { model: pick.model }).model
+    : initial?.model ?? null
 
   const chooseAgent = (next: string): void => {
     setPicked({ ...pick, agent: next })

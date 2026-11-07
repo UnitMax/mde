@@ -475,6 +475,16 @@ Editing a recalled message ends history navigation. Recall uses this thread's vi
 and pending messages, loads older pages when needed, and restores only text, leaving attachments
 as they are. Recalled text uses the normal draft saving path; there is no separate stored history.
 The model picker shows the selected provider and model as “Provider / Model”, with a muted provider prefix.
+Its menu includes a reasoning-effort pane when OpenCode offers model variants. Browsing a model
+shows that model's choices; choosing an effort selects both the model and the variant. Selecting
+a model uses its defaults, or retains the effort when reselecting the current model. The menu stays
+open for models with variants so an effort can be chosen immediately. Default removes the variant
+override; it is distinct from a variant named None. Choices, including custom IDs and their order,
+come from OpenCode's model catalogue rather than a fixed list. Models without variants have no
+effort choices. The chosen effort appears beside the model in the composer and is remembered for
+new threads and drafts; a remembered variant no longer offered by the model falls back to its defaults.
+Effort-only changes are applied through OpenCode's model-switch operation before sending a message
+or starting a goal, including when returning to defaults.
 The folder, model and agent last used are remembered in `inbox.json`; otherwise the composer
 starts with OpenCode's default model and the Build agent. Sending creates the OpenCode session in
 the folder (or in a new worktree, below), records it as a chat thread, selects it, and sends the

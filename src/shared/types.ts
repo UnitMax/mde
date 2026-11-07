@@ -304,6 +304,8 @@ export interface ChatModel {
   providerId: string
   providerName: string
   name: string
+  /** Selectable variant IDs, in the order OpenCode reports them. Absent when none are offered. */
+  variants?: string[]
   /** The context window in tokens, when OpenCode reports one. */
   contextLimit?: number
   /** The most tokens one reply can have, when OpenCode reports it. */

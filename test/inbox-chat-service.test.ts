@@ -58,6 +58,28 @@ function setup(responses: Partial<Record<ServiceOperation, unknown>> = {}, draft
 }
 
 describe('Inbox chat service', () => {
+  it.each([
+    [undefined, 'high', true],
+    ['high', 'low', true],
+    ['high', undefined, true],
+    ['high', 'high', false],
+  ] as const)('applies effort %s → %s before sending (switch: %s)', async (before, after, switches) => {
+    const { service, folder, calls, store } = setup({
+      'session.create': { data: { id: 'ses_effort' } },
+      'session.get': { data: { agent: 'build', model: { id: model.id, providerID: model.providerId, ...(before ? { variant: before } : {}) } } },
+    })
+    await service.create({ folderId: folder.id, text: 'Start', agent: 'build', model })
+    calls.length = 0
+    const choice = { ...model, ...(after ? { variant: after } : {}) }
+    await service.send({ threadId: 'ses_effort', text: 'Continue', model: choice })
+    expect(calls.map((call) => call.operation)).toEqual([
+      'session.get', ...(switches ? ['session.switchModel'] : []), 'session.prompt',
+    ])
+    if (switches) expect(calls[1]?.request.body).toEqual({ model: { id: model.id, providerID: model.providerId, ...(after ? { variant: after } : {}) } })
+    expect(store.composer().model).toEqual(choice)
+    service.stop()
+  })
+
   it('creates terminal chats with the same API choices and records their API status', async () => {
     const { service, folder, calls, store, advance, disable } = setup({
       'session.create': { data: { id: 'ses_terminal', title: 'Terminal task' } },
