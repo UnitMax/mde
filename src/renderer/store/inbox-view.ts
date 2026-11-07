@@ -2,11 +2,13 @@ import { create } from 'zustand'
 import {
   clampInboxSidebarWidth,
   getInboxDraftsCollapsed,
+  getInboxProjectFilter,
   getInboxSidebarWidth,
   getInboxTitleIcons,
   getInboxWorkingCollapsed,
   getInboxWorkingSection,
   saveInboxDraftsCollapsed,
+  saveInboxProjectFilter,
   saveInboxSidebarWidth,
   saveInboxTitleIcons,
   saveInboxWorkingCollapsed,
@@ -23,6 +25,12 @@ interface Store {
    */
   titleIcons: boolean
   setTitleIcons: (on: boolean) => void
+  /**
+   * The project the thread list, the Working section and the drafts are narrowed to: its folder ID, or null for
+   * all of them. Kept between runs. An ID with no project behind it (removed since) narrows nothing.
+   */
+  projectFilter: string | null
+  setProjectFilter: (projectId: string | null) => void
   /** That section is folded up, leaving only its header. */
   workingCollapsed: boolean
   setWorkingCollapsed: (collapsed: boolean) => void
@@ -46,6 +54,11 @@ export const useInboxView = create<Store>((set) => ({
   setTitleIcons: (on) => {
     saveInboxTitleIcons(on)
     set({ titleIcons: on })
+  },
+  projectFilter: getInboxProjectFilter(),
+  setProjectFilter: (projectId) => {
+    saveInboxProjectFilter(projectId)
+    set({ projectFilter: projectId })
   },
   workingCollapsed: getInboxWorkingCollapsed(),
   setWorkingCollapsed: (collapsed) => {

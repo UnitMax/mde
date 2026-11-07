@@ -27,6 +27,16 @@ export function draftProject(draft: ChatDraftSummary, folders: readonly InboxFol
   return inboxThreadFolder({ folderId: own.id, worktree: own.worktree, target: own.target }, folders) ?? own
 }
 
+/** The drafts for one project, or all of them with no project; a worktree folder's draft is its source project's. */
+export function draftsInProject(
+  drafts: readonly ChatDraftSummary[],
+  project: Pick<InboxFolder, 'id'> | null,
+  folders: readonly InboxFolder[]
+): ChatDraftSummary[] {
+  if (!project) return [...drafts]
+  return drafts.filter((draft) => draftProject(draft, folders)?.id === project.id)
+}
+
 /** The folder's name in a row, or a note that it is gone from the Inbox (the draft then opens in the page's folder). */
 export function draftFolderLabel(draft: ChatDraftSummary, folders: readonly InboxFolder[]): string {
   return folders.find((folder) => folder.id === draft.folderId)?.name ?? 'Removed folder'

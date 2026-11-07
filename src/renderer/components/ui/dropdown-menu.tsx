@@ -68,6 +68,32 @@ export const DropdownMenuCheckboxItem = React.forwardRef<
 ))
 DropdownMenuCheckboxItem.displayName = DropdownMenuPrimitive.CheckboxItem.displayName
 
+export const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup
+
+/** One choice of several, with the check where the checkbox items have it. */
+export const DropdownMenuRadioItem = React.forwardRef<
+  React.ElementRef<typeof DropdownMenuPrimitive.RadioItem>,
+  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.RadioItem>
+>(({ className, children, ...props }, ref) => (
+  <DropdownMenuPrimitive.RadioItem
+    ref={ref}
+    className={cn(
+      'relative flex cursor-default select-none items-center gap-2 rounded py-1.5 pl-7 pr-2 text-[13px] text-fg outline-none',
+      'data-[highlighted]:bg-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-40',
+      className
+    )}
+    {...props}
+  >
+    <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
+      <DropdownMenuPrimitive.ItemIndicator>
+        <Check className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
+      </DropdownMenuPrimitive.ItemIndicator>
+    </span>
+    {children}
+  </DropdownMenuPrimitive.RadioItem>
+))
+DropdownMenuRadioItem.displayName = DropdownMenuPrimitive.RadioItem.displayName
+
 /**
  * A menu row that is an on/off switch. It is a checkbox item, so it is announced as a menu item that is checked or
  * not, and the arrow keys, Space and Enter work as in any menu; the switch drawn on the right is decoration. Choosing

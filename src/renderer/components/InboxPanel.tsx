@@ -22,6 +22,7 @@ import type { InboxThread } from '@shared/types'
 import { ElapsedTime } from '@/components/ElapsedTime'
 import { InboxChangesBadge } from '@/components/inbox/InboxChanges'
 import { InboxDraftsSection } from '@/components/inbox/InboxDrafts'
+import { InboxProjectFilter } from '@/components/inbox/InboxProjectFilter'
 import { InboxProjectsButton } from '@/components/inbox/InboxProjectsButton'
 import { InboxSettingsMenu } from '@/components/inbox/InboxSettingsMenu'
 import { ProjectIcon } from '@/components/inbox/ProjectIcon'
@@ -47,9 +48,13 @@ import {
 import {
   INBOX_CLOCK_MS,
   INBOX_FILTERS,
+  countUnreadInboxThreads,
   inboxFolderLabel,
+  inboxProjectSummaries,
+  inboxProjects,
   inboxThreadFolder,
   inboxThreadHome,
+  inboxThreadsInProject,
   inboxWorktreeShared,
   inboxLocked,
   inboxThreadWorking,
@@ -64,7 +69,7 @@ import {
   type InboxFilter,
   type InboxStatusChip
 } from '@/lib/inbox'
-import { visibleDrafts } from '@/lib/inbox-drafts'
+import { draftsInProject, visibleDrafts } from '@/lib/inbox-drafts'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { cn } from '@/lib/utils'
 import { useInboxChat } from '@/store/inbox-chat'
@@ -472,13 +477,18 @@ function InboxThreadRow({
   )
 }
 
-/** `workingShown`: the Working section has the threads that are working, so the list does not. */
-function emptyMessage(filter: InboxFilter, query: string, workingShown: boolean): string {
-  if (query.trim()) return 'No threads match your search.'
-  if (filter === 'unread') return 'No unread threads.'
-  if (filter === 'attention') return 'No threads need your input.'
-  if (filter === 'archived') return 'No parked threads.'
-  return workingShown ? 'No other threads.' : 'No threads yet.'
+/**
+ * `workingShown`: the Working section has the threads that are working, so the list does not. `project` is the name
+ * of the project the Inbox is narrowed to, if it is.
+ */
+function emptyMessage(filter: InboxFilter, query: string, workingShown: boolean, project?: string): string {
+  const where = project ? ` in ${project}` : ''
+  if (query.trim()) return project ? `No threads in ${project} match your search.` : 'No threads match your search.'
+  if (filter === 'unread') return `No unread threads${where}.`
+  if (filter === 'attention') return project ? `No threads in ${project} need your input.` : 'No threads need your input.'
+  if (filter === 'archived') return `No parked threads${where}.`
+  if (workingShown) return `No other threads${where}.`
+  return project ? `No threads in ${project} yet.` : 'No threads yet.'
 }
 
 /**
@@ -489,6 +499,7 @@ function emptyMessage(filter: InboxFilter, query: string, workingShown: boolean)
 function InboxWorkingSection({
   threads,
   searching,
+  project,
   selectedId,
   now,
   forking,
@@ -498,6 +509,8 @@ function InboxWorkingSection({
   threads: InboxThread[]
   /** A search is narrowing the threads. */
   searching: boolean
+  /** The name of the project the Inbox is narrowed to, if it is. */
+  project?: string
   selectedId: string | null
   now: number
   forking: boolean
@@ -539,7 +552,9 @@ function InboxWorkingSection({
         >
           {threads.length === 0 ? (
             <p className="px-2 py-1 text-xs text-fg-subtle">
-              {searching ? 'No working threads match your search.' : 'No threads are working.'}
+              {searching
+                ? 'No working threads match your search.'
+                : project ? `No threads are working in ${project}.` : 'No threads are working.'}
             </p>
           ) : (
             <div className="flex flex-col gap-0.5">
@@ -577,6 +592,14 @@ export function InboxPanel(): JSX.Element {
   // A fork is a request to the service and can fail; the menu has no place to say so.
   const [fork, setFork] = useState<{ pending: boolean; error: string | null }>({ pending: false, error: null })
   const folders = useInboxChat((state) => state.folders)
+  const foldersLoaded = useInboxChat((state) => state.foldersLoaded)
+  const projectId = useInboxView((state) => state.projectFilter)
+  const setProjectFilter = useInboxView((state) => state.setProjectFilter)
+  // The project the Inbox is narrowed to. One that has since been removed narrows nothing, and is forgotten once the list is known.
+  const project = (projectId && inboxProjects(folders).find((folder) => folder.id === projectId)) || null
+  useEffect(() => {
+    if (projectId && foldersLoaded && !project) setProjectFilter(null)
+  }, [projectId, foldersLoaded, project, setProjectFilter])
   const drafts = useInboxDrafts((state) => state.drafts)
   const page = useInboxDrafts((state) => state.page)
   const loadDrafts = useInboxDrafts((state) => state.load)
@@ -588,13 +611,16 @@ export function InboxPanel(): JSX.Element {
   }, [loadDrafts, selectedId])
   // A new thread being written for the first time is not listed until its page is left; one taken from the list stays in it.
   const onNewThread = selectedId === null && !page.opened
-  const listedDrafts = visibleDrafts(drafts, onNewThread ? page.id : null, folders)
-  const shownDrafts = query.trim() ? visibleDrafts(drafts, onNewThread ? page.id : null, folders, query) : listedDrafts
+  const projectDrafts = draftsInProject(drafts, project, folders)
+  const listedDrafts = visibleDrafts(projectDrafts, onNewThread ? page.id : null, folders)
+  const shownDrafts = query.trim() ? visibleDrafts(projectDrafts, onNewThread ? page.id : null, folders, query) : listedDrafts
   const showWorking = useInboxView((state) => state.workingSection)
   // With the section on, unpinned working threads move into it; pinned ones stay in the list.
-  const visible = visibleInboxThreads(threads, filter, query, showWorking)
-  const working = showWorking ? workingInboxThreads(threads, query) : []
-  const workingShown = showWorking && threads.some((thread) => !thread.pinned && inboxThreadWorking(thread))
+  const projectThreads = inboxThreadsInProject(threads, project, folders)
+  const visible = visibleInboxThreads(projectThreads, filter, query, showWorking)
+  const working = showWorking ? workingInboxThreads(projectThreads, query) : []
+  const workingShown = showWorking && projectThreads.some((thread) => !thread.pinned && inboxThreadWorking(thread))
+  const projectSummaries = inboxProjectSummaries(threads, folders)
   const startFork = (thread: InboxThread): void => {
     if (fork.pending) return
     setFork({ pending: true, error: null })
@@ -655,6 +681,15 @@ export function InboxPanel(): JSX.Element {
           </button>
         )}
       </div>
+      {(projectSummaries.length > 1 || project) && (
+        <InboxProjectFilter
+          summaries={projectSummaries}
+          selected={project}
+          total={threads.filter((thread) => !thread.archived).length}
+          unread={countUnreadInboxThreads(threads)}
+          onChange={setProjectFilter}
+        />
+      )}
       <div className="flex items-center px-1">
         <div role="group" aria-label="Inbox filter" className="flex gap-0.5">
           {INBOX_FILTERS.map((option) => (
@@ -701,8 +736,8 @@ export function InboxPanel(): JSX.Element {
       <div className="min-h-16 flex-1 overflow-y-auto" data-testid="inbox-thread-list">
         {visible.length === 0 ? (
           <div className="px-2 py-1 text-xs text-fg-subtle">
-            <p>{emptyMessage(filter, query, workingShown)}</p>
-            {threads.length === 0 && (
+            <p>{emptyMessage(filter, query, workingShown, project?.name)}</p>
+            {projectThreads.length === 0 && (
               <p className="mt-1">
                 Start one with New thread.
               </p>
@@ -738,6 +773,7 @@ export function InboxPanel(): JSX.Element {
         <InboxWorkingSection
           threads={working}
           searching={query.trim() !== ''}
+          project={project?.name}
           selectedId={selectedId}
           now={now}
           forking={fork.pending}

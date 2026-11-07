@@ -213,6 +213,19 @@ of the Working section, and to draft rows (where the icon comes before the pen m
 without an icon, or one removed from the Inbox, shows the plain folder, so every row has something in
 front and the titles stay lined up. The switch takes effect at once.
 
+**Project filter.** With two or more projects, a field under the search box ("All projects", with a layers
+icon) narrows the Inbox to one of them. Its menu lists every project by name with its picture, the number of
+threads it has in the Inbox (parked ones left out) and, in the tab badge's accent pill, how many of those are
+unread; "All projects" shows the totals. Picking one turns the field into that project's picture and name, tinted
+with the accent, with an X to go back to all of them. The filter applies to the thread list, to the Working
+section and to the Drafts section, together with the status tabs and the search; a thread started in a worktree
+belongs to the project the worktree was cut from, and a thread whose project was removed from the Inbox only shows
+with no project picked. The empty messages name the project ("No unread threads in app."). The Inbox tab's unread
+badge keeps counting every project. The choice is kept in `localStorage` (`mde.inbox-project-filter`, a project's
+folder ID; `store/inbox-view.ts`) and is forgotten once the projects have been read and it names none of them, so a
+removed project cannot leave the list narrowed to nothing. The field stays visible while a project is picked, even
+with only one project left, so there is always a way back.
+
 **Drafts.** A new thread that was started and not sent is a draft, listed in a **Drafts** section
 directly above Working. The section is not there at all while there are no drafts. A draft joins it
 when its page is left with something in it, whether by choosing New thread, opening a thread or

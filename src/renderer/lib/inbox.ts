@@ -69,6 +69,52 @@ export function inboxThreadFolder(
     !folder.worktree && folder.directory === worktree.repository && sameInboxTarget(folder.target, thread.target))
 }
 
+/** The projects the Inbox lists: every folder but the worktrees MDE made, which belong to the project they were cut from. */
+export function inboxProjects(folders: readonly InboxFolder[]): InboxFolder[] {
+  return folders.filter((folder) => !folder.worktree)
+}
+
+/**
+ * The threads of one project, or all of them with no project. A thread in a worktree belongs to the project the
+ * worktree was cut from; one whose project has been removed from the Inbox belongs to none, so it only shows
+ * with no project picked.
+ */
+export function inboxThreadsInProject(
+  threads: readonly InboxThread[],
+  project: Pick<InboxFolder, 'id'> | null,
+  folders: readonly InboxFolder[]
+): InboxThread[] {
+  if (!project) return [...threads]
+  return threads.filter((thread) => inboxThreadFolder(thread, folders)?.id === project.id)
+}
+
+/** A project with how many of its threads are in the Inbox (not parked) and how many of those are unread. */
+export interface InboxProjectSummary {
+  project: InboxFolder
+  threads: number
+  unread: number
+}
+
+/** Every project with its thread counts, by name, for the project filter's menu. */
+export function inboxProjectSummaries(
+  threads: readonly InboxThread[],
+  folders: readonly InboxFolder[]
+): InboxProjectSummary[] {
+  const counts = new Map<string, { threads: number; unread: number }>()
+  for (const thread of threads) {
+    if (thread.archived) continue
+    const id = inboxThreadFolder(thread, folders)?.id
+    if (!id) continue
+    const count = counts.get(id) ?? { threads: 0, unread: 0 }
+    count.threads += 1
+    if (isInboxThreadUnread(thread)) count.unread += 1
+    counts.set(id, count)
+  }
+  return inboxProjects(folders)
+    .map((project) => ({ project, threads: counts.get(project.id)?.threads ?? 0, unread: counts.get(project.id)?.unread ?? 0 }))
+    .sort((a, b) => a.project.name.localeCompare(b.project.name) || (a.project.id < b.project.id ? -1 : 1))
+}
+
 /** Whether a thread's worktree is still used by another thread, such as a fork of it. */
 export function inboxWorktreeShared(thread: InboxThread, threads: readonly InboxThread[]): boolean {
   const worktree = thread.worktree
