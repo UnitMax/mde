@@ -68,6 +68,12 @@ export const bundledRendererDependencies = [
   'zustand',
 ]
 
+// electron-vite also bundles devDependencies into the main-process script (only `dependencies` are left
+// external), so a library used there needs attribution in the same way.
+export const bundledMainDependencies = [
+  'jsonc-parser',
+]
+
 function packageName(packagePath, metadata) {
   if (typeof metadata.name === 'string' && metadata.name) return metadata.name
   const marker = '/node_modules/'
@@ -160,7 +166,7 @@ export function attributedPackagePaths(packageMetadata = packages) {
       .filter(([packagePath, metadata]) => packagePath !== '' && !metadata.dev)
       .map(([packagePath]) => packagePath),
   )
-  for (const packagePath of dependencyClosure(bundledRendererDependencies, packageMetadata)) {
+  for (const packagePath of dependencyClosure([...bundledRendererDependencies, ...bundledMainDependencies], packageMetadata)) {
     selected.add(packagePath)
   }
   return selected
@@ -191,6 +197,7 @@ function directDependencyNames() {
   return new Set([
     ...Object.keys(rootPackage.dependencies ?? {}),
     ...bundledRendererDependencies,
+    ...bundledMainDependencies,
   ])
 }
 
@@ -235,7 +242,7 @@ export function renderThirdPartyNotices() {
     '',
     '## Locked package inventory',
     '',
-    `Generated from \`package-lock.json\` by \`npm run licenses\`. ${entries.length} shipped package entries are listed, including production dependencies and libraries bundled into renderer assets. Build-time-only dependencies are excluded.`,
+    `Generated from \`package-lock.json\` by \`npm run licenses\`. ${entries.length} shipped package entries are listed, including production dependencies and libraries bundled into the renderer assets and the main-process script. Build-time-only dependencies are excluded.`,
     '',
     '| Package | Version | Direct dependency | Declared license | Source |',
     '| --- | --- | --- | --- | --- |'

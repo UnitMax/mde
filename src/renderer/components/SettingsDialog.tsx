@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CodingAgent } from '@shared/types'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { AboutSettingsPanel } from '@/components/AboutSettingsPanel'
 import { KeyboardShortcutsSettings } from '@/components/KeyboardShortcutsSettings'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { SwitchRow } from '@/components/ui/switch'
 import { useWorkspace, type SettingsSection } from '@/store/workspace'
 import { applyTerminalSettings, fitSession, getSession } from '@/terminal/sessions'
 import { isOsc52Policy, OSC52_POLICIES, type Osc52Policy } from '@/terminal/osc52'
@@ -35,53 +37,13 @@ const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: 'about', label: 'About' }
 ]
 
-function SettingsToggle({
-  checked,
-  label,
-  description,
-  testId,
-  onClick
-}: {
-  checked: boolean
-  label: string
-  description: string
-  testId: string
-  onClick: () => void
-}): JSX.Element {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      data-testid={testId}
-      onClick={onClick}
-      className="flex w-full items-center justify-between rounded border border-line bg-panel px-3 py-2 text-left text-xs text-fg-muted hover:bg-hover"
-    >
-      <span>
-        <span className="block font-medium text-fg">{label}</span>
-        <span className="mt-0.5 block text-fg-subtle">{description}</span>
-      </span>
-      <span
-        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
-          checked ? 'bg-accent' : 'bg-line-strong'
-        }`}
-      >
-        <span
-          className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-            checked ? 'translate-x-4' : 'translate-x-0.5'
-          }`}
-        />
-      </span>
-    </button>
-  )
-}
-
 /** The single application Settings dialog, opened through the workspace store from anywhere. */
 export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.Element {
   const open = useWorkspace((state) => state.settingsDialog.open)
   const requestedSection = useWorkspace((state) => state.settingsDialog.section)
   const openSettings = useWorkspace((state) => state.openSettings)
   const closeSettings = useWorkspace((state) => state.closeSettings)
+  const openOpenCodeConfig = useWorkspace((state) => state.openOpenCodeConfig)
   const setOpen = (value: boolean): void => {
     if (value) openSettings()
     else closeSettings()
@@ -91,6 +53,8 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
   const [settings, setSettings] = useState<TerminalSettings>(() => getTerminalSettings())
   const [availableFonts] = useState(() => listTerminalFonts())
   const platform = useWorkspace((state) => state.platform)
+  // OpenCode, and so its configuration, is only used on macOS and (inside WSL) on Windows.
+  const agentIntegration = platform?.platform === 'darwin' || platform?.platform === 'win32'
   useEffect(() => {
     if (open) setActiveSection(requestedSection)
   }, [open, requestedSection])
@@ -333,7 +297,7 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
                     Configure terminal behavior and keyboard shortcuts.
                   </p>
                 </div>
-                <SettingsToggle
+                <SwitchRow
                   checked={settings.escapeExitsFullscreen}
                   label="Exit fullscreen with Escape"
                   description="Press Escape to leave the temporary fullscreen terminal view."
@@ -429,6 +393,29 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
                     )
                   })}
                 </div>
+
+                {agentIntegration && (
+                  <div className="space-y-2 rounded border border-line bg-panel p-3" data-testid="opencode-config-entry">
+                    <div>
+                      <h4 className="text-xs font-medium text-fg">OpenCode configuration</h4>
+                      <p className="mt-0.5 text-[11px] text-fg-subtle">
+                        Permission rules, custom OpenAI-compatible providers and disabled providers, in OpenCode’s global configuration file.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      data-testid="opencode-config-open"
+                      onClick={() => {
+                        closeSettings()
+                        openOpenCodeConfig()
+                      }}
+                    >
+                      Edit configuration…
+                    </Button>
+                  </div>
+                )}
               </section>
             )}
 
@@ -442,7 +429,7 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
                     Choose which individual terminal activity appears beneath each session.
                   </p>
                 </div>
-                <SettingsToggle
+                <SwitchRow
                   checked={settings.showTerminalInstances}
                   label="Show terminal instances"
                   description="List terminal panes beneath their session."

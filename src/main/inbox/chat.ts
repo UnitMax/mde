@@ -356,6 +356,11 @@ export class InboxChatService {
     return next
   }
 
+  /** Forgets the cached agents and models, e.g. after OpenCode's configuration changed what it offers. */
+  invalidateOptions(): void {
+    this.options.clear()
+  }
+
   /** Agents and models where a folder or thread lives; cached for a minute per place. */
   async chatOptions(request: ChatOptionsRequest): Promise<ChatOptions> {
     const place = this.place(request)

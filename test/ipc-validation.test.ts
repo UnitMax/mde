@@ -14,6 +14,15 @@ const tab = { sessionId: 'session', tabId: 'tab' }
 const model = { id: 'model-1', providerId: 'provider-1' }
 
 /** Explicit legitimate fixtures prevent an exhaustive registry that rejects normal use. */
+const configDraft = {
+  permissions: [{ action: 'shell', resource: 'git push *', effect: 'deny' }],
+  customProviders: [{
+    id: 'local', name: 'Local', baseUrl: 'http://localhost:8080/v1', apiKeyEnv: 'LOCAL_KEY',
+    models: [{ id: 'qwen', name: 'Qwen', context: 32000, output: null, tools: true, imageInput: false }],
+  }],
+  disabledProviders: ['opencode'],
+}
+
 const validPayloads = {
   [IpcChannels.appInfo]: undefined,
   [IpcChannels.platformInfo]: undefined,
@@ -97,6 +106,9 @@ const validPayloads = {
   [IpcChannels.chatFormReply]: { threadId: 'ses_thread', formId: 'frm_1', answer: { q0: 'Red', q1: ['a', 'b'], q2: true, q3: 3 } },
   [IpcChannels.chatSubscribe]: { threadId: 'ses_thread' },
   [IpcChannels.chatUnsubscribe]: { threadId: 'ses_thread' },
+  [IpcChannels.opencodeConfigRead]: { kind: 'wsl', distro: 'Ubuntu-24.04' },
+  [IpcChannels.opencodeConfigPreview]: { kind: 'native', draft: configDraft },
+  [IpcChannels.opencodeConfigSave]: { kind: 'wsl', distro: 'Ubuntu-24.04', draft: configDraft, revision: 'a'.repeat(64) },
   [IpcChannels.windowModeGet]: undefined,
   [IpcChannels.windowModeSet]: { mode: 'mini' },
   [IpcChannels.windowChromeSet]: { color: '#10141b', symbolColor: '#7b8698' },
@@ -617,5 +629,56 @@ describe('Inbox project validation', () => {
     rejects(update, { name: 'Docs' })
     for (const name of ['', '   ', 'x'.repeat(513), 'a\nb', 42, null]) rejects(update, { id: 'fld_1234', name })
     expect(() => assertIpcPayload(update, { id: 'fld_1234', name: 'x'.repeat(512) })).not.toThrow()
+  })
+})
+
+describe('OpenCode configuration validation', () => {
+  const save = (draft: unknown, extra: Record<string, unknown> = {}): unknown => ({ kind: 'native', revision: 'abc', draft, ...extra })
+  const draftWith = (patch: Record<string, unknown>): unknown => ({ ...configDraft, ...patch })
+
+  it('accepts an empty draft, a draft without a distro, and a WSL target', () => {
+    for (const draft of [{ permissions: [], customProviders: [], disabledProviders: [] }, configDraft]) {
+      expect(() => assertIpcPayload(IpcChannels.opencodeConfigSave, save(draft))).not.toThrow()
+      expect(() => assertIpcPayload(IpcChannels.opencodeConfigPreview, { kind: 'native', draft })).not.toThrow()
+    }
+    expect(() => assertIpcPayload(IpcChannels.opencodeConfigRead, { kind: 'native' })).not.toThrow()
+  })
+
+  it('rejects a target that is not native or a WSL distro name', () => {
+    rejects(IpcChannels.opencodeConfigRead, { kind: 'remote' })
+    rejects(IpcChannels.opencodeConfigRead, { kind: 'wsl', distro: '../etc' })
+    rejects(IpcChannels.opencodeConfigRead, { kind: 'native', path: '/etc/passwd' })
+    rejects(IpcChannels.opencodeConfigRead, { kind: 'native', configPath: '/etc/passwd' })
+  })
+
+  it('rejects malformed rules, providers and models, and fields that do not belong', () => {
+    const rule = { action: 'shell', resource: '*', effect: 'ask' }
+    const provider = (configDraft.customProviders as Record<string, unknown>[])[0]!
+    const model = (provider.models as Record<string, unknown>[])[0]!
+    for (const draft of [
+      draftWith({ permissions: [{ ...rule, effect: 'maybe' }] }),
+      draftWith({ permissions: [{ ...rule, unexpected: true }] }),
+      draftWith({ permissions: [{ action: 'shell', resource: '*' }] }),
+      draftWith({ permissions: [{ ...rule, resource: 'x'.repeat(2001) }] }),
+      draftWith({ permissions: Array.from({ length: 501 }, () => rule) }),
+      draftWith({ customProviders: [{ ...provider, extra: 1 }] }),
+      draftWith({ customProviders: [{ ...provider, models: [{ ...model, context: 1.5 }] }] }),
+      draftWith({ customProviders: [{ ...provider, models: [{ ...model, context: 0 }] }] }),
+      draftWith({ customProviders: [{ ...provider, models: [{ ...model, tools: 'yes' }] }] }),
+      draftWith({ customProviders: [{ ...provider, baseUrl: 'h'.repeat(2049) }] }),
+      draftWith({ customProviders: Array.from({ length: 51 }, () => provider) }),
+      draftWith({ disabledProviders: Array.from({ length: 201 }, (_, index) => `p${index}`) }),
+      draftWith({ disabledProviders: [42] }),
+      { permissions: [], customProviders: [] },
+    ]) {
+      rejects(IpcChannels.opencodeConfigPreview, { kind: 'native', draft })
+      rejects(IpcChannels.opencodeConfigSave, save(draft))
+    }
+  })
+
+  it('rejects a missing or oversized revision and one smuggled in as a path', () => {
+    rejects(IpcChannels.opencodeConfigSave, { kind: 'native', draft: configDraft })
+    rejects(IpcChannels.opencodeConfigSave, save(configDraft, { revision: 'a'.repeat(129) }))
+    rejects(IpcChannels.opencodeConfigSave, save(configDraft, { path: '/home/me/.config/opencode/opencode.jsonc' }))
   })
 })

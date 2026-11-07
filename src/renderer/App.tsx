@@ -16,6 +16,7 @@ import { InboxThreadView } from '@/components/InboxThreadView'
 import { useInboxLock } from '@/components/InboxPanel'
 import { inboxFileRoot } from '@/lib/inbox'
 import { SettingsDialog } from '@/components/SettingsDialog'
+import { OpenCodeConfigDialog } from '@/components/inbox/OpenCodeConfigDialog'
 import { TodoSearch } from '@/components/TodoSearch'
 import { TodoProjectSettingsDialog } from '@/components/TodoProjectSettingsDialog'
 import { TodoTaskDialog } from '@/components/TodoTaskDialog'
@@ -83,6 +84,7 @@ export function App(): JSX.Element {
   const openFiles = useWorkspace((state) => state.openFiles)
   const openFileAction = useWorkspace((state) => state.openFile)
   const openSettings = useWorkspace((state) => state.openSettings)
+  const opencodeConfigOpen = useWorkspace((state) => state.opencodeConfigDialog.open)
   const closeFileAction = useWorkspace((state) => state.closeFile)
   const selectedTodoProjectId = useWorkspace((state) => state.selectedTodoProjectId)
   const activeWorkspaceView = useWorkspace((state) => state.activeWorkspaceView)
@@ -311,7 +313,8 @@ export function App(): JSX.Element {
         newSessionOpen ||
         newTodoProjectOpen ||
         todoProjectSettingsOpen ||
-        todoTaskDialogOpen
+        todoTaskDialogOpen ||
+        opencodeConfigOpen
       ) {
         return
       }
@@ -326,6 +329,7 @@ export function App(): JSX.Element {
   }, [
     newSessionOpen,
     newTodoProjectOpen,
+    opencodeConfigOpen,
     sessionSwitcherOpen,
     todoProjectSettingsOpen,
     todoSearchOpen,
@@ -343,7 +347,8 @@ export function App(): JSX.Element {
         newSessionOpen ||
         newTodoProjectOpen ||
         todoProjectSettingsOpen ||
-        todoTaskDialogOpen
+        todoTaskDialogOpen ||
+        opencodeConfigOpen
       ) {
         return
       }
@@ -358,6 +363,7 @@ export function App(): JSX.Element {
   }, [
     newSessionOpen,
     newTodoProjectOpen,
+    opencodeConfigOpen,
     sessionSwitcherOpen,
     todoProjectSettingsOpen,
     todoSearchAvailable,
@@ -745,6 +751,7 @@ export function App(): JSX.Element {
         {ready && inboxRoot && <InboxSidebar session={inboxRoot} threadId={selectedInboxThreadId ?? undefined} />}
 
         <SettingsDialog terminalIds={layoutForSession?.panes.map((pane) => pane.terminalId) ?? []} />
+        <OpenCodeConfigDialog />
 
         <AddSessionDialog
           open={newSessionOpen}

@@ -93,6 +93,7 @@
     "src/renderer/components/ui/dropdown-menu.tsx",
     "src/renderer/components/ui/input.tsx",
     "src/renderer/components/ui/select.tsx",
+    "src/renderer/components/ui/switch.tsx",
     "src/renderer/lib/inbox.ts",
     "src/renderer/components/ElapsedTime.tsx",
     "src/renderer/components/InboxPanel.tsx",
@@ -117,6 +118,7 @@
     "src/renderer/store/inbox-changes.ts",
     "src/renderer/store/inbox-view.ts",
     "src/renderer/store/inbox-terminal.ts",
+    "src/renderer/store/opencode-config.ts",
     "src/shared/**/*",
     "test/**/*"
   ],

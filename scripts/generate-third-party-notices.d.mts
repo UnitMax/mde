@@ -5,6 +5,7 @@ export interface PackageMetadata {
 }
 
 export const bundledRendererDependencies: string[]
+export const bundledMainDependencies: string[]
 export function dependencyClosure(
   rootNames: string[],
   packageMetadata?: Record<string, PackageMetadata>,

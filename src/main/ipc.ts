@@ -1,6 +1,14 @@
 import { constants, promises as fs } from 'node:fs'
 import { supportsAgentIntegration } from '@shared/agent-support'
 import { isFileRoot } from '@shared/file-root'
+import type {
+  OpenCodeConfigPreview,
+  OpenCodeConfigPreviewRequest,
+  OpenCodeConfigRequest,
+  OpenCodeConfigSaveRequest,
+  OpenCodeConfigSnapshot,
+  OpenCodeConfigTarget
+} from '@shared/opencode-config'
 import { inboxTerminalThreadId, inboxThreadTerminalId } from '@shared/inbox-thread-terminal'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import {
@@ -117,6 +125,7 @@ import type { PtyLaunchOptions, PtyManager } from './pty/manager'
 import { fileTreeDropFile, resolveTerminalDrop } from './pty/drop'
 import type { InboxRecorder } from './inbox/recorder'
 import type { InboxChatService } from './inbox/chat'
+import type { OpenCodeConfigService } from './opencode/config'
 import type { MiniWindowController } from './mini-window'
 import type { TitleBarController } from './window-chrome'
 import { createAppInfo } from '@shared/app-info'
@@ -345,7 +354,7 @@ export function registerIpcHandlers(
   ptyManager: PtyManager,
   miniWindow: MiniWindowController,
   titleBar: TitleBarController,
-  inbox: { recorder: InboxRecorder; chat: InboxChatService }
+  inbox: { recorder: InboxRecorder; chat: InboxChatService; openCodeConfig: OpenCodeConfigService }
 ): void {
   const inboxRecorder = inbox.recorder
   const chat = inbox.chat
@@ -540,6 +549,25 @@ export function registerIpcHandlers(
   handle<InboxRemoveFolderRequest, void>(IpcChannels.inboxFoldersRemove, (req) => chat.removeFolder(req.id))
   handle<InboxComposerState, InboxComposerState>(IpcChannels.inboxComposerSet, (req) => chat.setComposer(req))
   handle<InboxGitInfoRequest, InboxGitInfo>(IpcChannels.inboxGitInfo, (req) => chat.gitInfo(req))
+
+  // OpenCode runs where its configuration lives: inside WSL on Windows, on this computer elsewhere. The renderer
+  // only names which; the folder and file are worked out in the main process.
+  const configTarget = async (req: OpenCodeConfigTarget): Promise<OpenCodeConfigTarget> => {
+    if (process.platform === 'win32') {
+      if (req.kind !== 'wsl' || !req.distro) throw new Error('On Windows, OpenCode runs in WSL.')
+      const match = (await listDistros()).find((distro) => distro.name === req.distro)
+      if (!match) throw new Error(`The WSL distribution ${req.distro} was not found.`)
+      return { kind: 'wsl', distro: match.name }
+    }
+    if (req.kind !== 'native' || req.distro !== undefined) throw new Error('WSL is only available on Windows.')
+    return { kind: 'native' }
+  }
+  handle<OpenCodeConfigRequest, OpenCodeConfigSnapshot>(IpcChannels.opencodeConfigRead, async (req) =>
+    inbox.openCodeConfig.read(await configTarget(req)))
+  handle<OpenCodeConfigPreviewRequest, OpenCodeConfigPreview>(IpcChannels.opencodeConfigPreview, async (req) =>
+    inbox.openCodeConfig.preview(await configTarget(req), req.draft))
+  handle<OpenCodeConfigSaveRequest, OpenCodeConfigSnapshot>(IpcChannels.opencodeConfigSave, async (req) =>
+    inbox.openCodeConfig.save(await configTarget(req), req.draft, req.revision))
 
   handle<ChatConfigureRequest, void>(IpcChannels.chatConfigure, (req) => chat.configure(req.executable))
   handle<ChatOptionsRequest, ChatOptions>(IpcChannels.chatOptions, (req) => chat.chatOptions(req))

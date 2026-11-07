@@ -78,6 +78,8 @@ interface WorkspaceState {
   /** When something new last happened in a thread being read, by thread; drives a brief cue. */
   inboxCues: Record<string, number>
   settingsDialog: SettingsDialogState
+  /** The OpenCode configuration editor, opened from Settings → Agents. */
+  opencodeConfigDialog: { open: boolean }
   /** Brief border animations for Inbox Terminal chats, keyed by thread ID and never persisted. */
   inboxTerminalHighlights: Record<string, InboxTerminalHighlight>
   platform: PlatformInfo | null
@@ -136,6 +138,8 @@ interface WorkspaceState {
   clearInboxTerminalHighlight: (threadId: string, token: number) => void
   openSettings: (section?: SettingsSection) => void
   closeSettings: () => void
+  openOpenCodeConfig: () => void
+  closeOpenCodeConfig: () => void
   selectInboxThread: (id: string | null) => void
   setInboxThreadRead: (id: string, read: boolean) => Promise<void>
   /** Counts the open thread as seen when the window comes back to the front, unless it was marked unread by hand. */
@@ -166,6 +170,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   inboxMarkedUnread: {},
   inboxCues: {},
   settingsDialog: { open: false, section: 'appearance' },
+  opencodeConfigDialog: { open: false },
   inboxTerminalHighlights: {},
   platform: null,
   windowMode: 'normal',
@@ -496,6 +501,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   closeSettings: () =>
     set((state) => ({ settingsDialog: { ...state.settingsDialog, open: false } })),
+
+  openOpenCodeConfig: () => set({ opencodeConfigDialog: { open: true } }),
+
+  closeOpenCodeConfig: () => set({ opencodeConfigDialog: { open: false } }),
 
   selectInboxThread: (id) => {
     set({ selectedInboxThreadId: id, ...(id ? { activeWorkspaceView: 'inbox' as const } : {}) })

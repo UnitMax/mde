@@ -289,6 +289,22 @@ describe('Inbox chat service', () => {
     await expect(service.chatOptions({ threadId: 'ses_gone' })).rejects.toThrow('no longer in the Inbox')
   })
 
+  it('asks OpenCode for agents and models again after its configuration was saved', async () => {
+    const { service, folder, calls } = setup({
+      'agent.list': { data: [{ id: 'build', name: 'Build', mode: 'primary' }] },
+      'provider.list': { data: [{ id: 'provider-1', name: 'Provider' }] },
+      'model.list': { data: [{ id: 'model-1', providerID: 'provider-1', name: 'Model' }] },
+      'model.default': { data: { id: 'model-1', providerID: 'provider-1' } },
+    })
+    await service.chatOptions({ folderId: folder.id })
+    const first = calls.length
+    await service.chatOptions({ folderId: folder.id })
+    expect(calls).toHaveLength(first)
+    service.invalidateOptions()
+    await service.chatOptions({ folderId: folder.id })
+    expect(calls.length).toBeGreaterThan(first)
+  })
+
   it('asks again when OpenCode has not loaded the folder yet and answers with no agents', async () => {
     const { service, folder, request } = setup({
       'provider.list': { data: [] },

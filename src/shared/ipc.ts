@@ -72,6 +72,13 @@ import type {
   ChatDraftRequest,
   ChatDraftList
 } from './types'
+import type {
+  OpenCodeConfigPreview,
+  OpenCodeConfigPreviewRequest,
+  OpenCodeConfigRequest,
+  OpenCodeConfigSaveRequest,
+  OpenCodeConfigSnapshot
+} from './opencode-config'
 
 export interface WorkspaceData {
   todoProjects: TodoProject[]
@@ -176,6 +183,10 @@ export const IpcChannels = {
   chatFormReply: 'chat:form-reply',
   chatSubscribe: 'chat:subscribe',
   chatUnsubscribe: 'chat:unsubscribe',
+
+  opencodeConfigRead: 'opencode-config:read',
+  opencodeConfigPreview: 'opencode-config:preview',
+  opencodeConfigSave: 'opencode-config:save',
 
   windowModeGet: 'window-mode:get',
   windowModeSet: 'window-mode:set',
@@ -559,6 +570,18 @@ export interface RendererApi {
     subscribe(req: ChatThreadRequest): Promise<void>
     unsubscribe(req: ChatThreadRequest): Promise<void>
     onEvent(listener: (event: ChatEvent) => void): () => void
+  }
+  /** OpenCode's own global configuration file. The renderer names a target (this computer or a WSL distro), never a path. */
+  opencodeConfig: {
+    /** The file as the editor sees it. A file that cannot be parsed comes back with `parseError` and an empty draft. */
+    read(req: OpenCodeConfigRequest): Promise<OpenCodeConfigSnapshot>
+    /** The text the file would have with the draft applied, secret-looking values hidden. Writes nothing. */
+    preview(req: OpenCodeConfigPreviewRequest): Promise<OpenCodeConfigPreview>
+    /**
+     * Applies the draft to the file, changing only what the editor manages. Refused when the file is no longer
+     * the one the revision came from. Returns the file as it is afterwards.
+     */
+    save(req: OpenCodeConfigSaveRequest): Promise<OpenCodeConfigSnapshot>
   }
   windowMode: {
     get(): Promise<WindowMode>

@@ -9,7 +9,9 @@ Markdown and Mermaid preview, and To Do boards. The Inbox is a separate
 view for starting and continuing OpenCode conversations in GUI chat or a direct OpenCode terminal;
 both use OpenCode's API for thread activity. Choose GUI (the default) or Terminal from the menu under the new-thread message box.
 Add, rename, remove and give icons to the folders threads start in from Projects (the folder button
-beside the Inbox settings); the icon shows beside each project's threads. See
+beside the Inbox settings); the icon shows beside each project's threads. On macOS and in WSL,
+Settings → Agents → Edit configuration changes OpenCode's own configuration file: permission rules,
+custom OpenAI-compatible providers and disabled providers. See
 [`docs/architecture.md`](docs/architecture.md) for how each part behaves.
 
 Build terminal layouts by holding Ctrl and clicking + on a pane’s left, right, top or bottom edge.

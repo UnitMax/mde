@@ -162,6 +162,11 @@ const api: RendererApi = {
     unsubscribe: (req) => ipcRenderer.invoke(IpcChannels.chatUnsubscribe, req),
     onEvent: (listener) => subscribe<ChatEvent>(IpcEvents.chatEvent, listener)
   },
+  opencodeConfig: {
+    read: (req) => ipcRenderer.invoke(IpcChannels.opencodeConfigRead, req),
+    preview: (req) => ipcRenderer.invoke(IpcChannels.opencodeConfigPreview, req),
+    save: (req) => ipcRenderer.invoke(IpcChannels.opencodeConfigSave, req)
+  },
   windowMode: {
     get: () => ipcRenderer.invoke(IpcChannels.windowModeGet),
     set: (req) => ipcRenderer.invoke(IpcChannels.windowModeSet, req),

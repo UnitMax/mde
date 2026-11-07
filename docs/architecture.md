@@ -101,7 +101,8 @@ The Settings dialog's Terminal section controls terminal behavior, including whe
 the temporary fullscreen view; it is enabled by default. Ctrl+Shift+F toggles fullscreen for the
 focused terminal pane. The Sidebar section controls whether terminal pane entries appear
 beneath each session; this preference is global and stored with the local terminal settings. The
-Agents section configures the launcher commands described below. The application theme (Slate,
+Agents section configures the launcher commands described below and, on macOS and Windows, opens the
+OpenCode configuration editor (see **OpenCode configuration editor** below). The application theme (Slate,
 Ember, Frost, High contrast) and zoom are also adjustable. The Appearance section sets the terminal
 font family, size and line height, and separately the font family of the file viewer's source code
 preview; both families are chosen from the same list of installed monospace fonts and default to
@@ -113,6 +114,55 @@ expanded or streamed afterward; code preview font selection is independent of th
 The Settings dialog is a single dialog mounted by `App` (`src/renderer/components/SettingsDialog.tsx`)
 and opened through the workspace store's `openSettings(section)`, so any view can open it at a
 given section. The Settings button in the title bar, next to the mini Inbox button, opens it at Appearance and is available in every mode.
+
+### OpenCode configuration editor
+
+Settings → Agents → **Edit configuration…** closes Settings and opens a second dialog
+(`OpenCodeConfigDialog`, mounted by `App`; its open flag is `opencodeConfigDialog` in the workspace
+store). It edits the parts of OpenCode's **global** configuration file that matter most, and is not a
+full configuration UI. It is offered only on macOS and Windows, where the Inbox and OpenCode run (on
+Windows, inside a WSL distro chosen at the top of the dialog; changing distro is disabled while there
+are unsaved edits). Per-project configuration files are not edited.
+
+It speaks OpenCode 2's own keys only, and never converts anything:
+
+- **Permissions** (`permissions`): an ordered list of `{ action, resource, effect }` rules, effect
+  `allow`, `ask` or `deny`. OpenCode checks them in order and the **last** match decides; with no match
+  it asks. The tab edits the list in place (action with a datalist of the known actions, resource,
+  Allow/Ask/Deny, move up/down, delete) and offers three quick rules. A rule whose action is the V1 name
+  `bash` or `task` gets a hint, since OpenCode 2 matches `shell` and `subagent`.
+- **Providers** (`providers`): custom providers whose `package` is
+  `@opencode/ai/providers/openai-compatible`, with a base URL (`settings.baseURL`), the *name* of an
+  environment variable for the key (`env`), and models (id, name, context and output limits, tools,
+  image input). A provider with any other package is listed read-only and left byte for byte as it is.
+  A provider's id cannot be changed once it exists.
+- **Disabled providers** (`policies`): a switch per provider turns the entry
+  `{ action: "provider.use", resource: <id>, effect: "deny" }` on or off; a resource may be a glob such as
+  `ac*`. The rows come from the running service's provider list (which no longer shows a disabled
+  provider), the custom providers in the draft and the ids already denied in the file, and an id can be
+  typed in.
+- **Left alone.** Older keys (`permission`, `provider`, `disabled_providers`, `enabled_providers`) are
+  reported ("OpenCode still applies them, and MDE leaves them as they are") but never read into the
+  forms or rewritten. A provider disabled through `disabled_providers` shows a locked switch.
+  An `enabled_providers` list is reported because it limits which providers are offered whatever the
+  switches say. Everything else in the file (the `mcp` section, agents, theme, comments) is kept.
+
+The forms edit a **draft** held in a Zustand store (`store/opencode-config.ts`). **Save** is enabled when
+the draft differs from the file and passes `validateDraft`. A **Source** tab shows the file as it would
+be after saving, read-only (`CodeViewer`), with the values of secret-looking settings hidden; the text
+comes from the main process (`opencode-config:preview`). **Revert** puts the draft back, and closing
+with unsaved edits asks first. If the file is not valid JSON, the dialog shows why and refuses to edit
+it, since OpenCode silently ignores such a file; if the file changed on disk after it was loaded, Save
+fails with a message and a Reload button, which discards the draft.
+
+In the main process (`src/main/opencode/config/`), `files.ts` finds the file (native, or inside the
+distro through its login shell and the `\\wsl.localhost\<distro>` share), `edit.ts` reads a draft out of
+the text and applies a draft back to it, `jsonc-edit.ts` makes the text edits (keeping comments, indentation,
+line endings, trailing-comma style and the layout of neighbouring entries), and `service.ts` ties them
+together with a revision check and serialized, atomic writes. The security properties are in
+`docs/security.md` under "OpenCode configuration boundary". OpenCode reloads the file by itself within a
+few seconds (verified against OpenCode 2.2.6), so there is no restart step; after a save MDE only drops
+the model list it cached for the Inbox so that the model picker asks again.
 
 ### Inbox
 
@@ -1211,6 +1261,9 @@ worktree.
   by `path:list-wsl-directories` in `src/main/wsl/browse.ts`). Inbox folders and runtime terminal
   directories use the target's own path format. `wslpath` is used when translating dropped paths
   or revealing a folder in Explorer.
+- The OpenCode configuration editor finds the distro's configuration folder with its login shell
+  (`OPENCODE_CONFIG_DIR`, else `XDG_CONFIG_HOME`, else `~/.config`) and reads and writes the file
+  through `\\wsl.localhost\<distro>\...`; links are resolved with `realpath` inside the distro.
 
 Native Windows shells also resolve before PTY creation: the default PowerShell
 and built-in PowerShell/cmd aliases use system locations. Custom Windows shells,

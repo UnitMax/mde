@@ -74,6 +74,7 @@ function array(validate: Validator, max: number): Validator {
   }
 }
 
+const positiveInteger: Validator = (value) => typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 100_000_000
 const distro: Validator = (value) => typeof value === 'string' && value.length <= 128 && !controls.test(value) &&
   /^[A-Za-z0-9][A-Za-z0-9._ -]{0,127}$/.test(value.trim())
 const kind = oneOf('native', 'wsl')
@@ -135,6 +136,21 @@ const goalObjective: Validator = (value) => promptText(value) && goalObjectivePr
 /** A request about a folder (new thread) or a thread names exactly one of them. */
 const exactlyOnePlace: Validator = (value) =>
   ((value as { folderId?: unknown }).folderId === undefined) !== ((value as { threadId?: unknown }).threadId === undefined)
+/**
+ * A draft of OpenCode's configuration: its shape and sizes, field by field (no extra keys, no accessors). Whether
+ * the values make sense is `validateDraft`'s question, which the service asks with a message the person can read.
+ */
+const configModel = object({
+  id: string(200), name: string(200, true), context: nullable(positiveInteger), output: nullable(positiveInteger),
+  tools: boolean, imageInput: boolean,
+})
+const configDraft = object({
+  permissions: array(object({ action: string(200), resource: string(2000), effect: oneOf('allow', 'ask', 'deny') }), 500),
+  customProviders: array(object({
+    id: string(64), name: string(200, true), baseUrl: string(2048), apiKeyEnv: string(128, true), models: array(configModel, 200),
+  }), 50),
+  disabledProviders: array(string(200), 200),
+})
 const mcpServerName: Validator = (value) => typeof value === 'string' && MCP_SERVER_NAME.test(value)
 const messageId: Validator = (value) => typeof value === 'string' && /^msg_[A-Za-z0-9_-]{1,200}$/.test(value)
 const formValue: Validator = (value) =>
@@ -223,6 +239,9 @@ export const ipcPayloadValidators = {
   [IpcChannels.inboxGitInfo]: object({ folderId: inboxFolderId }),
   [IpcChannels.inboxChangeDiff]: object({ threadId: opencodeSessionId, path }),
   [IpcChannels.inboxChanges]: object({ threadId: opencodeSessionId, details: optional(boolean) }),
+  [IpcChannels.opencodeConfigRead]: object({ kind, distro: optional(distro) }),
+  [IpcChannels.opencodeConfigPreview]: object({ kind, distro: optional(distro), draft: configDraft }),
+  [IpcChannels.opencodeConfigSave]: object({ kind, distro: optional(distro), draft: configDraft, revision: string(128) }),
   [IpcChannels.chatConfigure]: object({ executable: path }),
   [IpcChannels.chatOptions]: (value) => object({ folderId: optional(inboxFolderId), threadId: optional(opencodeSessionId) })(value) &&
     exactlyOnePlace(value),

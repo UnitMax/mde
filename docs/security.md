@@ -72,6 +72,14 @@ bounded keys, strings, numbers, booleans and string lists. `files:list` and `fil
 existence, session/source ownership, filesystem containment and platform
 constraints after the central validation.
 
+OpenCode configuration requests (`opencode-config:read`, `opencode-config:preview`,
+`opencode-config:save`) carry a target (`native`, or `wsl` with a distro name) and, for preview and save,
+a draft; save also carries the revision the draft was made from. Never a path. The validator checks the
+shape and size of the draft (at most 500 permission rules, 50 custom providers of 200 models each and 200
+disabled providers; bounded strings without controls); the rules for what is valid (`validateDraft` in
+`src/shared/opencode-config.ts`) run again in the main process, so the form and the file cannot disagree.
+See "OpenCode configuration boundary".
+
 The Inbox terminal belongs to no workspace session. Terminal requests accept the reserved session ID `inbox-terminal`; the main process builds its launch session on demand, as a shell in its saved directory or the home directory (`~` in the default WSL distro on Windows), and the reserved ID always wins over a stored session. File browsing, previews, tree drops and attachments accept either an Inbox folder/thread identity or a live terminal ID with its expected directory. For a terminal root, main resolves the launch environment and current directory from the PTY, verifies the directory on disk, and rejects a mismatch or a terminal that moves during verification. The renderer’s directory is a consistency check, not an arbitrary filesystem root. Relative-path and symlink containment checks still apply below the resolved root. Git changes and diffs likewise require a live terminal and expected directory, and run from its checkout root. Mixed root selectors are rejected at the IPC boundary. Naming `inbox-terminal` as a saved file-root session still fails. This adds no authority the renderer does not already have through `pty:write`.
 
 Inbox terminal chat threads use the reserved `inbox-thread:<sessionID>` identity for both the terminal
@@ -232,8 +240,8 @@ the validated `chat:*` channels.
   a boolean, and sends `POST /api/experimental/mcp/{server}/connect` or `/disconnect` with no body. The
   main process acts only on a name OpenCode lists at that moment (exact match) and refuses a server that
   needs a sign-in or whose state is unknown, so a connect cannot start a sign-in flow on the machine
-  running OpenCode; the renderer cannot add, change or remove a server, and no configuration file is
-  written (the change lasts until OpenCode restarts). The name is percent-encoded as a path segment, and a
+  running OpenCode; the renderer cannot add, change or remove a server, and these channels write no
+  configuration file (the change lasts until OpenCode restarts). The name is percent-encoded as a path segment, and a
   name made only of dots is refused because `fetch` would normalise it out of the path.
   Path parameters must match `ses_`, `per_` or `frm_` ID patterns (an MCP server name, the rule above),
   only the query keys `limit`, `order`, `cursor` and `location[directory]` are
@@ -347,6 +355,51 @@ absolute Linux path and a flag for hidden folders.
   system file dialog could. A folder chosen here is only text in the form field: it is validated and
   canonicalized again by `path:resolve` and `path:validate` and by the add handlers before anything
   is stored or run.
+
+### OpenCode configuration boundary
+
+The **OpenCode configuration** editor changes OpenCode's own global file, so it is the one place MDE writes
+outside its own stores and outside a project checkout. It is limited to three things: permission rules,
+OpenAI-compatible providers and `provider.use` deny policies (disabled providers), in OpenCode 2's own keys
+(`permissions`, `providers`, `policies`). The code is in `src/main/opencode/config/`.
+
+- **The renderer names no path.** It sends `native` or `wsl` plus a distro. The main process accepts `wsl`
+  only on Windows, with a distro name that `wsl.exe -l` lists, and `native` only elsewhere. The folder is
+  worked out where OpenCode runs (`OPENCODE_CONFIG_DIR`, else `$XDG_CONFIG_HOME/opencode`, else
+  `~/.config/opencode`; in the distro through its login shell, validated as a plain absolute Linux path),
+  and the file is `opencode.jsonc`, else `opencode.json`, else a new `opencode.jsonc`. In a distro it is
+  reached as `\\wsl.localhost\<distro>\...`.
+- **Size and type.** A file over 1 MiB or one that is not a regular file is refused. The target of a
+  symbolic link is edited in place (`realpath` first; for WSL, `realpath` run in the distro) so a file
+  managed by dotfiles is not replaced by a regular one.
+- **Edits are surgical and checked.** `jsonc-parser` locates things and `jsonc-edit.ts` changes only the
+  entries being added, replaced or removed. Comments, other keys, foreign providers, other policies,
+  legacy keys (`permission`, `provider`, `disabled_providers`, `enabled_providers`), indentation, line
+  endings and a byte order mark are kept. Every result is parsed again before it is written; if an edit
+  would leave invalid JSON (OpenCode ignores such a file without a message), nothing is written. A
+  provider id that collides with a provider the editor does not manage is refused rather than merged.
+  A file that is not valid JSONC is shown as such and never changed.
+- **Lost updates are refused.** The snapshot carries a SHA-256 of the file text (`absent` when there is no
+  file). Save reads the file again, refuses if the hash differs, then applies the draft to the fresh
+  text. Saves are serialized.
+- **Atomic, private writes.** The text goes to a temporary file in the same folder (mode of the existing
+  file, `0600` for a new one), is flushed and renamed over the target; the temporary file is removed on
+  failure. Nothing is backed up.
+- **No secrets are asked for or written.** A provider's key is the name of an environment variable
+  (`env: [NAME]`), validated as such; a base URL with a user name or password is refused. Keys already in
+  the file stay where they are, are not sent to the renderer as part of the draft, and the Source preview
+  hides the values of keys named like `api key`, `token`, `secret`, `password`, `authorization` or
+  `credential` (by name only; `{env:...}` and `{file:...}` references stay visible).
+- **No new network access.** Listing providers uses the existing local service client. After a save the
+  main process only drops its cached model list; OpenCode reloads the file by itself.
+- **Reach.** Script already running in the renderer could change these three settings, including
+  allowing every tool without asking (`permissions`). That is the same class of authority as writing to a
+  terminal through `pty:write`, and is recorded for the same reason as the clipboard note above.
+
+Regression coverage: `test/opencode-config-edit.test.ts`, `test/jsonc-edit.test.ts` (exact-output tests and
+a seeded fuzz that parses every result), `test/opencode-config-files.test.ts` (real temporary directories,
+symbolic links, modes, conflicts, WSL paths), `test/ipc-opencode-config.test.ts` and the validator cases in
+`test/ipc-validation.test.ts`.
 
 ## Windows executable selection
 

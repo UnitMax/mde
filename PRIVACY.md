@@ -45,6 +45,11 @@ MDE stores data only on the local machine:
   you last chose in the Inbox composer. It never holds prompts, messages or tool data. It keeps at
   most 1,000 conversations; deleting a conversation from the Inbox removes only MDE's record.
 
+- OpenCode's own global configuration file (`opencode.jsonc`, or `opencode.json`, in OpenCode's
+  configuration folder), only when you use the **OpenCode configuration** editor (Settings, Agents) and
+  press Save. This is OpenCode's file, not an MDE store; see the paragraph on the editor below for what
+  is read and written.
+
 Older versions may have left status-plugin files, temporary snapshots and reporting/alert preference
 files on disk. MDE no longer reads or writes them; removal is manual (see the upgrade notes in
 `docs/architecture.md`).
@@ -103,10 +108,31 @@ thread and how each stands: name, title, connected, failed or needs a sign-in, a
 credentials and paths removed. MDE drops everything else in the answer (commands, URLs, headers and
 environment variables), keeps the list in memory only and stores nothing. Switching a server off or on
 there tells the service to disconnect or connect it until OpenCode restarts. MDE does not start,
-contact or configure MCP servers itself and writes nothing to OpenCode's configuration; OpenCode starts
-and contacts them, and may send them what the model passes to their tools, as it does in a terminal.
-What a tool is called with and returns is part of the conversation, which is fetched from the service,
-kept in memory only and not written to disk by MDE.
+contact or configure MCP servers itself and leaves the MCP part of OpenCode's configuration alone;
+OpenCode starts and contacts them, and may send them what the model passes to their tools, as it does
+in a terminal. What a tool is called with and returns is part of the conversation, which is fetched
+from the service, kept in memory only and not written to disk by MDE.
+
+The **OpenCode configuration** editor (Settings, Agents, Edit configuration; on the Mac and, for a WSL
+distro, on Windows) reads and writes OpenCode's own global configuration file: `opencode.jsonc` or
+`opencode.json` in `~/.config/opencode`, or in the folder named by `OPENCODE_CONFIG_DIR` or
+`XDG_CONFIG_HOME` (inside the WSL distro on Windows, reached as `\\wsl.localhost\<distro>\...`). MDE reads
+the file when you open the editor and writes it only when you press Save, and then only the permission
+rules, the custom OpenAI-compatible providers it manages and the list of disabled providers; the rest of
+the file, comments included, is kept as it was; the write goes through a temporary file next to it,
+which replaces the file and is removed if the write fails. The file can hold credentials that you or OpenCode put
+there. MDE does not copy it, log it, back it up or store it anywhere else. The main process reads the
+whole file and gives the window the parts the editor manages (the rules, the providers it manages, the
+ids and names of other providers, and the names of older settings), which stay in memory until you
+close the editor. The read-only Source tab also shows the rest of the file as it will be after saving, so
+that you can check the change; there, the value of a setting whose name contains `api key`, `token`,
+`secret`, `password`, `authorization` or `credential` is replaced by `(hidden)` unless it is an
+`{env:...}` or `{file:...}` reference. That matches names only, so a secret kept under another name
+would be visible in that tab. The editor asks for the name of an environment variable that holds a
+provider's key, never for the key, and writes no key. It lists providers by asking the same local service
+which ones it has (ids and names only). Saving makes no network request: OpenCode notices the changed
+file itself, and only contacts a provider you added when you use one of its models, as it does in a
+terminal. MDE does not contact the address of a custom provider.
 
 The Inbox's Changes tab for the open thread, and the changes line under each visible thread
 (when you turn that on in the Inbox's gear menu; it is off by default) with the file list and

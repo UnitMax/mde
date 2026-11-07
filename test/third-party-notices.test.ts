@@ -6,6 +6,7 @@ import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
 import {
   attributedPackagePaths,
+  bundledMainDependencies,
   bundledRendererDependencies,
   dependencyClosure,
   renderThirdPartyNotices,
@@ -28,6 +29,15 @@ describe('third-party notice package selection', () => {
       'react-dom',
       'zustand',
     ]))
+  })
+
+  it('tracks every library that is bundled into the main-process script', () => {
+    expect(bundledMainDependencies).toEqual(['jsonc-parser'])
+    expect(attributedPackagePaths({
+      '': {},
+      'node_modules/jsonc-parser': { dev: true },
+      'node_modules/unrelated-build-tool': { dev: true },
+    })).toEqual(new Set(['node_modules/jsonc-parser']))
   })
 
   it('includes transitive dependencies of bundled renderer libraries', () => {

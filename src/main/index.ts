@@ -14,6 +14,7 @@ import { InboxDraftStore } from './inbox/drafts'
 import { InboxChatService } from './inbox/chat'
 import { InboxWorktrees } from './inbox/worktree'
 import { OpenCodeServiceClient } from './opencode/service/client'
+import { createOpenCodeConfigService } from './opencode/config'
 import { discoverOpenCodeService } from './opencode/service/discovery'
 import { readGitTerminalInfo } from './git'
 import { adjustZoomFactor, DEFAULT_ZOOM_FACTOR, getZoomAction } from './zoom'
@@ -186,6 +187,10 @@ if (!app.requestSingleInstanceLock()) {
       // have been removed since, and it then opens in whichever folder the page shows.
       return !key.startsWith('thread:') || Boolean(inboxStore?.get(key.slice('thread:'.length)))
     })
+    const openCodeConfig = createOpenCodeConfigService({
+      client: serviceClient,
+      onSaved: () => inboxChat?.invalidateOptions()
+    })
     inboxChat = new InboxChatService({
       drafts: inboxDrafts,
       worktrees: new InboxWorktrees(),
@@ -208,7 +213,7 @@ if (!app.requestSingleInstanceLock()) {
       ptyManager,
       miniWindow,
       titleBar,
-      { recorder: inboxRecorder, chat: inboxChat }
+      { recorder: inboxRecorder, chat: inboxChat, openCodeConfig }
     )
     createWindow()
 

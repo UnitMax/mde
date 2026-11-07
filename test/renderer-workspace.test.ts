@@ -110,7 +110,8 @@ describe('renderer workspace event bridge', () => {
       windowMode: 'normal',
       inboxThreads: [],
       selectedInboxThreadId: null,
-      settingsDialog: { open: false, section: 'appearance' }
+      settingsDialog: { open: false, section: 'appearance' },
+      opencodeConfigDialog: { open: false }
     })
     api.inbox.list.mockClear()
     api.inbox.setRead.mockClear()
@@ -725,5 +726,13 @@ describe('renderer workspace event bridge', () => {
     expect(useWorkspace.getState().settingsDialog).toEqual({ open: false, section: 'agents' })
     useWorkspace.getState().openSettings()
     expect(useWorkspace.getState().settingsDialog.section).toBe('appearance')
+  })
+
+  it('opens and closes the OpenCode configuration editor on its own, apart from Settings', () => {
+    useWorkspace.getState().openOpenCodeConfig()
+    expect(useWorkspace.getState().opencodeConfigDialog).toEqual({ open: true })
+    expect(useWorkspace.getState().settingsDialog.open).toBe(false)
+    useWorkspace.getState().closeOpenCodeConfig()
+    expect(useWorkspace.getState().opencodeConfigDialog).toEqual({ open: false })
   })
 })

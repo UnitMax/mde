@@ -14,7 +14,7 @@ The `react-remove-scroll-bar@2.3.8` npm tarball declares MIT but omits its licen
 
 ## Locked package inventory
 
-Generated from `package-lock.json` by `npm run licenses`. 266 shipped package entries are listed, including production dependencies and libraries bundled into renderer assets. Build-time-only dependencies are excluded.
+Generated from `package-lock.json` by `npm run licenses`. 267 shipped package entries are listed, including production dependencies and libraries bundled into the renderer assets and the main-process script. Build-time-only dependencies are excluded.
 
 | Package | Version | Direct dependency | Declared license | Source |
 | --- | --- | --- | --- | --- |
@@ -230,6 +230,7 @@ Generated from `package-lock.json` by `npm run licenses`. 266 shipped package en
 | `internmap` | `1.0.1` | no | ISC | https://registry.npmjs.org/internmap/-/internmap-1.0.1.tgz |
 | `internmap` | `2.0.3` | no | ISC | https://registry.npmjs.org/internmap/-/internmap-2.0.3.tgz |
 | `js-tokens` | `4.0.0` | no | MIT | https://registry.npmjs.org/js-tokens/-/js-tokens-4.0.0.tgz |
+| `jsonc-parser` | `3.3.1` | yes | MIT | https://registry.npmjs.org/jsonc-parser/-/jsonc-parser-3.3.1.tgz |
 | `katex` | `0.18.2` | no | MIT | https://registry.npmjs.org/katex/-/katex-0.18.2.tgz |
 | `khroma` | `2.1.0` | no | Not declared | https://registry.npmjs.org/khroma/-/khroma-2.1.0.tgz |
 | `layout-base` | `1.0.2` | no | MIT | https://registry.npmjs.org/layout-base/-/layout-base-1.0.2.tgz |
@@ -3414,6 +3415,38 @@ THE SOFTWARE.
 
 ### Notice text 64
 
+Packages: `jsonc-parser@3.3.1`
+
+Files:
+
+- `node_modules/jsonc-parser/LICENSE.md`
+
+~~~text
+The MIT License (MIT)
+
+Copyright (c) Microsoft
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+~~~
+
+### Notice text 65
+
 Packages: `katex@0.18.2`
 
 Files:
@@ -3444,7 +3477,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 65
+### Notice text 66
 
 Packages: `khroma@2.1.0`
 
@@ -3476,7 +3509,7 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ~~~
 
-### Notice text 66
+### Notice text 67
 
 Packages: `layout-base@1.0.2`, `layout-base@2.0.1`
 
@@ -3509,7 +3542,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 67
+### Notice text 68
 
 Packages: `linkifyjs@4.3.3`
 
@@ -3539,7 +3572,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 68
+### Notice text 69
 
 Packages: `lodash-es@4.18.1`
 
@@ -3597,7 +3630,7 @@ licenses; we recommend you read them, as their terms may differ from the
 terms above.
 ~~~
 
-### Notice text 69
+### Notice text 70
 
 Packages: `loose-envify@1.4.0`
 
@@ -3629,7 +3662,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 70
+### Notice text 71
 
 Packages: `lucide-react@1.31.0`
 
@@ -3683,7 +3716,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 71
+### Notice text 72
 
 Packages: `marked@16.4.2`, `marked@17.0.6`
 
@@ -3739,7 +3772,7 @@ Redistribution and use in source and binary forms, with or without modification,
 This software is provided by the copyright holders and contributors “as is” and any express or implied warranties, including, but not limited to, the implied warranties of merchantability and fitness for a particular purpose are disclaimed. In no event shall the copyright owner or contributors be liable for any direct, indirect, incidental, special, exemplary, or consequential damages (including, but not limited to, procurement of substitute goods or services; loss of use, data, or profits; or business interruption) however caused and on any theory of liability, whether in contract, strict liability, or tort (including negligence or otherwise) arising in any way out of the use of this software, even if advised of the possibility of such damage.
 ~~~
 
-### Notice text 72
+### Notice text 73
 
 Packages: `mermaid@12.1.0`
 
@@ -3771,7 +3804,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 73
+### Notice text 74
 
 Packages: `node-addon-api@7.1.1`
 
@@ -3791,7 +3824,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ~~~
 
-### Notice text 74
+### Notice text 75
 
 Packages: `node-pty@1.1.0`
 
@@ -3823,7 +3856,7 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 IN THE SOFTWARE.
 ~~~
 
-### Notice text 75
+### Notice text 76
 
 Packages: `node-pty@1.1.0`
 
@@ -3903,7 +3936,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 76
+### Notice text 77
 
 Packages: `orderedmap@2.1.1`, `w3c-keyname@2.2.8`
 
@@ -3934,7 +3967,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 77
+### Notice text 78
 
 Packages: `package-manager-detector@1.8.0`
 
@@ -3966,7 +3999,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 78
+### Notice text 79
 
 Packages: `path-data-parser@0.1.0`, `points-on-curve@0.2.0`
 
@@ -3999,7 +4032,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 79
+### Notice text 80
 
 Packages: `points-on-path@0.2.1`
 
@@ -4031,7 +4064,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 80
+### Notice text 81
 
 Packages: `prosemirror-changeset@2.4.2`
 
@@ -4061,7 +4094,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 81
+### Notice text 82
 
 Packages: `prosemirror-commands@1.7.2`, `prosemirror-dropcursor@1.8.3`, `prosemirror-gapcursor@1.4.1`, `prosemirror-history@1.5.0`, `prosemirror-inputrules@1.5.1`, `prosemirror-keymap@1.2.3`, `prosemirror-model@1.25.11`, `prosemirror-schema-list@1.5.1`, `prosemirror-state@1.4.4`, `prosemirror-transform@1.12.0`, `prosemirror-view@1.42.3`
 
@@ -4101,7 +4134,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 82
+### Notice text 83
 
 Packages: `prosemirror-tables@1.8.5`
 
@@ -4131,7 +4164,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 83
+### Notice text 84
 
 Packages: `react-remove-scroll-bar@2.3.8`
 
@@ -4161,7 +4194,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 84
+### Notice text 85
 
 Packages: `react@18.3.1`, `react-dom@18.3.1`, `scheduler@0.23.2`
 
@@ -4195,7 +4228,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 85
+### Notice text 86
 
 Packages: `robust-predicates@3.0.3`
 
@@ -4230,7 +4263,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 For more information, please refer to <http://unlicense.org>
 ~~~
 
-### Notice text 86
+### Notice text 87
 
 Packages: `rope-sequence@1.3.4`
 
@@ -4260,7 +4293,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 87
+### Notice text 88
 
 Packages: `roughjs@4.6.6`
 
@@ -4292,7 +4325,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 88
+### Notice text 89
 
 Packages: `rw@1.3.3`
 
@@ -4329,7 +4362,7 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ~~~
 
-### Notice text 89
+### Notice text 90
 
 Packages: `safer-buffer@2.1.2`
 
@@ -4361,7 +4394,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 90
+### Notice text 91
 
 Packages: `style-mod@4.1.4`
 
@@ -4391,7 +4424,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 91
+### Notice text 92
 
 Packages: `stylis@4.4.0`
 
@@ -4423,7 +4456,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 92
+### Notice text 93
 
 Packages: `tailwind-merge@3.6.0`
 
@@ -4455,7 +4488,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 93
+### Notice text 94
 
 Packages: `tinyexec@1.3.1`
 
@@ -4487,7 +4520,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 94
+### Notice text 95
 
 Packages: `ts-dedent@2.3.0`
 
@@ -4519,7 +4552,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 95
+### Notice text 96
 
 Packages: `tslib@2.8.1`
 
@@ -4542,7 +4575,7 @@ OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
 ~~~
 
-### Notice text 96
+### Notice text 97
 
 Packages: `use-sync-external-store@1.6.0`
 
@@ -4574,7 +4607,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 97
+### Notice text 98
 
 Packages: `uuid@14.0.2`
 
@@ -4594,7 +4627,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ~~~
 
-### Notice text 98
+### Notice text 99
 
 Packages: `zustand@5.0.15`
 
