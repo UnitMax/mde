@@ -723,7 +723,7 @@ describe('Inbox conversation', () => {
     expect(view.querySelector('[data-testid="chat-reasoning"]')?.textContent).toContain('Thought')
     // Expanding a tool shows its input and output.
     await act(async () => view.querySelector<HTMLButtonElement>('[data-testid="chat-tool-call_1"] button')!.click())
-    expect(view.querySelector('[data-testid="chat-tool-call_1"]')?.textContent).toContain('1: export {}')
+    expect(view.querySelector('[data-testid="chat-tool-call_1"]')?.textContent).toContain('export {}')
     expect(view.querySelector('[data-testid="chat-working"]')).not.toBeNull()
 
     await act(async () => {
@@ -754,6 +754,11 @@ describe('Inbox conversation', () => {
     expect(view.querySelector('[data-testid="chat-skill-demo"]')?.textContent).toBe('Demo skill')
     expect(view.querySelector('[data-testid="chat-message-msg_1"]')?.textContent).toContain('use $demo please')
 
+    // Three steps in a row are folded into one line; opening it shows the steps.
+    const group = view.querySelector<HTMLElement>('[data-testid="chat-activity"]')!
+    expect(group.textContent).toContain('Loading 3 skills')
+    expect(view.querySelector('[data-testid="chat-tool-call_skill"]')).toBeNull()
+    await act(async () => group.querySelector<HTMLButtonElement>(':scope > button')!.click())
     const loaded = view.querySelector('[data-testid="chat-tool-call_skill"]')!
     expect(loaded.textContent).toContain('Loaded the demo skill')
     expect(loaded.textContent).not.toContain('PINEAPPLE')
@@ -840,7 +845,7 @@ describe('Inbox conversation', () => {
     await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-reasoning"]')).not.toBeNull())
     const reasoning = view.querySelector<HTMLElement>('[data-testid="chat-reasoning"]')!
     const toggle = reasoning.querySelector('button')!
-    expect(toggle.textContent).toContain('Thinking…')
+    expect(toggle.textContent).toContain('Thinking')
     // Streamed chunks accumulate from the start, alongside the fetched snapshot.
     await act(async () => useInboxChat.getState().applyEvent({
       type: 'delta', threadId: 'ses_one', messageId: 'msg_2', part: 'reasoning', ordinal: 0,

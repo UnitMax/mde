@@ -363,6 +363,25 @@ function toolDuration(value: unknown): number | undefined {
   return duration >= 0 && duration <= 7 * 24 * 60 * 60 * 1000 ? Math.round(duration) : undefined
 }
 
+/** A shell command's exit code; OpenCode reports it as a whole number in the tool's metadata. */
+function exitCode(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && Math.abs(value) <= 1_000_000 ? value : undefined
+}
+
+/** What was answered to the question tool's questions: one list of chosen or typed answers per question. */
+const MAX_ANSWERED_QUESTIONS = 20
+const MAX_ANSWERS = 20
+const MAX_ANSWER_LENGTH = 500
+
+function parseAnswers(value: unknown): string[][] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const answers = value.slice(0, MAX_ANSWERED_QUESTIONS).map((entry) =>
+    list(entry)
+      .slice(0, MAX_ANSWERS)
+      .flatMap((answer) => (typeof answer === 'string' && answer.trim() ? [body(answer, MAX_ANSWER_LENGTH).text.trim()] : [])))
+  return answers.length > 0 ? answers : undefined
+}
+
 function parsePart(value: unknown): ChatPart | null {
   const part = record(value)
   if (!part) return null
@@ -386,14 +405,16 @@ function parsePart(value: unknown): ChatPart | null {
   const output = toolOutput(state.content)
   const error = status === 'error' ? errorText(state.error) : undefined
   const metadata = record(state.metadata)
-  const childId = name === 'subagent'
-    ? short(metadata?.sessionID) ?? /^\s*<subagent\b[^>]*\bsessionID="([^"]+)"/i.exec(output.text)?.[1]
-      ?? /\(sessionID: ([^)]+)\)/.exec(error ?? '')?.[1]
+  const childId = name === 'subagent' || name === 'task'
+    ? short(metadata?.sessionID) ?? short(metadata?.sessionId) ?? /^\s*<subagent\b[^>]*\bsessionID="([^"]+)"/i.exec(output.text)?.[1]
+      ?? /^\s*<task\b[^>]*\bid="([^"]+)"/i.exec(output.text)?.[1] ?? /\(sessionID: ([^)]+)\)/.exec(error ?? '')?.[1]
     : undefined
   const sessionId = childId && /^ses_[A-Za-z0-9_-]{1,200}$/.test(childId) ? childId : undefined
   const changes = status === 'completed' ? parsePatches(metadata) : { patches: [], truncated: false }
   const calls = parseToolCalls(metadata, status)
   const durationMs = status === 'completed' || status === 'error' ? toolDuration(part.time) : undefined
+  const code = status === 'completed' || status === 'error' ? exitCode(metadata?.exit) : undefined
+  const answers = name === 'question' && status === 'completed' ? parseAnswers(metadata?.answers) : undefined
   // OpenCode cuts a script's output itself and says so in the metadata.
   const cutByOpenCode = calls !== undefined && metadata?.truncated === true
   return {
@@ -410,6 +431,8 @@ function parsePart(value: unknown): ChatPart | null {
     ...(durationMs !== undefined ? { durationMs } : {}),
     ...(changes.patches.length > 0 ? { patches: changes.patches } : {}),
     ...(status === 'completed' && typeof metadata?.exists === 'boolean' ? { existed: metadata.exists } : {}),
+    ...(code !== undefined ? { exitCode: code } : {}),
+    ...(answers ? { answers } : {}),
   }
 }
 

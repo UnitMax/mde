@@ -56,7 +56,7 @@ function SubagentCard({ part, models }: { part: ToolPart; models: readonly ChatM
       data-testid={`chat-subagent-${part.id}`}
       aria-label={`Subagent: ${title}`}
       className={cn(
-        'min-w-0 overflow-hidden rounded-xl border bg-panel/60 transition-colors',
+        'min-w-0 overflow-hidden rounded-lg border bg-panel transition-colors',
         active ? 'border-accent/40' : info.state === 'failed' ? 'border-danger/40' : 'border-line',
       )}
     >

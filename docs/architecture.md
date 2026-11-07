@@ -618,10 +618,9 @@ inside `~/.mde/worktrees`, and a worktree already deleted by hand counts as remo
 **Conversation.** The thread view shows the newest 50 messages and loads older ones when you
 scroll up. User messages are bubbles; assistant text and reasoning are Markdown rendered read-only
 with the preview's extensions (raw HTML off, links opened through the external-link validator).
-Reasoning is a collapsible "Thought" block and updates as it streams, using the same Markdown
-renderer as replies; each tool call is a row with a status icon and a summary such as
-"Read src/app.ts" or "Ran npm test" that expands to its full input and output, each cut at 64 KB.
-Subagent calls (OpenCode's `subagent` tool) are shown as cards instead: the agent type, the selected model and variant, the title, its state (Working, Done, Stopped, Failed) and a one-line preview of the task. The model uses the same display name as the composer; hovering reveals the full provider/model ID. MDE reads the child session named by the tool's metadata (or its result/error wrapper), checks that it belongs to the recorded parent, and returns only its model. Reads are deduplicated per page, limited to four at once, and time out after two seconds; unavailable models do not prevent the conversation from loading. Model and agent selection events in these child sessions refresh the open parent. Subagents started together are grouped under one heading, and a card expands to the full task and the answer rendered as Markdown. The subagent's own steps are not shown. Agent and model switches, failures and stops appear as small notes. Text streams in as OpenCode
+Reasoning is a "Thought" row that updates as it streams, using the same Markdown renderer as
+replies; each tool call is a row too (see **Activity rows** below), whose input and output are each
+cut at 64 KB. Subagent calls (OpenCode's `subagent` tool) are shown as cards instead: the agent type, the selected model and variant, the title, its state (Working, Done, Stopped, Failed) and a one-line preview of the task. The model uses the same display name as the composer; hovering reveals the full provider/model ID. MDE reads the child session named by the tool's metadata (or its result/error wrapper), checks that it belongs to the recorded parent, and returns only its model. Reads are deduplicated per page, limited to four at once, and time out after two seconds; unavailable models do not prevent the conversation from loading. Model and agent selection events in these child sessions refresh the open parent. Subagents started together are grouped under one heading, and a card expands to the full task and the answer rendered as Markdown. The subagent's own steps are not shown. Agent and model switches, failures and stops appear as small notes. Text streams in as OpenCode
 produces it. Permission requests (Allow once, Always allow, Reject) and questions (option buttons,
 checkboxes, free text) are answered inline as cards; a question with field types MDE cannot show
 asks you to answer it in a terminal. While the thread works and the box is empty, the send button becomes Stop. A
@@ -857,6 +856,40 @@ event). `parseMessage` turns these into notes with a target icon instead of a "S
 "Goal resumed" open to the objective, and "Goal not met yet, working on it" opens to what the reviewer
 found missing, as prose. The instructions that OpenCode wraps around them are not shown.
 
+**Activity rows.** Everything the agent does in a conversation is drawn from one set of pieces
+(`chat-ui.tsx`) so that it reads as one family. A step is a row (`ActivityRow`): a mark for its kind
+of work, a verb in muted text ("Read", "Ran", "Searched"), what it was about in the code font with a
+folder dimmed and the file bright, and small print at the right (a count, an exit code, the time).
+Quiet when it went well; while it runs the mark spins and the verb shimmers (a plain brighter verb
+with reduced motion), and a failure turns the mark, the verb and the reason red. A row with something
+to show opens on a click, with its chevron appearing on hover, onto a panel hung from a rail under
+its mark: a terminal for a command, a numbered and syntax-colored preview for a file read (24 lines
+then "Show N lines more", copied without its numbers from the right-click menu), results grouped by
+file with the matched words marked for `grep`, a list for `glob`, the host and text of a page with
+open and copy buttons for `webfetch`, a list of results for `websearch` (JSON as OpenCode's search
+tool answers it), a checklist with a progress bar for the to-do list (`todowrite`), the skill's
+instructions, and key/value arguments with the output for a tool with no view of its own. A command
+shows its exit code (`metadata.exit`, kept by `parse.ts` as `exitCode`) and the escape remnants of
+color codes are dropped from its output. The tool names OpenCode renamed (`bash` is `shell`, `task`
+is `subagent`, `apply_patch` is `patch`) are read as the same tools, so older conversations look
+alike (`toolKind` in `lib/chat-tools.ts`). An `apply_patch` call is drawn as diffs from its
+`patchText`, with files added, changed, moved and deleted. A question the person has answered
+(`metadata.answers`, kept as `answers`) is a card with the question and the answer chosen.
+
+A run of three or more ordinary steps (thoughts, reads, searches, commands, skills, tool calls) in a
+message is folded into one line that sums it up in the tense of what is still going on: "Read 4 files,
+searched 2 times, running 1 command", with a red "N failed" tag when a step failed or a command
+exited with an error. The group is open while the agent is writing the message and the run is at
+its end, so the work can be followed, and shuts by itself when the agent moves on to text or a file
+change; a click on it is the person's choice and stays. A message the agent left unfinished is not
+live, so its thoughts do not go on shimmering. File changes, answered questions and subagent cards
+are never folded; they break the run. While a thought is written its row previews what it is on: the latest
+finished heading (`**Title**`) in it, or else its latest finished sentence. A line that is half written is never shown, each preview
+stays up for at least 2.6 seconds (what arrives in between is skipped), and a new one fades in, so the text does not churn
+with every streamed token. Once the thought is done the row says "Thought" and the heading it began with.
+Notes (agent switches, errors, goals) are quiet rows of the same kind, and a finished compaction is a
+rule across the conversation that opens onto the summary.
+
 **File changes.** The `edit` and `write` tools are drawn as diffs instead of raw JSON, one card per
 file (`ChatFileChange`): a header with the verb ("Edited", "Created", "Overwrote"), the path
 relative to the thread's folder, and `+added −removed` counts, then the lines with a line-number
@@ -873,8 +906,7 @@ there is no such diff yet, so the diff is worked out in the renderer from the ca
 `oldString` and `newString` (`lib/diff.ts`), without line numbers. A write has no diff in
 OpenCode's metadata, so its content is shown as additions, and only whether the file already
 existed is known (once the tool has finished). A failed edit keeps the plain row with OpenCode's
-reason. A script's calls to MCP servers get a card of their own (see **MCP servers**), and every other
-tool is unchanged.
+reason. A script's calls to MCP servers get a row of their own (see **MCP servers**).
 
 **MCP servers.** OpenCode can be given MCP servers (programs or remote services that offer tools to the
 model) in its configuration. MDE shows the ones OpenCode lists for the folder or thread, and connects or

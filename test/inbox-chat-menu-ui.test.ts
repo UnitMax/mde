@@ -163,7 +163,21 @@ describe('the right-click menu of a conversation', () => {
     await act(async () => view.querySelector<HTMLButtonElement>('[data-testid="chat-tool-call_1"] button')!.click())
     await rightClick(view.querySelector('[data-testid="chat-tool-call_1"] pre')!)
     await choose('Copy code')
-    expect(writeText).toHaveBeenLastCalledWith('{"path":"/home/me/app/src/auth.ts"}')
+    expect(writeText).toHaveBeenLastCalledWith('export {}')
+  })
+
+  it('copies the lines of a file the agent read without their numbers', async () => {
+    page = { ...page, messages: page.messages.map((message) => message.kind === 'assistant'
+      ? { ...message, parts: message.parts.map((part) => part.kind === 'tool'
+        ? { ...part, output: 'Read file /home/me/app/src/auth.ts, lines 1-3\n1: const a = 1\n2: \n3: export {}' }
+        : part) }
+      : message) }
+    const view = await render()
+    await act(async () => view.querySelector<HTMLButtonElement>('[data-testid="chat-tool-call_1"] button')!.click())
+    await rightClick(view.querySelector('[data-testid="chat-read"] .file-diff-code')!)
+    expect(labels()[0]).toBe('Copy code')
+    await choose('Copy code')
+    expect(writeText).toHaveBeenLastCalledWith('const a = 1\n\nexport {}')
   })
 
   it('copies the selected text when the click lands on it, and not when it lands elsewhere', async () => {

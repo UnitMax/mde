@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { ChevronRight, Code, Plug } from 'lucide-react'
 import type { ChatPart } from '@shared/types'
+import { ActivityRow, Glyph, TruncatedNote } from '@/components/inbox/chat-ui'
 import { ChatMarkdown } from '@/components/inbox/ChatMarkdown'
-import { ToolIcon } from '@/components/inbox/ToolIcon'
 import {
   argsPreview,
   callArguments,
@@ -61,7 +61,7 @@ function Block({ label, children, tone }: { label: string; children: React.React
 
 const PRE = 'inbox-code-font overflow-auto whitespace-pre-wrap break-words rounded-md border border-line bg-bg px-2.5 py-2 text-[12px] leading-snug'
 
-function Arguments({ input }: { input: string }): JSX.Element | null {
+export function Arguments({ input }: { input: string }): JSX.Element | null {
   const pairs = callArguments(input)
   if (!pairs) return input ? <pre className={cn(PRE, 'max-h-40 text-fg-muted')}>{input}</pre> : null
   if (pairs.length === 0) return <p className="text-[12px] text-fg-subtle">No arguments</p>
@@ -139,50 +139,41 @@ function Script({ code }: { code: string }): JSX.Element {
  * a script that made several says how many and which servers.
  */
 export function McpCallView({ part, calls }: { part: ToolPart; calls: McpCall[] }): JSX.Element {
-  const [open, setOpen] = useState(false)
   const [first] = calls
   const code = scriptOf(part)
   const servers = [...new Set(calls.map((call) => call.server ?? call.namespace).filter(Boolean))]
   const answer = calls.length === 1 && part.status === 'completed' && part.output ? inlineAnswer(part.output) : null
   const duration = part.durationMs !== undefined ? scriptDuration(part.durationMs) : ''
-  const failed = part.status === 'error'
-  const verb = part.status === 'completed' || failed ? 'Called' : 'Calling'
+  const done = part.status === 'completed' || part.status === 'error'
+  const single = first && calls.length === 1
   return (
-    <div data-testid={`chat-tool-${part.id}`} data-mcp-calls={calls.length} className="min-w-0">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        className={cn(
-          'group flex w-full min-w-0 items-center gap-1.5 rounded px-1.5 py-1 text-left text-[12px] transition-colors hover:bg-hover',
-          failed ? 'text-danger' : 'text-fg-muted hover:text-fg',
-        )}
-      >
-        <ChevronRight aria-hidden="true" className={cn('h-3 w-3 shrink-0 transition-transform', open && 'rotate-90')} />
-        <ToolIcon status={part.status} />
-        {first && calls.length === 1 ? (
-          <span className="flex min-w-0 flex-1 items-center gap-1.5">
-            <Badge call={first} />
-            <span className={cn('shrink-0 font-medium', !failed && 'text-fg')}>{first.tool}</span>
-            <span className="inbox-code-font min-w-0 truncate text-[11.5px] text-fg-muted">{argsPreview(first.input)}</span>
-            {answer && <span className="inbox-code-font max-w-[45%] shrink-0 truncate text-[11.5px] text-fg" title={answer}>→ {answer}</span>}
-            {part.error && <span className="min-w-0 truncate text-danger"> — {part.error}</span>}
-          </span>
-        ) : (
-          <span className="flex min-w-0 flex-1 items-center gap-1.5">
-            <span className={cn('shrink-0 font-medium', !failed && 'text-fg')}>{verb} {calls.length} tools</span>
-            <span className="min-w-0 truncate text-fg-muted">{servers.join(', ')}</span>
-            {part.error && <span className="min-w-0 truncate text-danger"> — {part.error}</span>}
-          </span>
-        )}
-        {duration && <span className="shrink-0 tabular-nums text-fg-subtle" title="How long the script ran">{duration}</span>}
-      </button>
-      {open && (
-        <div className="ml-[1.4rem] mt-1.5 flex min-w-0 flex-col gap-2.5 pb-1">
+    <ActivityRow
+      testId={`chat-tool-${part.id}`}
+      icon={Plug}
+      status={part.status}
+      verb={single ? (done ? 'Called' : 'Calling') : `${done ? 'Called' : 'Calling'} ${calls.length} tools`}
+      subject={single ? (
+        <span className="flex min-w-0 items-center gap-1.5">
+          <Badge call={first} />
+          <span className="shrink-0 font-medium">{first.tool}</span>
+          <span className="inbox-code-font min-w-0 truncate text-[11.5px] text-fg-muted">{argsPreview(first.input)}</span>
+          {answer && <span className="inbox-code-font max-w-[45%] shrink-0 truncate text-[11.5px]" title={answer}>→ {answer}</span>}
+          {part.error && <span className="min-w-0 truncate text-danger"> — {part.error}</span>}
+        </span>
+      ) : (
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="min-w-0 truncate text-fg-muted">{servers.join(', ')}</span>
+          {part.error && <span className="min-w-0 truncate text-danger"> — {part.error}</span>}
+        </span>
+      )}
+      meta={duration ? <span title="How long the script ran">{duration}</span> : undefined}
+      attrs={{ 'data-mcp-calls': calls.length }}
+      detail={(
+        <div className="flex min-w-0 flex-col gap-2.5">
           {calls.map((call, index) => (
             <div key={index} data-testid="chat-mcp-call" className="min-w-0">
               <div className="mb-1 flex min-w-0 items-center gap-1.5 text-[12px]">
-                <ToolIcon status={call.status} />
+                <Glyph icon={Plug} status={call.status} />
                 <Badge call={call} />
                 <span className="font-medium text-fg">{call.tool}</span>
               </div>
@@ -195,10 +186,10 @@ export function McpCallView({ part, calls }: { part: ToolPart; calls: McpCall[] 
               <pre className={cn(PRE, 'max-h-40 border-danger/40 text-danger')}>{part.error}</pre>
             </Block>
           )}
-          {part.truncated && <p className="text-[11px] text-fg-subtle">Shortened; the full text is in OpenCode.</p>}
+          {part.truncated && <TruncatedNote />}
           {code && <Script code={code} />}
         </div>
       )}
-    </div>
+    />
   )
 }

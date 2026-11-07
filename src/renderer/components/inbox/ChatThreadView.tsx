@@ -235,6 +235,8 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   }, [dismissAside, thread.id])
 
   const running = state?.running ?? thread.status === 'working'
+  // Only the newest step of the agent can be live; one before it that never finished was cut short.
+  const lastAssistantId = useMemo(() => [...messages].reverse().find((message) => message.kind === 'assistant')?.id, [messages])
 
   // Compacting summarizes the conversation to free up context. OpenCode does it in the background and writes it
   // into the conversation as a note, so this only asks, and refuses what would make a second, failing note:
@@ -347,6 +349,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
                   message={message}
                   directory={thread.directory}
                   models={ready?.models}
+                  working={running && message.id === lastAssistantId}
                   onRevert={message.kind === 'user' ? askRevert : undefined}
                   onFork={message.kind === 'user' ? forkFrom : undefined}
                 />

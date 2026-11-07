@@ -774,6 +774,35 @@ describe('OpenCode service parsing', () => {
       expect(write({ status: 'completed', metadata: { truncated: false } })).not.toHaveProperty('existed')
       expect(write({ status: 'running', metadata: { exists: true } })).not.toHaveProperty('existed')
     })
+
+    it('keeps the exit code of a shell command once it has finished', () => {
+      const shell = (state: Record<string, unknown>) => tool(parseMessage({
+        id: 'msg_1', type: 'assistant', agent: 'build', model: { id: 'm', providerID: 'p' }, time: { created: 1 },
+        content: [{ type: 'tool', id: 'call_1', name: 'shell', time: { created: 1 }, state: { input: { command: 'npm test' }, ...state } }],
+      }))
+      expect(shell({ status: 'completed', metadata: { exit: 0 } })?.exitCode).toBe(0)
+      expect(shell({ status: 'completed', metadata: { exit: 2 } })?.exitCode).toBe(2)
+      expect(shell({ status: 'error', error: { message: 'Failed' }, metadata: { exit: 127 } })?.exitCode).toBe(127)
+      expect(shell({ status: 'running', metadata: { exit: 0 } })).not.toHaveProperty('exitCode')
+      expect(shell({ status: 'completed', metadata: { exit: 'nope' } })).not.toHaveProperty('exitCode')
+      expect(shell({ status: 'completed', metadata: { exit: 1.5 } })).not.toHaveProperty('exitCode')
+      expect(shell({ status: 'completed' })).not.toHaveProperty('exitCode')
+    })
+
+    it('keeps what was answered to the question tool, cut to a sane size', () => {
+      const ask = (state: Record<string, unknown>, name = 'question') => tool(parseMessage({
+        id: 'msg_1', type: 'assistant', agent: 'build', model: { id: 'm', providerID: 'p' }, time: { created: 1 },
+        content: [{ type: 'tool', id: 'call_1', name, time: { created: 1 }, state: { input: { questions: [] }, ...state } }],
+      }))
+      expect(ask({ status: 'completed', metadata: { answers: [['Paris'], ['Red', 'Blue'], []] } })?.answers).toEqual([['Paris'], ['Red', 'Blue'], []])
+      expect(ask({ status: 'completed', metadata: { answers: [['  ', 7, 'ok '], 'nope'] } })?.answers).toEqual([['ok'], []])
+      expect(ask({ status: 'completed', metadata: { answers: [['x'.repeat(900)]] } })?.answers?.[0]?.[0]).toHaveLength(500)
+      expect(ask({ status: 'completed', metadata: { answers: Array.from({ length: 30 }, () => ['a']) } })?.answers).toHaveLength(20)
+      expect(ask({ status: 'completed', metadata: { answers: [] } })).not.toHaveProperty('answers')
+      expect(ask({ status: 'completed', metadata: { answers: 'Paris' } })).not.toHaveProperty('answers')
+      expect(ask({ status: 'running', metadata: { answers: [['Paris']] } })).not.toHaveProperty('answers')
+      expect(ask({ status: 'completed', metadata: { answers: [['Paris']] } }, 'read')).not.toHaveProperty('answers')
+    })
   })
 
   it('maps permission requests and question forms', () => {

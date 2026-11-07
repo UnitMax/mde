@@ -60,9 +60,8 @@ export const ChatMarkdown = memo(function ChatMarkdown({
     <div
       className={cn(
         'min-w-0 break-words leading-relaxed',
-        variant === 'reasoning'
-          ? 'border-l-2 border-line pl-3 text-[12.5px] text-fg-subtle'
-          : 'text-[14px] text-fg',
+        // Reasoning is shown on the rail of its row, which is its left edge.
+        variant === 'reasoning' ? 'text-[12.5px] text-fg-muted' : 'text-[14px] text-fg',
       )}
       onClick={onClick}
     >

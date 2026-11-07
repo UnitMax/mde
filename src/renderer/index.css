@@ -622,6 +622,67 @@
   }
 }
 
+/*
+ * Work that is going on in the conversation (ActivityRow): a row settles in when it starts, and its verb is lit by a
+ * light that runs along it, so that what is happening now stands out from what happened. Without motion the verb is
+ * simply the brighter color.
+ */
+.chat-rise {
+  animation: mde-pending-in 160ms ease-out;
+}
+
+.chat-shimmer {
+  background-image: linear-gradient(
+    100deg,
+    var(--color-fg-muted) 0%,
+    var(--color-fg-muted) 38%,
+    var(--color-fg) 50%,
+    var(--color-fg-muted) 62%,
+    var(--color-fg-muted) 100%
+  );
+  background-size: 250% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: mde-shimmer 1.9s linear infinite;
+}
+
+/* A line that is replaced (the preview of the thought being written) is faded in, not cut over. */
+.chat-swap {
+  animation: mde-swap 420ms ease-out;
+}
+
+@keyframes mde-swap {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes mde-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-rise,
+  .chat-swap {
+    animation: none;
+  }
+
+  .chat-shimmer {
+    background-image: none;
+    color: var(--color-fg);
+    animation: none;
+  }
+}
+
 /* A message held for the agent (ChatPendingView) settles in rather than appearing with a jolt. */
 .chat-pending {
   animation: mde-pending-in 180ms ease-out;

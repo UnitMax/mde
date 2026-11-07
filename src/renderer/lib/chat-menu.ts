@@ -87,10 +87,22 @@ export interface MenuTarget {
   messageId: string | null
 }
 
+/**
+ * The code in a block. A `pre` is its text; a block of numbered lines (`data-code`, as the preview of a file is) is the
+ * text of its lines one under the other, without the numbers, which are not code.
+ */
+function codeOf(block: Element | null): string {
+  if (!block) return ''
+  if (block.hasAttribute('data-code')) {
+    return Array.from(block.querySelectorAll('.file-diff-code')).map((line) => line.textContent ?? '').join('\n').replace(/\n+$/, '')
+  }
+  return block.textContent?.replace(/\n+$/, '') ?? ''
+}
+
 /** What is under a right-click in the transcript, read from the page. */
 export function menuTarget(element: Element | null, transcript: Element): MenuTarget {
   if (!element || !transcript.contains(element)) return { code: null, link: null, messageId: null }
-  const code = element.closest('pre')?.textContent?.replace(/\n+$/, '') ?? ''
+  const code = codeOf(element.closest('pre, [data-code]'))
   const href = element.closest('a[href]')?.getAttribute('href') ?? null
   return {
     code: code || null,

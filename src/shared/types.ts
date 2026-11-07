@@ -394,6 +394,10 @@ export type ChatPart =
       patches?: ChatFilePatch[]
       /** For a file write: whether the file was already there. Known once the tool has finished. */
       existed?: boolean
+      /** For a shell command: the exit code, once it has finished. */
+      exitCode?: number
+      /** For the question tool: what was answered to each question, once the person has answered. */
+      answers?: string[][]
     }
 
 export type ChatMessage =

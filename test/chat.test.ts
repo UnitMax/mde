@@ -180,6 +180,17 @@ describe('subagent calls', () => {
     expect(subagentResult('Plain answer')).toBe('Plain answer')
   })
 
+  it('reads the older `task` tool as a subagent too', () => {
+    const old = call({
+      name: 'task', status: 'completed',
+      input: JSON.stringify({ description: 'Count to 100', prompt: 'Write a script', subagent_type: 'general' }),
+      output: '<task id="ses_x" state="completed">\n<task_result>\nThe script printed 1 to 100.\n</task_result>\n</task>',
+    })
+    expect(subagentInfo(old)).toMatchObject({ agent: 'general', title: 'Count to 100', state: 'done' })
+    expect(subagentResult(old.output!)).toBe('The script printed 1 to 100.')
+    expect(messageBlocks([old]).map((block) => block.kind)).toEqual(['subagents'])
+  })
+
   it('groups consecutive subagent calls into one block', () => {
     const text: ChatPart = { kind: 'text', text: 'Launching' }
     const blocks = messageBlocks([text, call({ id: 'a' }), call({ id: 'b' }), text, call({ id: 'c' })])

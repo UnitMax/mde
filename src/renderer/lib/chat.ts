@@ -560,9 +560,9 @@ export function skillCall(part: ToolPart): SkillCall {
   return { name, body: inner.trim() || null, files }
 }
 
-/** OpenCode runs a subagent through its `subagent` tool. */
+/** OpenCode runs a subagent through its `subagent` tool; versions before it called it `task`. */
 export function isSubagentCall(part: ChatPart): part is ToolPart {
-  return part.kind === 'tool' && part.name === 'subagent'
+  return part.kind === 'tool' && (part.name === 'subagent' || part.name === 'task')
 }
 
 export interface SubagentInfo {
@@ -587,14 +587,17 @@ export function subagentInfo(part: ToolPart): SubagentInfo {
     : part.status === 'error'
       ? /interrupt|abort|cancel/i.test(part.error ?? '') ? 'interrupted' : 'failed'
       : part.status === 'running' ? 'running' : 'starting'
-  return { agent: text('agent'), title: text('description'), task: text('prompt'), state, problem }
+  return { agent: text('agent') ?? text('subagent_type'), title: text('description'), task: text('prompt'), state, problem }
 }
 
-/** OpenCode wraps a subagent's answer in a `<subagent …>` tag carrying its internal session ID; only the answer is shown. */
+/**
+ * OpenCode wraps a subagent's answer in a `<subagent …>` tag carrying its internal session ID (`<task …>` with the
+ * answer in `<task_result>`, before the rename); only the answer is shown.
+ */
 export function subagentResult(output: string): string {
   return output
-    .replace(/^\s*<subagent\b[^>]*>\s*/i, '')
-    .replace(/\s*<\/subagent>\s*$/i, '')
+    .replace(/^\s*<(?:subagent|task)\b[^>]*>\s*(?:<task_result>\s*)?/i, '')
+    .replace(/\s*(?:<\/task_result>\s*)?<\/(?:subagent|task)>\s*$/i, '')
     .trim()
 }
 

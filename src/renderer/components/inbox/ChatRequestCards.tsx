@@ -20,7 +20,7 @@ function Card({
   return (
     <section
       data-testid={testId}
-      className="rounded-xl border border-warn/40 bg-warn/5 px-3.5 py-3"
+      className="rounded-lg border border-warn/40 bg-warn/5 px-3.5 py-3"
       aria-label={title}
     >
       <h3 className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-fg">

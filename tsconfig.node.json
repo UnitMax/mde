@@ -100,6 +100,7 @@
     "src/renderer/components/inbox/*.tsx",
     "src/renderer/lib/chat.ts",
     "src/renderer/lib/chat-quote.ts",
+    "src/renderer/lib/chat-tools.ts",
     "src/renderer/lib/quote-button-place.ts",
     "src/renderer/lib/mcp.ts",
     "src/renderer/lib/inbox-drafts.ts",

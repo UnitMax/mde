@@ -6,7 +6,7 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { parseMessagesPage } from '../src/main/opencode/service/parse'
 import { McpCallView } from '../src/renderer/components/inbox/ChatMcpCall'
-import { ToolCallView } from '../src/renderer/components/inbox/ChatMessageView'
+import { ToolCallView } from '../src/renderer/components/inbox/ChatTools'
 import { McpChip } from '../src/renderer/components/inbox/McpChip'
 import { McpServerNamesContext } from '../src/renderer/components/inbox/mcp-context'
 import { mcpCalls } from '../src/renderer/lib/mcp'
@@ -349,7 +349,7 @@ describe('the card for MCP calls', () => {
 
   it('shows a failed call in the colour of an error, with the reason in the row and in a block of its own', async () => {
     const container = await card('call_error')
-    expect(header(container).className).toContain('text-danger')
+    expect(q('[data-testid="chat-tool-call_error"]', container)?.hasAttribute('data-failed')).toBe(true)
     expect(text(header(container))).toContain('demo_display.sample failed')
     await expand(container)
     const blocks = all('p', container).map((block) => text(block))

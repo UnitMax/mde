@@ -246,7 +246,7 @@ export function emphasisIn(hunk: DiffHunk): Map<number, CharRange> {
 export interface FileChange {
   path: string
   /** What happened to the file; `write` while it is still unknown whether the file existed. */
-  action: 'edit' | 'create' | 'overwrite' | 'write'
+  action: 'edit' | 'create' | 'overwrite' | 'write' | 'delete'
   hunks: DiffHunk[]
   /** Whether the lines carry real line numbers, which only a diff from OpenCode does. */
   numbered: boolean
