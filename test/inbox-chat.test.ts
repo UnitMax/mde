@@ -162,7 +162,7 @@ describe('Inbox new thread', () => {
   it('names the folder, picks the default model and agent, and starts a thread on Enter', async () => {
     const view = await render()
     expect(view.querySelector('h1')?.textContent).toContain('What should we build in app')
-    await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-model-picker"]')?.textContent).toBe('OpenCode / Flint Free'))
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-model-picker"]')?.textContent).toBe('OpenCode /Flint Free'))
     expect(view.querySelector('[data-testid="chat-agent-picker"]')?.textContent).toContain('Build')
     expect(api.chat.options).toHaveBeenCalledWith({ folderId: 'fld_app' })
 

@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react'
 import { FoldVertical, Gauge, LoaderCircle } from 'lucide-react'
 import type { ChatTokens } from '@shared/types'
+import { toolbarChip, useComposerSize } from '@/components/inbox/composer-toolbar'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import {
   CONTEXT_SEGMENTS,
@@ -14,6 +15,7 @@ import {
   type ContextTone,
   type ContextUsage,
 } from '@/lib/chat'
+import { atLeast } from '@/lib/composer-size'
 import { cn } from '@/lib/utils'
 
 const TONE_COLOR: Record<ContextTone, string> = {
@@ -48,7 +50,7 @@ function describe(usage: ContextUsage): string {
 function Segments({ usage, running }: { usage: ContextUsage; running: boolean }): JSX.Element {
   const lit = Math.min(CONTEXT_SEGMENTS, Math.ceil(Math.min(usage.ratio ?? 0, 1) * CONTEXT_SEGMENTS))
   return (
-    <span aria-hidden className="flex items-center gap-[3px] @max-[30rem]:hidden">
+    <span aria-hidden className="flex items-center gap-[3px]" data-testid="chat-context-segments">
       {Array.from({ length: CONTEXT_SEGMENTS }, (_, index) => {
         const fill = segmentFill(usage.ratio, index)
         return (
@@ -68,6 +70,34 @@ function Segments({ usage, running }: { usage: ContextUsage; running: boolean })
         )
       })}
     </span>
+  )
+}
+
+/**
+ * The meter at a size too small for the segments: the same fill as a ring, so a narrow box still shows how full
+ * the window is. It turns amber and red with the segments.
+ */
+function Ring({ usage, running }: { usage: ContextUsage; running: boolean }): JSX.Element {
+  const ratio = Math.min(Math.max(usage.ratio ?? 0, 0), 1)
+  const radius = 6
+  const circumference = 2 * Math.PI * radius
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16" className="h-4 w-4 shrink-0 -rotate-90" data-testid="chat-context-ring">
+      <circle cx="8" cy="8" r={radius} fill="none" strokeWidth="2" style={{ stroke: 'var(--color-line-strong)' }} />
+      {ratio > 0 && (
+        <circle
+          cx="8"
+          cy="8"
+          r={radius}
+          fill="none"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeDasharray={`${circumference * ratio} ${circumference}`}
+          className={cn(running && 'motion-safe:animate-pulse')}
+          style={{ stroke: 'var(--meter)' }}
+        />
+      )}
+    </svg>
   )
 }
 
@@ -210,12 +240,21 @@ function Details({ usage }: { usage: ContextUsage }): JSX.Element {
 }
 
 /**
- * A pill for the composer's toolbar showing how full the model's context window is, as a gauge and
- * a token count. It turns amber and then red as the window fills; clicking it opens the breakdown.
+ * A control for the composer's toolbar showing how full the model's context window is, as a gauge and a
+ * token count. It turns amber and then red as the window fills; clicking it opens the breakdown.
  */
 export function ContextMeter({ usage, running = false, compact }: { usage: ContextUsage; running?: boolean; compact?: ContextCompact }): JSX.Element {
+  const size = useComposerSize()
   const label = describe(usage)
   const style = { '--meter': TONE_COLOR[usage.tone] } as CSSProperties
+  const tinted = usage.tone === 'normal' ? undefined : { color: 'var(--meter)' }
+  // Wide, the segments; roomy enough for a number, the ring; below that the ring alone. Without a known
+  // window there is nothing to fill, so the gauge icon stands in.
+  const gauge = !usage.limit ? <Gauge aria-hidden className="h-3.5 w-3.5 shrink-0" style={tinted} />
+    : size === 'wide' ? <Segments usage={usage} running={running} />
+      : usage.compacted ? <FoldVertical aria-hidden className="h-3.5 w-3.5 shrink-0" style={tinted} />
+        : <Ring usage={usage} running={running} />
+  const numbered = atLeast(size, 'medium')
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -226,22 +265,14 @@ export function ContextMeter({ usage, running = false, compact }: { usage: Conte
           data-testid="chat-context-meter"
           data-tone={usage.tone}
           style={style}
-          className={cn(
-            'mr-1 flex h-7 shrink-0 items-center gap-2 rounded-full border border-line bg-panel/70 px-2.5 text-[11.5px] tabular-nums',
-            'text-fg-muted transition-colors hover:border-line-strong hover:bg-hover hover:text-fg',
-            'data-[state=open]:border-line-strong data-[state=open]:bg-hover data-[state=open]:text-fg',
-          )}
+          className={cn(toolbarChip, 'shrink-0 gap-2 text-[11.5px] tabular-nums', numbered ? 'px-2' : 'w-7 justify-center px-0')}
         >
-          {usage.limit && <Segments usage={usage} running={running} />}
-          {/* Stands in for the gauge when the composer is too narrow to spare its width. */}
-          <Gauge
-            aria-hidden
-            className={cn('h-3 w-3', usage.limit && 'hidden @max-[30rem]:block')}
-            style={usage.tone === 'normal' ? undefined : { color: 'var(--meter)' }}
-          />
-          <span className="font-medium" style={usage.tone === 'normal' ? undefined : { color: 'var(--meter)' }}>
-            {usage.compacted ? 'Compacted' : formatTokens(usage.used)}
-          </span>
+          {gauge}
+          {numbered && (
+            <span className="font-medium" style={tinted}>
+              {usage.compacted ? 'Compacted' : formatTokens(usage.used)}
+            </span>
+          )}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="end" sideOffset={8} className="w-80 p-0" style={style}>

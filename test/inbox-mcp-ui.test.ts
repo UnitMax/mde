@@ -104,8 +104,7 @@ describe('the MCP chip', () => {
     await chip()
     expect(trigger().getAttribute('aria-label')).toBe('MCP servers: 2 connected')
     expect(trigger().getAttribute('data-tone')).toBe('ok')
-    expect(text(trigger())).toContain('MCP')
-    expect(text(trigger())).toContain('2')
+    expect(text(trigger())).toBe('2')
   })
 
   it('shows connected out of all when some are switched off', async () => {

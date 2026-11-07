@@ -1,8 +1,10 @@
 import type { ReactNode } from 'react'
 import { ArrowUp, Check, ChevronDown, CornerDownRight, ListEnd, LoaderCircle } from 'lucide-react'
 import type { ChatDelivery } from '@shared/types'
+import { useComposerSize } from '@/components/inbox/composer-toolbar'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { DELIVERY_HINT } from '@/lib/chat'
+import { atLeast } from '@/lib/composer-size'
 import { cn } from '@/lib/utils'
 
 const MODES: { id: ChatDelivery; label: string; icon: typeof ListEnd }[] = [
@@ -40,6 +42,7 @@ export interface ChatSendButtonProps {
 
 /** The way out of the prompt box: round when the agent is idle, a Steer / Queue button while it works. */
 export function ChatSendButton({ running, delivery, onDeliveryChange, disabled, sending, onSend, backgroundShortcut, onMenuClosed, command }: ChatSendButtonProps): JSX.Element {
+  const labelled = atLeast(useComposerSize(), 'medium')
   if (command) {
     return (
       <button
@@ -91,7 +94,7 @@ export function ChatSendButton({ running, delivery, onDeliveryChange, disabled, 
       >
         {icon}
         {/* In a narrow box the pickers need the room more: the word stays for screen readers and the tooltip. */}
-        <span className="@max-[30rem]:sr-only">{mode.label}</span>
+        <span className={cn(!labelled && 'sr-only')}>{mode.label}</span>
       </button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild disabled={disabled}>

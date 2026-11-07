@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ForwardedRef, type ReactNode } from 'react'
-import { Paperclip, PenLine, X, File as FileIcon, Bot, ChevronDown, Hammer, ListChecks, LoaderCircle, Square } from 'lucide-react'
+import { Paperclip, PenLine, X, File as FileIcon, Bot, Hammer, ListChecks, LoaderCircle, Square } from 'lucide-react'
 import { readFileTreeDrop, isFileDrop } from '@/terminal/drop'
 import type { ChatDelivery, ChatDraft, ChatDraftChoice, ChatDraftKey, ChatDraftRequest, ChatAgent, ChatSkill, OpenCodeModelRef } from '@shared/types'
 import { skillTriggerAt } from '@shared/skills'
@@ -18,8 +18,10 @@ import { ChatInput, type ChatInputHandle } from '@/components/inbox/ChatInput'
 import { ChatQuoteCard } from '@/components/inbox/ChatQuoteCard'
 import { ModelPicker } from '@/components/inbox/ModelPicker'
 import { ChatSendButton } from '@/components/inbox/ChatSendButton'
+import { ComposerSizeContext, HoverChevron, toolbarChip, useComposerSize, useMeasuredComposerSize } from '@/components/inbox/composer-toolbar'
 import { SlashCommandIcon } from '@/components/inbox/SlashCommandIcon'
 import { orderAgents, type ContextUsage } from '@/lib/chat'
+import { atLeast } from '@/lib/composer-size'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { cn } from '@/lib/utils'
 import type { OptionsState } from '@/store/inbox-chat'
@@ -36,9 +38,10 @@ function agentColor(agent: ChatAgent | undefined): string | undefined {
   return agent?.color && /^#[0-9a-fA-F]{3,8}$/.test(agent.color) ? agent.color : undefined
 }
 
-const pickerButton =
-  'flex h-7 min-w-0 items-center gap-1.5 rounded-md px-2 text-[12px] text-fg-muted transition-colors ' +
-  'hover:bg-hover hover:text-fg disabled:pointer-events-none disabled:opacity-50 data-[state=open]:bg-hover data-[state=open]:text-fg'
+const pickerButton = toolbarChip
+
+/** The toolbar's icon-only buttons: square, so they line up with each other. */
+const iconButton = cn(toolbarChip, 'w-7 shrink-0 justify-center px-0')
 
 export function AgentPicker({
   agents,
@@ -51,15 +54,26 @@ export function AgentPicker({
   onChange: (agent: string) => void
   disabled?: boolean
 }): JSX.Element {
+  const size = useComposerSize()
   const ordered = useMemo(() => orderAgents(agents), [agents])
   const current = ordered.find((agent) => agent.id === value)
+  const name = current?.name ?? value ?? 'Agent'
+  const named = atLeast(size, 'medium')
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild disabled={disabled}>
-        <button type="button" className={pickerButton} aria-label="Agent" data-testid="chat-agent-picker">
+        {/* Narrow, the name goes and the icon stays, in the agent's own color so Build and Plan still tell apart. */}
+        <button
+          type="button"
+          className={cn(pickerButton, 'shrink-0', named ? 'pr-1.5' : 'px-1.5')}
+          aria-label="Agent"
+          title={named ? undefined : `Agent: ${name}`}
+          data-testid="chat-agent-picker"
+          style={{ color: agentColor(current) }}
+        >
           <AgentIcon id={value ?? ''} className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate" style={{ color: agentColor(current) }}>{current?.name ?? value ?? 'Agent'}</span>
-          <ChevronDown className="h-3 w-3 shrink-0 opacity-70" />
+          {named && <span className="truncate">{name}</span>}
+          {named && <HoverChevron />}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64">
@@ -132,9 +146,9 @@ export interface ChatComposerProps {
   running?: boolean
   onStop?: () => void
   onRetryOptions?: () => void
-  /** How full the model's context window is; the pill is left out when there is nothing to show. */
+  /** How full the model's context window is; the meter is left out when there is nothing to show. */
   context?: ContextUsage | null
-  /** Offers compacting in the context pill's menu; without it the menu only shows the breakdown. */
+  /** Offers compacting in the context meter's menu; without it the menu only shows the breakdown. */
   compact?: ContextCompact
   placeholder?: string
   autoFocus?: boolean
@@ -143,7 +157,7 @@ export interface ChatComposerProps {
   sendBlocked?: boolean
   /** Shown directly under the box, above any error; the new-thread page puts its Git bar here. */
   footer?: ReactNode
-  /** More pills for the toolbar, after the model and agent pickers; the MCP servers go here. */
+  /** More controls for the right side of the toolbar, before the context meter; the MCP servers go here. */
   extraPickers?: ReactNode
   /**
    * The slash commands the box offers: a message that starts with `/` and one of their names is that
@@ -221,6 +235,8 @@ export const ChatComposer = forwardRef(function ChatComposer({
   const recalled = useRef<{ messages: { id: string; text: string }[]; loading: boolean }>({ messages: [], loading: false })
   const resetHistory = (): void => { recalled.current = { messages: [], loading: false } }
   const inputRef = useRef<HTMLInputElement>(null)
+  const toolbarRef = useRef<HTMLDivElement>(null)
+  const toolbarBox = useMeasuredComposerSize(toolbarRef)
   const currentKey = useRef(draftKey)
   currentKey.current = draftKey
   const mutate = (request: ChatDraftRequest): Promise<ChatDraft> => {
@@ -627,7 +643,7 @@ export const ChatComposer = forwardRef(function ChatComposer({
           }
         }}
         style={dragging ? { outline: '2px solid var(--color-accent)' } : undefined}
-        className="@container relative rounded-2xl border border-line-strong bg-elevated shadow-lg shadow-black/20 focus-within:border-accent/60"
+        className="relative rounded-2xl border border-line-strong bg-elevated shadow-lg shadow-black/20 focus-within:border-accent/60"
       >
         {pickerOpen && (
           <CompletionPicker
@@ -682,69 +698,79 @@ export const ChatComposer = forwardRef(function ChatComposer({
           }}
           onKeyDown={onKeyDown}
         />
-        <div className="flex min-w-0 items-center gap-1 px-2 pb-2">
-          {draftKey && <button type="button" aria-label="Attach files" title="Attach files" disabled={disabled || sending || adding || !loaded} className={pickerButton} onClick={() => inputRef.current?.click()}><Paperclip className="h-4 w-4" /></button>}
-          {options?.status === 'ready' ? (
-            <>
-              <ModelPicker models={options.value.models} value={model} onChange={onModelChange} onMenuClosed={() => messageRef.current?.focus()} disabled={disabled} />
-              <span aria-hidden className="h-4 w-px bg-line-strong" />
-              <AgentPicker agents={options.value.agents} value={agent} onChange={onAgentChange} disabled={disabled} />
-              {extraPickers}
-            </>
-          ) : options?.status === 'error' ? (
-            <span className="flex min-w-0 items-center gap-2 px-2 text-[12px] text-danger">
-              <span className="min-w-0 truncate" title={options.error}>{options.error}</span>
-              {onRetryOptions && (
-                <button type="button" className="shrink-0 text-accent hover:underline" onClick={onRetryOptions}>
-                  Retry
+        {/*
+          What runs the message (attach, model, agent) sits on the left, what it knows (MCP, context) and the way
+          out on the right. The groups are told apart by space, not by dividers, and every control reads the same
+          width-based size, so a narrow box takes labels away in one fixed order (see lib/composer-size.ts).
+        */}
+        <ComposerSizeContext.Provider value={toolbarBox}>
+          <div ref={toolbarRef} className="flex min-w-0 items-center gap-2 px-2 pb-2">
+            <div className="flex min-w-0 flex-1 items-center gap-0.5">
+              {draftKey && <button type="button" aria-label="Attach files" title="Attach files" disabled={disabled || sending || adding || !loaded} className={iconButton} onClick={() => inputRef.current?.click()}><Paperclip className="h-4 w-4" /></button>}
+              {options?.status === 'ready' ? (
+                <>
+                  <ModelPicker models={options.value.models} value={model} onChange={onModelChange} onMenuClosed={() => messageRef.current?.focus()} disabled={disabled} />
+                  <AgentPicker agents={options.value.agents} value={agent} onChange={onAgentChange} disabled={disabled} />
+                </>
+              ) : options?.status === 'error' ? (
+                <span className="flex min-w-0 items-center gap-2 px-2 text-[12px] text-danger">
+                  <span className="min-w-0 truncate" title={options.error}>{options.error}</span>
+                  {onRetryOptions && (
+                    <button type="button" className="shrink-0 text-accent hover:underline" onClick={onRetryOptions}>
+                      Retry
+                    </button>
+                  )}
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5 px-2 text-[12px] text-fg-subtle">
+                  <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                  Connecting to OpenCode…
+                </span>
+              )}
+            </div>
+            <div className="flex shrink-0 items-center gap-0.5">
+              {options?.status === 'ready' && extraPickers}
+              {context && <ContextMeter usage={context} running={running} compact={compact} />}
+              {onSaveDraft && (
+                <button
+                  type="button"
+                  data-testid="chat-save-draft"
+                  aria-label="Save as draft"
+                  title={`Save as draft (${mac ? 'Cmd' : 'Ctrl'}+S)`}
+                  disabled={!canSave}
+                  onClick={onSaveDraft}
+                  className={iconButton}
+                >
+                  <PenLine aria-hidden="true" className="h-4 w-4" />
                 </button>
               )}
-            </span>
-          ) : (
-            <span className="flex items-center gap-1.5 px-2 text-[12px] text-fg-subtle">
-              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-              Connecting to OpenCode…
-            </span>
-          )}
-          <span className="flex-1" />
-          {context && <ContextMeter usage={context} running={running} compact={compact} />}
-          {onSaveDraft && (
-            <button
-              type="button"
-              data-testid="chat-save-draft"
-              aria-label="Save as draft"
-              title={`Save as draft (${mac ? 'Cmd' : 'Ctrl'}+S)`}
-              disabled={!canSave}
-              onClick={onSaveDraft}
-              className={cn(pickerButton, 'w-7 justify-center px-0')}
-            >
-              <PenLine aria-hidden="true" className="h-4 w-4" />
-            </button>
-          )}
-          {running && onStop && !text.trim() && draft.attachments.length === 0 && quotes.length === 0 ? (
-            <button
-              type="button"
-              aria-label="Stop"
-              title="Stop"
-              onClick={onStop}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-fg text-bg transition-opacity hover:opacity-90"
-            >
-              <Square className="h-3 w-3 fill-current" />
-            </button>
-          ) : (
-            <ChatSendButton
-              running={running}
-              delivery={delivery}
-              onDeliveryChange={setDelivery}
-              disabled={invocation ? !canRun || missingArgument || strayArgument : !canSend}
-              sending={sending}
-              backgroundShortcut={allowBackgroundSend ? `${mac ? 'Cmd' : 'Ctrl'}+Enter` : undefined}
-              command={invocation ? { name: invocation.command.name, icon: <SlashCommandIcon name={invocation.command.name} className="h-4 w-4" /> } : undefined}
-              onSend={() => void (invocation ? runCommand(invocation) : send())}
-              onMenuClosed={() => messageRef.current?.focus()}
-            />
-          )}
-        </div>
+              <span className="w-1.5" aria-hidden="true" />
+              {running && onStop && !text.trim() && draft.attachments.length === 0 && quotes.length === 0 ? (
+                <button
+                  type="button"
+                  aria-label="Stop"
+                  title="Stop"
+                  onClick={onStop}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-fg text-bg transition-opacity hover:opacity-90"
+                >
+                  <Square className="h-3 w-3 fill-current" />
+                </button>
+              ) : (
+                <ChatSendButton
+                  running={running}
+                  delivery={delivery}
+                  onDeliveryChange={setDelivery}
+                  disabled={invocation ? !canRun || missingArgument || strayArgument : !canSend}
+                  sending={sending}
+                  backgroundShortcut={allowBackgroundSend ? `${mac ? 'Cmd' : 'Ctrl'}+Enter` : undefined}
+                  command={invocation ? { name: invocation.command.name, icon: <SlashCommandIcon name={invocation.command.name} className="h-4 w-4" /> } : undefined}
+                  onSend={() => void (invocation ? runCommand(invocation) : send())}
+                  onMenuClosed={() => messageRef.current?.focus()}
+                />
+              )}
+            </div>
+          </div>
+        </ComposerSizeContext.Provider>
       </div>
       {footer}
       {error && <p role="alert" className="px-2 text-xs text-danger">

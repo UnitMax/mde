@@ -949,11 +949,11 @@ reason. A script's calls to MCP servers get a row of their own (see **MCP server
 
 **MCP servers.** OpenCode can be given MCP servers (programs or remote services that offer tools to the
 model) in its configuration. MDE shows the ones OpenCode lists for the folder or thread, and connects or
-disconnects them as OpenCode's terminal UI does; it never reads, writes or starts one itself. A pill
-after the agent picker in the composer's toolbar (`McpChip`, on the new-thread page and in a thread)
-shows "MCP" and how many servers are connected (`1/2` when some are not), with a dot for the worst
-state: a failed server or one that needs a sign-in (both with a warning icon), one still connecting, or
-all well. It is not there when OpenCode lists no server, or is too old to have the list. It opens a
+disconnects them as OpenCode's terminal UI does; it never reads, writes or starts one itself. A plug
+icon on the right of the composer's toolbar (`McpChip`, on the new-thread page and in a thread) wears a
+badge for the worst state: a failed server or one that needs a sign-in (both with a warning icon instead
+of the plug), one still connecting, or all well. Next to it is how many servers are connected (`1/2` when
+some are not), which narrow boxes leave out (see **Composer toolbar**). It is not there when OpenCode lists no server, or is too old to have the list. It opens a
 list with a switch for each server and its state: Connected, Connecting…, Disabled, Failed (with
 OpenCode's error, shortened and stripped of credentials and paths), or Sign-in needed. A switch calls
 OpenCode's runtime connect or disconnect (`POST /api/experimental/mcp/{server}/connect` or
@@ -998,22 +998,46 @@ the longest listed server name they start with and drawn the same way (that form
 against a live OpenCode). An `execute` without calls, such as one still being written, stays a plain
 row, and a lookup of a server's tools reads "Looked up demo_math tools".
 
-**Context usage.** Once a step of the conversation has finished, a pill in the composer's bottom
+**Context usage.** Once a step of the conversation has finished, a control in the composer's bottom
 row, left of the send button, shows how full the model's context window is: a five-segment gauge
-and a token count (`ContextMeter`). The count is the newest finished assistant step's own tokens
+and a token count (`ContextMeter`; a ring where the toolbar is narrower, see **Composer toolbar**). The count is the newest finished assistant step's own tokens
 (new input, cache read and write, output and reasoning), which is what the conversation held after
 that step; a step that is still streaming has no count yet. The window is the *chosen* model's
 `limit.context` from OpenCode's model list, so picking another model in the composer shows at once
 whether the thread still fits. The gauge turns amber from 70% and red from 90%, and its last lit
-segment pulses while the thread works. Without a known window the pill shows only the count, and
-below about 30 rem of composer width the gauge collapses to an icon. Clicking the pill opens a
+segment pulses while the thread works. Without a known window it shows only the count with a gauge
+icon. Clicking it opens a
 breakdown: the count against the window, one bar split by kind of token, the thread's total tokens
 and the cost OpenCode reports (many providers report $0), and the model's window and reply limit.
 The thread totals come from `session.get`, requested with the newest page of messages only, so
 they stay right however many older pages are loaded; if that request fails, the conversation
 still loads and the totals are left out. After a compaction the size is not known until the next
-step finishes, so until then the pill reads "Compacted" (see "Compaction" below). The pill does not
-appear in the new-thread composer, where nothing has been measured yet.
+step finishes, so until then it reads "Compacted" (see "Compaction" below). It does not appear in the
+new-thread composer, where nothing has been measured yet.
+
+**Composer toolbar.** The row under the prompt box keeps what runs the message on the left (attach,
+model, agent) and what it knows plus the way out on the right (MCP, context, Send or Stop). The controls
+are quiet text and icons that take a background only on hover, with no dividers and no borders; a
+chevron shows only while a chip is hovered, focused or open. The model chip is one line in one type size,
+`OpenCode / Beam Free · Medium`: the provider in front and the effort behind in the quiet tone, the name
+in the normal one. The provider is shown only at the wide size and only when the whole line would fit
+(`providerFits` in `lib/composer-size.ts`, an estimate from the character count and the toolbar's width);
+otherwise it is left out and the name leads. The full `provider/model#effort` is always the tooltip. The toolbar measures its own width
+(`useMeasuredComposerSize`) and every control reads the same size from `ComposerSizeContext`, so a
+narrow box drops labels in one fixed order instead of each control truncating on its own: below 680 px
+the provider goes and the context segments become a ring; below 540 px the MCP count, the agent's name
+(its coloured icon stays, the name is the tooltip) and the context number go (the ring and the badge
+stay, the number is in the label and the breakdown); below 410 px the effort goes too. Only the model's
+name is ever cut short, with an ellipsis, as a last resort. Send never hides; its Steer / Queue word
+stays for screen readers when the box has no room to show it.
+
+Focus after a menu: Radix hands the focus back to the button that opened a menu, and the browser then
+draws the focus ring on it as for a keyboard user, which would stay until the next click elsewhere. Every
+dropdown menu (`DropdownMenuContent` in `components/ui/dropdown-menu.tsx`) therefore keeps the focus where
+the click put it when the mouse closed or chose from the menu, and hands it back, ring included, only when
+the last input was a key (`lib/input-modality.ts`, which watches the window's key and pointer presses). A
+menu that sets its own `onCloseAutoFocus` (the model menu returning to the message box, the Sessions
+menus) is not affected.
 
 **Time worked.** A line under each turn says how long the agent worked on it (`TurnDuration`,
 `ChatTurnTime.tsx`), such as `Worked for 1m 30s`, and while the turn is still going the same line

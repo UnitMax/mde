@@ -1,6 +1,7 @@
 import * as React from 'react'
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu'
 import { Check } from 'lucide-react'
+import { quietCloseFocus } from '@/lib/input-modality'
 import { cn } from '@/lib/utils'
 
 export const DropdownMenu = DropdownMenuPrimitive.Root
@@ -14,6 +15,8 @@ export const DropdownMenuContent = React.forwardRef<
     <DropdownMenuPrimitive.Content
       ref={ref}
       sideOffset={sideOffset}
+      // A menu closed with the mouse must not leave the focus ring on its button (see quietCloseFocus); a menu can still say otherwise.
+      onCloseAutoFocus={quietCloseFocus}
       className={cn(
         'z-50 min-w-[10rem] overflow-hidden rounded-md border border-line-strong bg-elevated p-1',
         'shadow-xl shadow-black/50 [animation:mde-menu-in_90ms_ease-out]',

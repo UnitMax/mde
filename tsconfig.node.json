@@ -106,6 +106,8 @@
     "src/renderer/lib/mcp.ts",
     "src/renderer/lib/inbox-drafts.ts",
     "src/renderer/lib/chat-menu.ts",
+    "src/renderer/lib/composer-size.ts",
+    "src/renderer/lib/input-modality.ts",
     "src/renderer/lib/chat-timeline.ts",
     "src/renderer/lib/duration.ts",
     "src/renderer/lib/diff.ts",

@@ -10,6 +10,8 @@ import {
   DropdownMenuSwitchItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { toolbarChip, useComposerSize } from '@/components/inbox/composer-toolbar'
+import { atLeast } from '@/lib/composer-size'
 import {
   callCountLabel,
   mcpAuthCommand,
@@ -128,7 +130,7 @@ function Row({
 }
 
 /**
- * The MCP servers OpenCode has for this folder or thread, as a pill in the composer's toolbar: how many are
+ * The MCP servers OpenCode has for this folder or thread, as a plug in the composer's toolbar: how many are
  * connected, and a dot for the worst state. Opening it lists them with a switch each, like the OpenCode TUI's list.
  * A switch connects or disconnects the server for the running OpenCode; nothing in OpenCode's configuration changes.
  * Nothing is shown while OpenCode has no MCP server for the place.
@@ -150,6 +152,7 @@ export function McpChip({
   /** False when older messages that are not loaded may hold more calls. */
   complete?: boolean
 }): JSX.Element | null {
+  const size = useComposerSize()
   const key = mcpKey(place.target, place.directory)
   const entry = useInboxMcp((state) => state.entries[key])
   const watch = useInboxMcp((state) => state.watch)
@@ -168,6 +171,7 @@ export function McpChip({
     [servers, busy],
   )
   if (!entry || servers.length === 0) return null
+  const counted = atLeast(size, 'medium')
   const alert = summary.tone === 'danger' || summary.tone === 'warn'
   const Icon = alert ? AlertTriangle : Plug
   const toggle = (server: string, enabled: boolean): void => {
@@ -178,24 +182,22 @@ export function McpChip({
   }
   return (
     <>
-      <span aria-hidden="true" className="h-4 w-px bg-line-strong" />
       <DropdownMenu onOpenChange={(open) => { if (open) void load(place, true) }}>
         <DropdownMenuTrigger asChild>
+          {/* The plug wears the worst state as a badge, so it shows at any width; the count joins it when there is room. */}
           <button
             type="button"
             aria-label={summary.description}
             title={summary.description}
             data-testid="chat-mcp-chip"
             data-tone={summary.tone}
-            className={cn(
-              'flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-[12px] text-fg-muted transition-colors',
-              'hover:bg-hover hover:text-fg data-[state=open]:bg-hover data-[state=open]:text-fg',
-            )}
+            className={cn(toolbarChip, 'shrink-0', counted ? 'px-2' : 'w-7 justify-center px-0')}
           >
-            <Icon aria-hidden="true" className={cn('h-3.5 w-3.5', summary.tone === 'danger' && 'text-danger', summary.tone === 'warn' && 'text-warn')} />
-            <span className="@max-[30rem]:hidden">MCP</span>
-            <span className="tabular-nums @max-[22rem]:hidden">{summary.label}</span>
-            <span aria-hidden="true" className={cn('h-1.5 w-1.5 rounded-full', TONE_DOT[summary.tone])} />
+            <span className="relative flex">
+              <Icon aria-hidden="true" className={cn('h-4 w-4', summary.tone === 'danger' && 'text-danger', summary.tone === 'warn' && 'text-warn')} />
+              <span aria-hidden="true" className={cn('absolute -right-0.5 -top-0.5 h-[7px] w-[7px] rounded-full ring-[1.5px] ring-elevated', TONE_DOT[summary.tone])} />
+            </span>
+            {counted && <span className="tabular-nums">{summary.label}</span>}
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent side="top" align="start" sideOffset={8} className="w-80 p-1" data-testid="chat-mcp-menu">

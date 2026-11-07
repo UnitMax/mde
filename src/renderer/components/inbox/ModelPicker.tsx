@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { Check, ChevronDown, ChevronRight, Search, Sparkles, Star } from 'lucide-react'
+import { Check, ChevronRight, Search, Sparkles, Star } from 'lucide-react'
 import type { ChatModel, OpenCodeModelRef } from '@shared/types'
 import {
   DropdownMenu,
@@ -10,7 +10,10 @@ import {
   DropdownMenuSwitchItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { HoverChevron, toolbarChip, useComposerSize, useComposerWidth } from '@/components/inbox/composer-toolbar'
 import { findModel, groupModels, modelKey, modelName, modelVariantLabel } from '@/lib/chat'
+import { atLeast, providerFits } from '@/lib/composer-size'
+import { quietCloseFocus } from '@/lib/input-modality'
 import { cn } from '@/lib/utils'
 import { useModelFavorites } from '@/store/model-favorites'
 
@@ -29,6 +32,8 @@ export function ModelPicker({
   onMenuClosed?: () => void
   disabled?: boolean
 }): JSX.Element {
+  const size = useComposerSize()
+  const width = useComposerWidth()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [browsed, setBrowsed] = useState<string | null>(null)
@@ -55,6 +60,11 @@ export function ModelPicker({
   const preview = visible.find((model) => modelKey(model) === browsed)
     ?? visible.find((model) => model.id === value?.id && model.providerId === value.providerId)
     ?? visible[0]
+  const name = modelName(models, value)
+  const effort = value?.variant ? modelVariantLabel(value.variant) : null
+  const provider = current?.providerName ?? value?.providerId ?? ''
+  const showEffort = Boolean(effort) && atLeast(size, 'narrow')
+  const showProvider = Boolean(value) && size === 'wide' && providerFits(name, effort, provider, width)
   const hasEfforts = models.some((model) => model.variants?.length)
   const previewSelected = preview?.id === value?.id && preview?.providerId === value?.providerId
   const selectedVariant = previewSelected ? JSON.stringify(value?.variant ?? null) : ''
@@ -82,31 +92,37 @@ export function ModelPicker({
       <DropdownMenuTrigger asChild disabled={disabled}>
         <button
           type="button"
-          className="flex h-7 min-w-0 items-center gap-1.5 rounded-md px-2 text-[12px] text-fg-muted transition-colors hover:bg-hover hover:text-fg disabled:pointer-events-none disabled:opacity-50 data-[state=open]:bg-hover data-[state=open]:text-fg"
+          className={cn(toolbarChip, 'shrink', atLeast(size, 'medium') && 'pr-1.5')}
           aria-label="Model"
           data-testid="chat-model-picker"
           title={value ? `${modelKey(value)}${value.variant ? `#${value.variant}` : ''}` : undefined}
         >
           <Sparkles className="h-3.5 w-3.5 shrink-0 text-accent" />
-          <span className="max-w-[16rem] truncate">
-            {value && <span className="text-fg-subtle">{current?.providerName ?? value.providerId} / </span>}
-            {modelName(models, value)}
+          {/* One line in one size: the provider in front and the effort behind are the same quiet tone, the name is the one that reads. */}
+          <span className="flex min-w-0 items-baseline gap-1">
+            {showProvider && <span className="shrink-0 text-fg-subtle" data-testid="chat-model-provider">{provider} /</span>}
+            {/* Short names keep their own width; a long one gives way, but not below a few letters. */}
+            <span className="max-w-[16rem] truncate" style={{ minWidth: `${Math.min(name.length, 5)}ch` }}>{name}</span>
+            {showEffort && (
+              <>
+                <span aria-hidden="true" className="shrink-0 text-fg-subtle">·</span>
+                <span className="max-w-28 shrink-0 truncate text-fg-subtle" data-testid="chat-model-effort">{effort}</span>
+              </>
+            )}
           </span>
-          {value?.variant && (
-            <span className="max-w-28 truncate rounded border border-line-strong px-1.5 py-0.5 text-[10px] leading-none text-fg-muted" data-testid="chat-model-effort">
-              {modelVariantLabel(value.variant)}
-            </span>
-          )}
-          <ChevronDown className="h-3 w-3 shrink-0 opacity-70" />
+          {atLeast(size, 'medium') && <HoverChevron />}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
         onInteractOutside={() => { selectedInMenu.current = false }}
         onCloseAutoFocus={(event) => {
-          if (!selectedInMenu.current || !onMenuClosed) return
-          event.preventDefault()
-          onMenuClosed()
+          if (selectedInMenu.current && onMenuClosed) {
+            event.preventDefault()
+            onMenuClosed()
+            return
+          }
+          quietCloseFocus(event)
         }}
         className={cn('flex max-h-[var(--radix-dropdown-menu-content-available-height)] w-80 max-w-[calc(100vw-2rem)] flex-col p-0', hasEfforts && 'w-[520px]')}
         data-testid="chat-model-menu"
