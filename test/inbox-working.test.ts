@@ -300,10 +300,10 @@ describe('Inbox Working section', () => {
     await render()
     const filter = (label: string): HTMLElement =>
       Array.from(container.querySelectorAll('button')).find((item) => item.textContent === label)!
-    await act(async () => filter('Needs input').click())
+    await act(async () => filter('Unread').click())
     expect(listIds()).toEqual(['ses_ask'])
     expect(rowIds()).toEqual(['ses_run', 'ses_run2'])
-    await act(async () => filter('Unread').click())
+    await act(async () => filter('Parked').click())
     expect(rowIds()).toEqual(['ses_run', 'ses_run2'])
   })
 
@@ -423,6 +423,6 @@ describe('Inbox Working section', () => {
     expect(document.body.querySelector('[data-testid="inbox-setting-changes"]')).not.toBeNull()
     expect(menuItem()).not.toBeNull()
     const group = container.querySelector('[aria-label="Inbox filter"]')!
-    expect(group.querySelectorAll('button')).toHaveLength(4)
+    expect(group.querySelectorAll('button')).toHaveLength(3)
   })
 })

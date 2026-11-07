@@ -1,12 +1,11 @@
 import type { InboxFolder, InboxGitInfo, InboxThread, InboxWorktree, OpenCodeModelRef, OpenCodeTarget, DirectoryContext } from '@shared/types'
 import { matchSubsequence, queryTokens } from '@/lib/fuzzy-search'
 
-export type InboxFilter = 'all' | 'unread' | 'attention' | 'archived'
+export type InboxFilter = 'all' | 'unread' | 'archived'
 
 export const INBOX_FILTERS: ReadonlyArray<{ id: InboxFilter; label: string }> = [
   { id: 'all', label: 'All' },
   { id: 'unread', label: 'Unread' },
-  { id: 'attention', label: 'Needs input' },
   { id: 'archived', label: 'Parked' }
 ]
 
@@ -179,8 +178,7 @@ function matchesFilter(thread: InboxThread, filter: InboxFilter, workingElsewher
   if (filter === 'archived') return thread.archived
   if (thread.archived) return false
   if (workingElsewhere && !thread.pinned && inboxThreadWorking(thread)) return false
-  if (filter === 'unread') return isInboxThreadUnread(thread)
-  if (filter === 'attention') return thread.status === 'attention'
+  if (filter === 'unread') return isInboxThreadUnread(thread) || thread.status === 'attention'
   return true
 }
 

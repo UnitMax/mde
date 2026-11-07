@@ -488,7 +488,6 @@ function emptyMessage(filter: InboxFilter, query: string, workingShown: boolean,
   const where = project ? ` in ${project}` : ''
   if (query.trim()) return project ? `No threads in ${project} match your search.` : 'No threads match your search.'
   if (filter === 'unread') return `No unread threads${where}.`
-  if (filter === 'attention') return project ? `No threads in ${project} need your input.` : 'No threads need your input.'
   if (filter === 'archived') return `No parked threads${where}.`
   if (workingShown) return `No other threads${where}.`
   return project ? `No threads in ${project} yet.` : 'No threads yet.'

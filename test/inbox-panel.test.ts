@@ -319,15 +319,17 @@ describe('Inbox', () => {
   it('filters and searches the list', async () => {
     useWorkspace.setState({
       inboxThreads: [
-        thread(),
-        thread({ id: 'ses_two', title: 'Question', status: 'attention', attentionReason: 'question', branch: null })
+        thread({ readAt: Date.now() }),
+        thread({ id: 'ses_two', title: 'Question', status: 'attention', attentionReason: 'question', branch: null, readAt: Date.now() })
       ]
     })
     const panel = await render(createElement(InboxPanel))
+    expect(Array.from(panel.querySelectorAll('[aria-label="Inbox filter"] button')).map((item) => item.textContent))
+      .toEqual(['All', 'Unread', 'Parked'])
     const filter = (label: string) => Array.from(panel.querySelectorAll('button')).find((item) => item.textContent === label)!
     await act(async () => filter('Parked').click())
     expect(panel.textContent).toContain('No parked threads.')
-    await act(async () => filter('Needs input').click())
+    await act(async () => filter('Unread').click())
     expect(panel.querySelector('[data-testid="inbox-thread-ses_one"]')).toBeNull()
     expect(panel.querySelector('[data-testid="inbox-thread-ses_two"]')).not.toBeNull()
     await act(async () => filter('All').click())

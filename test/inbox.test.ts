@@ -62,7 +62,6 @@ describe('inbox list helpers', () => {
       visibleInboxThreads(threads, filter, '').map((item) => item.id)
     expect(ids('all')).toEqual(['ses_unread', 'ses_question', 'ses_read'])
     expect(ids('unread')).toEqual(['ses_unread', 'ses_question'])
-    expect(ids('attention')).toEqual(['ses_question'])
     expect(ids('archived')).toEqual(['ses_archived'])
   })
 
@@ -88,10 +87,10 @@ describe('inbox list helpers', () => {
     expect(list[0]?.id).toBe('ses_new')
   })
 
-  it('keeps pins subject to search, read status, attention and parked filters', () => {
+  it('keeps pins subject to search, unread and parked filters', () => {
     const list = [
       thread({ id: 'ses_read', pinned: true, readAt: 20 }),
-      thread({ id: 'ses_question', pinned: true, status: 'attention', attentionReason: 'question' }),
+      thread({ id: 'ses_question', pinned: true, status: 'attention', attentionReason: 'question', readAt: 20 }),
       thread({ id: 'ses_parked', pinned: true, archived: true }),
       thread({ id: 'ses_match', pinned: true, title: 'Parser' }),
     ]
@@ -99,13 +98,27 @@ describe('inbox list helpers', () => {
       visibleInboxThreads(list, filter, query, true).map((item) => item.id)
     expect(ids('all')).toEqual(['ses_read', 'ses_question', 'ses_match'])
     expect(ids('unread')).toEqual(['ses_question', 'ses_match'])
-    expect(ids('attention')).toEqual(['ses_question'])
     expect(ids('archived')).toEqual(['ses_parked'])
     expect(ids('all', 'parser')).toEqual(['ses_match'])
   })
 
   it('counts unread threads outside the archive', () => {
     expect(countUnreadInboxThreads(threads)).toBe(2)
+  })
+
+  it('includes questions and permissions in Unread after they have been opened, until they are resolved', () => {
+    const list = [
+      thread({ id: 'ses_question', status: 'attention', attentionReason: 'question', readAt: 20 }),
+      thread({ id: 'ses_permission', title: 'Approve install', status: 'attention', attentionReason: 'permission', readAt: 20 }),
+      thread({ id: 'ses_unread', lastActivityAt: 30 }),
+      thread({ id: 'ses_read', readAt: 20 }),
+      thread({ id: 'ses_parked', status: 'attention', archived: true }),
+    ]
+    expect(visibleInboxThreads(list, 'unread', '').map((item) => item.id))
+      .toEqual(['ses_unread', 'ses_question', 'ses_permission'])
+    expect(visibleInboxThreads(list, 'unread', 'approve').map((item) => item.id)).toEqual(['ses_permission'])
+    const resolved = list.map((item) => item.status === 'attention' ? { ...item, status: 'working' as const } : item)
+    expect(visibleInboxThreads(resolved, 'unread', '').map((item) => item.id)).toEqual(['ses_unread'])
   })
 
   it('labels folders, models and statuses', () => {
@@ -204,7 +217,6 @@ describe('working threads and the list', () => {
     const unread = threads.map((item) => ({ ...item, readAt: 0 }))
     expect(ids(visibleInboxThreads(unread, 'unread', '', true))).toEqual(['ses_done', 'ses_ask'])
     expect(ids(visibleInboxThreads(unread, 'archived', '', true))).toEqual(['ses_parked'])
-    expect(ids(visibleInboxThreads(threads, 'attention', '', true))).toEqual(['ses_ask'])
   })
 
   it('searches what is left, and the working threads with the same words', () => {

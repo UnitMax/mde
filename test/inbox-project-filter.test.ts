@@ -355,8 +355,6 @@ describe('the Inbox panel narrowed to a project', () => {
       Array.from(container.querySelectorAll<HTMLElement>('[aria-label="Inbox filter"] button')).find((item) => item.textContent === label)!
     await act(async () => tab('Unread').click())
     expect(q('inbox-thread-list')!.textContent).toContain('No unread threads in web.')
-    await act(async () => tab('Needs input').click())
-    expect(q('inbox-thread-list')!.textContent).toContain('No threads in web need your input.')
     await act(async () => tab('Parked').click())
     expect(q('inbox-thread-list')!.textContent).toContain('No parked threads in web.')
   })
