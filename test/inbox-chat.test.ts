@@ -1248,6 +1248,11 @@ describe('Inbox conversation', () => {
       const view = await render()
       await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-working"]')).not.toBeNull())
       expect(view.querySelector('[data-testid="chat-working"]')?.textContent).toMatch(/^Working for 1m (30|31|32)s$/)
+      // Its only motion is the light along its rule: no spinner, which would clash with the ones on the rows above.
+      const working = view.querySelector('[data-testid="chat-working"]')!
+      expect(working.querySelector('.animate-spin')).toBeNull()
+      expect(working.querySelector('.working-rule')).not.toBeNull()
+      expect(working.querySelector('svg')).not.toBeNull()
       // The unfinished turn has no finished-turn line yet.
       expect(durations(view)).toEqual([])
       // The same count is not repeated in the header, which only names the state.

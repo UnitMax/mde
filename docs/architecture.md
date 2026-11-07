@@ -1000,8 +1000,8 @@ appear in the new-thread composer, where nothing has been measured yet.
 
 **Time worked.** A line under each turn says how long the agent worked on it (`TurnDuration`,
 `ChatTurnTime.tsx`), such as `Worked for 1m 30s`, and while the turn is still going the same line
-reads `Working for 1m 30s`, counting up every second, with a spinner and a light moving along its
-rule (`WorkingFor`). A turn is a user message with everything after it up to the next user message
+reads `Working for 1m 30s`, counting up every second, with the same still clock as the finished line
+and a light moving along its rule (`WorkingFor`), which is its only motion. A turn is a user message with everything after it up to the next user message
 (`turnStats` in `lib/chat.ts`); a goal's notes (set, resumed, and each time its reviewer sends the agent
 back to work) begin a turn as well, because a goal starts work with no user message, so a goal set a day
 after the last prompt is timed from the goal, and each round gets its own line without the reviewer's time
