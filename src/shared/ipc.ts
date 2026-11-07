@@ -136,6 +136,8 @@ export const IpcChannels = {
   pathListWslDirectories: 'path:list-wsl-directories',
   pathRevealTerminal: 'path:reveal-terminal',
   pathOpenTerminalInVsCode: 'path:open-terminal-in-vscode',
+  pathRevealInbox: 'path:reveal-inbox',
+  pathOpenInboxInVsCode: 'path:open-inbox-in-vscode',
 
   gitInfo: 'git:info',
   gitTerminalInfo: 'git:terminal-info',
@@ -492,6 +494,10 @@ export interface RendererApi {
     listWslDirectories(req: ListWslDirectoriesRequest): Promise<WslDirectoryListing>
     revealTerminal(terminalId: string): Promise<void>
     openTerminalInVsCode(terminalId: string): Promise<void>
+    /** Opens the folder of an Inbox thread (`ses_…`) or project (`fld_…`) in the file manager. */
+    revealInbox(id: string): Promise<void>
+    /** Opens the folder of an Inbox thread or project in Windows VS Code; WSL folders on Windows only. */
+    openInboxInVsCode(id: string): Promise<void>
   }
   git: {
     info(req: GitInfoRequest): Promise<GitInfoResponse>

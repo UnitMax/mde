@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import {
   ChevronRight,
-  Code,
   File,
   FileSymlink,
   Folder,
@@ -15,6 +14,7 @@ import type { DirectoryContext } from '@shared/types'
 import type { FileRoot } from '@shared/ipc'
 import { fileRootKey } from '@/lib/file-root'
 import { Button } from '@/components/ui/button'
+import { OpenFolderButtons, type OpenFolderTarget } from '@/components/OpenFolderButtons'
 import { useWorkspace } from '@/store/workspace'
 import { cn } from '@/lib/utils'
 import { ipcErrorMessage } from '@/lib/ipc-error'
@@ -79,10 +79,10 @@ function FileTree({
   const rootId = fileRootKey(root)
   const openFilePath = useWorkspace((state) => state.openFiles[rootId])
   const openFile = useWorkspace((state) => state.openFile)
-  const isWindows = useWorkspace((state) => state.platform?.isWindows === true)
-  const wslAvailable = useWorkspace((state) => state.wslAvailable)
-  // Main only hands WSL folders to VS Code, matching the terminal header button.
-  const canOpenInVsCode = Boolean(root.terminalId) && !browseOnly && isWindows && wslAvailable && session.kind === 'wsl' && Boolean(session.distro)
+  // A terminal's current folder, or the Inbox thread or project the tree was opened on.
+  const folderTarget: OpenFolderTarget | null = root.terminalId
+    ? { terminalId: root.terminalId }
+    : browseOnly ? { inboxId: session.id } : null
 
   const load = useCallback(
     async (path: string): Promise<void> => {
@@ -205,30 +205,7 @@ function FileTree({
             Files
           </span>
         )}
-        {canOpenInVsCode && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="shrink-0"
-            onClick={() => void window.api.paths.openTerminalInVsCode(root.terminalId!)}
-            title="Open folder in VS Code"
-            aria-label="Open folder in VS Code"
-          >
-            <Code className="h-3.5 w-3.5" />
-          </Button>
-        )}
-        {!browseOnly && root.terminalId && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="shrink-0"
-            onClick={() => void window.api.paths.revealTerminal(root.terminalId!)}
-            title="Open folder in File Explorer"
-            aria-label="Open folder in File Explorer"
-          >
-            <FolderOpen className="h-3.5 w-3.5" />
-          </Button>
-        )}
+        {folderTarget && !browseOnly && <OpenFolderButtons target={folderTarget} kind={session.kind} distro={session.distro} />}
         {!browseOnly && (
           <Button
             variant="ghost"
@@ -346,8 +323,9 @@ function FileTree({
         })}
       </div>
       {browseOnly && (
-        <div className="flex shrink-0 justify-end border-t border-line px-2 py-1">
-          <Button variant="ghost" size="sm" onClick={refresh} title="Refresh files" aria-label="Refresh files">
+        <div className="flex shrink-0 items-center gap-1 border-t border-line px-2 py-1">
+          {folderTarget && <OpenFolderButtons target={folderTarget} kind={session.kind} distro={session.distro} />}
+          <Button className="ml-auto" variant="ghost" size="sm" onClick={refresh} title="Refresh files" aria-label="Refresh files">
             <RefreshCw className="h-3.5 w-3.5" />
             Refresh
           </Button>
@@ -358,8 +336,9 @@ function FileTree({
 }
 
 /**
- * Files of a live terminal root or an Inbox folder. `browseOnly` is for Inbox folders:
- * the tree and viewer work, but opening the folder in VS Code or the file manager does not.
+ * Files of a live terminal root or an Inbox folder. `browseOnly` is for Inbox folders: the folder opens in
+ * VS Code or the file manager by its Inbox ID. Those buttons and Refresh sit in a footer there, because the
+ * header's 260 px minimum is already full with the Files, Changes and Terminal tabs.
  */
 export function FileTreePanel({
   session,

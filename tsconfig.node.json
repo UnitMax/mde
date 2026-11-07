@@ -52,6 +52,7 @@
     "src/renderer/components/TitleBar.tsx",
     "src/renderer/components/TerminalGitInfo.tsx",
     "src/renderer/components/FileTreePanel.tsx",
+    "src/renderer/components/OpenFolderButtons.tsx",
     "src/renderer/lib/file-tree.ts",
     "src/renderer/lib/file-root.ts",
     "src/renderer/lib/ipc-error.ts",

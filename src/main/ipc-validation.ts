@@ -212,6 +212,8 @@ export const ipcPayloadValidators = {
   [IpcChannels.pathListWslDirectories]: object({ distro, path: optional(path), hidden: optional(boolean) }),
   [IpcChannels.pathRevealTerminal]: id,
   [IpcChannels.pathOpenTerminalInVsCode]: id,
+  [IpcChannels.pathRevealInbox]: id,
+  [IpcChannels.pathOpenInboxInVsCode]: id,
   [IpcChannels.gitInfo]: object(terminalDirectory),
   [IpcChannels.gitTerminalInfo]: terminalId,
   [IpcChannels.gitDiff]: object({ ...terminalDirectory, path }),

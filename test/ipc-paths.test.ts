@@ -350,6 +350,161 @@ describe('terminal Explorer IPC', () => {
   })
 })
 
+describe('Inbox folder IPC', () => {
+  const thread = (overrides: Partial<Session> & { path?: string } = {}): Session & { path: string } => ({
+    ...wslSession({ id: 'ses_thread' }),
+    path: '/home/me/app',
+    ...overrides
+  })
+
+  beforeEach(() => {
+    electronMock.handlers.clear()
+    electronMock.shell.openPath.mockClear()
+    electronMock.shell.openExternal.mockClear()
+    electronMock.dialog.showErrorBox.mockClear()
+    inboxFileRoot.mockReset().mockReturnValue(null)
+    wslPathsMock.canonicalizeWslPath.mockReset()
+    wslPathsMock.toWindows.mockReset()
+    wslPathsMock.uncPathFor.mockReset()
+    wslDistrosMock.runWslCommand.mockReset()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('shows a WSL thread folder in the file manager, named by thread or project ID', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    inboxFileRoot.mockReturnValue(thread())
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/app')
+    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
+    wslPathsMock.toWindows.mockResolvedValue('\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\app')
+    registerForTest(vi.fn())
+
+    await handler(IpcChannels.pathRevealInbox)(trustedEvent, 'ses_thread')
+    await handler(IpcChannels.pathRevealInbox)(trustedEvent, 'fld_1234')
+
+    expect(inboxFileRoot).toHaveBeenNthCalledWith(1, 'ses_thread')
+    expect(inboxFileRoot).toHaveBeenNthCalledWith(2, 'fld_1234')
+    expect(wslDistrosMock.runWslCommand).toHaveBeenCalledWith('Ubuntu-24.04', ['test', '-d', '/home/me/app'])
+    expect(electronMock.shell.openPath).toHaveBeenCalledTimes(2)
+    expect(electronMock.shell.openPath).toHaveBeenCalledWith('\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\app')
+  })
+
+  it('shows a native thread folder in the file manager on any platform', async () => {
+    const directory = await fs.mkdtemp(join(tmpdir(), 'mde-inbox-folder-'))
+    try {
+      inboxFileRoot.mockReturnValue(thread({ kind: 'native', distro: undefined, path: directory }))
+      registerForTest(vi.fn())
+
+      await handler(IpcChannels.pathRevealInbox)(trustedEvent, 'ses_thread')
+
+      expect(electronMock.shell.openPath).toHaveBeenCalledWith(directory)
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('opens a WSL thread folder in VS Code through the remote URI', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    inboxFileRoot.mockReturnValue(thread({ path: '/home/me/my app' }))
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/my app')
+    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
+    registerForTest(vi.fn())
+
+    await handler(IpcChannels.pathOpenInboxInVsCode)(trustedEvent, 'ses_thread')
+
+    expect(electronMock.shell.openExternal).toHaveBeenCalledWith(
+      'vscode://vscode-remote/wsl+Ubuntu-24.04/home/me/my%20app/'
+    )
+    expect(electronMock.dialog.showErrorBox).not.toHaveBeenCalled()
+  })
+
+  it('opens the canonical folder rather than a symlink to it', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    inboxFileRoot.mockReturnValue(thread({ path: '/home/me/link' }))
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/real')
+    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
+    registerForTest(vi.fn())
+
+    await handler(IpcChannels.pathOpenInboxInVsCode)(trustedEvent, 'ses_thread')
+
+    expect(electronMock.shell.openExternal).toHaveBeenCalledWith('vscode://vscode-remote/wsl+Ubuntu-24.04/home/me/real/')
+  })
+
+  it('does nothing for an ID that is not in the Inbox', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    registerForTest(vi.fn())
+
+    await handler(IpcChannels.pathRevealInbox)(trustedEvent, 'ses_gone')
+    await handler(IpcChannels.pathOpenInboxInVsCode)(trustedEvent, 'ses_gone')
+
+    expect(electronMock.shell.openPath).not.toHaveBeenCalled()
+    expect(electronMock.shell.openExternal).not.toHaveBeenCalled()
+    expect(electronMock.dialog.showErrorBox).not.toHaveBeenCalled()
+  })
+
+  it('refuses a folder that is really a file, or not a plain absolute path', async () => {
+    // The thread's directory is recorded data, but a file here would make "open folder" launch it.
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    inboxFileRoot.mockReturnValue(thread({ path: '/home/me/Update.exe' }))
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/Update.exe')
+    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 1 })
+    registerForTest(vi.fn())
+
+    await handler(IpcChannels.pathRevealInbox)(trustedEvent, 'ses_thread')
+    await handler(IpcChannels.pathOpenInboxInVsCode)(trustedEvent, 'ses_thread')
+
+    inboxFileRoot.mockReturnValue(thread({ path: '/home/me/../../etc' }))
+    wslDistrosMock.runWslCommand.mockClear()
+    await handler(IpcChannels.pathRevealInbox)(trustedEvent, 'ses_thread')
+    await handler(IpcChannels.pathOpenInboxInVsCode)(trustedEvent, 'ses_thread')
+
+    expect(wslDistrosMock.runWslCommand).not.toHaveBeenCalled()
+    expect(electronMock.shell.openPath).not.toHaveBeenCalled()
+    expect(electronMock.shell.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('does not hand a WSL folder to the desktop away from Windows', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
+    inboxFileRoot.mockReturnValue(thread())
+    registerForTest(vi.fn())
+
+    await handler(IpcChannels.pathRevealInbox)(trustedEvent, 'ses_thread')
+    await handler(IpcChannels.pathOpenInboxInVsCode)(trustedEvent, 'ses_thread')
+
+    expect(wslDistrosMock.runWslCommand).not.toHaveBeenCalled()
+    expect(electronMock.shell.openPath).not.toHaveBeenCalled()
+    expect(electronMock.shell.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('opens only WSL folders in VS Code, as the terminal button does', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    inboxFileRoot.mockReturnValue(thread({ kind: 'native', distro: undefined, path: 'C:\\Users\\Me\\app' }))
+    registerForTest(vi.fn())
+
+    await handler(IpcChannels.pathOpenInboxInVsCode)(trustedEvent, 'ses_thread')
+
+    expect(electronMock.shell.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('tells the user when Windows cannot open the folder in VS Code', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    inboxFileRoot.mockReturnValue(thread())
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/app')
+    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
+    electronMock.shell.openExternal.mockRejectedValueOnce(new Error('No application is registered'))
+    registerForTest(vi.fn())
+
+    await handler(IpcChannels.pathOpenInboxInVsCode)(trustedEvent, 'ses_thread')
+
+    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+      'Could not open VS Code',
+      expect.stringContaining('No application is registered')
+    )
+  })
+})
+
 describe('terminal directory restoration over IPC', () => {
   beforeEach(() => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')

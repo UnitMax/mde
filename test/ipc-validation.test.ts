@@ -63,6 +63,8 @@ const validPayloads = {
   [IpcChannels.pathListWslDirectories]: { distro: 'Ubuntu-24.04', path: '/home/me', hidden: true },
   [IpcChannels.pathRevealTerminal]: 'pane',
   [IpcChannels.pathOpenTerminalInVsCode]: 'pane',
+  [IpcChannels.pathRevealInbox]: 'ses_thread',
+  [IpcChannels.pathOpenInboxInVsCode]: 'fld_1234',
   [IpcChannels.gitInfo]: { terminalId: 'pane', directory: '/workspace' },
   [IpcChannels.gitTerminalInfo]: terminalId,
   [IpcChannels.gitDiff]: { terminalId: 'pane', directory: '/workspace', path: 'src/file.ts' },

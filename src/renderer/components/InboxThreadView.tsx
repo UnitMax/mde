@@ -14,6 +14,7 @@ import { inboxModelLabel, inboxThreadHome, sessionAge, sessionDate } from '@/lib
 import { useWorkspace } from '@/store/workspace'
 import { useInboxChat } from '@/store/inbox-chat'
 import { Button } from '@/components/ui/button'
+import { OpenFolderButtons } from '@/components/OpenFolderButtons'
 
 /** Says which thread this one was forked from, and that the two share a folder. */
 function ForkedFrom({ source }: { source: string }): JSX.Element {
@@ -57,6 +58,11 @@ function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
       <div className="flex min-w-0 items-center gap-2">
         <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-fg">{thread.customTitle ?? thread.title}</h2>
         <InboxStatusBadge thread={thread} />
+        <OpenFolderButtons
+          target={{ inboxId: thread.id }}
+          kind={thread.target.kind}
+          distro={thread.target.kind === 'wsl' ? thread.target.distro : undefined}
+        />
         <Button
           variant="ghost"
           size="sm"

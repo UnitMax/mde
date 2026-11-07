@@ -291,6 +291,31 @@ async function revealDirectory(session: Session, directory: string): Promise<voi
   await shell.openPath(windowsPath)
 }
 
+/** Hands a verified WSL folder to the registered Windows VS Code installation, reporting a failure to the user. */
+async function openDirectoryInVsCode(session: Session, directory: string): Promise<void> {
+  try {
+    const url = safeVsCodeRemoteUrl(buildVsCodeRemoteUri(session, process.platform, directory))
+    if (!url) throw new Error('Refusing to open an unexpected VS Code URL.')
+    await shell.openExternal(url)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    dialog.showErrorBox(
+      'Could not open VS Code',
+      `Could not hand the WSL folder to the registered Windows VS Code installation. Make sure VS Code is installed and the Remote - WSL extension is available locally.\n\n${detail}`
+    )
+  }
+}
+
+/** Whether this process can show the session's folder in a file manager: a WSL folder needs Windows and a distro. */
+function canRevealSession(session: Session): boolean {
+  return session.kind !== 'wsl' || (process.platform === 'win32' && Boolean(session.distro))
+}
+
+/** Whether this process can open the session's folder in VS Code: only WSL folders, from Windows. */
+function canOpenSessionInVsCode(session: Session): boolean {
+  return process.platform === 'win32' && session.kind === 'wsl' && Boolean(session.distro)
+}
+
 export function registerIpcHandlers(
   security: IpcSecurityContext,
   ptyManager: PtyManager,
@@ -695,7 +720,7 @@ export function registerIpcHandlers(
     if (!terminal?.directory) return
 
     const session = await getTerminalSession(terminal.sessionId)
-    if (!session || (session.kind === 'wsl' && (process.platform !== 'win32' || !session.distro))) return
+    if (!session || !canRevealSession(session)) return
 
     const directory = await verifiedDirectory(session, terminal.directory)
     if (!directory) return
@@ -707,22 +732,28 @@ export function registerIpcHandlers(
     if (!terminal?.directory) return
 
     const session = await getTerminalSession(terminal.sessionId)
-    if (!session || process.platform !== 'win32' || session.kind !== 'wsl' || !session.distro) return
+    if (!session || !canOpenSessionInVsCode(session)) return
 
     const directory = await verifiedDirectory(session, terminal.directory)
     if (!directory) return
 
-    try {
-      const url = safeVsCodeRemoteUrl(buildVsCodeRemoteUri(session, process.platform, directory))
-      if (!url) throw new Error('Refusing to open an unexpected VS Code URL.')
-      await shell.openExternal(url)
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error)
-      dialog.showErrorBox(
-        'Could not open VS Code',
-        `Could not hand the WSL folder to the registered Windows VS Code installation. Make sure VS Code is installed and the Remote - WSL extension is available locally.\n\n${detail}`
-      )
-    }
+    await openDirectoryInVsCode(session, directory)
+  })
+  // The folder of an Inbox thread or project. Main resolves the ID from the Inbox store, so the renderer
+  // never names a path, and the folder is verified like a terminal's before it reaches the desktop.
+  const inboxDirectory = async (id: string, allowed: (session: Session) => boolean): Promise<{ session: Session; directory: string } | null> => {
+    const root = chat.fileRoot(id)
+    if (!root || !allowed(root)) return null
+    const directory = await verifiedDirectory(root, root.path)
+    return directory ? { session: root, directory } : null
+  }
+  handle<string, void>(IpcChannels.pathRevealInbox, async (id) => {
+    const folder = await inboxDirectory(id, canRevealSession)
+    if (folder) await revealDirectory(folder.session, folder.directory)
+  })
+  handle<string, void>(IpcChannels.pathOpenInboxInVsCode, async (id) => {
+    const folder = await inboxDirectory(id, canOpenSessionInVsCode)
+    if (folder) await openDirectoryInVsCode(folder.session, folder.directory)
   })
 
   handle<GitInfoRequest, GitInfoResponse>(IpcChannels.gitInfo, async (req) => {
