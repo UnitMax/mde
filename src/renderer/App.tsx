@@ -717,7 +717,7 @@ export function App(): JSX.Element {
           )}
         </main>
 
-        {ready && activeWorkspaceView === 'sessions' && selected && terminalFileRoot && <FileTreePanel session={{ ...selected, path: terminalFileRoot.directory }} root={terminalFileRoot} />}
+        {ready && activeWorkspaceView === 'sessions' && selected && <FileTreePanel session={selected} root={terminalFileRoot} />}
         {ready && inboxRoot && <InboxSidebar session={inboxRoot} threadId={selectedInboxThreadId ?? undefined} />}
 
         <SettingsDialog terminalIds={layoutForSession?.panes.map((pane) => pane.terminalId) ?? []} />

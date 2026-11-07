@@ -25,7 +25,7 @@ const session: DirectoryContext = {
   createdAt: '2026-01-01T00:00:00.000Z'
 }
 
-async function renderPanel(target: DirectoryContext = session, fileRoot?: TerminalDirectoryRequest): Promise<HTMLElement> {
+async function renderPanel(target: DirectoryContext = session, fileRoot?: TerminalDirectoryRequest | null): Promise<HTMLElement> {
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
@@ -155,6 +155,22 @@ describe('FileTreePanel', () => {
     expect(container.textContent).toContain('Loading')
     await act(async () => useWorkspace.getState().setStatus('pane-1', 'running'))
     expect(list).toHaveBeenCalledWith({ ...root, path: '' })
+    expect(container.textContent).toContain('README.md')
+  })
+
+  it('reserves the panel while its terminal directory is unknown without listing the session folder', async () => {
+    const container = await renderPanel(session, null)
+    const panelClass = container.querySelector('[data-testid="file-tree-panel"]')?.className
+    expect(panelClass).toContain('w-[260px]')
+    expect(container.textContent).toContain('Loading')
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Refresh files"]')?.disabled).toBe(true)
+    expect(container.querySelector('[aria-label="Open folder in File Explorer"]')).toBeNull()
+    expect(list).not.toHaveBeenCalled()
+
+    const root = { terminalId: 'pane-1', directory: '/workspace/current' }
+    await act(async () => roots.at(-1)!.render(createElement(FileTreePanel, { session, root })))
+    expect(container.querySelector('[data-testid="file-tree-panel"]')?.className).toBe(panelClass)
+    expect(list).toHaveBeenCalledExactlyOnceWith({ ...root, path: '' })
     expect(container.textContent).toContain('README.md')
   })
 

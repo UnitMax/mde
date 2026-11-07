@@ -1191,6 +1191,9 @@ workflow within MDE using an in-app transient selection; native Windows terminal
 In Sessions mode, the Files tree follows the selected terminal’s current directory. Selecting another
 pane or changing directory resets the tree to that root. File previews belong to that terminal and
 directory, so the same relative filename in another root cannot reuse an earlier preview.
+The Files panel keeps its width (or its collapsed rail) while a newly opened session or terminal
+reports its directory. Until that report arrives it shows a loading state without listing another
+folder, so terminal startup does not expand and shrink the terminal area.
 
 Drag a file or folder from the Files tree on the right into any terminal to paste its full path.
 A floating preview follows the drag, and the receiving terminal highlights where the path will land.
