@@ -132,7 +132,7 @@ export function FileViewer({ session, root: requestedRoot, path, onOpenFile, onC
       ref={rootRef}
       tabIndex={-1}
       data-testid="file-viewer"
-      className="absolute inset-0 z-10 flex min-h-0 flex-col bg-bg outline-none"
+      className="absolute inset-0 z-30 flex min-h-0 flex-col bg-bg outline-none"
     >
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-line bg-panel pl-3 pr-1.5">
         <FileText className="h-3.5 w-3.5 shrink-0 text-fg-subtle" aria-hidden="true" />
