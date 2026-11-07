@@ -890,14 +890,16 @@ with every streamed token. Once the thought is done the row says "Thought" and t
 Notes (agent switches, errors, goals) are quiet rows of the same kind, and a finished compaction is a
 rule across the conversation that opens onto the summary.
 
-**File changes.** The `edit` and `write` tools are drawn as diffs instead of raw JSON, one card per
-file (`ChatFileChange`): a header with the verb ("Edited", "Created", "Overwrote"), the path
-relative to the thread's folder, and `+added −removed` counts, then the lines with a line-number
+**File changes.** The `edit` and `write` tools are drawn as diffs instead of raw JSON, one row per
+file (`ChatFileChange`), the same activity row as every other step with no box around it: the verb
+("Edited", "Created", "Overwrote"), the path relative to the thread's folder, and `+added −removed`
+counts, and the diff open under it, hung from the rail, with its tinted lines as its only frame
+(the Changes panel draws the same lines in a bordered viewer). The lines have a line-number
 gutter, green and red tints taken from the theme's `ok` and `danger` colors, a mark on the words
 that changed within a line, and syntax colors from the same table as the file viewer
 (`lib/syntax-style.ts`). Each side of a hunk is colored as its own piece of code, so a comment or
-string spanning lines reads right; a language that is unknown or too big shows plain. The card is
-open by default and folds from its header; a diff over 40 lines starts at 28 with "Show N more
+string spanning lines reads right; a language that is unknown or too big shows plain. The diff is
+open by default and folds from its row; a diff over 40 lines starts at 28 with "Show N more
 lines". A whole file written at once is only lightly tinted. For a finished edit the diff is the
 one OpenCode reports in the tool's metadata (`filediff`, or `files` when it lists several), kept
 by `parse.ts` as a unified diff capped at 64 KB per file and 256 KB per call, which gives exact

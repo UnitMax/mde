@@ -54,6 +54,8 @@ export interface ActivityRowProps {
   onToggle?: (open: boolean) => void
   testId?: string
   title?: string
+  /** Names the row for assistive technology where the verb and subject alone would be read apart. */
+  label?: string
   className?: string
   /** The verb is drawn as in progress even though the work is done, such as the thought still being written. */
   shimmer?: boolean
@@ -82,6 +84,7 @@ export function ActivityRow({
   onToggle,
   testId,
   title,
+  label,
   className,
   shimmer = false,
   quiet = false,
@@ -122,6 +125,7 @@ export function ActivityRow({
   return (
     <div
       {...attrs}
+      {...(label ? { role: 'group', 'aria-label': label } : {})}
       data-testid={testId}
       data-status={status}
       data-failed={bad ? '' : undefined}

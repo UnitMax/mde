@@ -342,6 +342,45 @@ describe('changes to files', () => {
     expect(text(view)).toContain('The file was deleted')
   })
 
+  it('draws a change as a row with its diff on the rail, not as a box of its own', async () => {
+    const part = tool('write', { path: `${DIR}/src/new.ts`, content: 'export const a = 1\n' }, { existed: false })
+    const view = await mount(createElement(ToolCallView, { part, directory: DIR }))
+    const row = q('[data-testid="chat-diff"]', view)!
+    // The same row as every other step: a group named for what was done, open onto the diff.
+    expect(row.getAttribute('role')).toBe('group')
+    expect(row.getAttribute('aria-label')).toBe('Created src/new.ts')
+    expect(row.getAttribute('data-path')).toBe(`${DIR}/src/new.ts`)
+    expect(text(q(':scope > button', row))).toBe('Created src/new.ts+1')
+    expect(q(':scope > button', row)!.getAttribute('aria-expanded')).toBe('true')
+    // No border, panel or rounded card around it or its parts; the diff hangs from the rail like any panel's content.
+    expect(all('.border, .bg-panel, .rounded-lg, .border-t', row)).toHaveLength(0)
+    expect(row.classList.contains('border')).toBe(false)
+    expect(q('[data-testid="chat-diff-scroll"]', row)!.closest('.border-l')).not.toBeNull()
+    expect(text(row)).toContain('export const a = 1')
+  })
+
+  it('keeps the counts on the row when the diff is shut, and opens it again', async () => {
+    const part = tool('edit', { filePath: `${DIR}/src/a.ts`, oldString: 'a', newString: 'b' }, { patches: [{ path: `${DIR}/src/a.ts`, patch: '@@ -1,2 +1,2 @@\n keep\n-old\n+new\n' }] })
+    const view = await mount(createElement(ToolCallView, { part, directory: DIR }))
+    const row = q('[data-testid="chat-diff"]', view)!
+    expect(text(q('[data-testid="chat-diff-stats"]', row))).toBe('+1−1')
+    expect(all('.file-diff-row', row)).toHaveLength(3)
+    await open(row)
+    expect(all('.file-diff-row', row)).toHaveLength(0)
+    expect(text(q('[data-testid="chat-diff-stats"]', row))).toBe('+1−1')
+    await open(row)
+    expect(all('.file-diff-row', row)).toHaveLength(3)
+  })
+
+  it('shows a change that is still being made as work in progress, with what is known of it', async () => {
+    const part = tool('write', { path: `${DIR}/src/a.ts`, content: 'let a' }, { status: 'running', existed: false })
+    const view = await mount(createElement(ToolCallView, { part, directory: DIR }))
+    const row = q('[data-testid="chat-diff"]', view)!
+    expect(row.getAttribute('data-status')).toBe('running')
+    expect(text(q(':scope > button', row))).toContain('Creating src/a.ts')
+    expect(q('svg.animate-spin', row)).not.toBeNull()
+  })
+
   it('keeps a failed edit as a row with the reason and the input', async () => {
     const row = await call(tool('edit', { filePath: `${DIR}/src/a.ts`, oldString: 'a', newString: 'b' }, { status: 'error', error: 'Found 2 matches for oldString' }))
     expect(q('[data-testid="chat-diff"]', row)).toBeNull()
