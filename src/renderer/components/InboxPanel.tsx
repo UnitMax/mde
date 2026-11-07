@@ -336,7 +336,10 @@ function InboxThreadRow({
             aria-label={parkLabel}
             title={parkLabel}
             onClick={() => void setArchived(thread.id, !thread.archived)}
-            className="absolute right-1.5 top-1.5 flex h-5 items-center justify-center gap-1 whitespace-nowrap rounded px-1.5 text-[11px] text-fg-muted opacity-0 transition-opacity hover:bg-active hover:text-fg focus-visible:bg-active group-focus-within:opacity-100 group-hover:opacity-100"
+            className={cn(
+              'absolute right-1.5 top-1.5 flex h-5 items-center justify-center gap-1 whitespace-nowrap rounded px-1.5 text-[11px] text-fg-muted opacity-0 transition-opacity hover:text-fg group-focus-within:opacity-100 group-hover:opacity-100',
+              selected ? 'hover:bg-hover focus-visible:bg-hover' : 'hover:bg-active focus-visible:bg-active',
+            )}
           >
             <ParkIcon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
             <span>{parkLabel}</span>
