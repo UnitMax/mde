@@ -686,7 +686,7 @@ export const ChatComposer = forwardRef(function ChatComposer({
           {draftKey && <button type="button" aria-label="Attach files" title="Attach files" disabled={disabled || sending || adding || !loaded} className={pickerButton} onClick={() => inputRef.current?.click()}><Paperclip className="h-4 w-4" /></button>}
           {options?.status === 'ready' ? (
             <>
-              <ModelPicker models={options.value.models} value={model} onChange={onModelChange} disabled={disabled} />
+              <ModelPicker models={options.value.models} value={model} onChange={onModelChange} onMenuClosed={() => messageRef.current?.focus()} disabled={disabled} />
               <span aria-hidden className="h-4 w-px bg-line-strong" />
               <AgentPicker agents={options.value.agents} value={agent} onChange={onAgentChange} disabled={disabled} />
               {extraPickers}

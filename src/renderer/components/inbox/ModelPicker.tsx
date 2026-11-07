@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { Check, ChevronDown, ChevronRight, Search, Sparkles } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Search, Sparkles, Star } from 'lucide-react'
 import type { ChatModel, OpenCodeModelRef } from '@shared/types'
 import {
   DropdownMenu,
@@ -7,21 +7,26 @@ import {
   DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSwitchItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { findModel, groupModels, modelKey, modelName, modelVariantLabel } from '@/lib/chat'
 import { cn } from '@/lib/utils'
+import { useModelFavorites } from '@/store/model-favorites'
 
 /** Model and effort share one menu; browsing models never changes the current choice. */
 export function ModelPicker({
   models,
   value,
   onChange,
+  onMenuClosed,
   disabled,
 }: {
   models: ChatModel[]
   value: OpenCodeModelRef | null
   onChange: (model: OpenCodeModelRef) => void
+  /** After a selection closes the menu, return focus to the composer's message input. */
+  onMenuClosed?: () => void
   disabled?: boolean
 }): JSX.Element {
   const [open, setOpen] = useState(false)
@@ -29,7 +34,22 @@ export function ModelPicker({
   const [browsed, setBrowsed] = useState<string | null>(null)
   const effortRef = useRef<HTMLDivElement>(null)
   const modelListRef = useRef<HTMLDivElement>(null)
-  const groups = useMemo(() => groupModels(models, query), [models, query])
+  const selectedInMenu = useRef(false)
+  const favorites = useModelFavorites((state) => state.favorites)
+  const toggleFavorite = useModelFavorites((state) => state.toggle)
+  const favoriteKeys = useMemo(() => new Set(favorites.map(modelKey)), [favorites])
+  const groups = useMemo(() => {
+    const providers = groupModels(models, query)
+    const starred = providers.flatMap((group) => group.models).filter((model) => favoriteKeys.has(modelKey(model)))
+      .sort((a, b) => a.name.localeCompare(b.name) || a.providerName.localeCompare(b.providerName))
+    return [
+      ...(starred.length ? [{ key: 'favorites', label: 'Favorites', favorite: true, models: starred }] : []),
+      ...providers.map((group) => ({
+        key: `provider:${group.providerId}`, label: group.providerName, favorite: false,
+        models: group.models.filter((model) => !favoriteKeys.has(modelKey(model))),
+      })).filter((group) => group.models.length > 0),
+    ]
+  }, [models, query, favoriteKeys])
   const current = findModel(models, value)
   const visible = groups.flatMap((group) => group.models)
   const preview = visible.find((model) => modelKey(model) === browsed)
@@ -40,12 +60,23 @@ export function ModelPicker({
   const selectedVariant = previewSelected ? JSON.stringify(value?.variant ?? null) : ''
 
   const choose = (model: ChatModel, variant?: string): void => {
+    selectedInMenu.current = true
     onChange({ id: model.id, providerId: model.providerId, ...(variant ? { variant } : {}) })
+  }
+
+  const star = (model: ChatModel): void => {
+    toggleFavorite(model)
+    // The row moves between sections. Keep keyboard focus on its star in the new position.
+    window.requestAnimationFrame(() => {
+      Array.from(modelListRef.current?.querySelectorAll<HTMLElement>('[data-favorite-key]') ?? [])
+        .find((item) => item.dataset.favoriteKey === modelKey(model))?.focus()
+    })
   }
 
   return (
     <DropdownMenu open={open} onOpenChange={(next) => {
       setOpen(next)
+      if (next) selectedInMenu.current = false
       if (!next) { setQuery(''); setBrowsed(null) }
     }}>
       <DropdownMenuTrigger asChild disabled={disabled}>
@@ -69,7 +100,17 @@ export function ModelPicker({
           <ChevronDown className="h-3 w-3 shrink-0 opacity-70" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className={cn('flex max-h-[var(--radix-dropdown-menu-content-available-height)] w-80 max-w-[calc(100vw-2rem)] flex-col p-0', hasEfforts && 'w-[520px]')} data-testid="chat-model-menu">
+      <DropdownMenuContent
+        align="start"
+        onInteractOutside={() => { selectedInMenu.current = false }}
+        onCloseAutoFocus={(event) => {
+          if (!selectedInMenu.current || !onMenuClosed) return
+          event.preventDefault()
+          onMenuClosed()
+        }}
+        className={cn('flex max-h-[var(--radix-dropdown-menu-content-available-height)] w-80 max-w-[calc(100vw-2rem)] flex-col p-0', hasEfforts && 'w-[520px]')}
+        data-testid="chat-model-menu"
+      >
         <div className="relative shrink-0 border-b border-line p-1.5">
           <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-subtle" />
           <input
@@ -89,35 +130,54 @@ export function ModelPicker({
           <div ref={modelListRef} className="max-h-80 overflow-y-auto p-1" data-testid="chat-model-list">
             {groups.length === 0 && <p className="px-2 py-1.5 text-xs text-fg-subtle">No models match.</p>}
             {groups.map((group) => (
-              <div key={group.providerId} role="group" aria-label={group.providerName}>
-                <p className="px-2 pb-0.5 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-fg-subtle">
-                  {group.providerName}
+              <div key={group.key} role="group" aria-label={group.label} className={cn(group.favorite && 'mb-1 border-b border-line pb-1')}>
+                <p className="flex items-center gap-1.5 px-2 pb-0.5 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-fg-subtle">
+                  {group.favorite && <Star className="h-2.5 w-2.5 fill-current text-accent" aria-hidden="true" />}
+                  {group.label}
                 </p>
                 {group.models.map((model) => {
                   const selected = model.id === value?.id && model.providerId === value.providerId
+                  const starred = favoriteKeys.has(modelKey(model))
                   return (
-                    <DropdownMenuItem
-                      key={modelKey(model)}
-                      onFocus={() => setBrowsed(modelKey(model))}
-                      onPointerMove={() => setBrowsed(modelKey(model))}
-                      onKeyDown={(event) => {
-                        if (event.key !== 'ArrowRight' || !model.variants?.length) return
-                        event.preventDefault()
-                        event.stopPropagation()
-                        effortRef.current?.querySelector<HTMLElement>('[role="menuitemradio"]')?.focus()
-                      }}
-                      onSelect={(event) => {
-                        choose(model, selected && model.variants?.includes(value?.variant ?? '') ? value?.variant : undefined)
-                        if (model.variants?.length) event.preventDefault()
-                      }}
-                      className={cn('gap-1.5 text-xs', preview && modelKey(preview) === modelKey(model) && 'bg-hover')}
-                      title={modelKey(model)}
-                      data-model-key={modelKey(model)}
-                    >
-                      <span className="min-w-0 flex-1 truncate">{model.name}</span>
-                      {selected && <Check className="h-3 w-3 shrink-0 text-accent" aria-hidden="true" />}
-                      {Boolean(model.variants?.length) && <ChevronRight className="h-3 w-3 shrink-0 text-fg-subtle" aria-hidden="true" />}
-                    </DropdownMenuItem>
+                    <div key={modelKey(model)} className={cn('group/model flex items-center rounded', preview && modelKey(preview) === modelKey(model) && 'bg-hover')}>
+                      <DropdownMenuItem
+                        onFocus={() => setBrowsed(modelKey(model))}
+                        onPointerMove={() => setBrowsed(modelKey(model))}
+                        onKeyDown={(event) => {
+                          if (event.key !== 'ArrowRight' || !model.variants?.length) return
+                          event.preventDefault()
+                          event.stopPropagation()
+                          effortRef.current?.querySelector<HTMLElement>('[role="menuitemradio"]')?.focus()
+                        }}
+                        onSelect={(event) => {
+                          choose(model, selected && model.variants?.includes(value?.variant ?? '') ? value?.variant : undefined)
+                          if (model.variants?.length) event.preventDefault()
+                        }}
+                        className="min-w-0 flex-1 gap-1.5 text-xs"
+                        title={modelKey(model)}
+                        aria-label={group.favorite ? `${model.name} (${model.providerName})` : undefined}
+                        data-model-key={modelKey(model)}
+                      >
+                        <span className="min-w-0 flex-1 truncate">
+                          {model.name}
+                          {group.favorite && <span className="ml-1.5 text-[10px] text-fg-subtle">{model.providerName}</span>}
+                        </span>
+                        {selected && <Check className="h-3 w-3 shrink-0 text-accent" aria-hidden="true" />}
+                        {Boolean(model.variants?.length) && <ChevronRight className="h-3 w-3 shrink-0 text-fg-subtle" aria-hidden="true" />}
+                      </DropdownMenuItem>
+                      <DropdownMenuSwitchItem
+                        checked={starred}
+                        onCheckedChange={() => star(model)}
+                        onFocus={() => setBrowsed(modelKey(model))}
+                        onPointerMove={() => setBrowsed(modelKey(model))}
+                        aria-label={`${starred ? 'Unstar' : 'Star'} ${model.name} (${model.providerName})`}
+                        title={starred ? 'Remove from favorites' : 'Add to favorites'}
+                        data-favorite-key={modelKey(model)}
+                        className={cn('h-7 w-7 shrink-0 justify-center gap-0 p-0',
+                          starred ? 'text-accent' : 'text-fg-subtle opacity-0 group-hover/model:opacity-100 group-focus-within/model:opacity-100 [@media(hover:none)]:opacity-100')}
+                        trailing={<Star className={cn('h-3.5 w-3.5', starred && 'fill-current')} aria-hidden="true" />}
+                      />
+                    </div>
                   )
                 })}
               </div>

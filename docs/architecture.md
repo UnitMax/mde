@@ -475,13 +475,20 @@ Editing a recalled message ends history navigation. Recall uses this thread's vi
 and pending messages, loads older pages when needed, and restores only text, leaving attachments
 as they are. Recalled text uses the normal draft saving path; there is no separate stored history.
 The model picker shows the selected provider and model as “Provider / Model”, with a muted provider prefix.
+Each model row has a star control. Starred models appear once in a Favorites section above the
+provider groups, sorted by model name and labeled with their provider. Favorites follow the search
+and show only models available in the current project; unavailable favorites are remembered for
+when they return. Starring keeps the menu open and does not change the selected model or effort.
+Favorites apply to the provider/model pair, independently of effort, and are kept across restarts in
+the renderer's `localStorage` (`mde.model-favorites`).
 Its menu includes a reasoning-effort pane when OpenCode offers model variants. Browsing a model
 shows that model's choices; choosing an effort selects both the model and the variant. Selecting
 a model uses its defaults, or retains the effort when reselecting the current model. The menu stays
 open for models with variants so an effort can be chosen immediately. Default removes the variant
 override; it is distinct from a variant named None. Choices, including custom IDs and their order,
 come from OpenCode's model catalogue rather than a fixed list. Models without variants have no
-effort choices. The chosen effort appears beside the model in the composer and is remembered for
+effort choices. After a selection closes the menu, focus returns to the message input for typing.
+The chosen effort appears beside the model in the composer and is remembered for
 new threads and drafts; a remembered variant no longer offered by the model falls back to its defaults.
 Effort-only changes are applied through OpenCode's model-switch operation before sending a message
 or starting a goal, including when returning to defaults.
