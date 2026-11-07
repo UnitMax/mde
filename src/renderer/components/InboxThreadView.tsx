@@ -8,6 +8,7 @@ import {
   useInboxLock
 } from '@/components/InboxPanel'
 import { ChatThreadView } from '@/components/inbox/ChatThreadView'
+import { CompactChatToggle } from '@/components/inbox/CompactChatToggle'
 import { NewThreadView } from '@/components/inbox/NewThreadView'
 import { TerminalThreadView } from '@/components/inbox/TerminalThreadView'
 import { inboxModelLabel, inboxThreadHome, sessionAge, sessionDate } from '@/lib/inbox'
@@ -58,6 +59,7 @@ function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
       <div className="flex min-w-0 items-center gap-2">
         <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-fg">{thread.customTitle ?? thread.title}</h2>
         <InboxStatusBadge thread={thread} />
+        {thread.mode !== 'terminal' && <CompactChatToggle />}
         <OpenFolderButtons
           target={{ inboxId: thread.id }}
           kind={thread.target.kind}

@@ -15,8 +15,10 @@ import { ChatRevertDialog } from '@/components/inbox/ChatRevertDialog'
 import { ChatScrollToBottom } from '@/components/inbox/ChatScrollToBottom'
 import { ChatTimeline } from '@/components/inbox/ChatTimeline'
 import { ChatTranscriptMenu } from '@/components/inbox/ChatTranscriptMenu'
+import { CompactChatContext } from '@/components/inbox/chat-ui'
 import { TurnDuration, WorkingFor } from '@/components/inbox/ChatTurnTime'
 import { scrollBehavior, TIMELINE_MIN_PROMPTS, timelineEntries } from '@/lib/chat-timeline'
+import { compactPlans, type RenderBlock } from '@/lib/chat-tools'
 import { cn } from '@/lib/utils'
 import { compactionState, contextUsage, findModel, goalPhase, hideReverted, initialChoice, mergeLive, revertedMessageCount, turnStats } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
@@ -25,6 +27,7 @@ import { slashCommands } from '@/lib/slash-commands'
 import { useInboxAside } from '@/store/inbox-aside'
 import { optionsKey, useInboxChat, type ChatThreadState } from '@/store/inbox-chat'
 import { useInboxMcp, type McpPlace } from '@/store/inbox-mcp'
+import { useInboxView } from '@/store/inbox-view'
 import { codeViewerFontFamily, getTerminalSettings, subscribeTerminalSettings } from '@/terminal/terminal-settings'
 
 const NO_SERVERS: readonly string[] = []
@@ -237,6 +240,15 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const running = state?.running ?? thread.status === 'working'
   // Only the newest step of the agent can be live; one before it that never finished was cut short.
   const lastAssistantId = useMemo(() => [...messages].reverse().find((message) => message.kind === 'assistant')?.id, [messages])
+  // The compact layout folds the activity of the agent's steps together, across steps. A step whose layout did not
+  // change keeps the one it had, so that streaming a new step does not draw all the earlier ones again.
+  const compact = useInboxView((view) => view.compactChat)
+  const lastPlans = useRef<ReadonlyMap<string, RenderBlock[]>>()
+  const plans = useMemo(() => {
+    const next = compact ? compactPlans(messages, running ? lastAssistantId : undefined, lastPlans.current) : undefined
+    lastPlans.current = next
+    return next
+  }, [compact, messages, running, lastAssistantId])
 
   // Compacting summarizes the conversation to free up context. OpenCode does it in the background and writes it
   // into the conversation as a note, so this only asks, and refuses what would make a second, failing note:
@@ -341,22 +353,25 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
           ) : state.messages.length === 0 && messages.length === 0 && !state.error ? (
             <p className="py-10 text-center text-xs text-fg-subtle">No messages yet.</p>
           ) : null}
-          {messages.map((message) => {
-            const took = turns.finished.get(message.id)
-            return (
-              <Fragment key={message.id}>
-                <ChatMessageView
-                  message={message}
-                  directory={thread.directory}
-                  models={ready?.models}
-                  working={running && message.id === lastAssistantId}
-                  onRevert={message.kind === 'user' ? askRevert : undefined}
-                  onFork={message.kind === 'user' ? forkFrom : undefined}
-                />
-                {took !== undefined && <TurnDuration ms={took.ms} tokensPerSecond={took.tokensPerSecond} />}
-              </Fragment>
-            )
-          })}
+          <CompactChatContext.Provider value={compact}>
+            {messages.map((message) => {
+              const took = turns.finished.get(message.id)
+              return (
+                <Fragment key={message.id}>
+                  <ChatMessageView
+                    message={message}
+                    directory={thread.directory}
+                    models={ready?.models}
+                    working={running && message.id === lastAssistantId}
+                    plan={plans?.get(message.id)}
+                    onRevert={message.kind === 'user' ? askRevert : undefined}
+                    onFork={message.kind === 'user' ? forkFrom : undefined}
+                  />
+                  {took !== undefined && <TurnDuration ms={took.ms} tokensPerSecond={took.tokensPerSecond} />}
+                </Fragment>
+              )
+            })}
+          </CompactChatContext.Provider>
           {/* Held for the agent: where the conversation will put them once it takes them up. */}
           {pending?.map((held) => (
             <ChatPendingView

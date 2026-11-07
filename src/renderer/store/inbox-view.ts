@@ -1,12 +1,14 @@
 import { create } from 'zustand'
 import {
   clampInboxSidebarWidth,
+  getInboxCompactChat,
   getInboxDraftsCollapsed,
   getInboxProjectFilter,
   getInboxSidebarWidth,
   getInboxTitleIcons,
   getInboxWorkingCollapsed,
   getInboxWorkingSection,
+  saveInboxCompactChat,
   saveInboxDraftsCollapsed,
   saveInboxProjectFilter,
   saveInboxSidebarWidth,
@@ -25,6 +27,12 @@ interface Store {
    */
   titleIcons: boolean
   setTitleIcons: (on: boolean) => void
+  /**
+   * Compact mode: chat conversations fold each stretch of activity (thinking, commands, reads, searches) into one line and start
+   * file changes shut (a preference, off by default).
+   */
+  compactChat: boolean
+  setCompactChat: (on: boolean) => void
   /**
    * The project the thread list, the Working section and the drafts are narrowed to: its folder ID, or null for
    * all of them. Kept between runs. An ID with no project behind it (removed since) narrows nothing.
@@ -59,6 +67,11 @@ export const useInboxView = create<Store>((set) => ({
   setProjectFilter: (projectId) => {
     saveInboxProjectFilter(projectId)
     set({ projectFilter: projectId })
+  },
+  compactChat: getInboxCompactChat(),
+  setCompactChat: (on) => {
+    saveInboxCompactChat(on)
+    set({ compactChat: on })
   },
   workingCollapsed: getInboxWorkingCollapsed(),
   setWorkingCollapsed: (collapsed) => {

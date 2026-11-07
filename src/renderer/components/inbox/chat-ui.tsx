@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Check, ChevronRight, CircleAlert, CircleDashed, Copy, LoaderCircle, type LucideIcon } from 'lucide-react'
 import type { ChatToolStatus } from '@shared/types'
 import { plural } from '@/lib/chat-tools'
@@ -9,6 +9,16 @@ import { cn } from '@/lib/utils'
  * one family: a row (icon, what happened, what it was about, a little detail on the right) that opens onto a panel
  * hung from a rail, and a surface for whatever the panel shows.
  */
+
+/**
+ * Whether the conversation is drawn compact: each stretch of activity is one line that starts shut, and a file change
+ * starts shut as well. Provided by the thread's view; anything drawn outside of one is not compact.
+ */
+export const CompactChatContext = createContext(false)
+
+export function useCompactChat(): boolean {
+  return useContext(CompactChatContext)
+}
 
 /** Horizontal placement shared by a row and the rail under it: the rail runs down the middle of the row's icon. */
 const RAIL = 'ml-[13px] border-l border-line'

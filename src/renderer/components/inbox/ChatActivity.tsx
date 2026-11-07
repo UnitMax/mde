@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Brain, ChevronRight, LoaderCircle } from 'lucide-react'
-import { ActivityRow, Chip, Rail } from '@/components/inbox/chat-ui'
+import { ActivityRow, Chip, Rail, useCompactChat } from '@/components/inbox/chat-ui'
 import { ChatMarkdown } from '@/components/inbox/ChatMarkdown'
 import { ToolCallView } from '@/components/inbox/ChatTools'
 import { activitySummary, reasoningPreview, reasoningTitle, toolFailed, type ActivityItem } from '@/lib/chat-tools'
@@ -55,25 +55,24 @@ export function ThoughtRow({ text, live }: { text: string; live: boolean }): JSX
 }
 
 /**
- * Three or more steps in a row (thoughts, reads, searches, commands) folded into one line that sums them up. It is
- * open while the agent is still at it, so that the work can be followed, and shuts when the agent moves on to
- * something else; a click on it is the person's choice, and stays.
+ * A run of steps (thoughts, reads, searches, commands) folded into one line that sums them up. It is open while the
+ * agent is still at it, so that the work can be followed, and shuts when the agent moves on to something else; in the
+ * compact layout it is never open of itself, and a live one only spins and shimmers. A click on it is the person's
+ * choice, and stays.
  */
 export function ActivityGroup({
   items,
   directory,
   live,
-  lastIndex,
 }: {
   items: ActivityItem[]
   directory: string
-  /** The message is still being written, and these steps are at its end. */
+  /** The agent is still at these steps, which are at the end of what it has written. */
   live: boolean
-  /** Index of the last part of the message, which is the thought still being written. */
-  lastIndex: number
 }): JSX.Element {
+  const compact = useCompactChat()
   const [chosen, setChosen] = useState<boolean | null>(null)
-  const open = chosen ?? live
+  const open = chosen ?? (live && !compact)
   const parts = items.map((item) => item.part)
   const failed = parts.filter(toolFailed).length
   return (
@@ -97,10 +96,12 @@ export function ActivityGroup({
       {open && (
         <Rail tight>
           <div className="flex min-w-0 flex-col">
-            {items.map(({ part, index }) => {
+            {items.map(({ part, index, messageId }, position) => {
               if (part.kind === 'tool') return <ToolCallView key={part.id} part={part} directory={directory} />
-              // Text never joins a group; only thoughts and tool calls do.
-              return part.kind === 'reasoning' ? <ThoughtRow key={index} text={part.text} live={live && index === lastIndex} /> : null
+              // Text never joins a group; only thoughts and tool calls do. The thought being written is the last step.
+              return part.kind === 'reasoning'
+                ? <ThoughtRow key={`${messageId ?? ''}:${index}`} text={part.text} live={live && position === items.length - 1} />
+                : null
             })}
           </div>
         </Rail>

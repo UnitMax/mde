@@ -8,7 +8,7 @@ import { SubagentGroup } from '@/components/inbox/ChatSubagents'
 import { ToolCallView } from '@/components/inbox/ChatTools'
 import { ActivityRow, CodeText, Surface } from '@/components/inbox/chat-ui'
 import { formatTokens, messageBlocks } from '@/lib/chat'
-import { activityBlocks } from '@/lib/chat-tools'
+import { activityBlocks, type RenderBlock } from '@/lib/chat-tools'
 import { splitQuotes } from '@/lib/chat-quote'
 import { cn } from '@/lib/utils'
 
@@ -69,12 +69,15 @@ export const ChatMessageView = memo(function ChatMessageView({
   onRevert,
   onFork,
   working = true,
+  plan,
 }: {
   message: ChatMessage
   directory: string
   models?: readonly ChatModel[]
   /** The agent is at work on this message; false for one the agent left unfinished. */
   working?: boolean
+  /** What to draw of an agent's step instead of laying it out alone: the compact layout, which reaches across steps. */
+  plan?: readonly RenderBlock[]
   /** Offered on the user's own messages: asks to revert the conversation to just before this one. */
   onRevert?: (message: Extract<ChatMessage, { kind: 'user' }>) => void
   /** Offered on the user's own messages: starts a new thread from just before this message. */
@@ -156,7 +159,7 @@ export const ChatMessageView = memo(function ChatMessageView({
     )
   }
 
-  return <AssistantMessage message={message} directory={directory} models={models} working={working} />
+  return <AssistantMessage message={message} directory={directory} models={models} working={working} plan={plan} />
 })
 
 /** A finished compaction: a rule across the conversation where it happened, which opens onto the summary the agent now remembers. */
@@ -198,23 +201,27 @@ function AssistantMessage({
   directory,
   models,
   working,
+  plan,
 }: {
   message: Extract<ChatMessage, { kind: 'assistant' }>
   directory: string
   models?: readonly ChatModel[]
   working: boolean
-}): JSX.Element {
+  plan?: readonly RenderBlock[]
+}): JSX.Element | null {
   // The step is live while it is being written and the agent is at work; one that was left unfinished is not.
   const live = !message.completed && working
   const lastIndex = message.parts.length - 1
-  const blocks = useMemo(() => activityBlocks(messageBlocks(message.parts)), [message.parts])
+  const blocks = useMemo(() => plan ?? activityBlocks(messageBlocks(message.parts)), [plan, message.parts])
+  // In the compact layout the activity of a step may be drawn with an earlier one; a step left with nothing draws nothing.
+  if (plan && blocks.length === 0 && !message.error) return null
   return (
     <div className="flex min-w-0 flex-col gap-1.5" data-testid={`chat-message-${message.id}`} data-chat-message={message.id}>
       {blocks.map((block, position) => {
         const tail = position === blocks.length - 1
         if (block.kind === 'subagents') return <SubagentGroup key={`subagents-${block.index}`} parts={block.parts} models={models} />
         if (block.kind === 'activity') {
-          return <ActivityGroup key={`activity-${block.index}`} items={block.items} directory={directory} live={live && tail} lastIndex={lastIndex} />
+          return <ActivityGroup key={`activity-${block.index}`} items={block.items} directory={directory} live={block.live ?? (live && tail)} />
         }
         const { part, index } = block
         if (part.kind === 'text') return part.text.trim() ? <ChatMarkdown key={index} text={part.text} /> : null

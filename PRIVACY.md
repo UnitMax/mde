@@ -33,6 +33,8 @@ MDE stores data only on the local machine:
   section is folded up (the word `on` or `off` for each).
 - The renderer's local storage (`mde.inbox-title-icons`): whether the Inbox's thread list shows each
   project's icon in front of the thread titles (the word `on` or `off`).
+- The renderer's local storage (`mde.inbox-compact-chat`): whether Inbox conversations are shown in
+  compact mode (the word `on` or `off`).
 - The renderer's local storage (`mde.inbox-project-filter`): the project the Inbox's thread list is
   narrowed to, as that project's folder ID (`fld_…`), or absent when it shows all projects.
 - The renderer's local storage (`mde.inbox-sidebar-width` and `mde.inbox-terminal-layout`): how wide

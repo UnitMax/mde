@@ -519,7 +519,7 @@ describe('a run of steps', () => {
   it('folds into one line that sums it up, shut once the message is complete', async () => {
     const view = await message(assistant(steps()))
     const group = q('[data-testid="chat-activity"]', view)!
-    expect(text(q('[data-testid="chat-activity-summary"]', group))).toBe('Read 2 files, ran 1 command')
+    expect(text(q('[data-testid="chat-activity-summary"]', group))).toBe('Read 2 files and ran 1 command')
     expect(group.hasAttribute('data-open')).toBe(false)
     expect(all('[data-testid^="chat-tool-"]', view)).toHaveLength(0)
     expect(text(view)).toContain('Done.')
@@ -539,7 +539,7 @@ describe('a run of steps', () => {
     const group = q('[data-testid="chat-activity"]', view)!
     expect(group.hasAttribute('data-open')).toBe(true)
     expect(group.hasAttribute('data-live')).toBe(true)
-    expect(text(q('[data-testid="chat-activity-summary"]', group))).toBe('Read 2 files, running 1 command')
+    expect(text(q('[data-testid="chat-activity-summary"]', group))).toBe('Read 2 files and running 1 command')
     expect(q(`[data-testid="chat-tool-${running.id}"]`, group)?.getAttribute('data-status')).toBe('running')
 
     // The agent goes on to say something: the group shuts by itself.

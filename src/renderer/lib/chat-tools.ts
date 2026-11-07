@@ -1,5 +1,5 @@
-import type { ChatPart, ChatToolStatus } from '@shared/types'
-import { displayPath, type MessageBlock } from '@/lib/chat'
+import type { ChatMessage, ChatPart, ChatToolStatus } from '@shared/types'
+import { displayPath, messageBlocks, type MessageBlock } from '@/lib/chat'
 import { countChanges, type DiffHunk, type DiffLine, type FileChange } from '@/lib/diff'
 
 type ToolPart = Extract<ChatPart, { kind: 'tool' }>
@@ -550,7 +550,7 @@ export function toolFailed(part: ChatPart): boolean {
 }
 
 /**
- * One line that sums up a stretch of activity: "Read 4 files, searched 2 times, ran 3 commands". A kind of
+ * One line that sums up a stretch of activity: "Read 4 files, searched 2 times and ran 3 commands". A kind of
  * work that is still going on is in the present tense, so the line is right while the agent works too.
  */
 export function activitySummary(parts: readonly ChatPart[], live = false): string {
@@ -567,8 +567,14 @@ export function activitySummary(parts: readonly ChatPart[], live = false): strin
     const entry = counts.get(category)
     return entry ? [PHRASES[category](entry.count, entry.active)] : []
   })
-  const text = phrases.join(', ')
+  const text = joinPhrases(phrases)
   return text ? `${text[0]!.toUpperCase()}${text.slice(1)}` : 'Activity'
+}
+
+/** "a", "a and b", "a, b and c". */
+function joinPhrases(phrases: readonly string[]): string {
+  if (phrases.length <= 1) return phrases[0] ?? ''
+  return `${phrases.slice(0, -1).join(', ')} and ${phrases[phrases.length - 1]}`
 }
 
 /** A tool call that is drawn as a card of its own rather than as one row among others: a file change or an answered question. */
@@ -582,12 +588,13 @@ export function isFeaturedTool(part: ChatPart): boolean {
   return false
 }
 
-export type ActivityItem = { part: ChatPart; index: number }
+/** A step of a group: the part, its index in its message, and which message when a group reaches over several. */
+export type ActivityItem = { part: ChatPart; index: number; messageId?: string }
 
 export type RenderBlock =
   | Exclude<MessageBlock, { kind: 'part' }>
   | { kind: 'part'; part: ChatPart; index: number }
-  | { kind: 'activity'; items: ActivityItem[]; index: number }
+  | { kind: 'activity'; items: ActivityItem[]; index: number; live?: boolean }
 
 /** A run of this many rows or more is folded into one line that sums it up. */
 export const GROUP_MIN = 3
@@ -615,6 +622,100 @@ export function activityBlocks(blocks: readonly MessageBlock[]): RenderBlock[] {
   }
   flush()
   return result
+}
+
+type ActivityBlock = Extract<RenderBlock, { kind: 'activity' }>
+
+/** One step of the agent (an assistant message) as the compact layout sees it. */
+export interface FlowStep {
+  id: string
+  parts: readonly ChatPart[]
+  /** The agent is writing this step now. */
+  live: boolean
+}
+
+/**
+ * The compact layout of consecutive steps of the agent, with nothing from the person between them. Everything that is
+ * not text, a file change, an answer or a subagent is folded into one group per stretch, however short, and a stretch
+ * runs on across the steps: the agent starts a new step for every round of tool calls, so a turn is many steps, and
+ * its activity should still read as one line. The group is drawn in the step where it starts, and the steps that
+ * contributed the rest draw whatever else they hold (an empty one draws nothing). Returns the blocks to draw by step.
+ */
+export function compactFlow(steps: readonly FlowStep[]): Map<string, RenderBlock[]> {
+  const plan = new Map<string, RenderBlock[]>()
+  let open: ActivityBlock | null = null
+  let last: RenderBlock | null = null
+  for (const step of steps) {
+    const blocks: RenderBlock[] = []
+    plan.set(step.id, blocks)
+    for (const block of messageBlocks(step.parts)) {
+      // A text that has only just begun to stream has nothing to show yet, and does not end the stretch.
+      if (block.kind === 'part' && block.part.kind === 'text' && !block.part.text.trim()) continue
+      if (block.kind === 'part' && isGroupable(block.part)) {
+        if (!open) {
+          open = { kind: 'activity', items: [], index: block.index, live: false }
+          blocks.push(open)
+        }
+        open.items.push({ part: block.part, index: block.index, messageId: step.id })
+        last = open
+        continue
+      }
+      open = null
+      blocks.push(block)
+      last = block
+    }
+  }
+  // The group the agent is at the end of is live while the last step is being written.
+  if (steps[steps.length - 1]?.live && last?.kind === 'activity') last.live = true
+  return plan
+}
+
+function sameBlock(a: RenderBlock, b: RenderBlock): boolean {
+  if (a.kind === 'part' && b.kind === 'part') return a.part === b.part && a.index === b.index
+  if (a.kind === 'subagents' && b.kind === 'subagents') {
+    return a.index === b.index && a.parts.length === b.parts.length && a.parts.every((part, index) => part === b.parts[index])
+  }
+  if (a.kind === 'activity' && b.kind === 'activity') {
+    return (
+      a.index === b.index &&
+      a.live === b.live &&
+      a.items.length === b.items.length &&
+      a.items.every((item, index) => item.part === b.items[index]!.part && item.index === b.items[index]!.index && item.messageId === b.items[index]!.messageId)
+    )
+  }
+  return false
+}
+
+/** Whether two layouts of a message draw the same thing, so that the earlier one can stay and the message is not drawn again. */
+export function samePlan(a: readonly RenderBlock[], b: readonly RenderBlock[]): boolean {
+  return a.length === b.length && a.every((block, index) => sameBlock(block, b[index]!))
+}
+
+/**
+ * The compact layout of a whole conversation, by the id of each assistant message: runs of consecutive steps are laid
+ * out together (`compactFlow`), and a note or a message of the person's ends a run. A layout that is the same as the one
+ * in `previous` is that one, so that a message whose layout did not change is not drawn again as the conversation streams.
+ */
+export function compactPlans(
+  messages: readonly ChatMessage[],
+  liveId: string | undefined,
+  previous?: ReadonlyMap<string, RenderBlock[]>,
+): Map<string, RenderBlock[]> {
+  const plans = new Map<string, RenderBlock[]>()
+  let run: FlowStep[] = []
+  const flush = (): void => {
+    for (const [id, blocks] of compactFlow(run)) {
+      const before = previous?.get(id)
+      plans.set(id, before && samePlan(before, blocks) ? before : blocks)
+    }
+    run = []
+  }
+  for (const message of messages) {
+    if (message.kind === 'assistant') run.push({ id: message.id, parts: message.parts, live: !message.completed && message.id === liveId })
+    else flush()
+  }
+  flush()
+  return plans
 }
 
 function isGroupable(part: ChatPart): boolean {

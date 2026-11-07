@@ -6,6 +6,7 @@ export const INBOX_WORKING_SECTION_STORAGE_KEY = 'mde.inbox-working-section'
 export const INBOX_WORKING_COLLAPSED_STORAGE_KEY = 'mde.inbox-working-collapsed'
 export const INBOX_DRAFTS_COLLAPSED_STORAGE_KEY = 'mde.inbox-drafts-collapsed'
 export const INBOX_TITLE_ICONS_STORAGE_KEY = 'mde.inbox-title-icons'
+export const INBOX_COMPACT_CHAT_STORAGE_KEY = 'mde.inbox-compact-chat'
 export const INBOX_PROJECT_FILTER_STORAGE_KEY = 'mde.inbox-project-filter'
 export const INBOX_SIDEBAR_WIDTH_STORAGE_KEY = 'mde.inbox-sidebar-width'
 export const INBOX_TERMINAL_LAYOUT_STORAGE_KEY = 'mde.inbox-terminal-layout'
@@ -76,6 +77,15 @@ export function getInboxTitleIcons(): boolean {
 
 export function saveInboxTitleIcons(on: boolean): void {
   writeSwitch(INBOX_TITLE_ICONS_STORAGE_KEY, on)
+}
+
+/** Whether chat conversations are in compact mode: one line per stretch of activity. Off unless turned on. */
+export function getInboxCompactChat(): boolean {
+  return readSwitch(INBOX_COMPACT_CHAT_STORAGE_KEY)
+}
+
+export function saveInboxCompactChat(on: boolean): void {
+  writeSwitch(INBOX_COMPACT_CHAT_STORAGE_KEY, on)
 }
 
 /** The project the thread list is narrowed to, as the user last left it: its folder ID, or none. */

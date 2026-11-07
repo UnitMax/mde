@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { FilePen, FilePlus, FileX, type LucideIcon } from 'lucide-react'
 import type { ChatPart } from '@shared/types'
-import { ActivityRow, TruncatedNote } from '@/components/inbox/chat-ui'
+import { ActivityRow, TruncatedNote, useCompactChat } from '@/components/inbox/chat-ui'
 import { displayPath } from '@/lib/chat'
 import { splitPath } from '@/lib/chat-tools'
 import { emphasisIn, type DiffHunk, type FileChange } from '@/lib/diff'
@@ -128,9 +128,12 @@ export function DiffBody({
 
 /**
  * One file's change, as a row like any other step (what was done to which file, how many lines) with the diff open
- * under it, hung from the rail. The row shuts the diff, and a long diff starts cut short.
+ * under it, hung from the rail. The row shuts the diff, and a long diff starts cut short. In the compact layout the
+ * diff starts shut, leaving the line; opening it is the person's choice.
  */
 function FileDiffCard({ change, status, directory }: { change: FileChange; status: ToolPart['status']; directory: string }): JSX.Element {
+  const compact = useCompactChat()
+  const [chosen, setChosen] = useState<boolean | null>(null)
   const [expanded, setExpanded] = useState(false)
   const shown = displayPath(change.path, directory)
   const { dir, base } = splitPath(shown)
@@ -157,7 +160,8 @@ function FileDiffCard({ change, status, directory }: { change: FileChange; statu
           </span>
         )
       }
-      defaultOpen
+      open={chosen ?? !compact}
+      onToggle={setChosen}
       detail={<DiffBody bare change={change} expanded={expanded} onExpand={() => setExpanded(true)} />}
     />
   )

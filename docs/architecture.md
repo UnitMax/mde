@@ -890,6 +890,22 @@ with every streamed token. Once the thought is done the row says "Thought" and t
 Notes (agent switches, errors, goals) are quiet rows of the same kind, and a finished compaction is a
 rule across the conversation that opens onto the summary.
 
+**Compact mode.** A switch in the thread's header (not to be confused with compacting the context, above) (chat threads only; `CompactChatToggle`,
+kept in `mde.inbox-compact-chat`, off by default) lays the conversation out with less in it. Everything
+that is not text, a file change, an answered question or a subagent becomes a group however short, so a
+single read or a lone thought is one line ("Read 1 file") rather than a row. OpenCode starts a new
+assistant message for every round of tool calls, so a turn is many messages and its work would
+otherwise show up as a line per message: `compactPlans` (`lib/chat-tools.ts`) therefore lays out each run
+of consecutive assistant messages together, with a text, a note or a message of the person's ending the
+run, and a stretch of activity runs on across the messages. The group is drawn in the message where it
+starts, and a message left with nothing to draw (and no error) renders nothing. Layouts are reused when
+they did not change, so streaming does not redraw the earlier messages. The group never opens by itself,
+not even while the agent is at it: it spins and shimmers in the present tense ("Running 2 commands"),
+keeps the failed count, and opens on a click. File changes stay rows of their own, since they are what
+changed, but start shut, with the counts on the line. The summary is worked out from the tool calls
+with no model involved ("Thought, read 1 file and ran 3 commands"). Turning the switch off puts the
+layout back at once; what was opened or shut by hand stays.
+
 **File changes.** The `edit` and `write` tools are drawn as diffs instead of raw JSON, one row per
 file (`ChatFileChange`), the same activity row as every other step with no box around it: the verb
 ("Edited", "Created", "Overwrote"), the path relative to the thread's folder, and `+added −removed`

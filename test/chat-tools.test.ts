@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import type { ChatPart } from '../src/shared/types'
+import type { ChatMessage, ChatPart } from '../src/shared/types'
 import { messageBlocks } from '../src/renderer/lib/chat'
 import {
   activityBlocks,
   activitySummary,
   answeredQuestions,
+  compactFlow,
+  compactPlans,
   humanizeTool,
   isFeaturedTool,
   markMatches,
@@ -15,6 +17,7 @@ import {
   patchFileChanges,
   reasoningPreview,
   reasoningTitle,
+  samePlan,
   searchRegExp,
   shellInfo,
   shellOutput,
@@ -23,6 +26,8 @@ import {
   toolFailed,
   toolKind,
   urlParts,
+  type FlowStep,
+  type RenderBlock,
 } from '../src/renderer/lib/chat-tools'
 
 type ToolPart = Extract<ChatPart, { kind: 'tool' }>
@@ -459,14 +464,124 @@ describe('activity groups', () => {
 
   it('sums up what was done, in the tense of what is still going on', () => {
     expect(activitySummary([thought, read('a'), read('b'), tool('grep', { pattern: 'x' }), tool('glob', {}), shell('c')])).toBe(
-      'Thought, read 2 files, searched 2 times, ran 1 command',
+      'Thought, read 2 files, searched 2 times and ran 1 command',
     )
-    expect(activitySummary([read('a'), shell('b', { status: 'running' }), shell('c')])).toBe('Read 1 file, running 2 commands')
-    expect(activitySummary([read('a'), thought], true)).toBe('Thinking, read 1 file')
-    expect(activitySummary([thought, thought, read('a')])).toBe('Thought 2 times, read 1 file')
+    expect(activitySummary([read('a'), shell('b', { status: 'running' }), shell('c')])).toBe('Read 1 file and running 2 commands')
+    expect(activitySummary([read('a'), thought], true)).toBe('Thinking and read 1 file')
+    expect(activitySummary([thought, thought, read('a')])).toBe('Thought 2 times and read 1 file')
     expect(activitySummary([tool('webfetch', {}), tool('websearch', {}), tool('skill', {}), tool('execute', {}), tool('todowrite', {})])).toBe(
-      'Searched once, fetched 1 page, loaded 1 skill, called 1 tool, updated the to-do list',
+      'Searched once, fetched 1 page, loaded 1 skill, called 1 tool and updated the to-do list',
     )
+    expect(activitySummary([thought])).toBe('Thought')
     expect(activitySummary([])).toBe('Activity')
+  })
+})
+
+describe('the compact layout', () => {
+  const read = (id: string): ChatPart => tool('read', { path: `/app/${id}.ts` }, { id })
+  const shell = (id: string, extra: Partial<ToolPart> = {}): ChatPart => tool('shell', { command: 'ls' }, { id, ...extra })
+  const thought = (words = 'Hmm'): ChatPart => ({ kind: 'reasoning', text: words })
+  const text = (words = 'Done'): ChatPart => ({ kind: 'text', text: words })
+  const edit = (id: string): ChatPart => tool('edit', { filePath: 'a.ts', oldString: 'a', newString: 'b' }, { id })
+  const step = (id: string, parts: ChatPart[], live = false): FlowStep => ({ id, parts, live })
+
+  /** What is drawn for each step, as short words: `group:3` for a group of three. */
+  const draw = (steps: FlowStep[]): Record<string, string[]> =>
+    Object.fromEntries(
+      [...compactFlow(steps)].map(([id, blocks]) => [
+        id,
+        blocks.map((block) => block.kind === 'activity' ? `group:${block.items.length}` : block.kind === 'subagents' ? 'subagents' : block.part.kind === 'tool' ? block.part.id : block.part.kind),
+      ]),
+    )
+
+  it('folds a stretch of activity into one group, however short', () => {
+    expect(draw([step('a', [text(), read('r1')])])).toEqual({ a: ['text', 'group:1'] })
+    expect(draw([step('a', [thought(), read('r1'), shell('s1'), text()])])).toEqual({ a: ['group:3', 'text'] })
+  })
+
+  it('breaks a stretch at text, at a file change and at subagents', () => {
+    expect(draw([step('a', [read('r1'), text(), read('r2'), edit('e1'), shell('s1')])])).toEqual({ a: ['group:1', 'text', 'group:1', 'e1', 'group:1'] })
+    const subagent = tool('subagent', { agent: 'general', description: 'd', prompt: 'p' }, { id: 'sub' })
+    expect(draw([step('a', [read('r1'), subagent, read('r2')])])).toEqual({ a: ['group:1', 'subagents', 'group:1'] })
+  })
+
+  it('runs a stretch on across the steps of the agent, and draws it where it starts', () => {
+    const flow = compactFlow([
+      step('a', [text(), shell('s1'), shell('s2')]),
+      step('b', [read('r1'), thought()]),
+      step('c', [read('r2')]),
+      step('d', [text()]),
+    ])
+    const group = flow.get('a')![1] as Extract<RenderBlock, { kind: 'activity' }>
+    expect(group.kind).toBe('activity')
+    expect(group.items.map((item) => [item.messageId, item.index])).toEqual([['a', 1], ['a', 2], ['b', 0], ['b', 1], ['c', 0]])
+    expect(flow.get('b')).toEqual([])
+    expect(flow.get('c')).toEqual([])
+    expect(flow.get('d')!.map((block) => block.kind)).toEqual(['part'])
+  })
+
+  it('does not run a stretch on across a text, and keeps what a step holds besides its activity', () => {
+    expect(draw([step('a', [read('r1')]), step('b', [text()]), step('c', [read('r2')])])).toEqual({ a: ['group:1'], b: ['text'], c: ['group:1'] })
+    expect(draw([step('a', [read('r1')]), step('b', [edit('e1'), read('r2')])])).toEqual({ a: ['group:1'], b: ['e1', 'group:1'] })
+  })
+
+  it('does not let a text that has only begun to stream break the stretch, and does not draw it', () => {
+    expect(draw([step('a', [read('r1'), text('  ')]), step('b', [read('r2')])])).toEqual({ a: ['group:2'], b: [] })
+  })
+
+  it('has the group the agent is at the end of live while the last step is being written', () => {
+    const lastGroup = (steps: FlowStep[], id = 'a') => [...compactFlow(steps).get(id)!].reverse().find((block) => block.kind === 'activity') as Extract<RenderBlock, { kind: 'activity' }>
+    expect(lastGroup([step('a', [text(), shell('s1')], true)]).live).toBe(true)
+    // The new step has nothing yet: the agent is still at work on what came before.
+    expect(lastGroup([step('a', [shell('s1')]), step('b', [], true)]).live).toBe(true)
+    // Writing text, or finished, it is not at the activity.
+    expect(lastGroup([step('a', [shell('s1'), text('Now')], true)]).live).toBe(false)
+    expect(lastGroup([step('a', [shell('s1')], false)]).live).toBe(false)
+    // An earlier group of the same step is over.
+    const groups = compactFlow([step('a', [shell('s1'), text('x'), shell('s2')], true)]).get('a')!.filter((block) => block.kind === 'activity') as Array<Extract<RenderBlock, { kind: 'activity' }>>
+    expect(groups.map((group) => group.live)).toEqual([false, true])
+  })
+
+  describe('of a conversation', () => {
+    const assistant = (id: string, parts: ChatPart[], completed = true): ChatMessage =>
+      ({ kind: 'assistant', id, time: 1, agent: 'build', model: { id: 'm', providerId: 'p' }, parts, completed }) as ChatMessage
+    const user = (id: string): ChatMessage => ({ kind: 'user', id, time: 1, text: 'Go' }) as ChatMessage
+    const note = (id: string): ChatMessage => ({ kind: 'note', id, time: 1, tone: 'info', text: 'Switched' }) as ChatMessage
+    const shape = (plans: Map<string, RenderBlock[]>) => Object.fromEntries([...plans].map(([id, blocks]) => [id, blocks.map((block) => block.kind)]))
+
+    it('lays out each run of steps together, and ends a run at the person or at a note', () => {
+      const plans = compactPlans(
+        [user('u1'), assistant('a1', [shell('s1')]), assistant('a2', [shell('s2')]), user('u2'), assistant('a3', [shell('s3')]), note('n1'), assistant('a4', [shell('s4')])],
+        undefined,
+      )
+      expect(shape(plans)).toEqual({ a1: ['activity'], a2: [], a3: ['activity'], a4: ['activity'] })
+      expect((plans.get('a1')![0] as Extract<RenderBlock, { kind: 'activity' }>).items).toHaveLength(2)
+      expect([...plans.keys()]).not.toContain('u1')
+    })
+
+    it('has only the live step of the agent live', () => {
+      const messages = [assistant('a1', [shell('s1')]), assistant('a2', [shell('s2')], false)]
+      const group = (id: string | undefined) => (compactPlans(messages, id).get('a1')![0] as Extract<RenderBlock, { kind: 'activity' }>).live
+      expect(group('a2')).toBe(true)
+      expect(group(undefined)).toBe(false)
+      // A step that was left unfinished, and is not the one being written, is not live.
+      expect(group('a1')).toBe(false)
+    })
+
+    it('keeps the earlier layout of a step whose layout did not change', () => {
+      const first = [assistant('a1', [text('Hi'), shell('s1')]), assistant('a2', [text('Next')], false)]
+      const before = compactPlans(first, 'a2')
+      // The conversation streams on: a2 gets longer, and a1's parts are the same objects.
+      const second = [first[0]!, assistant('a2', [text('Next, and more')], false)]
+      const after = compactPlans(second, 'a2', before)
+      expect(after.get('a1')).toBe(before.get('a1'))
+      expect(after.get('a2')).not.toBe(before.get('a2'))
+      // A change that reaches an earlier step (the group grows) is a new layout for it.
+      const third = [first[0]!, assistant('a2', [shell('s2')], false)]
+      const grown = compactPlans(third, 'a2', after)
+      expect(grown.get('a1')).not.toBe(after.get('a1'))
+      expect(samePlan(grown.get('a1')!, after.get('a1')!)).toBe(false)
+      expect(grown.get('a2')).toEqual([])
+    })
   })
 })
