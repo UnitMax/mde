@@ -1,12 +1,14 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { INBOX_TERMINAL_LAYOUT_STORAGE_KEY } from '../src/renderer/lib/inbox-settings'
+import { getInboxTerminalDistro, INBOX_TERMINAL_DISTRO_STORAGE_KEY, INBOX_TERMINAL_LAYOUT_STORAGE_KEY, saveInboxTerminalDistro } from '../src/renderer/lib/inbox-settings'
 import type { PtyExitInfo } from '../src/shared/types'
 
 const dispose = vi.fn((_terminalId: string) => {})
 const focus = vi.fn((_terminalId: string) => () => {})
+const disposeScreen = vi.fn()
 vi.mock('../src/renderer/terminal/dispose', () => ({ disposeRuntimeTerminal: (id: string) => dispose(id) }))
 vi.mock('../src/renderer/terminal/focus', () => ({ focusTerminalWhenReady: (id: string) => focus(id) }))
+vi.mock('../src/renderer/terminal/sessions', () => ({ disposeSession: (id: string) => disposeScreen(id) }))
 
 const ID = (pane: number): string => `inbox-terminal:tab:inbox-terminal:tab:default:pane:pane-${pane}`
 const stored = (): unknown => JSON.parse(localStorage.getItem(INBOX_TERMINAL_LAYOUT_STORAGE_KEY) ?? 'null')
@@ -22,6 +24,7 @@ beforeEach(() => {
   localStorage.clear()
   dispose.mockClear()
   focus.mockClear()
+  disposeScreen.mockClear()
   vi.useFakeTimers()
 })
 afterEach(() => {
@@ -30,6 +33,50 @@ afterEach(() => {
 })
 
 describe('the Inbox terminal store', () => {
+  it('remembers the WSL preference and clears it when the default is chosen', async () => {
+    saveInboxTerminalDistro('Debian')
+    expect(getInboxTerminalDistro()).toBe('Debian')
+    const store = await load()
+    expect(store.getState().distro).toBe('Debian')
+    saveInboxTerminalDistro(null)
+    expect(getInboxTerminalDistro()).toBeNull()
+    expect(localStorage.getItem(INBOX_TERMINAL_DISTRO_STORAGE_KEY)).toBeNull()
+  })
+
+  it('switches distro after main-process validation, preserving splits and clearing old screens and exits', async () => {
+    const configureInbox = vi.fn(async () => ({ session: { id: 'inbox-terminal', name: 'Terminal', kind: 'wsl', distro: 'Debian', createdAt: '' }, changed: true }))
+    vi.stubGlobal('api', { pty: { configureInbox } })
+    const store = await load()
+    store.getState().splitPane(ID(1), 'right')
+    store.setState({ session: { id: 'inbox-terminal', name: 'Terminal', kind: 'wsl', distro: 'Ubuntu', createdAt: '' } })
+    const tree = store.getState().layout.tree
+    expect(await store.getState().configureDistro('Debian')).toBe(true)
+    expect(configureInbox).toHaveBeenCalledWith({ distro: 'Debian' })
+    expect(store.getState().session).toMatchObject({ distro: 'Debian' })
+    expect(store.getState().layout.tree).toEqual(tree)
+    expect(disposeScreen.mock.calls.map(([id]) => id)).toEqual([ID(1), ID(2)])
+    expect(dispose).not.toHaveBeenCalled()
+    expect(localStorage.getItem(INBOX_TERMINAL_DISTRO_STORAGE_KEY)).toBe('Debian')
+  })
+
+  it('keeps the previous preference and screens when validation fails', async () => {
+    vi.stubGlobal('api', { pty: { configureInbox: vi.fn(async () => { throw new Error('Missing distro') }) } })
+    const store = await load()
+    expect(await store.getState().configureDistro('Missing')).toBe(false)
+    expect(store.getState()).toMatchObject({ distro: null, error: 'Missing distro', configuring: false })
+    expect(disposeScreen).not.toHaveBeenCalled()
+    expect(localStorage.getItem(INBOX_TERMINAL_DISTRO_STORAGE_KEY)).toBeNull()
+  })
+
+  it('reattaches without clearing screens when the main process keeps the same distro', async () => {
+    const session = { id: 'inbox-terminal', name: 'Terminal', kind: 'wsl' as const, distro: 'Debian', createdAt: '' }
+    vi.stubGlobal('api', { pty: { configureInbox: vi.fn(async () => ({ session, changed: false })) } })
+    const store = await load()
+    expect(await store.getState().configureDistro('Debian')).toBe(true)
+    expect(disposeScreen).not.toHaveBeenCalled()
+    expect(store.getState().session).toEqual(session)
+  })
+
   it('starts as one terminal whose ID belongs to the Inbox terminal session', async () => {
     const store = await load()
     expect(store.getState().layout.tree).toEqual({ type: 'pane', paneId: 'pane-1' })

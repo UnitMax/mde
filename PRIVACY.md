@@ -37,6 +37,8 @@ MDE stores data only on the local machine:
   the Inbox's right-hand sidebar is (a number of pixels), and the arrangement of the Inbox terminal
   (a tree of pane IDs, split IDs, horizontal or vertical directions, and numeric divider ratios).
   Neither holds terminal content or pane titles; the terminal's shells are not restored on the next run.
+- The renderer's local storage (`mde.inbox-terminal-distro`): the WSL distribution chosen for the
+  Inbox sidebar terminal. No entry means the Windows default distribution.
 - `inbox.json` under Electron's user-data directory, once you use the Inbox: one record for each
   OpenCode conversation you started in the Inbox, with its session ID, OpenCode title, optional custom name, folder, terminal chat mode
   when chosen (older threads use GUI chat), target (Mac

@@ -188,6 +188,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.tabsUpdate]: object({ sessionId: id, tabId: id, patch: object({ name: optional(label), layout: optional(layout) }) }),
   [IpcChannels.tabsRemove]: tab,
   [IpcChannels.ptyEnsure]: object(ptyRequest),
+  [IpcChannels.ptyConfigureInbox]: object({ distro: nullable(distro) }),
   [IpcChannels.ptyRestart]: object(ptyRequest),
   [IpcChannels.ptyWrite]: object({ terminalId: id, data: text }),
   [IpcChannels.ptyResize]: object({ terminalId: id, size }),

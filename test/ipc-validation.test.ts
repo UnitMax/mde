@@ -44,6 +44,7 @@ const validPayloads = {
   [IpcChannels.tabsUpdate]: { ...tab, patch: { name: 'Tab', layout } },
   [IpcChannels.tabsRemove]: tab,
   [IpcChannels.ptyEnsure]: ensure,
+  [IpcChannels.ptyConfigureInbox]: { distro: 'Debian' },
   [IpcChannels.ptyRestart]: ensure,
   [IpcChannels.ptyWrite]: { terminalId: 'pane', data: '\x03\x1b[A\r\n' },
   [IpcChannels.ptyResize]: { terminalId: 'pane', size },
@@ -152,6 +153,15 @@ describe('IPC payload boundary', () => {
     rejects(channel, { distro: 'Ubuntu', path: 'x'.repeat(IPC_LIMITS.path + 1) })
     rejects(channel, { distro: 'Ubuntu', hidden: 'yes' })
     rejects(channel, { distro: 'Ubuntu', command: 'ls' })
+  })
+
+  it('accepts only a WSL name or the default for the Inbox terminal', () => {
+    expect(() => assertIpcPayload(IpcChannels.ptyConfigureInbox, { distro: null })).not.toThrow()
+    for (const distro of ['', '-d', 'Ubuntu\n', 'a'.repeat(129), 42]) {
+      rejects(IpcChannels.ptyConfigureInbox, { distro })
+    }
+    rejects(IpcChannels.ptyConfigureInbox, {})
+    rejects(IpcChannels.ptyConfigureInbox, { distro: 'Debian', shell: 'sh' })
   })
 
   it('accepts only OpenCode session IDs and booleans for inbox changes', () => {

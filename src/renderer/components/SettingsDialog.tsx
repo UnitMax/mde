@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { AboutSettingsPanel } from '@/components/AboutSettingsPanel'
 import { KeyboardShortcutsSettings } from '@/components/KeyboardShortcutsSettings'
+import { InboxTerminalSettings } from '@/components/inbox/InboxTerminalSettings'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SwitchRow } from '@/components/ui/switch'
@@ -328,6 +329,7 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
                     unfocused, or that you have not just typed in is always refused.
                   </span>
                 </label>
+                {platform?.isWindows && <InboxTerminalSettings />}
               </section>
             )}
 

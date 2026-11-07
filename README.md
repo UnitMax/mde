@@ -14,6 +14,9 @@ Settings → OpenCode → Edit configuration changes OpenCode's own configuratio
 custom OpenAI-compatible providers and disabled providers. See
 [`docs/architecture.md`](docs/architecture.md) for how each part behaves.
 
+On Windows, choose the Inbox sidebar terminal's WSL distribution from Settings → Terminal →
+Inbox sidebar terminal. Apply restarts its panes when the distribution changes; the choice is remembered.
+
 Build terminal layouts by holding Ctrl and clicking + on a pane’s left, right, top or bottom edge.
 Drag dividers to resize; closing a pane expands its sibling and preserves the rest of the layout.
 Select a terminal to browse its current folder in Files. Click its branch and change counts in the

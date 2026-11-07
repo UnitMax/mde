@@ -38,7 +38,7 @@ vi.mock('../src/main/wsl/distros', () => ({ isWslAvailable: vi.fn(), listDistros
 import { IpcChannels } from '../src/shared/ipc'
 import { registerIpcHandlers } from '../src/main/ipc'
 import { canonicalizeWslPath } from '../src/main/wsl/paths'
-import { runWslCommand } from '../src/main/wsl/distros'
+import { listDistros, runWslCommand } from '../src/main/wsl/distros'
 
 const { security, event: trustedEvent } = trustedIpcSender()
 const size = { cols: 80, rows: 24 }
@@ -78,6 +78,85 @@ describe('the Inbox terminal over IPC', () => {
   it('does not let anything but a terminal request name it: session file access is not available', async () => {
     await expect(handler(IpcChannels.filesList)(trustedEvent, { sessionId: 'inbox-terminal', path: '' })).rejects.toThrow()
     expect(workspaceMock.getSession).not.toHaveBeenCalled()
+  })
+})
+
+describe('choosing the sidebar terminal WSL distribution', () => {
+  const terminalId = 'inbox-terminal:tab:inbox-terminal:tab:default:pane:pane-1'
+  const request = { terminalId, sessionId: 'inbox-terminal', size, palette }
+  const pty = {
+    ensure: vi.fn((_id: string, _session: Session) => 'running'), restart: vi.fn((_id: string, _session: Session) => 'running'), savedDirectory: vi.fn(),
+    terminalInfo: vi.fn(), statuses: vi.fn(() => ({})), disposeForSourceSession: vi.fn(),
+  }
+  const configure = (distro: string | null) => handler(IpcChannels.ptyConfigureInbox)(trustedEvent, { distro })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    vi.mocked(listDistros).mockResolvedValue([
+      { name: 'Ubuntu', state: 'Running', version: 2, isDefault: true },
+      { name: 'Debian', state: 'Running', version: 2, isDefault: false },
+    ])
+    pty.savedDirectory.mockReset()
+    pty.terminalInfo.mockReset()
+    pty.statuses.mockReturnValue({})
+    registerIpcHandlers(security, pty as never, {} as never, {} as never, {} as never)
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  it('switches only the sidebar shells, and uses the choice on ensure and restart', async () => {
+    await handler(IpcChannels.ptyEnsure)(trustedEvent, request)
+    pty.statuses.mockReturnValue({ [terminalId]: 'running', other: 'running' })
+    pty.terminalInfo.mockImplementation((id: string) => ({ sessionId: id === terminalId ? 'inbox-terminal' : 'ses-other', directory: null }))
+    await expect(configure('Debian')).resolves.toMatchObject({ session: { distro: 'Debian' }, changed: true })
+    expect(pty.disposeForSourceSession).toHaveBeenCalledExactlyOnceWith('inbox-terminal')
+    for (const channel of [IpcChannels.ptyEnsure, IpcChannels.ptyRestart]) {
+      await handler(channel)(trustedEvent, request)
+    }
+    expect(pty.ensure.mock.lastCall?.[1]).toMatchObject({ distro: 'Debian' })
+    expect(pty.restart.mock.lastCall?.[1]).toMatchObject({ distro: 'Debian' })
+    await expect(configure(null)).resolves.toMatchObject({ session: { distro: 'Ubuntu' }, changed: true })
+  })
+
+  it('rejects missing distros before stopping any shells or changing the current target', async () => {
+    await expect(configure('Missing')).rejects.toThrow('was not found')
+    expect(pty.disposeForSourceSession).not.toHaveBeenCalled()
+    await handler(IpcChannels.ptyEnsure)(trustedEvent, request)
+    expect(pty.ensure.mock.lastCall?.[1]).toMatchObject({ distro: 'Ubuntu' })
+  })
+
+  it('preserves saved pane directories on startup, and leaves shells alone when reapplying the same distro', async () => {
+    await configure('Debian')
+    expect(pty.disposeForSourceSession).not.toHaveBeenCalled()
+    pty.statuses.mockReturnValue({ [terminalId]: 'running' })
+    pty.terminalInfo.mockReturnValue({ sessionId: 'inbox-terminal', directory: null })
+    await configure('Debian')
+    expect(pty.disposeForSourceSession).not.toHaveBeenCalled()
+  })
+
+  it('follows the latest Windows default when default is reapplied', async () => {
+    await configure(null)
+    vi.mocked(listDistros).mockResolvedValue([
+      { name: 'Ubuntu', state: 'Running', version: 2, isDefault: false },
+      { name: 'Debian', state: 'Running', version: 2, isDefault: true },
+    ])
+    await expect(configure(null)).resolves.toMatchObject({ session: { distro: 'Debian' }, changed: true })
+    await handler(IpcChannels.ptyEnsure)(trustedEvent, request)
+    expect(pty.ensure.mock.lastCall?.[1]).toMatchObject({ distro: 'Debian' })
+  })
+
+  it.each([IpcChannels.ptyEnsure, IpcChannels.ptyRestart])('cancels an old %s still checking its saved directory when the distro changes', async (channel) => {
+    pty.savedDirectory.mockReturnValue('/home/me/app')
+    vi.mocked(canonicalizeWslPath).mockResolvedValue('/home/me/app')
+    let finishCheck!: (value: Awaited<ReturnType<typeof runWslCommand>>) => void
+    vi.mocked(runWslCommand).mockImplementationOnce(() => new Promise((resolve) => { finishCheck = resolve }))
+    const pending = handler(channel)(trustedEvent, request)
+    await vi.waitFor(() => expect(runWslCommand).toHaveBeenCalled())
+    await configure('Debian')
+    finishCheck({ stdout: '', stderr: '', code: 0 })
+    await expect(pending).resolves.toBe('none')
+    expect(pty.ensure).not.toHaveBeenCalled()
+    expect(pty.restart).not.toHaveBeenCalled()
   })
 })
 

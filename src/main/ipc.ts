@@ -140,6 +140,7 @@ import { safeVsCodeRemoteUrl } from './external-links'
 import { readGitDiff, readGitInfo, readGitTerminalInfo } from './git'
 import { readInboxGitChanges, readInboxGitDiff } from './inbox/changes'
 import { terminalSessionResolver } from './inbox/terminal'
+import { INBOX_TERMINAL_SESSION_ID, inboxTerminalSession, type InboxTerminalConfiguration, type InboxTerminalSettings } from '@shared/inbox-terminal'
 import { isSafeRelativePath, listSessionDirectory, readSessionFile } from './files/tree'
 import {
   createTodoProject,
@@ -301,6 +302,8 @@ export function registerIpcHandlers(
   const chat = inbox.chat
   const pendingEnsures = new Map<string, symbol>()
   // Inbox shells and conversation terminals have reserved identities, resolved from main-owned state.
+  let inboxTerminalGeneration = 0
+  let pendingInboxConfiguration: symbol | undefined
   const getShellSession = terminalSessionResolver({ getSession, listDistros, platform: process.platform })
   const getTerminalSession = async (id: string): Promise<Session | null> => {
     const threadId = inboxTerminalThreadId(id)
@@ -551,14 +554,38 @@ export function registerIpcHandlers(
 
   handle<WindowChromeColors, void>(IpcChannels.windowChromeSet, (req) => titleBar.setColors(req))
 
+  handle<InboxTerminalSettings, InboxTerminalConfiguration>(IpcChannels.ptyConfigureInbox, async (req) => {
+    if (process.platform !== 'win32' && req.distro !== null) throw new Error('WSL is only available on Windows.')
+    const pending = Symbol()
+    pendingInboxConfiguration = pending
+    const distros = process.platform === 'win32' ? await listDistros() : []
+    const next = inboxTerminalSession(process.platform, distros, req.distro)
+    if (req.distro !== null && !next) throw new Error(`The WSL distribution ${req.distro} was not found.`)
+    const current = await getShellSession(INBOX_TERMINAL_SESSION_ID)
+    if (pendingInboxConfiguration !== pending) throw new Error('The sidebar terminal selection changed. Try again.')
+    const changed = current?.kind !== next?.kind || current?.distro !== next?.distro
+    if (changed) {
+      // Invalidate launches still checking a directory before stopping the old shells.
+      inboxTerminalGeneration++
+      const hasShells = Object.keys(ptyManager.statuses()).some((id) =>
+        ptyManager.terminalInfo(id)?.sessionId === INBOX_TERMINAL_SESSION_ID)
+      // At startup, saved directories already carry their distro; preserve matching ones.
+      if (hasShells) ptyManager.disposeForSourceSession(INBOX_TERMINAL_SESSION_ID)
+    }
+    getShellSession.setInboxSession(next)
+    return { session: next, changed }
+  })
+
   handle<EnsurePtyRequest, PtyStatus>(IpcChannels.ptyEnsure, async (req) => {
     const pending = Symbol()
+    const generation = inboxTerminalGeneration
     pendingEnsures.set(req.terminalId, pending)
     try {
       const session = await getTerminalSession(req.sessionId)
       if (!session) return 'none'
       const launch = await threadTerminalLaunch(req, session) ?? await restoredShellLaunch(req, session)
-      if (pendingEnsures.get(req.terminalId) !== pending) return 'none'
+      if (pendingEnsures.get(req.terminalId) !== pending ||
+        (req.sessionId === INBOX_TERMINAL_SESSION_ID && generation !== inboxTerminalGeneration)) return 'none'
       return ptyManager.ensure(
         req.terminalId,
         session,
@@ -572,12 +599,14 @@ export function registerIpcHandlers(
   })
   handle<RestartPtyRequest, PtyStatus>(IpcChannels.ptyRestart, async (req) => {
     const pending = Symbol()
+    const generation = inboxTerminalGeneration
     pendingEnsures.set(req.terminalId, pending)
     try {
       const session = await getTerminalSession(req.sessionId)
       if (!session) return 'none'
       const launch = await threadTerminalLaunch(req, session) ?? await restoredShellLaunch(req, session, true)
-      if (pendingEnsures.get(req.terminalId) !== pending) return 'none'
+      if (pendingEnsures.get(req.terminalId) !== pending ||
+        (req.sessionId === INBOX_TERMINAL_SESSION_ID && generation !== inboxTerminalGeneration)) return 'none'
       return ptyManager.restart(
         req.terminalId,
         session,

@@ -71,6 +71,12 @@ bounded keys, strings, numbers, booleans and string lists. `files:list` and `fil
 existence, session/source ownership, filesystem containment and platform
 constraints after the central validation.
 
+`pty:configure-inbox` accepts only a WSL distribution name (up to 128 code units, without controls or
+option syntax), or `null` for the Windows default. The main process matches explicit names against
+installed distributions and rejects WSL choices on other platforms. It resolves the sidebar's reserved
+session itself for all subsequent terminal and filesystem requests. Switching targets invalidates
+pending sidebar launches and disposes its old shells; other sessions and Inbox threads keep their targets.
+
 OpenCode configuration requests (`opencode-config:read`, `opencode-config:preview`,
 `opencode-config:save`) carry a target (`native`, or `wsl` with a distro name) and, for preview and save,
 a draft; save also carries the revision the draft was made from. Never a path. The validator checks the

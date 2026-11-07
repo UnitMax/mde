@@ -1,3 +1,4 @@
+import type { InboxTerminalConfiguration, InboxTerminalSettings } from './inbox-terminal'
 import type {
   Distro,
   GitDiffResponse,
@@ -113,6 +114,7 @@ export const IpcChannels = {
   tabsRemove: 'tabs:remove',
 
   ptyEnsure: 'pty:ensure',
+  ptyConfigureInbox: 'pty:configure-inbox',
   ptyWrite: 'pty:write',
   ptyResize: 'pty:resize',
   ptyPalette: 'pty:palette',
@@ -465,6 +467,7 @@ export interface RendererApi {
     remove(req: RemoveSessionTabRequest): Promise<Session | null>
   }
   pty: {
+    configureInbox(req: InboxTerminalSettings): Promise<InboxTerminalConfiguration>
     ensure(req: EnsurePtyRequest): Promise<PtyStatus>
     write(req: WritePtyRequest): Promise<void>
     resize(req: ResizePtyRequest): Promise<void>

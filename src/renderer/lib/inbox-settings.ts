@@ -8,6 +8,25 @@ export const INBOX_DRAFTS_COLLAPSED_STORAGE_KEY = 'mde.inbox-drafts-collapsed'
 export const INBOX_TITLE_ICONS_STORAGE_KEY = 'mde.inbox-title-icons'
 export const INBOX_SIDEBAR_WIDTH_STORAGE_KEY = 'mde.inbox-sidebar-width'
 export const INBOX_TERMINAL_LAYOUT_STORAGE_KEY = 'mde.inbox-terminal-layout'
+export const INBOX_TERMINAL_DISTRO_STORAGE_KEY = 'mde.inbox-terminal-distro'
+
+/** No saved choice follows the Windows default distribution. */
+export function getInboxTerminalDistro(): string | null {
+  try {
+    return localStorage.getItem(INBOX_TERMINAL_DISTRO_STORAGE_KEY) || null
+  } catch {
+    return null
+  }
+}
+
+export function saveInboxTerminalDistro(distro: string | null): void {
+  try {
+    if (distro === null) localStorage.removeItem(INBOX_TERMINAL_DISTRO_STORAGE_KEY)
+    else localStorage.setItem(INBOX_TERMINAL_DISTRO_STORAGE_KEY, distro)
+  } catch {
+    // A restricted storage environment keeps the choice for this session only.
+  }
+}
 
 /** The right-hand sidebar is this wide until it is dragged, and never narrower. */
 export const INBOX_SIDEBAR_DEFAULT_WIDTH = 260

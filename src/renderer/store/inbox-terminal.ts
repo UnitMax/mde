@@ -1,9 +1,12 @@
 import { terminalPaneIds } from '@shared/terminal-layouts'
 import { create } from 'zustand'
-import type { PtyExitInfo } from '@shared/types'
+import type { PtyExitInfo, Session } from '@shared/types'
 import { INBOX_TERMINAL_SESSION_ID } from '@shared/inbox-terminal'
-import { getInboxTerminalLayout, saveInboxTerminalLayout } from '@/lib/inbox-settings'
+import { getInboxTerminalDistro, getInboxTerminalLayout, saveInboxTerminalDistro, saveInboxTerminalLayout } from '@/lib/inbox-settings'
+import { ipcErrorMessage } from '@/lib/ipc-error'
+import { useWorkspace } from '@/store/workspace'
 import { disposeRuntimeTerminal } from '@/terminal/dispose'
+import { disposeSession } from '@/terminal/sessions'
 import { focusTerminalWhenReady } from '@/terminal/focus'
 import {
   layoutReordered,
@@ -34,6 +37,11 @@ function startingLayout(): SessionTerminalLayout {
 }
 
 interface Store {
+  distro: string | null
+  session: Session | null | undefined
+  configuring: boolean
+  error: string | null
+  configureDistro: (distro: string | null) => Promise<boolean>
   /** What the terminal looks like: its arrangement and panes. Their shells run in the main process. */
   layout: SessionTerminalLayout
   splitPane: (terminalId: string, side: TerminalSplitSide) => void
@@ -53,8 +61,8 @@ let saveTimer: number | undefined
 
 /**
  * The Inbox's one terminal. It belongs to no thread: whichever thread is open, the same shells are there, and
- * they keep running while the sidebar shows something else. Only the arrangement is remembered between runs,
- * not the shells.
+ * they keep running while the sidebar shows something else. The arrangement and preferred WSL distro are
+ * remembered between runs, not the shells.
  */
 export const useInboxTerminal = create<Store>((set, get) => {
   const commit = (next: SessionTerminalLayout, settle = true): void => {
@@ -74,6 +82,36 @@ export const useInboxTerminal = create<Store>((set, get) => {
   }
 
   return {
+    distro: getInboxTerminalDistro(),
+    session: undefined,
+    configuring: false,
+    error: null,
+
+    configureDistro: async (distro) => {
+      if (get().configuring) return false
+      set({ configuring: true, error: null })
+      try {
+        const { session, changed } = await window.api.pty.configureInbox({ distro })
+        if (changed) {
+          const workspace = useWorkspace.getState()
+          for (const pane of get().layout.panes) {
+            disposeSession(pane.terminalId)
+            workspace.clearExit(pane.terminalId)
+            workspace.setStatus(pane.terminalId, 'none')
+            workspace.setTerminalDirectory({ terminalId: pane.terminalId, directory: null })
+          }
+          focused = null
+          set({ layout: { ...get().layout, panes: get().layout.panes.map(({ exited: _exited, ...pane }) => pane) } })
+        }
+        saveInboxTerminalDistro(distro)
+        set({ distro, session, configuring: false })
+        return true
+      } catch (error) {
+        set({ configuring: false, error: ipcErrorMessage(error, 'Could not change the sidebar terminal distribution.') })
+        return false
+      }
+    },
+
     layout: startingLayout(),
 
     splitPane: (terminalId, side) => {

@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TerminalView } from '../src/renderer/components/TerminalView'
 import { InboxTerminal } from '../src/renderer/components/inbox/InboxTerminal'
-import { INBOX_TERMINAL_SESSION_ID } from '../src/shared/inbox-terminal'
+import { INBOX_TERMINAL_SESSION_ID, inboxTerminalSession } from '../src/shared/inbox-terminal'
 import { INBOX_TERMINAL_TAB, useInboxTerminal } from '../src/renderer/store/inbox-terminal'
 import { useWorkspace } from '../src/renderer/store/workspace'
 import { createRuntimeLayout, defaultSessionTab, splitRuntimePane } from '../src/renderer/terminal/tabs'
@@ -66,7 +66,10 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('ResizeObserver', class { observe(): void {} disconnect(): void {} unobserve(): void {} })
-  vi.stubGlobal('api', { pty: { ensure: vi.fn(async () => 'running'), resize: vi.fn(async () => {}), statuses: vi.fn(async () => ({})) }, git: { terminalInfo: vi.fn(async () => null) } })
+  vi.stubGlobal('api', { pty: {
+    configureInbox: vi.fn(async ({ distro }: { distro: string | null }) => ({ session: inboxTerminalSession('win32', useWorkspace.getState().distros, distro), changed: false })),
+    ensure: vi.fn(async () => 'running'), resize: vi.fn(async () => {}), statuses: vi.fn(async () => ({})),
+  }, git: { terminalInfo: vi.fn(async () => null) } })
   useWorkspace.setState({ platform: { platform: 'darwin', isWindows: false }, wslAvailable: false, distros: [], statuses: {}, exits: {}, terminalDirectories: {} })
   container = document.createElement('div')
   document.body.append(container)
@@ -225,7 +228,7 @@ describe('TerminalView embedded in the Inbox sidebar', () => {
 })
 
 describe('InboxTerminal', () => {
-  beforeEach(() => useInboxTerminal.setState({ layout: createRuntimeLayout(INBOX_TERMINAL_SESSION_ID, INBOX_TERMINAL_TAB) }))
+  beforeEach(() => useInboxTerminal.setState({ layout: createRuntimeLayout(INBOX_TERMINAL_SESSION_ID, INBOX_TERMINAL_TAB), distro: null, session: undefined, configuring: false, error: null }))
 
   it('uses the Inbox session and follows the split store', async () => {
     await render(createElement(InboxTerminal))
@@ -250,5 +253,28 @@ describe('InboxTerminal', () => {
     useWorkspace.setState({ platform: { platform: 'win32', isWindows: true }, distros: [{ name: 'Debian', state: 'Running', version: 2, isDefault: true }] })
     await render(createElement(InboxTerminal))
     await vi.waitFor(() => expect(window.api.pty.ensure).toHaveBeenCalled())
+    expect(window.api.pty.configureInbox).toHaveBeenCalledWith({ distro: null })
+    expect(useInboxTerminal.getState().session).toMatchObject({ distro: 'Debian' })
+  })
+
+  it('configures the saved WSL distro before launching a sidebar shell', async () => {
+    useWorkspace.setState({ platform: { platform: 'win32', isWindows: true }, distros: [
+      { name: 'Ubuntu', state: 'Running', version: 2, isDefault: true },
+      { name: 'Debian', state: 'Running', version: 2, isDefault: false },
+    ] })
+    useInboxTerminal.setState({ distro: 'Debian' })
+    await render(createElement(InboxTerminal))
+    expect(window.api.pty.configureInbox).toHaveBeenCalledWith({ distro: 'Debian' })
+    expect(useInboxTerminal.getState().session).toMatchObject({ distro: 'Debian' })
+    expect(vi.mocked(window.api.pty.configureInbox).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(window.api.pty.ensure).mock.invocationCallOrder[0]!)
+  })
+
+  it('shows a missing saved distro without starting a shell in another distro', async () => {
+    useWorkspace.setState({ platform: { platform: 'win32', isWindows: true } })
+    vi.mocked(window.api.pty.configureInbox).mockRejectedValueOnce(new Error('The WSL distribution Debian was not found.'))
+    useInboxTerminal.setState({ distro: 'Debian' })
+    await render(createElement(InboxTerminal))
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Debian was not found')
+    expect(window.api.pty.ensure).not.toHaveBeenCalled()
   })
 })

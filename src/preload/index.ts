@@ -54,6 +54,7 @@ const api: RendererApi = {
     remove: (req) => ipcRenderer.invoke(IpcChannels.tabsRemove, req)
   },
   pty: {
+    configureInbox: (req) => ipcRenderer.invoke(IpcChannels.ptyConfigureInbox, req),
     ensure: (req) => ipcRenderer.invoke(IpcChannels.ptyEnsure, req),
     write: (req) => ipcRenderer.invoke(IpcChannels.ptyWrite, req),
     resize: (req) => ipcRenderer.invoke(IpcChannels.ptyResize, req),

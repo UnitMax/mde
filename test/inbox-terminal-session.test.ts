@@ -23,6 +23,12 @@ describe('the Inbox terminal session', () => {
   it('has no session on Windows without a distro', () => {
     expect(inboxTerminalSession('win32', [])).toBeNull()
   })
+
+  it('uses the chosen distro, and never silently substitutes another when it is missing', () => {
+    const distros = [distro('Debian'), distro('Ubuntu', true)]
+    expect(inboxTerminalSession('win32', distros, 'Debian')).toMatchObject({ distro: 'Debian' })
+    expect(inboxTerminalSession('win32', distros, 'Missing')).toBeNull()
+  })
 })
 
 describe('the terminal session lookup', () => {
@@ -64,5 +70,18 @@ describe('the terminal session lookup', () => {
     await expect(resolve(INBOX_TERMINAL_SESSION_ID)).rejects.toThrow('wsl.exe failed')
     expect(await resolve(INBOX_TERMINAL_SESSION_ID)).toMatchObject({ distro: 'Ubuntu' })
     expect(listDistros).toHaveBeenCalledTimes(3)
+  })
+
+  it('uses the updated preference for subsequent terminal and filesystem requests', async () => {
+    const distros = [distro('Ubuntu', true), distro('Debian')]
+    const { resolve } = resolver({
+      platform: 'win32',
+      listDistros: vi.fn(async () => distros),
+    })
+    expect(await resolve(INBOX_TERMINAL_SESSION_ID)).toMatchObject({ distro: 'Ubuntu' })
+    resolve.setInboxSession(inboxTerminalSession('win32', distros, 'Debian'))
+    expect(await resolve(INBOX_TERMINAL_SESSION_ID)).toMatchObject({ distro: 'Debian' })
+    resolve.setInboxSession(inboxTerminalSession('win32', distros))
+    expect(await resolve(INBOX_TERMINAL_SESSION_ID)).toMatchObject({ distro: 'Ubuntu' })
   })
 })

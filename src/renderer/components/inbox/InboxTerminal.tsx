@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect } from 'react'
 import { inboxTerminalSession } from '@shared/inbox-terminal'
 import { TerminalView } from '@/components/TerminalView'
 import { focusTerminalWhenReady } from '@/terminal/focus'
@@ -30,17 +30,31 @@ export function InboxTerminal(): JSX.Element {
   const closePane = useInboxTerminal((state) => state.closePane)
   const paneFocused = useInboxTerminal((state) => state.paneFocused)
   const platform = useWorkspace((state) => state.platform)
-  const distros = useWorkspace((state) => state.distros)
-  // The main process builds the real session; this one only says what kind of shell it is, and shows "~".
-  const session = useMemo(() => inboxTerminalSession(platform?.platform ?? '', distros), [platform?.platform, distros])
+  const configuredSession = useInboxTerminal((state) => state.session)
+  const configuring = useInboxTerminal((state) => state.configuring)
+  const error = useInboxTerminal((state) => state.error)
+  const configureDistro = useInboxTerminal((state) => state.configureDistro)
+  const session = platform?.isWindows ? configuredSession : inboxTerminalSession(platform?.platform ?? '', [])
   const firstTerminalId = layout.panes[0]?.terminalId
 
   useEffect(() => {
-    if (!focusWhenShown || !firstTerminalId) return
+    if (platform?.isWindows && useInboxTerminal.getState().session === undefined) {
+      void configureDistro(useInboxTerminal.getState().distro)
+    }
+  }, [platform?.isWindows, configureDistro])
+
+  useEffect(() => {
+    if (!focusWhenShown || !firstTerminalId || !session || configuring) return
     focusWhenShown = false
     return focusTerminalWhenReady(firstTerminalId)
-  }, [firstTerminalId])
+  }, [firstTerminalId, session, configuring])
 
+  if (!platform || configuring || (!session && !error && platform.isWindows && configuredSession === undefined)) {
+    return <p role="status" className="p-4 text-[12px] text-fg-muted">Opening sidebar terminal…</p>
+  }
+  if (!session && error) {
+    return <p role="alert" className="p-4 text-[12px] leading-snug text-danger">{error} Choose a distribution in Settings → Terminal → Inbox sidebar terminal.</p>
+  }
   if (!session) {
     return <p role="status" className="p-4 text-[12px] leading-snug text-fg-muted">The terminal needs a WSL distribution, and none was found.</p>
   }
