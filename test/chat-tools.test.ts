@@ -24,6 +24,7 @@ import {
   splitPath,
   todoView,
   toolFailed,
+  textHeadline,
   toolKind,
   urlParts,
   type FlowStep,
@@ -402,6 +403,15 @@ describe('reasoning', () => {
   })
 })
 
+describe('the headline of words', () => {
+  it('is the first line without its markup, cut when long', () => {
+    expect(textHeadline('\n\nI will check `src/app.ts` first.\nThen more.')).toBe('I will check src/app.ts first.')
+    expect(textHeadline('## Plan\n- one')).toBe('Plan')
+    expect(textHeadline('   ')).toBe('')
+    expect(textHeadline('x'.repeat(300), 20)).toHaveLength(20)
+  })
+})
+
 describe('activity groups', () => {
   const read = (id: string, extra: Partial<ToolPart> = {}): ChatPart => tool('read', { path: `/app/${id}.ts` }, { id, ...extra })
   const shell = (id: string, extra: Partial<ToolPart> = {}): ChatPart => tool('shell', { command: 'ls' }, { id, ...extra })
@@ -473,6 +483,8 @@ describe('activity groups', () => {
       'Searched once, fetched 1 page, loaded 1 skill, called 1 tool and updated the to-do list',
     )
     expect(activitySummary([thought])).toBe('Thought')
+    expect(activitySummary([{ kind: 'text', text: 'a' }, thought, read('a'), { kind: 'text', text: 'b' }])).toBe('Thought, wrote 2 updates and read 1 file')
+    expect(activitySummary([{ kind: 'text', text: 'a' }])).toBe('Wrote an update')
     expect(activitySummary([])).toBe('Activity')
   })
 })
@@ -495,34 +507,55 @@ describe('the compact layout', () => {
     )
 
   it('folds a stretch of activity into one group, however short', () => {
-    expect(draw([step('a', [text(), read('r1')])])).toEqual({ a: ['text', 'group:1'] })
+    expect(draw([step('a', [read('r1')])])).toEqual({ a: ['group:1'] })
     expect(draw([step('a', [thought(), read('r1'), shell('s1'), text()])])).toEqual({ a: ['group:3', 'text'] })
   })
 
-  it('breaks a stretch at text, at a file change and at subagents', () => {
-    expect(draw([step('a', [read('r1'), text(), read('r2'), edit('e1'), shell('s1')])])).toEqual({ a: ['group:1', 'text', 'group:1', 'e1', 'group:1'] })
+  it('folds the words the agent wrote on its way into the group, and draws only the answer', () => {
+    // The text before the last piece of work is the agent talking its way through it; the text after, the answer.
+    expect(draw([step('a', [text('I will look.'), read('r1'), text('Now the fix.'), shell('s1'), text('All done.')])])).toEqual({ a: ['group:4', 'text'] })
+    expect(draw([step('a', [text('I will look.'), read('r1')])])).toEqual({ a: ['group:2'] })
+    // A thought after the words is work too, so the words are before it.
+    expect(draw([step('a', [text('Hmm.'), thought()])])).toEqual({ a: ['group:2'] })
+    // Several texts after the last work are all the answer.
+    expect(draw([step('a', [shell('s1'), text('One.'), text('Two.')])])).toEqual({ a: ['group:1', 'text', 'text'] })
+    // Without any work, what the agent wrote is the answer.
+    expect(draw([step('a', [text('Just words.')])])).toEqual({ a: ['text'] })
+    expect(draw([step('a', [thought(), text('The answer.')])])).toEqual({ a: ['group:1', 'text'] })
+  })
+
+  it('breaks a stretch at a file change and at subagents, and folds the words before them too', () => {
+    expect(draw([step('a', [read('r1'), text('Fixing it.'), edit('e1'), shell('s1'), text('Done.')])])).toEqual({ a: ['group:2', 'e1', 'group:1', 'text'] })
+    expect(draw([step('a', [text('Fixing it.'), edit('e1'), text('Done.')])])).toEqual({ a: ['group:1', 'e1', 'text'] })
     const subagent = tool('subagent', { agent: 'general', description: 'd', prompt: 'p' }, { id: 'sub' })
     expect(draw([step('a', [read('r1'), subagent, read('r2')])])).toEqual({ a: ['group:1', 'subagents', 'group:1'] })
   })
 
   it('runs a stretch on across the steps of the agent, and draws it where it starts', () => {
     const flow = compactFlow([
-      step('a', [text(), shell('s1'), shell('s2')]),
+      step('a', [text('Looking.'), shell('s1'), shell('s2')]),
       step('b', [read('r1'), thought()]),
       step('c', [read('r2')]),
-      step('d', [text()]),
+      step('d', [text('Done.')]),
     ])
-    const group = flow.get('a')![1] as Extract<RenderBlock, { kind: 'activity' }>
+    const group = flow.get('a')![0] as Extract<RenderBlock, { kind: 'activity' }>
     expect(group.kind).toBe('activity')
-    expect(group.items.map((item) => [item.messageId, item.index])).toEqual([['a', 1], ['a', 2], ['b', 0], ['b', 1], ['c', 0]])
+    expect(group.items.map((item) => [item.messageId, item.index])).toEqual([['a', 0], ['a', 1], ['a', 2], ['b', 0], ['b', 1], ['c', 0]])
     expect(flow.get('b')).toEqual([])
     expect(flow.get('c')).toEqual([])
     expect(flow.get('d')!.map((block) => block.kind)).toEqual(['part'])
   })
 
-  it('does not run a stretch on across a text, and keeps what a step holds besides its activity', () => {
-    expect(draw([step('a', [read('r1')]), step('b', [text()]), step('c', [read('r2')])])).toEqual({ a: ['group:1'], b: ['text'], c: ['group:1'] })
+  it('folds the words between the steps into the stretch, and shows the answer in the last one', () => {
+    const steps = [step('a', [text('I will look.'), read('r1')]), step('b', [text('Now the tests.'), shell('s1')]), step('c', [text('All done.')])]
+    expect(draw(steps)).toEqual({ a: ['group:4'], b: [], c: ['text'] })
+    const group = compactFlow(steps).get('a')![0] as Extract<RenderBlock, { kind: 'activity' }>
+    expect(group.items.map((item) => item.part.kind)).toEqual(['text', 'tool', 'text', 'tool'])
+  })
+
+  it('keeps what a step holds besides its activity, and what a file change cuts off', () => {
     expect(draw([step('a', [read('r1')]), step('b', [edit('e1'), read('r2')])])).toEqual({ a: ['group:1'], b: ['e1', 'group:1'] })
+    expect(draw([step('a', [read('r1')]), step('b', [text('Final.')])])).toEqual({ a: ['group:1'], b: ['text'] })
   })
 
   it('does not let a text that has only begun to stream break the stretch, and does not draw it', () => {
@@ -531,15 +564,22 @@ describe('the compact layout', () => {
 
   it('has the group the agent is at the end of live while the last step is being written', () => {
     const lastGroup = (steps: FlowStep[], id = 'a') => [...compactFlow(steps).get(id)!].reverse().find((block) => block.kind === 'activity') as Extract<RenderBlock, { kind: 'activity' }>
-    expect(lastGroup([step('a', [text(), shell('s1')], true)]).live).toBe(true)
+    expect(lastGroup([step('a', [text('Looking.'), shell('s1')], true)]).live).toBe(true)
     // The new step has nothing yet: the agent is still at work on what came before.
     expect(lastGroup([step('a', [shell('s1')]), step('b', [], true)]).live).toBe(true)
-    // Writing text, or finished, it is not at the activity.
+    // Writing its answer, or finished, it is not at the activity.
     expect(lastGroup([step('a', [shell('s1'), text('Now')], true)]).live).toBe(false)
     expect(lastGroup([step('a', [shell('s1')], false)]).live).toBe(false)
     // An earlier group of the same step is over.
-    const groups = compactFlow([step('a', [shell('s1'), text('x'), shell('s2')], true)]).get('a')!.filter((block) => block.kind === 'activity') as Array<Extract<RenderBlock, { kind: 'activity' }>>
+    const groups = compactFlow([step('a', [shell('s1'), edit('e1'), shell('s2')], true)]).get('a')!.filter((block) => block.kind === 'activity') as Array<Extract<RenderBlock, { kind: 'activity' }>>
     expect(groups.map((group) => group.live)).toEqual([false, true])
+  })
+
+  it('shows the words being written as they are until more work follows, and folds them then', () => {
+    // The agent is writing text after its work: it is the answer so far.
+    expect(draw([step('a', [shell('s1'), text('I think the')], true)])).toEqual({ a: ['group:1', 'text'] })
+    // A new tool call arrives, and the words before it were not the answer after all.
+    expect(draw([step('a', [shell('s1'), text('I think the cause is X.'), shell('s2')], true)])).toEqual({ a: ['group:3'] })
   })
 
   describe('of a conversation', () => {

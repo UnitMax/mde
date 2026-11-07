@@ -143,28 +143,82 @@ describe('a conversation in compact mode', () => {
     expect(all('[data-testid="chat-activity"]')).toHaveLength(0)
   })
 
-  it('folds everything but the text into one line, across the steps of the turn', async () => {
+  it('folds everything but the answer into one line, across the steps of the turn', async () => {
     useInboxView.setState({ compactChat: true })
     await render()
     await vi.waitFor(() => expect(q('[data-testid="chat-message-a4"]')).not.toBeNull())
 
-    // The agent's words stay as they are; the steps between them are one line.
-    expect(text(q('[data-testid="chat-message-a1"]'))).toContain('I will check the failing test.')
+    // Only the answer is drawn as it is; what the agent said on the way is part of the line.
     const groups = all('[data-testid="chat-activity"]')
     expect(groups).toHaveLength(1)
-    expect(text(q('[data-testid="chat-activity-summary"]'))).toBe('Thought, read 1 file and ran 3 commands')
+    expect(text(q('[data-testid="chat-activity-summary"]'))).toBe('Thought, wrote an update, read 1 file and ran 3 commands')
     expect(groups[0]!.querySelector('button')!.getAttribute('aria-expanded')).toBe('false')
+    expect(text(q('[data-testid="chat-message-a1"]'))).not.toContain('I will check the failing test.')
     expect(all('[data-testid^="chat-tool-"]')).toHaveLength(0)
     expect(q('[data-testid="chat-reasoning"]')).toBeNull()
+    expect(q('[data-testid="chat-said"]')).toBeNull()
     // The steps that only did work have nothing left to draw.
     expect(q('[data-testid="chat-message-a2"]')).toBeNull()
     expect(q('[data-testid="chat-message-a3"]')).toBeNull()
     expect(text(q('[data-testid="chat-message-a4"]'))).toBe('All fixed.')
 
-    // Opening the line shows every step, from all the messages that did them.
+    // Opening the line shows every step, from all the messages that did them, the words among them.
     await click(groups[0]!.querySelector('button'))
     expect(all('[data-testid^="chat-tool-"]')).toHaveLength(4)
     expect(q('[data-testid="chat-reasoning"]')).not.toBeNull()
+    expect(text(q('[data-testid="chat-said"]'))).toBe('Said I will check the failing test.')
+  })
+
+  it('folds the words the agent wrote between its tool calls, and shows the last ones', async () => {
+    page = {
+      messages: [
+        prompt,
+        step('a1', [{ kind: 'text', text: 'Let me look at the **handler**.' }, read('reset.ts')]),
+        step('a2', [{ kind: 'text', text: 'The cause is clear now.\n\nI will fix it.' }, shell('npm test')]),
+        step('a3', [{ kind: 'text', text: 'Fixed it.' }]),
+      ],
+      older: null,
+      running: false,
+    }
+    useInboxView.setState({ compactChat: true })
+    await render()
+    await vi.waitFor(() => expect(q('[data-testid="chat-message-a3"]')).not.toBeNull())
+    expect(text(q('[data-testid="chat-message-a1"]'))).not.toContain('Let me look')
+    expect(text(q('[data-testid="chat-activity-summary"]'))).toBe('Wrote 2 updates, read 1 file and ran 1 command')
+    expect(text(q('[data-testid="chat-message-a3"]'))).toBe('Fixed it.')
+
+    await click(q('[data-testid="chat-activity"] button'))
+    const said = all('[data-testid="chat-said"]')
+    expect(said.map((row) => text(row))).toEqual(['Said Let me look at the handler.', 'Said The cause is clear now.'])
+    // A row opens onto all of the words, as the text it was written as.
+    await click(said[1]!.querySelector('button'))
+    expect(text(said[1]!)).toContain('I will fix it.')
+  })
+
+  it('draws the words being written as they are, while no more work has followed them', async () => {
+    page = { messages: [prompt, step('a1', [shell('npm test'), { kind: 'text', text: 'The test fails because' }], false)], older: null, running: true }
+    useWorkspace.setState({ inboxThreads: [thread({ status: 'working' })] })
+    useInboxView.setState({ compactChat: true })
+    await render()
+    await vi.waitFor(() => expect(q('[data-testid="chat-message-a1"]')).not.toBeNull())
+    expect(text(q('[data-testid="chat-message-a1"]'))).toContain('The test fails because')
+    expect(q('[data-testid="chat-activity"]')!.hasAttribute('data-live')).toBe(false)
+    expect(q('[data-testid="chat-said"]')).toBeNull()
+  })
+
+  it('folds the words into the line once the agent goes on to more work, which is then at work again', async () => {
+    page = {
+      messages: [prompt, step('a1', [shell('npm test'), { kind: 'text', text: 'The test fails because the redirect is wrong.' }, shell('git diff', { status: 'running', exitCode: undefined, output: undefined })], false)],
+      older: null,
+      running: true,
+    }
+    useWorkspace.setState({ inboxThreads: [thread({ status: 'working' })] })
+    useInboxView.setState({ compactChat: true })
+    await render()
+    await vi.waitFor(() => expect(q('[data-testid="chat-activity"]')).not.toBeNull())
+    expect(text(q('[data-testid="chat-message-a1"]'))).not.toContain('The test fails')
+    expect(q('[data-testid="chat-activity"]')!.hasAttribute('data-live')).toBe(true)
+    expect(text(q('[data-testid="chat-activity-summary"]'))).toBe('Wrote an update and running 2 commands')
   })
 
   it('puts the steps back when compact is turned off, and folds them again when it is turned on', async () => {

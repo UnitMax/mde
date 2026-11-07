@@ -271,6 +271,8 @@ describe('choosing how to send to a busy agent', () => {
   it('steers by default and shows the message as steering', async () => {
     const container = await render()
     accepted = held('msg_p1', 'Also add a test')
+    // The service holds what it accepted, so the refetch that follows the send reports it as held too.
+    page = { ...page, pending: [accepted] }
     await typeAndSend(container, 'Also add a test')
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'ses_one', text: 'Also add a test', delivery: 'steer' }))
     expect(byId('chat-pending-status-msg_p1')!.textContent).toMatch(/^Steering/)
@@ -279,6 +281,7 @@ describe('choosing how to send to a busy agent', () => {
   it('queues when Queue was chosen, and shows the message as queued', async () => {
     const container = await render()
     accepted = held('msg_p1', 'Then run the linter', 'queue')
+    page = { ...page, pending: [accepted] }
     await typeAndSend(container, 'Then run the linter', true)
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ text: 'Then run the linter', delivery: 'queue' }))
     expect(byId('chat-pending-status-msg_p1')!.textContent).toMatch(/^Queued/)

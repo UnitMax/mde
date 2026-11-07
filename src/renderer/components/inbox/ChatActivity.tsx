@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Brain, ChevronRight, LoaderCircle } from 'lucide-react'
+import { Brain, ChevronRight, LoaderCircle, MessageSquareText } from 'lucide-react'
 import { ActivityRow, Chip, Rail, useCompactChat } from '@/components/inbox/chat-ui'
 import { ChatMarkdown } from '@/components/inbox/ChatMarkdown'
 import { ToolCallView } from '@/components/inbox/ChatTools'
-import { activitySummary, reasoningPreview, reasoningTitle, toolFailed, type ActivityItem } from '@/lib/chat-tools'
+import { activitySummary, reasoningPreview, reasoningTitle, textHeadline, toolFailed, type ActivityItem } from '@/lib/chat-tools'
 import { cn } from '@/lib/utils'
 
 /** How long one line of the preview stays up before the next one may take its place. */
@@ -55,6 +55,24 @@ export function ThoughtRow({ text, live }: { text: string; live: boolean }): JSX
 }
 
 /**
+ * Words the agent wrote on its way through the work, inside a group of the compact layout: a row with what they began
+ * with, opening onto all of them. Models often think out loud in their text, and this keeps it out of the way.
+ */
+export function SaidRow({ text }: { text: string }): JSX.Element | null {
+  if (!text.trim()) return null
+  const headline = textHeadline(text)
+  return (
+    <ActivityRow
+      testId="chat-said"
+      icon={MessageSquareText}
+      verb="Said"
+      subject={headline ? <span className="text-fg-muted">{headline}</span> : undefined}
+      detail={<ChatMarkdown text={text} />}
+    />
+  )
+}
+
+/**
  * A run of steps (thoughts, reads, searches, commands) folded into one line that sums them up. It is open while the
  * agent is still at it, so that the work can be followed, and shuts when the agent moves on to something else; in the
  * compact layout it is never open of itself, and a live one only spins and shimmers. A click on it is the person's
@@ -98,10 +116,10 @@ export function ActivityGroup({
           <div className="flex min-w-0 flex-col">
             {items.map(({ part, index, messageId }, position) => {
               if (part.kind === 'tool') return <ToolCallView key={part.id} part={part} directory={directory} />
-              // Text never joins a group; only thoughts and tool calls do. The thought being written is the last step.
-              return part.kind === 'reasoning'
-                ? <ThoughtRow key={`${messageId ?? ''}:${index}`} text={part.text} live={live && position === items.length - 1} />
-                : null
+              // The thought being written is the last step. Text joins a group only in the compact layout.
+              const key = `${messageId ?? ''}:${index}`
+              if (part.kind === 'text') return <SaidRow key={key} text={part.text} />
+              return <ThoughtRow key={key} text={part.text} live={live && position === items.length - 1} />
             })}
           </div>
         </Rail>

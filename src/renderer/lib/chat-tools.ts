@@ -491,13 +491,21 @@ export function reasoningPreview(text: string, max = 160): string | null {
   return sentence.length > max ? `${sentence.slice(0, max - 1)}…` : sentence
 }
 
+/** The first line of the words the agent wrote, without its markup, for a row that opens onto all of them. */
+export function textHeadline(text: string, max = 160): string {
+  const line = text.split('\n').map(plainMarkdown).find(Boolean) ?? ''
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Grouping
 
 /** What a stretch of activity is counted as in the line that sums it up. */
-export type ActivityCategory = 'thinking' | 'read' | 'search' | 'list' | 'web' | 'shell' | 'skill' | 'todo' | 'tool'
+export type ActivityCategory = 'thinking' | 'update' | 'read' | 'search' | 'list' | 'web' | 'shell' | 'skill' | 'todo' | 'tool'
 
 export function activityCategory(part: ChatPart): ActivityCategory {
+  // Words the agent wrote on its way through the work, which only the compact layout folds into a group.
+  if (part.kind === 'text') return 'update'
   if (part.kind !== 'tool') return 'thinking'
   switch (toolKind(part.name)) {
     case 'read':
@@ -524,6 +532,7 @@ export function activityCategory(part: ChatPart): ActivityCategory {
 
 const PHRASES: Record<ActivityCategory, (count: number, active: boolean) => string> = {
   thinking: (count, active) => (active ? 'thinking' : count > 1 ? `thought ${count} times` : 'thought'),
+  update: (count, active) => (active ? 'writing an update' : count === 1 ? 'wrote an update' : `wrote ${count} updates`),
   read: (count, active) => `${active ? 'reading' : 'read'} ${plural(count, 'file')}`,
   search: (count, active) => `${active ? 'searching' : 'searched'} ${count === 1 ? 'once' : `${count} times`}`,
   list: (count, active) => `${active ? 'listing' : 'listed'} ${plural(count, 'folder')}`,
@@ -534,7 +543,7 @@ const PHRASES: Record<ActivityCategory, (count: number, active: boolean) => stri
   tool: (count, active) => `${active ? 'calling' : 'called'} ${plural(count, 'tool')}`,
 }
 
-const CATEGORY_ORDER: ActivityCategory[] = ['thinking', 'read', 'search', 'list', 'web', 'shell', 'skill', 'tool', 'todo']
+const CATEGORY_ORDER: ActivityCategory[] = ['thinking', 'update', 'read', 'search', 'list', 'web', 'shell', 'skill', 'tool', 'todo']
 
 const ACTIVE: ReadonlySet<ChatToolStatus> = new Set(['pending', 'running'])
 
@@ -560,7 +569,7 @@ export function activitySummary(parts: readonly ChatPart[], live = false): strin
     const entry = counts.get(category) ?? { count: 0, active: false }
     entry.count += 1
     // The thought being written is the last part of a message that is still streaming.
-    entry.active ||= part.kind === 'tool' ? isActiveTool(part) : live && index === parts.length - 1
+    entry.active ||= part.kind === 'tool' ? isActiveTool(part) : part.kind === 'reasoning' && live && index === parts.length - 1
     counts.set(category, entry)
   })
   const phrases = CATEGORY_ORDER.flatMap((category) => {
@@ -634,24 +643,42 @@ export interface FlowStep {
   live: boolean
 }
 
+/** Whether a part is work the agent did, as against words it wrote: a tool call, or a thought. */
+function isWork(part: ChatPart): boolean {
+  return part.kind === 'tool' || (part.kind === 'reasoning' && part.text.trim() !== '')
+}
+
 /**
  * The compact layout of consecutive steps of the agent, with nothing from the person between them. Everything that is
- * not text, a file change, an answer or a subagent is folded into one group per stretch, however short, and a stretch
- * runs on across the steps: the agent starts a new step for every round of tool calls, so a turn is many steps, and
- * its activity should still read as one line. The group is drawn in the step where it starts, and the steps that
- * contributed the rest draw whatever else they hold (an empty one draws nothing). Returns the blocks to draw by step.
+ * not an answer is folded into one group per stretch, however short: thoughts and tool calls, and also the words the
+ * agent wrote on its way, since models often think out loud in their text rather than in their thinking. Only the
+ * text after the last piece of work, the answer, is drawn as it is. File changes, answered questions and subagents are
+ * not folded; they break the stretch. A stretch runs on across the steps: the agent starts a new step for every
+ * round of tool calls, so a turn is many steps, and its activity should still read as one line. The group is drawn in
+ * the step where it starts, and the steps that contributed the rest draw whatever else they hold (an empty one draws
+ * nothing). Returns the blocks to draw by step.
  */
 export function compactFlow(steps: readonly FlowStep[]): Map<string, RenderBlock[]> {
+  // Where the last piece of work is: the text before it is the agent talking its way through, and the text after it the answer.
+  let lastWork: [step: number, part: number] | null = null
+  for (const [stepIndex, step] of steps.entries()) {
+    for (const [index, part] of step.parts.entries()) if (isWork(part)) lastWork = [stepIndex, index]
+  }
+  const end = lastWork as [number, number] | null
+  const beforeLastWork = (stepIndex: number, index: number): boolean =>
+    end !== null && (stepIndex < end[0] || (stepIndex === end[0] && index < end[1]))
+
   const plan = new Map<string, RenderBlock[]>()
   let open: ActivityBlock | null = null
   let last: RenderBlock | null = null
-  for (const step of steps) {
+  for (const [stepIndex, step] of steps.entries()) {
     const blocks: RenderBlock[] = []
     plan.set(step.id, blocks)
     for (const block of messageBlocks(step.parts)) {
       // A text that has only just begun to stream has nothing to show yet, and does not end the stretch.
       if (block.kind === 'part' && block.part.kind === 'text' && !block.part.text.trim()) continue
-      if (block.kind === 'part' && isGroupable(block.part)) {
+      const talking = block.kind === 'part' && block.part.kind === 'text' && beforeLastWork(stepIndex, block.index)
+      if (block.kind === 'part' && (talking || isGroupable(block.part))) {
         if (!open) {
           open = { kind: 'activity', items: [], index: block.index, live: false }
           blocks.push(open)
