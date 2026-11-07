@@ -10,7 +10,7 @@ view for starting and continuing OpenCode conversations in GUI chat or a direct 
 both use OpenCode's API for thread activity. Choose GUI (the default) or Terminal from the menu under the new-thread message box.
 Add, rename, remove and give icons to the folders threads start in from Projects (the folder button
 beside the Inbox settings); the icon shows beside each project's threads. On macOS and in WSL,
-Settings → Agents → Edit configuration changes OpenCode's own configuration file: permission rules,
+Settings → OpenCode → Edit configuration changes OpenCode's own configuration file: permission rules,
 custom OpenAI-compatible providers and disabled providers. See
 [`docs/architecture.md`](docs/architecture.md) for how each part behaves.
 
@@ -78,7 +78,7 @@ notarization requires overriding `mac.identity` and supplying release credential
 and configuration. The Mac
 package includes only the rebuilt PTY binding and spawn helper outside `app.asar`,
 with compiler debug paths stripped before signing. Native Mac terminals support
-the agent launcher and the F12 mini Inbox window.
+the F12 mini Inbox window.
 WSL-specific actions remain Windows-only.
 
 Cross-building for Windows from Linux is not supported; build on Windows, or from WSL with

@@ -27,7 +27,6 @@ export function InboxTerminal(): JSX.Element {
   const resize = useInboxTerminal((state) => state.resize)
   const reorder = useInboxTerminal((state) => state.reorder)
   const titlePane = useInboxTerminal((state) => state.titlePane)
-  const addPane = useInboxTerminal((state) => state.addPane)
   const closePane = useInboxTerminal((state) => state.closePane)
   const paneFocused = useInboxTerminal((state) => state.paneFocused)
   const platform = useWorkspace((state) => state.platform)
@@ -54,7 +53,6 @@ export function InboxTerminal(): JSX.Element {
       onSplitPane={splitPane}
       onLayoutResize={resize}
       onPaneOrderChange={reorder}
-      onAddPane={addPane}
       onClosePane={closePane}
       onPaneFocus={paneFocused}
       onPaneTitleChange={titlePane}

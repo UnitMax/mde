@@ -239,7 +239,7 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
 
     init: () => {
       const configure = (): void => {
-        const executable = getTerminalSettings().agents.opencode.executable.trim()
+        const executable = getTerminalSettings().openCodeExecutable.trim()
         if (executable) quietly(() => window.api.chat.configure({ executable }))
       }
       configure()

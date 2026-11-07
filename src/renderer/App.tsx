@@ -32,7 +32,6 @@ import {
 } from '@/terminal/layout-edits'
 import {
   activeSessionTab,
-  appendRuntimePane,
   splitRuntimePane,
   createRuntimeLayout,
   persistRuntimeLayout,
@@ -44,7 +43,6 @@ import {
   terminalFocusTargetAfterRemoval,
   type SessionTerminalLayout,
   type TerminalSplitSide,
-  type RuntimeTerminalLaunch,
 } from '@/terminal/layout'
 import type { PersistedTerminalLayout, Session, TodoTask } from '@shared/types'
 import type { TerminalDirectoryRequest } from '@shared/ipc'
@@ -522,31 +520,6 @@ export function App(): JSX.Element {
     if (added) setPendingTerminalFocus({ sessionId, tabId, terminalId: added.terminalId })
   }
 
-  const addTerminalPane = (
-    sessionId: string,
-    tabId: string,
-    sourceTerminalId: string,
-    launch: RuntimeTerminalLaunch
-  ): void => {
-    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
-    if (!session) return
-    const existing = layoutForTab(session, tabId)
-    if (!existing.panes.some((pane) => pane.terminalId === sourceTerminalId)) return
-
-    const next = appendRuntimePane(sessionId, tabId, existing, launch)
-    if (!next) return
-    setRuntimeLayout(sessionId, tabId, next)
-    queueLayoutPersistence(sessionId, tabId, next, true)
-    const pane = next.panes.find((candidate) => !existing.panes.includes(candidate))
-    if (pane) {
-      setPendingTerminalFocus({
-        sessionId,
-        tabId,
-        terminalId: pane.terminalId
-      })
-    }
-  }
-
   const closeTerminalPane = (sessionId: string, tabId: string, terminalId: string): void => {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!session) return
@@ -716,9 +689,6 @@ export function App(): JSX.Element {
                 onSplitPane={(terminalId, side) => splitTerminalPane(selected.id, activeTab.id, terminalId, side)}
                 onLayoutResize={(splitId, ratio) => resizeTerminalLayout(selected.id, activeTab.id, splitId, ratio)}
                 onPaneOrderChange={(terminalIds) => reorderTerminalPanes(selected.id, activeTab.id, terminalIds)}
-                onAddPane={(sourceTerminalId, launch) =>
-                  addTerminalPane(selected.id, activeTab.id, sourceTerminalId, launch)
-                }
                 onClosePane={(terminalId) => closeTerminalPane(selected.id, activeTab.id, terminalId)}
                 onPaneFocus={(terminalId) => {
                   focusedTerminalIdRef.current = terminalId

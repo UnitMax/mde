@@ -383,18 +383,10 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.sessionsRemove, 'session\r')
   })
 
-  it('validates new-pane launches, nested arguments and aggregate bounds', () => {
+  it('refuses a renderer-supplied launch on ensure and restart', () => {
     const launch = { sourceTerminalId: 'source', agent: { kind: 'codex', command: { executable: 'codex', args: ['--model', 'example'] } } }
-    expect(() => assertIpcPayload(IpcChannels.ptyEnsure, { ...ensure, launch })).not.toThrow()
+    rejects(IpcChannels.ptyEnsure, { ...ensure, launch })
     rejects(IpcChannels.ptyRestart, { ...ensure, launch })
-    for (const bad of ['invalid', { ...launch, directory: 'invalid' },
-      { ...launch, agent: { kind: 'codex', command: { executable: 'codex', args: Array(2) } } },
-      { ...launch, agent: { kind: 'codex', command: { executable: 'codex', args: Object.setPrototypeOf(['a'], { reduce: () => 0 }) } } },
-      { ...launch, agent: { kind: 'codex', command: { executable: 'codex', args: Array(129).fill('a') } } },
-      { ...launch, agent: { kind: 'codex', command: { executable: 'codex', args: Array(9).fill('x'.repeat(32768)) } } },
-      { ...launch, agent: { kind: 'codex', command: { executable: 'codex', args: ['a\x85b'] } } }]) {
-      rejects(IpcChannels.ptyEnsure, { ...ensure, launch: bad })
-    }
   })
 
   it('validates bounded drop arrays and safe relative file paths', () => {

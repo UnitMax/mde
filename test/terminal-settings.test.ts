@@ -53,11 +53,7 @@ describe('terminal settings', () => {
       escapeExitsFullscreen: false,
       showTerminalInstances: false,
       osc52Policy: 'notify',
-      agents: {
-        opencode: { executable: 'opencode', args: '' },
-        codex: { executable: 'codex', args: '' },
-        claude: { executable: 'claude', args: '' }
-      }
+      openCodeExecutable: 'opencode'
     })
   })
 
@@ -73,11 +69,7 @@ describe('terminal settings', () => {
       escapeExitsFullscreen: false,
       showTerminalInstances: false,
       osc52Policy: 'notify',
-      agents: {
-        opencode: { executable: 'opencode', args: '' },
-        codex: { executable: 'codex', args: '' },
-        claude: { executable: 'claude', args: '' }
-      }
+      openCodeExecutable: 'opencode'
     })
     expect(
       resolveTerminalSettings(
@@ -99,11 +91,7 @@ describe('terminal settings', () => {
       escapeExitsFullscreen: false,
       showTerminalInstances: false,
       osc52Policy: 'notify',
-      agents: {
-        opencode: { executable: 'opencode', args: '' },
-        codex: { executable: 'codex', args: '' },
-        claude: { executable: 'claude', args: '' }
-      }
+      openCodeExecutable: 'opencode'
     })
     expect(
       resolveTerminalSettings(
@@ -114,12 +102,20 @@ describe('terminal settings', () => {
       escapeExitsFullscreen: false,
       showTerminalInstances: false,
       osc52Policy: 'notify',
-      agents: {
-        opencode: { executable: 'opencode', args: '' },
-        codex: { executable: 'codex', args: '' },
-        claude: { executable: 'claude', args: '' }
-      }
+      openCodeExecutable: 'opencode'
     })
+  })
+
+  it('keeps a custom OpenCode executable and ignores the removed agent launcher commands', () => {
+    expect(resolveTerminalSettings({ openCodeExecutable: '/opt/opencode/bin/opencode' }, available).openCodeExecutable)
+      .toBe('/opt/opencode/bin/opencode')
+    expect(resolveTerminalSettings({ openCodeExecutable: 7 }, available).openCodeExecutable).toBe('opencode')
+    const stored = resolveTerminalSettings(
+      { agents: { opencode: { executable: 'old-opencode', args: '--x' }, codex: { executable: 'codex', args: '' } } },
+      available
+    )
+    expect(stored).not.toHaveProperty('agents')
+    expect(stored.openCodeExecutable).toBe('opencode')
   })
 
   it('ignores the removed per-session OpenCode instance setting', () => {
@@ -146,11 +142,7 @@ describe('terminal settings', () => {
       escapeExitsFullscreen: false,
       showTerminalInstances: false,
       osc52Policy: 'notify',
-      agents: {
-        opencode: { executable: 'opencode', args: '' },
-        codex: { executable: 'codex', args: '' },
-        claude: { executable: 'claude', args: '' }
-      }
+      openCodeExecutable: 'opencode'
     })
   })
 
@@ -166,11 +158,7 @@ describe('terminal settings', () => {
       escapeExitsFullscreen: false,
       showTerminalInstances: true,
       osc52Policy: 'ask' as const,
-      agents: {
-        opencode: { executable: 'opencode', args: '' },
-        codex: { executable: 'codex', args: '' },
-        claude: { executable: 'claude', args: '' }
-      }
+      openCodeExecutable: 'opencode'
     }
 
     saveTerminalSettings(settings)

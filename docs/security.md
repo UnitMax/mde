@@ -25,7 +25,7 @@ so a replaced or closed window is not trusted through a cached ID.
 
 Payload objects accept only declared own data properties. Unknown keys,
 inherited fields, custom prototypes, accessors and symbols are rejected,
-including within patches and launch commands. Optional fields may be absent or
+including within patches. Optional fields may be absent or
 `undefined`, as used by preload; nullable fields accept `null` only where the
 shared contract allows it. No-payload channels accept only `undefined`.
 
@@ -35,9 +35,8 @@ The current limits are:
 | --- | --- |
 | IDs | 512 UTF-16 code units |
 | Labels and titles | 4,096 code units |
-| Paths, executables and individual arguments | 32,768 code units |
+| Paths and executables | 32,768 code units |
 | Task descriptions, terminal input and clipboard text | 2 Mi code units |
-| Agent arguments | 128 entries; 256 Ki code units combined |
 | Dropped file descriptors | 256 entries |
 | Terminal columns and rows | Integers from 1 through 4,096 |
 | Layouts | Bounded split tree (up to 64 panes), unique pane and split IDs, matching pane references and order, finite ratios strictly between 0 and 1; unknown keys, cycles and accessors rejected |
@@ -120,7 +119,7 @@ preventing all IPC transport allocation or request flooding.
 
 This boundary authenticates a frame, not individual user gestures. JavaScript
 already compromised inside the authorized renderer retains its legitimate
-bridge capabilities, including PTY input, configured agent launches and
+bridge capabilities, including PTY input, the configured OpenCode command and
 workspace changes. Sender checks and payload schemas do not establish
 executable provenance or make third-party agents safe. Any future capability
 restriction or move of command preferences into main-process storage should
@@ -417,8 +416,7 @@ The resolver reads `SystemRoot` case-insensitively, canonicalizes paths, checks
 regular-file type and rejects system programs redirected outside the Windows
 installation tree. It resolves only the program being used and caches successful
 results, so missing WSL does not disable native shells. Missing/invalid paths
-fail without a bare-name fallback. Native PTYs start in a verified restored directory, the source terminal's directory for a launcher
-request, or the user's home directory. WSL `--cd` likewise selects the verified Linux directory,
+fail without a bare-name fallback. Native PTYs start in a verified restored directory or the user's home directory. WSL `--cd` likewise selects the verified Linux directory,
 defaulting to `~`.
 Launch-spec construction receives resolved host paths and remains free of
 filesystem lookup. These changes add no renderer or preload capabilities.

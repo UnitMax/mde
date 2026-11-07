@@ -298,54 +298,7 @@ describe('terminal Explorer IPC', () => {
     expect(electronMock.shell.openPath).not.toHaveBeenCalled()
   })
 
-  it('launches from the source terminal directory when requested', async () => {
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    const terminalInfo = vi.fn(() => ({
-      sessionId: 'session-1',
-      directory: '/home/me/live'
-    }))
-    const ensure = vi.fn(() => 'running')
-    const session = wslSession()
-    workspaceMock.getSession.mockResolvedValue(session)
-    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/live')
-    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
-    registerForTest(terminalInfo, ensure)
-
-    const request = {
-      terminalId: 'child-pane',
-      sessionId: session.id,
-      size: { cols: 100, rows: 30 },
-      palette: { foreground: '#d8dee9', background: '#0b0e13' },
-      launch: { sourceTerminalId: 'source-pane' }
-    }
-
-    await expect(handler(IpcChannels.ptyEnsure)(trustedEvent, request)).resolves.toBe('running')
-
-    expect(wslPathsMock.canonicalizeWslPath).toHaveBeenCalledWith('Ubuntu-24.04', '/home/me/live')
-    expect(ensure).toHaveBeenCalledWith(
-      'child-pane',
-      session,
-      request.size,
-      request.palette,
-      { directory: '/home/me/live' }
-    )
-  })
-
-  it('waits for the source terminal directory before spawning a launcher pane', async () => {
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    const ensure = vi.fn(() => 'running')
-    workspaceMock.getSession.mockResolvedValue(wslSession())
-    registerForTest(vi.fn(() => ({ sessionId: 'session-1', directory: null })), ensure)
-
-    await expect(handler(IpcChannels.ptyEnsure)(trustedEvent, {
-      terminalId: 'child-pane', sessionId: 'session-1',
-      size: { cols: 80, rows: 24 }, palette: { foreground: '#ffffff', background: '#000000' },
-      launch: { sourceTerminalId: 'source-pane' },
-    })).rejects.toThrow('The source terminal directory is not available.')
-    expect(ensure).not.toHaveBeenCalled()
-  })
-
-  it('rejects renderer-provided launch directories before spawning a pane', async () => {
+  it('rejects a renderer-provided launch before spawning a pane', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     const terminalInfo = vi.fn(() => ({ sessionId: 'session-1', directory: '/home/me/live' }))
     const ensure = vi.fn(() => 'running')
@@ -474,16 +427,6 @@ describe('terminal directory restoration over IPC', () => {
     registerForTest(vi.fn(() => ({ sessionId: 'session-1', directory: '/home/me/current' })), vi.fn(), saved, restart)
     await handler(IpcChannels.ptyRestart)(trustedEvent, request('pane'))
     expect(restart).toHaveBeenCalledWith('pane', wslSession(), request('pane').size, request('pane').palette, { directory: '/home/me/current' })
-    expect(saved).not.toHaveBeenCalled()
-  })
-
-  it('uses the source terminal directory for an explicit launcher request', async () => {
-    const ensure = vi.fn(() => 'running')
-    const saved = vi.fn(() => '/home/me/older')
-    registerForTest(vi.fn((id) => id === 'source' ? { sessionId: 'session-1', directory: '/home/me/source' } : null), ensure, saved)
-    const input = { ...request('pane'), launch: { sourceTerminalId: 'source' } }
-    await handler(IpcChannels.ptyEnsure)(trustedEvent, input)
-    expect(ensure).toHaveBeenCalledWith('pane', wslSession(), input.size, input.palette, { directory: '/home/me/source' })
     expect(saved).not.toHaveBeenCalled()
   })
 

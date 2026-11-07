@@ -720,10 +720,10 @@ describe('renderer workspace event bridge', () => {
   })
 
   it('opens the shared settings dialog at a requested section', () => {
-    useWorkspace.getState().openSettings('agents')
-    expect(useWorkspace.getState().settingsDialog).toEqual({ open: true, section: 'agents' })
+    useWorkspace.getState().openSettings('opencode')
+    expect(useWorkspace.getState().settingsDialog).toEqual({ open: true, section: 'opencode' })
     useWorkspace.getState().closeSettings()
-    expect(useWorkspace.getState().settingsDialog).toEqual({ open: false, section: 'agents' })
+    expect(useWorkspace.getState().settingsDialog).toEqual({ open: false, section: 'opencode' })
     useWorkspace.getState().openSettings()
     expect(useWorkspace.getState().settingsDialog.section).toBe('appearance')
   })

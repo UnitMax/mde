@@ -9,8 +9,7 @@ import {
   MAX_TERMINAL_COUNT,
   type SessionTerminalLayout,
   type TerminalPaneState,
-  type TerminalSplitSide,
-  type RuntimeTerminalLaunch
+  type TerminalSplitSide
 } from './layout'
 
 export function defaultSessionTab(sessionId: string): SessionTab {
@@ -49,22 +48,12 @@ export function nextPaneId(panes: readonly TerminalPaneState[]): string {
   return `pane-${index}`
 }
 
-export function appendRuntimePane(
-  sessionId: string,
-  tabId: string,
-  layout: SessionTerminalLayout,
-  launch: RuntimeTerminalLaunch
-): SessionTerminalLayout | null {
-  return splitRuntimePane(sessionId, tabId, layout, launch.sourceTerminalId, 'right', launch)
-}
-
 export function splitRuntimePane(
   sessionId: string,
   tabId: string,
   layout: SessionTerminalLayout,
   sourceTerminalId: string,
   side: TerminalSplitSide,
-  launch?: RuntimeTerminalLaunch,
 ): SessionTerminalLayout | null {
   if (layout.panes.length >= MAX_TERMINAL_COUNT) return null
   const source = layout.panes.find((pane) => pane.terminalId === sourceTerminalId)
@@ -73,7 +62,6 @@ export function splitRuntimePane(
   const added: TerminalPaneState = {
     terminalId: terminalIdForPane(sessionId, tabId, paneId),
     paneId,
-    ...(launch ? { launch } : {}),
   }
   const before = side === 'left' || side === 'top'
   const tree = mapTerminalTree(layout.tree, (node) => node.type === 'pane' && node.paneId === paneKey(source)

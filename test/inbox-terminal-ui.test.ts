@@ -54,7 +54,6 @@ function props(layout: SessionTerminalLayout, overrides: Record<string, unknown>
     onSplitPane: vi.fn(),
     onLayoutResize: vi.fn(),
     onPaneOrderChange: vi.fn(),
-    onAddPane: vi.fn(),
     onClosePane: vi.fn(),
     onPaneFocus: vi.fn(),
     onPaneTitleChange: vi.fn(),

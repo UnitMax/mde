@@ -2,20 +2,10 @@ import type { FileRoot } from './ipc'
 
 export type SessionKind = 'native' | 'wsl'
 
-export type CodingAgent = 'opencode' | 'codex' | 'claude'
-
-/** Parsed argv for a coding-agent command; no shell syntax is represented. */
+/** Parsed argv for the OpenCode command an Inbox terminal thread runs; no shell syntax is represented. */
 export interface AgentCommand {
   executable: string
   args: string[]
-}
-
-export interface TerminalLaunch {
-  sourceTerminalId: string
-  agent?: {
-    kind: CodingAgent
-    command: AgentCommand
-  }
 }
 
 export type SessionIcon =

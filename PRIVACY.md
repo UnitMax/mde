@@ -19,8 +19,8 @@ MDE stores data only on the local machine:
   MDE. Removed panes are forgotten. Commands, terminal output and conversation content are not saved
   in these records.
 - The renderer's local storage (`mde.terminal-settings`): appearance and terminal preferences,
-  including the executable and argument strings configured for the shell, OpenCode, Codex and
-  Claude launchers. Any secret typed into an argument string is stored there in plain text.
+  including the command that starts OpenCode for the Inbox (Settings, OpenCode, Executable: a program
+  name or path, without arguments). An older `agents` entry from a removed launcher is ignored.
 - The renderer's local storage (`mde.markdown-preview-width`): whether the Markdown preview is a
   centered column or fills the page (the word `centered` or `full`).
 - The renderer's local storage (`mde.workspace-navigation`): the last active tab (Sessions, To Do
@@ -46,7 +46,7 @@ MDE stores data only on the local machine:
   most 1,000 conversations; deleting a conversation from the Inbox removes only MDE's record.
 
 - OpenCode's own global configuration file (`opencode.jsonc`, or `opencode.json`, in OpenCode's
-  configuration folder), only when you use the **OpenCode configuration** editor (Settings, Agents) and
+  configuration folder), only when you use the **OpenCode configuration** editor (Settings, OpenCode) and
   press Save. This is OpenCode's file, not an MDE store; see the paragraph on the editor below for what
   is read and written.
 
@@ -113,7 +113,7 @@ OpenCode starts and contacts them, and may send them what the model passes to th
 in a terminal. What a tool is called with and returns is part of the conversation, which is fetched
 from the service, kept in memory only and not written to disk by MDE.
 
-The **OpenCode configuration** editor (Settings, Agents, Edit configuration; on the Mac and, for a WSL
+The **OpenCode configuration** editor (Settings, OpenCode, Edit configuration; on the Mac and, for a WSL
 distro, on Windows) reads and writes OpenCode's own global configuration file: `opencode.jsonc` or
 `opencode.json` in `~/.config/opencode`, or in the folder named by `OPENCODE_CONFIG_DIR` or
 `XDG_CONFIG_HOME` (inside the WSL distro on Windows, reached as `\\wsl.localhost\<distro>\...`). MDE reads

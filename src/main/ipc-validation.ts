@@ -16,8 +16,6 @@ export const IPC_LIMITS = {
   label: 4096,
   path: 32_768,
   text: 2 * 1024 * 1024,
-  arguments: 128,
-  argumentText: 256 * 1024,
   droppedFiles: 256,
   terminalDimension: 4096,
 } as const
@@ -92,15 +90,8 @@ const dimension: Validator = (value) => typeof value === 'number' && Number.isIn
 const size = object({ cols: dimension, rows: dimension })
 const layout: Validator = isPersistedTerminalLayout
 const tab = object({ sessionId: id, tabId: id })
-const argsShape = array(string(IPC_LIMITS.path, true), IPC_LIMITS.arguments)
-const args: Validator = (value) => argsShape(value) &&
-  (value as string[]).reduce((length, entry) => length + entry.length, 0) <= IPC_LIMITS.argumentText
-const command = object({ executable: path, args })
-const agent = object({ kind: oneOf('opencode', 'codex', 'claude'), command })
-const commandLaunch = object({ sourceTerminalId: id, agent: optional(agent) })
 const opencodeSessionId: Validator = (value) => id(value) && /^ses_[A-Za-z0-9_-]+$/.test(value as string)
 const ptyRequest = { terminalId: id, sessionId: id, size, palette }
-const ensure = object({ ...ptyRequest, launch: optional(commandLaunch) })
 const relativePath: Validator = (value) => path(value) && !(value as string).startsWith('/') &&
   !(value as string).includes('\\') && (value as string).split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..')
 const listPath: Validator = (value) => value === '' || relativePath(value)
@@ -196,7 +187,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.tabsSelect]: tab,
   [IpcChannels.tabsUpdate]: object({ sessionId: id, tabId: id, patch: object({ name: optional(label), layout: optional(layout) }) }),
   [IpcChannels.tabsRemove]: tab,
-  [IpcChannels.ptyEnsure]: ensure,
+  [IpcChannels.ptyEnsure]: object(ptyRequest),
   [IpcChannels.ptyRestart]: object(ptyRequest),
   [IpcChannels.ptyWrite]: object({ terminalId: id, data: text }),
   [IpcChannels.ptyResize]: object({ terminalId: id, size }),

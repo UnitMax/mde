@@ -44,13 +44,12 @@ describe('KeyboardShortcutsSettings', () => {
     const section = container.querySelector<HTMLElement>('[data-testid="keyboard-shortcuts-settings"]')
 
     expect(section).not.toBeNull()
-    expect(section?.querySelectorAll('[data-testid^="keyboard-shortcut-row-"]')).toHaveLength(43)
+    expect(section?.querySelectorAll('[data-testid^="keyboard-shortcut-row-"]')).toHaveLength(39)
     expect(section?.querySelectorAll('button')).toHaveLength(0)
     const rows = Array.from(section?.querySelectorAll<HTMLElement>('[data-testid^="keyboard-shortcut-row-"]') ?? [])
     expect(rows.every((row) => row.classList.contains('grid-cols-[12rem_minmax(0,1fr)]'))).toBe(true)
     expect(section?.querySelector('[data-testid="keyboard-shortcut-keys-zoom-in"]')?.classList.contains('flex-col')).toBe(true)
     expect(section?.textContent).toContain('Ctrl+O')
-    expect(section?.textContent).toContain('Ctrl+N')
     expect(section?.textContent).toContain('Hold to show controls for adding a terminal at any edge.')
     expect(section?.textContent).toContain('Ctrl+Shift+F')
     expect(section?.textContent).toContain('Ctrl+Shift+1–9')
@@ -70,7 +69,6 @@ describe('KeyboardShortcutsSettings', () => {
     const section = container.querySelector<HTMLElement>('[data-testid="keyboard-shortcuts-settings"]')
 
     expect(section?.textContent).toContain('Cmd+O')
-    expect(section?.textContent).toContain('Cmd+N')
     expect(section?.textContent).toContain('Cmd+F')
     expect(section?.textContent).toContain('Cmd+C')
     expect(section?.textContent).toContain('Cmd+V')

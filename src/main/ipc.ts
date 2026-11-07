@@ -1,5 +1,4 @@
 import { constants, promises as fs } from 'node:fs'
-import { supportsAgentIntegration } from '@shared/agent-support'
 import { isFileRoot } from '@shared/file-root'
 import type {
   OpenCodeConfigPreview,
@@ -26,7 +25,6 @@ import {
   type RestartPtyRequest,
   type FilesListRequest,
   type FilesReadRequest,
-  type PtyLaunchRequest,
   type MoveTodoTaskRequest,
   type PlatformInfo,
   type ReorderSessionRequest,
@@ -69,8 +67,6 @@ import type {
   TodoTask,
   Session,
   PtyStatus,
-  AgentCommand,
-  CodingAgent,
   WindowMode,
   InboxAddFolderRequest,
   InboxComposerState,
@@ -281,61 +277,6 @@ async function verifiedDirectory(session: Session, directory: string, quiet = fa
   return result.code === 0 ? canonical : reject(`not a directory in ${distro}`)
 }
 
-function isCodingAgent(value: unknown): value is CodingAgent {
-  return value === 'opencode' || value === 'codex' || value === 'claude'
-}
-
-function isSafeLaunchArgument(value: unknown): value is string {
-  return typeof value === 'string' && !/[\u0000-\u001f\u007f]/.test(value)
-}
-
-function validatePtyLaunchRequest(launch: PtyLaunchRequest): void {
-  if (!launch || typeof launch.sourceTerminalId !== 'string' || !launch.sourceTerminalId.trim()) {
-    throw new Error('Invalid terminal launch source.')
-  }
-  if (launch.agent === undefined) return
-  if (!launch.agent || typeof launch.agent !== 'object' || !isCodingAgent(launch.agent.kind)) {
-    throw new Error('Invalid coding agent.')
-  }
-
-  const command = launch.agent.command as AgentCommand | undefined
-  if (
-    !command ||
-    !isSafeLaunchArgument(command.executable) ||
-    !command.executable.trim() ||
-    !Array.isArray(command.args) ||
-    !command.args.every(isSafeLaunchArgument)
-  ) {
-    throw new Error('Invalid coding-agent command.')
-  }
-}
-
-async function resolvePtyLaunchOptions(
-  ptyManager: PtyManager,
-  session: Session,
-  launch: PtyLaunchRequest | undefined
-): Promise<PtyLaunchOptions | undefined> {
-  if (!launch) return undefined
-  validatePtyLaunchRequest(launch)
-  if (!supportsAgentIntegration(process.platform, session)) {
-    throw new Error('New terminal launches require macOS or a Windows/WSL session.')
-  }
-
-  const source = ptyManager.terminalInfo(launch.sourceTerminalId)
-  if (!source || source.sessionId !== session.id) {
-    throw new Error('The source terminal is not available.')
-  }
-
-  if (!source.directory) throw new Error('The source terminal directory is not available.')
-  const directory = await verifiedDirectory(session, source.directory)
-  if (!directory) throw new Error('The source terminal directory is not available.')
-
-  return {
-    directory,
-    ...(launch.agent ? { agent: launch.agent.command } : {})
-  }
-}
-
 async function revealDirectory(session: Session, directory: string): Promise<void> {
   if (session.kind === 'native') {
     await shell.openPath(directory)
@@ -371,7 +312,7 @@ export function registerIpcHandlers(
       if (inboxTerminalThreadId(req.terminalId)) throw new Error('Invalid Inbox thread terminal.')
       return null
     }
-    if (req.terminalId !== session.id || req.launch !== undefined) throw new Error('Invalid Inbox thread terminal launch.')
+    if (req.terminalId !== session.id) throw new Error('Invalid Inbox thread terminal launch.')
     const threadDirectory = chat.fileRoot(threadId)?.path
     if (!threadDirectory) throw new Error('The thread directory is not available.')
     const directory = await verifiedDirectory(session, threadDirectory)
@@ -616,9 +557,7 @@ export function registerIpcHandlers(
     try {
       const session = await getTerminalSession(req.sessionId)
       if (!session) return 'none'
-      const launch = await threadTerminalLaunch(req, session) ??
-        await resolvePtyLaunchOptions(ptyManager, session, req.launch) ??
-        await restoredShellLaunch(req, session)
+      const launch = await threadTerminalLaunch(req, session) ?? await restoredShellLaunch(req, session)
       if (pendingEnsures.get(req.terminalId) !== pending) return 'none'
       return ptyManager.ensure(
         req.terminalId,

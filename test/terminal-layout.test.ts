@@ -4,7 +4,7 @@ import {
   terminalFocusTargetAfterRemoval, swapTerminalPanes, orderTerminalPanes,
   terminalSplitRatio, terminalLayoutGeometry, MAX_TERMINAL_COUNT,
 } from '../src/renderer/terminal/layout'
-import { appendRuntimePane, createRuntimeLayout, defaultSessionTab, persistRuntimeLayout, splitRuntimePane } from '../src/renderer/terminal/tabs'
+import { createRuntimeLayout, defaultSessionTab, persistRuntimeLayout, splitRuntimePane } from '../src/renderer/terminal/tabs'
 import { layoutResized } from '../src/renderer/terminal/layout-edits'
 import { isPersistedTerminalLayout, terminalPaneIds } from '../src/shared/terminal-layouts'
 import { assertIpcPayload } from '../src/main/ipc-validation'
@@ -50,16 +50,6 @@ describe('dynamic terminal layouts', () => {
     expect(last.tree).toEqual({ type: 'pane', paneId: 'pane-3' })
     expect(removeTerminalPane(last, id(3))).toBeNull()
     expect(removeTerminalPane(three, 'missing')).toBeNull()
-  })
-
-  it('adds a launcher terminal next to its source without rearranging other panes or persisting the launch', () => {
-    const two = split(single(), 1, 'bottom')
-    const launch = { sourceTerminalId: id(1) }
-    const next = appendRuntimePane('s', 's:tab:default', two, launch)!
-    expect(next.panes.map((pane) => pane.paneId)).toEqual(['pane-1', 'pane-3', 'pane-2'])
-    expect(next.panes[1]?.launch).toBe(launch)
-    expect(persistRuntimeLayout(next).panes[1]).toEqual({ id: 'pane-3' })
-    expect(appendRuntimePane('s', 't', two, { ...launch, sourceTerminalId: 'missing' })).toBeNull()
   })
 
   it('allows layouts beyond nine panes and bounds resource use independently of geometry', () => {

@@ -62,12 +62,6 @@ export function getKeyboardShortcutGroups(
           note: 'Available in the To Do view.'
         },
         {
-          id: 'terminal-launcher-open',
-          keys: [`${primaryModifier}+N`],
-          description: 'Open the terminal launcher.',
-          note: 'Available from a focused Mac or Windows/WSL terminal.'
-        },
-        {
           id: 'mini-window-toggle',
           keys: ['F12'],
           description: 'Toggle the always-on-top mini Inbox window.',
@@ -224,21 +218,6 @@ export function getKeyboardShortcutGroups(
           id: 'todo-search-close',
           keys: ['Esc'],
           description: 'Close the To Do search.'
-        },
-        {
-          id: 'terminal-launcher-move',
-          keys: ['↑', '↓'],
-          description: 'Move through terminal launcher commands.'
-        },
-        {
-          id: 'terminal-launcher-ends',
-          keys: ['Home', 'End'],
-          description: 'Select the first or last terminal launcher command.'
-        },
-        {
-          id: 'terminal-launcher-select',
-          keys: ['Enter'],
-          description: 'Launch the selected terminal command.'
         }
       ]
     }

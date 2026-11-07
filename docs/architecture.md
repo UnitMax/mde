@@ -101,8 +101,10 @@ The Settings dialog's Terminal section controls terminal behavior, including whe
 the temporary fullscreen view; it is enabled by default. Ctrl+Shift+F toggles fullscreen for the
 focused terminal pane. The Sidebar section controls whether terminal pane entries appear
 beneath each session; this preference is global and stored with the local terminal settings. The
-Agents section configures the launcher commands described below and, on macOS and Windows, opens the
-OpenCode configuration editor (see **OpenCode configuration editor** below). The application theme (Slate,
+OpenCode section (shown on macOS and Windows only) sets the command that starts OpenCode for the
+Inbox, which is its background service and its terminal threads, and opens the OpenCode configuration
+editor (see **OpenCode configuration editor** below). A command that is empty or contains a control
+character is explained under the field and not used: the Inbox keeps the previous one. The application theme (Slate,
 Ember, Frost, High contrast) and zoom are also adjustable. The Appearance section sets the terminal
 font family, size and line height, and separately the font family of the file viewer's source code
 preview; both families are chosen from the same list of installed monospace fonts and default to
@@ -117,7 +119,7 @@ given section. The Settings button in the title bar, next to the mini Inbox butt
 
 ### OpenCode configuration editor
 
-Settings → Agents → **Edit configuration…** closes Settings and opens a second dialog
+Settings → OpenCode → **Edit configuration…** closes Settings and opens a second dialog
 (`OpenCodeConfigDialog`, mounted by `App`; its open flag is `opencodeConfigDialog` in the workspace
 store). It edits the parts of OpenCode's **global** configuration file that matter most, and is not a
 full configuration UI. It is offered only on macOS and Windows, where the Inbox and OpenCode run (on
@@ -411,7 +413,7 @@ The Inbox also shows a right-hand sidebar with three tabs, Files, Changes and Te
 
 **Resizing.** Dragging the sidebar's left edge makes it wider (up to 70% of the window) or narrower (never under 260 px). The edge is a keyboard-operable separator: Left and Right arrows change the width by 16 px (64 with Shift), Home and End go to the limits, and a double-click restores 260 px. One width serves all three tabs and is kept in the renderer's `localStorage` (`mde.inbox-sidebar-width`).
 
-**Terminal tab.** The Inbox has one terminal, shared by every thread: it is the same whichever thread (or the new-thread page) is open, and it keeps running while the sidebar shows another tab or the Sessions view is open. It reuses the Sessions view's terminal layout (`TerminalView` in its embedded mode: no tab strip or session header, and Ctrl split controls, Ctrl+Shift+F and the pane-switch shortcuts acting only while the keyboard is inside it, so typing in the composer is never intercepted). Splitting any pane on any side, resizing the dividers, reordering panes, pane titles, fullscreen, restart, and the terminal launcher work as in Sessions. Each pane reopens in its last reported directory, falling back to home: `~` in the default WSL distro on Windows, the home directory on the Mac. The layout and its dividers are kept in `localStorage` (`mde.inbox-terminal-layout`) and come back as fresh shells on the next run; the shell processes themselves are not restored. Directories are saved separately in the main-process terminal records. The layout edits shared with the Sessions view live in `src/renderer/terminal/layout-edits.ts`, and the Inbox's copy of the state in `src/renderer/store/inbox-terminal.ts`.
+**Terminal tab.** The Inbox has one terminal, shared by every thread: it is the same whichever thread (or the new-thread page) is open, and it keeps running while the sidebar shows another tab or the Sessions view is open. It reuses the Sessions view's terminal layout (`TerminalView` in its embedded mode: no tab strip or session header, and Ctrl split controls, Ctrl+Shift+F and the pane-switch shortcuts acting only while the keyboard is inside it, so typing in the composer is never intercepted). Splitting any pane on any side, resizing the dividers, reordering panes, pane titles, fullscreen and restart work as in Sessions. Each pane reopens in its last reported directory, falling back to home: `~` in the default WSL distro on Windows, the home directory on the Mac. The layout and its dividers are kept in `localStorage` (`mde.inbox-terminal-layout`) and come back as fresh shells on the next run; the shell processes themselves are not restored. Directories are saved separately in the main-process terminal records. The layout edits shared with the Sessions view live in `src/renderer/terminal/layout-edits.ts`, and the Inbox's copy of the state in `src/renderer/store/inbox-terminal.ts`.
 
 The terminal is not a workspace session and is never stored. Terminal requests name it with the reserved session ID `inbox-terminal` (`src/shared/inbox-terminal.ts`), which the main process resolves on demand (`src/main/inbox/terminal.ts`) for terminal requests. File and Git requests can also name a live terminal ID and its expected directory; naming `inbox-terminal` as a saved file-root session still fails.
 
@@ -1139,17 +1141,6 @@ A To Do project is a separate kind of project: a board with a name, an uppercase
 have a title and description, are numbered per project (`MDE-12`), and move between columns by
 drag and drop. Ctrl+F (Cmd+F on macOS) searches tasks in the open To Do project.
 
-### Terminal launcher
-
-In a focused Mac or Windows/WSL terminal, Ctrl+N or Cmd+N opens a launcher for a new shell, OpenCode, Codex, or
-Claude pane. It uses that terminal's current directory and waits for the shell to report it
-before enabling commands. New launcher panes split their source pane to its right,
-preserving the surrounding arrangement and its divider ratios. The per-tab resource limit is 64 panes.
-Configure each executable and its shell-style arguments in the Settings dialog's Agents section.
-Arguments are passed as literal argv values; shell expansion and command chaining are not supported.
-Agent launch identity is runtime-only, so reopening the app restores ordinary shells rather than
-relaunching an agent.
-
 ### Clipboard
 
 Terminal clipboard shortcuts use the normal system clipboard, including for WSL sessions on Windows.
@@ -1274,6 +1265,16 @@ their existing target-shell behavior.
 
 ## Upgrade notes
 
+### Removed terminal launcher
+
+Ctrl+N (Cmd+N on the Mac) no longer opens a launcher for a new shell, OpenCode, Codex or Claude pane;
+the key now reaches the program in the terminal like any other. Split a pane with the split controls
+instead. The Agents section of Settings and its per-agent executable and argument fields are gone.
+Their stored `agents` entry in `mde.terminal-settings` is ignored and not migrated. The one
+setting the Inbox still needs, the command that starts OpenCode, moved to Settings → OpenCode →
+Executable and starts again as `opencode`; set it there if you had changed it. Terminal threads in the
+Inbox are not affected.
+
 ### Removed OpenCode status integration
 
 MDE no longer installs or runs an OpenCode status plugin, tracks terminal agents, or requests
@@ -1286,9 +1287,8 @@ automatically; workspace and Inbox data are unchanged.
 
 ### Removing previously installed Codex hooks
 
-Codex hook reporting has been removed. The Codex launcher and its command settings remain
-available. Existing workspace and launcher settings remain compatible. The mini Inbox uses
-Inbox threads and their API events.
+Codex hook reporting has been removed, and so has the terminal launcher that started Codex (see
+**Removed terminal launcher** above). The mini Inbox uses Inbox threads and their API events.
 
 Previously installed hooks are not removed automatically. Restart MDE after upgrading; new
 terminals no longer receive the `MDE_CODEX_STATUS_*` environment variables, so the old MDE hook

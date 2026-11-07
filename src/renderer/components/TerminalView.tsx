@@ -1,4 +1,3 @@
-import { supportsAgentIntegration } from '@shared/agent-support'
 import {
   useCallback,
   useEffect,
@@ -55,7 +54,6 @@ import {
   type SessionTerminalLayout,
   type TerminalSplitSide,
   type TerminalPaneState,
-  type RuntimeTerminalLaunch,
   type TerminalResizeAxis,
 } from '@/terminal/layout'
 import {
@@ -80,8 +78,6 @@ import { terminalPrimarySelectionMode } from '@/terminal/clipboard'
 import { SessionTabStrip } from '@/components/SessionTabStrip'
 import { TerminalPaneHeader } from '@/components/TerminalPaneHeader'
 import { TerminalPaneOverlay } from '@/components/TerminalPaneOverlay'
-import { TerminalLauncher } from '@/components/TerminalLauncher'
-import { isTerminalLauncherShortcut } from '@/lib/terminal-launcher'
 
 const FALLBACK_SIZE: PtySize = { cols: 80, rows: 24 }
 const noop = (): void => {}
@@ -111,7 +107,6 @@ interface TerminalViewProps {
   onSplitPane: (terminalId: string, side: TerminalSplitSide) => void
   onLayoutResize: (splitId: string, ratio: number) => void
   onPaneOrderChange: (terminalIds: readonly string[]) => void
-  onAddPane: (sourceTerminalId: string, launch: RuntimeTerminalLaunch) => void
   onClosePane: (terminalId: string) => void
   onPaneFocus: (terminalId: string) => void
   onPaneTitleChange: (terminalId: string, title: string | null) => void
@@ -336,8 +331,7 @@ export function TerminalSurface({
           terminalId: pane.terminalId,
           sessionId: sourceSession.id,
           size: action.size,
-          palette: getTerminalPalette(terminal.themeId),
-          launch: pane.launch
+          palette: getTerminalPalette(terminal.themeId)
         }).then((status) => {
           if (cancelled) return
           setLaunchError(null)
@@ -907,21 +901,16 @@ export function TerminalView({
   onSplitPane,
   onLayoutResize,
   onPaneOrderChange,
-  onAddPane,
   onClosePane,
   onPaneFocus,
   onPaneTitleChange
 }: TerminalViewProps): JSX.Element {
-  const platform = useWorkspace((state) => state.platform)
-  const terminalDirectories = useWorkspace((state) => state.terminalDirectories)
   const [splitModifierHeld, setSplitModifierHeld] = useState(false)
   const [reorderModifierHeld, setReorderModifierHeld] = useState(false)
   const [hoveredPaneId, setHoveredPaneId] = useState<string | null>(null)
   const [reorderSourceId, setReorderSourceId] = useState<string | null>(null)
   const [reorderTargetId, setReorderTargetId] = useState<string | null>(null)
   const [fullscreenTerminalId, setFullscreenTerminalId] = useState<string | null>(null)
-  const [terminalLauncherOpen, setTerminalLauncherOpen] = useState(false)
-  const [terminalLauncherSourceId, setTerminalLauncherSourceId] = useState<string | null>(null)
   const [terminalSettings, setTerminalSettings] = useState<TerminalSettings>(() => getTerminalSettings())
   const rootRef = useRef<HTMLDivElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
@@ -952,34 +941,10 @@ export function TerminalView({
   }, [])
 
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      const target = event.target
-      if (target instanceof Element && target.closest('[role="dialog"]')) return
-      if (!isTerminalLauncherShortcut(event)) return
-      if (!supportsAgentIntegration(platform?.platform, selectedSession)) return
-      if (!(target instanceof Element) || !target.closest('.terminal-host')) return
-
-      const sourceTerminalId = focusedTerminalIdRef.current
-      if (!sourceTerminalId || !terminalLayout.panes.some((pane) => pane.terminalId === sourceTerminalId)) return
-
-      event.preventDefault()
-      event.stopPropagation()
-      hidePaneOverlay()
-      setTerminalLauncherSourceId(sourceTerminalId)
-      setTerminalLauncherOpen(true)
-    }
-
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [selectedSession.kind, terminalLayout.panes, platform?.platform, selectedSession.distro, hidePaneOverlay])
-
-  useEffect(() => {
     focusedTerminalIdRef.current = null
     setFocusedTerminalId(null)
     setSplitModifierHeld(false)
     setFullscreenTerminalId(null)
-    setTerminalLauncherOpen(false)
-    setTerminalLauncherSourceId(null)
   }, [activeTab.id, selectedSession.id])
 
   const requestClosePane = (terminalId: string): void => {
@@ -1367,7 +1332,7 @@ export function TerminalView({
         paneOverlayNumber={isFullscreen ? null : index + 1}
         paneOverlayActive={pane.terminalId === focusedTerminalId}
         onClose={() => requestClosePane(pane.terminalId)}
-        splitControlsVisible={splitModifierHeld && !reorderSourceId && !terminalLauncherOpen && terminalLayout.panes.length < MAX_TERMINAL_COUNT}
+        splitControlsVisible={splitModifierHeld && !reorderSourceId && terminalLayout.panes.length < MAX_TERMINAL_COUNT}
         onSplit={(side) => {
           setFullscreenTerminalId(null)
           onSplitPane(pane.terminalId, side)
@@ -1416,27 +1381,6 @@ export function TerminalView({
           />
         ))}
       </div>
-
-      <TerminalLauncher
-        open={terminalLauncherOpen}
-        onOpenChange={(open) => {
-          setTerminalLauncherOpen(open)
-          if (!open) setTerminalLauncherSourceId(null)
-        }}
-        session={selectedSession}
-        sourceTerminalId={terminalLauncherSourceId ?? ''}
-        directory={terminalLauncherSourceId
-          ? terminalDirectories[terminalLauncherSourceId]
-          : undefined}
-        paneCount={terminalLayout.panes.length}
-        onSelect={(launch) => {
-          setFullscreenTerminalId(null)
-          onAddPane(launch.sourceTerminalId, launch)
-          setTerminalLauncherOpen(false)
-          setTerminalLauncherSourceId(null)
-        }}
-      />
-
     </div>
   )
 }

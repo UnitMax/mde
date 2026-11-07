@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import type { TerminalLaunch, TerminalLayoutNode } from '@shared/types'
+import type { TerminalLayoutNode } from '@shared/types'
 
 export { MAX_TERMINAL_COUNT } from '@shared/terminal-layouts'
 export type { TerminalLayoutNode, TerminalResizeAxis, TerminalSplitSide } from '@shared/types'
@@ -9,11 +9,7 @@ export interface TerminalPaneState {
   paneId?: string
   title?: string
   exited?: boolean
-  /** Runtime-only launch metadata; deliberately omitted from persisted tabs. */
-  launch?: RuntimeTerminalLaunch
 }
-
-export type RuntimeTerminalLaunch = TerminalLaunch
 
 export interface SessionTerminalLayout {
   tree: TerminalLayoutNode

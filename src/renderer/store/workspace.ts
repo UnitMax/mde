@@ -36,7 +36,7 @@ export type SettingsSection =
   | 'appearance'
   | 'terminal'
   | 'shortcuts'
-  | 'agents'
+  | 'opencode'
   | 'sidebar'
   | 'about'
 
@@ -78,7 +78,7 @@ interface WorkspaceState {
   /** When something new last happened in a thread being read, by thread; drives a brief cue. */
   inboxCues: Record<string, number>
   settingsDialog: SettingsDialogState
-  /** The OpenCode configuration editor, opened from Settings → Agents. */
+  /** The OpenCode configuration editor, opened from Settings → OpenCode. */
   opencodeConfigDialog: { open: boolean }
   /** Brief border animations for Inbox Terminal chats, keyed by thread ID and never persisted. */
   inboxTerminalHighlights: Record<string, InboxTerminalHighlight>

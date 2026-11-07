@@ -22,7 +22,6 @@ import type {
   PtyExitInfo,
   PtySize,
   PtyStatus,
-  TerminalLaunch,
   WindowMode,
   InboxAddFolderRequest,
   InboxComposerState,
@@ -277,13 +276,9 @@ export interface EnsurePtyRequest {
   sessionId: string
   size: PtySize
   palette: TerminalPalette
-  /** Optional runtime-only launch override for a new terminal pane. */
-  launch?: PtyLaunchRequest
 }
 
-export type RestartPtyRequest = Omit<EnsurePtyRequest, 'launch'>
-
-export type PtyLaunchRequest = TerminalLaunch
+export type RestartPtyRequest = EnsurePtyRequest
 
 export interface TerminalPalette {
   foreground: string

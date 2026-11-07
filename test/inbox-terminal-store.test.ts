@@ -66,7 +66,7 @@ describe('the Inbox terminal store', () => {
     const store = await load()
     expect(store.getState().layout.tree).toEqual(tree)
     expect(store.getState().layout.panes.map((pane) => pane.terminalId)).toEqual([ID(2), ID(1)])
-    expect(store.getState().layout.panes.every((pane) => !pane.launch && !pane.exited)).toBe(true)
+    expect(store.getState().layout.panes.every((pane) => !pane.exited)).toBe(true)
   })
 
   it.each(['{', 'null', JSON.stringify({ layout: 'columns', sizes: {} }), JSON.stringify({ tree: { type: 'pane' } })])('starts with one terminal for an invalid or old layout: %s', async (raw) => {
@@ -85,18 +85,6 @@ describe('the Inbox terminal store', () => {
     expect(store.getState().layout.tree).toEqual({ type: 'pane', paneId: 'pane-2' })
     store.getState().closePane(ID(2))
     expect(store.getState().layout.panes).toHaveLength(1)
-  })
-
-  it('adds a pane for a terminal started from the launcher, and puts the keyboard there', async () => {
-    const store = await load()
-    const launch = { sourceTerminalId: ID(1), agent: 'opencode' } as never
-    store.getState().addPane('elsewhere', launch)
-    expect(store.getState().layout.panes).toHaveLength(1)
-    store.getState().addPane(ID(1), launch)
-    expect(store.getState().layout.panes).toHaveLength(2)
-    expect(store.getState().layout.panes[1]!.launch).toBe(launch)
-    expect(store.getState().layout.tree.type).toBe('split')
-    expect(focus).toHaveBeenCalledWith(ID(2))
   })
 
   it('keeps the title of a pane, reorders panes, and ignores an order that is not one', async () => {

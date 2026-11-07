@@ -117,9 +117,8 @@ describe('Inbox terminal chat launches over IPC', () => {
     expect(workspaceMock.getSession).not.toHaveBeenCalled()
   })
 
-  it('rejects other pane identities, launch overrides, missing threads and removed folders', async () => {
+  it('rejects other pane identities, missing threads and removed folders', async () => {
     await expect(handler(IpcChannels.ptyEnsure)(trustedEvent, { ...request(), terminalId: 'another-pane' })).rejects.toThrow('Invalid Inbox')
-    await expect(handler(IpcChannels.ptyEnsure)(trustedEvent, { ...request(), launch: { sourceTerminalId: 'pane' } })).rejects.toThrow('Invalid Inbox')
     await fs.rm(directory, { recursive: true })
     await expect(handler(IpcChannels.ptyEnsure)(trustedEvent, request())).rejects.toThrow('directory is not available')
     chat.terminalSession.mockImplementation(() => { throw new Error('Thread no longer exists') })

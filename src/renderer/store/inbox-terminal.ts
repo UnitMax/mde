@@ -13,11 +13,10 @@ import {
 import {
   removeTerminalPane,
   terminalFocusTargetAfterRemoval,
-  type RuntimeTerminalLaunch,
   type SessionTerminalLayout,
   type TerminalSplitSide,
 } from '@/terminal/layout'
-import { appendRuntimePane, splitRuntimePane, createRuntimeLayout, defaultSessionTab } from '@/terminal/tabs'
+import { splitRuntimePane, createRuntimeLayout, defaultSessionTab } from '@/terminal/tabs'
 
 /** The Inbox terminal is one tab of one session, so it has one tab and nothing to choose between. */
 export const INBOX_TERMINAL_TAB = defaultSessionTab(INBOX_TERMINAL_SESSION_ID)
@@ -41,7 +40,6 @@ interface Store {
   resize: (splitId: string, ratio: number) => void
   reorder: (terminalIds: readonly string[]) => void
   titlePane: (terminalId: string, title: string | null) => void
-  addPane: (sourceTerminalId: string, launch: RuntimeTerminalLaunch) => void
   closePane: (terminalId: string) => void
   /** Which pane has the keyboard, so closing it can hand the keyboard on. */
   paneFocused: (terminalId: string) => void
@@ -97,16 +95,6 @@ export const useInboxTerminal = create<Store>((set, get) => {
     titlePane: (terminalId, title) => {
       const next = layoutTitled(get().layout, terminalId, title)
       if (next) commit(next)
-    },
-
-    addPane: (sourceTerminalId, launch) => {
-      const existing = get().layout
-      if (!existing.panes.some((pane) => pane.terminalId === sourceTerminalId)) return
-      const next = appendRuntimePane(INBOX_TERMINAL_SESSION_ID, INBOX_TERMINAL_TAB.id, existing, launch)
-      if (!next) return
-      commit(next)
-      const added = next.panes.find((pane) => !existing.panes.includes(pane))
-      if (added) focusTerminalWhenReady(added.terminalId)
     },
 
     closePane: (terminalId) => {
