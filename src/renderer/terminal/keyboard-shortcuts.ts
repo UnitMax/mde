@@ -33,6 +33,7 @@ export function getKeyboardShortcutGroups(
         { id: 'inbox-changes-tabs', keys: ['Left', 'Right', 'Home', 'End'], description: 'Switch Files and Changes when a thread sidebar tab is focused.' },
         { id: 'inbox-close-changes', keys: ['Escape'], description: 'Close the Git change review, or the changed-file list under a thread.' },
         { id: 'inbox-paste-image', keys: [`${primaryModifier}+V`], description: 'Paste clipboard images as attachments in the message box; text pastes normally.' },
+        { id: 'inbox-cycle-agent', keys: ['Shift+Tab'], description: 'Cycle through available agents in the message box.' },
         { id: 'inbox-skill-picker', keys: ['$'], description: 'Start a word with $ in the message box to pick a skill; keep typing to narrow the list.' },
         { id: 'inbox-skill-picker-keys', keys: ['Up', 'Down', 'Tab', 'Enter', 'Escape'], description: 'In the skill list: Up and Down move, Tab or Enter insert the skill, Escape closes the list.' },
         { id: 'inbox-slash-picker', keys: ['/'], description: 'Start a message with / to pick a command, such as /btw to ask a side question that is not added to the conversation, /fork to fork the thread, /compact to summarize the conversation and free up context, or /goal to keep the agent working until an objective is met; keep typing to narrow the list.' },

@@ -44,7 +44,7 @@ describe('KeyboardShortcutsSettings', () => {
     const section = container.querySelector<HTMLElement>('[data-testid="keyboard-shortcuts-settings"]')
 
     expect(section).not.toBeNull()
-    expect(section?.querySelectorAll('[data-testid^="keyboard-shortcut-row-"]')).toHaveLength(39)
+    expect(section?.querySelectorAll('[data-testid^="keyboard-shortcut-row-"]')).toHaveLength(40)
     expect(section?.querySelectorAll('button')).toHaveLength(0)
     const rows = Array.from(section?.querySelectorAll<HTMLElement>('[data-testid^="keyboard-shortcut-row-"]') ?? [])
     expect(rows.every((row) => row.classList.contains('grid-cols-[12rem_minmax(0,1fr)]'))).toBe(true)
@@ -55,6 +55,7 @@ describe('KeyboardShortcutsSettings', () => {
     expect(section?.textContent).toContain('Ctrl+Shift+1–9')
     expect(section?.textContent).toContain('Ctrl+Insert')
     expect(section?.textContent).toContain('Ctrl+Enter')
+    expect(section?.querySelector('[data-testid="keyboard-shortcut-row-inbox-cycle-agent"]')?.textContent).toContain('Shift+Tab')
     expect(section?.querySelector('[data-testid="keyboard-shortcut-row-inbox-send-background"]')?.textContent).toContain('keep the composer open')
     expect(section?.textContent).toContain('Tab')
     expect(section?.textContent).toContain('Home')

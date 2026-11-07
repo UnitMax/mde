@@ -62,6 +62,25 @@ async function click(button: HTMLElement | null): Promise<void> {
 }
 
 describe('the send button', () => {
+  it('cycles available agents in picker order from the message box', async () => {
+    const onAgentChange = vi.fn()
+    const options: ChatComposerProps['options'] = { status: 'ready', value: {
+      agents: [{ id: 'review', name: 'Review' }, { id: 'plan', name: 'Plan' }, { id: 'build', name: 'Build' }],
+      models: [], defaultModel: null, defaultAgent: null, skills: [],
+    } }
+    const { box, render } = await setup({ options, onAgentChange })
+    expect((await pressMessageKey(box, 'Tab', { shiftKey: true })).defaultPrevented).toBe(true)
+    expect(onAgentChange).toHaveBeenLastCalledWith('plan')
+    await render({ agent: 'plan' })
+    await pressMessageKey(box, 'Tab', { shiftKey: true })
+    expect(onAgentChange).toHaveBeenLastCalledWith('review')
+    await render({ agent: 'review' })
+    await pressMessageKey(box, 'Tab', { shiftKey: true })
+    expect(onAgentChange).toHaveBeenLastCalledWith('build')
+    await render({ options: { status: 'ready', value: { ...options.value, agents: [] } } })
+    expect((await pressMessageKey(box, 'Tab', { shiftKey: true })).defaultPrevented).toBe(false)
+  })
+
   it.each([
     ['win32', 'Ctrl+Enter'],
     ['darwin', 'Cmd+Enter'],

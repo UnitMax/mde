@@ -549,6 +549,15 @@ export const ChatComposer = forwardRef(function ChatComposer({
 
   const onKeyDown = (event: KeyboardEvent): void => {
     if (event.isComposing) return
+    if (event.key === 'Tab' && event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && !disabled && options?.status === 'ready') {
+      const agents = orderAgents(options.value.agents)
+      if (agents.length > 1) {
+        event.preventDefault()
+        const current = agents.findIndex((item) => item.id === agent)
+        onAgentChange(agents[(current + 1) % agents.length]!.id)
+        return
+      }
+    }
     if (onSaveDraft && (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 's') {
       event.preventDefault()
       if (canSave) onSaveDraft()
