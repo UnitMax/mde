@@ -25,6 +25,7 @@ import {
   AlertDialogTitle
 } from '@/components/ui/alert-dialog'
 import { ipcErrorMessage } from '@/lib/ipc-error'
+import { cn } from '@/lib/utils'
 import { useWorkspace } from '@/store/workspace'
 import {
   attachSession,
@@ -48,6 +49,8 @@ import { getTerminalPalette } from '@/theme/themes'
 import {
   isTerminalPaneClosable,
   MAX_TERMINAL_COUNT,
+  TERMINAL_CARD_GAP_PX,
+  TERMINAL_RESIZE_GAP_PX,
   swapTerminalPanes,
   terminalLayoutGeometry,
   terminalSplitRatio,
@@ -556,6 +559,7 @@ function TerminalPane({
   paneOverlayNumber = null,
   paneOverlayActive = false,
   splitControlsVisible = false,
+  cards = false,
   onSplit,
 }: {
   session: Session
@@ -571,6 +575,8 @@ function TerminalPane({
   paneOverlayNumber?: number | null
   paneOverlayActive?: boolean
   splitControlsVisible?: boolean
+  /** Draw the pane as a rounded card that stands out when it is the active one (the card layout setting). */
+  cards?: boolean
   onSplit: (side: TerminalSplitSide) => void
 }): JSX.Element {
   const clearExit = useWorkspace((state) => state.clearExit)
@@ -606,27 +612,39 @@ function TerminalPane({
     void restart()
   }
 
+  // With a single pane there is nothing to tell the active one from, so the card layout highlights only among several.
+  const cardActive = cards && paneOverlayActive && terminalLayout.panes.length > 1
   const borderClass = reorderState === 'active'
     ? 'border-accent'
     : reorderState === 'candidate' || reorderState === 'target'
       ? 'border-accent/70'
-      : paneOverlayVisible && paneOverlayActive
-        ? 'border-accent'
-        : 'border-line'
+      : cards
+        ? cardActive ? 'border-accent' : 'border-line-strong'
+        : paneOverlayVisible && paneOverlayActive
+          ? 'border-accent'
+          : 'border-line'
 
   return (
     <div
       onPointerDown={onFocus}
       onFocusCapture={onFocus}
-      className={`relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden border ${borderClass} bg-bg ${
-        reorderState === 'active' ? 'opacity-45' : ''
-      }`}
+      data-testid="terminal-pane"
+      data-card={cards ? 'true' : 'false'}
+      data-active={cardActive ? 'true' : 'false'}
+      className={cn(
+        'relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden border bg-bg',
+        borderClass,
+        cards && 'rounded-lg transition-[border-color,box-shadow] duration-150 motion-reduce:transition-none',
+        cards && (cardActive ? 'shadow-[0_0_12px_-3px_color-mix(in_srgb,var(--color-accent)_45%,transparent)]' : 'shadow-sm'),
+        reorderState === 'active' && 'opacity-45'
+      )}
     >
       <TerminalPaneHeader
         session={session}
         pane={pane}
         terminalLayout={terminalLayout}
         focused={paneOverlayActive}
+        card={cards}
         isFullscreen={isFullscreen}
         onToggleFullscreen={onToggleFullscreen}
         onTitleChange={onTitleChange}
@@ -757,6 +775,10 @@ interface TerminalResizeHandleProps {
   splitId: string
   axis: TerminalResizeAxis
   ratio: number
+  /** The space the panes leave between them, which the divider is centered in. */
+  gap: number
+  /** Card layout: the divider shows as a rounded bar in the wider gap. */
+  cards: boolean
   style: CSSProperties
   onResize: (ratio: number) => void
 }
@@ -773,6 +795,8 @@ function TerminalResizeHandle({
   splitId,
   axis,
   ratio,
+  gap,
+  cards,
   style,
   onResize
 }: TerminalResizeHandleProps): JSX.Element {
@@ -835,7 +859,7 @@ function TerminalResizeHandle({
       ? event.clientX - bounds.left
       : event.clientY - bounds.top
     const trackSize = axis === 'column' ? bounds.width : bounds.height
-    drag.pendingRatio = terminalSplitRatio(pointerPosition, trackSize)
+    drag.pendingRatio = terminalSplitRatio(pointerPosition, trackSize, undefined, gap)
 
     if (drag.frame !== undefined) return
     drag.frame = requestAnimationFrame(() => {
@@ -846,12 +870,14 @@ function TerminalResizeHandle({
     })
   }
 
-  const lineClass = axis === 'column' ? 'h-full w-px' : 'h-px w-full'
+  const lineClass = cards
+    ? axis === 'column' ? 'h-full w-0.5 rounded-full' : 'h-0.5 w-full rounded-full'
+    : axis === 'column' ? 'h-full w-px' : 'h-px w-full'
   const handleClass = axis === 'column'
     ? 'h-full w-2 -translate-x-1/2 cursor-col-resize flex-col'
     : 'h-2 w-full -translate-y-1/2 cursor-row-resize flex-row'
 
-  const position = `calc(${ratio * 100}% + ${0.5 - ratio}px)`
+  const position = `calc(${ratio * 100}% + ${gap / 2 - ratio * gap}px)`
   return (
     <div ref={containerRef} className="pointer-events-none absolute" style={style}>
       <div
@@ -872,7 +898,7 @@ function TerminalResizeHandle({
           const bounds = containerRef.current?.getBoundingClientRect()
           const size = bounds ? axis === 'column' ? bounds.width : bounds.height : 0
           const target = ratio + (event.key === decrease ? -0.02 : 0.02)
-          onResize(size > 0 ? terminalSplitRatio(target * (size - 1) + 0.5, size) : Math.max(0.05, Math.min(0.95, target)))
+          onResize(size > 0 ? terminalSplitRatio(target * (size - gap) + gap / 2, size, undefined, gap) : Math.max(0.05, Math.min(0.95, target)))
         }}
         className={`group pointer-events-auto absolute z-20 flex touch-none items-center justify-center ${handleClass}`}
         style={axis === 'column' ? { left: position, top: 0 } : { top: position, left: 0 }}
@@ -1297,7 +1323,9 @@ export function TerminalView({
   const renderedPanes = terminalLayout.panes
   const fullscreenPane = terminalFullscreenPane(renderedPanes, fullscreenTerminalId)
   const isFullscreen = fullscreenPane !== null
-  const geometry = terminalLayoutGeometry(terminalLayout.tree)
+  const cards = terminalSettings.terminalCards
+  const gap = cards ? TERMINAL_CARD_GAP_PX : TERMINAL_RESIZE_GAP_PX
+  const geometry = terminalLayoutGeometry(terminalLayout.tree, gap)
 
   const renderPane = (pane: TerminalPaneState, index: number): JSX.Element => (
     <div
@@ -1333,6 +1361,7 @@ export function TerminalView({
         paneOverlayActive={pane.terminalId === focusedTerminalId}
         onClose={() => requestClosePane(pane.terminalId)}
         splitControlsVisible={splitModifierHeld && !reorderSourceId && terminalLayout.panes.length < MAX_TERMINAL_COUNT}
+        cards={cards}
         onSplit={(side) => {
           setFullscreenTerminalId(null)
           onSplitPane(pane.terminalId, side)
@@ -1356,7 +1385,9 @@ export function TerminalView({
       )}
       <div
         ref={gridRef}
-        className="relative h-full min-h-0 flex-1 bg-line"
+        data-testid="terminal-grid"
+        data-cards={cards ? 'true' : 'false'}
+        className={cn('relative h-full min-h-0 flex-1', cards ? 'bg-panel' : 'bg-line')}
         onPointerMoveCapture={(event) => {
           setSplitModifierHeld(event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey &&
             !document.querySelector('[role="dialog"], [role="alertdialog"]'))
@@ -1369,17 +1400,22 @@ export function TerminalView({
           if (!reorderDragRef.current) setHoveredPaneId(null)
         }}
       >
-        {(fullscreenPane ? [fullscreenPane] : renderedPanes).map((pane) => renderPane(pane, renderedPanes.indexOf(pane)))}
-        {!isFullscreen && geometry.splits.map(({ node, style }) => (
-          <TerminalResizeHandle
-            key={node.id}
-            splitId={node.id}
-            axis={node.axis}
-            ratio={node.ratio}
-            style={style}
-            onResize={(ratio) => onLayoutResize(node.id, ratio)}
-          />
-        ))}
+        {/* Panes are positioned against this box, so the card layout's margin around them is its inset. */}
+        <div className="absolute" style={{ inset: cards ? TERMINAL_CARD_GAP_PX : 0 }}>
+          {(fullscreenPane ? [fullscreenPane] : renderedPanes).map((pane) => renderPane(pane, renderedPanes.indexOf(pane)))}
+          {!isFullscreen && geometry.splits.map(({ node, style }) => (
+            <TerminalResizeHandle
+              key={node.id}
+              splitId={node.id}
+              axis={node.axis}
+              ratio={node.ratio}
+              gap={gap}
+              cards={cards}
+              style={style}
+              onResize={(ratio) => onLayoutResize(node.id, ratio)}
+            />
+          ))}
+        </div>
       </div>
     </div>
   )

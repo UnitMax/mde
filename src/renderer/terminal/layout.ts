@@ -19,6 +19,8 @@ export interface SessionTerminalLayout {
 
 export const TERMINAL_RESIZE_MIN_TRACK_PX = 120
 export const TERMINAL_RESIZE_GAP_PX = 1
+/** The space between (and around) terminal cards in the card layout; a divider sits in the middle of it. */
+export const TERMINAL_CARD_GAP_PX = 6
 
 export function paneKey(pane: TerminalPaneState): string {
   return pane.paneId ?? pane.terminalId
@@ -88,7 +90,7 @@ const rectStyle = (rect: Rectangle): CSSProperties => ({
 })
 
 /** Flat positioned slots keep terminal components mounted when their split ancestry changes. */
-export function terminalLayoutGeometry(tree: TerminalLayoutNode): {
+export function terminalLayoutGeometry(tree: TerminalLayoutNode, gap = TERMINAL_RESIZE_GAP_PX): {
   panes: { paneId: string; style: CSSProperties }[]
   splits: { node: Extract<TerminalLayoutNode, { type: 'split' }>; style: CSSProperties }[]
 } {
@@ -102,13 +104,13 @@ export function terminalLayoutGeometry(tree: TerminalLayoutNode): {
     splits.push({ node, style: rectStyle(rect) })
     const size = node.axis === 'column' ? 'width' : 'height'
     const start = node.axis === 'column' ? 'left' : 'top'
-    const usable = { ...rect[size], pixels: rect[size].pixels - TERMINAL_RESIZE_GAP_PX }
+    const usable = { ...rect[size], pixels: rect[size].pixels - gap }
     const first = { fraction: usable.fraction * node.ratio, pixels: usable.pixels * node.ratio }
     const second = { fraction: usable.fraction * (1 - node.ratio), pixels: usable.pixels * (1 - node.ratio) }
     visit(node.first, { ...rect, [size]: first })
     visit(node.second, { ...rect, [size]: second, [start]: {
       fraction: rect[start].fraction + first.fraction,
-      pixels: rect[start].pixels + first.pixels + TERMINAL_RESIZE_GAP_PX,
+      pixels: rect[start].pixels + first.pixels + gap,
     } })
   }
   visit(tree, {

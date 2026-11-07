@@ -113,6 +113,14 @@ blocks, edit/write diffs (including line numbers and change markers), and their 
 change counts. Changes take effect immediately in the open conversation, including content
 expanded or streamed afterward; code preview font selection is independent of the terminal font.
 
+The Appearance section also has a **Card terminals** switch (`terminalCards` in the local terminal
+settings, off by default). Off, panes tile edge to edge, divided by a 1px line. On, `TerminalView` draws
+every pane as a rounded card on the panel background with a 6px margin around and between the cards
+(`TERMINAL_CARD_GAP_PX`; `terminalLayoutGeometry` takes the gap, and the dividers sit in the middle of it,
+showing as a thin rounded bar on hover). With more than one pane, the pane that last took focus gets an accent
+border and glow, and the titles of the others are muted; a lone pane is not singled out. The switch applies
+at once to every `TerminalView`, so the Sessions view and the Inbox sidebar terminal change together.
+
 The Settings dialog is a single dialog mounted by `App` (`src/renderer/components/SettingsDialog.tsx`)
 and opened through the workspace store's `openSettings(section)`, so any view can open it at a
 given section. The Settings button in the title bar, next to the mini Inbox button, opens it at Appearance and is available in every mode.

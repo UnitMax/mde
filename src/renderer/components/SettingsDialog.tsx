@@ -282,6 +282,14 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
                       </SelectContent>
                     </Select>
                   </label>
+
+                  <SwitchRow
+                    checked={settings.terminalCards}
+                    label="Card terminals"
+                    description="Show each terminal as a rounded card with space around it, and highlight the active one. Applies to every terminal layout, including the Inbox sidebar."
+                    testId="terminal-cards"
+                    onClick={() => updateSettings({ terminalCards: !settings.terminalCards })}
+                  />
                 </div>
               </section>
             )}

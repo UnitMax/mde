@@ -52,6 +52,7 @@ describe('terminal settings', () => {
       theme: 'slate',
       escapeExitsFullscreen: false,
       showTerminalInstances: false,
+      terminalCards: false,
       osc52Policy: 'notify',
       openCodeExecutable: 'opencode'
     })
@@ -68,6 +69,7 @@ describe('terminal settings', () => {
       theme: 'slate',
       escapeExitsFullscreen: false,
       showTerminalInstances: false,
+      terminalCards: false,
       osc52Policy: 'notify',
       openCodeExecutable: 'opencode'
     })
@@ -90,6 +92,7 @@ describe('terminal settings', () => {
       theme: 'frost',
       escapeExitsFullscreen: false,
       showTerminalInstances: false,
+      terminalCards: false,
       osc52Policy: 'notify',
       openCodeExecutable: 'opencode'
     })
@@ -101,6 +104,7 @@ describe('terminal settings', () => {
     ).toMatchObject({
       escapeExitsFullscreen: false,
       showTerminalInstances: false,
+      terminalCards: false,
       osc52Policy: 'notify',
       openCodeExecutable: 'opencode'
     })
@@ -116,6 +120,14 @@ describe('terminal settings', () => {
     )
     expect(stored).not.toHaveProperty('agents')
     expect(stored.openCodeExecutable).toBe('opencode')
+  })
+
+  it('keeps the card terminals preference only when it is a boolean, and defaults it off', () => {
+    expect(defaultTerminalSettings(available).terminalCards).toBe(false)
+    expect(resolveTerminalSettings({ terminalCards: true }, available).terminalCards).toBe(true)
+    expect(resolveTerminalSettings({ terminalCards: false }, available).terminalCards).toBe(false)
+    expect(resolveTerminalSettings({ terminalCards: 'yes' }, available).terminalCards).toBe(false)
+    expect(resolveTerminalSettings({}, available).terminalCards).toBe(false)
   })
 
   it('ignores the removed per-session OpenCode instance setting', () => {
@@ -141,6 +153,7 @@ describe('terminal settings', () => {
       theme: 'slate',
       escapeExitsFullscreen: false,
       showTerminalInstances: false,
+      terminalCards: false,
       osc52Policy: 'notify',
       openCodeExecutable: 'opencode'
     })
@@ -157,6 +170,7 @@ describe('terminal settings', () => {
       theme: 'ember' as const,
       escapeExitsFullscreen: false,
       showTerminalInstances: true,
+      terminalCards: true,
       osc52Policy: 'ask' as const,
       openCodeExecutable: 'opencode'
     }

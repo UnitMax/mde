@@ -44,6 +44,8 @@ export interface TerminalPaneHeaderProps {
   terminalLayout: SessionTerminalLayout
   /** The pane that last took focus; only singled out when there is another pane to tell it from. */
   focused: boolean
+  /** The card layout: with several panes, the ones that are not active read quieter so the active one stands out. */
+  card?: boolean
   isFullscreen: boolean
   onToggleFullscreen: () => void
   onTitleChange: (title: string | null) => void
@@ -64,6 +66,7 @@ export function TerminalPaneHeader({
   pane,
   terminalLayout,
   focused,
+  card = false,
   isFullscreen,
   onToggleFullscreen,
   onTitleChange,
@@ -122,7 +125,7 @@ export function TerminalPaneHeader({
       aria-label={title}
       className={cn(
         'group/header @container/pane relative flex h-7 shrink-0 items-center gap-2 border-b bg-panel pl-2.5 pr-1',
-        showFocus ? 'border-accent/50' : 'border-line'
+        showFocus ? (card ? 'border-accent/30' : 'border-accent/50') : 'border-line'
       )}
       data-focused={focused ? 'true' : 'false'}
       data-testid="terminal-pane-title-bar"
@@ -146,7 +149,7 @@ export function TerminalPaneHeader({
           />
         ) : (
           <span
-            className="min-w-0 truncate text-xs font-medium text-fg"
+            className={cn('min-w-0 truncate text-xs font-medium', card && paneCount > 1 && !focused ? 'text-fg-muted' : 'text-fg')}
             data-testid="terminal-pane-title"
             title={[title, directory, 'Double-click to rename'].filter(Boolean).join(' · ')}
             onDoubleClick={(event) => {

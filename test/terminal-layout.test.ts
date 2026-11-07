@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   isTerminalPaneClosable, removeTerminalPane,
   terminalFocusTargetAfterRemoval, swapTerminalPanes, orderTerminalPanes,
-  terminalSplitRatio, terminalLayoutGeometry, MAX_TERMINAL_COUNT,
+  terminalSplitRatio, terminalLayoutGeometry, MAX_TERMINAL_COUNT, TERMINAL_CARD_GAP_PX,
 } from '../src/renderer/terminal/layout'
 import { createRuntimeLayout, defaultSessionTab, persistRuntimeLayout, splitRuntimePane } from '../src/renderer/terminal/tabs'
 import { layoutResized } from '../src/renderer/terminal/layout-edits'
@@ -71,6 +71,17 @@ describe('dynamic terminal layouts', () => {
       { left: 'calc(50% + 0.5px)', top: 'calc(50% + 0.5px)', width: 'calc(50% + -0.5px)', height: 'calc(50% + -0.5px)' },
     ])
     expect(geometry.splits[1]?.style).toEqual({ left: 'calc(50% + 0.5px)', top: 'calc(0% + 0px)', width: 'calc(50% + -0.5px)', height: 'calc(100% + 0px)' })
+  })
+
+  it('spaces nested geometry by a wider gap, centering each divider in it', () => {
+    const three = split(split(single(), 1, 'right'), 2, 'bottom')
+    const geometry = terminalLayoutGeometry(three.tree, TERMINAL_CARD_GAP_PX)
+    const half = TERMINAL_CARD_GAP_PX / 2
+    expect(geometry.panes.map((pane) => pane.style)).toEqual([
+      { left: 'calc(0% + 0px)', top: 'calc(0% + 0px)', width: `calc(50% + -${half}px)`, height: 'calc(100% + 0px)' },
+      { left: `calc(50% + ${half}px)`, top: 'calc(0% + 0px)', width: `calc(50% + -${half}px)`, height: `calc(50% + -${half}px)` },
+      { left: `calc(50% + ${half}px)`, top: `calc(50% + ${half}px)`, width: `calc(50% + -${half}px)`, height: `calc(50% + -${half}px)` },
+    ])
   })
 
   it('clamps a dragged divider so both sides remain usable', () => {
