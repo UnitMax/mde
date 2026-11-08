@@ -130,7 +130,7 @@ export function SessionTabStrip({
   const mask = overflowMask(overflow)
 
   return (
-    <div className="flex h-9 shrink-0 items-center gap-1 border-b border-line bg-panel px-2" data-testid="session-tab-strip">
+    <div className="fancy-glass flex h-9 shrink-0 items-center gap-1 border-b border-line bg-panel px-2" data-testid="session-tab-strip">
       <div
         ref={listRef}
         role="tablist"

@@ -632,7 +632,7 @@ export function Sidebar({
 
   if (collapsed && activeSection === 'sessions') {
     return (
-      <aside className="flex h-full min-h-0 w-11 shrink-0 flex-col items-center overflow-hidden border-r border-line bg-panel py-2">
+      <aside className="fancy-glass flex h-full min-h-0 w-11 shrink-0 flex-col items-center overflow-hidden border-r border-line bg-panel py-2">
         <div className="mt-2 min-h-0 w-full flex-1 overflow-y-auto">
           {activeSection === 'sessions' && (
             <div className="flex flex-col items-center gap-1">
@@ -717,7 +717,7 @@ export function Sidebar({
   }
 
   return (
-    <aside className="flex w-[260px] shrink-0 flex-col border-r border-line bg-panel">
+    <aside className="fancy-glass flex w-[260px] shrink-0 flex-col border-r border-line bg-panel">
       <div className="min-h-0 flex-1 px-2 pb-2 pt-3">
         <div
           id="sidebar-section-sessions"

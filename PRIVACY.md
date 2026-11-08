@@ -49,6 +49,9 @@ backed-up locations can place copies elsewhere. These stores are not encrypted b
   the Inbox's right-hand sidebar is (a number of pixels), and the arrangement of the Inbox terminal
   (a tree of pane IDs, split IDs, horizontal or vertical directions, and numeric divider ratios).
   Neither holds terminal content or pane titles; the terminal's shells are not restored on the next run.
+- The renderer's local storage (`mde.fancy-mode`): whether fancy mode is on, which of its animated
+  backgrounds is chosen, and whether the Inbox's unread and working threads are animated (a small JSON
+  object of two booleans and a background name). Nothing leaves the device; the animations are drawn locally.
 - The renderer's local storage (`mde.inbox-floating-terminal`): whether the Inbox terminal floats over the
   conversation, where its window was left (four pixel numbers) and whether it is maximized. No terminal
   content.

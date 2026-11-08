@@ -132,6 +132,43 @@ showing as a thin rounded bar on hover). With more than one pane, the pane that 
 border and glow, and the titles of the others are muted; a lone pane is not singled out. The switch applies
 at once to every `TerminalView`, so the Sessions view and the Inbox sidebar terminal change together.
 
+The Appearance section ends with **Fancy mode** (`src/renderer/fancy/`, `FancyModeSettings`), an opt-in extra that
+is off by default. Its settings (`enabled`, `background`, `threadEffects`) live in the renderer's local storage under
+`mde.fancy-mode`, read and written by `fancy/settings.ts` and held in the `useFancyMode` store. Turned on, it does two
+things, each a canvas drawn by the one shared animation loop in `fancy/scheduler.ts` (a single
+`requestAnimationFrame` for everything, a frame rate per task, no drawing while the page is hidden). Under the system's
+reduced-motion setting nothing animates: each canvas draws one still picture.
+
+- **An animated background**, chosen from three: **Aurora** (curtains of light with shimmering rays over faint
+  stars), **Constellation** (a drifting star network; signals hop along its links, shooting stars cross, and the stars
+  near the cursor lean toward it) and **Contours** (a topographic map of drifting noise traced with marching squares,
+  `backgrounds/contours-math.ts`, with every fourth line heavier). `FancyBackground` is a canvas at `-z-10` in `App`'s
+  root, which is `isolate`d, so it sits above the root's color and below every panel; it lets every click through. The
+  panels that carry `fancy-glass` (title bar, both sidebars, the Files panel, the session tab strip) become frosted
+  glass over it, by a rule in `index.css` that applies only under the `data-fancy-bg` attribute `App` sets while the
+  background is on; terminals and dialogs stay solid. All three are 2D canvases, not shaders: terminals hold WebGL
+  contexts, Chromium drops the oldest one past a limit, and a background must never take a terminal's. Each draws at
+  full strength and `backgroundOpacity(palette)` sets the layer's opacity, the largest (up to 0.6 on a dark theme, 0.4
+  on a light one) at which body text keeps a contrast of 4.5 against a bright peak of the theme's own colors, so a
+  theme whose text has little to spare (One Dark) gets a fainter background; `test/fancy-color.test.ts` holds every
+  theme to it. The colors are the theme's: its accent, its green, and two hues turned 52 degrees either way from the
+  accent (`rotateHue`), so every theme gets a set that sits together. The settings show a small live preview of each
+  background, moving while it is hovered or chosen.
+- **Thread effects** in the Inbox's thread list (`ThreadEffect`, a canvas at `-z-10` in the row, which is `isolate`d so
+  the effect sits above the row's color and below its text): an unread thread gets a storm (`thread-effects/lightning.ts`:
+  two arcs of current crackle round the border, small arcs jump in from the edge, and every one to three seconds a
+  forked bolt, from midpoint displacement, cracks across the row, flashing twice, lighting the row and throwing
+  sparks), and a working thread gets digital rain (`thread-effects/matrix-rain.ts`: falling columns of katakana and
+  digits, or digits and letters where the fonts cannot draw katakana, with a glowing head, a band of light sweeping down
+  and a packet of light running along the lower edge). A thread that is both unread and working shows the storm. The
+  working effect also shows in the Working section, since it uses the same row. A row draws only while on screen
+  (`IntersectionObserver`), so a long list costs what the visible rows cost. The mini Inbox window has no effects.
+
+The geometry and the timing of the effects (`generateBolt`, `strikeEnvelope`, `roundedPerimeter`, the rain's
+simulation, the contour lines) are pure functions with tests; the drawing itself was checked by eye in headless
+Chromium. Fancy mode must stay cheap: add nothing that runs outside the shared loop, and nothing that draws for a row
+that is not on screen.
+
 The Settings dialog is a single dialog mounted by `App` (`src/renderer/components/SettingsDialog.tsx`)
 and opened through the workspace store's `openSettings(section)`, so any view can open it at a
 given section. The Settings button in the title bar, next to the mini Inbox button, opens it at Appearance and is available in every mode.
