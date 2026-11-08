@@ -205,7 +205,8 @@ function InboxThreadRow({
     <>
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <div className={cn('group relative rounded', selected || multiSelected ? 'bg-active' : 'hover:bg-hover', multiSelected && 'ring-1 ring-inset ring-accent')}>
+          <div className={cn('group relative rounded', selected || multiSelected ? 'bg-active' : unread ? 'bg-accent/[0.08] hover:bg-hover' : 'hover:bg-hover', multiSelected && 'ring-1 ring-inset ring-accent')}>
+          {selected && <span aria-hidden="true" data-testid={`inbox-thread-selected-bar-${thread.id}`} className="pointer-events-none absolute inset-y-2 left-0 w-0.5 rounded-full bg-accent" />}
           <button
             type="button"
             data-testid={`inbox-thread-${thread.id}`}
@@ -213,7 +214,7 @@ function InboxThreadRow({
             aria-current={selected || undefined}
             aria-label={multiSelected ? `${thread.customTitle ?? thread.title}, selected` : undefined}
             onClick={onSelect}
-            className="flex w-full min-w-0 flex-col gap-0.5 rounded px-2 py-1.5 text-left"
+            className="flex w-full min-w-0 flex-col gap-0.5 rounded px-2.5 py-2 text-left"
           >
             <span
               className={cn(
@@ -234,7 +235,7 @@ function InboxThreadRow({
               {unread && (
                 <span
                   aria-label="Unread"
-                  className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+                  className="h-2 w-2 shrink-0 rounded-full bg-accent"
                 />
               )}
               {thread.forkedFrom && (
@@ -259,8 +260,9 @@ function InboxThreadRow({
               )}
               <span
                 className={cn(
-                  'min-w-0 flex-1 truncate text-[13px]',
-                  unread ? 'font-semibold text-fg' : selected ? 'text-fg' : 'text-fg-muted'
+                  'min-w-0 flex-1 truncate text-[14px]',
+                  // Unread reads at a glance: bold in the full colour, against regular weight in a softer one.
+                  unread ? 'font-bold text-fg' : 'font-normal text-fg/80'
                 )}
               >
                 {thread.customTitle ?? thread.title}
@@ -268,13 +270,13 @@ function InboxThreadRow({
               <time
                 dateTime={new Date(thread.lastActivityAt).toISOString()}
                 title={sessionDate(thread.lastActivityAt)}
-                className="shrink-0 text-[11px] text-fg-subtle group-hover:hidden group-focus-within:hidden"
+                className={cn('shrink-0 text-[11px] group-hover:hidden group-focus-within:hidden', unread ? 'font-semibold text-fg' : 'text-fg-muted')}
               >
                 {sessionAge(thread.lastActivityAt, now)}
               </time>
             </span>
             {/* With the icon in front of the title, the lines below start where the title does. */}
-            <span className={cn('flex w-full min-w-0 items-center gap-1 text-[11px] text-fg-subtle', titleIcons && 'pl-5')}>
+            <span className={cn('flex w-full min-w-0 items-center gap-1 text-[11px] text-fg-muted', titleIcons && 'pl-5')}>
               {!titleIcons && <ProjectIcon icon={project?.icon} />}
               <span className="min-w-0 truncate" title={thread.directory} data-testid={`inbox-thread-project-${thread.id}`}>
                 {project?.name ?? inboxFolderLabel(inboxThreadHome(thread))}
@@ -291,7 +293,7 @@ function InboxThreadRow({
             {(model || hasDraft || inboxStatusChip(thread)) && (
               <span className={cn('flex w-full min-w-0 items-center gap-1.5 text-[11px]', titleIcons && 'pl-5')}>
                 <span
-                  className="min-w-0 flex-1 truncate text-fg-subtle"
+                  className="min-w-0 flex-1 truncate text-fg-muted"
                   title={thread.model ? `${thread.model.providerId}/${thread.model.id}` : undefined}
                 >
                   {model}

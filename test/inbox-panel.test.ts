@@ -292,6 +292,12 @@ describe('Inbox', () => {
     expect(first.textContent).toContain('Done')
     expect((rows[1] as HTMLElement).dataset.unread).toBeUndefined()
     expect(rows[1]!.textContent).toContain('2h ago')
+    // Unread stands out by weight and colour, not by the dot alone: bold and full colour against regular and softer.
+    const title = (row: Element) => row.querySelector('.truncate')!.className
+    expect(title(rows[0]!)).toContain('font-bold')
+    expect(title(rows[1]!)).toContain('font-normal')
+    expect(title(rows[1]!)).not.toContain('font-bold')
+    expect(title(rows[1]!)).not.toContain('text-fg-muted')
 
     await act(async () => first.click())
     expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_one')
@@ -556,6 +562,11 @@ describe('Inbox thread fork', () => {
     expect(row?.getAttribute('aria-current')).toBe('true')
     // The original is where it was, unchanged.
     expect(panel.querySelector('[data-testid="inbox-thread-ses_one"]')?.getAttribute('aria-current')).toBeNull()
+    // The open thread carries an accent bar beside it, and every title is in the full text colour, read or not.
+    expect(panel.querySelector('[data-testid="inbox-thread-selected-bar-ses_fork"]')).not.toBeNull()
+    expect(panel.querySelector('[data-testid="inbox-thread-selected-bar-ses_one"]')).toBeNull()
+    expect(panel.querySelector('[data-testid="inbox-thread-ses_one"] .truncate')?.className).toContain('text-fg')
+    expect(panel.querySelector('[data-testid="inbox-thread-ses_one"] .truncate')?.className).not.toContain('text-fg-muted')
     expect(useWorkspace.getState().inboxThreads.find((item) => item.id === 'ses_one')).toEqual(thread({ lastActivityAt: expect.any(Number) }))
     expect(panel.querySelector('[data-testid="inbox-fork-status"]')).toBeNull()
     expect(alertText(panel)).toBeUndefined()
