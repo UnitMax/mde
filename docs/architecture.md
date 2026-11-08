@@ -181,18 +181,16 @@ The Inbox is selected in the title bar beside Sessions and To Do. It lists OpenC
 that action ("5m ago"), the title, the folder name with the full path as a tooltip, the Git branch,
 the model, and a status chip: Needs input or Needs permission, Done, Failed, or Working. Threads
 with activity you have not opened are bold with a dot, and the tab shows how many there are. The
-list can be searched by title, folder, branch and model, and filtered to All, Unread or Parked.
+list can be searched by title, folder, branch and model, and filtered to All, Unread or Parked (see **Toolbar** below).
 Unread includes threads waiting for an answer or permission even after they have been opened, until
-they no longer need input. Parked threads stay under Parked. A clear button appears inside the search
-field when it contains text; clicking it clears
-the query and returns focus to the field. Hovering or focusing a row shows a car icon and a "Park" label; parked threads offer
+they no longer need input. Parked threads stay under Parked. Hovering or focusing a row shows a car icon and a "Park" label; parked threads offer
 "Move to Inbox" instead. The context menu pins or unpins a thread, marks it read or unread, parks
 it, forks it, or deletes it. Pinned threads appear first in the same list with a small pin icon and
 no separate heading; each group keeps the most recent activity first. Pins respect the search and
-filter tabs, so parked pinned threads stay under Parked. The optional `pinned` flag is saved in
+status filter, so parked pinned threads stay under Parked. The optional `pinned` flag is saved in
 `inbox.json` through `inbox:set-pinned`; older records without it are unpinned.
 
-The gear at the end of the filters opens the Inbox's display settings. One of them adds a
+The gear at the end of the toolbar opens the Inbox's display settings. One of them adds a
 **Working** section to the sidebar, under the list rather than as another filter tab. Turned on, the
 unpinned threads that are working right now move out of the list into it, the run that began last first, each
 with the same row, menu and elapsed time, and they go back to the list (at the place their last
@@ -200,7 +198,7 @@ activity gives them) as soon as they stop. A thread that is done, failed, waitin
 permission, not yet started or parked is not in it. A parked thread that is still working therefore
 stays under Parked. Pinned working threads stay at the top of the main list and are left out of the
 Working section and its count. Unpinning one moves it into Working while that section is enabled.
-The section ignores the filter tabs, but the search narrows it along with the list. Its
+The section ignores the status filter, but the search narrows it along with the list. Its
 header (an arrow, the name and a count) folds it up, leaving the count; while it is folded those
 threads are not listed anywhere else. It takes at most 45% of the sidebar's height and scrolls beyond
 that, and the list above keeps a small minimum height. Both choices are kept in the renderer's
@@ -215,17 +213,26 @@ of the Working section, and to draft rows (where the icon comes before the pen m
 without an icon, or one removed from the Inbox, shows the plain folder, so every row has something in
 front and the titles stay lined up. The switch takes effect at once.
 
-**Project filter.** With two or more projects, a field under the search box ("All projects", with a layers
-icon) narrows the Inbox to one of them. Its menu lists every project by name with its picture, the number of
+**Toolbar.** The top of the Inbox tab is one row of small buttons (`InboxToolbar`): **New thread**, **Search** and
+**Filter** at the start, the project manager and the Inbox settings gear at the end. New thread opens the blank page
+(and shows as pressed while it is the page showing). Search opens a field under the row and puts the caret in it;
+a clear button appears inside the field while it has text, the first Escape empties the field and the next puts it
+away, and the button closes it, emptying it so that nothing out of sight narrows the list. The field stays open while
+it has text. Filter opens a menu with **Show** (All, Unread, Parked) and, from two projects on, **Project**. A narrowed
+list is never left unexplained: the filter button turns accent-colored with a dot, and a chip for each filter that is on
+(Unread, Parked, the project) sits under the row with an X to take it off.
+
+**Project filter.** With two or more projects, the Filter menu's **Project** section ("All projects", with a layers
+icon) narrows the Inbox to one of them. It lists every project by name with its picture, the number of
 threads it has in the Inbox (parked ones left out) and, in the tab badge's accent pill, how many of those are
-unread; "All projects" shows the totals. Picking one turns the field into that project's picture and name, tinted
-with the accent, with an X to go back to all of them. The filter applies to the thread list, to the Working
+unread; "All projects" shows the totals. Picking one shows that project's picture and name as a chip under the
+toolbar, tinted with the accent, with an X to go back to all of them. The filter applies to the thread list, to the Working
 section and to the Drafts section, together with the status tabs and the search; a thread started in a worktree
 belongs to the project the worktree was cut from, and a thread whose project was removed from the Inbox only shows
 with no project picked. The empty messages name the project ("No unread threads in app."). The Inbox tab's unread
 badge keeps counting every project. The choice is kept in `localStorage` (`mde.inbox-project-filter`, a project's
 folder ID; `store/inbox-view.ts`) and is forgotten once the projects have been read and it names none of them, so a
-removed project cannot leave the list narrowed to nothing. The field stays visible while a project is picked, even
+removed project cannot leave the list narrowed to nothing. The Project section stays in the menu, and the chip stays, while a project is picked, even
 with only one project left, so there is always a way back.
 
 **Drafts.** A new thread that was started and not sent is a draft, listed in a **Drafts** section
@@ -240,7 +247,7 @@ Opening a draft puts it on the new-thread page in its own folder to carry on wit
 in the list, marked as the open one, while New thread is not; choosing New thread then sets the
 open draft aside and shows a blank page. Choosing New thread on a blank page, or one nothing was
 typed on, does nothing. A thread started from a draft removes it. The section takes at most 35% of the
-sidebar's height and folds up like Working (`mde.inbox-drafts-collapsed`); the filter tabs do not
+sidebar's height and folds up like Working (`mde.inbox-drafts-collapsed`); the status filter do not
 apply to it, the search does (text, file name and folder). A draft whose folder was removed from the
 Inbox is kept, labelled "Removed folder", and opens in whichever folder the page shows. Unsent
 text in an existing thread is not listed here: it stays in that thread's box, as before, but the
@@ -409,7 +416,7 @@ home and parent buttons, a breadcrumb, and a "Show hidden folders" switch, and i
 Linux path.
 
 **Projects.** The project manager is a dialog, opened from the folder-with-a-cog button beside the
-Inbox settings gear in the thread list's filter row, or from "Manage projects…" in the new-thread
+Inbox settings gear in the Inbox toolbar, or from "Manage projects…" in the new-thread
 page's project menu (`InboxProjectsDialog`). It lists the projects by name with their folder, the WSL
 distro and how many threads each has (a thread in a worktree counts for the project the worktree was
 cut from), and offers Add project, Edit and Remove. Worktrees MDE made for threads are folders too

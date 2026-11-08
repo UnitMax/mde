@@ -11,10 +11,8 @@ import {
   Mail,
   MailOpen,
   PenLine,
-  PenSquare,
   Pin,
   PinOff,
-  Search,
   Trash2,
   X
 } from 'lucide-react'
@@ -22,11 +20,8 @@ import type { InboxThread } from '@shared/types'
 import { ElapsedTime } from '@/components/ElapsedTime'
 import { InboxChangesBadge } from '@/components/inbox/InboxChanges'
 import { InboxDraftsSection } from '@/components/inbox/InboxDrafts'
-import { InboxProjectFilter } from '@/components/inbox/InboxProjectFilter'
-import { InboxProjectsButton } from '@/components/inbox/InboxProjectsButton'
-import { InboxSettingsMenu } from '@/components/inbox/InboxSettingsMenu'
+import { InboxToolbar } from '@/components/inbox/InboxToolbar'
 import { ProjectIcon } from '@/components/inbox/ProjectIcon'
-import { Input } from '@/components/ui/input'
 import { ThreadRenameDialog, useThreadRename } from '@/components/inbox/ThreadRename'
 import {
   AlertDialog,
@@ -46,7 +41,6 @@ import {
 } from '@/components/ui/context-menu'
 import {
   INBOX_CLOCK_MS,
-  INBOX_FILTERS,
   countUnreadInboxThreads,
   inboxFolderLabel,
   inboxProjectSummaries,
@@ -552,6 +546,7 @@ export function InboxPanel(): JSX.Element {
   const forkThread = useInboxChat((state) => state.forkThread)
   const [filter, setFilter] = useState<InboxFilter>('all')
   const [query, setQuery] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   // A fork is a request to the service and can fail; the menu has no place to say so.
   const [fork, setFork] = useState<{ pending: boolean; error: string | null }>({ pending: false, error: null })
@@ -598,86 +593,23 @@ export function InboxPanel(): JSX.Element {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-1.5">
-      <div className="px-1 pt-0.5">
-        <button
-          type="button"
-          data-testid="inbox-new-thread-button"
-          aria-current={onNewThread || undefined}
-          // From a thread this opens the blank page; on the page itself it sets aside what is typed there.
-          onClick={() => (selectedId === null ? void startFresh() : selectThread(null))}
-          className={cn(
-            'flex h-7 w-full items-center gap-2 rounded px-2 text-[13px] transition-colors',
-            onNewThread ? 'bg-active text-fg' : 'text-fg-muted hover:bg-hover hover:text-fg'
-          )}
-        >
-          <PenSquare className="h-3.5 w-3.5" />
-          New thread
-        </button>
-      </div>
-      <div className="relative px-1">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-subtle" />
-        <Input
-          ref={searchRef}
-          aria-label="Search inbox"
-          placeholder="Search threads"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape' && query) {
-              event.stopPropagation()
-              setQuery('')
-            }
-          }}
-          className="h-7 pl-7 pr-7 text-xs"
-        />
-        {query.length > 0 && (
-          <button
-            type="button"
-            aria-label="Clear search"
-            title="Clear search"
-            onClick={() => {
-              setQuery('')
-              searchRef.current?.focus()
-            }}
-            className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-fg-subtle transition-colors hover:bg-hover hover:text-fg"
-          >
-            <X aria-hidden="true" className="h-3.5 w-3.5" />
-          </button>
-        )}
-      </div>
-      {(projectSummaries.length > 1 || project) && (
-        <InboxProjectFilter
-          summaries={projectSummaries}
-          selected={project}
-          total={threads.filter((thread) => !thread.archived).length}
-          unread={countUnreadInboxThreads(threads)}
-          onChange={setProjectFilter}
-        />
-      )}
-      <div className="flex items-center px-1">
-        <div role="group" aria-label="Inbox filter" className="flex gap-0.5">
-          {INBOX_FILTERS.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              aria-pressed={filter === option.id}
-              onClick={() => setFilter(option.id)}
-              className={cn(
-                'h-6 whitespace-nowrap rounded px-1 text-[11px] transition-colors',
-                filter === option.id
-                  ? 'bg-active text-fg'
-                  : 'text-fg-subtle hover:bg-hover hover:text-fg'
-              )}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-        <div className="ml-auto flex shrink-0 items-center">
-          <InboxProjectsButton />
-          <InboxSettingsMenu />
-        </div>
-      </div>
+      <InboxToolbar
+        newThreadActive={onNewThread}
+        // From a thread this opens the blank page; on the page itself it sets aside what is typed there.
+        onNewThread={() => (selectedId === null ? void startFresh() : selectThread(null))}
+        query={query}
+        onQueryChange={setQuery}
+        searchOpen={searchOpen}
+        onSearchOpenChange={setSearchOpen}
+        searchRef={searchRef}
+        filter={filter}
+        onFilterChange={setFilter}
+        summaries={projectSummaries}
+        project={project}
+        total={threads.filter((thread) => !thread.archived).length}
+        unread={countUnreadInboxThreads(threads)}
+        onProjectChange={setProjectFilter}
+      />
       {fork.pending && (
         <p role="status" data-testid="inbox-fork-status" className="mx-1 flex items-center gap-1.5 rounded bg-elevated px-2 py-1 text-[11px] text-fg-muted">
           <LoaderCircle aria-hidden="true" className="h-3 w-3 shrink-0 animate-spin text-accent motion-reduce:animate-none" />

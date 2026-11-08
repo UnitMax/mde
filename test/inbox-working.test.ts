@@ -15,6 +15,7 @@ import { useInboxChanges } from '../src/renderer/store/inbox-changes'
 import { useInboxView } from '../src/renderer/store/inbox-view'
 import { useWorkspace } from '../src/renderer/store/workspace'
 import type { InboxThread } from '../src/shared/types'
+import { openInboxSearch, showInboxThreads } from './helpers/inbox-toolbar'
 
 function thread(overrides: Partial<InboxThread> = {}): InboxThread {
   return {
@@ -198,8 +199,7 @@ describe('Inbox Working section', () => {
     useInboxView.setState({ workingSection: true })
     await render()
     expect(container.textContent).not.toContain('Parked run')
-    const parked = Array.from(container.querySelectorAll('button')).find((item) => item.textContent === 'Parked')!
-    await act(async () => parked.click())
+    await showInboxThreads(container, 'Parked')
     expect(listIds()).toEqual(['ses_parked'])
   })
 
@@ -209,8 +209,7 @@ describe('Inbox Working section', () => {
       thread({ id: 'ses_read_done', status: 'completed', readAt: 0 }),
     ] })
     await render()
-    const unread = Array.from(container.querySelectorAll('button')).find((item) => item.textContent === 'Unread')!
-    await act(async () => unread.click())
+    await showInboxThreads(container, 'Unread')
     expect(listIds()).toEqual(['ses_run', 'ses_read_done'])
     await act(async () => useInboxView.getState().setWorkingSection(true))
     expect(listIds()).toEqual(['ses_read_done'])
@@ -298,19 +297,17 @@ describe('Inbox Working section', () => {
   it('ignores the filter tabs, so it always shows what is running', async () => {
     useInboxView.setState({ workingSection: true })
     await render()
-    const filter = (label: string): HTMLElement =>
-      Array.from(container.querySelectorAll('button')).find((item) => item.textContent === label)!
-    await act(async () => filter('Unread').click())
+    await showInboxThreads(container, 'Unread')
     expect(listIds()).toEqual(['ses_ask'])
     expect(rowIds()).toEqual(['ses_run', 'ses_run2'])
-    await act(async () => filter('Parked').click())
+    await showInboxThreads(container, 'Parked')
     expect(rowIds()).toEqual(['ses_run', 'ses_run2'])
   })
 
   it('is searched with the list, since a working thread is not in the list to be found there', async () => {
     useInboxView.setState({ workingSection: true })
     await render()
-    const search = container.querySelector<HTMLInputElement>('[aria-label="Search inbox"]')!
+    const search = await openInboxSearch(container)
     const type = async (text: string): Promise<void> => {
       await act(async () => {
         Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, text)
@@ -417,12 +414,11 @@ describe('Inbox Working section', () => {
     expect(section()).toBeNull()
   })
 
-  it('keeps the gear after the filters with both switches in its menu', async () => {
+  it('keeps the gear at the end of the toolbar with both switches in its menu', async () => {
     await render()
     await openMenu()
     expect(document.body.querySelector('[data-testid="inbox-setting-changes"]')).not.toBeNull()
     expect(menuItem()).not.toBeNull()
-    const group = container.querySelector('[aria-label="Inbox filter"]')!
-    expect(group.querySelectorAll('button')).toHaveLength(3)
+    expect(container.querySelector('[aria-label="Filter threads"]')).not.toBeNull()
   })
 })

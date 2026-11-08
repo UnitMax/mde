@@ -16,6 +16,7 @@ import { useInboxDrafts } from '../src/renderer/store/inbox-drafts'
 import { useInboxView } from '../src/renderer/store/inbox-view'
 import { useWorkspace } from '../src/renderer/store/workspace'
 import type { ChatDraftSummary, InboxFolder, InboxThread } from '../src/shared/types'
+import { openInboxSearch, showInboxThreads } from './helpers/inbox-toolbar'
 
 function folder(id: string, name: string, overrides: Partial<InboxFolder> = {}): InboxFolder {
   return { id, name, directory: `/home/me/${name}`, target: { kind: 'native' }, createdAt: 1, lastUsedAt: 1, ...overrides }
@@ -192,10 +193,19 @@ describe('the Inbox panel narrowed to a project', () => {
   const workingIds = (): string[] => rowIds(q('inbox-working-section'))
   const draftIds = (): string[] =>
     Array.from(container.querySelectorAll('[data-testid^="inbox-draft-drf_"]')).map((row) => row.getAttribute('data-testid')!.replace('inbox-draft-', ''))
-  const filter = (): HTMLElement | null => q('inbox-project-filter')
+  /** The button that opens the filter menu, and the chip that says a project is picked. */
+  const filterButton = (): HTMLElement => q('inbox-filter-button')!
+  const chip = (): HTMLElement | null => q('inbox-project-filter')
   const render = async (): Promise<void> => { await act(async () => root.render(createElement(InboxPanel))) }
   const openMenu = async (): Promise<void> => {
-    await act(async () => { filter()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+    await act(async () => { filterButton().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+  }
+  /** Whether the menu has a project to pick, which it has only once there is a choice to make. */
+  const offersProjects = async (): Promise<boolean> => {
+    await openMenu()
+    const offered = option('all') !== null
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    return offered
   }
   const option = (id: string): HTMLElement | null => document.body.querySelector(`[data-testid="inbox-project-option-${id}"]`)
   const choose = async (id: string): Promise<void> => {
@@ -236,8 +246,8 @@ describe('the Inbox panel narrowed to a project', () => {
   it('lists every project in the Inbox until one is picked', async () => {
     await render()
 
-    expect(filter()!.textContent).toContain('All projects')
-    expect(filter()!.getAttribute('data-active')).toBeNull()
+    expect(chip()).toBeNull()
+    expect(filterButton().getAttribute('data-active')).toBeNull()
     expect(q('inbox-project-filter-clear')).toBeNull()
     // Newest first; the parked thread waits under Parked.
     expect(listIds()).toEqual(['ses_app1', 'ses_app2', 'ses_appwork', 'ses_appwt', 'ses_web1', 'ses_webwork'])
@@ -247,13 +257,13 @@ describe('the Inbox panel narrowed to a project', () => {
   it('is offered once there is a choice to make, and not before', async () => {
     setFolders([app])
     await render()
-    expect(filter()).toBeNull()
+    expect(await offersProjects()).toBe(false)
 
     await act(async () => setFolders([app, web]))
-    expect(filter()).not.toBeNull()
+    expect(await offersProjects()).toBe(true)
 
     await act(async () => setFolders([]))
-    expect(filter()).toBeNull()
+    expect(await offersProjects()).toBe(false)
   })
 
   it('narrows the list, and the drafts, to the project picked, worktree threads included', async () => {
@@ -262,9 +272,9 @@ describe('the Inbox panel narrowed to a project', () => {
 
     expect(listIds()).toEqual(['ses_app1', 'ses_app2', 'ses_appwork', 'ses_appwt'])
     expect(draftIds()).toEqual(['drf_app'])
-    expect(filter()!.textContent).toContain('app')
-    expect(filter()!.getAttribute('data-active')).toBe('true')
-    expect(filter()!.getAttribute('aria-label')).toBe('Project: app')
+    expect(chip()!.textContent).toBe('app')
+    expect(filterButton().getAttribute('data-active')).toBe('true')
+    expect(chip()!.getAttribute('title')).toBe(app.directory)
     expect(q('inbox-project-filter-icon')!.getAttribute('data-icon')).toBe('rocket')
     expect(useInboxView.getState().projectFilter).toBe('fld_app')
     expect(localStorage.getItem(INBOX_PROJECT_FILTER_STORAGE_KEY)).toBe('fld_app')
@@ -284,7 +294,8 @@ describe('the Inbox panel narrowed to a project', () => {
     expect(listIds()).toEqual(['ses_web1', 'ses_webwork'])
     await choose('all')
     expect(listIds()).toHaveLength(6)
-    expect(filter()!.getAttribute('data-active')).toBeNull()
+    expect(chip()).toBeNull()
+    expect(filterButton().getAttribute('data-active')).toBeNull()
   })
 
   it('shows the project with a check, and every project with its threads and how many are unread', async () => {
@@ -306,6 +317,7 @@ describe('the Inbox panel narrowed to a project', () => {
     expect(counts('all')).toEqual(['1', '6'])
     // Projects come in order of name, after "All projects".
     const order = Array.from(document.body.querySelectorAll('[role="menuitemradio"]')).map((item) => item.getAttribute('data-testid'))
+      .filter((id) => id!.startsWith('inbox-project-option'))
     expect(order).toEqual(['inbox-project-option-all', 'inbox-project-option-fld_app', 'inbox-project-option-fld_web'])
   })
 
@@ -327,15 +339,13 @@ describe('the Inbox panel narrowed to a project', () => {
     await render()
     await choose('fld_app')
 
-    const tab = (label: string): HTMLElement =>
-      Array.from(container.querySelectorAll<HTMLElement>('[aria-label="Inbox filter"] button')).find((item) => item.textContent === label)!
-    await act(async () => tab('Unread').click())
+    await showInboxThreads(container, 'Unread')
     expect(listIds()).toEqual(['ses_app2'])
-    await act(async () => tab('Parked').click())
+    await showInboxThreads(container, 'Parked')
     expect(listIds()).toEqual(['ses_appparked'])
 
-    await act(async () => tab('All').click())
-    const search = container.querySelector<HTMLInputElement>('[aria-label="Search inbox"]')!
+    await showInboxThreads(container, 'All')
+    const search = await openInboxSearch(container)
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'working')
       search.dispatchEvent(new Event('input', { bubbles: true }))
@@ -351,11 +361,9 @@ describe('the Inbox panel narrowed to a project', () => {
     expect(q('inbox-thread-list')!.textContent).toContain('No threads in web yet.')
     expect(q('inbox-thread-list')!.textContent).toContain('Start one with New thread.')
 
-    const tab = (label: string): HTMLElement =>
-      Array.from(container.querySelectorAll<HTMLElement>('[aria-label="Inbox filter"] button')).find((item) => item.textContent === label)!
-    await act(async () => tab('Unread').click())
+    await showInboxThreads(container, 'Unread')
     expect(q('inbox-thread-list')!.textContent).toContain('No unread threads in web.')
-    await act(async () => tab('Parked').click())
+    await showInboxThreads(container, 'Parked')
     expect(q('inbox-thread-list')!.textContent).toContain('No parked threads in web.')
   })
 
@@ -394,7 +402,7 @@ describe('the Inbox panel narrowed to a project', () => {
       await render()
 
       expect(listIds()).toHaveLength(6)
-      expect(filter()!.textContent).toContain('All projects')
+      expect(chip()).toBeNull()
       expect(useInboxView.getState().projectFilter).toBeNull()
       expect(localStorage.getItem(INBOX_PROJECT_FILTER_STORAGE_KEY)).toBeNull()
     })
@@ -407,7 +415,8 @@ describe('the Inbox panel narrowed to a project', () => {
       await act(async () => setFolders([app]))
       expect(useInboxView.getState().projectFilter).toBeNull()
       expect(listIds()).toHaveLength(6)
-      expect(filter()).toBeNull()
+      expect(chip()).toBeNull()
+      expect(await offersProjects()).toBe(false)
     })
 
     it('does not count a worktree folder as a project to narrow to', async () => {

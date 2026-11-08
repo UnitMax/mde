@@ -96,12 +96,10 @@ describe('Inbox display setting for Git changes', () => {
     expect(changes).toHaveBeenCalledTimes(1)
   })
 
-  it('puts the gear after the filters, outside the filter group', async () => {
+  it('puts the gear at the end of the toolbar, after the buttons that open the filters', async () => {
     await act(async () => root.render(createElement(InboxPanel)))
-    const group = container.querySelector('[aria-label="Inbox filter"]')!
-    expect(group.querySelectorAll('button')).toHaveLength(3)
-    expect(group.contains(gear())).toBe(false)
+    const filter = container.querySelector('[aria-label="Filter threads"]')!
     expect(gear().getAttribute('aria-label')).toBe('Inbox settings')
-    expect(group.compareDocumentPosition(gear()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(filter.compareDocumentPosition(gear()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })

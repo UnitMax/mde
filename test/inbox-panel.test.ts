@@ -9,6 +9,7 @@ import { InboxThreadView } from '../src/renderer/components/InboxThreadView'
 import { useInboxChat } from '../src/renderer/store/inbox-chat'
 import { useWorkspace } from '../src/renderer/store/workspace'
 import { messageInput, pressMessageKey } from './helpers/chat-input'
+import { openInboxFilterMenu, openInboxSearch, showInboxThreads } from './helpers/inbox-toolbar'
 
 const roots: Root[] = []
 const setRead = vi.fn(async () => null)
@@ -325,17 +326,24 @@ describe('Inbox', () => {
       ]
     })
     const panel = await render(createElement(InboxPanel))
-    expect(Array.from(panel.querySelectorAll('[aria-label="Inbox filter"] button')).map((item) => item.textContent))
+    await openInboxFilterMenu(panel)
+    expect(Array.from(document.body.querySelectorAll('[role="menuitemradio"]')).map((item) => item.textContent))
       .toEqual(['All', 'Unread', 'Parked'])
-    const filter = (label: string) => Array.from(panel.querySelectorAll('button')).find((item) => item.textContent === label)!
-    await act(async () => filter('Parked').click())
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    await showInboxThreads(panel, 'Parked')
     expect(panel.textContent).toContain('No parked threads.')
-    await act(async () => filter('Unread').click())
+    // A narrowed list says so, with a way back, under the toolbar.
+    expect(panel.querySelector('[data-testid="inbox-status-filter"]')?.textContent).toBe('Parked')
+    await showInboxThreads(panel, 'Unread')
     expect(panel.querySelector('[data-testid="inbox-thread-ses_one"]')).toBeNull()
     expect(panel.querySelector('[data-testid="inbox-thread-ses_two"]')).not.toBeNull()
-    await act(async () => filter('All').click())
+    await act(async () => panel.querySelector<HTMLElement>('[aria-label="Show all threads"]')!.click())
+    expect(panel.querySelector('[data-testid="inbox-status-filter"]')).toBeNull()
 
-    const search = panel.querySelector<HTMLInputElement>('[aria-label="Search inbox"]')!
+    // Search is a button until it is wanted.
+    expect(panel.querySelector('[aria-label="Search inbox"]')).toBeNull()
+    const search = await openInboxSearch(panel)
+    expect(document.activeElement).toBe(search)
     expect(panel.querySelector('[aria-label="Clear search"]')).toBeNull()
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
@@ -350,6 +358,49 @@ describe('Inbox', () => {
     expect(panel.querySelector('[aria-label="Clear search"]')).toBeNull()
     expect(panel.querySelector('[data-testid="inbox-thread-ses_one"]')).not.toBeNull()
     expect(panel.querySelector('[data-testid="inbox-thread-ses_two"]')).not.toBeNull()
+  })
+
+  it('puts the search away with Escape, or with its button, and keeps it while it has text', async () => {
+    useWorkspace.setState({ inboxThreads: [thread({ readAt: Date.now() })] })
+    const panel = await render(createElement(InboxPanel))
+    const button = (): HTMLButtonElement => panel.querySelector<HTMLButtonElement>('[aria-label="Search threads"]')!
+    expect(button().getAttribute('aria-expanded')).toBe('false')
+    await openInboxSearch(panel)
+    expect(button().getAttribute('aria-expanded')).toBe('true')
+    // The field is made again each time the search is opened, so it is looked up each time.
+    const type = async (text: string): Promise<void> => act(async () => {
+      const field = panel.querySelector<HTMLInputElement>('[aria-label="Search inbox"]')!
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, text)
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await type('feature')
+    // The first Escape empties the field, the second puts it away.
+    const escape = (): Promise<void> => act(async () => void panel.querySelector('[aria-label="Search inbox"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    await escape()
+    expect(panel.querySelector<HTMLInputElement>('[aria-label="Search inbox"]')!.value).toBe('')
+    await escape()
+    expect(panel.querySelector('[aria-label="Search inbox"]')).toBeNull()
+    expect(button().getAttribute('aria-expanded')).toBe('false')
+
+    // The button also puts it away, and clears what was typed, so the list is not narrowed by something out of sight.
+    await openInboxSearch(panel)
+    await type('zebra')
+    expect(panel.querySelector('[data-testid="inbox-thread-ses_one"]')).toBeNull()
+    await act(async () => button().click())
+    expect(panel.querySelector('[aria-label="Search inbox"]')).toBeNull()
+    expect(panel.querySelector('[data-testid="inbox-thread-ses_one"]')).not.toBeNull()
+  })
+
+  it('shows the filter button as on while the list is narrowed, and not otherwise', async () => {
+    useWorkspace.setState({ inboxThreads: [thread({ readAt: Date.now() })] })
+    const panel = await render(createElement(InboxPanel))
+    const filterButton = (): HTMLElement => panel.querySelector<HTMLElement>('[data-testid="inbox-filter-button"]')!
+    expect(filterButton().getAttribute('data-active')).toBeNull()
+    expect(panel.querySelector('[data-testid="inbox-active-filters"]')).toBeNull()
+    await showInboxThreads(panel, 'Parked')
+    expect(filterButton().getAttribute('data-active')).toBe('true')
+    await act(async () => panel.querySelector<HTMLElement>('[aria-label="Show all threads"]')!.click())
+    expect(filterButton().getAttribute('data-active')).toBeNull()
   })
 })
 

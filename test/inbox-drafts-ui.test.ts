@@ -15,6 +15,7 @@ import { useInboxDrafts } from '../src/renderer/store/inbox-drafts'
 import { useInboxView } from '../src/renderer/store/inbox-view'
 import { useWorkspace } from '../src/renderer/store/workspace'
 import type { ChatDraftRequest, ChatDraftSummary, InboxFolder, InboxThread } from '../src/shared/types'
+import { openInboxSearch, showInboxThreads } from './helpers/inbox-toolbar'
 
 const minutes = (count: number): number => Date.now() - count * 60_000
 
@@ -115,7 +116,7 @@ describe('Inbox Drafts section', () => {
   const render = async (): Promise<void> => { await act(async () => root.render(createElement(InboxPanel))) }
   const settle = async (): Promise<void> => { await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) }) }
   const type = async (value: string): Promise<void> => {
-    const input = container.querySelector<HTMLInputElement>('input[aria-label="Search inbox"]')!
+    const input = await openInboxSearch(container)
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
       input.dispatchEvent(new Event('input', { bubbles: true }))
@@ -387,7 +388,7 @@ describe('Inbox Drafts section', () => {
     ]
     await render()
     await settle()
-    await act(async () => Array.from(container.querySelectorAll<HTMLElement>('[aria-pressed]')).find((tab) => tab.textContent === 'Unread')!.click())
+    await showInboxThreads(container, 'Unread')
     expect(rowIds()).toEqual(['drf_one', 'drf_two'])
     await type('parser')
     expect(rowIds()).toEqual(['drf_two'])
