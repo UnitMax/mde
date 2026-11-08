@@ -77,7 +77,7 @@ function createWindow(): void {
     show: false,
     backgroundColor: '#0b0d10',
     autoHideMenuBar: true,
-    title: 'mde',
+    title: 'MDE',
     // The renderer draws its own title bar; the OS keeps only the window buttons.
     ...titleBar.windowOptions(),
     webPreferences: {

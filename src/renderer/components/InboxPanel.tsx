@@ -27,8 +27,7 @@ import { InboxProjectsButton } from '@/components/inbox/InboxProjectsButton'
 import { InboxSettingsMenu } from '@/components/inbox/InboxSettingsMenu'
 import { ProjectIcon } from '@/components/inbox/ProjectIcon'
 import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog'
+import { ThreadRenameDialog, useThreadRename } from '@/components/inbox/ThreadRename'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -105,14 +104,17 @@ const CHIP_TONES: Record<InboxStatusChip['tone'], string> = {
 /** `elapsed` adds how long a working thread has been going, counting up. */
 export function InboxStatusBadge({
   thread,
-  elapsed = false
+  elapsed = false,
+  hideDone = false
 }: {
   thread: InboxThread
   elapsed?: boolean
+  /** Leaves out "Done", for a place where finished is what a thread normally is. */
+  hideDone?: boolean
 }): JSX.Element | null {
   const chip = inboxStatusChip(thread)
   const cueAt = useWorkspace((state) => state.inboxCues[thread.id])
-  if (!chip) return null
+  if (!chip || (hideDone && thread.status === 'completed')) return null
   const cued = inboxCueActive(cueAt)
   return (
     <span
@@ -185,23 +187,8 @@ function InboxThreadRow({
   const setRead = useWorkspace((state) => state.setInboxThreadRead)
   const setArchived = useWorkspace((state) => state.setInboxThreadArchived)
   const setPinned = useWorkspace((state) => state.setInboxThreadPinned)
-  const setCustomTitle = useWorkspace((state) => state.setInboxThreadCustomTitle)
-  const [renaming, setRenaming] = useState(false)
-  const [name, setName] = useState('')
-  const [savingName, setSavingName] = useState(false)
-  const [nameError, setNameError] = useState<string | null>(null)
-  const saveName = async (value: string | null): Promise<void> => {
-    setSavingName(true)
-    setNameError(null)
-    try {
-      await setCustomTitle(thread.id, value)
-      setRenaming(false)
-    } catch (reason) {
-      setNameError(ipcErrorMessage(reason, 'Could not change the thread name.'))
-    } finally {
-      setSavingName(false)
-    }
-  }
+  const rename = useThreadRename(thread)
+  const { saving: savingName, error: nameError, renaming } = rename
   const pinLabel = thread.pinned ? 'Unpin thread' : 'Pin thread'
   const PinIcon = thread.pinned ? PinOff : Pin
   const parkLabel = thread.archived ? 'Move to Inbox' : 'Park'
@@ -355,15 +342,11 @@ function InboxThreadRow({
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
-          <ContextMenuItem disabled={savingName} onSelect={() => {
-            setName(thread.customTitle ?? thread.title)
-            setNameError(null)
-            setRenaming(true)
-          }}>
+          <ContextMenuItem disabled={savingName} onSelect={rename.start}>
             <PenLine aria-hidden="true" className="h-3.5 w-3.5" />
             Rename thread
           </ContextMenuItem>
-          <ContextMenuItem disabled={!thread.customTitle || savingName} onSelect={() => void saveName(null)}>
+          <ContextMenuItem disabled={!thread.customTitle || savingName} onSelect={() => void rename.save(null)}>
             <X aria-hidden="true" className="h-3.5 w-3.5" />
             Clear custom name
           </ContextMenuItem>
@@ -393,28 +376,7 @@ function InboxThreadRow({
       </ContextMenu>
 
       {nameError && !renaming && <p role="alert" className="px-2 text-xs text-danger">{nameError}</p>}
-      <Dialog open={renaming} onOpenChange={(open) => { if (!savingName) setRenaming(open) }}>
-        <DialogContent onOpenAutoFocus={(event) => {
-          event.preventDefault()
-          const input = document.getElementById(`inbox-thread-name-${thread.id}`) as HTMLInputElement | null
-          input?.focus()
-          input?.select()
-        }}>
-          <form onSubmit={(event) => { event.preventDefault(); if (name.trim() && !savingName) void saveName(name.trim()) }}>
-            <DialogTitle>Rename thread</DialogTitle>
-            <DialogDescription className="mt-1">
-              Use a custom name in the Inbox. Clear it from the right-click menu to use OpenCode’s title again.
-            </DialogDescription>
-            <label htmlFor={`inbox-thread-name-${thread.id}`} className="mb-1 mt-4 block text-xs text-fg-muted">Custom name</label>
-            <Input id={`inbox-thread-name-${thread.id}`} value={name} maxLength={512} disabled={savingName} onChange={(event) => setName(event.target.value)} />
-            {nameError && <p role="alert" className="mt-2 text-xs text-danger">{nameError}</p>}
-            <DialogFooter>
-              <Button type="button" variant="secondary" disabled={savingName} onClick={() => setRenaming(false)}>Cancel</Button>
-              <Button type="submit" disabled={!name.trim() || savingName}>{savingName ? 'Saving…' : 'Save'}</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <ThreadRenameDialog thread={thread} rename={rename} />
       <AlertDialog
         open={confirmingRemove}
         onOpenChange={(open) => {

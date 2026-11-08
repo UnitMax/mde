@@ -91,6 +91,14 @@ function button(container: HTMLElement, label: string): HTMLButtonElement {
   return found
 }
 
+/** Opens the header's thread menu and picks an item, as a person would with the keyboard. */
+async function threadAction(container: HTMLElement, label: string): Promise<void> {
+  await act(async () => button(container, 'Thread actions').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+  const item = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((entry) => entry.textContent?.trim() === label)
+  if (!item) throw new Error(`No menu item ${label}`)
+  await act(async () => item.click())
+}
+
 /**
  * A draft store in miniature: what a composer loads is what was last typed or put above it, kept per
  * draft. `initial` is the text of the open thread's draft.
@@ -708,20 +716,25 @@ describe('Inbox conversation', () => {
     let finish!: () => void
     api.chat.regenerateTitle.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve }))
     const view = await render()
-    await act(async () => button(view, 'Regenerate title').click())
+    const regenerating = (): boolean => view.querySelector('[role="status"][aria-label="Regenerating title"]') !== null
+    expect(regenerating()).toBe(false)
+    await threadAction(view, 'Regenerate title')
     expect(api.chat.regenerateTitle).toHaveBeenCalledWith({ threadId: 'ses_one' })
-    expect(button(view, 'Regenerate title').disabled).toBe(true)
-    expect(view.textContent).toContain('Regenerating…')
+    expect(regenerating()).toBe(true)
     await act(async () => useWorkspace.setState({ selectedInboxThreadId: 'ses_two' }))
-    expect(button(view, 'Regenerate title').disabled).toBe(false)
+    expect(regenerating()).toBe(false)
     await act(async () => useWorkspace.setState({ selectedInboxThreadId: 'ses_one' }))
-    expect(button(view, 'Regenerate title').disabled).toBe(true)
+    expect(regenerating()).toBe(true)
+    // The item cannot be picked again while the request runs.
+    await act(async () => button(view, 'Thread actions').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    expect(Array.from(document.querySelectorAll('[role="menuitem"]')).find((entry) => entry.textContent === 'Regenerate title')?.hasAttribute('data-disabled')).toBe(true)
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
     await act(async () => {
       useWorkspace.getState().upsertInboxThread({ ...original, title: 'Updated title' })
       finish()
     })
     expect(view.querySelector('h2')?.textContent).toBe('Updated title')
-    expect(button(view, 'Regenerate title').disabled).toBe(false)
+    expect(regenerating()).toBe(false)
     expect(useWorkspace.getState().inboxThreads.find((item) => item.id === original.id)?.title).toBe('Updated title')
   })
 
@@ -729,14 +742,14 @@ describe('Inbox conversation', () => {
     useWorkspace.setState({ inboxThreads: [thread(), thread({ id: 'ses_two' })], selectedInboxThreadId: 'ses_one' })
     api.chat.regenerateTitle.mockRejectedValueOnce(new Error("Error invoking remote method 'chat:regenerate-title': Error: Service unavailable"))
     const view = await render()
-    await act(async () => button(view, 'Regenerate title').click())
+    await threadAction(view, 'Regenerate title')
     expect(view.querySelector('[role="alert"]')?.textContent).toBe('Service unavailable')
     expect(view.querySelector('h2')?.textContent).toBe('Fix login')
     await act(async () => useWorkspace.setState({ selectedInboxThreadId: 'ses_two' }))
     expect(view.querySelector('[role="alert"]')).toBeNull()
     await act(async () => useWorkspace.setState({ selectedInboxThreadId: 'ses_one' }))
     expect(view.querySelector('[role="alert"]')?.textContent).toBe('Service unavailable')
-    await act(async () => button(view, 'Regenerate title').click())
+    await threadAction(view, 'Regenerate title')
     expect(view.querySelector('[role="alert"]')).toBeNull()
     expect(api.chat.regenerateTitle).toHaveBeenCalledTimes(2)
   })

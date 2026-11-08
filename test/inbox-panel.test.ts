@@ -214,7 +214,8 @@ describe('Inbox', () => {
 
     const main = await render(createElement(InboxThreadView))
     expect(main.textContent).toContain('Fix login')
-    expect(main.textContent).toContain('/home/me/app (Ubuntu)')
+    expect(main.querySelector('[data-testid="inbox-thread-folder"]')?.textContent).toBe('app')
+    expect(main.querySelector('[data-testid="inbox-thread-folder"]')?.getAttribute('title')).toBe('/home/me/app (Ubuntu)')
     await vi.waitFor(() => expect(main.textContent).toContain('Please fix the login'))
     expect(main.querySelector('[data-testid="chat-composer"]')).not.toBeNull()
   })
@@ -511,8 +512,9 @@ describe('Inbox fork marker', () => {
     useWorkspace.setState({ inboxThreads: [original(), fork()], selectedInboxThreadId: 'ses_fork' })
     const view = await render(createElement(InboxThreadView))
     const line = view.querySelector('[data-testid="inbox-forked-from"]')!
-    expect(line.textContent).toBe('Forked from Fix login · works in the same folder, so file changes show up in both')
-    await act(async () => (line.querySelector('button') as HTMLButtonElement).click())
+    expect(line.textContent).toBe('Forked from Fix login')
+    expect(line.getAttribute('title')).toContain('same folder')
+    await act(async () => (line as HTMLButtonElement).click())
     expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_one')
     // The original is not a fork, so its header has no such line.
     await act(async () => { /* the view follows the selection */ })
@@ -524,7 +526,7 @@ describe('Inbox fork marker', () => {
     const view = await render(createElement(InboxThreadView))
     const line = view.querySelector('[data-testid="inbox-forked-from"]')!
     expect(line.textContent).toContain('Forked from a thread that is no longer in the Inbox')
-    expect(line.querySelector('button')).toBeNull()
+    expect(line.tagName).not.toBe('BUTTON')
   })
 })
 
@@ -646,14 +648,16 @@ describe('Inbox thread deletion and worktrees', () => {
     expect(row.textContent).toContain('mde/1a2b3c4d')
   })
 
-  it('marks a worktree thread in its header, naming the folder and the branch it started from', async () => {
+  it('marks a worktree thread in its header by its folder and branch, and keeps the details in the tooltip', async () => {
     useWorkspace.setState({ inboxThreads: [inWorktree()], selectedInboxThreadId: 'ses_one' })
     const view = await render(createElement(InboxThreadView))
     const header = view.querySelector('header')!
-    expect(header.textContent).toContain('/home/me/app')
+    expect(header.querySelector('[data-testid="inbox-thread-folder"]')?.textContent).toBe('app')
+    expect(header.querySelector('[data-testid="inbox-thread-folder"]')?.getAttribute('title')).toContain(worktree.root)
+    expect(header.textContent).not.toContain('/home/me/app')
     expect(header.textContent).not.toContain('.mde/worktrees')
     const marker = header.querySelector('[data-testid="inbox-thread-worktree"]')
-    expect(marker?.textContent).toBe('worktree')
+    expect(marker?.textContent).toContain('mde/1a2b3c4d')
     expect(marker?.getAttribute('title')).toContain('started from main')
     expect(marker?.getAttribute('title')).toContain(worktree.root)
   })

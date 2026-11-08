@@ -624,7 +624,7 @@ export function App(): JSX.Element {
     <div className="flex h-full w-full flex-col overflow-hidden bg-bg">
       <TitleBar
         icon={<Terminal className="h-3.5 w-3.5 shrink-0 text-accent" />}
-        title="mde"
+        title="MDE"
         navigation={<WorkspaceNavigation />}
       >
         <TitleBarButton

@@ -48,6 +48,10 @@ const render = (element: ReactElement): Promise<void> => act(async () => root.re
 const button = (label: string, within: ParentNode = container): HTMLButtonElement | null =>
   within.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)
 const click = (element: HTMLElement | null): Promise<void> => act(async () => element!.click())
+const openMenu = (trigger: HTMLElement): Promise<void> =>
+  act(async () => void trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+const menuItem = (label: string): HTMLElement =>
+  Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((item) => item.textContent === label)!
 const onWindows = (wslAvailable = true): void =>
   useWorkspace.setState({ platform: { platform: 'win32', isWindows: true }, wslAvailable })
 const onMac = (): void => useWorkspace.setState({ platform: { platform: 'darwin', isWindows: false }, wslAvailable: false })
@@ -167,7 +171,8 @@ describe('Inbox thread header', () => {
     await click(button(FOLDER, header()))
     expect(revealInbox).toHaveBeenCalledExactlyOnceWith('ses_one')
 
-    await click(button(VS_CODE, header()))
+    await openMenu(button('More ways to open the folder', header())!)
+    await click(menuItem(VS_CODE))
     expect(openInboxInVsCode).toHaveBeenCalledExactlyOnceWith('ses_one')
   })
 
@@ -186,7 +191,7 @@ describe('Inbox thread header', () => {
     onMac()
     await render(createElement(InboxThreadView))
 
-    expect(button(VS_CODE, header())).toBeNull()
+    expect(button('More ways to open the folder', header())).toBeNull()
     expect(button(FOLDER, header())).not.toBeNull()
   })
 

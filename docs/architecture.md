@@ -387,7 +387,7 @@ Inbox list, header and mini inbox; search matches both names. OpenCode title upd
 continue independently, including title regeneration. Setting or clearing the custom
 name preserves activity, unread status, pinning and parking and sends nothing to OpenCode.
 
-The open thread's header has a **Regenerate title** button. It asks OpenCode's native title
+The open thread's header has a **Regenerate title** item in its thread menu (the ⋯ button, with Rename thread, Fork thread and Copy folder path; see **Thread header** below). A spinner beside the title shows while it runs, and the item is disabled until it is done. It asks OpenCode's native title
 agent to regenerate the current title (`PATCH /api/session/{sessionID}` with `title: ""`),
 including while the conversation is running or parked. OpenCode chooses the title model
 and conversation context using its own configuration. It may keep the same title when
@@ -434,7 +434,7 @@ when `inbox.json` is read, leaving the plain folder.
 
 The Inbox also shows a right-hand sidebar with three tabs, Files, Changes and Terminal (a new thread, which has no changes yet, offers Files and Terminal). The Files tab shows the open thread's folder, or the folder a new thread starts in. It is the same tree and viewer as in Sessions mode. The renderer passes the thread's or folder's own ID to `files:list` and `files:read`; the main process looks it up in the Inbox store when no workspace session has that ID.
 
-**Opening a folder.** The Files tab's footer has the same Open folder in VS Code and Open folder in File Explorer buttons as the Sessions file sidebar (there they sit in the header, but the Inbox header is full with the three tabs at 260 px), and a thread's header has them too, between the status badge and Regenerate title, for chat and terminal threads alike (`OpenFolderButtons`). VS Code is offered for a WSL folder on Windows with WSL installed, as in Sessions; the file manager works for a folder on the Mac as well, and opens a WSL folder through its `\\wsl.localhost` path. The new-thread page's Files tab opens the project the new thread starts in. The renderer sends only the thread or project ID (`path:reveal-inbox`, `path:open-inbox-in-vscode`); the main process resolves it in the Inbox store and checks the folder like a terminal's directory (a plain absolute path that is still a directory in the distro, with symlinks resolved) before handing it to the desktop, and does nothing for an ID that is no longer in the Inbox.
+**Opening a folder.** The Files tab's footer has the same Open folder in VS Code and Open folder in File Explorer buttons as the Sessions file sidebar (there they sit in the header, but the Inbox header is full with the three tabs at 260 px), and a thread's header has one **Open** button for chat and terminal threads alike (`OpenFolderMenu`): it opens the folder in the file manager, and where VS Code is offered a chevron beside it adds that choice. VS Code is offered for a WSL folder on Windows with WSL installed, as in Sessions; the file manager works for a folder on the Mac as well, and opens a WSL folder through its `\\wsl.localhost` path. The new-thread page's Files tab opens the project the new thread starts in. The renderer sends only the thread or project ID (`path:reveal-inbox`, `path:open-inbox-in-vscode`); the main process resolves it in the Inbox store and checks the folder like a terminal's directory (a plain absolute path that is still a directory in the distro, with symlinks resolved) before handing it to the desktop, and does nothing for an ID that is no longer in the Inbox.
 
 **Resizing.** Dragging the sidebar's left edge makes it wider (up to 70% of the window) or narrower (never under 260 px). The edge is a keyboard-operable separator: Left and Right arrows change the width by 16 px (64 with Shift), Home and End go to the limits, and a double-click restores 260 px. One width serves all three tabs and is kept in the renderer's `localStorage` (`mde.inbox-sidebar-width`).
 
@@ -622,8 +622,7 @@ stays listed until it is removed from the menu. Threads started in a worktree be
 not listed.
 
 The sidebar and thread header name the folder the thread was started in rather than the worktree's
-random directory, and the header shows a WORKTREE marker with the worktree's path and base branch
-as its tooltip. A fork of a worktree thread shares the worktree, as it shares the directory.
+random directory, and the header shows the worktree's branch with a worktree icon, whose tooltip has the worktree's path and base branch. A fork of a worktree thread shares the worktree, as it shares the directory.
 
 **Removing a worktree.** The delete dialog for a thread whose worktree no other thread uses has an
 unticked "Also remove the worktree" box. Ticking it runs `git worktree remove` (never `--force`)
@@ -907,6 +906,8 @@ with every streamed token. Once the thought is done the row says "Thought" and t
 Notes (agent switches, errors, goals) are quiet rows of the same kind, and a finished compaction is a
 rule across the conversation that opens onto the summary.
 
+**Thread header.** One row of 44 px (`ThreadHeader`), so the conversation gets the height. The title is the only strong text; double-clicking it opens the Rename dialog (shared with the sidebar's, `ThreadRename`). Beside it, in muted type: a status pill only while the thread is working, needs input or failed (never "Done", which is what a thread normally is and the sidebar shows), the project's name and icon (the tooltip has the full path and, in WSL, the distro, as the title's tooltip has the last activity), the branch, and for a fork where it came from. These three drop out as the pane narrows, by container query on the header: the fork mark first, then the branch, then the folder; with a long title they are clipped before the title is shortened. The model is not in the header: the composer's model chip shows and changes it. At the end are **Open**, the compact toggle (chat threads only) and the thread menu. Errors from regenerating the title, forking or copying are shown in a line under the row.
+
 **Compact mode.** A switch in the thread's header (not to be confused with compacting the context, above) (chat threads only; `CompactChatToggle`,
 kept in `mde.inbox-compact-chat`, off by default) lays the conversation out with less in it. Everything before the answer
 becomes a group however short, so a single read or a lone thought is one line
@@ -1061,7 +1062,7 @@ on this computer's clock like the count itself, and falls back to the user messa
 there is none; a clock that disagrees with the service's, as WSL's can after the computer sleeps,
 therefore cannot skew it. The sidebar's `Working` pill counts from the same `workingSince` (`Working
 · 1m 30s`); the pill in the thread's header only names the state, and `Needs input` pills show no
-time. The finished line also carries the model's generation speed when OpenCode's numbers give
+time. The header has no pill for a finished thread. The finished line also carries the model's generation speed when OpenCode's numbers give
 it, such as `Worked for 1m 30s · 53.1 tok/s`. The service has no such field; OpenCode's own
 interface works it out from the same messages, and `tokensPerSecond` in `lib/chat.ts` does the same
 sum: the output and reasoning tokens of every step in the turn, divided by the time those steps spent
@@ -1182,11 +1183,11 @@ read the draft again, take focus and put the caret after the added text. A compo
 whenever it sees it, including when it appears after it was set, and then calls `clearDraftReload`,
 so what runs first, the box or the text, does not matter and a thread opened later is not told
 again. Attachments are not put back in the box, as with a revert, and both threads share one working
-directory, so file changes made by either show up in both, which the new thread's header says. When
+directory, so file changes made by either show up in both, which the tooltip of the new thread's "Forked from" mark in its header says. When
 that directory is a worktree MDE made for the original, the fork shares the worktree too, and it is
 removed only with the last thread that uses it.
 
-The new thread's header says "Forked from" with the original's title, a link while the original is
+The new thread's header says "Forked from" with the original's title (a muted mark beside the folder and branch), a link while the original is
 still in the Inbox, and the sidebar row shows a small fork icon. `forkedFrom` is stored in
 `inbox.json` as a thread ID and dropped if it is not one; it is not otherwise used.
 
