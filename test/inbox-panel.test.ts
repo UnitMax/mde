@@ -298,6 +298,8 @@ describe('Inbox', () => {
     expect(title(rows[1]!)).toContain('font-normal')
     expect(title(rows[1]!)).not.toContain('font-bold')
     expect(title(rows[1]!)).not.toContain('text-fg-muted')
+    expect(title(rows[0]!)).toContain('text-fg')
+    expect(title(rows[1]!)).toContain('text-fg/90')
 
     await act(async () => first.click())
     expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_one')

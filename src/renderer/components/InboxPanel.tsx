@@ -261,8 +261,9 @@ function InboxThreadRow({
               <span
                 className={cn(
                   'min-w-0 flex-1 truncate text-[14px]',
-                  // Unread reads at a glance: bold in the full colour, against regular weight in a softer one.
-                  unread ? 'font-bold text-fg' : 'font-normal text-fg/80'
+                  // Unread reads at a glance: bold in the full colour, against regular weight in a slightly softer one.
+                  unread || selected ? 'text-fg' : 'text-fg/90',
+                  unread ? 'font-bold' : 'font-normal'
                 )}
               >
                 {thread.customTitle ?? thread.title}
