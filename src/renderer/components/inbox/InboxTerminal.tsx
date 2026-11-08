@@ -1,6 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { inboxTerminalSession } from '@shared/inbox-terminal'
 import { TerminalView } from '@/components/TerminalView'
+import { TerminalSelectionActionsContext, type TerminalSelectionActions } from '@/components/terminal-selection-actions'
+import { sendTextToThread } from '@/lib/inbox-thread-input'
 import { focusTerminalWhenReady } from '@/terminal/focus'
 import { INBOX_TERMINAL_TAB, useInboxTerminal } from '@/store/inbox-terminal'
 import { useWorkspace } from '@/store/workspace'
@@ -37,6 +39,13 @@ export function InboxTerminal({ focusOnMount = false }: { focusOnMount?: boolean
   const configureDistro = useInboxTerminal((state) => state.configureDistro)
   const session = platform?.isWindows ? configuredSession : inboxTerminalSession(platform?.platform ?? '', [])
   const firstTerminalId = layout.panes[0]?.terminalId
+  // The right-click menu can send the selected text to the thread that is open in the Inbox.
+  const openThreadId = useWorkspace((state) => state.inboxThreads.some((thread) => thread.id === state.selectedInboxThreadId) ? state.selectedInboxThreadId : null)
+  const selectionActions = useMemo<TerminalSelectionActions>(() => ({
+    canSend: openThreadId !== null,
+    sendLabel: 'Send to thread',
+    send: (text) => { if (openThreadId) sendTextToThread(openThreadId, text) },
+  }), [openThreadId])
 
   useEffect(() => {
     if (platform?.isWindows && useInboxTerminal.getState().session === undefined) {
@@ -63,6 +72,7 @@ export function InboxTerminal({ focusOnMount = false }: { focusOnMount?: boolean
     return <p role="status" className="p-4 text-[12px] leading-snug text-fg-muted">The terminal needs a WSL distribution, and none was found.</p>
   }
   return (
+    <TerminalSelectionActionsContext.Provider value={selectionActions}>
     <TerminalView
       session={session}
       activeTab={INBOX_TERMINAL_TAB}
@@ -75,5 +85,6 @@ export function InboxTerminal({ focusOnMount = false }: { focusOnMount?: boolean
       onPaneFocus={paneFocused}
       onPaneTitleChange={titlePane}
     />
+    </TerminalSelectionActionsContext.Provider>
   )
 }

@@ -4,10 +4,11 @@ import {
   useRef,
   useState,
   type DragEvent as ReactDragEvent,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type CSSProperties
 } from 'react'
-import { FolderOpen, Plus } from 'lucide-react'
+import { Copy, FolderOpen, MessageSquareQuote, Plus } from 'lucide-react'
 import type { FileTreeDropEntry } from '@shared/ipc'
 import type {
   PtySize,
@@ -24,6 +25,8 @@ import {
   AlertDialogFooter,
   AlertDialogTitle
 } from '@/components/ui/alert-dialog'
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
+import { useTerminalSelectionActions } from '@/components/terminal-selection-actions'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { cn } from '@/lib/utils'
 import { useWorkspace } from '@/store/workspace'
@@ -38,6 +41,7 @@ import {
   type Osc52Notice,
   type Osc52Prompt
 } from '@/terminal/osc52-notices'
+import { terminalMenuOnRightClick } from '@/terminal/clipboard'
 import { terminalSizeAction } from '@/terminal/terminal-compat'
 import { viewportSettle } from '@/terminal/viewport-settle'
 import {
@@ -160,6 +164,11 @@ export function TerminalSurface({
   const [launchAttempt, setLaunchAttempt] = useState(0)
   const setStatus = useWorkspace((state) => state.setStatus)
   const platform = useWorkspace((state) => state.platform)
+  const selectionActions = useTerminalSelectionActions()
+  // The text that was selected when the right-click menu opened, and what the menu was asked to do with it. The
+  // menu takes the keyboard while it is open, so the action runs once it has closed and given the focus back.
+  const [menuText, setMenuText] = useState('')
+  const menuAction = useRef<'copy' | 'send' | null>(null)
   const primarySelectionMode = terminalPrimarySelectionMode(
     platform?.platform ?? 'other',
     sourceSession.kind
@@ -413,7 +422,28 @@ export function TerminalSurface({
     return () => window.cancelAnimationFrame(frame)
   }, [isFullscreen])
 
+  const openMenu = (event: ReactMouseEvent<HTMLElement>): void => {
+    const terminal = getSession(pane.terminalId)?.term
+    // A program using the mouse gets the click, unless Shift is held; the menu stays shut and nothing is prevented.
+    if (!terminal || !terminalMenuOnRightClick(terminal.modes.mouseTrackingMode, event.shiftKey)) {
+      event.preventDefault()
+      return
+    }
+    menuAction.current = null
+    setMenuText(terminal.hasSelection() ? terminal.getSelection() : '')
+  }
+  const closeMenu = (event: Event): void => {
+    // Without this the focus would go to the element the menu was opened from, not into the terminal.
+    event.preventDefault()
+    const action = menuAction.current
+    menuAction.current = null
+    if (action === 'send') selectionActions?.send(menuText)
+    else getSession(pane.terminalId)?.term.focus()
+  }
+
   return (
+    <ContextMenu>
+    <ContextMenuTrigger asChild onContextMenu={openMenu}>
     <div
       ref={hostRef}
       className="terminal-host relative min-h-0 flex-1 overflow-hidden"
@@ -517,6 +547,33 @@ export function TerminalSurface({
         </div>
       )}
     </div>
+    </ContextMenuTrigger>
+    <ContextMenuContent onCloseAutoFocus={closeMenu} data-testid="terminal-menu">
+      <ContextMenuItem
+        disabled={!menuText}
+        data-testid="terminal-menu-copy"
+        onSelect={() => {
+          menuAction.current = 'copy'
+          void window.api.clipboard.writeText(menuText).catch((error: unknown) => {
+            console.warn('[terminal] menu clipboard copy failed:', error)
+          })
+        }}
+      >
+        <Copy className="h-3.5 w-3.5" />
+        Copy
+      </ContextMenuItem>
+      {selectionActions && (
+        <ContextMenuItem
+          disabled={!menuText || !selectionActions.canSend}
+          data-testid="terminal-menu-send"
+          onSelect={() => { menuAction.current = 'send' }}
+        >
+          <MessageSquareQuote className="h-3.5 w-3.5" />
+          {selectionActions.sendLabel}
+        </ContextMenuItem>
+      )}
+    </ContextMenuContent>
+    </ContextMenu>
   )
 }
 

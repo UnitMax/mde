@@ -6,6 +6,7 @@ import { TerminalSurface } from '@/components/TerminalView'
 import { TerminalThreadHighlight } from '@/components/inbox/TerminalThreadHighlight'
 import { Button } from '@/components/ui/button'
 import { ipcErrorMessage } from '@/lib/ipc-error'
+import { registerThreadInput } from '@/lib/inbox-thread-input'
 import { useInboxChat } from '@/store/inbox-chat'
 import { useWorkspace } from '@/store/workspace'
 import { fitSession, getSession } from '@/terminal/sessions'
@@ -25,6 +26,13 @@ export function TerminalThreadView({ thread }: { thread: InboxThread }): JSX.Ele
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState<ChatDraft | null>(null)
 
+  // Text sent to this thread from the Inbox terminal's right-click menu is pasted into the terminal, where it
+  // waits in the prompt like anything pasted; it is not sent.
+  useEffect(() => registerThreadInput(thread.id, (text) => {
+    const terminal = getSession(terminalId)
+    terminal?.term.paste(text)
+    terminal?.term.focus()
+  }), [thread.id, terminalId])
   // Keep the thread's API subscription and reconnect behavior while its terminal is displayed.
   useEffect(() => openThread(thread.id), [openThread, thread.id])
   useEffect(() => {

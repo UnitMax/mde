@@ -7,6 +7,7 @@ import type { ChatDraft, ChatMessage, ChatMessagesPage, ChatOptions, InboxFolder
 import { InboxThreadView } from '../src/renderer/components/InboxThreadView'
 import { useInboxChat } from '../src/renderer/store/inbox-chat'
 import { useWorkspace } from '../src/renderer/store/workspace'
+import { sendTextToThread } from '../src/renderer/lib/inbox-thread-input'
 import { messageInput, pressMessageKey, setMessageText } from './helpers/chat-input'
 
 const roots: Root[] = []
@@ -565,5 +566,20 @@ describe('quotes in a sent message', () => {
     const view = await render()
     expect(view.querySelector('[data-chat-message="msg_3"] [data-testid="chat-quote-toggle"]')).toBeNull()
     expect(view.querySelector('[data-chat-message] [data-testid="chat-quote-remove"]')).toBeNull()
+  })
+})
+
+describe('text sent from the Inbox terminal', () => {
+  it('is attached to the open thread as a quote, as a selection of the conversation is', async () => {
+    const view = await render()
+    expect(sendTextToThread('ses_one', 'Error: boom\n    at fn (a.js:1)')).toBe(true)
+    await vi.waitFor(() => expect(cards(view)).toEqual(['Error: boom\n    at fn (a.js:1)']))
+    expect(box(view)).toBe('')
+  })
+
+  it('has nowhere to go once the thread is closed', async () => {
+    await render()
+    await act(async () => roots.splice(0).forEach((root) => root.unmount()))
+    expect(sendTextToThread('ses_one', 'text')).toBe(false)
   })
 })

@@ -6,7 +6,7 @@ import {
   terminalClipboardAction,
   terminalMiddleClickAction,
   terminalPrimarySelectionMode,
-  terminalRightClickAction
+  terminalMenuOnRightClick
 } from '../src/renderer/terminal/clipboard'
 
 const key = (overrides: Partial<Parameters<typeof terminalClipboardAction>[0]> = {}) => ({
@@ -52,10 +52,11 @@ describe('terminal mouse clipboard behavior', () => {
     expect(terminalPrimarySelectionMode('darwin', 'native')).toBe('none')
   })
 
-  it('copies only selected text on right click outside mouse-tracked TUIs', () => {
-    expect(terminalRightClickAction(true, 'none')).toBe('copy')
-    expect(terminalRightClickAction(false, 'none')).toBeNull()
-    expect(terminalRightClickAction(true, 'vt200')).toBeNull()
+  it('opens the menu on right click unless a program has the mouse, and Shift takes the click back', () => {
+    expect(terminalMenuOnRightClick('none', false)).toBe(true)
+    expect(terminalMenuOnRightClick('vt200', false)).toBe(false)
+    expect(terminalMenuOnRightClick('any', false)).toBe(false)
+    expect(terminalMenuOnRightClick('any', true)).toBe(true)
   })
 
   it('pastes local primary selection only in normal WSL terminal mode', () => {

@@ -21,6 +21,7 @@ import { ChatTimeline } from '@/components/inbox/ChatTimeline'
 import { ChatTranscriptMenu } from '@/components/inbox/ChatTranscriptMenu'
 import { CompactChatContext } from '@/components/inbox/chat-ui'
 import { TurnDuration, WorkingFor } from '@/components/inbox/ChatTurnTime'
+import { registerThreadInput } from '@/lib/inbox-thread-input'
 import { scrollBehavior, TIMELINE_MIN_PROMPTS, timelineEntries } from '@/lib/chat-timeline'
 import { compactPlans, type RenderBlock } from '@/lib/chat-tools'
 import { cn } from '@/lib/utils'
@@ -97,6 +98,8 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   }, [findRequest, clearFindRequest, thread.id])
   // Text selected in the conversation goes into the message box as a quote, from the button by the selection or the right-click menu.
   const quote = useCallback((text: string) => composer.current?.quote(text), [])
+  // Text sent from the Inbox terminal's right-click menu arrives the same way.
+  useEffect(() => registerThreadInput(thread.id, quote), [thread.id, quote])
   const stickRef = useRef(true)
   // Whether the view is scrolled up from the newest message, which is when the way back is offered.
   const [away, setAway] = useState(false)

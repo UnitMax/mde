@@ -7,7 +7,6 @@ import {
   decodeOsc52Clipboard,
   terminalClipboardAction,
   terminalMiddleClickAction,
-  terminalRightClickAction,
   type TerminalPrimarySelectionMode
 } from './clipboard'
 import {
@@ -311,22 +310,6 @@ function createSession(
     return false
   })
 
-  const onContextMenu = (event: MouseEvent): void => {
-    noteUserInput()
-    const action = terminalRightClickAction(
-      term.hasSelection(),
-      term.modes.mouseTrackingMode
-    )
-    if (action !== 'copy') return
-
-    event.preventDefault()
-    event.stopPropagation()
-    void window.api.clipboard.writeText(term.getSelection()).catch((error: unknown) => {
-      console.warn('[terminal] right-click clipboard copy failed:', error)
-    })
-  }
-  container.addEventListener('contextmenu', onContextMenu)
-
   const onAuxClick = (event: MouseEvent): void => {
     noteUserInput()
     if (event.button !== 1) return
@@ -382,7 +365,6 @@ function createSession(
     renderer: 'dom',
     themeId: settings.theme,
     disposeClipboardHandlers: () => {
-      container.removeEventListener('contextmenu', onContextMenu)
       container.removeEventListener('auxclick', onAuxClick)
       container.removeEventListener('pointerdown', noteUserInput, true)
       container.removeEventListener('pointerup', noteUserInput, true)
