@@ -112,6 +112,8 @@
     "src/renderer/lib/input-modality.ts",
     "src/renderer/lib/chat-timeline.ts",
     "src/renderer/lib/chat-find.ts",
+    "src/renderer/lib/inbox-search.ts",
+    "src/renderer/store/inbox-find.ts",
     "src/renderer/lib/duration.ts",
     "src/renderer/lib/diff.ts",
     "src/renderer/lib/diff-highlight.ts",

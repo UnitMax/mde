@@ -43,6 +43,7 @@ export function getKeyboardShortcutGroups(
         { id: 'inbox-aside-close', keys: ['Escape'], description: 'Close the answer to a side question shown above the message box, when no list is open.' },
         { id: 'inbox-timeline', keys: ['Up', 'Down', 'Enter', 'Escape'], description: 'On the prompt timeline beside a conversation: Up or Down opens it, Up, Down, Home and End move between prompts, Enter jumps to one, Escape closes it.' },
         { id: 'inbox-find', keys: [`${primaryModifier}+F`], description: 'Search the text of the open GUI thread, yours and the agent\'s, with every match highlighted. Enter and Shift+Enter move to the next and previous match, Escape closes the search. Text selected in the conversation becomes the search.' },
+        { id: 'inbox-search-all', keys: [`${primaryModifier}+Shift+F`], description: 'Search the text of every Inbox thread in an overlay. Up and Down move between the messages found, Enter opens the thread with the search bar on that message, Escape closes the overlay.' },
         { id: 'inbox-send', keys: ['Enter'], description: 'Send the message and attachments.' },
         { id: 'inbox-send-background', keys: platform === 'darwin' ? ['Cmd+Enter', 'Ctrl+Enter'] : ['Ctrl+Enter'], description: 'On the new-thread page, start a thread in the background and keep the composer open for the next thread.' },
         { id: 'inbox-save-draft', keys: [`${primaryModifier}+S`], description: 'On the new-thread page, save what you typed as a draft and start a blank page.' },

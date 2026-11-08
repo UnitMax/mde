@@ -81,6 +81,13 @@ opened threads); MDE does not write them to disk. Prompts and answers you send g
 which stores them in OpenCode's own data and forwards them to the model provider you chose, as
 OpenCode does in a terminal.
 
+The Inbox's search over all threads (Ctrl+Shift+F) is the exception to opening a thread to read it: while
+the search overlay is open (and for a while after, until the threads change), the main process reads the
+user and assistant text of every thread's messages from the service, newest thread first, and keeps that
+text in memory so that searching is fast. Tool calls, reasoning and command output are not read into it.
+It is never written to disk or logged, is sent only to the renderer as short snippets of the matches, and
+is dropped when a thread is removed or MDE quits.
+
 Subagent cards also read the selected model and variant from their child sessions through the same
 local service. These details stay in memory; MDE does not read the child conversation's messages
 or make a model-provider request to show the label.

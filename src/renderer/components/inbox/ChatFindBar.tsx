@@ -8,6 +8,11 @@ const SEARCH_DELAY_MS = 120
 /** A streaming reply changes the text again and again; the matches are found again at most this often. */
 const REFRESH_DELAY_MS = 150
 
+/** The message whose text the range is in. */
+function messageOf(range: Range): string | null {
+  return range.startContainer.parentElement?.closest('[data-chat-message]')?.getAttribute('data-chat-message') ?? null
+}
+
 /**
  * The search bar over the top right of a conversation (Ctrl+F). It looks for the query in the text of the messages,
  * paints every match, and steps through them with Enter and Shift+Enter. Earlier messages that are not loaded yet are
@@ -16,6 +21,7 @@ const REFRESH_DELAY_MS = 150
 export function ChatFindBar({
   scrollRef,
   seed,
+  target,
   focusSignal,
   moreToLoad,
   loadingMore,
@@ -25,6 +31,8 @@ export function ChatFindBar({
   scrollRef: RefObject<HTMLElement | null>
   /** Text selected in the conversation when the search was asked for; it becomes the query. Empty keeps the query as it is. */
   seed: string
+  /** A message to go to first, when the search comes from a result in the search over all threads: its first match is the current one. */
+  target?: string
   /** Changes when the search is asked for again while it is open, to take the focus back into the field. */
   focusSignal: number
   /** There are earlier messages that are not loaded, and loading them is possible right now. */
@@ -41,7 +49,13 @@ export function ChatFindBar({
   // Counts the times the view should move to the current match: when it was chosen by the person, not when a refresh found it again.
   const [reveal, setReveal] = useState(0)
 
+  // The message the search should land on, until it is found (earlier messages may have to be loaded first) or given up on.
+  const targetRef = useRef(target)
+  const moreRef = useRef(moreToLoad || loadingMore)
+  moreRef.current = moreToLoad || loadingMore
+
   useEffect(() => {
+    targetRef.current = target
     if (seed) setQuery(seed)
     inputRef.current?.focus()
     inputRef.current?.select()
@@ -60,7 +74,16 @@ export function ChatFindBar({
     ranges.current = found
     setCount(found.length)
     let next = -1
-    if (found.length > 0) {
+    const wanted = targetRef.current
+    if (wanted && found.length > 0) {
+      next = found.findIndex((range) => messageOf(range) === wanted)
+      // Found, or nowhere to be found once everything is loaded (the text is drawn differently from how it was written).
+      if (next !== -1 || !moreRef.current) {
+        targetRef.current = undefined
+        setReveal((tick) => tick + 1)
+      }
+    }
+    if (next === -1 && found.length > 0) {
       if (!fresh && before) {
         next = found.findIndex((range) => range.startContainer === before.startContainer && range.startOffset === before.startOffset)
         // The text was drawn again under the match (a streaming reply): stay at the same place in the list.
@@ -69,7 +92,8 @@ export function ChatFindBar({
       if (next === -1) {
         const viewTop = scroller.getBoundingClientRect().top
         next = startingMatch(found.map((range) => range.getBoundingClientRect().top), viewTop)
-        if (fresh) setReveal((tick) => tick + 1)
+        // While the wanted message is still being looked for, the view stays where it is.
+        if (fresh && !targetRef.current) setReveal((tick) => tick + 1)
       }
     }
     setCurrent(next)

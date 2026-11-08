@@ -29,6 +29,8 @@ import type {
   ChatSetDeliveryRequest,
   ChatRevert,
   ChatRevertRequest,
+  ChatSearchRequest,
+  ChatSearchResponse,
   ChatSendRequest,
   ChatSkill,
   InboxComposerState,
@@ -84,6 +86,7 @@ import {
 } from '../opencode/service/parse'
 import { skillMentions } from '@shared/skills'
 import type { InboxRecorder } from './recorder'
+import { InboxSearch } from './search'
 import { isChatAgentId, type InboxStore } from './store'
 import type { CreatedWorktree, InboxWorktrees } from './worktree'
 
@@ -208,6 +211,7 @@ const REQUEST_EVENTS = new Set(['permission.asked', 'permission.replied', 'form.
  */
 export class InboxChatService {
   private readonly streams: ServiceEventStreams
+  private readonly searcher: InboxSearch
   private readonly subscribed = new Map<string, number>()
   /** Child sessions whose model changes should refresh an open parent conversation. */
   private readonly subagentParents = new Map<string, string>()
@@ -220,6 +224,7 @@ export class InboxChatService {
   private readonly titleReads = new Map<string, { renamed: boolean }>()
 
   constructor(private readonly dependencies: InboxChatDependencies) {
+    this.searcher = new InboxSearch(dependencies)
     this.streams = new ServiceEventStreams(dependencies.client, {
       onEvent: (target, event) => this.onEvent(event, target),
       onConnected: (target, reconnected) => {
@@ -616,6 +621,11 @@ export class InboxChatService {
     // Only an answer from the service says whether a revert is staged; without one it stays unknown.
     const revert = session ? parseSessionRevert(session) : undefined
     return { ...result, ...(usage ? { usage } : {}), ...(revert !== undefined ? { revert } : {}), ...(inbox ?? {}) }
+  }
+
+  /** Looks for text in the messages of all threads; see `InboxSearch`. */
+  search(request: ChatSearchRequest): ChatSearchResponse {
+    return this.searcher.search(request)
   }
 
   /** Read only the child sessions named by these calls; a missing child must never hide the chat. */

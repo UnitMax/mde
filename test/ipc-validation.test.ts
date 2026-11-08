@@ -91,6 +91,7 @@ const validPayloads = {
   [IpcChannels.inboxChangeDiff]: { threadId: 'ses_thread', path: 'src/app.ts' },
   [IpcChannels.inboxChanges]: { threadId: 'ses_thread', details: true },
   [IpcChannels.chatMessages]: { threadId: 'ses_thread', cursor: 'eyJpZCI6Im1zZyJ9' },
+  [IpcChannels.chatSearch]: { query: 'login redirect' },
   [IpcChannels.chatSend]: { threadId: 'ses_thread', text: 'Next step', agent: 'plan', model },
   [IpcChannels.chatInterrupt]: { threadId: 'ses_thread' },
   [IpcChannels.chatCompact]: { threadId: 'ses_thread' },

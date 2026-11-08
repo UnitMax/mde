@@ -49,6 +49,8 @@ import type {
   InboxChangeDiff,
   ChatMessagesPage,
   ChatMessagesRequest,
+  ChatSearchRequest,
+  ChatSearchResponse,
   ChatMcpRequest,
   ChatMcpSetRequest,
   ChatMcpState,
@@ -166,6 +168,7 @@ export const IpcChannels = {
   inboxChanges: 'inbox:changes',
   inboxChangeDiff: 'inbox:change-diff',
   chatMessages: 'chat:messages',
+  chatSearch: 'chat:search',
   chatSend: 'chat:send',
   chatDiscardPending: 'chat:discard-pending',
   chatSetDelivery: 'chat:set-delivery',
@@ -536,6 +539,11 @@ export interface RendererApi {
     options(req: ChatOptionsRequest): Promise<ChatOptions>
     create(req: ChatCreateRequest): Promise<InboxThread>
     messages(req: ChatMessagesRequest): Promise<ChatMessagesPage>
+    /**
+     * Looks for text in the messages of every thread. The threads are read in the background, newest first, and kept in
+     * memory; the answer has what is read so far, so asking again while `indexed` is below `total` finds more.
+     */
+    search(req: ChatSearchRequest): Promise<ChatSearchResponse>
     /**
      * Sends a message. When the agent was busy, OpenCode holds it instead of showing it in the conversation;
      * the answer is that held message, or null when OpenCode's answer could not be read.

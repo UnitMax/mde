@@ -688,6 +688,24 @@ there is a query the earlier messages that are not loaded yet are loaded, so tha
 is searched, and the matches are found again as messages stream in. Text selected in the
 conversation when the bar is opened becomes the query. Nothing is stored.
 
+**Search over all threads.** Ctrl+Shift+F (Cmd+Shift+F on a Mac), in the Inbox view only (the terminal
+views keep it for fullscreen), opens an overlay like the session switcher (`InboxSearchDialog`). The
+conversations live in OpenCode, so the main process reads them (`main/inbox/search.ts`, `InboxSearch`):
+every thread, archived and terminal ones too, newest first, three at a time, all pages of messages (up to
+2 MB of text per thread), keeping only the user's text and the agent's text parts in memory. A thread is
+read again when it has had activity since, a working one after 5 s, and one that could not be read after
+30 s. `chat:search` answers synchronously with what is read so far plus `indexed` / `total`; the overlay
+asks once when it opens with an empty query (to start the reading) and again, debounced, as the person
+types, and keeps asking every 0.4 s until `indexed` reaches `total`, so results fill in while the threads
+are read. The match is case-insensitive on the written text (`shared/text-search.ts`, shared with the
+find bar), so Markdown markers count: a search for text that only exists in the rendered form can miss.
+Results are messages, at most three per thread (with the count of the rest) and 100 threads, the thread's
+title, project and age as the heading and a snippet with the match marked. Enter or a click opens the
+thread (a terminal thread is only opened) and hands `store/inbox-find.ts` a request that the thread's
+`ChatThreadView` takes: it opens its own find bar with the query, loads earlier messages as needed and
+makes the first match inside that message the current one (`target` of `ChatFindBar`), or the nearest
+match when that message's text is drawn differently.
+
 **Steering or queueing a message.** With the agent working and something typed, the round send
 button grows into a pill (`ChatSendButton`): an arrow and **Steer**, and a chevron that opens a menu
 with **Steer** (the agent reads it at its next step) and **Queue** (sent when the agent is done).

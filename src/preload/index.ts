@@ -145,6 +145,7 @@ const api: RendererApi = {
     options: (req) => ipcRenderer.invoke(IpcChannels.chatOptions, req),
     create: (req) => ipcRenderer.invoke(IpcChannels.chatCreate, req),
     messages: (req) => ipcRenderer.invoke(IpcChannels.chatMessages, req),
+    search: (req) => ipcRenderer.invoke(IpcChannels.chatSearch, req),
     send: (req) => ipcRenderer.invoke(IpcChannels.chatSend, req),
     discardPending: (req) => ipcRenderer.invoke(IpcChannels.chatDiscardPending, req),
     setDelivery: (req) => ipcRenderer.invoke(IpcChannels.chatSetDelivery, req),

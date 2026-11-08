@@ -91,6 +91,8 @@ import type {
   InboxChangeDiff,
   ChatMessagesPage,
   ChatMessagesRequest,
+  ChatSearchRequest,
+  ChatSearchResponse,
   ChatOptions,
   ChatOptionsRequest,
   ChatPermissionReplyRequest,
@@ -550,6 +552,7 @@ export function registerIpcHandlers(
   handle<InboxChangesRequest, InboxChangesResponse>(IpcChannels.inboxChanges, (req) => readInboxGitChanges(inboxGitRoot(req.threadId), req.details))
   handle<InboxChangeDiffRequest, InboxChangeDiff>(IpcChannels.inboxChangeDiff, (req) => readInboxGitDiff(inboxGitRoot(req.threadId), req.path))
   handle<ChatMessagesRequest, ChatMessagesPage>(IpcChannels.chatMessages, (req) => chat.messages(req))
+  handle<ChatSearchRequest, ChatSearchResponse>(IpcChannels.chatSearch, (req) => chat.search(req))
   handle<void, ChatDraftList>(IpcChannels.chatDrafts, () => chat.drafts())
   handle<ChatDraftRequest, ChatDraft>(IpcChannels.chatDraft, async (req) => chat.draft(req, req.action === 'tree' ? await fileRoot(req) : undefined))
   handle<ChatSendRequest, ChatPendingMessage | null>(IpcChannels.chatSend, (req) => chat.send(req))

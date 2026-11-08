@@ -30,6 +30,7 @@ import { mcpKey } from '@/lib/mcp'
 import { slashCommands } from '@/lib/slash-commands'
 import { useInboxAside } from '@/store/inbox-aside'
 import { optionsKey, useInboxChat, type ChatThreadState } from '@/store/inbox-chat'
+import { useInboxFind } from '@/store/inbox-find'
 import { useInboxMcp, type McpPlace } from '@/store/inbox-mcp'
 import { useInboxView } from '@/store/inbox-view'
 import { codeViewerFontFamily, getTerminalSettings, subscribeTerminalSettings } from '@/terminal/terminal-settings'
@@ -84,8 +85,16 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const composer = useRef<ChatComposerHandle>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   // The search bar (Ctrl+F). Asking again while it is open gives its field the focus; a selection in the conversation becomes the query.
-  const [find, setFind] = useState<{ query: string; signal: number } | null>(null)
+  const [find, setFind] = useState<{ query: string; signal: number; target?: string } | null>(null)
   useEffect(() => setFind(null), [thread.id])
+  // A result of the search over all threads opens this thread with its search bar on the message that was found.
+  const findRequest = useInboxFind((store) => store.request)
+  const clearFindRequest = useInboxFind((store) => store.clear)
+  useEffect(() => {
+    if (!findRequest || findRequest.threadId !== thread.id) return
+    clearFindRequest()
+    setFind((current) => ({ query: findRequest.query, signal: (current?.signal ?? 0) + 1, target: findRequest.messageId }))
+  }, [findRequest, clearFindRequest, thread.id])
   // Text selected in the conversation goes into the message box as a quote, from the button by the selection or the right-click menu.
   const quote = useCallback((text: string) => composer.current?.quote(text), [])
   const stickRef = useRef(true)
@@ -488,6 +497,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
         <ChatFindBar
           scrollRef={scrollRef}
           seed={find.query}
+          target={find.target}
           focusSignal={find.signal}
           moreToLoad={Boolean(state?.older) && !state?.error}
           loadingMore={Boolean(state?.loadingOlder)}

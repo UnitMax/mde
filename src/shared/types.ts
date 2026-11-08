@@ -698,6 +698,38 @@ export interface ChatMessagesRequest {
   cursor?: string
 }
 
+/** Search over the text of all the Inbox's threads (Ctrl+Shift+F). */
+export interface ChatSearchRequest {
+  query: string
+}
+
+/** One message with the query in it: a stretch of its text around the first match, cut into the part before, the match and the part after. */
+export interface ChatSearchHit {
+  messageId: string
+  role: 'user' | 'assistant'
+  before: string
+  match: string
+  after: string
+}
+
+export interface ChatSearchResult {
+  threadId: string
+  /** The newest messages with the query in them, newest first; there may be more (`hitCount`). */
+  hits: ChatSearchHit[]
+  /** How many messages of the thread have the query in them. */
+  hitCount: number
+}
+
+export interface ChatSearchResponse {
+  /** Threads with a match, the most recently active first. */
+  results: ChatSearchResult[]
+  /** Threads read so far and threads there are; the search is complete when they are equal, and until then asking again finds more. */
+  indexed: number
+  total: number
+  /** More threads matched than are listed. */
+  truncated: boolean
+}
+
 export interface ChatSendRequest {
   attachmentIds?: string[]
   draftRevision?: number

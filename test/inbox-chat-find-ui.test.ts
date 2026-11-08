@@ -9,6 +9,7 @@ vi.mock('../src/renderer/components/inbox/InboxTerminal', () => ({
 }))
 import { InboxThreadView } from '../src/renderer/components/InboxThreadView'
 import { useInboxChat } from '../src/renderer/store/inbox-chat'
+import { useInboxFind } from '../src/renderer/store/inbox-find'
 import { useInboxView } from '../src/renderer/store/inbox-view'
 import { useWorkspace } from '../src/renderer/store/workspace'
 import type { ChatMessage, ChatMessagesPage, ChatPart, ChatRequests, InboxThread } from '../src/shared/types'
@@ -106,6 +107,7 @@ const painted = new Map<string, string[]>()
 
 beforeEach(() => {
   painted.clear()
+  useInboxFind.setState({ request: null })
   class FakeHighlight {
     ranges: Range[]
     constructor(...ranges: Range[]) { this.ranges = ranges }
@@ -203,5 +205,21 @@ describe('find in a conversation', () => {
     await vi.waitFor(() => expect(status()).toBe('1 of 1'))
     expect(api.chat.messages).toHaveBeenCalledWith(expect.objectContaining({ cursor: 'cursor-1' }))
     api.chat.messages.mockImplementation(async () => page)
+  })
+
+  it('opens from a result of the search over all threads, on the message that was found', async () => {
+    useInboxFind.getState().ask({ threadId: 'ses_one', query: 'redirect', messageId: 'a4' })
+    await render()
+    await vi.waitFor(() => expect(input()?.value).toBe('redirect'))
+    // Without the message the search would start at the first match.
+    await vi.waitFor(() => expect(status()).toBe('2 of 2'))
+    expect(useInboxFind.getState().request).toBeNull()
+  })
+
+  it('ignores a request for another thread, and leaves it for that thread', async () => {
+    useInboxFind.getState().ask({ threadId: 'ses_other', query: 'redirect', messageId: 'a4' })
+    await render()
+    expect(q('[data-testid="chat-find"]')).toBeNull()
+    expect(useInboxFind.getState().request?.threadId).toBe('ses_other')
   })
 })

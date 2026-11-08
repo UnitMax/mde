@@ -22,6 +22,8 @@ import { TodoSearch } from '@/components/TodoSearch'
 import { TodoProjectSettingsDialog } from '@/components/TodoProjectSettingsDialog'
 import { TodoTaskDialog } from '@/components/TodoTaskDialog'
 import { isSessionSwitcherShortcut } from '@/lib/session-switcher'
+import { isInboxSearchShortcut } from '@/lib/inbox-search'
+import { InboxSearchDialog } from '@/components/inbox/InboxSearchDialog'
 import { isTodoSearchShortcut } from '@/lib/todo-search'
 import { useWorkspace } from '@/store/workspace'
 import { focusTerminalWhenReady } from '@/terminal/focus'
@@ -99,6 +101,7 @@ export function App(): JSX.Element {
   const [todoTaskDialogTaskId, setTodoTaskDialogTaskId] = useState<string | null>(null)
   const [todoTaskDialogColumnId, setTodoTaskDialogColumnId] = useState<string | null>(null)
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false)
+  const [inboxSearchOpen, setInboxSearchOpen] = useState(false)
   const [todoSearchOpen, setTodoSearchOpen] = useState(false)
   const [terminalLayouts, setTerminalLayouts] = useState<RuntimeLayouts>({})
   const [pendingTerminalFocus, setPendingTerminalFocus] = useState<{
@@ -333,6 +336,30 @@ export function App(): JSX.Element {
     todoSearchOpen,
     todoTaskDialogOpen
   ])
+
+  // Ctrl+Shift+F searches the text of every Inbox thread. It is the Inbox's own: the terminal views keep it for fullscreen.
+  useEffect(() => {
+    if (activeWorkspaceView !== 'inbox') return
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (
+        !isInboxSearchShortcut(event) ||
+        inboxSearchOpen ||
+        sessionSwitcherOpen ||
+        newSessionOpen ||
+        opencodeConfigOpen ||
+        document.querySelector('[role="dialog"], [role="alertdialog"]')
+      ) {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+      setInboxSearchOpen(true)
+    }
+
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [activeWorkspaceView, inboxSearchOpen, newSessionOpen, opencodeConfigOpen, sessionSwitcherOpen])
 
   const todoSearchAvailable = activeWorkspaceView === 'todo' && selectedTodoProjectId !== null
   useEffect(() => {
@@ -737,6 +764,7 @@ export function App(): JSX.Element {
           </>
         )}
         <SessionSwitcher open={sessionSwitcherOpen} onOpenChange={setSessionSwitcherOpen} />
+        <InboxSearchDialog open={inboxSearchOpen} onOpenChange={setInboxSearchOpen} />
       </div>
     </div>
   )
