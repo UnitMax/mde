@@ -1547,16 +1547,16 @@ Each terminal header shows a compact chip with the branch and tracked line chang
 directory. Changes without line counts, including untracked entries and binary changes, show a
 changed-entry count, and a clean checkout shows the branch alone. Commits ahead, the worktree root
 and the clean state are in the chip's tooltip. In a pane narrower than 22rem the chip shrinks to the
-branch icon, plus a dot when there are changes, so the title keeps its room. Clicking the chip opens
-changes, diffs and recent history for that checkout. Queries run from the checkout root, so a terminal inside a subfolder still reviews the
-whole repository. Changing directory closes an open Git dialog and clears the old metadata. The
-session sidebar shows the launch directory and environment; it has no Git view or Git polling.
+branch icon, plus a dot when there are changes, so the title keeps its room. The chip is informational
+and cannot be clicked. Queries run from the checkout root, so a terminal inside a subfolder still
+summarizes the whole repository. Changing directory clears the old metadata. The session sidebar
+shows the launch directory and environment; it has no Git view or Git polling.
 
 MDE polls terminal metadata every ten seconds, on directory changes and on window focus through
 `src/main/git.ts`, using read-only native, Windows and WSL commands. It never overlaps a header’s
 refreshes. The Inbox’s worktrees create and remove a worktree on request through a separate runner.
 Every Git process goes through a shared pool of three slots (`src/main/spawn-limiter.ts`), where
-polled readers queue behind requests such as opening the Git dialog.
+polled readers queue behind requests such as opening an Inbox diff.
 
 Git and `wsl.exe` processes are started on a worker thread (`src/main/exec-host.ts`), not on the main
 thread. Starting a process is a blocking call, and on Windows it occasionally takes over 100 ms (about

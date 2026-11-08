@@ -15,8 +15,6 @@ import {
   type CreateSessionTabRequest,
   type DropPtyFile,
   type DropPtyFilesRequest,
-  type GitDiffRequest,
-  type GitInfoRequest,
   type TerminalDirectoryRequest,
   type FileRoot,
   type GitTerminalInfoRequest,
@@ -52,9 +50,7 @@ import type {
   Distro,
   FileReadResponse,
   FileTreeListResponse,
-  GitDiffResponse,
   HostPlatform,
-  GitInfoResponse,
   GitTerminalInfoResponse,
   NewTodoProject,
   NewTodoTask,
@@ -146,7 +142,7 @@ import {
 import { listWslDirectories } from './wsl/browse'
 import { buildVsCodeRemoteUri } from './vscode'
 import { safeVsCodeRemoteUrl } from './external-links'
-import { readGitDiff, readGitInfo, readGitTerminalInfo } from './git'
+import { readGitTerminalInfo } from './git'
 import { readInboxGitChanges, readInboxGitDiff } from './inbox/changes'
 import { terminalSessionResolver } from './inbox/terminal'
 import { INBOX_TERMINAL_SESSION_ID, inboxTerminalSession, type InboxTerminalConfiguration, type InboxTerminalSettings } from '@shared/inbox-terminal'
@@ -775,10 +771,6 @@ export function registerIpcHandlers(
     if (folder) await openDirectoryInVsCode(folder.session, folder.directory)
   })
 
-  handle<GitInfoRequest, GitInfoResponse>(IpcChannels.gitInfo, async (req) => {
-    return readGitInfo(await terminalDirectory(req))
-  })
-
   handle<GitTerminalInfoRequest, GitTerminalInfoResponse | null>(
     IpcChannels.gitTerminalInfo,
     async (req) => {
@@ -806,11 +798,6 @@ export function registerIpcHandlers(
       }
     }
   )
-
-  handle<GitDiffRequest, GitDiffResponse>(IpcChannels.gitDiff, async (req) => {
-    if (!req || typeof req.path !== 'string' || !req.path) throw new Error('Invalid Git diff request.')
-    return readGitDiff(await terminalDirectory(req), req.path)
-  })
 
   handle<FilesListRequest, FileTreeListResponse>(IpcChannels.filesList, async (req) => {
     if (!isFileRoot(req) || typeof req.path !== 'string') throw new Error('Invalid file request.')

@@ -1,15 +1,12 @@
 import { execFile } from './exec-host'
 import { win32 } from 'node:path'
 import type {
-  GitChange,
   InboxChangesResponse,
   InboxChangeDiff,
   GitChangeStatus,
   GitDiffResponse,
-  GitInfoResponse,
   GitStatusResponse,
   GitTerminalInfoResponse,
-  GitCommit,
   DirectoryContext,
   Session
 } from '@shared/types'
@@ -17,7 +14,6 @@ import { resolveWindowsGitExecutable } from './git-executable'
 import { createSpawnLimiter, type SpawnPriority } from './spawn-limiter'
 import { runWslCommand } from './wsl/distros'
 
-const GIT_HISTORY_LIMIT = 50
 const GIT_COMMAND_TIMEOUT_MS = 10_000
 /** A checkout writes a whole working tree, so it gets far longer than a status query. */
 const GIT_MUTATION_TIMEOUT_MS = 120_000
@@ -28,7 +24,7 @@ const GIT_EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 
 /**
  * Git processes allowed at once across terminal headers and Inbox changes. Background
- * refreshes yield to requests the user makes, such as opening a changes dialog.
+ * refreshes yield to requests the user makes, such as opening an Inbox diff.
  */
 const GIT_SPAWN_LIMIT = 3
 const gitSpawns = createSpawnLimiter(GIT_SPAWN_LIMIT)
@@ -180,7 +176,7 @@ function attrSourceKey(session: Session, workspaceDirectory: string): string {
  * Wraps a transport so every Git call carries the safety options. Hardening
  * lives here rather than at the call sites so no query can omit it. Calls share
  * one bounded pool of process slots; `background` polling yields to `interactive`
- * requests such as opening the Git dialog.
+ * requests such as opening an Inbox diff.
  */
 export function createGitCommandRunner(
   session: DirectoryContext,
@@ -307,10 +303,6 @@ export function parseGitNumstat(output: string): GitLineChangeCounts {
   return { additions, deletions }
 }
 
-function hasGitStatus(code: string | undefined): boolean {
-  return code !== undefined && code !== ' ' && code !== '.' && code !== '?' && code !== '!'
-}
-
 function statusFromPorcelain(recordType: string, xy: string): GitChangeStatus {
   if (recordType === '?') return 'untracked'
   if (recordType === 'u' || xy.includes('U')) return 'unmerged'
@@ -320,6 +312,13 @@ function statusFromPorcelain(recordType: string, xy: string): GitChangeStatus {
   if (xy.includes('A')) return 'added'
   if (xy.includes('T')) return 'type-changed'
   return 'modified'
+}
+
+/** Paths and status needed to summarize changes and read checkout diffs. */
+interface GitChange {
+  path: string
+  oldPath: string | null
+  status: GitChangeStatus
 }
 
 function parseStatusRecord(
@@ -335,9 +334,7 @@ function parseStatusRecord(
       change: {
         path,
         oldPath: null,
-        status: 'untracked',
-        staged: false,
-        unstaged: true
+        status: 'untracked'
       },
       nextFieldIndex: fieldIndex
     }
@@ -353,8 +350,6 @@ function parseStatusRecord(
   const path = parts.slice(pathStart).join(' ')
   if (!xy || !path) throw new Error('Git returned malformed change status.')
 
-  const indexStatus = xy[0]
-  const worktreeStatus = xy[1]
   const oldPath = recordType === '2' ? fields[fieldIndex] : undefined
   if (recordType === '2' && !oldPath) throw new Error('Git returned malformed change status.')
 
@@ -362,9 +357,7 @@ function parseStatusRecord(
     change: {
       path,
       oldPath: oldPath ?? null,
-      status: statusFromPorcelain(recordType, xy),
-      staged: hasGitStatus(indexStatus),
-      unstaged: hasGitStatus(worktreeStatus)
+      status: statusFromPorcelain(recordType, xy)
     },
     nextFieldIndex: recordType === '2' ? fieldIndex + 1 : fieldIndex
   }
@@ -426,61 +419,6 @@ async function readGitChangesAfterRepository(run: GitCommandRunner): Promise<Git
   const status = await run(gitStatusArgs)
   if (status.code !== 0) throw commandError('status', status)
   return parseGitStatus(status.stdout)
-}
-
-/** Parses NUL-delimited `%H`, `%s`, `%an`, `%cI` records from `git log`. */
-export function parseGitLog(output: string): GitCommit[] {
-  const fields = output.split('\u0000')
-  if (fields.at(-1) === '') fields.pop()
-  if (fields.length === 0) return []
-  if (fields.length % 4 !== 0) throw new Error('Git returned malformed commit history.')
-
-  const commits: GitCommit[] = []
-  for (let index = 0; index < fields.length; index += 4) {
-    const hash = fields[index]?.trim()
-    const message = fields[index + 1]
-    const author = fields[index + 2]?.trim()
-    const timestamp = fields[index + 3]?.trim()
-    if (!hash || message === undefined || !author || !timestamp) {
-      throw new Error('Git returned malformed commit history.')
-    }
-    commits.push({ hash, message, author, timestamp })
-  }
-  return commits
-}
-
-export async function readGitInfoWithRunner(run: GitCommandRunner): Promise<GitInfoResponse> {
-  const repository = await ensureRepository(run)
-  if (!repository) return { repository: false, branch: null, commits: [], changes: [] }
-
-  const [branch, history, status] = await Promise.all([
-    run(['--no-pager', 'branch', '--show-current']),
-    run([
-      '--no-pager',
-      'log',
-      '-z',
-      '--max-count',
-      String(GIT_HISTORY_LIMIT),
-      '--format=%H%x00%s%x00%an%x00%cI'
-    ]),
-    run(gitStatusArgs)
-  ])
-
-  if (branch.code !== 0) throw commandError('branch', branch)
-  if (history.code !== 0 && !/does not have any commits yet/i.test(history.stderr)) throw commandError('history', history)
-  if (status.code !== 0) throw commandError('status', status)
-
-  return {
-    repository: true,
-    branch: branch.stdout.trim() || null,
-    commits: parseGitLog(history.stdout),
-    changes: parseGitStatus(status.stdout)
-  }
-}
-
-export async function readGitInfo(session: DirectoryContext): Promise<GitInfoResponse> {
-  const checkout = await checkoutRunner(createGitCommandRunner(session, process.platform, session.path))
-  return checkout ? readGitInfoWithRunner(checkout.run) : { repository: false, branch: null, commits: [], changes: [] }
 }
 
 export async function readGitTerminalInfoWithRunner(
@@ -607,13 +545,6 @@ export async function readGitDiffWithRunner(
     diff: result.stdout,
     binary: isBinaryGitDiff(result.stdout)
   }
-}
-
-export async function readGitDiff(session: DirectoryContext, path: string): Promise<GitDiffResponse> {
-  const nullDevice = session.kind === 'wsl' || process.platform !== 'win32' ? '/dev/null' : 'NUL'
-  const checkout = await checkoutRunner(createGitCommandRunner(session, process.platform, session.path))
-  if (!checkout) throw new Error('This terminal folder is not a Git repository.')
-  return readGitDiffWithRunner(checkout.run, path, nullDevice)
 }
 
 /** Untracked files whose line counts are read; the rest are listed without counts. */

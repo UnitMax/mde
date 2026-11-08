@@ -26,8 +26,8 @@ Inbox sidebar terminal. Apply restarts its panes when the distribution changes; 
 
 Build terminal layouts by holding Ctrl and clicking + on a pane’s left, right, top or bottom edge.
 Drag dividers to resize; closing a pane expands its sibling and preserves the rest of the layout.
-Select a terminal to browse its current folder in Files. Click its branch and change counts in the
-terminal header to review Git changes and history. Sessions group terminals by name and environment;
+Select a terminal to browse its current folder in Files. Its terminal header shows the current
+branch and change counts. Sessions group terminals by name and environment;
 the Sessions sidebar shows each session’s runtime and WSL distribution below its name. Create a
 session with a name and environment, then drag its sidebar handle to reorder it. Each terminal
 remembers its own last reported folder across app restarts. Restored shells fall back

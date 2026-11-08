@@ -66,9 +66,7 @@ const validPayloads = {
   [IpcChannels.pathOpenTerminalInVsCode]: 'pane',
   [IpcChannels.pathRevealInbox]: 'ses_thread',
   [IpcChannels.pathOpenInboxInVsCode]: 'fld_1234',
-  [IpcChannels.gitInfo]: { terminalId: 'pane', directory: '/workspace' },
   [IpcChannels.gitTerminalInfo]: terminalId,
-  [IpcChannels.gitDiff]: { terminalId: 'pane', directory: '/workspace', path: 'src/file.ts' },
   [IpcChannels.filesList]: { sessionId: 'session', path: '' },
   [IpcChannels.filesRead]: { sessionId: 'session', path: 'src/file.ts' },
   [IpcChannels.inboxList]: undefined,
@@ -449,8 +447,6 @@ describe('IPC payload boundary', () => {
     const root = { terminalId: 'pane', directory: '/workspace/current' }
     expect(() => assertIpcPayload(IpcChannels.filesList, { ...root, path: '' })).not.toThrow()
     expect(() => assertIpcPayload(IpcChannels.filesRead, { ...root, path: 'src/main.ts' })).not.toThrow()
-    expect(() => assertIpcPayload(IpcChannels.gitInfo, root)).not.toThrow()
-    expect(() => assertIpcPayload(IpcChannels.gitDiff, { ...root, path: 'src/main.ts' })).not.toThrow()
     expect(() => assertIpcPayload(IpcChannels.ptyDropFiles, { terminalId: 'target', files: [], mode: 'shell', treeEntry: { ...root, path: 'src' } })).not.toThrow()
     expect(() => assertIpcPayload(IpcChannels.chatDraft, { key: 'draft:drf_one', action: 'tree', ...root, path: 'src/main.ts' })).not.toThrow()
     for (const channel of [IpcChannels.filesList, IpcChannels.filesRead]) {
@@ -459,8 +455,6 @@ describe('IPC payload boundary', () => {
       rejects(channel, { ...root, directory: '', path: 'src/main.ts' })
       rejects(channel, { ...root, path: '../outside' })
     }
-    rejects(IpcChannels.gitInfo, { sessionId: 'session' })
-    rejects(IpcChannels.gitInfo, { ...root, sessionId: 'session' })
   })
 
   it('rejects malformed trees, unmatched pane references and invalid ratios', () => {

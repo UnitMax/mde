@@ -9,8 +9,6 @@ import { useWorkspace } from '../src/renderer/store/workspace'
 
 const roots: Root[] = []
 const terminalInfo = vi.fn()
-const gitInfo = vi.fn()
-const gitDiff = vi.fn()
 const snapshot: GitTerminalInfoResponse = {
   repository: true, branch: 'feature/terminal', worktree: '/workspace/repo',
   directory: '/workspace/repo/src', additions: 12, deletions: 3, commitsAhead: 2, changedFiles: 1,
@@ -30,13 +28,9 @@ describe('TerminalGitInfo', () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     Object.defineProperty(window, 'api', {
       configurable: true,
-      value: { git: { terminalInfo, info: gitInfo, diff: gitDiff } },
+      value: { git: { terminalInfo } },
     })
     terminalInfo.mockReset().mockResolvedValue(snapshot)
-    gitInfo.mockReset().mockResolvedValue({ repository: true, branch: snapshot.branch, commits: [], changes: [
-      { path: 'src/changed.ts', oldPath: null, status: 'modified', staged: false, unstaged: true },
-    ] })
-    gitDiff.mockReset().mockResolvedValue({ path: 'src/changed.ts', diff: '@@ -1 +1 @@\n-old\n+new\n', binary: false })
     useWorkspace.setState({ statuses: { 'pane-1': 'running' }, terminalDirectories: { 'pane-1': snapshot.directory } })
   })
 
@@ -48,9 +42,9 @@ describe('TerminalGitInfo', () => {
     vi.unstubAllGlobals()
   })
 
-  it('shows the branch and line changes in a clickable header, with the rest in its label', async () => {
+  it('shows the branch and line changes as a non-interactive summary, with the rest in its label', async () => {
     const container = await renderInfo()
-    const info = container.querySelector('button')
+    const info = container.querySelector('[role="img"]')
     expect(info?.textContent).toContain('feature/terminal')
     expect(info?.textContent).toContain('+12')
     expect(info?.textContent).toContain('−3')
@@ -60,15 +54,11 @@ describe('TerminalGitInfo', () => {
     for (const label of [info?.getAttribute('aria-label'), info?.getAttribute('title')]) {
       expect(label).toContain('2 commits ahead of upstream')
       expect(label).toContain('Git worktree /workspace/repo')
-      expect(label).toContain('Open Git changes and history')
     }
     expect(info?.querySelector('.bg-warn')).not.toBeNull()
-    expect(gitInfo).not.toHaveBeenCalled()
-
-    await act(async () => info?.click())
-    expect(gitInfo).toHaveBeenCalledWith({ terminalId: 'pane-1', directory: snapshot.directory })
-    expect(gitDiff).toHaveBeenCalledWith({ terminalId: 'pane-1', directory: snapshot.directory, path: 'src/changed.ts' })
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('+new')
+    expect(container.querySelector('button, [tabindex], [role="button"]')).toBeNull()
+    await act(async () => info?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
   })
 
   it('renders nothing outside a repository', async () => {
@@ -81,16 +71,13 @@ describe('TerminalGitInfo', () => {
     const container = await renderInfo()
     expect(container.textContent).toContain('Detached HEAD')
     expect(container.textContent).toContain('2 changed')
-    expect(container.querySelector('button')?.getAttribute('aria-label')).toContain('2 changed entries')
+    expect(container.querySelector('[role="img"]')?.getAttribute('aria-label')).toContain('2 changed entries')
   })
 
-  it('clears the dialog and refreshes after changing directory', async () => {
+  it('refreshes the summary after changing directory', async () => {
     const container = await renderInfo()
-    await act(async () => container.querySelector('button')?.click())
-    expect(document.querySelector('[role="dialog"]')).not.toBeNull()
     terminalInfo.mockResolvedValue({ ...snapshot, branch: 'feature/live', worktree: '/workspace/other', directory: '/workspace/other' })
     await act(async () => useWorkspace.getState().setTerminalDirectory({ terminalId: 'pane-1', directory: '/workspace/other' }))
-    expect(document.querySelector('[role="dialog"]')).toBeNull()
     expect(container.textContent).toContain('feature/live')
     expect(container.textContent).not.toContain('feature/terminal')
   })
@@ -117,7 +104,7 @@ describe('TerminalGitInfo', () => {
     terminalInfo.mockResolvedValue({ ...snapshot, additions: 0, deletions: 0, changedFiles: 0, commitsAhead: null })
     await act(async () => window.dispatchEvent(new Event('focus')))
     expect(terminalInfo).toHaveBeenCalledTimes(2)
-    const info = container.querySelector('button')
+    const info = container.querySelector('[role="img"]')
     expect(info?.textContent).toBe('feature/terminal')
     expect(info?.getAttribute('aria-label')).toContain('Working tree clean')
     expect(info?.querySelector('.bg-warn')).toBeNull()

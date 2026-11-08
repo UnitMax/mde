@@ -2,8 +2,6 @@ import type { InboxTerminalConfiguration, InboxTerminalSettings } from './inbox-
 import type { TaskbarAttentionRequest } from './taskbar-attention'
 import type {
   Distro,
-  GitDiffResponse,
-  GitInfoResponse,
   GitTerminalInfoResponse,
   HostPlatform,
   NewTodoProject,
@@ -146,9 +144,7 @@ export const IpcChannels = {
   pathRevealInbox: 'path:reveal-inbox',
   pathOpenInboxInVsCode: 'path:open-inbox-in-vscode',
 
-  gitInfo: 'git:info',
   gitTerminalInfo: 'git:terminal-info',
-  gitDiff: 'git:diff',
 
   filesList: 'files:list',
   filesRead: 'files:read',
@@ -267,15 +263,8 @@ export type FileRoot =
   | { sessionId: string; terminalId?: never; directory?: never }
   | (TerminalDirectoryRequest & { sessionId?: never })
 
-export type GitInfoRequest = TerminalDirectoryRequest
-
 export interface GitTerminalInfoRequest {
   terminalId: string
-}
-
-export interface GitDiffRequest extends TerminalDirectoryRequest {
-  /** Path relative to the current checkout root. */
-  path: string
 }
 
 export type FilesListRequest = FileRoot & {
@@ -515,9 +504,7 @@ export interface RendererApi {
     openInboxInVsCode(id: string): Promise<void>
   }
   git: {
-    info(req: GitInfoRequest): Promise<GitInfoResponse>
     terminalInfo(req: GitTerminalInfoRequest): Promise<GitTerminalInfoResponse | null>
-    diff(req: GitDiffRequest): Promise<GitDiffResponse>
   }
   files: {
     list(req: FilesListRequest): Promise<FileTreeListResponse>

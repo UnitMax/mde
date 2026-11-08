@@ -903,17 +903,6 @@ export interface WslDirectoryListing {
   truncated: boolean
 }
 
-/** A single commit shown by the read-only Git history view. */
-export interface GitCommit {
-  /** Full object ID; the renderer may shorten this for display. */
-  hash: string
-  message: string
-  /** Display name recorded for the commit author. */
-  author: string
-  /** ISO-8601 committer timestamp from Git. */
-  timestamp: string
-}
-
 export type GitChangeStatus =
   | 'modified'
   | 'added'
@@ -923,25 +912,6 @@ export type GitChangeStatus =
   | 'type-changed'
   | 'unmerged'
   | 'untracked'
-
-/** A file changed relative to HEAD in the current Git worktree. */
-export interface GitChange {
-  /** Path relative to the Git command's working directory. */
-  path: string
-  /** Original path for Git-detected renames and copies. */
-  oldPath: string | null
-  status: GitChangeStatus
-  staged: boolean
-  unstaged: boolean
-}
-
-export interface GitInfoResponse {
-  repository: boolean
-  /** Null when the repository is in a detached HEAD state. */
-  branch: string | null
-  commits: GitCommit[]
-  changes: GitChange[]
-}
 
 /** Lightweight Git state for a checkout. */
 export interface GitStatusResponse {

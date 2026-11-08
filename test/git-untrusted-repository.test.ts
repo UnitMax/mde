@@ -7,7 +7,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   createGitCommandRunner,
   readGitDiffWithRunner,
-  readGitInfoWithRunner,
   readGitStatusWithRunner
 } from '../src/main/git'
 import type { DirectoryContext } from '../src/shared/types'
@@ -127,18 +126,6 @@ describeUntrustedRepository('Automatic Git queries against an untrusted working 
       changedFiles: 6,
     })
 
-    expect(await firedSentinels()).toEqual([])
-  })
-
-  it('executes nothing the repository configured while reading history and changes', async () => {
-    const info = await readGitInfoWithRunner(createGitCommandRunner(session, 'linux'))
-
-    expect(info.branch).toBe('main')
-    expect(info.commits).toHaveLength(1)
-    expect(info.changes).toContainEqual(
-      expect.objectContaining({ path: 'tracked.txt', status: 'modified', unstaged: true })
-    )
-    expect(info.changes).toContainEqual(expect.objectContaining({ path: 'untracked.txt', status: 'untracked' }))
     expect(await firedSentinels()).toEqual([])
   })
 

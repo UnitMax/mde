@@ -8,16 +8,12 @@ import {
   parseGitAheadCount,
   parseGitNumstat,
   parseGitStatus,
-  parseGitLog,
-  readGitInfo,
-  readGitInfoWithRunner,
   readGitTerminalInfo,
   readGitTerminalInfoWithRunner,
   readGitStatusWithRunner,
   readGitDiffWithRunner,
   type GitCommandResult
 } from '../src/main/git'
-import { formatGitTimestamp, parseGitDiff, shortGitHash } from '../src/renderer/lib/git'
 
 const mocks = vi.hoisted(() => ({
   execFile: vi.fn(),
@@ -92,14 +88,12 @@ describe('Git process concurrency', () => {
   function holdProcesses() {
     const held: Array<() => void> = []
     const order: string[] = []
-    const cwds: string[] = []
     const state = { running: 0, peak: 0 }
     mocks.execFile.mockImplementation(
-      (_file: string, args: string[], options: { cwd?: string }, callback: (error: null, stdout: string, stderr: string) => void) => {
+      (_file: string, args: string[], _options: { cwd?: string }, callback: (error: null, stdout: string, stderr: string) => void) => {
         state.running += 1
         state.peak = Math.max(state.peak, state.running)
         order.push(args.at(-1) ?? '')
-        cwds.push(options.cwd ?? '')
         held.push(() => {
           state.running -= 1
           callback(null, 'true\n', '')
@@ -114,7 +108,7 @@ describe('Git process concurrency', () => {
         await new Promise((resolve) => setTimeout(resolve, 0))
       }
     }
-    return { state, order, cwds, releaseAll }
+    return { state, order, releaseAll }
   }
 
   it('starts at most three Git processes at once, however many sessions refresh together', async () => {
@@ -137,41 +131,17 @@ describe('Git process concurrency', () => {
     const interactive = createGitCommandRunner(nativeSession, 'linux', nativeSession.path, 'interactive')
 
     const polls = ['poll-1', 'poll-2', 'poll-3', 'poll-4', 'poll-5'].map((name) => background([name]))
-    const dialog = interactive(['dialog'])
+    const diff = interactive(['diff'])
     await new Promise((resolve) => setTimeout(resolve, 0))
     await processes.releaseAll()
-    await Promise.all([...polls, dialog])
+    await Promise.all([...polls, diff])
 
-    // Three polls took the free slots; the dialog's command was then next, ahead of poll-4 and poll-5.
-    expect(processes.order.slice(0, 4)).toEqual(['poll-1', 'poll-2', 'poll-3', 'dialog'])
-  })
-
-  it('treats the polled readers as background work and the dialog readers as interactive', async () => {
-    const processes = holdProcesses()
-    const blockers = [1, 2, 3].map((n) =>
-      createGitCommandRunner({ ...nativeSession, path: `/workspace/blocker-${n}` }, 'linux', `/workspace/blocker-${n}`)(['blocker'])
-    )
-    await new Promise((resolve) => setTimeout(resolve, 0))
-
-    // Queued behind the blockers in this order: two pollers, then the dialog's reader.
-    const queued = [
-      readGitTerminalInfo(nativeSession, '/workspace/status-poll'),
-      readGitTerminalInfo(nativeSession, '/workspace/terminal-poll'),
-      readGitInfo({ ...nativeSession, path: '/workspace/dialog' })
-    ]
-    queued.forEach((promise) => promise.catch(() => undefined))
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    await processes.releaseAll()
-    await Promise.all(blockers)
-
-    const afterBlockers = processes.cwds.slice(3)
-    expect(afterBlockers[0]).toBe('/workspace/dialog')
-    expect(afterBlockers.slice(1, 3).sort()).toEqual(['/workspace/status-poll', '/workspace/terminal-poll'])
-    expect(processes.state.peak).toBe(3)
+    // Three polls took the free slots; the requested diff was then next, ahead of poll-4 and poll-5.
+    expect(processes.order.slice(0, 4)).toEqual(['poll-1', 'poll-2', 'poll-3', 'diff'])
   })
 })
 
-describe('Git history queries', () => {
+describe('Git command transport and status parsing', () => {
   it('uses the explicit native folder as the Git cwd', async () => {
     const calls: Array<{ file: string; args: string[]; cwd?: string }> = []
     mocks.execFile.mockImplementation(
@@ -186,7 +156,7 @@ describe('Git history queries', () => {
       }
     )
 
-    await readGitInfo(nativeSession)
+    await readGitTerminalInfo(nativeSession, nativeSession.path)
 
     expect(calls).toHaveLength(6)
     expect(calls.every((call) => call.file === 'git' && call.cwd === nativeSession.path)).toBe(true)
@@ -249,9 +219,9 @@ describe('Git history queries', () => {
       return { stdout, stderr: '', code: 0 }
     })
 
-    await readGitInfoWithRunner(createGitCommandRunner(wslSession, 'win32'))
+    await readGitStatusWithRunner(createGitCommandRunner(wslSession, 'win32'))
 
-    expect(calls).toHaveLength(4)
+    expect(calls).toHaveLength(5)
     expect(calls.every((call) => call.distro === 'Ubuntu-24.04')).toBe(true)
     expect(calls.every((call) => call.cwd === '/home/me/src/app')).toBe(true)
     expect(calls.every((call) => call.command[0] === 'git')).toBe(true)
@@ -269,75 +239,6 @@ describe('Git history queries', () => {
       ['git', ...hardened('--no-pager', 'diff', 'HEAD', '--', filename)],
       { cwd: '/home/me/src/app' }
     )
-  })
-
-  it('reads the branch and newest commits through one runner', async () => {
-    const calls: string[][] = []
-    const run = async (args: string[]): Promise<GitCommandResult> => {
-      calls.push(args)
-      if (args.includes('rev-parse')) return result('true\n')
-      if (args.includes('branch')) return result('main\n')
-      if (args.includes('status')) return result('')
-      return result(
-        '0123456789abcdef\u0000First commit\u0000Max Mustermann\u00002026-08-19T10:00:00+02:00\u0000'
-      )
-    }
-
-    await expect(readGitInfoWithRunner(run)).resolves.toEqual({
-      repository: true,
-      branch: 'main',
-      commits: [
-        {
-          hash: '0123456789abcdef',
-          message: 'First commit',
-          author: 'Max Mustermann',
-          timestamp: '2026-08-19T10:00:00+02:00'
-        }
-      ],
-      changes: []
-    })
-    expect(calls).toContainEqual(['--no-pager', 'rev-parse', '--is-inside-work-tree'])
-    expect(calls).toContainEqual(['--no-pager', 'branch', '--show-current'])
-    expect(calls).toContainEqual([
-      '--no-pager',
-      'log',
-      '-z',
-      '--max-count',
-      '50',
-      '--format=%H%x00%s%x00%an%x00%cI'
-    ])
-  })
-
-  it('returns an inline non-repository result for Git’s repository error', async () => {
-    const run = async (): Promise<GitCommandResult> =>
-      result('', 'fatal: not a git repository (or any of the parent directories): .git', 128)
-
-    await expect(readGitInfoWithRunner(run)).resolves.toEqual({
-      repository: false,
-      branch: null,
-      commits: [],
-      changes: []
-    })
-  })
-
-  it('propagates other Git failures', async () => {
-    const run = async (): Promise<GitCommandResult> => result('', 'fatal: permission denied', 128)
-
-    await expect(readGitInfoWithRunner(run)).rejects.toThrow('Could not read Git repository.')
-  })
-
-  it('parses empty and NUL-delimited histories', () => {
-    expect(parseGitLog('')).toEqual([])
-    expect(
-      parseGitLog('abc123\u0000Message with a tab\tinside\u0000Ada Lovelace\u00002026-08-19T10:00:00+02:00\u0000')
-    ).toEqual([
-      {
-        hash: 'abc123',
-        message: 'Message with a tab\tinside',
-        author: 'Ada Lovelace',
-        timestamp: '2026-08-19T10:00:00+02:00'
-      }
-    ])
   })
 
   it('parses ahead counts and ignores missing upstream headers', () => {
@@ -370,36 +271,26 @@ describe('Git history queries', () => {
         path: 'src/changed.ts',
         oldPath: null,
         status: 'modified',
-        staged: true,
-        unstaged: false
       },
       {
         path: 'src/removed.ts',
         oldPath: null,
         status: 'deleted',
-        staged: false,
-        unstaged: true
       },
       {
         path: 'src/new name.ts',
         oldPath: 'old name.ts',
         status: 'renamed',
-        staged: true,
-        unstaged: false
       },
       {
         path: 'new file.ts',
         oldPath: null,
         status: 'untracked',
-        staged: false,
-        unstaged: true
       },
       {
         path: 'conflict.ts',
         oldPath: null,
         status: 'unmerged',
-        staged: true,
-        unstaged: true
       }
     ])
   })
@@ -676,23 +567,7 @@ describe('Git diff queries', () => {
   })
 })
 
-describe('Git history display helpers', () => {
-  it('shortens hashes and preserves invalid timestamps', () => {
-    expect(shortGitHash('0123456789abcdef')).toBe('0123456')
-    expect(formatGitTimestamp('not-a-timestamp')).toBe('not-a-timestamp')
-    expect(formatGitTimestamp('2026-08-19T10:00:00+02:00')).not.toBe('2026-08-19T10:00:00+02:00')
-  })
-
-  it('classifies unified diff lines for the renderer', () => {
-    expect(parseGitDiff('diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n context\n')).toEqual([
-      { text: 'diff --git a/a.ts b/a.ts', kind: 'metadata' },
-      { text: '@@ -1 +1 @@', kind: 'hunk' },
-      { text: '-old', kind: 'deletion' },
-      { text: '+new', kind: 'addition' },
-      { text: ' context', kind: 'context' }
-    ])
-  })
-
+describe('Git diff binary detection', () => {
   it('detects only standalone Git binary markers', () => {
     expect(isBinaryGitDiff('diff --git a/image.png b/image.png\nBinary files a/image.png and b/image.png differ\n')).toBe(true)
     expect(isBinaryGitDiff('diff --git a/image.png b/image.png\nGIT binary patch\n')).toBe(true)
@@ -714,7 +589,7 @@ describe('Git command hardening (SEC-008)', () => {
       }
     )
 
-    await readGitInfo(nativeSession)
+    await readGitTerminalInfo(nativeSession, nativeSession.path)
 
     expect(calls).not.toHaveLength(0)
     for (const args of calls) {

@@ -112,9 +112,7 @@ const api: RendererApi = {
     openInboxInVsCode: (id) => ipcRenderer.invoke(IpcChannels.pathOpenInboxInVsCode, id)
   },
   git: {
-    info: (req) => ipcRenderer.invoke(IpcChannels.gitInfo, req),
-    terminalInfo: (req) => ipcRenderer.invoke(IpcChannels.gitTerminalInfo, req),
-    diff: (req) => ipcRenderer.invoke(IpcChannels.gitDiff, req)
+    terminalInfo: (req) => ipcRenderer.invoke(IpcChannels.gitTerminalInfo, req)
   },
   files: {
     list: (req) => ipcRenderer.invoke(IpcChannels.filesList, req),

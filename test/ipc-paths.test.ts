@@ -749,11 +749,11 @@ describe('file tree IPC', () => {
     expect(wslDistrosMock.runWslCommandBuffer.mock.calls[0]?.[1]).toContain('/home/me/current/README.md')
   })
 
-  it.each([IpcChannels.filesList, IpcChannels.filesRead, IpcChannels.gitInfo, IpcChannels.gitDiff])('rejects a stale or invented terminal directory for %s', async (channel) => {
+  it.each([IpcChannels.filesList, IpcChannels.filesRead])('rejects a stale or invented terminal directory for %s', async (channel) => {
     workspaceMock.getSession.mockResolvedValue(wslSession())
     const terminalInfo = vi.fn(() => ({ sessionId: 'session-1', directory: '/home/me/current' }))
     registerForTest(terminalInfo)
-    await expect(handler(channel)(trustedEvent, { terminalId: 'pane-1', directory: '/home/me/other', ...(channel === IpcChannels.gitInfo ? {} : { path: 'README.md' }) })).rejects.toThrow('The terminal directory has changed.')
+    await expect(handler(channel)(trustedEvent, { terminalId: 'pane-1', directory: '/home/me/other', path: 'README.md' })).rejects.toThrow('The terminal directory has changed.')
     expect(wslDistrosMock.runWslCommand).not.toHaveBeenCalled()
   })
 
