@@ -21,9 +21,14 @@ export const markdownExtensions = [
   ...sharedMarkdownExtensions,
 ]
 
-/** The preview also renders Mermaid diagrams and GitHub task lists. */
+/**
+ * The preview also renders Mermaid diagrams and GitHub task lists. It is read-only, so it has no use for the
+ * editor's trailing empty paragraph, which is there to give the cursor somewhere to go after a list, code block
+ * or table. It is only added on the first transaction, and a click is one: the text of a message ending in a
+ * list then grew by a blank line the moment it was clicked.
+ */
 export const markdownPreviewExtensions = [
-  StarterKit.configure({ ...starterKitOptions, codeBlock: false }),
+  StarterKit.configure({ ...starterKitOptions, codeBlock: false, trailingNode: false }),
   ...sharedMarkdownExtensions,
   MermaidCodeBlock,
   TaskList,
