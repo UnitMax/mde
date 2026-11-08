@@ -964,14 +964,3 @@
     animation: mde-inbox-terminal-fade 1200ms ease-out both;
   }
 }
-
-/* Find in a conversation: every match, and the one being stepped to (see lib/chat-find.ts). */
-::highlight(chat-find) {
-  background-color: color-mix(in srgb, var(--color-accent) 38%, transparent);
-  color: inherit;
-}
-
-::highlight(chat-find-current) {
-  background-color: var(--color-accent);
-  color: var(--color-bg);
-}

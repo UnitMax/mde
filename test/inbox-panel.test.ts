@@ -7,6 +7,7 @@ import type { ChatDraft, ChatDraftRequest, ChatForkRequest, ChatForkResult, Inbo
 import { InboxPanel } from '../src/renderer/components/InboxPanel'
 import { InboxThreadView } from '../src/renderer/components/InboxThreadView'
 import { useInboxChat } from '../src/renderer/store/inbox-chat'
+import { useInboxView } from '../src/renderer/store/inbox-view'
 import { useWorkspace } from '../src/renderer/store/workspace'
 import { messageInput, pressMessageKey } from './helpers/chat-input'
 import { openInboxFilterMenu, openInboxSearch, showInboxThreads } from './helpers/inbox-toolbar'
@@ -45,10 +46,20 @@ async function render(element: Parameters<Root['render']>[0]): Promise<HTMLEleme
   return container
 }
 
+async function openThreadMenu(row: HTMLElement): Promise<void> {
+  await act(async () => row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 20, button: 2 })))
+}
+
+async function chooseThreadAction(label: string): Promise<void> {
+  const item = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((entry) => entry.textContent?.trim() === label)
+  if (!item) throw new Error(`Missing context menu action: ${label}`)
+  await act(async () => item.click())
+}
+
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('api', {
-    inbox: { setRead, setArchived: vi.fn(async () => null), remove, folders },
+    inbox: { setRead, setArchived: vi.fn(async () => null), setPinned: vi.fn(async () => null), remove, folders },
     chat: {
       draft,
       fork,
@@ -166,6 +177,79 @@ describe('Inbox chat message history', () => {
 })
 
 describe('Inbox', () => {
+  it.each([
+    ['Pin thread', 'setPinned', { pinned: true }],
+    ['Mark as unread', 'setRead', { read: false }],
+    ['Park', 'setArchived', { archived: true }],
+  ] as const)('applies %s to selected threads without opening them', async (label, method, values) => {
+    useWorkspace.setState({
+      inboxThreads: [thread({ readAt: Date.now() }), thread({ id: 'ses_two', title: 'Second', readAt: Date.now() }), thread({ id: 'ses_three', title: 'Third', readAt: Date.now() })],
+      selectedInboxThreadId: 'ses_one',
+    })
+    const panel = await render(createElement(InboxPanel))
+    const second = panel.querySelector<HTMLButtonElement>('[data-testid="inbox-thread-ses_two"]')!
+    await act(async () => second.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true })))
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_one')
+    expect(panel.querySelectorAll('[aria-label$=", selected"]')).toHaveLength(2)
+    expect(second.getAttribute('aria-label')).toBe('Second, selected')
+    await openThreadMenu(second)
+    expect(Array.from(document.body.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent?.trim())).toEqual(['Pin thread', 'Mark as unread', 'Park'])
+    await chooseThreadAction(label)
+    expect(window.api.inbox[method]).toHaveBeenCalledTimes(2)
+    expect(window.api.inbox[method]).toHaveBeenCalledWith({ id: 'ses_one', ...values })
+    expect(window.api.inbox[method]).toHaveBeenCalledWith({ id: 'ses_two', ...values })
+    expect(panel.querySelectorAll('[aria-label$=", selected"]')).toHaveLength(0)
+  })
+
+  it('keeps only failed threads selected for retry and lets a regular click clear selection', async () => {
+    useWorkspace.setState({ inboxThreads: [thread({ readAt: Date.now() }), thread({ id: 'ses_two', title: 'Second', readAt: Date.now() })], selectedInboxThreadId: 'ses_one' })
+    vi.mocked(window.api.inbox.setPinned).mockImplementation(async ({ id }) => {
+      if (id === 'ses_two') throw new Error('Failed')
+      return null
+    })
+    const panel = await render(createElement(InboxPanel))
+    const second = panel.querySelector<HTMLButtonElement>('[data-testid="inbox-thread-ses_two"]')!
+    await act(async () => second.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true })))
+    await openThreadMenu(second)
+    await chooseThreadAction('Pin thread')
+    expect(panel.querySelectorAll('[aria-label$=", selected"]')).toHaveLength(1)
+    expect(panel.querySelector('[role="alert"]')?.textContent).toContain('Could not update 1 thread')
+    await act(async () => second.click())
+    expect(panel.querySelectorAll('[aria-label$=", selected"]')).toHaveLength(0)
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_two')
+  })
+
+  it('uses the clicked selected thread to choose the action and leaves an unselected thread menu alone', async () => {
+    useWorkspace.setState({
+      inboxThreads: [thread({ pinned: false, readAt: Date.now() }), thread({ id: 'ses_two', title: 'Second', pinned: true, readAt: Date.now() }), thread({ id: 'ses_three', title: 'Third', readAt: Date.now() })],
+      selectedInboxThreadId: 'ses_one',
+    })
+    const panel = await render(createElement(InboxPanel))
+    const second = panel.querySelector<HTMLButtonElement>('[data-testid="inbox-thread-ses_two"]')!
+    const third = panel.querySelector<HTMLButtonElement>('[data-testid="inbox-thread-ses_three"]')!
+    await act(async () => second.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true })))
+    await openThreadMenu(third)
+    expect(document.body.textContent).toContain('Rename thread')
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    await openThreadMenu(second)
+    await chooseThreadAction('Unpin thread')
+    expect(window.api.inbox.setPinned).toHaveBeenCalledTimes(2)
+    expect(window.api.inbox.setPinned).toHaveBeenCalledWith({ id: 'ses_one', pinned: false })
+    expect(window.api.inbox.setPinned).toHaveBeenCalledWith({ id: 'ses_two', pinned: false })
+  })
+
+  it('selects and deselects threads across the list and Working section', async () => {
+    useInboxView.setState({ workingSection: true, workingCollapsed: false })
+    useWorkspace.setState({ inboxThreads: [thread({ readAt: Date.now() }), thread({ id: 'ses_two', status: 'working', readAt: Date.now() })], selectedInboxThreadId: 'ses_one' })
+    const panel = await render(createElement(InboxPanel))
+    const working = panel.querySelector<HTMLButtonElement>('[data-testid="inbox-working-list"] [data-testid="inbox-thread-ses_two"]')!
+    await act(async () => working.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true })))
+    expect(panel.querySelectorAll('[aria-label$=", selected"]')).toHaveLength(2)
+    await act(async () => working.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true })))
+    expect(panel.querySelectorAll('[aria-label$=", selected"]')).toHaveLength(1)
+    await act(async () => useInboxView.setState({ workingSection: false }))
+  })
+
   it('is locked where OpenCode’s service is not reachable, and works elsewhere', async () => {
     useWorkspace.setState({ platform: { platform: 'linux', isWindows: false }, inboxThreads: [thread()] })
     const panel = await render(createElement(InboxPanel))

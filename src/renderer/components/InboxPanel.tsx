@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import {
   Car,
   ChevronDown,
@@ -148,9 +148,14 @@ export function InboxLockedNotice({ compact = false }: { compact?: boolean }): J
   )
 }
 
+type BulkAction = 'pin' | 'read' | 'park'
+
 function InboxThreadRow({
   thread,
   selected,
+  multiSelected,
+  bulkPending,
+  onBulk,
   now,
   forking,
   onSelect,
@@ -158,10 +163,13 @@ function InboxThreadRow({
 }: {
   thread: InboxThread
   selected: boolean
+  multiSelected: boolean
+  bulkPending: boolean
+  onBulk: (action: BulkAction, value: boolean) => void
   now: number
   /** A fork is being made, so another one waits. */
   forking: boolean
-  onSelect: () => void
+  onSelect: (event: MouseEvent<HTMLButtonElement>) => void
   onFork: () => void
 }): JSX.Element {
   const setRead = useWorkspace((state) => state.setInboxThreadRead)
@@ -197,12 +205,13 @@ function InboxThreadRow({
     <>
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <div className={cn('group relative rounded', selected ? 'bg-active' : 'hover:bg-hover')}>
+          <div className={cn('group relative rounded', selected || multiSelected ? 'bg-active' : 'hover:bg-hover', multiSelected && 'ring-1 ring-inset ring-accent')}>
           <button
             type="button"
             data-testid={`inbox-thread-${thread.id}`}
             data-unread={unread || undefined}
             aria-current={selected || undefined}
+            aria-label={multiSelected ? `${thread.customTitle ?? thread.title}, selected` : undefined}
             onClick={onSelect}
             className="flex w-full min-w-0 flex-col gap-0.5 rounded px-2 py-1.5 text-left"
           >
@@ -327,6 +336,7 @@ function InboxThreadRow({
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
+          {!multiSelected && <>
           <ContextMenuItem disabled={savingName} onSelect={rename.start}>
             <PenLine aria-hidden="true" className="h-3.5 w-3.5" />
             Rename thread
@@ -336,18 +346,20 @@ function InboxThreadRow({
             Clear custom name
           </ContextMenuItem>
           <ContextMenuSeparator />
-          <ContextMenuItem onSelect={() => void setPinned(thread.id, !thread.pinned)}>
+          </>}
+          <ContextMenuItem disabled={multiSelected && bulkPending} onSelect={() => multiSelected ? onBulk('pin', !thread.pinned) : void setPinned(thread.id, !thread.pinned)}>
             <PinIcon aria-hidden="true" className="h-3.5 w-3.5" />
             {pinLabel}
           </ContextMenuItem>
-          <ContextMenuItem onSelect={() => void setRead(thread.id, unread)}>
+          <ContextMenuItem disabled={multiSelected && bulkPending} onSelect={() => multiSelected ? onBulk('read', unread) : void setRead(thread.id, unread)}>
             {unread ? <MailOpen className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />}
             {unread ? 'Mark as read' : 'Mark as unread'}
           </ContextMenuItem>
-          <ContextMenuItem onSelect={() => void setArchived(thread.id, !thread.archived)}>
+          <ContextMenuItem disabled={multiSelected && bulkPending} onSelect={() => multiSelected ? onBulk('park', !thread.archived) : void setArchived(thread.id, !thread.archived)}>
             <ParkIcon aria-hidden="true" className="h-3.5 w-3.5" />
             {parkLabel}
           </ContextMenuItem>
+          {!multiSelected && <>
           <ContextMenuItem disabled={forking} onSelect={onFork}>
             <GitFork className="h-3.5 w-3.5" />
             Fork thread
@@ -357,6 +369,7 @@ function InboxThreadRow({
             <Trash2 className="h-3.5 w-3.5" />
             Delete from Inbox
           </ContextMenuItem>
+          </>}
         </ContextMenuContent>
       </ContextMenu>
 
@@ -450,6 +463,9 @@ function InboxWorkingSection({
   searching,
   project,
   selectedId,
+  selectedIds,
+  bulkPending,
+  onBulk,
   now,
   forking,
   onSelect,
@@ -461,9 +477,12 @@ function InboxWorkingSection({
   /** The name of the project the Inbox is narrowed to, if it is. */
   project?: string
   selectedId: string | null
+  selectedIds: Set<string>
+  bulkPending: boolean
+  onBulk: (action: BulkAction, value: boolean) => void
   now: number
   forking: boolean
-  onSelect: (thread: InboxThread) => void
+  onSelect: (thread: InboxThread, event: MouseEvent<HTMLButtonElement>) => void
   onFork: (thread: InboxThread) => void
 }): JSX.Element {
   const collapsed = useInboxView((state) => state.workingCollapsed)
@@ -506,15 +525,18 @@ function InboxWorkingSection({
                 : project ? `No threads are working in ${project}.` : 'No threads are working.'}
             </p>
           ) : (
-            <div className="flex flex-col gap-0.5">
+            <div className="flex flex-col gap-1">
               {threads.map((thread) => (
                 <InboxThreadRow
                   key={thread.id}
                   thread={thread}
                   selected={thread.id === selectedId}
+                  multiSelected={selectedIds.has(thread.id)}
+                  bulkPending={bulkPending}
+                  onBulk={onBulk}
                   now={now}
                   forking={forking}
-                  onSelect={() => onSelect(thread)}
+                  onSelect={(event) => onSelect(thread, event)}
                   onFork={() => onFork(thread)}
                 />
               ))}
@@ -539,6 +561,9 @@ export function InboxPanel(): JSX.Element {
   const [query, setQuery] = useState('')
   const [threadListHovered, setThreadListHovered] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const [bulkPending, setBulkPending] = useState(false)
+  const [bulkError, setBulkError] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   // A fork is a request to the service and can fail; the menu has no place to say so.
   const [fork, setFork] = useState<{ pending: boolean; error: string | null }>({ pending: false, error: null })
@@ -585,6 +610,38 @@ export function InboxPanel(): JSX.Element {
   const projectThreads = inboxThreadsInProject(threads, project, folders)
   const visible = visibleInboxThreads(projectThreads, filter, query, showWorking)
   const working = showWorking ? workingInboxThreads(projectThreads, query) : []
+  const selectedThreads = threads.filter((thread) => selectedIds.has(thread.id))
+  const clearSelection = (): void => { setSelectedIds(new Set()); setBulkError(null) }
+  const selectRow = (thread: InboxThread, event: MouseEvent<HTMLButtonElement>): void => {
+    if (bulkPending) return
+    if (event.ctrlKey || event.metaKey) {
+      setSelectedIds((previous) => {
+        const next = new Set(previous)
+        if (previous.size === 0 && selectedId && selectedId !== thread.id && [...visible, ...working].some((item) => item.id === selectedId)) next.add(selectedId)
+        if (next.has(thread.id)) next.delete(thread.id)
+        else next.add(thread.id)
+        return next
+      })
+      setBulkError(null)
+    } else {
+      clearSelection()
+      selectThread(thread.id)
+    }
+  }
+  const runBulk = async (action: BulkAction, value: boolean): Promise<void> => {
+    setBulkPending(true)
+    setBulkError(null)
+    const workspace = useWorkspace.getState()
+    const results = await Promise.allSettled(selectedThreads.map((thread) => (
+      action === 'pin' ? workspace.setInboxThreadPinned(thread.id, value)
+        : action === 'read' ? workspace.setInboxThreadRead(thread.id, value)
+          : workspace.setInboxThreadArchived(thread.id, value)
+    )))
+    const failed = selectedThreads.filter((_, index) => results[index]?.status === 'rejected')
+    setSelectedIds(new Set(failed.map((thread) => thread.id)))
+    if (failed.length) setBulkError(`Could not update ${failed.length} ${failed.length === 1 ? 'thread' : 'threads'}. Try again.`)
+    setBulkPending(false)
+  }
   const workingShown = showWorking && projectThreads.some((thread) => !thread.pinned && inboxThreadWorking(thread))
   const projectSummaries = inboxProjectSummaries(threads, folders)
   const startFork = (thread: InboxThread): void => {
@@ -605,18 +662,19 @@ export function InboxPanel(): JSX.Element {
         // From a thread this opens the blank page; on the page itself it sets aside what is typed there.
         onNewThread={() => (selectedId === null ? void startFresh() : selectThread(null))}
         query={query}
-        onQueryChange={setQuery}
+        onQueryChange={(value) => { clearSelection(); setQuery(value) }}
         searchOpen={searchOpen}
         onSearchOpenChange={setSearchOpen}
         searchRef={searchRef}
         filter={filter}
-        onFilterChange={setFilter}
+        onFilterChange={(value) => { clearSelection(); setFilter(value) }}
         summaries={projectSummaries}
         project={project}
         total={threads.filter((thread) => !thread.archived).length}
         unread={countUnreadInboxThreads(threads)}
-        onProjectChange={setProjectFilter}
+        onProjectChange={(value) => { clearSelection(); setProjectFilter(value) }}
       />
+      {bulkError && <p role="alert" className="px-2 text-xs text-danger">{bulkError}</p>}
       {fork.pending && (
         <p role="status" data-testid="inbox-fork-status" className="mx-1 flex items-center gap-1.5 rounded bg-elevated px-2 py-1 text-[11px] text-fg-muted">
           <LoaderCircle aria-hidden="true" className="h-3 w-3 shrink-0 animate-spin text-accent motion-reduce:animate-none" />
@@ -652,15 +710,18 @@ export function InboxPanel(): JSX.Element {
             )}
           </div>
         ) : (
-          <div className="flex flex-col gap-0.5">
+          <div className="flex flex-col gap-1">
             {visible.map((thread) => (
               <InboxThreadRow
                 key={thread.id}
                 thread={thread}
                 selected={thread.id === selectedId}
+                multiSelected={selectedIds.has(thread.id)}
+                bulkPending={bulkPending}
+                onBulk={(action, value) => void runBulk(action, value)}
                 now={now}
                 forking={fork.pending}
-                onSelect={() => selectThread(thread.id)}
+                onSelect={(event) => selectRow(thread, event)}
                 onFork={() => startFork(thread)}
               />
             ))}
@@ -683,9 +744,12 @@ export function InboxPanel(): JSX.Element {
           searching={query.trim() !== ''}
           project={project?.name}
           selectedId={selectedId}
+          selectedIds={selectedIds}
+          bulkPending={bulkPending}
+          onBulk={(action, value) => void runBulk(action, value)}
           now={now}
           forking={fork.pending}
-          onSelect={(thread) => selectThread(thread.id)}
+          onSelect={selectRow}
           onFork={startFork}
         />
       )}

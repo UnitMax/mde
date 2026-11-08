@@ -7,7 +7,7 @@
 /** Marks the elements whose text the search looks through (`data-chat-searchable` in the markup). */
 export const SEARCHABLE_ATTRIBUTE = 'data-chat-searchable'
 
-/** The names of the two highlights the search paints (see `::highlight` in index.css). */
+/** The names of the two highlights the search paints (see `::highlight` in chat-find.css). */
 export const FIND_HIGHLIGHT = 'chat-find'
 export const FIND_CURRENT_HIGHLIGHT = 'chat-find-current'
 

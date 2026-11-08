@@ -190,6 +190,12 @@ no separate heading; each group keeps the most recent activity first. Pins respe
 status filter, so parked pinned threads stay under Parked. The optional `pinned` flag is saved in
 `inbox.json` through `inbox:set-pinned`; older records without it are unpinned.
 
+Ctrl-click (or Command-click on macOS) selects threads across the list and Working section without opening them.
+The open thread joins the selection when visible. The context menu of a selected thread applies its pin,
+read, and park actions to all selected threads, using the clicked thread's current state to choose the action.
+A regular click opens a thread and clears the selection; changing the
+search, filter, or project also clears it. If an operation fails, only the threads that failed remain selected.
+
 The gear at the end of the toolbar opens the Inbox's display settings. One of them adds a
 **Working** section to the sidebar, under the list rather than as another filter tab. Turned on, the
 unpinned threads that are working right now move out of the list into it, the run that began last first, each
