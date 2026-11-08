@@ -537,6 +537,7 @@ export function InboxPanel(): JSX.Element {
   const forkThread = useInboxChat((state) => state.forkThread)
   const [filter, setFilter] = useState<InboxFilter>('all')
   const [query, setQuery] = useState('')
+  const [threadListHovered, setThreadListHovered] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   // A fork is a request to the service and can fail; the menu has no place to say so.
@@ -635,7 +636,12 @@ export function InboxPanel(): JSX.Element {
           </button>
         </div>
       )}
-      <div className="min-h-16 flex-1 overflow-y-auto" data-testid="inbox-thread-list">
+      <div
+        className={cn('inbox-thread-list min-h-16 flex-1 overflow-y-auto', threadListHovered && 'inbox-thread-list-hovered')}
+        data-testid="inbox-thread-list"
+        onPointerEnter={() => setThreadListHovered(true)}
+        onPointerLeave={() => setThreadListHovered(false)}
+      >
         {visible.length === 0 ? (
           <div className="px-2 py-1 text-xs text-fg-subtle">
             <p>{emptyMessage(filter, query, workingShown, project?.name)}</p>
