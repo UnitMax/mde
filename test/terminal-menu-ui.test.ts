@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TerminalView } from '../src/renderer/components/TerminalView'
 import { InboxTerminal } from '../src/renderer/components/inbox/InboxTerminal'
-import { registerThreadInput } from '../src/renderer/lib/inbox-thread-input'
+import { registerNewThreadInput, registerThreadInput } from '../src/renderer/lib/inbox-thread-input'
 import { inboxTerminalSession } from '../src/shared/inbox-terminal'
 import { useWorkspace } from '../src/renderer/store/workspace'
 import { createRuntimeLayout, defaultSessionTab } from '../src/renderer/terminal/tabs'
@@ -42,6 +42,7 @@ vi.mock('../src/renderer/terminal/sessions', () => {
 
 const session: Session = { id: 'ses-1', name: 'My session', kind: 'native', createdAt: '' }
 const writeText = vi.fn(async (_text: string): Promise<void> => undefined)
+const paste = vi.fn(async (): Promise<void> => undefined)
 let root: Root
 let container: HTMLDivElement
 const render = (element: ReactElement): Promise<void> => act(async () => root.render(element))
@@ -70,13 +71,14 @@ function sessionsTerminal(): ReactElement {
 beforeEach(() => {
   localStorage.clear()
   writeText.mockClear()
+  paste.mockClear()
   screen.selection = ''
   screen.tracking = 'none'
   screen.focus.mockClear()
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('ResizeObserver', class { observe(): void {} disconnect(): void {} unobserve(): void {} })
   vi.stubGlobal('api', {
-    clipboard: { writeText },
+    clipboard: { writeText, paste },
     pty: { ensure: vi.fn(async () => 'running'), resize: vi.fn(async () => {}), statuses: vi.fn(async () => ({})), configureInbox: vi.fn(async () => ({ session: inboxTerminalSession('darwin', []), changed: false })) },
     git: { terminalInfo: vi.fn(async () => null) },
   })
@@ -96,14 +98,26 @@ afterEach(async () => {
 })
 
 describe('the right-click menu of a Sessions terminal', () => {
-  it('offers Copy alone, which copies the selection and gives the keyboard back to the terminal', async () => {
+  it('offers Copy and Paste; Copy copies the selection and gives the keyboard back to the terminal', async () => {
     screen.selection = 'Error: boom\n    at fn (a.js:1)'
     await render(sessionsTerminal())
     await rightClick()
-    expect(labels()).toEqual(['Copy'])
+    expect(labels()).toEqual(['Copy', 'Paste'])
     await choose('terminal-menu-copy')
     expect(writeText).toHaveBeenCalledExactlyOnceWith('Error: boom\n    at fn (a.js:1)')
+    expect(paste).not.toHaveBeenCalled()
     await vi.waitFor(() => expect(screen.focus).toHaveBeenCalled())
+  })
+
+  it('pastes into the terminal, once the menu has given it the keyboard, even with nothing selected', async () => {
+    await render(sessionsTerminal())
+    await rightClick()
+    expect(disabled('terminal-menu-paste')).toBe(false)
+    await choose('terminal-menu-paste')
+    await vi.waitFor(() => expect(paste).toHaveBeenCalledOnce())
+    expect(screen.focus).toHaveBeenCalled()
+    expect(screen.focus.mock.invocationCallOrder[0]).toBeLessThan(paste.mock.invocationCallOrder[0]!)
+    expect(writeText).not.toHaveBeenCalled()
   })
 
   it('has nothing to copy without a selection', async () => {
@@ -131,7 +145,7 @@ describe('the right-click menu of a Sessions terminal', () => {
     expect(items()).toHaveLength(0)
     expect(refused.defaultPrevented).toBe(true)
     await rightClick({ shiftKey: true })
-    expect(labels()).toEqual(['Copy'])
+    expect(labels()).toEqual(['Copy', 'Paste'])
   })
 })
 
@@ -149,12 +163,42 @@ describe('the right-click menu of the Inbox terminal', () => {
     await render(createElement(InboxTerminal))
     screen.focus.mockClear()
     await rightClick()
-    expect(labels()).toEqual(['Copy', 'Send to thread'])
+    expect(labels()).toEqual(['Copy', 'Paste', 'Send to current thread', 'Send to new thread'])
     await choose('terminal-menu-send')
     await vi.waitFor(() => expect(input).toHaveBeenCalledExactlyOnceWith('Error: boom'))
     // Copy was not asked for, and the thread takes the keyboard rather than the terminal.
     expect(writeText).not.toHaveBeenCalled()
     expect(screen.focus).not.toHaveBeenCalled()
+    stop()
+  })
+
+  it('starts a new thread with the selection: the page opens and takes it as a quote', async () => {
+    openThread()
+    const page = vi.fn()
+    screen.selection = 'Error: boom'
+    await render(createElement(InboxTerminal))
+    screen.focus.mockClear()
+    await rightClick()
+    await choose('terminal-menu-send-new')
+    // The thread is left for the new-thread page, which is not open yet: the text waits for it.
+    await vi.waitFor(() => expect(useWorkspace.getState().selectedInboxThreadId).toBeNull())
+    const stop = registerNewThreadInput(page)
+    expect(page).toHaveBeenCalledExactlyOnceWith('Error: boom')
+    expect(screen.focus).not.toHaveBeenCalled()
+    stop()
+  })
+
+  it('hands the selection to the new-thread page when it is open already, and stays on it', async () => {
+    const page = vi.fn()
+    const stop = registerNewThreadInput(page)
+    screen.selection = 'Error: boom'
+    await render(createElement(InboxTerminal))
+    await rightClick()
+    expect(disabled('terminal-menu-send')).toBe(true)
+    expect(disabled('terminal-menu-send-new')).toBe(false)
+    await choose('terminal-menu-send-new')
+    await vi.waitFor(() => expect(page).toHaveBeenCalledExactlyOnceWith('Error: boom'))
+    expect(useWorkspace.getState().selectedInboxThreadId).toBeNull()
     stop()
   })
 
@@ -171,5 +215,6 @@ describe('the right-click menu of the Inbox terminal', () => {
     screen.selection = ''
     await rightClick()
     expect(disabled('terminal-menu-send')).toBe(true)
+    expect(disabled('terminal-menu-send-new')).toBe(true)
   })
 })

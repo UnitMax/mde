@@ -7,7 +7,7 @@ import type { ChatDraft, ChatMessage, ChatMessagesPage, ChatOptions, InboxFolder
 import { InboxThreadView } from '../src/renderer/components/InboxThreadView'
 import { useInboxChat } from '../src/renderer/store/inbox-chat'
 import { useWorkspace } from '../src/renderer/store/workspace'
-import { sendTextToThread } from '../src/renderer/lib/inbox-thread-input'
+import { sendTextToNewThread, sendTextToThread } from '../src/renderer/lib/inbox-thread-input'
 import { messageInput, pressMessageKey, setMessageText } from './helpers/chat-input'
 
 const roots: Root[] = []
@@ -581,5 +581,18 @@ describe('text sent from the Inbox terminal', () => {
     await render()
     await act(async () => roots.splice(0).forEach((root) => root.unmount()))
     expect(sendTextToThread('ses_one', 'text')).toBe(false)
+  })
+
+  it('starts the new-thread page with it as a quote, whether it was sent before the page opened or after', async () => {
+    useWorkspace.setState({ selectedInboxThreadId: null })
+    sendTextToNewThread('sent before')
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    roots.push(root)
+    await act(async () => root.render(createElement(InboxThreadView)))
+    await vi.waitFor(() => expect(cards(container)).toEqual(['sent before']))
+    sendTextToNewThread('sent after')
+    await vi.waitFor(() => expect(cards(container)).toEqual(['sent before', 'sent after']))
   })
 })

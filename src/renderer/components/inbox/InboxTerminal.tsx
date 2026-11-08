@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { inboxTerminalSession } from '@shared/inbox-terminal'
 import { TerminalView } from '@/components/TerminalView'
 import { TerminalSelectionActionsContext, type TerminalSelectionActions } from '@/components/terminal-selection-actions'
-import { sendTextToThread } from '@/lib/inbox-thread-input'
+import { sendTextToNewThread, sendTextToThread } from '@/lib/inbox-thread-input'
 import { focusTerminalWhenReady } from '@/terminal/focus'
 import { INBOX_TERMINAL_TAB, useInboxTerminal } from '@/store/inbox-terminal'
 import { useWorkspace } from '@/store/workspace'
@@ -43,8 +43,12 @@ export function InboxTerminal({ focusOnMount = false }: { focusOnMount?: boolean
   const openThreadId = useWorkspace((state) => state.inboxThreads.some((thread) => thread.id === state.selectedInboxThreadId) ? state.selectedInboxThreadId : null)
   const selectionActions = useMemo<TerminalSelectionActions>(() => ({
     canSend: openThreadId !== null,
-    sendLabel: 'Send to thread',
     send: (text) => { if (openThreadId) sendTextToThread(openThreadId, text) },
+    sendNew: (text) => {
+      // Handed over first, so the page that opens takes it; a page that is open already takes it as it is.
+      sendTextToNewThread(text)
+      if (useWorkspace.getState().selectedInboxThreadId !== null) useWorkspace.getState().selectInboxThread(null)
+    },
   }), [openThreadId])
 
   useEffect(() => {

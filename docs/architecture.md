@@ -1500,15 +1500,19 @@ Terminal clipboard shortcuts use the normal system clipboard, including for WSL 
 On macOS, use the corresponding `Command` shortcuts. OSC 52 clipboard sequences are accepted, so
 copying a selection from the OpenCode TUI updates the system clipboard even while its mouse mode
 is enabled. Right-clicking a terminal opens a menu with **Copy**, which copies the text that was selected
-when the menu opened to the normal system clipboard (it is off while nothing is selected). A program that
+when the menu opened to the normal system clipboard (it is off while nothing is selected), and **Paste**,
+which gives the terminal the keyboard and pastes the clipboard into it as Ctrl+V does. A program that
 has asked for the mouse, such as a full-screen editor or the OpenCode TUI, gets the right-click instead,
 and Shift+right-click opens the menu anyway. The Inbox's terminal, in the sidebar or floating, adds
-**Send to thread**: it hands the selection to the thread that is open in the Inbox, and is off when no
-thread is open. A chat thread takes it as a quote above its message box, like a selection of the
-conversation sent with **Quote**; a terminal thread has it pasted into its terminal, where it waits at
-the prompt unsent. Each open thread says how it takes text in `src/renderer/lib/inbox-thread-input.ts`.
-The menu is drawn by the shared `TerminalSurface`, and `TerminalSelectionActionsContext` is how a terminal
-offers more than Copy.
+**Send to current thread**, which hands the selection to the thread that is open in the Inbox (it is off
+when no thread is open), and **Send to new thread**, which opens the new-thread page with the selection
+as a quote in its box (or adds it to the page if that is open already). A chat thread takes the selection
+as a quote above its message box, like a selection of the conversation sent with **Quote**; a terminal
+thread has it pasted into its terminal, where it waits at the prompt unsent. Each open thread, and the
+new-thread page, say how they take text in `src/renderer/lib/inbox-thread-input.ts`; text sent to the
+new-thread page while it is still opening waits up to three seconds for it. The menu is drawn by the
+shared `TerminalSurface`, and `TerminalSelectionActionsContext` is how a terminal offers more than Copy
+and Paste.
 On Linux, left-dragged text also becomes the desktop's separate PRIMARY selection, which middle-click
 pastes without changing the normal clipboard. WSL terminals on Windows provide the same middle-click
 workflow within MDE using an in-app transient selection; native Windows terminals do not.

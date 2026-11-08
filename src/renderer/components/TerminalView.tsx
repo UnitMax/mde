@@ -8,7 +8,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type CSSProperties
 } from 'react'
-import { Copy, FolderOpen, MessageSquareQuote, Plus } from 'lucide-react'
+import { ClipboardPaste, Copy, FolderOpen, MessageSquarePlus, MessageSquareQuote, Plus } from 'lucide-react'
 import type { FileTreeDropEntry } from '@shared/ipc'
 import type {
   PtySize,
@@ -25,7 +25,7 @@ import {
   AlertDialogFooter,
   AlertDialogTitle
 } from '@/components/ui/alert-dialog'
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { useTerminalSelectionActions } from '@/components/terminal-selection-actions'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { cn } from '@/lib/utils'
@@ -168,7 +168,7 @@ export function TerminalSurface({
   // The text that was selected when the right-click menu opened, and what the menu was asked to do with it. The
   // menu takes the keyboard while it is open, so the action runs once it has closed and given the focus back.
   const [menuText, setMenuText] = useState('')
-  const menuAction = useRef<'copy' | 'send' | null>(null)
+  const menuAction = useRef<'copy' | 'paste' | 'send' | 'send-new' | null>(null)
   const primarySelectionMode = terminalPrimarySelectionMode(
     platform?.platform ?? 'other',
     sourceSession.kind
@@ -437,8 +437,17 @@ export function TerminalSurface({
     event.preventDefault()
     const action = menuAction.current
     menuAction.current = null
-    if (action === 'send') selectionActions?.send(menuText)
-    else getSession(pane.terminalId)?.term.focus()
+    if (action === 'send') {
+      selectionActions?.send(menuText)
+      return
+    }
+    if (action === 'send-new') {
+      selectionActions?.sendNew(menuText)
+      return
+    }
+    getSession(pane.terminalId)?.term.focus()
+    // The system pastes into the focused field, which is the terminal's own, as Ctrl+V does.
+    if (action === 'paste') void window.api.clipboard.paste().catch(() => undefined)
   }
 
   return (
@@ -562,15 +571,30 @@ export function TerminalSurface({
         <Copy className="h-3.5 w-3.5" />
         Copy
       </ContextMenuItem>
+      <ContextMenuItem data-testid="terminal-menu-paste" onSelect={() => { menuAction.current = 'paste' }}>
+        <ClipboardPaste className="h-3.5 w-3.5" />
+        Paste
+      </ContextMenuItem>
       {selectionActions && (
-        <ContextMenuItem
-          disabled={!menuText || !selectionActions.canSend}
-          data-testid="terminal-menu-send"
-          onSelect={() => { menuAction.current = 'send' }}
-        >
-          <MessageSquareQuote className="h-3.5 w-3.5" />
-          {selectionActions.sendLabel}
-        </ContextMenuItem>
+        <>
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            disabled={!menuText || !selectionActions.canSend}
+            data-testid="terminal-menu-send"
+            onSelect={() => { menuAction.current = 'send' }}
+          >
+            <MessageSquareQuote className="h-3.5 w-3.5" />
+            Send to current thread
+          </ContextMenuItem>
+          <ContextMenuItem
+            disabled={!menuText}
+            data-testid="terminal-menu-send-new"
+            onSelect={() => { menuAction.current = 'send-new' }}
+          >
+            <MessageSquarePlus className="h-3.5 w-3.5" />
+            Send to new thread
+          </ContextMenuItem>
+        </>
       )}
     </ContextMenuContent>
     </ContextMenu>

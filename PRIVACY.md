@@ -221,7 +221,7 @@ and small raster thumbnails in memory; MDE does not persist conversation attachm
 ## The clipboard
 
 The Inbox right-click menus write to the system clipboard only when you choose Copy, Cut, or one of
-the "Copy …" items, and the terminal does the same when you copy a selection or choose Copy in its menu. The terminal menu's Send to thread does not use the clipboard: it places the selected text in the open thread's message box or terminal as an unsent draft. Paste asks the
+the "Copy …" items, and the terminal does the same when you copy a selection or choose Copy in its menu. The terminal menu's Paste asks the operating system to paste the clipboard into the terminal, as Ctrl+V does. Its Send to current thread and Send to new thread do not use the clipboard: they place the selected text in a message box (or a thread's terminal) as an unsent draft. Paste asks the
 operating system to paste the clipboard into the message box. MDE does not read, store, or send the
 clipboard's contents anywhere itself; what you paste is an unsent draft like any other text you type.
 

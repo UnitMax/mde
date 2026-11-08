@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, FolderCog, FolderPlus, Trash2 } from 'lucide-react'
 import type { ChatDraftChoice, InboxFolder, InboxGitBranch, InboxThreadMode, OpenCodeModelRef } from '@shared/types'
 import { worktreeBranchConflict, worktreeBranchProblem } from '@shared/worktree-branch'
@@ -11,7 +11,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { AddInboxFolderDialog } from '@/components/inbox/AddInboxFolderDialog'
-import { ChatComposer } from '@/components/inbox/ChatComposer'
+import { ChatComposer, type ChatComposerHandle } from '@/components/inbox/ChatComposer'
+import { registerNewThreadInput } from '@/lib/inbox-thread-input'
 import { ComposerBar } from '@/components/inbox/ComposerBar'
 import { ComposerDock } from '@/components/inbox/ComposerDock'
 import { ModelQuickSwitch } from '@/components/inbox/ModelQuickSwitch'
@@ -132,6 +133,19 @@ export function NewThreadView(): JSX.Element {
   const page = useInboxDrafts((state) => state.page)
   const startFresh = useInboxDrafts((state) => state.startFresh)
   useEffect(() => () => useInboxDrafts.getState().leave(), [])
+  // Text sent from the Inbox terminal's right-click menu becomes a quote in the box. The box is not there until a
+  // project is chosen, so text that arrives before then waits for it.
+  const composerHandle = useRef<ChatComposerHandle>(null)
+  const quotesWaiting = useRef<string[]>([])
+  const attachWaitingQuotes = (): void => {
+    const box = composerHandle.current
+    if (box) for (const text of quotesWaiting.current.splice(0)) box.quote(text)
+  }
+  useEffect(() => registerNewThreadInput((text) => {
+    quotesWaiting.current.push(text)
+    attachWaitingQuotes()
+  }), [])
+  useEffect(attachWaitingQuotes)
   const [adding, setAdding] = useState(false)
   const [managing, setManaging] = useState(false)
   const plainFolders = useMemo(() => folders.filter((item) => !item.worktree), [folders])
@@ -297,6 +311,7 @@ export function NewThreadView(): JSX.Element {
             {ready && <ModelQuickSwitch models={ready.models} value={model} onChange={chooseModel} />}
           </ComposerDock>
           <ChatComposer
+            ref={composerHandle}
             // The draft stays with the page when its folder is changed, so what was typed is not lost to the switch.
             key={page.id}
             draftKey={`draft:${page.id}`}

@@ -5,10 +5,12 @@ import { createContext, useContext } from 'react'
  * has somewhere to send the text provides it; without it the menu offers Copy alone.
  */
 export interface TerminalSelectionActions {
-  /** Whether there is a place to send the text to right now (a thread is open). */
+  /** Whether a thread is open to send the text to right now. */
   canSend: boolean
-  sendLabel: string
+  /** Sends the text to the open thread. */
   send: (text: string) => void
+  /** Starts a new thread with the text. */
+  sendNew: (text: string) => void
 }
 
 export const TerminalSelectionActionsContext = createContext<TerminalSelectionActions | null>(null)
