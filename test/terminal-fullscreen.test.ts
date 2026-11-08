@@ -11,11 +11,11 @@ const panes = [
 ]
 
 describe('terminal fullscreen behavior', () => {
-  it('matches only Ctrl+Shift+F', () => {
+  it('matches only Ctrl+Shift+Enter', () => {
     const input = {
       type: 'keydown',
-      key: 'f',
-      code: 'KeyF',
+      key: 'Enter',
+      code: 'Enter',
       control: true,
       meta: false,
       alt: false,
@@ -23,13 +23,13 @@ describe('terminal fullscreen behavior', () => {
     }
 
     expect(isTerminalFullscreenShortcut(input)).toBe(true)
-    expect(isTerminalFullscreenShortcut({ ...input, key: 'F' })).toBe(true)
+    expect(isTerminalFullscreenShortcut({ ...input, code: 'NumpadEnter' })).toBe(true)
     expect(isTerminalFullscreenShortcut({ ...input, type: 'keyup' })).toBe(false)
     expect(isTerminalFullscreenShortcut({ ...input, control: false })).toBe(false)
     expect(isTerminalFullscreenShortcut({ ...input, shift: false })).toBe(false)
     expect(isTerminalFullscreenShortcut({ ...input, meta: true })).toBe(false)
     expect(isTerminalFullscreenShortcut({ ...input, alt: true })).toBe(false)
-    expect(isTerminalFullscreenShortcut({ ...input, key: 'g', code: 'KeyG' })).toBe(false)
+    expect(isTerminalFullscreenShortcut({ ...input, key: 'f', code: 'KeyF' })).toBe(false)
   })
 
   it('selects the requested pane and safely falls back when it is gone', () => {

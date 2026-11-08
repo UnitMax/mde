@@ -35,7 +35,7 @@ export function TerminalPaneOverlay({
           data-testid="terminal-pane-overlay-fullscreen"
           className="rounded-md border border-accent/40 bg-panel/95 px-2 py-1 text-xs font-medium text-accent shadow"
         >
-          {`Ctrl+Shift+F · ${isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}`}
+          {`Ctrl+Shift+Enter · ${isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}`}
         </span>
       )}
     </div>

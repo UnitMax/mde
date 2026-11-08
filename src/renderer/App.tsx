@@ -340,7 +340,7 @@ export function App(): JSX.Element {
     todoTaskDialogOpen
   ])
 
-  // Ctrl+Shift+F searches the text of every Inbox thread. It is the Inbox's own: the terminal views keep it for fullscreen.
+  // Ctrl+Shift+F searches the text of every Inbox thread. Terminal fullscreen is Ctrl+Shift+Enter, so the two never share a chord.
   useEffect(() => {
     if (activeWorkspaceView !== 'inbox') return
     const onKeyDown = (event: KeyboardEvent): void => {

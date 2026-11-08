@@ -17,6 +17,7 @@ export interface TerminalFullscreenKeyInput {
   inDialog: boolean
 }
 
+/** Ctrl+Shift+Enter toggles fullscreen for the focused terminal. Ctrl+Shift+F belongs to the Inbox's search over all threads. */
 export function isTerminalFullscreenShortcut(input: TerminalFullscreenShortcutInput): boolean {
   return (
     input.type === 'keydown' &&
@@ -24,7 +25,7 @@ export function isTerminalFullscreenShortcut(input: TerminalFullscreenShortcutIn
     input.shift &&
     !input.meta &&
     !input.alt &&
-    (input.key.toLocaleLowerCase() === 'f' || input.code === 'KeyF')
+    (input.key === 'Enter' || input.code === 'Enter' || input.code === 'NumpadEnter')
   )
 }
 

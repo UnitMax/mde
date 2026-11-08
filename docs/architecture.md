@@ -91,14 +91,19 @@ startup). A missing thread opens the Inbox's new-thread page; that page's empty 
 remembered. Missing, malformed or unavailable storage defaults to Sessions. No existing workspace
 or Inbox records are changed to store this preference.
 
-Keyboard shortcuts are listed in the app under Settings → Keyboard Shortcuts; that list is defined
-in `src/renderer/terminal/keyboard-shortcuts.ts`.
+Keyboard shortcuts are listed in the app under Settings → Shortcuts, grouped by where they work
+(Everywhere, Inbox, Terminal, Files and To Do) and searchable; that list is defined in
+`src/renderer/terminal/keyboard-shortcuts.ts`. It holds only shortcuts worth looking up: the keys every
+list, menu and dialog answers to (arrows, Enter, Esc) are one footnote, and longer explanations live in
+this document. A chord may repeat across groups (Ctrl+F finds in the Inbox and in the file viewer) but never
+within a group or between Everywhere and another group; `test/keyboard-shortcuts.test.ts` fails otherwise.
+Ctrl+Shift+F is the Inbox's search over all threads and Ctrl+Shift+Enter is terminal fullscreen.
 
 ### Settings
 
 The Settings dialog's Terminal section controls terminal behavior, including whether Escape exits
-the temporary fullscreen view; it is enabled by default. Ctrl+Shift+F toggles fullscreen for the
-focused terminal pane. The Sidebar section controls whether terminal pane entries appear
+the temporary fullscreen view; it is enabled by default. Ctrl+Shift+Enter toggles fullscreen for the
+focused terminal pane (Ctrl+Shift+F is the Inbox's search over all threads, so the two never share a chord). The Sidebar section controls whether terminal pane entries appear
 beneath each session; this preference is global and stored with the local terminal settings. The
 OpenCode section (shown on macOS and Windows only) sets the command that starts OpenCode for the
 Inbox, which is its background service and its terminal threads, and opens the OpenCode configuration
@@ -460,7 +465,7 @@ The Inbox also shows a right-hand sidebar with three tabs, Files, Changes and Te
 
 **Tab strip.** Files, Changes and Terminal sit in one row that never wraps: when they do not fit (the 260 px default with a change count and the float button is enough), the row scrolls sideways under an edge fade, the mouse wheel turns it, and ‹ › buttons appear on both sides and scroll it by most of its width. Left, Right, Home and End still switch tabs, and the shown tab is scrolled into view. It is the reusable `components/ui/scroll-strip.tsx`.
 
-**Terminal tab.** The Inbox has one terminal, shared by every thread: it is the same whichever thread (or the new-thread page) is open, and it keeps running while the sidebar shows another tab or the Sessions view is open. It reuses the Sessions view's terminal layout (`TerminalView` in its embedded mode: no tab strip or session header, and Ctrl split controls, Ctrl+Shift+F and the pane-switch shortcuts acting only while the keyboard is inside it, so typing in the composer is never intercepted). Splitting any pane on any side, resizing the dividers, reordering panes, pane titles, fullscreen and restart work as in Sessions. Each pane reopens in its last reported directory, falling back to home: `~` in the chosen WSL distro on Windows, the home directory on the Mac. The layout and its dividers are kept in `localStorage` (`mde.inbox-terminal-layout`) and come back as fresh shells on the next run; the shell processes themselves are not restored. Directories are saved separately in the main-process terminal records. The layout edits shared with the Sessions view live in `src/renderer/terminal/layout-edits.ts`, and the Inbox's copy of the state in `src/renderer/store/inbox-terminal.ts`.
+**Terminal tab.** The Inbox has one terminal, shared by every thread: it is the same whichever thread (or the new-thread page) is open, and it keeps running while the sidebar shows another tab or the Sessions view is open. It reuses the Sessions view's terminal layout (`TerminalView` in its embedded mode: no tab strip or session header, and Ctrl split controls, Ctrl+Shift+Enter and the pane-switch shortcuts acting only while the keyboard is inside it, so typing in the composer is never intercepted). Splitting any pane on any side, resizing the dividers, reordering panes, pane titles, fullscreen and restart work as in Sessions. Each pane reopens in its last reported directory, falling back to home: `~` in the chosen WSL distro on Windows, the home directory on the Mac. The layout and its dividers are kept in `localStorage` (`mde.inbox-terminal-layout`) and come back as fresh shells on the next run; the shell processes themselves are not restored. Directories are saved separately in the main-process terminal records. The layout edits shared with the Sessions view live in `src/renderer/terminal/layout-edits.ts`, and the Inbox's copy of the state in `src/renderer/store/inbox-terminal.ts`.
 
 **Floating terminal.** The button beside *Collapse sidebar* on the Terminal tab lifts the same terminal out of the sidebar into a window drawn inside the app window, over everything under the title bar: the thread list, the conversation and the right sidebar (not a separate OS window, so it has no taskbar button). It is the same `InboxTerminal`, so the shells, panes and layout are the same ones; only one of the two places renders it at a time, and moving between them reattaches the live xterm (as switching tabs does). While it floats, the Terminal tab shows a notice with *Show/Hide terminal* and *Move back to the sidebar*. Everything the sidebar terminal does works in the window: Ctrl+click splits to the left, right, top or bottom, divider drags, reordering, per-pane fullscreen (which fills the window) and restart. The window itself drags by its title bar, resizes from all four edges and corners (never smaller than 320 x 180 or outside that area), maximizes to all of it (button or double-click on the title bar), hides, and docks back (it then opens the sidebar's Terminal tab and focuses the terminal). While the window is dragged, the terminal inside is kept mounted but not painted (the panel colour shows instead), because repainting a live xterm (especially its WebGL canvas) under a moving window flickers; a resize leaves the window alone and draws an outline that follows the pointer, so the terminal and its shell are refitted once, on release, instead of on every step. The place is saved on release only. The geometry is pure code in `src/renderer/lib/floating-window.ts`; the state in `src/renderer/store/inbox-floating-terminal.ts`; the window in `components/inbox/FloatingTerminal.tsx`, mounted in `App.tsx` beside the sidebars, while the Inbox view is showing. Whether it floats, its rectangle and whether it is maximized are kept in `localStorage` (`mde.inbox-floating-terminal`); it always starts hidden, so a restart never covers the conversation.
 
@@ -711,8 +716,7 @@ there is a query the earlier messages that are not loaded yet are loaded, so tha
 is searched, and the matches are found again as messages stream in. Text selected in the
 conversation when the bar is opened becomes the query. Nothing is stored.
 
-**Search over all threads.** Ctrl+Shift+F (Cmd+Shift+F on a Mac), in the Inbox view only (the terminal
-views keep it for fullscreen), opens an overlay like the session switcher (`InboxSearchDialog`). The
+**Search over all threads.** Ctrl+Shift+F (Cmd+Shift+F on a Mac), in the Inbox view only, opens an overlay like the session switcher (`InboxSearchDialog`). The
 conversations live in OpenCode, so the main process reads them (`main/inbox/search.ts`, `InboxSearch`):
 every thread, archived and terminal ones too, newest first, three at a time, all pages of messages (up to
 2 MB of text per thread), keeping only the user's text and the agent's text parts in memory. A thread is
