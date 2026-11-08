@@ -364,9 +364,26 @@ const REFERENCE = /^\{(?:env|file):[^}]*\}$/
 
 /** Hides the values of settings that look like secrets, so the preview can be shown without leaking a key. */
 export function redactSecrets(text: string): string {
-  return text.replace(/("(?:[^"\\\n]|\\.)*"\s*:\s*)"((?:[^"\\\n]|\\.)*)"/g, (whole, head: string, value: string) => {
-    const key = head.slice(0, head.lastIndexOf('"') + 1)
-    if (!SECRET_KEY.test(key) || REFERENCE.test(value) || value === '') return whole
-    return `${head}"(hidden)"`
-  })
+  const errors: ParseError[] = []
+  const root = parseTree(text, errors, { allowTrailingComma: true })
+  if (!root || errors.length) return '(Configuration preview unavailable: invalid JSONC.)'
+  const edits: { offset: number; length: number }[] = []
+  const visit = (node: NonNullable<typeof root>): void => {
+    if (node.type === 'property') {
+      const [key, value] = node.children ?? []
+      if (key && value && SECRET_KEY.test(String(key.value))) {
+        if (!(value.type === 'string' && (value.value === '' || REFERENCE.test(value.value)))) {
+          edits.push({ offset: value.offset, length: value.length })
+        }
+        return
+      }
+    }
+    for (const child of node.children ?? []) visit(child)
+  }
+  visit(root)
+  let result = text
+  for (const edit of edits.sort((a, b) => b.offset - a.offset)) {
+    result = result.slice(0, edit.offset) + '"(hidden)"' + result.slice(edit.offset + edit.length)
+  }
+  return result
 }

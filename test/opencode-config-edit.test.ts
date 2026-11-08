@@ -348,6 +348,14 @@ describe('applying a draft', () => {
 })
 
 describe('the preview', () => {
+  it('redacts decoded secret keys and entire complex values, retaining unrelated comments', () => {
+    const result = redactSecrets('{ /* keep */ "api\\u004bey": "escaped-secret", "token": ["array-secret"], "password": {"x": "nested-secret"}, "safe": true }')
+    expect(result).not.toMatch(/escaped-secret|array-secret|nested-secret/)
+    expect(result).toContain('/* keep */')
+    expect(result).toContain('"safe": true')
+    expectValid(result)
+    expect(redactSecrets('{"token":"do-not-leak"')).not.toContain('do-not-leak')
+  })
   it('hides secret-looking values but not references to where they live', () => {
     const text = `{
   "providers": { "p": { "settings": { "apiKey": "sk-live-123", "baseURL": "http://h" }, "headers": { "Authorization": "Bearer abc", "X-Api-Key": "k", "Accept": "json" } } },

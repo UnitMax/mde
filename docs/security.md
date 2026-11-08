@@ -453,10 +453,10 @@ OpenAI-compatible providers and `provider.use` deny policies (disabled providers
 - **No secrets are asked for or written.** A provider's key is the name of an environment variable
   (`env: [NAME]`), validated as such; a base URL with a user name or password is refused. Keys already in
   the file stay where they are, are not sent to the renderer as part of the draft, and the Source preview
-  attempts to hide ordinary string values of keys named like `api key`, `token`, `secret`, `password`,
-  `authorization` or `credential`. This regex heuristic misses JSON-escaped key names and array/object
-  values, as well as secrets under other names; `{env:...}` and `{file:...}` references stay visible.
-  The preview is not a fully sanitized artifact for sharing.
+  parses JSONC and replaces complete values under decoded secret-looking keys with `(hidden)`,
+  including arrays and objects. Env/file string references remain visible. Invalid JSONC has no
+  content preview. Unknown-name secrets and unrelated comments are still outside this heuristic;
+  the preview is not a fully sanitized artifact for sharing.
 - **No new network access.** Listing providers uses the existing local service client. After a save the
   main process only drops its cached model list; OpenCode reloads the file by itself.
 - **Reach.** Script already running in the renderer could change these three settings, including
@@ -599,3 +599,5 @@ OpenCode operations; oversized history responses retry with smaller pages, never
 Permission scope hardening: incomplete, malformed, overlong or visually ambiguous resource lists disable approval in the card. Main re-reads the request before granting and refuses incomplete or missing scopes; rejection remains available.
 
 File and stream hardening: native previews and attachment copies share nonblocking regular-file opens, no-follow protection and handle identity revalidation. Linux checks the actual opened descriptor path under /proc; WSL reads use a validated descriptor rather than reopening the pathname. SSE limits count full multiline UTF-8 events and cancel oversized streams. Linux final-file/ancestor race and FIFO regressions pass. macOS/Windows pathname revalidation is defense in depth, not atomic ancestor containment; SEC-028 remains open there. WSL pre-open FIFO races remain bounded by the subprocess timeout.
+
+Configuration preview hardening: redaction walks parsed JSONC properties, decodes escaped keys and replaces whole secret values using source offsets. Comments outside redacted values and unrelated formatting remain intact. Invalid input fails closed. SEC-031 source fixtures pass.

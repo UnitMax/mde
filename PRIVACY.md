@@ -174,10 +174,11 @@ whole file and gives the window the parts the editor manages (the rules, the pro
 ids and names of other providers, and the names of older settings), which stay in memory until you
 close the editor. The read-only Source tab also shows the rest of the file as it will be after saving, so
 that you can check the change; there, the value of a setting whose name contains `api key`, `token`,
-`secret`, `password`, `authorization` or `credential` is replaced by `(hidden)` for ordinary quoted
-string values unless it is an `{env:...}` or `{file:...}` reference. This is a text-matching heuristic:
-JSON-escaped key names, array/object values and secrets under other names can remain visible. The
-Source tab must not be treated as a fully sanitized copy for sharing. The editor asks for the name of
+`secret`, `password`, `authorization` or `credential` is replaced by `(hidden)` after parsing JSONC
+and decoding the key. Arrays and objects under such keys are hidden in full; `{env:...}` and
+`{file:...}` string references remain visible. Malformed JSONC produces no content preview. Secrets
+under other names or in unrelated comments can still remain visible, so the Source tab must not be
+treated as a fully sanitized copy for sharing. The editor asks for the name of
 an environment variable that holds a provider's key, never for the key, and writes no new key. It lists providers by asking the same local service
 which ones it has (ids and names only). Saving makes no network request: OpenCode notices the changed
 file itself, and only contacts a provider you added when you use one of its models, as it does in a
