@@ -120,8 +120,10 @@ export function readWindowsContainedFile(root: string, path: string, limit: numb
     execFile(file, ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], {
       cwd: win32.dirname(file),
       env: { ...process.env, MDE_CONTAINED_READ: JSON.stringify({ root, path, limit }) },
-      encoding: 'utf8', timeout: 15_000, maxBuffer: Math.ceil(limit * 4 / 3) + 64 * 1024, windowsHide: true,
-    }, (error, stdout) => {
+      // PowerShell starts and compiles the reader for every read, which a loaded machine (or a CI runner running a
+      // test suite in parallel) can stretch to well over ten seconds; a hung one is still stopped.
+      encoding: 'utf8', timeout: 30_000, maxBuffer: Math.ceil(limit * 4 / 3) + 64 * 1024, windowsHide: true,
+    }, (error, stdout, stderr) => {
       try {
         if (error) throw error
         const result = JSON.parse(stdout) as { size: number; data: string | null }
@@ -130,7 +132,12 @@ export function readWindowsContainedFile(root: string, path: string, limit: numb
         const bytes = result.data === null ? null : Buffer.from(result.data, 'base64')
         if (bytes && (bytes.length !== result.size || bytes.length > limit)) throw new Error()
         resolve({ size: result.size, bytes })
-      } catch { reject(new Error('File changed or could not be opened safely. Try again.')) }
+      } catch (cause) {
+        // The message stays plain for the user; the cause says whether it was a timeout, an exit code or bad output.
+        reject(new Error('File changed or could not be opened safely. Try again.', {
+          cause: { error: cause, stderr: String(stderr).slice(0, 2000), stdout: String(stdout).slice(0, 200) },
+        }))
+      }
     })
   }))
 }
