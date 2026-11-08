@@ -11,6 +11,7 @@ import { Sidebar } from '@/components/Sidebar'
 import { SessionSwitcher } from '@/components/SessionSwitcher'
 import { TerminalView } from '@/components/TerminalView'
 import { TitleBar, TitleBarButton } from '@/components/TitleBar'
+import { WorkspaceNavigation } from '@/components/WorkspaceNavigation'
 import { TodoProjectView } from '@/components/TodoProjectView'
 import { InboxThreadView } from '@/components/InboxThreadView'
 import { useInboxLock } from '@/components/InboxPanel'
@@ -624,6 +625,7 @@ export function App(): JSX.Element {
       <TitleBar
         icon={<Terminal className="h-3.5 w-3.5 shrink-0 text-accent" />}
         title="mde"
+        navigation={<WorkspaceNavigation />}
       >
         <TitleBarButton
           data-testid="mini-window-open"

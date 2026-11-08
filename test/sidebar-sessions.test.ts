@@ -6,6 +6,8 @@ import type { Session } from '../src/shared/types'
 import { Sidebar } from '../src/renderer/components/Sidebar'
 import { useWorkspace } from '../src/renderer/store/workspace'
 
+vi.mock('../src/renderer/components/InboxPanel', () => ({ InboxPanel: () => createElement('div', { 'data-testid': 'inbox-panel' }) }))
+
 const native: Session = { id: 'native', name: 'Tools', kind: 'native', createdAt: '' }
 const wsl: Session = { id: 'wsl', name: 'Build', kind: 'wsl', distro: 'Ubuntu-24.04', createdAt: '' }
 let root: Root
@@ -75,6 +77,25 @@ describe('Sessions sidebar', () => {
     expect(button.title).toBe('Build · WSL · Ubuntu-24.04')
     act(() => button.click())
     expect(selectSession).toHaveBeenCalledWith(wsl.id)
+  })
+
+  it('keeps the toggle next to session creation and expands other sections', () => {
+    render()
+    const collapse = container.querySelector<HTMLButtonElement>('[aria-label="Collapse sidebar"]')!
+    expect(collapse.parentElement?.querySelector('[aria-label="New session"]')).not.toBeNull()
+    act(() => collapse.click())
+    expect(container.querySelector('[aria-label="Expand sidebar"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="collapsed-session-label"]')).not.toBeNull()
+    act(() => useWorkspace.setState({ activeWorkspaceView: 'todo' }))
+    expect(container.querySelector('aside')?.className).toContain('w-[260px]')
+    expect(container.querySelector('[aria-label="New task"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Expand sidebar"]')).toBeNull()
+    act(() => useWorkspace.setState({ activeWorkspaceView: 'inbox' }))
+    expect(container.querySelector('[data-testid="inbox-panel"]')).not.toBeNull()
+    expect(container.querySelector('aside')?.className).toContain('w-[260px]')
+    expect(container.querySelector('[aria-label="Expand sidebar"]')).toBeNull()
+    act(() => useWorkspace.setState({ activeWorkspaceView: 'sessions' }))
+    expect(container.querySelector('[aria-label="Expand sidebar"]')).not.toBeNull()
   })
 
   it('reorders sessions across the whole list', async () => {

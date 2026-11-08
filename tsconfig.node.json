@@ -50,6 +50,7 @@
     "src/renderer/lib/terminal-instances.ts",
     "src/renderer/components/MiniInboxWindow.tsx",
     "src/renderer/components/TitleBar.tsx",
+    "src/renderer/components/WorkspaceNavigation.tsx",
     "src/renderer/components/TerminalGitInfo.tsx",
     "src/renderer/components/FileTreePanel.tsx",
     "src/renderer/components/OpenFolderButtons.tsx",

@@ -14,10 +14,12 @@ const TRAFFIC_LIGHT_INSET_PX = 78
 export function TitleBar({
   icon,
   title,
+  navigation,
   children
 }: {
   icon?: ReactNode
   title: ReactNode
+  navigation?: ReactNode
   /** Right-aligned actions; wrap each in TitleBarButton so it can receive clicks. */
   children?: ReactNode
 }): JSX.Element {
@@ -34,9 +36,11 @@ export function TitleBar({
         style={isMac ? { paddingLeft: TRAFFIC_LIGHT_INSET_PX } : undefined}
       >
         {icon}
-        <div className="flex min-w-0 flex-1 items-center gap-2 truncate text-[12px] font-medium text-fg-muted">
+        <div className="flex shrink-0 items-center gap-2 text-[12px] font-medium text-fg-muted">
           {title}
         </div>
+        {navigation}
+        <div className="min-w-2 flex-1" />
         {children && <div className="flex shrink-0 items-center gap-0.5">{children}</div>}
       </div>
     </header>

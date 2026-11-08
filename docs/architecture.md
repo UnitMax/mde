@@ -176,7 +176,7 @@ the model list it cached for the Inbox so that the model picker asks again.
 
 ### Inbox
 
-The Inbox is the third sidebar tab, beside Sessions and To Do. It lists OpenCode conversations
+The Inbox is selected in the title bar beside Sessions and To Do. It lists OpenCode conversations
 ("threads") like a mail inbox, the most recent agent action first. Each row shows the time since
 that action ("5m ago"), the title, the folder name with the full path as a tooltip, the Git branch,
 the model, and a status chip: Needs input or Needs permission, Done, Failed, or Working. Threads
@@ -1240,8 +1240,10 @@ read that service's server list again.
 
 The OS title bar is hidden (`titleBarStyle: 'hidden'`) and the renderer draws its own bar,
 `TitleBar`, across the top of the window in both the full and the mini view. It is the window's drag
-handle (`-webkit-app-region: drag`; buttons inside it opt out with `app-no-drag`) and hosts the
-button that opens the mini window. On Windows and Linux the OS still draws the minimize, maximize
+handle (`-webkit-app-region: drag`; buttons inside it opt out with `app-no-drag`). The full window
+places workspace navigation beside the title, and the mini window and settings buttons on the right.
+The Sessions sidebar has a collapse toggle beside New session; To Do and Inbox always use the full
+sidebar. On Windows and Linux the OS still draws the minimize, maximize
 and close buttons over the right edge (Electron's Window Controls Overlay), so snap layouts and
 resize borders keep working; the bar's content is confined to the area left of them with
 `env(titlebar-area-x)` and `env(titlebar-area-width)`. macOS keeps its traffic lights and the bar

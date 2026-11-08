@@ -10,13 +10,12 @@ import {
   Check,
   Copy,
   GripVertical,
-  Inbox,
   ListTodo,
   MoreHorizontal,
   Monitor,
-  Terminal,
   PanelLeftClose,
   PanelLeftOpen,
+  Terminal,
   Pencil,
   Plus,
   RotateCcw,
@@ -62,7 +61,6 @@ import { SESSION_ICONS, sessionIconOption } from '@shared/session-icons'
 import type { SessionTerminalLayout } from '@/terminal/layout'
 import { sessionTabs } from '@/terminal/tabs'
 import { InboxPanel } from '@/components/InboxPanel'
-import { countUnreadInboxThreads } from '@/lib/inbox'
 import {
   terminalDirectoryLabel,
   terminalPaneLabel
@@ -71,88 +69,6 @@ import {
   getTerminalSettings,
   subscribeTerminalSettings
 } from '@/terminal/terminal-settings'
-
-const SIDEBAR_SECTIONS = [
-  { id: 'sessions' as const, label: 'Sessions', Icon: Terminal },
-  { id: 'todo' as const, label: 'To Do', Icon: ListTodo },
-  { id: 'inbox' as const, label: 'Inbox', Icon: Inbox }
-]
-
-interface SidebarSectionNavigationProps {
-  activeSection: WorkspaceView
-  collapsed: boolean
-  onSelect: (section: WorkspaceView) => void
-  /** Unread Inbox threads, shown as a badge on the Inbox tab. */
-  inboxUnread: number
-}
-
-function SidebarSectionNavigation({
-  activeSection,
-  collapsed,
-  onSelect,
-  inboxUnread
-}: SidebarSectionNavigationProps): JSX.Element {
-  return (
-    <div
-      role={collapsed ? 'group' : 'tablist'}
-      aria-label="Workspace sections"
-      className={cn(
-        'flex gap-1',
-        collapsed
-          ? 'flex-col items-center'
-          : 'h-8 min-w-0 flex-1 items-center rounded-lg bg-elevated p-0.5'
-      )}
-    >
-      {SIDEBAR_SECTIONS.map((section) => {
-        const Icon = section.Icon
-        const active = section.id === activeSection
-        const unread = section.id === 'inbox' ? inboxUnread : 0
-        const unreadLabel = `${unread} unread Inbox thread${unread === 1 ? '' : 's'}`
-        return (
-          <button
-            key={section.id}
-            type="button"
-            id={collapsed ? undefined : `sidebar-section-tab-${section.id}`}
-            role={collapsed ? undefined : 'tab'}
-            aria-label={unread > 0 ? `${section.label}, ${unreadLabel}` : section.label}
-            aria-selected={collapsed ? undefined : active}
-            aria-pressed={collapsed ? active : undefined}
-            aria-controls={collapsed ? undefined : `sidebar-section-${section.id}`}
-            title={section.label}
-            onClick={() => onSelect(section.id)}
-            className={cn(
-              'relative flex items-center justify-center gap-1 rounded text-left transition-colors',
-              collapsed
-                ? 'h-7 w-7'
-                : 'h-7 min-w-0 flex-1 border-b-2 px-2 text-[13px]',
-              active
-                ? collapsed
-                  ? 'bg-active text-fg'
-                  : 'border-accent bg-panel text-fg'
-                : collapsed
-                  ? 'text-fg-muted hover:bg-hover hover:text-fg'
-                  : 'border-transparent text-fg-muted hover:bg-hover hover:text-fg'
-            )}
-          >
-            {collapsed ? <Icon className="h-4 w-4 shrink-0" /> : <span>{section.label}</span>}
-            {unread > 0 && (
-              <span
-                data-testid="inbox-unread-count"
-                title={unreadLabel}
-                className={cn(
-                  'flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-medium leading-none text-accent-fg',
-                  collapsed && 'absolute -right-1 -top-1 h-3.5 min-w-3.5 px-0.5 text-[9px] ring-2 ring-panel'
-                )}
-              >
-                {unread}
-              </span>
-            )}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
 
 function customSessionColor(color: Session['color']): Session['color'] {
   return color && color !== DEFAULT_SESSION_COLOR ? color : undefined
@@ -746,15 +662,15 @@ function SidebarCreateActions({
       <div title={todoTaskAvailable ? 'New task' : 'Select a To Do project first'}>
         <Button
           variant="secondary"
-          size={collapsed ? 'icon' : 'sm'}
-          className={cn(!collapsed && 'w-full')}
+          size="sm"
+          className="w-full"
           disabled={!todoTaskAvailable}
           onClick={onNewTodoTask}
           title="New task"
           aria-label="New task"
         >
           <Plus className="h-3.5 w-3.5" />
-          {!collapsed && <span>New task</span>}
+          <span>New task</span>
         </Button>
       </div>
     )
@@ -801,8 +717,6 @@ export function Sidebar({
   const collapsed = useWorkspace((state) => state.sidebarCollapsed)
   const toggleSidebar = useWorkspace((state) => state.toggleSidebar)
   const activeSection = useWorkspace((state) => state.activeWorkspaceView)
-  const setActiveSection = useWorkspace((state) => state.setWorkspaceView)
-  const inboxUnread = useWorkspace((state) => countUnreadInboxThreads(state.inboxThreads))
   const [terminalSettings, setTerminalSettings] = useState(() => getTerminalSettings())
 
   useEffect(() => subscribeTerminalSettings(() => setTerminalSettings(getTerminalSettings())), [])
@@ -821,20 +735,9 @@ export function Sidebar({
     />
   )
 
-  if (collapsed) {
+  if (collapsed && activeSection === 'sessions') {
     return (
       <aside className="flex h-full min-h-0 w-11 shrink-0 flex-col items-center overflow-hidden border-r border-line bg-panel py-2">
-        <Button variant="ghost" size="icon" onClick={toggleSidebar} title="Expand sidebar">
-          <PanelLeftOpen className="h-4 w-4" />
-        </Button>
-        <div className="mt-2 shrink-0">
-          <SidebarSectionNavigation
-            activeSection={activeSection}
-            collapsed
-            onSelect={setActiveSection}
-            inboxUnread={inboxUnread}
-          />
-        </div>
         <div className="mt-2 min-h-0 w-full flex-1 overflow-y-auto">
           {activeSection === 'sessions' && (
             <div className="flex flex-col items-center gap-1">
@@ -901,28 +804,8 @@ export function Sidebar({
               })}
             </div>
           )}
-          {activeSection === 'todo' && (
-            <div className="flex flex-col items-center gap-1">
-              {todoProjects.map((project) => (
-                <button
-                  key={project.id}
-                  type="button"
-                  onClick={() => selectTodoProject(project.id)}
-                  title={project.name}
-                  className={cn(
-                    'flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase',
-                    project.id === selectedTodoProjectId
-                      ? 'bg-active text-fg'
-                      : 'text-fg-muted hover:bg-hover hover:text-fg'
-                  )}
-                >
-                  {project.name.slice(0, 2)}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
-        <div className="mt-auto shrink-0" hidden={activeSection === 'inbox'}>
+        <div className="mt-auto flex shrink-0 flex-col items-center gap-1">
           <SidebarCreateActions
             activeSection={activeSection}
             collapsed
@@ -930,6 +813,9 @@ export function Sidebar({
             onNewTodoTask={onNewTodoTask}
             todoTaskAvailable={selectedTodoProjectId !== null}
           />
+          <Button variant="ghost" size="icon" onClick={toggleSidebar} title="Expand sidebar" aria-label="Expand sidebar">
+            <PanelLeftOpen className="h-4 w-4" />
+          </Button>
         </div>
       </aside>
     )
@@ -937,32 +823,10 @@ export function Sidebar({
 
   return (
     <aside className="flex w-[260px] shrink-0 flex-col border-r border-line bg-panel">
-      <div className="flex items-center gap-2 px-3 pb-2 pt-3">
-        <SidebarSectionNavigation
-          activeSection={activeSection}
-          collapsed={false}
-          onSelect={setActiveSection}
-          inboxUnread={inboxUnread}
-        />
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="shrink-0"
-          onClick={toggleSidebar}
-          title="Collapse sidebar"
-          aria-label="Collapse sidebar"
-        >
-          <PanelLeftClose className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-
-      <div className="min-h-0 flex-1 px-2 pb-2">
+      <div className="min-h-0 flex-1 px-2 pb-2 pt-3">
         <div
           id="sidebar-section-sessions"
-          role="tabpanel"
-          aria-labelledby="sidebar-section-tab-sessions"
-          className="flex h-full min-h-0 flex-col"
-          hidden={activeSection !== 'sessions'}
+          className={cn('h-full min-h-0 flex-col', activeSection === 'sessions' ? 'flex' : 'hidden')}
         >
           <div className="min-h-0 flex-1 overflow-y-auto" data-testid="sidebar-sessions-scroll">
             {sessionList}
@@ -971,8 +835,6 @@ export function Sidebar({
 
         <div
           id="sidebar-section-todo"
-          role="tabpanel"
-          aria-labelledby="sidebar-section-tab-todo"
           className="h-full min-h-0 overflow-y-auto"
           hidden={activeSection !== 'todo'}
         >
@@ -1008,8 +870,6 @@ export function Sidebar({
 
         <div
           id="sidebar-section-inbox"
-          role="tabpanel"
-          aria-labelledby="sidebar-section-tab-inbox"
           className="h-full min-h-0"
           hidden={activeSection !== 'inbox'}
         >
@@ -1017,15 +877,22 @@ export function Sidebar({
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-line p-2" hidden={activeSection === 'inbox'}>
-        <SidebarCreateActions
-          activeSection={activeSection}
-          collapsed={false}
-          onNewSession={() => onNewSession()}
-          onNewTodoTask={onNewTodoTask}
-          todoTaskAvailable={selectedTodoProjectId !== null}
-        />
-      </div>
+      {activeSection !== 'inbox' && <div className="flex shrink-0 items-center gap-1 border-t border-line p-2">
+        <div className="min-w-0 flex-1">
+          <SidebarCreateActions
+            activeSection={activeSection}
+            collapsed={false}
+            onNewSession={onNewSession}
+            onNewTodoTask={onNewTodoTask}
+            todoTaskAvailable={selectedTodoProjectId !== null}
+          />
+        </div>
+        {activeSection === 'sessions' && (
+          <Button variant="ghost" size="icon-sm" onClick={toggleSidebar} title="Collapse sidebar" aria-label="Collapse sidebar">
+            <PanelLeftClose className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>}
     </aside>
   )
 }

@@ -4,6 +4,7 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TitleBar, TitleBarButton } from '../src/renderer/components/TitleBar'
+import { WorkspaceNavigation } from '../src/renderer/components/WorkspaceNavigation'
 import { useWorkspace } from '../src/renderer/store/workspace'
 
 const roots: Root[] = []
@@ -90,5 +91,26 @@ describe('TitleBar', () => {
     act(() => roots.splice(0).forEach((root) => root.unmount()))
     containers.splice(0).forEach((container) => container.remove())
     expect(insetOf()).toBe('78px')
+  })
+
+  it('places clickable workspace navigation beside the title and keeps it when the sidebar collapses', () => {
+    const original = useWorkspace.getState()
+    const select = vi.fn()
+    useWorkspace.setState({ activeWorkspaceView: 'sessions', sidebarCollapsed: false, inboxThreads: [], setWorkspaceView: select })
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    roots.push(root)
+    containers.push(container)
+    act(() => root.render(createElement(TitleBar, { title: 'mde', navigation: createElement(WorkspaceNavigation) })))
+    const nav = container.querySelector<HTMLElement>('header nav')!
+    expect(nav.className).toContain('app-no-drag')
+    expect(nav.querySelector('[aria-label="Sessions"]')?.getAttribute('aria-pressed')).toBe('true')
+    act(() => (nav.querySelector('[aria-label="Inbox"]') as HTMLButtonElement).click())
+    expect(select).toHaveBeenCalledWith('inbox')
+    act(() => useWorkspace.setState({ sidebarCollapsed: true, activeWorkspaceView: 'inbox' }))
+    expect(nav.querySelector('[aria-label="Expand sidebar"]')).toBeNull()
+    expect(nav.querySelector('[aria-label="Inbox"]')?.getAttribute('aria-pressed')).toBe('true')
+    act(() => useWorkspace.setState(original))
   })
 })
