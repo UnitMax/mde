@@ -15,10 +15,10 @@ let root: Root
 let container: HTMLDivElement
 const changed = vi.fn()
 
-async function render(models: ChatModel[] = [reasoner, fixed, other], initial: OpenCodeModelRef | null = { id: reasoner.id, providerId: reasoner.providerId }): Promise<void> {
+async function render(models: ChatModel[] = [reasoner, fixed, other], initial: OpenCodeModelRef | null = { id: reasoner.id, providerId: reasoner.providerId }, onMenuClosed?: () => void): Promise<void> {
   function Harness(): JSX.Element {
     const [value, setValue] = useState(initial)
-    return createElement(ModelPicker, { models, value, onChange: (next) => { changed(next); setValue(next) } })
+    return createElement(ModelPicker, { models, value, onMenuClosed, onChange: (next) => { changed(next); setValue(next) } })
   }
   await act(async () => root.render(createElement(Harness)))
 }
@@ -191,6 +191,19 @@ describe('model and reasoning menu', () => {
     expect(changed).not.toHaveBeenCalled()
     await open()
     expect(document.querySelector<HTMLInputElement>('[aria-label="Search models"]')?.value).toBe('')
+  })
+
+  it('returns focus to the message input when dismissed with Escape', async () => {
+    const message = document.createElement('textarea')
+    document.body.append(message)
+    await render(undefined, undefined, () => message.focus())
+    await open()
+    const input = document.querySelector<HTMLInputElement>('[aria-label="Search models"]')!
+    await act(async () => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+    expect(menu()).toBeNull()
+    expect(document.activeElement).toBe(message)
+    expect(changed).not.toHaveBeenCalled()
   })
 
   it('moves between models and effort with the arrow keys and selects with Enter', async () => {

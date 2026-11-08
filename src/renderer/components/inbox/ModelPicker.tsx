@@ -28,7 +28,7 @@ export function ModelPicker({
   models: ChatModel[]
   value: OpenCodeModelRef | null
   onChange: (model: OpenCodeModelRef) => void
-  /** After a selection closes the menu, return focus to the composer's message input. */
+  /** After a selection or Escape closes the menu, return focus to the message input. */
   onMenuClosed?: () => void
   disabled?: boolean
 }): JSX.Element {
@@ -40,6 +40,7 @@ export function ModelPicker({
   const effortRef = useRef<HTMLDivElement>(null)
   const modelListRef = useRef<HTMLDivElement>(null)
   const selectedInMenu = useRef(false)
+  const escapedMenu = useRef(false)
   const favorites = useModelFavorites((state) => state.favorites)
   const toggleFavorite = useModelFavorites((state) => state.toggle)
   const favoriteKeys = useMemo(() => new Set(favorites.map(modelKey)), [favorites])
@@ -86,7 +87,7 @@ export function ModelPicker({
   return (
     <DropdownMenu open={open} onOpenChange={(next) => {
       setOpen(next)
-      if (next) selectedInMenu.current = false
+      if (next) { selectedInMenu.current = false; escapedMenu.current = false }
       if (!next) { setQuery(''); setBrowsed(null) }
     }}>
       <DropdownMenuTrigger asChild disabled={disabled}>
@@ -115,9 +116,10 @@ export function ModelPicker({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
+        onEscapeKeyDown={() => { escapedMenu.current = true }}
         onInteractOutside={() => { selectedInMenu.current = false }}
         onCloseAutoFocus={(event) => {
-          if (selectedInMenu.current && onMenuClosed) {
+          if ((selectedInMenu.current || escapedMenu.current) && onMenuClosed) {
             event.preventDefault()
             onMenuClosed()
             return
