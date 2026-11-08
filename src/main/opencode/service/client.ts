@@ -11,6 +11,7 @@ export const SERVICE_OPERATIONS = {
   'skill.list': { method: 'GET', path: '/api/skill' },
   'session.create': { method: 'POST', path: '/api/session' },
   'session.active': { method: 'GET', path: '/api/session/active' },
+  'job.list': { method: 'GET', path: '/api/experimental/job' },
   'session.get': { method: 'GET', path: '/api/session/{sessionID}' },
   'session.update': { method: 'PATCH', path: '/api/session/{sessionID}' },
   'session.message.list': { method: 'GET', path: '/api/session/{sessionID}/message' },
@@ -57,6 +58,9 @@ const PATH_PARAMETERS: Record<string, RegExp> = {
   server: MCP_SERVER_NAME,
 }
 const QUERY_PARAMETERS: Record<string, RegExp> = {
+  sessionID: /^ses_[A-Za-z0-9_-]{1,200}$/,
+  status: /^running$/,
+  descendants: /^true$/,
   limit: /^\d{1,4}$/,
   order: /^(asc|desc)$/,
   cursor: /^[A-Za-z0-9_=.-]{1,2048}$/,

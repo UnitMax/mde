@@ -1190,6 +1190,25 @@ The new thread's header says "Forked from" with the original's title, a link whi
 still in the Inbox, and the sidebar row shows a small fork icon. `forkedFrom` is stored in
 `inbox.json` as a thread ID and dropped if it is not one; it is not otherwise used.
 
+**Background tasks.** `ChatBackgroundTasks` is a rounded strip above the thread's composer, matching
+the worktree strip below the new-thread composer. It shows the number of running tasks and expands
+to commands and task descriptions. The main process calls OpenCode's experimental
+`GET /api/experimental/job` with the recorded session ID, `status=running`, and `descendants=true`,
+so background shells, subagents, and image jobs are counted even after the agent's turn finishes.
+Completed but unconsumed jobs are excluded. An unknown response shape is a failure, not an empty list.
+Shell lifecycle events refresh open lists on the same target. The visible thread also refreshes every
+five seconds, after reconnecting, and on focus or becoming visible; polling stops when it closes.
+A later failed read retains the previous list and marks its status unknown. Unsupported API versions
+show an unavailable state with an update hint; MDE does not infer background work from shell text.
+An × dismisses the unavailable strip when there are no listed tasks. This choice is remembered in
+`localStorage` (`mde.background-tasks-hide-unavailable`) across threads and restarts; tracking continues
+and running or last-seen tasks remain visible regardless of the preference.
+
+The list is read-only: it exposes no process-stop controls or IPC operations. Stopping a managed shell
+externally can deliver a completion or error notification to the agent without communicating the user's
+intent, which can cause the agent to restart it. These lists are kept only in memory. Commands that
+detach processes outside OpenCode's managed jobs are outside this indicator.
+
 **Transport.** OpenCode 2 runs one background service per machine, which its terminal UI also
 uses, so a thread can be continued in a terminal (`opencode --session ses_…`) and both stay in
 sync. `src/main/opencode/service/discovery.ts` finds the service for a target by running a fixed

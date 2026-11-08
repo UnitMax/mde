@@ -24,6 +24,7 @@ const configDraft = {
 }
 
 const validPayloads = {
+  [IpcChannels.chatBackground]: { threadId: 'ses_one' },
   [IpcChannels.appInfo]: undefined,
   [IpcChannels.platformInfo]: undefined,
   [IpcChannels.workspaceList]: undefined,

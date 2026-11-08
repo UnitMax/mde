@@ -265,6 +265,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.chatInterrupt]: chatThread,
   [IpcChannels.chatCompact]: chatThread,
   [IpcChannels.chatGoal]: chatThread,
+  [IpcChannels.chatBackground]: chatThread,
   [IpcChannels.chatGoalSet]: (value) => object({ threadId: opencodeSessionId, action: oneOf('set'), objective: goalObjective, agent: optional(agentId), model: optional(modelRef) })(value) ||
     object({ threadId: opencodeSessionId, action: oneOf('pause', 'resume', 'clear') })(value),
   [IpcChannels.chatRedo]: chatThread,

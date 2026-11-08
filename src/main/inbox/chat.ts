@@ -45,6 +45,7 @@ import type {
   Session,
 } from '@shared/types'
 import { OpenCodeServiceError, type OpenCodeServiceClient } from '../opencode/service/client'
+import { listBackgroundTasks } from '../opencode/service/background'
 import { serviceTargetKey } from '../opencode/service/discovery'
 import { inboxThreadTerminalSession } from '@shared/inbox-thread-terminal'
 import { normalizeInboxFolderIcon } from '@shared/inbox-folder-icons'
@@ -1046,6 +1047,16 @@ export class InboxChatService {
 
   private onEvent(event: ServiceEvent, target: OpenCodeTarget): void {
     this.dependencies.recorder.applyServiceEvent(event)
+    // Shell lifecycle events need not carry a session ID. Refresh open lists on this service,
+    // including parents whose subagents own the shell. The list API supplies the actual scope.
+    if (event.type.startsWith('shell.') || event.type.startsWith('session.shell.')) {
+      for (const threadId of this.subscribed.keys()) {
+        const thread = this.dependencies.store.get(threadId)
+        if (thread && serviceTargetKey(thread.target) === serviceTargetKey(target)) {
+          this.dependencies.send({ type: 'background', threadId })
+        }
+      }
+    }
     // An MCP server changed. It belongs to no session, so it is passed on before the thread checks below.
     if (event.type === 'mcp.status.changed' || event.type === 'mcp.tools.changed') {
       this.dependencies.send({ type: 'mcp', target })
@@ -1201,6 +1212,11 @@ export class InboxChatService {
     const thread = this.dependencies.store.get(id)
     if (!thread) throw new Error('This thread is no longer in the Inbox.')
     return thread
+  }
+
+  async backgroundTasks(threadId: string) {
+    this.assertEnabled()
+    return listBackgroundTasks(this.dependencies.client, this.thread(threadId))
   }
 
   private promptText(text: string, attachments?: string[]): string {

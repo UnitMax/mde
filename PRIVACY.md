@@ -111,6 +111,15 @@ a long goal can make many such requests. OpenCode stores the goal (its objective
 the reviewer's last finding) with the session and writes the goal's messages into the conversation. MDE
 reads that state from the service, keeps it in memory only, and stores nothing more for it.
 
+The background-task strip above the Inbox message box asks the same local service for running jobs
+owned by the thread and its subagents. Task descriptions, shell commands and start times are kept in
+memory while displayed; MDE does not store them separately on disk. The list is read-only and does
+not stop or otherwise change the listed tasks. MDE does not scan the operating
+system's process list or infer detached processes from commands. Refreshes use the same loopback
+connection, including while the agent is idle, and do not make model requests.
+Hiding the unavailable-task message saves a boolean preference in `localStorage`
+(`mde.background-tasks-hide-unavailable`); it contains no task or conversation data.
+
 The Inbox's MCP list asks the same local service which MCP servers OpenCode has for the folder or
 thread and how each stands: name, title, connected, failed or needs a sign-in, and a short error with
 credentials and paths removed. MDE drops everything else in the answer (commands, URLs, headers and

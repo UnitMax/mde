@@ -678,6 +678,20 @@ export interface ChatThreadRequest {
   threadId: string
 }
 
+/** A running job owned by the thread or one of its subagents, as reported by OpenCode. */
+export interface ChatBackgroundTask {
+  id: string
+  kind: 'shell' | 'subagent' | 'image' | 'other'
+  title: string
+  command?: string
+  startedAt?: number
+}
+
+export interface ChatBackgroundState {
+  supported: boolean
+  tasks: ChatBackgroundTask[]
+}
+
 export interface ChatMessagesRequest {
   threadId: string
   /** Cursor from a previous page's `older`; omitted for the newest page. */
@@ -736,6 +750,7 @@ export interface ChatFormReplyRequest {
 
 /** Live changes for subscribed chat threads, pushed from the main process. */
 export type ChatEvent =
+  | { type: 'background'; threadId: string }
   | { type: 'delta'; threadId: string; messageId: string; part: 'text' | 'reasoning'; ordinal: number; delta: string }
   /** The thread's messages changed; refetch the newest page. */
   | { type: 'messages'; threadId: string }

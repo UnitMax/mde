@@ -68,6 +68,7 @@ import type {
   ChatGoal,
   ChatGoalRequest,
   ChatThreadRequest,
+  ChatBackgroundState,
   ChatDraft,
   ChatDraftRequest,
   ChatDraftList
@@ -177,6 +178,7 @@ export const IpcChannels = {
   chatCompact: 'chat:compact',
   chatGoal: 'chat:goal',
   chatGoalSet: 'chat:goal-set',
+  chatBackground: 'chat:background',
   chatRedo: 'chat:redo',
   chatRevert: 'chat:revert',
   chatFork: 'chat:fork',
@@ -526,6 +528,7 @@ export interface RendererApi {
     gitInfo(req: InboxGitInfoRequest): Promise<InboxGitInfo>
   }
   chat: {
+    backgroundTasks(req: ChatThreadRequest): Promise<ChatBackgroundState>
     draft(req: ChatDraftRequest): Promise<ChatDraft>
     /** The new-thread drafts that have something in them, most recently changed first, and the threads with an unsent message. */
     drafts(): Promise<ChatDraftList>

@@ -105,6 +105,7 @@ import type {
   ChatMcpRequest,
   ChatMcpSetRequest,
   ChatMcpState,
+  ChatBackgroundState,
   ChatSetDeliveryRequest,
   ChatAsideRequest,
   ChatAsideAnswer,
@@ -560,6 +561,7 @@ export function registerIpcHandlers(
   handle<ChatThreadRequest, void>(IpcChannels.chatInterrupt, (req) => chat.interrupt(req.threadId))
   handle<ChatThreadRequest, void>(IpcChannels.chatCompact, (req) => chat.compact(req.threadId))
   handle<ChatThreadRequest, ChatGoal | null>(IpcChannels.chatGoal, (req) => chat.goal(req.threadId))
+  handle<ChatThreadRequest, ChatBackgroundState>(IpcChannels.chatBackground, (req) => chat.backgroundTasks(req.threadId))
   handle<ChatGoalRequest, void>(IpcChannels.chatGoalSet, (req) => chat.setGoal(req))
   handle<ChatThreadRequest, void>(IpcChannels.chatRedo, (req) => chat.redo(req.threadId))
   handle<ChatRevertRequest, ChatRevert>(IpcChannels.chatRevert, (req) => chat.revert(req))

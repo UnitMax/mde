@@ -138,6 +138,7 @@ const api: RendererApi = {
     gitInfo: (req) => ipcRenderer.invoke(IpcChannels.inboxGitInfo, req)
   },
   chat: {
+    backgroundTasks: (req) => ipcRenderer.invoke(IpcChannels.chatBackground, req),
     draft: (req) => ipcRenderer.invoke(IpcChannels.chatDraft, req),
     drafts: () => ipcRenderer.invoke(IpcChannels.chatDrafts),
     configure: (req) => ipcRenderer.invoke(IpcChannels.chatConfigure, req),

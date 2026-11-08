@@ -58,6 +58,38 @@ function setup(responses: Partial<Record<ServiceOperation, unknown>> = {}, draft
 }
 
 describe('Inbox chat service', () => {
+  it('scopes background tracking to a recorded, enabled thread', async () => {
+    const { service, folder, calls, disable } = setup({
+      'session.create': { data: { id: 'ses_background' } },
+      'job.list': { data: [] },
+    })
+    await service.create({ folderId: folder.id, text: 'Start', agent: 'build', model })
+    calls.length = 0
+    await expect(service.backgroundTasks('ses_background')).resolves.toEqual({ supported: true, tasks: [] })
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toEqual({ operation: 'job.list', request: { query: { sessionID: 'ses_background', status: 'running', descendants: 'true' } } })
+    await expect(service.backgroundTasks('ses_unknown')).rejects.toThrow('no longer in the Inbox')
+    disable()
+    await expect(service.backgroundTasks('ses_background')).rejects.toThrow('only available')
+    expect(calls).toHaveLength(1)
+    service.stop()
+  })
+
+  it('refreshes background lists for shell lifecycle events only on the subscribed target', async () => {
+    const { service, folder, events } = setup({ 'session.create': { data: { id: 'ses_background' } } })
+    await service.create({ folderId: folder.id, text: 'Start', agent: 'build', model })
+    service.subscribe('ses_background')
+    const emit = (type: string, target = wsl) =>
+      (service as unknown as { onEvent(event: { type: string; data: Record<string, unknown> }, target: typeof wsl): void }).onEvent({ type, data: {} }, target)
+    for (const type of ['shell.created', 'shell.exited', 'shell.deleted', 'session.shell.started', 'session.shell.ended']) emit(type)
+    expect(events).toEqual(Array.from({ length: 5 }, () => ({ type: 'background', threadId: 'ses_background' })))
+    emit('shell.exited', { kind: 'wsl', distro: 'AnotherDistro' })
+    service.unsubscribe('ses_background')
+    emit('shell.created')
+    expect(events).toHaveLength(5)
+    service.stop()
+  })
+
   it.each([
     [undefined, 'high', true],
     ['high', 'low', true],
