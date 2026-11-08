@@ -179,7 +179,8 @@ The Inbox is selected in the title bar beside Sessions and To Do. It lists OpenC
 ("threads") like a mail inbox, the most recent agent action first. Each row shows the time since
 that action ("5m ago"), the title, the folder name with the full path as a tooltip, the Git branch,
 the model, and a status chip: Needs input or Needs permission, Done, Failed, or Working. Threads
-with activity you have not opened are bold with a dot, and the tab shows how many there are. The
+with activity you have not opened are bold with a dot, and the tab shows how many there are. Terminal
+threads have a terminal icon beside their title; GUI threads have no mode icon. The
 list can be searched by title, folder, branch and model, and filtered to All, Unread or Parked (see **Toolbar** below).
 Unread includes threads waiting for an answer or permission even after they have been opened, until
 they no longer need input. Parked threads stay under Parked. Hovering or focusing a row shows a car icon and a "Park" label; parked threads offer

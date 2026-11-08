@@ -431,6 +431,20 @@ describe('Inbox sidebar with projects', () => {
     label: q(`inbox-thread-project-${id}`)?.textContent ?? undefined,
   })
 
+  it('marks terminal threads without adding an icon to GUI or older threads', async () => {
+    useWorkspace.setState({ inboxThreads: [
+      thread('ses_terminal', { mode: 'terminal' }),
+      thread('ses_gui', { mode: 'gui' }),
+      thread('ses_older'),
+    ] })
+    await render()
+    const marker = q('inbox-thread-terminal-mark-ses_terminal')
+    expect(marker?.getAttribute('title')).toBe('Terminal thread')
+    expect(marker?.querySelector('[aria-label="Terminal thread"]')).not.toBeNull()
+    expect(q('inbox-thread-terminal-mark-ses_gui')).toBeNull()
+    expect(q('inbox-thread-terminal-mark-ses_older')).toBeNull()
+  })
+
   it('shows each thread’s project with its icon, in place of the plain folder', async () => {
     await render()
     expect(project('ses_a').label).toBe('app')
