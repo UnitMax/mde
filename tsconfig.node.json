@@ -92,6 +92,7 @@
     "src/renderer/components/ui/scroll-strip.tsx",
     "src/renderer/components/ui/button.tsx",
     "src/renderer/components/ui/context-menu.tsx",
+    "src/renderer/components/ui/menu-separator.ts",
     "src/renderer/components/ui/dialog.tsx",
     "src/renderer/components/ui/dropdown-menu.tsx",
     "src/renderer/components/ui/input.tsx",

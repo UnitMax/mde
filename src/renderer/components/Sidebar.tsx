@@ -271,11 +271,13 @@ function SessionRow({
           <ContextMenuSeparator />
           <ContextMenuSub>
             <ContextMenuSubTrigger>
-              <span
-                aria-hidden="true"
-                className="h-3 w-3 shrink-0 rounded-full border border-fg/20"
-                style={{ backgroundColor: sessionColorHex(sessionColor) }}
-              />
+              {/* The same 14px box as the icons of the items above, so the labels line up. */}
+              <span aria-hidden="true" className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+                <span
+                  className="h-3 w-3 rounded-full border border-fg/20"
+                  style={{ backgroundColor: sessionColorHex(sessionColor) }}
+                />
+              </span>
               <span className="flex-1">Session color</span>
               <ChevronRight className="h-3.5 w-3.5 text-fg-subtle" />
             </ContextMenuSubTrigger>

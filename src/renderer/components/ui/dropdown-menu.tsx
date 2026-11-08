@@ -3,6 +3,7 @@ import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu'
 import { Check } from 'lucide-react'
 import { quietCloseFocus } from '@/lib/input-modality'
 import { cn } from '@/lib/utils'
+import { MENU_SEPARATOR_CLASS } from './menu-separator'
 
 export const DropdownMenu = DropdownMenuPrimitive.Root
 export const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger
@@ -35,7 +36,7 @@ export const DropdownMenuItem = React.forwardRef<
   <DropdownMenuPrimitive.Item
     ref={ref}
     className={cn(
-      'flex cursor-default select-none items-center gap-2 rounded px-2 py-1.5 text-[13px] text-fg outline-none',
+      'flex cursor-default select-none items-center gap-2 rounded px-2 py-1.5 text-[13px] leading-5 text-fg outline-none',
       'data-[highlighted]:bg-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-40',
       className
     )}
@@ -45,7 +46,7 @@ export const DropdownMenuItem = React.forwardRef<
 DropdownMenuItem.displayName = DropdownMenuPrimitive.Item.displayName
 
 export function DropdownMenuSeparator({ className }: { className?: string }): JSX.Element {
-  return <DropdownMenuPrimitive.Separator className={cn('my-1 h-px bg-line', className)} />
+  return <DropdownMenuPrimitive.Separator className={cn(MENU_SEPARATOR_CLASS, className)} />
 }
 
 export const DropdownMenuCheckboxItem = React.forwardRef<
@@ -55,7 +56,7 @@ export const DropdownMenuCheckboxItem = React.forwardRef<
   <DropdownMenuPrimitive.CheckboxItem
     ref={ref}
     className={cn(
-      'relative flex cursor-default select-none items-start gap-2 rounded py-1.5 pl-7 pr-2 text-[13px] text-fg outline-none',
+      'relative flex cursor-default select-none items-start gap-2 rounded py-1.5 pl-7 pr-2 text-[13px] leading-5 text-fg outline-none',
       'data-[highlighted]:bg-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-40',
       className
     )}
@@ -81,7 +82,7 @@ export const DropdownMenuRadioItem = React.forwardRef<
   <DropdownMenuPrimitive.RadioItem
     ref={ref}
     className={cn(
-      'relative flex cursor-default select-none items-center gap-2 rounded py-1.5 pl-7 pr-2 text-[13px] text-fg outline-none',
+      'relative flex cursor-default select-none items-center gap-2 rounded py-1.5 pl-7 pr-2 text-[13px] leading-5 text-fg outline-none',
       'data-[highlighted]:bg-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-40',
       className
     )}
@@ -115,7 +116,7 @@ export const DropdownMenuSwitchItem = React.forwardRef<
       onSelect?.(event)
     }}
     className={cn(
-      'flex cursor-default select-none items-center gap-2.5 rounded px-2 py-1.5 text-[13px] text-fg outline-none',
+      'flex cursor-default select-none items-center gap-2.5 rounded px-2 py-1.5 text-[13px] leading-5 text-fg outline-none',
       'data-[highlighted]:bg-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-60',
       className
     )}

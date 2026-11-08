@@ -1,6 +1,7 @@
 import { ChevronDown, Code, FolderOpen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { cn } from '@/lib/utils'
 import { useWorkspace } from '@/store/workspace'
 
 /**
@@ -96,7 +97,7 @@ export function OpenFolderMenu({
       <Button
         variant="ghost"
         size="sm"
-        className={canOpenInVsCode ? 'rounded-r-none pr-1.5' : undefined}
+        className={cn('h-6', canOpenInVsCode && 'rounded-r-none pr-1.5')}
         onClick={reveal}
         title="Open folder in File Explorer"
         aria-label="Open folder in File Explorer"
