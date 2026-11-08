@@ -291,7 +291,8 @@ export function NewThreadView(): JSX.Element {
           )}
         </div>
         {folder && (
-          <>
+          // The tray and the box are one piece, so they sit in a wrapper of their own: the column's gap would float the tray.
+          <div>
           <ComposerDock>
             {ready && <ModelQuickSwitch models={ready.models} value={model} onChange={chooseModel} />}
           </ComposerDock>
@@ -346,7 +347,7 @@ export function NewThreadView(): JSX.Element {
               }
             }}
           />
-          </>
+          </div>
         )}
         {saved && (
           <p role="status" data-testid="inbox-draft-saved" className="-mt-3 text-center text-xs text-fg-muted">
