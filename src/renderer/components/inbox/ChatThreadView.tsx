@@ -78,6 +78,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const askAside = useInboxAside((store) => store.ask)
   const dismissAside = useInboxAside((store) => store.dismiss)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
   const composerSlot = useRef<HTMLDivElement>(null)
   const composer = useRef<ChatComposerHandle>(null)
   // Text selected in the conversation goes into the message box as a quote, from the button by the selection or the right-click menu.
@@ -212,6 +213,8 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
     const scroller = scrollRef.current
     if (!scroller) return
     stickRef.current = true
+    // Already at the end there is no scroll to report it, so the button is put away here as well.
+    setAway(false)
     scroller.scrollTo({ top: scroller.scrollHeight, behavior: scrollBehavior() })
   }, [])
 
@@ -220,11 +223,32 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   useEffect(() => {
     const element = scrollRef.current
     if (!element || typeof ResizeObserver === 'undefined') return undefined
+    // Only the room it has in height counts: opening a step can make the scrollbar appear, which narrows the conversation
+    // and also resizes it, and following the end then would throw the view to the bottom.
+    let height = element.clientHeight
     const observer = new ResizeObserver(() => {
+      if (element.clientHeight === height) return
+      height = element.clientHeight
       if (stickRef.current) element.scrollTop = element.scrollHeight
     })
     observer.observe(element)
-    return () => observer.disconnect()
+    // The conversation itself changes height too (a folded step opening or closing). Closing one while scrolled up can leave
+    // the view at the end without a scroll event, so the place is measured again, or the button would be stuck on screen.
+    const content = contentRef.current
+    const contentObserver = content
+      ? new ResizeObserver(() => {
+          if (stickRef.current) return
+          const near = element.scrollHeight - element.scrollTop - element.clientHeight < STICK_THRESHOLD_PX
+          if (!near) return
+          stickRef.current = true
+          setAway(false)
+        })
+      : null
+    if (content) contentObserver?.observe(content)
+    return () => {
+      observer.disconnect()
+      contentObserver?.disconnect()
+    }
   }, [])
   // The side question takes room from the conversation, so a conversation that is following its end keeps doing so.
   const asideId = aside?.id
@@ -337,7 +361,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
       <div className="relative flex min-h-0 flex-1 flex-col">
       <ChatTranscriptMenu messages={messages} complete={!state?.older} transcriptRef={scrollRef} onCopyError={setCopyError} onQuote={quote}>
       <div ref={scrollRef} onScroll={onScroll} className="chat-selectable min-h-0 flex-1 overflow-y-auto" data-testid="chat-transcript">
-        <div className={cn('mx-auto flex w-full max-w-3xl flex-col gap-4 px-6 py-5', railGutter)}>
+        <div ref={contentRef} className={cn('mx-auto flex w-full max-w-3xl flex-col gap-4 px-6 py-5', railGutter)}>
           {state?.older && (
             <button
               type="button"
