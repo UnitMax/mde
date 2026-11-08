@@ -290,8 +290,9 @@ describe('PtyManager runtime terminal identities', () => {
     const source = sourceSession()
     manager.ensure('pane-a', source, { cols: 80, rows: 24 }, palette)
     manager.ensure('pane-b', source, { cols: 80, rows: 24 }, palette)
-    const first = join(tmpdir(), 'mde-first')
-    const second = join(tmpdir(), 'mde-second')
+    // A native Windows directory is kept as `C:/...`, the form Git and fs accept, whichever way it was reported.
+    const first = join(tmpdir(), 'mde-first').replaceAll('\\', '/')
+    const second = join(tmpdir(), 'mde-second').replaceAll('\\', '/')
     ptyMock.children.get('pane-1')?.dataListener?.(`\u001b]7;${pathToFileURL(first).href}\u0007`)
     ptyMock.children.get('pane-2')?.dataListener?.(`\u001b]7;${pathToFileURL(second).href}\u0007`)
     manager.disposeAll()

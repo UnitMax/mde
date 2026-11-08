@@ -56,6 +56,8 @@ describe('the Inbox terminal over IPC', () => {
     electronMock.handlers.clear()
     workspaceMock.getSession.mockReset().mockResolvedValue(null)
     ptyManager.ensure.mockClear()
+    // On Windows the terminal is a shell in a WSL distro, which it looks up.
+    vi.mocked(listDistros).mockResolvedValue([{ name: 'Ubuntu', state: 'Running', version: 2, isDefault: true }])
     registerIpcHandlers(security, ptyManager as never, {} as never, {} as never, {} as never)
   })
 

@@ -223,7 +223,8 @@ describe('WSL path resolution', () => {
     })
   })
 
-  it('executes home shorthand expansion without retaining a literal tilde', async () => {
+  // The script is run by the local bash, which on Windows is the WSL launcher and not a shell with this HOME.
+  it.skipIf(process.platform === 'win32')('executes home shorthand expansion without retaining a literal tilde', async () => {
     vi.mocked(runWslCommand).mockImplementation(async (_distro, command) => {
       const result = spawnSync('bash', [
         '-lc',

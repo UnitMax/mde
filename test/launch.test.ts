@@ -87,7 +87,8 @@ describe('buildLaunchSpec', () => {
     expect(spec.args[10]).toContain('"$shell" -l -i')
   })
 
-  it('builds a syntactically valid WSL shell bootstrap', () => {
+  // `bash` on Windows is the WSL launcher, which ignores `-n` and would run the script.
+  it.skipIf(process.platform !== 'linux')('builds a syntactically valid WSL shell bootstrap', () => {
     const spec = buildLaunchSpec(session({ kind: 'wsl', distro: 'Ubuntu-24.04' }), {
       platform: 'win32', windowsExecutable: wslExecutable
     })

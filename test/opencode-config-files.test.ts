@@ -12,6 +12,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nativeConfigFileSystem, wslConfigFileSystem, WSL_CONFIG_DIRECTORY_EXPRESSION } from '../src/main/opencode/config/files'
 import { OpenCodeConfigService } from '../src/main/opencode/config/service'
 import { openCodeConfigDirectory } from '../src/main/native-environment'
+import { canCreateSymlinks } from './helpers/symlinks'
+
+// The native target is the Mac: POSIX paths and file modes, which Windows does not have.
+const posixOnly = process.platform === 'win32'
 
 const target = { kind: 'native' } as const
 const RULE = { action: 'shell', resource: '*', effect: 'ask' } as const
@@ -43,7 +47,7 @@ const withRule = (snapshot: OpenCodeConfigSnapshot): OpenCodeConfigDraft => ({
 })
 
 describe('reading', () => {
-  it('describes a missing file without creating it', async () => {
+  it.skipIf(posixOnly)('describes a missing file without creating it', async () => {
     const snapshot = await service().read(target)
     expect(snapshot).toMatchObject({
       file: { displayPath: '~/.config/opencode/opencode.jsonc', exists: false },
@@ -98,7 +102,7 @@ describe('reading', () => {
 })
 
 describe('saving', () => {
-  it('creates the folder and a private file when there is none', async () => {
+  it.skipIf(posixOnly)('creates the folder and a private file when there is none', async () => {
     const onSaved = vi.fn()
     const subject = service({ onSaved })
     const snapshot = await subject.save(target, { ...emptyDraft(), permissions: [RULE] }, 'absent')
@@ -111,7 +115,7 @@ describe('saving', () => {
     expect(onSaved).toHaveBeenCalledTimes(1)
   })
 
-  it('changes only what the draft changed, keeps the file mode and leaves no temporary file', async () => {
+  it.skipIf(posixOnly)('changes only what the draft changed, keeps the file mode and leaves no temporary file', async () => {
     await fs.mkdir(directory, { recursive: true })
     const path = join(directory, 'opencode.jsonc')
     const original = '{\n  // mine\n  "model": "a/b",\n  "provider": { "old": {} }\n}\n'
@@ -161,7 +165,7 @@ describe('saving', () => {
     expect(results.map((result) => result.status).sort()).toEqual(['fulfilled', 'rejected'])
   })
 
-  it('writes through a symbolic link instead of replacing it', async () => {
+  it.skipIf(posixOnly || !canCreateSymlinks)('writes through a symbolic link instead of replacing it', async () => {
     await fs.mkdir(directory, { recursive: true })
     const dotfiles = join(root, 'dotfiles')
     await fs.mkdir(dotfiles)
@@ -216,9 +220,9 @@ describe('previewing', () => {
 describe('where the configuration lives', () => {
   it('follows OPENCODE_CONFIG_DIR, then XDG_CONFIG_HOME, then ~/.config', () => {
     expect(openCodeConfigDirectory({ OPENCODE_CONFIG_DIR: '/opt/oc/', XDG_CONFIG_HOME: '/xdg' }, '/home/me')).toBe('/opt/oc')
-    expect(openCodeConfigDirectory({ XDG_CONFIG_HOME: '/xdg' }, '/home/me')).toBe('/xdg/opencode')
-    expect(openCodeConfigDirectory({}, '/home/me')).toBe('/home/me/.config/opencode')
-    expect(openCodeConfigDirectory({ XDG_CONFIG_HOME: 'relative' }, '/home/me')).toBe('/home/me/.config/opencode')
+    expect(openCodeConfigDirectory({ XDG_CONFIG_HOME: '/xdg' }, '/home/me')).toBe(join('/xdg', 'opencode'))
+    expect(openCodeConfigDirectory({}, '/home/me')).toBe(join('/home/me', '.config', 'opencode'))
+    expect(openCodeConfigDirectory({ XDG_CONFIG_HOME: 'relative' }, '/home/me')).toBe(join('/home/me', '.config', 'opencode'))
     expect(() => openCodeConfigDirectory({ OPENCODE_CONFIG_DIR: 'relative' }, '/home/me')).toThrow(/absolute/)
   })
 

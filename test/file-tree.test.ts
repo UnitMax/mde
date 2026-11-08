@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { FileTreeEntry, DirectoryContext } from '../src/shared/types'
+import { canCreateSymlinks } from './helpers/symlinks'
 import {
   MAX_FILE_TREE_ENTRIES,
   MAX_FILE_VIEW_BYTES,
@@ -117,7 +118,7 @@ describe('native file tree listing', () => {
     root = null
   })
 
-  it('lists one directory level and reports symlinks without following them', async () => {
+  it.skipIf(!canCreateSymlinks)('lists one directory level and reports symlinks without following them', async () => {
     root = await mkdtemp(join(tmpdir(), 'mde-file-tree-'))
     await mkdir(join(root, 'src', 'lib'), { recursive: true })
     await mkdir(join(root, '.git'))
@@ -263,8 +264,10 @@ describe('native file reads', () => {
     await writeFile(join(root, 'image.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]))
     await writeFile(join(root, 'big.log'), Buffer.alloc(MAX_FILE_VIEW_BYTES + 1, 0x61))
     await writeFile(join(outside, 'secret.txt'), 'secret')
-    await symlink(join(outside, 'secret.txt'), join(root, 'escape.txt'))
-    await symlink(join(root, 'src', 'index.ts'), join(root, 'inside.ts'))
+    if (canCreateSymlinks) {
+      await symlink(join(outside, 'secret.txt'), join(root, 'escape.txt'))
+      await symlink(join(root, 'src', 'index.ts'), join(root, 'inside.ts'))
+    }
     return session({ path: root })
   }
 
@@ -278,7 +281,7 @@ describe('native file reads', () => {
       tooLarge: false
     })
     expect((await readSessionFile(target, 'bom.md')).content).toBe('# Title\n')
-    expect((await readSessionFile(target, 'inside.ts')).content).toBe('export const x = 1\n')
+    if (canCreateSymlinks) expect((await readSessionFile(target, 'inside.ts')).content).toBe('export const x = 1\n')
   })
 
   it('reports binary and oversized files without content', async () => {
@@ -293,7 +296,9 @@ describe('native file reads', () => {
 
   it('refuses symlinks out of the session, folders, missing files, and unsafe paths', async () => {
     const target = await fixture()
-    await expect(readSessionFile(target, 'escape.txt')).rejects.toThrow('File is outside the session folder.')
+    if (canCreateSymlinks) {
+      await expect(readSessionFile(target, 'escape.txt')).rejects.toThrow('File is outside the session folder.')
+    }
     await expect(readSessionFile(target, 'src')).rejects.toThrow('Not a file.')
     await expect(readSessionFile(target, 'missing.txt')).rejects.toThrow('File not found.')
     await expect(readSessionFile(target, '')).rejects.toThrow('Invalid file path.')

@@ -606,11 +606,18 @@ Windows build 26200.9711.
 - The opt-in native Windows executable-lookup integration passed: harmless
   cwd/PATH sentinels, real WSL queries and native/WSL ConPTY. This source harness
   is distinct from the packaged native-terminal smoke above.
-- Full native Windows suite: 3,341 passed, 15 failed, 62 skipped (3,418 total).
-  Failures include insufficient permission for symlink fixtures, filenames
-  invalid on Windows, POSIX mode/path expectations, Windows bash invocation,
-  platform-specific mocks and a goal-state UI assertion. The Windows release
-  test gate is therefore not cleared; a successful build is not a passing suite.
+- Full native Windows suite, first run: 3,341 passed, 15 failed, 62 skipped (3,418
+  total). The failures were test assumptions, not product faults: symlink fixtures
+  that need a privilege an ordinary account lacks, filenames Windows forbids, POSIX
+  file modes and paths, the local `bash` being the WSL launcher, mocks that assumed
+  a native shell, and one goal-state UI assertion that passes in isolation.
+  Afterwards (2026-11-08, same Windows build): 3,352 passed, 0 failed, 70 skipped,
+  twice in a row. The tests that need symlinks, POSIX modes or a real bash now skip
+  where those do not exist (`test/helpers/symlinks.ts`), and the symlink and POSIX
+  cases still run on Linux. A Windows account that may create symlinks (an
+  administrator, or Developer Mode) runs the symlink tests; that was not tried here.
+  One product change came with it: reading a folder on Windows now says "Not a file."
+  instead of reporting a failed safe open.
 - Real native Windows file probes passed ordinary reads, static junction
   containment, device/alternate-stream path rejection and one-time ancestor
   replacement rejection. However, a controlled repeated junction replacement

@@ -15,7 +15,11 @@ export async function readContainedFile(rootPath: string, relative: string, limi
   const root = await fs.realpath(rootPath)
   const path = await fs.realpath(join(root, ...relative.split('/')))
   if (!inside(root, path)) throw new Error('File is outside the session folder.')
-  if (process.platform === 'win32') return readWindowsContainedFile(root, path, limit)
+  if (process.platform === 'win32') {
+    // A folder is refused plainly, not reported as a failed safe open; the native reader still checks what it opens.
+    if ((await fs.stat(path)).isDirectory()) throw new Error('Not a file.')
+    return readWindowsContainedFile(root, path, limit)
+  }
   if (!(await fs.lstat(path)).isFile()) throw new Error('Not a file.')
   const flags = constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW
   const handle = await fs.open(path, flags)
