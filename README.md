@@ -18,6 +18,9 @@ Settings → Notifications plays a sound and flashes the taskbar button when an 
 input or fails; on Windows the button is also coloured red, yellow or green with a count until you return.
 It needs nothing installed.
 
+The Inbox terminal can also float as a window over the conversation: use the button beside Collapse sidebar on
+the Terminal tab, then F11 shows and hides it. It can be moved, resized from every edge, maximized, and put back.
+
 On Windows, choose the Inbox sidebar terminal's WSL distribution from Settings → Terminal →
 Inbox sidebar terminal. Apply restarts its panes when the distribution changes; the choice is remembered.
 

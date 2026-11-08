@@ -121,6 +121,7 @@ const validPayloads = {
   [IpcChannels.windowChromeSet]: { color: '#10141b', symbolColor: '#7b8698' },
   [IpcChannels.attentionUpdate]: { indicator: { tone: 'failed', count: 2 }, flash: 'brief' },
   [IpcChannels.attentionBeep]: undefined,
+  [IpcChannels.floatingTerminalActive]: { active: true },
 } satisfies Record<IpcChannel, unknown>
 
 const channels = Object.values(IpcChannels)
@@ -416,6 +417,8 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.attentionUpdate, { indicator: null, flash: null })
     rejects(IpcChannels.attentionUpdate, { flash: 'brief' })
     rejects(IpcChannels.attentionBeep, {})
+    rejects(IpcChannels.floatingTerminalActive, { active: 'yes' })
+    rejects(IpcChannels.floatingTerminalActive, {})
     expect(() => assertIpcPayload(IpcChannels.attentionUpdate, { indicator: null })).not.toThrow()
     expect(() => assertIpcPayload(IpcChannels.attentionUpdate, { indicator: { tone: 'input', count: 99 }, flash: 'continuous' })).not.toThrow()
     expect(() => assertIpcPayload(IpcChannels.windowChromeSet, { color: '#FFF', symbolColor: '#aBc123' })).not.toThrow()

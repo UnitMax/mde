@@ -6,6 +6,7 @@ import { rendererEntryUrl } from './ipc-security'
 import { getMiniWindowAction, MiniWindowController } from './mini-window'
 import { TitleBarController } from './window-chrome'
 import { TaskbarAttention } from './taskbar-attention'
+import { FloatingTerminalKey } from './floating-terminal-key'
 import { BADGE_SIZE, badgeBitmap } from './taskbar-badge'
 import { PtyManager } from './pty/manager'
 import { TerminalDirectoryStore } from './pty/directories'
@@ -52,6 +53,8 @@ const titleBar = new TitleBarController({
   }
 })
 
+/** Whether F11 belongs to the Inbox's floating terminal; the renderer says so while it has one. */
+const floatingTerminalKey = new FloatingTerminalKey()
 // Flashes, colours and badges the taskbar button when a thread needs the person; the renderer decides when.
 const taskbarAttention = new TaskbarAttention({
   platform: process.platform,
@@ -120,6 +123,8 @@ function createWindow(): void {
     })
   )
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault())
+  // A reloaded page has no floating terminal until it says so again.
+  mainWindow.webContents.on('did-start-loading', () => floatingTerminalKey.setActive(false))
   mainWindow.webContents.on('before-input-event', (event, input) => {
     // Handled here rather than in the renderer so it works from every pane and
     // dialog, and so the terminal never receives F12's escape sequence.
@@ -127,6 +132,13 @@ function createWindow(): void {
     if (miniWindowAction) {
       event.preventDefault()
       if (miniWindowAction === 'toggle') miniWindow.toggle()
+      return
+    }
+
+    const floatingTerminalAction = floatingTerminalKey.action(input)
+    if (floatingTerminalAction) {
+      event.preventDefault()
+      if (floatingTerminalAction === 'toggle') mainWindow?.webContents.send(IpcEvents.floatingTerminalToggle)
       return
     }
 
@@ -230,7 +242,8 @@ if (!app.requestSingleInstanceLock()) {
       miniWindow,
       titleBar,
       { recorder: inboxRecorder, chat: inboxChat, openCodeConfig },
-      taskbarAttention
+      taskbarAttention,
+      floatingTerminalKey
     )
     createWindow()
 

@@ -5,6 +5,7 @@ import { AddSessionDialog } from '@/components/AddSessionDialog'
 import { MiniInboxWindow } from '@/components/MiniInboxWindow'
 import { FileTreePanel } from '@/components/FileTreePanel'
 import { FileViewer } from '@/components/FileViewer'
+import { FloatingTerminal } from '@/components/inbox/FloatingTerminal'
 import { InboxChangeViewer, InboxSidebar } from '@/components/inbox/InboxChanges'
 import { NewTodoProjectDialog } from '@/components/NewTodoProjectDialog'
 import { Sidebar } from '@/components/Sidebar'
@@ -664,6 +665,7 @@ export function App(): JSX.Element {
           {!ready ? null : activeWorkspaceView === 'inbox' ? (
             <>
               <InboxThreadView />
+              <FloatingTerminal />
               {selectedInboxThreadId && <InboxChangeViewer threadId={selectedInboxThreadId} />}
               {inboxRoot && inboxOpenFilePath !== undefined && (
                 <FileViewer

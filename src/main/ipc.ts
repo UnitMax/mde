@@ -127,6 +127,7 @@ import type { PtyLaunchOptions, PtyManager } from './pty/manager'
 import { fileTreeDropFile, resolveTerminalDrop } from './pty/drop'
 import type { InboxRecorder } from './inbox/recorder'
 import type { TaskbarAttention } from './taskbar-attention'
+import type { FloatingTerminalKey } from './floating-terminal-key'
 import type { TaskbarAttentionRequest } from '@shared/taskbar-attention'
 import type { InboxChatService } from './inbox/chat'
 import type { OpenCodeConfigService } from './opencode/config'
@@ -330,7 +331,8 @@ export function registerIpcHandlers(
   miniWindow: MiniWindowController,
   titleBar: TitleBarController,
   inbox: { recorder: InboxRecorder; chat: InboxChatService; openCodeConfig: OpenCodeConfigService },
-  taskbar?: TaskbarAttention
+  taskbar?: TaskbarAttention,
+  floatingTerminalKey?: FloatingTerminalKey
 ): void {
   const inboxRecorder = inbox.recorder
   const chat = inbox.chat
@@ -594,6 +596,7 @@ export function registerIpcHandlers(
 
   handle<TaskbarAttentionRequest, void>(IpcChannels.attentionUpdate, (req) => taskbar?.update(req))
   handle<void, void>(IpcChannels.attentionBeep, () => shell.beep())
+  handle<{ active: boolean }, void>(IpcChannels.floatingTerminalActive, ({ active }) => floatingTerminalKey?.setActive(active))
 
   handle<InboxTerminalSettings, InboxTerminalConfiguration>(IpcChannels.ptyConfigureInbox, async (req) => {
     if (process.platform !== 'win32' && req.distro !== null) throw new Error('WSL is only available on Windows.')

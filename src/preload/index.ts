@@ -185,6 +185,10 @@ const api: RendererApi = {
   attention: {
     update: (req) => ipcRenderer.invoke(IpcChannels.attentionUpdate, req),
     beep: () => ipcRenderer.invoke(IpcChannels.attentionBeep)
+  },
+  floatingTerminal: {
+    setActive: (active) => ipcRenderer.invoke(IpcChannels.floatingTerminalActive, { active }),
+    onToggle: (listener) => subscribe<void>(IpcEvents.floatingTerminalToggle, () => listener())
   }
 }
 

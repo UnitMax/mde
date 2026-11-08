@@ -61,6 +61,7 @@
     "src/renderer/lib/wsl-folder.ts",
     "src/renderer/lib/file-viewer.ts",
     "src/renderer/lib/inbox-settings.ts",
+    "src/renderer/lib/floating-window.ts",
     "src/renderer/lib/workspace-navigation.ts",
     "src/renderer/lib/skills.ts",
     "src/renderer/lib/file-mentions.ts",
@@ -132,6 +133,7 @@
     "src/renderer/store/inbox-changes.ts",
     "src/renderer/store/inbox-view.ts",
     "src/renderer/store/inbox-terminal.ts",
+    "src/renderer/store/inbox-floating-terminal.ts",
     "src/renderer/store/opencode-config.ts",
     "src/shared/**/*",
     "test/**/*"

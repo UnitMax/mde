@@ -301,6 +301,7 @@ export const ipcPayloadValidators = {
     flash: optional(oneOf('none', 'brief', 'continuous')),
   }),
   [IpcChannels.attentionBeep]: noPayload,
+  [IpcChannels.floatingTerminalActive]: object({ active: boolean }),
 } satisfies Record<IpcChannel, Validator>
 
 export function assertIpcPayload(channel: IpcChannel, payload: unknown): void {

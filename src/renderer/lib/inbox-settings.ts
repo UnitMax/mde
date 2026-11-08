@@ -1,5 +1,6 @@
 import { isTerminalLayoutTree } from '@shared/terminal-layouts'
 import type { TerminalLayoutNode } from '@shared/types'
+import { isFloatingRect, type FloatingRect } from './floating-window'
 
 export const INBOX_SIDEBAR_CHANGES_STORAGE_KEY = 'mde.inbox-sidebar-changes'
 export const INBOX_WORKING_SECTION_STORAGE_KEY = 'mde.inbox-working-section'
@@ -12,6 +13,7 @@ export const INBOX_PROJECT_FILTER_STORAGE_KEY = 'mde.inbox-project-filter'
 export const INBOX_SIDEBAR_WIDTH_STORAGE_KEY = 'mde.inbox-sidebar-width'
 export const INBOX_TERMINAL_LAYOUT_STORAGE_KEY = 'mde.inbox-terminal-layout'
 export const INBOX_TERMINAL_DISTRO_STORAGE_KEY = 'mde.inbox-terminal-distro'
+export const INBOX_FLOATING_TERMINAL_STORAGE_KEY = 'mde.inbox-floating-terminal'
 
 /** No saved choice follows the Windows default distribution. */
 export function getInboxTerminalDistro(): string | null {
@@ -196,5 +198,47 @@ export function saveInboxTerminalLayout(value: StoredTerminalLayout): void {
     localStorage.setItem(INBOX_TERMINAL_LAYOUT_STORAGE_KEY, JSON.stringify({ tree: value.tree }))
   } catch {
     // A restricted storage environment keeps the layout for this session only.
+  }
+}
+
+/** Whether the Inbox's terminal floats over the conversation, and where its window was left. */
+export interface StoredFloatingTerminal {
+  floating: boolean
+  /** Null until the window has been moved or resized: it then opens in its default place. */
+  rect: FloatingRect | null
+  maximized: boolean
+}
+
+export const DEFAULT_FLOATING_TERMINAL: StoredFloatingTerminal = { floating: false, rect: null, maximized: false }
+
+export function parseStoredFloatingTerminal(raw: string | null): StoredFloatingTerminal {
+  if (!raw) return DEFAULT_FLOATING_TERMINAL
+  try {
+    const value: unknown = JSON.parse(raw)
+    if (!value || typeof value !== 'object') return DEFAULT_FLOATING_TERMINAL
+    const { floating, rect, maximized } = value as Record<string, unknown>
+    return {
+      floating: floating === true,
+      rect: isFloatingRect(rect) ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null,
+      maximized: maximized === true,
+    }
+  } catch {
+    return DEFAULT_FLOATING_TERMINAL
+  }
+}
+
+export function getInboxFloatingTerminal(): StoredFloatingTerminal {
+  try {
+    return parseStoredFloatingTerminal(localStorage.getItem(INBOX_FLOATING_TERMINAL_STORAGE_KEY))
+  } catch {
+    return DEFAULT_FLOATING_TERMINAL
+  }
+}
+
+export function saveInboxFloatingTerminal(value: StoredFloatingTerminal): void {
+  try {
+    localStorage.setItem(INBOX_FLOATING_TERMINAL_STORAGE_KEY, JSON.stringify(value))
+  } catch {
+    // A restricted storage environment keeps the window where it is for this session only.
   }
 }

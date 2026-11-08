@@ -32,6 +32,7 @@ export function getKeyboardShortcutGroups(
       shortcuts: [
         { id: 'inbox-new-thread', keys: ['Ctrl+N'], description: 'Start a new Inbox thread, setting aside any current draft.' },
         { id: 'inbox-multi-select', keys: platform === 'darwin' ? ['Ctrl+Click', 'Cmd+Click'] : ['Ctrl+Click'], description: 'Select multiple Inbox threads for pinning, marking unread, or parking.' },
+        { id: 'inbox-floating-terminal', keys: ['F11'], description: 'Show or hide the Inbox terminal once it has been floated out of the sidebar (the button beside Collapse sidebar on the Terminal tab). Until then F11 keeps putting the window in full screen.' },
         { id: 'inbox-changes-tabs', keys: ['Left', 'Right', 'Home', 'End'], description: 'Switch Files and Changes when a thread sidebar tab is focused.' },
         { id: 'inbox-close-changes', keys: ['Escape'], description: 'Close the Git change review, or the changed-file list under a thread.' },
         { id: 'inbox-paste-image', keys: [`${primaryModifier}+V`], description: 'Paste clipboard images as attachments in the message box; text pastes normally.' },

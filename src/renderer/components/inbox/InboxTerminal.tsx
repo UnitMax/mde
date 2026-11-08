@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { inboxTerminalSession } from '@shared/inbox-terminal'
 import { TerminalView } from '@/components/TerminalView'
 import { focusTerminalWhenReady } from '@/terminal/focus'
@@ -17,11 +17,12 @@ export function focusInboxTerminalWhenShown(): void {
 }
 
 /**
- * The Inbox's terminal: the project view's terminal layout, once, in the sidebar. It has no tabs of its own
+ * The Inbox's terminal: the project view's terminal layout, once, in the sidebar or, when it is broken out
+ * of it, floating over the conversation (`focusOnMount` takes the keyboard as the floating window opens). It has no tabs of its own
  * and does not depend on the open thread; its shells start in the home directory and keep running while
  * the sidebar shows something else.
  */
-export function InboxTerminal(): JSX.Element {
+export function InboxTerminal({ focusOnMount = false }: { focusOnMount?: boolean }): JSX.Element {
   const layout = useInboxTerminal((state) => state.layout)
   const splitPane = useInboxTerminal((state) => state.splitPane)
   const resize = useInboxTerminal((state) => state.resize)
@@ -43,9 +44,12 @@ export function InboxTerminal(): JSX.Element {
     }
   }, [platform?.isWindows, configureDistro])
 
+  // A terminal opened by the person taking it out, or bringing it back, takes the keyboard once it is there.
+  const focusMount = useRef(focusOnMount)
   useEffect(() => {
-    if (!focusWhenShown || !firstTerminalId || !session || configuring) return
+    if (!(focusWhenShown || focusMount.current) || !firstTerminalId || !session || configuring) return
     focusWhenShown = false
+    focusMount.current = false
     return focusTerminalWhenReady(firstTerminalId)
   }, [firstTerminalId, session, configuring])
 

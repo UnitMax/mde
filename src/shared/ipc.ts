@@ -207,6 +207,7 @@ export const IpcChannels = {
   windowChromeSet: 'window-chrome:set',
   attentionUpdate: 'attention:update',
   attentionBeep: 'attention:beep',
+  floatingTerminalActive: 'floating-terminal:active',
 
   appInfo: 'app:info',
   platformInfo: 'platform:info'
@@ -220,6 +221,7 @@ export const IpcEvents = {
   inboxChanged: 'inbox:changed',
   chatEvent: 'chat:event',
   windowModeChanged: 'window-mode:changed',
+  floatingTerminalToggle: 'floating-terminal:toggle',
 } as const
 
 export interface PlatformInfo {
@@ -623,5 +625,11 @@ export interface RendererApi {
     update(req: TaskbarAttentionRequest): Promise<void>
     /** The system's own alert sound. */
     beep(): Promise<void>
+  }
+  floatingTerminal: {
+    /** Says whether the Inbox has a floating terminal, so the main process hands it F11 instead of keeping it. */
+    setActive(active: boolean): Promise<void>
+    /** F11 was pressed while there is one: show it, or hide it. */
+    onToggle(listener: () => void): () => void
   }
 }

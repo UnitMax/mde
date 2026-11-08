@@ -5,7 +5,9 @@ import type { GitChangeStatus, InboxChangeDiff, InboxChangedFile, InboxChangesRe
 import { Button } from '@/components/ui/button'
 import { FileTreePanel } from '@/components/FileTreePanel'
 import { DiffBody } from './ChatFileChange'
+import { FloatingTerminalNotice, FloatTerminalButton } from './FloatingTerminal'
 import { focusInboxTerminalWhenShown, InboxTerminal } from './InboxTerminal'
+import { useInboxFloatingTerminal } from '@/store/inbox-floating-terminal'
 import { InboxSidebarFrame } from './InboxSidebarFrame'
 import { parseUnifiedDiff } from '@/lib/diff'
 import { ipcErrorMessage } from '@/lib/ipc-error'
@@ -573,10 +575,12 @@ function ChangesAside({ threadId }: { threadId: string }): JSX.Element {
  */
 function TerminalAside({ threadId }: { threadId?: string }): JSX.Element {
   const toggle = useWorkspace((s) => s.toggleFileTree)
+  const floating = useInboxFloatingTerminal((s) => s.floating)
   return (
     <aside data-testid="inbox-terminal-panel" className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-line bg-panel">
       <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
         <SidebarTabs threadId={threadId} />
+        {!floating && <FloatTerminalButton />}
         <Button variant="ghost" size="icon-sm" className="shrink-0" title="Collapse sidebar" aria-label="Collapse sidebar" onClick={toggle}>
           <PanelRightClose className="h-3.5 w-3.5" />
         </Button>
@@ -587,7 +591,7 @@ function TerminalAside({ threadId }: { threadId?: string }): JSX.Element {
         aria-labelledby="inbox-terminal-tab"
         className="flex min-h-0 flex-1 flex-col border-t border-line"
       >
-        <InboxTerminal />
+        {floating ? <FloatingTerminalNotice /> : <InboxTerminal />}
       </div>
     </aside>
   )

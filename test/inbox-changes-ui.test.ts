@@ -8,6 +8,7 @@ vi.mock('../src/renderer/components/inbox/InboxTerminal', () => ({
   focusInboxTerminalWhenShown: vi.fn(),
 }))
 import { focusInboxTerminalWhenShown } from '../src/renderer/components/inbox/InboxTerminal'
+import { useInboxFloatingTerminal } from '../src/renderer/store/inbox-floating-terminal'
 import { CHANGES_LIST_LIMIT, InboxChangesBadge, InboxChangeViewer, InboxSidebar } from '../src/renderer/components/inbox/InboxChanges'
 import { useInboxChanges, inboxChangesKey } from '../src/renderer/store/inbox-changes'
 import { useWorkspace } from '../src/renderer/store/workspace'
@@ -564,6 +565,24 @@ it('shows the terminal for a new thread too: it belongs to no thread', async () 
   expect(terminalPanel()?.querySelector('[data-testid="inbox-terminal-stub"]')).not.toBeNull()
   expect(Array.from(terminalPanel()!.querySelectorAll('[role="tab"]')).map((item) => item.textContent)).toEqual(['Files', 'Terminal'])
   expect(changes).not.toHaveBeenCalled()
+})
+
+it('offers to float the terminal, and shows a notice in its place while it floats', async () => {
+  const floating = useInboxFloatingTerminal
+  floating.setState({ floating: false, visible: false })
+  await sidebar()
+  await act(async () => tab('terminal')!.click())
+  expect(terminalPanel()?.querySelector('[data-testid="floating-terminal-break-out"]')).not.toBeNull()
+  await act(async () => floating.getState().breakOut())
+  expect(floating.getState().floating).toBe(true)
+  // Floating moved the sidebar off the terminal tab; choosing it again shows where the terminal went.
+  await act(async () => tab('terminal')!.click())
+  expect(terminalPanel()?.querySelector('[data-testid="inbox-terminal-stub"]')).toBeNull()
+  expect(terminalPanel()?.querySelector('[data-testid="floating-terminal-break-out"]')).toBeNull()
+  expect(terminalPanel()?.querySelector('[data-testid="floating-terminal-notice"]')?.textContent).toContain('F11')
+  await act(async () => floating.getState().dock())
+  expect(terminalPanel()?.querySelector('[data-testid="inbox-terminal-stub"]')).not.toBeNull()
+  floating.setState({ floating: false, visible: false })
 })
 
 it('takes the keyboard to the terminal when the tab is clicked, but not when it is reached from the keyboard', async () => {

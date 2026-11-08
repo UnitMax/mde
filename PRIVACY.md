@@ -43,6 +43,9 @@ MDE stores data only on the local machine:
   the Inbox's right-hand sidebar is (a number of pixels), and the arrangement of the Inbox terminal
   (a tree of pane IDs, split IDs, horizontal or vertical directions, and numeric divider ratios).
   Neither holds terminal content or pane titles; the terminal's shells are not restored on the next run.
+- The renderer's local storage (`mde.inbox-floating-terminal`): whether the Inbox terminal floats over the
+  conversation, where its window was left (four pixel numbers) and whether it is maximized. No terminal
+  content.
 - The renderer's local storage (`mde.inbox-terminal-distro`): the WSL distribution chosen for the
   Inbox sidebar terminal. No entry means the Windows default distribution.
 - The renderer's local storage (`mde.alert-settings`): the Notifications choices: whether and how loudly
