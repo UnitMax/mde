@@ -1,0 +1,88 @@
+name: CI
+
+# Every push and pull request runs the checks that a release also runs, so a problem shows up when it is made and not
+# when a release is built. Releases are built by the separate "Build release draft" workflow.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out the commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.21.0'
+          package-manager-cache: false
+
+      - name: Install dependencies and rebuild node-pty
+        run: npm ci --no-audit
+
+      - name: Check the third-party notices
+        run: npm run licenses:check
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
+
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Check out the commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.21.0'
+          architecture: x64
+          package-manager-cache: false
+
+      - name: Install dependencies with Windows node-pty prebuilds
+        run: npm ci --no-audit
+
+      - name: Run tests
+        run: npm test
+
+  # Separate so that a newly published advisory is visible as its own failure and not as a broken build.
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.21.0'
+          package-manager-cache: false
+
+      - name: Audit dependencies against the lockfile
+        run: npm run audit:deps

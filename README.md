@@ -96,14 +96,19 @@ Cross-building for Windows from Linux is not supported; build on Windows, or fro
 the Windows staging details and verification are in
 [`docs/windows-release.md`](docs/windows-release.md).
 
-### Release builds with GitHub Actions
+### Checks and release builds with GitHub Actions
 
-The [Build release draft workflow](.github/workflows/build-release.yml) runs when a
-version tag such as `0.0.119` is pushed; `v`-prefixed tags are also accepted. It builds
-Windows x64 on `windows-2025` and macOS ARM64 on `macos-15` in parallel, using Node
-24.21.0 and locked dependencies. Both jobs run the full test suite, dependency audit,
-license checks, typechecking, compilation, packaging, and packaged-output audit.
-Windows uses the existing `node-pty` prebuilds; macOS rebuilds the native module.
+The [CI workflow](.github/workflows/ci.yml) runs on every push and pull request: license
+notices, typecheck and the test suite on Linux, the test suite on native Windows, and the
+dependency audit as its own job. It builds nothing.
+
+The [Build release draft workflow](.github/workflows/build-release.yml) is started by hand
+and builds a release from the head of the default branch. It reads the version from
+`package.json`, checks that `package-lock.json` (both fields) agrees and that the tag
+`v<version>` is free, then builds Windows x64 on `windows-2025` and macOS ARM64 on `macos-15`
+in parallel, using Node 24.21.0 and locked dependencies. Both jobs run the full test suite,
+dependency audit, license checks, typechecking, compilation, packaging, and packaged-output
+audit. Windows uses the existing `node-pty` prebuilds; macOS rebuilds the native module.
 Packaging explicitly disables publishing.
 
 The macOS job verifies the app signature, architecture, and disk image. The Windows
@@ -113,36 +118,33 @@ Actions artifacts retained for three days. A failed check prevents that job's up
 
 For each release:
 
-1. Prepare and commit the release version in `package.json` and both version
-   fields in `package-lock.json`, then push the commit. The workflow must already
-   be on the default branch to support manual runs.
-2. Push the matching version tag from that commit. For example:
+1. Merge the work to the default branch. The version in `package.json` and both version
+   fields in `package-lock.json` change only for a release, in one commit, for example:
 
    ```sh
-   version=$(node -p "require('./package.json').version")
-   git tag -a "$version" -m "$version"
-   git push origin "refs/tags/$version"
+   npm version 0.1.15 --no-git-tag-version
    ```
 
-3. Open **Actions → Build release draft** and check that both builds and the
-   draft-release job succeed. After both builds pass, the final job verifies the
-   downloaded checksums and creates a draft GitHub Release for the existing tag,
-   attaching the Windows ZIP, macOS DMG, both checksums, `LICENSE`, and
-   `THIRD_PARTY_NOTICES.md`.
+2. Open **Actions → Build release draft → Run workflow** on the default branch. Nothing
+   needs tagging by hand.
+3. Check that all jobs succeed. After both builds pass, the final job creates the tag
+   `v<version>` on the commit that was built, verifies the downloaded checksums and
+   creates a draft GitHub Release for it, attaching the Windows ZIP, macOS DMG, both
+   checksums, `LICENSE`, and `THIRD_PARTY_NOTICES.md`.
 4. Open the draft under **Releases**, review the files and release notes, and test
    the extracted Windows ZIP as described in [`docs/windows-release.md`](docs/windows-release.md).
    Publish the release manually when ready. For Windows, extract the entire ZIP
    into its own folder and run `mde.exe`. For macOS, mount the DMG and drag MDE into
    Applications.
 
-The tag, with an optional `v` prefix removed, must exactly match all three manifest
-version fields; mismatches fail before dependency installation. Ordinary branch
-pushes do not build. To rebuild an existing tag, use **Run workflow** with the
-required `tag` input on the default branch, or rerun its previous job. The tagged
-commit must contain the workflow's build commands and release helper. Runs for the
-same tag share a concurrency group; each platform build has a 30-minute timeout.
-Reruns reuse an existing draft and replace matching assets, preserving its release
-notes. An already published release is never modified: the upload job fails instead.
+The workflow refuses to run on any other branch. It fails before building when the version
+was already published, when its tag exists on a different commit, or when the three version
+fields disagree. Raise the version for a new release; to rebuild one that is still a draft,
+run the workflow again: it reuses the draft, replaces matching assets and keeps its release
+notes. A published release is never modified. Runs share one concurrency group and each
+platform build has a 30-minute timeout. The workflow file must be on the default branch
+for **Run workflow** to appear. Tags made before this process (`0.0.x`, no `v`) stay as
+they are.
 
 The workflow uses pinned GitHub actions and read-only repository permissions for
 builds. Only the final draft-release job receives `contents: write` and `actions: read`,

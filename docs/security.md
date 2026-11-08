@@ -511,14 +511,17 @@ before releases. Renderer libraries such as Mermaid are bundled into the app
 even though they are declared as development dependencies, so a production-only
 audit does not cover all shipped code.
 
-The tag workflow runs the full dependency audit, tests, license check, typecheck,
-and packaged-output audit in fresh Windows and macOS jobs before uploading ZIP/DMG
-artifacts and checksums. Build jobs have read-only repository permissions, pinned
-official actions, no persisted checkout credentials or signing secrets, and package
-without publishing. A separate job has limited release-write permission to create
-or update a draft release after both builds succeed. Build artifacts expire after
-three days; publication of the draft remains manual. Ordinary branch pushes do
-not run this gate, so contributors must still run the local checks above.
+The release workflow (started by hand on the default branch) runs the full dependency
+audit, tests, license check, typecheck, and packaged-output audit in fresh Windows and
+macOS jobs before uploading ZIP/DMG artifacts and checksums. Build jobs have read-only
+repository permissions, pinned official actions, no persisted checkout credentials or
+signing secrets, and package without publishing. A separate job has limited release-write
+permission to tag the built commit and create or update a draft release after both builds
+succeed; it never moves an existing tag or touches a published release. Build artifacts
+expire after three days; publication of the draft remains manual. The CI workflow runs the
+tests on Linux and Windows, the license and typecheck gates, and this audit on every push
+and pull request, with read-only permissions. It is a safety net, not a substitute for the
+local checks above.
 
 The initial 2026-11-08 audit reported six moderate entries from minimatch globparts
 amplification. The affected modern copies now resolve to 11.0.1 through a version-range

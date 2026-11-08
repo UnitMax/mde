@@ -1,22 +1,15 @@
 name: Build release draft
 
+# Run from the default branch with "Run workflow". The commit that is built is that branch's head at that moment; the
+# version comes from package.json, and the tag v<version> is created on that commit only after both builds pass.
 on:
-  push:
-    tags:
-      - '[0-9]*'
-      - 'v*'
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Existing version tag to build (for example, 0.0.117)'
-        required: true
-        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: build-release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  group: build-release
   cancel-in-progress: false
 
 defaults:
@@ -24,19 +17,73 @@ defaults:
     shell: bash
 
 jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      sha: ${{ steps.release.outputs.sha }}
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - name: Require the default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          test "$GITHUB_REF" = "refs/heads/$DEFAULT_BRANCH" || {
+            echo "::error::Run this workflow on $DEFAULT_BRANCH, not on $GITHUB_REF_NAME."
+            exit 1
+          }
+
+      - name: Check out the commit to release
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.21.0'
+          package-manager-cache: false
+
+      - name: Read the version and check its tag is free
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs'
+
+          const manifest = JSON.parse(readFileSync('package.json', 'utf8'))
+          const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'))
+          const versions = [manifest.version, lock.version, lock.packages?.['']?.version]
+          if (!/^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/.test(manifest.version ?? '') ||
+              versions.some((version) => version !== manifest.version)) {
+            throw new Error('package.json and package-lock.json (both fields) must hold the same release version')
+          }
+
+          appendFileSync(process.env.GITHUB_OUTPUT, [
+            `sha=${process.env.GITHUB_SHA}`,
+            `version=${manifest.version}`,
+            `tag=v${manifest.version}`,
+          ].join('\n') + '\n')
+          NODE
+          # Fails now, before any build, when this version was already published or its tag is on another commit.
+          node scripts/draft-release.mjs check "v$(node -p "require('./package.json').version")" "$GITHUB_SHA"
+
   macos:
+    needs: prepare
     outputs:
       version: ${{ steps.release.outputs.version }}
     runs-on: macos-15
     timeout-minutes: 30
     env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
-      - name: Check out the version tag
+      - name: Check out the commit to release
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.sha }}
+          ref: ${{ needs.prepare.outputs.sha }}
           persist-credentials: false
 
       - name: Set up Node
@@ -59,11 +106,10 @@ jobs:
           const manifest = JSON.parse(readFileSync('package.json', 'utf8'))
           const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'))
           const versions = [manifest.version, lock.version, lock.packages?.['']?.version]
-          const tag = process.env.RELEASE_TAG
-          const version = tag?.replace(/^v/, '')
+          const version = process.env.RELEASE_VERSION
           if (!/^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/.test(version ?? '') ||
               versions.some((expected) => version !== expected)) {
-            throw new Error('The tag must match the version in package.json and package-lock.json (including its root package), with an optional v prefix')
+            throw new Error('The commit being built must hold the release version in package.json and package-lock.json (including its root package)')
           }
 
           appendFileSync(process.env.GITHUB_OUTPUT, `version=${manifest.version}\n`)
@@ -104,18 +150,19 @@ jobs:
           compression-level: 0
 
   windows:
+    needs: prepare
     runs-on: windows-2025
     timeout-minutes: 30
     outputs:
       version: ${{ steps.release.outputs.version }}
     env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
-      - name: Check out the version tag
+      - name: Check out the commit to release
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.sha }}
+          ref: ${{ needs.prepare.outputs.sha }}
           persist-credentials: false
 
       - name: Set up Node
@@ -138,10 +185,10 @@ jobs:
           const manifest = JSON.parse(readFileSync('package.json', 'utf8'))
           const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'))
           const versions = [manifest.version, lock.version, lock.packages?.['']?.version]
-          const version = process.env.RELEASE_TAG?.replace(/^v/, '')
+          const version = process.env.RELEASE_VERSION
           if (!/^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/.test(version ?? '') ||
               versions.some((expected) => version !== expected)) {
-            throw new Error('The tag must match the version in package.json and package-lock.json (including its root package), with an optional v prefix')
+            throw new Error('The commit being built must hold the release version in package.json and package-lock.json (including its root package)')
           }
 
           appendFileSync(process.env.GITHUB_OUTPUT, `version=${manifest.version}\n`)
@@ -210,21 +257,22 @@ jobs:
           compression-level: 0
 
   draft-release:
-    needs: [macos, windows]
+    needs: [prepare, macos, windows]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write
       actions: read
     env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
       VERSION: ${{ needs.macos.outputs.version }}
       WINDOWS_VERSION: ${{ needs.windows.outputs.version }}
     steps:
-      - name: Check out the version tag
+      - name: Check out the commit to release
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.sha }}
+          ref: ${{ needs.prepare.outputs.sha }}
           persist-credentials: false
 
       - name: Set up Node
@@ -246,11 +294,16 @@ jobs:
           sha256sum -c "mde-$VERSION-arm64.dmg.sha256"
           sha256sum -c "mde-$VERSION-win.zip.sha256"
 
+      - name: Tag the built commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/draft-release.mjs tag "$RELEASE_TAG" "$RELEASE_SHA"
+
       - name: Create or update the draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          node scripts/draft-release.mjs "$RELEASE_TAG" \
+          node scripts/draft-release.mjs upload "$RELEASE_TAG" \
             "release-assets/mde-$VERSION-win.zip" \
             "release-assets/mde-$VERSION-win.zip.sha256" \
             "release-assets/mde-$VERSION-arm64.dmg" \

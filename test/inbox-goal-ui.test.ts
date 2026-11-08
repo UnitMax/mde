@@ -478,6 +478,10 @@ describe('the goal in the chat store', () => {
   it('remembers the agent and model a goal was set with, as a message does, and starts the thread running', async () => {
     await render()
     const other = { id: 'free-2', providerId: 'opencode' }
+    // Setting a goal starts the agent, so the service says the thread is running from then on. The store also marks it
+    // running at once, before this returns, but the refetch it schedules (CHAT_REFRESH_DELAY_MS later) replaces that
+    // with what the service says; a service that still said idle made this test depend on that refetch being late.
+    setGoal.mockImplementationOnce(async () => { page = { ...page, running: true } })
     await act(async () => { await useInboxChat.getState().setGoal('ses_one', { action: 'set', objective: 'Ship it', agent: 'plan', model: other }) })
     expect(useInboxChat.getState().composer).toMatchObject({ agent: 'plan', model: other })
     expect(useInboxChat.getState().threads.ses_one?.running).toBe(true)

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { uploadDraftRelease } from '../scripts/draft-release.mjs'
+import { ensureReleaseTag, uploadDraftRelease } from '../scripts/draft-release.mjs'
 
 const tag = 'v0.0.1'
 const repository = 'example/mde'
@@ -43,5 +43,56 @@ describe('draft release uploads', () => {
     expect(run).toHaveBeenCalledTimes(1)
     expect(() => uploadDraftRelease({ tag: '--draft', repository, assets, run })).toThrow('version tag')
     expect(run).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('release tags', () => {
+  const sha = 'a'.repeat(40)
+  const other = 'b'.repeat(40)
+
+  /** Answers the two lookups in order: the release list, then the matching tag refs. */
+  function lookups(releases: unknown[], refs: unknown[], third = '') {
+    return vi.fn()
+      .mockReturnValueOnce(JSON.stringify([releases]))
+      .mockReturnValueOnce(JSON.stringify(refs))
+      .mockReturnValueOnce(third)
+      .mockReturnValue('')
+  }
+
+  it('creates the tag on the built commit when there is none', () => {
+    const run = lookups([], [{ ref: `refs/tags/${tag}-rc1`, object: { type: 'commit', sha: other } }])
+    expect(ensureReleaseTag({ tag, sha, repository, run })).toBe('created')
+    expect(run.mock.calls[1]?.[1]).toEqual(['api', `repos/${repository}/git/matching-refs/tags/${tag}`])
+    expect(run.mock.calls[2]?.[1]).toEqual([
+      'api', '--method', 'POST', `repos/${repository}/git/refs`, '-f', `ref=refs/tags/${tag}`, '-f', `sha=${sha}`,
+    ])
+  })
+
+  it('only checks when asked not to create', () => {
+    const run = lookups([{ tag_name: tag, draft: true }], [])
+    expect(ensureReleaseTag({ tag, sha, repository, create: false, run })).toBe('created')
+    expect(run).toHaveBeenCalledTimes(2)
+  })
+
+  it('accepts a tag already on the built commit, lightweight or annotated', () => {
+    expect(ensureReleaseTag({ tag, sha, repository, run: lookups([], [{ ref: `refs/tags/${tag}`, object: { type: 'commit', sha } }]) })).toBe('exists')
+    const annotated = lookups([], [{ ref: `refs/tags/${tag}`, object: { type: 'tag', sha: other } }], JSON.stringify({ object: { type: 'commit', sha } }))
+    expect(ensureReleaseTag({ tag, sha, repository, run: annotated })).toBe('exists')
+    expect(annotated.mock.calls[2]?.[1]).toEqual(['api', `repos/${repository}/git/tags/${other}`])
+  })
+
+  it('refuses a tag on another commit and a version that is already published', () => {
+    const moved = lookups([], [{ ref: `refs/tags/${tag}`, object: { type: 'commit', sha: other } }])
+    expect(() => ensureReleaseTag({ tag, sha, repository, run: moved })).toThrow('different commit')
+    const published = lookups([{ tag_name: tag, draft: false }], [])
+    expect(() => ensureReleaseTag({ tag, sha, repository, run: published })).toThrow('already published')
+    expect(published).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects a malformed tag or commit before asking GitHub', () => {
+    const run = vi.fn()
+    expect(() => ensureReleaseTag({ tag: '--delete', sha, repository, run })).toThrow('version tag')
+    expect(() => ensureReleaseTag({ tag, sha: 'main', repository, run })).toThrow('full commit SHA')
+    expect(run).not.toHaveBeenCalled()
   })
 })
