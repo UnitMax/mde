@@ -55,6 +55,7 @@ export function PermissionCard({
   return (
     <Card testId={`chat-permission-${permission.id}`} icon={<ShieldAlert className="h-4 w-4 text-warn" />} title={`Permission: ${permissionTitle(permission.action)}`}>
       {permission.message && <p className="mb-2 text-[13px] text-fg-muted">{permission.message}</p>}
+      {permission.incomplete && <p role="alert" className="mb-2 text-[13px] text-warn">MDE cannot show this permission request completely. Review it in an OpenCode terminal, or reject it here.</p>}
       {permission.resources.length > 0 && (
         <ul className="mb-3 flex flex-col gap-0.5">
           {permission.resources.map((resource) => (
@@ -65,11 +66,11 @@ export function PermissionCard({
         </ul>
       )}
       <div className="flex flex-wrap gap-1.5">
-        <Button size="sm" disabled={pending !== null} onClick={() => void reply('once')}>
+        <Button size="sm" disabled={pending !== null || permission.incomplete} onClick={() => void reply('once')}>
           {pending === 'once' && <LoaderCircle className="h-3.5 w-3.5 animate-spin" />}
           Allow once
         </Button>
-        <Button size="sm" variant="secondary" disabled={pending !== null} onClick={() => void reply('always')}>
+        <Button size="sm" variant="secondary" disabled={pending !== null || permission.incomplete} onClick={() => void reply('always')}>
           {pending === 'always' && <LoaderCircle className="h-3.5 w-3.5 animate-spin" />}
           Always allow
         </Button>

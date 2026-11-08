@@ -592,6 +592,7 @@ export interface ChatPermission {
   action: string
   resources: string[]
   message?: string
+  incomplete?: boolean
 }
 
 export interface ChatFormOption {

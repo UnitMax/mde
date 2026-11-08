@@ -1551,15 +1551,33 @@ describe('Inbox chat service', () => {
   })
 
   it('replies to permissions and questions with checked IDs', async () => {
-    const { service, folder, calls } = setup({ 'session.create': { data: { id: 'ses_new' } } })
+    const { service, folder, calls } = setup({
+      'session.create': { data: { id: 'ses_new' } },
+      'session.permission.list': { data: [{ id: 'per_1', action: 'read', resources: ['file'] }] },
+    })
     await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
     calls.length = 0
     await service.replyPermission({ threadId: 'ses_new', requestId: 'per_1', decision: 'always' })
     await service.replyForm({ threadId: 'ses_new', formId: 'frm_1', answer: { q0: 'Red' } })
     expect(calls).toEqual([
+      { operation: 'session.permission.list', request: { params: { sessionID: 'ses_new' } } },
       { operation: 'session.permission.reply', request: { params: { sessionID: 'ses_new', requestID: 'per_1' }, body: { decision: 'always' } } },
       { operation: 'session.form.reply', request: { params: { sessionID: 'ses_new', formID: 'frm_1' }, body: { answer: { q0: 'Red' } } } },
     ])
+    service.stop()
+  })
+
+  it('refuses incomplete approvals in main while allowing rejection', async () => {
+    const { service, folder, calls } = setup({
+      'session.create': { data: { id: 'ses_new' } },
+      'session.permission.list': { data: [{ id: 'per_1', action: 'read', resources: Array(51).fill('file') }] },
+    })
+    await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+    calls.length = 0
+    await expect(service.replyPermission({ threadId: 'ses_new', requestId: 'per_1', decision: 'once' })).rejects.toThrow('Review this permission')
+    expect(calls.some((call) => call.operation === 'session.permission.reply')).toBe(false)
+    await service.replyPermission({ threadId: 'ses_new', requestId: 'per_1', decision: 'reject' })
+    expect(calls.at(-1)?.operation).toBe('session.permission.reply')
     service.stop()
   })
 

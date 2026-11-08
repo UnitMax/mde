@@ -862,6 +862,12 @@ describe('OpenCode service parsing', () => {
     expect(external?.unsupported).toBe(true)
   })
 
+  it('marks incomplete permission scopes so they cannot be approved', () => {
+    for (const resources of [Array(51).fill('visible'), ['x'.repeat(4097)], ['safe', null], ['spoof\u202efile']]) {
+      expect(parsePermissions({ data: [{ id: 'per_1', action: 'read', resources }] })[0]?.incomplete).toBe(true)
+    }
+  })
+
   it('reads new sessions and active sessions', () => {
     expect(parseCreatedSession({ data: { id: 'ses_1', title: 'New' } })).toEqual({ id: 'ses_1', title: 'New' })
     expect(() => parseCreatedSession({ data: { id: '../x' } })).toThrow()

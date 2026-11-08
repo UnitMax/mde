@@ -809,12 +809,17 @@ export function parsePermissions(value: unknown): ChatPermission[] {
     const id = short(request?.id)
     const action = short(request?.action, 200)
     if (!request || !id || !/^per_[A-Za-z0-9_-]{1,200}$/.test(id) || !action) continue
-    const resources = list(request.resources)
+    const rawResources = list(request.resources)
+    const incomplete = !Array.isArray(request.resources) || rawResources.length > 50 ||
+      rawResources.some((resource) => typeof resource !== 'string' || !resource.trim() || resource.length > 4096 ||
+        /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/.test(resource)) ||
+      (request.message !== undefined && (typeof request.message !== 'string' || request.message.length > 4000))
+    const resources = rawResources
       .map((resource) => body(resource, 4096).text.trim())
       .filter(Boolean)
       .slice(0, 50)
     const message = body(request.message, 4000).text.trim()
-    permissions.push({ id, action, resources, ...(message ? { message } : {}) })
+    permissions.push({ id, action, resources, ...(message ? { message } : {}), ...(incomplete ? { incomplete: true } : {}) })
   }
   return permissions
 }

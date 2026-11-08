@@ -1031,6 +1031,11 @@ export class InboxChatService {
 
   async replyPermission(request: ChatPermissionReplyRequest): Promise<void> {
     const thread = this.thread(request.threadId)
+    if (request.decision !== 'reject') {
+      const answer = await this.dependencies.client.request(thread.target, 'session.permission.list', { params: { sessionID: thread.id } })
+      const permission = parsePermissions(answer).find((entry) => entry.id === request.requestId)
+      if (!permission || permission.incomplete) throw new Error('Review this permission request in an OpenCode terminal, or reject it here.')
+    }
     await this.dependencies.client.request(thread.target, 'session.permission.reply', {
       params: { sessionID: thread.id, requestID: request.requestId },
       body: { decision: request.decision },

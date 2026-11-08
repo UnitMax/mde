@@ -595,3 +595,5 @@ app's user-data directory. They are not encrypted. Generated thumbnails are rast
 remote image URLs and attachment HTML are never rendered. Existing CSP and renderer isolation
 remain unchanged. Prompt and history size allowances are restricted to the relevant fixed
 OpenCode operations; oversized history responses retry with smaller pages, never unbounded reads.
+
+Permission scope hardening: incomplete, malformed, overlong or visually ambiguous resource lists disable approval in the card. Main re-reads the request before granting and refuses incomplete or missing scopes; rejection remains available.
