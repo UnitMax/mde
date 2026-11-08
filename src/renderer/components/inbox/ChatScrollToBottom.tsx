@@ -11,7 +11,7 @@ export function ChatScrollToBottom({ onClick }: { onClick: () => void }): JSX.El
         type="button"
         data-testid="chat-scroll-to-bottom"
         onClick={onClick}
-        className="chat-scroll-pill pointer-events-auto flex h-8 items-center gap-1.5 rounded-full border border-line-strong bg-elevated pl-2.5 pr-3.5 text-[12px] text-fg-muted shadow-lg shadow-black/40 transition-colors hover:bg-hover hover:text-fg"
+        className="chat-scroll-pill pointer-events-auto flex h-8 items-center gap-1.5 rounded-full border border-line-strong bg-elevated pl-2.5 pr-3.5 text-[12px] text-fg-muted shadow-lg shadow-shade/40 transition-colors hover:bg-hover hover:text-fg"
       >
         <ArrowDown aria-hidden className="h-3.5 w-3.5" />
         Scroll to bottom

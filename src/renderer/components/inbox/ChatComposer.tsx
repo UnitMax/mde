@@ -33,9 +33,15 @@ function AgentIcon({ id, className }: { id: string; className?: string }): JSX.E
   return <Bot className={className} />
 }
 
-/** Agent colors are hex values or theme names; only hex is used, everything else falls back. */
+/**
+ * Agent colors are hex values or theme names; only hex is used, everything else falls back. They are picked
+ * for a dark terminal, so a light theme blends them with its text color (`--agent-color-strength` in index.css)
+ * until the name reads on a light ground; on a dark theme the color is shown as it is.
+ */
 function agentColor(agent: ChatAgent | undefined): string | undefined {
-  return agent?.color && /^#[0-9a-fA-F]{3,8}$/.test(agent.color) ? agent.color : undefined
+  return agent?.color && /^#[0-9a-fA-F]{3,8}$/.test(agent.color)
+    ? `color-mix(in srgb, ${agent.color} var(--agent-color-strength), var(--color-fg))`
+    : undefined
 }
 
 const pickerButton = toolbarChip
@@ -652,7 +658,7 @@ export const ChatComposer = forwardRef(function ChatComposer({
           }
         }}
         style={dragging ? { outline: '2px solid var(--color-accent)' } : undefined}
-        className="relative rounded-2xl border border-line-strong bg-elevated shadow-lg shadow-black/20 focus-within:border-accent/60"
+        className="relative rounded-2xl border border-line-strong bg-elevated shadow-lg shadow-shade/20 focus-within:border-accent/60"
       >
         {pickerOpen && (
           <CompletionPicker

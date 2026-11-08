@@ -22,6 +22,8 @@
   --color-warn: #d8a325;
   --color-danger: #f0574f;
   --color-scrollbar-hover: #3b4757;
+  /* Shadows and the veil behind a dialog; black on a dark theme, a deep slate on a light one. */
+  --color-shade: #000000;
 
   /* Code viewer syntax; set from the theme's bright ANSI colors. */
   --color-syntax-keyword: #ad7fa8;
@@ -35,6 +37,15 @@
     'Cascadia Mono', 'JetBrains Mono', 'Iosevka Term', 'Fira Code', 'DejaVu Sans Mono', Menlo, Consolas, monospace;
   --font-sans:
     'Segoe UI', Inter, ui-sans-serif, system-ui, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* How much of an agent's own color shows; a light theme blends the rest from its text color so the name reads. */
+:root {
+  --agent-color-strength: 100%;
+}
+
+:root[data-mode='light'] {
+  --agent-color-strength: 58%;
 }
 
 @layer base {
@@ -509,7 +520,7 @@
   border-radius: 10px;
   background: var(--color-panel);
   color: var(--color-fg);
-  box-shadow: 0 8px 24px #0006;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--color-shade) 40%, transparent);
   font-size: 12px;
 }
 

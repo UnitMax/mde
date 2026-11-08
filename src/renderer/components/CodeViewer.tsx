@@ -19,12 +19,14 @@ import {
   getTerminalSettings,
   subscribeTerminalSettings
 } from '@/terminal/terminal-settings'
+import { getThemeMode } from '@/theme/themes'
 
 function fontTheme(family: string): Extension {
   return EditorView.theme({ '.cm-scroller': { fontFamily: codeViewerFontFamily(family) } })
 }
 
-const viewerTheme = EditorView.theme(
+/** Its colors are theme variables; `dark` only picks which of CodeMirror's own light or dark base rules apply. */
+const viewerTheme = (dark: boolean): Extension => EditorView.theme(
   {
     '&': {
       height: '100%',
@@ -72,7 +74,7 @@ const viewerTheme = EditorView.theme(
     '.cm-panel.cm-search label': { color: 'var(--color-fg-muted)' },
     '.cm-panel.cm-search [name=close]': { color: 'var(--color-fg-muted)' }
   },
-  { dark: true }
+  { dark }
 )
 
 const viewerHighlight = HighlightStyle.define([...SYNTAX_STYLE])
@@ -88,11 +90,13 @@ export function CodeViewer({ path, content }: CodeViewerProps): JSX.Element {
   const viewRef = useRef<EditorView | null>(null)
   const languageRef = useRef(new Compartment())
   const fontRef = useRef(new Compartment())
+  const modeRef = useRef(new Compartment())
 
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
     let family = getTerminalSettings().codeFamily
+    let dark = getThemeMode(getTerminalSettings().theme) === 'dark'
     const view = new EditorView({
       parent: host,
       state: EditorState.create({
@@ -109,7 +113,7 @@ export function CodeViewer({ path, content }: CodeViewerProps): JSX.Element {
           highlightSelectionMatches(),
           search({ top: true }),
           keymap.of([...searchKeymap, ...defaultKeymap]),
-          viewerTheme,
+          modeRef.current.of(viewerTheme(dark)),
           fontRef.current.of(fontTheme(family)),
           syntaxHighlighting(viewerHighlight),
           languageRef.current.of([])
@@ -118,10 +122,16 @@ export function CodeViewer({ path, content }: CodeViewerProps): JSX.Element {
     })
     viewRef.current = view
     const unsubscribe = subscribeTerminalSettings(() => {
-      const next = getTerminalSettings().codeFamily
-      if (next === family) return
-      family = next
-      view.dispatch({ effects: fontRef.current.reconfigure(fontTheme(next)) })
+      const settings = getTerminalSettings()
+      if (settings.codeFamily !== family) {
+        family = settings.codeFamily
+        view.dispatch({ effects: fontRef.current.reconfigure(fontTheme(family)) })
+      }
+      const nextDark = getThemeMode(settings.theme) === 'dark'
+      if (nextDark !== dark) {
+        dark = nextDark
+        view.dispatch({ effects: modeRef.current.reconfigure(viewerTheme(dark)) })
+      }
     })
     return () => {
       unsubscribe()

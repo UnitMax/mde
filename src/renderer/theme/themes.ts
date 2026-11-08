@@ -1,231 +1,66 @@
 import type { ITheme } from '@xterm/xterm'
 import type { TerminalPalette } from '@shared/ipc'
+import {
+  CATPPUCCIN_MOCHA,
+  DRACULA,
+  EMBER,
+  FROST,
+  GRUVBOX_DARK,
+  HIGH_CONTRAST,
+  NORD,
+  ONE_DARK,
+  SLATE,
+  TOKYO_NIGHT
+} from './palettes-dark'
+import {
+  CATPPUCCIN_LATTE,
+  GITHUB_LIGHT,
+  GRUVBOX_LIGHT,
+  HIGH_CONTRAST_LIGHT,
+  SOLARIZED_LIGHT
+} from './palettes-light'
+import type {
+  ApplicationPalette,
+  ApplicationThemeId,
+  ApplicationThemeOption,
+  SyntaxPalette,
+  TerminalTheme,
+  ThemeMode
+} from './types'
 
-export type ApplicationThemeId = 'slate' | 'ember' | 'frost' | 'high-contrast'
+export type {
+  ApplicationPalette,
+  ApplicationThemeId,
+  ApplicationThemeOption,
+  SyntaxPalette,
+  ThemeMode,
+  ThemeSourceKey
+} from './types'
 
-export interface ApplicationPalette {
-  bg: string
-  panel: string
-  elevated: string
-  hover: string
-  active: string
-  line: string
-  lineStrong: string
-  fg: string
-  fgMuted: string
-  fgSubtle: string
-  accent: string
-  accentHover: string
-  accentFg: string
-  ok: string
-  warn: string
-  danger: string
-  scrollbarHover: string
-}
-
-type TerminalTheme = ITheme & TerminalPalette
-
-export interface ApplicationThemeOption {
-  id: ApplicationThemeId
-  label: string
-  application: ApplicationPalette
-  terminal: TerminalTheme
-}
-
-const SLATE: ApplicationThemeOption = {
-  id: 'slate',
-  label: 'Slate',
-  application: {
-    bg: '#0b0e13',
-    panel: '#10141b',
-    elevated: '#171d27',
-    hover: '#1a212c',
-    active: '#232c3b',
-    line: '#222a36',
-    lineStrong: '#2e3846',
-    fg: '#d8dee9',
-    fgMuted: '#7b8698',
-    fgSubtle: '#58616f',
-    accent: '#5b8cff',
-    accentHover: '#6f9bff',
-    accentFg: '#06090f',
-    ok: '#3fb950',
-    warn: '#d8a325',
-    danger: '#f0574f',
-    scrollbarHover: '#3b4757'
-  },
-  terminal: {
-    background: '#0b0e13',
-    foreground: '#d8dee9',
-    cursor: '#5b8cff',
-    cursorAccent: '#0b0e13',
-    selectionBackground: '#2c3a52',
-    black: '#2e3436',
-    red: '#cc0000',
-    green: '#4e9a06',
-    yellow: '#c4a000',
-    blue: '#3465a4',
-    magenta: '#75507b',
-    cyan: '#06989a',
-    white: '#d3d7cf',
-    brightBlack: '#555753',
-    brightRed: '#ef2929',
-    brightGreen: '#8ae234',
-    brightYellow: '#fce94f',
-    brightBlue: '#729fcf',
-    brightMagenta: '#ad7fa8',
-    brightCyan: '#34e2e2',
-    brightWhite: '#eeeeec'
-  }
-}
-
-const EMBER: ApplicationThemeOption = {
-  id: 'ember',
-  label: 'Ember',
-  application: {
-    bg: '#1a1110',
-    panel: '#211614',
-    elevated: '#2b1b18',
-    hover: '#35221e',
-    active: '#4a2c25',
-    line: '#3d2925',
-    lineStrong: '#60433b',
-    fg: '#f5e6d3',
-    fgMuted: '#bca58f',
-    fgSubtle: '#806a5d',
-    accent: '#ff9f43',
-    accentHover: '#ffb466',
-    accentFg: '#1a1110',
-    ok: '#98c379',
-    warn: '#e5c07b',
-    danger: '#e06c75',
-    scrollbarHover: '#76534a'
-  },
-  terminal: {
-    background: '#1a1110',
-    foreground: '#f5e6d3',
-    cursor: '#ff9f43',
-    cursorAccent: '#1a1110',
-    selectionBackground: '#5a3024',
-    black: '#2b1b18',
-    red: '#e06c75',
-    green: '#98c379',
-    yellow: '#e5c07b',
-    blue: '#61afef',
-    magenta: '#c678dd',
-    cyan: '#56b6c2',
-    white: '#f5e6d3',
-    brightBlack: '#6b4f48',
-    brightRed: '#ff7b86',
-    brightGreen: '#b5e890',
-    brightYellow: '#ffd98a',
-    brightBlue: '#8ac7ff',
-    brightMagenta: '#e29bf2',
-    brightCyan: '#83e1eb',
-    brightWhite: '#fff5e9'
-  }
-}
-
-const FROST: ApplicationThemeOption = {
-  id: 'frost',
-  label: 'Frost',
-  application: {
-    bg: '#101923',
-    panel: '#131f2b',
-    elevated: '#172b3b',
-    hover: '#1c3041',
-    active: '#25445c',
-    line: '#26394a',
-    lineStrong: '#3b5368',
-    fg: '#dce7f3',
-    fgMuted: '#93a8bc',
-    fgSubtle: '#667b8f',
-    accent: '#67d5ff',
-    accentHover: '#8ee1ff',
-    accentFg: '#07131b',
-    ok: '#8bd49c',
-    warn: '#f0ca7a',
-    danger: '#ff6b7a',
-    scrollbarHover: '#4b667d'
-  },
-  terminal: {
-    background: '#101923',
-    foreground: '#dce7f3',
-    cursor: '#67d5ff',
-    cursorAccent: '#101923',
-    selectionBackground: '#25445c',
-    black: '#17232f',
-    red: '#ff6b7a',
-    green: '#8bd49c',
-    yellow: '#f0ca7a',
-    blue: '#72a7ff',
-    magenta: '#c49cff',
-    cyan: '#67d5ff',
-    white: '#dce7f3',
-    brightBlack: '#5e7488',
-    brightRed: '#ff9aa5',
-    brightGreen: '#b1edbd',
-    brightYellow: '#ffe39d',
-    brightBlue: '#a5c5ff',
-    brightMagenta: '#dfc8ff',
-    brightCyan: '#a0ecff',
-    brightWhite: '#f5faff'
-  }
-}
-
-const HIGH_CONTRAST: ApplicationThemeOption = {
-  id: 'high-contrast',
-  label: 'High contrast',
-  application: {
-    bg: '#000000',
-    panel: '#080808',
-    elevated: '#121212',
-    hover: '#1c1c1c',
-    active: '#292929',
-    line: '#666666',
-    lineStrong: '#a0a0a0',
-    fg: '#ffffff',
-    fgMuted: '#dedede',
-    fgSubtle: '#bdbdbd',
-    accent: '#80aaff',
-    accentHover: '#a8c5ff',
-    accentFg: '#000000',
-    ok: '#80ff80',
-    warn: '#ffff80',
-    danger: '#ff8080',
-    scrollbarHover: '#c0c0c0'
-  },
-  terminal: {
-    background: '#000000',
-    foreground: '#ffffff',
-    cursor: '#ffffff',
-    cursorAccent: '#000000',
-    selectionBackground: '#3f5f9f',
-    black: '#000000',
-    red: '#ff5f56',
-    green: '#5fff5f',
-    yellow: '#ffff5f',
-    blue: '#5f87ff',
-    magenta: '#ff5fff',
-    cyan: '#5fffff',
-    white: '#ffffff',
-    brightBlack: '#808080',
-    brightRed: '#ff8080',
-    brightGreen: '#80ff80',
-    brightYellow: '#ffff80',
-    brightBlue: '#80aaff',
-    brightMagenta: '#ff80ff',
-    brightCyan: '#80ffff',
-    brightWhite: '#ffffff'
-  }
-}
-
-export const APPLICATION_THEMES: readonly ApplicationThemeOption[] = [
+/** The dark themes in the order the settings list them. */
+export const DARK_THEMES: readonly ApplicationThemeOption[] = [
   SLATE,
   EMBER,
   FROST,
-  HIGH_CONTRAST
+  HIGH_CONTRAST,
+  CATPPUCCIN_MOCHA,
+  TOKYO_NIGHT,
+  DRACULA,
+  NORD,
+  ONE_DARK,
+  GRUVBOX_DARK
 ]
+
+/** The light themes in the order the settings list them. */
+export const LIGHT_THEMES: readonly ApplicationThemeOption[] = [
+  GITHUB_LIGHT,
+  SOLARIZED_LIGHT,
+  CATPPUCCIN_LATTE,
+  GRUVBOX_LIGHT,
+  HIGH_CONTRAST_LIGHT
+]
+
+export const APPLICATION_THEMES: readonly ApplicationThemeOption[] = [...DARK_THEMES, ...LIGHT_THEMES]
 
 const APPLICATION_PALETTE_VARIABLES: Record<keyof ApplicationPalette, `--color-${string}`> = {
   bg: '--color-bg',
@@ -244,21 +79,20 @@ const APPLICATION_PALETTE_VARIABLES: Record<keyof ApplicationPalette, `--color-$
   ok: '--color-ok',
   warn: '--color-warn',
   danger: '--color-danger',
-  scrollbarHover: '--color-scrollbar-hover'
+  scrollbarHover: '--color-scrollbar-hover',
+  shade: '--color-shade'
 }
 
-/**
- * Code viewer syntax colors come from each theme's bright ANSI colors, so the
- * viewer matches the terminals without a second palette per theme.
- */
-const SYNTAX_COLOR_VARIABLES = {
-  '--color-syntax-keyword': 'brightMagenta',
-  '--color-syntax-string': 'brightGreen',
-  '--color-syntax-number': 'brightYellow',
-  '--color-syntax-function': 'brightBlue',
-  '--color-syntax-type': 'brightCyan',
-  '--color-syntax-property': 'cyan'
-} as const satisfies Record<string, keyof ITheme>
+const SYNTAX_COLOR_VARIABLES: Record<keyof SyntaxPalette, `--color-syntax-${string}`> = {
+  keyword: '--color-syntax-keyword',
+  string: '--color-syntax-string',
+  number: '--color-syntax-number',
+  function: '--color-syntax-function',
+  type: '--color-syntax-type',
+  property: '--color-syntax-property'
+}
+
+type AnsiColor = Extract<keyof ITheme, 'magenta' | 'green' | 'yellow' | 'blue' | 'cyan' | `bright${string}`>
 
 interface ThemeRoot {
   dataset: DOMStringMap
@@ -273,6 +107,10 @@ export function getApplicationTheme(themeId: ApplicationThemeId): ApplicationThe
   return APPLICATION_THEMES.find((option) => option.id === themeId) ?? SLATE
 }
 
+export function getThemeMode(themeId: ApplicationThemeId): ThemeMode {
+  return getApplicationTheme(themeId).mode
+}
+
 export function getTerminalTheme(themeId: ApplicationThemeId): TerminalTheme {
   return getApplicationTheme(themeId).terminal
 }
@@ -282,16 +120,45 @@ export function getTerminalPalette(themeId: ApplicationThemeId): TerminalPalette
   return { foreground, background }
 }
 
+/** The ratio xterm keeps between text and background for this theme; 1 draws colors as the program asked. */
+export function getTerminalMinimumContrastRatio(themeId: ApplicationThemeId): number {
+  return getApplicationTheme(themeId).minimumContrastRatio ?? 1
+}
+
+/**
+ * Code viewer syntax colors. A theme without its own come from its ANSI colors, so the viewer matches the
+ * terminals without a second palette: the bright ones on a dark ground, where they stand out, and the normal ones
+ * on a light ground, where the bright ones fade.
+ */
+export function getSyntaxPalette(theme: ApplicationThemeOption): SyntaxPalette {
+  if (theme.syntax) return theme.syntax
+  const ansi = theme.terminal
+  const dark = theme.mode === 'dark'
+  const pick = (bright: AnsiColor, normal: AnsiColor): string => ansi[dark ? bright : normal] ?? theme.application.fg
+  return {
+    keyword: pick('brightMagenta', 'magenta'),
+    string: pick('brightGreen', 'green'),
+    number: pick('brightYellow', 'yellow'),
+    function: pick('brightBlue', 'blue'),
+    type: pick('brightCyan', 'cyan'),
+    property: ansi.cyan ?? theme.application.fg
+  }
+}
+
 export function applyApplicationTheme(
   themeId: ApplicationThemeId,
   root: ThemeRoot = document.documentElement
 ): void {
   const theme = getApplicationTheme(themeId)
   root.dataset.theme = theme.id
+  root.dataset.mode = theme.mode
+  // Tells the browser which native parts (form controls, the default canvas) to draw light or dark.
+  root.style.setProperty('color-scheme', theme.mode)
   for (const [key, variable] of Object.entries(APPLICATION_PALETTE_VARIABLES)) {
     root.style.setProperty(variable, theme.application[key as keyof ApplicationPalette])
   }
-  for (const [variable, key] of Object.entries(SYNTAX_COLOR_VARIABLES)) {
-    root.style.setProperty(variable, theme.terminal[key] ?? theme.application.fg)
+  const syntax = getSyntaxPalette(theme)
+  for (const [key, variable] of Object.entries(SYNTAX_COLOR_VARIABLES)) {
+    root.style.setProperty(variable, syntax[key as keyof SyntaxPalette])
   }
 }

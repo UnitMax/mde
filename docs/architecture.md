@@ -104,8 +104,8 @@ beneath each session; this preference is global and stored with the local termin
 OpenCode section (shown on macOS and Windows only) sets the command that starts OpenCode for the
 Inbox, which is its background service and its terminal threads, and opens the OpenCode configuration
 editor (see **OpenCode configuration editor** below). A command that is empty or contains a control
-character is explained under the field and not used: the Inbox keeps the previous one. The application theme (Slate,
-Ember, Frost, High contrast) and zoom are also adjustable. The Appearance section sets the terminal
+character is explained under the field and not used: the Inbox keeps the previous one. The application theme and zoom are also adjustable
+(see **Themes** below). The Appearance section sets the terminal
 font family, size and line height, and separately the font family of the file viewer's source code
 preview; both families are chosen from the same list of installed monospace fonts and default to
 its first entry. The code preview font family also applies to Inbox tool input, output and error
@@ -1264,6 +1264,43 @@ OS's own caption color, not something the app can set, and that color follows th
 setting. On a dark bar under a light OS theme the wash is black and the hover is invisible, so the
 main process sets `nativeTheme.themeSource` to match the brightness of the bar color. The close
 button keeps its fixed red.
+
+### Themes
+
+There are fifteen application themes in two groups, which the Appearance setting lists as Dark and Light with a
+small swatch of each (panel, working area, accent). Dark: Slate, Ember, Frost, High contrast, Catppuccin Mocha,
+Tokyo Night, Dracula, Nord, One Dark and Gruvbox Dark. Light: GitHub Light, Solarized Light, Catppuccin Latte,
+Gruvbox Light and High contrast light. The choice is saved with the terminal settings; an id that is no longer
+known falls back to Slate.
+
+A theme (`src/renderer/theme/`) is a `mode` (`dark` or `light`), 18 application colors, a 16-color terminal
+palette with foreground, background, cursor and selection, and optionally its own syntax colors. Applying it sets
+the `--color-*` variables, `data-mode` and `color-scheme` on the root element, so form controls and the default
+canvas follow the mode. The layers keep their order in both modes: `bg` is the working area and the wells inside
+cards, `panel` the chrome around it, `elevated` the raised cards, menus and composer (the brightest surface on a
+light theme, where they cast a shadow), then `hover` and `active`. `shade` is the color of shadows and of the veil
+behind a dialog: black on a dark theme, a deep slate on a light one. Never write `black` or `white` into a
+component for a shadow, a veil or a border; use `shade` and `fg`, or a light theme turns them into dirt.
+
+What a mode changes elsewhere: the code viewer's CodeMirror base rules and Mermaid diagrams follow it; syntax colors
+come from the theme's own `syntax` block, or else from the terminal's bright ANSI colors on a dark theme and the
+normal ones on a light theme, where the bright ones fade; light terminals set xterm's `minimumContrastRatio`
+(4.5, and 7 for High contrast light) so the faint grays a program picks for a dark ground stay readable; an
+agent's own color in the composer is blended with the text color on a light theme (`--agent-color-strength`);
+and the native window gets the brightness of the title bar (see **Window chrome** above). The terminal's
+foreground and background still go to the PTY, so a program asking for the background color (OSC 11) hears that
+the ground is light and can pick its own light colors.
+
+`test/themes.test.ts` holds every theme to contrast floors (text on each surface, the accent and the text on it,
+status colors, syntax and terminal colors), so a new palette cannot ship unreadable. Slate, Ember and Frost
+predate those floors and are exempt from them.
+
+Eight of the themes adapt the palettes of other projects (Catppuccin, GitHub Primer, Solarized, Gruvbox, Tokyo
+Night, Dracula, Nord, One Dark), all MIT licensed. Their copyright lines and license texts are kept verbatim under
+`scripts/license-overrides/themes/`, listed with what MDE changed in `scripts/theme-credits.json`, and
+`npm run licenses` writes them into the **Color themes** section of `THIRD_PARTY_NOTICES.md`, which the About
+dialog, the packages and the release draft already carry. A theme adapted from another project needs a `source`
+key and an entry there; `test/theme-credits.test.ts` fails when the two disagree.
 
 ### Mini Inbox window
 

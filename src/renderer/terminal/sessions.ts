@@ -24,6 +24,7 @@ import {
 } from './terminal-settings'
 import {
   getTerminalPalette,
+  getTerminalMinimumContrastRatio,
   getTerminalTheme,
   type ApplicationThemeId
 } from '@/theme/themes'
@@ -142,6 +143,7 @@ function createSession(
     lineHeight: settings.lineHeight,
     scrollback: 10_000,
     theme: getTerminalTheme(settings.theme),
+    minimumContrastRatio: getTerminalMinimumContrastRatio(settings.theme),
     rightClickSelectsWord: false
   })
 
@@ -403,6 +405,7 @@ export function applyTerminalSettings(settings: TerminalSettings): void {
     session.term.options.fontSize = settings.size
     session.term.options.lineHeight = settings.lineHeight
     session.term.options.theme = getTerminalTheme(settings.theme)
+    session.term.options.minimumContrastRatio = getTerminalMinimumContrastRatio(settings.theme)
     session.themeId = settings.theme
     void window.api.pty.setPalette({
       terminalId: session.terminalId,
@@ -415,6 +418,7 @@ export function applyTerminalTheme(themeId: ApplicationThemeId): void {
   const theme = getTerminalTheme(themeId)
   for (const session of sessions.values()) {
     session.term.options.theme = theme
+    session.term.options.minimumContrastRatio = getTerminalMinimumContrastRatio(themeId)
     session.themeId = themeId
     void window.api.pty.setPalette({
       terminalId: session.terminalId,

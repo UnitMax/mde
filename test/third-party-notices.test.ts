@@ -9,6 +9,7 @@ import {
   bundledMainDependencies,
   bundledRendererDependencies,
   dependencyClosure,
+  loadThemeCredits,
   renderThirdPartyNotices,
 } from '../scripts/generate-third-party-notices.mjs'
 
@@ -86,9 +87,14 @@ describe('third-party notice package selection', () => {
     const directory = await realpath(await mkdtemp(join(tmpdir(), 'mde-notices-check-')))
     const run = promisify(execFile)
     try {
-      await mkdir(join(directory, 'scripts'))
+      await mkdir(join(directory, 'scripts', 'license-overrides', 'themes'), { recursive: true })
       const script = join(directory, 'scripts', 'generate-third-party-notices.mjs')
       await copyFile(resolve('scripts/generate-third-party-notices.mjs'), script)
+      // The notices also carry the color theme credits and the license texts they name.
+      await copyFile(resolve('scripts/theme-credits.json'), join(directory, 'scripts', 'theme-credits.json'))
+      for (const source of loadThemeCredits().sources) {
+        await copyFile(resolve('scripts/license-overrides', source.licenseFile), join(directory, 'scripts', 'license-overrides', source.licenseFile))
+      }
       await writeFile(join(directory, 'package-lock.json'), JSON.stringify({ packages: { '': {} } }))
       await run(process.execPath, [script])
       const notices = join(directory, 'THIRD_PARTY_NOTICES.md')

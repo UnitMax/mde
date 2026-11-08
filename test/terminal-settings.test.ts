@@ -58,6 +58,10 @@ describe('terminal settings', () => {
     })
   })
 
+  it.each(APPLICATION_THEMES.map((theme) => theme.id))('keeps the saved theme %s', (id) => {
+    expect(resolveTerminalSettings({ theme: id }, available).theme).toBe(id)
+  })
+
   it('rejects unavailable families, unsupported sizes, and unsupported line heights', () => {
     expect(
       resolveTerminalSettings({ family: 'Missing Font', size: 99, lineHeight: 2, theme: 'missing' }, available)
@@ -252,6 +256,7 @@ describe('terminal settings', () => {
       'ok',
       'panel',
       'scrollbarHover',
+      'shade',
       'warn'
     ]
 
@@ -277,14 +282,24 @@ describe('terminal settings', () => {
     expect(values.get('--color-accent')).toBe('#ff9f43')
     expect(values.get('--color-syntax-keyword')).toBe('#e29bf2')
     expect(values.get('--color-syntax-string')).toBe('#b5e890')
-    expect(values.size).toBe(23)
+    expect(values.get('--color-shade')).toBe('#000000')
+    expect(values.get('color-scheme')).toBe('dark')
+    expect(root.dataset.mode).toBe('dark')
+    expect(values.size).toBe(25)
 
     applyApplicationTheme('frost', root)
     expect(root.dataset.theme).toBe('frost')
     expect(values.get('--color-bg')).toBe('#101923')
     expect(values.get('--color-accent')).toBe('#67d5ff')
     expect(values.get('--color-syntax-keyword')).toBe('#dfc8ff')
-    expect(values.size).toBe(23)
+    expect(values.size).toBe(25)
+
+    applyApplicationTheme('github-light', root)
+    expect(root.dataset.theme).toBe('github-light')
+    expect(root.dataset.mode).toBe('light')
+    expect(values.get('color-scheme')).toBe('light')
+    expect(values.get('--color-bg')).toBe('#f6f8fa')
+    expect(values.size).toBe(25)
   })
 
   it('builds an xterm family with a monospace fallback', () => {

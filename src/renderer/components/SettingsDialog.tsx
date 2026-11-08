@@ -5,7 +5,15 @@ import { AboutSettingsPanel } from '@/components/AboutSettingsPanel'
 import { KeyboardShortcutsSettings } from '@/components/KeyboardShortcutsSettings'
 import { InboxTerminalSettings } from '@/components/inbox/InboxTerminalSettings'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select'
 import { SwitchRow } from '@/components/ui/switch'
 import { useWorkspace, type SettingsSection } from '@/store/workspace'
 import { applyTerminalSettings, fitSession, getSession } from '@/terminal/sessions'
@@ -18,7 +26,8 @@ import {
   TERMINAL_FONT_SIZES,
   type TerminalSettings
 } from '@/terminal/terminal-settings'
-import { APPLICATION_THEMES, applyApplicationTheme } from '@/theme/themes'
+import { APPLICATION_THEMES, DARK_THEMES, LIGHT_THEMES, applyApplicationTheme } from '@/theme/themes'
+import { ThemeSwatch } from '@/components/ThemeSwatch'
 import { syncWindowChrome } from '@/lib/window-chrome'
 
 const OSC52_POLICY_LABELS: Record<Osc52Policy, string> = {
@@ -193,10 +202,21 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {APPLICATION_THEMES.map((option) => (
-                          <SelectItem key={option.id} value={option.id}>
-                            {option.label}
-                          </SelectItem>
+                        {[
+                          { label: 'Dark', themes: DARK_THEMES },
+                          { label: 'Light', themes: LIGHT_THEMES }
+                        ].map((group) => (
+                          <SelectGroup key={group.label}>
+                            <SelectLabel>{group.label}</SelectLabel>
+                            {group.themes.map((option) => (
+                              <SelectItem key={option.id} value={option.id}>
+                                <span className="flex items-center gap-2">
+                                  <ThemeSwatch theme={option} />
+                                  {option.label}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
                         ))}
                       </SelectContent>
                     </Select>

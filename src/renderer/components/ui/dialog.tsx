@@ -8,11 +8,11 @@ export const DialogTrigger = DialogPrimitive.Trigger
 export const DialogClose = DialogPrimitive.Close
 
 const overlayClass =
-  'fixed inset-0 z-50 bg-black/60 backdrop-blur-[1px]'
+  'fixed inset-0 z-50 bg-shade/60 backdrop-blur-[1px]'
 
 const contentClass =
   'fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 ' +
-  'rounded-lg border border-line-strong bg-elevated p-5 shadow-2xl shadow-black/60'
+  'rounded-lg border border-line-strong bg-elevated p-5 shadow-2xl shadow-shade/60'
 
 interface DialogContentProps
   extends React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {

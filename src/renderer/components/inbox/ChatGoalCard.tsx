@@ -149,7 +149,7 @@ export function ChatGoalCard({
       data-testid="chat-goal"
       data-status={goal.status}
       data-phase={active ? settled : undefined}
-      className={cn('chat-goal relative mb-2 overflow-hidden rounded-2xl border bg-elevated shadow-lg shadow-black/20', look.border)}
+      className={cn('chat-goal relative mb-2 overflow-hidden rounded-2xl border bg-elevated shadow-lg shadow-shade/20', look.border)}
     >
       {live && (
         <span aria-hidden data-testid="chat-goal-sweep" className="pointer-events-none absolute inset-x-0 top-0 h-0.5 overflow-hidden">

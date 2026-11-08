@@ -179,7 +179,7 @@ function Rail({
         </button>
         {open && (
           <div
-            className="chat-timeline-card absolute right-1 top-1/2 flex max-h-[calc(100%-1.5rem)] w-[min(19rem,70vw)] -translate-y-1/2 flex-col rounded-xl border border-line-strong bg-elevated p-1 shadow-xl shadow-black/50"
+            className="chat-timeline-card absolute right-1 top-1/2 flex max-h-[calc(100%-1.5rem)] w-[min(19rem,70vw)] -translate-y-1/2 flex-col rounded-xl border border-line-strong bg-elevated p-1 shadow-xl shadow-shade/50"
             data-testid="chat-timeline-card"
           >
             <div

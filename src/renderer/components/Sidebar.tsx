@@ -346,7 +346,7 @@ function SessionRow({
             <ContextMenuSubTrigger>
               <span
                 aria-hidden="true"
-                className="h-3 w-3 shrink-0 rounded-full border border-white/20"
+                className="h-3 w-3 shrink-0 rounded-full border border-fg/20"
                 style={{ backgroundColor: sessionColorHex(sessionColor) }}
               />
               <span className="flex-1">Session color</span>
@@ -360,7 +360,7 @@ function SessionRow({
                 >
                   <span
                     aria-hidden="true"
-                    className="h-3 w-3 shrink-0 rounded-full border border-white/20"
+                    className="h-3 w-3 shrink-0 rounded-full border border-fg/20"
                     style={{ backgroundColor: option.hex }}
                   />
                   <span className="flex-1">{option.label}</span>

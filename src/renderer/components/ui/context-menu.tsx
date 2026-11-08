@@ -30,7 +30,7 @@ export const ContextMenuSubContent = React.forwardRef<
     ref={ref}
     className={cn(
       'z-50 min-w-[10rem] overflow-hidden rounded-md border border-line-strong bg-elevated p-1',
-      'shadow-xl shadow-black/50 [animation:mde-menu-in_90ms_ease-out]',
+      'shadow-xl shadow-shade/50 [animation:mde-menu-in_90ms_ease-out]',
       className
     )}
     {...props}
@@ -47,7 +47,7 @@ export const ContextMenuContent = React.forwardRef<
       ref={ref}
       className={cn(
         'z-50 min-w-[10rem] overflow-hidden rounded-md border border-line-strong bg-elevated p-1',
-        'shadow-xl shadow-black/50 [animation:mde-menu-in_90ms_ease-out]',
+        'shadow-xl shadow-shade/50 [animation:mde-menu-in_90ms_ease-out]',
         className
       )}
       {...props}

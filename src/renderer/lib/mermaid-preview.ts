@@ -27,14 +27,14 @@ let nextDiagramId = 0
 let renderQueue: Promise<unknown> = Promise.resolve()
 
 function themeConfig(themeId: ApplicationThemeId): MermaidConfig {
-  const { application: palette, terminal } = getApplicationTheme(themeId)
+  const { application: palette, terminal, mode } = getApplicationTheme(themeId)
   const fontFamily = getComputedStyle(document.documentElement).getPropertyValue('--font-sans').trim() || 'system-ui, sans-serif'
   const chartColors = [terminal.brightBlue, palette.ok, palette.warn, palette.danger, terminal.brightMagenta, terminal.brightCyan]
   return {
     theme: 'base',
     fontFamily,
     themeVariables: {
-      darkMode: true,
+      darkMode: mode === 'dark',
       fontFamily,
       fontSize: '14px',
       background: palette.bg,

@@ -252,7 +252,7 @@ function Popover({
       }}
       className={cn(
         'fixed z-50 flex w-[22rem] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-md border border-line-strong bg-elevated outline-none',
-        'shadow-xl shadow-black/50 [animation:mde-menu-in_90ms_ease-out]'
+        'shadow-xl shadow-shade/50 [animation:mde-menu-in_90ms_ease-out]'
       )}
     >
       {children}

@@ -133,7 +133,7 @@ export function ChatQuoteButton({
             setOffer(null)
           }}
           style={{ left: offer.left, top: offer.top, width: QUOTE_BUTTON_WIDTH, height: QUOTE_BUTTON_HEIGHT }}
-          className="pointer-events-auto absolute flex items-center justify-center gap-1.5 rounded-lg border border-line-strong bg-elevated text-[12px] font-medium text-fg shadow-lg shadow-black/40 transition-colors [animation:mde-menu-in_90ms_ease-out] hover:bg-hover"
+          className="pointer-events-auto absolute flex items-center justify-center gap-1.5 rounded-lg border border-line-strong bg-elevated text-[12px] font-medium text-fg shadow-lg shadow-shade/40 transition-colors [animation:mde-menu-in_90ms_ease-out] hover:bg-hover"
         >
           <Quote aria-hidden className="h-3.5 w-3.5 text-accent" />
           Quote

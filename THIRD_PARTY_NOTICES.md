@@ -12,6 +12,278 @@ The OpenCode executable is an external dependency and is not bundled or relicens
 
 The `react-remove-scroll-bar@2.3.8` npm tarball declares MIT but omits its license file. Its notice text below is preserved from the upstream repository license at `https://github.com/theKashey/react-remove-scroll-bar/blob/master/LICENSE`.
 
+## Color themes
+
+The Slate, Ember, Frost, High contrast and High contrast light themes are original to MDE and are licensed with it under the MIT License in `LICENSE`.
+The other themes adapt the color palettes of the projects below, which publish them under the MIT License. MDE uses only their color values, no code or other assets. It is not affiliated with them or endorsed by them; their names only say where a palette comes from. Each license text is reproduced exactly as the project publishes it.
+
+| Theme | Adapted from | Source | License |
+| --- | --- | --- | --- |
+| Catppuccin Mocha | Catppuccin | https://github.com/catppuccin/catppuccin | MIT |
+| Catppuccin Latte | Catppuccin | https://github.com/catppuccin/catppuccin | MIT |
+| GitHub Light | GitHub Primer | https://github.com/primer/primitives | MIT |
+| Solarized Light | Solarized | https://github.com/altercation/solarized | MIT |
+| Gruvbox Dark | Gruvbox | https://github.com/morhetz/gruvbox | MIT |
+| Gruvbox Light | Gruvbox | https://github.com/morhetz/gruvbox | MIT |
+| Tokyo Night | Tokyo Night | https://github.com/tokyo-night/tokyo-night-vscode-theme | MIT |
+| Dracula | Dracula | https://github.com/dracula/dracula-theme | MIT |
+| Nord | Nord | https://github.com/nordtheme/nord | MIT |
+| One Dark | One Dark (Atom) | https://github.com/atom/one-dark-syntax | MIT |
+
+### Catppuccin
+
+Themes: Catppuccin Mocha and Catppuccin Latte
+
+Source: https://github.com/catppuccin/catppuccin
+
+What MDE changed: Mocha and Latte colors and their terminal color mapping. Surface shades between the published ones are derived, and Latte's green, yellow, magenta and gray are darkened so text reads on its light ground.
+
+~~~text
+MIT License
+
+Copyright (c) 2021 Catppuccin
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+~~~
+
+### GitHub Primer
+
+Themes: GitHub Light
+
+Source: https://github.com/primer/primitives
+
+What MDE changed: The light color scheme and its terminal colors. Surface shades are derived, and some of the bright terminal colors are darkened so they read on the light ground.
+
+~~~text
+The MIT License (MIT)
+
+Copyright (c) 2018 GitHub Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+~~~
+
+### Solarized
+
+Themes: Solarized Light
+
+Source: https://github.com/altercation/solarized
+
+What MDE changed: The base tones and the accent hues. Most accents are darkened and the grays moved, so that text, buttons and code reach the contrast MDE requires; surface shades are derived.
+
+~~~text
+Copyright (c) 2011 Ethan Schoonover
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+~~~
+
+### Gruvbox
+
+Themes: Gruvbox Dark and Gruvbox Light
+
+Source: https://github.com/morhetz/gruvbox
+
+What MDE changed: The dark and light palettes. Surface shades are derived, one dark syntax red is lightened, and the light theme's accents and bright terminal colors are darkened for contrast. The original repository states the MIT/X11 license in its README without a license file; the text below is the one published by the gruvbox-community fork (https://github.com/gruvbox-community/gruvbox), which carries the same copyright.
+
+~~~text
+MIT License
+
+Copyright (c) 2018 Pavel Pertsev
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+~~~
+
+### Tokyo Night
+
+Themes: Tokyo Night
+
+Source: https://github.com/tokyo-night/tokyo-night-vscode-theme
+
+What MDE changed: The VS Code theme's colors. Surface shades, text grays and the bright terminal colors are derived.
+
+~~~text
+The MIT License (MIT)
+
+Copyright (c) 2018-present Enkia
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+~~~
+
+### Dracula
+
+Themes: Dracula
+
+Source: https://github.com/dracula/dracula-theme
+
+What MDE changed: The Dracula palette and its terminal colors (https://spec.draculatheme.com). Surface shades between the background and the current-line color, and the text grays, are derived.
+
+~~~text
+The MIT License (MIT)
+
+Copyright (c) 2023 Dracula Theme
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+~~~
+
+### Nord
+
+Themes: Nord
+
+Source: https://github.com/nordtheme/nord
+
+What MDE changed: The Nord palette. Surface shades, the text grays and the bright terminal colors are derived.
+
+~~~text
+MIT License (MIT)
+
+Copyright (c) 2016-present Sven Greb <development@svengreb.de> (https://www.svengreb.de)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+~~~
+
+### One Dark (Atom)
+
+Themes: One Dark
+
+Source: https://github.com/atom/one-dark-syntax
+
+What MDE changed: The syntax colors of Atom's One Dark. Surface shades, the text grays and the bright terminal colors are derived.
+
+~~~text
+Copyright (c) 2016 GitHub Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+~~~
+
 ## Locked package inventory
 
 Generated from `package-lock.json` by `npm run licenses`. 267 shipped package entries are listed, including production dependencies and libraries bundled into the renderer assets and the main-process script. Build-time-only dependencies are excluded.

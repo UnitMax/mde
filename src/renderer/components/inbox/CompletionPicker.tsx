@@ -47,7 +47,7 @@ export function CompletionPicker({
       role="listbox"
       aria-label={label}
       data-testid={testId}
-      className="absolute inset-x-0 bottom-full z-30 mb-1.5 max-h-64 overflow-y-auto rounded-xl border border-line-strong bg-elevated p-1 shadow-lg shadow-black/30"
+      className="absolute inset-x-0 bottom-full z-30 mb-1.5 max-h-64 overflow-y-auto rounded-xl border border-line-strong bg-elevated p-1 shadow-lg shadow-shade/30"
     >
       {heading && <p aria-hidden className="px-2.5 pb-0.5 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-fg-subtle">{heading}</p>}
       {items.map((item, index) => (

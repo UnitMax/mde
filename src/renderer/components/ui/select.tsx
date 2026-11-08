@@ -4,6 +4,7 @@ import { Check, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export const Select = SelectPrimitive.Root
+export const SelectGroup = SelectPrimitive.Group
 /**
  * Sized to shrink, not to overflow: the trigger is a fixed-width flex row, and
  * a value wider than it would otherwise spill over whatever sits to its right.
@@ -52,7 +53,7 @@ export const SelectContent = React.forwardRef<
       position={position}
       className={cn(
         'z-50 max-h-72 min-w-[8rem] overflow-hidden rounded-md border border-line-strong bg-elevated',
-        'shadow-xl shadow-black/50 [animation:mde-menu-in_90ms_ease-out]',
+        'shadow-xl shadow-shade/50 [animation:mde-menu-in_90ms_ease-out]',
         position === 'popper' && 'w-[var(--radix-select-trigger-width)] translate-y-1',
         className
       )}
@@ -87,3 +88,15 @@ export const SelectItem = React.forwardRef<
   </SelectPrimitive.Item>
 ))
 SelectItem.displayName = SelectPrimitive.Item.displayName
+
+export const SelectLabel = React.forwardRef<
+  React.ElementRef<typeof SelectPrimitive.Label>,
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Label>
+>(({ className, ...props }, ref) => (
+  <SelectPrimitive.Label
+    ref={ref}
+    className={cn('px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-fg-subtle', className)}
+    {...props}
+  />
+))
+SelectLabel.displayName = SelectPrimitive.Label.displayName

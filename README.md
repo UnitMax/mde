@@ -150,7 +150,9 @@ models. Local `npm run build` on macOS still produces both DMG and ZIP.
 MDE's first-party source, documentation, scripts, and branding are licensed under the MIT
 License in `LICENSE`. Third-party packages remain under their own licenses; the complete
 locked dependency inventory and available package license/notice text are recorded in
-`THIRD_PARTY_NOTICES.md`.
+`THIRD_PARTY_NOTICES.md`. The same file credits the color themes that adapt other projects' palettes
+(Catppuccin, GitHub Primer, Solarized, Gruvbox, Tokyo Night, Dracula, Nord and One Dark, all MIT) and
+reproduces their license texts.
 
 Regenerate the notices after changing dependencies with:
 

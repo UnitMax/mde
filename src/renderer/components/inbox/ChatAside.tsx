@@ -53,7 +53,7 @@ export function ChatAside({
         event.stopPropagation()
         onDismiss()
       }}
-      className="chat-aside mb-2 overflow-hidden rounded-2xl border border-line-strong bg-elevated shadow-lg shadow-black/20"
+      className="chat-aside mb-2 overflow-hidden rounded-2xl border border-line-strong bg-elevated shadow-lg shadow-shade/20"
     >
       <header className="flex items-start gap-2.5 px-3.5 pt-3">
         <span className="flex h-5 shrink-0 items-center gap-1 rounded-md bg-accent/15 pl-1.5 pr-2 text-[11.5px] font-medium text-accent">

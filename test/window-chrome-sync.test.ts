@@ -16,11 +16,17 @@ describe('windowChromeColors', () => {
   })
 
   it.each(APPLICATION_THEMES.map((theme) => theme.id))(
-    'keeps the native theme dark for %s, so the button hover wash is visible',
+    'gives the native window the brightness of the bar for %s, so the button hover wash is visible',
     (id) => {
-      expect(isDarkColor(windowChromeColors(id).color)).toBe(true)
+      expect(isDarkColor(windowChromeColors(id).color)).toBe(getApplicationTheme(id).mode === 'dark')
     }
   )
+
+  it.each(APPLICATION_THEMES.map((theme) => theme.id))('draws the window symbols against the bar for %s', (id) => {
+    const { color, symbolColor } = windowChromeColors(id)
+    // The symbols are dark on a light bar and light on a dark one.
+    expect(isDarkColor(symbolColor)).toBe(!isDarkColor(color))
+  })
 })
 
 describe('syncWindowChrome', () => {
