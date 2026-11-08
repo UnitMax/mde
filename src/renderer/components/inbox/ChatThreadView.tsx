@@ -517,6 +517,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
           ref={composer}
           key={thread.id}
           draftKey={`thread:${thread.id}`}
+          fileScope={{ threadId: thread.id }}
           onPreviousMessage={previousMessage}
           draftReload={draftReload}
           onDraftReloaded={(id) => clearDraftReload(thread.id, id)}

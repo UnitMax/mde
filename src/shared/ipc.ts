@@ -50,6 +50,9 @@ import type {
   ChatMessagesPage,
   ChatMessagesRequest,
   ChatSearchRequest,
+  ChatFileEntry,
+  ChatFilesRequest,
+  ChatFilesCheckRequest,
   ChatSearchResponse,
   ChatMcpRequest,
   ChatMcpSetRequest,
@@ -169,6 +172,8 @@ export const IpcChannels = {
   inboxChangeDiff: 'inbox:change-diff',
   chatMessages: 'chat:messages',
   chatSearch: 'chat:search',
+  chatFiles: 'chat:files',
+  chatFilesCheck: 'chat:files-check',
   chatSend: 'chat:send',
   chatDiscardPending: 'chat:discard-pending',
   chatSetDelivery: 'chat:set-delivery',
@@ -544,6 +549,10 @@ export interface RendererApi {
      * memory; the answer has what is read so far, so asking again while `indexed` is below `total` finds more.
      */
     search(req: ChatSearchRequest): Promise<ChatSearchResponse>
+    /** The files and folders the `@` picker offers for what was typed. */
+    files(req: ChatFilesRequest): Promise<ChatFileEntry[]>
+    /** Which of the `@` paths a message writes are in the project, so they can be marked as mentions. */
+    checkFiles(req: ChatFilesCheckRequest): Promise<ChatFileEntry[]>
     /**
      * Sends a message. When the agent was busy, OpenCode holds it instead of showing it in the conversation;
      * the answer is that held message, or null when OpenCode's answer could not be read.

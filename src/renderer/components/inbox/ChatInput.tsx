@@ -78,6 +78,15 @@ function commandMarks(state: EditorState, token: ChatInputProps['commandToken'])
   return Decoration.set([Decoration.mark({ class: 'chat-input-command' }).range(range.from, range.to)])
 }
 
+/** Asks the file marks to be worked out again for text that did not change, when what is known of the files did. */
+const refreshFileMarks = StateEffect.define<null>()
+
+/** The files and folders the message names, marked so that the text can be seen to attach them. */
+function fileMarks(state: EditorState, ranges: ChatInputProps['mentionRanges']): DecorationSet {
+  const found = (ranges?.(state.doc.toString()) ?? []).filter((range) => range.to > range.from && range.to <= state.doc.length)
+  return found.length ? Decoration.set(found.map((range) => Decoration.mark({ class: 'chat-input-file' }).range(range.from, range.to)), true) : Decoration.none
+}
+
 const inputTheme = EditorView.theme({
   '&': { color: 'var(--color-fg)', fontSize: '14px', backgroundColor: 'transparent' },
   '&.cm-focused': { outline: 'none' },
@@ -92,6 +101,11 @@ const inputTheme = EditorView.theme({
     borderLeft: '2px solid color-mix(in srgb, var(--color-accent) 60%, transparent)',
   },
   '.chat-input-quote-mark': { color: 'var(--color-fg-subtle)' },
+  '.chat-input-file': {
+    color: 'var(--color-accent)',
+    backgroundColor: 'color-mix(in srgb, var(--color-accent) 15%, transparent)',
+    borderRadius: '4px',
+  },
   '.chat-input-command': {
     color: 'var(--color-accent)',
     fontWeight: '500',
@@ -132,6 +146,8 @@ interface ChatInputProps {
    * function is read as the text changes, and again when a different one is given.
    */
   commandToken?: (text: string) => { from: number; to: number } | null
+  /** The parts of the text that name a file or folder of the project; they are marked. Read like `commandToken`. */
+  mentionRanges?: (text: string) => { from: number; to: number }[]
 }
 
 /** Markdown remains plain text, with bullet markers displayed as bullets while editing. */
@@ -160,6 +176,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             update: (value, transaction) =>
               transaction.docChanged || transaction.effects.some((effect) => effect.is(refreshCommandToken))
                 ? commandMarks(transaction.state, latest.current.commandToken)
+                : value,
+            provide: (field) => EditorView.decorations.from(field),
+          }),
+          StateField.define<DecorationSet>({
+            create: (state) => fileMarks(state, latest.current.mentionRanges),
+            update: (value, transaction) =>
+              transaction.docChanged || transaction.effects.some((effect) => effect.is(refreshFileMarks))
+                ? fileMarks(transaction.state, latest.current.mentionRanges)
                 : value,
             provide: (field) => EditorView.decorations.from(field),
           }),
@@ -219,6 +243,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   useLayoutEffect(() => {
     viewRef.current?.dispatch({ effects: refreshCommandToken.of(null) })
   }, [props.commandToken])
+
+  useLayoutEffect(() => {
+    viewRef.current?.dispatch({ effects: refreshFileMarks.of(null) })
+  }, [props.mentionRanges])
 
   useLayoutEffect(() => {
     const view = viewRef.current!

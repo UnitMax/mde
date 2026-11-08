@@ -318,6 +318,14 @@ export interface ChatSkillUse {
   name: string
 }
 
+/** A file or folder a sent message named with `@path`; `text` is as it was written, with the `@` and any quotes. */
+export interface ChatFileMention {
+  text: string
+  /** Relative to the folder the thread works in; a folder's ends in `/`. */
+  path: string
+  directory: boolean
+}
+
 /** A skill the user can invoke by writing `$id` in a message. */
 export interface ChatSkill {
   /** What follows the `$`: the skill's directory name, which can differ from `name`. */
@@ -403,7 +411,7 @@ export type ChatPart =
     }
 
 export type ChatMessage =
-  | { kind: 'user'; id: string; time: number; text: string; attachments?: ChatAttachment[]; skills?: ChatSkillUse[] }
+  | { kind: 'user'; id: string; time: number; text: string; attachments?: ChatAttachment[]; skills?: ChatSkillUse[]; mentions?: ChatFileMention[] }
   | {
       kind: 'assistant'
       id: string
@@ -628,6 +636,22 @@ export interface ChatOptionsRequest {
   folderId?: string
   threadId?: string
 }
+
+/** One file or folder of the project, as the `@` picker lists it. */
+export interface ChatFileEntry {
+  /** Relative to the folder, written with `/`; a folder's ends in `/`. */
+  path: string
+  directory: boolean
+}
+
+/** The files and folders of a folder (new thread) or of an existing thread that fit `query`, best first; exactly one place is given. */
+export type ChatFilesRequest = ChatOptionsRequest & { query: string }
+
+/**
+ * Which of these paths exist in the folder or thread (a path without the closing `/` also finds a folder).
+ * Answers with the ones that do, each with the path as it was asked.
+ */
+export type ChatFilesCheckRequest = ChatOptionsRequest & { paths: string[] }
 
 /**
  * How an MCP server stands, as far as MDE tells apart. OpenCode's `pending` is `connecting`, `needs_auth` is

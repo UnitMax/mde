@@ -63,6 +63,7 @@
     "src/renderer/lib/inbox-settings.ts",
     "src/renderer/lib/workspace-navigation.ts",
     "src/renderer/lib/skills.ts",
+    "src/renderer/lib/file-mentions.ts",
     "src/renderer/lib/slash-commands.ts",
     "src/renderer/lib/code-languages.ts",
     "src/renderer/lib/markdown-extensions.ts",

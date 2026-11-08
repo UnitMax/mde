@@ -779,6 +779,38 @@ come with it, without OpenCode's wrapper and its note about the skill's director
 found says so on that row. A skill activated by other means appears as a note whose details are the
 skill's text, and the `session.skill.activated` event refreshes the conversation.
 
+**Files and folders (`@`).** A word that starts with `@` in either composer opens a list of the files and
+folders of the project that fit it, above the box (`CompletionPicker` again, with the name first and the
+folders it is in after it). It is for the folder the page is about: a new thread's folder, or the thread's
+own directory (the worktree, for a thread started in one). The search is OpenCode's own (`GET /api/fs/find`,
+`chat.files`): it ranks the paths, leaves out what Git ignores, lists the most recently changed ones for a
+bare `@`, and runs in the distro for a WSL folder, so MDE walks no directory itself. Typing waits 60 ms for
+a pause, and the list stays as it was until the answer for the longer word arrives. Up and Down move, Tab
+or Enter write `@path ` over the word (the whole word, with the caret in the middle of it), Escape closes
+the list until that word is gone, and a click does the same as Enter without moving the caret. A folder is
+written with its closing `/`, and a path with a space or other punctuation in quotes, `@"my notes.txt"`;
+the rules for what counts as an `@word` and as a mention are in `src/shared/file-mentions.ts`, shared by
+the composer, the sender and the transcript. An `@` inside a word (`me@example.com`) is not one.
+
+A mention is marked in the text of the box (a CodeMirror mark in `ChatInput`, the accent color on a faint
+background) only once the project is known to have the path: the paths a message writes are checked in
+one request (`chat.checkFiles`) after typing pauses for 300 ms, a path the caret is still in is not
+asked about, a pick is known at once, and a path that was not there is asked about again after five
+seconds because an agent may have created it. So what is marked is what will be attached, and `@alice`
+or `@gone.ts` stays plain text. Drafts are kept as plain text, so a reloaded draft is checked again.
+
+When a message is sent, the main process reads the same `@path` tokens and asks OpenCode for each (once
+per path, at most 20) whether the directory the session runs in has it. Each one that does is sent as
+a file of the prompt, `files: [{ uri: 'file:///…', name, mention: { start, end, text } }]`, next to the
+unchanged text and the draft's own attachments, and OpenCode reads the file or folder itself and gives
+the model its content (verified live: a text file arrives as `text/plain`, a folder as
+`application/x-directory`, and an encoded address such as `my%20notes%20%231.txt` is read correctly).
+Each part of the path is encoded and the path must stay inside the project (no `..`, no leading `/`,
+no backslash). A path that is not there, a failed search and a message without an `@` all cost the
+message nothing: it goes out as plain text. In the conversation OpenCode returns those files with the
+message; a file with a `mention` that is read from a `file:` address is shown as a mention (the same
+marks in the bubble, titled with the path), not as an attachment beside the text.
+
 **Slash commands.** In a conversation's message box, a message that starts with `/` and the name of a
 command is that command, not a message for the agent. (The new-thread page has no commands, because a
 command acts on a thread, so a slash there is plain text.) Typing a `/` as the first character opens a

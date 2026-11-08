@@ -186,6 +186,16 @@ function quietly(call: () => PromiseLike<unknown>): void {
 
 const refreshTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const refreshing = new Map<string, Promise<void>>()
+
+/**
+ * Drops the refreshes that are waiting for their turn. They are kept per thread ID outside the store's state, so
+ * a test that starts the store over for the next case calls this, or a refresh asked for by the last case
+ * fires in the middle of the next one.
+ */
+export function cancelScheduledRefreshes(): void {
+  for (const timer of refreshTimers.values()) clearTimeout(timer)
+  refreshTimers.clear()
+}
 /**
  * When this app last changed the messages held for a thread's agent (sent one, took one back). A read
  * of the service that began before then cannot know of the change, so it does not get to undo it.

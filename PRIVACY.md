@@ -98,6 +98,13 @@ about a minute. When you send a message that names a skill, MDE tells the servic
 service gives the skill's text to the model, as OpenCode does in a terminal. MDE stores nothing more
 for skills, and a skill the model loads is shown from the conversation the service returns.
 
+The message box's `@` list is filled by asking the same local service for the files and folders of the
+folder that fit what you typed (paths only, never contents), and MDE checks the paths a message writes
+against it so they can be marked. Nothing of this is stored by MDE. When you send a message that names a
+file or folder, MDE gives the service its address and where it was written; the service reads the file
+(or lists the folder) itself and sends it to the model provider you chose with the message, as it does for
+any attachment, and returns it with the conversation. The draft keeps only the text you typed.
+
 The message box's `/btw` side question sends the question to the same local service, which answers it
 from the conversation as it stands and may send that conversation and the question to the model provider
 you chose, as it does for any message. It does not add either to the conversation. MDE keeps the question

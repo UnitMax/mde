@@ -1,6 +1,6 @@
 import { memo, useMemo, useState } from 'react'
 import { BookOpen, ChevronRight, CircleAlert, FoldVertical, GitFork, Target, Undo2 } from 'lucide-react'
-import type { ChatMessage, ChatModel } from '@shared/types'
+import type { ChatFileMention, ChatMessage, ChatModel } from '@shared/types'
 import { ActivityGroup, NoteRow, ThoughtRow } from '@/components/inbox/ChatActivity'
 import { ChatMarkdown } from '@/components/inbox/ChatMarkdown'
 import { ChatQuoteCard } from '@/components/inbox/ChatQuoteCard'
@@ -10,25 +10,40 @@ import { ActivityRow, Surface } from '@/components/inbox/chat-ui'
 import { formatTokens, messageBlocks } from '@/lib/chat'
 import { activityBlocks, type RenderBlock } from '@/lib/chat-tools'
 import { splitQuotes } from '@/lib/chat-quote'
+import { splitMentions } from '@/lib/file-mentions'
 import { cn } from '@/lib/utils'
 
+/** The text of a message with the files and folders it named marked, as they are in the box they were written in. */
+function MentionedText({ text, mentions }: { text: string; mentions: readonly ChatFileMention[] }): JSX.Element {
+  const parts = useMemo(() => splitMentions(text, mentions), [text, mentions])
+  return (
+    <>
+      {parts.map((part, index) => part.mention
+        ? <span key={index} data-testid="chat-file-mention" title={part.mention.path} className="rounded bg-accent/15 text-accent">{part.text}</span>
+        : part.text)}
+    </>
+  )
+}
+
 /** What the person wrote, with the quotes in it set apart from the rest of the text. */
-function BubbleText({ text }: { text: string }): JSX.Element {
+function BubbleText({ text, mentions = NO_MENTIONS }: { text: string; mentions?: readonly ChatFileMention[] }): JSX.Element {
   const segments = useMemo(() => splitQuotes(text), [text])
   const [only] = segments
   // Without a quote, or with only an empty one, the text is shown as it is.
   // What the person wrote is what the search looks through; the files and skills around it are not text of theirs.
-  if (segments.length === 0 || (segments.length === 1 && only?.kind === 'text')) return <div data-chat-searchable>{text}</div>
+  if (segments.length === 0 || (segments.length === 1 && only?.kind === 'text')) return <div data-chat-searchable><MentionedText text={text} mentions={mentions} /></div>
   return (
     <div data-chat-searchable>
       {segments.map((segment, index) =>
         segment.kind === 'quote'
           ? <ChatQuoteCard key={index} text={segment.text} />
-          : <span key={index} className="block">{segment.text}</span>,
+          : <span key={index} className="block"><MentionedText text={segment.text} mentions={mentions} /></span>,
       )}
     </div>
   )
 }
+
+const NO_MENTIONS: readonly ChatFileMention[] = []
 
 /**
  * The bubble of one of the user's messages: its text, files and skills. `pending` draws it as a message
@@ -53,7 +68,7 @@ export function UserBubble({ message, pending = false }: { message: Extract<Chat
           <span className="truncate">{skill.name}</span>
         </span>)}
       </div> : null}
-      <BubbleText text={message.text} />
+      <BubbleText text={message.text} mentions={message.mentions} />
     </div>
   )
 }

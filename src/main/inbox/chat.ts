@@ -21,6 +21,9 @@ import type {
   ChatMessagesPage,
   ChatMessagesRequest,
   ChatOptions,
+  ChatFileEntry,
+  ChatFilesCheckRequest,
+  ChatFilesRequest,
   ChatOptionsRequest,
   ChatPart,
   ChatPendingMessage,
@@ -79,12 +82,14 @@ import {
   parseSessionRevert,
   parseStagedRevert,
   parseSessionUsage,
+  parseFileEntries,
   parseSkills,
   parseTurnMarkers,
   unfinishedTurnStart,
   type TurnMarker,
 } from '../opencode/service/parse'
 import { skillMentions } from '@shared/skills'
+import { mentionAttachments, resolveFile } from './file-mentions'
 import type { InboxRecorder } from './recorder'
 import { InboxSearch } from './search'
 import { isChatAgentId, type InboxStore } from './store'
@@ -93,6 +98,8 @@ import type { CreatedWorktree, InboxWorktrees } from './worktree'
 export const CHAT_PAGE_SIZE = 50
 export const CHAT_TEXT_MAX_LENGTH = 100_000
 const OPTIONS_TTL_MS = 60_000
+/** The `@` picker lists at most this many files and folders at once; typing narrows them down. */
+const FILE_PICKER_LIMIT = 40
 /**
  * OpenCode answers the first agent request for a folder it has not loaded yet with an empty list
  * (the models are fine), and the next request is complete. Ask a few more times before giving up.
@@ -1135,6 +1142,32 @@ export class InboxChatService {
     }
   }
 
+  /**
+   * The files and folders of a folder (new thread) or an existing thread that fit what was typed after an `@`,
+   * best first. OpenCode ranks them, and leaves out what Git ignores. Nothing typed lists the most recent.
+   */
+  async files(request: ChatFilesRequest): Promise<ChatFileEntry[]> {
+    this.assertEnabled()
+    return this.findFiles(this.place(request), request.query)
+  }
+
+  /** Which of these paths the folder or thread has; the answer holds the ones it does, as they were written. */
+  async checkFiles(request: ChatFilesCheckRequest): Promise<ChatFileEntry[]> {
+    this.assertEnabled()
+    const place = this.place(request)
+    const found = await Promise.all([...new Set(request.paths)].map(async (path) => {
+      const entry = await resolveFile((query) => this.findFiles(place, query), path).catch(() => null)
+      return entry ? [{ path, directory: entry.directory }] : []
+    }))
+    return found.flat()
+  }
+
+  private async findFiles(place: { target: OpenCodeTarget; directory: string }, query: string): Promise<ChatFileEntry[]> {
+    return parseFileEntries(await this.dependencies.client.request(place.target, 'fs.find', {
+      query: { 'location[directory]': place.directory, query, limit: String(FILE_PICKER_LIMIT) },
+    }))
+  }
+
   private async loadSkills(place: { target: OpenCodeTarget; directory: string }): Promise<ChatSkill[]> {
     for (let attempt = 1; ; attempt += 1) {
       const skills = parseSkills(await this.dependencies.client.request(place.target, 'skill.list', {
@@ -1163,9 +1196,17 @@ export class InboxChatService {
         mentions = skillMentions(text, (await this.loadSkills(place)).map((skill) => skill.id))
       } catch { /* The skills are an extra; the message goes without them. */ }
     }
+    // A path after an `@` that the project has is attached as a file; one it does not have is just text.
+    let attached = files
+    if (text.includes('@')) {
+      try {
+        const named = await mentionAttachments((query) => this.findFiles(place, query), place.directory, text)
+        if (named.length) attached = [...(files ?? []), ...named]
+      } catch { /* The files are an extra; the message goes without them. */ }
+    }
     return {
       text,
-      ...(files?.length ? { files } : {}),
+      ...(attached?.length ? { files: attached } : {}),
       ...(mentions.length ? { skills: mentions.map(({ id, start, end, text: written }) => ({ id, mention: { start, end, text: written } })) } : {}),
     }
   }

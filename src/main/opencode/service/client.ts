@@ -9,6 +9,8 @@ export const SERVICE_OPERATIONS = {
   'model.list': { method: 'GET', path: '/api/model' },
   'model.default': { method: 'GET', path: '/api/model/default' },
   'skill.list': { method: 'GET', path: '/api/skill' },
+  // The files and folders of a directory ranked for a few typed letters; it leaves out what Git ignores.
+  'fs.find': { method: 'GET', path: '/api/fs/find' },
   'session.create': { method: 'POST', path: '/api/session' },
   'session.active': { method: 'GET', path: '/api/session/active' },
   'job.list': { method: 'GET', path: '/api/experimental/job' },
@@ -62,6 +64,8 @@ const QUERY_PARAMETERS: Record<string, RegExp> = {
   status: /^running$/,
   descendants: /^true$/,
   limit: /^\d{1,4}$/,
+  // What was typed after an `@`: any text without control characters.
+  query: /^[^\u0000-\u001f\u007f-\u009f]{0,300}$/,
   order: /^(asc|desc)$/,
   cursor: /^[A-Za-z0-9_=.-]{1,2048}$/,
   'location[directory]': /^[^\u0000-\u001f\u007f-\u009f]{1,4096}$/,

@@ -92,6 +92,8 @@ const validPayloads = {
   [IpcChannels.inboxChanges]: { threadId: 'ses_thread', details: true },
   [IpcChannels.chatMessages]: { threadId: 'ses_thread', cursor: 'eyJpZCI6Im1zZyJ9' },
   [IpcChannels.chatSearch]: { query: 'login redirect' },
+  [IpcChannels.chatFiles]: { folderId: 'fld_1234', query: 'src/main' },
+  [IpcChannels.chatFilesCheck]: { threadId: 'ses_thread', paths: ['src/main.ts'] },
   [IpcChannels.chatSend]: { threadId: 'ses_thread', text: 'Next step', agent: 'plan', model },
   [IpcChannels.chatInterrupt]: { threadId: 'ses_thread' },
   [IpcChannels.chatCompact]: { threadId: 'ses_thread' },
@@ -333,6 +335,19 @@ describe('IPC payload boundary', () => {
     expect(() => assertIpcPayload(IpcChannels.chatOptions, { threadId: 'ses_thread' })).not.toThrow()
     rejects(IpcChannels.chatOptions, {})
     rejects(IpcChannels.chatOptions, { folderId: 'fld_1234', threadId: 'ses_thread' })
+  })
+
+  it('names exactly one place, and a bounded query or list of paths, in the file requests', () => {
+    expect(() => assertIpcPayload(IpcChannels.chatFiles, { threadId: 'ses_thread', query: '' })).not.toThrow()
+    rejects(IpcChannels.chatFiles, { query: 'a' })
+    rejects(IpcChannels.chatFiles, { folderId: 'fld_1234', threadId: 'ses_thread', query: 'a' })
+    rejects(IpcChannels.chatFiles, { folderId: 'fld_1234', query: 'a'.repeat(301) })
+    rejects(IpcChannels.chatFiles, { folderId: 'fld_1234', query: 'a\nb' })
+    rejects(IpcChannels.chatFiles, { folderId: 'fld_1234' })
+    expect(() => assertIpcPayload(IpcChannels.chatFilesCheck, { folderId: 'fld_1234', paths: [] })).not.toThrow()
+    rejects(IpcChannels.chatFilesCheck, { folderId: 'fld_1234', paths: Array.from({ length: 21 }, (_, index) => `f${index}`) })
+    rejects(IpcChannels.chatFilesCheck, { folderId: 'fld_1234', paths: ['ok', 7] })
+    rejects(IpcChannels.chatFilesCheck, { paths: ['a'] })
   })
 
   it('names exactly one place and a plain server name in the MCP requests', () => {

@@ -301,6 +301,7 @@ export function NewThreadView(): JSX.Element {
             key={page.id}
             draftKey={`draft:${page.id}`}
             draftMeta={draftMeta}
+            fileScope={{ folderId: folder.id }}
             onSaveDraft={saveDraft}
             allowBackgroundSend
             autoFocus

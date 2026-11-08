@@ -1,9 +1,11 @@
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ForwardedRef, type ReactNode } from 'react'
-import { Paperclip, PenLine, X, File as FileIcon, Bot, Hammer, ListChecks, LoaderCircle, Square } from 'lucide-react'
+import { Paperclip, PenLine, X, File as FileIcon, Folder, Bot, Hammer, ListChecks, LoaderCircle, Square } from 'lucide-react'
 import { readFileTreeDrop, isFileDrop } from '@/terminal/drop'
-import type { ChatDelivery, ChatDraft, ChatDraftChoice, ChatDraftKey, ChatDraftRequest, ChatAgent, ChatSkill, OpenCodeModelRef } from '@shared/types'
+import type { ChatDelivery, ChatDraft, ChatDraftChoice, ChatDraftKey, ChatDraftRequest, ChatAgent, ChatFileEntry, ChatSkill, OpenCodeModelRef } from '@shared/types'
+import { fileMentionTokens, fileTriggerAt } from '@shared/file-mentions'
 import { skillTriggerAt } from '@shared/skills'
 import { addQuote, joinQuotes, leadingQuotes, MESSAGE_TEXT_LIMIT } from '@/lib/chat-quote'
+import { applyFile, describeFile } from '@/lib/file-mentions'
 import { applySkill, filterSkills } from '@/lib/skills'
 import { applyCommand, filterCommands, parseInvocation, slashTriggerAt, type SlashCommand, type SlashInvocation } from '@/lib/slash-commands'
 import {
@@ -104,8 +106,10 @@ export function AgentPicker({
 }
 
 /** Names the word at the caret that a list would open for, as `dismissed` remembers a list that was closed. */
-function completionKey(text: string, caret: number, hasCommands: boolean): string | null {
+function completionKey(text: string, caret: number, hasCommands: boolean, hasFiles: boolean): string | null {
   if (hasCommands && slashTriggerAt(text, caret)) return 'command'
+  const file = hasFiles ? fileTriggerAt(text, caret) : null
+  if (file) return `file:${file.start}`
   const skill = skillTriggerAt(text, caret)
   return skill ? `skill:${skill.start}` : null
 }
@@ -113,6 +117,17 @@ function completionKey(text: string, caret: number, hasCommands: boolean): strin
 const NO_SKILLS: ChatSkill[] = []
 const NO_COMMANDS: readonly SlashCommand[] = []
 const NO_ITEMS: CompletionItem[] = []
+const NO_FILES: ChatFileEntry[] = []
+
+/** Typing in a name waits this long for a pause before the project is searched. */
+const FILE_SEARCH_MS = 60
+/** A path is checked against the project once typing has paused this long. */
+const FILE_CHECK_MS = 300
+/** A path that was not there when it was checked is looked for again after this long, since an agent may have made it since. */
+const FILE_MISSING_RECHECK_MS = 5000
+/** What was found about the paths a message writes after an `@`, by path. */
+type CheckedFiles = ReadonlyMap<string, { exists: boolean; at: number }>
+const NO_CHECKED: CheckedFiles = new Map()
 
 export interface ChatComposerProps {
   draftKey?: ChatDraftKey
@@ -172,6 +187,11 @@ export interface ChatComposerProps {
   commands?: readonly SlashCommand[]
   /** Escape was pressed in the box and nothing in the box used it; return true when the page did (it closed something). */
   onEscape?: () => boolean
+  /**
+   * The folder (new thread) or thread whose files an `@` offers, and whose files a message may name. Without
+   * it the box has no file picker.
+   */
+  fileScope?: { folderId: string } | { threadId: string }
 }
 
 /** What the page around the box can ask of it. */
@@ -217,6 +237,7 @@ export const ChatComposer = forwardRef(function ChatComposer({
   extraPickers,
   commands = NO_COMMANDS,
   onEscape,
+  fileScope,
 }: ChatComposerProps, ref: ForwardedRef<ChatComposerHandle>): JSX.Element {
   // What is typed. The quotes attached to the message are kept apart from it, as cards above the box, and are
   // joined to it as block quotes where the draft is kept and where the message is sent.
@@ -349,15 +370,86 @@ export const ChatComposer = forwardRef(function ChatComposer({
     () => (commands.length > 0 && cursor?.text === text ? slashTriggerAt(text, cursor.at) : null),
     [commands, cursor, text],
   )
-  const trigger = useMemo(
-    () => (!slashTrigger && skills.length > 0 && cursor?.text === text ? skillTriggerAt(text, cursor.at) : null),
-    [slashTrigger, skills, cursor, text],
+  // An `@word` at the caret lists the files and folders of the project that fit it. Which place that is comes
+  // from the page; the answer is only kept for the place and the word it was asked for.
+  const scopeKey = fileScope ? ('folderId' in fileScope ? `folder:${fileScope.folderId}` : `thread:${fileScope.threadId}`) : null
+  const scope = useRef(fileScope)
+  scope.current = fileScope
+  const fileTrigger = useMemo(
+    () => (!slashTrigger && scopeKey && cursor?.text === text ? fileTriggerAt(text, cursor.at) : null),
+    [slashTrigger, scopeKey, cursor, text],
   )
-  const completionWord = slashTrigger ? 'command' : trigger ? `skill:${trigger.start}` : null
+  const [fileResults, setFileResults] = useState<{ scope: string; entries: ChatFileEntry[] } | null>(null)
+  const fileQuery = fileTrigger?.query ?? null
+  useEffect(() => {
+    if (fileQuery === null || !scopeKey) {
+      setFileResults(null)
+      return undefined
+    }
+    let current = true
+    // The list stays as it was until the answer for the longer word arrives, so it does not blink while typing.
+    const timer = window.setTimeout(() => {
+      Promise.resolve()
+        .then(() => window.api.chat.files({ ...scope.current!, query: fileQuery }))
+        .catch((): ChatFileEntry[] => [])
+        .then((entries) => { if (current) setFileResults({ scope: scopeKey, entries }) })
+    }, FILE_SEARCH_MS)
+    return () => { current = false; window.clearTimeout(timer) }
+  }, [fileQuery, scopeKey])
+  const fileEntries = fileTrigger && fileResults?.scope === scopeKey ? fileResults.entries : NO_FILES
+  // What the project is known to have of the paths the message writes: they are marked as files in the text, and
+  // the sender attaches them. A path that is still being typed is not asked about.
+  const [checked, setChecked] = useState<{ scope: string; paths: CheckedFiles }>({ scope: '', paths: NO_CHECKED })
+  const known = checked.scope === scopeKey ? checked.paths : NO_CHECKED
+  const remember = (found: ReadonlyMap<string, boolean>): void => {
+    const at = Date.now()
+    // What was found belongs to the place it was asked of; another place starts over.
+    setChecked((current) => {
+      const paths = new Map(current.scope === scopeKey ? current.paths : NO_CHECKED)
+      for (const [path, exists] of found) paths.set(path, { exists, at })
+      return { scope: scopeKey ?? '', paths }
+    })
+  }
+  useEffect(() => {
+    if (!scopeKey || !text.includes('@')) return undefined
+    const caret = cursor?.text === text ? cursor.at : -1
+    const now = Date.now()
+    const unknown = [...new Set(fileMentionTokens(text)
+      .filter((token) => !(caret >= token.start && caret <= token.end))
+      .map((token) => token.path))]
+      .filter((path) => {
+        const entry = known.get(path)
+        return !entry || (!entry.exists && now - entry.at > FILE_MISSING_RECHECK_MS)
+      })
+      .slice(0, 20)
+    if (unknown.length === 0) return undefined
+    const timer = window.setTimeout(() => {
+      Promise.resolve()
+        .then(() => window.api.chat.checkFiles({ ...scope.current!, paths: unknown }))
+        .catch((): ChatFileEntry[] => [])
+        .then((found) => {
+          const existing = new Set(found.map((entry) => entry.path))
+          remember(new Map(unknown.map((path) => [path, existing.has(path)])))
+        })
+    }, FILE_CHECK_MS)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, cursor, scopeKey, known])
+  const mentionRanges = useCallback(
+    (value: string) => fileMentionTokens(value)
+      .filter((token) => known.get(token.path)?.exists)
+      .map((token) => ({ from: token.start, to: token.end })),
+    [known],
+  )
+  const trigger = useMemo(
+    () => (!slashTrigger && !fileTrigger && skills.length > 0 && cursor?.text === text ? skillTriggerAt(text, cursor.at) : null),
+    [slashTrigger, fileTrigger, skills, cursor, text],
+  )
+  const completionWord = slashTrigger ? 'command' : fileTrigger ? `file:${fileTrigger.start}` : trigger ? `skill:${trigger.start}` : null
   useEffect(() => { if (!completionWord) setDismissed(null) }, [completionWord])
   const commandMatches = useMemo(() => (slashTrigger ? filterCommands(commands, slashTrigger.query) : NO_COMMANDS), [commands, slashTrigger])
   const matches = useMemo(() => (trigger ? filterSkills(skills, trigger.query) : NO_SKILLS), [skills, trigger])
-  const listLength = slashTrigger ? commandMatches.length : matches.length
+  const listLength = slashTrigger ? commandMatches.length : fileTrigger ? fileEntries.length : matches.length
   const pickerOpen = completionWord !== null && listLength > 0 && completionWord !== dismissed && !disabled && !sending && loaded
   const activeIndex = Math.min(activeItem, Math.max(listLength - 1, 0))
   // The message as a command, when it starts with the name of one.
@@ -434,6 +526,17 @@ export const ChatComposer = forwardRef(function ChatComposer({
     // A new object each time, so the box renders and puts the caret in place even when the text is unchanged.
     setCursor({ text: next.text, at: next.caret })
   }
+  const pickFile = (entry: ChatFileEntry): void => {
+    if (!fileTrigger) return
+    resetHistory()
+    const next = applyFile(text, fileTrigger, entry)
+    pendingCaret.current = next.caret
+    setText(next.text)
+    persist(next.text)
+    setCursor({ text: next.text, at: next.caret })
+    // The file is known to be there, so it is marked at once and not after the check.
+    remember(new Map([[entry.path, true]]))
+  }
   const completeCommand = (command: SlashCommand): void => {
     if (!slashTrigger) return
     resetHistory()
@@ -476,6 +579,11 @@ export const ChatComposer = forwardRef(function ChatComposer({
   // box to be finished; one that takes nothing runs, unless it is only being completed (Tab).
   const choose = (index: number, completeOnly = false): void => {
     if (!slashTrigger) {
+      if (fileTrigger) {
+        const entry = fileEntries[index]
+        if (entry) pickFile(entry)
+        return
+      }
       const skill = matches[index]
       if (skill) pickSkill(skill)
       return
@@ -495,7 +603,7 @@ export const ChatComposer = forwardRef(function ChatComposer({
     setText(body)
     setCursor({ text: body, at: body.length })
     // A recalled message that ends in a $word, or is one slash word, is ready to edit or send, without opening a list.
-    setDismissed(completionKey(body, body.length, commands.length > 0))
+    setDismissed(completionKey(body, body.length, commands.length > 0, scopeKey !== null))
     persist(body, attached)
   }
   const recallMessage = (event: KeyboardEvent): void => {
@@ -626,6 +734,17 @@ export const ChatComposer = forwardRef(function ChatComposer({
         icon: <SlashCommandIcon name={command.name} className="h-3.5 w-3.5" />,
         testId: `slash-option-${command.name}`,
       }))
+      : fileTrigger
+        ? fileEntries.map((entry) => {
+          const { name, folder } = describeFile(entry.path)
+          return {
+            key: entry.path,
+            label: name,
+            description: folder || undefined,
+            icon: entry.directory ? <Folder aria-hidden className="h-3.5 w-3.5" /> : <FileIcon aria-hidden className="h-3.5 w-3.5" />,
+            testId: `file-option-${entry.path}`,
+          }
+        })
       : matches.map((skill) => ({
         key: skill.id,
         label: `$${skill.id}`,
@@ -663,8 +782,8 @@ export const ChatComposer = forwardRef(function ChatComposer({
         {pickerOpen && (
           <CompletionPicker
             id={listId}
-            label={slashTrigger ? 'Commands' : 'Skills'}
-            testId={slashTrigger ? 'slash-picker' : 'skill-picker'}
+            label={slashTrigger ? 'Commands' : fileTrigger ? 'Files' : 'Skills'}
+            testId={slashTrigger ? 'slash-picker' : fileTrigger ? 'file-picker' : 'skill-picker'}
             heading={slashTrigger ? 'Commands' : undefined}
             items={items}
             active={activeIndex}
@@ -705,6 +824,7 @@ export const ChatComposer = forwardRef(function ChatComposer({
           // Moving the caret with the keys or the mouse changes which word it is in.
           onSelect={(next, caret) => setCursor({ text: next, at: caret })}
           commandToken={commandToken}
+          mentionRanges={mentionRanges}
           controls={pickerOpen ? listId : undefined}
           activeDescendant={pickerOpen ? `${listId}-${activeIndex}` : undefined}
           onPaste={(event) => {

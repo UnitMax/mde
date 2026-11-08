@@ -1,7 +1,11 @@
 import { GOAL_OBJECTIVE_LIMIT } from '@shared/goal'
+import { FILE_MENTION_LIMIT, isMentionablePath } from '@shared/file-mentions'
 import { MCP_SERVER_NAME } from '@shared/mcp'
 import type {
   ChatAgent,
+  ChatAttachment,
+  ChatFileEntry,
+  ChatFileMention,
   ChatGoal,
   ChatGoalNote,
   ChatForm,
@@ -144,6 +148,40 @@ export function parseSkills(value: unknown): ChatSkill[] {
     if (skills.length >= SKILL_LIMIT) break
   }
   return skills
+}
+
+/**
+ * The files and folders OpenCode found for what was typed after an `@`, in its order (best first). The
+ * project's own root and anything that could not be written in a message are left out; a folder's path
+ * always ends in `/`.
+ */
+export function parseFileEntries(value: unknown): ChatFileEntry[] {
+  const entries: ChatFileEntry[] = []
+  const seen = new Set<string>()
+  for (const item of list(data(value, 'a file list'))) {
+    const entry = record(item)
+    if (!entry || typeof entry.path !== 'string') continue
+    const directory = entry.type === 'directory' || entry.path.endsWith('/')
+    const path = directory && !entry.path.endsWith('/') ? `${entry.path}/` : entry.path
+    if (!isMentionablePath(path) || seen.has(path)) continue
+    seen.add(path)
+    entries.push({ path, directory })
+  }
+  return entries
+}
+
+/**
+ * A file the user's message named with `@path` comes back as an attachment that has a `mention` and is read
+ * from a `file:` address. It is a mention, shown in the text, and not an attachment to show beside it.
+ */
+function fileMention(file: Json | null): ChatFileMention | null {
+  const mention = record(file?.mention)
+  const uri = record(file?.source)?.uri
+  const path = short(file?.name, 1000)
+  const text = short(mention?.text, 1100)
+  if (!path || !text || !text.startsWith('@') || typeof uri !== 'string' || !uri.startsWith('file:')) return null
+  if (!isMentionablePath(path)) return null
+  return { text, path, directory: file?.mime === 'application/x-directory' || path.endsWith('/') }
 }
 
 const MCP_STATUSES: Record<string, ChatMcpStatus> = {
@@ -469,15 +507,31 @@ export function parseMessage(value: unknown, thumbnail?: (bytes: Buffer) => stri
   switch (message.type) {
     case 'user': {
       const skills = parseSkillUses(message.skills)
-      return { kind: 'user', id, time: at, text: body(message.text, CHAT_TEXT_LIMIT).text, ...(skills.length ? { skills } : {}), ...(Array.isArray(message.files) && message.files.length ? { attachments: message.files.slice(0, 10).flatMap((raw, index) => {
+      const mentions: ChatFileMention[] = []
+      const attachments: ChatAttachment[] = []
+      list(message.files).forEach((raw, index) => {
         const file = record(raw)
+        const mentioned = fileMention(file)
+        if (mentioned) {
+          if (mentions.length < FILE_MENTION_LIMIT) mentions.push(mentioned)
+          return
+        }
         const mime = short(file?.mime, 200)
-        if (!file || !mime || typeof file.data !== 'string' || file.data.length > 28 * 1024 * 1024) return []
+        if (!file || !mime || typeof file.data !== 'string' || file.data.length > 28 * 1024 * 1024 || attachments.length >= 10) return
         const bytes = Buffer.from(file.data, 'base64')
         let preview: string | undefined
         try { if (mime.startsWith('image/')) preview = thumbnail?.(bytes) } catch { /* A broken preview still shows its filename. */ }
-        return [{ id: `${id}-${index}`, name: short(file.name) ?? 'Attachment', mime, size: bytes.length, ...(preview ? { thumbnail: preview } : {}) }]
-      }) } : {}) }
+        attachments.push({ id: `${id}-${index}`, name: short(file.name) ?? 'Attachment', mime, size: bytes.length, ...(preview ? { thumbnail: preview } : {}) })
+      })
+      return {
+        kind: 'user',
+        id,
+        time: at,
+        text: body(message.text, CHAT_TEXT_LIMIT).text,
+        ...(skills.length ? { skills } : {}),
+        ...(attachments.length ? { attachments } : {}),
+        ...(mentions.length ? { mentions } : {}),
+      }
     }
     case 'assistant': {
       const model = parseModelRef(message.model)

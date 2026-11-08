@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ChatCreateRequest, ChatDraft, ChatDraftRequest, ChatForkRequest, ChatForkResult, ChatMessage, ChatMessagesPage, ChatOptions, ChatRequests, ChatRevert, ChatRevertRequest, InboxFolder, InboxGitInfo, InboxThread } from '../src/shared/types'
 import { InboxThreadView } from '../src/renderer/components/InboxThreadView'
-import { useInboxChat } from '../src/renderer/store/inbox-chat'
+import { cancelScheduledRefreshes, useInboxChat } from '../src/renderer/store/inbox-chat'
 import { useModelFavorites } from '../src/renderer/store/model-favorites'
 import { useWorkspace } from '../src/renderer/store/workspace'
 import { getTerminalSettings, saveTerminalSettings, TERMINAL_SETTINGS_STORAGE_KEY } from '../src/renderer/terminal/terminal-settings'
@@ -128,6 +128,8 @@ beforeEach(() => {
     selectedInboxThreadId: null,
     activeWorkspaceView: 'inbox',
   })
+  // A refresh that the last test asked for would otherwise fire in this one.
+  cancelScheduledRefreshes()
   useInboxChat.setState({ folders: [folder], composer: { folderId: 'fld_app' }, foldersLoaded: true, options: {}, threads: {}, recent: [], titleRegenerations: {} })
 })
 
