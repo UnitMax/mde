@@ -654,7 +654,7 @@ export function App(): JSX.Element {
           <Settings2 className="h-3.5 w-3.5" />
         </TitleBarButton>
       </TitleBar>
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <Sidebar
           onNewTodoProject={() => setNewTodoProjectOpen(true)}
           onNewTodoTask={() => openNewTodoTask()}
@@ -665,7 +665,6 @@ export function App(): JSX.Element {
           {!ready ? null : activeWorkspaceView === 'inbox' ? (
             <>
               <InboxThreadView />
-              <FloatingTerminal />
               {selectedInboxThreadId && <InboxChangeViewer threadId={selectedInboxThreadId} />}
               {inboxRoot && inboxOpenFilePath !== undefined && (
                 <FileViewer
@@ -730,6 +729,8 @@ export function App(): JSX.Element {
 
         {ready && activeWorkspaceView === 'sessions' && selected && <FileTreePanel session={selected} root={terminalFileRoot} />}
         {ready && inboxRoot && <InboxSidebar session={inboxRoot} threadId={selectedInboxThreadId ?? undefined} />}
+        {/* Over everything below the title bar: both sidebars and the conversation. */}
+        {ready && activeWorkspaceView === 'inbox' && <FloatingTerminal />}
 
         <SettingsDialog terminalIds={layoutForSession?.panes.map((pane) => pane.terminalId) ?? []} />
         <OpenCodeConfigDialog />

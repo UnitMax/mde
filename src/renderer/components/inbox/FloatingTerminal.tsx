@@ -168,7 +168,7 @@ function FloatingTerminalWindow({ bounds }: { bounds: FloatingBounds }): JSX.Ele
         <Button
           variant="ghost"
           size="icon-sm"
-          title={maximized ? 'Restore size' : 'Fill the conversation area'}
+          title={maximized ? 'Restore size' : 'Fill the whole window'}
           aria-label={maximized ? 'Restore terminal size' : 'Maximize terminal'}
           data-testid="floating-terminal-maximize"
           onClick={toggleMaximized}
@@ -204,7 +204,8 @@ function FloatingTerminalWindow({ bounds }: { bounds: FloatingBounds }): JSX.Ele
 }
 
 /**
- * The Inbox's terminal as a window floating inside the app window, over the conversation: it can be moved,
+ * The Inbox's terminal as a window floating inside the app window, over everything under the title bar (both
+ * sidebars and the conversation): it can be moved,
  * resized from every edge, maximized and put back in the sidebar, and F11 shows and hides it. It is the
  * same terminal as the sidebar's (one set of shells), so only one of the two is ever on screen.
  * Mounted once by the Inbox view; draws nothing until the terminal has been broken out of the sidebar.

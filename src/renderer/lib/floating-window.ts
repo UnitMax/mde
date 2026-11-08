@@ -33,7 +33,7 @@ export function clampFloatingRect(rect: FloatingRect, bounds: FloatingBounds): F
   }
 }
 
-/** Where a window opens that has not been placed: the bottom-right corner, over the end of the conversation. */
+/** Where a window opens that has not been placed: the bottom-right corner, over the end of the conversation and the sidebar beside it. */
 export function defaultFloatingRect(bounds: FloatingBounds): FloatingRect {
   const width = Math.min(DEFAULT_MAX_SIZE.width, Math.round(bounds.width * 0.6))
   const height = Math.min(DEFAULT_MAX_SIZE.height, Math.round(bounds.height * 0.5))
