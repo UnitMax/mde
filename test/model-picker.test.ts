@@ -25,6 +25,8 @@ async function render(models: ChatModel[] = [reasoner, fixed, other], initial: O
 
 const trigger = (): HTMLButtonElement => container.querySelector('[data-testid="chat-model-picker"]')!
 async function open(): Promise<void> {
+  // Let a previous menu finish restoring focus before reopening it.
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
   await act(async () => trigger().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
 }
 const menu = (): HTMLElement | null => document.querySelector('[data-testid="chat-model-menu"]')
@@ -39,6 +41,12 @@ async function click(label: string, role?: string): Promise<void> {
 }
 async function browse(label: string): Promise<void> {
   await act(async () => item(label, 'menuitem').focus())
+}
+async function press(key: string, shiftKey = false): Promise<void> {
+  await act(async () => {
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey, bubbles: true, cancelable: true }))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
 }
 
 describe('model and reasoning menu', () => {
@@ -203,6 +211,277 @@ describe('model and reasoning menu', () => {
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
     expect(menu()).toBeNull()
     expect(document.activeElement).toBe(message)
+    expect(changed).not.toHaveBeenCalled()
+  })
+
+  it('moves one model per arrow press across favorites and providers without selecting', async () => {
+    useModelFavorites.setState({ favorites: [{ id: reasoner.id, providerId: reasoner.providerId }] })
+    await render()
+    await open()
+    const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-model-key]'))
+    await act(async () => rows[0]!.focus())
+    for (const row of rows.slice(1)) {
+      await press('ArrowDown')
+      expect(document.activeElement).toBe(row)
+    }
+    await press('ArrowDown')
+    expect(document.activeElement).toBe(rows[0])
+    await press('ArrowUp')
+    expect(document.activeElement).toBe(rows.at(-1))
+    for (const row of rows.slice(0, -1).reverse()) {
+      await press('ArrowUp')
+      expect(document.activeElement).toBe(row)
+    }
+    await press('ArrowUp')
+    expect(document.activeElement).toBe(rows.at(-1))
+    await press('End')
+    expect(document.activeElement).toBe(rows.at(-1))
+    await press('Home')
+    expect(document.activeElement).toBe(rows[0])
+    expect(changed).not.toHaveBeenCalled()
+  })
+
+  it.each([false, true])('starts arrow navigation from the selected model (favorites: %s)', async (starred) => {
+    if (starred) useModelFavorites.setState({ favorites: [fixed, other, reasoner].map(({ id, providerId }) => ({ id, providerId })) })
+    await render(undefined, { id: other.id, providerId: other.providerId })
+    await open()
+    await press('ArrowDown')
+    expect(document.activeElement?.getAttribute('data-model-key')).toBe('p/reasoner')
+    const input = document.querySelector<HTMLInputElement>('[aria-label="Search models"]')!
+    await act(async () => input.focus())
+    await press('ArrowUp')
+    expect(document.activeElement?.getAttribute('data-model-key')).toBe('p/other')
+    await act(async () => input.focus())
+    await press('ArrowUp')
+    expect(document.activeElement?.getAttribute('data-model-key')).toBe('local/fixed-high')
+    await press('Escape')
+    await open()
+    await press('ArrowUp')
+    expect(document.activeElement?.getAttribute('data-model-key')).toBe('local/fixed-high')
+    expect(changed).not.toHaveBeenCalled()
+  })
+
+  it.each([null, { id: 'unavailable', providerId: 'p' }])('enters from either end when no visible model is selected: %s', async (initial) => {
+    await render(undefined, initial)
+    await open()
+    await press('ArrowDown')
+    expect(document.activeElement?.getAttribute('data-model-key')).toBe('local/fixed-high')
+    await press('Escape')
+    await open()
+    await press('ArrowUp')
+    expect(document.activeElement?.getAttribute('data-model-key')).toBe('p/reasoner')
+    expect(changed).not.toHaveBeenCalled()
+  })
+
+  it('continues from the selected favorite after opening with the mouse', async () => {
+    useModelFavorites.setState({ favorites: [fixed, other, reasoner].map(({ id, providerId }) => ({ id, providerId })) })
+    await render(undefined, { id: other.id, providerId: other.providerId })
+    await act(async () => trigger().dispatchEvent(new PointerEvent('pointerdown', {
+      button: 0, pointerType: 'mouse', bubbles: true, cancelable: true,
+    })))
+    expect(menu()).not.toBeNull()
+    await press('ArrowDown')
+    expect(document.activeElement?.getAttribute('data-model-key')).toBe('p/reasoner')
+    expect(changed).not.toHaveBeenCalled()
+  })
+
+  it('enters the filtered model list from search with Up and Down', async () => {
+    await render()
+    await open()
+    const input = document.querySelector<HTMLInputElement>('[aria-label="Search models"]')!
+    await act(async () => input.focus())
+    await press('ArrowDown')
+    expect(document.activeElement).toBe(document.querySelector('[data-model-key]'))
+    await act(async () => input.focus())
+    await press('ArrowUp')
+    expect(document.activeElement).toBe(Array.from(document.querySelectorAll('[data-model-key]')).at(-1))
+    await act(async () => {
+      input.focus()
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Reasoner')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await press('ArrowDown')
+    expect(document.activeElement).toBe(item('Reasoner', 'menuitem'))
+    await press('ArrowDown')
+    expect(document.activeElement).toBe(item('Reasoner', 'menuitem'))
+    await press('ArrowUp')
+    expect(document.activeElement).toBe(item('Reasoner', 'menuitem'))
+    await act(async () => {
+      input.focus()
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'no matching model')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await press('ArrowDown')
+    expect(document.activeElement).toBe(input)
+    await press('ArrowUp')
+    expect(document.activeElement).toBe(input)
+    expect(changed).not.toHaveBeenCalled()
+  })
+
+  it('keeps search focused while hovering models, stars and effort choices', async () => {
+    await render()
+    await open()
+    const input = document.querySelector<HTMLInputElement>('[aria-label="Search models"]')!
+    await act(async () => {
+      input.focus()
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Provider')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const hover = async (target: HTMLElement): Promise<void> => {
+      await act(async () => target.dispatchEvent(new PointerEvent('pointermove', {
+        pointerType: 'mouse', bubbles: true, cancelable: true,
+      })))
+      expect(document.activeElement).toBe(input)
+      await act(async () => target.dispatchEvent(new PointerEvent('pointerout', {
+        pointerType: 'mouse', bubbles: true, cancelable: true, relatedTarget: input,
+      })))
+      expect(document.activeElement).toBe(input)
+    }
+    await hover(item('Other', 'menuitem'))
+    expect(item('Max')).toBeTruthy()
+    await hover(document.querySelector<HTMLElement>('[data-favorite-key="p/other"]')!)
+    await hover(item('Default'))
+    await hover(item('Max'))
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(document.activeElement, 'Provider Other')
+      document.activeElement!.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(document.querySelectorAll('[data-model-key]')).toHaveLength(1)
+    expect(item('Other', 'menuitem')).toBeTruthy()
+    expect(changed).not.toHaveBeenCalled()
+    await click('Other', 'menuitem')
+    await click('Max')
+    expect(changed).toHaveBeenLastCalledWith({ id: other.id, providerId: other.providerId, variant: 'max' })
+  })
+
+  it('uses Tab to reach the favorite star and navigates away in one arrow press', async () => {
+    await render()
+    await open()
+    await browse('Reasoner')
+    await press('Tab')
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Star Reasoner (Provider)')
+    await press('Tab', true)
+    expect(document.activeElement).toBe(item('Reasoner', 'menuitem'))
+    await press('Tab')
+    await press('Enter')
+    await act(async () => { await new Promise((resolve) => requestAnimationFrame(resolve)) })
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Unstar Reasoner (Provider)')
+    expect(changed).not.toHaveBeenCalled()
+    await press('ArrowDown')
+    expect(document.activeElement).toBe(document.querySelectorAll('[data-model-key]')[1])
+  })
+
+  it('keeps search focused when the menu receives focus without changing the starting model', async () => {
+    await render(undefined, { id: other.id, providerId: other.providerId })
+    await open()
+    const input = document.querySelector<HTMLInputElement>('[aria-label="Search models"]')!
+    expect(document.activeElement).toBe(input)
+    await act(async () => menu()!.focus())
+    expect(document.activeElement).toBe(input)
+    await press('ArrowDown')
+    expect(document.activeElement?.getAttribute('data-model-key')).toBe('p/reasoner')
+    expect(changed).not.toHaveBeenCalled()
+  })
+
+  it.each(['model', 'star', 'effort'])('continues searching when %s has focus', async (target) => {
+    await render()
+    await open()
+    const input = document.querySelector<HTMLInputElement>('[aria-label="Search models"]')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Othe')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await browse('Other')
+    if (target === 'star') await press('Tab')
+    if (target === 'effort') await press('ArrowRight')
+    await press('r')
+    expect(document.activeElement).toBe(input)
+    expect(input.value).toBe('Other')
+    expect(document.querySelectorAll('[data-model-key]')).toHaveLength(1)
+    expect(changed).not.toHaveBeenCalled()
+    await press('Enter')
+    expect(changed).toHaveBeenLastCalledWith({ id: other.id, providerId: other.providerId })
+  })
+
+  it('edits the search with Space, Backspace and Delete after browsing', async () => {
+    await render()
+    await open()
+    const input = document.querySelector<HTMLInputElement>('[aria-label="Search models"]')!
+    await browse('Other')
+    await press('Tab')
+    await press(' ')
+    expect(input.value).toBe(' ')
+    expect(document.activeElement).toBe(input)
+    expect(getModelFavorites()).toEqual([])
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Other')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.setSelectionRange(5, 5)
+    })
+    await press('ArrowDown')
+    await press('Backspace')
+    expect(input.value).toBe('Othe')
+    await act(async () => input.setSelectionRange(0, 1))
+    await press('ArrowDown')
+    await press('Delete')
+    expect(input.value).toBe('the')
+    expect(document.activeElement).toBe(input)
+    expect(changed).not.toHaveBeenCalled()
+  })
+
+  it('pastes into search from a model and keeps Escape available', async () => {
+    await render()
+    await open()
+    await browse('Other')
+    const clipboardData = new DataTransfer()
+    clipboardData.setData('text/plain', 'Fixed')
+    await act(async () => document.activeElement!.dispatchEvent(new ClipboardEvent('paste', {
+      clipboardData, bubbles: true, cancelable: true,
+    })))
+    const input = document.querySelector<HTMLInputElement>('[aria-label="Search models"]')!
+    expect(document.activeElement).toBe(input)
+    expect(input.value).toBe('Fixed')
+    expect(document.querySelectorAll('[data-model-key]')).toHaveLength(1)
+    await press('Escape')
+    expect(menu()).toBeNull()
+    expect(changed).not.toHaveBeenCalled()
+  })
+
+  it.each(['ctrlKey', 'metaKey'])('can select and replace search from a model using %s+A', async (modifier) => {
+    await render()
+    await open()
+    const input = document.querySelector<HTMLInputElement>('[aria-label="Search models"]')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Other')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await browse('Other')
+    await act(async () => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'a', [modifier]: true, bubbles: true, cancelable: true,
+    })))
+    expect(document.activeElement).toBe(input)
+    expect(input.selectionStart).toBe(0)
+    expect(input.selectionEnd).toBe(5)
+    // Native typing now goes to the input; simulate its input event in happy-dom.
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Fixed')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(document.querySelectorAll('[data-model-key]')).toHaveLength(1)
+    expect(item('Fixed high', 'menuitem')).toBeTruthy()
+    expect(changed).not.toHaveBeenCalled()
+  })
+
+  it('focuses search for composition and does not select a model on composition Enter', async () => {
+    await render()
+    await open()
+    await browse('Reasoner')
+    await press('Process')
+    expect(document.activeElement).toBe(document.querySelector('[aria-label="Search models"]'))
+    await act(async () => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter', isComposing: true, bubbles: true, cancelable: true,
+    })))
+    expect(menu()).not.toBeNull()
     expect(changed).not.toHaveBeenCalled()
   })
 

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, type PointerEvent } from 'react'
 import { Check, ChevronRight, Search, Sparkles, Star } from 'lucide-react'
 import type { ChatModel, OpenCodeModelRef } from '@shared/types'
 import {
@@ -37,6 +37,7 @@ export function ModelPicker({
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [browsed, setBrowsed] = useState<string | null>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
   const effortRef = useRef<HTMLDivElement>(null)
   const modelListRef = useRef<HTMLDivElement>(null)
   const selectedInMenu = useRef(false)
@@ -69,6 +70,26 @@ export function ModelPicker({
   const hasEfforts = models.some((model) => model.variants?.length)
   const previewSelected = preview?.id === value?.id && preview?.providerId === value?.providerId
   const selectedVariant = previewSelected ? JSON.stringify(value?.variant ?? null) : ''
+
+  const preserveSearchFocus = (event: PointerEvent<HTMLElement>): void => {
+    // Radix focuses menu items on hover and the menu itself on pointer leave.
+    if (document.activeElement === searchRef.current) event.preventDefault()
+  }
+
+  const editSearch = (text: string, deletion?: 'Backspace' | 'Delete'): void => {
+    const input = searchRef.current
+    if (!input) return
+    let start = input.selectionStart ?? input.value.length
+    let end = input.selectionEnd ?? start
+    if (start === end) {
+      if (deletion === 'Backspace') start -= Array.from(input.value.slice(0, start)).at(-1)?.length ?? 0
+      if (deletion === 'Delete') end += Array.from(input.value.slice(end))[0]?.length ?? 0
+    }
+    input.focus()
+    input.setRangeText(text, start, end, 'end')
+    setQuery(input.value)
+    setBrowsed(null)
+  }
 
   const choose = (model: ChatModel, variant?: string): void => {
     selectedInMenu.current = true
@@ -116,6 +137,44 @@ export function ModelPicker({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
+        onFocusCapture={(event) => {
+          if (event.target !== event.currentTarget) return
+          // Start in search without letting Radix browse the first model on keyboard open.
+          event.preventDefault()
+          event.stopPropagation()
+          searchRef.current?.focus()
+        }}
+        onPointerMoveCapture={preserveSearchFocus}
+        onKeyDownCapture={(event) => {
+          const input = searchRef.current
+          if (!input || event.target === input) return
+          // Text always belongs to search, even after keyboard navigation or a click moves focus.
+          if (event.nativeEvent.isComposing || event.key === 'Process' || event.key === 'Dead') {
+            input.focus()
+            event.stopPropagation()
+            return
+          }
+          if ((event.ctrlKey || event.metaKey) && !event.getModifierState('AltGraph')) {
+            if ((event.ctrlKey || event.metaKey) && !event.altKey && ['a', 'c', 'v', 'x'].includes(event.key.toLowerCase())) {
+              input.focus()
+              event.stopPropagation()
+              if (event.key.toLowerCase() === 'a') { event.preventDefault(); input.select() }
+            }
+            return
+          }
+          const printable = Array.from(event.key).length === 1
+          const deletion = event.key === 'Backspace' || event.key === 'Delete' ? event.key : undefined
+          if (!printable && !deletion) return
+          event.preventDefault()
+          event.stopPropagation()
+          editSearch(printable ? event.key : '', deletion)
+        }}
+        onPasteCapture={(event) => {
+          if (event.target === searchRef.current) return
+          event.preventDefault()
+          event.stopPropagation()
+          editSearch(event.clipboardData.getData('text/plain'))
+        }}
         onEscapeKeyDown={() => { escapedMenu.current = true }}
         onInteractOutside={() => { selectedInMenu.current = false }}
         onCloseAutoFocus={(event) => {
@@ -132,6 +191,7 @@ export function ModelPicker({
         <div className="relative shrink-0 border-b border-line p-1.5">
           <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-subtle" />
           <input
+            ref={searchRef}
             autoFocus
             aria-label="Search models"
             placeholder="Search models"
@@ -139,13 +199,58 @@ export function ModelPicker({
             onChange={(event) => { setQuery(event.target.value); setBrowsed(null) }}
             // Typing belongs to the field, rather than the menu's type-ahead.
             onKeyDown={(event) => {
-              if (event.key !== 'Escape' && event.key !== 'ArrowDown' && event.key !== 'ArrowUp') event.stopPropagation()
+              if (event.nativeEvent.isComposing) { event.stopPropagation(); return }
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                event.stopPropagation()
+                Array.from(modelListRef.current?.querySelectorAll<HTMLElement>('[data-model-key]') ?? [])
+                  .find((item) => preview && item.dataset.modelKey === modelKey(preview))?.click()
+                return
+              }
+              if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault()
+                event.stopPropagation()
+                const rows = Array.from(modelListRef.current?.querySelectorAll<HTMLElement>('[data-model-key]') ?? [])
+                const key = browsed ?? (value ? modelKey(value) : null)
+                const index = rows.findIndex((row) => row.dataset.modelKey === key)
+                const next = index < 0 ? (event.key === 'ArrowDown' ? 0 : rows.length - 1)
+                  : (index + (event.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length
+                rows[next]?.focus()
+                return
+              }
+              if (event.key !== 'Escape') event.stopPropagation()
             }}
             className="h-7 w-full rounded bg-panel pl-7 pr-2 text-xs text-fg outline-none placeholder:text-fg-subtle"
           />
         </div>
         <div className={cn('min-h-0 overflow-y-auto', hasEfforts && 'grid grid-cols-[minmax(0,1fr)_180px] max-[480px]:grid-cols-1')}>
-          <div ref={modelListRef} className="max-h-80 overflow-y-auto p-1" data-testid="chat-model-list">
+          <div
+            ref={modelListRef}
+            // Each row has two Radix items. Handle navigation before its roving focus stops on the star.
+            onKeyDownCapture={(event) => {
+              if (event.ctrlKey || event.altKey || event.metaKey) return
+              const target = (event.target as HTMLElement).closest<HTMLElement>('[data-model-key], [data-favorite-key]')
+              if (!target) return
+              if (event.key === 'Tab') {
+                event.preventDefault()
+                event.stopPropagation()
+                target.parentElement?.querySelector<HTMLElement>(target.hasAttribute('data-model-key')
+                  ? '[data-favorite-key]' : '[data-model-key]')?.focus()
+                return
+              }
+              if (event.shiftKey || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+              event.preventDefault()
+              event.stopPropagation()
+              const rows = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[data-model-key]'))
+              const key = target.dataset.modelKey ?? target.dataset.favoriteKey
+              const index = rows.findIndex((row) => row.dataset.modelKey === key)
+              const next = event.key === 'Home' ? 0 : event.key === 'End' ? rows.length - 1
+                : index + (event.key === 'ArrowDown' ? 1 : -1)
+              rows[(next + rows.length) % rows.length]?.focus()
+            }}
+            className="max-h-80 overflow-y-auto p-1"
+            data-testid="chat-model-list"
+          >
             {groups.length === 0 && <p className="px-2 py-1.5 text-xs text-fg-subtle">No models match.</p>}
             {groups.map((group) => (
               <div key={group.key} role="group" aria-label={group.label} className={cn(group.favorite && 'mb-1 border-b border-line pb-1')}>
@@ -161,6 +266,7 @@ export function ModelPicker({
                       <DropdownMenuItem
                         onFocus={() => setBrowsed(modelKey(model))}
                         onPointerMove={() => setBrowsed(modelKey(model))}
+                        onPointerLeave={preserveSearchFocus}
                         onKeyDown={(event) => {
                           if (event.key !== 'ArrowRight' || !model.variants?.length) return
                           event.preventDefault()
@@ -188,6 +294,7 @@ export function ModelPicker({
                         onCheckedChange={() => star(model)}
                         onFocus={() => setBrowsed(modelKey(model))}
                         onPointerMove={() => setBrowsed(modelKey(model))}
+                        onPointerLeave={preserveSearchFocus}
                         aria-label={`${starred ? 'Unstar' : 'Star'} ${model.name} (${model.providerName})`}
                         title={starred ? 'Remove from favorites' : 'Add to favorites'}
                         data-favorite-key={modelKey(model)}
@@ -220,12 +327,12 @@ export function ModelPicker({
               </div>
               {preview?.variants?.length ? (
                 <DropdownMenuRadioGroup value={selectedVariant} aria-label={`Reasoning effort for ${preview.name}`} className="max-h-64 overflow-y-auto">
-                  <DropdownMenuRadioItem value="null" onSelect={() => choose(preview)} className="items-start text-xs">
+                  <DropdownMenuRadioItem value="null" onSelect={() => choose(preview)} onPointerLeave={preserveSearchFocus} className="items-start text-xs">
                     <span>Default<span className="mt-0.5 block text-[10px] text-fg-subtle">Use model settings</span></span>
                   </DropdownMenuRadioItem>
                   <div className="mx-2 my-1 h-px bg-line" />
                   {preview.variants.map((variant) => (
-                    <DropdownMenuRadioItem key={variant} value={JSON.stringify(variant)} onSelect={() => choose(preview, variant)} title={variant} className="text-xs">
+                    <DropdownMenuRadioItem key={variant} value={JSON.stringify(variant)} onSelect={() => choose(preview, variant)} onPointerLeave={preserveSearchFocus} title={variant} className="text-xs">
                       <span className="truncate">{modelVariantLabel(variant)}</span>
                     </DropdownMenuRadioItem>
                   ))}

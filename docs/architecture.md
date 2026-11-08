@@ -498,6 +498,16 @@ Each model row has a star control. Starred models appear once in a Favorites sec
 provider groups, sorted by model name and labeled with their provider. Favorites follow the search
 and show only models available in the current project; unavailable favorites are remembered for
 when they return. Starring keeps the menu open and does not change the selected model or effort.
+Hovering choices previews them without taking focus from search, so typing can continue.
+Typing, Space, Backspace, Delete and paste always edit search, even when a model, star, effort
+choice or the menu itself has focus; the menu's letter-based type-ahead is bypassed. Enter in
+search selects the previewed model. Enter still selects a focused model or effort or toggles a star.
+Up and Down move directly between models, skipping the star controls and wrapping from either
+end to the other; Home and End jump to the first and last visible model. Opening keeps the
+selected model as the starting point. From search, arrows continue from the last-browsed model
+or the selection; if neither is visible, Down enters the first result and Up the last.
+Tab or Shift+Tab moves between a model and its star, where Enter toggles the favorite.
+Right moves from a model to its reasoning effort choices; Left returns to the model.
 Favorites apply to the provider/model pair, independently of effort, and are kept across restarts in
 the renderer's `localStorage` (`mde.model-favorites`).
 Its menu includes a reasoning-effort pane when OpenCode offers model variants. Browsing a model
