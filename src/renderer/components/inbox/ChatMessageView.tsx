@@ -17,15 +17,16 @@ function BubbleText({ text }: { text: string }): JSX.Element {
   const segments = useMemo(() => splitQuotes(text), [text])
   const [only] = segments
   // Without a quote, or with only an empty one, the text is shown as it is.
-  if (segments.length === 0 || (segments.length === 1 && only?.kind === 'text')) return <>{text}</>
+  // What the person wrote is what the search looks through; the files and skills around it are not text of theirs.
+  if (segments.length === 0 || (segments.length === 1 && only?.kind === 'text')) return <div data-chat-searchable>{text}</div>
   return (
-    <>
+    <div data-chat-searchable>
       {segments.map((segment, index) =>
         segment.kind === 'quote'
           ? <ChatQuoteCard key={index} text={segment.text} />
           : <span key={index} className="block">{segment.text}</span>,
       )}
-    </>
+    </div>
   )
 }
 

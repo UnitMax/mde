@@ -667,6 +667,21 @@ scrolled up (more than 80 px from the newest message), a **Scroll to bottom** bu
 message box; it takes the reader to the newest message and following new output again. In a pane narrower than 50 rem the conversation and the message box keep a wider
 right margin while the rail is there, so that it does not touch the text.
 
+**Find in a thread.** Ctrl+F (Cmd+F on a Mac) opens a search bar over the top right of a GUI
+thread (`ChatFindBar`, with the pure logic in `lib/chat-find.ts`), from the message box or anywhere
+else in the thread's pane but not from inside a dialog. It searches the text of the user's messages
+and the agent's replies, ignoring case; reasoning, tool calls and command output are not searched.
+The search reads what is drawn: the elements marked `data-chat-searchable` are walked for their text
+nodes, so a match can run across Markdown formatting, and text that is hidden (a collapsed step in
+compact mode) is not found. Matches are painted with the CSS Custom Highlight API (`::highlight` in
+`index.css`), the current one apart from the rest, so the message DOM is not touched. A new query
+starts at the match nearest the top of the view (the newest one when the view is at the end);
+Enter and Shift+Enter, or the arrow buttons, step through the matches around the ends and scroll
+the current one into view; Escape closes the bar and gives the focus back to the message box. While
+there is a query the earlier messages that are not loaded yet are loaded, so that the whole thread
+is searched, and the matches are found again as messages stream in. Text selected in the
+conversation when the bar is opened becomes the query. Nothing is stored.
+
 **Steering or queueing a message.** With the agent working and something typed, the round send
 button grows into a pill (`ChatSendButton`): an arrow and **Steer**, and a chevron that opens a menu
 with **Steer** (the agent reads it at its next step) and **Queue** (sent when the agent is done).

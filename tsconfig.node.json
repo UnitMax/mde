@@ -111,6 +111,7 @@
     "src/renderer/lib/composer-size.ts",
     "src/renderer/lib/input-modality.ts",
     "src/renderer/lib/chat-timeline.ts",
+    "src/renderer/lib/chat-find.ts",
     "src/renderer/lib/duration.ts",
     "src/renderer/lib/diff.ts",
     "src/renderer/lib/diff-highlight.ts",

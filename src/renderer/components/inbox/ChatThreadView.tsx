@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { AlertTriangle, FoldVertical, LoaderCircle, RefreshCw } from 'lucide-react'
 import type { ChatMessage, InboxThread, OpenCodeModelRef } from '@shared/types'
 import { ChatAside } from '@/components/inbox/ChatAside'
+import { ChatFindBar } from '@/components/inbox/ChatFindBar'
 import { ChatBackgroundTasks } from '@/components/inbox/ChatBackgroundTasks'
 import { ComposerDock } from '@/components/inbox/ComposerDock'
 import { ModelQuickSwitch } from '@/components/inbox/ModelQuickSwitch'
@@ -81,6 +82,10 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const contentRef = useRef<HTMLDivElement>(null)
   const composerSlot = useRef<HTMLDivElement>(null)
   const composer = useRef<ChatComposerHandle>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
+  // The search bar (Ctrl+F). Asking again while it is open gives its field the focus; a selection in the conversation becomes the query.
+  const [find, setFind] = useState<{ query: string; signal: number } | null>(null)
+  useEffect(() => setFind(null), [thread.id])
   // Text selected in the conversation goes into the message box as a quote, from the button by the selection or the right-click menu.
   const quote = useCallback((text: string) => composer.current?.quote(text), [])
   const stickRef = useRef(true)
@@ -186,6 +191,30 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
       })
     }
   }, [state?.older, state?.loadingOlder, loadOlder, thread.id])
+
+  // Ctrl+F (Cmd+F on a Mac) searches this conversation, from the message box or anywhere else in the thread's pane.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key.toLowerCase() !== 'f' || !(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.isComposing || event.defaultPrevented) return
+      const target = event.target instanceof Element ? event.target : null
+      if (target?.closest('[role="dialog"], [role="alertdialog"]')) return
+      const root = rootRef.current
+      const active = document.activeElement
+      if (!root || (active && active !== document.body && !root.contains(active))) return
+      event.preventDefault()
+      event.stopPropagation()
+      const selected = window.getSelection()
+      const text = selected && !selected.isCollapsed && scrollRef.current?.contains(selected.anchorNode) ? selected.toString().trim() : ''
+      setFind((current) => ({ query: text && !text.includes('\n') && text.length <= 200 ? text : '', signal: (current?.signal ?? 0) + 1 }))
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [])
+  const closeFind = useCallback(() => {
+    setFind(null)
+    requestAnimationFrame(() => composerSlot.current?.querySelector<HTMLElement>('[data-testid="chat-input"] .cm-content')?.focus())
+  }, [])
+  const loadEarlier = useCallback(() => void loadOlder(thread.id), [loadOlder, thread.id])
 
   const requests = state?.requests
   const pending = state?.pending
@@ -354,6 +383,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   return (
     <McpServerNamesContext.Provider value={mcpNames}>
     <div
+      ref={rootRef}
       className="@container flex min-h-0 flex-1 flex-col"
       data-testid="chat-thread"
       style={{ '--inbox-code-font': codeViewerFontFamily(codeFamily) } as CSSProperties}
@@ -454,6 +484,17 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
       <ChatTimeline entries={prompts} scrollRef={scrollRef} onJump={jumpToPrompt} />
       <ChatQuoteButton transcriptRef={scrollRef} onQuote={quote} />
       {away && <ChatScrollToBottom onClick={scrollToBottom} />}
+      {find && (
+        <ChatFindBar
+          scrollRef={scrollRef}
+          seed={find.query}
+          focusSignal={find.signal}
+          moreToLoad={Boolean(state?.older) && !state?.error}
+          loadingMore={Boolean(state?.loadingOlder)}
+          onLoadMore={loadEarlier}
+          onClose={closeFind}
+        />
+      )}
       </div>
       <div ref={composerSlot} className={cn('mx-auto w-full max-w-3xl shrink-0 px-6 pb-5 pt-2', railGutter)}>
         {goal && <ChatGoalCard key={goal.id} goal={goal} phase={phase} running={running} onAction={(action) => setGoal(thread.id, { action })} />}

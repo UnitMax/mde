@@ -64,6 +64,8 @@ export const ChatMarkdown = memo(function ChatMarkdown({
         variant === 'reasoning' ? 'text-[12.5px] text-fg-muted' : 'text-[14px] text-fg',
       )}
       onClick={onClick}
+      // The agent's replies are searched; its reasoning is not.
+      data-chat-searchable={variant === 'message' ? '' : undefined}
     >
       <EditorContent editor={editor} />
     </div>
