@@ -21,6 +21,8 @@ const mocks = vi.hoisted(() => ({
   runWslCommand: vi.fn()
 }))
 
+// Filter discovery is tested against real Git and in git-filters.test.ts.
+vi.mock('../src/main/git-filters', () => ({ gitFilterSafetyArgs: async () => [] }))
 vi.mock('../src/main/exec-host', () => ({ execFile: mocks.execFile }))
 vi.mock('../src/main/git-executable', () => ({
   resolveWindowsGitExecutable: mocks.resolveWindowsGitExecutable
@@ -36,7 +38,7 @@ function result(stdout = '', stderr = '', code = 0): GitCommandResult {
  * able to change without a deliberate test update.
  */
 const safetyArgs = [
-  '--attr-source=4b825dc642cb6eb9a060e54bf8d69288fbee4904',
+  '--no-pager',
   '--no-optional-locks',
   '-c',
   'core.fsmonitor=false',
@@ -49,12 +51,33 @@ const safetyArgs = [
   '-c',
   'credential.helper=',
   '-c',
-  'protocol.ext.allow=never'
+  'protocol.allow=never',
+  '-c',
+  'protocol.ext.allow=never',
+  '-c',
+  'submodule.recurse=false',
+  '-c',
+  'diff.ignoreSubmodules=all',
+  '-c',
+  'diff.submodule=short',
+  '-c',
+  'status.submoduleSummary=false',
+  '-c',
+  'maintenance.auto=false',
+  '-c',
+  'gc.auto=0',
 ]
 
 function hardened(...args: string[]): string[] {
   return [...safetyArgs, ...args]
 }
+
+const wslGit = (...args: string[]): string[] => [
+  '/usr/bin/env', '-u', 'GIT_CONFIG',
+  'GIT_OPTIONAL_LOCKS=0', 'GIT_TERMINAL_PROMPT=0', 'GIT_ASKPASS=',
+  'GIT_NO_LAZY_FETCH=1', 'GIT_ALLOW_PROTOCOL=', 'GIT_PROTOCOL_FROM_USER=0', 'LC_ALL=C',
+  'git', ...args,
+]
 
 const nativeSession = {
   id: 'native-1',
@@ -224,7 +247,7 @@ describe('Git command transport and status parsing', () => {
     expect(calls).toHaveLength(5)
     expect(calls.every((call) => call.distro === 'Ubuntu-24.04')).toBe(true)
     expect(calls.every((call) => call.cwd === '/home/me/src/app')).toBe(true)
-    expect(calls.every((call) => call.command[0] === 'git')).toBe(true)
+    expect(calls.every((call) => call.command[0] === '/usr/bin/env' && call.command.includes('git'))).toBe(true)
   })
 
   it('preserves Git separators and hostile filenames as direct arguments', async () => {
@@ -236,7 +259,7 @@ describe('Git command transport and status parsing', () => {
 
     expect(mocks.runWslCommand).toHaveBeenCalledWith(
       'Ubuntu-24.04',
-      ['git', ...hardened('--no-pager', 'diff', 'HEAD', '--', filename)],
+      wslGit(...hardened('--no-pager', 'diff', 'HEAD', '--', filename)),
       { cwd: '/home/me/src/app' }
     )
   })
@@ -594,7 +617,7 @@ describe('Git command hardening (SEC-008)', () => {
     expect(calls).not.toHaveLength(0)
     for (const args of calls) {
       expect(args.slice(0, safetyArgs.length)).toEqual(safetyArgs)
-      expect(args.indexOf('--no-pager')).toBeGreaterThanOrEqual(safetyArgs.length)
+      expect(args[0]).toBe('--no-pager')
     }
   })
 
@@ -617,8 +640,28 @@ describe('Git command hardening (SEC-008)', () => {
     expect(environment).toMatchObject({
       GIT_OPTIONAL_LOCKS: '0',
       GIT_TERMINAL_PROMPT: '0',
-      GIT_ASKPASS: ''
+      GIT_ASKPASS: '',
+      GIT_NO_LAZY_FETCH: '1',
+      GIT_ALLOW_PROTOCOL: '',
+      GIT_PROTOCOL_FROM_USER: '0',
     })
+  })
+
+  it('does not let GIT_CONFIG redirect only the filter-inspection command', async () => {
+    vi.stubEnv('GIT_CONFIG', '/fixture/other-config')
+    vi.stubEnv('git_config', '/fixture/other-config')
+    vi.stubEnv('git_allow_protocol', 'https')
+    try {
+      mocks.execFile.mockImplementation(
+        (_file: string, _args: string[], options: { env: NodeJS.ProcessEnv }, callback: (error: null, stdout: string, stderr: string) => void) => {
+          expect(options.env.GIT_CONFIG).toBeUndefined()
+          expect(options.env.git_config).toBeUndefined()
+          expect(options.env.git_allow_protocol).toBeUndefined()
+          callback(null, '', '')
+        }
+      )
+      await createGitCommandRunner(nativeSession, 'linux')(['status'])
+    } finally { vi.unstubAllEnvs() }
   })
 
   it('prefixes WSL Git calls with the same safety options', async () => {
@@ -628,52 +671,9 @@ describe('Git command hardening (SEC-008)', () => {
 
     expect(mocks.runWslCommand).toHaveBeenCalledWith(
       'Ubuntu-24.04',
-      ['git', ...hardened('--no-pager', 'status')],
+      wslGit(...hardened('--no-pager', 'status')),
       { cwd: '/home/me/src/app' }
     )
-  })
-
-  it('retries without attr-source when Git rejects it, then remembers that repository', async () => {
-    const calls: string[][] = []
-    mocks.execFile.mockImplementation(
-      (_file: string, args: string[], _options: unknown, callback: (error: Error | null, stdout: string, stderr: string) => void) => {
-        calls.push(args)
-        if (args.includes(safetyArgs[0] as string)) {
-          const failure = Object.assign(new Error('git failed'), { code: 128 })
-          callback(failure, '', 'fatal: bad --attr-source or GIT_ATTR_SOURCE\n')
-          return
-        }
-        callback(null, 'true\n', '')
-      }
-    )
-
-    const legacySession = { ...nativeSession, path: '/workspace/legacy-git' }
-    const run = createGitCommandRunner(legacySession, 'linux')
-
-    await expect(run(['--no-pager', 'status'])).resolves.toMatchObject({ code: 0 })
-    await expect(run(['--no-pager', 'status'])).resolves.toMatchObject({ code: 0 })
-
-    expect(calls).toHaveLength(3)
-    expect(calls[1]).toEqual(hardened('--no-pager', 'status').slice(1))
-    expect(calls[2]).toEqual(hardened('--no-pager', 'status').slice(1))
-  })
-
-  it('does not drop attr-source when a command fails for an unrelated reason', async () => {
-    const calls: string[][] = []
-    mocks.execFile.mockImplementation(
-      (_file: string, args: string[], _options: unknown, callback: (error: Error | null, stdout: string, stderr: string) => void) => {
-        calls.push(args)
-        const failure = Object.assign(new Error('git failed'), { code: 128 })
-        callback(failure, '', 'fatal: not a git repository (or any of the parent directories): .git\n')
-      }
-    )
-
-    const run = createGitCommandRunner({ ...nativeSession, path: '/workspace/plain' }, 'linux')
-    await run(['--no-pager', 'status'])
-    await run(['--no-pager', 'status'])
-
-    expect(calls).toHaveLength(2)
-    expect(calls.every((args) => args[0] === safetyArgs[0])).toBe(true)
   })
 })
 
@@ -720,7 +720,7 @@ describe('Git branch listing', () => {
 })
 
 describe('Git mutation runner', () => {
-  it('keeps every safety option except attr-source, so a checkout honours .gitattributes', async () => {
+  it('keeps every safety option and the longer timeout for worktree checkout', async () => {
     const calls: Array<{ file: string; args: string[]; options: { cwd: string; timeout: number } }> = []
     mocks.execFile.mockImplementation(
       (file: string, args: string[], options: { cwd: string; timeout: number }, callback: (error: null, stdout: string, stderr: string) => void) => {
@@ -735,7 +735,7 @@ describe('Git mutation runner', () => {
     expect(calls).toHaveLength(1)
     const [call] = calls
     expect(call?.file).toBe('git')
-    expect(call?.args).toEqual([...safetyArgs.slice(1), 'worktree', 'add', '--', '/workspace/wt', 'refs/heads/main'])
+    expect(call?.args).toEqual([...safetyArgs, 'worktree', 'add', '--', '/workspace/wt', 'refs/heads/main'])
     expect(call?.args.some((arg) => arg.startsWith('--attr-source'))).toBe(false)
     expect(call?.options.cwd).toBe('/workspace/native')
     expect(call?.options.timeout).toBe(120_000)
@@ -749,7 +749,7 @@ describe('Git mutation runner', () => {
 
     expect(mocks.runWslCommand).toHaveBeenCalledWith(
       'Ubuntu-24.04',
-      ['git', ...safetyArgs.slice(1), 'worktree', 'remove', '--', '/home/me/.mde/worktrees/app-01234567/abcd1234'],
+      wslGit(...safetyArgs, 'worktree', 'remove', '--', '/home/me/.mde/worktrees/app-01234567/abcd1234'),
       { cwd: '/home/me/src/app', timeoutMs: 90_000 }
     )
   })

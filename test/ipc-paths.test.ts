@@ -621,6 +621,7 @@ describe('terminal Git IPC', () => {
       _options: { cwd?: string } = {}
     ) => {
       if (command[0] === 'test') return { stdout: '', stderr: '', code: 0 }
+      if (command.includes('config')) return { stdout: '', stderr: '', code: 1 }
       if (command.includes('--is-inside-work-tree')) return { stdout: 'true\n', stderr: '', code: 0 }
       if (command.includes('status') || command.includes('diff')) return { stdout: '', stderr: '', code: 0 }
       if (command.includes('branch')) return { stdout: 'feature/live\n', stderr: '', code: 0 }
@@ -638,9 +639,9 @@ describe('terminal Git IPC', () => {
 
     expect(terminalInfo).toHaveBeenCalledWith('pane-1')
     const gitCalls = wslDistrosMock.runWslCommand.mock.calls.filter(
-      ([, command]) => command[0] === 'git'
+      ([, command]) => command[0] === '/usr/bin/env' && command.includes('git')
     )
-    expect(gitCalls).toHaveLength(6)
+    expect(gitCalls).toHaveLength(8)
     expect(gitCalls.every(([, , options]) => options.cwd === '/home/me/current')).toBe(true)
   })
 

@@ -86,6 +86,8 @@ describeUntrustedRepository('Automatic Git queries against an untrusted working 
       { flag: 'a' }
     )
     await writeFile(join(repository, '.gitattributes'), '*.txt diff=hostile filter=hostile\n')
+    // This source outranks --attr-source and used to bypass the hardening.
+    await writeFile(join(repository, '.git', 'info', 'attributes'), '*.txt diff=hostile filter=hostile\n')
 
     await writeFile(join(repository, 'tracked.txt'), 'one\ntwo\n')
     await writeFile(join(repository, 'untracked.txt'), 'new\n')

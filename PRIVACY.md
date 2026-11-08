@@ -4,11 +4,17 @@ This document describes the privacy and network behavior of the released MDE app
 
 ## Summary
 
-MDE is local-only for its own application traffic. The released application contains no telemetry, analytics, crash reporting, automatic update checks, or internet service connections.
+MDE contains no telemetry, analytics, remote crash uploader, automatic update checks, or direct
+model-provider or remote MCP client. Its application HTTP client connects to OpenCode's loopback
+service. This does not guarantee that using MDE produces no external traffic: MDE invokes Git,
+shells and OpenCode, and reads paths through the operating system. MDE's Git calls now deny remote transports and
+suppress external filters; the network section explains the remaining boundaries.
 
 ## What MDE stores locally
 
-MDE stores data only on the local machine:
+MDE writes the following data to filesystem and Chromium application storage. Its actual location
+depends on the operating system and account configuration; mounted, redirected, synchronized or
+backed-up locations can place copies elsewhere. These stores are not encrypted by MDE.
 
 - `workspace.json` under Electron's user-data directory: terminal session names and order,
   platform and distro details, shell overrides, tab and terminal layout, and To Do projects
@@ -90,9 +96,12 @@ OpenCode does in a terminal.
 The Inbox's search over all threads (Ctrl+Shift+F) is the exception to opening a thread to read it: while
 the search overlay is open (and for a while after, until the threads change), the main process reads the
 user and assistant text of every thread's messages from the service, newest thread first, and keeps that
-text in memory so that searching is fast. Tool calls, reasoning and command output are not read into it.
-It is never written to disk or logged, is sent only to the renderer as short snippets of the matches, and
-is dropped when a thread is removed or MDE quits.
+text in memory so that searching is fast. Tool calls, reasoning and command output are not retained in
+the search index, although message pages containing them reach the main process before it extracts
+user and assistant text. The index is never intentionally written to disk or logged, is sent only to
+the renderer as short snippets of the matches, and is dropped when a thread is removed or MDE quits.
+Once started, indexing can continue after the search overlay closes; the main process caches the text
+for later searches.
 
 Subagent cards also read the selected model and variant from their child sessions through the same
 local service. These details stay in memory; MDE does not read the child conversation's messages
@@ -157,16 +166,19 @@ distro, on Windows) reads and writes OpenCode's own global configuration file: `
 the file when you open the editor and writes it only when you press Save, and then only the permission
 rules, the custom OpenAI-compatible providers it manages and the list of disabled providers; the rest of
 the file, comments included, is kept as it was; the write goes through a temporary file next to it,
-which replaces the file and is removed if the write fails. The file can hold credentials that you or OpenCode put
-there. MDE does not copy it, log it, back it up or store it anywhere else. The main process reads the
+which replaces the file. Cleanup of a failed temporary write is best effort; a crash or failure before
+rename can leave a temporary copy. The file can hold credentials that you or OpenCode put
+there. Apart from the temporary write, MDE keeps no separate copy or backup and does not log the file.
+The main process reads the
 whole file and gives the window the parts the editor manages (the rules, the providers it manages, the
 ids and names of other providers, and the names of older settings), which stay in memory until you
 close the editor. The read-only Source tab also shows the rest of the file as it will be after saving, so
 that you can check the change; there, the value of a setting whose name contains `api key`, `token`,
-`secret`, `password`, `authorization` or `credential` is replaced by `(hidden)` unless it is an
-`{env:...}` or `{file:...}` reference. That matches names only, so a secret kept under another name
-would be visible in that tab. The editor asks for the name of an environment variable that holds a
-provider's key, never for the key, and writes no key. It lists providers by asking the same local service
+`secret`, `password`, `authorization` or `credential` is replaced by `(hidden)` for ordinary quoted
+string values unless it is an `{env:...}` or `{file:...}` reference. This is a text-matching heuristic:
+JSON-escaped key names, array/object values and secrets under other names can remain visible. The
+Source tab must not be treated as a fully sanitized copy for sharing. The editor asks for the name of
+an environment variable that holds a provider's key, never for the key, and writes no new key. It lists providers by asking the same local service
 which ones it has (ids and names only). Saving makes no network request: OpenCode notices the changed
 file itself, and only contacts a provider you added when you use one of its models, as it does in a
 terminal. MDE does not contact the address of a custom provider.
@@ -210,7 +222,9 @@ worktree branch and name if a new worktree was chosen) and when it last changed;
 in its sidebar and marks the threads that have an unsent message. Removing an attachment, successfully sending its draft, deleting a new-thread
 draft from the sidebar, or removing a thread deletes the relevant copies. Removing a folder from the
 Inbox leaves its drafts. Startup removes orphaned copies and new-thread drafts with nothing in them. Valid drafts do not expire automatically. Saved attachment
-contents are capped at 200 MiB total, with 10 files and 20 MiB per draft.
+contents are capped at 200 MiB total, with 10 files and 20 MiB per draft. File removal is best effort;
+failed deletion, abrupt shutdown, filesystem snapshots and backups can retain copies. These limits
+apply to attachment bytes; there is no aggregate count or text quota for saved new-thread drafts.
 
 Only sending a message transfers attachments to the loopback OpenCode service, as native inline
 file attachments. OpenCode stores them and may forward their contents to the chosen provider.
@@ -220,39 +234,105 @@ and small raster thumbnails in memory; MDE does not persist conversation attachm
 
 ## The clipboard
 
-The Inbox right-click menus write to the system clipboard only when you choose Copy, Cut, or one of
-the "Copy …" items, and the terminal does the same when you copy a selection or choose Copy in its menu. The terminal menu's Paste asks the operating system to paste the clipboard into the terminal, as Ctrl+V does. Its Send to current thread and Send to new thread do not use the clipboard: they place the selected text in a message box (or a thread's terminal) as an unsent draft. Paste asks the
-operating system to paste the clipboard into the message box. MDE does not read, store, or send the
-clipboard's contents anywhere itself; what you paste is an unsent draft like any other text you type.
+The Inbox right-click menus write to the system clipboard when you choose Copy, Cut, or one of the
+"Copy …" items. The terminal also writes copied selections, and its OSC 52 support can accept a
+terminal program's clipboard-write request subject to the configured policy and interaction checks.
+Clipboard history managers and operating-system clipboard synchronization can retain or transmit copies.
+
+Paste asks the operating system to paste into the focused terminal or message box. The renderer's
+paste handlers can read that content; pasted Inbox text and images can be saved in the draft store,
+and sending transfers them to OpenCode. Terminal paste transfers text to the foreground terminal
+program, which may execute it or use the network. There is no periodic clipboard polling, but the
+paste bridge does not enforce a user gesture independently of the renderer. Send to current thread
+and Send to new thread place selected terminal text into a message box or terminal without using the
+system clipboard; text placed in an Inbox message box can become a persistent unsent draft.
 
 ## Network behavior in the released application
 
 In Sessions mode, the Files sidebar reads the selected terminal’s current directory.
-Each terminal header reads local Git metadata for that
-terminal’s checkout; opening it reads changes and diffs there. Directory reports update the local
-per-terminal records described above. File previews and Git snapshots are held in memory and are
+Each terminal header reads Git metadata for that terminal’s checkout. The Inbox Changes tab reads
+changes and diffs on demand. Directory reports update the local
+per-terminal records described above. File previews and Git results are held in memory and are
 not added to the saved workspace. Inbox file browsing
 continues to use the selected thread or folder.
 
-MDE does not make automatic network requests. It reads local files and invokes local commands to support terminal sessions and file actions: Git for repository status (and, when you start an Inbox conversation in a new worktree or delete one with its worktree, to create or remove that worktree; MDE never runs `git fetch` or any other Git network command), `wsl.exe` on Windows, and the configured OpenCode executable to find the OpenCode background service.
+MDE reads files and invokes commands to support terminal sessions and file actions: Git for
+repository status/diffs and worktree creation/removal, `wsl.exe` on Windows, and the configured
+OpenCode executable to find the background service. These helpers are relevant to network behavior:
 
-The Inbox makes HTTP requests, and holds an event stream open, to the OpenCode background service on a loopback address (`127.0.0.1`, `localhost` or `[::1]`) only; MDE refuses any other address in the service's state file. On Windows these reach the service inside WSL through WSL's localhost forwarding. These connections support Inbox options, conversations and background thread activity in either GUI or Terminal mode. Any internet traffic that follows, such as calls to a model provider, is made by OpenCode, not by MDE.
+- Git normally can fetch missing objects during apparently local operations and execute configured
+  clean/smudge/process filters, including Git LFS downloads. MDE's Git calls deny all transport
+  protocols and disable lazy fetching where supported. They also inspect effective filter key names
+  before converting operations and disable those driver commands for the invocation. Missing objects
+  produce an error rather than a download. Branch listing uses local metadata and includes cached
+  remote-tracking branches; it does not refresh them.
+- Worktree checkout keeps Git's built-in line-ending conversion, but refuses a checkout that selects
+  a configured external filter instead of running that program or silently skipping needed conversion.
+  Create such worktrees in a terminal, then add their folders to Inbox. Removal can likewise refuse
+  when a configured clean filter is needed. Read-only diffs compare unfiltered contents, which can
+  differ from a terminal Git query on filter-managed files. Submodule recursion/diffs and automatic
+  maintenance are disabled in MDE-owned calls. These protections apply inside WSL as well as natively.
+  Configuration is inspected on each operation, but separate subprocesses cannot guarantee atomicity
+  against concurrent malicious changes to Git configuration.
+- Network shares, mapped drives and mounted filesystems can cause OS network access and
+  authentication when paths are validated, listed, read or polled. MDE does not enforce local-only
+  filesystem locations.
 
-MDE also disables Chromium's DNS-over-HTTPS upgrade at startup, with `app.configureHostResolver({ secureDnsMode: 'off' })`. Chromium's default mode would otherwise route name resolution through a DoH provider whenever the system resolver is a recognized one, without any application code asking it to. Because MDE resolves no hostnames of its own, the result is no DNS traffic rather than a fallback to plaintext DNS, and the statement above holds regardless of how the user's machine is configured to resolve names.
+The Inbox's application HTTP client makes requests and holds an event stream open to the OpenCode
+background service. MDE accepts only a loopback address (`127.0.0.1`, `localhost` or `[::1]`) with an
+explicit port in the service state file and refuses redirects. On Windows these reach WSL through
+localhost forwarding. These connections support Inbox options, conversations and background thread
+activity in GUI and Terminal mode; service startup can occur during options/configuration reads or
+restored thread activity. Provider and MCP connections resulting from these OpenCode operations are
+made by OpenCode. The accepted `localhost` name still depends on OS name resolution, and MDE does
+not install an application-wide firewall or independently verify the actual socket peer.
+
+MDE disables Chromium's automatic DNS-over-HTTPS upgrade at startup with
+`app.configureHostResolver({ secureDnsMode: 'off' })`. This does not disable ordinary DNS, Node's
+resolver, OS network filesystems, proxies, child-program networking or all Chromium request paths.
+It is not evidence that no DNS or internet traffic can occur. Packaged network behavior must be
+verified on each supported platform and network configuration.
 
 On Mac, agent commands and service discovery run through the user's login shell. Shell startup configuration
 can execute user-configured commands, as it does in normal terminal sessions.
 
 ## User-initiated external actions
 
-MDE may open an external link in the system browser when the user explicitly activates a terminal link. The browser then makes any resulting network connection. MDE does not automatically load those links.
+MDE may open a web link in the system browser when the user activates it in a terminal, Markdown
+preview or chat view. The browser makes any resulting network connection and receives the full URL,
+which may include query data. Opening a folder in a file manager or VS Code can likewise trigger the
+receiving application's filesystem, extension or network behavior.
 
 Commands entered by the user in a terminal, including commands run through third-party terminal applications, may access the network. Those are user-directed child-process activities rather than automatic connections made by MDE.
 
 ## Scope of this statement
 
-This local-only statement applies to MDE's supported release configuration. MDE cannot control commands launched by the user or a compromised host operating system; network activity initiated by those external components is outside MDE's behavior and responsibility.
+This statement describes the supported release configuration. Development, dependency audits,
+downloads, builds and release publication deliberately use external services. OpenCode, terminal
+programs, OS filesystem services and browser/editor handoffs have separate behavior and retention.
+Automatic helpers started by MDE must still be considered when assessing network behavior.
+
+## Retention, access and reset
+
+MDE relies on the account's filesystem permissions, OS access controls and device encryption;
+it provides no application encryption or secure-erasure guarantee for JSON, drafts or localStorage.
+Conversation caches and terminal scrollback are not intentionally persisted, but operating-system
+swap, diagnostics and crash dumps can contain process memory. Some console errors include paths or
+command diagnostics; no remote MDE log uploader is configured.
+
+Parking a thread does not delete it. Removing a thread removes MDE's record and its draft, not
+OpenCode's conversation history, provider data, shell history or backups. Removing a project leaves
+its drafts. Worktrees and their branches have the separate lifecycle described above.
+
+To reset MDE's own storage, quit the app and its terminals, identify its actual Electron user-data
+directory for the account, back up anything needed, then remove that application's JSON files,
+draft directory and Chromium storage. Separately manage worktrees, OpenCode history/configuration,
+legacy plugins/status files, clipboard history, OS backups and third-party data. Do not delete
+shared directories merely because their name resembles an MDE artifact.
 
 ## Audit conclusion
 
-The released MDE application has no hidden telemetry or automatic internet activity. Explicit browser-link clicks and user terminal commands are separate, user-directed activities outside MDE's own network behavior.
+No hidden MDE telemetry or direct provider client was found in the source review. MDE's Git
+operations now deny remote transports and configured external filters. This does not establish
+a universal no-traffic guarantee: OS filesystem services, launched programs and packaged network
+behavior still require separate assessment and platform verification.

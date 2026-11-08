@@ -13,6 +13,7 @@ import type {
 import { resolveWindowsGitExecutable } from './git-executable'
 import { createSpawnLimiter, type SpawnPriority } from './spawn-limiter'
 import { runWslCommand } from './wsl/distros'
+import { gitFilterSafetyArgs } from './git-filters'
 
 const GIT_COMMAND_TIMEOUT_MS = 10_000
 /** A checkout writes a whole working tree, so it gets far longer than a status query. */
@@ -39,6 +40,7 @@ const gitSpawns = createSpawnLimiter(GIT_SPAWN_LIMIT)
 const GIT_DISABLED_HOOKS_PATH = '/nonexistent/mde-disabled-git-hooks'
 
 const gitSafetyArgs = [
+  '--no-pager',
   '--no-optional-locks',
   '-c',
   'core.fsmonitor=false',
@@ -51,22 +53,33 @@ const gitSafetyArgs = [
   '-c',
   'credential.helper=',
   '-c',
-  'protocol.ext.allow=never'
+  'protocol.allow=never',
+  '-c',
+  'protocol.ext.allow=never',
+  '-c',
+  'submodule.recurse=false',
+  '-c',
+  'diff.ignoreSubmodules=all',
+  '-c',
+  'diff.submodule=short',
+  '-c',
+  'status.submoduleSummary=false',
+  '-c',
+  'maintenance.auto=false',
+  '-c',
+  'gc.auto=0',
 ]
 
-/**
- * Reading attributes from the empty tree instead of the working tree stops an
- * in-tree `.gitattributes` from selecting a `filter`, `textconv`, or diff
- * driver, which Git would otherwise run while diffing. The option needs Git
- * 2.40 and a matching object format, so a repository that rejects it falls
- * back to plain hardening.
- */
-const gitAttrSourceArg = `--attr-source=${GIT_EMPTY_TREE}`
-
-const gitEnvironment: NodeJS.ProcessEnv = {
+const gitEnvironment = {
   GIT_OPTIONAL_LOCKS: '0',
   GIT_TERMINAL_PROMPT: '0',
-  GIT_ASKPASS: ''
+  GIT_ASKPASS: '',
+  GIT_NO_LAZY_FETCH: '1',
+  // An empty allowlist overrides even protocol.<name>.allow=always and
+  // prevents arbitrary remote helpers on Git versions predating no-lazy-fetch.
+  GIT_ALLOW_PROTOCOL: '',
+  GIT_PROTOCOL_FROM_USER: '0',
+  LC_ALL: 'C',
 }
 
 export interface GitCommandResult {
@@ -89,13 +102,21 @@ function runNativeGit(
   cwd: string,
   timeoutMs = GIT_COMMAND_TIMEOUT_MS
 ): Promise<GitCommandResult> {
+  const environment: NodeJS.ProcessEnv = { ...process.env }
+  // GIT_CONFIG only affects `git config`: inheriting it would make the filter
+  // probe inspect another file while the subsequent operation reads the repo.
+  const replaced = new Set(['GIT_CONFIG', ...Object.keys(gitEnvironment)].map((key) => key.toUpperCase()))
+  for (const key of Object.keys(environment)) {
+    if (replaced.has(key.toUpperCase())) delete environment[key]
+  }
+  Object.assign(environment, gitEnvironment)
   return new Promise((resolve) => {
     execFile(
       file,
       args,
       {
         cwd,
-        env: { ...process.env, ...gitEnvironment },
+        env: environment,
         encoding: 'utf8',
         timeout: timeoutMs,
         maxBuffer: GIT_MAX_BUFFER,
@@ -146,7 +167,15 @@ function createTransportRunner(
 
     const distro = session.distro
     return async (args) => {
-      const result = await runWslCommand(distro, ['git', ...args], {
+      // Host env overrides are not automatically inherited inside WSL. Apply
+      // this policy distro-side with direct argv, without a login shell.
+      const result = await runWslCommand(distro, [
+        '/usr/bin/env',
+        '-u', 'GIT_CONFIG',
+        ...Object.entries(gitEnvironment).map(([key, value]) => `${key}=${value}`),
+        'git',
+        ...args,
+      ], {
         cwd: workspaceDirectory,
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       })
@@ -158,18 +187,25 @@ function createTransportRunner(
   return (args) => runNativeGit('git', args, workspaceDirectory, timeoutMs)
 }
 
-/**
- * Git installations older than 2.40, and repositories whose object format the
- * hardcoded empty tree does not match, reject `--attr-source`.
- */
-function rejectsAttrSource(result: GitCommandResult): boolean {
-  return result.code !== 0 && !result.launchError && /attr-source/i.test(result.stderr)
-}
-
-const attrSourceUnsupported = new Set<string>()
-
-function attrSourceKey(session: Session, workspaceDirectory: string): string {
-  return `${session.kind}:${session.distro ?? ''}:${workspaceDirectory}`
+function createSafeGitRunner(
+  transport: GitCommandRunner,
+  priority: SpawnPriority,
+): GitCommandRunner {
+  const run: GitCommandRunner = (args) => gitSpawns.run(priority, () => transport([...gitSafetyArgs, ...args]))
+  return async (args) => {
+    const filters = await gitFilterSafetyArgs(run, args)
+    const result = await run([...filters, ...args])
+    if (filters.length && result.code !== 0 && /(?:clean|smudge) filter .* failed/.test(result.stderr)) {
+      const worktree = args.indexOf('worktree')
+      return {
+        ...result,
+        stderr: worktree >= 0 && args[worktree + 1] === 'remove'
+          ? 'This worktree needs Git filters. Remove it in a terminal, then remove its Inbox entry.'
+          : 'This checkout needs Git filters. Create the worktree in a terminal, then add its folder to the Inbox.',
+      }
+    }
+    return result
+  }
 }
 
 /**
@@ -184,27 +220,14 @@ export function createGitCommandRunner(
   workspaceDirectory = session.path,
   priority: SpawnPriority = 'interactive'
 ): GitCommandRunner {
-  const transport = createTransportRunner(session, workspaceDirectory, platform)
-  const run: GitCommandRunner = (args) => gitSpawns.run(priority, () => transport(args))
-  const key = attrSourceKey(session, workspaceDirectory)
-
-  return async (args) => {
-    const hardened = [...gitSafetyArgs, ...args]
-    if (attrSourceUnsupported.has(key)) return run(hardened)
-
-    const result = await run([gitAttrSourceArg, ...hardened])
-    if (!rejectsAttrSource(result)) return result
-
-    attrSourceUnsupported.add(key)
-    return run(hardened)
-  }
+  return createSafeGitRunner(createTransportRunner(session, workspaceDirectory, platform), priority)
 }
 
 /**
  * A runner for the few commands that change a repository, such as creating or removing a worktree.
- * It keeps every safety option (hooks, credential helpers, and askpass stay off) but not
- * `--attr-source`: a checkout must honour the repository's own `.gitattributes`, or a
- * repository using LFS or line-ending conversion would be written out with the wrong content.
+ * It keeps every safety option and native attribute conversions (text/eol/ident),
+ * but refuses a checkout/removal that needs an external filter. No helper or
+ * remote fetch is permitted, even when Git configuration explicitly allows it.
  * The timeout is long because a checkout writes a whole working tree.
  */
 export function createGitMutationRunner(
@@ -214,7 +237,7 @@ export function createGitMutationRunner(
   platform: NodeJS.Platform = process.platform
 ): GitCommandRunner {
   const transport = createTransportRunner(session, workspaceDirectory, platform, timeoutMs)
-  return (args) => gitSpawns.run('interactive', () => transport([...gitSafetyArgs, ...args]))
+  return createSafeGitRunner(transport, 'interactive')
 }
 
 export interface GitRef {
@@ -256,6 +279,17 @@ export async function readGitRefs(run: GitCommandRunner): Promise<GitRef[]> {
   ])
   if (result.code !== 0) throw commandError('branches', result)
   return parseGitRefs(result.stdout)
+}
+
+/** Metadata only: branch pickers must not scan files or require missing blobs. */
+export async function readGitBranchInfoWithRunner(
+  run: GitCommandRunner,
+): Promise<{ repository: boolean; branch: string | null }> {
+  if (!(await ensureRepository(run))) return { repository: false, branch: null }
+  const result = await run(['--no-pager', 'symbolic-ref', '--quiet', '--short', 'HEAD'])
+  if (result.code === 1 && !result.launchError) return { repository: true, branch: null }
+  if (result.code !== 0) throw commandError('branch', result)
+  return { repository: true, branch: result.stdout.trim() || null }
 }
 
 function isNotRepository(result: GitCommandResult): boolean {

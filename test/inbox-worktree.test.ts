@@ -276,9 +276,10 @@ describe('Inbox worktrees with a fake runner', () => {
   it('passes the full ref, a generated branch and a terminator, with no renderer text in the path', async () => {
     const { service, mutations } = setup((args) => (args.includes('for-each-ref') ? ok(refs) : ok()))
     const created = await service.create(folder, 'origin/main')
-    expect(mutations).toEqual([[
-      'worktree', 'add', '--no-track', '-b', 'mde/abcd1234', '--', '/home/me/.mde/worktrees/app-01234567/abcd1234', 'refs/remotes/origin/main',
-    ]])
+    expect(mutations).toEqual([
+      ['worktree', 'add', '--no-checkout', '--no-track', '-b', 'mde/abcd1234', '--', '/home/me/.mde/worktrees/app-01234567/abcd1234', 'refs/remotes/origin/main'],
+      ['-C', '/home/me/.mde/worktrees/app-01234567/abcd1234', 'reset', '--hard', '--no-recurse-submodules', 'HEAD'],
+    ])
     expect(created.worktree).toEqual({
       repository: '/home/me/app', root: '/home/me/.mde/worktrees/app-01234567/abcd1234', branch: 'mde/abcd1234', base: 'origin/main',
     })
@@ -303,6 +304,17 @@ describe('Inbox worktrees with a fake runner', () => {
     await expect(service.create(folder, 'main')).rejects.toThrow("Could not create the worktree: cannot lock ref 'refs/heads/x': disk full")
   })
 
+  it('cleans up a failed checkout even when its error says a file already exists', async () => {
+    const { service, mutations } = setup((args) => {
+      if (args.includes('for-each-ref')) return ok(refs)
+      if (args.includes('reset')) return { stdout: '', stderr: 'fatal: target file already exists', code: 128 }
+      return ok()
+    })
+    await expect(service.create(folder, 'main')).rejects.toThrow('target file already exists')
+    expect(mutations.at(-1)).toEqual(['branch', '-D', '--', 'mde/abcd1234'])
+    expect(mutations.filter((args) => args[0] === 'worktree' && args[1] === 'add')).toHaveLength(1)
+  })
+
   it('gives up after three clashes without touching what already exists', async () => {
     const { service, mutations } = setup((args) => {
       if (args.includes('for-each-ref')) return ok(refs)
@@ -322,9 +334,10 @@ describe('Inbox worktrees with a fake runner', () => {
       const { service, reads, mutations } = setup((args) => (args.includes('for-each-ref') ? ok(refs) : args[0] === 'show-ref' ? missing : ok()))
       const created = await service.create(folder, 'main', 'feature/x')
       expect(reads).toContainEqual(['show-ref', '--verify', '--quiet', 'refs/heads/feature/x'])
-      expect(mutations).toEqual([[
-        'worktree', 'add', '--no-track', '-b', 'feature/x', '--', '/home/me/.mde/worktrees/app-01234567/abcd1234', 'refs/heads/main',
-      ]])
+      expect(mutations).toEqual([
+        ['worktree', 'add', '--no-checkout', '--no-track', '-b', 'feature/x', '--', '/home/me/.mde/worktrees/app-01234567/abcd1234', 'refs/heads/main'],
+        ['-C', '/home/me/.mde/worktrees/app-01234567/abcd1234', 'reset', '--hard', '--no-recurse-submodules', 'HEAD'],
+      ])
       expect(created.worktree.branch).toBe('feature/x')
     })
 

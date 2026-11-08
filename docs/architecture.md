@@ -1581,20 +1581,35 @@ was a single `spawn` call. On the worker, the same 120 launches caused no main-t
 40 ms. The launcher has the same callback shape as `child_process.execFile`; other callers still use
 that directly, because they run rarely.
 
-Because those queries run without you asking for them, MDE treats the folder as untrusted input. A
-complete working tree — one that arrives as an archive or copy with its own `.git` directory, rather
-than a fresh `git clone` — can carry configuration that names programs Git would otherwise run
-during a plain `status` or `diff`, so every Git call disables hooks, `core.fsmonitor`, external
-diff and textconv helpers, credential helpers and in-tree attributes. Opening a terminal in such a
-folder and running its commands yourself remains ordinary code execution: the hardening covers only
-MDE's own automatic queries.
+Because those queries run without you asking for them, MDE treats the folder as untrusted input.
+Every Git call disables hooks, fsmonitor, credential helpers, submodule recursion/diffs and automatic
+maintenance. Diff commands also disable external diff/textconv. Native calls and direct WSL
+`/usr/bin/env ... git` argv set an empty `GIT_ALLOW_PROTOCOL` and `GIT_NO_LAZY_FETCH=1`, so missing
+objects fail rather than being fetched; explicit per-protocol allow settings cannot enable a remote.
 
-The runner for worktree requests (`createGitMutationRunner`) keeps all of that hardening except
-in-tree attributes, which a checkout has to honour: reading attributes from the empty tree would
-write a repository that uses LFS or line-ending conversion with the wrong content. It also allows
-two minutes instead of ten seconds, since a checkout writes a whole working tree. Because hooks
-stay disabled, a `post-checkout` hook (a tool installing its own hooks, say) does not run in a new
-worktree.
+Before status, diff or a converting worktree operation, the runner reads effective filter **key
+names**, including info-selected drivers, global/system config, conditional includes and per-worktree
+config. It empties clean/smudge/process commands with bounded per-invocation overrides. The list is
+not cached, and errors fail closed. `GIT_CONFIG` is unset to prevent a different config file being
+used only for that probe. Reads compare unfiltered content, so filter-transformed files can appear
+changed compared with a normal terminal Git query. These subprocess checks do not make concurrent
+malicious config replacement atomic; filesystem trust remains a separate limit.
+
+Worktree creation first uses `worktree add --no-checkout`, then a guarded `reset --hard` in the new
+worktree. That ensures branch-conditional includes are inspected for the actual checkout branch.
+Built-in text/eol/ident conversion remains available. A selected configured external filter causes
+checkout to fail without running the filter, and the fresh worktree/branch is cleaned up. The user
+can create a filter-dependent worktree in a terminal, then add its folder to Inbox. Normal removal
+also inspects the target worktree's filter configuration and refuses rather than running a needed
+clean filter; failed-start cleanup can force-remove the fresh, unused worktree. Mutations retain
+the two-minute timeout; read commands retain ten seconds.
+
+The new-thread branch picker uses only repository detection, symbolic HEAD and `for-each-ref`;
+it no longer scans status/diffs. Local and already cached remote-tracking branches remain listed
+with missing blobs and without remote access. The picker does not refresh remote branches.
+
+Regression evidence and platform limits are in
+[`docs/security.md`](security.md#release-security-review-2026-11-08).
 
 ## WSL
 

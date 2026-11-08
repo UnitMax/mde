@@ -11,7 +11,7 @@ import {
   createGitCommandRunner,
   createGitMutationRunner,
   readGitRefs,
-  readGitTerminalInfoWithRunner,
+  readGitBranchInfoWithRunner,
   type GitCommandResult,
   type GitCommandRunner,
 } from '../git'
@@ -98,7 +98,7 @@ export class InboxWorktrees {
 
   async info(folder: InboxFolder): Promise<InboxGitInfo> {
     const run = this.dependencies.read(folder.target, folder.directory)
-    const terminal = await readGitTerminalInfoWithRunner(run)
+    const terminal = await readGitBranchInfoWithRunner(run)
     if (!terminal.repository) return { repository: false, branch: null, branches: [] }
     const refs = await readGitRefs(run)
     return {
@@ -139,7 +139,18 @@ export class InboxWorktrees {
       const id = this.dependencies.randomId()
       const branch = chosenBranch ?? `mde/${id}`
       const root = `${parent}/${id}`
-      const result = await mutate(['worktree', 'add', '--no-track', '-b', branch, '--', root, ref.ref])
+      // Establish the new HEAD before inspecting filters for checkout: onbranch
+      // includes can expose drivers that do not exist in the original checkout.
+      const added = await mutate(['worktree', 'add', '--no-checkout', '--no-track', '-b', branch, '--', root, ref.ref])
+      let result = added
+      if (added.code === 0) {
+        try {
+          result = await mutate(['-C', root, 'reset', '--hard', '--no-recurse-submodules', 'HEAD'])
+        } catch (error) {
+          await this.discard(folder.target, { repository: folder.directory, root, branch, base })
+          throw error
+        }
+      }
       if (result.code === 0) {
         return {
           directory: prefix ? `${root}/${prefix}` : root,
@@ -149,7 +160,7 @@ export class InboxWorktrees {
       // A clash with an existing branch or folder left nothing of ours behind (and a chosen name that
       // clashes is somebody's own branch, which must stay). Any other failure will fail again, and
       // may have left a partial worktree and the branch we were creating.
-      const clash = !result.launchError && /already exists/i.test(result.stderr)
+      const clash = added.code !== 0 && !result.launchError && /already exists/i.test(result.stderr)
       if (clash && attempt < attempts) continue
       if (!clash) await this.discard(folder.target, { repository: folder.directory, root, branch, base })
       throw new Error(`Could not create the worktree: ${gitMessage(result)}`)
@@ -188,6 +199,16 @@ export class InboxWorktrees {
       throw new Error('This worktree is not in MDE’s worktree folder, so MDE will not remove it.')
     }
     const run = this.dependencies.mutate(thread.target, worktree.repository)
+    // A missing target has no config to inspect and no files to remove. Prune
+    // its stale registration before asking the guarded removal runner to enter it.
+    const read = this.dependencies.read(thread.target, worktree.repository)
+    const exists = await read(['-C', worktree.root, 'rev-parse', '--is-inside-work-tree'])
+    if (exists.code !== 0) {
+      await run(['worktree', 'prune'])
+      const listed = await read(['worktree', 'list', '--porcelain'])
+      if (listed.code === 0 && !listed.stdout.split('\n').includes(`worktree ${worktree.root}`)) return
+      throw new Error('Could not inspect the worktree before removing it.')
+    }
     const result = await run(['worktree', 'remove', '--', worktree.root])
     if (result.code === 0) return
     // Already deleted by hand: forget Git's record of it and call it done.

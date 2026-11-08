@@ -3,6 +3,57 @@
 Security-relevant design and maintenance notes. The privacy and network statement is in
 [`PRIVACY.md`](../PRIVACY.md).
 
+## Release security review, 2026-11-08
+
+The source review of `inbox-mode` 0.1.14 against local `master` 0.0.126 found no
+telemetry, remote crash uploader, updater, direct provider client or remote MCP
+client in MDE. The application HTTP client accepts loopback OpenCode origins
+and rejects redirects. This is not a guarantee of no external traffic.
+
+The audit reproduced repository filter execution through automatic status queries
+and remote object fetching from partial clones. The Git runners now address those
+paths with the same policy for native processes and inside WSL:
+
+- All transport protocols are denied with an empty `GIT_ALLOW_PROTOCOL`, even if
+  repository configuration explicitly allows a protocol or remote helper.
+  `GIT_NO_LAZY_FETCH=1` also disables on-demand fetching on supporting Git versions.
+  Missing local objects produce an error; MDE does not fetch them.
+- Before each status, diff or converting worktree operation, main reads effective
+  filter key names, including global/system, conditional includes and per-worktree
+  settings. Bounded command-line overrides empty every configured driver's clean,
+  smudge and process command. No filter command values are passed to the UI or logged.
+  `GIT_CONFIG` is removed so it cannot redirect only the configuration probe.
+- Read operations compare unfiltered content. Worktree checkout/removal requires
+  a selected configured filter to succeed while its commands are disabled, so Git
+  refuses that operation instead of silently producing an incomplete checkout.
+  Manage filter-dependent worktrees in a terminal and add their folders to Inbox.
+- New worktrees are registered with `--no-checkout`, then populated through a
+  guarded reset in that new worktree. This inspects settings for the new branch
+  before conversion; the original branch's configuration is insufficient.
+  Removal also inspects the target worktree's settings before its cleanliness check.
+- Branch discovery uses repository/ref metadata only. Local and cached
+  remote-tracking branches remain available without scanning files or fetching
+  objects. Submodule recursion/diffs and automatic maintenance are disabled
+  in MDE-owned calls to avoid child operations with another execution context.
+
+Real-Git regression fixtures cover info attributes, local/global/included/worktree
+filters, long-running process filters, branch-conditional checkout/removal,
+missing objects, a loopback HTTP recorder and a planted remote helper. They also
+verify ordinary checkout, built-in line-ending conversion and branch listing
+with missing blobs. Filter settings are re-read rather than cached; these
+separate subprocesses do not establish atomicity against concurrent malicious
+rewriting of Git configuration. Such mutation remains a filesystem trust limit.
+Native Windows/WSL and macOS packaged acceptance remains required; OS network
+mounts and login-shell startup also need separate attribution.
+
+Other review findings include an SSE event limit that counts the pending line
+but not accumulated `data:` lines, permission cards that omit resources beyond
+50 without disabling approval, and incomplete configuration Source redaction.
+Native file/attachment readers retain FIFO blocking and pathname containment
+races. Existing regression tests pass; these cases need additional coverage
+with their fixes. Full `npm audit` currently fails on a moderate build dependency
+advisory, described under dependency maintenance below. The Git changes do not remediate these other findings.
+
 ## IPC security boundary
 
 All renderer-to-main calls pass through the registration wrapper in
@@ -160,12 +211,13 @@ the validated `chat:*` channels.
   temporary file is involved. The `url` must be `http:` on `127.0.0.1`,
   `localhost` or `[::1]` with an explicit port and no credentials, path, query
   or fragment, and the password must be 1–256 printable ASCII characters.
-  Anything else is refused, so a tampered state file cannot point MDE, and the
-  password, at another host.
+  Anything else is refused. This validates the URL text, not the identity of
+  the listening service or the eventual socket peer; `localhost` relies on OS
+  resolution. Packaged resolver/proxy behavior still needs network verification.
 - **Secrets.** The password is held in memory per target, sent only as HTTP
   Basic auth to that loopback origin, and never logged, stored or put in an
   error message. A 401 or connection failure drops it and rediscovers once.
-- **Operations.** `SERVICE_OPERATIONS` is a fixed allowlist of thirty-one method
+- **Operations.** `SERVICE_OPERATIONS` is a fixed allowlist of method
   and path pairs (agents, skills, MCP servers, providers, models, session create/get/active, message
   list, prompt, interrupt, agent and model switch, permission and form
   list/reply, session update, staging or clearing a revert, fork, compact, one-off text generation for a
@@ -312,10 +364,14 @@ object takes no other key, so the renderer cannot name a path, a remote or a com
   login-shell `$HOME` on Windows) and must be a plain absolute path.
 - **No shell.** Arguments are a fixed array with `--` before the positional operands. WSL commands
   run through `wsl.exe -e` direct execution, like every other WSL command.
-- **Same hardening, longer clock.** The runner keeps the safety options of the automatic queries
-  (hooks, `core.fsmonitor`, credential helpers, askpass and ssh commands are disabled) and drops only
-  `--attr-source`, which would make a checkout ignore `.gitattributes`. Creating a worktree never
-  fetches, so it uses no network and no credentials, and never runs the repository's hooks.
+- **Git safety overrides, longer clock.** Both runners deny remote transports and automatic
+  lazy fetching, disable hooks/fsmonitor/credential helpers, and inspect all effective configured
+  filter drivers before converting operations. They no longer rely on `--attr-source`, which did
+  not suppress info attributes and had a weaker fallback on older Git versions. Built-in
+  text/eol/ident conversion remains enabled. A checkout that selects a configured external filter
+  is refused, with an explanation to manage that worktree in a terminal. An unrelated globally
+  installed filter does not prevent an ordinary checkout. Conversion begins only after
+  `worktree add --no-checkout`, through a guarded reset in the new branch's own context.
 - **Removal is conservative.** `inbox:remove` with `removeWorktree` acts only on a thread MDE
   recorded with a worktree, whose root is a plain absolute path inside `<home>/.mde/worktrees/` and
   contains the thread's directory, and only when no other thread uses that root. It runs
@@ -371,8 +427,10 @@ OpenAI-compatible providers and `provider.use` deny policies (disabled providers
 - **The renderer names no path.** It sends `native` or `wsl` plus a distro. The main process accepts `wsl`
   only on Windows, with a distro name that `wsl.exe -l` lists, and `native` only elsewhere. The folder is
   worked out where OpenCode runs (`OPENCODE_CONFIG_DIR`, else `$XDG_CONFIG_HOME/opencode`, else
-  `~/.config/opencode`; in the distro through its login shell, validated as a plain absolute Linux path),
-  and the file is `opencode.jsonc`, else `opencode.json`, else a new `opencode.jsonc`. In a distro it is
+  `~/.config/opencode`; in the distro through its login shell). The WSL value checker currently
+  requires an absolute prefix and rejects NUL/newlines, but does not apply the stricter plain-path
+  rules to every value before UNC translation; backslashes and dot segments need hardening.
+  The file is `opencode.jsonc`, else `opencode.json`, else a new `opencode.jsonc`. In a distro it is
   reached as `\\wsl.localhost\<distro>\...`.
 - **Size and type.** A file over 1 MiB or one that is not a regular file is refused. The target of a
   symbolic link is edited in place (`realpath` first; for WSL, `realpath` run in the distro) so a file
@@ -387,14 +445,18 @@ OpenAI-compatible providers and `provider.use` deny policies (disabled providers
 - **Lost updates are refused.** The snapshot carries a SHA-256 of the file text (`absent` when there is no
   file). Save reads the file again, refuses if the hash differs, then applies the draft to the fresh
   text. Saves are serialized.
-- **Atomic, private writes.** The text goes to a temporary file in the same folder (mode of the existing
-  file, `0600` for a new one), is flushed and renamed over the target; the temporary file is removed on
-  failure. Nothing is backed up.
+- **Atomic replacement and modes.** The text goes to a temporary file in the same folder (mode of the existing
+  file, `0600` for a new one), is flushed and renamed over the target. Cleanup is attempted after
+  rename failure, but earlier write failures or a crash can leave a temporary copy. Creation uses a
+  predictable time/PID name without exclusive creation and relies on the containing directory's
+  access controls. Nothing is intentionally backed up by MDE.
 - **No secrets are asked for or written.** A provider's key is the name of an environment variable
   (`env: [NAME]`), validated as such; a base URL with a user name or password is refused. Keys already in
   the file stay where they are, are not sent to the renderer as part of the draft, and the Source preview
-  hides the values of keys named like `api key`, `token`, `secret`, `password`, `authorization` or
-  `credential` (by name only; `{env:...}` and `{file:...}` references stay visible).
+  attempts to hide ordinary string values of keys named like `api key`, `token`, `secret`, `password`,
+  `authorization` or `credential`. This regex heuristic misses JSON-escaped key names and array/object
+  values, as well as secrets under other names; `{env:...}` and `{file:...}` references stay visible.
+  The preview is not a fully sanitized artifact for sharing.
 - **No new network access.** Listing providers uses the existing local service client. After a save the
   main process only drops its cached model list; OpenCode reloads the file by itself.
 - **Reach.** Script already running in the renderer could change these three settings, including
@@ -450,12 +512,25 @@ before releases. Renderer libraries such as Mermaid are bundled into the app
 even though they are declared as development dependencies, so a production-only
 audit does not cover all shipped code.
 
-The macOS tag workflow also runs the full dependency audit, tests, license check,
-typecheck, and packaged-output audit before uploading its DMG and checksum. It
-uses pinned official actions, read-only repository permissions, no signing
-secrets, and packaging with `--publish never`. Artifacts expire after three days;
-release publication remains manual. Ordinary branch pushes do not run this gate,
-so contributors must still run the local checks above.
+The tag workflow runs the full dependency audit, tests, license check, typecheck,
+and packaged-output audit in fresh Windows and macOS jobs before uploading ZIP/DMG
+artifacts and checksums. Build jobs have read-only repository permissions, pinned
+official actions, no persisted checkout credentials or signing secrets, and package
+without publishing. A separate job has limited release-write permission to create
+or update a draft release after both builds succeed. Build artifacts expire after
+three days; publication of the draft remains manual. Ordinary branch pushes do
+not run this gate, so contributors must still run the local checks above.
+
+On 2026-11-08 the full audit of 0.1.14 reported six moderate entries from
+[minimatch globparts amplification](https://github.com/isaacs/minimatch/security/advisories/GHSA-g3hv-75wg-m249)
+and its dependent build packages. These are one underlying advisory across the
+packager dependency chain, not six demonstrated runtime exploits. The relevant
+lockfile copies include minimatch 10.2.6 and 9.0.9; upstream's advisory describes
+10.2.6 and a fix in 11.0.1, while npm reports a broader affected range. Check
+version and call-site compatibility before updating. Do not blindly apply npm's
+suggested force fix, which proposes a breaking electron-builder downgrade.
+The production-only audit reports zero but excludes bundled renderer libraries
+and does not clear the full release gate. No dependencies were changed by this review.
 
 The lockfile includes patched `http-cache-semantics` 4.3.0 and `source-map-js`
 1.2.2. These updates remain within their parents' existing dependency ranges.
