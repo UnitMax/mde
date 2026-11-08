@@ -258,3 +258,43 @@ describe('the sidebar while the terminal floats', () => {
     expect(useInboxFloatingTerminal.getState().floating).toBe(false)
   })
 })
+
+describe('while the window is being dragged', () => {
+  beforeEach(async () => { await click('floating-terminal-break-out') })
+  const body = () => query('floating-terminal-body')!
+
+  it('follows the pointer with the terminal hidden, shows it again on release, and keeps the place only then', async () => {
+    await pointer('floating-terminal-titlebar', 'pointerdown', 500, 20)
+    await pointer('floating-terminal-titlebar', 'pointermove', 400, -80)
+    expect(windowBox()).toEqual({ x: 284, y: 234, width: 600, height: 350 })
+    expect(query('floating-terminal')!.getAttribute('data-drag-mode')).toBe('move')
+    expect(body().className).toContain('invisible')
+    // The terminal stays mounted, so nothing about the shell is touched.
+    expect(body().querySelector('[data-testid="inbox-terminal-stub"]')).not.toBeNull()
+    expect(stored().rect).toBeNull()
+    await pointer('floating-terminal-titlebar', 'pointerup', 400, -80)
+    expect(body().className).not.toContain('invisible')
+    expect(query('floating-terminal')!.getAttribute('data-drag-mode')).toBeNull()
+    expect(stored().rect).toEqual({ x: 284, y: 234, width: 600, height: 350 })
+  })
+
+  it('draws an outline for a resize and leaves the terminal at its size until release', async () => {
+    await pointer('floating-terminal-resize-e', 'pointerdown', 984, 400)
+    await pointer('floating-terminal-resize-e', 'pointermove', 900, 400)
+    expect(windowBox()).toEqual({ x: 384, y: 334, width: 600, height: 350 })
+    const outline = query('floating-terminal-outline')!
+    expect(outline.style.width).toBe('516px')
+    expect(body().className).not.toContain('invisible')
+    expect(stored().rect).toBeNull()
+    await pointer('floating-terminal-resize-e', 'pointerup', 900, 400)
+    expect(query('floating-terminal-outline')).toBeNull()
+    expect(windowBox()).toEqual({ x: 384, y: 334, width: 516, height: 350 })
+  })
+
+  it('ends the drag when the pointer is cancelled', async () => {
+    await pointer('floating-terminal-titlebar', 'pointerdown', 500, 20)
+    await pointer('floating-terminal-titlebar', 'pointercancel', 450, 20)
+    expect(body().className).not.toContain('invisible')
+    expect(windowBox().x).toBe(334)
+  })
+})

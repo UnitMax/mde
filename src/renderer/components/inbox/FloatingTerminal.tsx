@@ -87,24 +87,29 @@ function FloatingTerminalWindow({ bounds }: { bounds: FloatingBounds }): JSX.Ele
   const maximized = useInboxFloatingTerminal((state) => state.maximized)
   const setRect = useInboxFloatingTerminal((state) => state.setRect)
   const gesture = useRef<Gesture | null>(null)
-  const [dragging, setDragging] = useState(false)
+  // What the window is being dragged to, and how. Only the final place is kept in the store, on release.
+  const [drag, setDrag] = useState<{ mode: 'move' | 'resize'; rect: FloatingRect } | null>(null)
+  const dragging = drag !== null
   // Where the keyboard was, so hiding the window hands it back there instead of leaving it nowhere.
   const [before] = useState(() => document.activeElement)
   useEffect(() => () => {
     if (before instanceof HTMLElement && before.isConnected && (!document.activeElement || document.activeElement === document.body)) before.focus()
   }, [before])
 
-  const rect = maximized
+  const placed = maximized
     ? { x: 0, y: 0, width: bounds.width, height: bounds.height }
     : clampFloatingRect(stored ?? defaultFloatingRect(bounds), bounds)
+  // A move shows the window following the pointer; a resize leaves it as it is and draws an outline, because
+  // resizing a live terminal refits it (and its shell) on every step and makes its content flicker.
+  const rect = drag?.mode === 'move' ? drag.rect : placed
 
   const begin = (event: ReactPointerEvent<HTMLElement>, edge?: FloatingEdge): void => {
     if (event.button !== 0 || maximized) return
     if (!edge && (event.target as HTMLElement).closest('button')) return
     event.preventDefault()
     event.currentTarget.setPointerCapture?.(event.pointerId)
-    gesture.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, start: rect, edge }
-    setDragging(true)
+    gesture.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, start: placed, edge }
+    setDrag({ mode: edge ? 'resize' : 'move', rect: placed })
   }
   const next = (event: ReactPointerEvent<HTMLElement>, current: Gesture): FloatingRect => {
     const dx = event.clientX - current.startX
@@ -115,13 +120,13 @@ function FloatingTerminalWindow({ bounds }: { bounds: FloatingBounds }): JSX.Ele
   }
   const move = (event: ReactPointerEvent<HTMLElement>): void => {
     const current = gesture.current
-    if (current && current.pointerId === event.pointerId) setRect(next(event, current), false)
+    if (current && current.pointerId === event.pointerId) setDrag({ mode: current.edge ? 'resize' : 'move', rect: next(event, current) })
   }
   const finish = (event: ReactPointerEvent<HTMLElement>): void => {
     const current = gesture.current
     if (!current || current.pointerId !== event.pointerId) return
     gesture.current = null
-    setDragging(false)
+    setDrag(null)
     if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
     setRect(next(event, current))
   }
@@ -129,11 +134,13 @@ function FloatingTerminalWindow({ bounds }: { bounds: FloatingBounds }): JSX.Ele
   const gestureProps = { onPointerMove: move, onPointerUp: finish, onPointerCancel: finish }
 
   return (
+    <>
     <section
       aria-label="Floating terminal"
       data-testid="floating-terminal"
       data-maximized={maximized || undefined}
       data-dragging={dragging || undefined}
+      data-drag-mode={drag?.mode}
       className={cn(
         'pointer-events-auto absolute flex min-h-0 flex-col overflow-hidden border border-line bg-panel shadow-2xl shadow-black/40',
         maximized ? 'rounded-none border-0' : 'rounded-lg'
@@ -186,7 +193,9 @@ function FloatingTerminalWindow({ bounds }: { bounds: FloatingBounds }): JSX.Ele
           <Minus className="h-3.5 w-3.5" />
         </Button>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col">
+      {/* Kept mounted but not painted while the window is carried, so its shell and screen are untouched and
+          nothing flickers; the panel colour shows through in its place. */}
+      <div className={cn('flex min-h-0 flex-1 flex-col', drag?.mode === 'move' && 'invisible')} data-testid="floating-terminal-body">
         <InboxTerminal focusOnMount />
       </div>
       {!maximized && FLOATING_EDGES.map((edge) => (
@@ -200,6 +209,15 @@ function FloatingTerminalWindow({ bounds }: { bounds: FloatingBounds }): JSX.Ele
         />
       ))}
     </section>
+    {drag?.mode === 'resize' && (
+      <div
+        aria-hidden
+        data-testid="floating-terminal-outline"
+        className="pointer-events-none absolute rounded-lg border-2 border-accent bg-accent/10"
+        style={{ left: drag.rect.x, top: drag.rect.y, width: drag.rect.width, height: drag.rect.height }}
+      />
+    )}
+    </>
   )
 }
 
