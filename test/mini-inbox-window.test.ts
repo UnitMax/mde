@@ -46,9 +46,9 @@ describe('MiniInboxWindow', () => {
     vi.unstubAllGlobals()
   })
 
-  it('shows Inbox titles and folders for both chat modes using thread metadata', async () => {
+  it('shows Inbox titles and projects for both chat modes using thread metadata', async () => {
     await render()
-    expect(container.querySelector('[data-testid="mini-inbox-group"]')?.getAttribute('aria-label')).toBe('Application')
+    expect(Array.from(container.querySelectorAll('[data-testid="mini-inbox-project"]')).map((item) => item.textContent)).toEqual(['Application', 'Application', 'Application'])
     expect(rows().map((row) => row.dataset.status)).toEqual(['working', 'attention', 'error'])
     expect(rows()[0]?.textContent).toContain('Fix login')
     expect(rows()[1]?.textContent).toContain('Review tests')
@@ -57,26 +57,50 @@ describe('MiniInboxWindow', () => {
     expect(container.querySelector('[data-testid="mini-inbox-count"]')?.textContent).toBe('3')
   })
 
-  it('draws each group’s project icon in its heading, the plain folder when the project has none', async () => {
+  it('is one list in the Inbox’s order, pinned first and then the latest activity, not grouped by project', async () => {
+    const other: InboxFolder = { id: 'fld_web', name: 'Website', directory: '/workspace/web', target: { kind: 'native' }, createdAt: 1, lastUsedAt: 1 }
+    const items = [
+      thread('ses_old_app', { lastActivityAt: 100 }),
+      thread('ses_new_web', { folderId: other.id, directory: other.directory, lastActivityAt: 300 }),
+      thread('ses_mid_app', { lastActivityAt: 200 }),
+      thread('ses_pinned_old', { lastActivityAt: 50, pinned: true }),
+    ]
+    await act(async () => root.render(createElement(MiniInboxWindow, { threads: items, folders: [folder, other], onOpenThread, onRestore })))
+    expect(rows().map((row) => row.parentElement && row.querySelector('[data-testid="mini-inbox-project"]')?.textContent)).toEqual(['Application', 'Website', 'Application', 'Application'])
+    expect(container.querySelectorAll('[data-testid="mini-inbox-list"] > li')).toHaveLength(4)
+    expect(container.querySelector('[data-testid="mini-inbox-group"]')).toBeNull()
+    expect(container.querySelector('h2')).toBeNull()
+    expect(rows().map((row) => row.getAttribute('title')?.split(' · ')[0])).toEqual(['ses_pinned_old', 'ses_new_web', 'ses_mid_app', 'ses_old_app'])
+    expect(rows()[0]!.querySelector('[aria-label="Pinned thread"]')).not.toBeNull()
+    expect(rows()[1]!.querySelector('[aria-label="Pinned thread"]')).toBeNull()
+  })
+
+  it('says how long ago each thread was active, as the sidebar does, with the date as its tooltip', async () => {
+    const now = Date.now()
+    await render([thread('ses_recent', { lastActivityAt: now - 5 * 60_000 }), thread('ses_older', { lastActivityAt: now - 3 * 3_600_000 })])
+    const ages = Array.from(container.querySelectorAll('[data-testid="mini-inbox-age"]'))
+    expect(ages.map((item) => item.textContent)).toEqual(['5m ago', '3h ago'])
+    expect(ages[0]!.getAttribute('title')).toMatch(/\d{4}/)
+  })
+
+  it('draws each thread’s project icon before its project name, the plain folder when the project has none', async () => {
     const icons = (): (string | null | undefined)[] =>
-      Array.from(container.querySelectorAll('[data-testid="mini-inbox-group"]'))
-        .map((group) => group.querySelector('[data-testid="project-icon"]')?.getAttribute('data-icon'))
+      rows().map((row) => row.querySelector('[data-testid="project-icon"]')?.getAttribute('data-icon'))
     await render()
-    expect(icons()).toEqual(['folder'])
+    expect(icons()).toEqual(['folder', 'folder', 'folder'])
     await act(async () => root.render(createElement(MiniInboxWindow, {
       threads, folders: [{ ...folder, icon: { kind: 'symbol', id: 'rocket', color: 'blue' } }], onOpenThread, onRestore,
     })))
-    expect(icons()).toEqual(['rocket'])
+    expect(icons()).toEqual(['rocket', 'rocket', 'rocket'])
     await act(async () => root.render(createElement(MiniInboxWindow, {
       threads, folders: [{ ...folder, icon: { kind: 'emoji', emoji: '🚀' } }], onOpenThread, onRestore,
     })))
-    expect(container.querySelector('[data-testid="mini-inbox-group"] [data-testid="project-icon"]')?.textContent).toBe('🚀')
+    expect(rows()[0]!.querySelector('[data-testid="project-icon"]')?.textContent).toBe('🚀')
   })
 
-  it('excludes parked threads from rows, groups, counts and summary chips', async () => {
+  it('excludes parked threads from rows, counts and summary chips', async () => {
     await render([thread('ses_done'), thread('ses_parked', { archived: true, status: 'working', folderId: 'fld_other' })])
     expect(rows()).toHaveLength(1)
-    expect(container.querySelectorAll('[data-testid="mini-inbox-group"]')).toHaveLength(1)
     expect(container.querySelector('[data-testid="mini-inbox-count"]')?.textContent).toBe('1')
     expect(container.querySelector('[data-testid="mini-inbox-chip-working"]')).toBeNull()
     expect(container.querySelector('[data-testid="mini-inbox-chip-completed"]')?.textContent).toBe('1 done')

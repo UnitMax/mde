@@ -1,9 +1,10 @@
-import { Circle, CircleAlert, CircleCheck, CircleX, Inbox, LoaderCircle, Maximize2 } from 'lucide-react'
+import { Circle, CircleAlert, CircleCheck, CircleX, GitBranch, Inbox, LoaderCircle, Maximize2, Pin } from 'lucide-react'
 import type { InboxFolder, InboxThread } from '@shared/types'
 import { ProjectIcon } from '@/components/inbox/ProjectIcon'
 import { TitleBar, TitleBarButton } from '@/components/TitleBar'
-import { inboxStatusChip, isInboxThreadUnread, visibleInboxThreads } from '@/lib/inbox'
-import { groupThreadsByFolder, miniInboxChips, summarizeThreads, type MiniInboxChipTone } from '@/lib/mini-inbox'
+import { useInboxClock } from '@/components/InboxPanel'
+import { inboxStatusChip, isInboxThreadUnread, sessionAge, sessionDate, visibleInboxThreads } from '@/lib/inbox'
+import { miniInboxChips, miniInboxProject, summarizeThreads, type MiniInboxChipTone } from '@/lib/mini-inbox'
 import { cn } from '@/lib/utils'
 
 const ROW_TINT: Partial<Record<InboxThread['status'], string>> = {
@@ -38,7 +39,7 @@ export function MiniInboxWindow({
   onOpenThread: (threadId: string) => void
 }): JSX.Element {
   const listed = visibleInboxThreads(threads, 'all', '')
-  const groups = groupThreadsByFolder(listed, folders)
+  const now = useInboxClock()
   const chips = miniInboxChips(summarizeThreads(listed))
 
   return (
@@ -75,32 +76,29 @@ export function MiniInboxWindow({
           ))}
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto py-1">
-        {groups.length === 0 ? (
+      <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+        {listed.length === 0 ? (
           <div data-testid="mini-inbox-empty" className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
             <Inbox className="h-5 w-5 text-fg-subtle" />
             <p className="text-[12px] text-fg-muted">No Inbox threads</p>
             <p className="text-[11px] text-fg-subtle">Start a conversation in the Inbox to see it here. Parked threads are hidden.</p>
           </div>
-        ) : groups.map((group) => (
-          <section key={group.folderId} data-testid="mini-inbox-group" aria-label={group.name} className="px-1.5 pb-1">
-            <div className="flex items-center gap-1.5 px-1.5 pb-0.5 pt-1.5" title={group.directory}>
-              <ProjectIcon icon={group.icon} className="text-fg-subtle" />
-              <h2 className="min-w-0 flex-1 truncate text-[10px] font-medium uppercase tracking-wide text-fg-subtle">{group.name}</h2>
-            </div>
-            <div className="space-y-0.5">
-              {group.threads.map((thread) => {
-                const status = inboxStatusChip(thread)?.label ?? 'Idle'
-                const StatusIcon = STATUS_ICON[thread.status]
-                const unread = isInboxThreadUnread(thread)
-                return (
+        ) : (
+          <ul data-testid="mini-inbox-list" aria-label="Inbox threads" className="space-y-0.5">
+            {listed.map((thread) => {
+              const status = inboxStatusChip(thread)?.label ?? 'Idle'
+              const StatusIcon = STATUS_ICON[thread.status]
+              const unread = isInboxThreadUnread(thread)
+              const project = miniInboxProject(thread, folders)
+              const title = thread.customTitle ?? thread.title
+              return (
+                <li key={thread.id}>
                   <button
-                    key={thread.id}
                     type="button"
                     data-testid="mini-inbox-row"
                     data-status={thread.status}
                     data-unread={unread || undefined}
-                    title={`${thread.customTitle ?? thread.title} · ${group.directory} · ${status}`}
+                    title={`${title} · ${project.directory} · ${status}`}
                     onClick={() => onOpenThread(thread.id)}
                     className={cn(
                       'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12px] text-fg-muted hover:bg-hover hover:text-fg',
@@ -112,16 +110,37 @@ export function MiniInboxWindow({
                       className={cn('h-3 w-3 shrink-0', thread.status === 'working' && 'animate-spin motion-reduce:animate-none')}
                     />
                     <div className="min-w-0 flex-1">
-                      <div className={cn('truncate text-fg', unread && 'font-semibold')}>{thread.customTitle ?? thread.title}</div>
-                      {thread.branch && <div className="truncate text-[10px] text-fg-subtle">{thread.branch}</div>}
+                      <div className="flex min-w-0 items-center gap-1">
+                        {thread.pinned && <Pin role="img" aria-label="Pinned thread" className="h-3 w-3 shrink-0 text-fg-subtle" />}
+                        <span className={cn('min-w-0 truncate text-fg', unread && 'font-semibold')}>{title}</span>
+                      </div>
+                      <div className="flex min-w-0 items-center gap-1 text-[10px] text-fg-subtle">
+                        <ProjectIcon icon={project.icon} />
+                        <span data-testid="mini-inbox-project" className="min-w-0 truncate">{project.name}</span>
+                        {thread.branch && (
+                          <>
+                            <GitBranch aria-hidden="true" className="ml-1 h-3 w-3 shrink-0" />
+                            <span className="min-w-0 truncate">{thread.branch}</span>
+                          </>
+                        )}
+                      </div>
                     </div>
-                    <span className="shrink-0 text-[10px] text-fg-subtle">{status}</span>
+                    <div className="flex shrink-0 flex-col items-end gap-0.5 text-[10px] text-fg-subtle">
+                      <time
+                        data-testid="mini-inbox-age"
+                        dateTime={new Date(thread.lastActivityAt).toISOString()}
+                        title={sessionDate(thread.lastActivityAt)}
+                      >
+                        {sessionAge(thread.lastActivityAt, now)}
+                      </time>
+                      <span>{status}</span>
+                    </div>
                   </button>
-                )
-              })}
-            </div>
-          </section>
-        ))}
+                </li>
+              )
+            })}
+          </ul>
+        )}
       </div>
     </div>
   )

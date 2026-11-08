@@ -1,13 +1,12 @@
 import type { InboxFolder, InboxFolderIcon, InboxThread } from '@shared/types'
 import { inboxFolderLabel, inboxThreadFolder, inboxThreadHome } from '@/lib/inbox'
 
-export interface MiniInboxGroup {
-  folderId: string
+/** The project a thread belongs to, for the line under its title. */
+export interface MiniInboxProject {
   name: string
   directory: string
   /** The project's icon, when it has one. */
   icon?: InboxFolderIcon
-  threads: InboxThread[]
 }
 
 export interface MiniInboxSummary {
@@ -25,31 +24,20 @@ export interface MiniInboxChip {
   tone: MiniInboxChipTone
 }
 
-/** Groups the displayed threads by their Inbox folder, retaining their list order. */
-export function groupThreadsByFolder(
-  threads: readonly InboxThread[],
-  folders: readonly InboxFolder[]
-): MiniInboxGroup[] {
-  const groups = new Map<string, MiniInboxGroup>()
-  for (const thread of threads) {
-    let group = groups.get(thread.folderId)
-    if (!group) {
-      const folder = folders.find((item) => item.id === thread.folderId)
-      const directory = folder?.directory ?? inboxThreadHome(thread)
-      // A worktree's own entry has no icon; its project does.
-      const icon = (inboxThreadFolder(thread, folders) ?? folder)?.icon
-      group = {
-        folderId: thread.folderId,
-        name: folder?.name ?? inboxFolderLabel(directory),
-        directory,
-        ...(icon ? { icon } : {}),
-        threads: [],
-      }
-      groups.set(thread.folderId, group)
-    }
-    group.threads.push(thread)
+/**
+ * The name and icon of the project a thread belongs to. A thread whose folder was removed from the Inbox is
+ * labelled by the directory's name, and a worktree by the repository it was cut from.
+ */
+export function miniInboxProject(thread: InboxThread, folders: readonly InboxFolder[]): MiniInboxProject {
+  const folder = folders.find((item) => item.id === thread.folderId)
+  const directory = folder?.directory ?? inboxThreadHome(thread)
+  // A worktree's own entry has no icon; its project does.
+  const icon = (inboxThreadFolder(thread, folders) ?? folder)?.icon
+  return {
+    name: folder?.name ?? inboxFolderLabel(directory),
+    directory,
+    ...(icon ? { icon } : {}),
   }
-  return [...groups.values()]
 }
 
 export function summarizeThreads(threads: readonly InboxThread[]): MiniInboxSummary {

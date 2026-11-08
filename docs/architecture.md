@@ -1322,12 +1322,14 @@ key and an entry there; `test/theme-credits.test.ts` fails when the two disagree
 
 ### Mini Inbox window
 
-F12 shrinks the main window into a small always-on-top list of Inbox threads, grouped by their
-Inbox folder, with a status summary and a restore button; F12 again restores the full window.
-It shows GUI and Terminal chat threads using the same titles, branch names, unread state and
-API-driven status as the Inbox. Parked threads are hidden; pins and recent activity determine
-the list order. Threads whose folder was removed still appear under the directory name, and
-worktrees fall back to the original repository name. It uses Inbox metadata independently of workspace sessions and terminal layouts. New activity stays unread while only the mini Inbox is
+F12 shrinks the main window into a small always-on-top list of Inbox threads, with a status summary
+and a restore button; F12 again restores the full window. The list is the Inbox sidebar's: one list,
+pinned threads first and then the latest activity, not grouped by project. Each row has the title
+(bold while unread, a pin for a pinned thread), the project's icon and name with the branch, how long
+ago the thread was active (the date is its tooltip) and its status. It shows GUI and Terminal chat
+threads using the same titles, branch names, unread state and API-driven status as the Inbox. Parked
+threads are hidden. Threads whose folder was removed are labelled with the directory name, and
+worktrees with the original repository name. It uses Inbox metadata independently of workspace sessions and terminal layouts. New activity stays unread while only the mini Inbox is
 visible. It is the
 same `BrowserWindow` and renderer, not a second window, so the IPC sender policy is unchanged and
 every terminal keeps running. The main process (`src/main/mini-window.ts`) owns the geometry: it
