@@ -104,10 +104,10 @@ describe('Settings → Terminal → Inbox sidebar terminal', () => {
     expect(document.body.querySelector('[data-testid="inbox-terminal-settings"]')).toBeNull()
   })
 
-  it('keeps the Inbox gear menu limited to thread sidebar settings on Windows', async () => {
+  it('keeps the Inbox gear menu limited to display settings of the Inbox on Windows', async () => {
     await openMenu()
     const menu = query('[role="menu"]')
-    expect(menu.querySelectorAll('[role="menuitemcheckbox"]')).toHaveLength(3)
+    expect(menu.querySelectorAll('[role="menuitemcheckbox"]')).toHaveLength(4)
     expect(menu.textContent).not.toContain('terminal')
     expect(menu.querySelector('[role="menuitem"]')).toBeNull()
   })

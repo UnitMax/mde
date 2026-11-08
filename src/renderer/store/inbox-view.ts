@@ -3,6 +3,7 @@ import {
   clampInboxSidebarWidth,
   getInboxCompactChat,
   getInboxDraftsCollapsed,
+  getInboxModelQuickSwitch,
   getInboxProjectFilter,
   getInboxSidebarWidth,
   getInboxTitleIcons,
@@ -10,6 +11,7 @@ import {
   getInboxWorkingSection,
   saveInboxCompactChat,
   saveInboxDraftsCollapsed,
+  saveInboxModelQuickSwitch,
   saveInboxProjectFilter,
   saveInboxSidebarWidth,
   saveInboxTitleIcons,
@@ -33,6 +35,9 @@ interface Store {
    */
   compactChat: boolean
   setCompactChat: (on: boolean) => void
+  /** Offer the favorite models as buttons above the message box (a preference, on by default). */
+  modelQuickSwitch: boolean
+  setModelQuickSwitch: (on: boolean) => void
   /**
    * The project the thread list, the Working section and the drafts are narrowed to: its folder ID, or null for
    * all of them. Kept between runs. An ID with no project behind it (removed since) narrows nothing.
@@ -62,6 +67,11 @@ export const useInboxView = create<Store>((set) => ({
   setTitleIcons: (on) => {
     saveInboxTitleIcons(on)
     set({ titleIcons: on })
+  },
+  modelQuickSwitch: getInboxModelQuickSwitch(),
+  setModelQuickSwitch: (on) => {
+    saveInboxModelQuickSwitch(on)
+    set({ modelQuickSwitch: on })
   },
   projectFilter: getInboxProjectFilter(),
   setProjectFilter: (projectId) => {

@@ -1,5 +1,6 @@
 import { useId, useState } from 'react'
 import { AlertTriangle, ChevronDown, Image, Layers, Terminal, Users, X } from 'lucide-react'
+import { ElapsedTime } from '@/components/ElapsedTime'
 import { barTrigger } from '@/components/inbox/ComposerBar'
 import { useBackgroundTasks } from '@/components/inbox/use-background-tasks'
 import { cn } from '@/lib/utils'
@@ -10,7 +11,17 @@ function unavailableHidden(): boolean {
   try { return localStorage.getItem(HIDE_UNAVAILABLE_KEY) === 'true' } catch { return false }
 }
 
-/** The companion to the worktree strip, tucked above the composer instead of below it. */
+const KINDS = {
+  shell: { Icon: Terminal, label: 'Shell process' },
+  subagent: { Icon: Users, label: 'Subagent' },
+  image: { Icon: Image, label: 'Image generation' },
+} as const
+
+/**
+ * The tasks OpenCode is running for this thread and its subagents, as a row of the tray above the message box
+ * (`ComposerDock`). Closed it says how many there are and which; open it lists them, each with how long it has been
+ * going. Nothing is drawn while there are none.
+ */
 export function ChatBackgroundTasks({ threadId }: { threadId: string }): JSX.Element | null {
   const { snapshot, error, refresh } = useBackgroundTasks(threadId)
   const [open, setOpen] = useState(false)
@@ -22,19 +33,23 @@ export function ChatBackgroundTasks({ threadId }: { threadId: string }): JSX.Ele
   if (unavailable && tasks.length === 0 && hideUnavailable) return null
   if (!unavailable && tasks.length === 0 && !open) return null
   const summary = unavailable ? 'Background task status unavailable' : `${tasks.length} background ${tasks.length === 1 ? 'task' : 'tasks'} running`
+  // What is running, so that the closed row says more than a number.
+  const preview = !open && !unavailable ? tasks.map((task) => task.title).join(', ') : ''
   return (
-    <div data-testid="chat-background-tasks" className="relative z-0 -mb-1.5 mx-5 overflow-hidden rounded-t-xl border border-b-0 border-line bg-elevated/50 px-1.5 pb-2 pt-1">
+    <div data-testid="chat-background-tasks" className="px-1.5 py-1">
       <div className="flex items-center gap-0.5">
         <button
           type="button"
           aria-expanded={open}
           aria-controls={listId}
+          title="Tasks reported by OpenCode for this thread and its subagents"
           onClick={() => { setOpen(!open); if (!open) refresh() }}
           className={cn(barTrigger, 'h-7 min-w-0 flex-1 justify-start px-2')}
         >
           {unavailable ? <AlertTriangle aria-hidden className="h-3.5 w-3.5 shrink-0 text-warn" /> : <Layers aria-hidden className="h-3.5 w-3.5 shrink-0 text-accent" />}
-          <span aria-live="polite" className="min-w-0 flex-1 truncate text-left">{summary}</span>
-          {unavailable && tasks.length > 0 && <span className="text-[11px] text-fg-subtle">{tasks.length} last seen</span>}
+          <span aria-live="polite" className="shrink-0 whitespace-nowrap text-left">{summary}</span>
+          {unavailable && tasks.length > 0 && <span className="shrink-0 text-[11px] text-fg-subtle">{tasks.length} last seen</span>}
+          <span className="min-w-0 flex-1 truncate text-left text-fg-subtle">{preview && `· ${preview}`}</span>
           <ChevronDown aria-hidden className={cn('h-3.5 w-3.5 shrink-0 transition-transform', open && 'rotate-180')} />
         </button>
         {unavailable && tasks.length === 0 && <button
@@ -48,33 +63,34 @@ export function ChatBackgroundTasks({ threadId }: { threadId: string }): JSX.Ele
           className={cn(barTrigger, 'h-6 w-6 shrink-0 justify-center px-0')}
         ><X aria-hidden className="h-3.5 w-3.5" /></button>}
       </div>
-      {open && <div id={listId} role="region" aria-label="Background tasks" className="px-2 pb-1 pt-1">
-        {unavailable && <div className="mb-2 flex items-start gap-2 text-xs text-fg-muted">
+      {open && <div id={listId} role="region" aria-label="Background tasks" className="px-1 pb-0.5 pt-1">
+        {unavailable && <div className="mb-1.5 flex items-start gap-2 px-1 text-xs text-fg-muted">
           <p role={error ? 'alert' : undefined} className="min-w-0 flex-1 leading-relaxed">
             {error ?? 'This OpenCode version cannot list background tasks. Update OpenCode to enable tracking.'}
             {error && tasks.length > 0 && ' The tasks below were last seen running; their current status is unknown.'}
           </p>
           <button type="button" onClick={refresh} className="shrink-0 rounded px-1 text-accent hover:underline">Retry</button>
         </div>}
-        {tasks.length > 0 ? <ul className="max-h-52 space-y-1 overflow-y-auto" aria-label="Running background tasks">
+        {tasks.length > 0 ? <ul className="max-h-48 overflow-y-auto" aria-label="Running background tasks">
           {tasks.map((task) => {
-            const Icon = task.kind === 'shell' ? Terminal : task.kind === 'subagent' ? Users : task.kind === 'image' ? Image : Layers
-            return <li key={task.id} className="rounded-lg border border-line bg-bg/40 px-2.5 py-2">
-              <div className="flex items-start gap-2">
-                <Icon aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-fg-subtle" />
-                <div className="min-w-0 flex-1">
-                  <p className={cn('break-words text-xs leading-relaxed text-fg', task.kind === 'shell' && 'inbox-code-font')} title={task.command ?? task.title}>{task.title}</p>
-                  {task.command && task.command !== task.title && <p className="inbox-code-font mt-0.5 line-clamp-2 break-all text-[11px] text-fg-muted" title={task.command}>{task.command}</p>}
-                  <p className="mt-0.5 text-[11px] text-fg-subtle">
-                    {task.kind === 'shell' ? 'Shell process' : task.kind === 'subagent' ? 'Subagent' : task.kind === 'image' ? 'Image generation' : 'Task'}
-                    {task.startedAt ? ` · Started ${new Date(task.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
-                  </p>
-                </div>
+            const { Icon, label } = KINDS[task.kind as keyof typeof KINDS] ?? { Icon: Layers, label: 'Task' }
+            const shell = task.kind === 'shell'
+            return <li
+              key={task.id}
+              className="flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-hover/60"
+              title={task.startedAt ? `${label}, started ${new Date(task.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : label}
+            >
+              <Icon aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-fg-subtle" />
+              <div className="min-w-0 flex-1">
+                <p className={cn('break-words text-xs leading-relaxed text-fg', shell && 'inbox-code-font')}>
+                  <span className="sr-only">{label}: </span>{task.title}
+                </p>
+                {task.command && task.command !== task.title && <p className="inbox-code-font line-clamp-2 break-all text-[11px] text-fg-muted" title={task.command}>{task.command}</p>}
               </div>
+              {task.startedAt ? <ElapsedTime since={task.startedAt} className="mt-0.5 shrink-0 text-[11px] text-fg-subtle" /> : null}
             </li>
           })}
-        </ul> : !unavailable && <p role="status" className="pb-1 text-xs text-fg-muted">No background tasks running.</p>}
-        <p className="mt-2 text-[11px] text-fg-subtle">Tasks reported by OpenCode for this thread and its subagents.</p>
+        </ul> : !unavailable && <p role="status" className="px-2 pb-1 text-xs text-fg-muted">No background tasks running.</p>}
       </div>}
     </div>
   )

@@ -7,6 +7,7 @@ export const INBOX_WORKING_COLLAPSED_STORAGE_KEY = 'mde.inbox-working-collapsed'
 export const INBOX_DRAFTS_COLLAPSED_STORAGE_KEY = 'mde.inbox-drafts-collapsed'
 export const INBOX_TITLE_ICONS_STORAGE_KEY = 'mde.inbox-title-icons'
 export const INBOX_COMPACT_CHAT_STORAGE_KEY = 'mde.inbox-compact-chat'
+export const INBOX_MODEL_QUICK_SWITCH_STORAGE_KEY = 'mde.inbox-model-quick-switch'
 export const INBOX_PROJECT_FILTER_STORAGE_KEY = 'mde.inbox-project-filter'
 export const INBOX_SIDEBAR_WIDTH_STORAGE_KEY = 'mde.inbox-sidebar-width'
 export const INBOX_TERMINAL_LAYOUT_STORAGE_KEY = 'mde.inbox-terminal-layout'
@@ -41,6 +42,15 @@ function readSwitch(key: string): boolean {
     return localStorage.getItem(key) === 'on'
   } catch {
     return false
+  }
+}
+
+/** `off` when it was turned off; on for anything else, and when storage cannot be read. */
+function readSwitchOnByDefault(key: string): boolean {
+  try {
+    return localStorage.getItem(key) !== 'off'
+  } catch {
+    return true
   }
 }
 
@@ -86,6 +96,15 @@ export function getInboxCompactChat(): boolean {
 
 export function saveInboxCompactChat(on: boolean): void {
   writeSwitch(INBOX_COMPACT_CHAT_STORAGE_KEY, on)
+}
+
+/** Whether the favorite models are offered as buttons above the message box. On unless turned off. */
+export function getInboxModelQuickSwitch(): boolean {
+  return readSwitchOnByDefault(INBOX_MODEL_QUICK_SWITCH_STORAGE_KEY)
+}
+
+export function saveInboxModelQuickSwitch(on: boolean): void {
+  writeSwitch(INBOX_MODEL_QUICK_SWITCH_STORAGE_KEY, on)
 }
 
 /** The project the thread list is narrowed to, as the user last left it: its folder ID, or none. */

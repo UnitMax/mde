@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import type { ChatCreateRequest, ChatDraft, ChatDraftRequest, ChatForkRequest, ChatForkResult, ChatMessage, ChatMessagesPage, ChatOptions, ChatRequests, ChatRevert, ChatRevertRequest, InboxFolder, InboxGitInfo, InboxThread } from '../src/shared/types'
 import { InboxThreadView } from '../src/renderer/components/InboxThreadView'
 import { useInboxChat } from '../src/renderer/store/inbox-chat'
+import { useModelFavorites } from '../src/renderer/store/model-favorites'
 import { useWorkspace } from '../src/renderer/store/workspace'
 import { getTerminalSettings, saveTerminalSettings, TERMINAL_SETTINGS_STORAGE_KEY } from '../src/renderer/terminal/terminal-settings'
 
@@ -707,6 +708,31 @@ describe('Inbox conversation', () => {
       }))
     } finally {
       api.chat.options.mockResolvedValue(options)
+    }
+  })
+
+  it('switches model from the quick switch above the box, and the next message uses it', async () => {
+    const models = [
+      { ...options.models[0]!, variants: ['low', 'high'] },
+      { id: 'free-2', providerId: 'opencode', providerName: 'OpenCode', name: 'Beam Free' },
+    ]
+    api.chat.options.mockResolvedValue({ ...options, models })
+    useModelFavorites.setState({ favorites: [{ id: 'free-1', providerId: 'opencode' }, { id: 'free-2', providerId: 'opencode' }] })
+    try {
+      const view = await render()
+      await vi.waitFor(() => expect(view.querySelector('[data-testid="model-quick-switch"]')).not.toBeNull())
+      const pressed = (): (string | null)[] =>
+        Array.from(view.querySelectorAll('[data-testid^="model-quick-switch-"]')).map((item) => item.getAttribute('aria-pressed'))
+      expect(pressed()).toEqual(['true', 'false'])
+      await act(async () => view.querySelector<HTMLElement>('[data-testid="model-quick-switch-opencode/free-2"]')!.click())
+      expect(pressed()).toEqual(['false', 'true'])
+      expect(view.querySelector('[data-testid="chat-model-picker"]')?.textContent).toContain('Beam Free')
+      await type(messageInput(view), 'Continue')
+      await act(async () => button(view, 'Send').click())
+      expect(api.chat.send).toHaveBeenLastCalledWith(expect.objectContaining({ threadId: 'ses_one', text: 'Continue', model: { id: 'free-2', providerId: 'opencode' } }))
+    } finally {
+      api.chat.options.mockResolvedValue(options)
+      useModelFavorites.setState({ favorites: [] })
     }
   })
 

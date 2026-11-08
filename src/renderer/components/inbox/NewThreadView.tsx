@@ -13,6 +13,8 @@ import {
 import { AddInboxFolderDialog } from '@/components/inbox/AddInboxFolderDialog'
 import { ChatComposer } from '@/components/inbox/ChatComposer'
 import { ComposerBar } from '@/components/inbox/ComposerBar'
+import { ComposerDock } from '@/components/inbox/ComposerDock'
+import { ModelQuickSwitch } from '@/components/inbox/ModelQuickSwitch'
 import { InboxProjectsDialog } from '@/components/inbox/InboxProjectsDialog'
 import { McpChip } from '@/components/inbox/McpChip'
 import { ProjectIcon } from '@/components/inbox/ProjectIcon'
@@ -289,6 +291,10 @@ export function NewThreadView(): JSX.Element {
           )}
         </div>
         {folder && (
+          <>
+          <ComposerDock>
+            {ready && <ModelQuickSwitch models={ready.models} value={model} onChange={chooseModel} />}
+          </ComposerDock>
           <ChatComposer
             // The draft stays with the page when its folder is changed, so what was typed is not lost to the switch.
             key={page.id}
@@ -340,6 +346,7 @@ export function NewThreadView(): JSX.Element {
               }
             }}
           />
+          </>
         )}
         {saved && (
           <p role="status" data-testid="inbox-draft-saved" className="-mt-3 text-center text-xs text-fg-muted">

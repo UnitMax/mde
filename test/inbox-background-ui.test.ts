@@ -54,6 +54,36 @@ describe('background tasks above the composer', () => {
     expect(container.querySelector('script')).toBeNull()
   })
 
+  it('says which tasks are running when closed, and how long each has been going when open', async () => {
+    listed = { supported: true, tasks: [{ ...task, startedAt: Date.now() - 125_000 }, { id: 'job_child', kind: 'subagent', title: 'Review code' }] }
+    await render()
+    expect(toggle().textContent).toContain('2 background tasks running')
+    expect(toggle().textContent).toContain('Web server, Review code')
+    await click(toggle())
+    // Open, the list says it, so the line does not.
+    expect(toggle().textContent).not.toContain('Web server')
+    const rows = Array.from(container.querySelectorAll('li'))
+    expect(rows[0]!.querySelector('[role="timer"]')?.textContent).toBe('2m 5s')
+    expect(rows[0]!.getAttribute('title')).toMatch(/^Shell process, started /)
+    // A task with no start time has no clock, and the kind is for a screen reader.
+    expect(rows[1]!.querySelector('[role="timer"]')).toBeNull()
+    expect(rows[1]!.querySelector('.sr-only')?.textContent).toBe('Subagent: ')
+    // The explanation is a tooltip, not a line of its own.
+    expect(container.textContent).not.toContain('Tasks reported by OpenCode')
+    expect(toggle().getAttribute('title')).toContain('reported by OpenCode')
+  })
+
+  it('is a row for the tray above the box, and leaves the tray empty when there is nothing to say', async () => {
+    const { ComposerDock } = await import('../src/renderer/components/inbox/ComposerDock')
+    listed = { supported: true, tasks: [] }
+    await act(async () => root.render(createElement(ComposerDock, null, createElement(ChatBackgroundTasks, { threadId: 'ses_one' }))))
+    const dock = container.querySelector('[data-testid="composer-dock"]')!
+    expect(dock.childNodes.length).toBe(0)
+    listed = { supported: true, tasks: [task] }
+    await act(async () => listener?.({ type: 'background', threadId: 'ses_one' }))
+    expect(dock.querySelector('[data-testid="chat-background-tasks"]')).not.toBeNull()
+  })
+
   it('keeps an open list visible when the last task finishes', async () => {
     await render()
     await click(toggle())

@@ -47,6 +47,7 @@
     "src/renderer/lib/mini-inbox.ts",
     "src/renderer/lib/window-chrome.ts",
     "src/renderer/lib/inbox-terminal-highlight.ts",
+    "src/renderer/lib/model-quick-switch.ts",
     "src/renderer/lib/terminal-instances.ts",
     "src/renderer/components/MiniInboxWindow.tsx",
     "src/renderer/components/TitleBar.tsx",

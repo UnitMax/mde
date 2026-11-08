@@ -3,6 +3,8 @@ import { AlertTriangle, FoldVertical, LoaderCircle, RefreshCw } from 'lucide-rea
 import type { ChatMessage, InboxThread, OpenCodeModelRef } from '@shared/types'
 import { ChatAside } from '@/components/inbox/ChatAside'
 import { ChatBackgroundTasks } from '@/components/inbox/ChatBackgroundTasks'
+import { ComposerDock } from '@/components/inbox/ComposerDock'
+import { ModelQuickSwitch } from '@/components/inbox/ModelQuickSwitch'
 import { ChatComposer, type ChatComposerHandle } from '@/components/inbox/ChatComposer'
 import { ChatGoalCard, type GoalAction } from '@/components/inbox/ChatGoalCard'
 import { McpChip } from '@/components/inbox/McpChip'
@@ -432,7 +434,10 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
       <div ref={composerSlot} className={cn('mx-auto w-full max-w-3xl shrink-0 px-6 pb-5 pt-2', railGutter)}>
         {goal && <ChatGoalCard key={goal.id} goal={goal} phase={phase} running={running} onAction={(action) => setGoal(thread.id, { action })} />}
         {aside && <ChatAside aside={aside} onDismiss={closeAside} onRetry={() => void askAside(thread.id, aside.question)} />}
-        <ChatBackgroundTasks key={`background:${thread.id}`} threadId={thread.id} />
+        <ComposerDock>
+          <ChatBackgroundTasks key={`background:${thread.id}`} threadId={thread.id} />
+          {ready && <ModelQuickSwitch models={ready.models} value={model} onChange={setModel} />}
+        </ComposerDock>
         <ChatComposer
           ref={composer}
           key={thread.id}

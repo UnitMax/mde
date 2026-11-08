@@ -4,12 +4,13 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useInboxChanges } from '@/store/inbox-changes'
 import { useInboxView } from '@/store/inbox-view'
 
-/** A gear at the end of the Inbox filters, with the Inbox's display settings. */
+/** A gear at the end of the Inbox toolbar, with the Inbox's display settings. */
 export function InboxSettingsMenu(): JSX.Element {
   const sidebarChanges = useInboxChanges((state) => state.sidebarChanges)
   const setSidebarChanges = useInboxChanges((state) => state.setSidebarChanges)
@@ -17,6 +18,8 @@ export function InboxSettingsMenu(): JSX.Element {
   const setWorkingSection = useInboxView((state) => state.setWorkingSection)
   const titleIcons = useInboxView((state) => state.titleIcons)
   const setTitleIcons = useInboxView((state) => state.setTitleIcons)
+  const modelQuickSwitch = useInboxView((state) => state.modelQuickSwitch)
+  const setModelQuickSwitch = useInboxView((state) => state.setModelQuickSwitch)
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -65,6 +68,20 @@ export function InboxSettingsMenu(): JSX.Element {
             <span className="block">Project icons</span>
             <span className="mt-0.5 block text-[11px] leading-snug text-fg-subtle">
               Shows each project&rsquo;s icon in front of the thread title, instead of beside the project name.
+            </span>
+          </span>
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>Message box</DropdownMenuLabel>
+        <DropdownMenuCheckboxItem
+          data-testid="inbox-setting-quick-switch"
+          checked={modelQuickSwitch}
+          onCheckedChange={(checked) => setModelQuickSwitch(checked === true)}
+        >
+          <span className="min-w-0">
+            <span className="block">Model quick switch</span>
+            <span className="mt-0.5 block text-[11px] leading-snug text-fg-subtle">
+              Shows up to five favorite models as buttons above the message box. Star models in the model menu.
             </span>
           </span>
         </DropdownMenuCheckboxItem>

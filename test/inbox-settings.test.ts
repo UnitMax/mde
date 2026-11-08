@@ -3,7 +3,15 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { InboxPanel } from '../src/renderer/components/InboxPanel'
-import { getInboxSidebarChanges, INBOX_SIDEBAR_CHANGES_STORAGE_KEY, saveInboxSidebarChanges } from '../src/renderer/lib/inbox-settings'
+import {
+  getInboxModelQuickSwitch,
+  getInboxSidebarChanges,
+  INBOX_MODEL_QUICK_SWITCH_STORAGE_KEY,
+  INBOX_SIDEBAR_CHANGES_STORAGE_KEY,
+  saveInboxModelQuickSwitch,
+  saveInboxSidebarChanges
+} from '../src/renderer/lib/inbox-settings'
+import { useInboxView } from '../src/renderer/store/inbox-view'
 import { useInboxChanges } from '../src/renderer/store/inbox-changes'
 import { useWorkspace } from '../src/renderer/store/workspace'
 import type { InboxChangesResponse, InboxThread } from '../src/shared/types'
@@ -101,5 +109,52 @@ describe('Inbox display setting for Git changes', () => {
     const filter = container.querySelector('[aria-label="Filter threads"]')!
     expect(gear().getAttribute('aria-label')).toBe('Inbox settings')
     expect(filter.compareDocumentPosition(gear()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+})
+
+describe('Inbox display setting for the model quick switch', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    vi.stubGlobal('IntersectionObserver', undefined)
+    vi.stubGlobal('api', { inbox: { changes, setRead: vi.fn(async () => null), setArchived: vi.fn(async () => null) } })
+    useWorkspace.setState({ platform: { platform: 'darwin', isWindows: false }, inboxThreads: [thread], selectedInboxThreadId: null, inboxMarkedUnread: {}, inboxCues: {}, activeWorkspaceView: 'inbox' })
+    useInboxChanges.setState({ entries: {}, selectedPath: null, tab: 'files', sidebarChanges: false })
+    useInboxView.setState({ modelQuickSwitch: true })
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+  })
+  afterEach(async () => {
+    await act(async () => root.unmount())
+    document.body.innerHTML = ''
+    vi.unstubAllGlobals()
+  })
+
+  it('is on until it is turned off, and an unreadable or unknown stored value is on too', () => {
+    expect(getInboxModelQuickSwitch()).toBe(true)
+    saveInboxModelQuickSwitch(false)
+    expect(localStorage.getItem(INBOX_MODEL_QUICK_SWITCH_STORAGE_KEY)).toBe('off')
+    expect(getInboxModelQuickSwitch()).toBe(false)
+    saveInboxModelQuickSwitch(true)
+    expect(getInboxModelQuickSwitch()).toBe(true)
+    localStorage.setItem(INBOX_MODEL_QUICK_SWITCH_STORAGE_KEY, 'maybe')
+    expect(getInboxModelQuickSwitch()).toBe(true)
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked') })
+    expect(getInboxModelQuickSwitch()).toBe(true)
+    vi.restoreAllMocks()
+  })
+
+  it('is a switch in the gear menu, checked at first, that turns it off and on', async () => {
+    await act(async () => root.render(createElement(InboxPanel)))
+    await openMenu()
+    const entry = (): HTMLElement => document.body.querySelector<HTMLElement>('[data-testid="inbox-setting-quick-switch"]')!
+    expect(entry().textContent).toContain('Model quick switch')
+    expect(entry().getAttribute('aria-checked')).toBe('true')
+    await act(async () => entry().click())
+    expect(useInboxView.getState().modelQuickSwitch).toBe(false)
+    expect(localStorage.getItem(INBOX_MODEL_QUICK_SWITCH_STORAGE_KEY)).toBe('off')
+    await openMenu()
+    expect(entry().getAttribute('aria-checked')).toBe('false')
   })
 })

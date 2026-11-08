@@ -1198,9 +1198,19 @@ The new thread's header says "Forked from" with the original's title (a muted ma
 still in the Inbox, and the sidebar row shows a small fork icon. `forkedFrom` is stored in
 `inbox.json` as a thread ID and dropped if it is not one; it is not otherwise used.
 
-**Background tasks.** `ChatBackgroundTasks` is a rounded strip above the thread's composer, matching
-the worktree strip below the new-thread composer. It shows the number of running tasks and expands
-to commands and task descriptions. The main process calls OpenCode's experimental
+**Composer dock.** `ComposerDock` is the tray tucked behind the top edge of the message box (the thread's and the
+new-thread page's), matching the worktree strip below the new-thread box. It holds rows that draw themselves or
+nothing, told apart by a hairline: the background tasks and the model quick switch. A tray with no row is not there.
+
+**Model quick switch.** `ModelQuickSwitch` is a row of the dock with up to five favorite models (the stars of the
+model menu, see above) as buttons, the model in use lit. Clicking one makes the next message use it, exactly as the
+menu does, and keeps the effort in use when the new model has it too (otherwise the model's default). The buttons
+are the first favorites in the order they were starred that the project offers; a favorite beyond the fifth that is
+in use takes the last place so the lit one is always there. Nothing is drawn without a favorite the project offers
+(`lib/model-quick-switch.ts`). It is on by default and can be turned off with **Model quick switch** in the Inbox settings gear menu (kept in `localStorage`, `mde.inbox-model-quick-switch`); the favorites are kept either way.
+
+**Background tasks.** `ChatBackgroundTasks` is a row of the dock above the thread's composer. Closed it shows the
+number of running tasks and their titles; open it lists each with its command and how long it has been going. The main process calls OpenCode's experimental
 `GET /api/experimental/job` with the recorded session ID, `status=running`, and `descendants=true`,
 so background shells, subagents, and image jobs are counted even after the agent's turn finishes.
 Completed but unconsumed jobs are excluded. An unknown response shape is a failure, not an empty list.
