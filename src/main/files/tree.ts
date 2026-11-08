@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs'
-import { join, sep } from 'node:path'
+import { join } from 'node:path'
+import { readContainedFile } from './read'
 import type {
   FileReadResponse,
   FileTreeEntry,
@@ -203,10 +204,14 @@ export const READ_WSL_FILE_SCRIPT = [
   'real=$(realpath -e -- "$target") || exit 11',
   'case "$real" in "${real_root%/}"/*) ;; *) exit 12 ;; esac',
   '[ -f "$real" ] || exit 13',
-  'size=$(stat -L -c %s -- "$real") || exit 14',
+  'exec 3< "$real" || exit 11',
+  'opened=$(readlink -f -- /proc/self/fd/3) || exit 11',
+  'case "$opened" in "${real_root%/}"/*) ;; *) exit 12 ;; esac',
+  '[ -f /proc/self/fd/3 ] || exit 13',
+  'size=$(stat -L -c %s -- /proc/self/fd/3) || exit 14',
   'printf "%s\\n" "$size"',
   '[ "$size" -gt "$limit" ] && exit 0',
-  'exec head -c "$limit" -- "$real"'
+  'exec head -c "$limit" <&3'
 ].join('\n')
 
 const WSL_READ_ERRORS: Record<number, string> = {
@@ -260,32 +265,10 @@ async function readWslFile(
   )
 }
 
-function isInside(root: string, target: string): boolean {
-  const prefix = root.endsWith(sep) ? root : root + sep
-  return target.startsWith(prefix)
-}
-
 async function readNativeFile(session: DirectoryContext, relativePath: string): Promise<FileReadResponse> {
-  let handle: fs.FileHandle | null = null
   try {
-    const realRoot = await fs.realpath(session.path)
-    const real = await fs.realpath(join(session.path, ...relativePath.split('/')))
-    if (!isInside(realRoot, real)) throw new Error('File is outside the session folder.')
-
-    handle = await fs.open(real, 'r')
-    const stat = await handle.stat()
-    if (!stat.isFile()) throw new Error('Not a file.')
-    if (stat.size > MAX_FILE_VIEW_BYTES) return fileResponse(relativePath, stat.size, null)
-
-    // One byte past the limit detects a file that grew since the stat.
-    const buffer = Buffer.alloc(MAX_FILE_VIEW_BYTES + 1)
-    let length = 0
-    while (length < buffer.length) {
-      const { bytesRead } = await handle.read(buffer, length, buffer.length - length, length)
-      if (bytesRead === 0) break
-      length += bytesRead
-    }
-    return fileResponse(relativePath, Math.max(stat.size, length), buffer.subarray(0, length))
+    const { size, bytes } = await readContainedFile(session.path, relativePath, MAX_FILE_VIEW_BYTES)
+    return fileResponse(relativePath, size, bytes)
   } catch (error) {
     if (error instanceof Error && !('code' in error)) throw error
     const code = (error as NodeJS.ErrnoException).code
@@ -293,8 +276,6 @@ async function readNativeFile(session: DirectoryContext, relativePath: string): 
     if (code === 'EISDIR') throw new Error('Not a file.')
     if (code === 'EACCES' || code === 'EPERM') throw new Error('Permission denied.')
     throw new Error('Could not read file.')
-  } finally {
-    await handle?.close()
   }
 }
 
@@ -329,21 +310,7 @@ export async function readSessionAttachment(session: DirectoryContext, path: str
     if (newline < 0 || !Number.isSafeInteger(size) || size < 0 || size > limit || bytes.length !== size) throw new Error('Attachment exceeds 20 MiB or changed while reading.')
     return bytes
   }
-  const root = await fs.realpath(session.path)
-  const real = await fs.realpath(join(root, ...path.split('/')))
-  if (!isInside(root, real)) throw new Error('File is outside the session folder.')
-  const handle = await fs.open(real, 'r')
-  try {
-    const stat = await handle.stat()
-    if (!stat.isFile() || stat.size > limit) throw new Error('Choose a regular file of at most 20 MiB.')
-    const bytes = Buffer.alloc(stat.size + 1)
-    let length = 0
-    while (length < bytes.length) {
-      const read = await handle.read(bytes, length, bytes.length - length, length)
-      if (!read.bytesRead) break
-      length += read.bytesRead
-    }
-    if (length !== stat.size) throw new Error('The file changed while reading. Try again.')
-    return bytes.subarray(0, length)
-  } finally { await handle.close() }
+  const { size, bytes } = await readContainedFile(session.path, path, limit)
+  if (!bytes || size > limit) throw new Error('Choose a regular file of at most 20 MiB.')
+  return bytes
 }

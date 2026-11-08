@@ -597,3 +597,5 @@ remain unchanged. Prompt and history size allowances are restricted to the relev
 OpenCode operations; oversized history responses retry with smaller pages, never unbounded reads.
 
 Permission scope hardening: incomplete, malformed, overlong or visually ambiguous resource lists disable approval in the card. Main re-reads the request before granting and refuses incomplete or missing scopes; rejection remains available.
+
+File and stream hardening: native previews and attachment copies share nonblocking regular-file opens, no-follow protection and handle identity revalidation. Linux checks the actual opened descriptor path under /proc; WSL reads use a validated descriptor rather than reopening the pathname. SSE limits count full multiline UTF-8 events and cancel oversized streams. Linux final-file/ancestor race and FIFO regressions pass. macOS/Windows pathname revalidation is defense in depth, not atomic ancestor containment; SEC-028 remains open there. WSL pre-open FIFO races remain bounded by the subprocess timeout.

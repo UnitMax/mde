@@ -379,6 +379,12 @@ describe('OpenCode service client', () => {
 })
 
 describe('OpenCode service events', () => {
+  it('bounds multiline and multibyte events across chunks', () => {
+    const parser = new SseParser()
+    const line = `data: ${'é'.repeat(256 * 1024)}\n`
+    expect(() => { for (let i = 0; i < 17; i++) parser.push(line) }).toThrow('size limit')
+    expect(() => new SseParser().push('x'.repeat(8 * 1024 * 1024 + 1))).toThrow('size limit')
+  })
   it('decodes server-sent events split across chunks and skips heartbeats', () => {
     const parser = new SseParser()
     expect(parser.push('data: {"type":"a","da')).toEqual([])

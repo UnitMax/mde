@@ -15,28 +15,29 @@ const EVENT_TYPE = /^[a-z][a-z0-9._-]{0,99}$/
 export class SseParser {
   private buffer = ''
   private data: string[] = []
+  private eventBytes = 0
 
   push(chunk: string): string[] {
     this.buffer += chunk
-    if (this.buffer.length > MAX_EVENT_BYTES) {
-      // A runaway event is dropped rather than buffered without bound.
-      this.buffer = ''
-      this.data = []
-      return []
-    }
     const events: string[] = []
     let newline: number
     while ((newline = this.buffer.search(/\r?\n|\r/)) >= 0) {
       const line = this.buffer.slice(0, newline)
       const width = this.buffer.startsWith('\r\n', newline) ? 2 : 1
+      this.eventBytes += Buffer.byteLength(line, 'utf8') + width
+      if (this.eventBytes > MAX_EVENT_BYTES) throw new Error('OpenCode event exceeds the size limit.')
       this.buffer = this.buffer.slice(newline + width)
       if (line === '') {
         if (this.data.length > 0) events.push(this.data.join('\n'))
         this.data = []
+        this.eventBytes = 0
       } else if (line.startsWith('data:')) {
         this.data.push(line.slice(line.startsWith('data: ') ? 6 : 5))
       }
       // Comments (`: heartbeat`), `id:`, `event:` and `retry:` lines are not needed.
+    }
+    if (this.eventBytes + Buffer.byteLength(this.buffer, 'utf8') > MAX_EVENT_BYTES) {
+      throw new Error('OpenCode event exceeds the size limit.')
     }
     return events
   }
@@ -157,6 +158,7 @@ export class ServiceEventStreams {
             }
           }
         } finally {
+          await reader.cancel().catch(() => {})
           reader.releaseLock()
         }
       } catch (error) {
