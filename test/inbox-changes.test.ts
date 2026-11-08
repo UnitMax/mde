@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { realpathSync } from 'node:fs'
 import { mkdtemp, mkdir, writeFile, unlink, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -18,7 +19,8 @@ const directories: string[] = []
 afterEach(async () => { await Promise.all(directories.splice(0).map((path) => rm(path, { recursive: true, force: true }))) })
 
 async function repository(initialize = true) {
-  const directory = await mkdtemp(join(tmpdir(), 'mde-inbox-git-'))
+  // The long form of the name: Git reports it, and a Windows temporary directory may be spelled with an 8.3 short name.
+  const directory = realpathSync.native(await mkdtemp(join(tmpdir(), 'mde-inbox-git-')))
   directories.push(directory)
   const git = (...args: string[]) => exec('git', args, { cwd: directory })
   if (initialize) {

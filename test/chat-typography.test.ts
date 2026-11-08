@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
-const read = (path: string): string => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
+// A Windows checkout may turn line endings into CRLF; the rules are matched line by line.
+const read = (path: string): string => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8').replace(/\r\n/g, '\n')
 const css = read('src/renderer/index.css')
 const rule = (selector: string): string => {
   const match = new RegExp(`^  ${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([^}]*)\\}`, 'm').exec(css)

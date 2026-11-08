@@ -1,4 +1,4 @@
-import { promises as fs } from 'node:fs'
+import { promises as fs, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFile } from 'node:child_process'
@@ -18,7 +18,9 @@ describe.skipIf(process.platform !== 'win32')('native Windows contained file rea
   let file: string
   let redirected: boolean
   beforeEach(async () => {
-    base = await fs.mkdtemp(join(tmpdir(), 'mde-win-contained-'))
+    // The long form of the name: the reader works with real paths, and a CI user's temporary directory is spelled
+    // with an 8.3 short name (RUNNER~1), so the fixture's own spelling would never match the path it is given.
+    base = realpathSync.native(await fs.mkdtemp(join(tmpdir(), 'mde-win-contained-')))
     root = join(base, "root with spaces ' $literal")
     sub = join(root, 'sub')
     parked = join(root, 'parked')
