@@ -12,7 +12,8 @@ import { getInboxCompactChat, INBOX_COMPACT_CHAT_STORAGE_KEY, saveInboxCompactCh
 import { useInboxChat } from '../src/renderer/store/inbox-chat'
 import { useInboxView } from '../src/renderer/store/inbox-view'
 import { useWorkspace } from '../src/renderer/store/workspace'
-import type { ChatMessage, ChatMessagesPage, ChatPart, InboxThread } from '../src/shared/types'
+import type { ChatMessage, ChatMessagesPage, ChatPart, ChatRequests, InboxThread } from '../src/shared/types'
+import { parseMessage } from '../src/main/opencode/service/parse'
 
 const MODEL = { id: 'free-1', providerId: 'opencode' }
 const TOGGLE = '[data-testid="chat-compact-toggle"]'
@@ -56,7 +57,7 @@ const api = {
     subscribe: vi.fn(async () => undefined),
     unsubscribe: vi.fn(async () => undefined),
     messages: vi.fn(async () => page),
-    requests: vi.fn(async () => ({ permissions: [], forms: [] })),
+    requests: vi.fn(async (): Promise<ChatRequests> => ({ permissions: [], forms: [] })),
     options: vi.fn(() => new Promise(() => {})),
   },
 }
@@ -135,6 +136,54 @@ describe('the compact mode switch', () => {
 })
 
 describe('a conversation in compact mode', () => {
+  it('folds a command, its process notification and later thinking into one activity line', async () => {
+    const notice = parseMessage({
+      id: 'n_process', type: 'synthetic', description: 'python3 server.py',
+      text: 'The background command received SIGTERM and exited cleanly.',
+    })!
+    page = {
+      messages: [
+        prompt,
+        step('a_command', [shell('kill "$SERVER_PID"')]),
+        notice,
+        step('a_answer', [{ kind: 'reasoning', text: 'The server has stopped.' }, { kind: 'text', text: 'The server has been stopped. Port 8000 is now free.' }]),
+      ], older: null, running: false,
+    }
+    useInboxView.setState({ compactChat: true })
+    await render()
+    await vi.waitFor(() => expect(q('[data-testid="chat-message-a_answer"]')).not.toBeNull())
+    expect(all('[data-testid="chat-activity"]')).toHaveLength(1)
+    expect(text(q('[data-testid="chat-activity-summary"]'))).toBe('Thought, ran 1 command and received 1 update')
+    expect(q('[data-testid="chat-message-n_process"]')).toBeNull()
+    expect(q('[data-testid="chat-reasoning"]')).toBeNull()
+    expect(text(q('[data-testid="chat-message-a_answer"]'))).toContain('Port 8000 is now free.')
+    await click(q('[data-testid="chat-activity"] button'))
+    expect(all('[data-testid^="chat-tool-"]')).toHaveLength(1)
+    expect(q('[data-testid="chat-reasoning"]')).not.toBeNull()
+    const row = q('[data-testid="chat-note-n_process"]')!
+    expect(text(row)).toContain('python3 server.py')
+    await click(row.querySelector('button'))
+    expect(text(row)).toContain('received SIGTERM and exited cleanly')
+    await click(q(TOGGLE))
+    expect(all('[data-testid="chat-activity"]')).toHaveLength(0)
+    expect(q('[data-testid="chat-message-n_process"]')).not.toBeNull()
+    expect(q('[data-testid="chat-reasoning"]')).not.toBeNull()
+  })
+
+  it('can start an activity group with a notification before the next assistant step', async () => {
+    page = {
+      messages: [prompt, parseMessage({ id: 'n_context', type: 'system', text: 'Background job finished.', description: 'Job finished' })!, step('a_answer', [{ kind: 'text', text: 'Ready.' }])],
+      older: null, running: false,
+    }
+    useInboxView.setState({ compactChat: true })
+    await render()
+    await vi.waitFor(() => expect(q('[data-testid="chat-activity-summary"]')).not.toBeNull())
+    expect(text(q('[data-testid="chat-activity-summary"]'))).toBe('Received 1 update')
+    expect(text(q('[data-testid="chat-message-a_answer"]'))).toBe('Ready.')
+    await click(q('[data-testid="chat-activity"] button'))
+    expect(text(q('[data-testid="chat-note-n_context"]'))).toBe('Job finished')
+  })
+
   it('shows every step as it always did until compact is turned on', async () => {
     await render()
     await vi.waitFor(() => expect(q('[data-testid="chat-message-a4"]')).not.toBeNull())
@@ -240,7 +289,10 @@ describe('a conversation in compact mode', () => {
     page = { messages: [prompt, step('a1', [{ kind: 'text', text: 'Fixing it.' }, edit()]), step('a2', [{ kind: 'text', text: 'Done.' }])], older: null, running: false }
     useInboxView.setState({ compactChat: true })
     await render()
-    await vi.waitFor(() => expect(q('[data-testid="chat-diff"]')).not.toBeNull())
+    await vi.waitFor(() => expect(q('[data-testid="chat-activity"]')).not.toBeNull())
+    expect(q('[data-testid="chat-diff"]')).toBeNull()
+    expect(text(q('[data-testid="chat-activity-summary"]'))).toBe('Wrote an update and edited 1 file')
+    await click(q('[data-testid="chat-activity"] button'))
     const row = q('[data-testid="chat-diff"]')!
     expect(row.querySelector('button')!.getAttribute('aria-expanded')).toBe('false')
     expect(text(q('[data-testid="chat-diff-stats"]'))).toBe('+1−1')
@@ -252,6 +304,84 @@ describe('a conversation in compact mode', () => {
     // Not compact, it is open as it always was; and what was chosen by hand stays.
     await click(q(TOGGLE))
     expect(all('.file-diff-row')).toHaveLength(3)
+  })
+
+  it('folds thinking, a file write, a patch, a notification and a test command into one line', async () => {
+    const write = tool('write', { filePath: '/home/me/app/server.py', content: 'print("Hello World")' }, { existed: false })
+    const patch = tool('patch', { patchText: '*** Begin Patch\n*** Add File: README.md\n+Run python3 server.py\n*** End Patch' })
+    page = {
+      messages: [
+        prompt,
+        step('a1', [{ kind: 'reasoning', text: 'I will create the server.' }, { kind: 'text', text: 'Writing the file.' }, write]),
+        step('a2', [patch]),
+        parseMessage({ id: 'n_process', type: 'synthetic', description: 'python3 server.py', text: 'Process started.' })!,
+        step('a3', [{ kind: 'reasoning', text: 'Now test it.' }, shell('curl http://localhost:8000')]),
+        step('a4', [{ kind: 'text', text: 'Done! The server works.' }]),
+      ], older: null, running: false,
+    }
+    useInboxView.setState({ compactChat: true })
+    await render()
+    await vi.waitFor(() => expect(q('[data-testid="chat-message-a4"]')).not.toBeNull())
+    expect(all('[data-testid="chat-activity"]')).toHaveLength(1)
+    expect(text(q('[data-testid="chat-activity-summary"]')))
+      .toBe('Thought 2 times, wrote an update, wrote 1 file, applied 1 patch, ran 1 command and received 1 update')
+    expect(q('[data-testid="chat-diff"]')).toBeNull()
+    expect(q('[data-testid="chat-reasoning"]')).toBeNull()
+    expect(text(q('[data-testid="chat-message-a4"]'))).toBe('Done! The server works.')
+    await click(q('[data-testid="chat-activity"] button'))
+    expect(all('[data-testid="chat-diff"]')).toHaveLength(2)
+    expect(all('[data-testid="chat-reasoning"]')).toHaveLength(2)
+    expect(q('[data-testid="chat-note-n_process"]')).not.toBeNull()
+  })
+
+  it('keeps answered questions and subagent cards inside the group with their details intact', async () => {
+    const question = tool('question', { questions: [{ question: 'Which port?' }] }, { answers: [['8000']] })
+    const subagent = (id: string) => tool('subagent', { agent: 'general', description: `Review ${id}`, prompt: 'Check the server.' }, {
+      output: 'Looks good.', subagent: { sessionId: `ses_${id}`, model: { id: 'review-model', providerId: 'p', variant: 'high' } },
+    })
+    page = { messages: [prompt, step('a1', [question, subagent('one'), subagent('two')]), step('a2', [shell('npm test'), { kind: 'text', text: 'All done.' }])], older: null, running: false }
+    useInboxView.setState({ compactChat: true })
+    await render()
+    await vi.waitFor(() => expect(q('[data-testid="chat-message-a2"]')).not.toBeNull())
+    expect(all('[data-testid="chat-activity"]')).toHaveLength(1)
+    expect(q('[data-testid="chat-answered-question"]')).toBeNull()
+    expect(q('[data-testid="chat-subagents"]')).toBeNull()
+    await click(q('[data-testid="chat-activity"] button'))
+    expect(text(q('[data-testid="chat-answered-question"]'))).toContain('8000')
+    expect(all('[data-testid="chat-subagents"]')).toHaveLength(1)
+    expect(all('[data-testid^="chat-subagent-"]')).toHaveLength(2)
+    expect(all('[aria-label="Model: review-model · high"]')).toHaveLength(2)
+    await click(q(TOGGLE))
+    expect(q('[data-testid="chat-answered-question"]')).not.toBeNull()
+    expect(q('[data-testid="chat-subagents"]')).not.toBeNull()
+  })
+
+  it('leaves active permission and question requests outside the collapsed activity', async () => {
+    const answer: ChatRequests = {
+      permissions: [{ id: 'per_active', action: 'shell', resources: ['python3 server.py'] }],
+      forms: [{ id: 'form_active', title: 'Which port?', unsupported: false, fields: [{ key: 'port', type: 'string', title: 'Port', required: true, options: [], custom: true }] }],
+    }
+    api.chat.requests.mockResolvedValueOnce(answer)
+    page = { messages: [prompt, step('a1', [tool('write', { filePath: '/home/me/app/server.py' }, { status: 'running' }), tool('question', {}, { status: 'running' })], false)], older: null, running: true }
+    useWorkspace.setState({ inboxThreads: [thread({ status: 'attention', attentionReason: 'question' })] })
+    useInboxView.setState({ compactChat: true })
+    await render()
+    await vi.waitFor(() => expect(q('[data-testid="chat-question-form_active"]')).not.toBeNull())
+    const group = q('[data-testid="chat-activity"]')!
+    expect(group.querySelector('button')?.getAttribute('aria-expanded')).toBe('false')
+    expect(q('[data-testid="chat-permission-per_active"]')).not.toBeNull()
+    expect(group.contains(q('[data-testid="chat-permission-per_active"]'))).toBe(false)
+    expect(group.contains(q('[data-testid="chat-question-form_active"]'))).toBe(false)
+    expect(q('[data-testid="chat-permission-per_active"] button')?.hasAttribute('disabled')).toBe(false)
+  })
+
+  it.each(['write', 'edit', 'subagent'])('keeps failed %s activity visible in the collapsed failure count', async (name) => {
+    page = { messages: [prompt, step('a1', [tool(name, {}, { status: 'error', error: 'Operation failed.' })]), step('a2', [{ kind: 'text', text: 'It failed.' }])], older: null, running: false }
+    useInboxView.setState({ compactChat: true })
+    await render()
+    await vi.waitFor(() => expect(q('[data-testid="chat-activity"]')).not.toBeNull())
+    expect(text(q('[data-testid="chat-activity"] button'))).toContain('1 failed')
+    expect(q('[data-testid="chat-activity"] button')?.getAttribute('aria-expanded')).toBe('false')
   })
 
   it('opens a file change in a conversation that is not compact', async () => {

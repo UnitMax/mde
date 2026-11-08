@@ -1,12 +1,12 @@
 import { memo, useMemo, useState } from 'react'
-import { AlertTriangle, BookOpen, ChevronRight, CircleAlert, FoldVertical, GitFork, Info, Target, Undo2 } from 'lucide-react'
+import { BookOpen, ChevronRight, CircleAlert, FoldVertical, GitFork, Target, Undo2 } from 'lucide-react'
 import type { ChatMessage, ChatModel } from '@shared/types'
-import { ActivityGroup, ThoughtRow } from '@/components/inbox/ChatActivity'
+import { ActivityGroup, NoteRow, ThoughtRow } from '@/components/inbox/ChatActivity'
 import { ChatMarkdown } from '@/components/inbox/ChatMarkdown'
 import { ChatQuoteCard } from '@/components/inbox/ChatQuoteCard'
 import { SubagentGroup } from '@/components/inbox/ChatSubagents'
 import { ToolCallView } from '@/components/inbox/ChatTools'
-import { ActivityRow, CodeText, Surface } from '@/components/inbox/chat-ui'
+import { ActivityRow, Surface } from '@/components/inbox/chat-ui'
 import { formatTokens, messageBlocks } from '@/lib/chat'
 import { activityBlocks, type RenderBlock } from '@/lib/chat-tools'
 import { splitQuotes } from '@/lib/chat-quote'
@@ -145,16 +145,12 @@ export const ChatMessageView = memo(function ChatMessageView({
     )
   }
   if (message.kind === 'note') {
-    const error = message.tone === 'error'
+    if (plan?.length === 0) return null
     return (
       <div data-testid={`chat-message-${message.id}`} data-chat-message={message.id} className="-my-1">
-        <ActivityRow
-          icon={error ? AlertTriangle : Info}
-          failed={error}
-          quiet={!error}
-          verb={<span className="whitespace-normal break-words">{message.text}</span>}
-          detail={message.detail ? <Surface tone={error ? 'danger' : undefined}><CodeText text={message.detail} className="max-h-80" /></Surface> : undefined}
-        />
+        {plan ? plan.map((block) => block.kind === 'activity'
+          ? <ActivityGroup key={`activity-${block.index}`} items={block.items} directory={directory} models={models} live={block.live ?? false} />
+          : null) : <NoteRow message={message} />}
       </div>
     )
   }
@@ -221,7 +217,7 @@ function AssistantMessage({
         const tail = position === blocks.length - 1
         if (block.kind === 'subagents') return <SubagentGroup key={`subagents-${block.index}`} parts={block.parts} models={models} />
         if (block.kind === 'activity') {
-          return <ActivityGroup key={`activity-${block.index}`} items={block.items} directory={directory} live={block.live ?? (live && tail)} />
+          return <ActivityGroup key={`activity-${block.index}`} items={block.items} directory={directory} models={models} live={block.live ?? (live && tail)} />
         }
         const { part, index } = block
         if (part.kind === 'text') return part.text.trim() ? <ChatMarkdown key={index} text={part.text} /> : null

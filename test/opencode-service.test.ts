@@ -435,6 +435,21 @@ describe('OpenCode service events', () => {
 })
 
 describe('OpenCode service parsing', () => {
+  it('identifies routine notes for compact activity without classifying switches and failures as routine', () => {
+    expect(parseMessage({ id: 'notice', type: 'synthetic', description: 'python3 server.py', text: 'Process finished.' }))
+      .toMatchObject({ kind: 'note', text: 'python3 server.py', detail: 'Process finished.', activity: 'notice' })
+    expect(parseMessage({ id: 'system', type: 'system', text: 'Context' })).toMatchObject({ activity: 'notice' })
+    expect(parseMessage({ id: 'shell', type: 'shell', command: 'echo ok' })).toMatchObject({ activity: 'shell' })
+    expect(parseMessage({ id: 'skill', type: 'skill', name: 'review' })).toMatchObject({ activity: 'skill' })
+    for (const raw of [
+      { id: 'agent', type: 'agent-switched', agent: 'build' },
+      { id: 'model', type: 'model-switched', model: { id: 'model', providerID: 'p' } },
+      { id: 'failed', type: 'idle', outcome: 'failed' },
+      { id: 'compacted', type: 'compaction', status: 'completed', summary: 'Summary' },
+      { id: 'goal', type: 'synthetic', text: 'An unfamiliar goal notification.', metadata: { source: 'goal' } },
+    ]) expect(parseMessage(raw)).not.toHaveProperty('activity')
+  })
+
   it('keeps only selectable agents', () => {
     const agents = parseAgents({ data: [
       { id: 'build', name: 'Build', mode: 'primary', hidden: false },

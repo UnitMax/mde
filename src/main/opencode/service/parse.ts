@@ -540,7 +540,7 @@ export function parseMessage(value: unknown, thumbnail?: (bytes: Buffer) => stri
       const command = body(message.command, 2000).text.trim()
       const output = body(record(message.output)?.output, CHAT_TOOL_TEXT_LIMIT).text
       return {
-        kind: 'note', id, time: at, tone: 'info',
+        kind: 'note', id, time: at, tone: 'info', activity: 'shell',
         text: command ? `Ran \`${command.split('\n')[0]}\`` : 'Ran a shell command',
         ...(output ? { detail: output } : {}),
       }
@@ -549,7 +549,7 @@ export function parseMessage(value: unknown, thumbnail?: (bytes: Buffer) => stri
       const name = short(message.name) ?? short(message.skill)
       const text = body(message.text, CHAT_TOOL_TEXT_LIMIT).text.trim()
       return {
-        kind: 'note', id, time: at, tone: 'info',
+        kind: 'note', id, time: at, tone: 'info', activity: 'skill',
         text: name ? `Loaded the ${name} skill` : 'Loaded a skill',
         ...(text ? { detail: text } : {}),
       }
@@ -559,11 +559,13 @@ export function parseMessage(value: unknown, thumbnail?: (bytes: Buffer) => stri
       const text = body(message.text, CHAT_TOOL_TEXT_LIMIT).text
       const description = short(message.description, 500)
       // What a goal writes into the conversation reads as its own thing, not as "Added context".
-      const goal = message.type === 'synthetic' && record(message.metadata)?.source === 'goal' ? goalNote(text) : null
+      const fromGoal = message.type === 'synthetic' && record(message.metadata)?.source === 'goal'
+      const goal = fromGoal ? goalNote(text) : null
       if (goal) return { kind: 'note', id, time: at, tone: 'info', ...goal }
       return text || description
         ? {
             kind: 'note', id, time: at, tone: 'info',
+            ...(!fromGoal ? { activity: 'notice' as const } : {}),
             text: description ?? (message.type === 'system' ? 'System note' : 'Added context'),
             ...(text ? { detail: text } : {}),
           }

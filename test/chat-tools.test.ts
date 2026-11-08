@@ -524,12 +524,22 @@ describe('the compact layout', () => {
     expect(draw([step('a', [thought(), text('The answer.')])])).toEqual({ a: ['group:1', 'text'] })
   })
 
-  it('breaks a stretch at a file change and at subagents, and folds the words before them too', () => {
-    expect(draw([step('a', [read('r1'), text('Fixing it.'), edit('e1'), shell('s1'), text('Done.')])])).toEqual({ a: ['group:2', 'e1', 'group:1', 'text'] })
-    expect(draw([step('a', [text('Fixing it.'), edit('e1'), text('Done.')])])).toEqual({ a: ['group:1', 'e1', 'text'] })
+  it('keeps file changes and subagents inside the same stretch of activity', () => {
+    expect(draw([step('a', [read('r1'), text('Fixing it.'), edit('e1'), shell('s1'), text('Done.')])])).toEqual({ a: ['group:4', 'text'] })
+    expect(draw([step('a', [text('Fixing it.'), edit('e1'), text('Done.')])])).toEqual({ a: ['group:2', 'text'] })
     const subagent = tool('subagent', { agent: 'general', description: 'd', prompt: 'p' }, { id: 'sub' })
-    expect(draw([step('a', [read('r1'), subagent, read('r2')])])).toEqual({ a: ['group:1', 'subagents', 'group:1'] })
+    expect(draw([step('a', [read('r1'), subagent, read('r2')])])).toEqual({ a: ['group:3'] })
   })
+
+  it.each(['read', 'write', 'edit', 'patch', 'apply_patch', 'question', 'subagent', 'task', 'shell', 'bash', 'grep', 'glob', 'webfetch', 'websearch', 'lookup', 'todo', 'skill', 'execute', 'custom-tool'])(
+    'keeps %s in one compact group across pending, running, completed and failed states', (name) => {
+      for (const status of ['pending', 'running', 'completed', 'error'] as const) {
+        const call = tool(name, { patchText: '*** Begin Patch\n*** Add File: a.ts\n+hello\n*** End Patch', questions: [{ question: 'Which?' }] }, { id: 'call', status, answers: [['A']] })
+        expect(draw([step('a', [thought(), text('Working.'), call]), step('b', [thought(), text('Done.')])]))
+          .toEqual({ a: ['group:4'], b: ['text'] })
+      }
+    },
+  )
 
   it('runs a stretch on across the steps of the agent, and draws it where it starts', () => {
     const flow = compactFlow([
@@ -553,8 +563,8 @@ describe('the compact layout', () => {
     expect(group.items.map((item) => item.part.kind)).toEqual(['text', 'tool', 'text', 'tool'])
   })
 
-  it('keeps what a step holds besides its activity, and what a file change cuts off', () => {
-    expect(draw([step('a', [read('r1')]), step('b', [edit('e1'), read('r2')])])).toEqual({ a: ['group:1'], b: ['e1', 'group:1'] })
+  it('continues across file changes in later steps and keeps the final answer visible', () => {
+    expect(draw([step('a', [read('r1')]), step('b', [edit('e1'), read('r2')])])).toEqual({ a: ['group:3'], b: [] })
     expect(draw([step('a', [read('r1')]), step('b', [text('Final.')])])).toEqual({ a: ['group:1'], b: ['text'] })
   })
 
@@ -570,9 +580,9 @@ describe('the compact layout', () => {
     // Writing its answer, or finished, it is not at the activity.
     expect(lastGroup([step('a', [shell('s1'), text('Now')], true)]).live).toBe(false)
     expect(lastGroup([step('a', [shell('s1')], false)]).live).toBe(false)
-    // An earlier group of the same step is over.
+    // A file change no longer splits the live activity into separate groups.
     const groups = compactFlow([step('a', [shell('s1'), edit('e1'), shell('s2')], true)]).get('a')!.filter((block) => block.kind === 'activity') as Array<Extract<RenderBlock, { kind: 'activity' }>>
-    expect(groups.map((group) => group.live)).toEqual([false, true])
+    expect(groups.map((group) => group.live)).toEqual([true])
   })
 
   it('shows the words being written as they are until more work follows, and folds them then', () => {
@@ -588,6 +598,38 @@ describe('the compact layout', () => {
     const user = (id: string): ChatMessage => ({ kind: 'user', id, time: 1, text: 'Go' }) as ChatMessage
     const note = (id: string): ChatMessage => ({ kind: 'note', id, time: 1, tone: 'info', text: 'Switched' }) as ChatMessage
     const shape = (plans: Map<string, RenderBlock[]>) => Object.fromEntries([...plans].map(([id, blocks]) => [id, blocks.map((block) => block.kind)]))
+
+    it('joins routine notifications without splitting work and keeps their order and details', () => {
+      const notice: ChatMessage = { kind: 'note', id: 'n1', time: 1, tone: 'info', text: 'python3 server.py', detail: 'Exited cleanly.', activity: 'notice' }
+      const messages = [user('u1'), assistant('a1', [shell('s1')]), notice, assistant('a2', [thought(), text('Stopped.')])]
+      const plans = compactPlans(messages, undefined)
+      expect(shape(plans)).toEqual({ a1: ['activity'], n1: [], a2: ['part'] })
+      const group = plans.get('a1')![0] as Extract<RenderBlock, { kind: 'activity' }>
+      expect(group.items.map((item) => item.part.kind)).toEqual(['tool', 'note', 'reasoning'])
+      expect(group.items[1]?.part).toBe(notice)
+      expect(activitySummary(group.items.map((item) => item.part))).toBe('Thought, ran 1 command and received 1 update')
+      expect(compactPlans(messages, undefined, plans).get('a1')).toBe(plans.get('a1'))
+    })
+
+    it('keeps live activity live when a routine notification follows it', () => {
+      const notice: ChatMessage = { kind: 'note', id: 'n1', time: 1, tone: 'info', text: 'Process update', activity: 'notice' }
+      const plans = compactPlans([assistant('a1', [thought()], false), notice], 'a1')
+      expect((plans.get('a1')![0] as Extract<RenderBlock, { kind: 'activity' }>).live).toBe(true)
+    })
+
+    it('keeps errors, compaction and goal notices outside the group', () => {
+      const base = { kind: 'note' as const, id: 'n1', time: 1, text: 'Notice', tone: 'info' as const, activity: 'notice' as const }
+      const notices: ChatMessage[] = [
+        { ...base, tone: 'error' },
+        { ...base, compaction: { status: 'running', reason: 'auto' } },
+        { ...base, goal: 'set' },
+      ]
+      for (const notice of notices) {
+        const plans = compactPlans([assistant('a1', [shell('s1')]), notice, assistant('a2', [thought()])], undefined)
+        expect(shape(plans)).toEqual({ a1: ['activity'], a2: ['activity'] })
+        expect(plans.has('n1')).toBe(false)
+      }
+    })
 
     it('lays out each run of steps together, and ends a run at the person or at a note', () => {
       const plans = compactPlans(

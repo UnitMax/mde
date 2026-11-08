@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { Brain, ChevronRight, LoaderCircle, MessageSquareText } from 'lucide-react'
-import { ActivityRow, Chip, Rail, useCompactChat } from '@/components/inbox/chat-ui'
+import { AlertTriangle, Brain, ChevronRight, Info, LoaderCircle, MessageSquareText } from 'lucide-react'
+import type { ChatMessage, ChatModel, ChatPart } from '@shared/types'
+import { ActivityRow, Chip, CodeText, Rail, Surface, useCompactChat } from '@/components/inbox/chat-ui'
 import { ChatMarkdown } from '@/components/inbox/ChatMarkdown'
 import { ToolCallView } from '@/components/inbox/ChatTools'
+import { SubagentGroup } from '@/components/inbox/ChatSubagents'
+import { isSubagentCall } from '@/lib/chat'
 import { activitySummary, reasoningPreview, reasoningTitle, textHeadline, toolFailed, type ActivityItem } from '@/lib/chat-tools'
 import { cn } from '@/lib/utils'
 
@@ -72,6 +75,21 @@ export function SaidRow({ text }: { text: string }): JSX.Element | null {
   )
 }
 
+/** The same notification row inside a compact group or on its own in the full conversation. */
+export function NoteRow({ message }: { message: Extract<ChatMessage, { kind: 'note' }> }): JSX.Element {
+  const error = message.tone === 'error'
+  return (
+    <ActivityRow
+      testId={`chat-note-${message.id}`}
+      icon={error ? AlertTriangle : Info}
+      failed={error}
+      quiet={!error}
+      verb={<span className="whitespace-normal break-words">{message.text}</span>}
+      detail={message.detail ? <Surface tone={error ? 'danger' : undefined}><CodeText text={message.detail} className="max-h-80" /></Surface> : undefined}
+    />
+  )
+}
+
 /**
  * A run of steps (thoughts, reads, searches, commands) folded into one line that sums them up. It is open while the
  * agent is still at it, so that the work can be followed, and shuts when the agent moves on to something else; in the
@@ -82,17 +100,31 @@ export function ActivityGroup({
   items,
   directory,
   live,
+  models,
 }: {
   items: ActivityItem[]
   directory: string
   /** The agent is still at these steps, which are at the end of what it has written. */
   live: boolean
+  models?: readonly ChatModel[]
 }): JSX.Element {
   const compact = useCompactChat()
   const [chosen, setChosen] = useState<boolean | null>(null)
   const open = chosen ?? (live && !compact)
   const parts = items.map((item) => item.part)
   const failed = parts.filter(toolFailed).length
+  const rows: Array<
+    { kind: 'item'; item: ActivityItem; position: number }
+    | { kind: 'subagents'; parts: Extract<ChatPart, { kind: 'tool' }>[]; messageId?: string }
+  > = []
+  for (const [position, item] of (open ? items.entries() : [])) {
+    const part = item.part
+    if (part.kind === 'tool' && isSubagentCall(part)) {
+      const previous = rows[rows.length - 1]
+      if (previous?.kind === 'subagents' && previous.messageId === item.messageId) previous.parts.push(part)
+      else rows.push({ kind: 'subagents', parts: [part], messageId: item.messageId })
+    } else rows.push({ kind: 'item', item, position })
+  }
   return (
     <div data-testid="chat-activity" data-open={open ? '' : undefined} data-live={live ? '' : undefined} className="min-w-0">
       <button
@@ -114,12 +146,15 @@ export function ActivityGroup({
       {open && (
         <Rail tight>
           <div className="flex min-w-0 flex-col">
-            {items.map(({ part, index, messageId }, position) => {
+            {rows.map((row) => {
+              if (row.kind === 'subagents') return <SubagentGroup key={row.parts[0]!.id} parts={row.parts} models={models} />
+              const { part, index, messageId } = row.item
               if (part.kind === 'tool') return <ToolCallView key={part.id} part={part} directory={directory} />
+              if (part.kind === 'note') return <NoteRow key={part.id} message={part} />
               // The thought being written is the last step. Text joins a group only in the compact layout.
               const key = `${messageId ?? ''}:${index}`
               if (part.kind === 'text') return <SaidRow key={key} text={part.text} />
-              return <ThoughtRow key={key} text={part.text} live={live && position === items.length - 1} />
+              return <ThoughtRow key={key} text={part.text} live={live && row.position === items.length - 1} />
             })}
           </div>
         </Rail>

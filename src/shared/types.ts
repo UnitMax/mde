@@ -424,7 +424,18 @@ export type ChatMessage =
       tokens?: ChatTokens
     }
   /** Agent or model switches, compaction, shell commands, and other notes. */
-  | { kind: 'note'; id: string; time: number; tone: 'info' | 'error'; text: string; detail?: string; compaction?: ChatCompaction; goal?: ChatGoalNote }
+  | {
+      kind: 'note'
+      id: string
+      time: number
+      tone: 'info' | 'error'
+      text: string
+      detail?: string
+      compaction?: ChatCompaction
+      goal?: ChatGoalNote
+      /** Routine work or context notifications that can join a compact activity group. */
+      activity?: 'shell' | 'skill' | 'notice'
+    }
 
 /**
  * What a note says about a goal: OpenCode writes a message into the conversation when a goal is set, when it

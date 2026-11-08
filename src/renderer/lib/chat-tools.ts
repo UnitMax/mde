@@ -1,5 +1,5 @@
 import type { ChatMessage, ChatPart, ChatToolStatus } from '@shared/types'
-import { displayPath, messageBlocks, type MessageBlock } from '@/lib/chat'
+import { displayPath, type MessageBlock } from '@/lib/chat'
 import { countChanges, type DiffHunk, type DiffLine, type FileChange } from '@/lib/diff'
 
 type ToolPart = Extract<ChatPart, { kind: 'tool' }>
@@ -501,15 +501,28 @@ export function textHeadline(text: string, max = 160): string {
 // Grouping
 
 /** What a stretch of activity is counted as in the line that sums it up. */
-export type ActivityCategory = 'thinking' | 'update' | 'read' | 'search' | 'list' | 'web' | 'shell' | 'skill' | 'todo' | 'tool'
+export type ActivityCategory = 'thinking' | 'update' | 'read' | 'search' | 'list' | 'web' | 'write' | 'edit' | 'patch' | 'shell' | 'subagent' | 'question' | 'skill' | 'todo' | 'tool' | 'notice'
+type ActivityNote = Extract<ChatMessage, { kind: 'note' }>
+type ActivityPart = ChatPart | ActivityNote
 
-export function activityCategory(part: ChatPart): ActivityCategory {
+export function activityCategory(part: ActivityPart): ActivityCategory {
+  if (part.kind === 'note') return part.activity ?? 'notice'
   // Words the agent wrote on its way through the work, which only the compact layout folds into a group.
   if (part.kind === 'text') return 'update'
   if (part.kind !== 'tool') return 'thinking'
   switch (toolKind(part.name)) {
     case 'read':
       return 'read'
+    case 'write':
+      return 'write'
+    case 'edit':
+      return 'edit'
+    case 'patch':
+      return 'patch'
+    case 'subagent':
+      return 'subagent'
+    case 'question':
+      return 'question'
     case 'grep':
     case 'glob':
     case 'websearch':
@@ -537,13 +550,19 @@ const PHRASES: Record<ActivityCategory, (count: number, active: boolean) => stri
   search: (count, active) => `${active ? 'searching' : 'searched'} ${count === 1 ? 'once' : `${count} times`}`,
   list: (count, active) => `${active ? 'listing' : 'listed'} ${plural(count, 'folder')}`,
   web: (count, active) => `${active ? 'fetching' : 'fetched'} ${plural(count, 'page')}`,
+  write: (count, active) => `${active ? 'writing' : 'wrote'} ${plural(count, 'file')}`,
+  edit: (count, active) => `${active ? 'editing' : 'edited'} ${plural(count, 'file')}`,
+  patch: (count, active) => `${active ? 'applying' : 'applied'} ${plural(count, 'patch', 'patches')}`,
   shell: (count, active) => `${active ? 'running' : 'ran'} ${plural(count, 'command')}`,
+  subagent: (count, active) => `${active ? 'delegating' : 'delegated'} ${plural(count, 'task')}`,
+  question: (_count, active) => (active ? 'asking for input' : 'received answers'),
   skill: (count, active) => `${active ? 'loading' : 'loaded'} ${plural(count, 'skill')}`,
   todo: (_count, active) => (active ? 'updating the to-do list' : 'updated the to-do list'),
   tool: (count, active) => `${active ? 'calling' : 'called'} ${plural(count, 'tool')}`,
+  notice: (count) => `received ${plural(count, 'update')}`,
 }
 
-const CATEGORY_ORDER: ActivityCategory[] = ['thinking', 'update', 'read', 'search', 'list', 'web', 'shell', 'skill', 'tool', 'todo']
+const CATEGORY_ORDER: ActivityCategory[] = ['thinking', 'update', 'read', 'search', 'list', 'web', 'write', 'edit', 'patch', 'shell', 'subagent', 'question', 'skill', 'tool', 'todo', 'notice']
 
 const ACTIVE: ReadonlySet<ChatToolStatus> = new Set(['pending', 'running'])
 
@@ -552,7 +571,7 @@ export function isActiveTool(part: ChatPart): boolean {
 }
 
 /** Whether a tool call ended badly: it failed, or it was a command that exited with an error. */
-export function toolFailed(part: ChatPart): boolean {
+export function toolFailed(part: ActivityPart): boolean {
   if (part.kind !== 'tool') return false
   if (part.status === 'error') return true
   return toolKind(part.name) === 'shell' && part.exitCode !== undefined && part.exitCode !== 0
@@ -562,7 +581,7 @@ export function toolFailed(part: ChatPart): boolean {
  * One line that sums up a stretch of activity: "Read 4 files, searched 2 times and ran 3 commands". A kind of
  * work that is still going on is in the present tense, so the line is right while the agent works too.
  */
-export function activitySummary(parts: readonly ChatPart[], live = false): string {
+export function activitySummary(parts: readonly ActivityPart[], live = false): string {
   const counts = new Map<ActivityCategory, { count: number; active: boolean }>()
   parts.forEach((part, index) => {
     const category = activityCategory(part)
@@ -598,7 +617,7 @@ export function isFeaturedTool(part: ChatPart): boolean {
 }
 
 /** A step of a group: the part, its index in its message, and which message when a group reaches over several. */
-export type ActivityItem = { part: ChatPart; index: number; messageId?: string }
+export type ActivityItem = { part: ActivityPart; index: number; messageId?: string }
 
 export type RenderBlock =
   | Exclude<MessageBlock, { kind: 'part' }>
@@ -615,7 +634,7 @@ export const GROUP_MIN = 3
  */
 export function activityBlocks(blocks: readonly MessageBlock[]): RenderBlock[] {
   const result: RenderBlock[] = []
-  let run: ActivityItem[] = []
+  let run: Array<{ part: ChatPart; index: number }> = []
   const flush = (): void => {
     if (run.length >= GROUP_MIN) result.push({ kind: 'activity', items: run, index: run[0]!.index })
     else for (const item of run) result.push({ kind: 'part', part: item.part, index: item.index })
@@ -641,6 +660,8 @@ export interface FlowStep {
   parts: readonly ChatPart[]
   /** The agent is writing this step now. */
   live: boolean
+  /** A routine notification interleaved with the assistant's work. Its parts are empty. */
+  note?: ActivityNote
 }
 
 /** Whether a part is work the agent did, as against words it wrote: a tool call, or a thought. */
@@ -652,8 +673,8 @@ function isWork(part: ChatPart): boolean {
  * The compact layout of consecutive steps of the agent, with nothing from the person between them. Everything that is
  * not an answer is folded into one group per stretch, however short: thoughts and tool calls, and also the words the
  * agent wrote on its way, since models often think out loud in their text rather than in their thinking. Only the
- * text after the last piece of work, the answer, is drawn as it is. File changes, answered questions and subagents are
- * not folded; they break the stretch. A stretch runs on across the steps: the agent starts a new step for every
+ * text after the last piece of work, the answer, is drawn as it is. All tools join the group, including file changes,
+ * answered questions and subagents; their full views remain inside it. A stretch runs on across the steps: the agent starts a new step for every
  * round of tool calls, so a turn is many steps, and its activity should still read as one line. The group is drawn in
  * the step where it starts, and the steps that contributed the rest draw whatever else they hold (an empty one draws
  * nothing). Returns the blocks to draw by step.
@@ -662,6 +683,7 @@ export function compactFlow(steps: readonly FlowStep[]): Map<string, RenderBlock
   // Where the last piece of work is: the text before it is the agent talking its way through, and the text after it the answer.
   let lastWork: [step: number, part: number] | null = null
   for (const [stepIndex, step] of steps.entries()) {
+    if (step.note?.activity === 'shell' || step.note?.activity === 'skill') lastWork = [stepIndex, 0]
     for (const [index, part] of step.parts.entries()) if (isWork(part)) lastWork = [stepIndex, index]
   }
   const end = lastWork as [number, number] | null
@@ -671,29 +693,41 @@ export function compactFlow(steps: readonly FlowStep[]): Map<string, RenderBlock
   const plan = new Map<string, RenderBlock[]>()
   let open: ActivityBlock | null = null
   let last: RenderBlock | null = null
+  let live = false
   for (const [stepIndex, step] of steps.entries()) {
     const blocks: RenderBlock[] = []
     plan.set(step.id, blocks)
-    for (const block of messageBlocks(step.parts)) {
-      // A text that has only just begun to stream has nothing to show yet, and does not end the stretch.
-      if (block.kind === 'part' && block.part.kind === 'text' && !block.part.text.trim()) continue
-      const talking = block.kind === 'part' && block.part.kind === 'text' && beforeLastWork(stepIndex, block.index)
-      if (block.kind === 'part' && (talking || isGroupable(block.part))) {
+    if (step.note) {
+      if (!open) {
+        open = { kind: 'activity', items: [], index: 0, live: false }
+        blocks.push(open)
+      }
+      open.items.push({ part: step.note, index: 0, messageId: step.id })
+      last = open
+      continue
+    }
+    live = step.live
+    for (const [index, part] of step.parts.entries()) {
+      // Empty text or thinking has nothing to show yet, and does not end the stretch.
+      if ((part.kind === 'text' || part.kind === 'reasoning') && !part.text.trim()) continue
+      const talking = part.kind === 'text' && beforeLastWork(stepIndex, index)
+      if (talking || isWork(part)) {
         if (!open) {
-          open = { kind: 'activity', items: [], index: block.index, live: false }
+          open = { kind: 'activity', items: [], index, live: false }
           blocks.push(open)
         }
-        open.items.push({ part: block.part, index: block.index, messageId: step.id })
+        open.items.push({ part, index, messageId: step.id })
         last = open
         continue
       }
       open = null
-      blocks.push(block)
-      last = block
+      const answer: RenderBlock = { kind: 'part', part, index }
+      blocks.push(answer)
+      last = answer
     }
   }
   // The group the agent is at the end of is live while the last step is being written.
-  if (steps[steps.length - 1]?.live && last?.kind === 'activity') last.live = true
+  if (live && last?.kind === 'activity') last.live = true
   return plan
 }
 
@@ -720,7 +754,7 @@ export function samePlan(a: readonly RenderBlock[], b: readonly RenderBlock[]): 
 
 /**
  * The compact layout of a whole conversation, by the id of each assistant message: runs of consecutive steps are laid
- * out together (`compactFlow`), and a note or a message of the person's ends a run. A layout that is the same as the one
+ * out together (`compactFlow`), including routine notifications. Other notes and user messages end a run. A layout that is the same as the one
  * in `previous` is that one, so that a message whose layout did not change is not drawn again as the conversation streams.
  */
 export function compactPlans(
@@ -739,6 +773,9 @@ export function compactPlans(
   }
   for (const message of messages) {
     if (message.kind === 'assistant') run.push({ id: message.id, parts: message.parts, live: !message.completed && message.id === liveId })
+    else if (message.kind === 'note' && message.activity && message.tone === 'info' && !message.goal && !message.compaction) {
+      run.push({ id: message.id, parts: [], live: false, note: message })
+    }
     else flush()
   }
   flush()

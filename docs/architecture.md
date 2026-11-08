@@ -908,8 +908,8 @@ Notes (agent switches, errors, goals) are quiet rows of the same kind, and a fin
 rule across the conversation that opens onto the summary.
 
 **Compact mode.** A switch in the thread's header (not to be confused with compacting the context, above) (chat threads only; `CompactChatToggle`,
-kept in `mde.inbox-compact-chat`, off by default) lays the conversation out with less in it. Everything that is not the answer, a file change, an answered
-question or a subagent becomes a group however short, so a single read or a lone thought is one line
+kept in `mde.inbox-compact-chat`, off by default) lays the conversation out with less in it. Everything before the answer
+becomes a group however short, so a single read or a lone thought is one line
 ("Read 1 file") rather than a row. That includes the words the agent wrote on its way: models often think
 out loud in their text, so any text before the turn's last piece of work (a tool call or a thought) is a
 step of the group too, shown inside it as a "Said …" row that opens onto the whole text and counted in the
@@ -917,15 +917,21 @@ line ("wrote 2 updates"), and only the text after the last piece of work, the an
 text still being written after the work is the answer so far, and joins the line if more work follows it.
 OpenCode starts a new assistant message for every round of tool calls, so a turn is many messages and its
 work would otherwise show up as a line per message: `compactPlans` (`lib/chat-tools.ts`) therefore lays out
-each run of consecutive assistant messages together, with a note or a message of the person's ending the
-run, and a stretch of activity runs on across the messages. The group is drawn in the message where it
+each run of assistant messages and routine notifications together. Background-process notifications,
+ordinary system/context notes, shell-command notes and loaded skills join the surrounding activity;
+opening the group shows their original labels and details. User messages, errors, model/agent switches,
+goal notices and context-compaction notices end the run and remain visible. A stretch of activity runs
+on across the messages. The group is drawn in the message where it
 starts, and a message left with nothing to draw (and no error) renders nothing. Layouts are reused when
 they did not change, so streaming does not redraw the earlier messages. The group never opens by itself,
 not even while the agent is at it: it spins and shimmers in the present tense ("Running 2 commands"),
-keeps the failed count, and opens on a click. File changes stay rows of their own, since they are what
-changed, but start shut, with the counts on the line. The summary is worked out from the tool calls
-with no model involved ("Thought, read 1 file and ran 3 commands"). Turning the switch off puts the
-layout back at once; what was opened or shut by hand stays.
+keeps the failed count, and opens on a click. All tools use this same grouping rule, including writes,
+edits, patches, answered questions, subagents and unknown tools. Opening the group shows their full
+views: file changes start shut with their counts, questions retain their answers, and consecutive
+subagents from the same step retain their grouped cards and model labels. Active permission and
+question requests remain outside the activity group so they can be answered. The summary is worked
+out from the tool calls with no model involved ("Thought, wrote 1 file and ran 3 commands"). Turning
+the switch off restores the normal layout.
 
 **File changes.** The `edit` and `write` tools are drawn as diffs instead of raw JSON, one row per
 file (`ChatFileChange`), the same activity row as every other step with no box around it: the verb
