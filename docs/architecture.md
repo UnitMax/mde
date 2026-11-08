@@ -214,7 +214,7 @@ without an icon, or one removed from the Inbox, shows the plain folder, so every
 front and the titles stay lined up. The switch takes effect at once.
 
 **Toolbar.** The top of the Inbox tab is one row of small buttons (`InboxToolbar`): **New thread**, **Search** and
-**Filter** at the start, the project manager and the Inbox settings gear at the end. New thread opens the blank page
+**Filter** at the start, the project manager and the Inbox settings gear at the end. New thread (also Ctrl+N) opens the blank page
 (and shows as pressed while it is the page showing). Search opens a field under the row and puts the caret in it;
 a clear button appears inside the field while it has text, the first Escape empties the field and the next puts it
 away, and the button closes it, emptying it so that nothing out of sight narrows the list. The field stays open while

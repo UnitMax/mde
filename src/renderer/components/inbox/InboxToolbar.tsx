@@ -139,7 +139,7 @@ export function InboxToolbar({
           type="button"
           data-testid="inbox-new-thread-button"
           aria-label="New thread"
-          title="New thread"
+          title="New thread (Ctrl+N)"
           aria-current={newThreadActive || undefined}
           onClick={onNewThread}
           className={cn(BUTTON, newThreadActive && 'bg-active text-fg')}

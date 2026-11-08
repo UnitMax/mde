@@ -570,6 +570,21 @@ export function InboxPanel(): JSX.Element {
   const loadDrafts = useInboxDrafts((state) => state.load)
   const openDraft = useInboxDrafts((state) => state.open)
   const startFresh = useInboxDrafts((state) => state.startFresh)
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (
+        lock || useWorkspace.getState().activeWorkspaceView !== 'inbox' || event.defaultPrevented ||
+        event.isComposing || event.repeat || !event.ctrlKey || event.altKey || event.metaKey || event.shiftKey ||
+        event.key.toLowerCase() !== 'n' || document.querySelector('[role="dialog"], [role="alertdialog"]')
+      ) return
+      event.preventDefault()
+      event.stopPropagation()
+      if (selectedId === null) void startFresh()
+      else selectThread(null)
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [lock, selectedId, selectThread, startFresh])
   // Read when the panel opens and whenever another thread is opened: the one left may have unsent text in its box.
   useEffect(() => {
     void loadDrafts()

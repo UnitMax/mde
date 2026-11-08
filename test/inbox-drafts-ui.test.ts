@@ -368,6 +368,31 @@ describe('Inbox Drafts section', () => {
     expect(pageDraft()).toEqual({ id: 'drf_page', opened: false })
   })
 
+  it('uses Ctrl+N to open a new thread and set aside a draft, but not outside Inbox or over a dialog', async () => {
+    stored = [summary({ id: 'drf_page', preview: 'Half a thought' })]
+    await render()
+    await settle()
+    const press = async (init: KeyboardEventInit = {}): Promise<KeyboardEvent> => {
+      const event = new KeyboardEvent('keydown', { key: 'n', ctrlKey: true, bubbles: true, cancelable: true, ...init })
+      await act(async () => window.dispatchEvent(event))
+      return event
+    }
+    expect((await press({ shiftKey: true })).defaultPrevented).toBe(false)
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    document.body.append(dialog)
+    expect((await press()).defaultPrevented).toBe(false)
+    dialog.remove()
+    act(() => useWorkspace.setState({ activeWorkspaceView: 'sessions' }))
+    expect((await press()).defaultPrevented).toBe(false)
+    act(() => useWorkspace.setState({ activeWorkspaceView: 'inbox' }))
+    expect((await press()).defaultPrevented).toBe(true)
+    expect(useWorkspace.getState().selectedInboxThreadId).toBeNull()
+    expect((await press()).defaultPrevented).toBe(true)
+    await vi.waitFor(() => expect(pageDraft().id).not.toBe('drf_page'))
+    expect(rowIds()).toContain('drf_page')
+  })
+
   it('goes with a deleted draft that is open, and leaves a blank page', async () => {
     stored = [summary({ id: 'drf_one' })]
     await render()
