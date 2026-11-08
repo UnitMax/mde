@@ -46,13 +46,12 @@ rewriting of Git configuration. Such mutation remains a filesystem trust limit.
 Native Windows/WSL and macOS packaged acceptance remains required; OS network
 mounts and login-shell startup also need separate attribution.
 
-Other review findings include an SSE event limit that counts the pending line
-but not accumulated `data:` lines, permission cards that omit resources beyond
-50 without disabling approval, and incomplete configuration Source redaction.
-Native file/attachment readers retain FIFO blocking and pathname containment
-races. Existing regression tests pass; these cases need additional coverage
-with their fixes. Full `npm audit` currently fails on a moderate build dependency
-advisory, described under dependency maintenance below. The Git changes do not remediate these other findings.
+Permission hardening now blocks incomplete scopes in the UI and revalidates them in main before
+approval. Configuration preview redaction parses JSONC and hides whole secret values. Full UTF-8
+SSE event budgets and native nonblocking/no-follow file reads are implemented. Linux descriptor
+containment tests pass; atomic ancestor containment remains open on macOS/Windows. Aggregate
+resource budgets and other lower-priority findings remain open. The full dependency audit now
+passes with the restricted minimatch override described below.
 
 ## IPC security boundary
 
@@ -521,16 +520,10 @@ or update a draft release after both builds succeed. Build artifacts expire afte
 three days; publication of the draft remains manual. Ordinary branch pushes do
 not run this gate, so contributors must still run the local checks above.
 
-On 2026-11-08 the full audit of 0.1.14 reported six moderate entries from
-[minimatch globparts amplification](https://github.com/isaacs/minimatch/security/advisories/GHSA-g3hv-75wg-m249)
-and its dependent build packages. These are one underlying advisory across the
-packager dependency chain, not six demonstrated runtime exploits. The relevant
-lockfile copies include minimatch 10.2.6 and 9.0.9; upstream's advisory describes
-10.2.6 and a fix in 11.0.1, while npm reports a broader affected range. Check
-version and call-site compatibility before updating. Do not blindly apply npm's
-suggested force fix, which proposes a breaking electron-builder downgrade.
-The production-only audit reports zero but excludes bundled renderer libraries
-and does not clear the full release gate. No dependencies were changed by this review.
+The initial 2026-11-08 audit reported six moderate entries from minimatch globparts
+amplification. The affected modern copies now resolve to 11.0.1 through a version-range
+override, and a fresh full audit reports zero vulnerabilities. Runtime and packaging
+platform validation are separate gates; npm audit does not inventory all native CVEs.
 
 The lockfile includes patched `http-cache-semantics` 4.3.0 and `source-map-js`
 1.2.2. These updates remain within their parents' existing dependency ranges.
@@ -539,31 +532,25 @@ Plain `npm audit fix` (without `--force`) also moved the three `undici` copies
 (`node-gyp`, `@electron/get` and `jsdom`) to 6.29.1, 7.30.1 and 8.12.3, again within
 their parents' ranges.
 
-### Open advisory: `minimatch` in Electron builder's toolchain
+### Patched advisory: minimatch in the packaging toolchain
 
-[GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249) (a denial of
-service from glob-pattern expansion) affects every `minimatch` below 11.0.1, and
-`npm audit` reports it as 15 moderate findings under `electron-builder`: `app-builder-lib`,
-`@electron/asar`, `@electron/universal`, `dir-compare`, `ejs`, `jake`, `filelist`, `glob`,
-`rimraf`, `temp` and `electron-winstaller`. These are packaging tools, run only at build
-time on patterns from this repository's own configuration; none of it ships in the app.
+The override `minimatch@>=7 <11.0.1` selects exactly 11.0.1 for the affected modern
+copies, including app-builder-lib and @electron/universal. It preserves minimatch
+3/5 for legacy callers that require a callable CommonJS export; forcing the new
+API onto those callers breaks archive creation. No direct dependency or application
+version was changed. Full npm audit now reports zero vulnerabilities.
 
-No safe fix exists yet. The newest `electron-builder` (26.18.1, and the 27 alpha),
-`@electron/asar` 4.3.1, `dir-compare` 5.0.0 and `filelist` 2.0.2 all still depend on
-`minimatch` 3 to 10. Forcing 11.0.3 with an override was tried and rejected: `glob` 7,
-which `@electron/asar` uses to crawl files when packing, throws, `dir-compare` fails with
-`minimatch_1.default is not a function`, and asar's unpacking stops working. The
-suggestion of `npm audit fix --force` (`electron-builder` 20.23.1) is a downgrade by
-six major versions.
+`test/packager-globs.test.ts` exercises the actual builder matcher, universal
+merger's named matching API and legacy asar matching API. Native Windows/macOS
+packaging remains a release check. Remove this override when upstream ranges
+select patched versions themselves.
 
-Removal condition: `electron-builder` and the tools above move to `minimatch` 11.0.1
-or later; then update, rerun `npm run audit:deps`, and build for each platform.
-
-Two scoped overrides address advisories while preserving the current direct
+Three scoped overrides address advisories while preserving the current direct
 dependency versions:
 
 | Override | Reason | Removal condition |
 | --- | --- | --- |
+| minimatch 7–10 → 11.0.1 | Fixes globparts amplification while retaining legacy callable APIs in older copies. | Packager dependencies adopt patched modern versions. |
 | Mermaid → KaTeX 0.18.2 | Fixes [inherited trust options](https://github.com/advisories/GHSA-238p-pmpm-9mq7). Mermaid's declared 0.16.x range excludes the fix. | Mermaid adopts a patched KaTeX release. |
 | @electron/get → global-agent 4.1.3 | Removes the roarr → sprintf-js chain affected by [unbounded formatting precision](https://github.com/advisories/GHSA-hp3w-g68c-fv3c). global-agent 4 no longer depends on roarr and retains the downloader's `bootstrap()` API. | Electron builder's downloader adopts a version without the vulnerable chain. |
 
