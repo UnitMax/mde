@@ -54,7 +54,8 @@ const dropMock = vi.hoisted(() => ({
 vi.mock('electron', () => electronMock)
 vi.mock('../src/main/store/workspace', () => workspaceMock)
 vi.mock('../src/main/pty/drop', () => dropMock)
-vi.mock('../src/main/wsl/paths', () => ({
+vi.mock('../src/main/wsl/paths', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../src/main/wsl/paths')>(),
   canonicalizeWslPath: vi.fn(),
   resolveForTarget: vi.fn(),
   toWindows: vi.fn(),
