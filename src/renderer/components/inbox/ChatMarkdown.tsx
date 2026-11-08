@@ -64,9 +64,9 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   return (
     <div
       className={cn(
-        'min-w-0 break-words leading-relaxed',
+        'min-w-0 break-words leading-[1.6]',
         // Reasoning is shown on the rail of its row, which is its left edge.
-        variant === 'reasoning' ? 'text-[12.5px] text-fg-muted' : 'text-[14px] text-fg',
+        variant === 'reasoning' ? 'text-[13px] text-fg-muted' : 'text-[15px] text-fg',
       )}
       onClick={onClick}
       // The agent's replies are searched; its reasoning is not.

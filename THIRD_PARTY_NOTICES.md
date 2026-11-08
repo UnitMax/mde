@@ -286,7 +286,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ## Locked package inventory
 
-Generated from `package-lock.json` by `npm run licenses`. 267 shipped package entries are listed, including production dependencies and libraries bundled into the renderer assets and the main-process script. Build-time-only dependencies are excluded.
+Generated from `package-lock.json` by `npm run licenses`. 268 shipped package entries are listed, including production dependencies and libraries bundled into the renderer assets and the main-process script. Build-time-only dependencies are excluded.
 
 | Package | Version | Direct dependency | Declared license | Source |
 | --- | --- | --- | --- | --- |
@@ -322,6 +322,7 @@ Generated from `package-lock.json` by `npm run licenses`. 267 shipped package en
 | `@floating-ui/dom` | `1.8.0` | no | MIT | https://registry.npmjs.org/@floating-ui/dom/-/dom-1.8.0.tgz |
 | `@floating-ui/react-dom` | `2.1.9` | no | MIT | https://registry.npmjs.org/@floating-ui/react-dom/-/react-dom-2.1.9.tgz |
 | `@floating-ui/utils` | `0.2.12` | no | MIT | https://registry.npmjs.org/@floating-ui/utils/-/utils-0.2.12.tgz |
+| `@fontsource-variable/inter` | `5.3.0` | yes | OFL-1.1 | https://registry.npmjs.org/@fontsource-variable/inter/-/inter-5.3.0.tgz |
 | `@iconify/types` | `2.0.0` | no | MIT | https://registry.npmjs.org/@iconify/types/-/types-2.0.0.tgz |
 | `@iconify/utils` | `3.1.7` | no | MIT | https://registry.npmjs.org/@iconify/utils/-/utils-3.1.7.tgz |
 | `@lezer/common` | `1.5.3` | no | MIT | https://registry.npmjs.org/@lezer/common/-/common-1.5.3.tgz |
@@ -963,6 +964,110 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ### Notice text 7
 
+Packages: `@fontsource-variable/inter@5.3.0`
+
+Files:
+
+- `node_modules/@fontsource-variable/inter/LICENSE`
+
+~~~text
+Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter) Inter-Italic[opsz,wght].ttf: Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded,
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+~~~
+
+### Notice text 8
+
 Packages: `@iconify/types@2.0.0`
 
 Files:
@@ -993,7 +1098,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 8
+### Notice text 9
 
 Packages: `@iconify/utils@3.1.7`
 
@@ -1025,7 +1130,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 9
+### Notice text 10
 
 Packages: `@lezer/common@1.5.3`, `@lezer/css@1.3.8`, `@lezer/highlight@1.2.4`, `@lezer/html@1.3.13`, `@lezer/javascript@1.5.5`, `@lezer/lr@1.4.10`, `@lezer/rust@1.0.3`, `@lezer/xml@1.0.6`
 
@@ -1064,7 +1169,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 10
+### Notice text 11
 
 Packages: `@lezer/cpp@1.1.6`, `@lezer/go@1.0.1`, `@lezer/java@1.1.4`, `@lezer/markdown@1.7.2`, `@lezer/python@1.1.19`
 
@@ -1100,7 +1205,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 11
+### Notice text 12
 
 Packages: `@lezer/json@1.0.3`
 
@@ -1132,7 +1237,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 12
+### Notice text 13
 
 Packages: `@lezer/yaml@1.0.4`
 
@@ -1164,7 +1269,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 13
+### Notice text 14
 
 Packages: `@marijn/find-cluster-break@1.0.4`
 
@@ -1196,7 +1301,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 14
+### Notice text 15
 
 Packages: `@mermaid-js/parser@2.0.1`
 
@@ -1228,7 +1333,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 15
+### Notice text 16
 
 Packages: `@radix-ui/number@1.1.3`, `@radix-ui/primitive@1.1.7`, `@radix-ui/react-alert-dialog@1.1.23`, `@radix-ui/react-arrow@1.1.15`, `@radix-ui/react-collection@1.1.15`, `@radix-ui/react-compose-refs@1.1.5`, `@radix-ui/react-context@1.2.2`, `@radix-ui/react-context-menu@2.3.7`, `@radix-ui/react-dialog@1.1.23`, `@radix-ui/react-direction@1.1.4`, `@radix-ui/react-dismissable-layer@1.1.19`, `@radix-ui/react-focus-guards@1.1.6`, `@radix-ui/react-focus-scope@1.1.16`, `@radix-ui/react-id@1.1.4`, `@radix-ui/react-label@2.1.15`, `@radix-ui/react-menu@2.1.24`, `@radix-ui/react-popper@1.3.7`, `@radix-ui/react-portal@1.1.17`, `@radix-ui/react-presence@1.1.10`, `@radix-ui/react-primitive@2.1.10`, `@radix-ui/react-radio-group@1.4.7`, `@radix-ui/react-roving-focus@1.1.19`, `@radix-ui/react-select@2.3.7`, `@radix-ui/react-slot@1.3.3`, `@radix-ui/react-use-callback-ref@1.1.4`, `@radix-ui/react-use-controllable-state@1.2.6`, `@radix-ui/react-use-effect-event@0.0.5`, `@radix-ui/react-use-is-hydrated@0.1.3`, `@radix-ui/react-use-layout-effect@1.1.4`, `@radix-ui/react-use-previous@1.1.4`, `@radix-ui/react-use-rect@1.1.4`, `@radix-ui/react-use-size@1.1.4`, `@radix-ui/react-visually-hidden@1.2.11`, `@radix-ui/rect@1.1.3`
 
@@ -1293,7 +1398,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 16
+### Notice text 17
 
 Packages: `@tiptap/core@3.30.5`, `@tiptap/extension-blockquote@3.30.5`, `@tiptap/extension-bold@3.30.5`, `@tiptap/extension-bullet-list@3.30.5`, `@tiptap/extension-code@3.30.5`, `@tiptap/extension-code-block@3.30.5`, `@tiptap/extension-document@3.30.5`, `@tiptap/extension-dropcursor@3.30.5`, `@tiptap/extension-gapcursor@3.30.5`, `@tiptap/extension-hard-break@3.30.5`, `@tiptap/extension-heading@3.30.5`, `@tiptap/extension-horizontal-rule@3.30.5`, `@tiptap/extension-italic@3.30.5`, `@tiptap/extension-link@3.30.5`, `@tiptap/extension-list@3.30.5`, `@tiptap/extension-list-item@3.30.5`, `@tiptap/extension-list-keymap@3.30.5`, `@tiptap/extension-ordered-list@3.30.5`, `@tiptap/extension-paragraph@3.30.5`, `@tiptap/extension-strike@3.30.5`, `@tiptap/extension-table@3.30.5`, `@tiptap/extension-text@3.30.5`, `@tiptap/extension-underline@3.30.5`, `@tiptap/extensions@3.30.5`, `@tiptap/markdown@3.30.5`, `@tiptap/pm@3.30.5`, `@tiptap/react@3.30.5`, `@tiptap/starter-kit@3.30.5`
 
@@ -1352,7 +1457,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 17
+### Notice text 18
 
 Packages: `@types/d3@7.4.3`, `@types/d3-array@3.2.2`, `@types/d3-axis@3.0.6`, `@types/d3-brush@3.0.6`, `@types/d3-chord@3.0.6`, `@types/d3-color@3.1.3`, `@types/d3-contour@3.0.6`, `@types/d3-delaunay@6.0.4`, `@types/d3-dispatch@3.0.7`, `@types/d3-drag@3.0.7`, `@types/d3-dsv@3.0.7`, `@types/d3-ease@3.0.2`, `@types/d3-fetch@3.0.7`, `@types/d3-force@3.0.10`, `@types/d3-format@3.0.4`, `@types/d3-geo@3.1.1`, `@types/d3-hierarchy@3.1.7`, `@types/d3-interpolate@3.0.4`, `@types/d3-path@3.1.1`, `@types/d3-polygon@3.0.2`, `@types/d3-quadtree@3.0.6`, `@types/d3-random@3.0.4`, `@types/d3-scale@4.0.9`, `@types/d3-scale-chromatic@3.1.0`, `@types/d3-selection@3.0.12`, `@types/d3-shape@3.2.0`, `@types/d3-time@3.0.4`, `@types/d3-time-format@4.0.3`, `@types/d3-timer@3.0.2`, `@types/d3-transition@3.0.9`, `@types/d3-zoom@3.0.9`, `@types/geojson@7946.0.16`, `@types/use-sync-external-store@0.0.6`
 
@@ -1416,7 +1521,7 @@ MIT License
     SOFTWARE
 ~~~
 
-### Notice text 18
+### Notice text 19
 
 Packages: `@upsetjs/venn.js@2.0.0`
 
@@ -1449,7 +1554,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 19
+### Notice text 20
 
 Packages: `@xterm/addon-fit@0.11.0`
 
@@ -1479,7 +1584,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 20
+### Notice text 21
 
 Packages: `@xterm/addon-webgl@0.19.0`
 
@@ -1509,7 +1614,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 21
+### Notice text 22
 
 Packages: `@xterm/xterm@6.0.0`
 
@@ -1541,7 +1646,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 22
+### Notice text 23
 
 Packages: `aria-hidden@1.2.6`, `react-remove-scroll@2.7.2`, `react-style-singleton@2.2.3`, `use-callback-ref@1.3.3`, `use-sidecar@1.1.3`
 
@@ -1577,7 +1682,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 23
+### Notice text 24
 
 Packages: `class-variance-authority@0.7.1`
 
@@ -1778,7 +1883,7 @@ Apache License
    limitations under the License.
 ~~~
 
-### Notice text 24
+### Notice text 25
 
 Packages: `clsx@2.1.1`
 
@@ -1798,7 +1903,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ~~~
 
-### Notice text 25
+### Notice text 26
 
 Packages: `commander@7.2.0`, `commander@8.3.0`
 
@@ -1832,7 +1937,7 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ~~~
 
-### Notice text 26
+### Notice text 27
 
 Packages: `cose-base@1.0.3`, `cose-base@2.2.0`
 
@@ -1865,7 +1970,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 27
+### Notice text 28
 
 Packages: `crelt@1.0.7`
 
@@ -1895,7 +2000,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 28
+### Notice text 29
 
 Packages: `cytoscape-cose-bilkent@4.1.0`
 
@@ -1925,7 +2030,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 29
+### Notice text 30
 
 Packages: `cytoscape-fcose@2.2.0`
 
@@ -1955,7 +2060,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 30
+### Notice text 31
 
 Packages: `cytoscape@3.34.3`
 
@@ -1985,7 +2090,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 31
+### Notice text 32
 
 Packages: `cytoscape@3.34.3`
 
@@ -2028,7 +2133,7 @@ SOFTWARE.`;
 fs.writeFileSync(path.join(__dirname, 'LICENSE'), license);
 ~~~
 
-### Notice text 32
+### Notice text 33
 
 Packages: `d3-array@2.12.1`
 
@@ -2066,7 +2171,7 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ~~~
 
-### Notice text 33
+### Notice text 34
 
 Packages: `d3-axis@3.0.0`, `d3-brush@3.0.0`, `d3-chord@3.0.1`, `d3-dispatch@3.0.1`, `d3-drag@3.0.0`, `d3-force@3.0.0`, `d3-hierarchy@3.1.2`, `d3-interpolate@3.0.1`, `d3-polygon@3.0.1`, `d3-quadtree@3.0.1`, `d3-random@3.0.1`, `d3-scale@4.0.2`, `d3-selection@3.0.0`, `d3-time-format@4.1.0`, `d3-timer@3.0.1`, `d3-transition@3.0.1`, `d3-zoom@3.0.0`
 
@@ -2106,7 +2211,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ~~~
 
-### Notice text 34
+### Notice text 35
 
 Packages: `d3-color@3.1.0`, `d3-shape@3.2.0`, `d3-time@3.1.0`
 
@@ -2132,7 +2237,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ~~~
 
-### Notice text 35
+### Notice text 36
 
 Packages: `d3-contour@4.0.2`
 
@@ -2156,7 +2261,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ~~~
 
-### Notice text 36
+### Notice text 37
 
 Packages: `d3-delaunay@6.0.4`
 
@@ -2181,7 +2286,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ~~~
 
-### Notice text 37
+### Notice text 38
 
 Packages: `d3-dsv@3.0.1`
 
@@ -2205,7 +2310,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ~~~
 
-### Notice text 38
+### Notice text 39
 
 Packages: `d3-ease@3.0.1`
 
@@ -2244,7 +2349,7 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ~~~
 
-### Notice text 39
+### Notice text 40
 
 Packages: `d3-fetch@3.0.1`
 
@@ -2268,7 +2373,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ~~~
 
-### Notice text 40
+### Notice text 41
 
 Packages: `d3-format@3.1.2`
 
@@ -2292,7 +2397,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ~~~
 
-### Notice text 41
+### Notice text 42
 
 Packages: `d3-geo@3.1.1`
 
@@ -2337,7 +2442,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ~~~
 
-### Notice text 42
+### Notice text 43
 
 Packages: `d3-path@1.0.9`
 
@@ -2375,7 +2480,7 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ~~~
 
-### Notice text 43
+### Notice text 44
 
 Packages: `d3-path@3.1.0`
 
@@ -2399,7 +2504,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ~~~
 
-### Notice text 44
+### Notice text 45
 
 Packages: `d3-sankey@0.12.3`
 
@@ -2437,7 +2542,7 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ~~~
 
-### Notice text 45
+### Notice text 46
 
 Packages: `d3-scale-chromatic@3.1.0`
 
@@ -2476,7 +2581,7 @@ CONDITIONS OF ANY KIND, either express or implied. See the License for the
 specific language governing permissions and limitations under the License.
 ~~~
 
-### Notice text 46
+### Notice text 47
 
 Packages: `d3-shape@1.3.7`
 
@@ -2514,7 +2619,7 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ~~~
 
-### Notice text 47
+### Notice text 48
 
 Packages: `d3@7.9.0`, `d3-array@3.2.4`
 
@@ -2539,7 +2644,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ~~~
 
-### Notice text 48
+### Notice text 49
 
 Packages: `dagre-d3-es@7.0.14`
 
@@ -2573,7 +2678,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 49
+### Notice text 50
 
 Packages: `dayjs@1.11.23`
 
@@ -2605,7 +2710,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 50
+### Notice text 51
 
 Packages: `delaunator@5.1.0`
 
@@ -2631,7 +2736,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ~~~
 
-### Notice text 51
+### Notice text 52
 
 Packages: `detect-node-es@1.1.0`
 
@@ -2663,7 +2768,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 52
+### Notice text 53
 
 Packages: `dompurify@3.4.17`
 
@@ -3047,7 +3152,7 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
   defined by the Mozilla Public License, v. 2.0.
 ~~~
 
-### Notice text 53
+### Notice text 54
 
 Packages: `dompurify@3.4.17`
 
@@ -3059,7 +3164,7 @@ Files:
 /*! @license DOMPurify VERSION | (c) Cure53 and other contributors | Released under the Apache license 2.0 and Mozilla Public License 2.0 | github.com/cure53/DOMPurify/blob/VERSION/LICENSE */
 ~~~
 
-### Notice text 54
+### Notice text 55
 
 Packages: `elkjs@0.9.3`
 
@@ -3334,7 +3439,7 @@ version(s), and exceptions or additional permissions here}.”
 > You may add additional accurate notices of copyright ownership.
 ~~~
 
-### Notice text 55
+### Notice text 56
 
 Packages: `es-toolkit@1.52.0`
 
@@ -3366,7 +3471,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 56
+### Notice text 57
 
 Packages: `es-toolkit@1.52.0`
 
@@ -3416,7 +3521,7 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ~~~
 
-### Notice text 57
+### Notice text 58
 
 Packages: `fast-equals@5.4.1`
 
@@ -3448,7 +3553,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 58
+### Notice text 59
 
 Packages: `get-nonce@1.0.1`
 
@@ -3480,7 +3585,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 59
+### Notice text 60
 
 Packages: `hachure-fill@0.5.2`
 
@@ -3512,7 +3617,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 60
+### Notice text 61
 
 Packages: `iconv-lite@0.6.3`
 
@@ -3543,7 +3648,7 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ~~~
 
-### Notice text 61
+### Notice text 62
 
 Packages: `import-meta-resolve@4.2.0`
 
@@ -3628,7 +3733,7 @@ IN THE SOFTWARE.
 """
 ~~~
 
-### Notice text 62
+### Notice text 63
 
 Packages: `internmap@1.0.1`, `internmap@2.0.3`
 
@@ -3653,7 +3758,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ~~~
 
-### Notice text 63
+### Notice text 64
 
 Packages: `js-tokens@4.0.0`
 
@@ -3685,7 +3790,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 64
+### Notice text 65
 
 Packages: `jsonc-parser@3.3.1`
 
@@ -3717,7 +3822,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 65
+### Notice text 66
 
 Packages: `katex@0.18.2`
 
@@ -3749,7 +3854,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 66
+### Notice text 67
 
 Packages: `khroma@2.1.0`
 
@@ -3781,7 +3886,7 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ~~~
 
-### Notice text 67
+### Notice text 68
 
 Packages: `layout-base@1.0.2`, `layout-base@2.0.1`
 
@@ -3814,7 +3919,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 68
+### Notice text 69
 
 Packages: `linkifyjs@4.3.3`
 
@@ -3844,7 +3949,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 69
+### Notice text 70
 
 Packages: `lodash-es@4.18.1`
 
@@ -3902,7 +4007,7 @@ licenses; we recommend you read them, as their terms may differ from the
 terms above.
 ~~~
 
-### Notice text 70
+### Notice text 71
 
 Packages: `loose-envify@1.4.0`
 
@@ -3934,7 +4039,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 71
+### Notice text 72
 
 Packages: `lucide-react@1.31.0`
 
@@ -3988,7 +4093,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 72
+### Notice text 73
 
 Packages: `marked@16.4.2`, `marked@17.0.6`
 
@@ -4044,7 +4149,7 @@ Redistribution and use in source and binary forms, with or without modification,
 This software is provided by the copyright holders and contributors “as is” and any express or implied warranties, including, but not limited to, the implied warranties of merchantability and fitness for a particular purpose are disclaimed. In no event shall the copyright owner or contributors be liable for any direct, indirect, incidental, special, exemplary, or consequential damages (including, but not limited to, procurement of substitute goods or services; loss of use, data, or profits; or business interruption) however caused and on any theory of liability, whether in contract, strict liability, or tort (including negligence or otherwise) arising in any way out of the use of this software, even if advised of the possibility of such damage.
 ~~~
 
-### Notice text 73
+### Notice text 74
 
 Packages: `mermaid@12.1.0`
 
@@ -4076,7 +4181,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 74
+### Notice text 75
 
 Packages: `node-addon-api@7.1.1`
 
@@ -4096,7 +4201,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ~~~
 
-### Notice text 75
+### Notice text 76
 
 Packages: `node-pty@1.1.0`
 
@@ -4128,7 +4233,7 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 IN THE SOFTWARE.
 ~~~
 
-### Notice text 76
+### Notice text 77
 
 Packages: `node-pty@1.1.0`
 
@@ -4208,7 +4313,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 77
+### Notice text 78
 
 Packages: `orderedmap@2.1.1`, `w3c-keyname@2.2.8`
 
@@ -4239,7 +4344,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 78
+### Notice text 79
 
 Packages: `package-manager-detector@1.8.0`
 
@@ -4271,7 +4376,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 79
+### Notice text 80
 
 Packages: `path-data-parser@0.1.0`, `points-on-curve@0.2.0`
 
@@ -4304,7 +4409,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 80
+### Notice text 81
 
 Packages: `points-on-path@0.2.1`
 
@@ -4336,7 +4441,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 81
+### Notice text 82
 
 Packages: `prosemirror-changeset@2.4.2`
 
@@ -4366,7 +4471,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 82
+### Notice text 83
 
 Packages: `prosemirror-commands@1.7.2`, `prosemirror-dropcursor@1.8.3`, `prosemirror-gapcursor@1.4.1`, `prosemirror-history@1.5.0`, `prosemirror-inputrules@1.5.1`, `prosemirror-keymap@1.2.3`, `prosemirror-model@1.25.11`, `prosemirror-schema-list@1.5.1`, `prosemirror-state@1.4.4`, `prosemirror-transform@1.12.0`, `prosemirror-view@1.42.3`
 
@@ -4406,7 +4511,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 83
+### Notice text 84
 
 Packages: `prosemirror-tables@1.8.5`
 
@@ -4436,7 +4541,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 84
+### Notice text 85
 
 Packages: `react-remove-scroll-bar@2.3.8`
 
@@ -4466,7 +4571,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 85
+### Notice text 86
 
 Packages: `react@18.3.1`, `react-dom@18.3.1`, `scheduler@0.23.2`
 
@@ -4500,7 +4605,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 86
+### Notice text 87
 
 Packages: `robust-predicates@3.0.3`
 
@@ -4535,7 +4640,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 For more information, please refer to <http://unlicense.org>
 ~~~
 
-### Notice text 87
+### Notice text 88
 
 Packages: `rope-sequence@1.3.4`
 
@@ -4565,7 +4670,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 88
+### Notice text 89
 
 Packages: `roughjs@4.6.6`
 
@@ -4597,7 +4702,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 89
+### Notice text 90
 
 Packages: `rw@1.3.3`
 
@@ -4634,7 +4739,7 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ~~~
 
-### Notice text 90
+### Notice text 91
 
 Packages: `safer-buffer@2.1.2`
 
@@ -4666,7 +4771,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 91
+### Notice text 92
 
 Packages: `style-mod@4.1.4`
 
@@ -4696,7 +4801,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ~~~
 
-### Notice text 92
+### Notice text 93
 
 Packages: `stylis@4.4.0`
 
@@ -4728,7 +4833,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 93
+### Notice text 94
 
 Packages: `tailwind-merge@3.6.0`
 
@@ -4760,7 +4865,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 94
+### Notice text 95
 
 Packages: `tinyexec@1.3.1`
 
@@ -4792,7 +4897,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 95
+### Notice text 96
 
 Packages: `ts-dedent@2.3.0`
 
@@ -4824,7 +4929,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 96
+### Notice text 97
 
 Packages: `tslib@2.8.1`
 
@@ -4847,7 +4952,7 @@ OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
 ~~~
 
-### Notice text 97
+### Notice text 98
 
 Packages: `use-sync-external-store@1.6.0`
 
@@ -4879,7 +4984,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ~~~
 
-### Notice text 98
+### Notice text 99
 
 Packages: `uuid@14.0.2`
 
@@ -4899,7 +5004,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ~~~
 
-### Notice text 99
+### Notice text 100
 
 Packages: `zustand@5.0.15`
 

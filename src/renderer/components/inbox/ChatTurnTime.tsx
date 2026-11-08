@@ -9,13 +9,13 @@ import { formatDuration, formatRate, spokenDuration } from '@/lib/duration'
 export function TurnDuration({ ms, tokensPerSecond = null }: { ms: number; tokensPerSecond?: number | null }): JSX.Element {
   return (
     <div
-      className="flex items-center gap-2 px-1.5 text-[11.5px] text-fg-subtle"
+      className="flex items-center gap-2 px-1.5 text-[11.5px] text-fg-muted"
       data-testid="chat-turn-duration"
       title={spokenDuration(ms)}
     >
       <Clock3 aria-hidden className="h-3 w-3 shrink-0" />
       <span className="shrink-0">
-        Worked for <span className="tabular-nums text-fg-muted">{formatDuration(ms)}</span>
+        Worked for <span className="tabular-nums text-fg/90">{formatDuration(ms)}</span>
       </span>
       {tokensPerSecond !== null && (
         <>
@@ -27,7 +27,7 @@ export function TurnDuration({ ms, tokensPerSecond = null }: { ms: number; token
             data-testid="chat-turn-rate"
             title="Output and reasoning tokens per second while the model was generating, not counting the time tools ran"
           >
-            <span className="tabular-nums text-fg-muted">{formatRate(tokensPerSecond)}</span> tok/s
+            <span className="tabular-nums text-fg/90">{formatRate(tokensPerSecond)}</span> tok/s
           </span>
         </>
       )}

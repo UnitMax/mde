@@ -112,6 +112,13 @@ blocks, edit/write diffs (including line numbers and change markers), and their 
 change counts. Changes take effect immediately in the open conversation, including content
 expanded or streamed afterward; code preview font selection is independent of the terminal font.
 
+The interface text is set in Inter, bundled with the app (`@fontsource-variable/inter`, imported by
+`main.tsx`; SIL Open Font License, listed in `THIRD_PARTY_NOTICES.md`), so every system draws the same
+letters; `--font-sans` falls back to Segoe UI and the system font. In Inbox chat replies (`.chat-markdown`)
+the text is 15px with a line height of 1.6 and the width of the column is unchanged. Inline code uses the
+code preview font at 0.88em in regular weight (it does not take on the bold of the text around it),
+list items sit close together, and headings are sized in `em` so the smaller reasoning text scales with them.
+
 The Appearance section also has a **Card terminals** switch (`terminalCards` in the local terminal
 settings, off by default). Off, panes tile edge to edge, divided by a 1px line. On, `TerminalView` draws
 every pane as a rounded card on the panel background with a 6px margin around and between the cards

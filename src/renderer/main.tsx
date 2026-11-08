@@ -1,5 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import '@fontsource-variable/inter/wght.css'
 import '@xterm/xterm/css/xterm.css'
 import './index.css'
 import './chat-find.css'

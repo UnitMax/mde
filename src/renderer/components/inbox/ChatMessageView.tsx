@@ -54,7 +54,7 @@ export function UserBubble({ message, pending = false }: { message: Extract<Chat
   return (
     <div
       className={cn(
-        'max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md border px-3.5 py-2 text-[14px] leading-relaxed',
+        'max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md border px-3.5 py-2 text-[15px] leading-[1.6]',
         pending ? 'border-dashed border-line-strong bg-active/40 text-fg-muted' : 'border-transparent bg-active text-fg',
       )}
     >
