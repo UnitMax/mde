@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os'
 import { trustedIpcSender } from './helpers/ipc-sender'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Session } from '../src/shared/types'
@@ -25,16 +26,13 @@ const electronMock = vi.hoisted(() => {
 })
 
 const workspaceMock = vi.hoisted(() => ({
-  createProject: vi.fn(),
   createTodoProject: vi.fn(),
   createTodoTask: vi.fn(),
   createSession: vi.fn(),
   duplicateSession: vi.fn(),
   getSession: vi.fn(),
   loadWorkspace: vi.fn(),
-  moveSession: vi.fn(),
   moveTodoTask: vi.fn(),
-  removeProject: vi.fn(),
   removeTodoProject: vi.fn(),
   removeTodoTask: vi.fn(),
   removeSession: vi.fn(),
@@ -42,7 +40,6 @@ const workspaceMock = vi.hoisted(() => ({
   createSessionTab: vi.fn(),
   removeSessionTab: vi.fn(),
   selectSessionTab: vi.fn(),
-  updateProject: vi.fn(),
   updateTodoProject: vi.fn(),
   updateTodoTask: vi.fn(),
   updateSession: vi.fn(),
@@ -57,7 +54,8 @@ const dropMock = vi.hoisted(() => ({
 vi.mock('electron', () => electronMock)
 vi.mock('../src/main/store/workspace', () => workspaceMock)
 vi.mock('../src/main/pty/drop', () => dropMock)
-vi.mock('../src/main/wsl/paths', () => ({
+vi.mock('../src/main/wsl/paths', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../src/main/wsl/paths')>(),
   canonicalizeWslPath: vi.fn(),
   resolveForTarget: vi.fn(),
   toWindows: vi.fn(),
@@ -77,16 +75,14 @@ const { security, event: trustedEvent } = trustedIpcSender()
 function nativeSession(): Session {
   return {
     id: 'session-1',
-    projectId: 'project-1',
     name: 'App',
     kind: 'native',
-    path: '/tmp',
     createdAt: '2026-01-01T00:00:00.000Z'
   }
 }
 
 function registerForTest(ptyManager: { terminalInfo: ReturnType<typeof vi.fn>; status: ReturnType<typeof vi.fn> }): void {
-  registerIpcHandlers(security, ptyManager as never, {} as never, {} as never, {} as never, {} as never)
+  registerIpcHandlers(security, ptyManager as never, {} as never, {} as never, {} as never)
 }
 
 function handler(channel: string): Handler {
@@ -153,19 +149,32 @@ describe('terminal file-drop IPC', () => {
     expect(dropMock.resolveTerminalDrop).not.toHaveBeenCalled()
   })
 
-  it('resolves a tree entry using its saved source session and the receiving terminal', async () => {
+
+  it('resolves a tree drag from the source terminal directory', async () => {
     const target = nativeSession()
-    const source = { ...target, id: 'source', path: '/tmp/another-project' }
-    workspaceMock.getSession.mockImplementation(async (id) => id === 'source' ? source : target)
-    const descriptor = { name: 'src', nativePath: '/tmp/another-project/src' }
+    const source = { ...target, id: 'source', path: '/workspace/launch' }
+    const directory = tmpdir()
+    workspaceMock.getSession.mockImplementation(async (id) => id === source.id ? source : target)
+    const descriptor = { name: 'src', nativePath: '/workspace/current/src' }
     dropMock.fileTreeDropFile.mockResolvedValue(descriptor)
-    dropMock.resolveTerminalDrop.mockResolvedValue({ insertions: [], acceptedCount: 0, rejections: [] })
-    registerForTest({ terminalInfo: vi.fn(() => ({ sessionId: target.id })), status: vi.fn(() => 'running') })
-    await handler(IpcChannels.ptyDropFiles)(trustedEvent, {
-      terminalId: 'pane-1', files: [], mode: 'shell', treeEntry: { sessionId: 'source', path: 'src' },
+    registerForTest({
+      terminalInfo: vi.fn((id) => ({ sessionId: id === 'source-pane' ? source.id : target.id, directory })),
+      status: vi.fn(() => 'running'),
     })
-    expect(dropMock.fileTreeDropFile).toHaveBeenCalledWith(source, 'src', process.platform)
+    await handler(IpcChannels.ptyDropFiles)(trustedEvent, {
+      terminalId: 'target-pane', files: [], mode: 'shell', treeEntry: { terminalId: 'source-pane', directory, path: 'src' },
+    })
+    expect(dropMock.fileTreeDropFile).toHaveBeenCalledWith({ ...source, path: directory }, 'src', process.platform)
     expect(dropMock.resolveTerminalDrop).toHaveBeenCalledWith(target, process.platform, [descriptor], 'shell')
+  })
+
+  it('rejects a tree drag when the source terminal has changed directory', async () => {
+    workspaceMock.getSession.mockResolvedValue(nativeSession())
+    registerForTest({ terminalInfo: vi.fn(() => ({ sessionId: 'session-1', directory: '/workspace/new' })), status: vi.fn(() => 'running') })
+    await expect(handler(IpcChannels.ptyDropFiles)(trustedEvent, {
+      terminalId: 'target-pane', files: [], mode: 'shell', treeEntry: { terminalId: 'source-pane', directory: '/workspace/old', path: 'src' },
+    })).rejects.toThrow('The terminal directory has changed.')
+    expect(dropMock.fileTreeDropFile).not.toHaveBeenCalled()
   })
 
   it('reports a tree drop onto a stopped terminal', async () => {
@@ -220,7 +229,7 @@ describe('registered IPC security boundary', () => {
   beforeEach(() => {
     electronMock.handlers.clear()
     vi.clearAllMocks()
-    registerIpcHandlers(security, {} as never, {} as never, {} as never, {} as never, {} as never)
+    registerIpcHandlers(security, {} as never, {} as never, {} as never, {} as never)
   })
 
   it('authenticates every channel before inspecting hostile payloads', async () => {
@@ -255,5 +264,18 @@ describe('registered IPC security boundary', () => {
     expect(electronMock.app.getVersion).not.toHaveBeenCalled()
     await expect(invoke(trustedEvent, undefined)).resolves.toMatchObject({ version: '0.0.1' })
     expect(electronMock.app.getVersion).toHaveBeenCalledOnce()
+  })
+
+  it('pastes into the sender that asked and hands nothing back', async () => {
+    const paste = vi.fn()
+    const invoke = handler(IpcChannels.clipboardPaste) as (...args: unknown[]) => Promise<unknown>
+    Object.assign(trustedEvent.sender, { paste })
+    await expect(invoke(trustedEvent, undefined)).resolves.toBeUndefined()
+    expect(paste).toHaveBeenCalledOnce()
+    // Another window is not trusted, and a payload is not accepted.
+    await expect(invoke(trustedIpcSender().event, undefined)).rejects.toThrow('Unauthorized IPC sender.')
+    await expect(invoke(trustedEvent, 'text')).rejects.toThrow('Invalid IPC payload for clipboard:paste.')
+    expect(paste).toHaveBeenCalledOnce()
+    expect(electronMock.clipboard.writeText).not.toHaveBeenCalled()
   })
 })

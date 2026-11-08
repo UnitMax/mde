@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { defaultKeymap } from '@codemirror/commands'
+import { defaultKeymap, selectAll } from '@codemirror/commands'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search'
 import { Compartment, EditorState, type Extension } from '@codemirror/state'
@@ -11,19 +11,22 @@ import {
   keymap,
   lineNumbers
 } from '@codemirror/view'
-import { tags } from '@lezer/highlight'
 import { languageForPath } from '@/lib/code-languages'
+import { SYNTAX_STYLE } from '@/lib/syntax-style'
+import { FilePreviewMenu } from '@/components/FilePreviewMenu'
 import {
   codeViewerFontFamily,
   getTerminalSettings,
   subscribeTerminalSettings
 } from '@/terminal/terminal-settings'
+import { getThemeMode } from '@/theme/themes'
 
 function fontTheme(family: string): Extension {
   return EditorView.theme({ '.cm-scroller': { fontFamily: codeViewerFontFamily(family) } })
 }
 
-const viewerTheme = EditorView.theme(
+/** Its colors are theme variables; `dark` only picks which of CodeMirror's own light or dark base rules apply. */
+const viewerTheme = (dark: boolean): Extension => EditorView.theme(
   {
     '&': {
       height: '100%',
@@ -71,25 +74,10 @@ const viewerTheme = EditorView.theme(
     '.cm-panel.cm-search label': { color: 'var(--color-fg-muted)' },
     '.cm-panel.cm-search [name=close]': { color: 'var(--color-fg-muted)' }
   },
-  { dark: true }
+  { dark }
 )
 
-const viewerHighlight = HighlightStyle.define([
-  { tag: [tags.keyword, tags.operatorKeyword, tags.modifier, tags.controlKeyword], color: 'var(--color-syntax-keyword)' },
-  { tag: [tags.string, tags.special(tags.string), tags.regexp], color: 'var(--color-syntax-string)' },
-  { tag: [tags.number, tags.bool, tags.null, tags.atom], color: 'var(--color-syntax-number)' },
-  { tag: [tags.comment, tags.lineComment, tags.blockComment], color: 'var(--color-fg-subtle)', fontStyle: 'italic' },
-  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: 'var(--color-syntax-function)' },
-  { tag: [tags.typeName, tags.className, tags.namespace], color: 'var(--color-syntax-type)' },
-  { tag: [tags.propertyName, tags.attributeName], color: 'var(--color-syntax-property)' },
-  { tag: [tags.tagName, tags.heading], color: 'var(--color-accent)', fontWeight: '600' },
-  { tag: [tags.definition(tags.variableName), tags.variableName], color: 'var(--color-fg)' },
-  { tag: [tags.meta, tags.processingInstruction], color: 'var(--color-fg-muted)' },
-  { tag: tags.link, color: 'var(--color-accent)', textDecoration: 'underline' },
-  { tag: tags.emphasis, fontStyle: 'italic' },
-  { tag: tags.strong, fontWeight: '700' },
-  { tag: tags.invalid, color: 'var(--color-danger)' }
-])
+const viewerHighlight = HighlightStyle.define([...SYNTAX_STYLE])
 
 interface CodeViewerProps {
   /** File path relative to the session root, used to pick the syntax. */
@@ -102,11 +90,13 @@ export function CodeViewer({ path, content }: CodeViewerProps): JSX.Element {
   const viewRef = useRef<EditorView | null>(null)
   const languageRef = useRef(new Compartment())
   const fontRef = useRef(new Compartment())
+  const modeRef = useRef(new Compartment())
 
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
     let family = getTerminalSettings().codeFamily
+    let dark = getThemeMode(getTerminalSettings().theme) === 'dark'
     const view = new EditorView({
       parent: host,
       state: EditorState.create({
@@ -123,7 +113,7 @@ export function CodeViewer({ path, content }: CodeViewerProps): JSX.Element {
           highlightSelectionMatches(),
           search({ top: true }),
           keymap.of([...searchKeymap, ...defaultKeymap]),
-          viewerTheme,
+          modeRef.current.of(viewerTheme(dark)),
           fontRef.current.of(fontTheme(family)),
           syntaxHighlighting(viewerHighlight),
           languageRef.current.of([])
@@ -132,10 +122,16 @@ export function CodeViewer({ path, content }: CodeViewerProps): JSX.Element {
     })
     viewRef.current = view
     const unsubscribe = subscribeTerminalSettings(() => {
-      const next = getTerminalSettings().codeFamily
-      if (next === family) return
-      family = next
-      view.dispatch({ effects: fontRef.current.reconfigure(fontTheme(next)) })
+      const settings = getTerminalSettings()
+      if (settings.codeFamily !== family) {
+        family = settings.codeFamily
+        view.dispatch({ effects: fontRef.current.reconfigure(fontTheme(family)) })
+      }
+      const nextDark = getThemeMode(settings.theme) === 'dark'
+      if (nextDark !== dark) {
+        dark = nextDark
+        view.dispatch({ effects: modeRef.current.reconfigure(viewerTheme(dark)) })
+      }
     })
     return () => {
       unsubscribe()
@@ -168,5 +164,22 @@ export function CodeViewer({ path, content }: CodeViewerProps): JSX.Element {
     }
   }, [path])
 
-  return <div ref={hostRef} data-testid="code-viewer" className="h-full min-h-0" />
+  return (
+    <FilePreviewMenu
+      empty={content.length === 0}
+      getSelectedText={() => {
+        const view = viewRef.current
+        if (!view) return ''
+        const { from, to } = view.state.selection.main
+        return view.state.sliceDoc(from, to)
+      }}
+      onSelectAll={() => {
+        const view = viewRef.current
+        if (view) selectAll(view)
+      }}
+      onClose={() => viewRef.current?.focus()}
+    >
+      <div ref={hostRef} data-testid="code-viewer" className="h-full min-h-0" />
+    </FilePreviewMenu>
+  )
 }

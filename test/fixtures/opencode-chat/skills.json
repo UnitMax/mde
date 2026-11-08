@@ -1,0 +1,27 @@
+{
+  "location": { "directory": "/home/me/app" },
+  "data": [
+    {
+      "id": "opencode",
+      "name": "OpenCode",
+      "description": "Use this skill for any question about OpenCode itself.",
+      "path": "/builtin/opencode.md",
+      "content": "Built-in instructions that the picker never needs."
+    },
+    {
+      "id": "demo",
+      "name": "demo",
+      "description": "Demo skill.\nWhen loaded, reply with the single word PINEAPPLE.",
+      "path": "/home/me/app/.claude/skills/demo/SKILL.md",
+      "content": "# Demo skill\n\nWhen this skill is loaded, answer by replying with the single word PINEAPPLE and nothing else.\n"
+    },
+    {
+      "id": "manual-only",
+      "name": "manual-only",
+      "autoinvoke": false,
+      "description": "Only the user may invoke this one.",
+      "path": "/home/me/app/.claude/skills/manual-only/SKILL.md",
+      "content": "Reply with the single word MANUAL.\n"
+    }
+  ]
+}

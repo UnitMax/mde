@@ -18,16 +18,10 @@ export interface LaunchContext {
   windowsExecutable?: HostExecutable
   /** process.env.SHELL on the host, if set. */
   defaultShell?: string
-  /** Environment variables that should be inherited by native target shells. */
-  environment?: Record<string, string>
-  /** Environment variables that should be inherited by commands inside WSL. */
-  wslEnvironment?: Record<string, string>
   /** Validated runtime directory override, used by a pane cloned from another terminal. */
   workingDirectory?: string
   /** Direct command to run after the target shell has loaded its login environment. */
   agent?: AgentCommand
-  /** Start the normal shell once the agent exits, instead of ending the terminal with it. */
-  returnToShell?: boolean
 }
 
 const DEFAULT_POSIX_SHELL = '/bin/bash'
@@ -181,18 +175,7 @@ esac
 `.trim()
 }
 
-/**
- * With returnToShell the agent runs as a child instead of replacing the
- * process, and the normal interactive shell startup takes over once it exits.
- */
-function wslAgentShellCommand(returnToShell = false): string {
-  const run = returnToShell ? '' : 'exec '
-  // A handler (not '' / ignore) is reset to default in exec'd children, so the
-  // agent still receives SIGINT while this wrapper survives it.
-  const preamble = returnToShell ? 'trap : INT\n' : ''
-  const handOff = returnToShell
-    ? `\nexec /bin/sh -c ${shellQuote(wslShellCommand())} mde-shell "$shell"`
-    : ''
+function wslAgentShellCommand(): string {
   return `
 if [ "$#" -lt 2 ]; then exit 2; fi
 shell=$1
@@ -212,14 +195,14 @@ if [ -z "$shell" ] || [ ! -x "$shell" ]; then
   shell=/bin/bash
 fi
 export SHELL="$shell"
-${preamble}case "\${shell##*/}" in
+case "\${shell##*/}" in
   fish)
-    ${run}"$shell" -l -i -c 'exec $argv' -- "$agent" "$@"
+    exec "$shell" -l -i -c 'exec $argv' -- "$agent" "$@"
     ;;
   *)
-    ${run}"$shell" -lic 'exec "$@"' mde-agent "$agent" "$@"
+    exec "$shell" -lic 'exec "$@"' mde-agent "$agent" "$@"
     ;;
-esac${handOff}
+esac
 `.trim()
 }
 
@@ -248,15 +231,6 @@ exit $?
 `.trim()
 }
 
-function wslEnvironmentArgs(environment: Record<string, string> | undefined): string[] {
-  if (!environment) return []
-  return Object.entries(environment)
-    .filter(([key]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key))
-    // These are argv entries to `env`, not shell source. Keeping each value as
-    // one entry preserves spaces, quotes, and other path characters exactly.
-    .map(([key, value]) => `${key}=${value}`)
-}
-
 /**
  * Builds the spawn command for a session. This is the seam a future remote
  * integration slots into — nothing else needs to know how a shell is started.
@@ -270,15 +244,11 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
       throw new Error(`WSL session "${session.name}" has no distro`)
     }
 
-    const workingDirectory = context.workingDirectory ?? session.path
+    const workingDirectory = context.workingDirectory ?? '~'
     const executable = context.windowsExecutable
     if (!executable?.cwd) throw new Error('A resolved Windows WSL executable and host directory are required.')
 
-    const environment = wslEnvironmentArgs({
-      ...context.environment,
-      ...context.wslEnvironment,
-      ...WSL_TERMINAL_ENVIRONMENT
-    })
+    const environment = Object.entries(WSL_TERMINAL_ENVIRONMENT).map(([key, value]) => `${key}=${value}`)
     return {
       file: assertWindowsExecutablePath(executable.file),
       cwd: assertWindowsExecutablePath(executable.cwd, 'Windows host directory'),
@@ -296,7 +266,7 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
         ...(environment.length > 0 ? ['env', ...environment] : []),
         '/bin/sh',
         '-c',
-        context.agent ? wslAgentShellCommand(context.returnToShell) : wslShellCommand(),
+        context.agent ? wslAgentShellCommand() : wslShellCommand(),
         context.agent ? 'mde-agent' : 'mde-shell',
         ...(context.agent
           ? [session.shell ?? WSL_DEFAULT_SHELL_MARKER, context.agent.executable, ...context.agent.args]
@@ -312,9 +282,9 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
     if (context.platform === 'darwin') {
       return {
         file: '/bin/sh',
-        args: ['-c', wslAgentShellCommand(context.returnToShell), 'mde-agent',
+        args: ['-c', wslAgentShellCommand(), 'mde-agent',
           session.shell ?? context.defaultShell ?? '/bin/zsh', context.agent.executable, ...context.agent.args],
-        cwd: context.workingDirectory ?? session.path
+        cwd: context.workingDirectory
       }
     }
     throw new Error('Coding agents can only be launched in WSL sessions on Windows')
@@ -327,14 +297,14 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
       return {
         file: shell,
         args: ['-NoExit', '-Command', powershellStartupCommand()],
-        cwd: context.workingDirectory ?? session.path
+        cwd: context.workingDirectory
       }
     }
 
     return {
       file: shell,
       args: [],
-      cwd: context.workingDirectory ?? session.path
+      cwd: context.workingDirectory
     }
   }
 
@@ -343,7 +313,7 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
     return {
       file: '/bin/bash',
       args: ['-c', nativeBashShellCommand(), 'mde-shell', shell],
-      cwd: context.workingDirectory ?? session.path
+      cwd: context.workingDirectory
     }
   }
 
@@ -351,7 +321,7 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
     return {
       file: shell,
       args: ['-l', '-i', '-C', fishStartupCommand()],
-      cwd: context.workingDirectory ?? session.path
+      cwd: context.workingDirectory
     }
   }
 
@@ -359,9 +329,9 @@ export function buildLaunchSpec(session: Session, context: LaunchContext): Launc
     return {
       file: '/bin/sh',
       args: ['-c', nativeZshShellCommand(), 'mde-shell', shell],
-      cwd: context.workingDirectory ?? session.path
+      cwd: context.workingDirectory
     }
   }
 
-  return { file: shell, args: ['-l'], cwd: context.workingDirectory ?? session.path }
+  return { file: shell, args: ['-l'], cwd: context.workingDirectory }
 }

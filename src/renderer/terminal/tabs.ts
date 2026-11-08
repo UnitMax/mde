@@ -4,12 +4,12 @@ import type {
   SessionTab
 } from '@shared/types'
 import {
-  defaultTerminalLayoutSizes,
-  layoutForCount,
+  mapTerminalTree,
+  paneKey,
   MAX_TERMINAL_COUNT,
   type SessionTerminalLayout,
   type TerminalPaneState,
-  type RuntimeTerminalLaunch
+  type TerminalSplitSide
 } from './layout'
 
 export function defaultSessionTab(sessionId: string): SessionTab {
@@ -17,9 +17,8 @@ export function defaultSessionTab(sessionId: string): SessionTab {
     id: `${sessionId}:tab:default`,
     name: 'Tab 1',
     layout: {
-      layout: 'single',
-      panes: [{ id: 'pane-1' }],
-      sizes: defaultTerminalLayoutSizes()
+      tree: { type: 'pane', paneId: 'pane-1' },
+      panes: [{ id: 'pane-1' }]
     }
   }
 }
@@ -49,62 +48,55 @@ export function nextPaneId(panes: readonly TerminalPaneState[]): string {
   return `pane-${index}`
 }
 
-export function appendRuntimePane(
+export function splitRuntimePane(
   sessionId: string,
   tabId: string,
   layout: SessionTerminalLayout,
-  launch: RuntimeTerminalLaunch
+  sourceTerminalId: string,
+  side: TerminalSplitSide,
 ): SessionTerminalLayout | null {
-  const nextCount = layout.panes.length + 1
-  if (nextCount > MAX_TERMINAL_COUNT) return null
-
+  if (layout.panes.length >= MAX_TERMINAL_COUNT) return null
+  const source = layout.panes.find((pane) => pane.terminalId === sourceTerminalId)
+  if (!source) return null
   const paneId = nextPaneId(layout.panes)
-  const nextLayout = layoutForCount(nextCount)
-  return {
-    layout: nextLayout,
-    panes: [
-      ...layout.panes,
-      {
-        terminalId: terminalIdForPane(sessionId, tabId, paneId),
-        paneId,
-        launch
-      }
-    ],
-    sizes: defaultTerminalLayoutSizes(nextLayout)
+  const added: TerminalPaneState = {
+    terminalId: terminalIdForPane(sessionId, tabId, paneId),
+    paneId,
   }
+  const before = side === 'left' || side === 'top'
+  const tree = mapTerminalTree(layout.tree, (node) => node.type === 'pane' && node.paneId === paneKey(source)
+    ? {
+        type: 'split',
+        id: crypto.randomUUID(),
+        axis: side === 'left' || side === 'right' ? 'column' : 'row',
+        ratio: 0.5,
+        first: before ? { type: 'pane', paneId } : node,
+        second: before ? node : { type: 'pane', paneId },
+      }
+    : node)
+  const panes = [...layout.panes]
+  panes.splice(panes.indexOf(source) + (before ? 0 : 1), 0, added)
+  return { tree, panes }
 }
 
 export function createRuntimeLayout(sessionId: string, tab: SessionTab): SessionTerminalLayout {
   return {
-    layout: tab.layout.layout,
+    tree: structuredClone(tab.layout.tree),
     panes: tab.layout.panes.map((pane) => ({
       terminalId: terminalIdForPane(sessionId, tab.id, pane.id),
       paneId: pane.id,
       ...(pane.title?.trim() ? { title: pane.title.trim() } : {})
-    })),
-    sizes: { ...tab.layout.sizes }
+    }))
   }
-}
-
-export function runtimeLayoutsForSession(
-  session: Session,
-  existing: Record<string, SessionTerminalLayout> = {}
-): Record<string, SessionTerminalLayout> {
-  const next: Record<string, SessionTerminalLayout> = {}
-  sessionTabs(session).forEach((tab) => {
-    next[tab.id] = existing[tab.id] ?? createRuntimeLayout(session.id, tab)
-  })
-  return next
 }
 
 export function persistRuntimeLayout(layout: SessionTerminalLayout): PersistedTerminalLayout {
   return {
-    layout: layout.layout,
+    tree: structuredClone(layout.tree),
     panes: layout.panes.map((pane) => ({
       id: pane.paneId ?? pane.terminalId,
       ...(pane.title?.trim() ? { title: pane.title.trim() } : {})
-    })),
-    sizes: { ...layout.sizes }
+    }))
   }
 }
 

@@ -6,23 +6,16 @@ import {
   type MouseEvent as ReactMouseEvent
 } from 'react'
 import {
-  Bot,
-  ChevronDown,
   ChevronRight,
   Check,
-  CircleAlert,
-  Code,
   Copy,
-  Folder,
-  FolderOpen,
-  FolderPlus,
-  GitBranch,
   GripVertical,
-  LoaderCircle,
   ListTodo,
   MoreHorizontal,
+  Monitor,
   PanelLeftClose,
   PanelLeftOpen,
+  Terminal,
   Pencil,
   Plus,
   RotateCcw,
@@ -30,12 +23,7 @@ import {
   Trash2
 } from 'lucide-react'
 import type {
-  OpenCodeTuiInstanceLabelMode,
-  OpenCodeTuiInstanceStatus,
-  Project,
-  PtyStatus,
   Session,
-  SessionTab,
   TodoProject
 } from '@shared/types'
 import { Button } from '@/components/ui/button'
@@ -58,443 +46,53 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger
 } from '@/components/ui/context-menu'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle
-} from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import {
   useWorkspace,
-  type GitSessionStatus,
-  type OpenCodeTuiStatusState,
   type WorkspaceView
 } from '@/store/workspace'
-import { OpenCodeStatusIcon } from '@/components/OpenCodeStatusIcon'
-import { OpenCodeNotificationBadge } from '@/components/OpenCodeNotificationBadge'
-import { SessionGitStatus } from '@/components/SessionGitStatus'
-import { SessionEnvironmentPanel } from '@/components/SessionEnvironmentPanel'
-import {
-  OPENCODE_STATUS_ICON_SLOT_CLASS,
-  openCodeStatusLabel,
-  openCodeOverviewStatusLabel
-} from '@/lib/opencode-tui-status'
 import {
   DEFAULT_SESSION_COLOR,
   SESSION_COLORS,
   sessionColorHex
 } from '@shared/session-colors'
 import { SESSION_ICONS, sessionIconOption } from '@shared/session-icons'
-import type { SessionTerminalLayout } from '@/terminal/layout'
-import { sessionTabs } from '@/terminal/tabs'
-import {
-  collectOpenCodeTuiOverviewEntries,
-  openCodeTuiInstanceLabel
-} from '@/lib/opencode-tui-instances'
-import { countOpenCodeTuiNotifications } from '@/lib/opencode-tui-notifications'
-import {
-  terminalDirectoryLabel,
-  terminalPaneLabel,
-  terminalPanesForSidebar
-} from '@/lib/terminal-instances'
-import {
-  getTerminalSettings,
-  subscribeTerminalSettings
-} from '@/terminal/terminal-settings'
-
-const STATUS_STYLE: Record<PtyStatus, { dot: string; label: string }> = {
-  none: { dot: 'bg-fg-subtle', label: 'No shell running' },
-  running: { dot: 'bg-ok', label: 'Shell running' },
-  exited: { dot: 'bg-danger', label: 'Shell exited' }
-}
-
-type OpenCodeIndicatorStatus = 'idle' | 'working' | 'attention' | 'completed' | 'error'
-
-const SIDEBAR_SECTIONS = [
-  { id: 'projects' as const, label: 'Projects', Icon: Folder },
-  { id: 'todo' as const, label: 'To Do', Icon: ListTodo }
-]
-
-interface SidebarSectionNavigationProps {
-  activeSection: WorkspaceView
-  collapsed: boolean
-  onSelect: (section: WorkspaceView) => void
-}
-
-function SidebarSectionNavigation({
-  activeSection,
-  collapsed,
-  onSelect
-}: SidebarSectionNavigationProps): JSX.Element {
-  return (
-    <div
-      role={collapsed ? 'group' : 'tablist'}
-      aria-label="Workspace sections"
-      className={cn(
-        'flex gap-1',
-        collapsed
-          ? 'flex-col items-center'
-          : 'h-8 min-w-0 flex-1 items-center rounded-lg bg-elevated p-0.5'
-      )}
-    >
-      {SIDEBAR_SECTIONS.map((section) => {
-        const Icon = section.Icon
-        const active = section.id === activeSection
-        return (
-          <button
-            key={section.id}
-            type="button"
-            id={collapsed ? undefined : `sidebar-section-tab-${section.id}`}
-            role={collapsed ? undefined : 'tab'}
-            aria-label={section.label}
-            aria-selected={collapsed ? undefined : active}
-            aria-pressed={collapsed ? active : undefined}
-            aria-controls={collapsed ? undefined : `sidebar-section-${section.id}`}
-            title={section.label}
-            onClick={() => onSelect(section.id)}
-            className={cn(
-              'flex items-center justify-center rounded text-left transition-colors',
-              collapsed
-                ? 'h-7 w-7'
-                : 'h-7 min-w-0 flex-1 border-b-2 px-2 text-[13px]',
-              active
-                ? collapsed
-                  ? 'bg-active text-fg'
-                  : 'border-accent bg-panel text-fg'
-                : collapsed
-                  ? 'text-fg-muted hover:bg-hover hover:text-fg'
-                  : 'border-transparent text-fg-muted hover:bg-hover hover:text-fg'
-            )}
-          >
-            {collapsed ? <Icon className="h-4 w-4 shrink-0" /> : <span>{section.label}</span>}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-interface SessionIndicator {
-  status: PtyStatus | OpenCodeIndicatorStatus
-  dot: string
-  label: string
-  row?: string
-}
-
-const OPENCODE_STATUS_STYLE: Record<OpenCodeIndicatorStatus, Omit<SessionIndicator, 'status'>> = {
-  idle: { dot: 'bg-fg-subtle', label: 'OpenCode idle' },
-  working: { dot: 'text-accent', label: 'OpenCode is working' },
-  attention: { dot: 'text-accent', label: 'OpenCode needs input', row: 'bg-accent/10' },
-  completed: { dot: 'bg-ok', label: 'OpenCode finished', row: 'bg-ok/10' },
-  error: { dot: 'bg-danger', label: 'OpenCode request failed', row: 'bg-danger/10' }
-}
-
-function attentionIndicator(reason: 'permission' | 'question'): SessionIndicator {
-  return {
-    status: 'attention',
-    dot: 'text-accent',
-    label: openCodeStatusLabel('attention', reason),
-    row: 'bg-accent/10'
-  }
-}
-
-function sessionIndicator(
-  status: PtyStatus,
-  tuiStatus?: OpenCodeTuiStatusState
-): SessionIndicator {
-  if (tuiStatus) {
-    const visualStatus = (tuiStatus.status === 'completed' || tuiStatus.status === 'error') && !tuiStatus.unread
-      ? 'idle'
-      : tuiStatus.status
-    if (visualStatus === 'attention') {
-      return attentionIndicator(tuiStatus.attentionReason ?? 'permission')
-    }
-    return {
-      status: visualStatus,
-      ...OPENCODE_STATUS_STYLE[visualStatus],
-      label: openCodeStatusLabel(visualStatus, tuiStatus.attentionReason)
-    }
-  }
-  return { status, ...STATUS_STYLE[status] }
-}
+import { InboxPanel } from '@/components/InboxPanel'
 
 function customSessionColor(color: Session['color']): Session['color'] {
   return color && color !== DEFAULT_SESSION_COLOR ? color : undefined
 }
 
-function sessionStatusTint(status: SessionIndicator['status']): string | undefined {
-  switch (status) {
-    case 'attention':
-      return 'linear-gradient(color-mix(in srgb, var(--color-accent) 12%, transparent), color-mix(in srgb, var(--color-accent) 12%, transparent))'
-    case 'completed':
-      return 'linear-gradient(color-mix(in srgb, var(--color-ok) 12%, transparent), color-mix(in srgb, var(--color-ok) 12%, transparent))'
-    case 'error':
-      return 'linear-gradient(color-mix(in srgb, var(--color-danger) 14%, transparent), color-mix(in srgb, var(--color-danger) 14%, transparent))'
-    default:
-      return undefined
-  }
-}
-
-function customSessionStatusRing(status: SessionIndicator['status']): string | undefined {
-  switch (status) {
-    case 'attention':
-      return 'ring-1 ring-inset ring-accent/70'
-    case 'completed':
-      return 'ring-1 ring-inset ring-ok/70'
-    case 'error':
-      return 'ring-1 ring-inset ring-danger/70'
-    default:
-      return undefined
-  }
-}
-
-function sessionBackgroundStyle(
-  color: Session['color'],
-  indicator: SessionIndicator
-): { backgroundColor: string; backgroundImage?: string } | undefined {
+function sessionBackgroundStyle(color: Session['color']): { backgroundColor: string } | undefined {
   const customColor = customSessionColor(color)
-  if (!customColor) return undefined
-  const tint = sessionStatusTint(indicator.status)
-  return {
-    backgroundColor: sessionColorHex(customColor),
-    ...(tint ? { backgroundImage: tint } : {})
-  }
+  return customColor ? { backgroundColor: sessionColorHex(customColor) } : undefined
 }
 
-function StatusDot({
-  indicator,
-  className,
-  testId = 'session-status'
-}: {
-  indicator: SessionIndicator
-  className?: string
-  testId?: string
-}): JSX.Element {
-  const sharedProps = {
-    'data-testid': testId,
-    'data-status': indicator.status,
-    title: indicator.label
-  }
+function sessionEnvironmentLabel(session: Session): string {
+  return session.kind === 'wsl' ? `WSL · ${session.distro ?? 'Distribution unavailable'}` : 'Native'
+}
 
-  if (indicator.status === 'working' || indicator.status === 'attention') {
-    const Icon = indicator.status === 'attention' ? CircleAlert : LoaderCircle
-    return (
-      <Icon
-        {...sharedProps}
-        className={cn(
-          'h-2.5 w-2.5 shrink-0 text-accent',
-          indicator.status === 'working' && 'animate-spin',
-          className
-        )}
-      />
-    )
-  }
-
+function SessionEnvironment({ session }: { session: Session }): JSX.Element {
+  const Icon = session.kind === 'wsl' ? Terminal : Monitor
   return (
-    <span
-      {...sharedProps}
-      className={cn('h-1.5 w-1.5 shrink-0 rounded-full', indicator.dot, className)}
-    />
-  )
-}
-
-function openCodeInstanceIndicator(instance: OpenCodeTuiInstanceStatus): SessionIndicator {
-  if (instance.status === 'attention') {
-    return attentionIndicator(instance.attentionReason ?? 'permission')
-  }
-  return {
-    status: instance.status,
-    ...OPENCODE_STATUS_STYLE[instance.status],
-    label: openCodeStatusLabel(instance.status, instance.attentionReason)
-  }
-}
-
-function OpenCodeAgentsSection({
-  sessions,
-  opencodeTuiInstances,
-  terminalLayouts,
-  labelMode,
-  onFocus,
-  collapsed,
-  onToggle
-}: {
-  sessions: readonly Session[]
-  opencodeTuiInstances: Readonly<Record<string, readonly OpenCodeTuiInstanceStatus[]>>
-  terminalLayouts: Readonly<Record<string, Readonly<Record<string, SessionTerminalLayout>>>>
-  labelMode: OpenCodeTuiInstanceLabelMode
-  onFocus: (sessionId: string, tabId: string, terminalId: string) => void
-  collapsed: boolean
-  onToggle: () => void
-}): JSX.Element {
-  const entries = collectOpenCodeTuiOverviewEntries(
-    sessions,
-    opencodeTuiInstances,
-    terminalLayouts
-  )
-
-  return (
-    <section
-      className="mt-3 shrink-0 border-t border-line pt-2"
-      data-testid="opencode-agents-section"
-      aria-labelledby="sidebar-opencode-agents-heading"
+    <div
+      data-testid="session-environment"
+      className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] leading-tight text-fg-subtle"
+      title={sessionEnvironmentLabel(session)}
     >
-      <button
-        id="sidebar-opencode-agents-heading"
-        type="button"
-        aria-expanded={!collapsed}
-        aria-controls="sidebar-opencode-agents-list"
-        data-testid="opencode-agents-toggle"
-        onClick={onToggle}
-        className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-fg-muted hover:bg-hover hover:text-fg"
-        title={collapsed ? 'Expand agents' : 'Collapse agents'}
-      >
-        {collapsed ? (
-          <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-        ) : (
-          <ChevronDown className="h-3.5 w-3.5 shrink-0" />
-        )}
-        <Bot className="h-3.5 w-3.5 shrink-0" />
-        <span className="min-w-0 flex-1 truncate text-[12px] font-medium">Agents</span>
-        <span className="text-[11px] text-fg-subtle">{entries.length}</span>
-      </button>
-
-      {!collapsed && (
-        <div id="sidebar-opencode-agents-list" className="mt-0.5 space-y-0.5">
-          {entries.length === 0 ? (
-            <p className="px-2 py-1 text-xs text-fg-subtle">No agents reported.</p>
-          ) : (
-            entries.map((entry) => {
-              const { instance } = entry
-              const indicator = openCodeInstanceIndicator(instance)
-              const label = openCodeTuiInstanceLabel(
-                instance,
-                entry.orderedIndex,
-                labelMode,
-                entry.layout
-              )
-              const statusLabel = openCodeOverviewStatusLabel(
-                instance.status,
-                instance.attentionReason
-              )
-              return (
-                <button
-                  key={`${entry.sessionId}:${instance.terminalId}`}
-                  type="button"
-                  data-testid="opencode-agent-row"
-                  title={`${label} · ${entry.sessionName} · ${entry.tabName} · ${indicator.label}`}
-                  onClick={() => onFocus(entry.sessionId, entry.tabId, instance.terminalId)}
-                  className={cn(
-                    'ml-1 flex w-[calc(100%-0.25rem)] items-center gap-2 rounded py-1.5 pl-4 pr-2 text-left text-[12px] text-fg-muted hover:bg-hover hover:text-fg',
-                    indicator.row
-                  )}
-                >
-                  <OpenCodeStatusIcon
-                    status={instance.status}
-                    attentionReason={instance.attentionReason}
-                    testId="opencode-agent-status"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-fg">{label}</div>
-                    <div className="truncate text-[10px] text-fg-subtle">
-                      {entry.sessionName} · {entry.tabName}
-                    </div>
-                  </div>
-                  <span className="shrink-0 text-[10px] text-fg-subtle">{statusLabel}</span>
-                </button>
-              )
-            })
-          )}
-        </div>
-      )}
-    </section>
-  )
-}
-
-function TerminalInstances({
-  tabs,
-  layouts,
-  statuses,
-  directories,
-  openCodeTerminalIds,
-  onFocus
-}: {
-  tabs: readonly SessionTab[]
-  layouts: Record<string, SessionTerminalLayout>
-  statuses: Record<string, PtyStatus>
-  directories: Record<string, string>
-  openCodeTerminalIds: ReadonlySet<string>
-  onFocus: (tabId: string, terminalId: string) => void
-}): JSX.Element | null {
-  const entries = tabs.flatMap((tab) => {
-    const layout = layouts[tab.id]
-    if (!layout || (tabs.length <= 1 && layout.panes.length <= 1)) return []
-    return terminalPanesForSidebar(layout, openCodeTerminalIds).map((pane) => ({
-      tab,
-      layout,
-      pane
-    }))
-  })
-  if (entries.length === 0) return null
-
-  return (
-    <div className="mb-0.5 ml-10 mr-2 mt-0.5" data-testid="terminal-instances">
-      <div className="space-y-0.5">
-        {entries.map(({ tab, layout, pane }) => {
-          const status = statuses[pane.terminalId] ?? (pane.exited ? 'exited' : 'none')
-          const indicator: SessionIndicator = { status, ...STATUS_STYLE[status] }
-          const label = terminalPaneLabel(pane, layout)
-          const directory = directories[pane.terminalId]
-          const directoryLabel = terminalDirectoryLabel(directory)
-          return (
-            <button
-              key={pane.terminalId}
-              type="button"
-              title={`${label} · ${tab.name} · ${directory ?? 'Directory unavailable'} · ${indicator.label}`}
-              onClick={() => onFocus(tab.id, pane.terminalId)}
-              className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[12px] text-fg-muted hover:bg-hover hover:text-fg"
-            >
-              <StatusDot indicator={indicator} testId="terminal-instance-status" />
-              <span className="min-w-0 flex-1 truncate">{label}</span>
-              <span className="max-w-[35%] shrink truncate text-[10px] text-fg-subtle">{tab.name}</span>
-              {directoryLabel && (
-                <span className="min-w-0 max-w-[35%] shrink truncate text-[10px] text-fg-subtle" title={directory}>
-                  {directoryLabel}
-                </span>
-              )}
-            </button>
-          )
-        })}
-      </div>
+      <span className="inline-flex shrink-0 items-center gap-1 rounded border border-line-strong bg-bg/30 px-1 py-0.5 text-[10px] font-medium text-fg-muted">
+        <Icon className="h-2.5 w-2.5" aria-hidden="true" />
+        {session.kind === 'wsl' ? 'WSL' : 'Native'}
+      </span>
+      {session.kind === 'wsl' && <span className="min-w-0 truncate">{session.distro ?? 'Distribution unavailable'}</span>}
     </div>
   )
 }
 
 interface SessionRowProps {
   session: Session
-  gitStatus?: GitSessionStatus
-  status: PtyStatus
-  terminalStatuses: Record<string, PtyStatus>
-  terminalDirectories: Record<string, string>
-  tuiStatus?: OpenCodeTuiStatusState
-  tuiInstances?: OpenCodeTuiInstanceStatus[]
-  opencodeNotificationCount: number
-  terminalTabs: readonly SessionTab[]
-  terminalLayouts: Record<string, SessionTerminalLayout>
-  showTerminalInstances: boolean
   selected: boolean
   onSelect: () => void
-  onFocusTerminal: (tabId: string, terminalId: string) => void
-  onOpenGit: () => void
   dragging: boolean
   dragDisabled: boolean
   dropPosition: 'before' | 'after' | null
@@ -506,20 +104,8 @@ interface SessionRowProps {
 
 function SessionRow({
   session,
-  gitStatus,
-  status,
-  terminalStatuses,
-  terminalDirectories,
-  tuiStatus,
-  tuiInstances = [],
-  opencodeNotificationCount,
-  terminalTabs,
-  terminalLayouts,
-  showTerminalInstances,
   selected,
   onSelect,
-  onFocusTerminal,
-  onOpenGit,
   dragging,
   dragDisabled,
   dropPosition,
@@ -531,20 +117,12 @@ function SessionRow({
   const renameSession = useWorkspace((state) => state.renameSession)
   const duplicateSession = useWorkspace((state) => state.duplicateSession)
   const setSessionColor = useWorkspace((state) => state.setSessionColor)
-  const moveSession = useWorkspace((state) => state.moveSession)
   const removeSession = useWorkspace((state) => state.removeSession)
-  const revealSession = useWorkspace((state) => state.revealSession)
-  const openSessionInVsCode = useWorkspace((state) => state.openSessionInVsCode)
-  const projects = useWorkspace((state) => state.projects)
-  const platform = useWorkspace((state) => state.platform)
-  const wslAvailable = useWorkspace((state) => state.wslAvailable)
 
   const rowRef = useRef<HTMLDivElement>(null)
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState(session.name)
   const [confirmingRemove, setConfirmingRemove] = useState(false)
-  const [moving, setMoving] = useState(false)
-  const [targetProjectId, setTargetProjectId] = useState(session.projectId)
 
   const startRename = (): void => {
     setDraftName(session.name)
@@ -570,151 +148,116 @@ function SessionRow({
     )
   }
 
-  const move = async (): Promise<void> => {
-    if (!targetProjectId || targetProjectId === session.projectId) {
-      setMoving(false)
-      return
-    }
-    await moveSession(session.id, targetProjectId)
-    setMoving(false)
-  }
-
-  const indicator = sessionIndicator(status, tuiStatus)
   const sessionColor = session.color ?? DEFAULT_SESSION_COLOR
   const customColor = customSessionColor(session.color)
-  const backgroundStyle = sessionBackgroundStyle(session.color, indicator)
-  const canOpenInVsCode =
-    platform?.isWindows === true && wslAvailable && session.kind === 'wsl' && Boolean(session.distro)
+  const backgroundStyle = sessionBackgroundStyle(session.color)
   return (
     <>
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <SessionEnvironmentPanel session={session} gitStatus={gitStatus}>
-            <div
-              ref={rowRef}
-              role="button"
-              tabIndex={0}
-              data-testid="session-row"
-              onClick={onSelect}
-              onDragOver={onDragOver}
-              onDrop={onDrop}
-              onKeyDown={(event) => {
-                if (event.key === 'F2' && event.target === event.currentTarget) {
-                  event.preventDefault()
-                  startRename()
-                  return
-                }
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault()
-                  onSelect()
-                }
+          <div
+            ref={rowRef}
+            role="button"
+            tabIndex={0}
+            data-testid="session-row"
+            onClick={onSelect}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+            onKeyDown={(event) => {
+              if (event.key === 'F2' && event.target === event.currentTarget) {
+                event.preventDefault()
+                startRename()
+                return
+              }
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                onSelect()
+              }
+            }}
+            className={cn(
+              'group relative flex w-full cursor-default items-center gap-2 rounded-md py-2 pl-4 pr-2 text-left',
+              customColor
+                ? 'text-fg transition-[filter] hover:brightness-110'
+                : selected
+                  ? 'bg-active text-fg'
+                  : 'text-fg-muted hover:bg-hover hover:text-fg',
+              dragging && 'opacity-60',
+              dropPosition === 'before' && 'border-t-2 border-accent',
+              dropPosition === 'after' && 'border-b-2 border-accent'
+            )}
+            style={backgroundStyle}
+          >
+            <button
+              type="button"
+              draggable={!dragDisabled}
+              disabled={dragDisabled}
+              aria-label={`Drag to reorder ${session.name}`}
+              title="Drag to reorder"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+              onDragStart={(event) => {
+                event.stopPropagation()
+                event.dataTransfer.effectAllowed = 'move'
+                event.dataTransfer.setData('text/plain', session.id)
+                onDragStart()
+              }}
+              onDragEnd={(event) => {
+                event.stopPropagation()
+                onDragEnd()
               }}
               className={cn(
-                'group relative ml-1 flex w-[calc(100%-0.25rem)] cursor-default items-center gap-2 rounded py-1.5 pl-4 pr-2 text-left',
-                customColor
-                  ? cn('text-fg transition-[filter] hover:brightness-110', customSessionStatusRing(indicator.status))
-                  : selected
-                    ? cn(
-                        'bg-active text-fg',
-                        indicator.status === 'attention' && 'ring-1 ring-inset ring-accent/60'
-                      )
-                    : cn('text-fg-muted hover:bg-hover hover:text-fg', indicator.row),
-                dragging && 'opacity-60',
-                dropPosition === 'before' && 'border-t-2 border-accent',
-                dropPosition === 'after' && 'border-b-2 border-accent'
+                'absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded text-fg-subtle opacity-0 transition-opacity',
+                'pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100',
+                'group-focus-within:pointer-events-auto group-focus-within:opacity-100',
+                'focus:pointer-events-auto focus:opacity-100 hover:text-fg',
+                dragging && 'pointer-events-auto opacity-100',
+                dragDisabled
+                  ? 'pointer-events-none cursor-default opacity-50'
+                  : 'cursor-grab active:cursor-grabbing'
               )}
-              style={backgroundStyle}
             >
-              <button
-                type="button"
-                draggable={!dragDisabled}
-                disabled={dragDisabled}
-                aria-label={`Drag to reorder ${session.name}`}
-                title="Drag to reorder"
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => event.stopPropagation()}
-                onDragStart={(event) => {
-                  event.stopPropagation()
-                  event.dataTransfer.effectAllowed = 'move'
-                  event.dataTransfer.setData('text/plain', session.id)
-                  onDragStart()
-                }}
-                onDragEnd={(event) => {
-                  event.stopPropagation()
-                  onDragEnd()
-                }}
-                className={cn(
-                  'absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded text-fg-subtle opacity-0 transition-opacity',
-                  'pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100',
-                  'group-focus-within:pointer-events-auto group-focus-within:opacity-100',
-                  'focus:pointer-events-auto focus:opacity-100 hover:text-fg',
-                  dragging && 'pointer-events-auto opacity-100',
-                  dragDisabled
-                    ? 'pointer-events-none cursor-default opacity-50'
-                    : 'cursor-grab active:cursor-grabbing'
-                )}
-              >
-                <GripVertical className="h-3.5 w-3.5" />
-              </button>
-              <span className={OPENCODE_STATUS_ICON_SLOT_CLASS}>
-                <StatusDot indicator={indicator} />
-              </span>
-
-              <div className="min-w-0 flex-1">
-                {renaming ? (
-                  <input
-                    autoFocus
-                    value={draftName}
-                    onChange={(event) => setDraftName(event.target.value)}
-                    onBlur={commitRename}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') commitRename()
-                      if (event.key === 'Escape') {
-                        setDraftName(session.name)
-                        setRenaming(false)
-                      }
-                      event.stopPropagation()
-                    }}
-                    onClick={(event) => event.stopPropagation()}
-                    className="h-5 w-full rounded-sm border border-accent bg-bg px-1 text-[13px] text-fg outline-none"
-                  />
-                ) : (
-                  <div data-testid="session-name" className="truncate text-[13px] leading-tight">
-                    {session.name}
-                  </div>
-                )}
-                <div className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight text-fg-subtle">
-                  {gitStatus?.response?.repository || gitStatus?.error ? (
-                    <SessionGitStatus status={gitStatus} className="flex-1" />
-                  ) : (
-                    <span data-testid="session-directory" className="min-w-0 truncate font-mono">
-                      {session.path}
-                    </span>
-                  )}
+              <GripVertical className="h-3.5 w-3.5" />
+            </button>
+            <div className="min-w-0 flex-1">
+              {renaming ? (
+                <input
+                  autoFocus
+                  value={draftName}
+                  onChange={(event) => setDraftName(event.target.value)}
+                  onBlur={commitRename}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') commitRename()
+                    if (event.key === 'Escape') {
+                      setDraftName(session.name)
+                      setRenaming(false)
+                    }
+                    event.stopPropagation()
+                  }}
+                  onClick={(event) => event.stopPropagation()}
+                  className="h-5 w-full rounded-sm border border-accent bg-bg px-1 text-[13px] text-fg outline-none"
+                />
+              ) : (
+                <div data-testid="session-name" className="truncate text-[13px] font-medium leading-tight">
+                  {session.name}
                 </div>
-              </div>
-
-              <OpenCodeNotificationBadge count={opencodeNotificationCount} />
-              <button
-                type="button"
-                onClick={openMenuFromButton}
-                title="Session actions"
-                className={cn(
-                  'shrink-0 rounded p-0.5 text-fg-subtle opacity-0 transition-opacity',
-                  'hover:bg-elevated hover:text-fg focus:opacity-100 group-hover:opacity-100'
-                )}
-              >
-                <MoreHorizontal className="h-3.5 w-3.5" />
-              </button>
+              )}
+              <SessionEnvironment session={session} />
             </div>
-          </SessionEnvironmentPanel>
+            <button
+              type="button"
+              onClick={openMenuFromButton}
+              title="Session actions"
+              className={cn(
+                'shrink-0 rounded p-0.5 text-fg-subtle opacity-0 transition-opacity',
+                'hover:bg-elevated hover:text-fg focus:opacity-100 group-hover:opacity-100'
+              )}
+            >
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </ContextMenuTrigger>
 
         <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
-          <ContextMenuItem onSelect={onOpenGit}>
-            <GitBranch className="h-3.5 w-3.5" />
-            Git history
-          </ContextMenuItem>
           <ContextMenuItem
             onSelect={startRename}
           >
@@ -728,11 +271,13 @@ function SessionRow({
           <ContextMenuSeparator />
           <ContextMenuSub>
             <ContextMenuSubTrigger>
-              <span
-                aria-hidden="true"
-                className="h-3 w-3 shrink-0 rounded-full border border-white/20"
-                style={{ backgroundColor: sessionColorHex(sessionColor) }}
-              />
+              {/* The same 14px box as the icons of the items above, so the labels line up. */}
+              <span aria-hidden="true" className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+                <span
+                  className="h-3 w-3 rounded-full border border-fg/20"
+                  style={{ backgroundColor: sessionColorHex(sessionColor) }}
+                />
+              </span>
               <span className="flex-1">Session color</span>
               <ChevronRight className="h-3.5 w-3.5 text-fg-subtle" />
             </ContextMenuSubTrigger>
@@ -744,7 +289,7 @@ function SessionRow({
                 >
                   <span
                     aria-hidden="true"
-                    className="h-3 w-3 shrink-0 rounded-full border border-white/20"
+                    className="h-3 w-3 shrink-0 rounded-full border border-fg/20"
                     style={{ backgroundColor: option.hex }}
                   />
                   <span className="flex-1">{option.label}</span>
@@ -753,25 +298,6 @@ function SessionRow({
               ))}
             </ContextMenuSubContent>
           </ContextMenuSub>
-          <ContextMenuItem onSelect={() => void revealSession(session.id)}>
-            <FolderOpen className="h-3.5 w-3.5" />
-            Reveal in file manager
-          </ContextMenuItem>
-          {canOpenInVsCode && (
-            <ContextMenuItem onSelect={() => void openSessionInVsCode(session.id)}>
-              <Code className="h-3.5 w-3.5" />
-              Open in VS Code
-            </ContextMenuItem>
-          )}
-          <ContextMenuItem
-            onSelect={() => {
-              setTargetProjectId(session.projectId)
-              setMoving(true)
-            }}
-          >
-            <Folder className="h-3.5 w-3.5" />
-            Move to project
-          </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem destructive onSelect={() => setConfirmingRemove(true)}>
             <Trash2 className="h-3.5 w-3.5" />
@@ -779,50 +305,6 @@ function SessionRow({
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
-
-      {showTerminalInstances && (
-        <TerminalInstances
-          tabs={terminalTabs}
-          layouts={terminalLayouts}
-          statuses={terminalStatuses}
-          directories={terminalDirectories}
-          openCodeTerminalIds={new Set(tuiInstances.map((instance) => instance.terminalId))}
-          onFocus={onFocusTerminal}
-        />
-      )}
-
-      <Dialog open={moving} onOpenChange={setMoving}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Move session</DialogTitle>
-            <DialogDescription>Choose the project label for “{session.name}”.</DialogDescription>
-          </DialogHeader>
-          <Select value={targetProjectId} onValueChange={setTargetProjectId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select a project" />
-            </SelectTrigger>
-            <SelectContent>
-              {projects.map((project) => (
-                <SelectItem key={project.id} value={project.id}>
-                  {project.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <DialogFooter>
-            <Button variant="secondary" size="sm" onClick={() => setMoving(false)}>
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              disabled={targetProjectId === session.projectId}
-              onClick={() => void move()}
-            >
-              Move
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <AlertDialog open={confirmingRemove} onOpenChange={setConfirmingRemove}>
         <AlertDialogContent>
@@ -847,61 +329,18 @@ interface SessionDropTarget {
   position: 'before' | 'after'
 }
 
-interface ProjectGroupProps {
-  project: Project
+interface SessionListProps {
   sessions: Session[]
-  gitStatuses: Record<string, GitSessionStatus>
-  statuses: Record<string, PtyStatus>
-  terminalDirectories: Record<string, string>
-  opencodeTuiStatuses: Record<string, OpenCodeTuiStatusState>
-  opencodeTuiInstances: Record<string, OpenCodeTuiInstanceStatus[]>
-  opencodeTuiReadRevisions: Readonly<Record<string, number>>
-  terminalLayouts: Record<string, Record<string, SessionTerminalLayout>>
-  showTerminalInstances: boolean
   selectedSessionId: string | null
   onSelectSession: (id: string) => void
-  onFocusTerminal: (sessionId: string, tabId: string, terminalId: string) => void
-  onOpenGit: (id: string) => void
-  onNewSession: (projectId: string) => void
 }
 
-function sessionTerminalStatus(
-  session: Session,
-  layouts: Record<string, SessionTerminalLayout> | undefined,
-  statuses: Record<string, PtyStatus>
-): PtyStatus {
-  const values = sessionTabs(session)
-    .flatMap((tab) => layouts?.[tab.id]?.panes ?? [])
-    .map((pane) => statuses[pane.terminalId] ?? (pane.exited ? 'exited' : 'none'))
-  if (values.includes('running')) return 'running'
-  if (values.includes('exited')) return 'exited'
-  return 'none'
-}
-
-function ProjectGroup({
-  project,
+function SessionList({
   sessions,
-  gitStatuses,
-  statuses,
-  terminalDirectories,
-  opencodeTuiStatuses,
-  opencodeTuiInstances,
-  opencodeTuiReadRevisions,
-  terminalLayouts,
-  showTerminalInstances,
   selectedSessionId,
   onSelectSession,
-  onFocusTerminal,
-  onOpenGit,
-  onNewSession
-}: ProjectGroupProps): JSX.Element {
-  const renameProject = useWorkspace((state) => state.renameProject)
-  const removeProject = useWorkspace((state) => state.removeProject)
+}: SessionListProps): JSX.Element {
   const reorderSession = useWorkspace((state) => state.reorderSession)
-  const [collapsed, setCollapsed] = useState(false)
-  const [renaming, setRenaming] = useState(false)
-  const [draftName, setDraftName] = useState(project.name)
-  const [confirmingRemove, setConfirmingRemove] = useState(false)
   const [draggingSessionId, setDraggingSessionId] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<SessionDropTarget | null>(null)
   const [reordering, setReordering] = useState(false)
@@ -987,134 +426,26 @@ function ProjectGroup({
     void commitDrop(sourceId, targetId, position)
   }
 
-  const commitRename = (): void => {
-    setRenaming(false)
-    const name = draftName.trim()
-    if (name && name !== project.name) void renameProject(project.id, name)
-    else setDraftName(project.name)
-  }
-
   return (
-    <>
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <div className="group flex w-full items-center gap-1 rounded px-2 py-1 text-left text-fg-muted hover:bg-hover hover:text-fg">
-            {renaming ? (
-              <input
-                autoFocus
-                value={draftName}
-                onChange={(event) => setDraftName(event.target.value)}
-                onBlur={commitRename}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') commitRename()
-                  if (event.key === 'Escape') {
-                    setDraftName(project.name)
-                    setRenaming(false)
-                  }
-                  event.stopPropagation()
-                }}
-                className="h-6 min-w-0 flex-1 rounded-sm border border-accent bg-bg px-1 text-[13px] text-fg outline-none"
-              />
-            ) : (
-              <button
-                type="button"
-                className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-                onClick={() => setCollapsed((value) => !value)}
-                title={collapsed ? 'Expand project' : 'Collapse project'}
-              >
-                {collapsed ? (
-                  <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-                ) : (
-                  <ChevronDown className="h-3.5 w-3.5 shrink-0" />
-                )}
-                <Folder className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate text-[13px] font-medium">{project.name}</span>
-                <span className="text-[11px] text-fg-subtle">{sessions.length}</span>
-              </button>
-            )}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="ml-auto shrink-0"
-              onClick={(event) => {
-                event.stopPropagation()
-                onNewSession(project.id)
-              }}
-              title="New session in this project"
-              aria-label="New session in this project"
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        </ContextMenuTrigger>
-        <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
-          <ContextMenuItem
-            onSelect={() => {
-              setDraftName(project.name)
-              setRenaming(true)
-            }}
-          >
-            <Pencil className="h-3.5 w-3.5" />
-            Rename project
-          </ContextMenuItem>
-          <ContextMenuSeparator />
-          <ContextMenuItem destructive onSelect={() => setConfirmingRemove(true)}>
-            <Trash2 className="h-3.5 w-3.5" />
-            Remove project
-          </ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
-
-      {!collapsed &&
-        sessions.map((session) => (
-          <SessionRow
-            key={session.id}
-            session={session}
-            gitStatus={gitStatuses[session.id]}
-            status={sessionTerminalStatus(session, terminalLayouts[session.id], statuses)}
-            terminalStatuses={statuses}
-            terminalDirectories={terminalDirectories}
-            tuiStatus={opencodeTuiStatuses[session.id]}
-            tuiInstances={opencodeTuiInstances[session.id]}
-            opencodeNotificationCount={countOpenCodeTuiNotifications(
-              opencodeTuiInstances[session.id] ?? [],
-              opencodeTuiReadRevisions,
-            )}
-            terminalTabs={sessionTabs(session)}
-            terminalLayouts={terminalLayouts[session.id] ?? {}}
-            showTerminalInstances={showTerminalInstances}
-            selected={session.id === selectedSessionId}
-            onSelect={() => onSelectSession(session.id)}
-            onFocusTerminal={(tabId, terminalId) => onFocusTerminal(session.id, tabId, terminalId)}
-            onOpenGit={() => onOpenGit(session.id)}
-            dragging={session.id === draggingSessionId}
-            dragDisabled={reordering}
-            dropPosition={
-              dropTarget?.sessionId === session.id ? dropTarget.position : null
-            }
-            onDragStart={() => handleDragStart(session.id)}
-            onDragEnd={handleDragEnd}
-            onDragOver={(event) => handleDragOver(event, session.id)}
-            onDrop={(event) => handleDrop(event, session.id)}
-          />
-        ))}
-
-      <AlertDialog open={confirmingRemove} onOpenChange={setConfirmingRemove}>
-        <AlertDialogContent>
-          <AlertDialogTitle>Remove “{project.name}”?</AlertDialogTitle>
-          <AlertDialogDescription>
-            This removes the project label, all of its sessions, and their terminal processes.
-            Nothing on disk is deleted.
-          </AlertDialogDescription>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void removeProject(project.id)}>
-              Remove project
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+    <div className="space-y-1">
+      {sessions.map((session) => (
+        <SessionRow
+          key={session.id}
+          session={session}
+          selected={session.id === selectedSessionId}
+          onSelect={() => onSelectSession(session.id)}
+          dragging={session.id === draggingSessionId}
+          dragDisabled={reordering}
+          dropPosition={
+            dropTarget?.sessionId === session.id ? dropTarget.position : null
+          }
+          onDragStart={() => handleDragStart(session.id)}
+          onDragEnd={handleDragEnd}
+          onDragOver={(event) => handleDragOver(event, session.id)}
+          onDrop={(event) => handleDrop(event, session.id)}
+        />
+      ))}
+    </div>
   )
 }
 
@@ -1204,8 +535,7 @@ function TodoProjectRow({
         <AlertDialogContent>
           <AlertDialogTitle>Remove “{project.name}”?</AlertDialogTitle>
           <AlertDialogDescription>
-            This removes the To Do project and all of its tasks. Terminal projects, sessions, and
-            files are unaffected.
+            This removes the To Do project and all of its tasks. Terminal sessions and files are unaffected.
           </AlertDialogDescription>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -1222,7 +552,6 @@ function TodoProjectRow({
 interface SidebarCreateActionsProps {
   activeSection: WorkspaceView
   collapsed: boolean
-  onNewProject: () => void
   onNewSession: () => void
   onNewTodoTask: () => void
   todoTaskAvailable: boolean
@@ -1231,7 +560,6 @@ interface SidebarCreateActionsProps {
 function SidebarCreateActions({
   activeSection,
   collapsed,
-  onNewProject,
   onNewSession,
   onNewTodoTask,
   todoTaskAvailable
@@ -1241,309 +569,148 @@ function SidebarCreateActions({
       <div title={todoTaskAvailable ? 'New task' : 'Select a To Do project first'}>
         <Button
           variant="secondary"
-          size={collapsed ? 'icon' : 'sm'}
-          className={cn(!collapsed && 'w-full')}
+          size="sm"
+          className="w-full"
           disabled={!todoTaskAvailable}
           onClick={onNewTodoTask}
           title="New task"
           aria-label="New task"
         >
           <Plus className="h-3.5 w-3.5" />
-          {!collapsed && <span>New task</span>}
+          <span>New task</span>
         </Button>
       </div>
     )
   }
 
   return (
-    <div className={cn('flex', collapsed ? 'flex-col gap-1' : 'w-full')}>
-      <Button
-        variant="secondary"
-        size={collapsed ? 'icon' : 'sm'}
-        className={cn(!collapsed && 'min-w-0 flex-1 rounded-r-none')}
-        onClick={onNewSession}
-        title="New session"
-        aria-label="New session"
-      >
-        <Plus className="h-3.5 w-3.5" />
-        {!collapsed && <span>New session</span>}
-      </Button>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="secondary"
-            size="icon"
-            className={cn(!collapsed && 'rounded-l-none border-l-0')}
-            title="More creation actions"
-            aria-label="More creation actions"
-          >
-            <ChevronDown className="h-3.5 w-3.5" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent side={collapsed ? 'right' : 'top'} align="end">
-          <DropdownMenuItem onSelect={() => onNewProject()}>
-            <FolderPlus className="h-3.5 w-3.5" />
-            New project
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
+    <Button
+      variant="secondary"
+      size={collapsed ? 'icon' : 'sm'}
+      className={cn(!collapsed && 'w-full')}
+      onClick={onNewSession}
+      title="New session"
+      aria-label="New session"
+    >
+      <Plus className="h-3.5 w-3.5" />
+      {!collapsed && <span>New session</span>}
+    </Button>
   )
 }
 
 interface SidebarProps {
-  onNewProject: () => void
   onNewTodoProject: () => void
   onNewTodoTask: () => void
-  onNewSession: (projectId?: string) => void
-  onOpenGit: (sessionId: string) => void
-  terminalLayouts: Record<string, Record<string, SessionTerminalLayout>>
-  onFocusTerminal: (sessionId: string, tabId: string, terminalId: string) => void
+  onNewSession: () => void
 }
 
 export function Sidebar({
-  onNewProject,
   onNewTodoProject,
   onNewTodoTask,
   onNewSession,
-  onOpenGit,
-  terminalLayouts,
-  onFocusTerminal
 }: SidebarProps): JSX.Element {
-  const ready = useWorkspace((state) => state.ready)
-  const projects = useWorkspace((state) => state.projects)
   const todoProjects = useWorkspace((state) => state.todoProjects)
   const sessions = useWorkspace((state) => state.sessions)
-  const gitStatuses = useWorkspace((state) => state.gitStatuses)
-  const statuses = useWorkspace((state) => state.statuses)
-  const terminalDirectories = useWorkspace((state) => state.terminalDirectories)
-  const opencodeTuiStatuses = useWorkspace((state) => state.opencodeTuiStatuses)
-  const opencodeTuiInstances = useWorkspace((state) => state.opencodeTuiInstances)
-  const opencodeTuiReadRevisions = useWorkspace((state) => state.opencodeTuiReadRevisions)
-  const instanceLabelMode = useWorkspace((state) => state.opencodeTuiInstanceLabelMode)
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
   const selectedTodoProjectId = useWorkspace((state) => state.selectedTodoProjectId)
   const selectSession = useWorkspace((state) => state.selectSession)
   const selectTodoProject = useWorkspace((state) => state.selectTodoProject)
   const setSessionIcon = useWorkspace((state) => state.setSessionIcon)
-  const refreshGitStatuses = useWorkspace((state) => state.refreshGitStatuses)
   const collapsed = useWorkspace((state) => state.sidebarCollapsed)
   const toggleSidebar = useWorkspace((state) => state.toggleSidebar)
   const activeSection = useWorkspace((state) => state.activeWorkspaceView)
-  const setActiveSection = useWorkspace((state) => state.setWorkspaceView)
-  const [terminalSettings, setTerminalSettings] = useState(() => getTerminalSettings())
-  const [agentsCollapsed, setAgentsCollapsed] = useState(false)
-  const gitSessionKey = sessions.map((session) => `${session.id}:${session.path}`).join('\u0000')
-  const orderedSessions = projects.flatMap((project) =>
-    sessions.filter((session) => session.projectId === project.id)
-  )
 
-  useEffect(() => subscribeTerminalSettings(() => setTerminalSettings(getTerminalSettings())), [])
-
-  useEffect(() => {
-    if (!ready) return
-
-    void refreshGitStatuses()
-    const interval = window.setInterval(() => void refreshGitStatuses(), 10_000)
-    const refreshOnFocus = (): void => {
-      void refreshGitStatuses()
-    }
-    window.addEventListener('focus', refreshOnFocus)
-    return () => {
-      window.clearInterval(interval)
-      window.removeEventListener('focus', refreshOnFocus)
-    }
-  }, [gitSessionKey, ready, refreshGitStatuses])
-
-  const projectSessionList = projects.length === 0 ? (
-    <p className="px-2 py-1 text-xs text-fg-subtle">No projects yet.</p>
+  const sessionList = sessions.length === 0 ? (
+    <p className="px-2 py-1 text-xs text-fg-subtle">No sessions yet.</p>
   ) : (
-    projects.map((project) => (
-      <ProjectGroup
-        key={project.id}
-        project={project}
-        sessions={sessions.filter((session) => session.projectId === project.id)}
-        gitStatuses={gitStatuses}
-        statuses={statuses}
-        terminalDirectories={terminalDirectories}
-        opencodeTuiStatuses={opencodeTuiStatuses}
-        opencodeTuiInstances={opencodeTuiInstances}
-        opencodeTuiReadRevisions={opencodeTuiReadRevisions}
-        terminalLayouts={terminalLayouts}
-        showTerminalInstances={terminalSettings.showTerminalInstances}
-        selectedSessionId={selectedSessionId}
-        onSelectSession={selectSession}
-        onFocusTerminal={onFocusTerminal}
-        onOpenGit={onOpenGit}
-        onNewSession={(projectId) => onNewSession(projectId)}
-      />
-    ))
-  )
-
-  const agentsSection = (
-    <OpenCodeAgentsSection
-      sessions={orderedSessions}
-      opencodeTuiInstances={opencodeTuiInstances}
-      terminalLayouts={terminalLayouts}
-      labelMode={instanceLabelMode}
-      onFocus={onFocusTerminal}
-      collapsed={agentsCollapsed}
-      onToggle={() => setAgentsCollapsed((value) => !value)}
+    <SessionList
+      sessions={sessions}
+      selectedSessionId={selectedSessionId}
+      onSelectSession={selectSession}
     />
   )
 
-  if (collapsed) {
+  if (collapsed && activeSection === 'sessions') {
     return (
       <aside className="flex h-full min-h-0 w-11 shrink-0 flex-col items-center overflow-hidden border-r border-line bg-panel py-2">
-        <Button variant="ghost" size="icon" onClick={toggleSidebar} title="Expand sidebar">
-          <PanelLeftOpen className="h-4 w-4" />
-        </Button>
-        <div className="mt-2 shrink-0">
-          <SidebarSectionNavigation
-            activeSection={activeSection}
-            collapsed
-            onSelect={setActiveSection}
-          />
-        </div>
         <div className="mt-2 min-h-0 w-full flex-1 overflow-y-auto">
-          {activeSection === 'projects' && (
+          {activeSection === 'sessions' && (
             <div className="flex flex-col items-center gap-1">
-              {projects.map((project) => {
-                const projectSessions = sessions.filter((session) => session.projectId === project.id)
-                return projectSessions.length > 0 ? (
-                  projectSessions.map((session) => {
-                    const indicator = sessionIndicator(
-                      statuses[session.id] ?? 'none',
-                      opencodeTuiStatuses[session.id],
-                    )
-                    const customColor = customSessionColor(session.color)
-                    const opencodeNotificationCount = countOpenCodeTuiNotifications(
-                      opencodeTuiInstances[session.id] ?? [],
-                      opencodeTuiReadRevisions,
-                    )
-                    return (
-                      <ContextMenu key={session.id}>
-                        <ContextMenuTrigger asChild>
-                          <SessionEnvironmentPanel session={session} gitStatus={gitStatuses[session.id]}>
-                            <button
-                              type="button"
-                              aria-label={`${project.name}: ${session.name}`}
-                              onClick={() => selectSession(session.id)}
-                              className={cn(
-                                'relative flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase',
-                                customColor
-                                  ? cn(
-                                      'text-fg transition-[filter] hover:brightness-110',
-                                      customSessionStatusRing(indicator.status)
-                                    )
-                                  : session.id === selectedSessionId
-                                    ? cn(
-                                        'bg-active text-fg',
-                                        indicator.status === 'attention' && 'ring-1 ring-inset ring-accent/60'
-                                      )
-                                    : cn('text-fg-muted hover:bg-hover hover:text-fg', indicator.row)
-                              )}
-                              style={sessionBackgroundStyle(session.color, indicator)}
+              {sessions.map((session) => {
+                const customColor = customSessionColor(session.color)
+                return (
+                  <ContextMenu key={session.id}>
+                    <ContextMenuTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={`${session.name} · ${sessionEnvironmentLabel(session)}`}
+                        title={`${session.name} · ${sessionEnvironmentLabel(session)}`}
+                        onClick={() => selectSession(session.id)}
+                        className={cn(
+                          'flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase',
+                          customColor
+                            ? 'text-fg transition-[filter] hover:brightness-110'
+                            : session.id === selectedSessionId
+                              ? 'bg-active text-fg'
+                              : 'text-fg-muted hover:bg-hover hover:text-fg'
+                        )}
+                        style={sessionBackgroundStyle(session.color)}
+                      >
+                        <span data-testid="collapsed-session-label">
+                          {sessionIconOption(session.icon)?.emoji ?? session.name.slice(0, 2)}
+                        </span>
+                      </button>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
+                      <ContextMenuSub>
+                        <ContextMenuSubTrigger>
+                          <Smile className="h-3.5 w-3.5" />
+                          <span className="flex-1">Change icon</span>
+                          <ChevronRight className="h-3.5 w-3.5 text-fg-subtle" />
+                        </ContextMenuSubTrigger>
+                        <ContextMenuSubContent>
+                          {SESSION_ICONS.map((option) => (
+                            <ContextMenuItem
+                              key={option.id}
+                              onSelect={() => void setSessionIcon(session.id, option.id)}
                             >
-                              <span data-testid="collapsed-session-label">
-                                {sessionIconOption(session.icon)?.emoji ?? session.name.slice(0, 2)}
+                              <span
+                                className="w-5 text-center text-base leading-none"
+                                role="img"
+                                aria-label={option.label}
+                              >
+                                {option.emoji}
                               </span>
-                              <OpenCodeNotificationBadge
-                                count={opencodeNotificationCount}
-                                className="absolute -right-1 -top-1 h-3.5 min-w-3.5 px-0 text-[9px] ring-2 ring-panel"
-                              />
-                              <StatusDot
-                                indicator={indicator}
-                                className="absolute -bottom-0.5 right-0.5 ring-2 ring-panel"
-                              />
-                            </button>
-                          </SessionEnvironmentPanel>
-                        </ContextMenuTrigger>
-                        <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
-                          <ContextMenuSub>
-                            <ContextMenuSubTrigger>
-                              <Smile className="h-3.5 w-3.5" />
-                              <span className="flex-1">Change icon</span>
-                              <ChevronRight className="h-3.5 w-3.5 text-fg-subtle" />
-                            </ContextMenuSubTrigger>
-                            <ContextMenuSubContent>
-                              {SESSION_ICONS.map((option) => (
-                                <ContextMenuItem
-                                  key={option.id}
-                                  onSelect={() => void setSessionIcon(session.id, option.id)}
-                                >
-                                  <span
-                                    className="w-5 text-center text-base leading-none"
-                                    role="img"
-                                    aria-label={option.label}
-                                  >
-                                    {option.emoji}
-                                  </span>
-                                  <span className="flex-1">{option.label}</span>
-                                  {session.icon === option.id && <Check className="h-3.5 w-3.5" />}
-                                </ContextMenuItem>
-                              ))}
-                              <ContextMenuSeparator />
-                              <ContextMenuItem onSelect={() => void setSessionIcon(session.id, null)}>
-                                <RotateCcw className="h-3.5 w-3.5" />
-                                <span className="flex-1">Use initials</span>
-                                {!session.icon && <Check className="h-3.5 w-3.5" />}
-                              </ContextMenuItem>
-                            </ContextMenuSubContent>
-                          </ContextMenuSub>
+                              <span className="flex-1">{option.label}</span>
+                              {session.icon === option.id && <Check className="h-3.5 w-3.5" />}
+                            </ContextMenuItem>
+                          ))}
                           <ContextMenuSeparator />
-                          <ContextMenuItem onSelect={() => onOpenGit(session.id)}>
-                            <GitBranch className="h-3.5 w-3.5" />
-                            Git history
+                          <ContextMenuItem onSelect={() => void setSessionIcon(session.id, null)}>
+                            <RotateCcw className="h-3.5 w-3.5" />
+                            <span className="flex-1">Use initials</span>
+                            {!session.icon && <Check className="h-3.5 w-3.5" />}
                           </ContextMenuItem>
-                        </ContextMenuContent>
-                      </ContextMenu>
-                    )
-                  })
-                ) : (
-                  <button
-                    key={project.id}
-                    type="button"
-                    onClick={() => onNewSession(project.id)}
-                    title={`${project.name} · New session`}
-                    className="flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase text-fg-muted hover:bg-hover hover:text-fg"
-                  >
-                    {project.name.slice(0, 2)}
-                  </button>
+                        </ContextMenuSubContent>
+                      </ContextMenuSub>
+                    </ContextMenuContent>
+                  </ContextMenu>
                 )
               })}
             </div>
           )}
-          {activeSection === 'todo' && (
-            <div className="flex flex-col items-center gap-1">
-              {todoProjects.map((project) => (
-                <button
-                  key={project.id}
-                  type="button"
-                  onClick={() => selectTodoProject(project.id)}
-                  title={project.name}
-                  className={cn(
-                    'flex h-7 w-7 items-center justify-center rounded text-[11px] font-medium uppercase',
-                    project.id === selectedTodoProjectId
-                      ? 'bg-active text-fg'
-                      : 'text-fg-muted hover:bg-hover hover:text-fg'
-                  )}
-                >
-                  {project.name.slice(0, 2)}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
-        <div className="mt-auto shrink-0">
+        <div className="mt-auto flex shrink-0 flex-col items-center gap-1">
           <SidebarCreateActions
             activeSection={activeSection}
             collapsed
-            onNewProject={onNewProject}
             onNewSession={() => onNewSession()}
             onNewTodoTask={onNewTodoTask}
             todoTaskAvailable={selectedTodoProjectId !== null}
           />
+          <Button variant="ghost" size="icon" onClick={toggleSidebar} title="Expand sidebar" aria-label="Expand sidebar">
+            <PanelLeftOpen className="h-4 w-4" />
+          </Button>
         </div>
       </aside>
     )
@@ -1551,55 +718,18 @@ export function Sidebar({
 
   return (
     <aside className="flex w-[260px] shrink-0 flex-col border-r border-line bg-panel">
-      <div className="flex items-center gap-2 px-3 pb-2 pt-3">
-        <SidebarSectionNavigation
-          activeSection={activeSection}
-          collapsed={false}
-          onSelect={setActiveSection}
-        />
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="shrink-0"
-          onClick={toggleSidebar}
-          title="Collapse sidebar"
-          aria-label="Collapse sidebar"
-        >
-          <PanelLeftClose className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-
-      <div className="min-h-0 flex-1 px-2 pb-2">
+      <div className="min-h-0 flex-1 px-2 pb-2 pt-3">
         <div
-          id="sidebar-section-projects"
-          role="tabpanel"
-          aria-labelledby="sidebar-section-tab-projects"
-          className="flex h-full min-h-0 flex-col"
-          hidden={activeSection !== 'projects'}
+          id="sidebar-section-sessions"
+          className={cn('h-full min-h-0 flex-col', activeSection === 'sessions' ? 'flex' : 'hidden')}
         >
-          {agentsCollapsed ? (
-            <>
-              <div className="min-h-0 flex-1 overflow-y-auto" data-testid="sidebar-projects-scroll">
-                {projectSessionList}
-              </div>
-              {agentsSection}
-            </>
-          ) : (
-            <>
-              <div className="min-h-0 flex-1 overflow-y-auto" data-testid="sidebar-projects-scroll">
-                {projectSessionList}
-              </div>
-              <div className="min-h-0 flex-1 overflow-y-auto" data-testid="sidebar-agents-scroll">
-                {agentsSection}
-              </div>
-            </>
-          )}
+          <div className="min-h-0 flex-1 overflow-y-auto" data-testid="sidebar-sessions-scroll">
+            {sessionList}
+          </div>
         </div>
 
         <div
           id="sidebar-section-todo"
-          role="tabpanel"
-          aria-labelledby="sidebar-section-tab-todo"
           className="h-full min-h-0 overflow-y-auto"
           hidden={activeSection !== 'todo'}
         >
@@ -1632,18 +762,32 @@ export function Sidebar({
             ))
           )}
         </div>
+
+        <div
+          id="sidebar-section-inbox"
+          className="h-full min-h-0"
+          hidden={activeSection !== 'inbox'}
+        >
+          {activeSection === 'inbox' && <InboxPanel />}
+        </div>
       </div>
 
-      <div className="shrink-0 border-t border-line p-2">
-        <SidebarCreateActions
-          activeSection={activeSection}
-          collapsed={false}
-          onNewProject={onNewProject}
-          onNewSession={() => onNewSession()}
-          onNewTodoTask={onNewTodoTask}
-          todoTaskAvailable={selectedTodoProjectId !== null}
-        />
-      </div>
+      {activeSection !== 'inbox' && <div className="flex shrink-0 items-center gap-1 border-t border-line p-2">
+        <div className="min-w-0 flex-1">
+          <SidebarCreateActions
+            activeSection={activeSection}
+            collapsed={false}
+            onNewSession={onNewSession}
+            onNewTodoTask={onNewTodoTask}
+            todoTaskAvailable={selectedTodoProjectId !== null}
+          />
+        </div>
+        {activeSection === 'sessions' && (
+          <Button variant="ghost" size="icon-sm" onClick={toggleSidebar} title="Collapse sidebar" aria-label="Collapse sidebar">
+            <PanelLeftClose className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>}
     </aside>
   )
 }

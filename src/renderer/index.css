@@ -22,6 +22,8 @@
   --color-warn: #d8a325;
   --color-danger: #f0574f;
   --color-scrollbar-hover: #3b4757;
+  /* Shadows and the veil behind a dialog; black on a dark theme, a deep slate on a light one. */
+  --color-shade: #000000;
 
   /* Code viewer syntax; set from the theme's bright ANSI colors. */
   --color-syntax-keyword: #ad7fa8;
@@ -33,8 +35,18 @@
 
   --font-mono:
     'Cascadia Mono', 'JetBrains Mono', 'Iosevka Term', 'Fira Code', 'DejaVu Sans Mono', Menlo, Consolas, monospace;
+  /* Inter is bundled (@fontsource-variable/inter, imported by main.tsx) so every system draws the same text. */
   --font-sans:
-    'Segoe UI', Inter, ui-sans-serif, system-ui, 'Helvetica Neue', Arial, sans-serif;
+    'Inter Variable', 'Segoe UI', ui-sans-serif, system-ui, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* How much of an agent's own color shows; a light theme blends the rest from its text color so the name reads. */
+:root {
+  --agent-color-strength: 100%;
+}
+
+:root[data-mode='light'] {
+  --agent-color-strength: 58%;
 }
 
 @layer base {
@@ -65,6 +77,17 @@
     user-select: text;
   }
 
+  /* Chat messages can be selected and copied; the controls inside them stay plain buttons. */
+  .chat-selectable,
+  .chat-selectable * {
+    user-select: text;
+  }
+
+  .chat-selectable button,
+  .chat-selectable button * {
+    user-select: none;
+  }
+
   :focus-visible {
     outline: 2px solid var(--color-accent);
     outline-offset: 1px;
@@ -86,6 +109,15 @@
   ::-webkit-scrollbar-thumb:hover {
     background: var(--color-scrollbar-hover);
     background-clip: content-box;
+  }
+  .inbox-thread-list::-webkit-scrollbar-thumb {
+    background-color: transparent;
+  }
+  .inbox-thread-list-hovered::-webkit-scrollbar-thumb {
+    background-color: var(--color-line-strong);
+  }
+  .inbox-thread-list-hovered::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-scrollbar-hover);
   }
 }
 
@@ -282,6 +314,82 @@
     border-top: 1px solid var(--color-line-strong);
   }
 
+  /*
+   * The reading text of the Inbox chat. Sizes are in em, so the quieter reasoning text scales with it.
+   * Code follows the code font from Settings and sits a little smaller than the words around it (a
+   * monospace font has a larger x-height, so at the same size it reads bigger and darker), and never takes
+   * on the bold of the text it is in. Lists keep their items close and set off from the text before them.
+   */
+  .chat-markdown strong {
+    font-weight: 600;
+  }
+
+  .chat-markdown code,
+  .chat-markdown pre {
+    font-family: var(--inbox-code-font, var(--font-mono));
+    font-size: 0.88em;
+    font-weight: 400;
+  }
+
+  .chat-markdown code {
+    border: 1px solid var(--color-line);
+    padding: 0.1em 0.35em;
+  }
+
+  .chat-markdown pre code {
+    border: 0;
+    font-size: 1em;
+  }
+
+  .chat-markdown ul,
+  .chat-markdown ol {
+    margin: 0.6rem 0;
+  }
+
+  .chat-markdown li > p,
+  .chat-markdown li > ul,
+  .chat-markdown li > ol {
+    margin: 0.25rem 0;
+  }
+
+  .chat-markdown h1,
+  .chat-markdown h2,
+  .chat-markdown h3,
+  .chat-markdown h4,
+  .chat-markdown h5,
+  .chat-markdown h6 {
+    margin: 1.1em 0 0.35em;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+
+  .chat-markdown h1 {
+    font-size: 1.4em;
+  }
+
+  .chat-markdown h2 {
+    font-size: 1.25em;
+  }
+
+  .chat-markdown h3 {
+    font-size: 1.1em;
+  }
+
+  .chat-markdown h4,
+  .chat-markdown h5,
+  .chat-markdown h6 {
+    font-size: 1em;
+  }
+
+  .chat-markdown > :first-child {
+    margin-top: 0;
+  }
+
+  .chat-markdown a {
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.18em;
+  }
+
   .markdown-prose ul[data-type='taskList'] {
     list-style: none;
     padding-left: 0.25rem;
@@ -362,6 +470,116 @@
     border-radius: 0.5rem;
     background-color: color-mix(in srgb, var(--color-accent) 8%, transparent);
   }
+
+  /*
+   * The diff of a file change in the Inbox chat. Added and removed lines are tinted from the
+   * theme's ok and danger colors, so every theme gets matching ones. The line numbers and signs
+   * cannot be selected, so copying a diff copies only the code.
+   */
+  .inbox-code-font,
+  .file-diff {
+    font-family: var(--inbox-code-font, var(--font-mono));
+  }
+
+  .file-diff {
+    font-size: 12px;
+    line-height: 1.55;
+    tab-size: 4;
+  }
+
+  /* Every row is as wide as the longest line, so a tint reaches the end when the diff scrolls sideways. */
+  .file-diff-lines {
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .file-diff-row {
+    display: flex;
+    min-height: 1.55em;
+  }
+
+  .file-diff-row[data-kind='add'] {
+    background-color: color-mix(in srgb, var(--color-ok) 13%, transparent);
+  }
+
+  .file-diff-row[data-kind='del'] {
+    background-color: color-mix(in srgb, var(--color-danger) 13%, transparent);
+  }
+
+  .file-diff-gutter {
+    flex: none;
+    padding: 0 0.5rem;
+    color: var(--color-fg-subtle);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    user-select: none;
+  }
+
+  .file-diff-row[data-kind='add'] .file-diff-gutter {
+    background-color: color-mix(in srgb, var(--color-ok) 9%, transparent);
+    color: color-mix(in srgb, var(--color-ok) 75%, var(--color-fg-subtle));
+  }
+
+  .file-diff-row[data-kind='del'] .file-diff-gutter {
+    background-color: color-mix(in srgb, var(--color-danger) 9%, transparent);
+    color: color-mix(in srgb, var(--color-danger) 75%, var(--color-fg-subtle));
+  }
+
+  /* A whole file written at once has no changes to pick out, so its lines are only lightly tinted. */
+  .file-diff[data-quiet] .file-diff-row[data-kind='add'] {
+    background-color: color-mix(in srgb, var(--color-ok) 5%, transparent);
+  }
+
+  .file-diff[data-quiet] .file-diff-row[data-kind='add'] .file-diff-gutter {
+    background-color: color-mix(in srgb, var(--color-ok) 8%, transparent);
+  }
+
+  .file-diff-sign {
+    flex: none;
+    width: 1.25rem;
+    color: var(--color-fg-subtle);
+    text-align: center;
+    user-select: none;
+  }
+
+  .file-diff-row[data-kind='add'] .file-diff-sign {
+    color: var(--color-ok);
+  }
+
+  .file-diff-row[data-kind='del'] .file-diff-sign {
+    color: var(--color-danger);
+  }
+
+  .file-diff-code {
+    flex: 1 0 auto;
+    padding-right: 0.75rem;
+    color: var(--color-fg);
+    white-space: pre;
+  }
+
+  /* The words that changed within a line stand out from the rest of its tint. */
+  .file-diff-emphasis {
+    border-radius: 2px;
+  }
+
+  .file-diff-row[data-kind='add'] .file-diff-emphasis {
+    background-color: color-mix(in srgb, var(--color-ok) 34%, transparent);
+  }
+
+  .file-diff-row[data-kind='del'] .file-diff-emphasis {
+    background-color: color-mix(in srgb, var(--color-danger) 34%, transparent);
+  }
+
+  .file-diff-gap {
+    display: flex;
+    height: 1.5rem;
+    align-items: center;
+    padding: 0 0.5rem;
+    background-color: color-mix(in srgb, var(--color-accent) 7%, transparent);
+    color: var(--color-fg-subtle);
+    font-size: 11px;
+    user-select: none;
+  }
 }
 
 @keyframes mde-menu-in {
@@ -388,7 +606,7 @@
   border-radius: 10px;
   background: var(--color-panel);
   color: var(--color-fg);
-  box-shadow: 0 8px 24px #0006;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--color-shade) 40%, transparent);
   font-size: 12px;
 }
 
@@ -414,56 +632,370 @@
   .terminal-file-drop-preview { animation: none; }
 }
 
-/* One-shot pane highlight (TerminalPaneHighlight): a comet travels once around the border while
+/* Inbox Terminal chat highlight (TerminalThreadHighlight): a comet travels once around the border while
    an inset glow fades in and out. The streak is a rotating conic gradient cut down to a 2px ring. */
-@property --mde-pane-sweep {
+@property --mde-inbox-terminal-sweep {
   syntax: '<angle>';
   inherits: false;
   initial-value: 0deg;
 }
 
-.terminal-pane-highlight {
-  --mde-pane-hl: var(--color-accent);
+.inbox-terminal-highlight {
+  --mde-inbox-terminal-hl: var(--color-accent);
   position: absolute;
   inset: 0;
   z-index: 30;
   pointer-events: none;
 }
 
-.terminal-pane-highlight[data-tone='done'] { --mde-pane-hl: var(--color-ok); }
-.terminal-pane-highlight[data-tone='error'] { --mde-pane-hl: var(--color-danger); }
+.inbox-terminal-highlight[data-tone='done'] { --mde-inbox-terminal-hl: var(--color-ok); }
+.inbox-terminal-highlight[data-tone='error'] { --mde-inbox-terminal-hl: var(--color-danger); }
 
-.terminal-pane-highlight::before,
-.terminal-pane-highlight::after {
+.inbox-terminal-highlight::before,
+.inbox-terminal-highlight::after {
   content: '';
   position: absolute;
   inset: 0;
 }
 
-.terminal-pane-highlight::before {
+.inbox-terminal-highlight::before {
   padding: 3px;
   background: conic-gradient(
-    from var(--mde-pane-sweep),
+    from var(--mde-inbox-terminal-sweep),
     transparent 0deg,
     transparent 190deg,
-    color-mix(in srgb, var(--mde-pane-hl) 18%, transparent) 240deg,
-    color-mix(in srgb, var(--mde-pane-hl) 55%, transparent) 310deg,
-    var(--mde-pane-hl) 352deg,
-    color-mix(in srgb, var(--mde-pane-hl) 50%, white) 360deg
+    color-mix(in srgb, var(--mde-inbox-terminal-hl) 18%, transparent) 240deg,
+    color-mix(in srgb, var(--mde-inbox-terminal-hl) 55%, transparent) 310deg,
+    var(--mde-inbox-terminal-hl) 352deg,
+    color-mix(in srgb, var(--mde-inbox-terminal-hl) 50%, white) 360deg
   );
   mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   mask-composite: exclude;
-  animation: mde-pane-sweep 1200ms cubic-bezier(0.4, 0.1, 0.3, 1) both;
+  animation: mde-inbox-terminal-sweep 1200ms cubic-bezier(0.4, 0.1, 0.3, 1) both;
 }
 
-.terminal-pane-highlight::after {
-  box-shadow: inset 0 0 22px color-mix(in srgb, var(--mde-pane-hl) 38%, transparent);
-  animation: mde-pane-glow 1500ms ease-out both;
+.inbox-terminal-highlight::after {
+  box-shadow: inset 0 0 22px color-mix(in srgb, var(--mde-inbox-terminal-hl) 38%, transparent);
+  animation: mde-inbox-terminal-glow 1500ms ease-out both;
 }
 
-@keyframes mde-pane-sweep {
+/*
+ * What names a thread's state (StatusMark): a glyph and a label with no box, so that a list of threads stays calm. It
+ * is made from the state's own color so that it fits every theme: the glyph in it, the label in it mixed toward the
+ * text color, which lifts it on a dark theme and deepens it on a light one (test/status-mark.test.ts holds every theme
+ * to a readable label). Where the person is wanted ("accent") it is heavier and its dot beats; a finished thread's
+ * ("ok") is the quietest, a green check and a muted label; "muted" is the neutral one for working and drafts.
+ */
+.status-mark {
+  --mark: var(--color-accent);
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.3125rem;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: 0.005em;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--mark) 64%, var(--color-fg));
+}
+
+.status-mark[data-tone='accent'] {
+  font-weight: 600;
+}
+
+.status-mark[data-tone='ok'] {
+  --mark: var(--color-ok);
+  font-weight: 400;
+  color: var(--color-fg-muted);
+}
+
+.status-mark[data-tone='danger'] {
+  --mark: var(--color-danger);
+}
+
+.status-mark[data-tone='muted'] {
+  --mark: var(--color-fg-muted);
+  font-weight: 400;
+  color: var(--color-fg-muted);
+}
+
+.status-mark-glyph {
+  width: 0.6875rem;
+  height: 0.6875rem;
+  flex-shrink: 0;
+  color: var(--mark);
+}
+
+/* The spinner of a working thread is the accent even beside a neutral label: it is the one thing moving. */
+.status-mark[data-tone='muted'] > .animate-spin {
+  color: var(--color-accent);
+}
+
+.status-pulse {
+  position: relative;
+  width: 0.375rem;
+  height: 0.375rem;
+  margin: 0 0.0625rem;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: var(--mark);
+}
+
+.status-pulse::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--mark);
+  animation: mde-status-ping 1.9s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes mde-status-ping {
   0% {
-    --mde-pane-sweep: 0deg;
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  70%,
+  100% {
+    transform: scale(2.8);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-pulse::after {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+/* The cue for something new in the thread being read (InboxPanel): that thread counts as read, so
+   instead of a dot the row glows for a moment and its status chip pops. */
+.inbox-cue {
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 50%, transparent);
+  animation: mde-inbox-cue 2200ms ease-out both;
+}
+
+.inbox-cue-pop {
+  animation: mde-inbox-pop 520ms cubic-bezier(0.2, 1.5, 0.4, 1) both;
+}
+
+@keyframes mde-inbox-cue {
+  0% {
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes mde-inbox-pop {
+  0% {
+    transform: scale(0.8);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* The glow stays, as a plain fade; the chip does not move. */
+@media (prefers-reduced-motion: reduce) {
+  .inbox-cue-pop {
+    animation: none;
+  }
+}
+
+/*
+ * Work that is going on in the conversation (ActivityRow): a row settles in when it starts, and its verb is lit by a
+ * light that runs along it, so that what is happening now stands out from what happened. Without motion the verb is
+ * simply the brighter color.
+ */
+.chat-rise {
+  animation: mde-pending-in 160ms ease-out;
+}
+
+.chat-shimmer {
+  background-image: linear-gradient(
+    100deg,
+    var(--color-fg-muted) 0%,
+    var(--color-fg-muted) 38%,
+    var(--color-fg) 50%,
+    var(--color-fg-muted) 62%,
+    var(--color-fg-muted) 100%
+  );
+  background-size: 250% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: mde-shimmer 1.9s linear infinite;
+}
+
+/* A line that is replaced (the preview of the thought being written) is faded in, not cut over. */
+.chat-swap {
+  animation: mde-swap 420ms ease-out;
+}
+
+@keyframes mde-swap {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes mde-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-rise,
+  .chat-swap {
+    animation: none;
+  }
+
+  .chat-shimmer {
+    background-image: none;
+    color: var(--color-fg);
+    animation: none;
+  }
+}
+
+/* A message held for the agent (ChatPendingView) settles in rather than appearing with a jolt. */
+.chat-pending {
+  animation: mde-pending-in 180ms ease-out;
+}
+
+@keyframes mde-pending-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* The answer to a side question (ChatAside) settles in the same way. */
+.chat-aside {
+  animation: mde-pending-in 180ms ease-out;
+}
+
+/* The goal card (ChatGoalCard) settles in too, and a light runs along its top edge while the agent works toward the goal. */
+.chat-goal {
+  animation: mde-pending-in 180ms ease-out;
+}
+
+.chat-goal-sweep {
+  animation: mde-goal-sweep 1800ms cubic-bezier(0.45, 0, 0.35, 1) infinite;
+}
+
+@keyframes mde-goal-sweep {
+  from {
+    left: -34%;
+  }
+  to {
+    left: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-pending,
+  .chat-aside,
+  .chat-goal {
+    animation: none;
+  }
+
+  /* No movement: the light stays, as a dim line across the edge. */
+  .chat-goal-sweep {
+    animation: none;
+    left: 0;
+    width: 100%;
+    opacity: 0.45;
+  }
+}
+
+/* The prompt timeline (ChatTimeline) grows out of its rail, and the scroll-to-bottom pill (ChatScrollToBottom) settles in. */
+.chat-timeline-card {
+  transform-origin: right center;
+  animation: mde-timeline-in 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes mde-timeline-in {
+  from {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+}
+
+.chat-scroll-pill {
+  animation: mde-pending-in 160ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-timeline-card,
+  .chat-scroll-pill {
+    animation: none;
+  }
+}
+
+/*
+ * The send button while the agent works (ChatSendButton) grows out of the round one into Steer / Queue.
+ * It is clipped only while it grows: a focus ring on either half must not be cut off afterwards.
+ */
+.chat-send-pill {
+  animation: mde-send-expand 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes mde-send-expand {
+  from {
+    max-width: 2rem;
+    overflow: hidden;
+  }
+  to {
+    max-width: 10rem;
+    overflow: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-send-pill {
+    animation: none;
+  }
+}
+
+/* The rule beside "Working for…" (ChatTurnTime): a short bright stretch of accent travels along a faint line. */
+.working-rule {
+  background:
+    linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-accent) 75%, transparent), transparent) no-repeat -40% 0 / 40% 100%,
+    linear-gradient(90deg, var(--color-line-strong), transparent);
+  animation: mde-working-sweep 2200ms ease-in-out infinite;
+}
+
+@keyframes mde-working-sweep {
+  to {
+    background-position: 140% 0, 0 0;
+  }
+}
+
+/* Without the movement the rule keeps the accent, fading out along its length. */
+@media (prefers-reduced-motion: reduce) {
+  .working-rule {
+    background: linear-gradient(90deg, color-mix(in srgb, var(--color-accent) 55%, transparent), transparent);
+    animation: none;
+  }
+}
+
+@keyframes mde-inbox-terminal-sweep {
+  0% {
+    --mde-inbox-terminal-sweep: 0deg;
     opacity: 0;
   }
   8% {
@@ -473,12 +1005,12 @@
     opacity: 1;
   }
   100% {
-    --mde-pane-sweep: 360deg;
+    --mde-inbox-terminal-sweep: 360deg;
     opacity: 0;
   }
 }
 
-@keyframes mde-pane-glow {
+@keyframes mde-inbox-terminal-glow {
   0% {
     opacity: 0;
   }
@@ -490,7 +1022,7 @@
   }
 }
 
-@keyframes mde-pane-fade {
+@keyframes mde-inbox-terminal-fade {
   0% {
     opacity: 0;
   }
@@ -504,8 +1036,8 @@
 
 /* The cue stays, the movement goes: a still ring fades in and out instead of sweeping. */
 @media (prefers-reduced-motion: reduce) {
-  .terminal-pane-highlight::before {
-    background: var(--mde-pane-hl);
-    animation: mde-pane-fade 1200ms ease-out both;
+  .inbox-terminal-highlight::before {
+    background: var(--mde-inbox-terminal-hl);
+    animation: mde-inbox-terminal-fade 1200ms ease-out both;
   }
 }

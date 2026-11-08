@@ -1,43 +1,21 @@
-import { supportsAgentIntegration } from '@shared/agent-support'
 import {
   useCallback,
   useEffect,
   useRef,
   useState,
-  type CSSProperties,
   type DragEvent as ReactDragEvent,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
-  type RefObject
+  type CSSProperties
 } from 'react'
-import {
-  Code,
-  CircleX,
-  FolderOpen,
-  History,
-  ListTodo,
-  Maximize2,
-  Minimize2,
-  Plus,
-  RotateCw,
-  Settings2,
-  X
-} from 'lucide-react'
+import { ClipboardPaste, Copy, FolderOpen, MessageSquarePlus, MessageSquareQuote, Plus } from 'lucide-react'
 import type { FileTreeDropEntry } from '@shared/ipc'
 import type {
-  OpenCodeTuiPluginState,
-  OpenCodeTuiInstanceLabelMode,
-  OpenCodeTuiInstanceStatus,
-  OpenCodeTuiSettings,
-  OpenCodePluginTarget,
-  OpenCodeAlertSettings,
-  CodingAgent,
-  OpenCodeResumeLaunch,
   PtySize,
   Session,
   SessionTab
 } from '@shared/types'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,69 +25,43 @@ import {
   AlertDialogFooter,
   AlertDialogTitle
 } from '@/components/ui/alert-dialog'
-import { AboutSettingsPanel } from '@/components/AboutSettingsPanel'
-import { KeyboardShortcutsSettings } from '@/components/KeyboardShortcutsSettings'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
+import { useTerminalSelectionActions } from '@/components/terminal-selection-actions'
 import { ipcErrorMessage } from '@/lib/ipc-error'
+import { cn } from '@/lib/utils'
 import { useWorkspace } from '@/store/workspace'
 import {
-  applyTerminalSettings,
   attachSession,
   detachSession,
   fitSession,
   getSession
 } from '@/terminal/sessions'
-import { isOsc52Policy, OSC52_POLICIES, type Osc52Policy } from '@/terminal/osc52'
 import {
   subscribeOsc52,
   type Osc52Notice,
   type Osc52Prompt
 } from '@/terminal/osc52-notices'
+import { terminalMenuOnRightClick } from '@/terminal/clipboard'
 import { terminalSizeAction } from '@/terminal/terminal-compat'
 import { viewportSettle } from '@/terminal/viewport-settle'
 import {
   getTerminalSettings,
-  listTerminalFonts,
-  saveTerminalSettings,
   subscribeTerminalSettings,
-  TERMINAL_LINE_HEIGHTS,
-  TERMINAL_FONT_SIZES,
   type TerminalSettings
 } from '@/terminal/terminal-settings'
+import { getTerminalPalette } from '@/theme/themes'
 import {
-  APPLICATION_THEMES,
-  applyApplicationTheme,
-  getTerminalPalette
-} from '@/theme/themes'
-import {
-  terminalGridTemplates,
-  terminalColumnRatios,
-  terminalColumnSplitRatio,
-  terminalRowColumns,
-  terminalRowGroups,
-  terminalRowRatios,
-  terminalRowSplitRatio,
   isTerminalPaneClosable,
-  isThreeColumnLayout,
-  isThreeRowLayout,
-  layoutClass,
-  paneClass,
-  panesToTrim,
-  TERMINAL_LAYOUTS,
-  terminalCount,
-  getTerminalLayoutShortcut,
+  MAX_TERMINAL_COUNT,
+  TERMINAL_CARD_GAP_PX,
+  TERMINAL_RESIZE_GAP_PX,
   swapTerminalPanes,
-  terminalResizeHandles,
+  terminalLayoutGeometry,
   terminalSplitRatio,
   type SessionTerminalLayout,
-  type TerminalLayout,
+  type TerminalSplitSide,
   type TerminalPaneState,
-  type RuntimeTerminalLaunch,
-  type TerminalColumnIndex,
   type TerminalResizeAxis,
-  type TerminalResizeScope,
-  type TerminalRowIndex
 } from '@/terminal/layout'
 import {
   isTerminalFullscreenShortcut,
@@ -130,21 +82,12 @@ import {
   terminalDropQuotingNotice
 } from '@/terminal/drop'
 import { terminalPrimarySelectionMode } from '@/terminal/clipboard'
-import { sessionTabs } from '@/terminal/tabs'
-import { OpenCodeStatusIcon } from '@/components/OpenCodeStatusIcon'
-import { TerminalGitInfo } from '@/components/TerminalGitInfo'
-import { TerminalFullscreenIndicator } from '@/components/TerminalFullscreenIndicator'
-import { TerminalPaneHighlight } from '@/components/TerminalPaneHighlight'
+import { SessionTabStrip } from '@/components/SessionTabStrip'
+import { TerminalPaneHeader } from '@/components/TerminalPaneHeader'
 import { TerminalPaneOverlay } from '@/components/TerminalPaneOverlay'
-import { TerminalLauncher } from '@/components/TerminalLauncher'
-import { OpenCodeSessionsDialog } from '@/components/OpenCodeSessionsDialog'
-import { isOpenCodeSessionsShortcut } from '@/lib/opencode-sessions'
-import { AGENT_COMMAND_OPTIONS, agentCommandSettingError } from '@/lib/agent-commands'
-import { openCodeTuiInstanceLabel } from '@/lib/opencode-tui-instances'
-import { syncWindowChrome } from '@/lib/window-chrome'
-import { isTerminalLauncherShortcut } from '@/lib/terminal-launcher'
 
 const FALLBACK_SIZE: PtySize = { cols: 80, rows: 24 }
+const noop = (): void => {}
 const RESIZE_DEBOUNCE_MS = 100
 
 function textInputHasFocus(): boolean {
@@ -158,24 +101,22 @@ interface TerminalViewProps {
   session: Session
   activeTab: SessionTab
   terminalLayout: SessionTerminalLayout
-  onSelectTab: (tabId: string) => void
-  onAddTab: () => void
-  onTabRenameStart: () => void
-  onRenameTab: (tabId: string, name: string) => void
-  onCloseTab: (tabId: string) => void
-  onLayoutChange: (layout: TerminalLayout) => void
-  onLayoutResize: (
-    axis: TerminalResizeAxis,
-    ratio: number,
-    index?: TerminalColumnIndex | TerminalRowIndex
-  ) => void
+  /**
+   * Drawn inside another view, as the Inbox does in its sidebar: one tab with no strip, and keyboard
+   * shortcuts that act only while the keyboard is in this view. The tab callbacks are not needed then.
+   */
+  embedded?: boolean
+  onSelectTab?: (tabId: string) => void
+  onAddTab?: () => void
+  onTabRenameStart?: () => void
+  onRenameTab?: (tabId: string, name: string) => void
+  onCloseTab?: (tabId: string) => void
+  onSplitPane: (terminalId: string, side: TerminalSplitSide) => void
+  onLayoutResize: (splitId: string, ratio: number) => void
   onPaneOrderChange: (terminalIds: readonly string[]) => void
-  onReduceLayout: (layout: TerminalLayout, paneIds: string[]) => void
-  onAddPane: (sourceTerminalId: string, launch: RuntimeTerminalLaunch) => void
   onClosePane: (terminalId: string) => void
   onPaneFocus: (terminalId: string) => void
   onPaneTitleChange: (terminalId: string, title: string | null) => void
-  onLinkTask: (terminalId: string) => void
 }
 
 interface TerminalSurfaceProps {
@@ -183,12 +124,6 @@ interface TerminalSurfaceProps {
   pane: TerminalPaneState
   onFocus: () => void
   isFullscreen: boolean
-}
-
-const OSC52_POLICY_LABELS: Record<Osc52Policy, string> = {
-  notify: 'Allow and notify me',
-  ask: 'Ask the first time in each terminal',
-  never: 'Never allow'
 }
 
 function osc52NoticeMessage(notice: Osc52Notice): string {
@@ -208,7 +143,7 @@ function osc52NoticeMessage(notice: Osc52Notice): string {
   return 'Blocked a clipboard write from a terminal that was not in the foreground.'
 }
 
-function TerminalSurface({
+export function TerminalSurface({
   session: sourceSession,
   pane,
   onFocus,
@@ -229,6 +164,11 @@ function TerminalSurface({
   const [launchAttempt, setLaunchAttempt] = useState(0)
   const setStatus = useWorkspace((state) => state.setStatus)
   const platform = useWorkspace((state) => state.platform)
+  const selectionActions = useTerminalSelectionActions()
+  // The text that was selected when the right-click menu opened, and what the menu was asked to do with it. The
+  // menu takes the keyboard while it is open, so the action runs once it has closed and given the focus back.
+  const [menuText, setMenuText] = useState('')
+  const menuAction = useRef<'copy' | 'paste' | 'send' | 'send-new' | null>(null)
   const primarySelectionMode = terminalPrimarySelectionMode(
     platform?.platform ?? 'other',
     sourceSession.kind
@@ -403,8 +343,7 @@ function TerminalSurface({
           terminalId: pane.terminalId,
           sessionId: sourceSession.id,
           size: action.size,
-          palette: getTerminalPalette(terminal.themeId),
-          launch: pane.launch
+          palette: getTerminalPalette(terminal.themeId)
         }).then((status) => {
           if (cancelled) return
           setLaunchError(null)
@@ -483,7 +422,37 @@ function TerminalSurface({
     return () => window.cancelAnimationFrame(frame)
   }, [isFullscreen])
 
+  const openMenu = (event: ReactMouseEvent<HTMLElement>): void => {
+    const terminal = getSession(pane.terminalId)?.term
+    // A program using the mouse gets the click, unless Shift is held; the menu stays shut and nothing is prevented.
+    if (!terminal || !terminalMenuOnRightClick(terminal.modes.mouseTrackingMode, event.shiftKey)) {
+      event.preventDefault()
+      return
+    }
+    menuAction.current = null
+    setMenuText(terminal.hasSelection() ? terminal.getSelection() : '')
+  }
+  const closeMenu = (event: Event): void => {
+    // Without this the focus would go to the element the menu was opened from, not into the terminal.
+    event.preventDefault()
+    const action = menuAction.current
+    menuAction.current = null
+    if (action === 'send') {
+      selectionActions?.send(menuText)
+      return
+    }
+    if (action === 'send-new') {
+      selectionActions?.sendNew(menuText)
+      return
+    }
+    getSession(pane.terminalId)?.term.focus()
+    // The system pastes into the focused field, which is the terminal's own, as Ctrl+V does.
+    if (action === 'paste') void window.api.clipboard.paste().catch(() => undefined)
+  }
+
   return (
+    <ContextMenu>
+    <ContextMenuTrigger asChild onContextMenu={openMenu}>
     <div
       ref={hostRef}
       className="terminal-host relative min-h-0 flex-1 overflow-hidden"
@@ -587,6 +556,48 @@ function TerminalSurface({
         </div>
       )}
     </div>
+    </ContextMenuTrigger>
+    <ContextMenuContent onCloseAutoFocus={closeMenu} data-testid="terminal-menu">
+      <ContextMenuItem
+        disabled={!menuText}
+        data-testid="terminal-menu-copy"
+        onSelect={() => {
+          menuAction.current = 'copy'
+          void window.api.clipboard.writeText(menuText).catch((error: unknown) => {
+            console.warn('[terminal] menu clipboard copy failed:', error)
+          })
+        }}
+      >
+        <Copy className="h-3.5 w-3.5" />
+        Copy
+      </ContextMenuItem>
+      <ContextMenuItem data-testid="terminal-menu-paste" onSelect={() => { menuAction.current = 'paste' }}>
+        <ClipboardPaste className="h-3.5 w-3.5" />
+        Paste
+      </ContextMenuItem>
+      {selectionActions && (
+        <>
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            disabled={!menuText || !selectionActions.canSend}
+            data-testid="terminal-menu-send"
+            onSelect={() => { menuAction.current = 'send' }}
+          >
+            <MessageSquareQuote className="h-3.5 w-3.5" />
+            Send to current thread
+          </ContextMenuItem>
+          <ContextMenuItem
+            disabled={!menuText}
+            data-testid="terminal-menu-send-new"
+            onSelect={() => { menuAction.current = 'send-new' }}
+          >
+            <MessageSquarePlus className="h-3.5 w-3.5" />
+            Send to new thread
+          </ContextMenuItem>
+        </>
+      )}
+    </ContextMenuContent>
+    </ContextMenu>
   )
 }
 
@@ -619,68 +630,45 @@ function TerminalPane({
   session,
   pane,
   terminalLayout,
-  openCodeInstance,
   onClose,
   onFocus,
   isFullscreen,
   onToggleFullscreen,
   onTitleChange,
-  onLinkTask,
-  onOpenCodeSessions,
   reorderState = 'none',
   paneOverlayVisible = false,
   paneOverlayNumber = null,
-  paneOverlayActive = false
+  paneOverlayActive = false,
+  splitControlsVisible = false,
+  cards = false,
+  onSplit,
 }: {
   session: Session
   pane: TerminalPaneState
   terminalLayout: SessionTerminalLayout
-  openCodeInstance?: OpenCodeTuiInstanceStatus
   onClose: () => void
   onFocus: () => void
   isFullscreen: boolean
   onToggleFullscreen: () => void
   onTitleChange: (title: string | null) => void
-  onLinkTask: (terminalId: string) => void
-  onOpenCodeSessions: () => void
   reorderState?: 'none' | 'candidate' | 'active' | 'target'
   paneOverlayVisible?: boolean
   paneOverlayNumber?: number | null
   paneOverlayActive?: boolean
+  splitControlsVisible?: boolean
+  /** Draw the pane as a rounded card that stands out when it is the active one (the card layout setting). */
+  cards?: boolean
+  onSplit: (side: TerminalSplitSide) => void
 }): JSX.Element {
   const clearExit = useWorkspace((state) => state.clearExit)
   const setStatus = useWorkspace((state) => state.setStatus)
   const exit = useWorkspace((state) => state.exits[pane.terminalId])
-  const platform = useWorkspace((state) => state.platform)
-  const wslAvailable = useWorkspace((state) => state.wslAvailable)
-  const currentDirectory = useWorkspace((state) => state.terminalDirectories[pane.terminalId])
-  const terminalStatus = useWorkspace((state) => state.statuses[pane.terminalId] ?? (pane.exited ? 'exited' : 'none'))
-  const linkedTaskId = useWorkspace((state) => state.terminalTaskLinks[pane.terminalId])
-  const unlinkTerminalTask = useWorkspace((state) => state.unlinkTerminalTask)
   const [restartConfirmationOpen, setRestartConfirmationOpen] = useState(false)
-  const [renamingTitle, setRenamingTitle] = useState(false)
-  const [draftTitle, setDraftTitle] = useState('')
-  const titleInputRef = useRef<HTMLInputElement>(null)
-  const title = pane.title?.trim() || (
-    openCodeInstance
-      ? openCodeTuiInstanceLabel(openCodeInstance, 0, 'title', terminalLayout)
-      : 'terminal'
-  )
-
-  useEffect(() => {
-    if (!renamingTitle) return
-    const frame = window.requestAnimationFrame(() => {
-      titleInputRef.current?.focus()
-      titleInputRef.current?.select()
-    })
-    return () => window.cancelAnimationFrame(frame)
-  }, [renamingTitle])
 
   const restart = async (): Promise<void> => {
     const terminal = getSession(pane.terminalId)
     terminal?.term.reset()
     const size = (terminal && fitSession(terminal)) || FALLBACK_SIZE
-    unlinkTerminalTask(pane.terminalId)
     clearExit(pane.terminalId)
     try {
       const status = await window.api.pty.restart({
@@ -705,178 +693,46 @@ function TerminalPane({
     void restart()
   }
 
-  const beginTitleRename = (): void => {
-    setDraftTitle(title)
-    setRenamingTitle(true)
-  }
-
-  const cancelTitleRename = (): void => {
-    setRenamingTitle(false)
-  }
-
-  const commitTitleRename = (): void => {
-    if (!renamingTitle) return
-    const normalizedTitle = draftTitle.trim()
-    onTitleChange(normalizedTitle || null)
-    setRenamingTitle(false)
-  }
-
+  // With a single pane there is nothing to tell the active one from, so the card layout highlights only among several.
+  const cardActive = cards && paneOverlayActive && terminalLayout.panes.length > 1
   const borderClass = reorderState === 'active'
     ? 'border-accent'
     : reorderState === 'candidate' || reorderState === 'target'
       ? 'border-accent/70'
-      : paneOverlayVisible && paneOverlayActive
-        ? 'border-accent'
-        : 'border-line'
+      : cards
+        ? cardActive ? 'border-accent' : 'border-line-strong'
+        : paneOverlayVisible && paneOverlayActive
+          ? 'border-accent'
+          : 'border-line'
 
   return (
     <div
-      className={`relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden border ${borderClass} bg-bg ${
-        reorderState === 'active' ? 'opacity-45' : ''
-      }`}
+      onPointerDown={onFocus}
+      onFocusCapture={onFocus}
+      data-testid="terminal-pane"
+      data-card={cards ? 'true' : 'false'}
+      data-active={cardActive ? 'true' : 'false'}
+      className={cn(
+        'relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden border bg-bg',
+        borderClass,
+        cards && 'rounded-lg transition-[border-color,box-shadow] duration-150 motion-reduce:transition-none',
+        cards && (cardActive ? 'shadow-[0_0_12px_-3px_color-mix(in_srgb,var(--color-accent)_45%,transparent)]' : 'shadow-sm'),
+        reorderState === 'active' && 'opacity-45'
+      )}
     >
-      <header
-        aria-label={title}
-        className="flex h-6 shrink-0 items-center gap-1 border-b border-line bg-panel/50 px-1"
-        data-testid="terminal-pane-title-bar"
-      >
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          {openCodeInstance && (
-            <OpenCodeStatusIcon
-              status={openCodeInstance.status}
-              attentionReason={openCodeInstance.attentionReason}
-              testId="terminal-opencode-status"
-            />
-          )}
-          {renamingTitle ? (
-            <input
-              ref={titleInputRef}
-              value={draftTitle}
-              onChange={(event) => setDraftTitle(event.target.value)}
-              onBlur={commitTitleRename}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') commitTitleRename()
-                if (event.key === 'Escape') cancelTitleRename()
-                event.stopPropagation()
-              }}
-              onClick={(event) => event.stopPropagation()}
-              className="h-5 min-w-0 flex-1 rounded-sm border border-accent bg-bg px-1 text-[11px] text-fg outline-none"
-              data-testid="terminal-pane-title-input"
-              aria-label="Terminal title"
-            />
-          ) : (
-            <span
-              className="min-w-0 truncate text-[11px] font-medium text-fg-muted"
-              data-testid="terminal-pane-title"
-              title={`${title} · Double-click to rename`}
-              onDoubleClick={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                beginTitleRename()
-              }}
-            >
-              {title}
-            </span>
-          )}
-          <TerminalGitInfo terminalId={pane.terminalId} />
-          <TerminalFullscreenIndicator isFullscreen={isFullscreen} />
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {terminalStatus === 'running' && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-fg-subtle hover:bg-hover hover:text-fg active:bg-active"
-              aria-label={linkedTaskId ? 'Change linked To Do task' : 'Link terminal to a To Do task'}
-              title={linkedTaskId ? 'Change linked To Do task' : 'Link terminal to a To Do task'}
-              data-testid={`terminal-task-link-${pane.terminalId}`}
-              onClick={() => onLinkTask(pane.terminalId)}
-            >
-              <ListTodo className="h-3.5 w-3.5" />
-            </Button>
-          )}
-          {supportsAgentIntegration(platform?.platform, session) && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-fg-subtle hover:bg-hover hover:text-fg active:bg-active"
-              aria-label="Open OpenCode sessions"
-              title="OpenCode sessions (Ctrl+Shift+O)"
-              data-testid={`terminal-opencode-sessions-${pane.terminalId}`}
-              onClick={onOpenCodeSessions}
-            >
-              <History className="h-3.5 w-3.5" />
-            </Button>
-          )}
-          {platform?.isWindows === true &&
-            wslAvailable &&
-            session.kind === 'wsl' &&
-            Boolean(session.distro) && (
-              <>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="text-fg-subtle hover:bg-hover hover:text-fg active:bg-active"
-                  aria-label="Open terminal directory in VS Code"
-                  title={currentDirectory ? 'Open current directory in VS Code' : 'Waiting for terminal directory'}
-                  disabled={!currentDirectory}
-                  onClick={() => void window.api.paths.openTerminalInVsCode(pane.terminalId)}
-                >
-                  <Code className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="text-fg-subtle hover:bg-hover hover:text-fg active:bg-active"
-                  aria-label="Open terminal directory in File Explorer"
-                  title={currentDirectory ? 'Open current directory in File Explorer' : 'Waiting for terminal directory'}
-                  disabled={!currentDirectory}
-                  onClick={() => void window.api.paths.revealTerminal(pane.terminalId)}
-                >
-                  <FolderOpen className="h-3.5 w-3.5" />
-                </Button>
-              </>
-            )}
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-fg-subtle hover:bg-hover hover:text-fg active:bg-active"
-            aria-label={isFullscreen ? 'Exit terminal fullscreen' : 'Enter terminal fullscreen'}
-            aria-pressed={isFullscreen}
-            data-testid={`terminal-fullscreen-toggle-${pane.terminalId}`}
-            title={isFullscreen
-              ? 'Exit terminal fullscreen (Ctrl+Shift+F)'
-              : 'Enter terminal fullscreen (Ctrl+Shift+F)'}
-            onClick={onToggleFullscreen}
-          >
-            {isFullscreen
-              ? <Minimize2 className="h-3.5 w-3.5" />
-              : <Maximize2 className="h-3.5 w-3.5" />}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-fg-subtle hover:bg-hover hover:text-fg active:bg-active"
-            aria-label="Restart terminal"
-            title="Restart terminal"
-            onClick={requestRestart}
-          >
-            <RotateCw className="h-3.5 w-3.5" />
-          </Button>
-          {isTerminalPaneClosable(terminalLayout.panes, pane.terminalId) && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-fg-subtle hover:bg-hover hover:text-fg active:bg-active"
-              aria-label="Close terminal"
-              title="Close terminal"
-              onClick={onClose}
-            >
-              <CircleX className="h-3.5 w-3.5" />
-            </Button>
-          )}
-        </div>
-      </header>
+      <TerminalPaneHeader
+        session={session}
+        pane={pane}
+        terminalLayout={terminalLayout}
+        focused={paneOverlayActive}
+        card={cards}
+        isFullscreen={isFullscreen}
+        onToggleFullscreen={onToggleFullscreen}
+        onTitleChange={onTitleChange}
+        onRestart={requestRestart}
+        onClose={onClose}
+        onSplit={onSplit}
+      />
       {exit && (
         <div
           className="flex shrink-0 items-center gap-3 border-b border-danger/30 bg-danger/10 px-3 py-1.5"
@@ -903,7 +759,38 @@ function TerminalPane({
         active={paneOverlayActive}
         isFullscreen={isFullscreen}
       />
-      <TerminalPaneHighlight terminalId={pane.terminalId} />
+      {splitControlsVisible && (
+        <div aria-label="Add terminal" role="group" data-testid="terminal-split-controls">
+          {(['left', 'right', 'top', 'bottom'] as const).map((side) => (
+            <button
+              key={side}
+              type="button"
+              aria-label={`Add terminal ${side === 'top' ? 'above' : side === 'bottom' ? 'below' : `to the ${side}`}`}
+              title={`Add terminal ${side === 'top' ? 'above' : side === 'bottom' ? 'below' : `to the ${side}`}`}
+              data-testid={`terminal-split-${side}`}
+              className={`absolute z-30 flex h-7 w-7 items-center justify-center rounded border border-accent/60 bg-panel text-accent shadow-md hover:bg-accent hover:text-bg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
+                side === 'left' ? 'left-1 top-1/2 -translate-y-1/2'
+                  : side === 'right' ? 'right-1 top-1/2 -translate-y-1/2'
+                    : side === 'top' ? 'left-1/2 top-8 -translate-x-1/2'
+                      : 'bottom-1 left-1/2 -translate-x-1/2'
+              }`}
+              onPointerDown={(event) => {
+                if (event.button !== 0) return
+                event.preventDefault()
+                event.stopPropagation()
+                onSplit(side)
+              }}
+              onClick={(event) => {
+                // Keyboard activation; pointer activation happens before a macOS Ctrl-click context menu.
+                if (event.detail === 0) onSplit(side)
+              }}
+              onContextMenu={(event) => event.preventDefault()}
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          ))}
+        </div>
+      )}
       {reorderState === 'target' && (
         <div
           aria-hidden="true"
@@ -965,49 +852,15 @@ function restoreTerminalReorderStyles(drag: TerminalReorderDragState): void {
   document.body.style.userSelect = drag.previousUserSelect
 }
 
-function LayoutGlyph({ layout }: { layout: TerminalLayout }): JSX.Element {
-  const count = terminalCount(layout)
-  const columns = layout === 'single'
-    ? 'grid-cols-1'
-    : layout === 'fiveGrid' || layout === 'eightGrid'
-      ? 'grid-cols-6'
-      : isThreeColumnLayout(layout)
-        ? 'grid-cols-3'
-        : 'grid-cols-2'
-  const rows = layout === 'single' || layout === 'columns' || layout === 'threeColumns'
-    ? 'grid-rows-1'
-    : isThreeRowLayout(layout)
-      ? 'grid-rows-3'
-      : 'grid-rows-2'
-  return (
-    <span className={`grid h-3.5 w-4 gap-px ${columns} ${rows}`} aria-hidden="true">
-      {Array.from({ length: count }, (_, index) => (
-        <span
-          key={index}
-          className={`rounded-[1px] bg-current ${layout === 'three' && index === 2
-            ? 'col-span-2'
-            : layout === 'fiveGrid'
-              ? index < 3 ? 'col-span-2' : 'col-span-3'
-              : layout === 'eightGrid'
-                ? index < 6 ? 'col-span-2' : 'col-span-3'
-                : layout === 'sevenGrid' && index === 6
-                  ? 'col-span-3'
-                  : ''}`}
-        />
-      ))}
-    </span>
-  )
-}
-
 interface TerminalResizeHandleProps {
-  layout: TerminalLayout
+  splitId: string
   axis: TerminalResizeAxis
-  scope: TerminalResizeScope
-  columnIndex?: TerminalColumnIndex
-  rowIndex?: TerminalRowIndex
   ratio: number
-  sizes: SessionTerminalLayout['sizes']
-  containerRef: RefObject<HTMLDivElement>
+  /** The space the panes leave between them, which the divider is centered in. */
+  gap: number
+  /** Card layout: the divider shows as a rounded bar in the wider gap. */
+  cards: boolean
+  style: CSSProperties
   onResize: (ratio: number) => void
 }
 
@@ -1019,55 +872,16 @@ interface TerminalDragState {
   previousUserSelect: string
 }
 
-function splitLinePosition(ratio: number, gapCount = 1, dividerIndex = 0): string {
-  return `calc(${ratio * 100}% + ${dividerIndex + 0.5 - ratio * gapCount}px)`
-}
-
-function terminalResizeHandleStyle(
-  layout: TerminalLayout,
-  axis: TerminalResizeAxis,
-  scope: TerminalResizeScope,
-  sizes: SessionTerminalLayout['sizes'],
-  columnIndex: TerminalColumnIndex | undefined,
-  rowIndex: TerminalRowIndex | undefined
-): CSSProperties {
-  if (axis === 'column') {
-    const dividerIndex = columnIndex ?? 0
-    const [firstColumnRatio, secondColumnRatio] = terminalColumnRatios(sizes)
-    const ratio = dividerIndex === 0 ? firstColumnRatio : secondColumnRatio
-    const gapCount = isThreeColumnLayout(layout) ? 2 : 1
-    return {
-      left: splitLinePosition(ratio, gapCount, dividerIndex),
-      top: 0,
-      height: scope === 'top'
-        ? splitLinePosition(sizes.rowRatio)
-        : scope === 'upper'
-          ? splitLinePosition(terminalRowRatios(sizes)[1], 2, 1)
-          : '100%'
-    }
-  }
-
-  const dividerIndex = rowIndex ?? 0
-  return {
-    left: 0,
-    top: isThreeRowLayout(layout)
-      ? splitLinePosition(terminalRowRatios(sizes)[dividerIndex], 2, dividerIndex)
-      : splitLinePosition(sizes.rowRatio),
-    width: '100%'
-  }
-}
-
 function TerminalResizeHandle({
-  layout,
+  splitId,
   axis,
-  scope,
-  columnIndex,
-  rowIndex,
   ratio,
-  sizes,
-  containerRef,
+  gap,
+  cards,
+  style,
   onResize
 }: TerminalResizeHandleProps): JSX.Element {
+  const containerRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<TerminalDragState | null>(null)
 
   const restoreDocumentStyles = (drag: TerminalDragState): void => {
@@ -1100,7 +914,7 @@ function TerminalResizeHandle({
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>): void => {
     const container = containerRef.current
-    if (!container) return
+    if (!container || event.button !== 0) return
 
     event.preventDefault()
     event.stopPropagation()
@@ -1126,13 +940,7 @@ function TerminalResizeHandle({
       ? event.clientX - bounds.left
       : event.clientY - bounds.top
     const trackSize = axis === 'column' ? bounds.width : bounds.height
-    drag.pendingRatio = axis === 'column' &&
-      isThreeColumnLayout(layout) &&
-      columnIndex !== undefined
-      ? terminalColumnSplitRatio(pointerPosition, trackSize, columnIndex, sizes)
-      : axis === 'row' && isThreeRowLayout(layout) && rowIndex !== undefined
-        ? terminalRowSplitRatio(pointerPosition, trackSize, rowIndex, sizes)
-        : terminalSplitRatio(pointerPosition, trackSize)
+    drag.pendingRatio = terminalSplitRatio(pointerPosition, trackSize, undefined, gap)
 
     if (drag.frame !== undefined) return
     drag.frame = requestAnimationFrame(() => {
@@ -1143,930 +951,46 @@ function TerminalResizeHandle({
     })
   }
 
-  const lineClass = axis === 'column' ? 'h-full w-px' : 'h-px w-full'
+  const lineClass = cards
+    ? axis === 'column' ? 'h-full w-0.5 rounded-full' : 'h-0.5 w-full rounded-full'
+    : axis === 'column' ? 'h-full w-px' : 'h-px w-full'
   const handleClass = axis === 'column'
     ? 'h-full w-2 -translate-x-1/2 cursor-col-resize flex-col'
     : 'h-2 w-full -translate-y-1/2 cursor-row-resize flex-row'
 
+  const position = `calc(${ratio * 100}% + ${gap / 2 - ratio * gap}px)`
   return (
-    <div
-      role="separator"
-      aria-label={axis === 'column' ? 'Resize terminal columns' : 'Resize terminal rows'}
-      aria-orientation={axis === 'column' ? 'vertical' : 'horizontal'}
-      data-testid={`terminal-resize-${axis}-${scope}${(axis === 'column' ? columnIndex : rowIndex) === 1 ? '-1' : ''}`}
-      className={`group absolute z-20 flex touch-none items-center justify-center ${handleClass}`}
-      style={terminalResizeHandleStyle(layout, axis, scope, sizes, columnIndex, rowIndex)}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={finishDrag}
-      onPointerCancel={finishDrag}
-      onLostPointerCapture={finishDrag}
-    >
-      <span className={`bg-transparent transition-colors group-hover:bg-accent ${lineClass}`} />
-    </div>
-  )
-}
-
-function pluginStatusLabel(state: OpenCodeTuiPluginState | undefined): string {
-  if (!state) return 'Checking…'
-  if (state.status === 'installed') return `Installed · v${state.installedVersion}`
-  if (state.status === 'outdated') {
-    return `Update available · v${state.installedVersion ?? 'unknown'} → v${state.currentVersion}`
-  }
-  if (state.status === 'conflict') return 'Another plugin owns the MDE plugin files'
-  return 'Not installed'
-}
-
-function pluginTargetKey(target: OpenCodePluginTarget): string {
-  return target.kind === 'native' ? 'native' : 'wsl:' + target.distro
-}
-
-function pluginTargetLabel(target: OpenCodePluginTarget, platform?: string): string {
-  return target.kind === 'native' ? (platform === 'darwin' ? 'This Mac' : 'Native Linux') : target.distro + ' (WSL 2)'
-}
-
-type SettingsSection = 'appearance' | 'terminal' | 'shortcuts' | 'agents' | 'sidebar' | 'opencode' | 'about'
-
-const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string }> = [
-  { id: 'appearance', label: 'Appearance' },
-  { id: 'terminal', label: 'Terminal' },
-  { id: 'shortcuts', label: 'Shortcuts' },
-  { id: 'agents', label: 'Agents' },
-  { id: 'sidebar', label: 'Sidebar' },
-  { id: 'opencode', label: 'OpenCode' },
-  { id: 'about', label: 'About' }
-]
-
-function SettingsToggle({
-  checked,
-  label,
-  description,
-  testId,
-  onClick
-}: {
-  checked: boolean
-  label: string
-  description: string
-  testId: string
-  onClick: () => void
-}): JSX.Element {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      data-testid={testId}
-      onClick={onClick}
-      className="flex w-full items-center justify-between rounded border border-line bg-panel px-3 py-2 text-left text-xs text-fg-muted hover:bg-hover"
-    >
-      <span>
-        <span className="block font-medium text-fg">{label}</span>
-        <span className="mt-0.5 block text-fg-subtle">{description}</span>
-      </span>
-      <span
-        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
-          checked ? 'bg-accent' : 'bg-line-strong'
-        }`}
-      >
-        <span
-          className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-            checked ? 'translate-x-4' : 'translate-x-0.5'
-          }`}
-        />
-      </span>
-    </button>
-  )
-}
-
-function SettingsControl({ terminalIds }: { terminalIds: string[] }): JSX.Element {
-  const [open, setOpen] = useState(false)
-  const [activeSection, setActiveSection] = useState<SettingsSection>('appearance')
-  const sectionButtonRefs = useRef<Array<HTMLButtonElement | null>>([])
-  const [settings, setSettings] = useState<TerminalSettings>(() => getTerminalSettings())
-  const [availableFonts] = useState(() => listTerminalFonts())
-  const platform = useWorkspace((state) => state.platform)
-  const wslAvailable = useWorkspace((state) => state.wslAvailable)
-  const distros = useWorkspace((state) => state.distros)
-  const refreshDistros = useWorkspace((state) => state.refreshDistros)
-  const opencodeTuiInstanceLabelMode = useWorkspace((state) => state.opencodeTuiInstanceLabelMode)
-  const setOpenCodeTuiInstanceLabelMode = useWorkspace(
-    (state) => state.setOpenCodeTuiInstanceLabelMode
-  )
-  const [tuiSettings, setTuiSettings] = useState<OpenCodeTuiSettings>({
-    enabled: false,
-    currentPluginVersion: '',
-    instanceLabelMode: 'numbered'
-  })
-  const [pluginStates, setPluginStates] = useState<Record<string, OpenCodeTuiPluginState>>({})
-  const [tuiLoading, setTuiLoading] = useState(false)
-  const [tuiBusyDistro, setTuiBusyDistro] = useState<string | null>(null)
-  const [tuiError, setTuiError] = useState<string | null>(null)
-  const [alertSettings, setAlertSettings] = useState<OpenCodeAlertSettings>({ enabled: true })
-  const [alertLoading, setAlertLoading] = useState(false)
-  const [alertError, setAlertError] = useState<string | null>(null)
-
-  const canManageTui = platform?.platform === 'darwin' || (platform?.isWindows === true && wslAvailable)
-  const pluginTargets: OpenCodePluginTarget[] =
-    platform?.platform === 'darwin'
-      ? [{ kind: 'native' }]
-      : distros.map((distro) => ({ kind: 'wsl', distro: distro.name }))
-
-  useEffect(() => {
-    if (open) setActiveSection('appearance')
-  }, [open])
-
-  const selectSection = (section: SettingsSection): void => {
-    setActiveSection(section)
-  }
-
-  const moveSection = (currentIndex: number, delta: number): void => {
-    const nextIndex = (currentIndex + delta + SETTINGS_SECTIONS.length) % SETTINGS_SECTIONS.length
-    const nextSection = SETTINGS_SECTIONS[nextIndex]
-    if (!nextSection) return
-    setActiveSection(nextSection.id)
-    sectionButtonRefs.current[nextIndex]?.focus()
-  }
-
-  const handleSectionKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number): void => {
-    if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
-      event.preventDefault()
-      moveSection(index, 1)
-    } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
-      event.preventDefault()
-      moveSection(index, -1)
-    } else if (event.key === 'Home') {
-      event.preventDefault()
-      const firstSection = SETTINGS_SECTIONS[0]
-      if (firstSection) {
-        setActiveSection(firstSection.id)
-        sectionButtonRefs.current[0]?.focus()
-      }
-    } else if (event.key === 'End') {
-      event.preventDefault()
-      const lastIndex = SETTINGS_SECTIONS.length - 1
-      const lastSection = SETTINGS_SECTIONS[lastIndex]
-      if (lastSection) {
-        setActiveSection(lastSection.id)
-        sectionButtonRefs.current[lastIndex]?.focus()
-      }
-    }
-  }
-
-  useEffect(() => {
-    if (open && platform?.isWindows && wslAvailable) void refreshDistros()
-  }, [platform?.isWindows, wslAvailable, open, refreshDistros])
-
-  const updateSettings = (patch: Partial<TerminalSettings>): void => {
-    const next = { ...settings, ...patch }
-    setSettings(next)
-    saveTerminalSettings(next)
-    applyApplicationTheme(next.theme)
-    if (patch.theme) syncWindowChrome(next.theme)
-    applyTerminalSettings(next)
-
-    terminalIds.forEach((terminalId) => {
-      const terminal = getSession(terminalId)
-      const size = terminal ? fitSession(terminal) : null
-      if (size) void window.api.pty.resize({ terminalId, size })
-    })
-  }
-
-  const updateAgentSetting = (
-    kind: CodingAgent,
-    patch: Partial<TerminalSettings['agents'][CodingAgent]>
-  ): void => {
-    updateSettings({
-      agents: {
-        ...settings.agents,
-        [kind]: { ...settings.agents[kind], ...patch }
-      }
-    })
-  }
-
-  useEffect(() => {
-    if (!open || !canManageTui) return
-    let cancelled = false
-    setTuiLoading(true)
-    setTuiError(null)
-    const targets: OpenCodePluginTarget[] = platform?.platform === 'darwin'
-      ? [{ kind: 'native' }]
-      : distros.map((distro) => ({ kind: 'wsl', distro: distro.name }))
-    void Promise.all([
-      window.api.opencodeTui.settings(),
-      Promise.allSettled(
-        targets.map((target) => window.api.opencodeTui.pluginState({ target }))
-      )
-    ])
-      .then(([nextSettings, stateResults]) => {
-        if (cancelled) return
-        const nextStates: Record<string, OpenCodeTuiPluginState> = {}
-        const failures: string[] = []
-        stateResults.forEach((result) => {
-          if (result.status === 'fulfilled') {
-            nextStates[pluginTargetKey(result.value.target)] = result.value
-          } else {
-            failures.push(ipcErrorMessage(result.reason, 'Could not inspect this OpenCode target.'))
-          }
-        })
-        setTuiSettings(nextSettings)
-        setPluginStates(nextStates)
-        if (failures.length > 0) setTuiError(failures[0] ?? 'Could not inspect one or more OpenCode targets.')
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setTuiError(ipcErrorMessage(error, 'Could not update the OpenCode status plugin.'))
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setTuiLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [canManageTui, distros, open, platform?.platform])
-
-  useEffect(() => {
-    if (!open) return
-    let cancelled = false
-    setAlertLoading(true)
-    setAlertError(null)
-    void window.api.opencodeAlerts
-      .settings()
-      .then((next) => {
-        if (!cancelled) setAlertSettings(next)
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setAlertError(ipcErrorMessage(error, 'Could not update OpenCode alerts.'))
-      })
-      .finally(() => {
-        if (!cancelled) setAlertLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [open])
-
-  const setTuiEnabled = async (): Promise<void> => {
-    setTuiError(null)
-    try {
-      const next = await window.api.opencodeTui.setEnabled({ enabled: !tuiSettings.enabled })
-      setTuiSettings(next)
-    } catch (error) {
-      setTuiError(ipcErrorMessage(error, 'Could not update the OpenCode status plugin.'))
-    }
-  }
-
-  const changeTuiInstanceLabelMode = async (
-    mode: OpenCodeTuiInstanceLabelMode
-  ): Promise<void> => {
-    setTuiError(null)
-    try {
-      await setOpenCodeTuiInstanceLabelMode(mode)
-      setTuiSettings((current) => ({ ...current, instanceLabelMode: mode }))
-    } catch (error) {
-      setTuiError(ipcErrorMessage(error, 'Could not update the OpenCode status plugin.'))
-    }
-  }
-
-  const setAlertsEnabled = async (): Promise<void> => {
-    setAlertError(null)
-    setAlertLoading(true)
-    try {
-      const next = await window.api.opencodeAlerts.setEnabled({ enabled: !alertSettings.enabled })
-      setAlertSettings(next)
-    } catch (error) {
-      setAlertError(ipcErrorMessage(error, 'Could not update OpenCode alerts.'))
-    } finally {
-      setAlertLoading(false)
-    }
-  }
-
-  const changePlugin = async (target: OpenCodePluginTarget, action: 'install' | 'remove'): Promise<void> => {
-    setTuiBusyDistro(pluginTargetKey(target))
-    setTuiError(null)
-    try {
-      const state =
-        action === 'install'
-          ? await window.api.opencodeTui.install({ target })
-          : await window.api.opencodeTui.remove({ target })
-      setPluginStates((current) => ({ ...current, [pluginTargetKey(target)]: state }))
-    } catch (error) {
-      setTuiError(ipcErrorMessage(error, 'Could not update the OpenCode status plugin.'))
-    } finally {
-      setTuiBusyDistro(null)
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <button
-        type="button"
-        aria-label="Change settings"
-        data-testid="terminal-settings-control"
-        title="Settings"
-        onClick={() => setOpen(true)}
-        className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded px-2 text-xs text-fg-subtle hover:bg-hover hover:text-fg"
-      >
-        <Settings2 className="h-3.5 w-3.5" />
-        Settings
-      </button>
-
-      <DialogContent className="flex h-[min(42rem,85vh)] max-w-3xl flex-col">
-        <DialogHeader>
-          <DialogTitle>Settings</DialogTitle>
-          <DialogDescription>
-            Appearance changes apply immediately. Plugin changes apply after OpenCode is restarted.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="grid min-h-0 flex-1 grid-cols-[10rem_minmax(0,1fr)] gap-5 overflow-hidden">
-          <div className="min-w-0 border-r border-line pr-3">
-            <div
-              role="tablist"
-              aria-label="Settings sections"
-              aria-orientation="vertical"
-              className="flex flex-col gap-1"
-            >
-              {SETTINGS_SECTIONS.map((section, index) => {
-                const active = activeSection === section.id
-                return (
-                  <button
-                    key={section.id}
-                    ref={(element) => {
-                      sectionButtonRefs.current[index] = element
-                    }}
-                    type="button"
-                    id={`terminal-settings-tab-${section.id}`}
-                    role="tab"
-                    aria-selected={active}
-                    aria-controls="terminal-settings-panel"
-                    tabIndex={active ? 0 : -1}
-                    onClick={() => selectSection(section.id)}
-                    onKeyDown={(event) => handleSectionKeyDown(event, index)}
-                    className={`w-full rounded px-3 py-2 text-left text-xs font-medium transition-colors ${
-                      active ? 'bg-active text-fg' : 'text-fg-muted hover:bg-hover hover:text-fg'
-                    }`}
-                  >
-                    {section.label}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          <div
-            id="terminal-settings-panel"
-            role="tabpanel"
-            aria-labelledby={`terminal-settings-tab-${activeSection}`}
-            tabIndex={0}
-            className="min-w-0 min-h-0 overflow-y-auto pr-1"
-          >
-            {activeSection === 'appearance' && (
-              <section className="space-y-3" aria-labelledby="appearance-settings">
-                <h3 id="appearance-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
-                  Appearance
-                </h3>
-                <div className="space-y-4">
-                  <label className="block text-xs font-medium text-fg-muted">
-                    Application theme
-                    <Select
-                      value={settings.theme}
-                      onValueChange={(value) => {
-                        const theme = APPLICATION_THEMES.find((option) => option.id === value)
-                        if (theme) updateSettings({ theme: theme.id })
-                      }}
-                    >
-                      <SelectTrigger className="mt-1">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {APPLICATION_THEMES.map((option) => (
-                          <SelectItem key={option.id} value={option.id}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </label>
-
-                  <label className="block text-xs font-medium text-fg-muted">
-                    Terminal font family
-                    <Select value={settings.family} onValueChange={(family) => updateSettings({ family })}>
-                      <SelectTrigger className="mt-1">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableFonts.map((font) => (
-                          <SelectItem key={font.family} value={font.family}>
-                            {font.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </label>
-
-                  <label className="block text-xs font-medium text-fg-muted">
-                    Terminal font size
-                    <Select
-                      value={String(settings.size)}
-                      onValueChange={(value) => {
-                        const size = TERMINAL_FONT_SIZES.find((candidate) => String(candidate) === value)
-                        if (size !== undefined) updateSettings({ size })
-                      }}
-                    >
-                      <SelectTrigger className="mt-1">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {TERMINAL_FONT_SIZES.map((size) => (
-                          <SelectItem key={size} value={String(size)}>
-                            {size}px
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </label>
-
-                  <label className="block text-xs font-medium text-fg-muted">
-                    Terminal line height
-                    <Select
-                      value={String(settings.lineHeight)}
-                      onValueChange={(value) => {
-                        const lineHeight = TERMINAL_LINE_HEIGHTS.find(
-                          (candidate) => String(candidate) === value
-                        )
-                        if (lineHeight !== undefined) updateSettings({ lineHeight })
-                      }}
-                    >
-                      <SelectTrigger className="mt-1">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {TERMINAL_LINE_HEIGHTS.map((lineHeight) => (
-                          <SelectItem key={lineHeight} value={String(lineHeight)}>
-                            {lineHeight.toFixed(1)}×
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </label>
-
-                  <label className="block text-xs font-medium text-fg-muted">
-                    Code preview font family
-                    <Select
-                      value={settings.codeFamily}
-                      onValueChange={(codeFamily) => updateSettings({ codeFamily })}
-                    >
-                      <SelectTrigger className="mt-1">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableFonts.map((font) => (
-                          <SelectItem key={font.family} value={font.family}>
-                            {font.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </label>
-                </div>
-              </section>
-            )}
-
-            {activeSection === 'terminal' && (
-              <section className="space-y-3" aria-labelledby="terminal-settings">
-                <div>
-                  <h3 id="terminal-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
-                    Terminal
-                  </h3>
-                  <p className="mt-1 text-xs text-fg-subtle">
-                    Configure terminal behavior and keyboard shortcuts.
-                  </p>
-                </div>
-                <SettingsToggle
-                  checked={settings.escapeExitsFullscreen}
-                  label="Exit fullscreen with Escape"
-                  description="Press Escape to leave the temporary fullscreen terminal view."
-                  testId="terminal-escape-fullscreen"
-                  onClick={() => updateSettings({ escapeExitsFullscreen: !settings.escapeExitsFullscreen })}
-                />
-
-                <label className="block text-xs font-medium text-fg-muted">
-                  Clipboard access from terminal programs
-                  <Select
-                    value={settings.osc52Policy}
-                    onValueChange={(value) => {
-                      if (isOsc52Policy(value)) updateSettings({ osc52Policy: value })
-                    }}
-                  >
-                    <SelectTrigger className="mt-1" data-testid="terminal-osc52-policy">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {OSC52_POLICIES.map((policy) => (
-                        <SelectItem key={policy} value={policy}>
-                          {OSC52_POLICY_LABELS[policy]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <span className="mt-1 block font-normal text-fg-subtle">
-                    Programs can ask to set the clipboard with an escape sequence, which editors
-                    use for yank over SSH. Whatever you choose here, a terminal that is hidden,
-                    unfocused, or that you have not just typed in is always refused.
-                  </span>
-                </label>
-              </section>
-            )}
-
-            {activeSection === 'shortcuts' && (
-              <KeyboardShortcutsSettings
-                platform={platform?.platform ?? 'other'}
-                escapeExitsFullscreen={settings.escapeExitsFullscreen}
-              />
-            )}
-
-            {activeSection === 'agents' && (
-              <section className="space-y-4" aria-labelledby="agent-settings">
-                <div>
-                  <h3 id="agent-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
-                    Agents
-                  </h3>
-                  <p className="mt-1 text-xs text-fg-subtle">
-                    Configure the commands available from Ctrl+N and Cmd+N. These commands run directly in WSL from the focused terminal directory.
-                  </p>
-                </div>
-
-                <div className="space-y-3">
-                  {AGENT_COMMAND_OPTIONS.map((option) => {
-                    const setting = settings.agents[option.kind]
-                    const error = agentCommandSettingError(setting)
-                    return (
-                      <div key={option.kind} className="space-y-2 rounded border border-line bg-panel p-3">
-                        <div>
-                          <h4 className="text-xs font-medium text-fg">{option.label}</h4>
-                          <p className="mt-0.5 text-[11px] text-fg-subtle">{option.description}</p>
-                        </div>
-                        <label className="block text-xs font-medium text-fg-muted">
-                          Executable
-                          <Input
-                            value={setting.executable}
-                            onChange={(event) => updateAgentSetting(option.kind, { executable: event.target.value })}
-                            className="mt-1"
-                            data-testid={`agent-${option.kind}-executable`}
-                            spellCheck={false}
-                          />
-                        </label>
-                        <label className="block text-xs font-medium text-fg-muted">
-                          Arguments
-                          <Input
-                            value={setting.args}
-                            onChange={(event) => updateAgentSetting(option.kind, { args: event.target.value })}
-                            className="mt-1"
-                            placeholder="Optional shell-style arguments"
-                            data-testid={`agent-${option.kind}-args`}
-                            spellCheck={false}
-                          />
-                        </label>
-                        {error ? (
-                          <p className="text-[11px] text-danger">{error} This option will be disabled in the launcher.</p>
-                        ) : (
-                          <p className="text-[11px] text-fg-subtle">
-                            The executable is checked when the command starts; a missing CLI will show its normal shell error.
-                          </p>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              </section>
-            )}
-
-            {activeSection === 'sidebar' && (
-              <section className="space-y-3" aria-labelledby="sidebar-settings">
-                <div>
-                  <h3 id="sidebar-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
-                    Sidebar
-                  </h3>
-                  <p className="mt-1 text-xs text-fg-subtle">
-                    Choose which individual terminal activity appears beneath each session.
-                  </p>
-                </div>
-                <SettingsToggle
-                  checked={settings.showTerminalInstances}
-                  label="Show terminal instances"
-                  description="List ordinary terminal panes beneath their session."
-                  testId="sidebar-terminal-instances"
-                  onClick={() => updateSettings({ showTerminalInstances: !settings.showTerminalInstances })}
-                />
-              </section>
-            )}
-
-            {activeSection === 'opencode' && (
-              <section className="space-y-6" aria-labelledby="opencode-settings">
-                <div>
-                  <h3 id="opencode-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
-                    OpenCode
-                  </h3>
-                  <p className="mt-1 text-xs text-fg-subtle">
-                    Configure desktop alerts and session status reporting.
-                  </p>
-                </div>
-
-                <section className="space-y-3" aria-labelledby="opencode-alert-settings">
-                  <div>
-                    <h4 id="opencode-alert-settings" className="text-xs font-medium text-fg">
-                      Alerts
-                    </h4>
-                    <p className="mt-1 text-xs text-fg-subtle">
-                      {platform?.platform === 'darwin' ? 'Request Dock attention' : 'Flash the taskbar'} and play a sound when OpenCode finishes, needs input, or encounters an error while MDE is unfocused.
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={alertSettings.enabled}
-                    data-testid="opencode-alerts-enabled"
-                    disabled={alertLoading}
-                    onClick={() => void setAlertsEnabled()}
-                    className="flex w-full items-center justify-between rounded border border-line bg-panel px-3 py-2 text-left text-xs text-fg-muted hover:bg-hover disabled:pointer-events-none disabled:opacity-50"
-                  >
-                    <span>
-                      <span className="block font-medium text-fg">Enable OpenCode alerts</span>
-                      <span className="mt-0.5 block text-fg-subtle">
-                        {alertSettings.enabled ? 'Alerts are enabled.' : 'Alerts are disabled.'}
-                      </span>
-                    </span>
-                    <span
-                      className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
-                        alertSettings.enabled ? 'bg-accent' : 'bg-line-strong'
-                      }`}
-                    >
-                      <span
-                        className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-                          alertSettings.enabled ? 'translate-x-4' : 'translate-x-0.5'
-                        }`}
-                      />
-                    </span>
-                  </button>
-                  {alertError && <p className="text-xs text-danger">{alertError}</p>}
-                </section>
-
-                <section
-                  className="space-y-3 border-t border-line pt-5"
-                  aria-labelledby="opencode-tui-settings"
-                >
-                  <div>
-                    <h4 id="opencode-tui-settings" className="text-xs font-medium text-fg">
-                      Session status
-                    </h4>
-                    <p className="mt-1 text-xs text-fg-subtle">
-                      Install the status plugin (OpenCode 2 or newer) for this Mac or a WSL distro and control reporting across new sessions.
-                    </p>
-                  </div>
-
-                  {!canManageTui ? (
-                    <p className="rounded border border-line bg-panel px-3 py-2 text-xs text-fg-subtle">
-                      This integration is available on macOS and Windows with WSL 2.
-                    </p>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={tuiSettings.enabled}
-                        data-testid="opencode-tui-enabled"
-                        disabled={tuiLoading || !tuiSettings.currentPluginVersion}
-                        onClick={() => void setTuiEnabled()}
-                        className="flex w-full items-center justify-between rounded border border-line bg-panel px-3 py-2 text-left text-xs text-fg-muted hover:bg-hover disabled:pointer-events-none disabled:opacity-50"
-                      >
-                        <span>
-                          <span className="block font-medium text-fg">Enable status reporting</span>
-                          <span className="mt-0.5 block text-fg-subtle">
-                            {tuiSettings.enabled
-                              ? 'New and restarted terminals will report OpenCode TUI status.'
-                              : 'Status reporting is disabled until you enable it.'}
-                          </span>
-                        </span>
-                        <span
-                          className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
-                            tuiSettings.enabled ? 'bg-accent' : 'bg-line-strong'
-                          }`}
-                        >
-                          <span
-                            className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-                              tuiSettings.enabled ? 'translate-x-4' : 'translate-x-0.5'
-                            }`}
-                          />
-                        </span>
-                      </button>
-
-                      <label className="block text-xs font-medium text-fg-muted">
-                        Instance labels
-                        <Select
-                          value={opencodeTuiInstanceLabelMode}
-                          onValueChange={(value) => {
-                            if (value === 'numbered' || value === 'title') {
-                              void changeTuiInstanceLabelMode(value)
-                            }
-                          }}
-                        >
-                          <SelectTrigger className="mt-1" data-testid="opencode-tui-instance-labels">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="numbered">OpenCode 1, 2, …</SelectItem>
-                            <SelectItem value="title">OpenCode session titles</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <span className="mt-1 block text-[11px] font-normal text-fg-subtle">
-                          Session titles stay in MDE's local runtime status snapshot. Numbered labels are used when a title is unavailable.
-                        </span>
-                      </label>
-
-                      <div className="space-y-2">
-                        {pluginTargets.length === 0 ? (
-                          <p className="text-xs text-fg-subtle">No WSL 2 distros found.</p>
-                        ) : (
-                          pluginTargets.map((target) => {
-                            const key = pluginTargetKey(target)
-                            const state = pluginStates[key]
-                            const busy = tuiBusyDistro === key
-                            const action = state?.status === 'installed' ? 'remove' : 'install'
-                            const actionLabel =
-                              state?.status === 'outdated'
-                                ? 'Replace'
-                                : state?.status === 'installed'
-                                  ? 'Uninstall'
-                                  : state?.status === 'conflict'
-                                    ? 'Unavailable'
-                                    : 'Install'
-                            return (
-                              <div
-                                key={key}
-                                className="flex items-center gap-3 rounded border border-line bg-panel px-3 py-2"
-                              >
-                                <div className="min-w-0 flex-1">
-                                  <div className="truncate text-xs font-medium text-fg">{pluginTargetLabel(target, platform?.platform)}</div>
-                                  <div className="truncate text-[11px] text-fg-subtle">
-                                    {pluginStatusLabel(state)}
-                                  </div>
-                                </div>
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  disabled={busy || state?.status === 'conflict' || !state}
-                                  onClick={() => void changePlugin(target, action)}
-                                >
-                                  {busy ? 'Working…' : actionLabel}
-                                </Button>
-                              </div>
-                            )
-                          })
-                        )}
-                      </div>
-                      <p className="text-[11px] text-fg-subtle">
-                        Current plugin version: v{tuiSettings.currentPluginVersion || '…'}. Restart OpenCode after installing,
-                        replacing, or uninstalling the plugin.
-                      </p>
-                    </>
-                  )}
-                  {tuiError && <p className="text-xs text-danger">{tuiError}</p>}
-                </section>
-              </section>
-            )}
-
-            {activeSection === 'about' && <AboutSettingsPanel />}
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function SessionTabStrip({
-  session,
-  activeTab,
-  onSelect,
-  onAdd,
-  onRenameStart,
-  onRename,
-  onClose
-}: {
-  session: Session
-  activeTab: SessionTab
-  onSelect: (tabId: string) => void
-  onAdd: () => void
-  onRenameStart: () => void
-  onRename: (tabId: string, name: string) => void
-  onClose: (tabId: string) => void
-}): JSX.Element {
-  const tabs = sessionTabs(session)
-  const [renamingTabId, setRenamingTabId] = useState<string | null>(null)
-  const [draftName, setDraftName] = useState('')
-  const renameInputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    if (!renamingTabId) return
-    const frame = window.requestAnimationFrame(() => {
-      renameInputRef.current?.focus()
-      renameInputRef.current?.select()
-    })
-    return () => window.cancelAnimationFrame(frame)
-  }, [renamingTabId])
-
-  const beginRename = (tab: SessionTab): void => {
-    onRenameStart()
-    setRenamingTabId(tab.id)
-    setDraftName(tab.name)
-  }
-
-  const commitRename = (): void => {
-    if (!renamingTabId) return
-    const name = draftName.trim()
-    if (name) onRename(renamingTabId, name)
-    setRenamingTabId(null)
-  }
-
-  return (
-    <div className="flex h-9 shrink-0 items-center gap-1 border-b border-line bg-panel px-2">
+    <div ref={containerRef} className="pointer-events-none absolute" style={style}>
       <div
-        role="tablist"
-        aria-label={`${session.name} terminal tabs`}
-        className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+        role="separator"
+        aria-label={axis === 'column' ? 'Resize terminal columns' : 'Resize terminal rows'}
+        aria-orientation={axis === 'column' ? 'vertical' : 'horizontal'}
+        data-testid={`terminal-resize-${splitId}`}
+        tabIndex={0}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(ratio * 100)}
+        onKeyDown={(event) => {
+          const decrease = axis === 'column' ? 'ArrowLeft' : 'ArrowUp'
+          const increase = axis === 'column' ? 'ArrowRight' : 'ArrowDown'
+          if (event.key !== decrease && event.key !== increase) return
+          event.preventDefault()
+          event.stopPropagation()
+          const bounds = containerRef.current?.getBoundingClientRect()
+          const size = bounds ? axis === 'column' ? bounds.width : bounds.height : 0
+          const target = ratio + (event.key === decrease ? -0.02 : 0.02)
+          onResize(size > 0 ? terminalSplitRatio(target * (size - gap) + gap / 2, size, undefined, gap) : Math.max(0.05, Math.min(0.95, target)))
+        }}
+        className={`group pointer-events-auto absolute z-20 flex touch-none items-center justify-center ${handleClass}`}
+        style={axis === 'column' ? { left: position, top: 0 } : { top: position, left: 0 }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={finishDrag}
+        onPointerCancel={finishDrag}
+        onLostPointerCapture={finishDrag}
       >
-        {tabs.map((tab) => {
-          const selected = tab.id === activeTab.id
-          const renaming = tab.id === renamingTabId
-          return (
-            <div
-              key={tab.id}
-              className={`group flex min-w-[7rem] max-w-[13rem] items-center rounded-t border border-b-0 ${
-                selected ? 'border-line bg-bg text-fg' : 'border-transparent text-fg-subtle hover:bg-hover hover:text-fg'
-              }`}
-            >
-              {renaming ? (
-                <input
-                  ref={renameInputRef}
-                  value={draftName}
-                  onChange={(event) => setDraftName(event.target.value)}
-                  onBlur={commitRename}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') commitRename()
-                    if (event.key === 'Escape') setRenamingTabId(null)
-                    event.stopPropagation()
-                  }}
-                  className="h-7 w-full min-w-0 flex-1 rounded-sm border border-accent bg-bg px-2 text-xs text-fg outline-none"
-                />
-              ) : (
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={selected}
-                  tabIndex={selected ? 0 : -1}
-                  onClick={() => onSelect(tab.id)}
-                  onMouseDown={(event) => {
-                    if (event.detail > 1) event.preventDefault()
-                  }}
-                  onDoubleClick={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    if (!selected) onSelect(tab.id)
-                    beginRename(tab)
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === 'F2') {
-                      event.preventDefault()
-                      beginRename(tab)
-                    }
-                  }}
-                  className="min-w-0 flex-1 truncate px-2 py-1.5 text-left text-xs"
-                  title={`${tab.name} · Double-click or press F2 to rename`}
-                >
-                  {tab.name}
-                </button>
-              )}
-              <button
-                type="button"
-                aria-label={`Close ${tab.name}`}
-                title={tabs.length <= 1 ? 'A session must keep one tab' : `Close ${tab.name}`}
-                disabled={tabs.length <= 1}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  onClose(tab.id)
-                }}
-                className="mr-1 rounded p-1 text-fg-subtle hover:bg-hover hover:text-fg disabled:cursor-not-allowed disabled:opacity-30"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          )
-        })}
+        <span className={`bg-transparent transition-colors group-hover:bg-accent group-focus-visible:bg-accent ${lineClass}`} />
       </div>
-      <Button variant="ghost" size="icon-sm" onClick={onAdd} title="New terminal tab" aria-label="New terminal tab">
-        <Plus className="h-3.5 w-3.5" />
-      </Button>
     </div>
   )
 }
@@ -2075,43 +999,34 @@ export function TerminalView({
   session: selectedSession,
   activeTab,
   terminalLayout,
-  onSelectTab,
-  onAddTab,
-  onTabRenameStart,
-  onRenameTab,
-  onCloseTab,
-  onLayoutChange,
+  embedded = false,
+  onSelectTab = noop,
+  onAddTab = noop,
+  onTabRenameStart = noop,
+  onRenameTab = noop,
+  onCloseTab = noop,
+  onSplitPane,
   onLayoutResize,
   onPaneOrderChange,
-  onReduceLayout,
-  onAddPane,
   onClosePane,
   onPaneFocus,
-  onPaneTitleChange,
-  onLinkTask
+  onPaneTitleChange
 }: TerminalViewProps): JSX.Element {
-  const platform = useWorkspace((state) => state.platform)
-  const wslAvailable = useWorkspace((state) => state.wslAvailable)
-  const opencodeTuiInstances = useWorkspace(
-    (state) => state.opencodeTuiInstances[selectedSession.id]
-  )
-  const terminalDirectories = useWorkspace((state) => state.terminalDirectories)
-  const [pendingReduction, setPendingReduction] = useState<{
-    layout: TerminalLayout
-    paneIds: string[]
-  } | null>(null)
+  const [splitModifierHeld, setSplitModifierHeld] = useState(false)
   const [reorderModifierHeld, setReorderModifierHeld] = useState(false)
   const [hoveredPaneId, setHoveredPaneId] = useState<string | null>(null)
   const [reorderSourceId, setReorderSourceId] = useState<string | null>(null)
   const [reorderTargetId, setReorderTargetId] = useState<string | null>(null)
   const [fullscreenTerminalId, setFullscreenTerminalId] = useState<string | null>(null)
-  const [terminalLauncherOpen, setTerminalLauncherOpen] = useState(false)
-  const [terminalLauncherSourceId, setTerminalLauncherSourceId] = useState<string | null>(null)
-  const [openCodeSessionsOpen, setOpenCodeSessionsOpen] = useState(false)
-  const [openCodeSessionsSourceId, setOpenCodeSessionsSourceId] = useState<string | null>(null)
-  const openCodeSessionsSourceStatus = useWorkspace((state) => state.statuses[openCodeSessionsSourceId ?? ''])
   const [terminalSettings, setTerminalSettings] = useState<TerminalSettings>(() => getTerminalSettings())
+  const rootRef = useRef<HTMLDivElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
+  /** Whether a key press is this view's to act on: any, in the Sessions view; only ones typed inside it, when embedded. */
+  const handlesKey = useCallback(
+    (event: KeyboardEvent): boolean =>
+      !embedded || (event.target instanceof Node && rootRef.current?.contains(event.target) === true),
+    [embedded]
+  )
   const reorderDragRef = useRef<TerminalReorderDragState | null>(null)
   const focusedTerminalIdRef = useRef<string | null>(null)
   const [focusedTerminalId, setFocusedTerminalId] = useState<string | null>(null)
@@ -2133,83 +1048,11 @@ export function TerminalView({
   }, [])
 
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      const target = event.target
-      if (target instanceof Element && target.closest('[role="dialog"]')) return
-      const openHistory = isOpenCodeSessionsShortcut(event)
-      if (!openHistory && !isTerminalLauncherShortcut(event)) return
-      if (!supportsAgentIntegration(platform?.platform, selectedSession)) return
-      if (openHistory && platform?.isWindows && !wslAvailable) return
-      if (!(target instanceof Element) || !target.closest('.terminal-host')) return
-
-      const sourceTerminalId = focusedTerminalIdRef.current
-      if (!sourceTerminalId || !terminalLayout.panes.some((pane) => pane.terminalId === sourceTerminalId)) return
-
-      event.preventDefault()
-      event.stopPropagation()
-      hidePaneOverlay()
-      if (openHistory) {
-        setOpenCodeSessionsSourceId(sourceTerminalId)
-        setOpenCodeSessionsOpen(true)
-      } else {
-        setTerminalLauncherSourceId(sourceTerminalId)
-        setTerminalLauncherOpen(true)
-      }
-    }
-
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [selectedSession.kind, terminalLayout.panes, platform?.platform, platform?.isWindows, wslAvailable, selectedSession.distro, hidePaneOverlay])
-
-  useEffect(() => {
     focusedTerminalIdRef.current = null
     setFocusedTerminalId(null)
+    setSplitModifierHeld(false)
     setFullscreenTerminalId(null)
-    setTerminalLauncherOpen(false)
-    setTerminalLauncherSourceId(null)
-    setOpenCodeSessionsOpen(false)
-    setOpenCodeSessionsSourceId(null)
   }, [activeTab.id, selectedSession.id])
-
-  // Replaces the picker's source pane in place: the process restarts there and no pane is added.
-  const replaceOpenCodeSessionProcess = async (launch: OpenCodeResumeLaunch): Promise<void> => {
-    const terminalId = launch.sourceTerminalId
-    const terminal = getSession(terminalId)
-    const size = (terminal && fitSession(terminal)) || FALLBACK_SIZE
-    try {
-      const status = await window.api.pty.restart({
-        terminalId,
-        sessionId: selectedSession.id,
-        size,
-        palette: getTerminalPalette(terminal?.themeId ?? getTerminalSettings().theme),
-        launch
-      })
-      if (status === 'none') throw new Error('This terminal is no longer available.')
-      // The old process's output all arrives before this reply, so clearing here cannot drop new output.
-      getSession(terminalId)?.term.reset()
-      useWorkspace.getState().unlinkTerminalTask(terminalId)
-      useWorkspace.getState().clearExit(terminalId)
-      useWorkspace.getState().setStatus(terminalId, status)
-    } catch (error) {
-      // A failure after the old process was stopped leaves the pane without one; reflect that.
-      const statuses = await window.api.pty.statuses().catch(() => null)
-      if (statuses) useWorkspace.getState().setStatus(terminalId, statuses[terminalId] ?? 'none')
-      throw error
-    }
-  }
-
-  const requestLayout = useCallback((layout: TerminalLayout): void => {
-    const targetCount = terminalCount(layout)
-    if (targetCount >= terminalLayout.panes.length) {
-      setFullscreenTerminalId(null)
-      onLayoutChange(layout)
-      return
-    }
-    setPendingReduction({
-      layout,
-      paneIds: panesToTrim(terminalLayout.panes, targetCount)
-    })
-  }, [onLayoutChange, terminalLayout.panes.length])
 
   const requestClosePane = (terminalId: string): void => {
     if (!isTerminalPaneClosable(terminalLayout.panes, terminalId)) return
@@ -2265,7 +1108,7 @@ export function TerminalView({
     const target = event.target
     if (
       target instanceof Element &&
-      target.closest('button, input, textarea, select, a, [role="separator"]')
+      target.closest('button, input, textarea, select, a, [role="separator"], [role="menu"]')
     ) {
       return
     }
@@ -2345,6 +1188,36 @@ export function TerminalView({
       )
     }
   }
+
+  useEffect(() => {
+    const update = (event: KeyboardEvent): void => {
+      const target = event.target
+      const editing = target instanceof Element && target.closest('input, textarea, [contenteditable="true"]') &&
+        !target.closest('.terminal-host')
+      setSplitModifierHeld(event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey &&
+        handlesKey(event) && !editing && !document.querySelector('[role="dialog"], [role="alertdialog"]'))
+    }
+    const clear = (): void => setSplitModifierHeld(false)
+    const onFocus = (event: FocusEvent): void => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      if ((embedded && !rootRef.current?.contains(target)) ||
+        (target.closest('input, textarea, [contenteditable="true"], [role="dialog"], [role="alertdialog"]') &&
+          !target.closest('.terminal-host'))) clear()
+    }
+    document.addEventListener('focusin', onFocus)
+    window.addEventListener('keydown', update, true)
+    window.addEventListener('keyup', update, true)
+    window.addEventListener('blur', clear)
+    document.addEventListener('visibilitychange', clear)
+    return () => {
+      window.removeEventListener('keydown', update, true)
+      window.removeEventListener('keyup', update, true)
+      window.removeEventListener('blur', clear)
+      document.removeEventListener('visibilitychange', clear)
+      document.removeEventListener('focusin', onFocus)
+    }
+  }, [handlesKey, embedded])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -2433,32 +1306,8 @@ export function TerminalView({
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       const target = event.target
-      if (target instanceof HTMLElement && target.closest('[role="dialog"]')) return
-
-      const layout = getTerminalLayoutShortcut({
-        type: event.type,
-        key: event.key,
-        code: event.code,
-        control: event.ctrlKey,
-        meta: event.metaKey,
-        alt: event.altKey,
-        shift: event.shiftKey
-      })
-      if (!layout) return
-
-      event.preventDefault()
-      event.stopPropagation()
-      requestLayout(layout)
-    }
-
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [requestLayout])
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      const target = event.target
       const inDialog = target instanceof Element && target.closest('[role="dialog"]') !== null
+      if (!handlesKey(event)) return
       if (!shouldExitTerminalFullscreen({
         key: event.key,
         escapeExitsFullscreen: terminalSettings.escapeExitsFullscreen,
@@ -2475,12 +1324,13 @@ export function TerminalView({
 
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [fullscreenTerminalId, terminalSettings.escapeExitsFullscreen])
+  }, [fullscreenTerminalId, terminalSettings.escapeExitsFullscreen, handlesKey])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       const target = event.target
       if (target instanceof Element && target.closest('[role="dialog"]')) return
+      if (!handlesKey(event)) return
 
       if (!isTerminalFullscreenShortcut({
         type: event.type,
@@ -2509,12 +1359,13 @@ export function TerminalView({
 
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [terminalLayout.panes])
+  }, [terminalLayout.panes, handlesKey])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       const target = event.target
       if (target instanceof Element && target.closest('[role="dialog"]')) return
+      if (!handlesKey(event)) return
 
       const index = getTerminalPaneSwitchIndex({
         type: event.type,
@@ -2535,7 +1386,7 @@ export function TerminalView({
 
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [fullscreenTerminalId, terminalLayout.panes])
+  }, [fullscreenTerminalId, terminalLayout.panes, handlesKey])
 
   useEffect(() => {
     if (
@@ -2550,53 +1401,31 @@ export function TerminalView({
     setFullscreenTerminalId((current) => current === terminalId ? null : terminalId)
   }
 
-  const confirmReduceLayout = (): void => {
-    if (!pendingReduction) return
-    setFullscreenTerminalId(null)
-    onReduceLayout(pendingReduction.layout, pendingReduction.paneIds)
-    setPendingReduction(null)
-  }
-
-  const location =
-    selectedSession.kind === 'wsl'
-      ? `${selectedSession.distro ?? 'WSL'} · ${selectedSession.path}`
-      : selectedSession.path
   const renderedPanes = terminalLayout.panes
   const fullscreenPane = terminalFullscreenPane(renderedPanes, fullscreenTerminalId)
   const isFullscreen = fullscreenPane !== null
-  const visiblePanes = fullscreenPane ? [fullscreenPane] : renderedPanes
-  const gridTemplates = isFullscreen
-    ? { columns: 'minmax(0, 1fr)', rows: 'minmax(0, 1fr)' }
-    : terminalGridTemplates(terminalLayout.layout, terminalLayout.sizes)
-  const rowGroups = isFullscreen ? null : terminalRowGroups(terminalLayout.layout)
-  const resizeHandles = isFullscreen ? [] : terminalResizeHandles(terminalLayout.layout)
+  const cards = terminalSettings.terminalCards
+  const gap = cards ? TERMINAL_CARD_GAP_PX : TERMINAL_RESIZE_GAP_PX
+  const geometry = terminalLayoutGeometry(terminalLayout.tree, gap)
 
   const renderPane = (pane: TerminalPaneState, index: number): JSX.Element => (
     <div
       key={pane.terminalId}
       data-terminal-pane-slot={index}
-      className={`h-full min-h-0 min-w-0 ${isFullscreen ? '' : paneClass(terminalLayout.layout, index)}`}
+      className="absolute min-h-0 min-w-0"
+      style={isFullscreen ? { inset: 0 } : geometry.panes[index]?.style}
       onPointerDownCapture={(event) => beginReorder(event, pane.terminalId)}
     >
       <TerminalPane
         session={selectedSession}
         pane={pane}
         terminalLayout={terminalLayout}
-        openCodeInstance={opencodeTuiInstances?.find(
-          (instance) => instance.terminalId === pane.terminalId
-        )}
         onFocus={() => {
           focusedTerminalIdRef.current = pane.terminalId
           setFocusedTerminalId(pane.terminalId)
           onPaneFocus(pane.terminalId)
         }}
         onTitleChange={(title) => onPaneTitleChange(pane.terminalId, title)}
-        onLinkTask={() => onLinkTask(pane.terminalId)}
-        onOpenCodeSessions={() => {
-          hidePaneOverlay()
-          setOpenCodeSessionsSourceId(pane.terminalId)
-          setOpenCodeSessionsOpen(true)
-        }}
         isFullscreen={isFullscreen}
         onToggleFullscreen={() => toggleFullscreen(pane.terminalId)}
         reorderState={
@@ -2612,177 +1441,63 @@ export function TerminalView({
         paneOverlayNumber={isFullscreen ? null : index + 1}
         paneOverlayActive={pane.terminalId === focusedTerminalId}
         onClose={() => requestClosePane(pane.terminalId)}
+        splitControlsVisible={splitModifierHeld && !reorderSourceId && terminalLayout.panes.length < MAX_TERMINAL_COUNT}
+        cards={cards}
+        onSplit={(side) => {
+          setFullscreenTerminalId(null)
+          onSplitPane(pane.terminalId, side)
+        }}
       />
     </div>
   )
 
   return (
-    <div className="relative z-0 isolate flex h-full min-w-0 flex-col bg-bg">
-      <SessionTabStrip
-        session={selectedSession}
-        activeTab={activeTab}
-        onSelect={onSelectTab}
-        onAdd={onAddTab}
-        onRenameStart={onTabRenameStart}
-        onRename={onRenameTab}
-        onClose={onCloseTab}
-      />
-      <header className="flex h-10 shrink-0 items-center gap-3 border-b border-line bg-panel/50 px-3">
-        <div className="flex min-w-0 flex-1 items-baseline gap-2">
-          <span
-            className="min-w-0 max-w-[40%] truncate text-[13px] font-semibold leading-5 text-fg"
-            title={selectedSession.name}
-          >
-            {selectedSession.name}
-          </span>
-          <span aria-hidden="true" className="h-3 w-px shrink-0 self-center bg-line-strong" />
-          <span
-            className="min-w-0 flex-1 truncate font-mono text-xs leading-5 text-fg-muted"
-            title={location}
-          >
-            {location}
-          </span>
-        </div>
-
-        <div
-          aria-label="Terminal layout"
-          role="group"
-          className="flex shrink-0 items-center gap-0.5 rounded border border-line bg-panel p-0.5"
-        >
-          {TERMINAL_LAYOUTS.map((candidate) => (
-            <button
-              key={candidate.value}
-              type="button"
-              aria-label={candidate.label}
-              aria-pressed={terminalLayout.layout === candidate.value}
-              data-testid={`terminal-layout-${candidate.value}`}
-              title={candidate.shortcut === undefined
-                ? candidate.label
-                : `${candidate.label} (Ctrl+${candidate.shortcut})`}
-              onClick={() => requestLayout(candidate.value)}
-              className={
-                terminalLayout.layout === candidate.value
-                  ? 'rounded-sm bg-active px-1.5 py-1 text-fg'
-                  : 'rounded-sm px-1.5 py-1 text-fg-subtle hover:bg-hover hover:text-fg'
-              }
-            >
-              <LayoutGlyph layout={candidate.value} />
-            </button>
-          ))}
-        </div>
-        <SettingsControl terminalIds={terminalLayout.panes.map((pane) => pane.terminalId)} />
-
-      </header>
-
+    <div ref={rootRef} className="relative z-0 isolate flex h-full min-w-0 flex-col bg-bg">
+      {!embedded && (
+        <SessionTabStrip
+          session={selectedSession}
+          activeTab={activeTab}
+          onSelect={onSelectTab}
+          onAdd={onAddTab}
+          onRenameStart={onTabRenameStart}
+          onRename={onRenameTab}
+          onClose={onCloseTab}
+        />
+      )}
       <div
-          ref={gridRef}
-          className={`relative grid h-full min-h-0 flex-1 gap-px bg-line ${layoutClass(terminalLayout.layout)}`}
-          style={{
-            gridTemplateColumns: gridTemplates.columns,
-            gridTemplateRows: gridTemplates.rows
-          }}
-          onPointerMove={moveReorder}
-          onPointerUp={finishReorder}
-          onPointerCancel={cancelReorder}
-          onLostPointerCapture={cancelReorder}
-          onPointerLeave={() => {
-            if (!reorderDragRef.current) setHoveredPaneId(null)
-          }}
-        >
-          {rowGroups
-            ? rowGroups.map((paneCount, groupIndex) => {
-                const start = rowGroups.slice(0, groupIndex).reduce((sum, count) => sum + count, 0)
-                return (
-                  <div
-                    key={groupIndex}
-                    className="grid min-h-0 min-w-0 gap-px"
-                    style={{
-                      gridTemplateColumns: terminalRowColumns(paneCount, terminalLayout.sizes),
-                      gridTemplateRows: 'minmax(0, 1fr)'
-                    }}
-                  >
-                    {visiblePanes
-                      .slice(start, start + paneCount)
-                      .map((pane, index) => renderPane(pane, start + index))}
-                  </div>
-                )
-              })
-            : visiblePanes.map(renderPane)}
-          {resizeHandles.map(({ axis, scope, columnIndex, rowIndex }) => (
-            <TerminalResizeHandle
-              key={`${axis}-${scope}-${columnIndex ?? rowIndex ?? 0}`}
-              layout={terminalLayout.layout}
-              axis={axis}
-              scope={scope}
-              columnIndex={columnIndex}
-              rowIndex={rowIndex}
-              ratio={axis === 'column'
-                ? terminalColumnRatios(terminalLayout.sizes)[columnIndex ?? 0]
-                : isThreeRowLayout(terminalLayout.layout)
-                  ? terminalRowRatios(terminalLayout.sizes)[rowIndex ?? 0]
-                  : terminalLayout.sizes.rowRatio}
-              sizes={terminalLayout.sizes}
-              containerRef={gridRef}
-              onResize={(ratio) => onLayoutResize(axis, ratio, axis === 'column' ? columnIndex : rowIndex)}
-            />
-          ))}
-      </div>
-
-      <OpenCodeSessionsDialog
-        open={openCodeSessionsOpen}
-        onOpenChange={setOpenCodeSessionsOpen}
-        session={selectedSession}
-        sourceTerminalId={openCodeSessionsSourceId ?? ''}
-        sourceRunning={openCodeSessionsSourceStatus === 'running'}
-        currentDirectory={openCodeSessionsSourceId ? terminalDirectories[openCodeSessionsSourceId] : undefined}
-        paneCount={terminalLayout.panes.length}
-        onRestoreFocus={() => {
-          if (openCodeSessionsSourceId) getSession(openCodeSessionsSourceId)?.term.focus()
+        ref={gridRef}
+        data-testid="terminal-grid"
+        data-cards={cards ? 'true' : 'false'}
+        className={cn('relative h-full min-h-0 flex-1', cards ? 'bg-panel' : 'bg-line')}
+        onPointerMoveCapture={(event) => {
+          setSplitModifierHeld(event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey &&
+            !document.querySelector('[role="dialog"], [role="alertdialog"]'))
         }}
-        onSelect={(launch) => {
-          setFullscreenTerminalId(null)
-          onAddPane(launch.sourceTerminalId, launch)
-          setOpenCodeSessionsOpen(false)
-        }}
-        onReplace={replaceOpenCodeSessionProcess}
-      />
-
-      <TerminalLauncher
-        open={terminalLauncherOpen}
-        onOpenChange={(open) => {
-          setTerminalLauncherOpen(open)
-          if (!open) setTerminalLauncherSourceId(null)
-        }}
-        session={selectedSession}
-        sourceTerminalId={terminalLauncherSourceId ?? ''}
-        directory={terminalLauncherSourceId
-          ? terminalDirectories[terminalLauncherSourceId]
-          : undefined}
-        paneCount={terminalLayout.panes.length}
-        onSelect={(launch) => {
-          onAddPane(launch.sourceTerminalId, launch)
-          setTerminalLauncherOpen(false)
-          setTerminalLauncherSourceId(null)
-        }}
-      />
-
-      <AlertDialog
-        open={pendingReduction !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingReduction(null)
+        onPointerMove={moveReorder}
+        onPointerUp={finishReorder}
+        onPointerCancel={cancelReorder}
+        onLostPointerCapture={cancelReorder}
+        onPointerLeave={() => {
+          if (!reorderDragRef.current) setHoveredPaneId(null)
         }}
       >
-        <AlertDialogContent>
-          <AlertDialogTitle>Close extra terminals?</AlertDialogTitle>
-          <AlertDialogDescription>
-            {`Changing to ${pendingReduction ? TERMINAL_LAYOUTS.find((candidate) => candidate.value === pendingReduction.layout)?.label.toLowerCase() : 'a smaller layout'} will close the extra terminals.`}
-          </AlertDialogDescription>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep current layout</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmReduceLayout}>Close terminals</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        {/* Panes are positioned against this box, so the card layout's margin around them is its inset. */}
+        <div className="absolute" style={{ inset: cards ? TERMINAL_CARD_GAP_PX : 0 }}>
+          {(fullscreenPane ? [fullscreenPane] : renderedPanes).map((pane) => renderPane(pane, renderedPanes.indexOf(pane)))}
+          {!isFullscreen && geometry.splits.map(({ node, style }) => (
+            <TerminalResizeHandle
+              key={node.id}
+              splitId={node.id}
+              axis={node.axis}
+              ratio={node.ratio}
+              gap={gap}
+              cards={cards}
+              style={style}
+              onResize={(ratio) => onLayoutResize(node.id, ratio)}
+            />
+          ))}
+        </div>
+      </div>
     </div>
   )
 }

@@ -1,21 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createGitCommandRunner,
+  createGitMutationRunner,
   isBinaryGitDiff,
+  parseGitRefs,
+  readGitRefs,
   parseGitAheadCount,
   parseGitNumstat,
   parseGitStatus,
-  parseGitLog,
-  readGitInfo,
-  readGitInfoWithRunner,
-  readGitStatus,
   readGitTerminalInfo,
   readGitTerminalInfoWithRunner,
   readGitStatusWithRunner,
   readGitDiffWithRunner,
   type GitCommandResult
 } from '../src/main/git'
-import { formatGitTimestamp, parseGitDiff, shortGitHash } from '../src/renderer/lib/git'
 
 const mocks = vi.hoisted(() => ({
   execFile: vi.fn(),
@@ -23,6 +21,8 @@ const mocks = vi.hoisted(() => ({
   runWslCommand: vi.fn()
 }))
 
+// Filter discovery is tested against real Git and in git-filters.test.ts.
+vi.mock('../src/main/git-filters', () => ({ gitFilterSafetyArgs: async () => [] }))
 vi.mock('../src/main/exec-host', () => ({ execFile: mocks.execFile }))
 vi.mock('../src/main/git-executable', () => ({
   resolveWindowsGitExecutable: mocks.resolveWindowsGitExecutable
@@ -38,7 +38,7 @@ function result(stdout = '', stderr = '', code = 0): GitCommandResult {
  * able to change without a deliberate test update.
  */
 const safetyArgs = [
-  '--attr-source=4b825dc642cb6eb9a060e54bf8d69288fbee4904',
+  '--no-pager',
   '--no-optional-locks',
   '-c',
   'core.fsmonitor=false',
@@ -51,16 +51,36 @@ const safetyArgs = [
   '-c',
   'credential.helper=',
   '-c',
-  'protocol.ext.allow=never'
+  'protocol.allow=never',
+  '-c',
+  'protocol.ext.allow=never',
+  '-c',
+  'submodule.recurse=false',
+  '-c',
+  'diff.ignoreSubmodules=all',
+  '-c',
+  'diff.submodule=short',
+  '-c',
+  'status.submoduleSummary=false',
+  '-c',
+  'maintenance.auto=false',
+  '-c',
+  'gc.auto=0',
 ]
 
 function hardened(...args: string[]): string[] {
   return [...safetyArgs, ...args]
 }
 
+const wslGit = (...args: string[]): string[] => [
+  '/usr/bin/env', '-u', 'GIT_CONFIG',
+  'GIT_OPTIONAL_LOCKS=0', 'GIT_TERMINAL_PROMPT=0', 'GIT_ASKPASS=',
+  'GIT_NO_LAZY_FETCH=1', 'GIT_ALLOW_PROTOCOL=', 'GIT_PROTOCOL_FROM_USER=0', 'LC_ALL=C',
+  'git', ...args,
+]
+
 const nativeSession = {
   id: 'native-1',
-  projectId: 'project-1',
   name: 'Native app',
   kind: 'native' as const,
   path: '/workspace/native',
@@ -91,14 +111,12 @@ describe('Git process concurrency', () => {
   function holdProcesses() {
     const held: Array<() => void> = []
     const order: string[] = []
-    const cwds: string[] = []
     const state = { running: 0, peak: 0 }
     mocks.execFile.mockImplementation(
-      (_file: string, args: string[], options: { cwd?: string }, callback: (error: null, stdout: string, stderr: string) => void) => {
+      (_file: string, args: string[], _options: { cwd?: string }, callback: (error: null, stdout: string, stderr: string) => void) => {
         state.running += 1
         state.peak = Math.max(state.peak, state.running)
         order.push(args.at(-1) ?? '')
-        cwds.push(options.cwd ?? '')
         held.push(() => {
           state.running -= 1
           callback(null, 'true\n', '')
@@ -113,7 +131,7 @@ describe('Git process concurrency', () => {
         await new Promise((resolve) => setTimeout(resolve, 0))
       }
     }
-    return { state, order, cwds, releaseAll }
+    return { state, order, releaseAll }
   }
 
   it('starts at most three Git processes at once, however many sessions refresh together', async () => {
@@ -136,42 +154,18 @@ describe('Git process concurrency', () => {
     const interactive = createGitCommandRunner(nativeSession, 'linux', nativeSession.path, 'interactive')
 
     const polls = ['poll-1', 'poll-2', 'poll-3', 'poll-4', 'poll-5'].map((name) => background([name]))
-    const dialog = interactive(['dialog'])
+    const diff = interactive(['diff'])
     await new Promise((resolve) => setTimeout(resolve, 0))
     await processes.releaseAll()
-    await Promise.all([...polls, dialog])
+    await Promise.all([...polls, diff])
 
-    // Three polls took the free slots; the dialog's command was then next, ahead of poll-4 and poll-5.
-    expect(processes.order.slice(0, 4)).toEqual(['poll-1', 'poll-2', 'poll-3', 'dialog'])
-  })
-
-  it('treats the polled readers as background work and the dialog readers as interactive', async () => {
-    const processes = holdProcesses()
-    const blockers = [1, 2, 3].map((n) =>
-      createGitCommandRunner({ ...nativeSession, path: `/workspace/blocker-${n}` }, 'linux', `/workspace/blocker-${n}`)(['blocker'])
-    )
-    await new Promise((resolve) => setTimeout(resolve, 0))
-
-    // Queued behind the blockers in this order: two pollers, then the dialog's reader.
-    const queued = [
-      readGitStatus({ ...nativeSession, path: '/workspace/status-poll' }),
-      readGitTerminalInfo(nativeSession, '/workspace/terminal-poll'),
-      readGitInfo({ ...nativeSession, path: '/workspace/dialog' })
-    ]
-    queued.forEach((promise) => promise.catch(() => undefined))
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    await processes.releaseAll()
-    await Promise.all(blockers)
-
-    const afterBlockers = processes.cwds.slice(3)
-    expect(afterBlockers[0]).toBe('/workspace/dialog')
-    expect(afterBlockers.slice(1, 3).sort()).toEqual(['/workspace/status-poll', '/workspace/terminal-poll'])
-    expect(processes.state.peak).toBe(3)
+    // Three polls took the free slots; the requested diff was then next, ahead of poll-4 and poll-5.
+    expect(processes.order.slice(0, 4)).toEqual(['poll-1', 'poll-2', 'poll-3', 'diff'])
   })
 })
 
-describe('Git history queries', () => {
-  it('uses the native session path as the Git cwd', async () => {
+describe('Git command transport and status parsing', () => {
+  it('uses the explicit native folder as the Git cwd', async () => {
     const calls: Array<{ file: string; args: string[]; cwd?: string }> = []
     mocks.execFile.mockImplementation(
       (file: string, args: string[], options: { cwd?: string }, callback: (error: null, stdout: string, stderr: string) => void) => {
@@ -185,9 +179,9 @@ describe('Git history queries', () => {
       }
     )
 
-    await readGitInfo(nativeSession)
+    await readGitTerminalInfo(nativeSession, nativeSession.path)
 
-    expect(calls).toHaveLength(4)
+    expect(calls).toHaveLength(6)
     expect(calls.every((call) => call.file === 'git' && call.cwd === nativeSession.path)).toBe(true)
   })
 
@@ -232,7 +226,7 @@ describe('Git history queries', () => {
     expect(mocks.execFile).not.toHaveBeenCalled()
   })
 
-  it('uses the WSL distro and session path for Git commands', async () => {
+  it('uses the WSL distro and explicit folder for Git commands', async () => {
     const calls: Array<{ distro: string; command: readonly string[]; cwd?: string }> = []
     mocks.runWslCommand.mockImplementation(async (
       distro: string,
@@ -248,12 +242,12 @@ describe('Git history queries', () => {
       return { stdout, stderr: '', code: 0 }
     })
 
-    await readGitInfoWithRunner(createGitCommandRunner(wslSession, 'win32'))
+    await readGitStatusWithRunner(createGitCommandRunner(wslSession, 'win32'))
 
-    expect(calls).toHaveLength(4)
+    expect(calls).toHaveLength(5)
     expect(calls.every((call) => call.distro === 'Ubuntu-24.04')).toBe(true)
     expect(calls.every((call) => call.cwd === '/home/me/src/app')).toBe(true)
-    expect(calls.every((call) => call.command[0] === 'git')).toBe(true)
+    expect(calls.every((call) => call.command[0] === '/usr/bin/env' && call.command.includes('git'))).toBe(true)
   })
 
   it('preserves Git separators and hostile filenames as direct arguments', async () => {
@@ -265,78 +259,9 @@ describe('Git history queries', () => {
 
     expect(mocks.runWslCommand).toHaveBeenCalledWith(
       'Ubuntu-24.04',
-      ['git', ...hardened('--no-pager', 'diff', 'HEAD', '--', filename)],
+      wslGit(...hardened('--no-pager', 'diff', 'HEAD', '--', filename)),
       { cwd: '/home/me/src/app' }
     )
-  })
-
-  it('reads the branch and newest commits through one runner', async () => {
-    const calls: string[][] = []
-    const run = async (args: string[]): Promise<GitCommandResult> => {
-      calls.push(args)
-      if (args.includes('rev-parse')) return result('true\n')
-      if (args.includes('branch')) return result('main\n')
-      if (args.includes('status')) return result('')
-      return result(
-        '0123456789abcdef\u0000First commit\u0000Max Mustermann\u00002026-08-19T10:00:00+02:00\u0000'
-      )
-    }
-
-    await expect(readGitInfoWithRunner(run)).resolves.toEqual({
-      repository: true,
-      branch: 'main',
-      commits: [
-        {
-          hash: '0123456789abcdef',
-          message: 'First commit',
-          author: 'Max Mustermann',
-          timestamp: '2026-08-19T10:00:00+02:00'
-        }
-      ],
-      changes: []
-    })
-    expect(calls).toContainEqual(['--no-pager', 'rev-parse', '--is-inside-work-tree'])
-    expect(calls).toContainEqual(['--no-pager', 'branch', '--show-current'])
-    expect(calls).toContainEqual([
-      '--no-pager',
-      'log',
-      '-z',
-      '--max-count',
-      '50',
-      '--format=%H%x00%s%x00%an%x00%cI'
-    ])
-  })
-
-  it('returns an inline non-repository result for Git’s repository error', async () => {
-    const run = async (): Promise<GitCommandResult> =>
-      result('', 'fatal: not a git repository (or any of the parent directories): .git', 128)
-
-    await expect(readGitInfoWithRunner(run)).resolves.toEqual({
-      repository: false,
-      branch: null,
-      commits: [],
-      changes: []
-    })
-  })
-
-  it('propagates other Git failures', async () => {
-    const run = async (): Promise<GitCommandResult> => result('', 'fatal: permission denied', 128)
-
-    await expect(readGitInfoWithRunner(run)).rejects.toThrow('Could not read Git repository.')
-  })
-
-  it('parses empty and NUL-delimited histories', () => {
-    expect(parseGitLog('')).toEqual([])
-    expect(
-      parseGitLog('abc123\u0000Message with a tab\tinside\u0000Ada Lovelace\u00002026-08-19T10:00:00+02:00\u0000')
-    ).toEqual([
-      {
-        hash: 'abc123',
-        message: 'Message with a tab\tinside',
-        author: 'Ada Lovelace',
-        timestamp: '2026-08-19T10:00:00+02:00'
-      }
-    ])
   })
 
   it('parses ahead counts and ignores missing upstream headers', () => {
@@ -369,36 +294,26 @@ describe('Git history queries', () => {
         path: 'src/changed.ts',
         oldPath: null,
         status: 'modified',
-        staged: true,
-        unstaged: false
       },
       {
         path: 'src/removed.ts',
         oldPath: null,
         status: 'deleted',
-        staged: false,
-        unstaged: true
       },
       {
         path: 'src/new name.ts',
         oldPath: 'old name.ts',
         status: 'renamed',
-        staged: true,
-        unstaged: false
       },
       {
         path: 'new file.ts',
         oldPath: null,
         status: 'untracked',
-        staged: false,
-        unstaged: true
       },
       {
         path: 'conflict.ts',
         oldPath: null,
         status: 'unmerged',
-        staged: true,
-        unstaged: true
       }
     ])
   })
@@ -410,20 +325,21 @@ describe('Git status summaries', () => {
     const run = async (args: string[]): Promise<GitCommandResult> => {
       calls.push(args)
       if (args.includes('--is-inside-work-tree')) return result('true\n')
-      if (args.includes('branch')) return result('feature/sidebar\n')
+      if (args.includes('branch')) return result('feature/terminal\n')
       if (args.includes('--verify')) return result('0123456\n')
       if (args.includes('status')) {
-        return result('# branch.head feature/sidebar\u0000# branch.upstream origin/feature/sidebar\u0000# branch.ab +2 -1\u0000')
+        return result('# branch.head feature/terminal\u0000# branch.upstream origin/feature/terminal\u0000# branch.ab +2 -1\u0000')
       }
       return result('12\t3\tsrc/changed.ts\u0000-\t-\timage.png\u0000')
     }
 
     await expect(readGitStatusWithRunner(run)).resolves.toEqual({
       repository: true,
-      branch: 'feature/sidebar',
+      branch: 'feature/terminal',
       additions: 12,
       deletions: 3,
-      commitsAhead: 2
+      commitsAhead: 2,
+      changedFiles: 0,
     })
     expect(calls).toContainEqual([
       '--no-pager',
@@ -431,7 +347,7 @@ describe('Git status summaries', () => {
       '--porcelain=v2',
       '--branch',
       '-z',
-      '--untracked-files=no'
+      '--untracked-files=normal'
     ])
     expect(calls).toContainEqual([
       '--no-pager',
@@ -463,7 +379,8 @@ describe('Git status summaries', () => {
       branch: 'main',
       additions: 5,
       deletions: 0,
-      commitsAhead: null
+      commitsAhead: null,
+      changedFiles: 0,
     })
     expect(calls.at(-1)).toContain('4b825dc642cb6eb9a060e54bf8d69288fbee4904')
   })
@@ -477,7 +394,8 @@ describe('Git status summaries', () => {
       branch: null,
       additions: 0,
       deletions: 0,
-      commitsAhead: null
+      commitsAhead: null,
+      changedFiles: 0,
     })
   })
 })
@@ -488,7 +406,7 @@ describe('terminal Git identity queries', () => {
     mocks.execFile.mockImplementation(
       (_file: string, args: string[], options: { cwd?: string }, callback: (error: null, stdout: string, stderr: string) => void) => {
         calls.push({ args, cwd: options.cwd })
-        const stdout = args.includes('--is-inside-work-tree')
+        const stdout = args.includes('status') || args.includes('diff') ? '' : args.includes('--is-inside-work-tree')
           ? 'true\n'
           : args.includes('branch')
             ? 'feature/native\n'
@@ -500,9 +418,11 @@ describe('terminal Git identity queries', () => {
     await expect(readGitTerminalInfo(nativeSession, '/workspace/other-repo')).resolves.toEqual({
       repository: true,
       branch: 'feature/native',
-      worktree: '/workspace/other-repo'
+      worktree: '/workspace/other-repo',
+      directory: '/workspace/other-repo',
+      additions: 0, deletions: 0, commitsAhead: null, changedFiles: 0
     })
-    expect(calls).toHaveLength(3)
+    expect(calls).toHaveLength(6)
     expect(calls.every((call) => call.cwd === '/workspace/other-repo')).toBe(true)
   })
 
@@ -519,15 +439,17 @@ describe('terminal Git identity queries', () => {
     await expect(readGitTerminalInfoWithRunner(run)).resolves.toEqual({
       repository: true,
       branch: 'feature/terminal',
-      worktree: '/workspace/other-repo'
+      worktree: '/workspace/other-repo',
+      additions: 0, deletions: 0, commitsAhead: null, changedFiles: 0
     })
-    expect(calls).toContainEqual(['--no-pager', 'branch', '--show-current'])
+    expect(calls).toContainEqual(['--literal-pathspecs', '-C', '/workspace/other-repo', '--no-pager', 'branch', '--show-current'])
     expect(calls).toContainEqual(['--no-pager', 'rev-parse', '--show-toplevel'])
   })
 
   it('keeps the worktree when HEAD is detached', async () => {
     const run = async (args: string[]): Promise<GitCommandResult> => {
       if (args.includes('--is-inside-work-tree')) return result('true\n')
+      if (args.includes('status') || args.includes('diff')) return result('')
       if (args.includes('branch')) return result('\n')
       return result('/workspace/repo\n')
     }
@@ -535,7 +457,8 @@ describe('terminal Git identity queries', () => {
     await expect(readGitTerminalInfoWithRunner(run)).resolves.toEqual({
       repository: true,
       branch: null,
-      worktree: '/workspace/repo'
+      worktree: '/workspace/repo',
+      additions: 0, deletions: 0, commitsAhead: null, changedFiles: 0
     })
   })
 
@@ -546,11 +469,12 @@ describe('terminal Git identity queries', () => {
     await expect(readGitTerminalInfoWithRunner(run)).resolves.toEqual({
       repository: false,
       branch: null,
-      worktree: null
+      worktree: null,
+      additions: 0, deletions: 0, commitsAhead: null, changedFiles: 0
     })
   })
 
-  it('uses the live WSL terminal directory instead of the configured session path', async () => {
+  it('uses the live WSL terminal directory for Git commands', async () => {
     const calls: Array<{ cwd?: string; command: readonly string[] }> = []
     mocks.runWslCommand.mockImplementation(async (
       _distro: string,
@@ -559,6 +483,7 @@ describe('terminal Git identity queries', () => {
     ) => {
       calls.push({ cwd: options.cwd, command })
       if (command.includes('--is-inside-work-tree')) return { stdout: 'true\n', stderr: '', code: 0 }
+      if (command.includes('status') || command.includes('diff')) return { stdout: '', stderr: '', code: 0 }
       if (command.includes('branch')) return { stdout: 'feature/live\n', stderr: '', code: 0 }
       return { stdout: '/home/me/other-repo\n', stderr: '', code: 0 }
     })
@@ -570,10 +495,11 @@ describe('terminal Git identity queries', () => {
     ).resolves.toEqual({
       repository: true,
       branch: 'feature/live',
-      worktree: '/home/me/other-repo'
+      worktree: '/home/me/other-repo',
+      additions: 0, deletions: 0, commitsAhead: null, changedFiles: 0
     })
 
-    expect(calls).toHaveLength(3)
+    expect(calls).toHaveLength(6)
     expect(calls.every((call) => call.cwd === '/home/me/other-repo')).toBe(true)
   })
 })
@@ -664,23 +590,7 @@ describe('Git diff queries', () => {
   })
 })
 
-describe('Git history display helpers', () => {
-  it('shortens hashes and preserves invalid timestamps', () => {
-    expect(shortGitHash('0123456789abcdef')).toBe('0123456')
-    expect(formatGitTimestamp('not-a-timestamp')).toBe('not-a-timestamp')
-    expect(formatGitTimestamp('2026-08-19T10:00:00+02:00')).not.toBe('2026-08-19T10:00:00+02:00')
-  })
-
-  it('classifies unified diff lines for the renderer', () => {
-    expect(parseGitDiff('diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-old\n+new\n context\n')).toEqual([
-      { text: 'diff --git a/a.ts b/a.ts', kind: 'metadata' },
-      { text: '@@ -1 +1 @@', kind: 'hunk' },
-      { text: '-old', kind: 'deletion' },
-      { text: '+new', kind: 'addition' },
-      { text: ' context', kind: 'context' }
-    ])
-  })
-
+describe('Git diff binary detection', () => {
   it('detects only standalone Git binary markers', () => {
     expect(isBinaryGitDiff('diff --git a/image.png b/image.png\nBinary files a/image.png and b/image.png differ\n')).toBe(true)
     expect(isBinaryGitDiff('diff --git a/image.png b/image.png\nGIT binary patch\n')).toBe(true)
@@ -702,12 +612,12 @@ describe('Git command hardening (SEC-008)', () => {
       }
     )
 
-    await readGitInfo(nativeSession)
+    await readGitTerminalInfo(nativeSession, nativeSession.path)
 
     expect(calls).not.toHaveLength(0)
     for (const args of calls) {
       expect(args.slice(0, safetyArgs.length)).toEqual(safetyArgs)
-      expect(args.indexOf('--no-pager')).toBe(safetyArgs.length)
+      expect(args[0]).toBe('--no-pager')
     }
   })
 
@@ -730,8 +640,28 @@ describe('Git command hardening (SEC-008)', () => {
     expect(environment).toMatchObject({
       GIT_OPTIONAL_LOCKS: '0',
       GIT_TERMINAL_PROMPT: '0',
-      GIT_ASKPASS: ''
+      GIT_ASKPASS: '',
+      GIT_NO_LAZY_FETCH: '1',
+      GIT_ALLOW_PROTOCOL: '',
+      GIT_PROTOCOL_FROM_USER: '0',
     })
+  })
+
+  it('does not let GIT_CONFIG redirect only the filter-inspection command', async () => {
+    vi.stubEnv('GIT_CONFIG', '/fixture/other-config')
+    vi.stubEnv('git_config', '/fixture/other-config')
+    vi.stubEnv('git_allow_protocol', 'https')
+    try {
+      mocks.execFile.mockImplementation(
+        (_file: string, _args: string[], options: { env: NodeJS.ProcessEnv }, callback: (error: null, stdout: string, stderr: string) => void) => {
+          expect(options.env.GIT_CONFIG).toBeUndefined()
+          expect(options.env.git_config).toBeUndefined()
+          expect(options.env.git_allow_protocol).toBeUndefined()
+          callback(null, '', '')
+        }
+      )
+      await createGitCommandRunner(nativeSession, 'linux')(['status'])
+    } finally { vi.unstubAllEnvs() }
   })
 
   it('prefixes WSL Git calls with the same safety options', async () => {
@@ -741,51 +671,97 @@ describe('Git command hardening (SEC-008)', () => {
 
     expect(mocks.runWslCommand).toHaveBeenCalledWith(
       'Ubuntu-24.04',
-      ['git', ...hardened('--no-pager', 'status')],
+      wslGit(...hardened('--no-pager', 'status')),
       { cwd: '/home/me/src/app' }
     )
   })
+})
 
-  it('retries without attr-source when Git rejects it, then remembers that repository', async () => {
-    const calls: string[][] = []
-    mocks.execFile.mockImplementation(
-      (_file: string, args: string[], _options: unknown, callback: (error: Error | null, stdout: string, stderr: string) => void) => {
-        calls.push(args)
-        if (args.includes(safetyArgs[0] as string)) {
-          const failure = Object.assign(new Error('git failed'), { code: 128 })
-          callback(failure, '', 'fatal: bad --attr-source or GIT_ATTR_SOURCE\n')
-          return
-        }
-        callback(null, 'true\n', '')
-      }
-    )
+describe('Git branch listing', () => {
+  it('lists local branches first, then remote-tracking ones, and skips a remote HEAD', () => {
+    const output = [
+      'refs/remotes/origin/HEAD',
+      'refs/remotes/origin/main',
+      'refs/heads/feature/login',
+      'refs/remotes/upstream/dev',
+      'refs/heads/main',
+      'refs/tags/v1',
+      'refs/heads/',
+      'refs/remotes/orphan',
+      ''
+    ].join('\n')
 
-    const legacySession = { ...nativeSession, path: '/workspace/legacy-git' }
-    const run = createGitCommandRunner(legacySession, 'linux')
-
-    await expect(run(['--no-pager', 'status'])).resolves.toMatchObject({ code: 0 })
-    await expect(run(['--no-pager', 'status'])).resolves.toMatchObject({ code: 0 })
-
-    expect(calls).toHaveLength(3)
-    expect(calls[1]).toEqual(hardened('--no-pager', 'status').slice(1))
-    expect(calls[2]).toEqual(hardened('--no-pager', 'status').slice(1))
+    expect(parseGitRefs(output)).toEqual([
+      { name: 'feature/login', remote: false, ref: 'refs/heads/feature/login' },
+      { name: 'main', remote: false, ref: 'refs/heads/main' },
+      { name: 'origin/main', remote: true, ref: 'refs/remotes/origin/main' },
+      { name: 'upstream/dev', remote: true, ref: 'refs/remotes/upstream/dev' }
+    ])
   })
 
-  it('does not drop attr-source when a command fails for an unrelated reason', async () => {
+  it('stops at a fixed number of branches', () => {
+    const output = Array.from({ length: 400 }, (_, index) => `refs/heads/b${index}`).join('\n')
+    expect(parseGitRefs(output)).toHaveLength(300)
+  })
+
+  it('asks for refs only and reports a failed listing', async () => {
     const calls: string[][] = []
+    const ok = async (args: string[]): Promise<GitCommandResult> => {
+      calls.push(args)
+      return result('refs/heads/main\n')
+    }
+    await expect(readGitRefs(ok)).resolves.toEqual([{ name: 'main', remote: false, ref: 'refs/heads/main' }])
+    expect(calls[0]).toEqual([
+      '--no-pager', 'for-each-ref', '--format=%(refname)', '--sort=-committerdate', 'refs/heads', 'refs/remotes'
+    ])
+    await expect(readGitRefs(async () => result('', 'fatal: not a git repository', 128)))
+      .rejects.toThrow('Could not read Git branches.')
+  })
+})
+
+describe('Git mutation runner', () => {
+  it('keeps every safety option and the longer timeout for worktree checkout', async () => {
+    const calls: Array<{ file: string; args: string[]; options: { cwd: string; timeout: number } }> = []
     mocks.execFile.mockImplementation(
-      (_file: string, args: string[], _options: unknown, callback: (error: Error | null, stdout: string, stderr: string) => void) => {
-        calls.push(args)
-        const failure = Object.assign(new Error('git failed'), { code: 128 })
-        callback(failure, '', 'fatal: not a git repository (or any of the parent directories): .git\n')
+      (file: string, args: string[], options: { cwd: string; timeout: number }, callback: (error: null, stdout: string, stderr: string) => void) => {
+        calls.push({ file, args, options })
+        callback(null, '', '')
       }
     )
 
-    const run = createGitCommandRunner({ ...nativeSession, path: '/workspace/plain' }, 'linux')
-    await run(['--no-pager', 'status'])
-    await run(['--no-pager', 'status'])
+    const run = createGitMutationRunner(nativeSession, '/workspace/native', undefined, 'linux')
+    await run(['worktree', 'add', '--', '/workspace/wt', 'refs/heads/main'])
 
-    expect(calls).toHaveLength(2)
-    expect(calls.every((args) => args[0] === safetyArgs[0])).toBe(true)
+    expect(calls).toHaveLength(1)
+    const [call] = calls
+    expect(call?.file).toBe('git')
+    expect(call?.args).toEqual([...safetyArgs, 'worktree', 'add', '--', '/workspace/wt', 'refs/heads/main'])
+    expect(call?.args.some((arg) => arg.startsWith('--attr-source'))).toBe(false)
+    expect(call?.options.cwd).toBe('/workspace/native')
+    expect(call?.options.timeout).toBe(120_000)
+  })
+
+  it('runs a WSL distro command directly with the longer timeout', async () => {
+    mocks.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
+
+    const run = createGitMutationRunner(wslSession, '/home/me/src/app', 90_000, 'win32')
+    await run(['worktree', 'remove', '--', '/home/me/.mde/worktrees/app-01234567/abcd1234'])
+
+    expect(mocks.runWslCommand).toHaveBeenCalledWith(
+      'Ubuntu-24.04',
+      wslGit(...safetyArgs, 'worktree', 'remove', '--', '/home/me/.mde/worktrees/app-01234567/abcd1234'),
+      { cwd: '/home/me/src/app', timeoutMs: 90_000 }
+    )
+  })
+
+  it('leaves ordinary queries on the short timeout', async () => {
+    mocks.execFile.mockImplementation(
+      (_file: string, _args: string[], options: { timeout: number }, callback: (error: null, stdout: string, stderr: string) => void) => {
+        expect(options.timeout).toBe(10_000)
+        callback(null, '', '')
+      }
+    )
+    await createGitCommandRunner(nativeSession, 'linux')(['--no-pager', 'status'])
+    expect(mocks.execFile).toHaveBeenCalled()
   })
 })

@@ -7,13 +7,14 @@ export function nativeLoginShell(): string {
   return process.env.SHELL || userInfo().shell || (process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash')
 }
 
-/** Read only integration-related values, framed past any shell startup banners. */
-export async function nativeLoginEnvironment(
-  shell = nativeLoginShell(),
-  environment = process.env,
-): Promise<NodeJS.ProcessEnv> {
+/**
+ * The two variables that decide where OpenCode keeps its configuration, read from the login shell. A macOS app
+ * started from the Dock does not inherit what the person exports in their shell profile, but OpenCode, started
+ * from a terminal, does. The values are framed by a marker so a profile that prints a banner cannot shift them.
+ */
+export async function nativeLoginConfigVariables(shell = nativeLoginShell(), environment = process.env): Promise<NodeJS.ProcessEnv> {
   const marker = `MDE_ENV_${randomUUID()}`
-  const script = 'printf "\\000%s\\000%s\\000%s\\000%s\\000" "$1" "$PATH" "${OPENCODE_CONFIG_DIR:-}" "${XDG_CONFIG_HOME:-}"'
+  const script = 'printf "\\000%s\\000%s\\000%s\\000" "$1" "${OPENCODE_CONFIG_DIR:-}" "${XDG_CONFIG_HOME:-}"'
   const fish = shell.split('/').at(-1) === 'fish'
   const args = fish
     ? ['-lic', 'exec /bin/sh -c "$argv[1]" mde-env "$argv[2]"', script, marker]
@@ -23,18 +24,20 @@ export async function nativeLoginEnvironment(
       if (error) return reject(new Error('Could not read the native login environment. Check your shell configuration.'))
       const prefix = `\0${marker}\0`
       const start = stdout.indexOf(prefix)
-      const values = stdout.slice(start + prefix.length).split('\0')
-      if (start < 0 || values.length < 4) return reject(new Error('The native login shell returned an invalid environment.'))
-      resolve({ ...environment, PATH: values[0], OPENCODE_CONFIG_DIR: values[1], XDG_CONFIG_HOME: values[2] })
+      const values = start < 0 ? [] : stdout.slice(start + prefix.length).split('\0')
+      if (values.length < 3) return reject(new Error('The native login shell returned an invalid environment.'))
+      resolve({ ...environment, OPENCODE_CONFIG_DIR: values[0], XDG_CONFIG_HOME: values[1] })
     })
   })
 }
 
+/** OpenCode's global configuration directory on this computer. */
 export async function nativeOpenCodeConfigDirectory(): Promise<string> {
-  const environment = process.platform === 'darwin' ? await nativeLoginEnvironment() : process.env
+  const environment = process.platform === 'darwin' ? await nativeLoginConfigVariables() : process.env
   return openCodeConfigDirectory(environment, homedir())
 }
 
+/** `$OPENCODE_CONFIG_DIR`, else `$XDG_CONFIG_HOME/opencode`, else `~/.config/opencode`, as OpenCode itself resolves it. */
 export function openCodeConfigDirectory(environment: NodeJS.ProcessEnv, homeDirectory: string): string {
   const configured = environment.OPENCODE_CONFIG_DIR?.trim()
   if (configured) {

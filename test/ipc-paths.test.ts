@@ -1,9 +1,13 @@
+import { promises as fs } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { trustedIpcSender } from './helpers/ipc-sender'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Session } from '../src/shared/types'
 
 type Handler = (event: unknown, request: unknown) => Promise<unknown> | unknown
 type TerminalInfo = { sessionId: string; directory: string | null }
+const hostPlatform = process.platform
 
 const electronMock = vi.hoisted(() => {
   const handlers = new Map<string, Handler>()
@@ -26,21 +30,17 @@ const electronMock = vi.hoisted(() => {
 })
 
 const workspaceMock = vi.hoisted(() => ({
-  createProject: vi.fn(),
   createTodoProject: vi.fn(),
   createTodoTask: vi.fn(),
   createSession: vi.fn(),
   duplicateSession: vi.fn(),
   getSession: vi.fn(),
   loadWorkspace: vi.fn(),
-  moveSession: vi.fn(),
   moveTodoTask: vi.fn(),
-  removeProject: vi.fn(),
   removeTodoProject: vi.fn(),
   removeTodoTask: vi.fn(),
   removeSession: vi.fn(),
   reorderSession: vi.fn(),
-  updateProject: vi.fn(),
   updateTodoProject: vi.fn(),
   updateTodoTask: vi.fn(),
   updateSession: vi.fn()
@@ -84,11 +84,9 @@ const { security, event: trustedEvent } = trustedIpcSender()
 function wslSession(overrides: Partial<Session> = {}): Session {
   return {
     id: 'session-1',
-    projectId: 'project-1',
     name: 'App',
     kind: 'wsl',
     distro: 'Ubuntu-24.04',
-    path: '/home/me/configured',
     createdAt: '2026-01-01T00:00:00.000Z',
     ...overrides
   }
@@ -100,17 +98,20 @@ function handler(channel: string): Handler {
   return registered
 }
 
+const inboxFileRoot = vi.fn()
+
 function registerForTest(
   terminalInfo: ReturnType<typeof vi.fn>,
-  ensure: ReturnType<typeof vi.fn> = vi.fn(() => 'running')
+  ensure: ReturnType<typeof vi.fn> = vi.fn(() => 'running'),
+  savedDirectory: ReturnType<typeof vi.fn> = vi.fn(),
+  restart: ReturnType<typeof vi.fn> = vi.fn(() => 'running'),
 ): void {
   registerIpcHandlers(
     security,
-    { terminalInfo, ensure } as never,
+    { terminalInfo, ensure, savedDirectory, restart, dispose: vi.fn() } as never,
     {} as never,
     {} as never,
-    {} as never,
-    {} as never
+    { chat: { fileRoot: inboxFileRoot }, recorder: {} } as never
   )
 }
 
@@ -134,7 +135,7 @@ describe('terminal Explorer IPC', () => {
     vi.restoreAllMocks()
   })
 
-  it('opens the live WSL terminal directory instead of the configured session path', async () => {
+  it('opens the live WSL terminal directory', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     const terminalInfo = vi.fn(() => ({
       sessionId: 'session-1',
@@ -297,188 +298,7 @@ describe('terminal Explorer IPC', () => {
     expect(electronMock.shell.openPath).not.toHaveBeenCalled()
   })
 
-  it('launches from the session directory without a live terminal directory', async () => {
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    const terminalInfo = vi.fn(() => ({ sessionId: 'session-1', directory: null }))
-    const ensure = vi.fn(() => 'running')
-    const session = wslSession({ path: '/home/me/session' })
-    workspaceMock.getSession.mockResolvedValue(session)
-    wslPathsMock.resolveForTarget.mockResolvedValue({ path: '/home/me/session' })
-    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/session')
-    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
-    registerForTest(terminalInfo, ensure)
-
-    const request = {
-      terminalId: 'child-pane',
-      sessionId: session.id,
-      size: { cols: 80, rows: 24 },
-      palette: { foreground: '#d8dee9', background: '#0b0e13' },
-      launch: { sourceTerminalId: 'source-pane', directory: 'session' }
-    }
-
-    await expect(handler(IpcChannels.ptyEnsure)(trustedEvent, request)).resolves.toBe('running')
-
-    expect(terminalInfo).toHaveBeenCalledWith('source-pane')
-    expect(wslPathsMock.canonicalizeWslPath).toHaveBeenCalledWith('Ubuntu-24.04', '/home/me/session')
-    expect(wslDistrosMock.runWslCommand).toHaveBeenCalledWith('Ubuntu-24.04', [
-      'test',
-      '-d',
-      '/home/me/session'
-    ])
-    expect(ensure).toHaveBeenCalledWith(
-      'child-pane',
-      session,
-      request.size,
-      request.palette,
-      { directory: '/home/me/session' }
-    )
-  })
-
-  it('reveals a legacy shorthand session path through its resolved directory', async () => {
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    workspaceMock.getSession.mockResolvedValue(wslSession({ path: '~/dev/mde' }))
-    wslPathsMock.resolveForTarget.mockResolvedValue({ path: '/home/me/dev/mde' })
-    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/dev/mde')
-    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
-    wslPathsMock.toWindows.mockResolvedValue('\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\dev\\mde')
-    registerForTest(vi.fn())
-
-    await handler(IpcChannels.pathReveal)(trustedEvent, 'session-1')
-
-    expect(wslPathsMock.resolveForTarget).toHaveBeenCalledWith('wsl', 'Ubuntu-24.04', '~/dev/mde')
-    expect(wslPathsMock.toWindows).toHaveBeenCalledWith('Ubuntu-24.04', '/home/me/dev/mde')
-    expect(electronMock.shell.openPath).toHaveBeenCalledWith(
-      '\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\dev\\mde'
-    )
-  })
-
-  it('opens a legacy shorthand session path in VS Code as an absolute folder', async () => {
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    workspaceMock.getSession.mockResolvedValue(wslSession({ path: '~/dev/mde' }))
-    wslPathsMock.resolveForTarget.mockResolvedValue({ path: '/home/me/dev/mde' })
-    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/dev/mde')
-    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
-    registerForTest(vi.fn())
-
-    await handler(IpcChannels.pathOpenInVsCode)(trustedEvent, 'session-1')
-
-    expect(electronMock.shell.openExternal).toHaveBeenCalledWith(
-      'vscode://vscode-remote/wsl+Ubuntu-24.04/home/me/dev/mde/'
-    )
-  })
-
-  it('does not reveal or open a session folder that no longer exists', async () => {
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    workspaceMock.getSession.mockResolvedValue(wslSession())
-    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/configured')
-    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 1 })
-    registerForTest(vi.fn())
-
-    await handler(IpcChannels.pathReveal)(trustedEvent, 'session-1')
-    await handler(IpcChannels.pathOpenInVsCode)(trustedEvent, 'session-1')
-
-    expect(electronMock.shell.openPath).not.toHaveBeenCalled()
-    expect(electronMock.shell.openExternal).not.toHaveBeenCalled()
-  })
-
-  it('normalizes a legacy session path before launching', async () => {
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    const terminalInfo = vi.fn(() => ({ sessionId: 'session-1', directory: '/home/me/live' }))
-    const ensure = vi.fn(() => 'running')
-    const session = wslSession({ path: '~/session' })
-    workspaceMock.getSession.mockResolvedValue(session)
-    wslPathsMock.resolveForTarget.mockResolvedValue({ path: '/home/me/session' })
-    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/session')
-    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
-    registerForTest(terminalInfo, ensure)
-
-    const request = {
-      terminalId: 'child-pane',
-      sessionId: session.id,
-      size: { cols: 80, rows: 24 },
-      palette: { foreground: '#d8dee9', background: '#0b0e13' },
-      launch: { sourceTerminalId: 'source-pane', directory: 'session' }
-    }
-
-    await expect(handler(IpcChannels.ptyEnsure)(trustedEvent, request)).resolves.toBe('running')
-
-    expect(wslPathsMock.resolveForTarget).toHaveBeenCalledWith(
-      'wsl',
-      'Ubuntu-24.04',
-      '~/session'
-    )
-    expect(wslPathsMock.canonicalizeWslPath).toHaveBeenCalledWith(
-      'Ubuntu-24.04',
-      '/home/me/session'
-    )
-    expect(ensure).toHaveBeenCalledWith(
-      'child-pane',
-      session,
-      request.size,
-      request.palette,
-      { directory: '/home/me/session' }
-    )
-  })
-
-  it('rejects an unavailable session directory before spawning a pane', async () => {
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    const terminalInfo = vi.fn(() => ({ sessionId: 'session-1', directory: '/home/me/live' }))
-    const ensure = vi.fn(() => 'running')
-    const session = wslSession({ path: '/home/me/missing' })
-    workspaceMock.getSession.mockResolvedValue(session)
-    wslPathsMock.resolveForTarget.mockResolvedValue({ path: '/home/me/missing' })
-    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/missing')
-    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 1 })
-    registerForTest(terminalInfo, ensure)
-
-    await expect(
-      handler(IpcChannels.ptyEnsure)(trustedEvent, {
-        terminalId: 'child-pane',
-        sessionId: session.id,
-        size: { cols: 80, rows: 24 },
-        palette: { foreground: '#d8dee9', background: '#0b0e13' },
-        launch: { sourceTerminalId: 'source-pane', directory: 'session' }
-      })
-    ).rejects.toThrow('The selected launch directory is not available')
-
-    expect(ensure).not.toHaveBeenCalled()
-  })
-
-  it('launches from the source terminal directory when requested', async () => {
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    const terminalInfo = vi.fn(() => ({
-      sessionId: 'session-1',
-      directory: '/home/me/live'
-    }))
-    const ensure = vi.fn(() => 'running')
-    const session = wslSession({ path: '/home/me/session' })
-    workspaceMock.getSession.mockResolvedValue(session)
-    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/live')
-    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
-    registerForTest(terminalInfo, ensure)
-
-    const request = {
-      terminalId: 'child-pane',
-      sessionId: session.id,
-      size: { cols: 100, rows: 30 },
-      palette: { foreground: '#d8dee9', background: '#0b0e13' },
-      launch: { sourceTerminalId: 'source-pane', directory: 'terminal' }
-    }
-
-    await expect(handler(IpcChannels.ptyEnsure)(trustedEvent, request)).resolves.toBe('running')
-
-    expect(wslPathsMock.canonicalizeWslPath).toHaveBeenCalledWith('Ubuntu-24.04', '/home/me/live')
-    expect(ensure).toHaveBeenCalledWith(
-      'child-pane',
-      session,
-      request.size,
-      request.palette,
-      { directory: '/home/me/live' }
-    )
-  })
-
-  it('rejects an unknown launch directory before spawning a pane', async () => {
+  it('rejects a renderer-provided launch before spawning a pane', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     const terminalInfo = vi.fn(() => ({ sessionId: 'session-1', directory: '/home/me/live' }))
     const ensure = vi.fn(() => 'running')
@@ -497,33 +317,6 @@ describe('terminal Explorer IPC', () => {
 
     expect(terminalInfo).not.toHaveBeenCalled()
     expect(ensure).not.toHaveBeenCalled()
-  })
-
-  it('normalizes a raw WSL home path before creating a session', async () => {
-    const created = wslSession({ path: '/home/tester/dev/testmde' })
-    workspaceMock.createSession.mockResolvedValue(created)
-    wslPathsMock.resolveForTarget.mockResolvedValue({ path: '/home/tester/dev/testmde' })
-    registerForTest(vi.fn())
-
-    const input = {
-      projectId: 'project-1',
-      name: 'testmde',
-      kind: 'wsl',
-      distro: 'Ubuntu-24.04',
-      path: '~/dev/testmde'
-    }
-
-    await expect(handler(IpcChannels.sessionsCreate)(trustedEvent, input)).resolves.toBe(created)
-
-    expect(wslPathsMock.resolveForTarget).toHaveBeenCalledWith(
-      'wsl',
-      'Ubuntu-24.04',
-      '~/dev/testmde'
-    )
-    expect(workspaceMock.createSession).toHaveBeenCalledWith({
-      ...input,
-      path: '/home/tester/dev/testmde'
-    })
   })
 
   it('validates hostile WSL directory names through direct execution', async () => {
@@ -555,30 +348,254 @@ describe('terminal Explorer IPC', () => {
     expect(wslPathsMock.canonicalizeWslPath).not.toHaveBeenCalled()
     expect(wslDistrosMock.runWslCommand).not.toHaveBeenCalled()
   })
+})
 
-  it('keeps native session paths in the target-native format', async () => {
-    const created = {
-      ...wslSession({ kind: 'native', distro: undefined, path: 'C:\\dev\\testmde' })
-    }
-    workspaceMock.createSession.mockResolvedValue(created)
-    wslPathsMock.resolveForTarget.mockResolvedValue({ path: 'C:\\dev\\testmde' })
+describe('Inbox folder IPC', () => {
+  const thread = (overrides: Partial<Session> & { path?: string } = {}): Session & { path: string } => ({
+    ...wslSession({ id: 'ses_thread' }),
+    path: '/home/me/app',
+    ...overrides
+  })
+
+  beforeEach(() => {
+    electronMock.handlers.clear()
+    electronMock.shell.openPath.mockClear()
+    electronMock.shell.openExternal.mockClear()
+    electronMock.dialog.showErrorBox.mockClear()
+    inboxFileRoot.mockReset().mockReturnValue(null)
+    wslPathsMock.canonicalizeWslPath.mockReset()
+    wslPathsMock.toWindows.mockReset()
+    wslPathsMock.uncPathFor.mockReset()
+    wslDistrosMock.runWslCommand.mockReset()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('shows a WSL thread folder in the file manager, named by thread or project ID', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    inboxFileRoot.mockReturnValue(thread())
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/app')
+    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
+    wslPathsMock.toWindows.mockResolvedValue('\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\app')
     registerForTest(vi.fn())
 
-    const input = {
-      projectId: 'project-1',
-      name: 'testmde',
-      kind: 'native',
-      path: 'C:\\dev\\testmde'
+    await handler(IpcChannels.pathRevealInbox)(trustedEvent, 'ses_thread')
+    await handler(IpcChannels.pathRevealInbox)(trustedEvent, 'fld_1234')
+
+    expect(inboxFileRoot).toHaveBeenNthCalledWith(1, 'ses_thread')
+    expect(inboxFileRoot).toHaveBeenNthCalledWith(2, 'fld_1234')
+    expect(wslDistrosMock.runWslCommand).toHaveBeenCalledWith('Ubuntu-24.04', ['test', '-d', '/home/me/app'])
+    expect(electronMock.shell.openPath).toHaveBeenCalledTimes(2)
+    expect(electronMock.shell.openPath).toHaveBeenCalledWith('\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\app')
+  })
+
+  it('shows a native thread folder in the file manager on any platform', async () => {
+    const directory = await fs.mkdtemp(join(tmpdir(), 'mde-inbox-folder-'))
+    try {
+      inboxFileRoot.mockReturnValue(thread({ kind: 'native', distro: undefined, path: directory }))
+      registerForTest(vi.fn())
+
+      await handler(IpcChannels.pathRevealInbox)(trustedEvent, 'ses_thread')
+
+      expect(electronMock.shell.openPath).toHaveBeenCalledWith(directory)
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true })
     }
+  })
 
-    await expect(handler(IpcChannels.sessionsCreate)(trustedEvent, input)).resolves.toBe(created)
+  it('opens a WSL thread folder in VS Code through the remote URI', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    inboxFileRoot.mockReturnValue(thread({ path: '/home/me/my app' }))
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/my app')
+    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
+    registerForTest(vi.fn())
 
-    expect(wslPathsMock.resolveForTarget).toHaveBeenCalledWith(
-      'native',
-      undefined,
-      'C:\\dev\\testmde'
+    await handler(IpcChannels.pathOpenInboxInVsCode)(trustedEvent, 'ses_thread')
+
+    expect(electronMock.shell.openExternal).toHaveBeenCalledWith(
+      'vscode://vscode-remote/wsl+Ubuntu-24.04/home/me/my%20app/'
     )
-    expect(workspaceMock.createSession).toHaveBeenCalledWith(input)
+    expect(electronMock.dialog.showErrorBox).not.toHaveBeenCalled()
+  })
+
+  it('opens the canonical folder rather than a symlink to it', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    inboxFileRoot.mockReturnValue(thread({ path: '/home/me/link' }))
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/real')
+    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
+    registerForTest(vi.fn())
+
+    await handler(IpcChannels.pathOpenInboxInVsCode)(trustedEvent, 'ses_thread')
+
+    expect(electronMock.shell.openExternal).toHaveBeenCalledWith('vscode://vscode-remote/wsl+Ubuntu-24.04/home/me/real/')
+  })
+
+  it('does nothing for an ID that is not in the Inbox', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    registerForTest(vi.fn())
+
+    await handler(IpcChannels.pathRevealInbox)(trustedEvent, 'ses_gone')
+    await handler(IpcChannels.pathOpenInboxInVsCode)(trustedEvent, 'ses_gone')
+
+    expect(electronMock.shell.openPath).not.toHaveBeenCalled()
+    expect(electronMock.shell.openExternal).not.toHaveBeenCalled()
+    expect(electronMock.dialog.showErrorBox).not.toHaveBeenCalled()
+  })
+
+  it('refuses a folder that is really a file, or not a plain absolute path', async () => {
+    // The thread's directory is recorded data, but a file here would make "open folder" launch it.
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    inboxFileRoot.mockReturnValue(thread({ path: '/home/me/Update.exe' }))
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/Update.exe')
+    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 1 })
+    registerForTest(vi.fn())
+
+    await handler(IpcChannels.pathRevealInbox)(trustedEvent, 'ses_thread')
+    await handler(IpcChannels.pathOpenInboxInVsCode)(trustedEvent, 'ses_thread')
+
+    inboxFileRoot.mockReturnValue(thread({ path: '/home/me/../../etc' }))
+    wslDistrosMock.runWslCommand.mockClear()
+    await handler(IpcChannels.pathRevealInbox)(trustedEvent, 'ses_thread')
+    await handler(IpcChannels.pathOpenInboxInVsCode)(trustedEvent, 'ses_thread')
+
+    expect(wslDistrosMock.runWslCommand).not.toHaveBeenCalled()
+    expect(electronMock.shell.openPath).not.toHaveBeenCalled()
+    expect(electronMock.shell.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('does not hand a WSL folder to the desktop away from Windows', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
+    inboxFileRoot.mockReturnValue(thread())
+    registerForTest(vi.fn())
+
+    await handler(IpcChannels.pathRevealInbox)(trustedEvent, 'ses_thread')
+    await handler(IpcChannels.pathOpenInboxInVsCode)(trustedEvent, 'ses_thread')
+
+    expect(wslDistrosMock.runWslCommand).not.toHaveBeenCalled()
+    expect(electronMock.shell.openPath).not.toHaveBeenCalled()
+    expect(electronMock.shell.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('opens only WSL folders in VS Code, as the terminal button does', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    inboxFileRoot.mockReturnValue(thread({ kind: 'native', distro: undefined, path: 'C:\\Users\\Me\\app' }))
+    registerForTest(vi.fn())
+
+    await handler(IpcChannels.pathOpenInboxInVsCode)(trustedEvent, 'ses_thread')
+
+    expect(electronMock.shell.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('tells the user when Windows cannot open the folder in VS Code', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    inboxFileRoot.mockReturnValue(thread())
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/app')
+    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
+    electronMock.shell.openExternal.mockRejectedValueOnce(new Error('No application is registered'))
+    registerForTest(vi.fn())
+
+    await handler(IpcChannels.pathOpenInboxInVsCode)(trustedEvent, 'ses_thread')
+
+    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+      'Could not open VS Code',
+      expect.stringContaining('No application is registered')
+    )
+  })
+})
+
+describe('terminal directory restoration over IPC', () => {
+  beforeEach(() => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    electronMock.handlers.clear()
+    workspaceMock.getSession.mockReset().mockResolvedValue(wslSession())
+    wslPathsMock.canonicalizeWslPath.mockReset().mockImplementation(async (_distro, path) => path)
+    wslDistrosMock.runWslCommand.mockReset().mockResolvedValue({ stdout: '', stderr: '', code: 0 })
+  })
+
+  afterEach(() => vi.restoreAllMocks())
+
+  const request = (terminalId: string) => ({
+    terminalId, sessionId: 'session-1', size: { cols: 80, rows: 24 },
+    palette: { foreground: '#ffffff', background: '#000000' },
+  })
+
+  it('restores each new shell in its own verified WSL directory', async () => {
+    const ensure = vi.fn(() => 'running')
+    registerForTest(vi.fn(() => null), ensure, vi.fn((id) => `/home/me/${id}`))
+    await handler(IpcChannels.ptyEnsure)(trustedEvent, request('first'))
+    await handler(IpcChannels.ptyEnsure)(trustedEvent, request('second'))
+    expect(ensure.mock.calls).toEqual([
+      ['first', wslSession(), request('first').size, request('first').palette, { directory: '/home/me/first' }],
+      ['second', wslSession(), request('second').size, request('second').palette, { directory: '/home/me/second' }],
+    ])
+    expect(wslDistrosMock.runWslCommand).toHaveBeenCalledWith('Ubuntu-24.04', ['test', '-d', '/home/me/first'])
+  })
+
+  it('restores native folders with spaces and falls back for missing folders or files', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue(hostPlatform)
+    const directory = await fs.mkdtemp(join(tmpdir(), 'mde-restore-'))
+    try {
+      const folder = join(directory, hostPlatform === 'win32' ? 'folder with spaces' : 'folder with spaces ')
+      const file = join(directory, 'file')
+      await fs.mkdir(folder)
+      await fs.writeFile(file, '')
+      const native = { ...wslSession(), kind: 'native', distro: undefined }
+      workspaceMock.getSession.mockResolvedValue(native)
+      const ensure = vi.fn(() => 'running')
+      registerForTest(vi.fn(() => null), ensure, vi.fn((id) => id === 'folder' ? folder : id === 'file' ? file : join(directory, 'missing')))
+      for (const id of ['folder', 'file', 'missing']) await handler(IpcChannels.ptyEnsure)(trustedEvent, request(id))
+      expect(ensure.mock.calls).toEqual([
+        ['folder', native, request('folder').size, request('folder').palette, { directory: folder }],
+        ['file', native, request('file').size, request('file').palette, undefined],
+        ['missing', native, request('missing').size, request('missing').palette, undefined],
+      ])
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it.each(['missing', 'inaccessible', 'unavailable'])('uses the default home launch when a saved folder is %s', async (failure) => {
+    const ensure = vi.fn(() => 'running')
+    if (failure === 'missing') wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 1 })
+    else if (failure === 'inaccessible') wslDistrosMock.runWslCommand.mockImplementation(async (_distro, command) => ({ stdout: '', stderr: '', code: command[1] === '-x' ? 1 : 0 }))
+    else wslPathsMock.canonicalizeWslPath.mockRejectedValue(new Error('Unavailable distro'))
+    registerForTest(vi.fn(() => null), ensure, vi.fn(() => '/home/me/gone'))
+    await handler(IpcChannels.ptyEnsure)(trustedEvent, request('pane'))
+    expect(ensure).toHaveBeenCalledWith('pane', wslSession(), request('pane').size, request('pane').palette, undefined)
+  })
+
+  it('does not revalidate saved directories while reattaching an existing PTY', async () => {
+    const ensure = vi.fn(() => 'running')
+    const saved = vi.fn(() => '/home/me/gone')
+    registerForTest(vi.fn(() => ({ sessionId: 'session-1', directory: '/home/me/live' })), ensure, saved)
+    await handler(IpcChannels.ptyEnsure)(trustedEvent, request('pane'))
+    expect(saved).not.toHaveBeenCalled()
+    expect(wslDistrosMock.runWslCommand).not.toHaveBeenCalled()
+    expect(ensure).toHaveBeenCalledWith('pane', wslSession(), request('pane').size, request('pane').palette, undefined)
+  })
+
+  it('restarts in the live terminal directory before using an older saved one', async () => {
+    const restart = vi.fn(() => 'running')
+    const saved = vi.fn(() => '/home/me/older')
+    registerForTest(vi.fn(() => ({ sessionId: 'session-1', directory: '/home/me/current' })), vi.fn(), saved, restart)
+    await handler(IpcChannels.ptyRestart)(trustedEvent, request('pane'))
+    expect(restart).toHaveBeenCalledWith('pane', wslSession(), request('pane').size, request('pane').palette, { directory: '/home/me/current' })
+    expect(saved).not.toHaveBeenCalled()
+  })
+
+  it('does not recreate a pane closed while its saved directory is being verified', async () => {
+    let resolve!: (path: string) => void
+    wslPathsMock.canonicalizeWslPath.mockReturnValue(new Promise<string>((done) => { resolve = done }))
+    const ensure = vi.fn(() => 'running')
+    registerForTest(vi.fn(() => null), ensure, vi.fn(() => '/home/me/project'))
+    const pending = handler(IpcChannels.ptyEnsure)(trustedEvent, request('pane'))
+    await vi.waitFor(() => expect(wslPathsMock.canonicalizeWslPath).toHaveBeenCalled())
+    await handler(IpcChannels.ptyDispose)(trustedEvent, 'pane')
+    resolve('/home/me/project')
+    expect(await pending).toBe('none')
+    expect(ensure).not.toHaveBeenCalled()
   })
 })
 
@@ -604,7 +621,9 @@ describe('terminal Git IPC', () => {
       _options: { cwd?: string } = {}
     ) => {
       if (command[0] === 'test') return { stdout: '', stderr: '', code: 0 }
+      if (command.includes('config')) return { stdout: '', stderr: '', code: 1 }
       if (command.includes('--is-inside-work-tree')) return { stdout: 'true\n', stderr: '', code: 0 }
+      if (command.includes('status') || command.includes('diff')) return { stdout: '', stderr: '', code: 0 }
       if (command.includes('branch')) return { stdout: 'feature/live\n', stderr: '', code: 0 }
       return { stdout: '/home/me/repo\n', stderr: '', code: 0 }
     })
@@ -613,14 +632,16 @@ describe('terminal Git IPC', () => {
     await expect(handler(IpcChannels.gitTerminalInfo)(trustedEvent, { terminalId: 'pane-1' })).resolves.toEqual({
       repository: true,
       branch: 'feature/live',
-      worktree: '/home/me/repo'
+      worktree: '/home/me/repo',
+      directory: '/home/me/current',
+      additions: 0, deletions: 0, commitsAhead: null, changedFiles: 0
     })
 
     expect(terminalInfo).toHaveBeenCalledWith('pane-1')
     const gitCalls = wslDistrosMock.runWslCommand.mock.calls.filter(
-      ([, command]) => command[0] === 'git'
+      ([, command]) => command[0] === '/usr/bin/env' && command.includes('git')
     )
-    expect(gitCalls).toHaveLength(3)
+    expect(gitCalls).toHaveLength(8)
     expect(gitCalls.every(([, , options]) => options.cwd === '/home/me/current')).toBe(true)
   })
 
@@ -635,6 +656,7 @@ describe('terminal Git IPC', () => {
 
 describe('file tree IPC', () => {
   beforeEach(() => {
+    inboxFileRoot.mockReset().mockReturnValue(null)
     electronMock.handlers.clear()
     workspaceMock.getSession.mockReset()
     wslPathsMock.resolveForTarget.mockReset()
@@ -656,6 +678,8 @@ describe('file tree IPC', () => {
 
     workspaceMock.getSession.mockResolvedValue(undefined)
     await expect(list(trustedEvent, { sessionId: 'missing', path: '' })).rejects.toThrow('Session no longer exists.')
+    workspaceMock.getSession.mockResolvedValue(wslSession())
+    await expect(list(trustedEvent, { sessionId: 'session-1', path: '' })).rejects.toThrow('Session no longer exists.')
   })
 
   it('refuses paths outside the session root before reaching the distro', async () => {
@@ -669,14 +693,14 @@ describe('file tree IPC', () => {
     expect(wslDistrosMock.runWslCommand).not.toHaveBeenCalled()
   })
 
-  it('lists a WSL session directory inside the configured distro', async () => {
+  it('lists a WSL Inbox folder inside its distro', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     registerForTest(vi.fn())
-    workspaceMock.getSession.mockResolvedValue(wslSession())
+    inboxFileRoot.mockReturnValue({ ...wslSession(), path: '/home/me/configured' })
     wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: 'f\tmain.ts\n', stderr: '', code: 0 })
 
     await expect(
-      handler(IpcChannels.filesList)(trustedEvent, { sessionId: 'session-1', path: 'src' })
+      handler(IpcChannels.filesList)(trustedEvent, { sessionId: 'fld_app', path: 'src' })
     ).resolves.toEqual({ path: 'src', entries: [{ name: 'main.ts', kind: 'file' }], truncated: false })
     expect(wslDistrosMock.runWslCommand).toHaveBeenCalledWith(
       'Ubuntu-24.04',
@@ -698,15 +722,91 @@ describe('file tree IPC', () => {
     expect(wslDistrosMock.runWslCommandBuffer).not.toHaveBeenCalled()
   })
 
-  it('reads a WSL session file through the binary-safe runner', async () => {
+  it('reads a WSL Inbox file through the binary-safe runner', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     registerForTest(vi.fn())
-    workspaceMock.getSession.mockResolvedValue(wslSession())
+    inboxFileRoot.mockReturnValue({ ...wslSession(), path: '/home/me/configured' })
     wslDistrosMock.runWslCommandBuffer.mockResolvedValue({ stdout: Buffer.from('3\nhi\n'), stderr: '', code: 0 })
 
     await expect(
-      handler(IpcChannels.filesRead)(trustedEvent, { sessionId: 'session-1', path: 'README.md' })
+      handler(IpcChannels.filesRead)(trustedEvent, { sessionId: 'fld_app', path: 'README.md' })
     ).resolves.toEqual({ path: 'README.md', content: 'hi\n', size: 3, binary: false, tooLarge: false })
     expect(wslDistrosMock.runWslCommandBuffer.mock.calls[0]?.[1]).toContain('/home/me/configured/README.md')
+  })
+
+  it('lists and reads relative to the live terminal, outside its launch folder', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    workspaceMock.getSession.mockResolvedValue(wslSession())
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/current')
+    wslDistrosMock.runWslCommand.mockImplementation(async (_distro: string, command: string[]) => ({
+      stdout: command[0] === 'find' ? 'f\tREADME.md\n' : '', stderr: '', code: 0,
+    }))
+    wslDistrosMock.runWslCommandBuffer.mockResolvedValue({ stdout: Buffer.from('3\nhi\n'), stderr: '', code: 0 })
+    registerForTest(vi.fn(() => ({ sessionId: 'session-1', directory: '/home/me/current' })))
+    const root = { terminalId: 'pane-1', directory: '/home/me/current' }
+    await expect(handler(IpcChannels.filesList)(trustedEvent, { ...root, path: '' })).resolves.toMatchObject({ entries: [{ name: 'README.md' }] })
+    expect(wslDistrosMock.runWslCommand).toHaveBeenCalledWith('Ubuntu-24.04', expect.arrayContaining(['/home/me/current']))
+    await expect(handler(IpcChannels.filesRead)(trustedEvent, { ...root, path: 'README.md' })).resolves.toMatchObject({ content: 'hi\n' })
+    expect(wslDistrosMock.runWslCommandBuffer.mock.calls[0]?.[1]).toContain('/home/me/current/README.md')
+  })
+
+  it.each([IpcChannels.filesList, IpcChannels.filesRead])('rejects a stale or invented terminal directory for %s', async (channel) => {
+    workspaceMock.getSession.mockResolvedValue(wslSession())
+    const terminalInfo = vi.fn(() => ({ sessionId: 'session-1', directory: '/home/me/current' }))
+    registerForTest(terminalInfo)
+    await expect(handler(channel)(trustedEvent, { terminalId: 'pane-1', directory: '/home/me/other', path: 'README.md' })).rejects.toThrow('The terminal directory has changed.')
+    expect(wslDistrosMock.runWslCommand).not.toHaveBeenCalled()
+  })
+
+  it('rechecks the terminal after directory verification finishes', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    workspaceMock.getSession.mockResolvedValue(wslSession())
+    wslPathsMock.canonicalizeWslPath.mockResolvedValue('/home/me/current')
+    const terminal = { sessionId: 'session-1', directory: '/home/me/current' }
+    wslDistrosMock.runWslCommand.mockImplementation(async () => {
+      terminal.directory = '/home/me/new'
+      return { stdout: '', stderr: '', code: 0 }
+    })
+    registerForTest(vi.fn(() => ({ ...terminal })))
+    await expect(handler(IpcChannels.filesList)(trustedEvent, { terminalId: 'pane-1', directory: '/home/me/current', path: '' })).rejects.toThrow('The terminal directory has changed.')
+    expect(wslDistrosMock.runWslCommand.mock.calls.every(([, command]) => command[0] === 'test')).toBe(true)
+  })
+
+  it('lists WSL folders through the browser channel, starting at the distro home', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    registerForTest(vi.fn())
+    wslDistrosMock.runWslCommand.mockImplementation(async (_distro: string, command: string[]) =>
+      command[0] === 'bash'
+        ? { stdout: '__MDE_VALUE_BEGIN__/home/me__MDE_VALUE_END__\n', stderr: '', code: 0 }
+        : { stdout: 'd\tsrc\nf\ta.txt\n', stderr: '', code: 0 })
+
+    await expect(
+      handler(IpcChannels.pathListWslDirectories)(trustedEvent, { distro: 'Ubuntu-24.04' })
+    ).resolves.toEqual({ path: '/home/me', directories: ['src'], truncated: false })
+    expect(wslDistrosMock.runWslCommand).toHaveBeenLastCalledWith(
+      'Ubuntu-24.04',
+      ['find', '-L', '/home/me', '-mindepth', '1', '-maxdepth', '1', '-printf', '%y\\t%f\\n']
+    )
+  })
+
+  it('rejects malformed folder-browser requests before reaching the distro', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    registerForTest(vi.fn())
+    const list = handler(IpcChannels.pathListWslDirectories)
+
+    await expect(list(trustedEvent, { distro: 'Ubuntu', path: '/home/me\nx' })).rejects.toThrow('Invalid IPC payload for path:list-wsl-directories.')
+    await expect(list(trustedEvent, { distro: 'Ubuntu', path: '../etc' })).rejects.toThrow('Invalid folder path.')
+    await expect(list(trustedEvent, { distro: '--help' })).rejects.toThrow('Invalid IPC payload for path:list-wsl-directories.')
+    expect(wslDistrosMock.runWslCommand).not.toHaveBeenCalled()
+  })
+
+  it('does not browse WSL folders on macOS', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    registerForTest(vi.fn())
+
+    await expect(
+      handler(IpcChannels.pathListWslDirectories)(trustedEvent, { distro: 'Ubuntu-24.04' })
+    ).rejects.toThrow('only be browsed on Windows')
+    expect(wslDistrosMock.runWslCommand).not.toHaveBeenCalled()
   })
 })

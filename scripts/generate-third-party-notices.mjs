@@ -9,6 +9,8 @@ const outputPath = join(root, 'THIRD_PARTY_NOTICES.md')
 const lock = JSON.parse(readFileSync(lockPath, 'utf8'))
 const packages = lock.packages ?? {}
 const rootPackage = packages[''] ?? {}
+const themeCreditsPath = join(root, 'scripts', 'theme-credits.json')
+const themeLicenseDirectory = join(root, 'scripts', 'license-overrides')
 const supplementalLicenseFiles = {
   'node_modules/react-remove-scroll-bar': [{
     name: 'upstream/LICENSE',
@@ -66,6 +68,12 @@ export const bundledRendererDependencies = [
   'react-dom',
   'tailwind-merge',
   'zustand',
+]
+
+// electron-vite also bundles devDependencies into the main-process script (only `dependencies` are left
+// external), so a library used there needs attribution in the same way.
+export const bundledMainDependencies = [
+  'jsonc-parser',
 ]
 
 function packageName(packagePath, metadata) {
@@ -160,7 +168,7 @@ export function attributedPackagePaths(packageMetadata = packages) {
       .filter(([packagePath, metadata]) => packagePath !== '' && !metadata.dev)
       .map(([packagePath]) => packagePath),
   )
-  for (const packagePath of dependencyClosure(bundledRendererDependencies, packageMetadata)) {
+  for (const packagePath of dependencyClosure([...bundledRendererDependencies, ...bundledMainDependencies], packageMetadata)) {
     selected.add(packagePath)
   }
   return selected
@@ -191,6 +199,7 @@ function directDependencyNames() {
   return new Set([
     ...Object.keys(rootPackage.dependencies ?? {}),
     ...bundledRendererDependencies,
+    ...bundledMainDependencies,
   ])
 }
 
@@ -214,6 +223,40 @@ function noticeText(entries) {
   return [...groups.values()].sort((a, b) => a.packages[0].localeCompare(b.packages[0]))
 }
 
+/** The color themes MDE adapted from other projects, and the originals it made itself: `scripts/theme-credits.json`. */
+export function loadThemeCredits() {
+  return JSON.parse(readFileSync(themeCreditsPath, 'utf8'))
+}
+
+function themeNoticeLines() {
+  const credits = loadThemeCredits()
+  const names = (themes) => {
+    const labels = themes.map((theme) => theme.label)
+    return labels.length > 1 ? `${labels.slice(0, -1).join(', ')} and ${labels.at(-1)}` : labels.join('')
+  }
+  const lines = [
+    '## Color themes',
+    '',
+    `The ${names(credits.original)} themes are original to MDE and are licensed with it under the MIT License in \`LICENSE\`.`,
+    'The other themes adapt the color palettes of the projects below, which publish them under the MIT License. MDE uses only their color values, no code or other assets. It is not affiliated with them or endorsed by them; their names only say where a palette comes from. Each license text is reproduced exactly as the project publishes it.',
+    '',
+    '| Theme | Adapted from | Source | License |',
+    '| --- | --- | --- | --- |'
+  ]
+  for (const source of credits.sources) {
+    for (const theme of source.themes) {
+      lines.push(`| ${markdownCell(theme.label)} | ${markdownCell(source.name)} | ${markdownCell(source.url)} | ${markdownCell(source.license)} |`)
+    }
+  }
+  for (const source of credits.sources) {
+    const text = readFileSync(join(themeLicenseDirectory, source.licenseFile), 'utf8').replaceAll('\r\n', '\n').trim()
+    lines.push('', `### ${source.name}`, '')
+    lines.push(`Themes: ${names(source.themes)}`, '', `Source: ${source.url}`, '', `What MDE changed: ${source.changes}`, '')
+    lines.push('~~~text', text, '~~~')
+  }
+  return lines
+}
+
 export function renderThirdPartyNotices() {
   const entries = packageEntries()
   const direct = directDependencyNames()
@@ -233,9 +276,11 @@ export function renderThirdPartyNotices() {
     '',
     'The `react-remove-scroll-bar@2.3.8` npm tarball declares MIT but omits its license file. Its notice text below is preserved from the upstream repository license at `https://github.com/theKashey/react-remove-scroll-bar/blob/master/LICENSE`.',
     '',
+    ...themeNoticeLines(),
+    '',
     '## Locked package inventory',
     '',
-    `Generated from \`package-lock.json\` by \`npm run licenses\`. ${entries.length} shipped package entries are listed, including production dependencies and libraries bundled into renderer assets. Build-time-only dependencies are excluded.`,
+    `Generated from \`package-lock.json\` by \`npm run licenses\`. ${entries.length} shipped package entries are listed, including production dependencies and libraries bundled into the renderer assets and the main-process script. Build-time-only dependencies are excluded.`,
     '',
     '| Package | Version | Direct dependency | Declared license | Source |',
     '| --- | --- | --- | --- | --- |'

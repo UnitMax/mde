@@ -1,21 +1,28 @@
-import { promises as fs } from 'node:fs'
-import { supportsAgentIntegration } from '@shared/agent-support'
+import { constants, promises as fs } from 'node:fs'
+import { isFileRoot } from '@shared/file-root'
+import type {
+  OpenCodeConfigPreview,
+  OpenCodeConfigPreviewRequest,
+  OpenCodeConfigRequest,
+  OpenCodeConfigSaveRequest,
+  OpenCodeConfigSnapshot,
+  OpenCodeConfigTarget
+} from '@shared/opencode-config'
+import { inboxTerminalThreadId, inboxThreadTerminalId } from '@shared/inbox-thread-terminal'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import {
   type AppInfo,
   type CreateSessionTabRequest,
   type DropPtyFile,
   type DropPtyFilesRequest,
-  type GitDiffRequest,
-  type GitInfoRequest,
-  type GitStatusRequest,
+  type TerminalDirectoryRequest,
+  type FileRoot,
   type GitTerminalInfoRequest,
   IpcChannels,
   type EnsurePtyRequest,
+  type RestartPtyRequest,
   type FilesListRequest,
   type FilesReadRequest,
-  type PtyLaunchRequest,
-  type MoveSessionRequest,
   type MoveTodoTaskRequest,
   type PlatformInfo,
   type ReorderSessionRequest,
@@ -29,13 +36,13 @@ import {
   type PtyDropRejection,
   type TerminalDropMode,
   type UpdatePtyPaletteRequest,
-  type UpdateProjectRequest,
   type UpdateTodoProjectRequest,
   type UpdateTodoTaskRequest,
   type UpdateSessionRequest,
   type UpdateSessionTabRequest,
   type SelectSessionTabRequest,
   type ValidatePathRequest,
+  type ListWslDirectoriesRequest,
   type WritePtyRequest,
   type WorkspaceData
 } from '@shared/ipc'
@@ -43,42 +50,83 @@ import type {
   Distro,
   FileReadResponse,
   FileTreeListResponse,
-  GitDiffResponse,
   HostPlatform,
-  GitInfoResponse,
-  GitStatusResponse,
   GitTerminalInfoResponse,
-  NewProject,
   NewTodoProject,
   NewTodoTask,
   NewSession,
+  DirectoryContext,
   PathCheckResult,
   PathResolution,
-  Project,
+  WslDirectoryListing,
   TodoProject,
   TodoTask,
-  OpenCodeTuiPluginRequest,
-  OpenCodeTuiPluginState,
-  OpenCodeTuiSetEnabledRequest,
-  OpenCodeTuiSetInstanceLabelModeRequest,
-  OpenCodeTuiSettings,
-  OpenCodeAlertSetEnabledRequest,
-  OpenCodeAlertSettings,
-  OpenCodeSessionsRequest,
-  OpenCodeSessionSummary,
   Session,
   PtyStatus,
-  AgentCommand,
-  CodingAgent,
-  TerminalLaunchDirectory,
-  WindowMode
+  WindowMode,
+  InboxAddFolderRequest,
+  InboxComposerState,
+  InboxFolder,
+  InboxFoldersState,
+  InboxGitInfo,
+  InboxGitInfoRequest,
+  InboxRemoveFolderRequest,
+  InboxRemoveRequest,
+  InboxSetArchivedRequest,
+  InboxSetPinnedRequest,
+  InboxSetCustomTitleRequest,
+  InboxSetReadRequest,
+  InboxThread,
+  InboxUpdateFolderRequest,
+  ChatConfigureRequest,
+  ChatCreateRequest,
+  ChatFormReplyRequest,
+  InboxChangesResponse,
+  InboxChangesRequest,
+  InboxChangeDiffRequest,
+  InboxChangeDiff,
+  ChatMessagesPage,
+  ChatMessagesRequest,
+  ChatSearchRequest,
+  ChatFileEntry,
+  ChatFilesRequest,
+  ChatFilesCheckRequest,
+  ChatSearchResponse,
+  ChatOptions,
+  ChatOptionsRequest,
+  ChatPermissionReplyRequest,
+  ChatRequests,
+  ChatRevert,
+  ChatForkRequest,
+  ChatForkResult,
+  ChatRevertRequest,
+  ChatSendRequest,
+  ChatPendingMessage,
+  ChatDiscardPendingRequest,
+  ChatMcpRequest,
+  ChatMcpSetRequest,
+  ChatMcpState,
+  ChatBackgroundState,
+  ChatSetDeliveryRequest,
+  ChatAsideRequest,
+  ChatAsideAnswer,
+  ChatGoal,
+  ChatGoalRequest,
+  ChatThreadRequest,
+  ChatDraftRequest,
+  ChatDraft,
+  ChatDraftList
 } from '@shared/types'
 import { assertIpcSender, type IpcSecurityContext } from './ipc-security'
 import { assertIpcPayload, type IpcChannel } from './ipc-validation'
 import type { PtyLaunchOptions, PtyManager } from './pty/manager'
 import { fileTreeDropFile, resolveTerminalDrop } from './pty/drop'
-import type { OpenCodeTuiStatusManager } from './opencode/tui-status'
-import type { OpenCodeAlertManager } from './opencode/alerts'
+import type { InboxRecorder } from './inbox/recorder'
+import type { TaskbarAttention } from './taskbar-attention'
+import type { FloatingTerminalKey } from './floating-terminal-key'
+import type { TaskbarAttentionRequest } from '@shared/taskbar-attention'
+import type { InboxChatService } from './inbox/chat'
+import type { OpenCodeConfigService } from './opencode/config'
 import type { MiniWindowController } from './mini-window'
 import type { TitleBarController } from './window-chrome'
 import { createAppInfo } from '@shared/app-info'
@@ -91,26 +139,21 @@ import {
   toWindows,
   uncPathFor
 } from './wsl/paths'
+import { listWslDirectories } from './wsl/browse'
 import { buildVsCodeRemoteUri } from './vscode'
 import { safeVsCodeRemoteUrl } from './external-links'
-import {
-  listOpenCodeSessions,
-  readOpenCodeSession,
-  validateOpenCodeExecutable,
-  validateOpenCodeSessionId
-} from './opencode/sessions'
-import { readGitDiff, readGitInfo, readGitStatus, readGitTerminalInfo } from './git'
+import { readGitTerminalInfo } from './git'
+import { readInboxGitChanges, readInboxGitDiff } from './inbox/changes'
+import { terminalSessionResolver } from './inbox/terminal'
+import { INBOX_TERMINAL_SESSION_ID, inboxTerminalSession, type InboxTerminalConfiguration, type InboxTerminalSettings } from '@shared/inbox-terminal'
 import { isSafeRelativePath, listSessionDirectory, readSessionFile } from './files/tree'
 import {
-  createProject,
   createTodoProject,
   createTodoTask,
   createSession,
   duplicateSession,
   getSession,
   loadWorkspace,
-  moveSession,
-  removeProject,
   removeTodoProject,
   removeTodoTask,
   removeSession,
@@ -118,7 +161,6 @@ import {
   createSessionTab,
   removeSessionTab,
   selectSessionTab,
-  updateProject,
   updateTodoProject,
   updateTodoTask,
   moveTodoTask,
@@ -206,9 +248,9 @@ async function validatePath(req: ValidatePathRequest): Promise<PathCheckResult> 
  * on-disk check — repeated here rather than trusted from report time, since the
  * path may have been replaced since — confirms it is still a directory.
  */
-async function verifiedDirectory(session: Session, directory: string): Promise<string | null> {
-  const path = directory.trim()
-  if (!path) return null
+async function verifiedDirectory(session: Session, directory: string, quiet = false): Promise<string | null> {
+  const path = directory
+  if (!path.trim()) return null
 
   if (session.kind === 'native') {
     if (process.platform === 'darwin' && !isPlainAbsolutePath(path)) return null
@@ -228,7 +270,7 @@ async function verifiedDirectory(session: Session, directory: string): Promise<s
   // Rejections are logged: this path fails closed, so a silent return here is
   // indistinguishable from a dead button.
   const reject = (reason: string): null => {
-    console.warn(`[path] not opening ${JSON.stringify(directory)}: ${reason}`)
+    if (!quiet) console.warn(`[path] not opening ${JSON.stringify(directory)}: ${reason}`)
     return null
   }
 
@@ -239,129 +281,6 @@ async function verifiedDirectory(session: Session, directory: string): Promise<s
 
   const result = await runWslCommand(distro, directoryCheckArgs(canonical))
   return result.code === 0 ? canonical : reject(`not a directory in ${distro}`)
-}
-
-/**
- * The session's own folder, verified like a terminal-reported directory.
- * Sessions saved by older versions can still hold a target-native shorthand
- * such as `~`, or a path copied from the Windows folder picker; those are
- * normalized first, since neither wslpath nor a VS Code URI understands them.
- */
-async function verifiedSessionDirectory(session: Session): Promise<string | null> {
-  if (session.kind === 'wsl' && session.distro && !isPlainAbsolutePath(session.path)) {
-    const resolved = await resolveForTarget('wsl', session.distro, session.path)
-    return verifiedDirectory(session, resolved.path)
-  }
-  return verifiedDirectory(session, session.path)
-}
-
-function isCodingAgent(value: unknown): value is CodingAgent {
-  return value === 'opencode' || value === 'codex' || value === 'claude'
-}
-
-function isTerminalLaunchDirectory(value: unknown): value is TerminalLaunchDirectory {
-  return value === 'terminal' || value === 'session'
-}
-
-function isSafeLaunchArgument(value: unknown): value is string {
-  return typeof value === 'string' && !/[\u0000-\u001f\u007f]/.test(value)
-}
-
-function validatePtyLaunchRequest(launch: PtyLaunchRequest): void {
-  if (!launch || typeof launch.sourceTerminalId !== 'string' || !launch.sourceTerminalId.trim()) {
-    throw new Error('Invalid terminal launch source.')
-  }
-  if ('opencodeSessionId' in launch) {
-    validateOpenCodeSessionId(launch.opencodeSessionId)
-    validateOpenCodeExecutable(launch.executable)
-    return
-  }
-  if (!isTerminalLaunchDirectory(launch.directory)) {
-    throw new Error('Invalid terminal launch directory.')
-  }
-  if (launch.agent === undefined) return
-  if (!launch.agent || typeof launch.agent !== 'object' || !isCodingAgent(launch.agent.kind)) {
-    throw new Error('Invalid coding agent.')
-  }
-
-  const command = launch.agent.command as AgentCommand | undefined
-  if (
-    !command ||
-    !isSafeLaunchArgument(command.executable) ||
-    !command.executable.trim() ||
-    !Array.isArray(command.args) ||
-    !command.args.every(isSafeLaunchArgument)
-  ) {
-    throw new Error('Invalid coding-agent command.')
-  }
-}
-
-async function resolvePtyLaunchOptions(
-  ptyManager: PtyManager,
-  session: Session,
-  launch: PtyLaunchRequest | undefined
-): Promise<PtyLaunchOptions | undefined> {
-  if (!launch) return undefined
-  validatePtyLaunchRequest(launch)
-  if (!supportsAgentIntegration(process.platform, session)) {
-    throw new Error('New terminal launches require macOS or a Windows/WSL session.')
-  }
-
-  const source = ptyManager.terminalInfo(launch.sourceTerminalId)
-  if (!source || source.sessionId !== session.id) {
-    throw new Error('The source terminal is not available.')
-  }
-
-  if ('opencodeSessionId' in launch) {
-    const saved = await readOpenCodeSession(session, launch.executable, launch.opencodeSessionId)
-    const directory = await verifiedDirectory(session, saved.directory)
-    if (!directory) throw new Error('The saved OpenCode session directory is not available.')
-    if (ptyManager.terminalInfo(launch.sourceTerminalId)?.sessionId !== session.id) {
-      throw new Error('The source terminal is not available.')
-    }
-    return {
-      directory,
-      agent: { executable: launch.executable, args: ['--session', saved.id] }
-    }
-  }
-
-  const requestedDirectory = launch.directory === 'session' ? session.path : source.directory
-  if (!requestedDirectory) {
-    throw new Error(
-      launch.directory === 'session'
-        ? 'The session directory is not available.'
-        : 'The source terminal directory is not available.'
-    )
-  }
-
-  const directory = launch.directory === 'session'
-    ? await verifiedSessionDirectory(session)
-    : await verifiedDirectory(session, requestedDirectory)
-  if (!directory) throw new Error('The selected launch directory is not available.')
-
-  return {
-    directory,
-    ...(launch.agent ? { agent: launch.agent.command } : {})
-  }
-}
-
-/**
- * Replacing a pane's process accepts only an OpenCode resume for that same pane.
- * It resolves through the new-pane path, so the saved record and directory are
- * verified before the running process is stopped. Quitting the agent returns
- * to the pane's shell rather than ending the terminal.
- */
-async function resolvePtyReplacementOptions(
-  ptyManager: PtyManager,
-  session: Session,
-  req: EnsurePtyRequest
-): Promise<PtyLaunchOptions | undefined> {
-  if (req.launch === undefined) return undefined
-  if (!('opencodeSessionId' in req.launch) || req.launch.sourceTerminalId !== req.terminalId) {
-    throw new Error('Invalid terminal replacement request.')
-  }
-  const options = await resolvePtyLaunchOptions(ptyManager, session, req.launch)
-  return options && { ...options, returnToShell: true }
 }
 
 async function revealDirectory(session: Session, directory: string): Promise<void> {
@@ -377,20 +296,120 @@ async function revealDirectory(session: Session, directory: string): Promise<voi
   await shell.openPath(windowsPath)
 }
 
-async function revealSession(session: Session): Promise<void> {
-  const directory = await verifiedSessionDirectory(session)
-  if (directory) await revealDirectory(session, directory)
+/** Hands a verified WSL folder to the registered Windows VS Code installation, reporting a failure to the user. */
+async function openDirectoryInVsCode(session: Session, directory: string): Promise<void> {
+  try {
+    const url = safeVsCodeRemoteUrl(buildVsCodeRemoteUri(session, process.platform, directory))
+    if (!url) throw new Error('Refusing to open an unexpected VS Code URL.')
+    await shell.openExternal(url)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    dialog.showErrorBox(
+      'Could not open VS Code',
+      `Could not hand the WSL folder to the registered Windows VS Code installation. Make sure VS Code is installed and the Remote - WSL extension is available locally.\n\n${detail}`
+    )
+  }
+}
+
+/** Whether this process can show the session's folder in a file manager: a WSL folder needs Windows and a distro. */
+function canRevealSession(session: Session): boolean {
+  return session.kind !== 'wsl' || (process.platform === 'win32' && Boolean(session.distro))
+}
+
+/** Whether this process can open the session's folder in VS Code: only WSL folders, from Windows. */
+function canOpenSessionInVsCode(session: Session): boolean {
+  return process.platform === 'win32' && session.kind === 'wsl' && Boolean(session.distro)
 }
 
 export function registerIpcHandlers(
   security: IpcSecurityContext,
   ptyManager: PtyManager,
-  opencodeTuiStatusManager: OpenCodeTuiStatusManager,
-  opencodeAlertManager: OpenCodeAlertManager,
   miniWindow: MiniWindowController,
-  titleBar: TitleBarController
+  titleBar: TitleBarController,
+  inbox: { recorder: InboxRecorder; chat: InboxChatService; openCodeConfig: OpenCodeConfigService },
+  taskbar?: TaskbarAttention,
+  floatingTerminalKey?: FloatingTerminalKey
 ): void {
+  const inboxRecorder = inbox.recorder
+  const chat = inbox.chat
   const pendingEnsures = new Map<string, symbol>()
+  // Inbox shells and conversation terminals have reserved identities, resolved from main-owned state.
+  let inboxTerminalGeneration = 0
+  let pendingInboxConfiguration: symbol | undefined
+  const getShellSession = terminalSessionResolver({ getSession, listDistros, platform: process.platform })
+  const getTerminalSession = async (id: string): Promise<Session | null> => {
+    const threadId = inboxTerminalThreadId(id)
+    return threadId ? chat.terminalSession(threadId) : getShellSession(id)
+  }
+  const threadTerminalLaunch = async (req: EnsurePtyRequest, session: Session): Promise<PtyLaunchOptions | null> => {
+    const threadId = inboxTerminalThreadId(session.id)
+    if (!threadId) {
+      if (inboxTerminalThreadId(req.terminalId)) throw new Error('Invalid Inbox thread terminal.')
+      return null
+    }
+    if (req.terminalId !== session.id) throw new Error('Invalid Inbox thread terminal launch.')
+    const threadDirectory = chat.fileRoot(threadId)?.path
+    if (!threadDirectory) throw new Error('The thread directory is not available.')
+    const directory = await verifiedDirectory(session, threadDirectory)
+    if (!directory) throw new Error('The thread directory is not available.')
+    const launch = await chat.terminalLaunch(threadId)
+    // Recheck after filesystem work: removing a thread must not leave a late launch behind.
+    const current = chat.terminalSession(threadId)
+    if (chat.fileRoot(threadId)?.path !== threadDirectory || current.kind !== session.kind || current.distro !== session.distro) {
+      throw new Error('The thread directory has changed.')
+    }
+    return { directory, ...launch }
+  }
+  const restoredShellLaunch = async (
+    req: EnsurePtyRequest,
+    session: Session,
+    restarting = false,
+  ): Promise<PtyLaunchOptions | undefined> => {
+    const current = ptyManager.terminalInfo(req.terminalId)
+    // Reattaching a live or exited PTY does not relaunch it or recheck its folder.
+    if (current && !restarting) return undefined
+    const saved = (current?.sessionId === session.id ? current.directory : null) ??
+      ptyManager.savedDirectory(req.terminalId, session)
+    if (!saved) return undefined
+    try {
+      const directory = await verifiedDirectory(session, saved, true)
+      if (!directory) return undefined
+      if (session.kind === 'native') {
+        await fs.access(directory, process.platform === 'win32' ? constants.F_OK : constants.X_OK)
+      } else {
+        const accessible = await runWslCommand(session.distro!, ['test', '-x', directory])
+        if (accessible.code !== 0) return undefined
+      }
+      return { directory }
+    } catch {
+      // A missing folder or unavailable target uses the ordinary home-directory launch.
+      return undefined
+    }
+  }
+  // The renderer names a terminal and an expected cwd, never an arbitrary filesystem root.
+  const terminalDirectory = async (req: TerminalDirectoryRequest): Promise<DirectoryContext> => {
+    if (!isFileRoot(req) || !req.terminalId) throw new Error('Invalid terminal directory request.')
+    const terminal = ptyManager.terminalInfo(req.terminalId)
+    if (!terminal) throw new Error('Terminal no longer exists.')
+    const session = await getTerminalSession(terminal.sessionId)
+    if (!session) throw new Error('Session no longer exists.')
+    const candidate = terminal.directory
+    if (!candidate || candidate !== req.directory) throw new Error('The terminal directory has changed.')
+    const directory = await verifiedDirectory(session, candidate)
+    if (!directory) throw new Error('Terminal folder not found.')
+    const current = ptyManager.terminalInfo(req.terminalId)
+    if (!current || current.sessionId !== terminal.sessionId || current.directory !== candidate) {
+      throw new Error('The terminal directory has changed.')
+    }
+    return { ...session, path: directory }
+  }
+  const fileRoot = async (root: FileRoot): Promise<DirectoryContext> => {
+    if (!isFileRoot(root)) throw new Error('Invalid file root.')
+    if (root.terminalId) return terminalDirectory(root)
+    const session = chat.fileRoot(root.sessionId!)
+    if (!session) throw new Error('Session no longer exists.')
+    return session
+  }
   const handle = <Req, Res>(
     channel: IpcChannel,
     handler: (req: Req, event: Electron.IpcMainInvokeEvent) => Promise<Res> | Res
@@ -415,22 +434,13 @@ export function registerIpcHandlers(
     clipboard.writeText(text)
   })
 
-  handle<void, WorkspaceData>(IpcChannels.workspaceList, () => loadWorkspace())
-  handle<NewProject, Project>(IpcChannels.projectsCreate, (input) => createProject(input))
-  handle<UpdateProjectRequest, Project | null>(IpcChannels.projectsUpdate, (req) =>
-    updateProject(req)
-  )
-  handle<string, void>(IpcChannels.projectsRemove, async (id) => {
-    // Removing a project must not leave any child shell running.
-    const workspace = await loadWorkspace()
-    for (const session of workspace.sessions) {
-      if (session.projectId === id) {
-        ptyManager.disposeForSourceSession(session.id)
-      }
-    }
-    await removeProject(id)
+  // The same paste Ctrl/Cmd+V does, into whatever the sender has focused. Nothing is returned, so the
+  // page cannot read the clipboard through this; it only receives the paste event a keypress would give.
+  handle<void, void>(IpcChannels.clipboardPaste, (_req, event) => {
+    event.sender.paste()
   })
 
+  handle<void, WorkspaceData>(IpcChannels.workspaceList, () => loadWorkspace())
   handle<NewTodoProject, TodoProject>(IpcChannels.todoProjectsCreate, (input) =>
     createTodoProject(input)
   )
@@ -448,19 +458,11 @@ export function registerIpcHandlers(
   )
   handle<string, void>(IpcChannels.todoTasksRemove, (id) => removeTodoTask(id))
 
-  handle<NewSession, Session>(IpcChannels.sessionsCreate, async (input) => {
-    const resolution = await resolveForTarget(input.kind, input.distro, input.path)
-    return createSession({
-      ...input,
-      path: resolution.path,
-      ...(resolution.distro ? { distro: resolution.distro } : {})
-    })
-  })
+  handle<NewSession, Session>(IpcChannels.sessionsCreate, (input) => createSession(input))
   handle<string, Session | null>(IpcChannels.sessionsDuplicate, (id) => duplicateSession(id))
   handle<UpdateSessionRequest, Session | null>(IpcChannels.sessionsUpdate, (req) =>
     updateSession(req)
   )
-  handle<MoveSessionRequest, Session | null>(IpcChannels.sessionsMove, (req) => moveSession(req))
   handle<ReorderSessionRequest, Session[] | null>(IpcChannels.sessionsReorder, (req) =>
     reorderSession(req)
   )
@@ -481,54 +483,104 @@ export function registerIpcHandlers(
     removeSessionTab(req)
   )
 
-  handle<OpenCodeTuiPluginRequest, OpenCodeTuiPluginState>(
-    IpcChannels.opencodeTuiPluginState,
-    async (req) => {
-      return opencodeTuiStatusManager.pluginState(req.target)
-    }
+  handle<void, InboxThread[]>(IpcChannels.inboxList, () => inboxRecorder.list())
+  handle<InboxSetReadRequest, InboxThread | null>(IpcChannels.inboxSetRead, (req) =>
+    inboxRecorder.setRead(req.id, req.read)
   )
-  handle<OpenCodeTuiPluginRequest, OpenCodeTuiPluginState>(
-    IpcChannels.opencodeTuiPluginInstall,
-    (req) => opencodeTuiStatusManager.installPlugin(req.target)
+  handle<InboxSetArchivedRequest, InboxThread | null>(IpcChannels.inboxSetArchived, (req) =>
+    inboxRecorder.setArchived(req.id, req.archived)
   )
-  handle<OpenCodeTuiPluginRequest, OpenCodeTuiPluginState>(
-    IpcChannels.opencodeTuiPluginRemove,
-    (req) => opencodeTuiStatusManager.removePlugin(req.target)
+  handle<InboxSetPinnedRequest, InboxThread | null>(IpcChannels.inboxSetPinned, (req) =>
+    inboxRecorder.setPinned(req.id, req.pinned)
   )
-  handle<void, OpenCodeTuiSettings>(IpcChannels.opencodeTuiSettings, () =>
-    opencodeTuiStatusManager.settings()
+  handle<InboxSetCustomTitleRequest, InboxThread | null>(IpcChannels.inboxSetCustomTitle, (req) =>
+    inboxRecorder.setCustomTitle(req.id, req.customTitle)
   )
-  handle<OpenCodeTuiSetEnabledRequest, OpenCodeTuiSettings>(
-    IpcChannels.opencodeTuiSetEnabled,
-    (req) => {
-      if (typeof req?.enabled !== 'boolean') {
-        throw new Error('Invalid OpenCode TUI enabled setting.')
-      }
-      return opencodeTuiStatusManager.setEnabled(req.enabled)
-    }
-  )
-  handle<OpenCodeTuiSetInstanceLabelModeRequest, OpenCodeTuiSettings>(
-    IpcChannels.opencodeTuiSetInstanceLabelMode,
-    (req) => {
-      if (req?.mode !== 'numbered' && req?.mode !== 'title') {
-        throw new Error('Invalid OpenCode TUI instance label mode.')
-      }
-      return opencodeTuiStatusManager.setInstanceLabelMode(req.mode)
-    }
-  )
+  handle<InboxRemoveRequest, void>(IpcChannels.inboxRemove, async (req) => {
+    // First, so that Git refusing (uncommitted changes) leaves the thread in place to try again.
+    if (req.removeWorktree) await chat.removeThreadWorktree(req.id)
+    await chat.removeDraft(`thread:${req.id}`)
+    inboxRecorder.remove(req.id)
+    const terminalId = inboxThreadTerminalId(req.id)
+    pendingEnsures.delete(terminalId)
+    ptyManager.dispose(terminalId)
+  })
+  handle<void, InboxFoldersState>(IpcChannels.inboxFolders, () => chat.folders())
+  handle<InboxAddFolderRequest, InboxFolder>(IpcChannels.inboxFoldersAdd, async (req) => {
+    // OpenCode's service runs where the folder lives: in WSL on Windows, natively on macOS.
+    if (process.platform === 'win32' && req.kind !== 'wsl') throw new Error('On Windows, Inbox folders must be in WSL.')
+    if (process.platform !== 'win32' && req.kind !== 'native') throw new Error('WSL folders are only available on Windows.')
+    const resolution = await resolveForTarget(req.kind, req.distro, req.path)
+    const distro = resolution.distro ?? req.distro
+    const check = await validatePath({ kind: req.kind, ...(distro ? { distro } : {}), path: resolution.path })
+    if (!check.exists) throw new Error(check.error ?? 'That folder does not exist.')
+    return chat.addFolder({
+      directory: resolution.path,
+      target: req.kind === 'wsl' ? { kind: 'wsl', distro: distro as string } : { kind: 'native' },
+      ...(req.name !== undefined ? { name: req.name } : {}),
+      ...(req.icon ? { icon: req.icon } : {}),
+    })
+  })
+  handle<InboxUpdateFolderRequest, InboxFolder>(IpcChannels.inboxFoldersUpdate, (req) => chat.updateFolder(req))
+  handle<InboxRemoveFolderRequest, void>(IpcChannels.inboxFoldersRemove, (req) => chat.removeFolder(req.id))
+  handle<InboxComposerState, InboxComposerState>(IpcChannels.inboxComposerSet, (req) => chat.setComposer(req))
+  handle<InboxGitInfoRequest, InboxGitInfo>(IpcChannels.inboxGitInfo, (req) => chat.gitInfo(req))
 
-  handle<void, OpenCodeAlertSettings>(IpcChannels.opencodeAlertsSettings, () =>
-    opencodeAlertManager.settings()
-  )
-  handle<OpenCodeAlertSetEnabledRequest, OpenCodeAlertSettings>(
-    IpcChannels.opencodeAlertsSetEnabled,
-    (req) => {
-      if (typeof req?.enabled !== 'boolean') {
-        throw new Error('Invalid OpenCode alerts enabled setting.')
-      }
-      return opencodeAlertManager.setEnabled(req.enabled)
+  // OpenCode runs where its configuration lives: inside WSL on Windows, on this computer elsewhere. The renderer
+  // only names which; the folder and file are worked out in the main process.
+  const configTarget = async (req: OpenCodeConfigTarget): Promise<OpenCodeConfigTarget> => {
+    if (process.platform === 'win32') {
+      if (req.kind !== 'wsl' || !req.distro) throw new Error('On Windows, OpenCode runs in WSL.')
+      const match = (await listDistros()).find((distro) => distro.name === req.distro)
+      if (!match) throw new Error(`The WSL distribution ${req.distro} was not found.`)
+      return { kind: 'wsl', distro: match.name }
     }
-  )
+    if (req.kind !== 'native' || req.distro !== undefined) throw new Error('WSL is only available on Windows.')
+    return { kind: 'native' }
+  }
+  handle<OpenCodeConfigRequest, OpenCodeConfigSnapshot>(IpcChannels.opencodeConfigRead, async (req) =>
+    inbox.openCodeConfig.read(await configTarget(req)))
+  handle<OpenCodeConfigPreviewRequest, OpenCodeConfigPreview>(IpcChannels.opencodeConfigPreview, async (req) =>
+    inbox.openCodeConfig.preview(await configTarget(req), req.draft))
+  handle<OpenCodeConfigSaveRequest, OpenCodeConfigSnapshot>(IpcChannels.opencodeConfigSave, async (req) =>
+    inbox.openCodeConfig.save(await configTarget(req), req.draft, req.revision))
+
+  handle<ChatConfigureRequest, void>(IpcChannels.chatConfigure, (req) => chat.configure(req.executable))
+  handle<ChatOptionsRequest, ChatOptions>(IpcChannels.chatOptions, (req) => chat.chatOptions(req))
+  handle<ChatCreateRequest, InboxThread>(IpcChannels.chatCreate, (req) => chat.create(req))
+  const inboxGitRoot = (threadId: string): DirectoryContext => {
+    const session = chat.fileRoot(threadId)
+    if (!session) throw new Error('This thread is no longer in the Inbox.')
+    return session
+  }
+  handle<InboxChangesRequest, InboxChangesResponse>(IpcChannels.inboxChanges, (req) => readInboxGitChanges(inboxGitRoot(req.threadId), req.details))
+  handle<InboxChangeDiffRequest, InboxChangeDiff>(IpcChannels.inboxChangeDiff, (req) => readInboxGitDiff(inboxGitRoot(req.threadId), req.path))
+  handle<ChatMessagesRequest, ChatMessagesPage>(IpcChannels.chatMessages, (req) => chat.messages(req))
+  handle<ChatSearchRequest, ChatSearchResponse>(IpcChannels.chatSearch, (req) => chat.search(req))
+  handle<ChatFilesRequest, ChatFileEntry[]>(IpcChannels.chatFiles, (req) => chat.files(req))
+  handle<ChatFilesCheckRequest, ChatFileEntry[]>(IpcChannels.chatFilesCheck, (req) => chat.checkFiles(req))
+  handle<void, ChatDraftList>(IpcChannels.chatDrafts, () => chat.drafts())
+  handle<ChatDraftRequest, ChatDraft>(IpcChannels.chatDraft, async (req) => chat.draft(req, req.action === 'tree' ? await fileRoot(req) : undefined))
+  handle<ChatSendRequest, ChatPendingMessage | null>(IpcChannels.chatSend, (req) => chat.send(req))
+  handle<ChatDiscardPendingRequest, void>(IpcChannels.chatDiscardPending, (req) => chat.discardPending(req))
+  handle<ChatSetDeliveryRequest, void>(IpcChannels.chatSetDelivery, (req) => chat.setDelivery(req))
+  handle<ChatAsideRequest, ChatAsideAnswer>(IpcChannels.chatAside, (req) => chat.aside(req))
+  handle<ChatMcpRequest, ChatMcpState>(IpcChannels.chatMcp, (req) => chat.mcpList(req))
+  handle<ChatMcpSetRequest, void>(IpcChannels.chatMcpSet, (req) => chat.mcpSetEnabled(req))
+  handle<ChatThreadRequest, void>(IpcChannels.chatInterrupt, (req) => chat.interrupt(req.threadId))
+  handle<ChatThreadRequest, void>(IpcChannels.chatCompact, (req) => chat.compact(req.threadId))
+  handle<ChatThreadRequest, ChatGoal | null>(IpcChannels.chatGoal, (req) => chat.goal(req.threadId))
+  handle<ChatThreadRequest, ChatBackgroundState>(IpcChannels.chatBackground, (req) => chat.backgroundTasks(req.threadId))
+  handle<ChatGoalRequest, void>(IpcChannels.chatGoalSet, (req) => chat.setGoal(req))
+  handle<ChatThreadRequest, void>(IpcChannels.chatRedo, (req) => chat.redo(req.threadId))
+  handle<ChatRevertRequest, ChatRevert>(IpcChannels.chatRevert, (req) => chat.revert(req))
+  handle<ChatForkRequest, ChatForkResult>(IpcChannels.chatFork, (req) => chat.fork(req))
+  handle<ChatThreadRequest, void>(IpcChannels.chatRegenerateTitle, (req) => chat.regenerateTitle(req.threadId))
+  handle<ChatThreadRequest, ChatRequests>(IpcChannels.chatRequests, (req) => chat.requests(req.threadId))
+  handle<ChatPermissionReplyRequest, void>(IpcChannels.chatPermissionReply, (req) => chat.replyPermission(req))
+  handle<ChatFormReplyRequest, void>(IpcChannels.chatFormReply, (req) => chat.replyForm(req))
+  handle<ChatThreadRequest, void>(IpcChannels.chatSubscribe, (req) => chat.subscribe(req.threadId))
+  handle<ChatThreadRequest, void>(IpcChannels.chatUnsubscribe, (req) => chat.unsubscribe(req.threadId))
 
   handle<void, WindowMode>(IpcChannels.windowModeGet, () => miniWindow.mode)
   handle<SetWindowModeRequest, WindowMode>(IpcChannels.windowModeSet, (req) => {
@@ -538,33 +590,42 @@ export function registerIpcHandlers(
 
   handle<WindowChromeColors, void>(IpcChannels.windowChromeSet, (req) => titleBar.setColors(req))
 
-  handle<OpenCodeSessionsRequest, OpenCodeSessionSummary[]>(IpcChannels.opencodeSessionsList, async (req) => {
-    if (!req || typeof req.sessionId !== 'string' || typeof req.sourceTerminalId !== 'string') {
-      throw new Error('Invalid OpenCode session history request.')
+  handle<TaskbarAttentionRequest, void>(IpcChannels.attentionUpdate, (req) => taskbar?.update(req))
+  handle<void, void>(IpcChannels.attentionBeep, () => shell.beep())
+  handle<{ active: boolean }, void>(IpcChannels.floatingTerminalActive, ({ active }) => floatingTerminalKey?.setActive(active))
+
+  handle<InboxTerminalSettings, InboxTerminalConfiguration>(IpcChannels.ptyConfigureInbox, async (req) => {
+    if (process.platform !== 'win32' && req.distro !== null) throw new Error('WSL is only available on Windows.')
+    const pending = Symbol()
+    pendingInboxConfiguration = pending
+    const distros = process.platform === 'win32' ? await listDistros() : []
+    const next = inboxTerminalSession(process.platform, distros, req.distro)
+    if (req.distro !== null && !next) throw new Error(`The WSL distribution ${req.distro} was not found.`)
+    const current = await getShellSession(INBOX_TERMINAL_SESSION_ID)
+    if (pendingInboxConfiguration !== pending) throw new Error('The sidebar terminal selection changed. Try again.')
+    const changed = current?.kind !== next?.kind || current?.distro !== next?.distro
+    if (changed) {
+      // Invalidate launches still checking a directory before stopping the old shells.
+      inboxTerminalGeneration++
+      const hasShells = Object.keys(ptyManager.statuses()).some((id) =>
+        ptyManager.terminalInfo(id)?.sessionId === INBOX_TERMINAL_SESSION_ID)
+      // At startup, saved directories already carry their distro; preserve matching ones.
+      if (hasShells) ptyManager.disposeForSourceSession(INBOX_TERMINAL_SESSION_ID)
     }
-    validateOpenCodeExecutable(req.executable)
-    const session = await getSession(req.sessionId)
-    if (!session || !supportsAgentIntegration(process.platform, session)) {
-      throw new Error('Session history requires macOS or a Windows/WSL terminal.')
-    }
-    const source = ptyManager.terminalInfo(req.sourceTerminalId)
-    if (!source || source.sessionId !== session.id) throw new Error('The source terminal is not available.')
-    return listOpenCodeSessions(session, req.executable)
+    getShellSession.setInboxSession(next)
+    return { session: next, changed }
   })
 
   handle<EnsurePtyRequest, PtyStatus>(IpcChannels.ptyEnsure, async (req) => {
     const pending = Symbol()
+    const generation = inboxTerminalGeneration
     pendingEnsures.set(req.terminalId, pending)
     try {
-      const session = await getSession(req.sessionId)
+      const session = await getTerminalSession(req.sessionId)
       if (!session) return 'none'
-      if (req.launch !== undefined) validatePtyLaunchRequest(req.launch)
-      // Reattaching an existing resumed TUI must not depend on its saved record
-      // still existing, or on the terminal that originally opened the picker.
-      const reattaching = req.launch && 'opencodeSessionId' in req.launch &&
-        ptyManager.terminalInfo(req.terminalId)?.sessionId === session.id
-      const launch = reattaching ? undefined : await resolvePtyLaunchOptions(ptyManager, session, req.launch)
-      if (pendingEnsures.get(req.terminalId) !== pending) return 'none'
+      const launch = await threadTerminalLaunch(req, session) ?? await restoredShellLaunch(req, session)
+      if (pendingEnsures.get(req.terminalId) !== pending ||
+        (req.sessionId === INBOX_TERMINAL_SESSION_ID && generation !== inboxTerminalGeneration)) return 'none'
       return ptyManager.ensure(
         req.terminalId,
         session,
@@ -576,14 +637,16 @@ export function registerIpcHandlers(
       if (pendingEnsures.get(req.terminalId) === pending) pendingEnsures.delete(req.terminalId)
     }
   })
-  handle<EnsurePtyRequest, PtyStatus>(IpcChannels.ptyRestart, async (req) => {
+  handle<RestartPtyRequest, PtyStatus>(IpcChannels.ptyRestart, async (req) => {
     const pending = Symbol()
+    const generation = inboxTerminalGeneration
     pendingEnsures.set(req.terminalId, pending)
     try {
-      const session = await getSession(req.sessionId)
+      const session = await getTerminalSession(req.sessionId)
       if (!session) return 'none'
-      const launch = await resolvePtyReplacementOptions(ptyManager, session, req)
-      if (pendingEnsures.get(req.terminalId) !== pending) return 'none'
+      const launch = await threadTerminalLaunch(req, session) ?? await restoredShellLaunch(req, session, true)
+      if (pendingEnsures.get(req.terminalId) !== pending ||
+        (req.sessionId === INBOX_TERMINAL_SESSION_ID && generation !== inboxTerminalGeneration)) return 'none'
       return ptyManager.restart(
         req.terminalId,
         session,
@@ -618,8 +681,7 @@ export function registerIpcHandlers(
       !req.files.every(isDropPtyFile) ||
       (req.treeEntry !== undefined && (
         !req.treeEntry ||
-        typeof req.treeEntry.sessionId !== 'string' ||
-        req.treeEntry.sessionId.length === 0 ||
+        !isFileRoot(req.treeEntry) ||
         typeof req.treeEntry.path !== 'string' ||
         req.treeEntry.path.length === 0 ||
         !isSafeRelativePath(req.treeEntry.path)
@@ -637,13 +699,12 @@ export function registerIpcHandlers(
       return terminalDropUnavailable(droppedFiles)
     }
 
-    const session = await getSession(terminal.sessionId)
+    const session = await getTerminalSession(terminal.sessionId)
     if (!session) return terminalDropUnavailable(droppedFiles)
 
     const files = [...req.files]
     if (req.treeEntry) {
-      const source = await getSession(req.treeEntry.sessionId)
-      if (!source) throw new Error('The source session is no longer available.')
+      const source = await fileRoot(req.treeEntry)
       files.push(await fileTreeDropFile(source, req.treeEntry.path, process.platform))
     }
     return resolveTerminalDrop(session, process.platform, files, req.mode)
@@ -668,80 +729,46 @@ export function registerIpcHandlers(
     resolveForTarget(req.kind, req.distro, req.rawPath)
   )
   handle<ValidatePathRequest, PathCheckResult>(IpcChannels.pathValidate, (req) => validatePath(req))
-  handle<string, void>(IpcChannels.pathReveal, async (sessionId) => {
-    const session = await getSession(sessionId)
-    if (session) await revealSession(session)
-  })
+  handle<ListWslDirectoriesRequest, WslDirectoryListing>(IpcChannels.pathListWslDirectories, (req) => listWslDirectories(req))
   handle<string, void>(IpcChannels.pathRevealTerminal, async (terminalId) => {
     const terminal = ptyManager.terminalInfo(terminalId)
     if (!terminal?.directory) return
 
-    const session = await getSession(terminal.sessionId)
-    if (!session || process.platform !== 'win32' || session.kind !== 'wsl' || !session.distro) return
+    const session = await getTerminalSession(terminal.sessionId)
+    if (!session || !canRevealSession(session)) return
 
     const directory = await verifiedDirectory(session, terminal.directory)
     if (!directory) return
 
     await revealDirectory(session, directory)
   })
-  handle<string, void>(IpcChannels.pathOpenInVsCode, async (sessionId) => {
-    const session = await getSession(sessionId)
-    if (!session || process.platform !== 'win32' || session.kind !== 'wsl' || !session.distro) return
-
-    const directory = await verifiedSessionDirectory(session)
-    if (!directory) return
-
-    try {
-      const url = safeVsCodeRemoteUrl(buildVsCodeRemoteUri(session, process.platform, directory))
-      if (!url) throw new Error('Refusing to open an unexpected VS Code URL.')
-      await shell.openExternal(url)
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error)
-      dialog.showErrorBox(
-        'Could not open VS Code',
-        `Could not hand the WSL folder to the registered Windows VS Code installation. Make sure VS Code is installed and the Remote - WSL extension is available locally.\n\n${detail}`
-      )
-    }
-  })
   handle<string, void>(IpcChannels.pathOpenTerminalInVsCode, async (terminalId) => {
     const terminal = ptyManager.terminalInfo(terminalId)
     if (!terminal?.directory) return
 
-    const session = await getSession(terminal.sessionId)
-    if (!session || process.platform !== 'win32' || session.kind !== 'wsl' || !session.distro) return
+    const session = await getTerminalSession(terminal.sessionId)
+    if (!session || !canOpenSessionInVsCode(session)) return
 
     const directory = await verifiedDirectory(session, terminal.directory)
     if (!directory) return
 
-    try {
-      const url = safeVsCodeRemoteUrl(buildVsCodeRemoteUri(session, process.platform, directory))
-      if (!url) throw new Error('Refusing to open an unexpected VS Code URL.')
-      await shell.openExternal(url)
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error)
-      dialog.showErrorBox(
-        'Could not open VS Code',
-        `Could not hand the WSL folder to the registered Windows VS Code installation. Make sure VS Code is installed and the Remote - WSL extension is available locally.\n\n${detail}`
-      )
-    }
+    await openDirectoryInVsCode(session, directory)
   })
-
-  handle<GitInfoRequest, GitInfoResponse>(IpcChannels.gitInfo, async (req) => {
-    if (!req || typeof req.sessionId !== 'string' || !req.sessionId) {
-      throw new Error('Invalid Git session request.')
-    }
-    const session = await getSession(req.sessionId)
-    if (!session) throw new Error('Session no longer exists.')
-    return readGitInfo(session)
+  // The folder of an Inbox thread or project. Main resolves the ID from the Inbox store, so the renderer
+  // never names a path, and the folder is verified like a terminal's before it reaches the desktop.
+  const inboxDirectory = async (id: string, allowed: (session: Session) => boolean): Promise<{ session: Session; directory: string } | null> => {
+    const root = chat.fileRoot(id)
+    if (!root || !allowed(root)) return null
+    const directory = await verifiedDirectory(root, root.path)
+    return directory ? { session: root, directory } : null
+  }
+  handle<string, void>(IpcChannels.pathRevealInbox, async (id) => {
+    const folder = await inboxDirectory(id, canRevealSession)
+    if (folder) await revealDirectory(folder.session, folder.directory)
   })
-
-  handle<GitStatusRequest, GitStatusResponse>(IpcChannels.gitStatus, async (req) => {
-    if (!req || typeof req.sessionId !== 'string' || !req.sessionId) {
-      throw new Error('Invalid Git session request.')
-    }
-    const session = await getSession(req.sessionId)
-    if (!session) throw new Error('Session no longer exists.')
-    return readGitStatus(session)
+  handle<string, void>(IpcChannels.pathOpenInboxInVsCode, async (id) => {
+    const folder = await inboxDirectory(id, canOpenSessionInVsCode)
+    if (folder) await openDirectoryInVsCode(folder.session, folder.directory)
   })
 
   handle<GitTerminalInfoRequest, GitTerminalInfoResponse | null>(
@@ -754,15 +781,16 @@ export function registerIpcHandlers(
       const terminal = ptyManager.terminalInfo(req.terminalId)
       if (!terminal) return null
 
-      const session = await getSession(terminal.sessionId)
+      const session = await getTerminalSession(terminal.sessionId)
       if (!session) return null
 
-      const candidateDirectory = terminal.directory ?? session.path
+      const candidateDirectory = terminal.directory
+      if (!candidateDirectory) return null
       const directory = await verifiedDirectory(session, candidateDirectory)
       if (!directory) return null
 
       try {
-        return await readGitTerminalInfo(session, directory)
+        return { ...await readGitTerminalInfo(session, directory), directory: candidateDirectory }
       } catch {
         // Terminal metadata is intentionally best-effort. The header should
         // disappear when Git cannot read the current directory.
@@ -771,30 +799,13 @@ export function registerIpcHandlers(
     }
   )
 
-  handle<GitDiffRequest, GitDiffResponse>(IpcChannels.gitDiff, async (req) => {
-    if (!req || typeof req.sessionId !== 'string' || !req.sessionId || typeof req.path !== 'string' || !req.path) {
-      throw new Error('Invalid Git diff request.')
-    }
-    const session = await getSession(req.sessionId)
-    if (!session) throw new Error('Session no longer exists.')
-    return readGitDiff(session, req.path)
-  })
-
   handle<FilesListRequest, FileTreeListResponse>(IpcChannels.filesList, async (req) => {
-    if (!req || typeof req.sessionId !== 'string' || !req.sessionId || typeof req.path !== 'string') {
-      throw new Error('Invalid file tree request.')
-    }
-    const session = await getSession(req.sessionId)
-    if (!session) throw new Error('Session no longer exists.')
-    return listSessionDirectory(session, req.path)
+    if (!isFileRoot(req) || typeof req.path !== 'string') throw new Error('Invalid file request.')
+    return listSessionDirectory(await fileRoot(req), req.path)
   })
 
   handle<FilesReadRequest, FileReadResponse>(IpcChannels.filesRead, async (req) => {
-    if (!req || typeof req.sessionId !== 'string' || !req.sessionId || typeof req.path !== 'string') {
-      throw new Error('Invalid file read request.')
-    }
-    const session = await getSession(req.sessionId)
-    if (!session) throw new Error('Session no longer exists.')
-    return readSessionFile(session, req.path)
+    if (!isFileRoot(req) || typeof req.path !== 'string') throw new Error('Invalid file request.')
+    return readSessionFile(await fileRoot(req), req.path)
   })
 }

@@ -1,3 +1,4 @@
+import { isFileRoot } from '@shared/file-root'
 import type { FileTreeDropEntry, PtyDropRejection, TerminalDropMode } from '@shared/ipc'
 
 export const FILE_TREE_DROP_TYPE = 'application/x-mde-file-tree-entry'
@@ -6,9 +7,11 @@ export function readFileTreeDrop(dataTransfer: Pick<DataTransfer, 'getData'>): F
   try {
     const entry: unknown = JSON.parse(dataTransfer.getData(FILE_TREE_DROP_TYPE))
     if (!entry || typeof entry !== 'object') return null
-    const { sessionId, path } = entry as Record<string, unknown>
-    return typeof sessionId === 'string' && sessionId.length > 0 &&
-      typeof path === 'string' && path.length > 0 ? { sessionId, path } : null
+    const { path } = entry as Record<string, unknown>
+    if (!isFileRoot(entry) || typeof path !== 'string' || !path) return null
+    return entry.terminalId
+      ? { terminalId: entry.terminalId, directory: entry.directory, path }
+      : { sessionId: entry.sessionId!, path }
   } catch {
     return null
   }

@@ -5,12 +5,13 @@ WSL using Windows Node.js, so the packaged application contains the correct Wind
 `node-pty` prebuilds. Cross-building from Linux is not supported; on native Windows,
 run `npm run build:win` directly.
 
-## Automated tag builds
+## Automated release builds
 
 The [Build release draft workflow](../.github/workflows/build-release.yml) builds
-Windows x64 natively on `windows-2025` alongside the macOS ARM64 DMG when a version
-tag is pushed. Plain and `v`-prefixed version tags are accepted and must match
-`package.json` and both root version fields in `package-lock.json`.
+Windows x64 natively on `windows-2025` alongside the macOS ARM64 DMG when it is run by
+hand on the default branch. The version in `package.json` and both root version fields in
+`package-lock.json` must agree; the tag `v<version>` is made by the workflow, on the
+built commit, once both builds pass.
 
 Both platform jobs run tests, the dependency audit, license checks, typechecking,
 and the package audit with publishing explicitly disabled. The Windows job extracts
@@ -19,8 +20,8 @@ required ConPTY files. After both builds succeed, a final job verifies their
 checksums and attaches the ZIP, DMG, SHA-256 checksum files, `LICENSE`, and
 `THIRD_PARTY_NOTICES.md` to one draft GitHub Release for that tag. It never publishes
 it. Review the draft and complete the Windows behavior checks below before manually
-publishing. See the [README](../README.md#release-builds-with-github-actions) for tag
-and manual-run instructions.
+publishing. See the [README](../README.md#checks-and-release-builds-with-github-actions) for the
+release steps.
 
 Reruns replace matching assets in the existing draft while preserving its notes.
 If the release is already published, the upload job fails without modifying it.
@@ -103,6 +104,12 @@ To also reinstall the cached Windows dependencies, add `--force-deps`; the flags
 can appear in either order. On native Windows, use `npm run build:win:dir`.
 For a release, use the default ZIP build and verify the extracted archive below.
 
+If the matching Windows dependencies are already installed, `npm run
+build:win:remote -- --dir --offline` stages the current source and packages the
+checksum-verified Electron ZIP from the Windows download cache. It fails if the cached
+dependencies or Electron runtime are missing or out of date; `--force-deps` is
+not available in this mode. Other packaging tools may still need their own caches.
+
 ## Verify Windows behavior
 
 Extract `dist\mde-<version>-win.zip` into an empty folder and run `mde.exe` from
@@ -131,11 +138,23 @@ Remove-Item Env:MDE_WINDOWS_EXECUTABLE_INTEGRATION
 Optionally set `MDE_WSL_DISTRO` to select a particular installed distro. The
 check compiles harmless sentinel executables in a fresh temporary directory,
 puts that directory in both cwd and `PATH`, and verifies real WSL queries,
-history transport, PowerShell and native/WSL ConPTY do not select the sentinels.
+PowerShell and native/WSL ConPTY do not select the sentinels.
 It restores cwd/environment and removes its fixtures. It does not access the
 user's OpenCode sessions or type commands into the user's existing terminals.
 Also start the extracted app from that fixture-style directory and verify
 default PowerShell, custom full-path shells and WSL terminals work there.
+
+Run the native containment regressions from the Windows build directory:
+
+```powershell
+npm test -- test/windows-contained-read.test.ts --maxWorkers=1
+```
+
+These use temporary directory junctions and need no administrator or symbolic-link privilege.
+They verify the repeated ancestor-replacement attack is refused, normal/empty/oversized reads,
+internal links and handle cleanup. Also open a native file preview and copy a file into an Inbox
+draft in the packaged app. Native Windows reads require system PowerShell's Add-Type capability;
+restricted language policies cause a safe read error, with no pathname fallback.
 
 Confirm the packaged binary was hardened, from the build directory:
 
@@ -195,7 +214,7 @@ third-party notices, and run the dependency audit. After upgrading, verify
 repeated application shutdown with several PowerShell and WSL terminals running,
 including panes in other tabs and sessions, using the extracted Windows ZIP.
 
-Windows releases are unsigned. Automated tag builds attach a SHA-256 checksum
+Windows releases are unsigned. Automated release builds attach a SHA-256 checksum
 alongside the ZIP; this detects corruption but does not provide a code signature.
 The `OriginalFilename` field of `mde.exe`'s version resource is also empty; electron-builder writes it
 that way and setting it would mean rewriting the binary after its fuses and asar

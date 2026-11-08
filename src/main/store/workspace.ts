@@ -1,14 +1,13 @@
+import { isPersistedTerminalLayout } from '@shared/terminal-layouts'
 import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import type {
-  MoveSessionRequest,
   MoveTodoTaskRequest,
   ReorderSessionRequest,
   CreateSessionTabRequest,
   RemoveSessionTabRequest,
   SelectSessionTabRequest,
-  UpdateProjectRequest,
   UpdateTodoProjectRequest,
   UpdateTodoTaskRequest,
   UpdateSessionRequest,
@@ -16,21 +15,19 @@ import type {
   WorkspaceData
 } from '@shared/ipc'
 import type {
-  NewProject,
   NewTodoProject,
   NewTodoTask,
   NewSession,
   PersistedTerminalLayout,
-  Project,
   TodoProject,
   TodoColumn,
   TodoTask,
   Session,
-  SessionTab,
-  TerminalLayout
+  SessionTab
 } from '@shared/types'
 import { isSessionColor } from '@shared/session-colors'
 import { isSessionIcon } from '@shared/session-icons'
+import { writeJsonAtomic } from './atomic-json'
 
 const FILE_NAME = 'workspace.json'
 
@@ -84,100 +81,22 @@ function uniqueEntries<T extends { id: string }>(entries: T[], kind: string): T[
   })
 }
 
-const TERMINAL_LAYOUT_COUNTS: Record<TerminalLayout, number> = {
-  single: 1,
-  columns: 2,
-  three: 3,
-  quadrant: 4,
-  fiveGrid: 5,
-  threeColumns: 3,
-  sixGrid: 6,
-  sevenGrid: 7,
-  eightGrid: 8,
-  nineGrid: 9
-}
-
-function isTerminalLayout(value: unknown): value is TerminalLayout {
-  return typeof value === 'string' && Object.hasOwn(TERMINAL_LAYOUT_COUNTS, value)
-}
-
-function ratio(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 1
-    ? value
-    : 0.5
-}
-
-function validRatio(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 1
-}
-
-function isThreeRowLayout(layout: TerminalLayout): boolean {
-  return layout === 'sevenGrid' || layout === 'eightGrid' || layout === 'nineGrid'
-}
-
-function isThreeColumnLayout(layout: TerminalLayout): boolean {
-  return layout === 'threeColumns' || layout === 'fiveGrid' || layout === 'sixGrid' ||
-    isThreeRowLayout(layout)
-}
-
-function threeRowRatios(sizes: Record<string, unknown>): { rowRatio: number; secondRowRatio: number } {
-  const rowRatio = validRatio(sizes.rowRatio) ? sizes.rowRatio : 1 / 3
-  const secondRowRatio = validRatio(sizes.secondRowRatio) ? sizes.secondRowRatio : 2 / 3
-  return rowRatio < secondRowRatio
-    ? { rowRatio, secondRowRatio }
-    : { rowRatio: 1 / 3, secondRowRatio: 2 / 3 }
-}
-
 function defaultTab(sessionId: string): SessionTab {
   return {
     id: `${sessionId}:tab:default`,
     name: 'Tab 1',
     layout: {
-      layout: 'single',
-      panes: [{ id: 'pane-1' }],
-      sizes: { columnRatio: 0.5, rowRatio: 0.5 }
+      tree: { type: 'pane', paneId: 'pane-1' },
+      panes: [{ id: 'pane-1' }]
     }
   }
 }
 
 function validateTerminalLayout(raw: unknown): PersistedTerminalLayout | null {
-  if (typeof raw !== 'object' || raw === null) return null
-  const record = raw as Record<string, unknown>
-  if (!isTerminalLayout(record.layout) || !Array.isArray(record.panes)) return null
-
-  const expectedCount = TERMINAL_LAYOUT_COUNTS[record.layout]
-  const panes = record.panes
-    .filter((pane): pane is Record<string, unknown> => typeof pane === 'object' && pane !== null)
-    .filter((pane) => isNonEmptyString(pane.id))
-    .map((pane) => ({
-      id: pane.id as string,
-      ...(isNonEmptyString(pane.title) ? { title: pane.title.trim() } : {})
-    }))
-  if (panes.length !== expectedCount || new Set(panes.map((pane) => pane.id)).size !== panes.length) {
-    return null
-  }
-
-  const sizes = typeof record.sizes === 'object' && record.sizes !== null
-    ? record.sizes as Record<string, unknown>
-    : {}
-  const columnRatio = isThreeColumnLayout(record.layout)
-    ? validRatio(sizes.columnRatio) ? sizes.columnRatio : 1 / 3
-    : ratio(sizes.columnRatio)
-  const secondColumnRatio = isThreeColumnLayout(record.layout)
-    ? validRatio(sizes.secondColumnRatio) ? sizes.secondColumnRatio : 2 / 3
-    : undefined
-  const normalizedColumnRatios = isThreeColumnLayout(record.layout) && columnRatio >= (secondColumnRatio ?? 0)
-    ? { columnRatio: 1 / 3, secondColumnRatio: 2 / 3 }
-    : { columnRatio, ...(secondColumnRatio === undefined ? {} : { secondColumnRatio }) }
+  if (!isPersistedTerminalLayout(raw)) return null
   return {
-    layout: record.layout,
-    panes,
-    sizes: {
-      ...normalizedColumnRatios,
-      ...(isThreeRowLayout(record.layout)
-        ? threeRowRatios(sizes)
-        : { rowRatio: ratio(sizes.rowRatio) })
-    }
+    tree: structuredClone(raw.tree),
+    panes: raw.panes.map((pane) => ({ id: pane.id, ...(pane.title ? { title: pane.title.trim() } : {}) })),
   }
 }
 
@@ -186,8 +105,7 @@ function validateSessionTab(raw: unknown): SessionTab | null {
   const record = raw as Record<string, unknown>
   if (!isNonEmptyString(record.id) || !isNonEmptyString(record.name)) return null
   const layout = validateTerminalLayout(record.layout)
-  if (!layout) return null
-  return { id: record.id, name: record.name.trim(), layout }
+  return { id: record.id, name: record.name.trim(), layout: layout ?? defaultTab(record.id).layout }
 }
 
 function sessionTabs(raw: unknown, sessionId: string): { tabs: SessionTab[]; activeTabId: string } {
@@ -206,26 +124,6 @@ function nextTabName(tabs: readonly SessionTab[]): string {
   let index = 1
   while (names.has(`Tab ${index}`)) index += 1
   return `Tab ${index}`
-}
-
-export function validateProject(raw: unknown): Project | null {
-  if (typeof raw !== 'object' || raw === null) return null
-  const r = raw as Record<string, unknown>
-  if (!isNonEmptyString(r.id) || !isNonEmptyString(r.name)) return null
-
-  return {
-    id: r.id,
-    name: r.name,
-    createdAt: isNonEmptyString(r.createdAt) ? r.createdAt : new Date(0).toISOString()
-  }
-}
-
-export function validateProjectList(raw: unknown): Project[] {
-  if (!Array.isArray(raw)) return []
-  return uniqueEntries(
-    raw.map(validateProject).filter((project): project is Project => project !== null),
-    'project'
-  )
 }
 
 export function validateTodoProject(raw: unknown): TodoProject | null {
@@ -337,16 +235,13 @@ export function validateTodoTaskList(
   )
 }
 
-export function validateSession(raw: unknown, projectIds: Set<string>): Session | null {
+export function validateSession(raw: unknown): Session | null {
   if (typeof raw !== 'object' || raw === null) return null
   const r = raw as Record<string, unknown>
   if (
     !isNonEmptyString(r.id) ||
-    !isNonEmptyString(r.projectId) ||
-    !projectIds.has(r.projectId) ||
     !isNonEmptyString(r.name) ||
-    (r.kind !== 'native' && r.kind !== 'wsl') ||
-    !isNonEmptyString(r.path)
+    (r.kind !== 'native' && r.kind !== 'wsl')
   ) {
     return null
   }
@@ -355,10 +250,8 @@ export function validateSession(raw: unknown, projectIds: Set<string>): Session 
   const normalizedTabs = sessionTabs(r.tabs, r.id)
   const session: Session = {
     id: r.id,
-    projectId: r.projectId,
     name: r.name,
     kind: r.kind,
-    path: r.path,
     createdAt: isNonEmptyString(r.createdAt) ? r.createdAt : new Date(0).toISOString(),
     tabs: normalizedTabs.tabs,
     activeTabId: typeof r.activeTabId === 'string' && normalizedTabs.tabs.some((tab) => tab.id === r.activeTabId)
@@ -372,11 +265,11 @@ export function validateSession(raw: unknown, projectIds: Set<string>): Session 
   return session
 }
 
-export function validateSessionList(raw: unknown, projectIds: Set<string>): Session[] {
+export function validateSessionList(raw: unknown): Session[] {
   if (!Array.isArray(raw)) return []
   return uniqueEntries(
     raw
-      .map((entry) => validateSession(entry, projectIds))
+      .map((entry) => validateSession(entry))
       .filter((session): session is Session => session !== null),
     'session'
   )
@@ -384,16 +277,31 @@ export function validateSessionList(raw: unknown, projectIds: Set<string>): Sess
 
 export function validateWorkspace(raw: unknown): WorkspaceData {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    return { projects: [], todoProjects: [], todoTasks: [], sessions: [] }
+    return { todoProjects: [], todoTasks: [], sessions: [] }
   }
   const record = raw as Record<string, unknown>
-  const projects = validateProjectList(record.projects)
   const todoProjects = validateTodoProjectList(record.todoProjects)
   const todoProjectMap = new Map(todoProjects.map((project) => [project.id, project]))
   const todoTasks = validateTodoTaskList(record.todoTasks, todoProjectMap)
-  const projectIds = new Set(projects.map((project) => project.id))
-  const sessions = validateSessionList(record.sessions, projectIds)
-  return { projects, todoProjects, todoTasks, sessions }
+  // Keep the former sidebar order while discarding legacy project links.
+  const projectRanks = new Map<string, number>()
+  if (Array.isArray(record.projects)) {
+    for (const project of record.projects) {
+      if (project && typeof project === 'object' && typeof project.id === 'string' && !projectRanks.has(project.id)) {
+        projectRanks.set(project.id, projectRanks.size)
+      }
+    }
+  }
+  const rawSessions = Array.isArray(record.sessions) ? [...record.sessions] : []
+  const rank = (value: unknown): number => {
+    if (!value || typeof value !== 'object' || !('projectId' in value) || typeof value.projectId !== 'string') {
+      return projectRanks.size
+    }
+    return projectRanks.get(value.projectId) ?? projectRanks.size
+  }
+  if (projectRanks.size) rawSessions.sort((left, right) => rank(left) - rank(right))
+  const sessions = validateSessionList(rawSessions)
+  return { todoProjects, todoTasks, sessions }
 }
 
 export async function loadWorkspace(): Promise<WorkspaceData> {
@@ -407,7 +315,7 @@ export async function loadWorkspace(): Promise<WorkspaceData> {
     if (code !== 'ENOENT') {
       console.warn('[workspace] could not read workspace.json, starting empty:', error)
     }
-    cache = { projects: [], todoProjects: [], todoTasks: [], sessions: [] }
+    cache = { todoProjects: [], todoTasks: [], sessions: [] }
     return cache
   }
 
@@ -416,7 +324,7 @@ export async function loadWorkspace(): Promise<WorkspaceData> {
     parsed = JSON.parse(text)
   } catch (error) {
     console.warn('[workspace] workspace.json is not valid JSON, starting empty:', error)
-    cache = { projects: [], todoProjects: [], todoTasks: [], sessions: [] }
+    cache = { todoProjects: [], todoTasks: [], sessions: [] }
     return cache
   }
 
@@ -433,63 +341,8 @@ function enqueueWrite(workspace: WorkspaceData): Promise<void> {
   return run
 }
 
-async function persist(workspace: WorkspaceData): Promise<void> {
-  const target = storeFile()
-  const tmp = `${target}.${process.pid}.${Date.now()}.tmp`
-  const contents = `${JSON.stringify(workspace, null, 2)}\n`
-
-  await fs.mkdir(storeDir as string, { recursive: true })
-  const handle = await fs.open(tmp, 'w')
-  try {
-    await handle.writeFile(contents, 'utf8')
-    await handle.sync()
-  } finally {
-    await handle.close()
-  }
-  await fs.rename(tmp, target)
-}
-
-export async function createProject(input: NewProject): Promise<Project> {
-  const workspace = await loadWorkspace()
-  const name = input.name.trim()
-  if (!name) throw new Error('Project name cannot be empty')
-
-  const project: Project = { id: randomUUID(), name, createdAt: new Date().toISOString() }
-  cache = { ...workspace, projects: [...workspace.projects, project] }
-  await enqueueWrite(cache)
-  return project
-}
-
-export async function updateProject(
-  req: UpdateProjectRequest
-): Promise<Project | null> {
-  const workspace = await loadWorkspace()
-  const index = workspace.projects.findIndex((project) => project.id === req.id)
-  const existing = workspace.projects[index]
-  if (!existing) return null
-
-  const name = req.patch.name?.trim()
-  if (!name) return existing
-  const updated = { ...existing, name }
-  const projects = [...workspace.projects]
-  projects[index] = updated
-  cache = { ...workspace, projects }
-  await enqueueWrite(cache)
-  return updated
-}
-
-export async function removeProject(id: string): Promise<string[]> {
-  const workspace = await loadWorkspace()
-  const removedSessionIds = workspace.sessions
-    .filter((session) => session.projectId === id)
-    .map((session) => session.id)
-  cache = {
-    ...workspace,
-    projects: workspace.projects.filter((project) => project.id !== id),
-    sessions: workspace.sessions.filter((session) => session.projectId !== id)
-  }
-  await enqueueWrite(cache)
-  return removedSessionIds
+function persist(workspace: WorkspaceData): Promise<void> {
+  return writeJsonAtomic(storeFile(), workspace)
 }
 
 export async function createTodoProject(input: NewTodoProject): Promise<TodoProject> {
@@ -656,20 +509,15 @@ export async function removeTodoTask(id: string): Promise<void> {
 
 export async function createSession(input: NewSession): Promise<Session> {
   const workspace = await loadWorkspace()
-  if (!workspace.projects.some((project) => project.id === input.projectId)) {
-    throw new Error('Cannot create a session without a valid project')
-  }
-  if (!input.name.trim() || !input.path.trim()) throw new Error('Session name and path are required')
+  if (!input.name.trim()) throw new Error('Session name is required')
   if (input.kind === 'wsl' && !input.distro?.trim()) {
     throw new Error('WSL sessions require a distro')
   }
 
   const session: Session = {
     id: randomUUID(),
-    projectId: input.projectId,
     name: input.name.trim(),
     kind: input.kind,
-    path: input.path.trim(),
     createdAt: new Date().toISOString(),
     tabs: []
   }
@@ -699,18 +547,15 @@ export async function duplicateSession(id: string): Promise<Session | null> {
 
   const existingNames = new Set(
     workspace.sessions
-      .filter((session) => session.projectId === source.projectId)
       .map((session) => session.name)
   )
   const session: Session = {
     id: randomUUID(),
-    projectId: source.projectId,
     name: duplicateSessionName(source.name, existingNames),
     ...(source.color ? { color: source.color } : {}),
     ...(source.icon ? { icon: source.icon } : {}),
     kind: source.kind,
     ...(source.distro ? { distro: source.distro } : {}),
-    path: source.path,
     ...(source.shell ? { shell: source.shell } : {}),
     createdAt: new Date().toISOString(),
     tabs: []
@@ -731,7 +576,6 @@ export async function updateSession(req: UpdateSessionRequest): Promise<Session 
 
   const updated: Session = { ...existing }
   if (req.patch.name?.trim()) updated.name = req.patch.name.trim()
-  if (req.patch.path?.trim()) updated.path = req.patch.path.trim()
   if (isSessionColor(req.patch.color)) updated.color = req.patch.color
   if (req.patch.icon === null) delete updated.icon
   else if (isSessionIcon(req.patch.icon)) updated.icon = req.patch.icon
@@ -845,66 +689,21 @@ export async function removeSessionTab(req: RemoveSessionTabRequest): Promise<Se
   return updated
 }
 
-export async function moveSession(req: MoveSessionRequest): Promise<Session | null> {
-  const workspace = await loadWorkspace()
-  if (!workspace.projects.some((project) => project.id === req.projectId)) return null
-  const index = workspace.sessions.findIndex((session) => session.id === req.id)
-  const existing = workspace.sessions[index]
-  if (!existing) return null
-
-  const updated = { ...existing, projectId: req.projectId }
-  const sessions = [...workspace.sessions]
-  sessions[index] = updated
-  cache = { ...workspace, sessions }
-  await enqueueWrite(cache)
-  return updated
-}
-
-/**
- * Reorders a session within its current project while leaving other projects'
- * positions in the flat persisted array untouched.
- */
+/** Reorders sessions while preserving every other session's relative order. */
 export function reorderSessionList(
   sessions: readonly Session[],
   req: ReorderSessionRequest
 ): Session[] | null {
-  if (
-    !req ||
-    typeof req.id !== 'string' ||
-    (req.beforeId !== null && typeof req.beforeId !== 'string')
-  ) {
+  if (!req || typeof req.id !== 'string' || (req.beforeId !== null && typeof req.beforeId !== 'string')) {
     return null
   }
-
   const source = sessions.find((session) => session.id === req.id)
   if (!source) return null
-
-  const projectEntries = sessions
-    .map((session, index) => ({ session, index }))
-    .filter(({ session }) => session.projectId === source.projectId)
-
-  const remaining = projectEntries
-    .filter(({ session }) => session.id !== source.id)
-    .map(({ session }) => session)
-
-  let insertionIndex = remaining.length
-  if (req.beforeId !== null) {
-    insertionIndex = remaining.findIndex((session) => session.id === req.beforeId)
-    if (insertionIndex < 0) return null
-  }
-
-  const reordered = [...remaining]
-  reordered.splice(insertionIndex, 0, source)
-  const currentOrder = projectEntries.map(({ session }) => session.id)
-  const nextOrder = reordered.map((session) => session.id)
-  if (currentOrder.every((id, index) => id === nextOrder[index])) return [...sessions]
-
-  const result = [...sessions]
-  projectEntries.forEach(({ index }, position) => {
-    const session = reordered[position]
-    if (session) result[index] = session
-  })
-  return result
+  const remaining = sessions.filter((session) => session.id !== req.id)
+  const index = req.beforeId === null ? remaining.length : remaining.findIndex((session) => session.id === req.beforeId)
+  if (index < 0) return null
+  remaining.splice(index, 0, source)
+  return remaining
 }
 
 export async function reorderSession(req: ReorderSessionRequest): Promise<Session[] | null> {

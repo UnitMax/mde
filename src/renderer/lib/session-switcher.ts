@@ -1,9 +1,8 @@
-import type { Project, Session } from '@shared/types'
+import type { Session } from '@shared/types'
 import { matchSubsequence, queryTokens } from '@/lib/fuzzy-search'
 
 export interface SessionSearchItem {
   session: Session
-  project?: Project
   order: number
 }
 
@@ -13,7 +12,7 @@ export interface SessionSearchMatch {
   matches: Partial<Record<SessionSearchField, number[]>>
 }
 
-export type SessionSearchField = 'name' | 'project' | 'path' | 'distro'
+export type SessionSearchField = 'name' | 'runtime' | 'distro'
 
 interface SearchField {
   key: SessionSearchField
@@ -33,11 +32,10 @@ export interface SessionSwitcherShortcutInput {
 }
 
 function fieldsFor(item: SessionSearchItem): SearchField[] {
-  const { session, project } = item
+  const { session } = item
   return [
     { key: 'name', value: session.name, weight: 100 },
-    { key: 'project', value: project?.name ?? '', weight: 65 },
-    { key: 'path', value: session.path, weight: 45 },
+    { key: 'runtime', value: session.kind === 'wsl' ? 'WSL' : 'Native', weight: 35 },
     { key: 'distro', value: session.distro ?? '', weight: 40 }
   ]
 }

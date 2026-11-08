@@ -1,25 +1,40 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { testLayout } from './helpers/terminal-layout'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
-  OpenCodeTuiInstancesUpdate,
-  OpenCodeTuiStatusUpdate,
-  Session,
-  TodoTask
+  InboxThread,
+  Session
 } from '../src/shared/types'
 
 vi.mock('../src/renderer/terminal/sessions', () => ({ disposeSession: vi.fn() }))
 
 import { useWorkspace } from '../src/renderer/store/workspace'
-import { countOpenCodeTuiNotifications } from '../src/renderer/lib/opencode-tui-notifications'
+import { getWorkspaceNavigation, WORKSPACE_NAVIGATION_STORAGE_KEY } from '../src/renderer/lib/workspace-navigation'
 
 describe('renderer workspace event bridge', () => {
-  const tuiStatusListeners: Array<(update: OpenCodeTuiStatusUpdate) => void> = []
-  const tuiInstanceListeners: Array<(update: OpenCodeTuiInstancesUpdate) => void> = []
+  const navigationStorage = new Map<string, string>()
   const directoryListeners: Array<(update: { terminalId: string; directory: string | null }) => void> = []
   const windowModeListeners: Array<(mode: 'normal' | 'mini') => void> = []
+  const inboxListeners: Array<(thread: InboxThread) => void> = []
   const api = {
+    inbox: {
+      list: vi.fn(async (): Promise<InboxThread[]> => []),
+      setRead: vi.fn(async ({ id, read }: { id: string; read: boolean }) => {
+        const thread = useWorkspace.getState().inboxThreads.find((item) => item.id === id)
+        return thread ? { ...thread, readAt: read ? thread.lastActivityAt : 0 } : null
+      }),
+      setArchived: vi.fn(async ({ id, archived }: { id: string; archived: boolean }) => {
+        const thread = useWorkspace.getState().inboxThreads.find((item) => item.id === id)
+        return thread ? { ...thread, archived } : null
+      }),
+      remove: vi.fn(async () => undefined),
+      onChanged: vi.fn((listener: (thread: InboxThread) => void) => {
+        inboxListeners.push(listener)
+        return vi.fn()
+      })
+    },
     platform: { info: vi.fn(async () => ({ platform: 'linux', arch: 'x64' })) },
     workspace: {
-      list: vi.fn(async () => ({ projects: [], todoProjects: [], todoTasks: [], sessions: [] }))
+      list: vi.fn(async () => ({ todoProjects: [], todoTasks: [], sessions: [] }))
     },
     todoProjects: {
       create: vi.fn(),
@@ -37,10 +52,8 @@ describe('renderer workspace event bridge', () => {
       duplicate: vi.fn(),
       update: vi.fn(async ({ id, patch }: { id: string; patch: Partial<Session> }) => ({
         id,
-        projectId: 'project-1',
         name: 'App',
         kind: 'native' as const,
-        path: '/workspace/app',
         createdAt: '2026-01-01T00:00:00.000Z',
         ...patch
       })),
@@ -73,72 +86,37 @@ describe('renderer workspace event bridge', () => {
         return vi.fn()
       })
     },
-    opencodeTui: {
-      settings: vi.fn(async () => ({
-        enabled: false,
-        currentPluginVersion: '1.1.0',
-        instanceLabelMode: 'numbered' as const
-      })),
-      setEnabled: vi.fn(async ({ enabled }: { enabled: boolean }) => ({
-        enabled,
-        currentPluginVersion: '1.1.0',
-        instanceLabelMode: 'numbered' as const
-      })),
-      setInstanceLabelMode: vi.fn(async ({ mode }: { mode: 'numbered' | 'title' }) => ({
-        enabled: false,
-        currentPluginVersion: '1.1.0',
-        instanceLabelMode: mode
-      })),
-      pluginState: vi.fn(async ({ distro }: { distro: string }) => ({
-        distro,
-        status: 'not-installed' as const,
-        installedVersion: null,
-        currentVersion: '1.0.0'
-      })),
-      install: vi.fn(async ({ distro }: { distro: string }) => ({
-        distro,
-        status: 'installed' as const,
-        installedVersion: '1.0.0',
-        currentVersion: '1.0.0'
-      })),
-      remove: vi.fn(async ({ distro }: { distro: string }) => ({
-        distro,
-        status: 'not-installed' as const,
-        installedVersion: null,
-        currentVersion: '1.0.0'
-      })),
-      onStatus: vi.fn((listener: (update: OpenCodeTuiStatusUpdate) => void) => {
-        tuiStatusListeners.push(listener)
-        return vi.fn()
-      }),
-      onInstances: vi.fn((listener: (update: OpenCodeTuiInstancesUpdate) => void) => {
-        tuiInstanceListeners.push(listener)
-        return vi.fn()
-      })
-    },
+
   }
 
   beforeEach(() => {
-    tuiStatusListeners.length = 0
-    tuiInstanceListeners.length = 0
     directoryListeners.length = 0
     windowModeListeners.length = 0
     vi.stubGlobal('window', { api })
+    navigationStorage.clear()
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => navigationStorage.get(key) ?? null,
+      setItem: (key: string, value: string) => navigationStorage.set(key, value),
+    })
     useWorkspace.setState({
-      opencodeTuiStatuses: {},
-      opencodeTuiInstances: {},
-      opencodeTuiReadRevisions: {},
-      opencodeTuiInstanceLabelMode: 'numbered',
-      terminalHighlights: {},
+      ready: false,
+      inboxTerminalHighlights: {},
       sessions: [],
       todoProjects: [],
       todoTasks: [],
-      terminalTaskLinks: {},
       selectedSessionId: null,
       selectedTodoProjectId: null,
-      activeWorkspaceView: 'projects',
-      windowMode: 'normal'
+      activeWorkspaceView: 'sessions',
+      windowMode: 'normal',
+      inboxThreads: [],
+      selectedInboxThreadId: null,
+      settingsDialog: { open: false, section: 'appearance' },
+      opencodeConfigDialog: { open: false }
     })
+    api.inbox.list.mockClear()
+    api.inbox.setRead.mockClear()
+    api.inbox.setArchived.mockClear()
+    api.inbox.remove.mockClear()
     api.windowMode.get.mockClear()
     api.windowMode.set.mockClear()
     api.windowMode.onChanged.mockClear()
@@ -158,9 +136,6 @@ describe('renderer workspace event bridge', () => {
     api.tabs.select.mockReset()
     api.tabs.update.mockReset()
     api.tabs.remove.mockReset()
-    api.opencodeTui.onStatus.mockClear()
-    api.opencodeTui.onInstances.mockClear()
-    api.opencodeTui.setInstanceLabelMode.mockClear()
   })
 
   it('tracks exits by runtime terminal ID, including split panes', () => {
@@ -179,51 +154,6 @@ describe('renderer workspace event bridge', () => {
     expect(useWorkspace.getState().exits['session-1']).toMatchObject({ exitCode: 1 })
   })
 
-  it('enforces one-to-one task and terminal links', () => {
-    const tasks: TodoTask[] = [
-      {
-        id: 'task-1',
-        todoProjectId: 'todo-1',
-        columnId: 'todo',
-        number: 1,
-        title: 'First',
-        description: '',
-        createdAt: '2026-01-01T00:00:00.000Z',
-        updatedAt: '2026-01-01T00:00:00.000Z'
-      },
-      {
-        id: 'task-2',
-        todoProjectId: 'todo-1',
-        columnId: 'todo',
-        number: 2,
-        title: 'Second',
-        description: '',
-        createdAt: '2026-01-01T00:00:00.000Z',
-        updatedAt: '2026-01-01T00:00:00.000Z'
-      }
-    ]
-    useWorkspace.setState({
-      todoTasks: tasks,
-      terminalTaskLinks: { 'terminal-1': 'task-1', 'terminal-2': 'task-2' }
-    })
-
-    useWorkspace.getState().linkTerminalToTodoTask('terminal-1', 'task-2')
-
-    expect(useWorkspace.getState().terminalTaskLinks).toEqual({ 'terminal-1': 'task-2' })
-  })
-
-  it('removes a task link when its terminal exits', () => {
-    useWorkspace.setState({ terminalTaskLinks: { 'terminal-1': 'task-1' } })
-
-    useWorkspace.getState().noteExit({
-      sessionId: 'session-1',
-      terminalId: 'terminal-1',
-      exitCode: 0
-    })
-
-    expect(useWorkspace.getState().terminalTaskLinks).toEqual({})
-  })
-
   it('keeps split terminal statuses addressable by runtime terminal ID', () => {
     useWorkspace.setState({ statuses: {} })
 
@@ -236,239 +166,27 @@ describe('renderer workspace event bridge', () => {
     })
   })
 
-  it('tracks TUI completion as unread until the session is selected', () => {
-    useWorkspace.setState({ selectedSessionId: 'other-session', opencodeTuiStatuses: {} })
-
-    useWorkspace.getState().appendOpenCodeTuiStatus({
-      sessionId: 'terminal-1',
-      status: 'completed',
-      revision: 1
-    })
-    expect(useWorkspace.getState().opencodeTuiStatuses['terminal-1']).toMatchObject({
-      status: 'completed',
-      unread: true
-    })
-
-    useWorkspace.getState().selectSession('terminal-1')
-    expect(useWorkspace.getState().opencodeTuiStatuses['terminal-1']?.unread).toBe(false)
-
-    useWorkspace.getState().appendOpenCodeTuiStatus({
-      sessionId: 'terminal-1',
-      status: null,
-      revision: 0
-    })
-    expect(useWorkspace.getState().opencodeTuiStatuses['terminal-1']).toBeUndefined()
-  })
-
-  it('tracks and removes independent OpenCode TUI pane instances', () => {
-    useWorkspace.getState().appendOpenCodeTuiInstances({
-      sessionId: 'session-1',
-      instances: [
-        {
-          terminalId: 'session-1',
-          status: 'working',
-          title: 'Checkout flow',
-          revision: 2
-        },
-        {
-          terminalId: 'session-1:split:1',
-          status: 'completed',
-          revision: 4
-        }
-      ]
-    })
-
-    expect(useWorkspace.getState().opencodeTuiInstances['session-1']).toEqual([
-      {
-        terminalId: 'session-1',
-        status: 'working',
-        title: 'Checkout flow',
-        revision: 2
-      },
-      {
-        terminalId: 'session-1:split:1',
-        status: 'completed',
-        revision: 4
-      }
-    ])
-
-    useWorkspace.getState().appendOpenCodeTuiInstances({
-      sessionId: 'session-1',
-      instances: []
-    })
-    expect(useWorkspace.getState().opencodeTuiInstances['session-1']).toBeUndefined()
-  })
-
-  it('tracks completed agents as read independently while retaining attention agents', () => {
-    const completedOne = {
-      terminalId: 'session-1:split:1',
-      status: 'completed' as const,
-      revision: 3
-    }
-    const completedTwo = {
-      terminalId: 'session-1:split:2',
-      status: 'completed' as const,
-      revision: 5
-    }
-    const attention = {
-      terminalId: 'session-1:split:3',
-      status: 'attention' as const,
-      attentionReason: 'question' as const,
-      revision: 2
-    }
-    useWorkspace.setState({
-      selectedSessionId: 'other-session',
-      opencodeTuiStatuses: {
-        'session-1': { status: 'working', revision: 7, unread: false }
-      }
-    })
-    useWorkspace.getState().appendOpenCodeTuiInstances({
-      sessionId: 'session-1',
-      instances: [completedOne, completedTwo, attention]
-    })
-
-    const count = (): number => {
-      const state = useWorkspace.getState()
-      return countOpenCodeTuiNotifications(
-        state.opencodeTuiInstances['session-1'] ?? [],
-        state.opencodeTuiReadRevisions
-      )
-    }
-    expect(count()).toBe(3)
-
-    useWorkspace.getState().selectSession('session-1')
-    expect(count()).toBe(1)
-    expect(useWorkspace.getState().opencodeTuiReadRevisions).toMatchObject({
-      'session-1:split:1': 3,
-      'session-1:split:2': 5
-    })
-
-    useWorkspace.getState().appendOpenCodeTuiInstances({
-      sessionId: 'session-1',
-      instances: [
-        { ...completedOne, revision: 4 },
-        completedTwo,
-        attention
-      ]
-    })
-    expect(count()).toBe(1)
-
-    useWorkspace.getState().selectSession('other-session')
-    expect(count()).toBe(1)
-
-    useWorkspace.getState().appendOpenCodeTuiInstances({
-      sessionId: 'session-1',
-      instances: [
-        { ...completedOne, revision: 5 },
-        completedTwo,
-        attention
-      ]
-    })
-    expect(count()).toBe(2)
-
-    useWorkspace.getState().appendOpenCodeTuiInstances({ sessionId: 'session-1', instances: [] })
-    expect(useWorkspace.getState().opencodeTuiReadRevisions).not.toHaveProperty('session-1:split:1')
-  })
-
-  it('flashes a pane when its OpenCode agent starts waiting, finishes, or fails', () => {
-    const working = { terminalId: 'session-1', status: 'working' as const, revision: 1 }
-    const append = (instances: OpenCodeTuiInstancesUpdate['instances']): void =>
-      useWorkspace.getState().appendOpenCodeTuiInstances({ sessionId: 'session-1', instances })
-    const highlights = (): ReturnType<typeof useWorkspace.getState>['terminalHighlights'] =>
-      useWorkspace.getState().terminalHighlights
-
-    append([working])
-    expect(highlights()).toEqual({})
-
-    append([{ ...working, status: 'attention', attentionReason: 'permission', revision: 2 }])
-    expect(highlights()['session-1']).toMatchObject({ tone: 'attention', token: 1 })
-
-    append([{ ...working, status: 'working', revision: 3 }])
-    expect(highlights()['session-1']).toMatchObject({ tone: 'attention', token: 1 })
-
-    append([{ ...working, status: 'completed', revision: 4 }])
-    expect(highlights()['session-1']).toMatchObject({ tone: 'done', token: 2 })
-
-    append([{ ...working, status: 'error', revision: 5 }])
-    expect(highlights()['session-1']).toMatchObject({ tone: 'error', token: 3 })
-  })
-
-  it('does not flash for a title-only update or an agent seen for the first time', () => {
-    const completed = { terminalId: 'session-1', status: 'completed' as const, revision: 4 }
-    const append = (instances: OpenCodeTuiInstancesUpdate['instances']): void =>
-      useWorkspace.getState().appendOpenCodeTuiInstances({ sessionId: 'session-1', instances })
-
-    append([completed])
-    append([{ ...completed, title: 'Checkout flow' }])
-    append([completed, { terminalId: 'session-1:split:1', status: 'attention', revision: 1 }])
-
-    expect(useWorkspace.getState().terminalHighlights).toEqual({})
-  })
-
-  it('flashes a focused terminal in the color of its current agent status', () => {
-    useWorkspace.getState().appendOpenCodeTuiInstances({
-      sessionId: 'session-1',
-      instances: [
-        { terminalId: 'session-1', status: 'completed', revision: 2 },
-        { terminalId: 'session-1:split:1', status: 'working', revision: 1 }
-      ]
-    })
-
-    useWorkspace.getState().flashTerminal('session-1')
-    useWorkspace.getState().flashTerminal('session-1:split:1')
-    useWorkspace.getState().flashTerminal('session-2', 'error')
-
-    const highlights = useWorkspace.getState().terminalHighlights
-    expect(highlights['session-1']).toMatchObject({ tone: 'done', token: 1 })
-    expect(highlights['session-1:split:1']).toMatchObject({ tone: 'attention', token: 1 })
-    expect(highlights['session-2']).toMatchObject({ tone: 'error', token: 1 })
-  })
-
-  it('restarts a repeated flash and ignores a stale clear of an earlier one', () => {
-    useWorkspace.getState().flashTerminal('session-1', 'done')
-    useWorkspace.getState().flashTerminal('session-1', 'done')
-    expect(useWorkspace.getState().terminalHighlights['session-1']?.token).toBe(2)
-
-    useWorkspace.getState().clearTerminalHighlight('session-1', 1)
-    expect(useWorkspace.getState().terminalHighlights['session-1']?.token).toBe(2)
-
-    useWorkspace.getState().clearTerminalHighlight('session-1', 2)
-    expect(useWorkspace.getState().terminalHighlights).toEqual({})
-  })
-
-  it('persists the global OpenCode TUI instance label mode', async () => {
-    await useWorkspace.getState().setOpenCodeTuiInstanceLabelMode('title')
-
-    expect(api.opencodeTui.setInstanceLabelMode).toHaveBeenCalledWith({ mode: 'title' })
-    expect(useWorkspace.getState().opencodeTuiInstanceLabelMode).toBe('title')
-  })
-
   it('creates and selects a terminal session', async () => {
     api.sessions.create.mockResolvedValue({
       id: 'terminal-session',
-      projectId: 'project-1',
       name: 'App',
       kind: 'native',
-      path: '/workspace/app',
       createdAt: '2026-01-01T00:00:00.000Z'
     })
 
     const session = await useWorkspace.getState().addSession({
-      projectId: 'project-1',
       name: 'App',
       kind: 'native',
-      path: '/workspace/app'
+
     })
 
     expect(api.sessions.create).toHaveBeenCalledWith({
-      projectId: 'project-1',
       name: 'App',
-      kind: 'native',
-      path: '/workspace/app'
+      kind: 'native'
     })
     expect(session.id).toBe('terminal-session')
     expect(useWorkspace.getState().selectedSessionId).toBe('terminal-session')
-    expect(useWorkspace.getState().activeWorkspaceView).toBe('projects')
+    expect(useWorkspace.getState().activeWorkspaceView).toBe('sessions')
   })
 
   it('creates, selects, renames, and removes independent To Do projects', async () => {
@@ -538,7 +256,7 @@ describe('renderer workspace event bridge', () => {
       }],
       selectedTodoProjectId: 'todo-1',
       selectedSessionId: 'session-1',
-      activeWorkspaceView: 'projects'
+      activeWorkspaceView: 'sessions'
     })
 
     useWorkspace.getState().setWorkspaceView('todo')
@@ -549,7 +267,7 @@ describe('renderer workspace event bridge', () => {
     })
 
     useWorkspace.getState().selectSession('session-1')
-    expect(useWorkspace.getState().activeWorkspaceView).toBe('projects')
+    expect(useWorkspace.getState().activeWorkspaceView).toBe('sessions')
   })
 
   it('creates, updates, moves, and removes To Do tasks', async () => {
@@ -583,22 +301,18 @@ describe('renderer workspace event bridge', () => {
     expect(await useWorkspace.getState().moveTodoTask(task.id, 'done', null)).toBe(true)
     expect(useWorkspace.getState().todoTasks).toEqual(moved)
 
-    useWorkspace.setState({ terminalTaskLinks: { 'terminal-1': task.id } })
     api.todoTasks.remove.mockResolvedValue(undefined)
     await useWorkspace.getState().removeTodoTask(task.id)
     expect(useWorkspace.getState().todoTasks).toEqual([])
-    expect(useWorkspace.getState().terminalTaskLinks).toEqual({})
   })
 
   it('appends and selects a duplicated session returned by the main process', async () => {
     const source: Session = {
       id: 'terminal-1',
-      projectId: 'project-1',
       name: 'App',
       color: 'teal',
       kind: 'wsl',
       distro: 'Ubuntu-24.04',
-      path: '/home/me/src/app',
       shell: '/bin/zsh',
       createdAt: '2026-01-01T00:00:00.000Z'
     }
@@ -623,19 +337,13 @@ describe('renderer workspace event bridge', () => {
     const firstTab = {
       id: 'tab-1',
       name: 'Tab 1',
-      layout: {
-        layout: 'single' as const,
-        panes: [{ id: 'pane-1' }],
-        sizes: { columnRatio: 0.5, rowRatio: 0.5 }
-      }
+      layout: testLayout([{ id: 'pane-1' }])
     }
     const secondTab = { ...firstTab, id: 'tab-2', name: 'Tab 2' }
     const session: Session = {
       id: 'session-1',
-      projectId: 'project-1',
       name: 'App',
       kind: 'native',
-      path: '/workspace/app',
       createdAt: '2026-01-01T00:00:00.000Z',
       tabs: [firstTab],
       activeTabId: firstTab.id
@@ -661,10 +369,8 @@ describe('renderer workspace event bridge', () => {
   it('persists and updates a session color', async () => {
     const session: Session = {
       id: 'session-1',
-      projectId: 'project-1',
       name: 'App',
       kind: 'native',
-      path: '/workspace/app',
       createdAt: '2026-01-01T00:00:00.000Z'
     }
     useWorkspace.setState({ sessions: [session] })
@@ -682,10 +388,8 @@ describe('renderer workspace event bridge', () => {
   it('persists and updates a session icon', async () => {
     const session: Session = {
       id: 'session-1',
-      projectId: 'project-1',
       name: 'App',
       kind: 'native',
-      path: '/workspace/app',
       createdAt: '2026-01-01T00:00:00.000Z'
     }
     useWorkspace.setState({ sessions: [session] })
@@ -712,16 +416,14 @@ describe('renderer workspace event bridge', () => {
   it('persists and applies a reordered session list without changing selection', async () => {
     const first: Session = {
       id: 'session-1',
-      projectId: 'project-1',
       name: 'First',
       kind: 'native',
-      path: '/workspace/first',
       createdAt: '2026-01-01T00:00:00.000Z'
     }
     const second: Session = { ...first, id: 'session-2', name: 'Second' }
-    const otherProject: Session = { ...first, id: 'session-3', projectId: 'project-2', name: 'Other' }
-    const reordered = [second, otherProject, first]
-    useWorkspace.setState({ sessions: [first, second, otherProject], selectedSessionId: first.id })
+    const third: Session = { ...first, id: 'session-3', name: 'Other' }
+    const reordered = [second, third, first]
+    useWorkspace.setState({ sessions: [first, second, third], selectedSessionId: first.id })
     api.sessions.reorder.mockResolvedValue(reordered)
 
     await useWorkspace.getState().reorderSession(first.id, second.id)
@@ -734,10 +436,8 @@ describe('renderer workspace event bridge', () => {
   it('leaves the session list unchanged when reorder is rejected', async () => {
     const session: Session = {
       id: 'session-1',
-      projectId: 'project-1',
       name: 'App',
       kind: 'native',
-      path: '/workspace/app',
       createdAt: '2026-01-01T00:00:00.000Z'
     }
     useWorkspace.setState({ sessions: [session] })
@@ -748,30 +448,6 @@ describe('renderer workspace event bridge', () => {
     expect(useWorkspace.getState().sessions).toEqual([session])
   })
 
-  it('keeps session colors unchanged when OpenCode status events arrive', () => {
-    const session: Session = {
-      id: 'session-1',
-      projectId: 'project-1',
-      name: 'App',
-      color: 'teal',
-      kind: 'native',
-      path: '/workspace/app',
-      createdAt: '2026-01-01T00:00:00.000Z'
-    }
-    useWorkspace.setState({ sessions: [session], selectedSessionId: 'other-session' })
-
-    useWorkspace.getState().appendOpenCodeTuiStatus({
-      sessionId: 'session-1',
-      status: 'attention',
-      revision: 1
-    })
-
-    expect(useWorkspace.getState().sessions).toEqual([session])
-    expect(useWorkspace.getState().opencodeTuiStatuses['session-1']).toMatchObject({
-      status: 'attention'
-    })
-  })
-
   it('registers process-lifetime push listeners only once', async () => {
     api.pty.directories.mockResolvedValueOnce({
       'session-1:snapshot': '/home/me/snapshot'
@@ -780,9 +456,8 @@ describe('renderer workspace event bridge', () => {
 
     expect(api.pty.onExit).toHaveBeenCalledTimes(1)
     expect(api.pty.onDirectory).toHaveBeenCalledTimes(1)
-    expect(api.opencodeTui.onStatus).toHaveBeenCalledTimes(1)
-    expect(api.opencodeTui.onInstances).toHaveBeenCalledTimes(1)
     expect(api.windowMode.onChanged).toHaveBeenCalledTimes(1)
+    expect(api.inbox.onChanged).toHaveBeenCalledTimes(1)
     windowModeListeners[0]?.('mini')
     expect(useWorkspace.getState().windowMode).toBe('mini')
     windowModeListeners[0]?.('normal')
@@ -816,5 +491,248 @@ describe('renderer workspace event bridge', () => {
     api.windowMode.set.mockResolvedValueOnce('mini')
     await useWorkspace.getState().setWindowMode('normal')
     expect(useWorkspace.getState().windowMode).toBe('mini')
+  })
+  const inboxThread = (overrides: Partial<InboxThread> = {}): InboxThread => ({
+    id: 'ses_one',
+    title: 'Fix login',
+    directory: '/home/me/app',
+    target: { kind: 'wsl', distro: 'Ubuntu' },
+    branch: 'main',
+    status: 'completed',
+    createdAt: 100,
+    lastActivityAt: 200,
+    readAt: 0,
+    archived: false,
+    folderId: 'fld_app',
+    ...overrides
+  })
+
+  describe('remembered navigation', () => {
+    it.each(['sessions', 'todo', 'inbox'] as const)('restores the %s tab after startup', async (view) => {
+      navigationStorage.set(WORKSPACE_NAVIGATION_STORAGE_KEY, JSON.stringify({ view, selectedInboxThreadId: null }))
+      await useWorkspace.getState().init()
+      expect(useWorkspace.getState().activeWorkspaceView).toBe(view)
+      expect(useWorkspace.getState().selectedInboxThreadId).toBeNull()
+    })
+
+    it('remembers the selected thread across tab changes and a restart', async () => {
+      api.inbox.list.mockResolvedValueOnce([inboxThread()])
+      await useWorkspace.getState().init()
+      useWorkspace.getState().selectInboxThread('ses_one')
+      expect(getWorkspaceNavigation()).toEqual({ view: 'inbox', selectedInboxThreadId: 'ses_one' })
+      useWorkspace.getState().setWorkspaceView('todo')
+      expect(getWorkspaceNavigation()).toEqual({ view: 'todo', selectedInboxThreadId: 'ses_one' })
+      useWorkspace.getState().setWorkspaceView('inbox')
+      useWorkspace.setState({ ready: false, activeWorkspaceView: 'sessions', selectedInboxThreadId: null, inboxThreads: [] })
+      api.inbox.list.mockResolvedValueOnce([inboxThread()])
+      await useWorkspace.getState().init()
+      expect(useWorkspace.getState()).toMatchObject({ activeWorkspaceView: 'inbox', selectedInboxThreadId: 'ses_one' })
+    })
+
+    it('keeps the Inbox tab with no selection when the saved thread no longer exists', async () => {
+      navigationStorage.set(WORKSPACE_NAVIGATION_STORAGE_KEY, JSON.stringify({ view: 'inbox', selectedInboxThreadId: 'ses_deleted' }))
+      api.inbox.list.mockResolvedValueOnce([inboxThread()])
+      await useWorkspace.getState().init()
+      expect(useWorkspace.getState()).toMatchObject({ activeWorkspaceView: 'inbox', selectedInboxThreadId: null })
+      expect(getWorkspaceNavigation()).toEqual({ view: 'inbox', selectedInboxThreadId: null })
+    })
+
+    it('can restore a thread that arrived as a push while startup was loading', async () => {
+      navigationStorage.set(WORKSPACE_NAVIGATION_STORAGE_KEY, JSON.stringify({ view: 'inbox', selectedInboxThreadId: 'ses_pushed' }))
+      useWorkspace.getState().upsertInboxThread(inboxThread({ id: 'ses_pushed' }))
+      await useWorkspace.getState().init()
+      expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_pushed')
+    })
+
+    it('remembers opening the new-thread page and deleting the selected thread', async () => {
+      api.inbox.list.mockResolvedValueOnce([inboxThread()])
+      await useWorkspace.getState().init()
+      useWorkspace.getState().selectInboxThread('ses_one')
+      useWorkspace.getState().selectInboxThread(null)
+      expect(getWorkspaceNavigation()).toEqual({ view: 'inbox', selectedInboxThreadId: null })
+      useWorkspace.getState().selectInboxThread('ses_one')
+      await useWorkspace.getState().removeInboxThread('ses_one')
+      expect(getWorkspaceNavigation()).toEqual({ view: 'inbox', selectedInboxThreadId: null })
+    })
+
+    it('saves implicit tab changes when a session is selected', async () => {
+      await useWorkspace.getState().init()
+      useWorkspace.getState().setWorkspaceView('inbox')
+      useWorkspace.getState().selectSession('session-1')
+      expect(getWorkspaceNavigation().view).toBe('sessions')
+    })
+  })
+
+  it('loads the inbox at startup, keeping pushes that arrived first', async () => {
+    api.inbox.list.mockResolvedValueOnce([
+      inboxThread({ id: 'ses_old', lastActivityAt: 100 }),
+      inboxThread({ id: 'ses_new', lastActivityAt: 300 })
+    ])
+    useWorkspace.setState({ inboxThreads: [inboxThread({ id: 'ses_old', title: 'Renamed', lastActivityAt: 400 })] })
+    await useWorkspace.getState().init()
+    const state = useWorkspace.getState()
+    expect(state.inboxThreads.map((thread) => [thread.id, thread.title])).toEqual([
+      ['ses_old', 'Renamed'],
+      ['ses_new', 'Fix login']
+    ])
+  })
+
+  it('keeps pushed threads newest first and marks the open thread read on selection', async () => {
+    useWorkspace.getState().upsertInboxThread(inboxThread({ id: 'ses_a', lastActivityAt: 100 }))
+    useWorkspace.getState().upsertInboxThread(inboxThread({ id: 'ses_b', lastActivityAt: 200 }))
+    expect(useWorkspace.getState().inboxThreads.map((thread) => thread.id)).toEqual(['ses_b', 'ses_a'])
+    useWorkspace.getState().upsertInboxThread(inboxThread({ id: 'ses_a', lastActivityAt: 300 }))
+    expect(useWorkspace.getState().inboxThreads.map((thread) => thread.id)).toEqual(['ses_a', 'ses_b'])
+
+    useWorkspace.getState().selectInboxThread('ses_b')
+    expect(useWorkspace.getState().activeWorkspaceView).toBe('inbox')
+    expect(api.inbox.setRead).toHaveBeenCalledWith({ id: 'ses_b', read: true })
+    await vi.waitFor(() => expect(
+      useWorkspace.getState().inboxThreads.find((thread) => thread.id === 'ses_b')?.readAt
+    ).toBe(200))
+  })
+
+  describe('the thread being read', () => {
+    const open = (): void => {
+      useWorkspace.setState({
+        activeWorkspaceView: 'inbox',
+        selectedInboxThreadId: 'ses_one',
+        inboxThreads: [inboxThread({ lastActivityAt: 200, readAt: 200 })],
+        inboxMarkedUnread: {},
+        inboxCues: {}
+      })
+    }
+    const thread = (): InboxThread => useWorkspace.getState().inboxThreads.find((item) => item.id === 'ses_one')!
+    const focused = (value: boolean): void => {
+      vi.stubGlobal('document', { hasFocus: () => value })
+    }
+    const readCalls = (read: boolean): number =>
+      api.inbox.setRead.mock.calls.filter(([request]) => request.read === read).length
+
+    beforeEach(() => {
+      focused(true)
+      open()
+    })
+    afterEach(() => {
+      vi.unstubAllGlobals()
+      vi.stubGlobal('window', { api })
+    })
+
+    it('counts new activity as seen straight away, and cues it instead of leaving a dot', async () => {
+      useWorkspace.getState().upsertInboxThread(inboxThread({ lastActivityAt: 300, readAt: 200, status: 'completed' }))
+      await vi.waitFor(() => expect(thread().readAt).toBe(300))
+      expect(readCalls(true)).toBe(1)
+      expect(Date.now() - useWorkspace.getState().inboxCues.ses_one!).toBeLessThan(5_000)
+      // The reply that makes it read is not new activity: no second cue, no second request.
+      const cue = useWorkspace.getState().inboxCues.ses_one
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      expect(useWorkspace.getState().inboxCues.ses_one).toBe(cue)
+      expect(readCalls(true)).toBe(1)
+    })
+
+    it('keeps new activity unread while only the mini Inbox is visible', async () => {
+      useWorkspace.setState({ windowMode: 'mini' })
+      useWorkspace.getState().upsertInboxThread(inboxThread({ lastActivityAt: 300, readAt: 200 }))
+      useWorkspace.getState().markOpenInboxThreadSeen()
+      expect(readCalls(true)).toBe(0)
+      expect(thread().readAt).toBe(200)
+      expect(useWorkspace.getState().inboxCues).toEqual({})
+
+      useWorkspace.setState({ windowMode: 'normal' })
+      useWorkspace.getState().selectInboxThread('ses_one')
+      await vi.waitFor(() => expect(thread().readAt).toBe(300))
+    })
+
+    it('keeps a thread marked unread by hand unread while it stays open', async () => {
+      await useWorkspace.getState().setInboxThreadRead('ses_one', false)
+      expect(thread().readAt).toBe(0)
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      expect(thread().readAt).toBe(0)
+      expect(readCalls(true)).toBe(0)
+      expect(useWorkspace.getState().inboxMarkedUnread).toEqual({ ses_one: true })
+      expect(useWorkspace.getState().inboxCues).toEqual({})
+    })
+
+    it('does not let coming back to the window clear a thread marked unread by hand', async () => {
+      await useWorkspace.getState().setInboxThreadRead('ses_one', false)
+      useWorkspace.getState().markOpenInboxThreadSeen()
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      expect(readCalls(true)).toBe(0)
+      expect(thread().readAt).toBe(0)
+    })
+
+    it('reads it again when it is opened again, or when something new happens in it', async () => {
+      await useWorkspace.getState().setInboxThreadRead('ses_one', false)
+      useWorkspace.getState().selectInboxThread('ses_one')
+      await vi.waitFor(() => expect(thread().readAt).toBe(200))
+      expect(useWorkspace.getState().inboxMarkedUnread).toEqual({})
+
+      await useWorkspace.getState().setInboxThreadRead('ses_one', false)
+      useWorkspace.getState().upsertInboxThread(inboxThread({ lastActivityAt: 400, readAt: 0, status: 'error' }))
+      await vi.waitFor(() => expect(thread().readAt).toBe(400))
+      expect(useWorkspace.getState().inboxMarkedUnread).toEqual({})
+      expect(useWorkspace.getState().inboxCues.ses_one).toBeDefined()
+    })
+
+    it('leaves activity that happens while the window is in the background unread, until it comes back', async () => {
+      focused(false)
+      useWorkspace.getState().upsertInboxThread(inboxThread({ lastActivityAt: 300, readAt: 200 }))
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      expect(readCalls(true)).toBe(0)
+      expect(thread().readAt).toBe(200)
+      expect(useWorkspace.getState().inboxCues).toEqual({})
+
+      focused(true)
+      useWorkspace.getState().markOpenInboxThreadSeen()
+      await vi.waitFor(() => expect(thread().readAt).toBe(300))
+    })
+
+    it('only counts the open thread, and only in the Inbox', async () => {
+      useWorkspace.setState({ activeWorkspaceView: 'sessions' })
+      useWorkspace.getState().upsertInboxThread(inboxThread({ lastActivityAt: 300, readAt: 200 }))
+      useWorkspace.getState().markOpenInboxThreadSeen()
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      expect(readCalls(true)).toBe(0)
+
+      useWorkspace.setState({ activeWorkspaceView: 'inbox', selectedInboxThreadId: null })
+      useWorkspace.getState().upsertInboxThread(inboxThread({ lastActivityAt: 400, readAt: 200 }))
+      useWorkspace.getState().markOpenInboxThreadSeen()
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      expect(readCalls(true)).toBe(0)
+    })
+
+    it('forgets a deleted thread\'s marker and cue', async () => {
+      useWorkspace.setState({ inboxMarkedUnread: { ses_one: true }, inboxCues: { ses_one: Date.now() } })
+      await useWorkspace.getState().removeInboxThread('ses_one')
+      expect(useWorkspace.getState().inboxMarkedUnread).toEqual({})
+      expect(useWorkspace.getState().inboxCues).toEqual({})
+    })
+  })
+
+  it('archives and deletes threads, clearing a deleted selection', async () => {
+    useWorkspace.setState({ inboxThreads: [inboxThread()], selectedInboxThreadId: 'ses_one' })
+    await useWorkspace.getState().setInboxThreadArchived('ses_one', true)
+    expect(useWorkspace.getState().inboxThreads[0]?.archived).toBe(true)
+    await useWorkspace.getState().removeInboxThread('ses_one')
+    expect(api.inbox.remove).toHaveBeenCalledWith({ id: 'ses_one' })
+    expect(useWorkspace.getState().inboxThreads).toEqual([])
+    expect(useWorkspace.getState().selectedInboxThreadId).toBeNull()
+  })
+
+  it('opens the shared settings dialog at a requested section', () => {
+    useWorkspace.getState().openSettings('opencode')
+    expect(useWorkspace.getState().settingsDialog).toEqual({ open: true, section: 'opencode' })
+    useWorkspace.getState().closeSettings()
+    expect(useWorkspace.getState().settingsDialog).toEqual({ open: false, section: 'opencode' })
+    useWorkspace.getState().openSettings()
+    expect(useWorkspace.getState().settingsDialog.section).toBe('appearance')
+  })
+
+  it('opens and closes the OpenCode configuration editor on its own, apart from Settings', () => {
+    useWorkspace.getState().openOpenCodeConfig()
+    expect(useWorkspace.getState().opencodeConfigDialog).toEqual({ open: true })
+    expect(useWorkspace.getState().settingsDialog.open).toBe(false)
+    useWorkspace.getState().closeOpenCodeConfig()
+    expect(useWorkspace.getState().opencodeConfigDialog).toEqual({ open: false })
   })
 })

@@ -7,7 +7,6 @@ import {
   decodeOsc52Clipboard,
   terminalClipboardAction,
   terminalMiddleClickAction,
-  terminalRightClickAction,
   type TerminalPrimarySelectionMode
 } from './clipboard'
 import {
@@ -24,6 +23,7 @@ import {
 } from './terminal-settings'
 import {
   getTerminalPalette,
+  getTerminalMinimumContrastRatio,
   getTerminalTheme,
   type ApplicationThemeId
 } from '@/theme/themes'
@@ -142,6 +142,7 @@ function createSession(
     lineHeight: settings.lineHeight,
     scrollback: 10_000,
     theme: getTerminalTheme(settings.theme),
+    minimumContrastRatio: getTerminalMinimumContrastRatio(settings.theme),
     rightClickSelectsWord: false
   })
 
@@ -309,22 +310,6 @@ function createSession(
     return false
   })
 
-  const onContextMenu = (event: MouseEvent): void => {
-    noteUserInput()
-    const action = terminalRightClickAction(
-      term.hasSelection(),
-      term.modes.mouseTrackingMode
-    )
-    if (action !== 'copy') return
-
-    event.preventDefault()
-    event.stopPropagation()
-    void window.api.clipboard.writeText(term.getSelection()).catch((error: unknown) => {
-      console.warn('[terminal] right-click clipboard copy failed:', error)
-    })
-  }
-  container.addEventListener('contextmenu', onContextMenu)
-
   const onAuxClick = (event: MouseEvent): void => {
     noteUserInput()
     if (event.button !== 1) return
@@ -380,7 +365,6 @@ function createSession(
     renderer: 'dom',
     themeId: settings.theme,
     disposeClipboardHandlers: () => {
-      container.removeEventListener('contextmenu', onContextMenu)
       container.removeEventListener('auxclick', onAuxClick)
       container.removeEventListener('pointerdown', noteUserInput, true)
       container.removeEventListener('pointerup', noteUserInput, true)
@@ -403,6 +387,7 @@ export function applyTerminalSettings(settings: TerminalSettings): void {
     session.term.options.fontSize = settings.size
     session.term.options.lineHeight = settings.lineHeight
     session.term.options.theme = getTerminalTheme(settings.theme)
+    session.term.options.minimumContrastRatio = getTerminalMinimumContrastRatio(settings.theme)
     session.themeId = settings.theme
     void window.api.pty.setPalette({
       terminalId: session.terminalId,
@@ -415,6 +400,7 @@ export function applyTerminalTheme(themeId: ApplicationThemeId): void {
   const theme = getTerminalTheme(themeId)
   for (const session of sessions.values()) {
     session.term.options.theme = theme
+    session.term.options.minimumContrastRatio = getTerminalMinimumContrastRatio(themeId)
     session.themeId = themeId
     void window.api.pty.setPalette({
       terminalId: session.terminalId,

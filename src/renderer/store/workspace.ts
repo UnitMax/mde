@@ -2,18 +2,10 @@ import { create } from 'zustand'
 import type { PlatformInfo, WorkspaceData } from '@shared/ipc'
 import type {
   Distro,
-  GitStatusResponse,
-  NewProject,
+  InboxThread,
   NewTodoProject,
   NewTodoTask,
   NewSession,
-  OpenCodeTuiAttentionReason,
-  OpenCodeTuiInstanceLabelMode,
-  OpenCodeTuiInstanceStatus,
-  OpenCodeTuiInstancesUpdate,
-  OpenCodeTuiStatus,
-  OpenCodeTuiStatusUpdate,
-  Project,
   TodoProject,
   TodoTask,
   PersistedTerminalLayout,
@@ -25,79 +17,50 @@ import type {
   SessionIcon,
   WindowMode
 } from '@shared/types'
+import { fileRootTerminalId } from '@/lib/file-root'
 import { disposeSession } from '@/terminal/sessions'
+import { inboxThreadTerminalId } from '@shared/inbox-thread-terminal'
 import { viewportSettle } from '@/terminal/viewport-settle'
-import type { TerminalTaskLinks } from '@/lib/terminal-task-links'
-import type { OpenCodeTuiReadRevisions } from '@/lib/opencode-tui-notifications'
+import { isInboxThreadUnread } from '@/lib/inbox'
+import { getWorkspaceNavigation, saveWorkspaceNavigation, type WorkspaceView } from '@/lib/workspace-navigation'
 import {
-  detectInstanceHighlights,
-  highlightToneForStatus,
-  type TerminalHighlight,
-  type TerminalHighlightTone
-} from '@/lib/terminal-highlight'
-
-export interface OpenCodeTuiStatusState {
-  status: OpenCodeTuiStatus
-  attentionReason?: OpenCodeTuiAttentionReason
-  revision: number
-  unread: boolean
-}
-
-export interface GitSessionStatus {
-  response: GitStatusResponse | null
-  error: string | null
-  loading: boolean
-}
+  inboxTerminalHighlightTone,
+  type InboxTerminalHighlight,
+} from '@/lib/inbox-terminal-highlight'
 
 let eventBridgeReady = false
-let gitStatusRefreshPromise: Promise<void> | null = null
-let gitStatusRefreshQueued = false
 
-export type WorkspaceView = 'projects' | 'todo'
+export type { WorkspaceView } from '@/lib/workspace-navigation'
+
+export type SettingsSection =
+  | 'appearance'
+  | 'terminal'
+  | 'notifications'
+  | 'shortcuts'
+  | 'opencode'
+  | 'about'
+
+export interface SettingsDialogState {
+  open: boolean
+  section: SettingsSection
+}
+
+/** Newest activity first, matching the main process order. */
+function sortInboxThreads(threads: InboxThread[]): InboxThread[] {
+  return [...threads].sort(
+    (a, b) => b.lastActivityAt - a.lastActivityAt || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)
+  )
+}
+
+function withInboxThread(threads: readonly InboxThread[], thread: InboxThread): InboxThread[] {
+  return sortInboxThreads([...threads.filter((item) => item.id !== thread.id), thread])
+}
 
 function belongsToSession(runtimeId: string, sessionId: string): boolean {
   return runtimeId === sessionId || runtimeId.startsWith(`${sessionId}:`)
 }
 
-function markCompletedOpenCodeTuiInstancesRead(
-  readRevisions: Record<string, number>,
-  instances: readonly OpenCodeTuiInstanceStatus[]
-): void {
-  instances.forEach((instance) => {
-    if (instance.status === 'completed') {
-      readRevisions[instance.terminalId] = instance.revision
-    }
-  })
-}
-
-function withTerminalHighlights(
-  current: Record<string, TerminalHighlight>,
-  flashes: readonly { terminalId: string; tone: TerminalHighlightTone }[]
-): Record<string, TerminalHighlight> {
-  const next = { ...current }
-  const at = Date.now()
-  flashes.forEach(({ terminalId, tone }) => {
-    next[terminalId] = { tone, token: (current[terminalId]?.token ?? 0) + 1, at }
-  })
-  return next
-}
-
-function clearOpenCodeTuiReadRevisions(
-  readRevisions: Record<string, number>,
-  sessionId: string,
-  instances: readonly { terminalId: string }[] = []
-): void {
-  const instanceTerminalIds = new Set(instances.map((instance) => instance.terminalId))
-  Object.keys(readRevisions)
-    .filter(
-      (terminalId) =>
-        belongsToSession(terminalId, sessionId) || instanceTerminalIds.has(terminalId)
-    )
-    .forEach((terminalId) => delete readRevisions[terminalId])
-}
-
 interface WorkspaceState {
-  projects: Project[]
   todoProjects: TodoProject[]
   todoTasks: TodoTask[]
   sessions: Session[]
@@ -107,14 +70,18 @@ interface WorkspaceState {
   statuses: Record<string, PtyStatus>
   terminalDirectories: Record<string, string>
   exits: Record<string, PtyExitInfo>
-  terminalTaskLinks: TerminalTaskLinks
-  gitStatuses: Record<string, GitSessionStatus>
-  opencodeTuiStatuses: Record<string, OpenCodeTuiStatusState>
-  opencodeTuiInstances: Record<string, OpenCodeTuiInstanceStatus[]>
-  opencodeTuiReadRevisions: OpenCodeTuiReadRevisions
-  opencodeTuiInstanceLabelMode: OpenCodeTuiInstanceLabelMode
-  /** One-shot pane highlights by terminal id; kept here because TerminalView remounts. */
-  terminalHighlights: Record<string, TerminalHighlight>
+  /** MDE's own record of OpenCode threads, newest activity first. */
+  inboxThreads: InboxThread[]
+  selectedInboxThreadId: string | null
+  /** Threads marked unread by hand and not opened since; they stay unread while open, even after a refocus. */
+  inboxMarkedUnread: Record<string, true>
+  /** When something new last happened in a thread being read, by thread; drives a brief cue. */
+  inboxCues: Record<string, number>
+  settingsDialog: SettingsDialogState
+  /** The OpenCode configuration editor, opened from Settings → OpenCode. */
+  opencodeConfigDialog: { open: boolean }
+  /** Brief border animations for Inbox Terminal chats, keyed by thread ID and never persisted. */
+  inboxTerminalHighlights: Record<string, InboxTerminalHighlight>
   platform: PlatformInfo | null
   /** Owned by the main process, which resizes the window; mirrored here to pick the UI. */
   windowMode: WindowMode
@@ -132,12 +99,8 @@ interface WorkspaceState {
   selectTodoProject: (id: string) => void
   toggleSidebar: () => void
   toggleFileTree: () => void
-  openFile: (sessionId: string, path: string) => void
-  closeFile: (sessionId: string) => void
-
-  addProject: (input: NewProject) => Promise<Project>
-  renameProject: (id: string, name: string) => Promise<void>
-  removeProject: (id: string) => Promise<void>
+  openFile: (rootId: string, path: string) => void
+  closeFile: (rootId: string) => void
 
   addTodoProject: (input: NewTodoProject) => Promise<TodoProject>
   renameTodoProject: (id: string, name: string) => Promise<void>
@@ -165,48 +128,50 @@ interface WorkspaceState {
   renameSession: (id: string, name: string) => Promise<void>
   setSessionColor: (id: string, color: SessionColor) => Promise<void>
   setSessionIcon: (id: string, icon: SessionIcon | null) => Promise<void>
-  moveSession: (id: string, projectId: string) => Promise<void>
   reorderSession: (id: string, beforeId: string | null) => Promise<void>
   removeSession: (id: string) => Promise<void>
-  revealSession: (id: string) => Promise<void>
-  openSessionInVsCode: (id: string) => Promise<void>
-  refreshGitStatuses: () => Promise<void>
 
   setStatus: (id: string, status: PtyStatus) => void
-  linkTerminalToTodoTask: (terminalId: string, taskId: string) => void
-  unlinkTerminalTask: (terminalId: string) => void
-  unlinkTodoTask: (taskId: string) => void
   setTerminalDirectory: (update: PtyDirectoryUpdate) => void
   noteExit: (info: PtyExitInfo) => void
   clearExit: (id: string) => void
-  appendOpenCodeTuiStatus: (update: OpenCodeTuiStatusUpdate) => void
-  appendOpenCodeTuiInstances: (update: OpenCodeTuiInstancesUpdate) => void
-  /** Plays the pane highlight; without a tone it follows the terminal's current agent status. */
-  flashTerminal: (terminalId: string, tone?: TerminalHighlightTone) => void
-  clearTerminalHighlight: (terminalId: string, token: number) => void
-  setOpenCodeTuiInstanceLabelMode: (mode: OpenCodeTuiInstanceLabelMode) => Promise<void>
+  clearInboxTerminalHighlight: (threadId: string, token: number) => void
+  openSettings: (section?: SettingsSection) => void
+  closeSettings: () => void
+  openOpenCodeConfig: () => void
+  closeOpenCodeConfig: () => void
+  selectInboxThread: (id: string | null) => void
+  setInboxThreadRead: (id: string, read: boolean) => Promise<void>
+  /** Counts the open thread as seen when the window comes back to the front, unless it was marked unread by hand. */
+  markOpenInboxThreadSeen: () => void
+  setInboxThreadArchived: (id: string, archived: boolean) => Promise<void>
+  setInboxThreadPinned: (id: string, pinned: boolean) => Promise<void>
+  setInboxThreadCustomTitle: (id: string, customTitle: string | null) => Promise<void>
+  /** Removes a thread from the Inbox; with `removeWorktree`, its Git worktree goes too, or nothing does. */
+  removeInboxThread: (id: string, options?: { removeWorktree?: boolean }) => Promise<void>
+  /** Applies a thread pushed by the main process. */
+  upsertInboxThread: (thread: InboxThread) => void
   setWindowMode: (mode: WindowMode) => Promise<void>
   refreshDistros: () => Promise<void>
 }
 
 export const useWorkspace = create<WorkspaceState>((set, get) => ({
-  projects: [],
   todoProjects: [],
   todoTasks: [],
   sessions: [],
   selectedSessionId: null,
   selectedTodoProjectId: null,
-  activeWorkspaceView: 'projects',
+  activeWorkspaceView: 'sessions',
   statuses: {},
   terminalDirectories: {},
   exits: {},
-  terminalTaskLinks: {},
-  gitStatuses: {},
-  opencodeTuiStatuses: {},
-  opencodeTuiInstances: {},
-  opencodeTuiReadRevisions: {},
-  opencodeTuiInstanceLabelMode: 'numbered',
-  terminalHighlights: {},
+  inboxThreads: [],
+  selectedInboxThreadId: null,
+  inboxMarkedUnread: {},
+  inboxCues: {},
+  settingsDialog: { open: false, section: 'appearance' },
+  opencodeConfigDialog: { open: false },
+  inboxTerminalHighlights: {},
   platform: null,
   windowMode: 'normal',
   wslAvailable: false,
@@ -223,8 +188,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       eventBridgeReady = true
       window.api.pty.onExit((info) => get().noteExit(info))
       window.api.pty.onDirectory((update) => get().setTerminalDirectory(update))
-      window.api.opencodeTui.onStatus((update) => get().appendOpenCodeTuiStatus(update))
-      window.api.opencodeTui.onInstances((update) => get().appendOpenCodeTuiInstances(update))
+      window.api.inbox.onChanged((thread) => get().upsertInboxThread(thread))
       window.api.windowMode.onChanged((windowMode) => set({ windowMode }))
     }
 
@@ -234,24 +198,27 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       statuses,
       directories,
       wslAvailable,
-      opencodeTuiSettings,
-      windowMode
+      windowMode,
+      inboxThreads
     ] = await Promise.all([
       window.api.platform.info(),
       window.api.workspace.list(),
       window.api.pty.statuses(),
       window.api.pty.directories(),
       window.api.wsl.available(),
-      window.api.opencodeTui.settings(),
       // A renderer reload can happen while the window is still in mini mode.
-      window.api.windowMode.get()
+      window.api.windowMode.get(),
+      // A local file read; the inbox must never hold up the rest of the workspace.
+      window.api.inbox.list().catch(() => [] as InboxThread[])
     ])
 
-    const { projects, todoProjects, todoTasks, sessions } = workspace as WorkspaceData
+    const { todoProjects, todoTasks, sessions } = workspace as WorkspaceData
+    const navigation = getWorkspaceNavigation()
+    // Pushes that arrived during startup are newer than the listed snapshot.
+    const currentInboxThreads = get().inboxThreads.reduce(withInboxThread, sortInboxThreads(inboxThreads))
     set({
       platform,
       windowMode,
-      projects,
       todoProjects,
       todoTasks,
       sessions,
@@ -259,40 +226,23 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       // The event bridge may receive a report while these startup requests
       // are in flight. Preserve that newer event over the initial snapshot.
       terminalDirectories: { ...directories, ...get().terminalDirectories },
-      gitStatuses: {},
-      opencodeTuiStatuses: {},
-      opencodeTuiReadRevisions: {},
-      opencodeTuiInstanceLabelMode: opencodeTuiSettings.instanceLabelMode,
+      inboxThreads: currentInboxThreads,
       wslAvailable,
       selectedSessionId: null,
       selectedTodoProjectId: todoProjects[0]?.id ?? null,
-      activeWorkspaceView: 'projects',
+      activeWorkspaceView: navigation.view,
+      selectedInboxThreadId: currentInboxThreads.some((thread) => thread.id === navigation.selectedInboxThreadId)
+        ? navigation.selectedInboxThreadId
+        : null,
       ready: true
     })
 
     if (wslAvailable) void get().refreshDistros()
   },
 
-  selectSession: (id) =>
-    set((state) => {
-      const tuiStatus = id ? state.opencodeTuiStatuses[id] : undefined
-      const opencodeTuiReadRevisions = { ...state.opencodeTuiReadRevisions }
-      const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
-      if (id) {
-        markCompletedOpenCodeTuiInstancesRead(
-          opencodeTuiReadRevisions,
-          state.opencodeTuiInstances[id] ?? []
-        )
-        if (tuiStatus?.unread) opencodeTuiStatuses[id] = { ...tuiStatus, unread: false }
-      }
-      return {
-        selectedSessionId: id,
-        ...(id ? { activeWorkspaceView: 'projects' as const } : {}),
-        ...(id ? { opencodeTuiStatuses, opencodeTuiReadRevisions } : {}),
-      }
-    }),
+  selectSession: (id) => set({ selectedSessionId: id, ...(id ? { activeWorkspaceView: 'sessions' as const } : {}) }),
 
-  setWorkspaceView: (view) =>
+  setWorkspaceView: (view) => {
     set((state) => ({
       activeWorkspaceView: view,
       ...(view === 'todo' && !state.todoProjects.some(
@@ -300,7 +250,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       )
         ? { selectedTodoProjectId: state.todoProjects[0]?.id ?? null }
         : {})
-    })),
+    }))
+    if (view === 'inbox') {
+      const { inboxThreads, selectedInboxThreadId } = get()
+      const thread = inboxThreads.find((item) => item.id === selectedInboxThreadId)
+      if (thread && thread.lastActivityAt > thread.readAt) void get().setInboxThreadRead(thread.id, true)
+    }
+  },
 
   selectTodoProject: (id) =>
     set((state) =>
@@ -311,77 +267,15 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
   toggleFileTree: () => set((state) => ({ fileTreeCollapsed: !state.fileTreeCollapsed })),
-  openFile: (sessionId, path) =>
-    set((state) => ({ openFiles: { ...state.openFiles, [sessionId]: path } })),
-  closeFile: (sessionId) =>
+  openFile: (rootId, path) =>
+    set((state) => ({ openFiles: { ...state.openFiles, [rootId]: path } })),
+  closeFile: (rootId) =>
     set((state) => {
-      if (!(sessionId in state.openFiles)) return {}
+      if (!(rootId in state.openFiles)) return {}
       const openFiles = { ...state.openFiles }
-      delete openFiles[sessionId]
+      delete openFiles[rootId]
       return { openFiles }
     }),
-
-  addProject: async (input) => {
-    const project = await window.api.projects.create(input)
-    set((state) => ({ projects: [...state.projects, project] }))
-    return project
-  },
-
-  renameProject: async (id, name) => {
-    const updated = await window.api.projects.update({ id, patch: { name } })
-    if (!updated) return
-    set((state) => ({ projects: state.projects.map((project) => (project.id === id ? updated : project)) }))
-  },
-
-  removeProject: async (id) => {
-    const childIds = get()
-      .sessions.filter((session) => session.projectId === id)
-      .map((session) => session.id)
-    await window.api.projects.remove(id)
-    childIds.forEach(disposeSession)
-    set((state) => {
-      const statuses = { ...state.statuses }
-      const terminalDirectories = { ...state.terminalDirectories }
-      const exits = { ...state.exits }
-      const terminalTaskLinks = { ...state.terminalTaskLinks }
-      const gitStatuses = { ...state.gitStatuses }
-      const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
-      const opencodeTuiInstances = { ...state.opencodeTuiInstances }
-      const opencodeTuiReadRevisions = { ...state.opencodeTuiReadRevisions }
-      childIds.forEach((sessionId) => {
-        Object.keys(statuses).filter((id) => belongsToSession(id, sessionId)).forEach((id) => delete statuses[id])
-        Object.keys(terminalDirectories).filter((id) => belongsToSession(id, sessionId)).forEach((id) => delete terminalDirectories[id])
-        Object.keys(exits).filter((id) => belongsToSession(id, sessionId)).forEach((id) => delete exits[id])
-        Object.keys(terminalTaskLinks)
-          .filter((id) => belongsToSession(id, sessionId))
-          .forEach((id) => delete terminalTaskLinks[id])
-        delete gitStatuses[sessionId]
-        clearOpenCodeTuiReadRevisions(
-          opencodeTuiReadRevisions,
-          sessionId,
-          opencodeTuiInstances[sessionId] ?? []
-        )
-        delete opencodeTuiStatuses[sessionId]
-        delete opencodeTuiInstances[sessionId]
-      })
-      return {
-        projects: state.projects.filter((project) => project.id !== id),
-        sessions: state.sessions.filter((session) => session.projectId !== id),
-        selectedSessionId:
-          state.selectedSessionId && childIds.includes(state.selectedSessionId)
-            ? null
-            : state.selectedSessionId,
-        statuses,
-        terminalDirectories,
-        exits,
-        terminalTaskLinks,
-        gitStatuses,
-        opencodeTuiStatuses,
-        opencodeTuiInstances,
-        opencodeTuiReadRevisions,
-      }
-    })
-  },
 
   addTodoProject: async (input) => {
     const project = await window.api.todoProjects.create(input)
@@ -407,10 +301,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   },
 
   removeTodoProject: async (id) => {
-    const removedTaskIds = get()
-      .todoTasks
-      .filter((task) => task.todoProjectId === id)
-      .map((task) => task.id)
     await window.api.todoProjects.remove(id)
     set((state) => {
       const removedIndex = state.todoProjects.findIndex((project) => project.id === id)
@@ -418,17 +308,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const selectedTodoProjectId = state.selectedTodoProjectId === id
         ? todoProjects[Math.min(removedIndex, todoProjects.length - 1)]?.id ?? null
         : state.selectedTodoProjectId
-      const terminalTaskLinks = { ...state.terminalTaskLinks }
-      removedTaskIds.forEach((taskId) => {
-        Object.entries(terminalTaskLinks)
-          .filter(([, linkedTaskId]) => linkedTaskId === taskId)
-          .forEach(([terminalId]) => delete terminalTaskLinks[terminalId])
-      })
       return {
         todoProjects,
         todoTasks: state.todoTasks.filter((task) => task.todoProjectId !== id),
         selectedTodoProjectId,
-        terminalTaskLinks
       }
     })
   },
@@ -469,16 +352,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   removeTodoTask: async (id) => {
     await window.api.todoTasks.remove(id)
-    set((state) => {
-      const terminalTaskLinks = { ...state.terminalTaskLinks }
-      Object.entries(terminalTaskLinks)
-        .filter(([, linkedTaskId]) => linkedTaskId === id)
-        .forEach(([terminalId]) => delete terminalTaskLinks[terminalId])
-      return {
-        todoTasks: state.todoTasks.filter((task) => task.id !== id),
-        terminalTaskLinks
-      }
-    })
+    set((state) => ({ todoTasks: state.todoTasks.filter((task) => task.id !== id) }))
   },
 
   addSession: async (input) => {
@@ -486,7 +360,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     set((state) => ({
       sessions: [...state.sessions, session],
       selectedSessionId: session.id,
-      activeWorkspaceView: 'projects'
+      activeWorkspaceView: 'sessions'
     }))
     return session
   },
@@ -497,7 +371,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     set((state) => ({
       sessions: [...state.sessions, session],
       selectedSessionId: session.id,
-      activeWorkspaceView: 'projects'
+      activeWorkspaceView: 'sessions'
     }))
     return session
   },
@@ -555,12 +429,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     set((state) => ({ sessions: state.sessions.map((session) => (session.id === id ? updated : session)) }))
   },
 
-  moveSession: async (id, projectId) => {
-    const updated = await window.api.sessions.move({ id, projectId })
-    if (!updated) return
-    set((state) => ({ sessions: state.sessions.map((session) => (session.id === id ? updated : session)) }))
-  },
-
   reorderSession: async (id, beforeId) => {
     const sessions = await window.api.sessions.reorder({ id, beforeId })
     if (!sessions) return
@@ -574,27 +442,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const statuses = { ...state.statuses }
       const terminalDirectories = { ...state.terminalDirectories }
       const exits = { ...state.exits }
-      const terminalTaskLinks = { ...state.terminalTaskLinks }
-      const gitStatuses = { ...state.gitStatuses }
-      const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
-      const opencodeTuiInstances = { ...state.opencodeTuiInstances }
-      const opencodeTuiReadRevisions = { ...state.opencodeTuiReadRevisions }
       Object.keys(statuses).filter((runtimeId) => belongsToSession(runtimeId, id)).forEach((runtimeId) => delete statuses[runtimeId])
       Object.keys(terminalDirectories).filter((runtimeId) => belongsToSession(runtimeId, id)).forEach((runtimeId) => delete terminalDirectories[runtimeId])
       Object.keys(exits).filter((runtimeId) => belongsToSession(runtimeId, id)).forEach((runtimeId) => delete exits[runtimeId])
-      Object.keys(terminalTaskLinks)
-        .filter((runtimeId) => belongsToSession(runtimeId, id))
-        .forEach((runtimeId) => delete terminalTaskLinks[runtimeId])
-      delete gitStatuses[id]
-      clearOpenCodeTuiReadRevisions(
-        opencodeTuiReadRevisions,
-        id,
-        opencodeTuiInstances[id] ?? []
-      )
-      delete opencodeTuiStatuses[id]
-      delete opencodeTuiInstances[id]
       const openFiles = { ...state.openFiles }
-      delete openFiles[id]
+      Object.keys(openFiles)
+        .filter((key) => belongsToSession(fileRootTerminalId(key) ?? key, id))
+        .forEach((key) => delete openFiles[key])
       return {
         openFiles,
         sessions: state.sessions.filter((session) => session.id !== id),
@@ -602,134 +456,17 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         statuses,
         terminalDirectories,
         exits,
-        terminalTaskLinks,
-        gitStatuses,
-        opencodeTuiStatuses,
-        opencodeTuiInstances,
-        opencodeTuiReadRevisions,
       }
     })
-  },
-
-  revealSession: async (id) => {
-    await window.api.paths.reveal(id)
-  },
-
-  openSessionInVsCode: async (id) => {
-    await window.api.paths.openInVsCode(id)
-  },
-
-  refreshGitStatuses: async () => {
-    if (gitStatusRefreshPromise) {
-      gitStatusRefreshQueued = true
-      return gitStatusRefreshPromise
-    }
-
-    const sessions = get().sessions
-    if (sessions.length === 0) {
-      set({ gitStatuses: {} })
-      return
-    }
-
-    set((state) => {
-      const gitStatuses = { ...state.gitStatuses }
-      const sessionIds = new Set(sessions.map((session) => session.id))
-      Object.keys(gitStatuses)
-        .filter((sessionId) => !sessionIds.has(sessionId))
-        .forEach((sessionId) => delete gitStatuses[sessionId])
-      sessions.forEach((session) => {
-        const previous = gitStatuses[session.id]
-        gitStatuses[session.id] = {
-          response: previous?.response ?? null,
-          error: null,
-          loading: true
-        }
-      })
-      return { gitStatuses }
-    })
-
-    const refresh = (async (): Promise<void> => {
-      const results = await Promise.all(
-        sessions.map(async (session) => {
-          try {
-            const response = await window.api.git.status({ sessionId: session.id })
-            return {
-              id: session.id,
-              value: { response, error: null, loading: false } satisfies GitSessionStatus
-            }
-          } catch (reason) {
-            return {
-              id: session.id,
-              value: {
-                response: null,
-                error: reason instanceof Error ? reason.message : 'Could not load Git status.',
-                loading: false
-              } satisfies GitSessionStatus
-            }
-          }
-        })
-      )
-
-      set((state) => {
-        const activeIds = new Set(state.sessions.map((session) => session.id))
-        const gitStatuses: Record<string, GitSessionStatus> = {}
-        results.forEach(({ id, value }) => {
-          if (activeIds.has(id)) gitStatuses[id] = value
-        })
-        return { gitStatuses }
-      })
-    })()
-
-    gitStatusRefreshPromise = refresh
-    try {
-      await refresh
-    } finally {
-      if (gitStatusRefreshPromise === refresh) gitStatusRefreshPromise = null
-      if (gitStatusRefreshQueued) {
-        gitStatusRefreshQueued = false
-        void get().refreshGitStatuses()
-      }
-    }
   },
 
   setStatus: (id, status) =>
-    set((state) => {
-      const terminalTaskLinks = { ...state.terminalTaskLinks }
-      if (status !== 'running') delete terminalTaskLinks[id]
-      return {
-        statuses: { ...state.statuses, [id]: status },
-        terminalTaskLinks
-      }
-    }),
-
-  linkTerminalToTodoTask: (terminalId, taskId) =>
-    set((state) => {
-      if (!state.todoTasks.some((task) => task.id === taskId)) return state
-      const terminalTaskLinks = { ...state.terminalTaskLinks }
-      delete terminalTaskLinks[terminalId]
-      Object.entries(terminalTaskLinks)
-        .filter(([, linkedTaskId]) => linkedTaskId === taskId)
-        .forEach(([linkedTerminalId]) => delete terminalTaskLinks[linkedTerminalId])
-      terminalTaskLinks[terminalId] = taskId
-      return { terminalTaskLinks }
-    }),
-
-  unlinkTerminalTask: (terminalId) =>
-    set((state) => {
-      if (!state.terminalTaskLinks[terminalId]) return state
-      const terminalTaskLinks = { ...state.terminalTaskLinks }
-      delete terminalTaskLinks[terminalId]
-      return { terminalTaskLinks }
-    }),
-
-  unlinkTodoTask: (taskId) =>
-    set((state) => {
-      const terminalTaskLinks = { ...state.terminalTaskLinks }
-      Object.entries(terminalTaskLinks)
-        .filter(([, linkedTaskId]) => linkedTaskId === taskId)
-        .forEach(([terminalId]) => delete terminalTaskLinks[terminalId])
-      return { terminalTaskLinks }
-    }),
+    set((state) => ({
+      statuses: { ...state.statuses, [id]: status },
+      openFiles: status === 'none'
+        ? Object.fromEntries(Object.entries(state.openFiles).filter(([key]) => fileRootTerminalId(key) !== id))
+        : state.openFiles,
+    })),
 
   setTerminalDirectory: (update) =>
     set((state) => {
@@ -740,15 +477,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     }),
 
   noteExit: (info) =>
-    set((state) => {
-      const terminalTaskLinks = { ...state.terminalTaskLinks }
-      delete terminalTaskLinks[info.terminalId]
-      return {
-        statuses: { ...state.statuses, [info.terminalId]: 'exited' },
-        exits: { ...state.exits, [info.terminalId]: info },
-        terminalTaskLinks
-      }
-    }),
+    set((state) => ({
+      statuses: { ...state.statuses, [info.terminalId]: 'exited' },
+      exits: { ...state.exits, [info.terminalId]: info },
+    })),
 
   clearExit: (id) =>
     set((state) => {
@@ -757,104 +489,111 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       return { exits }
     }),
 
-  appendOpenCodeTuiStatus: ({ sessionId, status, attentionReason, revision }) =>
+  clearInboxTerminalHighlight: (threadId, token) =>
     set((state) => {
-      if (status === null) {
-        if (!state.opencodeTuiStatuses[sessionId]) return state
-        const opencodeTuiStatuses = { ...state.opencodeTuiStatuses }
-        delete opencodeTuiStatuses[sessionId]
-        return { opencodeTuiStatuses }
-      }
-
-      const previous = state.opencodeTuiStatuses[sessionId]
-      if (previous?.revision === revision && previous.status === status && previous.attentionReason === attentionReason) {
-        return state
-      }
-      return {
-        opencodeTuiStatuses: {
-          ...state.opencodeTuiStatuses,
-          [sessionId]: {
-            status,
-            ...(attentionReason ? { attentionReason } : {}),
-            revision,
-            unread:
-              status === 'completed' || status === 'error'
-                ? state.selectedSessionId !== sessionId
-                : previous?.unread ?? false
-          }
-        }
-      }
+      if (state.inboxTerminalHighlights[threadId]?.token !== token) return state
+      const inboxTerminalHighlights = { ...state.inboxTerminalHighlights }
+      delete inboxTerminalHighlights[threadId]
+      return { inboxTerminalHighlights }
     }),
 
-  appendOpenCodeTuiInstances: ({ sessionId, instances }) =>
+  openSettings: (section = 'appearance') => set({ settingsDialog: { open: true, section } }),
+
+  closeSettings: () =>
+    set((state) => ({ settingsDialog: { ...state.settingsDialog, open: false } })),
+
+  openOpenCodeConfig: () => set({ opencodeConfigDialog: { open: true } }),
+
+  closeOpenCodeConfig: () => set({ opencodeConfigDialog: { open: false } }),
+
+  selectInboxThread: (id) => {
+    set({ selectedInboxThreadId: id, ...(id ? { activeWorkspaceView: 'inbox' as const } : {}) })
+    const thread = id ? get().inboxThreads.find((item) => item.id === id) : undefined
+    if (thread && thread.lastActivityAt > thread.readAt) void get().setInboxThreadRead(thread.id, true)
+  },
+
+  setInboxThreadRead: async (id, read) => {
+    // Marking a thread unread has to survive it being the open one: it stays unread until it is opened again.
     set((state) => {
-      const previous = state.opencodeTuiInstances[sessionId]
-      const opencodeTuiReadRevisions = { ...state.opencodeTuiReadRevisions }
-      const currentTerminalIds = new Set(instances.map((instance) => instance.terminalId))
-      const previousTerminalIds = new Set(
-        (previous ?? []).map((instance) => instance.terminalId)
-      )
-      Object.keys(opencodeTuiReadRevisions)
-        .filter((terminalId) =>
-          (belongsToSession(terminalId, sessionId) || previousTerminalIds.has(terminalId)) &&
-          !currentTerminalIds.has(terminalId)
-        )
-        .forEach((terminalId) => delete opencodeTuiReadRevisions[terminalId])
-      instances.forEach((instance) => {
-        if (instance.status !== 'completed') {
-          delete opencodeTuiReadRevisions[instance.terminalId]
-        } else if (state.selectedSessionId === sessionId) {
-          opencodeTuiReadRevisions[instance.terminalId] = instance.revision
-        }
-      })
-      if (instances.length === 0) {
-        if (
-          !previous &&
-          Object.keys(opencodeTuiReadRevisions).length ===
-            Object.keys(state.opencodeTuiReadRevisions).length
-        ) {
-          return state
-        }
-        const opencodeTuiInstances = { ...state.opencodeTuiInstances }
-        delete opencodeTuiInstances[sessionId]
-        return { opencodeTuiInstances, opencodeTuiReadRevisions }
-      }
-      const highlights = detectInstanceHighlights(previous, instances)
+      const { [id]: _released, ...others } = state.inboxMarkedUnread
+      return { inboxMarkedUnread: read ? others : { ...others, [id]: true } }
+    })
+    const thread = await window.api.inbox.setRead({ id, read })
+    if (thread) get().upsertInboxThread(thread)
+  },
+
+  markOpenInboxThreadSeen: () => {
+    const { activeWorkspaceView, windowMode, selectedInboxThreadId, inboxThreads, inboxMarkedUnread } = get()
+    if (windowMode !== 'normal' || activeWorkspaceView !== 'inbox' || !selectedInboxThreadId || inboxMarkedUnread[selectedInboxThreadId]) return
+    const thread = inboxThreads.find((item) => item.id === selectedInboxThreadId)
+    if (thread && isInboxThreadUnread(thread)) void get().setInboxThreadRead(thread.id, true)
+  },
+
+  setInboxThreadArchived: async (id, archived) => {
+    const thread = await window.api.inbox.setArchived({ id, archived })
+    if (thread) get().upsertInboxThread(thread)
+  },
+
+  setInboxThreadCustomTitle: async (id, customTitle) => {
+    const thread = await window.api.inbox.setCustomTitle({ id, customTitle })
+    if (thread) get().upsertInboxThread(thread)
+  },
+
+  setInboxThreadPinned: async (id, pinned) => {
+    const thread = await window.api.inbox.setPinned({ id, pinned })
+    if (thread) get().upsertInboxThread(thread)
+  },
+
+  removeInboxThread: async (id, options) => {
+    await window.api.inbox.remove({ id, ...(options?.removeWorktree ? { removeWorktree: true } : {}) })
+    const terminalId = inboxThreadTerminalId(id)
+    disposeSession(terminalId)
+    get().setStatus(terminalId, 'none')
+    get().clearExit(terminalId)
+    get().setTerminalDirectory({ terminalId, directory: null })
+    set((state) => {
+      const { [id]: _marked, ...inboxMarkedUnread } = state.inboxMarkedUnread
+      const { [id]: _cue, ...inboxCues } = state.inboxCues
+      const { [id]: _highlight, ...inboxTerminalHighlights } = state.inboxTerminalHighlights
       return {
-        opencodeTuiInstances: {
-          ...state.opencodeTuiInstances,
-          [sessionId]: instances
+        inboxThreads: state.inboxThreads.filter((thread) => thread.id !== id),
+        selectedInboxThreadId: state.selectedInboxThreadId === id ? null : state.selectedInboxThreadId,
+        inboxMarkedUnread,
+        inboxCues,
+        inboxTerminalHighlights,
+      }
+    })
+  },
+
+  upsertInboxThread: (thread) => {
+    const state = get()
+    const previous = state.inboxThreads.find((item) => item.id === thread.id)
+    const tone = inboxTerminalHighlightTone(previous, thread)
+    set({
+      inboxThreads: withInboxThread(state.inboxThreads, thread),
+      ...(tone ? {
+        inboxTerminalHighlights: {
+          ...state.inboxTerminalHighlights,
+          [thread.id]: { tone, token: (state.inboxTerminalHighlights[thread.id]?.token ?? 0) + 1, at: Date.now() },
         },
-        opencodeTuiReadRevisions,
-        ...(highlights.length > 0
-          ? { terminalHighlights: withTerminalHighlights(state.terminalHighlights, highlights) }
-          : {})
-      }
-    }),
-
-  flashTerminal: (terminalId, tone) =>
-    set((state) => {
-      const instance = Object.values(state.opencodeTuiInstances)
-        .flat()
-        .find((candidate) => candidate.terminalId === terminalId)
-      return {
-        terminalHighlights: withTerminalHighlights(state.terminalHighlights, [
-          { terminalId, tone: tone ?? highlightToneForStatus(instance?.status) }
-        ])
-      }
-    }),
-
-  clearTerminalHighlight: (terminalId, token) =>
-    set((state) => {
-      if (state.terminalHighlights[terminalId]?.token !== token) return state
-      const terminalHighlights = { ...state.terminalHighlights }
-      delete terminalHighlights[terminalId]
-      return { terminalHighlights }
-    }),
-
-  setOpenCodeTuiInstanceLabelMode: async (mode) => {
-    const settings = await window.api.opencodeTui.setInstanceLabelMode({ mode })
-    set({ opencodeTuiInstanceLabelMode: settings.instanceLabelMode })
+      } : {}),
+    })
+    // New activity on the thread being read is seen immediately, like an open mail. Only new activity
+    // counts: a thread that was just marked unread is still the open one, and has to stay unread.
+    const activity = !previous || thread.lastActivityAt > previous.lastActivityAt
+    if (
+      activity &&
+      state.windowMode === 'normal' &&
+      state.activeWorkspaceView === 'inbox' &&
+      state.selectedInboxThreadId === thread.id &&
+      isInboxThreadUnread(thread) &&
+      typeof document !== 'undefined' &&
+      document.hasFocus()
+    ) {
+      void get().setInboxThreadRead(thread.id, true)
+      // Nothing is left marking it unread, so the list and header say, briefly, that something happened.
+      if (previous) set((current) => ({ inboxCues: { ...current.inboxCues, [thread.id]: Date.now() } }))
+    }
   },
 
   setWindowMode: async (mode) => {
@@ -871,4 +610,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 // finished growing back. Their sizing waits for the viewport to stop changing.
 useWorkspace.subscribe((state, previous) => {
   if (previous.windowMode === 'mini' && state.windowMode === 'normal') viewportSettle.begin()
+  if (state.ready && (
+    !previous.ready ||
+    state.activeWorkspaceView !== previous.activeWorkspaceView ||
+    state.selectedInboxThreadId !== previous.selectedInboxThreadId
+  )) {
+    saveWorkspaceNavigation({ view: state.activeWorkspaceView, selectedInboxThreadId: state.selectedInboxThreadId })
+  }
 })

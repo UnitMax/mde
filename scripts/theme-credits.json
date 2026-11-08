@@ -1,0 +1,109 @@
+{
+  "original": [
+    { "id": "slate", "label": "Slate" },
+    { "id": "ember", "label": "Ember" },
+    { "id": "frost", "label": "Frost" },
+    { "id": "high-contrast", "label": "High contrast" },
+    { "id": "high-contrast-light", "label": "High contrast light" }
+  ],
+  "sources": [
+    {
+      "key": "catppuccin",
+      "name": "Catppuccin",
+      "themes": [
+        { "id": "catppuccin-mocha", "label": "Catppuccin Mocha" },
+        { "id": "catppuccin-latte", "label": "Catppuccin Latte" }
+      ],
+      "url": "https://github.com/catppuccin/catppuccin",
+      "license": "MIT",
+      "copyright": "Copyright (c) 2021 Catppuccin",
+      "licenseFile": "themes/catppuccin-LICENSE",
+      "changes": "Mocha and Latte colors and their terminal color mapping. Surface shades between the published ones are derived, and Latte's green, yellow, magenta and gray are darkened so text reads on its light ground."
+    },
+    {
+      "key": "github",
+      "name": "GitHub Primer",
+      "themes": [
+        { "id": "github-light", "label": "GitHub Light" }
+      ],
+      "url": "https://github.com/primer/primitives",
+      "license": "MIT",
+      "copyright": "Copyright (c) 2018 GitHub Inc.",
+      "licenseFile": "themes/github-LICENSE",
+      "changes": "The light color scheme and its terminal colors. Surface shades are derived, and some of the bright terminal colors are darkened so they read on the light ground."
+    },
+    {
+      "key": "solarized",
+      "name": "Solarized",
+      "themes": [
+        { "id": "solarized-light", "label": "Solarized Light" }
+      ],
+      "url": "https://github.com/altercation/solarized",
+      "license": "MIT",
+      "copyright": "Copyright (c) 2011 Ethan Schoonover",
+      "licenseFile": "themes/solarized-LICENSE",
+      "changes": "The base tones and the accent hues. Most accents are darkened and the grays moved, so that text, buttons and code reach the contrast MDE requires; surface shades are derived."
+    },
+    {
+      "key": "gruvbox",
+      "name": "Gruvbox",
+      "themes": [
+        { "id": "gruvbox-dark", "label": "Gruvbox Dark" },
+        { "id": "gruvbox-light", "label": "Gruvbox Light" }
+      ],
+      "url": "https://github.com/morhetz/gruvbox",
+      "license": "MIT",
+      "copyright": "Copyright (c) 2018 Pavel Pertsev",
+      "licenseFile": "themes/gruvbox-LICENSE",
+      "changes": "The dark and light palettes. Surface shades are derived, one dark syntax red is lightened, and the light theme's accents and bright terminal colors are darkened for contrast. The original repository states the MIT/X11 license in its README without a license file; the text below is the one published by the gruvbox-community fork (https://github.com/gruvbox-community/gruvbox), which carries the same copyright."
+    },
+    {
+      "key": "tokyo-night",
+      "name": "Tokyo Night",
+      "themes": [
+        { "id": "tokyo-night", "label": "Tokyo Night" }
+      ],
+      "url": "https://github.com/tokyo-night/tokyo-night-vscode-theme",
+      "license": "MIT",
+      "copyright": "Copyright (c) 2018-present Enkia",
+      "licenseFile": "themes/tokyo-night-LICENSE",
+      "changes": "The VS Code theme's colors. Surface shades, text grays and the bright terminal colors are derived."
+    },
+    {
+      "key": "dracula",
+      "name": "Dracula",
+      "themes": [
+        { "id": "dracula", "label": "Dracula" }
+      ],
+      "url": "https://github.com/dracula/dracula-theme",
+      "license": "MIT",
+      "copyright": "Copyright (c) 2023 Dracula Theme",
+      "licenseFile": "themes/dracula-LICENSE",
+      "changes": "The Dracula palette and its terminal colors (https://spec.draculatheme.com). Surface shades between the background and the current-line color, and the text grays, are derived."
+    },
+    {
+      "key": "nord",
+      "name": "Nord",
+      "themes": [
+        { "id": "nord", "label": "Nord" }
+      ],
+      "url": "https://github.com/nordtheme/nord",
+      "license": "MIT",
+      "copyright": "Copyright (c) 2016-present Sven Greb <development@svengreb.de> (https://www.svengreb.de)",
+      "licenseFile": "themes/nord-LICENSE",
+      "changes": "The Nord palette. Surface shades, the text grays and the bright terminal colors are derived."
+    },
+    {
+      "key": "one-dark",
+      "name": "One Dark (Atom)",
+      "themes": [
+        { "id": "one-dark", "label": "One Dark" }
+      ],
+      "url": "https://github.com/atom/one-dark-syntax",
+      "license": "MIT",
+      "copyright": "Copyright (c) 2016 GitHub Inc.",
+      "licenseFile": "themes/one-dark-LICENSE",
+      "changes": "The syntax colors of Atom's One Dark. Surface shades, the text grays and the bright terminal colors are derived."
+    }
+  ]
+}

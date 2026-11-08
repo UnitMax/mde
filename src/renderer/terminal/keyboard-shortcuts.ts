@@ -27,6 +27,33 @@ export function getKeyboardShortcutGroups(
 
   return [
     {
+      id: 'inbox-chat',
+      label: 'Inbox chat',
+      shortcuts: [
+        { id: 'inbox-new-thread', keys: ['Ctrl+N'], description: 'Start a new Inbox thread, setting aside any current draft.' },
+        { id: 'inbox-multi-select', keys: platform === 'darwin' ? ['Ctrl+Click', 'Cmd+Click'] : ['Ctrl+Click'], description: 'Select multiple Inbox threads for pinning, marking unread, or parking.' },
+        { id: 'inbox-floating-terminal', keys: ['F11'], description: 'Show or hide the Inbox terminal once it has been floated out of the sidebar (the button beside Collapse sidebar on the Terminal tab). Until then F11 keeps putting the window in full screen.' },
+        { id: 'inbox-changes-tabs', keys: ['Left', 'Right', 'Home', 'End'], description: 'Switch Files and Changes when a thread sidebar tab is focused.' },
+        { id: 'inbox-close-changes', keys: ['Escape'], description: 'Close the Git change review, or the changed-file list under a thread.' },
+        { id: 'inbox-paste-image', keys: [`${primaryModifier}+V`], description: 'Paste clipboard images as attachments in the message box; text pastes normally.' },
+        { id: 'inbox-cycle-agent', keys: ['Shift+Tab'], description: 'Cycle through available agents in the message box.' },
+        { id: 'inbox-model-picker', keys: ['Up', 'Down', 'Home', 'End', 'Tab', 'Shift+Tab', 'Left', 'Right', 'Enter'], description: 'In the model menu: typing always edits search. Up and Down continue from the selected or last-browsed model and wrap at either end, Home and End jump to the first and last model. Tab or Shift+Tab moves between a model and its favorite star; Enter selects the model or effort, or toggles the star. Right opens reasoning effort choices, Left returns to the model.' },
+        { id: 'inbox-skill-picker', keys: ['$'], description: 'Start a word with $ in the message box to pick a skill; keep typing to narrow the list.' },
+        { id: 'inbox-skill-picker-keys', keys: ['Up', 'Down', 'Tab', 'Enter', 'Escape'], description: 'In the skill list: Up and Down move, Tab or Enter insert the skill, Escape closes the list.' },
+        { id: 'inbox-slash-picker', keys: ['/'], description: 'Start a message with / to pick a command, such as /btw to ask a side question that is not added to the conversation, /fork to fork the thread, /compact to summarize the conversation and free up context, or /goal to keep the agent working until an objective is met; keep typing to narrow the list.' },
+        { id: 'inbox-slash-picker-keys', keys: ['Up', 'Down', 'Tab', 'Enter', 'Escape'], description: 'In the command list: Up and Down move, Tab writes the command into the box, Enter does too (or runs a command that takes nothing more), Escape closes the list.' },
+        { id: 'inbox-aside-close', keys: ['Escape'], description: 'Close the answer to a side question shown above the message box, when no list is open.' },
+        { id: 'inbox-timeline', keys: ['Up', 'Down', 'Enter', 'Escape'], description: 'On the prompt timeline beside a conversation: Up or Down opens it, Up, Down, Home and End move between prompts, Enter jumps to one, Escape closes it.' },
+        { id: 'inbox-find', keys: [`${primaryModifier}+F`], description: 'Search the text of the open GUI thread, yours and the agent\'s, with every match highlighted. Enter and Shift+Enter move to the next and previous match, Escape closes the search. Text selected in the conversation becomes the search.' },
+        { id: 'inbox-search-all', keys: [`${primaryModifier}+Shift+F`], description: 'Search the text of every Inbox thread in an overlay. Up and Down move between the messages found, Enter opens the thread with the search bar on that message, Escape closes the overlay.' },
+        { id: 'inbox-send', keys: ['Enter'], description: 'Send the message and attachments.' },
+        { id: 'inbox-send-background', keys: platform === 'darwin' ? ['Cmd+Enter', 'Ctrl+Enter'] : ['Ctrl+Enter'], description: 'On the new-thread page, start a thread in the background and keep the composer open for the next thread.' },
+        { id: 'inbox-save-draft', keys: [`${primaryModifier}+S`], description: 'On the new-thread page, save what you typed as a draft and start a blank page.' },
+        { id: 'inbox-message-history', keys: ['Up', 'Down'], description: 'With an empty message box, Up recalls earlier messages in this thread. Down moves forward to the empty box; editing ends history navigation.' },
+        { id: 'inbox-newline', keys: ['Shift+Enter', 'Ctrl+J'], description: 'Insert a newline in the message box; continue a bullet list, or leave it when its last item is empty.' }
+      ]
+    },
+    {
       id: 'workspace',
       label: 'Workspace',
       shortcuts: [
@@ -42,22 +69,10 @@ export function getKeyboardShortcutGroups(
           note: 'Available in the To Do view.'
         },
         {
-          id: 'terminal-launcher-open',
-          keys: [`${primaryModifier}+N`],
-          description: 'Open the terminal launcher.',
-          note: 'Available from a focused Mac or Windows/WSL terminal.'
-        },
-        {
-          id: 'opencode-sessions-open',
-          keys: ['Ctrl+Shift+O'],
-          description: 'Browse OpenCode sessions from every directory on this Mac or in the current WSL distro.',
-          note: 'Available from a focused Mac or Windows/WSL terminal.'
-        },
-        {
           id: 'mini-window-toggle',
           keys: ['F12'],
-          description: 'Toggle the always-on-top mini window that lists your agents.',
-          note: 'Works while MDE is focused. Clicking an agent restores the full window, focuses its terminal, and highlights it.'
+          description: 'Toggle the always-on-top mini Inbox window.',
+          note: 'Works while MDE is focused. Clicking a thread restores the full window and opens that Inbox conversation.'
         }
       ]
     },
@@ -66,10 +81,10 @@ export function getKeyboardShortcutGroups(
       label: 'Terminal',
       shortcuts: [
         {
-          id: 'terminal-layout',
-          keys: ['Ctrl+1–9'],
-          description: 'Choose a terminal layout.',
-          note: '1 pane, 2 columns, 3 terminals, 4 quadrant, 5 grid, 6 grid, 7 columns, 8 and 9 grids. The seven-terminal grid has no shortcut. Numpad digits also work.'
+          id: 'terminal-split',
+          keys: ['Ctrl'],
+          description: 'Hold to show controls for adding a terminal at any edge.',
+          note: 'Click + on the left, right, top or bottom of a pane to split it. Drag a divider to resize.'
         },
         {
           id: 'terminal-fullscreen',
@@ -85,7 +100,7 @@ export function getKeyboardShortcutGroups(
           id: 'terminal-pane-switch',
           keys: ['Ctrl+Shift+1–9'],
           description: 'Focus a terminal by its number.',
-          note: 'Numpad digits also work. Ignored while a terminal is fullscreen.'
+          note: 'Focus the first nine panes. Numpad digits also work. Ignored while a terminal is fullscreen.'
         },
         {
           id: 'terminal-fullscreen-escape',
@@ -197,27 +212,6 @@ export function getKeyboardShortcutGroups(
           description: 'Close the session switcher.'
         },
         {
-          id: 'opencode-sessions-move',
-          keys: ['↑', '↓'],
-          description: 'Move through OpenCode sessions across directory groups.'
-        },
-        {
-          id: 'opencode-sessions-select',
-          keys: ['Enter'],
-          description: 'Resume the selected OpenCode session in a new terminal.'
-        },
-        {
-          id: 'opencode-sessions-replace',
-          keys: ['Shift+Enter'],
-          description: 'Resume the selected OpenCode session in the terminal the picker was opened from.',
-          note: 'Asks first when that terminal is running, since it interrupts the current command or task.'
-        },
-        {
-          id: 'opencode-sessions-close',
-          keys: ['Esc'],
-          description: 'Close the OpenCode session picker.'
-        },
-        {
           id: 'todo-search-move',
           keys: ['↑', '↓'],
           description: 'Move through matching tasks in the To Do search.'
@@ -231,27 +225,6 @@ export function getKeyboardShortcutGroups(
           id: 'todo-search-close',
           keys: ['Esc'],
           description: 'Close the To Do search.'
-        },
-        {
-          id: 'terminal-launcher-source',
-          keys: ['Tab'],
-          description: 'Switch between terminal and session directories in the terminal launcher.',
-          note: 'Available when both directory choices are available.'
-        },
-        {
-          id: 'terminal-launcher-move',
-          keys: ['↑', '↓'],
-          description: 'Move through terminal launcher commands.'
-        },
-        {
-          id: 'terminal-launcher-ends',
-          keys: ['Home', 'End'],
-          description: 'Select the first or last terminal launcher command.'
-        },
-        {
-          id: 'terminal-launcher-select',
-          keys: ['Enter'],
-          description: 'Launch the selected terminal command.'
         }
       ]
     }

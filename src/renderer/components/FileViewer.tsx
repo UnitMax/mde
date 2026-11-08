@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
   Code,
@@ -10,6 +10,8 @@ import {
   X
 } from 'lucide-react'
 import type { FileReadResponse, Session } from '@shared/types'
+import type { FileRoot } from '@shared/ipc'
+import { useWorkspace } from '@/store/workspace'
 import { Button } from '@/components/ui/button'
 import { CodeViewer } from '@/components/CodeViewer'
 import { MarkdownPreview } from '@/components/MarkdownPreview'
@@ -29,7 +31,8 @@ type LoadState =
 
 interface FileViewerProps {
   session: Session
-  /** File path relative to the session root. */
+  root?: FileRoot
+  /** File path relative to the file root. */
   path: string
   onOpenFile: (path: string) => void
   onClose: () => void
@@ -49,7 +52,14 @@ function Message({ children, tone = 'muted' }: { children: string; tone?: 'muted
   )
 }
 
-export function FileViewer({ session, path, onOpenFile, onClose }: FileViewerProps): JSX.Element {
+export function FileViewer({ session, root: requestedRoot, path, onOpenFile, onClose }: FileViewerProps): JSX.Element {
+  const root = useMemo<FileRoot>(
+    () => requestedRoot?.terminalId
+      ? { terminalId: requestedRoot.terminalId, directory: requestedRoot.directory }
+      : { sessionId: session.id },
+    [requestedRoot?.terminalId, requestedRoot?.directory, session.id]
+  )
+  const terminalReady = useWorkspace((state) => !root.terminalId || (state.statuses[root.terminalId] ?? 'none') !== 'none')
   const [state, setState] = useState<LoadState>({ status: 'loading' })
   const [showSource, setShowSource] = useState(false)
   const [previewWidth, setPreviewWidth] = useState<MarkdownPreviewWidth>(getMarkdownPreviewWidth)
@@ -60,15 +70,16 @@ export function FileViewer({ session, path, onOpenFile, onClose }: FileViewerPro
   const load = useCallback(async (): Promise<void> => {
     const sequence = ++requestSequence.current
     setState({ status: 'loading' })
+    if (!terminalReady) return
     try {
-      const file = await window.api.files.read({ sessionId: session.id, path })
+      const file = await window.api.files.read({ ...root, path })
       if (sequence === requestSequence.current) setState({ status: 'ready', file })
     } catch (error) {
       if (sequence === requestSequence.current) {
         setState({ status: 'error', error: ipcErrorMessage(error, 'Could not read file.') })
       }
     }
-  }, [path, session.id])
+  }, [path, root, terminalReady])
 
   useEffect(() => {
     setShowSource(false)
@@ -121,7 +132,7 @@ export function FileViewer({ session, path, onOpenFile, onClose }: FileViewerPro
       ref={rootRef}
       tabIndex={-1}
       data-testid="file-viewer"
-      className="absolute inset-0 z-10 flex min-h-0 flex-col bg-bg outline-none"
+      className="absolute inset-0 z-30 flex min-h-0 flex-col bg-bg outline-none"
     >
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-line bg-panel pl-3 pr-1.5">
         <FileText className="h-3.5 w-3.5 shrink-0 text-fg-subtle" aria-hidden="true" />

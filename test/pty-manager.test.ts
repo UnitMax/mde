@@ -1,3 +1,6 @@
+import { homedir, tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Session } from '@shared/types'
 
@@ -21,6 +24,7 @@ const ptyMock = vi.hoisted(() => ({
 vi.mock('node-pty', () => ({ spawn: ptyMock.spawn }))
 
 import { PtyManager } from '../src/main/pty/manager'
+import { TerminalDirectoryStore } from '../src/main/pty/directories'
 
 import * as hostExecutables from '../src/main/windows-executable'
 
@@ -49,10 +53,8 @@ function createFakeChild(): FakeChild {
 function sourceSession(): Session {
   return {
     id: 'session-1',
-    projectId: 'project-1',
     name: 'App',
     kind: 'native',
-    path: '/tmp/app',
     createdAt: '2026-01-01T00:00:00.000Z'
   }
 }
@@ -62,7 +64,7 @@ function wslSession(): Session {
     ...sourceSession(),
     kind: 'wsl',
     distro: 'Ubuntu-24.04',
-    path: '/home/me/app'
+
   }
 }
 
@@ -127,20 +129,27 @@ describe('PtyManager runtime terminal identities', () => {
     expect(child?.resize).toHaveBeenCalledWith(140, 42)
   })
 
-  it('applies launch integration environment to native shells and disposes it', () => {
-    const integration = {
-      prepare: vi.fn(() => ({ MDE_TEST_INTEGRATION: '1' })),
-      dispose: vi.fn()
+  it.each(['darwin', 'win32'] as const)('keeps terminal service credentials out of argv on %s', (platform) => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
+    const previousWslEnv = process.env.WSLENV
+    process.env.WSLENV = 'KEEP/u:OPENCODE_PASSWORD/p'
+    try {
+      const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() })
+      manager.ensure('inbox-thread:ses_one', platform === 'win32' ? wslSession() : sourceSession(), { cols: 80, rows: 24 }, palette, {
+        agent: { executable: 'opencode', args: ['--server', 'http://127.0.0.1:49374', '--session', 'ses_one'] },
+        environment: { OPENCODE_PASSWORD: 'test-password' },
+      })
+      const [, args, options] = ptyMock.spawn.mock.calls[0] as [string, string[], { env: Record<string, string> }]
+      expect(args.join(' ')).not.toContain('test-password')
+      expect(args.join(' ')).not.toContain('OPENCODE_PASSWORD')
+      expect(options.env.OPENCODE_PASSWORD).toBe('test-password')
+      if (platform === 'win32') expect(options.env.WSLENV).toBe('KEEP/u:OPENCODE_PASSWORD/u')
+      expect(process.env.OPENCODE_PASSWORD).not.toBe('test-password')
+      manager.disposeAll()
+    } finally {
+      if (previousWslEnv === undefined) delete process.env.WSLENV
+      else process.env.WSLENV = previousWslEnv
     }
-    const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() }, integration)
-
-    manager.ensure('pane-a', sourceSession(), { cols: 80, rows: 24 }, palette)
-
-    expect(ptyMock.spawn.mock.calls[0]?.[2]).toMatchObject({
-      env: expect.objectContaining({ MDE_TEST_INTEGRATION: '1' })
-    })
-    manager.dispose('pane-a')
-    expect(integration.dispose).toHaveBeenCalledWith('pane-a')
   })
 
   it('restarts and disposes panes independently', () => {
@@ -227,6 +236,8 @@ describe('PtyManager runtime terminal identities', () => {
     manager.ensure('pane-a', source, { cols: 80, rows: 24 }, palette)
     manager.ensure('pane-b', source, { cols: 80, rows: 24 }, palette)
 
+    expect(manager.terminalInfo('pane-a')?.directory).toBe(homedir())
+    events.onDirectory.mockClear()
     ptyMock.children.get('pane-1')?.dataListener?.('\u001b]7;file://localhost/home/me/a\u0007')
     ptyMock.children.get('pane-2')?.dataListener?.('\u001b]7;file:///tmp/b\u001b\\')
 
@@ -257,18 +268,42 @@ describe('PtyManager runtime terminal identities', () => {
     expect(manager.directories()).toEqual({ 'pane-b': '/tmp/b' })
   })
 
-  it('reports the WSL launch directory before the first prompt', () => {
+  it('waits for a WSL shell to report its home directory', () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     const events = { onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() }
     const manager = new PtyManager(events)
 
     manager.ensure('pane-a', wslSession(), { cols: 80, rows: 24 }, palette)
 
-    expect(events.onDirectory).toHaveBeenCalledWith({
-      terminalId: 'pane-a',
-      directory: '/home/me/app'
-    })
+    expect(ptyMock.spawn.mock.calls[0]?.[1]?.slice(2, 4)).toEqual(['--cd', '~'])
+    expect(events.onDirectory).not.toHaveBeenCalled()
+    expect(manager.directories()).toEqual({})
+    ptyMock.children.get('pane-1')?.dataListener?.('\u001b]7;file://localhost/home/me/app\u0007')
+    expect(events.onDirectory).toHaveBeenCalledWith({ terminalId: 'pane-a', directory: '/home/me/app' })
     expect(manager.directories()).toEqual({ 'pane-a': '/home/me/app' })
+  })
+
+  it('retains reported directories at shutdown and forgets panes explicitly removed later', async () => {
+    const saved = new TerminalDirectoryStore()
+    const events = { onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() }
+    const manager = new PtyManager(events, saved)
+    const source = sourceSession()
+    manager.ensure('pane-a', source, { cols: 80, rows: 24 }, palette)
+    manager.ensure('pane-b', source, { cols: 80, rows: 24 }, palette)
+    // A native Windows directory is kept as `C:/...`, the form Git and fs accept, whichever way it was reported.
+    const first = join(tmpdir(), 'mde-first').replaceAll('\\', '/')
+    const second = join(tmpdir(), 'mde-second').replaceAll('\\', '/')
+    ptyMock.children.get('pane-1')?.dataListener?.(`\u001b]7;${pathToFileURL(first).href}\u0007`)
+    ptyMock.children.get('pane-2')?.dataListener?.(`\u001b]7;${pathToFileURL(second).href}\u0007`)
+    manager.disposeAll()
+
+    const nextRun = new PtyManager(events, saved)
+    expect(nextRun.savedDirectory('pane-a', source)).toBe(first)
+    expect(nextRun.savedDirectory('pane-b', source)).toBe(second)
+    nextRun.dispose('pane-a')
+    expect(nextRun.savedDirectory('pane-a', source)).toBeUndefined()
+    expect(nextRun.savedDirectory('pane-b', source)).toBe(second)
+    await saved.flush()
   })
 
   it('updates the stored WSL directory after a prompt reports cd', () => {
@@ -304,16 +339,14 @@ describe('PtyManager runtime terminal identities', () => {
     })
   })
 
-  it('rejects unavailable host executables before creating PTYs or integration timers', () => {
+  it('rejects unavailable host executables before creating PTYs', () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
     vi.mocked(hostExecutables.resolveWslExecutable).mockImplementation(() => {
       throw new Error('Windows WSL executable is unavailable')
     })
-    const integration = { prepare: vi.fn(), dispose: vi.fn() }
-    const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() }, integration)
+    const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() })
     expect(() => manager.ensure('pane-a', wslSession(), { cols: 80, rows: 24 }, palette)).toThrow('WSL executable is unavailable')
     expect(ptyMock.spawn).not.toHaveBeenCalled()
-    expect(integration.prepare).not.toHaveBeenCalled()
   })
 
   it.each(['linux', 'darwin'] as const)('does not request a Windows backend on %s', (platform) => {

@@ -3,7 +3,9 @@
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Session } from '../src/shared/types'
+import type { TerminalDirectoryRequest } from '../src/shared/ipc'
+import { fileRootKey } from '../src/renderer/lib/file-root'
+import type { DirectoryContext } from '../src/shared/types'
 import { FILE_TREE_DROP_TYPE, readFileTreeDrop } from '../src/renderer/terminal/drop'
 import { FileTreePanel } from '../src/renderer/components/FileTreePanel'
 import { useWorkspace } from '../src/renderer/store/workspace'
@@ -15,16 +17,15 @@ const list = vi.fn()
 const reveal = vi.fn(async () => undefined)
 const openInVsCode = vi.fn(async () => undefined)
 
-const session: Session = {
+const session: DirectoryContext = {
   id: 'session-1',
-  projectId: 'project-1',
   name: 'App',
   kind: 'native',
   path: '/home/me/app',
   createdAt: '2026-01-01T00:00:00.000Z'
 }
 
-async function renderPanel(target: Session = session): Promise<HTMLElement> {
+async function renderPanel(target: DirectoryContext = session, fileRoot?: TerminalDirectoryRequest | null): Promise<HTMLElement> {
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
@@ -32,7 +33,7 @@ async function renderPanel(target: Session = session): Promise<HTMLElement> {
   containers.push(container)
 
   await act(async () => {
-    root.render(createElement(FileTreePanel, { session: target }))
+    root.render(createElement(FileTreePanel, { session: target, root: fileRoot }))
   })
 
   return container
@@ -49,7 +50,7 @@ describe('FileTreePanel', () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     Object.defineProperty(window, 'api', {
       configurable: true,
-      value: { files: { list }, paths: { reveal, openInVsCode } }
+      value: { files: { list }, paths: { revealTerminal: reveal, openTerminalInVsCode: openInVsCode } }
     })
     list.mockReset()
     reveal.mockClear()
@@ -70,7 +71,7 @@ describe('FileTreePanel', () => {
       }
       throw new Error("Error invoking remote method 'files:list': Error: Folder not found.")
     })
-    useWorkspace.setState({ openFiles: {}, fileTreeCollapsed: false, platform: null, wslAvailable: false })
+    useWorkspace.setState({ statuses: { 'pane-1': 'running', 'pane-2': 'running' }, openFiles: {}, fileTreeCollapsed: false, platform: null, wslAvailable: false })
   })
 
   afterEach(() => {
@@ -146,10 +147,68 @@ describe('FileTreePanel', () => {
     expect(item.className).not.toContain('opacity-40')
   })
 
+  it('waits for terminal startup before reading its directory', async () => {
+    useWorkspace.setState({ statuses: {} })
+    const root = { terminalId: 'pane-1', directory: '/workspace/current' }
+    const container = await renderPanel(session, root)
+    expect(list).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Loading')
+    await act(async () => useWorkspace.getState().setStatus('pane-1', 'running'))
+    expect(list).toHaveBeenCalledWith({ ...root, path: '' })
+    expect(container.textContent).toContain('README.md')
+  })
+
+  it('reserves the panel while its terminal directory is unknown without listing the session folder', async () => {
+    const container = await renderPanel(session, null)
+    const panelClass = container.querySelector('[data-testid="file-tree-panel"]')?.className
+    expect(panelClass).toContain('w-[260px]')
+    expect(container.textContent).toContain('Loading')
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Refresh files"]')?.disabled).toBe(true)
+    expect(container.querySelector('[aria-label="Open folder in File Explorer"]')).toBeNull()
+    expect(list).not.toHaveBeenCalled()
+
+    const root = { terminalId: 'pane-1', directory: '/workspace/current' }
+    await act(async () => roots.at(-1)!.render(createElement(FileTreePanel, { session, root })))
+    expect(container.querySelector('[data-testid="file-tree-panel"]')?.className).toBe(panelClass)
+    expect(list).toHaveBeenCalledExactlyOnceWith({ ...root, path: '' })
+    expect(container.textContent).toContain('README.md')
+  })
+
+  it('lists, opens and drags files from the selected terminal directory', async () => {
+    const root = { terminalId: 'pane-2', directory: '/workspace/other' }
+    const container = await renderPanel(session, root)
+    expect(list).toHaveBeenCalledWith({ ...root, path: '' })
+    expect(container.querySelector('[role="tree"]')?.getAttribute('aria-label')).toBe('Files in /workspace/other')
+    await act(async () => treeItem(container, 'README.md').click())
+    expect(useWorkspace.getState().openFiles).toEqual({ [fileRootKey(root)]: 'README.md' })
+    const values = new Map<string, string>()
+    const transfer = { setData: (key: string, value: string) => values.set(key, value), getData: (key: string) => values.get(key) ?? '', setDragImage: vi.fn() }
+    const drag = new Event('dragstart', { bubbles: true })
+    Object.defineProperty(drag, 'dataTransfer', { value: transfer })
+    await act(async () => treeItem(container, 'README.md').dispatchEvent(drag))
+    expect(readFileTreeDrop(transfer)).toEqual({ ...root, path: 'README.md' })
+  })
+
+  it('resets expansion and ignores stale listings when the selected terminal changes directory', async () => {
+    let finish: (value: unknown) => void = () => undefined
+    const oldRoot = { terminalId: 'pane-1', directory: '/workspace/old' }
+    const container = await renderPanel(session, oldRoot)
+    list.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    await act(async () => treeItem(container, 'src').click())
+    const next = { terminalId: 'pane-2', directory: '/workspace/new' }
+    list.mockResolvedValueOnce({ entries: [{ name: 'new.ts', kind: 'file' }], truncated: false })
+    await act(async () => roots.at(-1)!.render(createElement(FileTreePanel, { session, root: next })))
+    await act(async () => finish({ entries: [{ name: 'old.ts', kind: 'file' }], truncated: false }))
+    expect(list).toHaveBeenLastCalledWith({ ...next, path: '' })
+    expect(container.textContent).toContain('new.ts')
+    expect(container.textContent).not.toContain('old.ts')
+    expect(container.querySelector('[data-path="src"]')).toBeNull()
+  })
+
   it('shows listing errors without the IPC prefix', async () => {
-    list.mockRejectedValueOnce(new Error("Error invoking remote method 'files:list': Error: Session folder not found."))
+    list.mockRejectedValueOnce(new Error("Error invoking remote method 'files:list': Error: DirectoryContext folder not found."))
     const container = await renderPanel()
-    expect(container.textContent).toContain('Session folder not found.')
+    expect(container.textContent).toContain('DirectoryContext folder not found.')
     expect(container.textContent).not.toContain('invoking remote method')
   })
 
@@ -168,24 +227,24 @@ describe('FileTreePanel', () => {
     expect(container.querySelector('[role="tree"]')).not.toBeNull()
   })
 
-  it('labels the panel Files and opens the root in File Explorer', async () => {
-    const container = await renderPanel()
+  it('labels the panel Files and opens the terminal folder in File Explorer', async () => {
+    const container = await renderPanel(session, { terminalId: 'pane-1', directory: '/home/me/current' })
     expect(container.querySelector('[data-testid="file-tree-panel"]')?.textContent).toContain('Files')
     expect(container.querySelector('[aria-label="Open folder in VS Code"]')).toBeNull()
 
     await act(async () => {
       container.querySelector<HTMLButtonElement>('[aria-label="Open folder in File Explorer"]')?.click()
     })
-    expect(reveal).toHaveBeenCalledWith('session-1')
+    expect(reveal).toHaveBeenCalledWith('pane-1')
   })
 
-  it('opens a WSL session root in VS Code on Windows', async () => {
+  it('opens a WSL terminal folder in VS Code on Windows', async () => {
     useWorkspace.setState({ platform: { platform: 'win32', isWindows: true }, wslAvailable: true })
-    const container = await renderPanel({ ...session, kind: 'wsl', distro: 'Ubuntu-24.04' })
+    const container = await renderPanel({ ...session, kind: 'wsl', distro: 'Ubuntu-24.04' }, { terminalId: 'pane-1', directory: '/home/me/current' })
 
     await act(async () => {
       container.querySelector<HTMLButtonElement>('[aria-label="Open folder in VS Code"]')?.click()
     })
-    expect(openInVsCode).toHaveBeenCalledWith('session-1')
+    expect(openInVsCode).toHaveBeenCalledWith('pane-1')
   })
 })

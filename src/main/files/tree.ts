@@ -1,11 +1,12 @@
 import { promises as fs } from 'node:fs'
-import { join, sep } from 'node:path'
+import { join } from 'node:path'
+import { readContainedFile } from './read'
 import type {
   FileReadResponse,
   FileTreeEntry,
   FileTreeEntryKind,
   FileTreeListResponse,
-  Session
+  DirectoryContext
 } from '@shared/types'
 import {
   runWslCommand,
@@ -13,7 +14,7 @@ import {
   type WslBufferResult,
   type WslResult
 } from '../wsl/distros'
-import { isPlainAbsolutePath, resolveForTarget } from '../wsl/paths'
+import { isPlainAbsolutePath } from '../wsl/paths'
 
 /** Directories beyond this size are cut off rather than streamed to the renderer. */
 export const MAX_FILE_TREE_ENTRIES = 2000
@@ -34,7 +35,6 @@ export interface FileTreeDependencies {
   readNativeDirectory(path: string): Promise<FileTreeEntry[]>
   runWsl(distro: string, command: readonly string[]): Promise<WslResult>
   runWslBuffer(distro: string, command: readonly string[]): Promise<WslBufferResult>
-  resolveWslPath(distro: string, rawPath: string): Promise<string>
 }
 
 /**
@@ -108,9 +108,7 @@ const defaultDependencies: FileTreeDependencies = {
   readNativeDirectory,
   runWsl: (distro, command) => runWslCommand(distro, command),
   runWslBuffer: (distro, command) =>
-    runWslCommandBuffer(distro, command, { maxBuffer: MAX_FILE_VIEW_BYTES + 64 * 1024 }),
-  resolveWslPath: async (distro, rawPath) =>
-    (await resolveForTarget('wsl', distro, rawPath)).path
+    runWslCommandBuffer(distro, command, { maxBuffer: MAX_FILE_VIEW_BYTES + 64 * 1024 })
 }
 
 function joinWslPath(root: string, relativePath: string): string {
@@ -119,28 +117,23 @@ function joinWslPath(root: string, relativePath: string): string {
   return `${base}/${relativePath}`
 }
 
-async function wslRoot(
-  session: Session,
-  deps: FileTreeDependencies
-): Promise<{ distro: string; root: string }> {
+function wslRoot(
+  session: DirectoryContext
+): { distro: string; root: string } {
   const distro = session.distro
   if (!distro) throw new Error('This WSL session has no distro configured.')
 
-  // Older sessions may still hold `~` or a Windows path; normalize those the
-  // same way terminal launches do, then insist on a plain absolute result.
-  const root = isPlainAbsolutePath(session.path)
-    ? session.path
-    : await deps.resolveWslPath(distro, session.path)
-  if (!isPlainAbsolutePath(root)) throw new Error('Session folder not found.')
+  const root = session.path
+  if (!isPlainAbsolutePath(root)) throw new Error('Folder not found.')
   return { distro, root }
 }
 
 async function listWslDirectory(
-  session: Session,
+  session: DirectoryContext,
   relativePath: string,
   deps: FileTreeDependencies
 ): Promise<FileTreeListResponse> {
-  const { distro, root } = await wslRoot(session, deps)
+  const { distro, root } = wslRoot(session)
 
   // -H follows a symlinked starting point (the session root may be one) but no
   // symlink found below it. The directory is absolute, so find cannot read it
@@ -165,7 +158,7 @@ async function listWslDirectory(
 }
 
 async function listNativeDirectory(
-  session: Session,
+  session: DirectoryContext,
   relativePath: string,
   deps: FileTreeDependencies
 ): Promise<FileTreeListResponse> {
@@ -174,16 +167,16 @@ async function listNativeDirectory(
     return finishListing(relativePath, await deps.readNativeDirectory(directory))
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code
-    if (code === 'ENOENT') throw new Error(relativePath ? 'Folder not found.' : 'Session folder not found.')
+    if (code === 'ENOENT') throw new Error('Folder not found.')
     if (code === 'ENOTDIR') throw new Error('Not a folder.')
     if (code === 'EACCES' || code === 'EPERM') throw new Error('Permission denied.')
     throw new Error('Could not list folder.')
   }
 }
 
-/** Lists one directory of a session's tree, named relative to the session root. */
+/** Lists one directory relative to a runtime filesystem root. */
 export async function listSessionDirectory(
-  session: Session,
+  session: DirectoryContext,
   relativePath: string,
   platform: NodeJS.Platform = process.platform,
   deps: FileTreeDependencies = defaultDependencies
@@ -211,14 +204,18 @@ export const READ_WSL_FILE_SCRIPT = [
   'real=$(realpath -e -- "$target") || exit 11',
   'case "$real" in "${real_root%/}"/*) ;; *) exit 12 ;; esac',
   '[ -f "$real" ] || exit 13',
-  'size=$(stat -L -c %s -- "$real") || exit 14',
+  'exec 3< "$real" || exit 11',
+  'opened=$(readlink -f -- /proc/self/fd/3) || exit 11',
+  'case "$opened" in "${real_root%/}"/*) ;; *) exit 12 ;; esac',
+  '[ -f /proc/self/fd/3 ] || exit 13',
+  'size=$(stat -L -c %s -- /proc/self/fd/3) || exit 14',
   'printf "%s\\n" "$size"',
   '[ "$size" -gt "$limit" ] && exit 0',
-  'exec head -c "$limit" -- "$real"'
+  'exec head -c "$limit" <&3'
 ].join('\n')
 
 const WSL_READ_ERRORS: Record<number, string> = {
-  10: 'Session folder not found.',
+  10: 'Folder not found.',
   11: 'File not found.',
   12: 'File is outside the session folder.',
   13: 'Not a file.',
@@ -240,11 +237,11 @@ function fileResponse(path: string, size: number, bytes: Buffer | null): FileRea
 }
 
 async function readWslFile(
-  session: Session,
+  session: DirectoryContext,
   relativePath: string,
   deps: FileTreeDependencies
 ): Promise<FileReadResponse> {
-  const { distro, root } = await wslRoot(session, deps)
+  const { distro, root } = wslRoot(session)
   const result = await deps.runWslBuffer(distro, [
     'bash',
     '-c',
@@ -268,32 +265,10 @@ async function readWslFile(
   )
 }
 
-function isInside(root: string, target: string): boolean {
-  const prefix = root.endsWith(sep) ? root : root + sep
-  return target.startsWith(prefix)
-}
-
-async function readNativeFile(session: Session, relativePath: string): Promise<FileReadResponse> {
-  let handle: fs.FileHandle | null = null
+async function readNativeFile(session: DirectoryContext, relativePath: string): Promise<FileReadResponse> {
   try {
-    const realRoot = await fs.realpath(session.path)
-    const real = await fs.realpath(join(session.path, ...relativePath.split('/')))
-    if (!isInside(realRoot, real)) throw new Error('File is outside the session folder.')
-
-    handle = await fs.open(real, 'r')
-    const stat = await handle.stat()
-    if (!stat.isFile()) throw new Error('Not a file.')
-    if (stat.size > MAX_FILE_VIEW_BYTES) return fileResponse(relativePath, stat.size, null)
-
-    // One byte past the limit detects a file that grew since the stat.
-    const buffer = Buffer.alloc(MAX_FILE_VIEW_BYTES + 1)
-    let length = 0
-    while (length < buffer.length) {
-      const { bytesRead } = await handle.read(buffer, length, buffer.length - length, length)
-      if (bytesRead === 0) break
-      length += bytesRead
-    }
-    return fileResponse(relativePath, Math.max(stat.size, length), buffer.subarray(0, length))
+    const { size, bytes } = await readContainedFile(session.path, relativePath, MAX_FILE_VIEW_BYTES)
+    return fileResponse(relativePath, size, bytes)
   } catch (error) {
     if (error instanceof Error && !('code' in error)) throw error
     const code = (error as NodeJS.ErrnoException).code
@@ -301,14 +276,12 @@ async function readNativeFile(session: Session, relativePath: string): Promise<F
     if (code === 'EISDIR') throw new Error('Not a file.')
     if (code === 'EACCES' || code === 'EPERM') throw new Error('Permission denied.')
     throw new Error('Could not read file.')
-  } finally {
-    await handle?.close()
   }
 }
 
-/** Reads one file for the viewer, named relative to the session root. */
+/** Reads one file for the viewer, named relative to a runtime filesystem root. */
 export async function readSessionFile(
-  session: Session,
+  session: DirectoryContext,
   relativePath: string,
   platform: NodeJS.Platform = process.platform,
   deps: FileTreeDependencies = defaultDependencies
@@ -320,4 +293,24 @@ export async function readSessionFile(
     return readWslFile(session, relativePath, deps)
   }
   return readNativeFile(session, relativePath)
+}
+
+/** Reads a binary attachment with the viewer's same root containment checks. */
+export async function readSessionAttachment(session: DirectoryContext, path: string): Promise<Buffer> {
+  const limit = 20 * 1024 * 1024
+  if (!path || !isSafeRelativePath(path)) throw new Error('Invalid attachment path.')
+  if (session.kind === 'wsl') {
+    if (process.platform !== 'win32') throw new Error('WSL files require Windows.')
+    const { distro, root } = wslRoot(session)
+    const result = await runWslCommandBuffer(distro, ['bash', '-c', READ_WSL_FILE_SCRIPT, 'mde-attach', root, joinWslPath(root, path), String(limit + 1)], { maxBuffer: limit + 64 * 1024 })
+    if (result.code !== 0) throw new Error(WSL_READ_ERRORS[result.code] ?? 'Could not read attachment.')
+    const newline = result.stdout.indexOf(10)
+    const size = Number(result.stdout.subarray(0, newline).toString('ascii'))
+    const bytes = result.stdout.subarray(newline + 1)
+    if (newline < 0 || !Number.isSafeInteger(size) || size < 0 || size > limit || bytes.length !== size) throw new Error('Attachment exceeds 20 MiB or changed while reading.')
+    return bytes
+  }
+  const { size, bytes } = await readContainedFile(session.path, path, limit)
+  if (!bytes || size > limit) throw new Error('Choose a regular file of at most 20 MiB.')
+  return bytes
 }

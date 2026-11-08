@@ -1,8 +1,8 @@
+import { testLayout } from './helpers/terminal-layout'
 import { describe, expect, it } from 'vitest'
 import type { Session } from '../src/shared/types'
 import {
   activeSessionTab,
-  appendRuntimePane,
   createRuntimeLayout,
   nextPaneId,
   persistRuntimeLayout,
@@ -13,47 +13,28 @@ import {
 
 const session: Session = {
   id: 'session-1',
-  projectId: 'project-1',
   name: 'App',
   kind: 'native',
-  path: '/workspace/app',
   createdAt: '2026-01-01T00:00:00.000Z',
   tabs: [
     {
       id: 'tab-1',
       name: 'Tab 1',
-      layout: {
-        layout: 'columns',
-        panes: [
-          { id: 'pane-1' },
-          { id: 'pane-2' }
-        ],
-        sizes: { columnRatio: 0.35, rowRatio: 0.5 }
-      }
+      layout: testLayout([
+        { id: 'pane-1' },
+        { id: 'pane-2' }
+      ], 0.35)
     },
     {
       id: 'tab-2',
       name: 'Tab 2',
-      layout: {
-        layout: 'single',
-        panes: [{ id: 'pane-1' }],
-        sizes: { columnRatio: 0.5, rowRatio: 0.5 }
-      }
+      layout: testLayout([{ id: 'pane-1' }])
     }
   ],
   activeTabId: 'tab-2'
 }
 
 describe('session tab runtime helpers', () => {
-  it('keeps OpenCode resume metadata runtime-only when adding a pane', () => {
-    const layout = createRuntimeLayout(session.id, session.tabs![0]!)
-    const launch = { sourceTerminalId: layout.panes[0]!.terminalId, opencodeSessionId: 'ses_saved', executable: 'opencode' }
-    const next = appendRuntimePane(session.id, 'tab-1', layout, launch)!
-    expect(next.panes.at(-1)?.launch).toEqual(launch)
-    expect(persistRuntimeLayout(next).panes).toHaveLength(3)
-    expect(JSON.stringify(persistRuntimeLayout(next))).not.toContain('ses_saved')
-    expect(JSON.stringify(persistRuntimeLayout(next))).not.toContain('opencode')
-  })
   it('uses stable tab and pane identities without sharing terminal IDs', () => {
     expect(terminalIdForPane(session.id, 'tab-1', 'pane-1')).toBe('session-1:tab:tab-1:pane:pane-1')
     expect(terminalIdForPane(session.id, 'tab-1', 'pane-1')).not.toBe(
@@ -103,53 +84,10 @@ describe('session tab runtime helpers', () => {
     expect(tabCloseSelection(session.tabs!.slice(0, 1), 'tab-1', 'tab-1')).toBeNull()
   })
 
-  it('keeps six-pane tab layouts and both column boundaries stable at runtime', () => {
-    const panes = [
-      { id: 'pane-1' },
-      { id: 'pane-2' },
-      { id: 'pane-3' },
-      { id: 'pane-4' },
-      { id: 'pane-5' },
-      { id: 'pane-6' }
-    ]
-    const sixTab = {
-      id: 'tab-six',
-      name: 'Six',
-      layout: {
-        layout: 'sixGrid' as const,
-        panes,
-        sizes: { columnRatio: 0.3, secondColumnRatio: 0.7, rowRatio: 0.4 }
-      }
-    }
-    const sixSession = { ...session, tabs: [sixTab], activeTabId: sixTab.id }
-    const runtime = createRuntimeLayout(sixSession.id, sixTab)
-
-    expect(runtime.panes).toHaveLength(6)
-    expect(runtime.panes[5]?.terminalId).toBe('session-1:tab:tab-six:pane:pane-6')
-    expect(persistRuntimeLayout(runtime)).toEqual(sixTab.layout)
-  })
-
-  it('restores a five-pane layout with stable runtime identities', () => {
-    const fiveTab = {
-      id: 'tab-five',
-      name: 'Five',
-      layout: {
-        layout: 'fiveGrid' as const,
-        panes: [
-          { id: 'pane-1' },
-          { id: 'pane-2' },
-          { id: 'pane-3' },
-          { id: 'pane-4' },
-          { id: 'pane-5' }
-        ],
-        sizes: { columnRatio: 0.3, secondColumnRatio: 0.7, rowRatio: 0.4 }
-      }
-    }
-    const runtime = createRuntimeLayout(session.id, fiveTab)
-
-    expect(runtime.layout).toBe('fiveGrid')
-    expect(runtime.panes).toHaveLength(5)
-    expect(runtime.panes[4]?.terminalId).toBe('session-1:tab:tab-five:pane:pane-5')
-    expect(persistRuntimeLayout(runtime)).toEqual(fiveTab.layout)
+  it('keeps nested splits and divider ratios stable through runtime conversion', () => {
+    const tab = { ...session.tabs![0]!, layout: testLayout(Array.from({ length: 12 }, (_, index) => ({ id: `pane-${index}` })), 0.35) }
+    const runtime = createRuntimeLayout(session.id, tab)
+    expect(runtime.panes).toHaveLength(12)
+    expect(persistRuntimeLayout(runtime)).toEqual(tab.layout)
   })
 })

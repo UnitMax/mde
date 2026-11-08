@@ -1,16 +1,10 @@
 import { useEffect, useState } from 'react'
-import { FolderGit2, GitBranch } from 'lucide-react'
+import { GitBranch } from 'lucide-react'
 import type { GitTerminalInfoResponse } from '@shared/types'
 import { useWorkspace } from '@/store/workspace'
+import { formatGitCount, gitStatusAccessibleLabel, gitStatusBranchLabel } from '@/lib/git'
 
 const REFRESH_INTERVAL_MS = 10_000
-
-function gitInfoAccessibleLabel(info: GitTerminalInfoResponse): string {
-  const values: string[] = []
-  if (info.branch) values.push(`Git branch ${info.branch}`)
-  if (info.worktree) values.push(`Git worktree ${info.worktree}`)
-  return values.join(' · ')
-}
 
 export function TerminalGitInfo({ terminalId }: { terminalId: string }): JSX.Element | null {
   const directory = useWorkspace((state) => state.terminalDirectories[terminalId])
@@ -19,20 +13,18 @@ export function TerminalGitInfo({ terminalId }: { terminalId: string }): JSX.Ele
 
   useEffect(() => {
     let cancelled = false
-    let requestId = 0
+    let inFlight = false
 
     const refresh = async (): Promise<void> => {
-      if (status === 'none') {
-        setInfo(null)
-        return
-      }
-
-      const currentRequest = ++requestId
+      if (inFlight || status === 'none') return
+      inFlight = true
       try {
         const next = await window.api.git.terminalInfo({ terminalId })
-        if (!cancelled && currentRequest === requestId) setInfo(next)
+        if (!cancelled) setInfo(next)
       } catch {
-        if (!cancelled && currentRequest === requestId) setInfo(null)
+        if (!cancelled) setInfo(null)
+      } finally {
+        inFlight = false
       }
     }
 
@@ -44,34 +36,51 @@ export function TerminalGitInfo({ terminalId }: { terminalId: string }): JSX.Ele
 
     return () => {
       cancelled = true
-      requestId += 1
       window.clearInterval(interval)
       window.removeEventListener('focus', refreshOnFocus)
     }
   }, [directory, status, terminalId])
 
-  if (!info?.repository || (!info.branch && !info.worktree)) return null
+  if (!info?.repository) return null
 
-  const accessibleLabel = gitInfoAccessibleLabel(info)
+  const dirty = info.changedFiles > 0 || info.additions > 0 || info.deletions > 0
+  const accessibleLabel = [
+    gitStatusAccessibleLabel(info),
+    info.changedFiles > 0
+      ? `${info.changedFiles} changed ${info.changedFiles === 1 ? 'entry' : 'entries'}`
+      : dirty ? null : 'Working tree clean',
+    info.worktree ? `Git worktree ${info.worktree}` : null,
+  ].filter(Boolean).join(' · ')
+
+  // The chip never shrinks (the title is the one flexible item in the header, so it is the one that
+  // gets an ellipsis). Instead, in a narrow pane (`@container/pane` is the header) the text goes and
+  // only the icon and a dot for uncommitted changes remain. The label and tooltip always carry the
+  // detail the chip leaves out (ahead, worktree, clean).
   return (
-    <span
-      className="flex min-w-0 max-w-[48%] shrink items-center gap-1.5 text-[10px] text-fg-subtle"
+    <div
+      role="img"
+      className="flex h-5 shrink-0 items-center gap-1.5 rounded px-1.5 text-[11px] text-fg-muted"
       data-testid={`terminal-git-info-${terminalId}`}
       aria-label={accessibleLabel}
       title={accessibleLabel}
     >
-      {info.branch && (
-        <span className="flex min-w-0 items-center gap-0.5">
-          <GitBranch className="h-3 w-3 shrink-0 text-accent" aria-hidden="true" />
-          <span className="truncate">{info.branch}</span>
-        </span>
+      <GitBranch className="h-3 w-3 shrink-0 text-accent" aria-hidden="true" />
+      <span className="max-w-[8rem] truncate @max-[22rem]/pane:hidden">{gitStatusBranchLabel(info)}</span>
+      {dirty && (
+        <>
+          <span className="flex shrink-0 items-center gap-1 font-mono @max-[22rem]/pane:hidden" data-testid="terminal-git-changes">
+            {info.additions > 0 && <span className="text-ok">+{formatGitCount(info.additions)}</span>}
+            {info.deletions > 0 && <span className="text-danger">−{formatGitCount(info.deletions)}</span>}
+            {info.additions === 0 && info.deletions === 0 && (
+              <span>{formatGitCount(info.changedFiles)} changed</span>
+            )}
+          </span>
+          <span
+            aria-hidden="true"
+            className="hidden h-1.5 w-1.5 shrink-0 rounded-full bg-warn @max-[22rem]/pane:block"
+          />
+        </>
       )}
-      {info.worktree && (
-        <span className="flex min-w-0 items-center gap-0.5 font-mono">
-          <FolderGit2 className="h-3 w-3 shrink-0 text-fg-subtle" aria-hidden="true" />
-          <span className="truncate">{info.worktree}</span>
-        </span>
-      )}
-    </span>
+    </div>
   )
 }

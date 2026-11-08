@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import {
   ChevronRight,
-  Code,
   File,
   FileSymlink,
   Folder,
@@ -12,7 +11,10 @@ import {
 } from 'lucide-react'
 import { FILE_TREE_DROP_TYPE } from '@/terminal/drop'
 import type { Session } from '@shared/types'
+import type { FileRoot } from '@shared/ipc'
+import { fileRootKey } from '@/lib/file-root'
 import { Button } from '@/components/ui/button'
+import { OpenFolderButtons, type OpenFolderTarget } from '@/components/OpenFolderButtons'
 import { useWorkspace } from '@/store/workspace'
 import { cn } from '@/lib/utils'
 import { ipcErrorMessage } from '@/lib/ipc-error'
@@ -26,6 +28,8 @@ import {
 
 const INDENT_PX = 12
 const BASE_PADDING_PX = 8
+
+type FileTreeContext = Session & { path?: string }
 
 function rowPadding(depth: number): number {
   return BASE_PADDING_PX + depth * INDENT_PX
@@ -49,7 +53,21 @@ function statusText(row: Exclude<FileTreeRow, FileTreeEntryRow>): string {
   return row.message ?? 'Could not list folder.'
 }
 
-function FileTree({ session, onCollapse }: { session: Session; onCollapse: () => void }): JSX.Element {
+function FileTree({
+  session,
+  root,
+  onCollapse,
+  browseOnly,
+  heading,
+  fill
+}: {
+  session: FileTreeContext
+  root: FileRoot | null
+  onCollapse: () => void
+  browseOnly: boolean
+  heading?: ReactNode
+  fill: boolean
+}): JSX.Element {
   const [cache, setCache] = useState<Map<string, FileTreeDirectoryState>>(() => new Map())
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   const [focusedPath, setFocusedPath] = useState<string | null>(null)
@@ -59,22 +77,24 @@ function FileTree({ session, onCollapse }: { session: Session; onCollapse: () =>
   const expandedRef = useRef(expanded)
   expandedRef.current = expanded
   const treeRef = useRef<HTMLDivElement>(null)
-  const openFilePath = useWorkspace((state) => state.openFiles[session.id])
+  const terminalReady = useWorkspace((state) => !root?.terminalId || (state.statuses[root.terminalId] ?? 'none') !== 'none')
+  const rootId = root ? fileRootKey(root) : null
+  const directory = root ? root.directory ?? session.path : undefined
+  const openFilePath = useWorkspace((state) => rootId ? state.openFiles[rootId] : undefined)
   const openFile = useWorkspace((state) => state.openFile)
-  const revealSession = useWorkspace((state) => state.revealSession)
-  const openSessionInVsCode = useWorkspace((state) => state.openSessionInVsCode)
-  const isWindows = useWorkspace((state) => state.platform?.isWindows === true)
-  const wslAvailable = useWorkspace((state) => state.wslAvailable)
-  // Main only hands WSL folders to VS Code, matching the terminal header button.
-  const canOpenInVsCode = isWindows && wslAvailable && session.kind === 'wsl' && Boolean(session.distro)
+  // A terminal's current folder, or the Inbox thread or project the tree was opened on.
+  const folderTarget: OpenFolderTarget | null = root?.terminalId
+    ? { terminalId: root.terminalId }
+    : root && browseOnly ? { inboxId: session.id } : null
 
   const load = useCallback(
     async (path: string): Promise<void> => {
       const requestGeneration = generation.current
       setCache((current) => new Map(current).set(path, { status: 'loading' }))
+      if (!root || !terminalReady) return
       let next: FileTreeDirectoryState
       try {
-        const response = await window.api.files.list({ sessionId: session.id, path })
+        const response = await window.api.files.list({ ...root, path })
         next = { status: 'ready', entries: response.entries, truncated: response.truncated }
       } catch (error) {
         next = { status: 'error', error: ipcErrorMessage(error, 'Could not list folder.') }
@@ -82,7 +102,7 @@ function FileTree({ session, onCollapse }: { session: Session; onCollapse: () =>
       if (generation.current !== requestGeneration) return
       setCache((current) => new Map(current).set(path, next))
     },
-    [session.id]
+    [root, terminalReady]
   )
 
   const refresh = useCallback((): void => {
@@ -163,7 +183,7 @@ function FileTree({ session, onCollapse }: { session: Session; onCollapse: () =>
       }
     } else if (event.key === 'Enter' || event.key === ' ') {
       if (isDirectory) setDirectoryExpanded(row.path, !row.expanded)
-      else openFile(session.id, row.path)
+      else if (rootId) openFile(rootId, row.path)
     } else {
       handled = false
     }
@@ -177,44 +197,31 @@ function FileTree({ session, onCollapse }: { session: Session; onCollapse: () =>
   return (
     <aside
       data-testid="file-tree-panel"
-      className="flex h-full min-h-0 w-[260px] shrink-0 flex-col border-l border-line bg-panel"
+      className={cn(
+        'flex h-full min-h-0 flex-col border-l border-line bg-panel',
+        fill ? 'w-full min-w-0' : 'w-[260px] shrink-0'
+      )}
     >
-      <div className="flex items-center gap-1 px-3 pb-2 pt-3">
-        <span className="min-w-0 flex-1 truncate text-[11px] font-medium uppercase tracking-wide text-fg-muted" title={session.path}>
-          Files
-        </span>
-        {canOpenInVsCode && (
+      <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
+        {heading ?? (
+          <span className="min-w-0 flex-1 truncate text-[11px] font-medium uppercase tracking-wide text-fg-muted" title={directory}>
+            Files
+          </span>
+        )}
+        {folderTarget && !browseOnly && <OpenFolderButtons target={folderTarget} kind={session.kind} distro={session.distro} />}
+        {!browseOnly && (
           <Button
             variant="ghost"
             size="icon-sm"
             className="shrink-0"
-            onClick={() => void openSessionInVsCode(session.id)}
-            title="Open folder in VS Code"
-            aria-label="Open folder in VS Code"
+            onClick={refresh}
+            disabled={!root}
+            title="Refresh files"
+            aria-label="Refresh files"
           >
-            <Code className="h-3.5 w-3.5" />
+            <RefreshCw className="h-3.5 w-3.5" />
           </Button>
         )}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="shrink-0"
-          onClick={() => void revealSession(session.id)}
-          title="Open folder in File Explorer"
-          aria-label="Open folder in File Explorer"
-        >
-          <FolderOpen className="h-3.5 w-3.5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="shrink-0"
-          onClick={refresh}
-          title="Refresh files"
-          aria-label="Refresh files"
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-        </Button>
         <Button
           variant="ghost"
           size="icon-sm"
@@ -227,10 +234,16 @@ function FileTree({ session, onCollapse }: { session: Session; onCollapse: () =>
         </Button>
       </div>
 
+      {root?.directory && (
+        <div data-testid="terminal-file-root" className="truncate px-3 pb-2 font-mono text-[10px] text-fg-subtle" title={root.directory}>
+          {root.directory}
+        </div>
+      )}
       <div
         ref={treeRef}
         role="tree"
-        aria-label={`Files in ${session.name}`}
+        aria-label={directory ? `Files in ${directory}` : 'Files'}
+        aria-busy={!root || !terminalReady}
         className="min-h-0 flex-1 overflow-y-auto px-1 pb-2 text-[12px]"
       >
         {rows.map((row) => {
@@ -273,7 +286,7 @@ function FileTree({ session, onCollapse }: { session: Session; onCollapse: () =>
               onDragStart={(event) => {
                 event.dataTransfer.effectAllowed = 'copy'
                 event.dataTransfer.setData(FILE_TREE_DROP_TYPE, JSON.stringify({
-                  sessionId: session.id,
+                  ...root,
                   path: row.path,
                 }))
                 const preview = document.createElement('div')
@@ -296,7 +309,7 @@ function FileTree({ session, onCollapse }: { session: Session; onCollapse: () =>
               onFocus={() => setFocusedPath(row.path)}
               onClick={() => {
                 if (isDirectory) setDirectoryExpanded(row.path, !row.expanded)
-                else openFile(session.id, row.path)
+                else if (rootId) openFile(rootId, row.path)
               }}
               onKeyDown={(event) => onRowKeyDown(event, row)}
             >
@@ -314,11 +327,49 @@ function FileTree({ session, onCollapse }: { session: Session; onCollapse: () =>
           )
         })}
       </div>
+      {browseOnly && (
+        <div className="flex shrink-0 items-center gap-1 border-t border-line px-2 py-1">
+          {folderTarget && <OpenFolderButtons target={folderTarget} kind={session.kind} distro={session.distro} />}
+          <Button className="ml-auto" variant="ghost" size="sm" onClick={refresh} title="Refresh files" aria-label="Refresh files">
+            <RefreshCw className="h-3.5 w-3.5" />
+            Refresh
+          </Button>
+        </div>
+      )}
     </aside>
   )
 }
 
-export function FileTreePanel({ session }: { session: Session }): JSX.Element {
+/**
+ * Files of a live terminal root or an Inbox folder. `browseOnly` is for Inbox folders: the folder opens in
+ * VS Code or the file manager by its Inbox ID. Those buttons and Refresh sit in a footer there, because the
+ * header's 260 px minimum is already full with the Files, Changes and Terminal tabs.
+ */
+export function FileTreePanel({
+  session,
+  root: requestedRoot,
+  browseOnly = false,
+  heading,
+  fill = false
+}: {
+  session: FileTreeContext
+  /** Omit for an Inbox folder; null keeps the panel loading until a terminal reports its directory. */
+  root?: FileRoot | null
+  browseOnly?: boolean
+  /** Replaces the "Files" title in the header, for a host that offers other tabs beside the files. */
+  heading?: ReactNode
+  /** Takes the width of its container instead of its own 260px, for a host whose sidebar can be resized. */
+  fill?: boolean
+}): JSX.Element {
+  const root = useMemo<FileRoot | null>(
+    () => {
+      if (requestedRoot === null) return null
+      return requestedRoot?.terminalId
+        ? { terminalId: requestedRoot.terminalId, directory: requestedRoot.directory }
+        : { sessionId: session.id }
+    },
+    [requestedRoot === null, requestedRoot?.terminalId, requestedRoot?.directory, session.id]
+  )
   const collapsed = useWorkspace((state) => state.fileTreeCollapsed)
   const toggleFileTree = useWorkspace((state) => state.toggleFileTree)
 
@@ -338,5 +389,5 @@ export function FileTreePanel({ session }: { session: Session }): JSX.Element {
     )
   }
 
-  return <FileTree key={session.id} session={session} onCollapse={toggleFileTree} />
+  return <FileTree key={root ? fileRootKey(root) : 'pending'} session={session} root={root} onCollapse={toggleFileTree} browseOnly={browseOnly} heading={heading} fill={fill} />
 }

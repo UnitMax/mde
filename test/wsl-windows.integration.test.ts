@@ -5,7 +5,7 @@ import {
   readGitStatusWithRunner
 } from '../src/main/git'
 import { listDistros, runWslCommand, type WslResult } from '../src/main/wsl/distros'
-import type { Session } from '../src/shared/types'
+import type { DirectoryContext } from '../src/shared/types'
 
 /**
  * Opt in on Windows or from inside WSL with MDE_WSL_INTEGRATION=1.
@@ -27,7 +27,7 @@ describeWindowsWsl('SEC-002 Windows/WSL direct execution', () => {
   let repository = ''
   let gitFilename = ''
   let gitSentinel = ''
-  let session: Session
+  let session: DirectoryContext
 
   async function successful(
     command: readonly string[],
@@ -88,7 +88,6 @@ describeWindowsWsl('SEC-002 Windows/WSL direct execution', () => {
 
     session = {
       id: 'sec-002-wsl',
-      projectId: 'sec-002-project',
       name: 'SEC-002 fixture',
       kind: 'wsl',
       distro,

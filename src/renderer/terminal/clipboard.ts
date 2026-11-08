@@ -1,4 +1,4 @@
-import type { HostPlatform, ProjectKind } from '@shared/types'
+import type { HostPlatform, SessionKind } from '@shared/types'
 
 export type TerminalClipboardAction = 'copy' | 'native-paste'
 
@@ -6,7 +6,7 @@ export type TerminalPrimarySelectionMode = 'native' | 'local' | 'none'
 
 export type TerminalMouseTrackingMode = 'none' | 'x10' | 'vt200' | 'drag' | 'any'
 
-export type TerminalMouseClipboardAction = 'copy' | 'local-paste'
+export type TerminalMouseClipboardAction = 'local-paste'
 
 export interface TerminalPrimarySelectionStore {
   get(): string | null
@@ -16,18 +16,20 @@ export interface TerminalPrimarySelectionStore {
 
 export function terminalPrimarySelectionMode(
   platform: HostPlatform,
-  sessionKind: ProjectKind
+  sessionKind: SessionKind
 ): TerminalPrimarySelectionMode {
   if (platform === 'linux') return 'native'
   if (platform === 'win32' && sessionKind === 'wsl') return 'local'
   return 'none'
 }
 
-export function terminalRightClickAction(
-  hasSelection: boolean,
-  mouseTrackingMode: TerminalMouseTrackingMode
-): TerminalMouseClipboardAction | null {
-  return hasSelection && mouseTrackingMode === 'none' ? 'copy' : null
+/**
+ * Whether a right-click opens the terminal's menu. A program that has asked for the mouse (a full-screen editor,
+ * the OpenCode TUI) gets the click instead, as it does for every other button; Shift hands it back to MDE, as
+ * it does for selecting text.
+ */
+export function terminalMenuOnRightClick(mouseTrackingMode: TerminalMouseTrackingMode, shiftKey: boolean): boolean {
+  return mouseTrackingMode === 'none' || shiftKey
 }
 
 export function terminalMiddleClickAction(

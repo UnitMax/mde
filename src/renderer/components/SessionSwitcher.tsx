@@ -4,10 +4,8 @@ import type { PtyStatus } from '@shared/types'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { HighlightedText } from '@/components/HighlightedText'
-import { OpenCodeNotificationBadge } from '@/components/OpenCodeNotificationBadge'
 import { cn } from '@/lib/utils'
 import { searchSessions, type SessionSearchMatch } from '@/lib/session-switcher'
-import { countOpenCodeTuiNotifications } from '@/lib/opencode-tui-notifications'
 import { useWorkspace } from '@/store/workspace'
 
 interface SessionSwitcherProps {
@@ -36,7 +34,6 @@ function SessionResult({
   result,
   active,
   status,
-  opencodeNotificationCount,
   id,
   onSelect,
   onHover
@@ -44,13 +41,13 @@ function SessionResult({
   result: SessionSearchMatch
   active: boolean
   status: PtyStatus
-  opencodeNotificationCount: number
   id: string
   onSelect: () => void
   onHover: () => void
 }): JSX.Element {
-  const { session, project } = result.item
-  const location = session.kind === 'wsl' ? `${session.distro ?? 'WSL'} · ${session.path}` : session.path
+  const { session } = result.item
+  const runtime = session.kind === 'wsl' ? 'WSL' : 'Native'
+  const location = session.distro ? `${runtime} · ${session.distro}` : runtime
   return (
     <button
       type="button"
@@ -71,39 +68,27 @@ function SessionResult({
           <HighlightedText value={session.name} positions={result.matches.name} />
         </span>
         <span className="block truncate text-[11px] text-fg-subtle" title={location}>
-          {project && <HighlightedText value={project.name} positions={result.matches.project} />}
-          {project && ' · '}
           <HighlightedText
-            value={location}
-            positions={result.matches.path ?? result.matches.distro}
+            value={runtime}
+            positions={result.matches.runtime}
           />
+          {session.distro && <>{' · '}<HighlightedText value={session.distro} positions={result.matches.distro} /></>}
         </span>
       </span>
-      <OpenCodeNotificationBadge count={opencodeNotificationCount} />
     </button>
   )
 }
 
 export function SessionSwitcher({ open, onOpenChange }: SessionSwitcherProps): JSX.Element {
-  const projects = useWorkspace((state) => state.projects)
   const sessions = useWorkspace((state) => state.sessions)
   const statuses = useWorkspace((state) => state.statuses)
-  const opencodeTuiInstances = useWorkspace((state) => state.opencodeTuiInstances)
-  const opencodeTuiReadRevisions = useWorkspace((state) => state.opencodeTuiReadRevisions)
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
   const selectSession = useWorkspace((state) => state.selectSession)
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const items = useMemo(() => {
-    const projectById = new Map(projects.map((project) => [project.id, project]))
-    return sessions.map((session, order) => ({
-      session,
-      project: projectById.get(session.projectId),
-      order
-    }))
-  }, [projects, sessions])
+  const items = useMemo(() => sessions.map((session, order) => ({ session, order })), [sessions])
   const results = useMemo(() => searchSessions(items, query), [items, query])
   const resultKey = results.map((result) => result.item.session.id).join('\0')
   const selectedResultIndex = results.findIndex((result) => result.item.session.id === selectedSessionId)
@@ -200,10 +185,6 @@ export function SessionSwitcher({ open, onOpenChange }: SessionSwitcherProps): J
                   result={result}
                   active={index === activeIndex}
                   status={statuses[result.item.session.id] ?? 'none'}
-                  opencodeNotificationCount={countOpenCodeTuiNotifications(
-                    opencodeTuiInstances[result.item.session.id] ?? [],
-                    opencodeTuiReadRevisions,
-                  )}
                   id={`session-switcher-${result.item.session.id}`}
                   onSelect={() => choose(result)}
                   onHover={() => setActiveIndex(index)}

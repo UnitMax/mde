@@ -102,7 +102,7 @@ interface SavedWindowState {
 }
 
 /**
- * Shrinks the main window into an always-on-top agents list and back. The same
+ * Shrinks the main window into an always-on-top Inbox list and back. The same
  * window and renderer are reused, so every terminal keeps running underneath. The
  * previous geometry lives in memory only; it is never written to disk.
  */

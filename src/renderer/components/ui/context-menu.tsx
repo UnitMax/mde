@@ -1,6 +1,7 @@
 import * as React from 'react'
 import * as ContextMenuPrimitive from '@radix-ui/react-context-menu'
 import { cn } from '@/lib/utils'
+import { MENU_SEPARATOR_CLASS } from './menu-separator'
 
 export const ContextMenu = ContextMenuPrimitive.Root
 export const ContextMenuTrigger = ContextMenuPrimitive.Trigger
@@ -13,7 +14,7 @@ export const ContextMenuSubTrigger = React.forwardRef<
   <ContextMenuPrimitive.SubTrigger
     ref={ref}
     className={cn(
-      'flex cursor-default select-none items-center gap-2 rounded px-2 py-1.5 text-[13px] text-fg outline-none',
+      'flex cursor-default select-none items-center gap-2 rounded px-2 py-1.5 text-[13px] leading-5 text-fg outline-none',
       'data-[state=open]:bg-hover',
       className
     )}
@@ -30,7 +31,7 @@ export const ContextMenuSubContent = React.forwardRef<
     ref={ref}
     className={cn(
       'z-50 min-w-[10rem] overflow-hidden rounded-md border border-line-strong bg-elevated p-1',
-      'shadow-xl shadow-black/50 [animation:mde-menu-in_90ms_ease-out]',
+      'shadow-xl shadow-shade/50 [animation:mde-menu-in_90ms_ease-out]',
       className
     )}
     {...props}
@@ -47,7 +48,7 @@ export const ContextMenuContent = React.forwardRef<
       ref={ref}
       className={cn(
         'z-50 min-w-[10rem] overflow-hidden rounded-md border border-line-strong bg-elevated p-1',
-        'shadow-xl shadow-black/50 [animation:mde-menu-in_90ms_ease-out]',
+        'shadow-xl shadow-shade/50 [animation:mde-menu-in_90ms_ease-out]',
         className
       )}
       {...props}
@@ -63,7 +64,7 @@ export const ContextMenuItem = React.forwardRef<
   <ContextMenuPrimitive.Item
     ref={ref}
     className={cn(
-      'flex cursor-default select-none items-center gap-2 rounded px-2 py-1.5 text-[13px] outline-none',
+      'flex cursor-default select-none items-center gap-2 rounded px-2 py-1.5 text-[13px] leading-5 outline-none',
       'data-[disabled]:pointer-events-none data-[disabled]:opacity-40',
       destructive
         ? 'text-danger data-[highlighted]:bg-danger/15'
@@ -76,5 +77,5 @@ export const ContextMenuItem = React.forwardRef<
 ContextMenuItem.displayName = ContextMenuPrimitive.Item.displayName
 
 export function ContextMenuSeparator({ className }: { className?: string }) {
-  return <ContextMenuPrimitive.Separator className={cn('my-1 h-px bg-line', className)} />
+  return <ContextMenuPrimitive.Separator className={cn(MENU_SEPARATOR_CLASS, className)} />
 }

@@ -7,10 +7,9 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   createGitCommandRunner,
   readGitDiffWithRunner,
-  readGitInfoWithRunner,
   readGitStatusWithRunner
 } from '../src/main/git'
-import type { Session } from '../src/shared/types'
+import type { DirectoryContext } from '../src/shared/types'
 
 const run = promisify(execFile)
 
@@ -37,7 +36,7 @@ describeUntrustedRepository('Automatic Git queries against an untrusted working 
   let root = ''
   let repository = ''
   let sentinels = ''
-  let session: Session
+  let session: DirectoryContext
 
   async function firedSentinels(): Promise<string[]> {
     return (await readdir(sentinels)).sort()
@@ -87,13 +86,14 @@ describeUntrustedRepository('Automatic Git queries against an untrusted working 
       { flag: 'a' }
     )
     await writeFile(join(repository, '.gitattributes'), '*.txt diff=hostile filter=hostile\n')
+    // This source outranks --attr-source and used to bypass the hardening.
+    await writeFile(join(repository, '.git', 'info', 'attributes'), '*.txt diff=hostile filter=hostile\n')
 
     await writeFile(join(repository, 'tracked.txt'), 'one\ntwo\n')
     await writeFile(join(repository, 'untracked.txt'), 'new\n')
 
     session = {
       id: 'untrusted-1',
-      projectId: 'project-1',
       name: 'Untrusted tree',
       kind: 'native',
       path: repository,
@@ -124,21 +124,10 @@ describeUntrustedRepository('Automatic Git queries against an untrusted working 
       branch: 'main',
       additions: 1,
       deletions: 0,
-      commitsAhead: null
+      commitsAhead: null,
+      changedFiles: 6,
     })
 
-    expect(await firedSentinels()).toEqual([])
-  })
-
-  it('executes nothing the repository configured while reading history and changes', async () => {
-    const info = await readGitInfoWithRunner(createGitCommandRunner(session, 'linux'))
-
-    expect(info.branch).toBe('main')
-    expect(info.commits).toHaveLength(1)
-    expect(info.changes).toContainEqual(
-      expect.objectContaining({ path: 'tracked.txt', status: 'modified', unstaged: true })
-    )
-    expect(info.changes).toContainEqual(expect.objectContaining({ path: 'untracked.txt', status: 'untracked' }))
     expect(await firedSentinels()).toEqual([])
   })
 

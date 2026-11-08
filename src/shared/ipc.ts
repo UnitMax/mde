@@ -1,46 +1,91 @@
+import type { InboxTerminalConfiguration, InboxTerminalSettings } from './inbox-terminal'
+import type { TaskbarAttentionRequest } from './taskbar-attention'
 import type {
   Distro,
-  GitDiffResponse,
-  GitInfoResponse,
-  GitStatusResponse,
   GitTerminalInfoResponse,
   HostPlatform,
-  NewProject,
   NewTodoProject,
   NewTodoTask,
   NewSession,
   PathCheckResult,
   PathResolution,
-  Project,
+  WslDirectoryListing,
   TodoProject,
   TodoTask,
-  ProjectKind,
+  SessionKind,
   Session,
   SessionTab,
-  OpenCodeTuiSetEnabledRequest,
-  OpenCodeTuiSetInstanceLabelModeRequest,
-  OpenCodeTuiSettings,
-  OpenCodeTuiPluginRequest,
-  OpenCodeTuiPluginState,
-  OpenCodeTuiStatusUpdate,
-  OpenCodeTuiInstancesUpdate,
   FileReadResponse,
   FileTreeListResponse,
-  OpenCodeAlertSetEnabledRequest,
-  OpenCodeAlertSettings,
   PtyDataChunk,
   PtyDirectoryUpdate,
   PtyExitInfo,
   PtySize,
   PtyStatus,
-  TerminalLaunch,
-  OpenCodeSessionsRequest,
-  OpenCodeSessionSummary,
-  WindowMode
+  WindowMode,
+  InboxAddFolderRequest,
+  InboxComposerState,
+  InboxFolder,
+  InboxFoldersState,
+  InboxGitInfo,
+  InboxGitInfoRequest,
+  InboxRemoveFolderRequest,
+  InboxRemoveRequest,
+  InboxSetArchivedRequest,
+  InboxSetPinnedRequest,
+  InboxSetCustomTitleRequest,
+  InboxSetReadRequest,
+  InboxThread,
+  InboxUpdateFolderRequest,
+  ChatConfigureRequest,
+  ChatDiscardPendingRequest,
+  ChatCreateRequest,
+  ChatEvent,
+  ChatFormReplyRequest,
+  InboxChangesResponse,
+  InboxChangesRequest,
+  InboxChangeDiffRequest,
+  InboxChangeDiff,
+  ChatMessagesPage,
+  ChatMessagesRequest,
+  ChatSearchRequest,
+  ChatFileEntry,
+  ChatFilesRequest,
+  ChatFilesCheckRequest,
+  ChatSearchResponse,
+  ChatMcpRequest,
+  ChatMcpSetRequest,
+  ChatMcpState,
+  ChatOptions,
+  ChatOptionsRequest,
+  ChatPermissionReplyRequest,
+  ChatRequests,
+  ChatRevert,
+  ChatForkRequest,
+  ChatForkResult,
+  ChatRevertRequest,
+  ChatPendingMessage,
+  ChatSendRequest,
+  ChatSetDeliveryRequest,
+  ChatAsideRequest,
+  ChatAsideAnswer,
+  ChatGoal,
+  ChatGoalRequest,
+  ChatThreadRequest,
+  ChatBackgroundState,
+  ChatDraft,
+  ChatDraftRequest,
+  ChatDraftList
 } from './types'
+import type {
+  OpenCodeConfigPreview,
+  OpenCodeConfigPreviewRequest,
+  OpenCodeConfigRequest,
+  OpenCodeConfigSaveRequest,
+  OpenCodeConfigSnapshot
+} from './opencode-config'
 
 export interface WorkspaceData {
-  projects: Project[]
   todoProjects: TodoProject[]
   todoTasks: TodoTask[]
   sessions: Session[]
@@ -52,9 +97,6 @@ export interface WorkspaceData {
  */
 export const IpcChannels = {
   workspaceList: 'workspace:list',
-  projectsCreate: 'projects:create',
-  projectsUpdate: 'projects:update',
-  projectsRemove: 'projects:remove',
 
   todoProjectsCreate: 'todo-projects:create',
   todoProjectsUpdate: 'todo-projects:update',
@@ -68,7 +110,6 @@ export const IpcChannels = {
   sessionsCreate: 'sessions:create',
   sessionsDuplicate: 'sessions:duplicate',
   sessionsUpdate: 'sessions:update',
-  sessionsMove: 'sessions:move',
   sessionsReorder: 'sessions:reorder',
   sessionsRemove: 'sessions:remove',
 
@@ -78,6 +119,7 @@ export const IpcChannels = {
   tabsRemove: 'tabs:remove',
 
   ptyEnsure: 'pty:ensure',
+  ptyConfigureInbox: 'pty:configure-inbox',
   ptyWrite: 'pty:write',
   ptyResize: 'pty:resize',
   ptyPalette: 'pty:palette',
@@ -88,6 +130,7 @@ export const IpcChannels = {
   ptyDropFiles: 'pty:drop-files',
 
   clipboardWriteText: 'clipboard:write-text',
+  clipboardPaste: 'clipboard:paste',
 
   wslAvailable: 'wsl:available',
   wslDistros: 'wsl:distros',
@@ -95,34 +138,72 @@ export const IpcChannels = {
   pathBrowse: 'path:browse',
   pathResolve: 'path:resolve',
   pathValidate: 'path:validate',
-  pathReveal: 'path:reveal',
+  pathListWslDirectories: 'path:list-wsl-directories',
   pathRevealTerminal: 'path:reveal-terminal',
-  pathOpenInVsCode: 'path:open-in-vscode',
   pathOpenTerminalInVsCode: 'path:open-terminal-in-vscode',
+  pathRevealInbox: 'path:reveal-inbox',
+  pathOpenInboxInVsCode: 'path:open-inbox-in-vscode',
 
-  gitInfo: 'git:info',
-  gitStatus: 'git:status',
   gitTerminalInfo: 'git:terminal-info',
-  gitDiff: 'git:diff',
 
   filesList: 'files:list',
   filesRead: 'files:read',
 
-  opencodeSessionsList: 'opencode-sessions:list',
+  inboxList: 'inbox:list',
+  inboxSetRead: 'inbox:set-read',
+  inboxSetArchived: 'inbox:set-archived',
+  inboxSetPinned: 'inbox:set-pinned',
+  inboxSetCustomTitle: 'inbox:set-custom-title',
+  inboxRemove: 'inbox:remove',
+  inboxFolders: 'inbox:folders',
+  inboxFoldersAdd: 'inbox:folders-add',
+  inboxFoldersRemove: 'inbox:folders-remove',
+  inboxFoldersUpdate: 'inbox:folders-update',
+  inboxComposerSet: 'inbox:composer-set',
+  inboxGitInfo: 'inbox:git-info',
 
-  opencodeTuiPluginState: 'opencode-tui:plugin-state',
-  opencodeTuiPluginInstall: 'opencode-tui:plugin-install',
-  opencodeTuiPluginRemove: 'opencode-tui:plugin-remove',
-  opencodeTuiSettings: 'opencode-tui:settings',
-  opencodeTuiSetEnabled: 'opencode-tui:set-enabled',
-  opencodeTuiSetInstanceLabelMode: 'opencode-tui:set-instance-label-mode',
+  chatConfigure: 'chat:configure',
+  chatOptions: 'chat:options',
+  chatCreate: 'chat:create',
+  inboxChanges: 'inbox:changes',
+  inboxChangeDiff: 'inbox:change-diff',
+  chatMessages: 'chat:messages',
+  chatSearch: 'chat:search',
+  chatFiles: 'chat:files',
+  chatFilesCheck: 'chat:files-check',
+  chatSend: 'chat:send',
+  chatDiscardPending: 'chat:discard-pending',
+  chatSetDelivery: 'chat:set-delivery',
+  chatAside: 'chat:aside',
+  chatMcp: 'chat:mcp',
+  chatMcpSet: 'chat:mcp-set',
+  chatDraft: 'chat:draft',
+  chatDrafts: 'chat:drafts',
+  chatInterrupt: 'chat:interrupt',
+  chatCompact: 'chat:compact',
+  chatGoal: 'chat:goal',
+  chatGoalSet: 'chat:goal-set',
+  chatBackground: 'chat:background',
+  chatRedo: 'chat:redo',
+  chatRevert: 'chat:revert',
+  chatFork: 'chat:fork',
+  chatRegenerateTitle: 'chat:regenerate-title',
+  chatRequests: 'chat:requests',
+  chatPermissionReply: 'chat:permission-reply',
+  chatFormReply: 'chat:form-reply',
+  chatSubscribe: 'chat:subscribe',
+  chatUnsubscribe: 'chat:unsubscribe',
 
-  opencodeAlertsSettings: 'opencode-alerts:settings',
-  opencodeAlertsSetEnabled: 'opencode-alerts:set-enabled',
+  opencodeConfigRead: 'opencode-config:read',
+  opencodeConfigPreview: 'opencode-config:preview',
+  opencodeConfigSave: 'opencode-config:save',
 
   windowModeGet: 'window-mode:get',
   windowModeSet: 'window-mode:set',
   windowChromeSet: 'window-chrome:set',
+  attentionUpdate: 'attention:update',
+  attentionBeep: 'attention:beep',
+  floatingTerminalActive: 'floating-terminal:active',
 
   appInfo: 'app:info',
   platformInfo: 'platform:info'
@@ -133,9 +214,10 @@ export const IpcEvents = {
   ptyData: 'pty:data',
   ptyExit: 'pty:exit',
   ptyDirectory: 'pty:directory',
-  opencodeTuiStatus: 'opencode-tui:status',
-  opencodeTuiInstances: 'opencode-tui:instances',
+  inboxChanged: 'inbox:changed',
+  chatEvent: 'chat:event',
   windowModeChanged: 'window-mode:changed',
+  floatingTerminalToggle: 'floating-terminal:toggle',
 } as const
 
 export interface PlatformInfo {
@@ -150,62 +232,61 @@ export interface AppInfo {
 }
 
 export interface ResolvePathRequest {
-  kind: ProjectKind
+  kind: SessionKind
   distro?: string
   /** Raw path as it came out of the picker or the text field. */
   rawPath: string
 }
 
 export interface ValidatePathRequest {
-  kind: ProjectKind
+  kind: SessionKind
   distro?: string
   path: string
 }
 
-export interface GitInfoRequest {
-  sessionId: string
+export interface ListWslDirectoriesRequest {
+  distro: string
+  /** An absolute Linux path in the distro. Omitted: the distro user's home directory. */
+  path?: string
+  /** Include folders whose names start with a dot. */
+  hidden?: boolean
 }
 
-export interface GitStatusRequest {
-  sessionId: string
+/** A live terminal root; directory is an expected value, never renderer-granted authority. */
+export interface TerminalDirectoryRequest {
+  terminalId: string
+  directory: string
 }
+
+/** An Inbox folder/thread ID or a live terminal with its expected directory. */
+export type FileRoot =
+  | { sessionId: string; terminalId?: never; directory?: never }
+  | (TerminalDirectoryRequest & { sessionId?: never })
 
 export interface GitTerminalInfoRequest {
   terminalId: string
 }
 
-export interface GitDiffRequest {
-  sessionId: string
+export type FilesListRequest = FileRoot & {
+  /** Directory relative to the root, '/'-separated; '' lists the root. */
   path: string
 }
 
-export interface FilesListRequest {
-  sessionId: string
-  /** Directory relative to the session root, '/'-separated; '' lists the root. */
-  path: string
-}
-
-export interface FilesReadRequest {
-  sessionId: string
-  /** File relative to the session root, '/'-separated. */
+export type FilesReadRequest = FileRoot & {
+  /** File relative to the root, '/'-separated. */
   path: string
 }
 
 export interface EnsurePtyRequest {
   /** Runtime terminal identity, unique even when panes share a session. */
   terminalId: string
-  /** Persisted workspace session used as the launch source. */
+  /** Workspace session or reserved Inbox terminal identity resolved by the main process. */
   sessionId: string
   size: PtySize
   palette: TerminalPalette
-  /**
-   * Optional runtime-only launch override: a new WSL terminal pane, or, for
-   * restart, an OpenCode session that replaces this terminal's process.
-   */
-  launch?: PtyLaunchRequest
 }
 
-export type PtyLaunchRequest = TerminalLaunch
+export type RestartPtyRequest = EnsurePtyRequest
 
 export interface TerminalPalette {
   foreground: string
@@ -240,11 +321,8 @@ export interface DropPtyFile {
   fileUri?: string
 }
 
-/** A tree entry relative to its owning session root. */
-export interface FileTreeDropEntry {
-  sessionId: string
-  path: string
-}
+/** A tree entry relative to its verified file root. */
+export type FileTreeDropEntry = FileRoot & { path: string }
 
 /** Files resolved by preload from a renderer file drop. */
 export interface DropPtyFilesRequest {
@@ -298,11 +376,6 @@ export interface WindowChromeColors {
   symbolColor: string
 }
 
-export interface UpdateProjectRequest {
-  id: string
-  patch: Partial<Pick<Project, 'name'>>
-}
-
 export interface UpdateTodoProjectRequest {
   id: string
   patch: Partial<Pick<TodoProject, 'name'>> & { shorthand?: string }
@@ -322,19 +395,14 @@ export interface MoveTodoTaskRequest {
 
 export interface UpdateSessionRequest {
   id: string
-  patch: Partial<Pick<Session, 'name' | 'path' | 'shell' | 'color'>> & {
+  patch: Partial<Pick<Session, 'name' | 'shell' | 'color'>> & {
     icon?: Session['icon'] | null
   }
 }
 
-export interface MoveSessionRequest {
-  id: string
-  projectId: string
-}
-
 export interface ReorderSessionRequest {
   id: string
-  /** Session to insert before; null appends to the end of the current project. */
+  /** Session to insert before; null appends to the end of the session list. */
   beforeId: string | null
 }
 
@@ -365,17 +433,17 @@ export interface RemoveSessionTabRequest {
 export interface RendererApi {
   clipboard: {
     writeText(text: string): Promise<void>
+    /**
+     * Pastes the system clipboard into the focused field, as Ctrl/Cmd+V would. The page never
+     * reads the clipboard itself; the content arrives as an ordinary paste event.
+     */
+    paste(): Promise<void>
   }
   app: {
     info(): Promise<AppInfo>
   }
   platform: {
     info(): Promise<PlatformInfo>
-  }
-  projects: {
-    create(input: NewProject): Promise<Project>
-    update(req: UpdateProjectRequest): Promise<Project | null>
-    remove(id: string): Promise<void>
   }
   todoProjects: {
     create(input: NewTodoProject): Promise<TodoProject>
@@ -395,7 +463,6 @@ export interface RendererApi {
     create(input: NewSession): Promise<Session>
     duplicate(id: string): Promise<Session | null>
     update(req: UpdateSessionRequest): Promise<Session | null>
-    move(req: MoveSessionRequest): Promise<Session | null>
     reorder(req: ReorderSessionRequest): Promise<Session[] | null>
     remove(id: string): Promise<void>
   }
@@ -406,11 +473,12 @@ export interface RendererApi {
     remove(req: RemoveSessionTabRequest): Promise<Session | null>
   }
   pty: {
+    configureInbox(req: InboxTerminalSettings): Promise<InboxTerminalConfiguration>
     ensure(req: EnsurePtyRequest): Promise<PtyStatus>
     write(req: WritePtyRequest): Promise<void>
     resize(req: ResizePtyRequest): Promise<void>
     setPalette(req: UpdatePtyPaletteRequest): Promise<void>
-    restart(req: EnsurePtyRequest): Promise<PtyStatus>
+    restart(req: RestartPtyRequest): Promise<PtyStatus>
     dispose(terminalId: string): Promise<void>
     statuses(): Promise<Record<string, PtyStatus>>
     directories(): Promise<Record<string, string>>
@@ -427,37 +495,109 @@ export interface RendererApi {
     browse(): Promise<string | null>
     resolve(req: ResolvePathRequest): Promise<PathResolution>
     validate(req: ValidatePathRequest): Promise<PathCheckResult>
-    reveal(sessionId: string): Promise<void>
+    listWslDirectories(req: ListWslDirectoriesRequest): Promise<WslDirectoryListing>
     revealTerminal(terminalId: string): Promise<void>
-    openInVsCode(sessionId: string): Promise<void>
     openTerminalInVsCode(terminalId: string): Promise<void>
+    /** Opens the folder of an Inbox thread (`ses_…`) or project (`fld_…`) in the file manager. */
+    revealInbox(id: string): Promise<void>
+    /** Opens the folder of an Inbox thread or project in Windows VS Code; WSL folders on Windows only. */
+    openInboxInVsCode(id: string): Promise<void>
   }
   git: {
-    info(req: GitInfoRequest): Promise<GitInfoResponse>
-    status(req: GitStatusRequest): Promise<GitStatusResponse>
     terminalInfo(req: GitTerminalInfoRequest): Promise<GitTerminalInfoResponse | null>
-    diff(req: GitDiffRequest): Promise<GitDiffResponse>
   }
   files: {
     list(req: FilesListRequest): Promise<FileTreeListResponse>
     read(req: FilesReadRequest): Promise<FileReadResponse>
   }
-  opencodeSessions: {
-    list(req: OpenCodeSessionsRequest): Promise<OpenCodeSessionSummary[]>
+  inbox: {
+    changes(req: InboxChangesRequest): Promise<InboxChangesResponse>
+    changeDiff(req: InboxChangeDiffRequest): Promise<InboxChangeDiff>
+    list(): Promise<InboxThread[]>
+    setRead(req: InboxSetReadRequest): Promise<InboxThread | null>
+    setArchived(req: InboxSetArchivedRequest): Promise<InboxThread | null>
+    setPinned(req: InboxSetPinnedRequest): Promise<InboxThread | null>
+    setCustomTitle(req: InboxSetCustomTitleRequest): Promise<InboxThread | null>
+    remove(req: InboxRemoveRequest): Promise<void>
+    onChanged(listener: (thread: InboxThread) => void): () => void
+    folders(): Promise<InboxFoldersState>
+    addFolder(req: InboxAddFolderRequest): Promise<InboxFolder>
+    updateFolder(req: InboxUpdateFolderRequest): Promise<InboxFolder>
+    removeFolder(req: InboxRemoveFolderRequest): Promise<void>
+    setComposer(req: InboxComposerState): Promise<InboxComposerState>
+    gitInfo(req: InboxGitInfoRequest): Promise<InboxGitInfo>
   }
-  opencodeTui: {
-    settings(): Promise<OpenCodeTuiSettings>
-    setEnabled(req: OpenCodeTuiSetEnabledRequest): Promise<OpenCodeTuiSettings>
-    setInstanceLabelMode(req: OpenCodeTuiSetInstanceLabelModeRequest): Promise<OpenCodeTuiSettings>
-    pluginState(req: OpenCodeTuiPluginRequest): Promise<OpenCodeTuiPluginState>
-    install(req: OpenCodeTuiPluginRequest): Promise<OpenCodeTuiPluginState>
-    remove(req: OpenCodeTuiPluginRequest): Promise<OpenCodeTuiPluginState>
-    onStatus(listener: (update: OpenCodeTuiStatusUpdate) => void): () => void
-    onInstances(listener: (update: OpenCodeTuiInstancesUpdate) => void): () => void
+  chat: {
+    backgroundTasks(req: ChatThreadRequest): Promise<ChatBackgroundState>
+    draft(req: ChatDraftRequest): Promise<ChatDraft>
+    /** The new-thread drafts that have something in them, most recently changed first, and the threads with an unsent message. */
+    drafts(): Promise<ChatDraftList>
+    configure(req: ChatConfigureRequest): Promise<void>
+    options(req: ChatOptionsRequest): Promise<ChatOptions>
+    create(req: ChatCreateRequest): Promise<InboxThread>
+    messages(req: ChatMessagesRequest): Promise<ChatMessagesPage>
+    /**
+     * Looks for text in the messages of every thread. The threads are read in the background, newest first, and kept in
+     * memory; the answer has what is read so far, so asking again while `indexed` is below `total` finds more.
+     */
+    search(req: ChatSearchRequest): Promise<ChatSearchResponse>
+    /** The files and folders the `@` picker offers for what was typed. */
+    files(req: ChatFilesRequest): Promise<ChatFileEntry[]>
+    /** Which of the `@` paths a message writes are in the project, so they can be marked as mentions. */
+    checkFiles(req: ChatFilesCheckRequest): Promise<ChatFileEntry[]>
+    /**
+     * Sends a message. When the agent was busy, OpenCode holds it instead of showing it in the conversation;
+     * the answer is that held message, or null when OpenCode's answer could not be read.
+     */
+    send(req: ChatSendRequest): Promise<ChatPendingMessage | null>
+    /** Takes back a message OpenCode still holds for the agent. One it has already delivered stays. */
+    discardPending(req: ChatDiscardPendingRequest): Promise<void>
+    /** Changes a held message between steering (read at the agent's next step) and queued (sent when it is done). */
+    setDelivery(req: ChatSetDeliveryRequest): Promise<void>
+    /**
+     * Asks a side question about a thread (the `/btw` command). The answer comes from the conversation as it
+     * stands and is not added to it; the agent is neither interrupted nor told.
+     */
+    aside(req: ChatAsideRequest): Promise<ChatAsideAnswer>
+    /** The MCP servers OpenCode has for a folder or thread, with how each stands. Never cached. */
+    mcp(req: ChatMcpRequest): Promise<ChatMcpState>
+    /** Connects or disconnects one MCP server for the running OpenCode; its configuration is not changed. */
+    setMcp(req: ChatMcpSetRequest): Promise<void>
+    interrupt(req: ChatThreadRequest): Promise<void>
+    /**
+     * Summarizes the conversation to free up context. OpenCode does it in the background and writes the
+     * result into the conversation; a request while the agent is busy waits for it to finish.
+     */
+    compact(req: ChatThreadRequest): Promise<void>
+    /** The goal OpenCode keeps for a thread (`/goal`), or null when it has none. */
+    goal(req: ChatThreadRequest): Promise<ChatGoal | null>
+    /**
+     * Sets a thread's goal, or pauses, resumes or clears it. OpenCode refuses what makes no sense (pausing a
+     * goal that is not active) with a reason, which comes back as the rejection.
+     */
+    setGoal(req: ChatGoalRequest): Promise<void>
+    redo(req: ChatThreadRequest): Promise<void>
+    revert(req: ChatRevertRequest): Promise<ChatRevert>
+    fork(req: ChatForkRequest): Promise<ChatForkResult>
+    regenerateTitle(req: ChatThreadRequest): Promise<void>
+    requests(req: ChatThreadRequest): Promise<ChatRequests>
+    replyPermission(req: ChatPermissionReplyRequest): Promise<void>
+    replyForm(req: ChatFormReplyRequest): Promise<void>
+    subscribe(req: ChatThreadRequest): Promise<void>
+    unsubscribe(req: ChatThreadRequest): Promise<void>
+    onEvent(listener: (event: ChatEvent) => void): () => void
   }
-  opencodeAlerts: {
-    settings(): Promise<OpenCodeAlertSettings>
-    setEnabled(req: OpenCodeAlertSetEnabledRequest): Promise<OpenCodeAlertSettings>
+  /** OpenCode's own global configuration file. The renderer names a target (this computer or a WSL distro), never a path. */
+  opencodeConfig: {
+    /** The file as the editor sees it. A file that cannot be parsed comes back with `parseError` and an empty draft. */
+    read(req: OpenCodeConfigRequest): Promise<OpenCodeConfigSnapshot>
+    /** The text the file would have with the draft applied, secret-looking values hidden. Writes nothing. */
+    preview(req: OpenCodeConfigPreviewRequest): Promise<OpenCodeConfigPreview>
+    /**
+     * Applies the draft to the file, changing only what the editor manages. Refused when the file is no longer
+     * the one the revision came from. Returns the file as it is afterwards.
+     */
+    save(req: OpenCodeConfigSaveRequest): Promise<OpenCodeConfigSnapshot>
   }
   windowMode: {
     get(): Promise<WindowMode>
@@ -466,5 +606,17 @@ export interface RendererApi {
   }
   windowChrome: {
     set(req: WindowChromeColors): Promise<void>
+  }
+  attention: {
+    /** Flashes, colours and badges the taskbar button; see `TaskbarAttentionRequest`. */
+    update(req: TaskbarAttentionRequest): Promise<void>
+    /** The system's own alert sound. */
+    beep(): Promise<void>
+  }
+  floatingTerminal: {
+    /** Says whether the Inbox has a floating terminal, so the main process hands it F11 instead of keeping it. */
+    setActive(active: boolean): Promise<void>
+    /** F11 was pressed while there is one: show it, or hide it. */
+    onToggle(listener: () => void): () => void
   }
 }

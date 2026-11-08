@@ -14,6 +14,7 @@ import type {
 } from '@shared/types'
 import { buildLaunchSpec, type LaunchContext } from './launch'
 import { TerminalQueryResponder } from './terminal-queries'
+import type { TerminalDirectoryStore } from './directories'
 import { resolveWindowsShell, resolveWslExecutable } from '../windows-executable'
 
 interface PtySession {
@@ -37,15 +38,10 @@ export interface PtyTerminalInfo {
 }
 
 export interface PtyLaunchOptions {
+  /** Main-owned values passed in the child environment, never as command-line arguments. */
+  environment?: Record<string, string>
   directory?: string
   agent?: AgentCommand
-  /** Hand the terminal back to the shell when the agent exits. */
-  returnToShell?: boolean
-}
-
-export interface PtyLaunchIntegration {
-  prepare(terminalId: string, session: Session): Record<string, string> | undefined
-  dispose(terminalId: string): void
 }
 
 function clampSize(size: PtySize): PtySize {
@@ -108,29 +104,14 @@ function spawnPty(
  */
 export class PtyManager {
   private readonly sessions = new Map<string, PtySession>()
-  private readonly integrations: PtyLaunchIntegration[]
 
   constructor(
     private readonly events: PtyEvents,
-    integration?: PtyLaunchIntegration | PtyLaunchIntegration[]
-  ) {
-    this.integrations = integration
-      ? Array.isArray(integration)
-        ? integration
-        : [integration]
-      : []
-  }
+    private readonly directoryStore?: TerminalDirectoryStore,
+  ) {}
 
-  private prepareIntegrations(terminalId: string, session: Session): Record<string, string> {
-    const environment: Record<string, string> = {}
-    for (const integration of this.integrations) {
-      Object.assign(environment, integration.prepare(terminalId, session))
-    }
-    return environment
-  }
-
-  private disposeIntegrations(terminalId: string): void {
-    for (const integration of this.integrations) integration.dispose(terminalId)
+  savedDirectory(terminalId: string, session: Session): string | undefined {
+    return this.directoryStore?.get(terminalId, session)
   }
 
   status(terminalId: string): PtyStatus {
@@ -176,38 +157,34 @@ export class PtyManager {
       return existing.status
     }
 
-    // Resolve before preparing integrations, which can start status timers.
     const context = launchContext(session)
-    const environment = this.prepareIntegrations(terminalId, session)
+    const forwardedKeys = Object.keys(options?.environment ?? {})
+    if (forwardedKeys.some((key) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key))) throw new Error('Invalid terminal environment variable.')
+    const processEnvironment = ptyEnv(options?.environment)
+    if (session.kind === 'wsl' && options?.environment) {
+      // WSLENV forwards these from Windows into WSL without putting their values in wsl.exe argv.
+      const inherited = (processEnvironment.WSLENV ?? '').split(':').filter((entry) => entry && !forwardedKeys.includes(entry.split('/')[0]!))
+      processEnvironment.WSLENV = [...inherited, ...forwardedKeys.map((key) => `${key}/u`)].join(':')
+    }
     const spec = buildLaunchSpec(session, {
       ...context,
-      environment,
-      wslEnvironment: environment,
       workingDirectory: options?.directory,
-      agent: options?.agent,
-      returnToShell: options?.returnToShell
+      agent: options?.agent
     })
     const { cols, rows } = clampSize(size)
 
-    let child: IPty
-    try {
-      child = spawnPty(spec.file, spec.args, {
-        name: 'xterm-256color',
-        cols,
-        rows,
-        cwd: spec.cwd ?? homedir(),
-        env: ptyEnv(environment),
-      }, process.platform)
-    } catch (error) {
-      this.disposeIntegrations(terminalId)
-      throw error
-    }
+    const child = spawnPty(spec.file, spec.args, {
+      name: 'xterm-256color',
+      cols,
+      rows,
+      cwd: spec.cwd ?? homedir(),
+      env: processEnvironment,
+    }, process.platform)
 
     const queryResponder = new TerminalQueryResponder(palette)
-    // WSL's --cd gives us a reliable initial directory even before the shell has
-    // displayed its first prompt. OSC 7 then keeps this value current after
-    // every directory change.
-    let currentDirectory: string | null = options?.directory ?? (session.kind === 'wsl' ? session.path : null)
+    // Native homes and explicit launch directories are known before the first
+    // prompt. WSL's default home is learned from OSC 7, which tracks later changes.
+    let currentDirectory: string | null = options?.directory ?? (session.kind === 'native' ? homedir() : null)
     // Answer palette probes beside the PTY so latency-sensitive TUIs do not
     // have to wait for a main -> renderer -> main IPC round trip.
     const dataListener = child.onData((data) => {
@@ -217,6 +194,7 @@ export class PtyManager {
         currentDirectory = result.directory
         const current = this.sessions.get(terminalId)
         if (current) current.currentDirectory = currentDirectory
+        this.directoryStore?.remember(terminalId, session, currentDirectory)
         this.events.onDirectory({ terminalId, directory: currentDirectory })
       }
       if (result.data) this.events.onData({ terminalId, data: result.data })
@@ -226,7 +204,6 @@ export class PtyManager {
       if (pending) this.events.onData({ terminalId, data: pending })
       const current = this.sessions.get(terminalId)
       if (current) current.status = 'exited'
-      this.disposeIntegrations(terminalId)
       const info: PtyExitInfo = { sessionId: session.id, terminalId, exitCode }
       if (signal !== undefined) info.signal = signal
       this.events.onExit(info)
@@ -244,6 +221,7 @@ export class PtyManager {
       }
     })
     if (currentDirectory) {
+      this.directoryStore?.remember(terminalId, session, currentDirectory)
       this.events.onDirectory({ terminalId, directory: currentDirectory })
     }
 
@@ -257,7 +235,7 @@ export class PtyManager {
     palette: TerminalPalette,
     options?: PtyLaunchOptions,
   ): PtyStatus {
-    this.dispose(terminalId)
+    this.dispose(terminalId, false)
     return this.ensure(terminalId, session, size, palette, options)
   }
 
@@ -283,12 +261,12 @@ export class PtyManager {
     this.sessions.get(terminalId)?.queryResponder.setPalette(palette)
   }
 
-  dispose(terminalId: string): void {
+  dispose(terminalId: string, forgetDirectory = true): void {
+    if (forgetDirectory) this.directoryStore?.forget(terminalId)
     const session = this.sessions.get(terminalId)
     if (!session) return
     this.sessions.delete(terminalId)
     this.events.onDirectory({ terminalId, directory: null })
-    this.disposeIntegrations(terminalId)
     session.disposeListeners()
     if (session.status === 'running') {
       try {
@@ -301,12 +279,13 @@ export class PtyManager {
 
   /** Disposes every runtime terminal launched from one persisted session. */
   disposeForSourceSession(sessionId: string): void {
+    this.directoryStore?.forgetSession(sessionId)
     for (const [terminalId, session] of this.sessions) {
       if (session.sourceSessionId === sessionId) this.dispose(terminalId)
     }
   }
 
   disposeAll(): void {
-    for (const sessionId of [...this.sessions.keys()]) this.dispose(sessionId)
+    for (const terminalId of [...this.sessions.keys()]) this.dispose(terminalId, false)
   }
 }

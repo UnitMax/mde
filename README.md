@@ -1,13 +1,45 @@
 # mde
 
-Cross-platform desktop shell for an agentic dev environment: grouped projects containing
-persistent terminal sessions, with first-class WSL support on Windows.
+Cross-platform desktop shell for an agentic dev environment: named, persistent terminal
+sessions, with first-class WSL support on Windows.
 
 It is a desktop shell focused on persistent terminal workflows: tabbed multi-pane terminals per
-session, Git status in the sidebar, a file tree with Markdown and Mermaid preview, an OpenCode
-session picker, and To Do boards. An optional OpenCode 2 terminal plugin provides agent status,
-alerts, and instance labels without replacing the terminal experience. See
+session, Git changes in each terminal header, a file tree that follows the selected terminal,
+Markdown and Mermaid preview, and To Do boards. The Inbox is a separate
+view for starting and continuing OpenCode conversations in GUI chat or a direct OpenCode terminal;
+both use OpenCode's API for thread activity. Choose GUI (the default) or Terminal from the menu under the new-thread message box.
+Add, rename, remove and give icons to the folders threads start in from Projects (the folder button
+beside the Inbox settings); the icon shows beside each project's threads. On macOS and in WSL,
+Settings → OpenCode → Edit configuration changes OpenCode's own configuration file: permission rules,
+custom OpenAI-compatible providers and disabled providers. See
 [`docs/architecture.md`](docs/architecture.md) for how each part behaves.
+
+Settings → Notifications plays a sound and flashes the taskbar button when an Inbox thread is done, needs
+input or fails; on Windows the button is also coloured red, yellow or green with a count until you return.
+It needs nothing installed.
+
+The Inbox terminal can also float as a window over the conversation: use the button beside Collapse sidebar on
+the Terminal tab, then F11 shows and hides it. It can be moved, resized from every edge, maximized, and put back.
+
+On Windows, choose the Inbox sidebar terminal's WSL distribution from Settings → Terminal →
+Inbox sidebar terminal. Apply restarts its panes when the distribution changes; the choice is remembered.
+
+Build terminal layouts by holding Ctrl and clicking + on a pane’s left, right, top or bottom edge.
+Drag dividers to resize; closing a pane expands its sibling and preserves the rest of the layout.
+Select a terminal to browse its current folder in Files. Its terminal header shows the current
+branch and change counts. Sessions group terminals by name and environment;
+the Sessions sidebar shows each session’s runtime and WSL distribution below its name. Create a
+session with a name and environment, then drag its sidebar handle to reorder it. Each terminal
+remembers its own last reported folder across app restarts. Restored shells fall back
+to the user’s home directory if their saved folder is unavailable.
+
+## Removing the old OpenCode plugin
+
+Close MDE and OpenCode, then delete `~/.config/opencode/plugins/mde-status/` and
+the older `~/.config/opencode/plugins/mde-status.js`, if present. On macOS, use
+`$OPENCODE_CONFIG_DIR/plugins/` if configured, otherwise `$XDG_CONFIG_HOME/opencode/plugins/`
+if configured. On Windows, repeat inside each WSL distro where you installed the plugin.
+Restart MDE and OpenCode afterward.
 
 ## Requirements
 
@@ -56,11 +88,7 @@ notarization requires overriding `mac.identity` and supplying release credential
 and configuration. The Mac
 package includes only the rebuilt PTY binding and spawn helper outside `app.asar`,
 with compiler debug paths stripped before signing. Native Mac terminals support
-the agent launcher, OpenCode history/resume, status reporting, Agents overview,
-and Dock attention and sound. Enable status reporting and install the optional plugin
-under Settings → OpenCode, then restart OpenCode.
-Mac plugin management resolves the config directory and executable environment
-through the user’s login shell, including when MDE is launched from Finder.
+the F12 mini Inbox window.
 WSL-specific actions remain Windows-only.
 
 Cross-building for Windows from Linux is not supported; build on Windows, or from WSL with
@@ -68,14 +96,19 @@ Cross-building for Windows from Linux is not supported; build on Windows, or fro
 the Windows staging details and verification are in
 [`docs/windows-release.md`](docs/windows-release.md).
 
-### Release builds with GitHub Actions
+### Checks and release builds with GitHub Actions
 
-The [Build release draft workflow](.github/workflows/build-release.yml) runs when a
-version tag such as `0.0.119` is pushed; `v`-prefixed tags are also accepted. It builds
-Windows x64 on `windows-2025` and macOS ARM64 on `macos-15` in parallel, using Node
-24.21.0 and locked dependencies. Both jobs run the full test suite, dependency audit,
-license checks, typechecking, compilation, packaging, and packaged-output audit.
-Windows uses the existing `node-pty` prebuilds; macOS rebuilds the native module.
+The [CI workflow](.github/workflows/ci.yml) runs on every push and pull request: license
+notices, typecheck and the test suite on Linux, the test suite on native Windows, and the
+dependency audit as its own job. It builds nothing.
+
+The [Build release draft workflow](.github/workflows/build-release.yml) is started by hand
+and builds a release from the head of the default branch. It reads the version from
+`package.json`, checks that `package-lock.json` (both fields) agrees and that the tag
+`v<version>` is free, then builds Windows x64 on `windows-2025` and macOS ARM64 on `macos-15`
+in parallel, using Node 24.21.0 and locked dependencies. Both jobs run the full test suite,
+dependency audit, license checks, typechecking, compilation, packaging, and packaged-output
+audit. Windows uses the existing `node-pty` prebuilds; macOS rebuilds the native module.
 Packaging explicitly disables publishing.
 
 The macOS job verifies the app signature, architecture, and disk image. The Windows
@@ -85,36 +118,33 @@ Actions artifacts retained for three days. A failed check prevents that job's up
 
 For each release:
 
-1. Prepare and commit the release version in `package.json` and both version
-   fields in `package-lock.json`, then push the commit. The workflow must already
-   be on the default branch to support manual runs.
-2. Push the matching version tag from that commit. For example:
+1. Merge the work to the default branch. The version in `package.json` and both version
+   fields in `package-lock.json` change only for a release, in one commit, for example:
 
    ```sh
-   version=$(node -p "require('./package.json').version")
-   git tag -a "$version" -m "$version"
-   git push origin "refs/tags/$version"
+   npm version 0.1.15 --no-git-tag-version
    ```
 
-3. Open **Actions → Build release draft** and check that both builds and the
-   draft-release job succeed. After both builds pass, the final job verifies the
-   downloaded checksums and creates a draft GitHub Release for the existing tag,
-   attaching the Windows ZIP, macOS DMG, both checksums, `LICENSE`, and
-   `THIRD_PARTY_NOTICES.md`.
+2. Open **Actions → Build release draft → Run workflow** on the default branch. Nothing
+   needs tagging by hand.
+3. Check that all jobs succeed. After both builds pass, the final job creates the tag
+   `v<version>` on the commit that was built, verifies the downloaded checksums and
+   creates a draft GitHub Release for it, attaching the Windows ZIP, macOS DMG, both
+   checksums, `LICENSE`, and `THIRD_PARTY_NOTICES.md`.
 4. Open the draft under **Releases**, review the files and release notes, and test
    the extracted Windows ZIP as described in [`docs/windows-release.md`](docs/windows-release.md).
    Publish the release manually when ready. For Windows, extract the entire ZIP
    into its own folder and run `mde.exe`. For macOS, mount the DMG and drag MDE into
    Applications.
 
-The tag, with an optional `v` prefix removed, must exactly match all three manifest
-version fields; mismatches fail before dependency installation. Ordinary branch
-pushes do not build. To rebuild an existing tag, use **Run workflow** with the
-required `tag` input on the default branch, or rerun its previous job. The tagged
-commit must contain the workflow's build commands and release helper. Runs for the
-same tag share a concurrency group; each platform build has a 30-minute timeout.
-Reruns reuse an existing draft and replace matching assets, preserving its release
-notes. An already published release is never modified: the upload job fails instead.
+The workflow refuses to run on any other branch. It fails before building when the version
+was already published, when its tag exists on a different commit, or when the three version
+fields disagree. Raise the version for a new release; to rebuild one that is still a draft,
+run the workflow again: it reuses the draft, replaces matching assets and keeps its release
+notes. A published release is never modified. Runs share one concurrency group and each
+platform build has a 30-minute timeout. The workflow file must be on the default branch
+for **Run workflow** to appear. Tags made before this process (`0.0.x`, no `v`) stay as
+they are.
 
 The workflow uses pinned GitHub actions and read-only repository permissions for
 builds. Only the final draft-release job receives `contents: write` and `actions: read`,
@@ -129,7 +159,9 @@ models. Local `npm run build` on macOS still produces both DMG and ZIP.
 MDE's first-party source, documentation, scripts, and branding are licensed under the MIT
 License in `LICENSE`. Third-party packages remain under their own licenses; the complete
 locked dependency inventory and available package license/notice text are recorded in
-`THIRD_PARTY_NOTICES.md`.
+`THIRD_PARTY_NOTICES.md`. The same file credits the color themes that adapt other projects' palettes
+(Catppuccin, GitHub Primer, Solarized, Gruvbox, Tokyo Night, Dracula, Nord and One Dark, all MIT) and
+reproduces their license texts.
 
 Regenerate the notices after changing dependencies with:
 

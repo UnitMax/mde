@@ -1,56 +1,59 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { PictureInPicture2, Plus, Terminal } from 'lucide-react'
+import { PictureInPicture2, Plus, Settings2, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { AddSessionDialog } from '@/components/AddProjectDialog'
-import { GitDialog } from '@/components/GitDialog'
-import { MiniAgentWindow } from '@/components/MiniAgentWindow'
+import { AddSessionDialog } from '@/components/AddSessionDialog'
+import { MiniInboxWindow } from '@/components/MiniInboxWindow'
 import { FileTreePanel } from '@/components/FileTreePanel'
 import { FileViewer } from '@/components/FileViewer'
-import { NewProjectDialog } from '@/components/NewProjectDialog'
+import { FloatingTerminal } from '@/components/inbox/FloatingTerminal'
+import { InboxChangeViewer, InboxSidebar } from '@/components/inbox/InboxChanges'
 import { NewTodoProjectDialog } from '@/components/NewTodoProjectDialog'
 import { Sidebar } from '@/components/Sidebar'
 import { SessionSwitcher } from '@/components/SessionSwitcher'
 import { TerminalView } from '@/components/TerminalView'
 import { TitleBar, TitleBarButton } from '@/components/TitleBar'
+import { WorkspaceNavigation } from '@/components/WorkspaceNavigation'
 import { TodoProjectView } from '@/components/TodoProjectView'
+import { InboxThreadView } from '@/components/InboxThreadView'
+import { useInboxLock } from '@/components/InboxPanel'
+import { inboxFileRoot } from '@/lib/inbox'
+import { SettingsDialog } from '@/components/SettingsDialog'
+import { OpenCodeConfigDialog } from '@/components/inbox/OpenCodeConfigDialog'
 import { TodoSearch } from '@/components/TodoSearch'
 import { TodoProjectSettingsDialog } from '@/components/TodoProjectSettingsDialog'
 import { TodoTaskDialog } from '@/components/TodoTaskDialog'
-import {
-  TerminalTaskLinkDialog,
-  type TerminalTaskLinkTarget
-} from '@/components/TerminalTaskLinkDialog'
 import { isSessionSwitcherShortcut } from '@/lib/session-switcher'
+import { isInboxSearchShortcut } from '@/lib/inbox-search'
+import { InboxSearchDialog } from '@/components/inbox/InboxSearchDialog'
 import { isTodoSearchShortcut } from '@/lib/todo-search'
+import { startAlerts } from '@/lib/alert-controller'
 import { useWorkspace } from '@/store/workspace'
-import { disposeSession, getSession } from '@/terminal/sessions'
+import { focusTerminalWhenReady } from '@/terminal/focus'
+import { disposeRuntimeTerminal } from '@/terminal/dispose'
+import {
+  layoutReordered,
+  layoutResized,
+  layoutTitled
+} from '@/terminal/layout-edits'
 import {
   activeSessionTab,
-  appendRuntimePane,
+  splitRuntimePane,
   createRuntimeLayout,
-  nextPaneId,
   persistRuntimeLayout,
   sessionTabs,
   terminalIdForPane
 } from '@/terminal/tabs'
 import {
-  defaultTerminalLayoutSizes,
-  orderTerminalPanes,
   removeTerminalPane,
   terminalFocusTargetAfterRemoval,
-  terminalCount,
   type SessionTerminalLayout,
-  type TerminalLayout,
-  type RuntimeTerminalLaunch,
-  type TerminalColumnIndex,
-  type TerminalRowIndex,
-  type TerminalResizeAxis
+  type TerminalSplitSide,
 } from '@/terminal/layout'
 import type { PersistedTerminalLayout, Session, TodoTask } from '@shared/types'
-import {
-  liveTerminalDescriptors,
-  type LiveTerminalDescriptor
-} from '@/lib/terminal-task-links'
+import type { TerminalDirectoryRequest } from '@shared/ipc'
+import { fileRootKey } from '@/lib/file-root'
+import { useInboxChat } from '@/store/inbox-chat'
+import { useInboxTerminal } from '@/store/inbox-terminal'
 
 type RuntimeLayouts = Record<string, Record<string, SessionTerminalLayout>>
 
@@ -61,7 +64,7 @@ function EmptyState({ onNewSession }: { onNewSession: () => void }): JSX.Element
       <div>
         <p className="text-[13px] text-fg-muted">No session selected</p>
         <p className="mt-1 text-xs text-fg-subtle">
-          Pick a session in the sidebar, or add a folder to work in.
+          Pick a session in the sidebar, or create one to group your terminals.
         </p>
       </div>
       <Button size="sm" onClick={onNewSession}>
@@ -78,62 +81,43 @@ export function App(): JSX.Element {
   const sessions = useWorkspace((state) => state.sessions)
   const todoProjects = useWorkspace((state) => state.todoProjects)
   const todoTasks = useWorkspace((state) => state.todoTasks)
-  const terminalStatuses = useWorkspace((state) => state.statuses)
-  const opencodeTuiInstances = useWorkspace((state) => state.opencodeTuiInstances)
-  const opencodeTuiInstanceLabelMode = useWorkspace((state) => state.opencodeTuiInstanceLabelMode)
   const windowMode = useWorkspace((state) => state.windowMode)
   const setWindowMode = useWorkspace((state) => state.setWindowMode)
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
   const openFiles = useWorkspace((state) => state.openFiles)
   const openFileAction = useWorkspace((state) => state.openFile)
+  const openSettings = useWorkspace((state) => state.openSettings)
+  const opencodeConfigOpen = useWorkspace((state) => state.opencodeConfigDialog.open)
   const closeFileAction = useWorkspace((state) => state.closeFile)
   const selectedTodoProjectId = useWorkspace((state) => state.selectedTodoProjectId)
   const activeWorkspaceView = useWorkspace((state) => state.activeWorkspaceView)
-  const selectSession = useWorkspace((state) => state.selectSession)
   const addTabAction = useWorkspace((state) => state.addTab)
   const selectTabAction = useWorkspace((state) => state.selectTab)
   const renameTabAction = useWorkspace((state) => state.renameTab)
   const updateTabLayoutAction = useWorkspace((state) => state.updateTabLayout)
   const removeTabAction = useWorkspace((state) => state.removeTab)
-  const clearExit = useWorkspace((state) => state.clearExit)
-  const setStatus = useWorkspace((state) => state.setStatus)
-  const unlinkTerminalTask = useWorkspace((state) => state.unlinkTerminalTask)
   const [newSessionOpen, setNewSessionOpen] = useState(false)
-  const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [newTodoProjectOpen, setNewTodoProjectOpen] = useState(false)
   const [todoProjectSettingsOpen, setTodoProjectSettingsOpen] = useState(false)
   const [todoTaskDialogOpen, setTodoTaskDialogOpen] = useState(false)
   const [todoTaskDialogTaskId, setTodoTaskDialogTaskId] = useState<string | null>(null)
   const [todoTaskDialogColumnId, setTodoTaskDialogColumnId] = useState<string | null>(null)
-  const [gitSessionId, setGitSessionId] = useState<string | null>(null)
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false)
+  const [inboxSearchOpen, setInboxSearchOpen] = useState(false)
   const [todoSearchOpen, setTodoSearchOpen] = useState(false)
-  const [terminalTaskLinkTarget, setTerminalTaskLinkTarget] = useState<TerminalTaskLinkTarget | null>(null)
-  const [defaultProjectId, setDefaultProjectId] = useState<string | undefined>(undefined)
   const [terminalLayouts, setTerminalLayouts] = useState<RuntimeLayouts>({})
   const [pendingTerminalFocus, setPendingTerminalFocus] = useState<{
     sessionId: string
     tabId: string
     terminalId: string
-    /** Play the pane highlight once the terminal is focused. */
-    highlight?: boolean
   } | null>(null)
   const terminalFocusRequestId = useRef(0)
+  const [focusedTerminalId, setFocusedTerminalId] = useState<string | null>(null)
   const focusedTerminalIdRef = useRef<string | null>(null)
   const terminalLayoutsRef = useRef<RuntimeLayouts>({})
   const sessionsRef = useRef(sessions)
   const pendingLayoutPersistence = useRef<Record<string, PersistedTerminalLayout>>({})
   const layoutPersistenceTimers = useRef<Record<string, number>>({})
-
-  const liveTerminals = useMemo<LiveTerminalDescriptor[]>(
-    () => liveTerminalDescriptors({
-      sessions,
-      terminalLayouts,
-      statuses: terminalStatuses,
-      opencodeTuiInstances,
-    }),
-    [opencodeTuiInstances, sessions, terminalLayouts, terminalStatuses]
-  )
 
   useEffect(() => {
     terminalLayoutsRef.current = terminalLayouts
@@ -142,6 +126,10 @@ export function App(): JSX.Element {
   useEffect(() => {
     sessionsRef.current = sessions
   }, [sessions])
+
+  useEffect(() => useInboxChat.getState().init(), [])
+  useEffect(() => useInboxTerminal.getState().init(), [])
+  useEffect(() => startAlerts(), [])
 
   useEffect(() => {
     void init()
@@ -189,14 +177,6 @@ export function App(): JSX.Element {
     }
   }, [])
 
-  const disposeRuntimeTerminal = (terminalId: string): void => {
-    clearExit(terminalId)
-    setStatus(terminalId, 'none')
-    unlinkTerminalTask(terminalId)
-    disposeSession(terminalId)
-    void window.api.pty.dispose(terminalId)
-  }
-
   const setRuntimeLayout = (
     sessionId: string,
     tabId: string,
@@ -235,7 +215,7 @@ export function App(): JSX.Element {
     const current = useWorkspace.getState()
     const session = current.sessions.find((candidate) => candidate.id === sessionId)
     if (
-      current.activeWorkspaceView !== 'projects' ||
+      current.activeWorkspaceView !== 'sessions' ||
       current.selectedSessionId !== sessionId ||
       !session ||
       activeSessionTab(session).id !== tabId
@@ -244,6 +224,7 @@ export function App(): JSX.Element {
     }
 
     focusedTerminalIdRef.current = terminalId
+    setFocusedTerminalId(terminalId)
     terminalFocusRequestId.current += 1
     setPendingTerminalFocus({ sessionId, tabId, terminalId })
   }
@@ -322,26 +303,9 @@ export function App(): JSX.Element {
       return
     }
 
-    let frame: number | undefined
-    let attempts = 0
-    const focus = (): void => {
-      const terminal = getSession(pendingTerminalFocus.terminalId)
-      if (terminal?.container.isConnected) {
-        terminal.term.focus()
-        if (pendingTerminalFocus.highlight) {
-          useWorkspace.getState().flashTerminal(pendingTerminalFocus.terminalId)
-        }
-        setPendingTerminalFocus(null)
-        return
-      }
-      attempts += 1
-      if (attempts < 8) frame = window.requestAnimationFrame(focus)
-      else setPendingTerminalFocus(null)
-    }
-    frame = window.requestAnimationFrame(focus)
-    return () => {
-      if (frame !== undefined) window.cancelAnimationFrame(frame)
-    }
+    return focusTerminalWhenReady(pendingTerminalFocus.terminalId, {
+      done: () => setPendingTerminalFocus(null)
+    })
   }, [pendingTerminalFocus, selectedSessionId, sessions])
 
   useEffect(() => {
@@ -351,10 +315,10 @@ export function App(): JSX.Element {
         sessionSwitcherOpen ||
         todoSearchOpen ||
         newSessionOpen ||
-        newProjectOpen ||
         newTodoProjectOpen ||
         todoProjectSettingsOpen ||
-        todoTaskDialogOpen
+        todoTaskDialogOpen ||
+        opencodeConfigOpen
       ) {
         return
       }
@@ -367,14 +331,38 @@ export function App(): JSX.Element {
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [
-    newProjectOpen,
     newSessionOpen,
     newTodoProjectOpen,
+    opencodeConfigOpen,
     sessionSwitcherOpen,
     todoProjectSettingsOpen,
     todoSearchOpen,
     todoTaskDialogOpen
   ])
+
+  // Ctrl+Shift+F searches the text of every Inbox thread. It is the Inbox's own: the terminal views keep it for fullscreen.
+  useEffect(() => {
+    if (activeWorkspaceView !== 'inbox') return
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (
+        !isInboxSearchShortcut(event) ||
+        inboxSearchOpen ||
+        sessionSwitcherOpen ||
+        newSessionOpen ||
+        opencodeConfigOpen ||
+        document.querySelector('[role="dialog"], [role="alertdialog"]')
+      ) {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+      setInboxSearchOpen(true)
+    }
+
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [activeWorkspaceView, inboxSearchOpen, newSessionOpen, opencodeConfigOpen, sessionSwitcherOpen])
 
   const todoSearchAvailable = activeWorkspaceView === 'todo' && selectedTodoProjectId !== null
   useEffect(() => {
@@ -385,11 +373,10 @@ export function App(): JSX.Element {
         todoSearchOpen ||
         sessionSwitcherOpen ||
         newSessionOpen ||
-        newProjectOpen ||
         newTodoProjectOpen ||
         todoProjectSettingsOpen ||
         todoTaskDialogOpen ||
-        terminalTaskLinkTarget !== null
+        opencodeConfigOpen
       ) {
         return
       }
@@ -402,11 +389,10 @@ export function App(): JSX.Element {
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [
-    newProjectOpen,
     newSessionOpen,
     newTodoProjectOpen,
+    opencodeConfigOpen,
     sessionSwitcherOpen,
-    terminalTaskLinkTarget,
     todoProjectSettingsOpen,
     todoSearchAvailable,
     todoSearchOpen,
@@ -422,10 +408,8 @@ export function App(): JSX.Element {
   const selectedTodoTask =
     todoTasks.find((task) => task.id === todoTaskDialogTaskId) ?? null
   const activeTab = selected ? activeSessionTab(selected) : null
-  const gitSession = sessions.find((session) => session.id === gitSessionId) ?? null
 
-  const openNewSession = (projectId?: string): void => {
-    setDefaultProjectId(projectId)
+  const openNewSession = (): void => {
     setNewSessionOpen(true)
   }
 
@@ -454,28 +438,6 @@ export function App(): JSX.Element {
   const cancelTerminalFocus = (): void => {
     terminalFocusRequestId.current += 1
     setPendingTerminalFocus(null)
-  }
-
-  const focusTerminal = (
-    sessionId: string,
-    tabId: string,
-    terminalId: string,
-    options?: { highlight?: boolean }
-  ): void => {
-    terminalFocusRequestId.current += 1
-    selectSession(sessionId)
-    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
-    if (session && activeSessionTab(session).id !== tabId) void selectTabAction(sessionId, tabId)
-    setPendingTerminalFocus({
-      sessionId,
-      tabId,
-      terminalId,
-      ...(options?.highlight ? { highlight: true } : {})
-    })
-  }
-
-  const focusLiveTerminal = (terminal: LiveTerminalDescriptor): void => {
-    focusTerminal(terminal.sessionId, terminal.tabId, terminal.terminalId)
   }
 
   const selectTab = (sessionId: string, tabId: string): void => {
@@ -525,24 +487,8 @@ export function App(): JSX.Element {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!session) return
 
-    const existing = layoutForTab(session, tabId)
-    if (!existing.panes.some((pane) => pane.terminalId === terminalId)) return
-
-    const normalizedTitle = title?.trim()
-    const next = {
-      ...existing,
-      panes: existing.panes.map((pane) => {
-        if (pane.terminalId !== terminalId) return pane
-
-        const updatedPane = { ...pane }
-        if (normalizedTitle) {
-          updatedPane.title = normalizedTitle
-        } else {
-          delete updatedPane.title
-        }
-        return updatedPane
-      })
-    }
+    const next = layoutTitled(layoutForTab(session, tabId), terminalId, title)
+    if (!next) return
 
     setRuntimeLayout(sessionId, tabId, next)
     queueLayoutPersistence(sessionId, tabId, next, true)
@@ -574,76 +520,16 @@ export function App(): JSX.Element {
     })
   }
 
-  const changeTerminalLayout = (sessionId: string, tabId: string, layout: TerminalLayout): void => {
+  const splitTerminalPane = (sessionId: string, tabId: string, terminalId: string, side: TerminalSplitSide): void => {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!session) return
     const existing = layoutForTab(session, tabId)
-    const targetCount = terminalCount(layout)
-    if (targetCount <= existing.panes.length) {
-      if (targetCount === existing.panes.length) {
-        const next = { ...existing, layout, sizes: defaultTerminalLayoutSizes(layout) }
-        setRuntimeLayout(sessionId, tabId, next)
-        queueLayoutPersistence(sessionId, tabId, next, true)
-      }
-      return
-    }
-
-    const panes = [...existing.panes]
-    while (panes.length < targetCount) {
-      const paneId = nextPaneId(panes)
-      panes.push({
-        terminalId: terminalIdForPane(sessionId, tabId, paneId),
-        paneId
-      })
-    }
-    const next = { layout, panes, sizes: defaultTerminalLayoutSizes(layout) }
-    setRuntimeLayout(sessionId, tabId, next)
-    queueLayoutPersistence(sessionId, tabId, next, true)
-  }
-
-  const addTerminalPane = (
-    sessionId: string,
-    tabId: string,
-    sourceTerminalId: string,
-    launch: RuntimeTerminalLaunch
-  ): void => {
-    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
-    if (!session) return
-    const existing = layoutForTab(session, tabId)
-    if (!existing.panes.some((pane) => pane.terminalId === sourceTerminalId)) return
-
-    const next = appendRuntimePane(sessionId, tabId, existing, launch)
+    const next = splitRuntimePane(sessionId, tabId, existing, terminalId, side)
     if (!next) return
     setRuntimeLayout(sessionId, tabId, next)
     queueLayoutPersistence(sessionId, tabId, next, true)
-    const pane = next.panes[next.panes.length - 1]
-    if (pane) {
-      setPendingTerminalFocus({
-        sessionId,
-        tabId,
-        terminalId: pane.terminalId
-      })
-    }
-  }
-
-  const reduceTerminalLayout = (
-    sessionId: string,
-    tabId: string,
-    layout: TerminalLayout,
-    paneIds: string[]
-  ): void => {
-    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
-    if (!session) return
-    const existing = layoutForTab(session, tabId)
-    paneIds.forEach(disposeRuntimeTerminal)
-    const next = {
-      layout,
-      panes: existing.panes.filter((pane) => !paneIds.includes(pane.terminalId)),
-      sizes: defaultTerminalLayoutSizes(layout)
-    }
-    setRuntimeLayout(sessionId, tabId, next)
-    queueLayoutPersistence(sessionId, tabId, next, true)
-    focusTerminalAfterPaneRemoval(sessionId, tabId, existing, paneIds, next)
+    const added = next.panes.find((pane) => !existing.panes.includes(pane))
+    if (added) setPendingTerminalFocus({ sessionId, tabId, terminalId: added.terminalId })
   }
 
   const closeTerminalPane = (sessionId: string, tabId: string, terminalId: string): void => {
@@ -661,21 +547,12 @@ export function App(): JSX.Element {
   const resizeTerminalLayout = (
     sessionId: string,
     tabId: string,
-    axis: TerminalResizeAxis,
-    ratio: number,
-    index?: TerminalColumnIndex | TerminalRowIndex
+    splitId: string,
+    ratio: number
   ): void => {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!session) return
-    const existing = layoutForTab(session, tabId)
-    const sizes = axis === 'column'
-      ? index === 1
-        ? { ...existing.sizes, secondColumnRatio: ratio }
-        : { ...existing.sizes, columnRatio: ratio }
-      : index === 1
-        ? { ...existing.sizes, secondRowRatio: ratio }
-        : { ...existing.sizes, rowRatio: ratio }
-    const next = { ...existing, sizes }
+    const next = layoutResized(layoutForTab(session, tabId), splitId, ratio)
     setRuntimeLayout(sessionId, tabId, next)
     queueLayoutPersistence(sessionId, tabId, next)
   }
@@ -683,18 +560,29 @@ export function App(): JSX.Element {
   const reorderTerminalPanes = (sessionId: string, tabId: string, terminalIds: readonly string[]): void => {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!session) return
-    const existing = layoutForTab(session, tabId)
-    const panes = orderTerminalPanes(existing.panes, terminalIds)
-    if (!panes) return
-    const next = { ...existing, panes }
+    const next = layoutReordered(layoutForTab(session, tabId), terminalIds)
+    if (!next) return
     setRuntimeLayout(sessionId, tabId, next)
     queueLayoutPersistence(sessionId, tabId, next, true)
   }
 
-  const openFilePath = selected ? openFiles[selected.id] : undefined
+  // The Inbox shows the files of the open thread's folder, or of the folder the new thread starts in.
+  const inboxLock = useInboxLock()
+  const inboxThreads = useWorkspace((state) => state.inboxThreads)
+  const selectedInboxThreadId = useWorkspace((state) => state.selectedInboxThreadId)
+  const inboxFolders = useInboxChat((state) => state.folders)
+  const inboxComposerFolderId = useInboxChat((state) => state.composer.folderId)
+  const inboxRoot = useMemo(() => {
+    if (activeWorkspaceView !== 'inbox' || inboxLock) return null
+    const thread = inboxThreads.find((item) => item.id === selectedInboxThreadId)
+    if (thread) return inboxFileRoot(thread)
+    const folder = inboxFolders.find((item) => item.id === inboxComposerFolderId) ?? inboxFolders[0]
+    return folder ? inboxFileRoot(folder) : null
+  }, [activeWorkspaceView, inboxLock, inboxThreads, selectedInboxThreadId, inboxFolders, inboxComposerFolderId])
+  const inboxOpenFilePath = inboxRoot ? openFiles[inboxRoot.id] : undefined
 
-  const closeOpenFile = (sessionId: string): void => {
-    closeFileAction(sessionId)
+  const closeOpenFile = (sessionId: string, rootId = sessionId): void => {
+    closeFileAction(rootId)
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!session) return
     // Hand focus back to the terminal the viewer covered.
@@ -711,22 +599,32 @@ export function App(): JSX.Element {
   const layoutForSession = selected && activeTab
     ? layoutForTab(selected, activeTab.id)
     : undefined
-  const terminalLayoutsForSidebar = terminalLayouts
+  const activeTerminalId = layoutForSession?.panes.find((pane) => pane.terminalId === focusedTerminalId)?.terminalId
+    ?? layoutForSession?.panes[0]?.terminalId
+  const terminalDirectory = useWorkspace((state) => activeTerminalId ? state.terminalDirectories[activeTerminalId] : undefined)
+  const terminalFileRoot = useMemo<TerminalDirectoryRequest | null>(
+    () => selected && activeTerminalId && terminalDirectory
+      ? { terminalId: activeTerminalId, directory: terminalDirectory }
+      : null,
+    [activeTerminalId, terminalDirectory, selected?.id]
+  )
+  const terminalFileRootId = terminalFileRoot ? fileRootKey(terminalFileRoot) : null
+  const openFilePath = terminalFileRootId ? openFiles[terminalFileRootId] : undefined
 
   // The main process has already shrunk the window. Terminals are not mounted here,
   // so nothing resizes their PTYs; they stay alive and reattach when restored.
   if (windowMode === 'mini') {
     return (
-      <MiniAgentWindow
-        sessions={sessions}
-        opencodeTuiInstances={opencodeTuiInstances}
-        terminalLayouts={terminalLayouts}
-        labelMode={opencodeTuiInstanceLabelMode}
+      <MiniInboxWindow
+        threads={inboxThreads}
+        folders={inboxFolders}
         onRestore={() => void setWindowMode('normal')}
-        onFocusAgent={(sessionId, tabId, terminalId) => {
-          void setWindowMode('normal').then(() =>
-            focusTerminal(sessionId, tabId, terminalId, { highlight: true })
-          )
+        onOpenThread={(threadId) => {
+          void setWindowMode('normal').then(() => {
+            if (useWorkspace.getState().inboxThreads.some((thread) => thread.id === threadId)) {
+              useWorkspace.getState().selectInboxThread(threadId)
+            }
+          })
         }}
       />
     )
@@ -736,37 +634,54 @@ export function App(): JSX.Element {
     <div className="flex h-full w-full flex-col overflow-hidden bg-bg">
       <TitleBar
         icon={<Terminal className="h-3.5 w-3.5 shrink-0 text-accent" />}
-        title="mde"
+        title="MDE"
+        navigation={<WorkspaceNavigation />}
       >
         <TitleBarButton
           data-testid="mini-window-open"
           onClick={() => void setWindowMode('mini')}
-          title="Mini agents window (F12)"
-          aria-label="Open the mini agents window"
+          title="Mini Inbox window (F12)"
+          aria-label="Open the mini Inbox window"
         >
           <PictureInPicture2 className="h-3.5 w-3.5" />
         </TitleBarButton>
+        <TitleBarButton
+          data-testid="settings-open"
+          onClick={() => openSettings()}
+          title="Settings"
+          aria-label="Open settings"
+        >
+          <Settings2 className="h-3.5 w-3.5" />
+        </TitleBarButton>
       </TitleBar>
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <Sidebar
-          onNewProject={() => setNewProjectOpen(true)}
           onNewTodoProject={() => setNewTodoProjectOpen(true)}
           onNewTodoTask={() => openNewTodoTask()}
           onNewSession={openNewSession}
-          onOpenGit={setGitSessionId}
-          terminalLayouts={terminalLayoutsForSidebar}
-          onFocusTerminal={focusTerminal}
         />
 
         <main className="relative h-full min-w-0 flex-1">
-          {!ready ? null : activeWorkspaceView === 'todo' ? (
+          {!ready ? null : activeWorkspaceView === 'inbox' ? (
+            <>
+              <InboxThreadView />
+              {selectedInboxThreadId && <InboxChangeViewer threadId={selectedInboxThreadId} />}
+              {inboxRoot && inboxOpenFilePath !== undefined && (
+                <FileViewer
+                  key={`viewer:${inboxRoot.id}`}
+                  session={inboxRoot}
+                  path={inboxOpenFilePath}
+                  onOpenFile={(path) => openFileAction(inboxRoot.id, path)}
+                  onClose={() => closeFileAction(inboxRoot.id)}
+                />
+              )}
+            </>
+          ) : activeWorkspaceView === 'todo' ? (
             <TodoProjectView
               project={selectedTodoProject}
               tasks={selectedTodoTasks}
-              terminalCatalog={liveTerminals}
               onNewTask={openNewTodoTask}
               onEditTask={openTodoTask}
-              onFocusTerminal={focusLiveTerminal}
               onOpenSettings={() => setTodoProjectSettingsOpen(true)}
             />
           ) : selected && activeTab && layoutForSession ? (
@@ -781,32 +696,29 @@ export function App(): JSX.Element {
                 onTabRenameStart={cancelTerminalFocus}
                 onRenameTab={(tabId, name) => renameTab(selected.id, tabId, name)}
                 onCloseTab={(tabId) => closeTab(selected.id, tabId)}
-                onLayoutChange={(layout) => changeTerminalLayout(selected.id, activeTab.id, layout)}
-                onLayoutResize={(axis, ratio, index) => resizeTerminalLayout(selected.id, activeTab.id, axis, ratio, index)}
+                onSplitPane={(terminalId, side) => splitTerminalPane(selected.id, activeTab.id, terminalId, side)}
+                onLayoutResize={(splitId, ratio) => resizeTerminalLayout(selected.id, activeTab.id, splitId, ratio)}
                 onPaneOrderChange={(terminalIds) => reorderTerminalPanes(selected.id, activeTab.id, terminalIds)}
-                onReduceLayout={(layout, paneIds) => reduceTerminalLayout(selected.id, activeTab.id, layout, paneIds)}
-                onAddPane={(sourceTerminalId, launch) =>
-                  addTerminalPane(selected.id, activeTab.id, sourceTerminalId, launch)
-                }
                 onClosePane={(terminalId) => closeTerminalPane(selected.id, activeTab.id, terminalId)}
                 onPaneFocus={(terminalId) => {
                   focusedTerminalIdRef.current = terminalId
+                  setFocusedTerminalId(terminalId)
                 }}
                 onPaneTitleChange={(terminalId, title) =>
                   renameTerminalPane(selected.id, activeTab.id, terminalId, title)
                 }
-                onLinkTask={(terminalId) => setTerminalTaskLinkTarget({ type: 'terminal', terminalId })}
               />
-              {openFilePath !== undefined && (
+              {openFilePath !== undefined && terminalFileRoot && terminalFileRootId && (
                 // Layered over the terminals so they stay mounted at their size. Its key must differ
                 // from the terminal view's: siblings that share one leave the previous session's
                 // terminals mounted after a switch.
                 <FileViewer
-                  key={`viewer:${selected.id}`}
+                  key={`viewer:${terminalFileRootId}`}
                   session={selected}
+                  root={terminalFileRoot}
                   path={openFilePath}
-                  onOpenFile={(path) => openFileAction(selected.id, path)}
-                  onClose={() => closeOpenFile(selected.id)}
+                  onOpenFile={(path) => openFileAction(terminalFileRootId, path)}
+                  onClose={() => closeOpenFile(selected.id, terminalFileRootId)}
                 />
               )}
             </>
@@ -815,14 +727,18 @@ export function App(): JSX.Element {
           )}
         </main>
 
-        {ready && activeWorkspaceView !== 'todo' && selected && <FileTreePanel session={selected} />}
+        {ready && activeWorkspaceView === 'sessions' && selected && <FileTreePanel session={selected} root={terminalFileRoot} />}
+        {ready && inboxRoot && <InboxSidebar session={inboxRoot} threadId={selectedInboxThreadId ?? undefined} />}
+        {/* Over everything below the title bar: both sidebars and the conversation. */}
+        {ready && activeWorkspaceView === 'inbox' && <FloatingTerminal />}
+
+        <SettingsDialog terminalIds={layoutForSession?.panes.map((pane) => pane.terminalId) ?? []} />
+        <OpenCodeConfigDialog />
 
         <AddSessionDialog
           open={newSessionOpen}
           onOpenChange={setNewSessionOpen}
-          defaultProjectId={defaultProjectId}
         />
-        <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
         <NewTodoProjectDialog
           open={newTodoProjectOpen}
           onOpenChange={setNewTodoProjectOpen}
@@ -837,13 +753,11 @@ export function App(): JSX.Element {
             <TodoTaskDialog
               project={selectedTodoProject}
               task={selectedTodoTask}
-              terminalCatalog={liveTerminals}
               defaultColumnId={
                 todoTaskDialogColumnId ?? selectedTodoProject.columns[0]?.id ?? 'todo'
               }
               open={todoTaskDialogOpen}
               onOpenChange={setTodoTaskDialogOpen}
-              onManageTerminalLink={(taskId) => setTerminalTaskLinkTarget({ type: 'task', taskId })}
             />
             <TodoSearch
               open={todoSearchOpen && activeWorkspaceView === 'todo'}
@@ -854,21 +768,8 @@ export function App(): JSX.Element {
             />
           </>
         )}
-        <GitDialog
-          open={gitSession !== null}
-          session={gitSession}
-          onOpenChange={(open) => {
-            if (!open) setGitSessionId(null)
-          }}
-        />
         <SessionSwitcher open={sessionSwitcherOpen} onOpenChange={setSessionSwitcherOpen} />
-        <TerminalTaskLinkDialog
-          target={terminalTaskLinkTarget}
-          terminals={liveTerminals}
-          onOpenChange={(open) => {
-            if (!open) setTerminalTaskLinkTarget(null)
-          }}
-        />
+        <InboxSearchDialog open={inboxSearchOpen} onOpenChange={setInboxSearchOpen} />
       </div>
     </div>
   )

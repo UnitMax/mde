@@ -1,5 +1,6 @@
 import { useEffect, type MouseEvent } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
+import { FilePreviewMenu } from '@/components/FilePreviewMenu'
 import { markdownPreviewExtensions } from '@/lib/markdown-extensions'
 import { externalLinkUrl, resolveRelativeLink } from '@/lib/file-viewer'
 import type { MarkdownPreviewWidth } from '@/lib/markdown-preview-width'
@@ -56,12 +57,24 @@ export function MarkdownPreview({ path, content, width, onOpenFile }: MarkdownPr
   }
 
   return (
-    <div
-      className="markdown-preview h-full min-h-0 overflow-y-auto"
-      data-width={width}
-      onClick={onClick}
+    <FilePreviewMenu
+      empty={content.length === 0}
+      getSelectedText={() => {
+        const selection = window.getSelection()
+        const dom = editor.view.dom
+        if (!selection?.anchorNode || !selection.focusNode) return ''
+        if (!dom.contains(selection.anchorNode) || !dom.contains(selection.focusNode)) return ''
+        return selection.toString()
+      }}
+      onSelectAll={() => window.getSelection()?.selectAllChildren(editor.view.dom)}
     >
-      <EditorContent editor={editor} />
-    </div>
+      <div
+        className="markdown-preview h-full min-h-0 overflow-y-auto"
+        data-width={width}
+        onClick={onClick}
+      >
+        <EditorContent editor={editor} />
+      </div>
+    </FilePreviewMenu>
   )
 }
