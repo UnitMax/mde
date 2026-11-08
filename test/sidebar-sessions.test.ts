@@ -21,8 +21,6 @@ function render(): void {
     onNewSession,
     onNewTodoProject: vi.fn(),
     onNewTodoTask: vi.fn(),
-    onFocusTerminal: vi.fn(),
-    terminalLayouts: {},
   })))
 }
 

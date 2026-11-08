@@ -37,7 +37,6 @@ export type SettingsSection =
   | 'terminal'
   | 'shortcuts'
   | 'opencode'
-  | 'sidebar'
   | 'about'
 
 export interface SettingsDialogState {

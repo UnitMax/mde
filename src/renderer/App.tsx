@@ -87,7 +87,6 @@ export function App(): JSX.Element {
   const closeFileAction = useWorkspace((state) => state.closeFile)
   const selectedTodoProjectId = useWorkspace((state) => state.selectedTodoProjectId)
   const activeWorkspaceView = useWorkspace((state) => state.activeWorkspaceView)
-  const selectSession = useWorkspace((state) => state.selectSession)
   const addTabAction = useWorkspace((state) => state.addTab)
   const selectTabAction = useWorkspace((state) => state.selectTab)
   const renameTabAction = useWorkspace((state) => state.renameTab)
@@ -411,24 +410,6 @@ export function App(): JSX.Element {
     setPendingTerminalFocus(null)
   }
 
-  const focusTerminal = (
-    sessionId: string,
-    tabId: string,
-    terminalId: string
-  ): void => {
-    terminalFocusRequestId.current += 1
-    focusedTerminalIdRef.current = terminalId
-    setFocusedTerminalId(terminalId)
-    selectSession(sessionId)
-    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
-    if (session && activeSessionTab(session).id !== tabId) void selectTabAction(sessionId, tabId)
-    setPendingTerminalFocus({
-      sessionId,
-      tabId,
-      terminalId,
-    })
-  }
-
   const selectTab = (sessionId: string, tabId: string): void => {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!session || !sessionTabs(session).some((tab) => tab.id === tabId)) return
@@ -599,7 +580,6 @@ export function App(): JSX.Element {
   )
   const terminalFileRootId = terminalFileRoot ? fileRootKey(terminalFileRoot) : null
   const openFilePath = terminalFileRootId ? openFiles[terminalFileRootId] : undefined
-  const terminalLayoutsForSidebar = terminalLayouts
 
   // The main process has already shrunk the window. Terminals are not mounted here,
   // so nothing resizes their PTYs; they stay alive and reattach when restored.
@@ -649,8 +629,6 @@ export function App(): JSX.Element {
           onNewTodoProject={() => setNewTodoProjectOpen(true)}
           onNewTodoTask={() => openNewTodoTask()}
           onNewSession={openNewSession}
-          terminalLayouts={terminalLayoutsForSidebar}
-          onFocusTerminal={focusTerminal}
         />
 
         <main className="relative h-full min-w-0 flex-1">

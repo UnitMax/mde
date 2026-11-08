@@ -50,7 +50,6 @@ next save; existing layouts need no migration and start at home until a pane dir
 The Sessions sidebar lists all sessions in one reorderable list. Each row shows its name with a
 compact Native or WSL badge below it; WSL rows also show the distribution. Collapsed rows show
 icons or initials, with environment details in their tooltip.
-Optional terminal entries show pane names, tabs and current folders.
 
 Each pane has a header (`TerminalPaneHeader`) that puts its name first. The title is the pane's
 custom name, else the last folder of the terminal's current

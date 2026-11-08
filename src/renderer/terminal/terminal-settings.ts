@@ -11,8 +11,6 @@ export interface TerminalSettings {
   theme: ApplicationThemeId
   /** Whether Escape exits the temporary fullscreen terminal view. */
   escapeExitsFullscreen: boolean
-  /** Whether individual terminal panes appear in the sidebar. */
-  showTerminalInstances: boolean
   /**
    * Whether terminal panes are drawn as separate rounded cards with space between them and a
    * highlighted active one, instead of tiling edge to edge. Applies to every terminal layout.
@@ -75,7 +73,6 @@ export function defaultTerminalSettings(
     lineHeight: 1,
     theme: 'slate',
     escapeExitsFullscreen: false,
-    showTerminalInstances: false,
     terminalCards: false,
     osc52Policy: 'notify',
     openCodeExecutable: DEFAULT_OPENCODE_EXECUTABLE
@@ -118,10 +115,6 @@ export function resolveTerminalSettings(
       typeof record.escapeExitsFullscreen === 'boolean'
         ? record.escapeExitsFullscreen
         : fallback.escapeExitsFullscreen,
-    showTerminalInstances:
-      typeof record.showTerminalInstances === 'boolean'
-        ? record.showTerminalInstances
-        : fallback.showTerminalInstances,
     terminalCards:
       typeof record.terminalCards === 'boolean' ? record.terminalCards : fallback.terminalCards,
     osc52Policy: isOsc52Policy(record.osc52Policy) ? record.osc52Policy : fallback.osc52Policy,

@@ -24,7 +24,6 @@ import {
 } from 'lucide-react'
 import type {
   Session,
-  SessionTab,
   TodoProject
 } from '@shared/types'
 import { Button } from '@/components/ui/button'
@@ -58,17 +57,7 @@ import {
   sessionColorHex
 } from '@shared/session-colors'
 import { SESSION_ICONS, sessionIconOption } from '@shared/session-icons'
-import type { SessionTerminalLayout } from '@/terminal/layout'
-import { sessionTabs } from '@/terminal/tabs'
 import { InboxPanel } from '@/components/InboxPanel'
-import {
-  terminalDirectoryLabel,
-  terminalPaneLabel
-} from '@/lib/terminal-instances'
-import {
-  getTerminalSettings,
-  subscribeTerminalSettings
-} from '@/terminal/terminal-settings'
 
 function customSessionColor(color: Session['color']): Session['color'] {
   return color && color !== DEFAULT_SESSION_COLOR ? color : undefined
@@ -100,67 +89,10 @@ function SessionEnvironment({ session }: { session: Session }): JSX.Element {
   )
 }
 
-function TerminalInstances({
-  tabs,
-  layouts,
-  directories,
-  onFocus
-}: {
-  tabs: readonly SessionTab[]
-  layouts: Record<string, SessionTerminalLayout>
-  directories: Record<string, string>
-  onFocus: (tabId: string, terminalId: string) => void
-}): JSX.Element | null {
-  const entries = tabs.flatMap((tab) => {
-    const layout = layouts[tab.id]
-    if (!layout || (tabs.length <= 1 && layout.panes.length <= 1)) return []
-    return layout.panes.map((pane) => ({
-      tab,
-      layout,
-      pane
-    }))
-  })
-  if (entries.length === 0) return null
-
-  return (
-    <div className="mb-0.5 ml-10 mr-2 mt-0.5" data-testid="terminal-instances">
-      <div className="space-y-0.5">
-        {entries.map(({ tab, layout, pane }) => {
-          const label = terminalPaneLabel(pane, layout)
-          const directory = directories[pane.terminalId]
-          const directoryLabel = terminalDirectoryLabel(directory)
-          return (
-            <button
-              key={pane.terminalId}
-              type="button"
-              title={`${label} · ${tab.name} · ${directory ?? 'Directory unavailable'}`}
-              onClick={() => onFocus(tab.id, pane.terminalId)}
-              className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[12px] text-fg-muted hover:bg-hover hover:text-fg"
-            >
-              <span className="min-w-0 flex-1 truncate">{label}</span>
-              <span className="max-w-[35%] shrink truncate text-[10px] text-fg-subtle">{tab.name}</span>
-              {directoryLabel && (
-                <span className="min-w-0 max-w-[35%] shrink truncate text-[10px] text-fg-subtle" title={directory}>
-                  {directoryLabel}
-                </span>
-              )}
-            </button>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
 interface SessionRowProps {
   session: Session
-  terminalDirectories: Record<string, string>
-  terminalTabs: readonly SessionTab[]
-  terminalLayouts: Record<string, SessionTerminalLayout>
-  showTerminalInstances: boolean
   selected: boolean
   onSelect: () => void
-  onFocusTerminal: (tabId: string, terminalId: string) => void
   dragging: boolean
   dragDisabled: boolean
   dropPosition: 'before' | 'after' | null
@@ -172,13 +104,8 @@ interface SessionRowProps {
 
 function SessionRow({
   session,
-  terminalDirectories,
-  terminalTabs,
-  terminalLayouts,
-  showTerminalInstances,
   selected,
   onSelect,
-  onFocusTerminal,
   dragging,
   dragDisabled,
   dropPosition,
@@ -377,15 +304,6 @@ function SessionRow({
         </ContextMenuContent>
       </ContextMenu>
 
-      {showTerminalInstances && (
-        <TerminalInstances
-          tabs={terminalTabs}
-          layouts={terminalLayouts}
-          directories={terminalDirectories}
-          onFocus={onFocusTerminal}
-        />
-      )}
-
       <AlertDialog open={confirmingRemove} onOpenChange={setConfirmingRemove}>
         <AlertDialogContent>
           <AlertDialogTitle>Remove “{session.name}”?</AlertDialogTitle>
@@ -411,22 +329,14 @@ interface SessionDropTarget {
 
 interface SessionListProps {
   sessions: Session[]
-  terminalDirectories: Record<string, string>
-  terminalLayouts: Record<string, Record<string, SessionTerminalLayout>>
-  showTerminalInstances: boolean
   selectedSessionId: string | null
   onSelectSession: (id: string) => void
-  onFocusTerminal: (sessionId: string, tabId: string, terminalId: string) => void
 }
 
 function SessionList({
   sessions,
-  terminalDirectories,
-  terminalLayouts,
-  showTerminalInstances,
   selectedSessionId,
   onSelectSession,
-  onFocusTerminal
 }: SessionListProps): JSX.Element {
   const reorderSession = useWorkspace((state) => state.reorderSession)
   const [draggingSessionId, setDraggingSessionId] = useState<string | null>(null)
@@ -520,13 +430,8 @@ function SessionList({
         <SessionRow
           key={session.id}
           session={session}
-          terminalDirectories={terminalDirectories}
-          terminalTabs={sessionTabs(session)}
-          terminalLayouts={terminalLayouts[session.id] ?? {}}
-          showTerminalInstances={showTerminalInstances}
           selected={session.id === selectedSessionId}
           onSelect={() => onSelectSession(session.id)}
-          onFocusTerminal={(tabId, terminalId) => onFocusTerminal(session.id, tabId, terminalId)}
           dragging={session.id === draggingSessionId}
           dragDisabled={reordering}
           dropPosition={
@@ -695,20 +600,15 @@ interface SidebarProps {
   onNewTodoProject: () => void
   onNewTodoTask: () => void
   onNewSession: () => void
-  terminalLayouts: Record<string, Record<string, SessionTerminalLayout>>
-  onFocusTerminal: (sessionId: string, tabId: string, terminalId: string) => void
 }
 
 export function Sidebar({
   onNewTodoProject,
   onNewTodoTask,
   onNewSession,
-  terminalLayouts,
-  onFocusTerminal
 }: SidebarProps): JSX.Element {
   const todoProjects = useWorkspace((state) => state.todoProjects)
   const sessions = useWorkspace((state) => state.sessions)
-  const terminalDirectories = useWorkspace((state) => state.terminalDirectories)
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
   const selectedTodoProjectId = useWorkspace((state) => state.selectedTodoProjectId)
   const selectSession = useWorkspace((state) => state.selectSession)
@@ -717,21 +617,14 @@ export function Sidebar({
   const collapsed = useWorkspace((state) => state.sidebarCollapsed)
   const toggleSidebar = useWorkspace((state) => state.toggleSidebar)
   const activeSection = useWorkspace((state) => state.activeWorkspaceView)
-  const [terminalSettings, setTerminalSettings] = useState(() => getTerminalSettings())
-
-  useEffect(() => subscribeTerminalSettings(() => setTerminalSettings(getTerminalSettings())), [])
 
   const sessionList = sessions.length === 0 ? (
     <p className="px-2 py-1 text-xs text-fg-subtle">No sessions yet.</p>
   ) : (
     <SessionList
       sessions={sessions}
-      terminalDirectories={terminalDirectories}
-      terminalLayouts={terminalLayouts}
-      showTerminalInstances={terminalSettings.showTerminalInstances}
       selectedSessionId={selectedSessionId}
       onSelectSession={selectSession}
-      onFocusTerminal={onFocusTerminal}
     />
   )
 

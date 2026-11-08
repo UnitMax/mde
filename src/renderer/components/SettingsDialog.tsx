@@ -41,7 +41,6 @@ const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: 'terminal', label: 'Terminal' },
   { id: 'shortcuts', label: 'Shortcuts' },
   { id: 'opencode', label: 'OpenCode' },
-  { id: 'sidebar', label: 'Sidebar' },
   { id: 'about', label: 'About' }
 ]
 
@@ -422,26 +421,6 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
                     Edit configuration…
                   </Button>
                 </div>
-              </section>
-            )}
-
-            {shownSection === 'sidebar' && (
-              <section className="space-y-3" aria-labelledby="sidebar-settings">
-                <div>
-                  <h3 id="sidebar-settings" className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
-                    Sidebar
-                  </h3>
-                  <p className="mt-1 text-xs text-fg-subtle">
-                    Choose which individual terminal activity appears beneath each session.
-                  </p>
-                </div>
-                <SwitchRow
-                  checked={settings.showTerminalInstances}
-                  label="Show terminal instances"
-                  description="List terminal panes beneath their session."
-                  testId="sidebar-terminal-instances"
-                  onClick={() => updateSettings({ showTerminalInstances: !settings.showTerminalInstances })}
-                />
               </section>
             )}
 

@@ -51,7 +51,6 @@ describe('terminal settings', () => {
       lineHeight: 1,
       theme: 'slate',
       escapeExitsFullscreen: false,
-      showTerminalInstances: false,
       terminalCards: false,
       osc52Policy: 'notify',
       openCodeExecutable: 'opencode'
@@ -72,7 +71,6 @@ describe('terminal settings', () => {
       lineHeight: 1,
       theme: 'slate',
       escapeExitsFullscreen: false,
-      showTerminalInstances: false,
       terminalCards: false,
       osc52Policy: 'notify',
       openCodeExecutable: 'opencode'
@@ -95,19 +93,17 @@ describe('terminal settings', () => {
       lineHeight: 1.4,
       theme: 'frost',
       escapeExitsFullscreen: false,
-      showTerminalInstances: false,
       terminalCards: false,
       osc52Policy: 'notify',
       openCodeExecutable: 'opencode'
     })
     expect(
       resolveTerminalSettings(
-        { escapeExitsFullscreen: 'yes', showTerminalInstances: 'yes', showOpenCodeInstances: true },
+        { escapeExitsFullscreen: 'yes', showOpenCodeInstances: true },
         available
       )
     ).toMatchObject({
       escapeExitsFullscreen: false,
-      showTerminalInstances: false,
       terminalCards: false,
       osc52Policy: 'notify',
       openCodeExecutable: 'opencode'
@@ -138,7 +134,10 @@ describe('terminal settings', () => {
     const resolved = resolveTerminalSettings({ showOpenCodeInstances: false }, available)
 
     expect(resolved).not.toHaveProperty('showOpenCodeInstances')
-    expect(resolved.showTerminalInstances).toBe(false)
+  })
+
+  it('ignores the removed terminal instances preference', () => {
+    expect(resolveTerminalSettings({ showTerminalInstances: true }, available)).not.toHaveProperty('showTerminalInstances')
   })
 
   it('loads legacy font settings and supplies the line-height default', () => {
@@ -156,7 +155,6 @@ describe('terminal settings', () => {
       lineHeight: 1,
       theme: 'slate',
       escapeExitsFullscreen: false,
-      showTerminalInstances: false,
       terminalCards: false,
       osc52Policy: 'notify',
       openCodeExecutable: 'opencode'
@@ -173,7 +171,6 @@ describe('terminal settings', () => {
       lineHeight: 1.4,
       theme: 'ember' as const,
       escapeExitsFullscreen: false,
-      showTerminalInstances: true,
       terminalCards: true,
       osc52Policy: 'ask' as const,
       openCodeExecutable: 'opencode'
@@ -202,10 +199,7 @@ describe('terminal settings', () => {
     const listener = vi.fn()
     const unsubscribe = subscribeTerminalSettings(listener)
 
-    saveTerminalSettings({
-      ...defaultTerminalSettings(available),
-      showTerminalInstances: true
-    })
+    saveTerminalSettings(defaultTerminalSettings(available))
 
     expect(listener).toHaveBeenCalledTimes(1)
     unsubscribe()
