@@ -45,6 +45,9 @@ MDE stores data only on the local machine:
   Neither holds terminal content or pane titles; the terminal's shells are not restored on the next run.
 - The renderer's local storage (`mde.inbox-terminal-distro`): the WSL distribution chosen for the
   Inbox sidebar terminal. No entry means the Windows default distribution.
+- The renderer's local storage (`mde.alert-settings`): the Notifications choices: whether and how loudly
+  sounds play, the sound for each of Done, Needs input and Failed, whether the taskbar flashes, and whether
+  it is coloured and badged. The sounds are generated on the device; nothing is downloaded or sent.
 - `inbox.json` under Electron's user-data directory, once you use the Inbox: one record for each
   OpenCode conversation you started in the Inbox, with its session ID, OpenCode title, optional custom name, folder, terminal chat mode
   when chosen (older threads use GUI chat), target (Mac

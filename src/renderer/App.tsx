@@ -25,6 +25,7 @@ import { isSessionSwitcherShortcut } from '@/lib/session-switcher'
 import { isInboxSearchShortcut } from '@/lib/inbox-search'
 import { InboxSearchDialog } from '@/components/inbox/InboxSearchDialog'
 import { isTodoSearchShortcut } from '@/lib/todo-search'
+import { startAlerts } from '@/lib/alert-controller'
 import { useWorkspace } from '@/store/workspace'
 import { focusTerminalWhenReady } from '@/terminal/focus'
 import { disposeRuntimeTerminal } from '@/terminal/dispose'
@@ -127,6 +128,7 @@ export function App(): JSX.Element {
 
   useEffect(() => useInboxChat.getState().init(), [])
   useEffect(() => useInboxTerminal.getState().init(), [])
+  useEffect(() => startAlerts(), [])
 
   useEffect(() => {
     void init()

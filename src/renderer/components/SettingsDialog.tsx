@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { AboutSettingsPanel } from '@/components/AboutSettingsPanel'
 import { KeyboardShortcutsSettings } from '@/components/KeyboardShortcutsSettings'
+import { NotificationSettings } from '@/components/NotificationSettings'
 import { InboxTerminalSettings } from '@/components/inbox/InboxTerminalSettings'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
@@ -39,6 +40,7 @@ const OSC52_POLICY_LABELS: Record<Osc52Policy, string> = {
 const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: 'appearance', label: 'Appearance' },
   { id: 'terminal', label: 'Terminal' },
+  { id: 'notifications', label: 'Notifications' },
   { id: 'shortcuts', label: 'Shortcuts' },
   { id: 'opencode', label: 'OpenCode' },
   { id: 'about', label: 'About' }
@@ -359,6 +361,8 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
                 {platform?.isWindows && <InboxTerminalSettings />}
               </section>
             )}
+
+            {shownSection === 'notifications' && <NotificationSettings />}
 
             {shownSection === 'shortcuts' && (
               <KeyboardShortcutsSettings

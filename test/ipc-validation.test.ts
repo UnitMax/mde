@@ -119,6 +119,8 @@ const validPayloads = {
   [IpcChannels.windowModeGet]: undefined,
   [IpcChannels.windowModeSet]: { mode: 'mini' },
   [IpcChannels.windowChromeSet]: { color: '#10141b', symbolColor: '#7b8698' },
+  [IpcChannels.attentionUpdate]: { indicator: { tone: 'failed', count: 2 }, flash: 'brief' },
+  [IpcChannels.attentionBeep]: undefined,
 } satisfies Record<IpcChannel, unknown>
 
 const channels = Object.values(IpcChannels)
@@ -407,6 +409,15 @@ describe('IPC payload boundary', () => {
       rejects(IpcChannels.windowChromeSet, { color: '#ffffff', symbolColor: color })
     }
     rejects(IpcChannels.windowChromeSet, { color: '#ffffff' })
+    for (const indicator of [{ tone: 'error', count: 1 }, { tone: 'done', count: 0 }, { tone: 'done', count: 100 }, { tone: 'done', count: 1.5 }, { tone: 'done' }, { tone: 'done', count: 1, extra: true }, undefined]) {
+      rejects(IpcChannels.attentionUpdate, { indicator })
+    }
+    rejects(IpcChannels.attentionUpdate, { indicator: null, flash: 'always' })
+    rejects(IpcChannels.attentionUpdate, { indicator: null, flash: null })
+    rejects(IpcChannels.attentionUpdate, { flash: 'brief' })
+    rejects(IpcChannels.attentionBeep, {})
+    expect(() => assertIpcPayload(IpcChannels.attentionUpdate, { indicator: null })).not.toThrow()
+    expect(() => assertIpcPayload(IpcChannels.attentionUpdate, { indicator: { tone: 'input', count: 99 }, flash: 'continuous' })).not.toThrow()
     expect(() => assertIpcPayload(IpcChannels.windowChromeSet, { color: '#FFF', symbolColor: '#aBc123' })).not.toThrow()
     rejects(IpcChannels.pathResolve, { kind: 'native', rawPath: '/tmp/a\0b' })
     rejects(IpcChannels.sessionsRemove, 'session\r')

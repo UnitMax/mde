@@ -181,6 +181,10 @@ const api: RendererApi = {
   },
   windowChrome: {
     set: (req) => ipcRenderer.invoke(IpcChannels.windowChromeSet, req)
+  },
+  attention: {
+    update: (req) => ipcRenderer.invoke(IpcChannels.attentionUpdate, req),
+    beep: () => ipcRenderer.invoke(IpcChannels.attentionBeep)
   }
 }
 

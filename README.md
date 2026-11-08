@@ -14,6 +14,10 @@ Settings → OpenCode → Edit configuration changes OpenCode's own configuratio
 custom OpenAI-compatible providers and disabled providers. See
 [`docs/architecture.md`](docs/architecture.md) for how each part behaves.
 
+Settings → Notifications plays a sound and flashes the taskbar button when an Inbox thread is done, needs
+input or fails; on Windows the button is also coloured red, yellow or green with a count until you return.
+It needs nothing installed.
+
 On Windows, choose the Inbox sidebar terminal's WSL distribution from Settings → Terminal →
 Inbox sidebar terminal. Apply restarts its panes when the distribution changes; the choice is remembered.
 

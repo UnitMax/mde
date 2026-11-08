@@ -1391,6 +1391,47 @@ Night, Dracula, Nord, One Dark), all MIT licensed. Their copyright lines and lic
 dialog, the packages and the release draft already carry. A theme adapted from another project needs a `source`
 key and an entry there; `test/theme-credits.test.ts` fails when the two disagree.
 
+### Notifications
+
+When an Inbox thread becomes Done, needs input (a question or a permission) or Failed, MDE can play a
+sound, flash its taskbar button and colour it, so that a long run does not have to be watched. Settings →
+Notifications has a switch and volume for the sounds, a sound for each of the three states (with a play
+button), a switch to stay quiet while MDE is the window in use, how the taskbar flashes, and, on Windows, a
+switch for the colour and badge. All of it is on by default except that last quiet switch.
+
+The renderer decides, because it has the threads, the open thread and the window's focus
+(`lib/alerts.ts`, started by `lib/alert-controller.ts` from `App`). It watches `inboxThreads` and compares each
+changed thread with its earlier self (`alertKind`): a thread that moves into `completed`, `error` or `attention`
+(a new reason counts) is an alert; a thread seen for the first time, such as the list loaded at startup, is
+not. A thread being read in the focused window in Inbox view never alerts. A second sound within 1.5 s is
+dropped unless it is more urgent (Failed over Needs input over Done), so several threads ending together make
+one sound. The settings (`lib/alert-settings.ts`) live in the renderer's `localStorage` as `mde.alert-settings`.
+
+The sounds are made by MDE (`lib/alert-sound.ts`): a tune per state (Done rises, Needs input pings twice, Failed
+falls to a low minor third) rendered from sine partials into an `AudioBuffer`, in one of three voices (chime,
+bell, pluck). There are no audio files, so there is no licence or credit to carry. The window sets
+`autoplayPolicy: 'no-user-gesture-required'` so that a sound can play before the first click. A fourth choice,
+System beep, asks the main process for `shell.beep()`.
+
+The taskbar is the main process's (`src/main/taskbar-attention.ts`), reached through `attention:update`. A
+request holds an optional flash (`brief` or `continuous`) and an indicator: the most urgent state among the
+unparked threads (Failed and Done while unread, Needs input until answered) and how many threads are in it.
+It is shown only while MDE is not the focused window, and is cleared when it is.
+
+- **Flash:** `BrowserWindow.flashFrame(true)`, which makes Windows flash the button a few times (Chromium asks
+  `FlashWindowEx` for four; Windows is expected to leave the button highlighted afterwards, which has not been
+  checked on a real Windows machine). `Until I come back` calls it again every 4 s until the window is
+  focused (the `focus` event also stops it). Windows never flashes the foreground window, and the code does not
+  ask. On macOS it bounces the Dock icon and on Linux it sets the urgency hint.
+- **Colour (Windows only):** a full progress bar on the button, `error` (red) for Failed, `paused` (yellow) for
+  Needs input, `normal` (green) for Done.
+- **Badge (Windows only):** an overlay icon with the number, 16 x 16. It is drawn in code as raw pixels
+  (`taskbar-badge.ts`: a disc and a 3 x 5 pixel font), so no image or font ships.
+
+None of this needs anything installed: these are window states Windows draws itself, which is why the ZIP
+release is enough. Windows toast notifications are left out on purpose, because they need a Start Menu
+shortcut with an AppUserModelID.
+
 ### Mini Inbox window
 
 F12 shrinks the main window into a small always-on-top list of Inbox threads, with a status summary

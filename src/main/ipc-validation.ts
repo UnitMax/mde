@@ -6,6 +6,7 @@ import { isSessionColor } from '@shared/session-colors'
 import { isSessionIcon } from '@shared/session-icons'
 import { MCP_SERVER_NAME } from '@shared/mcp'
 import { worktreeBranchProblem } from '@shared/worktree-branch'
+import { ATTENTION_COUNT_LIMIT } from '@shared/taskbar-attention'
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels]
 type Validator = (value: unknown) => boolean
@@ -73,6 +74,8 @@ function array(validate: Validator, max: number): Validator {
 }
 
 const positiveInteger: Validator = (value) => typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 100_000_000
+const attentionCount: Validator = (value) =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= ATTENTION_COUNT_LIMIT
 const distro: Validator = (value) => typeof value === 'string' && value.length <= 128 && !controls.test(value) &&
   /^[A-Za-z0-9][A-Za-z0-9._ -]{0,127}$/.test(value.trim())
 const kind = oneOf('native', 'wsl')
@@ -293,6 +296,11 @@ export const ipcPayloadValidators = {
   [IpcChannels.windowModeGet]: noPayload,
   [IpcChannels.windowModeSet]: object({ mode: oneOf('normal', 'mini') }),
   [IpcChannels.windowChromeSet]: object({ color: hexColor, symbolColor: hexColor }),
+  [IpcChannels.attentionUpdate]: object({
+    indicator: nullable(object({ tone: oneOf('done', 'input', 'failed'), count: attentionCount })),
+    flash: optional(oneOf('none', 'brief', 'continuous')),
+  }),
+  [IpcChannels.attentionBeep]: noPayload,
 } satisfies Record<IpcChannel, Validator>
 
 export function assertIpcPayload(channel: IpcChannel, payload: unknown): void {

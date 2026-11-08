@@ -1,4 +1,5 @@
 import type { InboxTerminalConfiguration, InboxTerminalSettings } from './inbox-terminal'
+import type { TaskbarAttentionRequest } from './taskbar-attention'
 import type {
   Distro,
   GitDiffResponse,
@@ -204,6 +205,8 @@ export const IpcChannels = {
   windowModeGet: 'window-mode:get',
   windowModeSet: 'window-mode:set',
   windowChromeSet: 'window-chrome:set',
+  attentionUpdate: 'attention:update',
+  attentionBeep: 'attention:beep',
 
   appInfo: 'app:info',
   platformInfo: 'platform:info'
@@ -614,5 +617,11 @@ export interface RendererApi {
   }
   windowChrome: {
     set(req: WindowChromeColors): Promise<void>
+  }
+  attention: {
+    /** Flashes, colours and badges the taskbar button; see `TaskbarAttentionRequest`. */
+    update(req: TaskbarAttentionRequest): Promise<void>
+    /** The system's own alert sound. */
+    beep(): Promise<void>
   }
 }

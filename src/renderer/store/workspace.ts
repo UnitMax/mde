@@ -35,6 +35,7 @@ export type { WorkspaceView } from '@/lib/workspace-navigation'
 export type SettingsSection =
   | 'appearance'
   | 'terminal'
+  | 'notifications'
   | 'shortcuts'
   | 'opencode'
   | 'about'

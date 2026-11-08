@@ -5,6 +5,8 @@ import { registerIpcHandlers } from './ipc'
 import { rendererEntryUrl } from './ipc-security'
 import { getMiniWindowAction, MiniWindowController } from './mini-window'
 import { TitleBarController } from './window-chrome'
+import { TaskbarAttention } from './taskbar-attention'
+import { BADGE_SIZE, badgeBitmap } from './taskbar-badge'
 import { PtyManager } from './pty/manager'
 import { TerminalDirectoryStore } from './pty/directories'
 import { initWorkspaceStore } from './store/workspace'
@@ -50,6 +52,16 @@ const titleBar = new TitleBarController({
   }
 })
 
+// Flashes, colours and badges the taskbar button when a thread needs the person; the renderer decides when.
+const taskbarAttention = new TaskbarAttention({
+  platform: process.platform,
+  getWindow: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
+  badge: (tone, count) =>
+    nativeImage.createFromBitmap(badgeBitmap(tone, count), { width: BADGE_SIZE, height: BADGE_SIZE }),
+  setInterval: (callback, ms) => setInterval(callback, ms),
+  clearInterval: (timer) => clearInterval(timer as ReturnType<typeof setInterval>)
+})
+
 const terminalDirectories = new TerminalDirectoryStore()
 const ptyManager = new PtyManager({
   onData: (chunk) => {
@@ -85,6 +97,8 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // Alert sounds play when a thread finishes, whether or not the person has clicked anything yet.
+      autoplayPolicy: 'no-user-gesture-required',
       // MDE does not provide spell checking, so do not initialize Chromium's
       // OS spelling services for ordinary text fields.
       spellcheck: false,
@@ -92,7 +106,9 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => mainWindow?.show())
+  mainWindow.on('focus', () => taskbarAttention.windowFocused())
   mainWindow.on('closed', () => {
+    taskbarAttention.dispose()
     miniWindow.reset()
     mainWindow = null
   })
@@ -213,7 +229,8 @@ if (!app.requestSingleInstanceLock()) {
       ptyManager,
       miniWindow,
       titleBar,
-      { recorder: inboxRecorder, chat: inboxChat, openCodeConfig }
+      { recorder: inboxRecorder, chat: inboxChat, openCodeConfig },
+      taskbarAttention
     )
     createWindow()
 
