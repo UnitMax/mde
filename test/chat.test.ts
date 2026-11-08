@@ -402,6 +402,11 @@ describe('turn stats', () => {
     const waiting = turnStats([user('u1', 1_000), step('a1', 1_010, 5_000)])
     expect(waiting.finished.get('a1')?.ms).toBe(4_000)
 
+    // ...unless the agent is still running: then the last turn is open, and "Worked for" must not flash between rounds.
+    const between = turnStats([user('u0', 100), step('a0', 110, 500), user('u1', 1_000), step('a1', 1_010, 5_000)], true)
+    expect(took(between)).toEqual([['a0', 400]])
+    expect(between.openSince).toBe(1_000)
+
     const justSent = turnStats([user('u1', 1_000), step('a1', 1_010, 5_000), user('u2', 9_000)])
     expect(took(justSent)).toEqual([['a1', 4_000]])
     expect(justSent.openSince).toBe(9_000)

@@ -314,8 +314,11 @@ export function tokensPerSecond(steps: readonly Extract<ChatMessage, { kind: 'as
  * The line for a turn belongs under its last step, ahead of any note about how the run ended. A turn
  * is left out when its start is not loaded, or when it has no finished step; one with a step still
  * running is the turn in progress.
+ *
+ * While the agent `running`, the last turn is in progress whatever its steps say: OpenCode writes a message per
+ * round of tool calls, and between two rounds every step so far is finished, which is not the end of the turn.
  */
-export function turnStats(messages: readonly ChatMessage[]): TurnStats {
+export function turnStats(messages: readonly ChatMessage[], running = false): TurnStats {
   const finished = new Map<string, TurnStat>()
   let startedAt: number | null = null
   let endedAt: number | null = null
@@ -345,6 +348,7 @@ export function turnStats(messages: readonly ChatMessage[]): TurnStats {
       else endedAt = Math.max(endedAt ?? 0, message.completedAt)
     }
   }
+  if (running) open = true
   close()
   return { finished, openSince: startedAt !== null && (open || endedAt === null) ? startedAt : null }
 }

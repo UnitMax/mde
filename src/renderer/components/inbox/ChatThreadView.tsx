@@ -303,7 +303,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const mcpNames = useInboxMcp((store) => store.entries[mcpKey(thread.target, thread.directory)]?.names) ?? NO_SERVERS
   // The time under each turn comes from the service's clock; the count for the turn in progress prefers
   // this computer's own, which the sidebar's pill also counts from, so a clock that is off cannot skew it.
-  const turns = useMemo(() => turnStats(messages), [messages])
+  const turns = useMemo(() => turnStats(messages, running), [messages, running])
   const busySince = thread.status === 'working' || thread.status === 'attention' ? thread.workingSince : undefined
 
   const previousMessage = useCallback(async (beforeId?: string): Promise<{ id: string; text: string } | null> => {
