@@ -593,6 +593,97 @@
   animation: mde-inbox-terminal-glow 1500ms ease-out both;
 }
 
+/*
+ * What names a thread's state (StatusMark): a glyph and a label with no box, so that a list of threads stays calm. It
+ * is made from the state's own color so that it fits every theme: the glyph in it, the label in it mixed toward the
+ * text color, which lifts it on a dark theme and deepens it on a light one (test/status-mark.test.ts holds every theme
+ * to a readable label). Where the person is wanted ("accent") it is heavier and its dot beats; a finished thread's
+ * ("ok") is the quietest, a green check and a muted label; "muted" is the neutral one for working and drafts.
+ */
+.status-mark {
+  --mark: var(--color-accent);
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.3125rem;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: 0.005em;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--mark) 64%, var(--color-fg));
+}
+
+.status-mark[data-tone='accent'] {
+  font-weight: 600;
+}
+
+.status-mark[data-tone='ok'] {
+  --mark: var(--color-ok);
+  font-weight: 400;
+  color: var(--color-fg-muted);
+}
+
+.status-mark[data-tone='danger'] {
+  --mark: var(--color-danger);
+}
+
+.status-mark[data-tone='muted'] {
+  --mark: var(--color-fg-muted);
+  font-weight: 400;
+  color: var(--color-fg-muted);
+}
+
+.status-mark-glyph {
+  width: 0.6875rem;
+  height: 0.6875rem;
+  flex-shrink: 0;
+  color: var(--mark);
+}
+
+/* The spinner of a working thread is the accent even beside a neutral label: it is the one thing moving. */
+.status-mark[data-tone='muted'] > .animate-spin {
+  color: var(--color-accent);
+}
+
+.status-pulse {
+  position: relative;
+  width: 0.375rem;
+  height: 0.375rem;
+  margin: 0 0.0625rem;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: var(--mark);
+}
+
+.status-pulse::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--mark);
+  animation: mde-status-ping 1.9s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes mde-status-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  70%,
+  100% {
+    transform: scale(2.8);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-pulse::after {
+    animation: none;
+    opacity: 0;
+  }
+}
+
 /* The cue for something new in the thread being read (InboxPanel): that thread counts as read, so
    instead of a dot the row glows for a moment and its status chip pops. */
 .inbox-cue {

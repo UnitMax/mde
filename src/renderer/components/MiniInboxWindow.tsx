@@ -1,10 +1,11 @@
 import { Circle, CircleAlert, CircleCheck, CircleX, GitBranch, Inbox, LoaderCircle, Maximize2, Pin } from 'lucide-react'
 import type { InboxFolder, InboxThread } from '@shared/types'
 import { ProjectIcon } from '@/components/inbox/ProjectIcon'
+import { StatusMark, statusGlyph } from '@/components/inbox/StatusMark'
 import { TitleBar, TitleBarButton } from '@/components/TitleBar'
 import { useInboxClock } from '@/components/InboxPanel'
 import { inboxStatusChip, isInboxThreadUnread, sessionAge, sessionDate, visibleInboxThreads } from '@/lib/inbox'
-import { miniInboxChips, miniInboxProject, summarizeThreads, type MiniInboxChipTone } from '@/lib/mini-inbox'
+import { miniInboxChips, miniInboxProject, summarizeThreads } from '@/lib/mini-inbox'
 import { cn } from '@/lib/utils'
 
 const ROW_TINT: Partial<Record<InboxThread['status'], string>> = {
@@ -19,12 +20,6 @@ const STATUS_ICON = {
   attention: CircleAlert,
   completed: CircleCheck,
   error: CircleX,
-}
-
-const CHIP_TONE: Record<MiniInboxChipTone, string> = {
-  accent: 'bg-accent/15 text-accent',
-  ok: 'bg-ok/15 text-ok',
-  danger: 'bg-danger/15 text-danger',
 }
 
 export function MiniInboxWindow({
@@ -64,15 +59,16 @@ export function MiniInboxWindow({
         </TitleBarButton>
       </TitleBar>
       {chips.length > 0 && (
-        <div className="flex shrink-0 flex-wrap gap-1 border-b border-line px-3 py-1.5" data-testid="mini-inbox-summary">
+        <div className="flex shrink-0 flex-wrap gap-x-3 gap-y-1 border-b border-line px-3 py-2" data-testid="mini-inbox-summary">
           {chips.map((chip) => (
-            <span
+            <StatusMark
               key={chip.key}
               data-testid={`mini-inbox-chip-${chip.key}`}
-              className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium leading-none', CHIP_TONE[chip.tone])}
+              tone={chip.tone}
+              glyph={statusGlyph(chip.key)}
             >
               {chip.label}
-            </span>
+            </StatusMark>
           ))}
         </div>
       )}
@@ -86,7 +82,8 @@ export function MiniInboxWindow({
         ) : (
           <ul data-testid="mini-inbox-list" aria-label="Inbox threads" className="space-y-0.5">
             {listed.map((thread) => {
-              const status = inboxStatusChip(thread)?.label ?? 'Idle'
+              const chip = inboxStatusChip(thread)
+              const status = chip?.label ?? 'Idle'
               const StatusIcon = STATUS_ICON[thread.status]
               const unread = isInboxThreadUnread(thread)
               const project = miniInboxProject(thread, folders)
@@ -133,7 +130,7 @@ export function MiniInboxWindow({
                       >
                         {sessionAge(thread.lastActivityAt, now)}
                       </time>
-                      <span>{status}</span>
+                      {chip ? <StatusMark tone={chip.tone} glyph={statusGlyph(thread.status)}>{chip.label}</StatusMark> : <span>{status}</span>}
                     </div>
                   </button>
                 </li>

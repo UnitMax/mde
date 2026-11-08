@@ -22,6 +22,7 @@ import { ElapsedTime } from '@/components/ElapsedTime'
 import { InboxChangesBadge } from '@/components/inbox/InboxChanges'
 import { InboxDraftsSection } from '@/components/inbox/InboxDrafts'
 import { InboxToolbar } from '@/components/inbox/InboxToolbar'
+import { StatusMark, statusGlyph } from '@/components/inbox/StatusMark'
 import { ProjectIcon } from '@/components/inbox/ProjectIcon'
 import { ThreadRenameDialog, useThreadRename } from '@/components/inbox/ThreadRename'
 import {
@@ -60,8 +61,7 @@ import {
   sessionDate,
   visibleInboxThreads,
   workingInboxThreads,
-  type InboxFilter,
-  type InboxStatusChip
+  type InboxFilter
 } from '@/lib/inbox'
 import { draftsInProject, visibleDrafts } from '@/lib/inbox-drafts'
 import { ipcErrorMessage } from '@/lib/ipc-error'
@@ -89,13 +89,6 @@ export function useInboxLock(): boolean {
   return inboxLocked(platform, wslAvailable)
 }
 
-const CHIP_TONES: Record<InboxStatusChip['tone'], string> = {
-  accent: 'bg-accent/15 text-accent',
-  ok: 'bg-ok/15 text-ok',
-  danger: 'bg-danger/15 text-danger',
-  muted: 'bg-elevated text-fg-muted'
-}
-
 /** `elapsed` adds how long a working thread has been going, counting up. */
 export function InboxStatusBadge({
   thread,
@@ -112,33 +105,25 @@ export function InboxStatusBadge({
   if (!chip || (hideDone && thread.status === 'completed')) return null
   const cued = inboxCueActive(cueAt)
   return (
-    <span
+    <StatusMark
       // A new key replays the pop each time something new happens in the thread being read.
       key={cued ? cueAt : 'still'}
+      tone={chip.tone}
+      glyph={statusGlyph(thread.status)}
       data-testid="inbox-status-chip"
       data-cue={cued || undefined}
-      className={cn(
-        'inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-px text-[10px] font-medium',
-        CHIP_TONES[chip.tone],
-        cued && 'inbox-cue-pop'
-      )}
+      className={cn(cued && 'inbox-cue-pop')}
     >
-      {thread.status === 'working' && (
-        <LoaderCircle
-          aria-hidden="true"
-          className="h-2.5 w-2.5 animate-spin text-accent motion-reduce:animate-none"
-        />
-      )}
       {chip.label}
       {elapsed && thread.status === 'working' && thread.workingSince !== undefined && (
         <>
           <span aria-hidden="true" className="opacity-50">
             ·
           </span>
-          <ElapsedTime since={thread.workingSince} className="font-normal text-fg-subtle" />
+          <ElapsedTime since={thread.workingSince} className="font-normal opacity-75" />
         </>
       )}
-    </span>
+    </StatusMark>
   )
 }
 
@@ -303,14 +288,14 @@ function InboxThreadRow({
                   {model}
                 </span>
                 {hasDraft && (
-                  <span
+                  <StatusMark
+                    tone="muted"
                     data-testid={`inbox-thread-draft-${thread.id}`}
                     title="There is an unsent message in this thread’s box"
-                    className="inline-flex shrink-0 items-center gap-1 rounded bg-elevated px-1.5 py-px text-[10px] font-medium text-fg-muted"
                   >
-                    <PenLine aria-hidden="true" className="h-2.5 w-2.5" />
+                    <PenLine aria-hidden="true" className="status-mark-glyph" />
                     Draft
-                  </span>
+                  </StatusMark>
                 )}
                 <InboxStatusBadge thread={thread} elapsed />
               </span>
