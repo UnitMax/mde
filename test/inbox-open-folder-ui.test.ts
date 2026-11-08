@@ -130,7 +130,8 @@ describe('Inbox Files sidebar', () => {
 
   it('puts the buttons in the footer beside Refresh, so the tab strip keeps the header', async () => {
     await sidebar(sessionFor('ses_one'), 'ses_one')
-    const header = container.querySelector('[role="tablist"]')!.parentElement!
+    // The tab list sits in its scrolling strip, which sits in the header.
+    const header = container.querySelector('[role="tablist"]')!.parentElement!.parentElement!
     const footer = button('Refresh files')!.parentElement!
 
     expect(footer.querySelector(`[aria-label="${VS_CODE}"]`)).not.toBeNull()

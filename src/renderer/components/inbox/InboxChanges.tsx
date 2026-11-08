@@ -5,6 +5,7 @@ import type { GitChangeStatus, InboxChangeDiff, InboxChangedFile, InboxChangesRe
 import { Button } from '@/components/ui/button'
 import { FileTreePanel } from '@/components/FileTreePanel'
 import { DiffBody } from './ChatFileChange'
+import { ScrollStrip } from '@/components/ui/scroll-strip'
 import { FloatingTerminalNotice, FloatTerminalButton } from './FloatingTerminal'
 import { focusInboxTerminalWhenShown, InboxTerminal } from './InboxTerminal'
 import { useInboxFloatingTerminal } from '@/store/inbox-floating-terminal'
@@ -475,11 +476,15 @@ function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
     refocusTab = null
   }, [])
   return (
-    <div
+    <ScrollStrip
       ref={strip}
       role="tablist"
       aria-label="Thread sidebar"
-      className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-3"
+      wrapperClassName="flex-1"
+      revealKey={tab}
+      // Room below the tabs for the shown tab's underline, which the scrolling list would clip, taken back
+      // from the layout so the header keeps its height.
+      className="-mb-1.5 gap-x-3 pb-1.5"
       onKeyDown={(event) => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
         event.preventDefault()
@@ -518,7 +523,7 @@ function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
           </button>
         )
       })}
-    </div>
+    </ScrollStrip>
   )
 }
 
