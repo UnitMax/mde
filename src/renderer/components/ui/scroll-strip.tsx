@@ -41,6 +41,8 @@ export const ScrollStrip = forwardRef<HTMLDivElement, ScrollStripProps>(function
   useImperativeHandle(ref, () => list.current!, [])
   const [overflow, setOverflow] = useState<Overflow>({ start: false, end: false })
   const [scrollable, setScrollable] = useState(false)
+  const shown = useRef<Overflow>({ start: false, end: false })
+  const shownScrollable = useRef(false)
 
   // Content can change without the strip changing size, so this is read after every render as well as on
   // scrolling and resizing.
@@ -50,9 +52,17 @@ export const ScrollStrip = forwardRef<HTMLDivElement, ScrollStripProps>(function
     const measure = (): void => {
       const start = element.scrollLeft > 1
       const end = element.scrollLeft + element.clientWidth < element.scrollWidth - 1
-      setOverflow((previous) => (previous.start === start && previous.end === end ? previous : { start, end }))
+      // Only a change is reported. This runs after every render, and asking React to update state that is
+      // already right keeps it rendering again for as long as the strip is being laid out.
+      if (shown.current.start !== start || shown.current.end !== end) {
+        shown.current = { start, end }
+        setOverflow({ start, end })
+      }
       // Once the arrows have appeared they stay while anything is scrolled away or still beyond the end.
-      setScrollable(start || end)
+      if (shownScrollable.current !== (start || end)) {
+        shownScrollable.current = start || end
+        setScrollable(start || end)
+      }
     }
     measure()
     element.addEventListener('scroll', measure, { passive: true })

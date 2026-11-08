@@ -53,6 +53,7 @@ export function SessionTabStrip({
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null)
   const [draftName, setDraftName] = useState('')
   const [overflow, setOverflow] = useState<Overflow>({ start: false, end: false })
+  const shown = useRef<Overflow>({ start: false, end: false })
   const listRef = useRef<HTMLDivElement>(null)
   const selectedRef = useRef<HTMLDivElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
@@ -74,7 +75,12 @@ export function SessionTabStrip({
     const measure = (): void => {
       const start = list.scrollLeft > 1
       const end = list.scrollLeft + list.clientWidth < list.scrollWidth - 1
-      setOverflow((previous) => (previous.start === start && previous.end === end ? previous : { start, end }))
+      // Only a change is reported: this runs after every render, and updating state that is already right
+      // keeps React rendering again for as long as the strip is being laid out.
+      if (shown.current.start !== start || shown.current.end !== end) {
+        shown.current = { start, end }
+        setOverflow({ start, end })
+      }
     }
     measure()
     list.addEventListener('scroll', measure, { passive: true })

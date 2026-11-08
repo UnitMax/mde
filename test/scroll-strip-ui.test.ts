@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement } from 'react'
+import { act, createElement, Profiler } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ScrollStrip } from '../src/renderer/components/ui/scroll-strip'
@@ -73,6 +73,31 @@ describe('ScrollStrip', () => {
     await scroll(200)
     expect(list().getAttribute('data-overflow')).toBe('start')
     expect(button('end')!.disabled).toBe(true)
+  })
+
+  it('settles when a neighbour takes room and the arrows appear, instead of updating without end', async () => {
+    // A browser reports an element to every new observer, once, whatever has changed; the strip makes a new
+    // one after every render. A button next to the strip takes room, and then its own arrows take more.
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(private callback: () => void) {}
+      observe(): void { setTimeout(() => this.callback(), 0) }
+      disconnect(): void {}
+      unobserve(): void {}
+    })
+    let commits = 0
+    const tree = (): ReturnType<typeof createElement> => createElement(Profiler, { id: 'strip', onRender: () => { commits += 1 } },
+      createElement(ScrollStrip, { role: 'tablist', 'aria-label': 'Tabs', revealKey: 'd' },
+        ...['a', 'b', 'c', 'd'].map((id) => createElement('button', { key: id, role: 'tab', 'aria-selected': id === 'd', 'data-id': id }, id))))
+    layout = { clientWidth: 207, scrollWidth: 205 }
+    await act(async () => root.render(tree()))
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get() {
+      return this.getAttribute('role') === 'tablist' ? (button('start') ? 135 : 179) : 0
+    } })
+    commits = 0
+    await act(async () => root.render(tree()))
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)) })
+    expect(button('start')).not.toBeNull()
+    expect(commits).toBeLessThan(8)
   })
 
   it('scrolls by most of its width with the arrows', async () => {
