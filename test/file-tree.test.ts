@@ -243,8 +243,8 @@ describe('renderer file tree rows', () => {
   })
 })
 
-// On Windows each read starts PowerShell, which takes seconds on a busy machine.
-describe('native file reads', { timeout: 30_000 }, () => {
+// On Windows each read starts PowerShell (stopped after 30 s), which takes seconds on a busy machine.
+describe('native file reads', { timeout: 120_000 }, () => {
   let root = ''
   let outside = ''
 

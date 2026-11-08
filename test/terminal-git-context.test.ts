@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -13,7 +13,8 @@ const hasGit = process.platform !== 'win32' && await run('git', ['--version']).t
 const gitTests = hasGit ? describe : describe.skip
 
 async function repository(): Promise<DirectoryContext> {
-  const root = await mkdtemp(join(tmpdir(), 'mde-terminal-git-'))
+  // Git reports the real path, and a macOS temporary directory (/var/folders) is a link to /private/var/folders.
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'mde-terminal-git-')))
   roots.push(root)
   await run('git', ['init', '--quiet', '--initial-branch=main', root])
   return { id: 'session', name: 'App', kind: 'native', path: root, createdAt: '2026-01-01' }
