@@ -1519,6 +1519,15 @@ workflow within MDE using an in-app transient selection; native Windows terminal
 
 ### Files and drag and drop
 
+Native Windows previews and copied attachments share the pinned-handle reader in
+`src/main/files/windows-read.ts`. A fixed no-profile PowerShell/.NET helper holds each ancestor
+without write/delete sharing, rejects unresolved reparse points and reads from the verified final handle.
+Paths are environment data, not script source. Calls use the worker process launcher, two process
+slots, a 15-second timeout and bounded output; unsafe/unavailable native verification fails closed.
+This avoids reopening Windows pathnames after containment validation. Linux uses descriptor-path
+verification; macOS pathname rechecks still require stronger containment.
+
+
 In Sessions mode, the Files tree follows the selected terminal’s current directory. Selecting another
 pane or changing directory resets the tree to that root. File previews belong to that terminal and
 directory, so the same relative filename in another root cannot reuse an earlier preview.

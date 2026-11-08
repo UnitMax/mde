@@ -1,5 +1,6 @@
 import { constants, promises as fs } from 'node:fs'
 import { join, sep } from 'node:path'
+import { readWindowsContainedFile } from './windows-read'
 
 function inside(root: string, path: string): boolean {
   return path.startsWith(root.endsWith(sep) ? root : root + sep)
@@ -14,8 +15,9 @@ export async function readContainedFile(rootPath: string, relative: string, limi
   const root = await fs.realpath(rootPath)
   const path = await fs.realpath(join(root, ...relative.split('/')))
   if (!inside(root, path)) throw new Error('File is outside the session folder.')
+  if (process.platform === 'win32') return readWindowsContainedFile(root, path, limit)
   if (!(await fs.lstat(path)).isFile()) throw new Error('Not a file.')
-  const flags = constants.O_RDONLY | constants.O_NONBLOCK | (process.platform === 'win32' ? 0 : constants.O_NOFOLLOW)
+  const flags = constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW
   const handle = await fs.open(path, flags)
   try {
     const stat = await handle.stat()

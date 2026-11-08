@@ -297,6 +297,14 @@ verified on each supported platform and network configuration.
 On Mac, agent commands and service discovery run through the user's login shell. Shell startup configuration
 can execute user-configured commands, as it does in normal terminal sessions.
 
+On Windows, native file previews and attachment copies use a fixed local PowerShell/.NET helper
+with profiles disabled. Main supplies the selected paths through child environment data; the helper
+holds native directory/file handles while reading and returns bounded bytes over standard output.
+It makes no HTTP requests and stores no copy of the file. PowerShell may create temporary compilation
+artifacts for MDE's fixed helper code; these contain no file contents or request-specific paths in the
+compiled source. The helper is limited to two concurrent reads and fails closed if local policy blocks
+native compilation. Network-backed paths still involve the operating system as described above.
+
 ## User-initiated external actions
 
 MDE may open a web link in the system browser when the user activates it in a terminal, Markdown

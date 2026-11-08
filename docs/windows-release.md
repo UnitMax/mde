@@ -143,6 +143,18 @@ user's OpenCode sessions or type commands into the user's existing terminals.
 Also start the extracted app from that fixture-style directory and verify
 default PowerShell, custom full-path shells and WSL terminals work there.
 
+Run the native containment regressions from the Windows build directory:
+
+```powershell
+npm test -- test/windows-contained-read.test.ts --maxWorkers=1
+```
+
+These use temporary directory junctions and need no administrator or symbolic-link privilege.
+They verify the repeated ancestor-replacement attack is refused, normal/empty/oversized reads,
+internal links and handle cleanup. Also open a native file preview and copy a file into an Inbox
+draft in the packaged app. Native Windows reads require system PowerShell's Add-Type capability;
+restricted language policies cause a safe read error, with no pathname fallback.
+
 Confirm the packaged binary was hardened, from the build directory:
 
 ```powershell

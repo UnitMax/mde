@@ -49,7 +49,7 @@ mounts and login-shell startup also need separate attribution.
 Permission hardening now blocks incomplete scopes in the UI and revalidates them in main before
 approval. Configuration preview redaction parses JSONC and hides whole secret values. Full UTF-8
 SSE event budgets and native nonblocking/no-follow file reads are implemented. Linux descriptor
-containment tests pass; atomic ancestor containment remains open on macOS/Windows. Aggregate
+containment tests pass; Windows now uses pinned native handles as described below. Atomic ancestor containment remains open on macOS. Aggregate
 resource budgets and other lower-priority findings remain open. The full dependency audit now
 passes with the restricted minimatch override described below.
 
@@ -588,3 +588,68 @@ Permission scope hardening: incomplete, malformed, overlong or visually ambiguou
 File and stream hardening: native previews and attachment copies share nonblocking regular-file opens, no-follow protection and handle identity revalidation. Linux checks the actual opened descriptor path under /proc; WSL reads use a validated descriptor rather than reopening the pathname. SSE limits count full multiline UTF-8 events and cancel oversized streams. Linux final-file/ancestor race and FIFO regressions pass. macOS/Windows pathname revalidation is defense in depth, not atomic ancestor containment; SEC-028 remains open there. WSL pre-open FIFO races remain bounded by the subprocess timeout.
 
 Configuration preview hardening: redaction walks parsed JSONC properties, decodes escaped keys and replaces whole secret values using source offsets. Comments outside redacted values and unrelated formatting remain intact. Invalid input fails closed. SEC-031 source fixtures pass.
+
+## Native Windows verification — 2026-11-08
+
+Current 0.1.14 source at 919cf14 was built from WSL using the native Windows
+build helper in a separate temporary staging directory. The normal development
+build and its user-data profile were not changed. Native Node was 24.19.0 on
+Windows build 26200.9711.
+
+- Native typecheck/compilation/notices and the unpacked Windows package build
+  passed; the package path audit passed across 79 packaged files. This was a
+  --dir build, not an extracted release ZIP verification.
+- The packaged executable started with fresh userData. Its app:// origin,
+  app-info IPC (0.1.14), absence of renderer Node globals, configured security
+  fuses and native ConPTY echo/output/disposal checks passed. Temporary loopback
+  debugging was enabled solely for this smoke test, then the app was closed.
+- The opt-in native Windows executable-lookup integration passed: harmless
+  cwd/PATH sentinels, real WSL queries and native/WSL ConPTY. This source harness
+  is distinct from the packaged native-terminal smoke above.
+- Full native Windows suite: 3,341 passed, 15 failed, 62 skipped (3,418 total).
+  Failures include insufficient permission for symlink fixtures, filenames
+  invalid on Windows, POSIX mode/path expectations, Windows bash invocation,
+  platform-specific mocks and a goal-state UI assertion. The Windows release
+  test gate is therefore not cleared; a successful build is not a passing suite.
+- Real native Windows file probes passed ordinary reads, static junction
+  containment, device/alternate-stream path rejection and one-time ancestor
+  replacement rejection. However, a controlled repeated junction replacement
+  between realpath and stat returned an outside fixture's bytes. Only disposable
+  dummy files were involved. This confirms SEC-028's remaining Windows race;
+  it is not a demonstration of reliable uncontrolled timing or exfiltration.
+
+macOS, extracted ZIP behavior, packaged WSL terminals, and packaged network
+capture remain separate acceptance work. Atomic Windows ancestor containment
+needs an implementation change; additional successful smoke tests cannot close it.
+
+Windows focused follow-up: all 31 goal UI tests passed when rerun in isolation, and the native Windows/WSL sentinel integration passed again (32 tests total). This does not clear the other full-suite failures.
+
+## Windows ancestor containment fix
+
+Native Windows previews and attachment copies now use the same fixed local helper. Main launches
+validated absolute system PowerShell with no profile, a fixed encoded command and paths carried
+only as JSON in the child environment. No user-controlled path is interpreted as script source.
+The helper compiles MDE's fixed C# implementation with Add-Type; it opens and holds each directory
+from the volume/share root without following reparse points and without FILE_SHARE_WRITE/FILE_SHARE_DELETE. A held
+ancestor therefore cannot be renamed/replaced before the file read ends. It rejects reparse-point
+handles, checks final root/file names from the handles and reads that verified file handle only.
+All handles are released on success or failure. Size caps, changed-size rejection, a 15-second
+process timeout, bounded output and at most two helpers at once limit the operation.
+
+Internal links resolved to ordinary in-root paths remain supported. Unresolved reparse providers,
+access/sharing failures or PowerShell policies that prohibit Add-Type cause a safe error; there is
+no fallback to the vulnerable pathname reader. No elevation, persistent helper executable, new
+package dependency or renderer capability is added. Helper startup adds latency to native Windows
+file reads; it runs outside Electron's UI thread.
+
+Directory opens request GENERIC_READ (including list access): attribute-only opens do not enforce
+these share restrictions. A native OS test verifies that both rename and write handles fail while
+a directory is pinned, then succeed after release.
+
+The native Windows regression suite uses junctions without administrator/symlink privileges.
+It covers ordinary/empty/oversized files, literal path characters, internal/external junctions,
+handle release and the exact repeated-junction realpath/stat attack previously reproduced.
+The rebuilt packaged application's actual files:read IPC also returned the expected fixture bytes.
+This closes the demonstrated Windows SEC-028 mechanism in source; macOS containment remains open.
+See [CreateFile sharing and reparse semantics](https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-createfilew)
+and [handle-derived names](https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-getfinalpathnamebyhandlew).
