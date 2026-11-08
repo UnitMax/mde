@@ -205,8 +205,9 @@ describe('Inbox Working section', () => {
 
   it('keeps working threads out of the Unread tab too', async () => {
     useWorkspace.setState({ inboxThreads: [
-      thread({ id: 'ses_run', status: 'working', readAt: 0, workingSince: Date.now() }),
-      thread({ id: 'ses_read_done', status: 'completed', readAt: 0 }),
+      // The more recent one first, whatever the clock says between the two lines.
+      thread({ id: 'ses_run', status: 'working', readAt: 0, workingSince: Date.now(), lastActivityAt: Date.now() }),
+      thread({ id: 'ses_read_done', status: 'completed', readAt: 0, lastActivityAt: Date.now() - 60_000 }),
     ] })
     await render()
     await showInboxThreads(container, 'Unread')

@@ -97,6 +97,9 @@ async function rightClick(element: Element): Promise<void> {
 
 /** Selects the text of an element, as dragging across it would, and lets the page see that it changed. */
 async function select(element: Element): Promise<void> {
+  // Pressing in the conversation takes the focus out of the message box, which would otherwise put its caret back
+  // as the selection (CodeMirror does that on its own schedule) and race with the one made here.
+  if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
   const range = document.createRange()
   range.selectNodeContents(element)
   const selection = window.getSelection()!

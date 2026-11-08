@@ -111,7 +111,8 @@ describe('the search over all threads', () => {
     await render()
     await type('needle')
     await vi.waitFor(() => expect(rows()).toHaveLength(3))
-    expect(search).toHaveBeenLastCalledWith({ query: 'needle' })
+    // The list may be drawn from an earlier answer for a moment before the one for the new text is asked for.
+    await vi.waitFor(() => expect(search).toHaveBeenLastCalledWith({ query: 'needle' }))
     const text = document.body.textContent ?? ''
     expect(text).toContain('Fix login')
     expect(text).toContain('Release plan')

@@ -39,8 +39,13 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   const latest = useRef(text)
   latest.current = text
 
+  // The editor starts with the text it is given, so only a change to it needs the editor to be filled again. Redrawing
+  // what is already drawn would replace its nodes under a selection or a search match for nothing.
+  const drawn = useRef(text)
   useEffect(() => {
+    if (drawn.current === text) return undefined
     const timer = window.setTimeout(() => {
+      drawn.current = latest.current
       editor.commands.setContent(latest.current, { contentType: 'markdown', emitUpdate: false })
     }, MARKDOWN_UPDATE_MS)
     return () => window.clearTimeout(timer)

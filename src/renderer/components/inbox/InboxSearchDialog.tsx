@@ -30,7 +30,8 @@ export function InboxSearchDialog({ open, onOpenChange }: { open: boolean; onOpe
   const [asked, setAsked] = useState('')
   const [answer, setAnswer] = useState<ChatSearchResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [activeIndex, setActiveIndex] = useState(0)
+  // The highlighted row belongs to the list it was chosen in: a different list starts at its first row, with no effect to reset it after the fact.
+  const [active, setActive] = useState({ list: '', index: 0 })
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
@@ -64,7 +65,12 @@ export function InboxSearchDialog({ open, onOpenChange }: { open: boolean; onOpe
 
   const rows = useMemo(() => (asked ? searchRows(answer, threads, folders) : []), [answer, asked, threads, folders])
   const rowKey = rows.map((row) => `${row.thread.id}:${row.hit.messageId}`).join('\0')
-  useEffect(() => setActiveIndex(0), [rowKey])
+  const activeIndex = active.list === rowKey ? active.index : 0
+  const setActiveIndex = (next: number | ((current: number) => number)): void =>
+    setActive((current) => {
+      const from = current.list === rowKey ? current.index : 0
+      return { list: rowKey, index: typeof next === 'function' ? next(from) : next }
+    })
   useEffect(() => {
     listRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
   }, [activeIndex, rowKey])
@@ -73,7 +79,7 @@ export function InboxSearchDialog({ open, onOpenChange }: { open: boolean; onOpe
     if (!next) {
       setQuery('')
       setAsked('')
-      setActiveIndex(0)
+      setActive({ list: '', index: 0 })
     }
     onOpenChange(next)
   }

@@ -315,6 +315,8 @@ describe('taking a held message back', () => {
   it('removes it at once and asks OpenCode to drop it', async () => {
     page = { ...page, pending: [held('msg_p1', 'Wrong thing'), held('msg_p2', 'Right thing')] }
     await render()
+    // OpenCode drops it, so the refetch that the removal schedules (150 ms later, however slow the machine) finds it gone.
+    page = { ...page, pending: [held('msg_p2', 'Right thing')] }
     await act(async () => byId('chat-pending-discard-msg_p1')!.click())
     expect(discardPending).toHaveBeenCalledExactlyOnceWith({ threadId: 'ses_one', messageId: 'msg_p1' })
     expect(shownPending()).toEqual(['msg_p2'])
@@ -327,12 +329,13 @@ describe('taking a held message back', () => {
     let answer!: (page: ChatMessagesPage) => void
     messages.mockImplementationOnce(() => new Promise<ChatMessagesPage>((resolve) => { answer = resolve }))
     const stale = store().refresh('ses_one')
+    // OpenCode drops it, so the refetch that the removal schedules (150 ms later, whenever the machine gets to it) finds it gone.
+    page = { ...page, pending: [] }
     await act(async () => byId('chat-pending-discard-msg_p1')!.click())
-    // The late answer still lists it.
+    // The late answer, read before that, still lists it.
     await act(async () => { answer(before); await stale })
     expect(shownPending()).toEqual([])
     // A refetch after the removal does not.
-    page = { ...page, pending: [] }
     await refetched()
     expect(shownPending()).toEqual([])
   })
