@@ -11,16 +11,23 @@ set -euo pipefail
 
 REMOTE_BUILD_SCRIPT='build:win'
 FORCE_DEPS=false
+OFFLINE=false
 for argument in "$@"; do
   case "$argument" in
     --dir) REMOTE_BUILD_SCRIPT='build:win:dir' ;;
     --force-deps) FORCE_DEPS=true ;;
+    --offline) OFFLINE=true ;;
     *)
-      echo "Usage: npm run build:win:remote -- [--dir] [--force-deps]" >&2
+      echo "Usage: npm run build:win:remote -- [--dir] [--force-deps | --offline]" >&2
       exit 2
       ;;
   esac
 done
+
+if "$OFFLINE" && { "$FORCE_DEPS" || [[ "$REMOTE_BUILD_SCRIPT" != 'build:win:dir' ]]; }; then
+  echo '--offline requires --dir and cannot be combined with --force-deps.' >&2
+  exit 2
+fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WINDOWS_TEMP_NATIVE="$(cd /mnt/c && cmd.exe /d /c 'echo %TEMP%' | tr -d '\r' | tail -n 1)"
@@ -29,6 +36,9 @@ WIN_DIR="$(wslpath -u "$WIN_DIR_NATIVE")"
 REMOTE_DEPS_COMMAND='node scripts/ensure-windows-dependencies.mjs'
 if "$FORCE_DEPS"; then
   REMOTE_DEPS_COMMAND+=' --force'
+fi
+if "$OFFLINE"; then
+  REMOTE_DEPS_COMMAND+=' --offline'
 fi
 
 # Both `rsync --delete` and the `rm -rf` below take this path as their target,
@@ -61,7 +71,11 @@ rm -rf "$WIN_DIR/dist"
 # cd into the Windows dir first so cmd.exe doesn't start from the \\wsl.localhost\...
 # UNC path (which it can't use as a cwd and warns about, harmlessly, before the
 # explicit `cd /d` below takes effect).
-(cd "$WIN_DIR" && cmd.exe /c "cd /d ${WIN_DIR_NATIVE} && ${REMOTE_DEPS_COMMAND} && npm run ${REMOTE_BUILD_SCRIPT}")
+if "$OFFLINE"; then
+  (cd "$WIN_DIR" && cmd.exe /c "cd /d ${WIN_DIR_NATIVE} && ${REMOTE_DEPS_COMMAND} && npm run licenses:check && npm run typecheck && npm run compile && node scripts/build-windows-offline.mjs && npm run audit:package")
+else
+  (cd "$WIN_DIR" && cmd.exe /c "cd /d ${WIN_DIR_NATIVE} && ${REMOTE_DEPS_COMMAND} && npm run ${REMOTE_BUILD_SCRIPT}")
+fi
 
 if [[ "$REMOTE_BUILD_SCRIPT" == 'build:win:dir' ]]; then
   echo "Unpacked app ready: ${WIN_DIR_NATIVE}\\dist\\win-unpacked\\mde.exe"

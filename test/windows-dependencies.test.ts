@@ -164,4 +164,20 @@ describe('Windows dependency fingerprinting', () => {
     })).toBe(false)
     expect(install).toHaveBeenCalledOnce()
   })
+
+  it('requires matching cached dependencies for an offline build', async () => {
+    const rootDirectory = await temporaryDirectory()
+    const metadata = { ...packageJson(), devDependencies: { electron: '43.4.0' } }
+    const lock = packageLock()
+    await writeFile(join(rootDirectory, 'package.json'), JSON.stringify(metadata))
+    await writeFile(join(rootDirectory, 'package-lock.json'), JSON.stringify(lock))
+    const install = vi.fn(() => 0)
+    const options = { rootDirectory, install, ...fingerprintOptions, npmVersionValue: fingerprintOptions.npmVersion, offline: true }
+    expect(() => ensureWindowsDependencies(options)).toThrow('Offline build requires matching, complete Windows dependencies')
+    expect(install).not.toHaveBeenCalled()
+    await writeInstalledPackages(rootDirectory)
+    await writeFile(join(rootDirectory, dependencyFingerprintFile), createDependencyFingerprint({ packageJson: metadata, packageLock: lock, ...fingerprintOptions }))
+    expect(ensureWindowsDependencies(options)).toBe(false)
+    expect(install).not.toHaveBeenCalled()
+  })
 })

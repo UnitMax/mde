@@ -126,6 +126,7 @@ function installDependencies(rootDirectory) {
 export function ensureWindowsDependencies({
   rootDirectory = process.cwd(),
   force = false,
+  offline = false,
   install = installDependencies,
   platform = process.platform,
   arch = process.arch,
@@ -151,6 +152,8 @@ export function ensureWindowsDependencies({
     return false
   }
 
+  if (offline) throw new Error('Offline build requires matching, complete Windows dependencies. Run a normal remote build when online.')
+
   console.log('Installing Windows dependencies with npm ci...')
   const status = install(rootDirectory)
   if (status !== 0) {
@@ -170,5 +173,5 @@ if (invokedPath === modulePath) {
     throw new Error('Windows dependencies must be installed with native Windows Node.js.')
   }
 
-  ensureWindowsDependencies({ force: process.argv.includes('--force') })
+  ensureWindowsDependencies({ force: process.argv.includes('--force'), offline: process.argv.includes('--offline') })
 }

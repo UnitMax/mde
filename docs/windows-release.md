@@ -103,6 +103,12 @@ To also reinstall the cached Windows dependencies, add `--force-deps`; the flags
 can appear in either order. On native Windows, use `npm run build:win:dir`.
 For a release, use the default ZIP build and verify the extracted archive below.
 
+If the matching Windows dependencies are already installed, `npm run
+build:win:remote -- --dir --offline` stages the current source and packages the
+checksum-verified Electron ZIP from the Windows download cache. It fails if the cached
+dependencies or Electron runtime are missing or out of date; `--force-deps` is
+not available in this mode. Other packaging tools may still need their own caches.
+
 ## Verify Windows behavior
 
 Extract `dist\mde-<version>-win.zip` into an empty folder and run `mde.exe` from
