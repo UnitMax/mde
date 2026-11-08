@@ -86,8 +86,10 @@ export function createAlerts(dependencies: AlertDependencies): Alerts {
     dependencies.send({ indicator: request.indicator, ...(starting || stopping ? { flash: request.flash } : {}) })
   }
 
+  // Always shown while there is something to show, focused or not: a badge that vanishes when the window is
+  // opened, or when another screen's window is clicked, is confusing. It goes when the threads have been read.
   const indicator = (settings: AlertSettings): TaskbarIndicator | null =>
-    settings.badge && !dependencies.focused() ? taskbarIndicator(dependencies.threads()) : null
+    settings.badge ? taskbarIndicator(dependencies.threads()) : null
 
   return {
     threadChanged(previous, next) {

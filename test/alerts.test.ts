@@ -191,19 +191,19 @@ describe('createAlerts taskbar', () => {
     expect(send).toHaveBeenCalledExactlyOnceWith({ indicator: { tone: 'done', count: 1 } })
   })
 
-  it('shows no indicator when the badge is off, or while MDE is in use', () => {
+  it('shows no indicator when the badge is off', () => {
     const noBadge = setup({ badge: false }, { threads: [finished] })
     noBadge.alerts.threadChanged(thread(), finished)
     expect(noBadge.send).toHaveBeenCalledExactlyOnceWith({ indicator: null, flash: 'brief' })
-    const focused = setup({}, { focused: true, threads: [finished] })
-    focused.alerts.refresh()
-    expect(focused.send).not.toHaveBeenCalled()
   })
 
-  it('does not flash while MDE is in use, even for a thread that is not open', () => {
+  it('shows the indicator while MDE is in use too, but does not flash for a thread that is not open', () => {
     const { alerts, send } = setup({}, { focused: true, viewing: 'other', threads: [finished] })
     alerts.threadChanged(thread(), finished)
-    expect(send).not.toHaveBeenCalled()
+    expect(send).toHaveBeenCalledExactlyOnceWith({ indicator: { tone: 'done', count: 1 } })
+    const shown = setup({}, { focused: true, threads: [finished] })
+    shown.alerts.refresh()
+    expect(shown.send).toHaveBeenCalledExactlyOnceWith({ indicator: { tone: 'done', count: 1 } })
   })
 
   it('sends a flash every time but an unchanged indicator only once', () => {
@@ -218,25 +218,36 @@ describe('createAlerts taskbar', () => {
     expect(send).not.toHaveBeenCalled()
   })
 
-  it('clears the indicator and stops the flash when the window is used', () => {
+  it('stops the flash but keeps the indicator when the window is used', () => {
     const { alerts, send, context } = setup({ flash: 'until-focus' })
     context.threads = [finished]
     alerts.threadChanged(thread(), finished)
     send.mockClear()
     context.focused = true
     alerts.refresh()
-    expect(send).toHaveBeenCalledExactlyOnceWith({ indicator: null, flash: 'none' })
+    expect(send).toHaveBeenCalledExactlyOnceWith({ indicator: { tone: 'done', count: 1 }, flash: 'none' })
     alerts.refresh()
     expect(send).toHaveBeenCalledTimes(1)
   })
 
-  it('brings the indicator back when the window is left with threads that need the person', () => {
+  it('keeps the indicator when the window is left and when it is come back to', () => {
     const { alerts, send, context } = setup({}, { focused: true, threads: [thread({ status: 'attention' })] })
     alerts.refresh()
-    expect(send).not.toHaveBeenCalled()
+    send.mockClear()
     context.focused = false
     alerts.refresh()
-    expect(send).toHaveBeenCalledExactlyOnceWith({ indicator: { tone: 'input', count: 1 } })
+    context.focused = true
+    alerts.refresh()
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ indicator: null }))
+  })
+
+  it('clears the indicator once the threads have been read or answered', () => {
+    const { alerts, send, context } = setup({}, { focused: true, threads: [finished] })
+    alerts.refresh()
+    send.mockClear()
+    context.threads = [{ ...finished, readAt: finished.lastActivityAt + 1 }]
+    alerts.refresh()
+    expect(send).toHaveBeenCalledExactlyOnceWith({ indicator: null })
   })
 
   it('stops a flash that was turned off in the settings', () => {

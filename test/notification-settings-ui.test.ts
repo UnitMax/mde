@@ -155,16 +155,16 @@ describe('startAlerts', () => {
     expect(played).not.toHaveBeenCalled()
   })
 
-  it('clears the taskbar when the window gets focus and sets it again when it is left', () => {
+  it('stops the flash but keeps the taskbar badge when the window gets focus', () => {
     useWorkspace.setState({ inboxThreads: [thread({ status: 'attention', lastActivityAt: 200 })] })
     update().mockClear()
     focused = true
     window.dispatchEvent(new Event('focus'))
-    expect(update()).toHaveBeenCalledExactlyOnceWith({ indicator: null, flash: 'none' })
+    expect(update()).toHaveBeenCalledExactlyOnceWith({ indicator: { tone: 'input', count: 1 }, flash: 'none' })
     update().mockClear()
     focused = false
     window.dispatchEvent(new Event('blur'))
-    expect(update()).toHaveBeenCalledExactlyOnceWith({ indicator: { tone: 'input', count: 1 } })
+    expect(update()).not.toHaveBeenCalled()
   })
 
   it('stops listening when stopped', () => {

@@ -6,7 +6,7 @@ import { playAlertChoice } from './alert-sound'
 
 /**
  * Starts telling the person about the threads: a sound and a flash when one finishes, fails or needs them, and the
- * colour and badge on the taskbar button while they are away. Returns what stops it.
+ * colour and badge on the taskbar button for as long as there is something unread or waiting. Returns what stops it.
  */
 export function startAlerts(): () => void {
   const alerts = createAlerts({

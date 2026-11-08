@@ -1403,7 +1403,7 @@ When an Inbox thread becomes Done, needs input (a question or a permission) or F
 sound, flash its taskbar button and colour it, so that a long run does not have to be watched. Settings →
 Notifications has a switch and volume for the sounds, a sound for each of the three states (with a play
 button), a switch to stay quiet while MDE is the window in use, how the taskbar flashes, and, on Windows, a
-switch for the colour and badge. All of it is on by default except that last quiet switch.
+switch for the colour and badge, which stay on for as long as threads are unread or waiting. All of it is on by default except that last quiet switch.
 
 The renderer decides, because it has the threads, the open thread and the window's focus
 (`lib/alerts.ts`, started by `lib/alert-controller.ts` from `App`). It watches `inboxThreads` and compares each
@@ -1422,7 +1422,9 @@ System beep, asks the main process for `shell.beep()`.
 The taskbar is the main process's (`src/main/taskbar-attention.ts`), reached through `attention:update`. A
 request holds an optional flash (`brief` or `continuous`) and an indicator: the most urgent state among the
 unparked threads (Failed and Done while unread, Needs input until answered) and how many threads are in it.
-It is shown only while MDE is not the focused window, and is cleared when it is.
+It is always shown while there is something to show, whether or not MDE is the focused window (a badge that
+vanished on focus would be confusing, for example with the window on a second screen); it goes as the threads
+are read or answered. Only the flash is for when MDE is not in use, and the focus ends it.
 
 - **Flash:** `BrowserWindow.flashFrame(true)`, which makes Windows flash the button a few times (Chromium asks
   `FlashWindowEx` for four; Windows is expected to leave the button highlighted afterwards, which has not been
