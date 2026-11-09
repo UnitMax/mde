@@ -24,6 +24,11 @@ backed-up locations can place copies elsewhere. These stores are not encrypted b
   distro name). These plain-text records reopen fresh shells in the same folders after restarting
   MDE. Removed panes are forgotten. Commands, terminal output and conversation content are not saved
   in these records.
+- `inbox-asides.json` under Electron's user-data directory: the answered `/btw` side questions of each
+  Inbox thread (the question, the answer and when it arrived, the newest 20 per thread), so they can
+  be read again after their card is closed and after a restart. Written when a side question is
+  answered or a thread is removed. Removing a thread removes its side questions; they do not expire
+  otherwise.
 - The renderer's local storage (`mde.terminal-settings`): appearance and terminal preferences,
   including the command that starts OpenCode for the Inbox (Settings, OpenCode, Executable: a program
   name or path, without arguments). An older `agents` entry from a removed launcher is ignored.
@@ -125,9 +130,9 @@ any attachment, and returns it with the conversation. The draft keeps only the t
 
 The message box's `/btw` side question sends the question to the same local service, which answers it
 from the conversation as it stands and may send that conversation and the question to the model provider
-you chose, as it does for any message. It does not add either to the conversation. MDE keeps the question
-and the answer in memory only, for each thread until you dismiss them or the app closes, and never
-writes them to disk.
+you chose, as it does for any message. It does not add either to the conversation. MDE keeps each
+answered question and its answer for the thread in `inbox-asides.json` (see above), unencrypted, so they
+can be read again; a question that failed is not kept.
 
 Compacting a conversation (the `/compact` command or the context pill's Compact conversation button) asks
 the same local service to summarize the conversation, which sends the conversation to the model provider
@@ -334,7 +339,7 @@ Conversation caches and terminal scrollback are not intentionally persisted, but
 swap, diagnostics and crash dumps can contain process memory. Some console errors include paths or
 command diagnostics; no remote MDE log uploader is configured.
 
-Parking a thread does not delete it. Removing a thread removes MDE's record and its draft, not
+Parking a thread does not delete it. Removing a thread removes MDE's record, its draft and its side questions, not
 OpenCode's conversation history, provider data, shell history or backups. Removing a project leaves
 its drafts. Worktrees and their branches have the separate lifecycle described above.
 

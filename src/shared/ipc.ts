@@ -69,6 +69,8 @@ import type {
   ChatSetDeliveryRequest,
   ChatAsideRequest,
   ChatAsideAnswer,
+  ChatAsideEntry,
+  ChatAsideHistoryRequest,
   ChatGoal,
   ChatGoalRequest,
   ChatThreadRequest,
@@ -175,6 +177,7 @@ export const IpcChannels = {
   chatDiscardPending: 'chat:discard-pending',
   chatSetDelivery: 'chat:set-delivery',
   chatAside: 'chat:aside',
+  chatAsideHistory: 'chat:aside-history',
   chatMcp: 'chat:mcp',
   chatMcpSet: 'chat:mcp-set',
   chatDraft: 'chat:draft',
@@ -559,6 +562,8 @@ export interface RendererApi {
      * stands and is not added to it; the agent is neither interrupted nor told.
      */
     aside(req: ChatAsideRequest): Promise<ChatAsideAnswer>
+    /** A thread's answered side questions, oldest first. */
+    asideHistory(req: ChatAsideHistoryRequest): Promise<ChatAsideEntry[]>
     /** The MCP servers OpenCode has for a folder or thread, with how each stands. Never cached. */
     mcp(req: ChatMcpRequest): Promise<ChatMcpState>
     /** Connects or disconnects one MCP server for the running OpenCode; its configuration is not changed. */

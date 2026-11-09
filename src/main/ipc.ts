@@ -110,6 +110,8 @@ import type {
   ChatSetDeliveryRequest,
   ChatAsideRequest,
   ChatAsideAnswer,
+  ChatAsideEntry,
+  ChatAsideHistoryRequest,
   ChatGoal,
   ChatGoalRequest,
   ChatThreadRequest,
@@ -500,6 +502,7 @@ export function registerIpcHandlers(
     // First, so that Git refusing (uncommitted changes) leaves the thread in place to try again.
     if (req.removeWorktree) await chat.removeThreadWorktree(req.id)
     await chat.removeDraft(`thread:${req.id}`)
+    await chat.removeAsides(req.id)
     inboxRecorder.remove(req.id)
     const terminalId = inboxThreadTerminalId(req.id)
     pendingEnsures.delete(terminalId)
@@ -565,6 +568,7 @@ export function registerIpcHandlers(
   handle<ChatDiscardPendingRequest, void>(IpcChannels.chatDiscardPending, (req) => chat.discardPending(req))
   handle<ChatSetDeliveryRequest, void>(IpcChannels.chatSetDelivery, (req) => chat.setDelivery(req))
   handle<ChatAsideRequest, ChatAsideAnswer>(IpcChannels.chatAside, (req) => chat.aside(req))
+  handle<ChatAsideHistoryRequest, ChatAsideEntry[]>(IpcChannels.chatAsideHistory, (req) => chat.asideHistory(req))
   handle<ChatMcpRequest, ChatMcpState>(IpcChannels.chatMcp, (req) => chat.mcpList(req))
   handle<ChatMcpSetRequest, void>(IpcChannels.chatMcpSet, (req) => chat.mcpSetEnabled(req))
   handle<ChatThreadRequest, void>(IpcChannels.chatInterrupt, (req) => chat.interrupt(req.threadId))

@@ -1065,7 +1065,10 @@ describe('Inbox chat service', () => {
         })
         await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
         calls.length = 0
-        await expect(service.aside({ threadId: 'ses_new', question: '  Why SQLite?\nAnd the index?  ' })).resolves.toEqual({ text: '**SQLite**, because it needs no server.' })
+        await expect(service.aside({ threadId: 'ses_new', question: '  Why SQLite?\nAnd the index?  ' })).resolves.toMatchObject({
+          text: '**SQLite**, because it needs no server.',
+          entry: { question: 'Why SQLite?\nAnd the index?', answer: '**SQLite**, because it needs no server.' },
+        })
         expect(calls).toEqual([{
           operation: 'session.generate',
           request: {

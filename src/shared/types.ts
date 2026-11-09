@@ -791,6 +791,22 @@ export interface ChatAsideRequest {
 export interface ChatAsideAnswer {
   /** The answer, in Markdown. */
   text: string
+  /** The question and answer as kept in the thread's history. */
+  entry: ChatAsideEntry
+}
+
+/** An answered side question, kept so it can be looked at again. */
+export interface ChatAsideEntry {
+  id: string
+  question: string
+  /** The answer, in Markdown. */
+  answer: string
+  /** When the answer arrived, in milliseconds since the epoch. */
+  askedAt: number
+}
+
+export interface ChatAsideHistoryRequest {
+  threadId: string
 }
 
 export interface ChatPermissionReplyRequest {

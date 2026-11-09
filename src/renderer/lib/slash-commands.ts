@@ -87,6 +87,8 @@ export function parseInvocation(commands: readonly SlashCommand[], text: string)
 export interface SlashActions {
   /** Asks a side question about the conversation; the answer is shown apart from it. */
   ask: (question: string) => void | Promise<void>
+  /** Opens the thread's earlier side questions; left out while it has none. */
+  asked?: () => void
   /** Forks the whole conversation into a new thread, which is opened. */
   fork: () => void | Promise<void>
   /** Compacts the conversation: it is summarized to free up context. */
@@ -101,8 +103,9 @@ export function slashCommands(actions: SlashActions): SlashCommand[] {
     {
       name: 'btw',
       description: 'Ask a side question. It is answered from this conversation and not added to it.',
-      argument: { hint: 'your question', required: true },
-      run: (question) => actions.ask(question),
+      // On its own it opens the earlier side questions, once there are any.
+      argument: { hint: 'your question', required: !actions.asked },
+      run: (question) => question ? actions.ask(question) : actions.asked?.(),
     },
     {
       name: 'fork',

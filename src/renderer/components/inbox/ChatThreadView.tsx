@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { AlertTriangle, FoldVertical, LoaderCircle, RefreshCw } from 'lucide-react'
 import type { ChatMessage, InboxThread, OpenCodeModelRef } from '@shared/types'
 import { ChatAside } from '@/components/inbox/ChatAside'
+import { AsideHistoryChip } from '@/components/inbox/AsideHistoryChip'
 import { ChatFindBar } from '@/components/inbox/ChatFindBar'
 import { ChatBackgroundTasks } from '@/components/inbox/ChatBackgroundTasks'
 import { ComposerDock } from '@/components/inbox/ComposerDock'
@@ -29,7 +30,7 @@ import { compactionState, contextUsage, drawnStart, findModel, goalPhase, hideRe
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { mcpKey } from '@/lib/mcp'
 import { slashCommands } from '@/lib/slash-commands'
-import { useInboxAside } from '@/store/inbox-aside'
+import { asideCount, shownAside, useInboxAside } from '@/store/inbox-aside'
 import { optionsKey, useInboxChat, type ChatThreadState } from '@/store/inbox-chat'
 import { useInboxFind } from '@/store/inbox-find'
 import { useInboxMcp, type McpPlace } from '@/store/inbox-mcp'
@@ -83,7 +84,13 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const clearDraftReload = useInboxChat((store) => store.clearDraftReload)
   const replyPermission = useInboxChat((store) => store.replyPermission)
   const replyForm = useInboxChat((store) => store.replyForm)
-  const aside = useInboxAside((store) => store.asides[thread.id])
+  const asides = useInboxAside((store) => store.threads[thread.id])
+  const aside = useMemo(() => shownAside(asides), [asides])
+  const asidesKept = asideCount(asides)
+  const loadAsides = useInboxAside((store) => store.load)
+  const openAsides = useInboxAside((store) => store.open)
+  const stepAside = useInboxAside((store) => store.step)
+  useEffect(() => { void loadAsides(thread.id) }, [loadAsides, thread.id])
   const askAside = useInboxAside((store) => store.ask)
   const dismissAside = useInboxAside((store) => store.dismiss)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -416,8 +423,14 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
     })
   }, [agent, latest?.agent, latest?.model, model, setGoal, thread.id])
   const commands = useMemo(
-    () => slashCommands({ ask: (question) => askAside(thread.id, question), fork: forkAll, compact: compactAll, goal: changeGoal }),
-    [askAside, forkAll, compactAll, changeGoal, thread.id],
+    () => slashCommands({
+      ask: (question) => askAside(thread.id, question),
+      asked: asidesKept > 0 ? () => openAsides(thread.id) : undefined,
+      fork: forkAll,
+      compact: compactAll,
+      goal: changeGoal,
+    }),
+    [askAside, openAsides, asidesKept > 0, forkAll, compactAll, changeGoal, thread.id],
   )
   // The MCP servers of the folder the thread runs in; the chip in the composer keeps this list current.
   const mcpPlace = useMemo<McpPlace>(
@@ -569,7 +582,15 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
       </div>
       <div ref={composerSlot} className={cn('mx-auto w-full max-w-3xl shrink-0 px-6 pb-5 pt-2', railGutter)}>
         {goal && <ChatGoalCard key={goal.id} goal={goal} phase={phase} running={running} onAction={(action) => setGoal(thread.id, { action })} />}
-        {aside && <ChatAside aside={aside} onDismiss={closeAside} onRetry={() => void askAside(thread.id, aside.question)} />}
+        {aside && (
+          <ChatAside
+            aside={aside}
+            position={{ index: asides?.at ?? 0, count: asidesKept }}
+            onStep={(by) => stepAside(thread.id, by)}
+            onDismiss={closeAside}
+            onRetry={() => void askAside(thread.id, aside.question)}
+          />
+        )}
         <ComposerDock>
           <ChatBackgroundTasks key={`background:${thread.id}`} threadId={thread.id} />
           {ready && <ModelQuickSwitch models={ready.models} value={model} onChange={setModel} />}
@@ -597,7 +618,10 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
             closeAside()
             return true
           }}
-          extraPickers={<McpChip place={mcpPlace} running={running} messages={shown} complete={!state?.older} />}
+          extraPickers={<>
+            <McpChip place={mcpPlace} running={running} messages={shown} complete={!state?.older} />
+            <AsideHistoryChip count={asidesKept} open={aside !== null} onToggle={() => aside ? closeAside() : openAsides(thread.id)} />
+          </>}
           onStop={() => void interrupt(thread.id)}
           onSend={async (text, attachments) => {
             stickRef.current = true

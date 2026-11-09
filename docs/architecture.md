@@ -964,18 +964,32 @@ old count would be wrong, so `contextUsage` marks it `compacted`: the pill reads
 dark and calm, and the breakdown shows the size before and the summary's size instead of the old
 composition. The first finished reply after the compaction measures it again.
 
-The question and its answer are held per thread in `store/inbox-aside.ts` (memory only: nothing is
-stored, and they are gone when the app is closed). A thread shows one side question; asking another
-replaces it, and an answer that arrives for a question that has since been replaced or dismissed is
-dropped. It is shown as a card of its own above the message box (`ChatAside`), not in the conversation:
+A side question is shown as a card of its own above the message box (`ChatAside`), not in the conversation:
 a `btw` mark and the question (two lines, the rest in the tooltip), a thinking state while the answer is on
 its way, then the answer as Markdown with the same renderer as the agent's messages (it scrolls when it is
-long), a Copy button and a dismiss button, and a line saying that it is not added to the conversation. A
-failure shows the reason and a Retry that asks the same question again. The card stays until it is
-dismissed or replaced, and an answer that arrives while another thread is open is there when the thread is.
-Escape dismisses it (the first Escape only closes an open command list; from inside the card, the caret
-goes back to the box), and a conversation that is following its end stays at its end when the card
-appears.
+long), a Copy button and a dismiss button, and a line saying that it is not added to the conversation, with
+the time the answer arrived (and the day, when that was not today). A failure shows the reason and a Retry
+that asks the same question again. An answer that arrives while another thread is open is there when the
+thread is. Escape dismisses the card (the first Escape only closes an open command list; from inside the
+card, the caret goes back to the box), and a conversation that is following its end stays at its end when
+the card appears.
+
+**Side question history.** Dismissing the card only closes it: every answered side question is kept per
+thread, so it can be looked at again. The main process keeps them (`InboxAsideHistory`,
+`src/main/inbox/asides.ts`) in one file, `inbox-asides.json` in the user data folder: the question, the
+answer and when it arrived, the newest 20 per thread (an answer is cut at 100,000 characters). It records
+an answer as part of `chat:aside` and returns the kept entry; `chat:aside-history` reads a thread's list.
+The file is written only when a question is answered or a thread is removed, never while typing; a write
+that fails does not fail the question (one warning without the path, and the next change writes again).
+Removing a thread removes its side questions, and entries of threads that no longer exist are dropped when
+the file is first read. Failed questions are not kept. The renderer (`store/inbox-aside.ts`) holds, per
+thread, the history (read once when the thread is first opened), the question being asked, and which one
+the card shows. With more than one, the card's header has a pager (earlier / later, "2 / 5"); asking a new
+question shows it in the same card, and an answer that arrives while the card is closed or on an earlier
+question joins the history without moving the card. The way back to a closed card is a chip in the message
+box's toolbar (`AsideHistoryChip`, the `btw` mark and the count, shown once the thread has a side
+question), which opens the card on the newest one and closes it again; `/btw` with no question does the
+same once there is a history (without one it still asks for a question).
 
 **Goals (`/goal`).** A goal keeps the agent working on an objective until a reviewer decides it is met.
 It is OpenCode's own `opencode.goal` plugin; MDE only starts, controls and shows it, and keeps no goal

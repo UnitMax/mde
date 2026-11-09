@@ -13,6 +13,7 @@ import { TerminalDirectoryStore } from './pty/directories'
 import { initWorkspaceStore } from './store/workspace'
 import { InboxStore, INBOX_FILE } from './inbox/store'
 import { InboxRecorder } from './inbox/recorder'
+import { InboxAsideHistory } from './inbox/asides'
 import { InboxDraftStore } from './inbox/drafts'
 import { InboxChatService } from './inbox/chat'
 import { InboxWorktrees } from './inbox/worktree'
@@ -29,6 +30,7 @@ let mainWindow: BrowserWindow | null = null
 let inboxStore: InboxStore | null = null
 let inboxRecorder: InboxRecorder | null = null
 let inboxDrafts: InboxDraftStore | null = null
+let inboxAsides: InboxAsideHistory | null = null
 let inboxChat: InboxChatService | null = null
 let quitPrepared = false
 const rendererUrl = rendererEntryUrl(app.isPackaged, process.env.ELECTRON_RENDERER_URL)
@@ -221,8 +223,10 @@ if (!app.requestSingleInstanceLock()) {
       client: serviceClient,
       onSaved: () => inboxChat?.invalidateOptions()
     })
+    inboxAsides = new InboxAsideHistory(join(app.getPath('userData'), 'inbox-asides.json'), (threadId) => Boolean(inboxStore?.get(threadId)))
     inboxChat = new InboxChatService({
       drafts: inboxDrafts,
+      asides: inboxAsides,
       worktrees: new InboxWorktrees(),
       thumbnail: previewAttachment,
       client: serviceClient,
@@ -265,7 +269,7 @@ if (!app.requestSingleInstanceLock()) {
     inboxChat?.stop()
     // Save the last pane directories and Inbox state before exiting.
     event.preventDefault()
-    void Promise.all([terminalDirectories.flush(), inboxStore?.flush(), inboxDrafts?.flush()])
+    void Promise.all([terminalDirectories.flush(), inboxStore?.flush(), inboxDrafts?.flush(), inboxAsides?.flush()])
       .catch(() => console.warn('[app] Could not finish saving local state.'))
       .finally(() => app.quit())
   })

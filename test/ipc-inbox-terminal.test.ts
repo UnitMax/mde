@@ -167,7 +167,7 @@ describe('Inbox terminal chat launches over IPC', () => {
   let directory: string
   const pty = { savedDirectory: vi.fn(), ensure: vi.fn(() => 'running'), restart: vi.fn(() => 'running'), terminalInfo: vi.fn(), dispose: vi.fn() }
   const launch = { agent: { executable: 'custom-opencode', args: ['--server', 'http://127.0.0.1:49374', '--session', 'ses_chat'] }, environment: { OPENCODE_PASSWORD: 'test-password' } }
-  const chat = { fileRoot: vi.fn(), terminalSession: vi.fn(), terminalLaunch: vi.fn(async () => launch), removeDraft: vi.fn(), removeThreadWorktree: vi.fn() }
+  const chat = { fileRoot: vi.fn(), terminalSession: vi.fn(), terminalLaunch: vi.fn(async () => launch), removeDraft: vi.fn(), removeAsides: vi.fn(), removeThreadWorktree: vi.fn() }
   const recorder = { remove: vi.fn() }
   const request = () => ({ terminalId, sessionId: terminalId, size, palette })
 
