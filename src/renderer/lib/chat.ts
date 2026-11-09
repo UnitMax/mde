@@ -407,6 +407,18 @@ export function mergeLive(messages: readonly ChatMessage[], live: readonly LiveP
   return result
 }
 
+/**
+ * Where the drawn part of a conversation begins: at the message `from` names, or at the one after it
+ * when that one is gone. It is never fewer than the newest `count` messages, which is also what is
+ * drawn while nothing is named. IDs sort in the order of the conversation.
+ */
+export function drawnStart(messages: readonly { id: string }[], from: string | null, count: number): number {
+  const newest = Math.max(0, messages.length - count)
+  if (from === null) return newest
+  const at = messages.findIndex((message) => message.id >= from)
+  return at < 0 ? newest : Math.min(at, newest)
+}
+
 /** Drops streamed text the fetched messages have caught up with. */
 export function pruneLive(messages: readonly ChatMessage[], live: readonly LivePart[]): LivePart[] {
   return live.filter((item) => {

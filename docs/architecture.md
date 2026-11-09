@@ -722,6 +722,19 @@ follow-up switches the session's agent or model first only when you changed them
 keeps the last ten opened threads in memory so going back to one is instant; MDE never writes
 messages to disk.
 
+**Long conversations.** Drawing a message costs a few milliseconds (each reply is a Markdown editor
+of its own), so a thread does not draw all it has loaded. `ChatThreadView` draws the conversation from
+one message on, at first the 40th from the end (`DRAWN_MESSAGES`, `drawnStart` in `lib/chat.ts`); the
+start is a message and not a count, so new messages at the end take nothing away at the top. Earlier
+messages are drawn 40 at a time when they are asked for: scrolling to the top, **Load earlier
+messages**, a prompt chosen in the timeline, or the search, which works on what is drawn and so
+draws the rest as it goes. What is loaded and not drawn comes first; only then is an older page read
+from OpenCode. The message that was topmost stays where it was on screen, and a conversation whose
+drawn part does not fill the pane twice over (the compact layout folds many messages into a line)
+draws more by itself. A thread that stays open gathers every message of a long run, so when it is
+left the store keeps only its newest 50 (`CHAT_KEPT_MESSAGES`) to show at once the next time, marked
+`cut`; the next read replaces them with the newest page and its cursor instead of adding to them.
+
 **Timeline and scrolling.** From the second prompt on, a slim rail at the right edge of the
 conversation has one short mark for each of the user's prompts (`ChatTimeline`, with the pure
 logic in `lib/chat-timeline.ts`). The marks follow the reading position: the turn being read, the

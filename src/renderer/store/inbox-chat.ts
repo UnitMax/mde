@@ -54,6 +54,11 @@ export interface ChatThreadState {
   compactionHeld: boolean
   /** The thread's goal (`/goal`), or null for none. Kept up to date by the service's goal events. */
   goal: ChatGoal | null
+  /**
+   * Set while `messages` is only the end of what was loaded, kept to show at once when the thread is
+   * opened again: the next read replaces it instead of adding to it. See `CHAT_KEPT_MESSAGES`.
+   */
+  cut?: boolean
 }
 
 export type OptionsState =
@@ -63,6 +68,11 @@ export type OptionsState =
 
 /** Threads kept in memory so switching back to one is instant. */
 export const CHAT_THREAD_CACHE = 10
+/**
+ * How many of its newest messages a thread keeps once it is left. A thread that stays open gathers
+ * every message of a long run, and drawing them all again is what makes coming back to it slow.
+ */
+export const CHAT_KEPT_MESSAGES = 50
 /** Bursts of service events collapse into one refetch. */
 export const CHAT_REFRESH_DELAY_MS = 150
 
@@ -350,6 +360,11 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
       void get().refreshGoal(threadId)
       return () => {
         quietly(() => window.api.chat.unsubscribe({ threadId }))
+        // Left with a long conversation loaded: only its end is kept. The cursor for what is older does not
+        // fit the cut, so it goes too, and the next read brings the newest page with its own.
+        patchThread(threadId, (thread) => (thread.messages.length > CHAT_KEPT_MESSAGES
+          ? { messages: thread.messages.slice(-CHAT_KEPT_MESSAGES), older: null, cut: true }
+          : {}))
       }
     },
 
@@ -367,14 +382,15 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
           // What was held when this read began is old news if this app changed it since.
           const read = (pendingChangedAt.get(threadId) ?? 0) >= startedAt ? undefined : page.pending
           patchThread(threadId, (thread) => {
-            const messages = mergeNewest(thread.messages, page.messages)
-            const keptOlder = thread.messages.length > 0 && messages.length > page.messages.length
+            const messages = thread.cut ? [...page.messages] : mergeNewest(thread.messages, page.messages)
+            const keptOlder = !thread.cut && thread.messages.length > 0 && messages.length > page.messages.length
             return {
               messages,
               older: keptOlder ? thread.older : page.older,
               running: page.running,
               loading: false,
               error: null,
+              cut: false,
               live: page.running ? pruneLive(messages, thread.live) : [],
               usage: page.usage ?? thread.usage,
               revert: page.revert === undefined ? thread.revert : page.revert,
