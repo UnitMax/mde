@@ -1688,7 +1688,7 @@ it no longer scans status/diffs. Local and already cached remote-tracking branch
 with missing blobs and without remote access. The picker does not refresh remote branches.
 
 Regression evidence and platform limits are in
-[`docs/security.md`](security.md#release-security-review-2026-11-08).
+[`docs/security.md`](security.md#git-execution-boundary).
 
 ## WSL
 
