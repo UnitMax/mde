@@ -18,6 +18,7 @@ export interface FancySettings {
   /** Fancy mode as a whole. Off, MDE draws no background and no thread effects. */
   enabled: boolean
   background: FancyBackgroundId
+  backgroundEnabled: boolean
   /** Lightning on unread threads and digital rain on working ones, in the Inbox's thread list. */
   threadEffects: boolean
 }
@@ -27,6 +28,7 @@ export const FANCY_SETTINGS_STORAGE_KEY = 'mde.fancy-mode'
 export const DEFAULT_FANCY_SETTINGS: FancySettings = {
   enabled: false,
   background: 'aurora',
+  backgroundEnabled: true,
   threadEffects: true
 }
 
@@ -41,6 +43,7 @@ export function resolveFancySettings(value: unknown): FancySettings {
   return {
     enabled: typeof record.enabled === 'boolean' ? record.enabled : DEFAULT_FANCY_SETTINGS.enabled,
     background: isFancyBackgroundId(record.background) ? record.background : DEFAULT_FANCY_SETTINGS.background,
+    backgroundEnabled: typeof record.backgroundEnabled === 'boolean' ? record.backgroundEnabled : DEFAULT_FANCY_SETTINGS.backgroundEnabled,
     threadEffects:
       typeof record.threadEffects === 'boolean' ? record.threadEffects : DEFAULT_FANCY_SETTINGS.threadEffects
   }

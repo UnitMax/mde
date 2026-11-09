@@ -104,6 +104,10 @@ describe('the fancy background', () => {
 
     await setFancy({ background: 'contours' })
     expect(byId('fancy-background')!.dataset.background).toBe('contours')
+    await setFancy({ backgroundEnabled: false })
+    expect(byId('fancy-background')).toBeNull()
+    await setFancy({ backgroundEnabled: true })
+    expect(byId('fancy-background')!.dataset.background).toBe('contours')
     await setFancy({ enabled: false })
     expect(byId('fancy-background')).toBeNull()
   })
@@ -115,6 +119,8 @@ describe('the effect behind a thread row', () => {
     expect(byId('fancy-thread-effect')).toBeNull()
     await setFancy({ enabled: true })
     expect(byId('fancy-thread-effect')!.dataset.effect).toBe('unread')
+    await setFancy({ backgroundEnabled: false })
+    expect(byId('fancy-thread-effect')).not.toBeNull()
     await setFancy({ threadEffects: false })
     expect(byId('fancy-thread-effect')).toBeNull()
   })
@@ -217,6 +223,18 @@ describe('the fancy mode settings', () => {
     expect(byId('fancy-background-contours')!.getAttribute('aria-checked')).toBe('true')
     expect(byId('fancy-background-aurora')!.getAttribute('aria-checked')).toBe('false')
     expect(JSON.parse(localStorage.getItem(FANCY_SETTINGS_STORAGE_KEY)!).background).toBe('contours')
+  })
+
+  it('toggles the background independently and remembers the selected style', async () => {
+    await openSettings()
+    await click(byId('fancy-mode')!)
+    await click(byId('fancy-background-contours')!)
+    await click(byId('fancy-background-enabled')!)
+    expect(JSON.parse(localStorage.getItem(FANCY_SETTINGS_STORAGE_KEY)!).backgroundEnabled).toBe(false)
+    expect(byId('fancy-background-contours')).toBeNull()
+    expect(byId('fancy-thread-preview')).not.toBeNull()
+    await click(byId('fancy-background-enabled')!)
+    expect(byId('fancy-background-contours')!.getAttribute('aria-checked')).toBe('true')
   })
 
   it('turns the thread effects off and on, with a preview of both while they are on', async () => {

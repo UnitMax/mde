@@ -133,7 +133,7 @@ border and glow, and the titles of the others are muted; a lone pane is not sing
 at once to every `TerminalView`, so the Sessions view and the Inbox sidebar terminal change together.
 
 The Appearance section ends with **Fancy mode** (`src/renderer/fancy/`, `FancyModeSettings`), an opt-in extra that
-is off by default. Its settings (`enabled`, `background`, `threadEffects`) live in the renderer's local storage under
+is off by default. Its settings (`enabled`, `background`, `backgroundEnabled`, `threadEffects`) live in the renderer's local storage under
 `mde.fancy-mode`, read and written by `fancy/settings.ts` and held in the `useFancyMode` store. Turned on, it does two
 things, each a canvas drawn by the one shared animation loop in `fancy/scheduler.ts` (a single
 `requestAnimationFrame` for everything, a frame rate per task, no drawing while the page is hidden). Under the system's

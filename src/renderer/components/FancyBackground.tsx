@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { mountBackground } from '@/fancy/background-host'
 import { fancyPaletteForTheme } from '@/fancy/color'
 import { useThemeId } from '@/fancy/use-theme-id'
-import { useFancyMode } from '@/store/fancy-mode'
+import { useFancyBackgroundOn, useFancyMode } from '@/store/fancy-mode'
 
 /**
  * The animated background of fancy mode. It fills the window behind everything (the app's root is an isolated
@@ -10,7 +10,7 @@ import { useFancyMode } from '@/store/fancy-mode'
  * click through. Panels that should show it carry `fancy-glass`; the rest stay solid.
  */
 export function FancyBackground(): JSX.Element | null {
-  const enabled = useFancyMode((state) => state.settings.enabled)
+  const enabled = useFancyBackgroundOn()
   const background = useFancyMode((state) => state.settings.background)
   const themeId = useThemeId()
   const canvas = useRef<HTMLCanvasElement>(null)

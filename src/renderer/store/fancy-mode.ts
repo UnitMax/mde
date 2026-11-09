@@ -19,7 +19,7 @@ export const useFancyMode = create<Store>((set, get) => ({
 
 /** Whether fancy mode draws the background. */
 export function useFancyBackgroundOn(): boolean {
-  return useFancyMode((state) => state.settings.enabled)
+  return useFancyMode((state) => state.settings.enabled && state.settings.backgroundEnabled)
 }
 
 /** Whether fancy mode lights up unread and working threads. */

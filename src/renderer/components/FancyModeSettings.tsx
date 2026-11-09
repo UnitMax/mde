@@ -73,7 +73,14 @@ export function FancyModeSettings(): JSX.Element {
 
       {settings.enabled && (
         <>
-          <div role="radiogroup" aria-label="Animated background" className="grid grid-cols-3 gap-2">
+          <SwitchRow
+            checked={settings.backgroundEnabled}
+            label="Animated background"
+            description="Show an animated background behind the app."
+            testId="fancy-background-enabled"
+            onClick={() => update({ backgroundEnabled: !settings.backgroundEnabled })}
+          />
+          {settings.backgroundEnabled && <div role="radiogroup" aria-label="Animated background" className="grid grid-cols-3 gap-2">
             {FANCY_BACKGROUND_OPTIONS.map((option) => {
               const selected = settings.background === option.id
               return (
@@ -101,7 +108,7 @@ export function FancyModeSettings(): JSX.Element {
                 </button>
               )
             })}
-          </div>
+          </div>}
 
           <SwitchRow
             checked={settings.threadEffects}

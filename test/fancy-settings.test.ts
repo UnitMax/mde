@@ -20,7 +20,7 @@ afterEach(() => {
 
 describe('fancy mode settings', () => {
   it('is off by default, with the aurora chosen and the thread effects ready', () => {
-    expect(DEFAULT_FANCY_SETTINGS).toEqual({ enabled: false, background: 'aurora', threadEffects: true })
+    expect(DEFAULT_FANCY_SETTINGS).toEqual({ enabled: false, background: 'aurora', backgroundEnabled: true, threadEffects: true })
     expect(getFancySettings()).toEqual(DEFAULT_FANCY_SETTINGS)
   })
 
@@ -41,21 +41,23 @@ describe('fancy mode settings', () => {
     expect(resolveFancySettings('on')).toEqual(DEFAULT_FANCY_SETTINGS)
     expect(resolveFancySettings({ enabled: true })).toEqual({ ...DEFAULT_FANCY_SETTINGS, enabled: true })
     expect(resolveFancySettings({ enabled: 'yes', background: 'plasma', threadEffects: 0 })).toEqual(DEFAULT_FANCY_SETTINGS)
-    expect(resolveFancySettings({ enabled: true, background: 'contours', threadEffects: false })).toEqual({
+    expect(resolveFancySettings({ enabled: true, background: 'contours', backgroundEnabled: true, threadEffects: false })).toEqual({
       enabled: true,
       background: 'contours',
+      backgroundEnabled: true,
       threadEffects: false
     })
   })
 
   it('is read back from local storage, and corrupt storage gives the defaults', () => {
-    saveFancySettings({ enabled: true, background: 'constellation', threadEffects: false })
+    saveFancySettings({ enabled: true, background: 'constellation', backgroundEnabled: true, threadEffects: false })
     expect(JSON.parse(localStorage.getItem(FANCY_SETTINGS_STORAGE_KEY)!)).toEqual({
       enabled: true,
       background: 'constellation',
+      backgroundEnabled: true,
       threadEffects: false
     })
-    expect(getFancySettings()).toEqual({ enabled: true, background: 'constellation', threadEffects: false })
+    expect(getFancySettings()).toEqual({ enabled: true, background: 'constellation', backgroundEnabled: true, threadEffects: false })
 
     localStorage.setItem(FANCY_SETTINGS_STORAGE_KEY, '{not json')
     expect(getFancySettings()).toEqual(DEFAULT_FANCY_SETTINGS)
@@ -64,7 +66,7 @@ describe('fancy mode settings', () => {
   it('is changed through the store, which keeps each change', () => {
     useFancyMode.getState().update({ enabled: true })
     useFancyMode.getState().update({ background: 'contours' })
-    expect(useFancyMode.getState().settings).toEqual({ enabled: true, background: 'contours', threadEffects: true })
-    expect(getFancySettings()).toEqual({ enabled: true, background: 'contours', threadEffects: true })
+    expect(useFancyMode.getState().settings).toEqual({ enabled: true, background: 'contours', backgroundEnabled: true, threadEffects: true })
+    expect(getFancySettings()).toEqual({ enabled: true, background: 'contours', backgroundEnabled: true, threadEffects: true })
   })
 })
