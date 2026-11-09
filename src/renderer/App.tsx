@@ -18,6 +18,7 @@ import { InboxThreadView } from '@/components/InboxThreadView'
 import { useInboxLock } from '@/components/InboxPanel'
 import { inboxFileRoot } from '@/lib/inbox'
 import { SettingsDialog } from '@/components/SettingsDialog'
+import { FancyBackground } from '@/components/FancyBackground'
 import { OpenCodeConfigDialog } from '@/components/inbox/OpenCodeConfigDialog'
 import { TodoSearch } from '@/components/TodoSearch'
 import { TodoProjectSettingsDialog } from '@/components/TodoProjectSettingsDialog'
@@ -28,6 +29,7 @@ import { InboxSearchDialog } from '@/components/inbox/InboxSearchDialog'
 import { isTodoSearchShortcut } from '@/lib/todo-search'
 import { startAlerts } from '@/lib/alert-controller'
 import { useWorkspace } from '@/store/workspace'
+import { useFancyBackgroundOn } from '@/store/fancy-mode'
 import { focusTerminalWhenReady } from '@/terminal/focus'
 import { disposeRuntimeTerminal } from '@/terminal/dispose'
 import {
@@ -82,6 +84,7 @@ export function App(): JSX.Element {
   const todoProjects = useWorkspace((state) => state.todoProjects)
   const todoTasks = useWorkspace((state) => state.todoTasks)
   const windowMode = useWorkspace((state) => state.windowMode)
+  const fancyBackground = useFancyBackgroundOn()
   const setWindowMode = useWorkspace((state) => state.setWindowMode)
   const selectedSessionId = useWorkspace((state) => state.selectedSessionId)
   const openFiles = useWorkspace((state) => state.openFiles)
@@ -340,7 +343,7 @@ export function App(): JSX.Element {
     todoTaskDialogOpen
   ])
 
-  // Ctrl+Shift+F searches the text of every Inbox thread. It is the Inbox's own: the terminal views keep it for fullscreen.
+  // Ctrl+Shift+F searches the text of every Inbox thread. Terminal fullscreen is Ctrl+Shift+Enter, so the two never share a chord.
   useEffect(() => {
     if (activeWorkspaceView !== 'inbox') return
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -631,7 +634,9 @@ export function App(): JSX.Element {
   }
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-bg">
+    // Isolated, so the fancy background (a negative z-index) lands above this color and below every panel.
+    <div className="relative isolate flex h-full w-full flex-col overflow-hidden bg-bg" data-fancy-bg={fancyBackground || undefined}>
+      <FancyBackground />
       <TitleBar
         icon={<Terminal className="h-3.5 w-3.5 shrink-0 text-accent" />}
         title="MDE"

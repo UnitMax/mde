@@ -186,8 +186,8 @@ export function TerminalPaneHeader({
           aria-pressed={isFullscreen}
           data-testid={`terminal-fullscreen-toggle-${terminalId}`}
           title={isFullscreen
-            ? 'Exit terminal fullscreen (Ctrl+Shift+F)'
-            : 'Enter terminal fullscreen (Ctrl+Shift+F)'}
+            ? 'Exit terminal fullscreen (Ctrl+Shift+Enter)'
+            : 'Enter terminal fullscreen (Ctrl+Shift+Enter)'}
           onClick={onToggleFullscreen}
         >
           {isFullscreen

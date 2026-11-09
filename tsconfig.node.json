@@ -139,6 +139,11 @@
     "src/renderer/store/inbox-terminal.ts",
     "src/renderer/store/inbox-floating-terminal.ts",
     "src/renderer/store/opencode-config.ts",
+    "src/renderer/store/fancy-mode.ts",
+    "src/renderer/fancy/**/*",
+    "src/renderer/components/FancyBackground.tsx",
+    "src/renderer/components/FancyModeSettings.tsx",
+    "src/renderer/components/ThreadEffect.tsx",
     "src/shared/**/*",
     "test/**/*"
   ],

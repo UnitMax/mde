@@ -28,7 +28,7 @@ export function TitleBar({
   return (
     <header
       data-testid="title-bar"
-      className="title-bar app-drag flex w-full shrink-0 items-center border-b border-line bg-panel"
+      className="title-bar app-drag fancy-glass flex w-full shrink-0 items-center border-b border-line bg-panel"
     >
       <div
         data-testid="title-bar-content"

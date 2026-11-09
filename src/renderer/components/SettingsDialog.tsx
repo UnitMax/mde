@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { AboutSettingsPanel } from '@/components/AboutSettingsPanel'
+import { FancyModeSettings } from '@/components/FancyModeSettings'
 import { KeyboardShortcutsSettings } from '@/components/KeyboardShortcutsSettings'
 import { NotificationSettings } from '@/components/NotificationSettings'
 import { InboxTerminalSettings } from '@/components/inbox/InboxTerminalSettings'
@@ -311,6 +312,8 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
                     testId="terminal-cards"
                     onClick={() => updateSettings({ terminalCards: !settings.terminalCards })}
                   />
+
+                  <FancyModeSettings />
                 </div>
               </section>
             )}

@@ -3,55 +3,13 @@
 Security-relevant design and maintenance notes. The privacy and network statement is in
 [`PRIVACY.md`](../PRIVACY.md).
 
-## Release security review, 2026-11-08
+## Network boundary
 
-The source review of `inbox-mode` 0.1.14 against local `master` 0.0.126 found no
-telemetry, remote crash uploader, updater, direct provider client or remote MCP
-client in MDE. The application HTTP client accepts loopback OpenCode origins
-and rejects redirects. This is not a guarantee of no external traffic.
-
-The audit reproduced repository filter execution through automatic status queries
-and remote object fetching from partial clones. The Git runners now address those
-paths with the same policy for native processes and inside WSL:
-
-- All transport protocols are denied with an empty `GIT_ALLOW_PROTOCOL`, even if
-  repository configuration explicitly allows a protocol or remote helper.
-  `GIT_NO_LAZY_FETCH=1` also disables on-demand fetching on supporting Git versions.
-  Missing local objects produce an error; MDE does not fetch them.
-- Before each status, diff or converting worktree operation, main reads effective
-  filter key names, including global/system, conditional includes and per-worktree
-  settings. Bounded command-line overrides empty every configured driver's clean,
-  smudge and process command. No filter command values are passed to the UI or logged.
-  `GIT_CONFIG` is removed so it cannot redirect only the configuration probe.
-- Read operations compare unfiltered content. Worktree checkout/removal requires
-  a selected configured filter to succeed while its commands are disabled, so Git
-  refuses that operation instead of silently producing an incomplete checkout.
-  Manage filter-dependent worktrees in a terminal and add their folders to Inbox.
-- New worktrees are registered with `--no-checkout`, then populated through a
-  guarded reset in that new worktree. This inspects settings for the new branch
-  before conversion; the original branch's configuration is insufficient.
-  Removal also inspects the target worktree's settings before its cleanliness check.
-- Branch discovery uses repository/ref metadata only. Local and cached
-  remote-tracking branches remain available without scanning files or fetching
-  objects. Submodule recursion/diffs and automatic maintenance are disabled
-  in MDE-owned calls to avoid child operations with another execution context.
-
-Real-Git regression fixtures cover info attributes, local/global/included/worktree
-filters, long-running process filters, branch-conditional checkout/removal,
-missing objects, a loopback HTTP recorder and a planted remote helper. They also
-verify ordinary checkout, built-in line-ending conversion and branch listing
-with missing blobs. Filter settings are re-read rather than cached; these
-separate subprocesses do not establish atomicity against concurrent malicious
-rewriting of Git configuration. Such mutation remains a filesystem trust limit.
-Native Windows/WSL and macOS packaged acceptance remains required; OS network
-mounts and login-shell startup also need separate attribution.
-
-Permission hardening now blocks incomplete scopes in the UI and revalidates them in main before
-approval. Configuration preview redaction parses JSONC and hides whole secret values. Full UTF-8
-SSE event budgets and native nonblocking/no-follow file reads are implemented. Linux descriptor
-containment tests pass; Windows now uses pinned native handles as described below. Atomic ancestor containment remains open on macOS. Aggregate
-resource budgets and other lower-priority findings remain open. The full dependency audit now
-passes with the restricted minimatch override described below.
+MDE has no telemetry, remote crash uploader, updater, direct provider client or
+remote MCP client. The application HTTP client accepts loopback OpenCode origins
+and rejects redirects. This is not a guarantee of no external traffic: OpenCode,
+launched commands, OS network mounts and login-shell startup have their own network
+behavior. See [`PRIVACY.md`](../PRIVACY.md).
 
 ## IPC security boundary
 
@@ -190,10 +148,10 @@ request fixture. Existing path/drop tests exercise the same real
 boundary with a trusted sender fixture. Native Windows/WSL smoke testing is
 still required before claiming platform-specific release verification.
 
-On 2026-10-03 the built application also passed an isolated Linux Electron
-smoke test with sandboxing enabled: main-frame app/workspace requests succeeded, and another sandboxed window loading the same app URL could not invoke
-`app:info`. The fixture used temporary userData and left the user's workspace
-untouched. This was an unpackaged Linux check, not Windows/WSL verification.
+Electron smoke tests should run with sandboxing enabled and temporary userData.
+Verify that main-frame app/workspace requests succeed and another sandboxed window
+loading the same app URL cannot invoke `app:info`. An unpackaged Linux check does
+not establish Windows/WSL or packaged-app behavior.
 
 The sender policy follows [Electron's IPC sender validation guidance](https://www.electronjs.org/docs/latest/tutorial/security#17-validate-the-sender-of-all-ipc-messages).
 
@@ -302,7 +260,12 @@ the validated `chat:*` channels.
   Path parameters must match `ses_`, `per_` or `frm_` ID patterns (an MCP server name, the rule above),
   only the query keys `limit`, `order`, `cursor` and `location[directory]` are
   allowed, request bodies are capped at 1 MB, responses at 16 MB, and each
-  request times out after 30 seconds.
+  request times out after 30 seconds. Redirects are rejected.
+- **Permission approvals.** Incomplete, malformed, overlong or visually ambiguous
+  resource lists disable approval in the card. Main re-reads the request before
+  granting and refuses incomplete or missing scopes; rejection remains available.
+- **Event streams.** SSE limits count full multiline UTF-8 events and cancel
+  oversized streams. Aggregate resource budgets remain an open hardening area.
 - **Responses.** Every response and event is parsed into MDE's own types; unknown
   fields are dropped, tool input and output are cut at 64 KB, and control
   characters are stripped. Subagent model labels use validated child session IDs from the parent
@@ -336,6 +299,59 @@ again when the worktree is made. `chat:drafts` takes no payload and returns text
 300 characters and the saved choices, no file contents, plus the ids of threads with an unsent message
 (never their text).
 
+### Inbox attachment boundary
+
+`chat:draft` is a fixed, validated union of draft load/text/prepend/add/tree/remove/clear/flush operations.
+Keys name an existing Inbox thread or folder. Binary uploads are bounded Uint8Arrays; generated
+IDs reference only files owned by that draft. Original filenames never form storage paths.
+Sidebar sources resolve through known sessions/folders and bounded regular-file reads with
+real-path containment checks, including in WSL. Renderer payloads cannot supply service URLs,
+file URLs, shell commands, or storage paths. Attachment contents are never logged.
+
+Draft files and their atomic index use private permissions on POSIX systems, and live under the
+app's user-data directory. They are not encrypted. Generated thumbnails are raster data URLs;
+remote image URLs and attachment HTML are never rendered. Existing CSP and renderer isolation
+remain unchanged. Prompt and history size allowances are restricted to the relevant fixed
+OpenCode operations; oversized history responses retry with smaller pages, never unbounded reads.
+
+### Git execution boundary
+
+Automatic status queries, diffs, branch discovery and worktree operations treat
+repository configuration as untrusted input. Native and WSL Git runners apply
+the same policy:
+
+- All transport protocols are denied with an empty `GIT_ALLOW_PROTOCOL`, even if
+  repository configuration explicitly allows a protocol or remote helper.
+  `GIT_NO_LAZY_FETCH=1` also disables on-demand fetching on supporting Git versions.
+  Missing local objects produce an error; MDE does not fetch them.
+- Before each status, diff or converting worktree operation, main reads effective
+  filter key names, including global/system, conditional includes and per-worktree
+  settings. Bounded command-line overrides empty every configured driver's clean,
+  smudge and process command. No filter command values are passed to the UI or logged.
+  `GIT_CONFIG` is removed so it cannot redirect only the configuration probe.
+- Read operations compare unfiltered content. Worktree checkout/removal requires
+  a selected configured filter to succeed while its commands are disabled, so Git
+  refuses that operation instead of silently producing an incomplete checkout.
+  Manage filter-dependent worktrees in a terminal and add their folders to Inbox.
+- New worktrees are registered with `--no-checkout`, then populated through a
+  guarded reset in that new worktree. This inspects settings for the new branch
+  before conversion; the original branch's configuration is insufficient.
+  Removal also inspects the target worktree's settings before its cleanliness check.
+- Branch discovery uses repository/ref metadata only. Local and cached
+  remote-tracking branches remain available without scanning files or fetching
+  objects. Submodule recursion/diffs and automatic maintenance are disabled
+  in MDE-owned calls to avoid child operations with another execution context.
+
+Real-Git regression fixtures cover info attributes, local/global/included/worktree
+filters, long-running process filters, branch-conditional checkout/removal,
+missing objects, a loopback HTTP recorder and a planted remote helper. They also
+verify ordinary checkout, built-in line-ending conversion and branch listing
+with missing blobs. Filter settings are re-read rather than cached; these
+separate subprocesses do not establish atomicity against concurrent malicious
+rewriting of Git configuration. Such mutation remains a filesystem trust limit.
+Native Windows/WSL and macOS packaged acceptance is required; OS network
+mounts and login-shell startup need separate attribution.
+
 ### Inbox worktree boundary
 
 An Inbox thread can run in a Git worktree MDE creates, which is the only place MDE changes a
@@ -365,8 +381,7 @@ object takes no other key, so the renderer cannot name a path, a remote or a com
   run through `wsl.exe -e` direct execution, like every other WSL command.
 - **Git safety overrides, longer clock.** Both runners deny remote transports and automatic
   lazy fetching, disable hooks/fsmonitor/credential helpers, and inspect all effective configured
-  filter drivers before converting operations. They no longer rely on `--attr-source`, which did
-  not suppress info attributes and had a weaker fallback on older Git versions. Built-in
+  filter drivers before converting operations (see "Git execution boundary"). Built-in
   text/eol/ident conversion remains enabled. A checkout that selects a configured external filter
   is refused, with an explanation to manage that worktree in a terminal. An unrelated globally
   installed filter does not prevent an ordinary checkout. Conversion begins only after
@@ -452,8 +467,9 @@ OpenAI-compatible providers and `provider.use` deny policies (disabled providers
 - **No secrets are asked for or written.** A provider's key is the name of an environment variable
   (`env: [NAME]`), validated as such; a base URL with a user name or password is refused. Keys already in
   the file stay where they are, are not sent to the renderer as part of the draft, and the Source preview
-  parses JSONC and replaces complete values under decoded secret-looking keys with `(hidden)`,
-  including arrays and objects. Env/file string references remain visible. Invalid JSONC has no
+  parses JSONC and uses source offsets to replace complete values under decoded secret-looking
+  keys with `(hidden)`, including arrays and objects. Comments outside redacted values and unrelated
+  formatting remain intact. Env/file string references remain visible. Invalid JSONC has no
   content preview. Unknown-name secrets and unrelated comments are still outside this heuristic;
   the preview is not a fully sanitized artifact for sharing.
 - **No new network access.** Listing providers uses the existing local service client. After a save the
@@ -523,25 +539,22 @@ tests on Linux and Windows, the license and typecheck gates, and this audit on e
 and pull request, with read-only permissions. It is a safety net, not a substitute for the
 local checks above.
 
-The initial 2026-11-08 audit reported six moderate entries from minimatch globparts
-amplification. The affected modern copies now resolve to 11.0.1 through a version-range
-override, and a fresh full audit reports zero vulnerabilities. Runtime and packaging
-platform validation are separate gates; npm audit does not inventory all native CVEs.
+Runtime and packaging platform validation are separate gates; npm audit does not
+inventory all native CVEs. Audit results describe the lockfile at the time of the
+check and must be refreshed after dependency changes and before releases.
 
 The lockfile includes patched `http-cache-semantics` 4.3.0 and `source-map-js`
 1.2.2. These updates remain within their parents' existing dependency ranges.
 
-Plain `npm audit fix` (without `--force`) also moved the three `undici` copies
-(`node-gyp`, `@electron/get` and `jsdom`) to 6.29.1, 7.30.1 and 8.12.3, again within
-their parents' ranges.
+The lockfile pins the three `undici` copies used by `node-gyp`, `@electron/get`
+and `jsdom` to 6.29.1, 7.30.1 and 8.12.3, within their parents' ranges.
 
 ### Patched advisory: minimatch in the packaging toolchain
 
 The override `minimatch@>=7 <11.0.1` selects exactly 11.0.1 for the affected modern
 copies, including app-builder-lib and @electron/universal. It preserves minimatch
 3/5 for legacy callers that require a callable CommonJS export; forcing the new
-API onto those callers breaks archive creation. No direct dependency or application
-version was changed. Full npm audit now reports zero vulnerabilities.
+API onto those callers breaks archive creation.
 
 `test/packager-globs.test.ts` exercises the actual builder matcher, universal
 merger's named matching API and legacy asar matching API. Native Windows/macOS
@@ -571,72 +584,22 @@ notices with `npm run licenses` when shipped dependencies change. Avoid blindly
 applying `npm audit fix --force`: its proposed major-version changes can downgrade
 the direct build and diagram dependencies.
 
-### Inbox attachment boundary
+## File read boundary
 
-`chat:draft` is a fixed, validated union of draft load/text/prepend/add/tree/remove/clear/flush operations.
-Keys name an existing Inbox thread or folder. Binary uploads are bounded Uint8Arrays; generated
-IDs reference only files owned by that draft. Original filenames never form storage paths.
-Sidebar sources resolve through known sessions/folders and bounded regular-file reads with
-real-path containment checks, including in WSL. Renderer payloads cannot supply service URLs,
-file URLs, shell commands, or storage paths. Attachment contents are never logged.
+Native previews and attachment copies share nonblocking regular-file opens,
+no-follow protection and handle identity revalidation. Linux checks the actual
+opened descriptor path under `/proc`; WSL reads use a validated descriptor rather
+than reopening the pathname. Linux regressions cover final-file and ancestor
+replacement races and FIFOs. WSL pre-open FIFO races remain bounded by the
+subprocess timeout.
 
-Draft files and their atomic index use private permissions on POSIX systems, and live under the
-app's user-data directory. They are not encrypted. Generated thumbnails are raster data URLs;
-remote image URLs and attachment HTML are never rendered. Existing CSP and renderer isolation
-remain unchanged. Prompt and history size allowances are restricted to the relevant fixed
-OpenCode operations; oversized history responses retry with smaller pages, never unbounded reads.
+Native Windows uses pinned handles as described below. On macOS, pathname
+revalidation is defense in depth, not atomic ancestor containment; that limitation
+remains open.
 
-Permission scope hardening: incomplete, malformed, overlong or visually ambiguous resource lists disable approval in the card. Main re-reads the request before granting and refuses incomplete or missing scopes; rejection remains available.
+### Windows ancestor containment
 
-File and stream hardening: native previews and attachment copies share nonblocking regular-file opens, no-follow protection and handle identity revalidation. Linux checks the actual opened descriptor path under /proc; WSL reads use a validated descriptor rather than reopening the pathname. SSE limits count full multiline UTF-8 events and cancel oversized streams. Linux final-file/ancestor race and FIFO regressions pass. macOS/Windows pathname revalidation is defense in depth, not atomic ancestor containment; SEC-028 remains open there. WSL pre-open FIFO races remain bounded by the subprocess timeout.
-
-Configuration preview hardening: redaction walks parsed JSONC properties, decodes escaped keys and replaces whole secret values using source offsets. Comments outside redacted values and unrelated formatting remain intact. Invalid input fails closed. SEC-031 source fixtures pass.
-
-## Native Windows verification — 2026-11-08
-
-Current 0.1.14 source at 919cf14 was built from WSL using the native Windows
-build helper in a separate temporary staging directory. The normal development
-build and its user-data profile were not changed. Native Node was 24.19.0 on
-Windows build 26200.9711.
-
-- Native typecheck/compilation/notices and the unpacked Windows package build
-  passed; the package path audit passed across 79 packaged files. This was a
-  --dir build, not an extracted release ZIP verification.
-- The packaged executable started with fresh userData. Its app:// origin,
-  app-info IPC (0.1.14), absence of renderer Node globals, configured security
-  fuses and native ConPTY echo/output/disposal checks passed. Temporary loopback
-  debugging was enabled solely for this smoke test, then the app was closed.
-- The opt-in native Windows executable-lookup integration passed: harmless
-  cwd/PATH sentinels, real WSL queries and native/WSL ConPTY. This source harness
-  is distinct from the packaged native-terminal smoke above.
-- Full native Windows suite, first run: 3,341 passed, 15 failed, 62 skipped (3,418
-  total). The failures were test assumptions, not product faults: symlink fixtures
-  that need a privilege an ordinary account lacks, filenames Windows forbids, POSIX
-  file modes and paths, the local `bash` being the WSL launcher, mocks that assumed
-  a native shell, and one goal-state UI assertion that passes in isolation.
-  Afterwards (2026-11-08, same Windows build): 3,352 passed, 0 failed, 70 skipped,
-  twice in a row. The tests that need symlinks, POSIX modes or a real bash now skip
-  where those do not exist (`test/helpers/symlinks.ts`), and the symlink and POSIX
-  cases still run on Linux. A Windows account that may create symlinks (an
-  administrator, or Developer Mode) runs the symlink tests; that was not tried here.
-  One product change came with it: reading a folder on Windows now says "Not a file."
-  instead of reporting a failed safe open.
-- Real native Windows file probes passed ordinary reads, static junction
-  containment, device/alternate-stream path rejection and one-time ancestor
-  replacement rejection. However, a controlled repeated junction replacement
-  between realpath and stat returned an outside fixture's bytes. Only disposable
-  dummy files were involved. This confirms SEC-028's remaining Windows race;
-  it is not a demonstration of reliable uncontrolled timing or exfiltration.
-
-macOS, extracted ZIP behavior, packaged WSL terminals, and packaged network
-capture remain separate acceptance work. Atomic Windows ancestor containment
-needs an implementation change; additional successful smoke tests cannot close it.
-
-Windows focused follow-up: all 31 goal UI tests passed when rerun in isolation, and the native Windows/WSL sentinel integration passed again (32 tests total). This does not clear the other full-suite failures.
-
-## Windows ancestor containment fix
-
-Native Windows previews and attachment copies now use the same fixed local helper. Main launches
+Native Windows previews and attachment copies use the same fixed local helper. Main launches
 validated absolute system PowerShell with no profile, a fixed encoded command and paths carried
 only as JSON in the child environment. No user-controlled path is interpreted as script source.
 The helper compiles MDE's fixed C# implementation with Add-Type; it opens and holds each directory
@@ -658,8 +621,28 @@ a directory is pinned, then succeed after release.
 
 The native Windows regression suite uses junctions without administrator/symlink privileges.
 It covers ordinary/empty/oversized files, literal path characters, internal/external junctions,
-handle release and the exact repeated-junction realpath/stat attack previously reproduced.
-The rebuilt packaged application's actual files:read IPC also returned the expected fixture bytes.
-This closes the demonstrated Windows SEC-028 mechanism in source; macOS containment remains open.
+handle release and repeated junction replacement between realpath and stat.
+Packaged acceptance must also exercise the actual `files:read` IPC boundary.
+macOS atomic ancestor containment remains open.
 See [CreateFile sharing and reparse semantics](https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-createfilew)
 and [handle-derived names](https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-getfinalpathnamebyhandlew).
+
+## Platform security verification
+
+Run native Windows/WSL and macOS acceptance against packaged artifacts, including
+an extracted Windows release ZIP. Use fresh temporary userData and disposable
+fixtures. Verify the `app://` origin, app-info IPC version, absence of renderer
+Node globals, configured security fuses, and native/WSL ConPTY output and disposal.
+Run the package path audit and the executable-lookup integration checks as separate
+gates; source tests do not establish packaged behavior.
+
+Filesystem checks should cover ordinary reads, junction/symlink containment,
+device and alternate-stream path rejection, and concurrent ancestor replacement.
+Tests requiring symlink privileges, POSIX modes or a real bash skip where those
+capabilities are unavailable (`test/helpers/symlinks.ts`); keep those cases running
+on supported systems and include a Windows account permitted to create symlinks.
+
+Packaged network capture is a separate check. Attribute traffic from OpenCode,
+OS network mounts and login-shell startup separately from MDE's HTTP client.
+Passing terminal or filesystem smoke tests does not establish network isolation
+or close known containment limitations.

@@ -23,6 +23,7 @@ import { InboxChangesBadge } from '@/components/inbox/InboxChanges'
 import { InboxDraftsSection } from '@/components/inbox/InboxDrafts'
 import { InboxToolbar } from '@/components/inbox/InboxToolbar'
 import { StatusMark, statusGlyph } from '@/components/inbox/StatusMark'
+import { ThreadEffect } from '@/components/ThreadEffect'
 import { ProjectIcon } from '@/components/inbox/ProjectIcon'
 import { ThreadRenameDialog, useThreadRename } from '@/components/inbox/ThreadRename'
 import {
@@ -190,6 +191,8 @@ function InboxThreadRow({
   // A worktree another thread (a fork of this one, say) still runs in is not offered for removal.
   const ownsWorktree = useWorkspace((state) => Boolean(thread.worktree) && !inboxWorktreeShared(thread, state.inboxThreads))
   const unread = isInboxThreadUnread(thread)
+  // Fancy mode lights the row: a storm while it is unread, digital rain while it works (unread comes first).
+  const effect = unread ? 'unread' : inboxThreadWorking(thread) ? 'working' : null
   // The project's own name and icon; once it has been removed from the Inbox, the folder's name and the plain folder.
   const project = useInboxChat((state) => inboxThreadFolder(thread, state.folders))
   const titleIcons = useInboxView((state) => state.titleIcons)
@@ -205,7 +208,8 @@ function InboxThreadRow({
     <>
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <div className={cn('group relative rounded', selected || multiSelected ? 'bg-active' : unread ? 'bg-accent/[0.08] hover:bg-hover' : 'hover:bg-hover', multiSelected && 'ring-1 ring-inset ring-accent')}>
+          <div className={cn('group relative isolate rounded', selected || multiSelected ? 'bg-active' : unread ? 'bg-accent/[0.08] hover:bg-hover' : 'hover:bg-hover', multiSelected && 'ring-1 ring-inset ring-accent')}>
+          {effect && <ThreadEffect kind={effect} seed={thread.id} />}
           {selected && <span aria-hidden="true" data-testid={`inbox-thread-selected-bar-${thread.id}`} className="pointer-events-none absolute inset-y-2 left-0 w-0.5 rounded-full bg-accent" />}
           <button
             type="button"

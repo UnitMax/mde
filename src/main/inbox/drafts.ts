@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { ChatDraft, ChatDraftChoice, ChatDraftKey, ChatDraftSummary } from '@shared/types'
+import { renameOver } from '../store/atomic-json'
 
 export const ATTACHMENT_LIMIT = 20 * 1024 * 1024
 export const DRAFT_STORAGE_LIMIT = 200 * 1024 * 1024
@@ -9,6 +10,8 @@ export const DRAFT_STORAGE_LIMIT = 200 * 1024 * 1024
 export const DRAFT_TEXT_LIMIT = 100_000
 /** How much of a new-thread draft's text its sidebar row is sent; the row shows a line or two. */
 export const DRAFT_PREVIEW_LIMIT = 300
+/** How long the text of a draft is left alone before typing is written to disk, in milliseconds. */
+export const DRAFT_IDLE_SAVE_MS = 5_000
 const empty = (): StoredDraft => ({ revision: 0, text: '', attachments: [] })
 
 /**
@@ -74,22 +77,35 @@ function validDraft(draft: StoredDraft): boolean {
   return size <= ATTACHMENT_LIMIT
 }
 
-/** Private, atomic storage for unsent prompts; file names never become storage paths. */
+/**
+ * Private, atomic storage for unsent prompts; file names never become storage paths.
+ *
+ * The drafts in memory are what counts, and the index on disk is a copy of them that is written at a
+ * few moments only: after a change that is not typing (a file added or removed, a draft sent, moved or
+ * deleted), when `save` is called (a draft is opened, the window loses focus, MDE quits), and once
+ * typing has paused for `idleSaveMs`. A write that fails is never an error for whoever changed the
+ * draft; the index stays marked as unsaved and the next of those moments writes it again.
+ */
 export class InboxDraftStore {
   private drafts: Record<string, StoredDraft> = {}
   private queue: Promise<unknown> = Promise.resolve()
   private loaded = false
+  private unsaved = false
+  private failing = false
+  private timer: ReturnType<typeof setTimeout> | undefined
   private readonly previews = new Map<string, string | undefined>()
   constructor(
     private readonly directory: string,
     private readonly thumbnail: (bytes: Buffer) => string | undefined = () => undefined,
     private readonly validOwner: (key: string) => boolean = () => true,
     private readonly now: () => number = Date.now,
+    private readonly idleSaveMs: number = DRAFT_IDLE_SAVE_MS,
   ) {}
 
   private async load(): Promise<void> {
     if (this.loaded) return
     this.drafts = {}
+    let tidied = false
     await fs.mkdir(join(this.directory, 'attachments'), { recursive: true, mode: 0o700 })
     try {
       const raw = JSON.parse(await fs.readFile(join(this.directory, 'index.json'), 'utf8'))
@@ -104,8 +120,10 @@ export class InboxDraftStore {
         const choice = cleanChoice(stored)
         const kept = { ...rest, ...(choice ? { choice } : {}), attachments: draft.attachments.map(({ thumbnail: _preview, ...file }) => file) }
         // The one draft a folder used to have is now a new-thread draft of its own, so it is listed too.
-        if (key.startsWith('folder:')) this.drafts[`draft:drf_${randomUUID()}`] = { ...kept, folderId: key.slice('folder:'.length), updatedAt: this.now() }
-        else this.drafts[key] = kept
+        if (key.startsWith('folder:')) {
+          this.drafts[`draft:drf_${randomUUID()}`] = { ...kept, folderId: key.slice('folder:'.length), updatedAt: this.now() }
+          tidied = true
+        } else this.drafts[key] = kept
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error('Could not load saved Inbox drafts. The saved files have been kept.')
@@ -113,9 +131,9 @@ export class InboxDraftStore {
     for (const [key, draft] of Object.entries(this.drafts)) {
       // A new-thread draft with nothing in it is not kept: the box was cleared, or the page never got a word.
       const gone = isNewThread(key) ? !hasContent(draft) || !draft.folderId : false
-      if (gone || !this.validOwner(key)) delete this.drafts[key]
+      if (gone || !this.validOwner(key)) { delete this.drafts[key]; tidied = true }
     }
-    await this.persist()
+    if (tidied) await this.persist()
     const referenced = new Set(Object.values(this.drafts).flatMap((draft) => draft.attachments.map((file) => file.id)))
     for (const name of await fs.readdir(join(this.directory, 'attachments'))) {
       if (/^[a-f0-9-]{36}$/.test(name) && !referenced.has(name)) await fs.unlink(join(this.directory, 'attachments', name))
@@ -123,15 +141,44 @@ export class InboxDraftStore {
     this.loaded = true
   }
 
+  /** Notes that the index on disk is behind, and has it written once nothing has changed for a while. */
+  private touch(): void {
+    this.unsaved = true
+    clearTimeout(this.timer)
+    if (this.idleSaveMs <= 0) return
+    this.timer = setTimeout(() => { void this.save() }, this.idleSaveMs)
+    this.timer.unref?.()
+  }
+
+  /** Writes the index now. It does not fail: what could not be written stays unsaved for the next time. */
   private async persist(): Promise<void> {
+    clearTimeout(this.timer)
+    this.timer = undefined
+    this.unsaved = false
     const target = join(this.directory, 'index.json')
-    const tmp = `${target}.tmp`
-    const handle = await fs.open(tmp, 'w', 0o600)
+    const tmp = `${target}.${process.pid}.tmp`
     try {
-      await handle.writeFile(JSON.stringify({ version: 1, drafts: this.drafts }))
-      await handle.sync()
-    } finally { await handle.close() }
-    await fs.rename(tmp, target)
+      const handle = await fs.open(tmp, 'w', 0o600)
+      try {
+        await handle.writeFile(JSON.stringify({ version: 1, drafts: this.drafts }))
+        await handle.sync()
+      } finally { await handle.close() }
+      await renameOver(tmp, target)
+      this.failing = false
+    } catch (error) {
+      await fs.rm(tmp, { force: true }).catch(() => {})
+      this.touch()
+      // Said once, not for every try, and without the path or anything a draft holds.
+      if (!this.failing) console.warn(`[inbox] Could not save drafts (${(error as NodeJS.ErrnoException).code ?? 'error'}); they are kept in memory and saved later.`)
+      this.failing = true
+    }
+  }
+
+  /** Writes the index if anything changed since it was last written. Never rejects. */
+  save(): Promise<void> {
+    const result = this.queue.then(async () => { if (this.unsaved) await this.persist() })
+    this.queue = result
+    return result
   }
 
   private run<T>(action: () => Promise<T>): Promise<T> {
@@ -182,7 +229,8 @@ export class InboxDraftStore {
       this.settle(key)
       // A new-thread draft that is still empty was never kept, so there is nothing to write.
       if (!kept && !(key in this.drafts)) return
-      await this.persist()
+      // Typing is not written at once: see the class comment.
+      this.touch()
     })
   }
 
@@ -212,10 +260,7 @@ export class InboxDraftStore {
       const id = randomUUID()
       await fs.writeFile(join(this.directory, 'attachments', id), bytes, { flag: 'wx', mode: 0o600 })
       this.drafts[key] = this.changed(key, { ...draft, revision: draft.revision + 1, attachments: [...draft.attachments, { id, name, mime, size: bytes.byteLength }] }, meta)
-      try { await this.persist() } catch (error) {
-        await fs.unlink(join(this.directory, 'attachments', id)).catch(() => {})
-        throw error
-      }
+      await this.persist()
     })
   }
 
@@ -301,5 +346,6 @@ export class InboxDraftStore {
     })
   }
 
-  flush(): Promise<unknown> { return this.queue }
+  /** Saves what is unsaved and waits for everything under way, as before MDE quits. */
+  flush(): Promise<void> { return this.save() }
 }

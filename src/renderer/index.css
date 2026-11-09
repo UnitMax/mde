@@ -883,6 +883,17 @@
   }
 }
 
+/* The reminder that the floating terminal is hidden (HiddenTerminalIndicator) settles in the same way. */
+.hidden-terminal-indicator {
+  animation: mde-pending-in 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hidden-terminal-indicator {
+    animation: none;
+  }
+}
+
 /* The answer to a side question (ChatAside) settles in the same way. */
 .chat-aside {
   animation: mde-pending-in 180ms ease-out;
@@ -1040,4 +1051,21 @@
     background: var(--mde-inbox-terminal-hl);
     animation: mde-inbox-terminal-fade 1200ms ease-out both;
   }
+}
+
+
+/*
+ * Fancy mode (src/renderer/fancy). The animated background is a canvas behind everything (FancyBackground); panels
+ * that carry `fancy-glass` turn into frosted glass over it while it is on, and stay solid otherwise. The page's
+ * own `--color-panel` is what is thinned, so every theme keeps its look. The thread effects are canvases at a
+ * negative z-index inside an isolated row, so they sit above the row's color and below its text.
+ */
+[data-fancy-bg] .fancy-glass {
+  background-color: color-mix(in srgb, var(--color-panel) 64%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: blur(14px) saturate(1.3);
+}
+
+.fancy-thread-effect {
+  mix-blend-mode: normal;
 }

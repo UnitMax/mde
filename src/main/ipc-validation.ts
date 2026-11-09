@@ -264,6 +264,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.chatDiscardPending]: object({ threadId: opencodeSessionId, messageId }),
   [IpcChannels.chatSetDelivery]: object({ threadId: opencodeSessionId, messageId, delivery: oneOf('steer', 'queue') }),
   [IpcChannels.chatAside]: object({ threadId: opencodeSessionId, question: (value) => promptText(value) && String(value).trim().length > 0 }),
+  [IpcChannels.chatAsideHistory]: object({ threadId: opencodeSessionId }),
   [IpcChannels.chatMcp]: (value) => object({ folderId: optional(inboxFolderId), threadId: optional(opencodeSessionId) })(value) &&
     exactlyOnePlace(value),
   [IpcChannels.chatMcpSet]: (value) => object({ folderId: optional(inboxFolderId), threadId: optional(opencodeSessionId), server: mcpServerName, enabled: boolean })(value) &&

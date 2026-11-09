@@ -99,7 +99,7 @@ beforeEach(() => {
     activeWorkspaceView: 'inbox',
   })
   useInboxChat.setState({ folders: [folder], composer: { folderId: 'fld_app' }, foldersLoaded: true, options: {}, threads: {}, recent: [], titleRegenerations: {} })
-  useInboxAside.setState({ asides: {} })
+  useInboxAside.setState({ threads: {} })
 })
 afterEach(async () => {
   for (const root of roots.splice(0)) await act(async () => root.unmount())

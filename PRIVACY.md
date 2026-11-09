@@ -24,6 +24,11 @@ backed-up locations can place copies elsewhere. These stores are not encrypted b
   distro name). These plain-text records reopen fresh shells in the same folders after restarting
   MDE. Removed panes are forgotten. Commands, terminal output and conversation content are not saved
   in these records.
+- `inbox-asides.json` under Electron's user-data directory: the answered `/btw` side questions of each
+  Inbox thread (the question, the answer and when it arrived, the newest 20 per thread), so they can
+  be read again after their card is closed and after a restart. Written when a side question is
+  answered or a thread is removed. Removing a thread removes its side questions; they do not expire
+  otherwise.
 - The renderer's local storage (`mde.terminal-settings`): appearance and terminal preferences,
   including the command that starts OpenCode for the Inbox (Settings, OpenCode, Executable: a program
   name or path, without arguments). An older `agents` entry from a removed launcher is ignored.
@@ -49,6 +54,9 @@ backed-up locations can place copies elsewhere. These stores are not encrypted b
   the Inbox's right-hand sidebar is (a number of pixels), and the arrangement of the Inbox terminal
   (a tree of pane IDs, split IDs, horizontal or vertical directions, and numeric divider ratios).
   Neither holds terminal content or pane titles; the terminal's shells are not restored on the next run.
+- The renderer's local storage (`mde.fancy-mode`): whether fancy mode is on, which of its animated
+  backgrounds is chosen, and whether the Inbox's unread and working threads are animated (a small JSON
+  object of two booleans and a background name). Nothing leaves the device; the animations are drawn locally.
 - The renderer's local storage (`mde.inbox-floating-terminal`): whether the Inbox terminal floats over the
   conversation, where its window was left (four pixel numbers) and whether it is maximized. No terminal
   content.
@@ -122,9 +130,9 @@ any attachment, and returns it with the conversation. The draft keeps only the t
 
 The message box's `/btw` side question sends the question to the same local service, which answers it
 from the conversation as it stands and may send that conversation and the question to the model provider
-you chose, as it does for any message. It does not add either to the conversation. MDE keeps the question
-and the answer in memory only, for each thread until you dismiss them or the app closes, and never
-writes them to disk.
+you chose, as it does for any message. It does not add either to the conversation. MDE keeps each
+answered question and its answer for the thread in `inbox-asides.json` (see above), unencrypted, so they
+can be read again; a question that failed is not kept.
 
 Compacting a conversation (the `/compact` command or the context pill's Compact conversation button) asks
 the same local service to summarize the conversation, which sends the conversation to the model provider
@@ -217,7 +225,9 @@ The Inbox paperclip, image paste, and file drops save copies under `inbox-drafts
 Electron's user-data directory. `index.json` stores unsent prompt text, filenames, MIME hints,
 sizes, revisions and generated attachment IDs; `attachments/` holds the copied contents.
 These local drafts are not encrypted. They survive app restarts and changes to the original
-files. Each thread has its own draft, and any number of unsent new threads are kept as drafts of
+files. Text being typed is held in memory and written to `index.json` when typing pauses for a few
+seconds, when a draft is opened, when the window loses focus and when MDE quits, so an abrupt
+shutdown can lose the last few seconds of typing. Each thread has its own draft, and any number of unsent new threads are kept as drafts of
 their own, each noting the folder it was written for, how it would start (GUI or Terminal, agent, model, and the
 worktree branch and name if a new worktree was chosen) and when it last changed; the Inbox lists them
 in its sidebar and marks the threads that have an unsent message. Removing an attachment, successfully sending its draft, deleting a new-thread
@@ -329,7 +339,7 @@ Conversation caches and terminal scrollback are not intentionally persisted, but
 swap, diagnostics and crash dumps can contain process memory. Some console errors include paths or
 command diagnostics; no remote MDE log uploader is configured.
 
-Parking a thread does not delete it. Removing a thread removes MDE's record and its draft, not
+Parking a thread does not delete it. Removing a thread removes MDE's record, its draft and its side questions, not
 OpenCode's conversation history, provider data, shell history or backups. Removing a project leaves
 its drafts. Worktrees and their branches have the separate lifecycle described above.
 

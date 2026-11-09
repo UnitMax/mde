@@ -91,14 +91,19 @@ startup). A missing thread opens the Inbox's new-thread page; that page's empty 
 remembered. Missing, malformed or unavailable storage defaults to Sessions. No existing workspace
 or Inbox records are changed to store this preference.
 
-Keyboard shortcuts are listed in the app under Settings → Keyboard Shortcuts; that list is defined
-in `src/renderer/terminal/keyboard-shortcuts.ts`.
+Keyboard shortcuts are listed in the app under Settings → Shortcuts, grouped by where they work
+(Everywhere, Inbox, Terminal, Files and To Do) and searchable; that list is defined in
+`src/renderer/terminal/keyboard-shortcuts.ts`. It holds only shortcuts worth looking up: the keys every
+list, menu and dialog answers to (arrows, Enter, Esc) are one footnote, and longer explanations live in
+this document. A chord may repeat across groups (Ctrl+F finds in the Inbox and in the file viewer) but never
+within a group or between Everywhere and another group; `test/keyboard-shortcuts.test.ts` fails otherwise.
+Ctrl+Shift+F is the Inbox's search over all threads and Ctrl+Shift+Enter is terminal fullscreen.
 
 ### Settings
 
 The Settings dialog's Terminal section controls terminal behavior, including whether Escape exits
-the temporary fullscreen view; it is enabled by default. Ctrl+Shift+F toggles fullscreen for the
-focused terminal pane. The Sidebar section controls whether terminal pane entries appear
+the temporary fullscreen view; it is enabled by default. Ctrl+Shift+Enter toggles fullscreen for the
+focused terminal pane (Ctrl+Shift+F is the Inbox's search over all threads, so the two never share a chord). The Sidebar section controls whether terminal pane entries appear
 beneath each session; this preference is global and stored with the local terminal settings. The
 OpenCode section (shown on macOS and Windows only) sets the command that starts OpenCode for the
 Inbox, which is its background service and its terminal threads, and opens the OpenCode configuration
@@ -126,6 +131,43 @@ every pane as a rounded card on the panel background with a 6px margin around an
 showing as a thin rounded bar on hover). With more than one pane, the pane that last took focus gets an accent
 border and glow, and the titles of the others are muted; a lone pane is not singled out. The switch applies
 at once to every `TerminalView`, so the Sessions view and the Inbox sidebar terminal change together.
+
+The Appearance section ends with **Fancy mode** (`src/renderer/fancy/`, `FancyModeSettings`), an opt-in extra that
+is off by default. Its settings (`enabled`, `background`, `backgroundEnabled`, `threadEffects`) live in the renderer's local storage under
+`mde.fancy-mode`, read and written by `fancy/settings.ts` and held in the `useFancyMode` store. Turned on, it does two
+things, each a canvas drawn by the one shared animation loop in `fancy/scheduler.ts` (a single
+`requestAnimationFrame` for everything, a frame rate per task, no drawing while the page is hidden). Under the system's
+reduced-motion setting nothing animates: each canvas draws one still picture.
+
+- **An animated background**, chosen from three: **Aurora** (curtains of light with shimmering rays over faint
+  stars), **Constellation** (a drifting star network; signals hop along its links, shooting stars cross, and the stars
+  near the cursor lean toward it) and **Contours** (a topographic map of drifting noise traced with marching squares,
+  `backgrounds/contours-math.ts`, with every fourth line heavier). `FancyBackground` is a canvas at `-z-10` in `App`'s
+  root, which is `isolate`d, so it sits above the root's color and below every panel; it lets every click through. The
+  panels that carry `fancy-glass` (title bar, both sidebars, the Files panel, the session tab strip) become frosted
+  glass over it, by a rule in `index.css` that applies only under the `data-fancy-bg` attribute `App` sets while the
+  background is on; terminals and dialogs stay solid. All three are 2D canvases, not shaders: terminals hold WebGL
+  contexts, Chromium drops the oldest one past a limit, and a background must never take a terminal's. Each draws at
+  full strength and `backgroundOpacity(palette)` sets the layer's opacity, the largest (up to 0.6 on a dark theme, 0.4
+  on a light one) at which body text keeps a contrast of 4.5 against a bright peak of the theme's own colors, so a
+  theme whose text has little to spare (One Dark) gets a fainter background; `test/fancy-color.test.ts` holds every
+  theme to it. The colors are the theme's: its accent, its green, and two hues turned 52 degrees either way from the
+  accent (`rotateHue`), so every theme gets a set that sits together. The settings show a small live preview of each
+  background, moving while it is hovered or chosen.
+- **Thread effects** in the Inbox's thread list (`ThreadEffect`, a canvas at `-z-10` in the row, which is `isolate`d so
+  the effect sits above the row's color and below its text): an unread thread gets a storm (`thread-effects/lightning.ts`:
+  two arcs of current crackle round the border, small arcs jump in from the edge, and every one to three seconds a
+  forked bolt, from midpoint displacement, cracks across the row, flashing twice, lighting the row and throwing
+  sparks), and a working thread gets digital rain (`thread-effects/matrix-rain.ts`: falling columns of katakana and
+  digits, or digits and letters where the fonts cannot draw katakana, with a glowing head, a band of light sweeping down
+  and a packet of light running along the lower edge). A thread that is both unread and working shows the storm. The
+  working effect also shows in the Working section, since it uses the same row. A row draws only while on screen
+  (`IntersectionObserver`), so a long list costs what the visible rows cost. The mini Inbox window has no effects.
+
+The geometry and the timing of the effects (`generateBolt`, `strikeEnvelope`, `roundedPerimeter`, the rain's
+simulation, the contour lines) are pure functions with tests; the drawing itself was checked by eye in headless
+Chromium. Fancy mode must stay cheap: add nothing that runs outside the shared loop, and nothing that draws for a row
+that is not on screen.
 
 The Settings dialog is a single dialog mounted by `App` (`src/renderer/components/SettingsDialog.tsx`)
 and opened through the workspace store's `openSettings(section)`, so any view can open it at a
@@ -460,9 +502,11 @@ The Inbox also shows a right-hand sidebar with three tabs, Files, Changes and Te
 
 **Tab strip.** Files, Changes and Terminal sit in one row that never wraps: when they do not fit (the 260 px default with a change count and the float button is enough), the row scrolls sideways under an edge fade, the mouse wheel turns it, and ‹ › buttons appear on both sides and scroll it by most of its width. Left, Right, Home and End still switch tabs, and the shown tab is scrolled into view. It is the reusable `components/ui/scroll-strip.tsx`.
 
-**Terminal tab.** The Inbox has one terminal, shared by every thread: it is the same whichever thread (or the new-thread page) is open, and it keeps running while the sidebar shows another tab or the Sessions view is open. It reuses the Sessions view's terminal layout (`TerminalView` in its embedded mode: no tab strip or session header, and Ctrl split controls, Ctrl+Shift+F and the pane-switch shortcuts acting only while the keyboard is inside it, so typing in the composer is never intercepted). Splitting any pane on any side, resizing the dividers, reordering panes, pane titles, fullscreen and restart work as in Sessions. Each pane reopens in its last reported directory, falling back to home: `~` in the chosen WSL distro on Windows, the home directory on the Mac. The layout and its dividers are kept in `localStorage` (`mde.inbox-terminal-layout`) and come back as fresh shells on the next run; the shell processes themselves are not restored. Directories are saved separately in the main-process terminal records. The layout edits shared with the Sessions view live in `src/renderer/terminal/layout-edits.ts`, and the Inbox's copy of the state in `src/renderer/store/inbox-terminal.ts`.
+**Terminal tab.** The Inbox has one terminal, shared by every thread: it is the same whichever thread (or the new-thread page) is open, and it keeps running while the sidebar shows another tab or the Sessions view is open. It reuses the Sessions view's terminal layout (`TerminalView` in its embedded mode: no tab strip or session header, and Ctrl split controls, Ctrl+Shift+Enter and the pane-switch shortcuts acting only while the keyboard is inside it, so typing in the composer is never intercepted). Splitting any pane on any side, resizing the dividers, reordering panes, pane titles, fullscreen and restart work as in Sessions. Each pane reopens in its last reported directory, falling back to home: `~` in the chosen WSL distro on Windows, the home directory on the Mac. The layout and its dividers are kept in `localStorage` (`mde.inbox-terminal-layout`) and come back as fresh shells on the next run; the shell processes themselves are not restored. Directories are saved separately in the main-process terminal records. The layout edits shared with the Sessions view live in `src/renderer/terminal/layout-edits.ts`, and the Inbox's copy of the state in `src/renderer/store/inbox-terminal.ts`.
 
 **Floating terminal.** The button beside *Collapse sidebar* on the Terminal tab lifts the same terminal out of the sidebar into a window drawn inside the app window, over everything under the title bar: the thread list, the conversation and the right sidebar (not a separate OS window, so it has no taskbar button). It is the same `InboxTerminal`, so the shells, panes and layout are the same ones; only one of the two places renders it at a time, and moving between them reattaches the live xterm (as switching tabs does). While it floats, the Terminal tab shows a notice with *Show/Hide terminal* and *Move back to the sidebar*. Everything the sidebar terminal does works in the window: Ctrl+click splits to the left, right, top or bottom, divider drags, reordering, per-pane fullscreen (which fills the window) and restart. The window itself drags by its title bar, resizes from all four edges and corners (never smaller than 320 x 180 or outside that area), maximizes to all of it (button or double-click on the title bar), hides, and docks back (it then opens the sidebar's Terminal tab and focuses the terminal). While the window is dragged, the terminal inside is kept mounted but not painted (the panel colour shows instead), because repainting a live xterm (especially its WebGL canvas) under a moving window flickers; a resize leaves the window alone and draws an outline that follows the pointer, so the terminal and its shell are refitted once, on release, instead of on every step. The place is saved on release only. The geometry is pure code in `src/renderer/lib/floating-window.ts`; the state in `src/renderer/store/inbox-floating-terminal.ts`; the window in `components/inbox/FloatingTerminal.tsx`, mounted in `App.tsx` beside the sidebars, while the Inbox view is showing. Whether it floats, its rectangle and whether it is maximized are kept in `localStorage` (`mde.inbox-floating-terminal`); it always starts hidden, so a restart never covers the conversation.
+
+While the terminal floats but is hidden, a small button sits at the foot of the thread list, bottom left (`components/inbox/HiddenTerminalIndicator.tsx`, mounted by `Sidebar.tsx` in the Inbox view): it says *Terminal hidden* (or how many terminals, when the layout is split), shows the F11 key, and a click shows the window again. It takes its own row below the list, so it never covers a thread, and it is gone as soon as the window is on screen or docked.
 
 F11 shows and hides the floating window. Like F12 it is caught in the main process (`before-input-event`, `src/main/floating-terminal-key.ts`) so it works whichever pane has the keyboard and the shell never receives it, and a held key is swallowed. The renderer tells the main process through `floating-terminal:active` while the terminal floats (and the main process forgets it when the page reloads); at all other times F11 keeps the default of putting the window in full screen. The press comes back as the `floating-terminal:toggle` event.
 
@@ -680,6 +724,19 @@ follow-up switches the session's agent or model first only when you changed them
 keeps the last ten opened threads in memory so going back to one is instant; MDE never writes
 messages to disk.
 
+**Long conversations.** Drawing a message costs a few milliseconds (each reply is a Markdown editor
+of its own), so a thread does not draw all it has loaded. `ChatThreadView` draws the conversation from
+one message on, at first the 40th from the end (`DRAWN_MESSAGES`, `drawnStart` in `lib/chat.ts`); the
+start is a message and not a count, so new messages at the end take nothing away at the top. Earlier
+messages are drawn 40 at a time when they are asked for: scrolling to the top, **Load earlier
+messages**, a prompt chosen in the timeline, or the search, which works on what is drawn and so
+draws the rest as it goes. What is loaded and not drawn comes first; only then is an older page read
+from OpenCode. The message that was topmost stays where it was on screen, and a conversation whose
+drawn part does not fill the pane twice over (the compact layout folds many messages into a line)
+draws more by itself. A thread that stays open gathers every message of a long run, so when it is
+left the store keeps only its newest 50 (`CHAT_KEPT_MESSAGES`) to show at once the next time, marked
+`cut`; the next read replaces them with the newest page and its cursor instead of adding to them.
+
 **Timeline and scrolling.** From the second prompt on, a slim rail at the right edge of the
 conversation has one short mark for each of the user's prompts (`ChatTimeline`, with the pure
 logic in `lib/chat-timeline.ts`). The marks follow the reading position: the turn being read, the
@@ -711,8 +768,7 @@ there is a query the earlier messages that are not loaded yet are loaded, so tha
 is searched, and the matches are found again as messages stream in. Text selected in the
 conversation when the bar is opened becomes the query. Nothing is stored.
 
-**Search over all threads.** Ctrl+Shift+F (Cmd+Shift+F on a Mac), in the Inbox view only (the terminal
-views keep it for fullscreen), opens an overlay like the session switcher (`InboxSearchDialog`). The
+**Search over all threads.** Ctrl+Shift+F (Cmd+Shift+F on a Mac), in the Inbox view only, opens an overlay like the session switcher (`InboxSearchDialog`). The
 conversations live in OpenCode, so the main process reads them (`main/inbox/search.ts`, `InboxSearch`):
 every thread, archived and terminal ones too, newest first, three at a time, all pages of messages (up to
 2 MB of text per thread), keeping only the user's text and the agent's text parts in memory. A thread is
@@ -908,18 +964,32 @@ old count would be wrong, so `contextUsage` marks it `compacted`: the pill reads
 dark and calm, and the breakdown shows the size before and the summary's size instead of the old
 composition. The first finished reply after the compaction measures it again.
 
-The question and its answer are held per thread in `store/inbox-aside.ts` (memory only: nothing is
-stored, and they are gone when the app is closed). A thread shows one side question; asking another
-replaces it, and an answer that arrives for a question that has since been replaced or dismissed is
-dropped. It is shown as a card of its own above the message box (`ChatAside`), not in the conversation:
+A side question is shown as a card of its own above the message box (`ChatAside`), not in the conversation:
 a `btw` mark and the question (two lines, the rest in the tooltip), a thinking state while the answer is on
 its way, then the answer as Markdown with the same renderer as the agent's messages (it scrolls when it is
-long), a Copy button and a dismiss button, and a line saying that it is not added to the conversation. A
-failure shows the reason and a Retry that asks the same question again. The card stays until it is
-dismissed or replaced, and an answer that arrives while another thread is open is there when the thread is.
-Escape dismisses it (the first Escape only closes an open command list; from inside the card, the caret
-goes back to the box), and a conversation that is following its end stays at its end when the card
-appears.
+long), a Copy button and a dismiss button, and a line saying that it is not added to the conversation, with
+the time the answer arrived (and the day, when that was not today). A failure shows the reason and a Retry
+that asks the same question again. An answer that arrives while another thread is open is there when the
+thread is. Escape dismisses the card (the first Escape only closes an open command list; from inside the
+card, the caret goes back to the box), and a conversation that is following its end stays at its end when
+the card appears.
+
+**Side question history.** Dismissing the card only closes it: every answered side question is kept per
+thread, so it can be looked at again. The main process keeps them (`InboxAsideHistory`,
+`src/main/inbox/asides.ts`) in one file, `inbox-asides.json` in the user data folder: the question, the
+answer and when it arrived, the newest 20 per thread (an answer is cut at 100,000 characters). It records
+an answer as part of `chat:aside` and returns the kept entry; `chat:aside-history` reads a thread's list.
+The file is written only when a question is answered or a thread is removed, never while typing; a write
+that fails does not fail the question (one warning without the path, and the next change writes again).
+Removing a thread removes its side questions, and entries of threads that no longer exist are dropped when
+the file is first read. Failed questions are not kept. The renderer (`store/inbox-aside.ts`) holds, per
+thread, the history (read once when the thread is first opened), the question being asked, and which one
+the card shows. With more than one, the card's header has a pager (earlier / later, "2 / 5"); asking a new
+question shows it in the same card, and an answer that arrives while the card is closed or on an earlier
+question joins the history without moving the card. The way back to a closed card is a chip in the message
+box's toolbar (`AsideHistoryChip`, the `btw` mark and the count, shown once the thread has a side
+question), which opens the card on the newest one and closes it again; `/btw` with no question does the
+same once there is a history (without one it still asks for a question).
 
 **Goals (`/goal`).** A goal keeps the agent working on an objective until a reviewer decides it is met.
 It is OpenCode's own `opencode.goal` plugin; MDE only starts, controls and shows it, and keeps no goal
@@ -1618,7 +1688,7 @@ it no longer scans status/diffs. Local and already cached remote-tracking branch
 with missing blobs and without remote access. The picker does not refresh remote branches.
 
 Regression evidence and platform limits are in
-[`docs/security.md`](security.md#release-security-review-2026-11-08).
+[`docs/security.md`](security.md#git-execution-boundary).
 
 ## WSL
 
@@ -1709,8 +1779,18 @@ reads only browser-provided File objects; source-tree reads remain in the main p
 same real-path containment checks as the viewer. Binary attachment reads have a separate 20 MiB
 limit and do not enlarge the text viewer's limit.
 
-`InboxDraftStore` serializes mutations and atomically saves each text edit and attachment change
-under `inbox-drafts/` in user data. Copies use opaque filenames and private permissions. Drafts
+`InboxDraftStore` serializes mutations and keeps the drafts in memory; `inbox-drafts/index.json` in
+user data is a copy of them that is replaced atomically at a few moments only. A change that is not
+typing (a file added or removed, a draft sent, moved or deleted, a quote put above the text) writes it
+at once. Typing does not: text is written when a draft is opened or looked at again (the `load` and
+`flush` draft actions), when the main window loses focus, before MDE quits, and once typing has
+paused for five seconds (`DRAFT_IDLE_SAVE_MS`). A crash can therefore lose the last few seconds of
+typing. A write that fails is never an error for the change that caused it: the index stays marked
+as unsaved, the failure is logged once without the path, and the next of those moments, or the
+five-second timer, writes it again. This matters on Windows, where a security scanner that has the
+file open makes the replacing rename fail with `EPERM`; `renameOver` in `store/atomic-json.ts`, which
+the other JSON stores share through `writeTextAtomic`, also tries such a refused rename a few more
+times over about half a second. Copies use opaque filenames and private permissions. Drafts
 belong to a thread (`thread:<id>`) or are a new thread not yet started (`draft:drf_<uuid>`), and
 survive restart. Native create/send requests carry attachment IDs and a draft revision; a create
 also names the draft it starts from (`draftId`). The main process validates ownership, sends copied

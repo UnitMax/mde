@@ -198,7 +198,7 @@ function FileTree({
     <aside
       data-testid="file-tree-panel"
       className={cn(
-        'flex h-full min-h-0 flex-col border-l border-line bg-panel',
+        'fancy-glass flex h-full min-h-0 flex-col border-l border-line bg-panel',
         fill ? 'w-full min-w-0' : 'w-[260px] shrink-0'
       )}
     >
@@ -375,7 +375,7 @@ export function FileTreePanel({
 
   if (collapsed) {
     return (
-      <aside className="flex h-full min-h-0 w-11 shrink-0 flex-col items-center border-l border-line bg-panel py-2">
+      <aside className="fancy-glass flex h-full min-h-0 w-11 shrink-0 flex-col items-center border-l border-line bg-panel py-2">
         <Button
           variant="ghost"
           size="icon"

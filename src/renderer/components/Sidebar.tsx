@@ -58,6 +58,7 @@ import {
 } from '@shared/session-colors'
 import { SESSION_ICONS, sessionIconOption } from '@shared/session-icons'
 import { InboxPanel } from '@/components/InboxPanel'
+import { HiddenTerminalIndicator } from '@/components/inbox/HiddenTerminalIndicator'
 
 function customSessionColor(color: Session['color']): Session['color'] {
   return color && color !== DEFAULT_SESSION_COLOR ? color : undefined
@@ -632,7 +633,7 @@ export function Sidebar({
 
   if (collapsed && activeSection === 'sessions') {
     return (
-      <aside className="flex h-full min-h-0 w-11 shrink-0 flex-col items-center overflow-hidden border-r border-line bg-panel py-2">
+      <aside className="fancy-glass flex h-full min-h-0 w-11 shrink-0 flex-col items-center overflow-hidden border-r border-line bg-panel py-2">
         <div className="mt-2 min-h-0 w-full flex-1 overflow-y-auto">
           {activeSection === 'sessions' && (
             <div className="flex flex-col items-center gap-1">
@@ -717,7 +718,7 @@ export function Sidebar({
   }
 
   return (
-    <aside className="flex w-[260px] shrink-0 flex-col border-r border-line bg-panel">
+    <aside className="fancy-glass flex w-[260px] shrink-0 flex-col border-r border-line bg-panel">
       <div className="min-h-0 flex-1 px-2 pb-2 pt-3">
         <div
           id="sidebar-section-sessions"
@@ -772,6 +773,7 @@ export function Sidebar({
         </div>
       </div>
 
+      {activeSection === 'inbox' && <HiddenTerminalIndicator />}
       {activeSection !== 'inbox' && <div className="flex shrink-0 items-center gap-1 border-t border-line p-2">
         <div className="min-w-0 flex-1">
           <SidebarCreateActions

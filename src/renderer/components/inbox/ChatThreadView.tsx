@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { AlertTriangle, FoldVertical, LoaderCircle, RefreshCw } from 'lucide-react'
 import type { ChatMessage, InboxThread, OpenCodeModelRef } from '@shared/types'
 import { ChatAside } from '@/components/inbox/ChatAside'
+import { AsideHistoryChip } from '@/components/inbox/AsideHistoryChip'
 import { ChatFindBar } from '@/components/inbox/ChatFindBar'
 import { ChatBackgroundTasks } from '@/components/inbox/ChatBackgroundTasks'
 import { ComposerDock } from '@/components/inbox/ComposerDock'
@@ -25,11 +26,11 @@ import { registerThreadInput } from '@/lib/inbox-thread-input'
 import { scrollBehavior, TIMELINE_MIN_PROMPTS, timelineEntries } from '@/lib/chat-timeline'
 import { compactPlans, type RenderBlock } from '@/lib/chat-tools'
 import { cn } from '@/lib/utils'
-import { compactionState, contextUsage, findModel, goalPhase, hideReverted, initialChoice, mergeLive, revertedMessageCount, sameModelRef, turnStats } from '@/lib/chat'
+import { compactionState, contextUsage, drawnStart, findModel, goalPhase, hideReverted, initialChoice, mergeLive, revertedMessageCount, sameModelRef, turnStats } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { mcpKey } from '@/lib/mcp'
 import { slashCommands } from '@/lib/slash-commands'
-import { useInboxAside } from '@/store/inbox-aside'
+import { asideCount, shownAside, useInboxAside } from '@/store/inbox-aside'
 import { optionsKey, useInboxChat, type ChatThreadState } from '@/store/inbox-chat'
 import { useInboxFind } from '@/store/inbox-find'
 import { useInboxMcp, type McpPlace } from '@/store/inbox-mcp'
@@ -40,6 +41,12 @@ const NO_SERVERS: readonly string[] = []
 
 /** Within this distance of the bottom, new content keeps the view pinned to it. */
 const STICK_THRESHOLD_PX = 80
+
+/**
+ * How many of the newest messages are drawn when a thread opens, and how many more each step back adds.
+ * Drawing a message costs a few milliseconds, so a long conversation drawn whole freezes the window.
+ */
+export const DRAWN_MESSAGES = 40
 
 /** A prompt the timeline jumps to is left this far below the top edge, so that its bubble is not cut off. */
 const JUMP_MARGIN_PX = 16
@@ -77,7 +84,13 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const clearDraftReload = useInboxChat((store) => store.clearDraftReload)
   const replyPermission = useInboxChat((store) => store.replyPermission)
   const replyForm = useInboxChat((store) => store.replyForm)
-  const aside = useInboxAside((store) => store.asides[thread.id])
+  const asides = useInboxAside((store) => store.threads[thread.id])
+  const aside = useMemo(() => shownAside(asides), [asides])
+  const asidesKept = asideCount(asides)
+  const loadAsides = useInboxAside((store) => store.load)
+  const openAsides = useInboxAside((store) => store.open)
+  const stepAside = useInboxAside((store) => store.step)
+  useEffect(() => { void loadAsides(thread.id) }, [loadAsides, thread.id])
   const askAside = useInboxAside((store) => store.ask)
   const dismissAside = useInboxAside((store) => store.dismiss)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -188,21 +201,45 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
     [shown, state?.usage, ready?.models, model],
   )
 
+  // Only the end of the conversation is drawn, from the message `drawnFrom` names; earlier messages are added
+  // above when they are asked for (scrolling to the top, the timeline, the search). The start is a message and
+  // not a count, so that new messages at the end take nothing away at the top.
+  const [drawnFrom, setDrawnFrom] = useState<string | null>(null)
+  const first = useMemo(() => drawnStart(messages, drawnFrom, DRAWN_MESSAGES), [messages, drawnFrom])
+  // Named as soon as there is a message, so that a short conversation growing past the count loses nothing at its top.
+  if (drawnFrom === null && messages.length > 0) setDrawnFrom(messages[first]!.id)
+  const drawn = useMemo(() => (first === 0 ? messages : messages.slice(first)), [messages, first])
+  const drawnFirstId = drawn[0]?.id
+  // Where the topmost drawn message was on screen before messages were added above it, to put it back there.
+  const keepPlace = useRef<{ id: string; top: number } | null>(null)
+  const notePlace = useCallback(() => {
+    const top = scrollRef.current?.querySelector<HTMLElement>('[data-chat-message]')
+    keepPlace.current = top ? { id: top.dataset.chatMessage!, top: top.getBoundingClientRect().top } : null
+  }, [])
+  const canLoadOlder = Boolean(state?.older) && !state?.loadingOlder
+  /** Shows more of the conversation above: what is loaded and not drawn first, then an older page. */
+  const showEarlier = useCallback(() => {
+    if (first > 0) {
+      notePlace()
+      setDrawnFrom(messages[Math.max(0, first - DRAWN_MESSAGES)]!.id)
+      return
+    }
+    if (!canLoadOlder) return
+    void loadOlder(thread.id).then(() => {
+      const loaded = useInboxChat.getState().threads[thread.id]?.messages[0]
+      if (!loaded) return
+      notePlace()
+      setDrawnFrom(loaded.id)
+    })
+  }, [first, messages, canLoadOlder, loadOlder, notePlace, thread.id])
+
   const onScroll = useCallback(() => {
     const element = scrollRef.current
     if (!element) return
     stickRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < STICK_THRESHOLD_PX
     setAway(!stickRef.current)
-    if (element.scrollTop < 40 && state?.older && !state.loadingOlder) {
-      const before = element.scrollHeight
-      void loadOlder(thread.id).then(() => {
-        // Keep the reader's place when older messages are added above.
-        requestAnimationFrame(() => {
-          if (scrollRef.current) scrollRef.current.scrollTop += scrollRef.current.scrollHeight - before
-        })
-      })
-    }
-  }, [state?.older, state?.loadingOlder, loadOlder, thread.id])
+    if (element.scrollTop < 40 && (first > 0 || canLoadOlder)) showEarlier()
+  }, [first, canLoadOlder, showEarlier])
 
   // Ctrl+F (Cmd+F on a Mac) searches this conversation, from the message box or anywhere else in the thread's pane.
   useEffect(() => {
@@ -226,8 +263,6 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
     setFind(null)
     requestAnimationFrame(() => composerSlot.current?.querySelector<HTMLElement>('[data-testid="chat-input"] .cm-content')?.focus())
   }, [])
-  const loadEarlier = useCallback(() => void loadOlder(thread.id), [loadOlder, thread.id])
-
   const requests = state?.requests
   const pending = state?.pending
   useLayoutEffect(() => {
@@ -238,9 +273,18 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const prompts = useMemo(() => timelineEntries(messages), [messages])
   // In a narrow pane the timeline's rail would touch the text, so the conversation and the composer both leave room for it.
   const railGutter = prompts.length >= TIMELINE_MIN_PROMPTS && '@max-[50rem]:pr-9'
+  // A prompt the timeline names that is not drawn yet: it is drawn first, and jumped to once it is there.
+  const jumpAfterDraw = useRef<string | null>(null)
   const jumpToPrompt = useCallback((id: string) => {
     const scroller = scrollRef.current
     const target = scroller && Array.from(scroller.querySelectorAll<HTMLElement>('[data-chat-message]')).find((element) => element.dataset.chatMessage === id)
+    if (scroller && !target && first > 0 && messages.findIndex((message) => message.id === id) < first && jumpAfterDraw.current !== id) {
+      jumpAfterDraw.current = id
+      keepPlace.current = null
+      setDrawnFrom(id)
+      return
+    }
+    jumpAfterDraw.current = null
     if (!scroller || !target) return
     const wanted = scroller.scrollTop + target.getBoundingClientRect().top - scroller.getBoundingClientRect().top - JUMP_MARGIN_PX
     const last = scroller.scrollHeight - scroller.clientHeight
@@ -249,7 +293,27 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
     if (Math.abs(top - scroller.scrollTop) < 1) return
     stickRef.current = last - top < STICK_THRESHOLD_PX
     scroller.scrollTo({ top, behavior: scrollBehavior() })
-  }, [])
+  }, [first, messages])
+  // Messages were added above: the one that was topmost stays where it was, or the view stays at the end it was
+  // following. Then, while what is drawn does not fill the pane twice over (a compact conversation folds many
+  // messages into one line), more is drawn, so that there is always something above to scroll to.
+  useLayoutEffect(() => {
+    const element = scrollRef.current
+    if (!element) return
+    const kept = keepPlace.current
+    keepPlace.current = null
+    const anchor = kept && Array.from(element.querySelectorAll<HTMLElement>('[data-chat-message]')).find((item) => item.dataset.chatMessage === kept.id)
+    if (kept && anchor) element.scrollTop += anchor.getBoundingClientRect().top - kept.top
+    else if (stickRef.current) element.scrollTop = element.scrollHeight
+    const jump = jumpAfterDraw.current
+    if (jump) {
+      jumpToPrompt(jump)
+      jumpAfterDraw.current = null
+      return
+    }
+    if (first > 0 && element.scrollHeight < element.clientHeight * 2) showEarlier()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawnFirstId])
   const scrollToBottom = useCallback(() => {
     const scroller = scrollRef.current
     if (!scroller) return
@@ -359,8 +423,14 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
     })
   }, [agent, latest?.agent, latest?.model, model, setGoal, thread.id])
   const commands = useMemo(
-    () => slashCommands({ ask: (question) => askAside(thread.id, question), fork: forkAll, compact: compactAll, goal: changeGoal }),
-    [askAside, forkAll, compactAll, changeGoal, thread.id],
+    () => slashCommands({
+      ask: (question) => askAside(thread.id, question),
+      asked: asidesKept > 0 ? () => openAsides(thread.id) : undefined,
+      fork: forkAll,
+      compact: compactAll,
+      goal: changeGoal,
+    }),
+    [askAside, openAsides, asidesKept > 0, forkAll, compactAll, changeGoal, thread.id],
   )
   // The MCP servers of the folder the thread runs in; the chip in the composer keeps this list current.
   const mcpPlace = useMemo<McpPlace>(
@@ -404,14 +474,15 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
       <ChatTranscriptMenu messages={messages} complete={!state?.older} transcriptRef={scrollRef} onCopyError={setCopyError} onQuote={quote}>
       <div ref={scrollRef} onScroll={onScroll} className="chat-selectable min-h-0 flex-1 overflow-y-auto" data-testid="chat-transcript">
         <div ref={contentRef} className={cn('mx-auto flex w-full max-w-3xl flex-col gap-4 px-6 py-5', railGutter)}>
-          {state?.older && (
+          {(first > 0 || state?.older) && (
             <button
               type="button"
               className="self-center text-xs text-accent hover:underline disabled:opacity-50"
-              disabled={state.loadingOlder}
-              onClick={() => void loadOlder(thread.id)}
+              disabled={first === 0 && state?.loadingOlder}
+              onClick={showEarlier}
+              data-testid="chat-show-earlier"
             >
-              {state.loadingOlder ? 'Loading…' : 'Load earlier messages'}
+              {first === 0 && state?.loadingOlder ? 'Loading…' : 'Load earlier messages'}
             </button>
           )}
           {!state || (state.loading && state.messages.length === 0) ? (
@@ -423,7 +494,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
             <p className="py-10 text-center text-xs text-fg-subtle">No messages yet.</p>
           ) : null}
           <CompactChatContext.Provider value={compact}>
-            {messages.map((message) => {
+            {drawn.map((message) => {
               const took = turns.finished.get(message.id)
               return (
                 <Fragment key={message.id}>
@@ -502,16 +573,24 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
           seed={find.query}
           target={find.target}
           focusSignal={find.signal}
-          moreToLoad={Boolean(state?.older) && !state?.error}
-          loadingMore={Boolean(state?.loadingOlder)}
-          onLoadMore={loadEarlier}
+          moreToLoad={first > 0 || (Boolean(state?.older) && !state?.error)}
+          loadingMore={first === 0 && Boolean(state?.loadingOlder)}
+          onLoadMore={showEarlier}
           onClose={closeFind}
         />
       )}
       </div>
       <div ref={composerSlot} className={cn('mx-auto w-full max-w-3xl shrink-0 px-6 pb-5 pt-2', railGutter)}>
         {goal && <ChatGoalCard key={goal.id} goal={goal} phase={phase} running={running} onAction={(action) => setGoal(thread.id, { action })} />}
-        {aside && <ChatAside aside={aside} onDismiss={closeAside} onRetry={() => void askAside(thread.id, aside.question)} />}
+        {aside && (
+          <ChatAside
+            aside={aside}
+            position={{ index: asides?.at ?? 0, count: asidesKept }}
+            onStep={(by) => stepAside(thread.id, by)}
+            onDismiss={closeAside}
+            onRetry={() => void askAside(thread.id, aside.question)}
+          />
+        )}
         <ComposerDock>
           <ChatBackgroundTasks key={`background:${thread.id}`} threadId={thread.id} />
           {ready && <ModelQuickSwitch models={ready.models} value={model} onChange={setModel} />}
@@ -539,7 +618,10 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
             closeAside()
             return true
           }}
-          extraPickers={<McpChip place={mcpPlace} running={running} messages={shown} complete={!state?.older} />}
+          extraPickers={<>
+            <McpChip place={mcpPlace} running={running} messages={shown} complete={!state?.older} />
+            <AsideHistoryChip count={asidesKept} open={aside !== null} onToggle={() => aside ? closeAside() : openAsides(thread.id)} />
+          </>}
           onStop={() => void interrupt(thread.id)}
           onSend={async (text, attachments) => {
             stickRef.current = true

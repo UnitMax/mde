@@ -162,6 +162,20 @@ describe('the Inbox commands', () => {
     expect(compact).not.toHaveBeenCalled()
   })
 
+  it('opens the earlier side questions with /btw on its own once there are some, and still asks one that is given', async () => {
+    const ask = vi.fn()
+    const asked = vi.fn()
+    expect(named('btw', slashCommands({ ...actions(), ask })).argument).toEqual({ hint: 'your question', required: true })
+    const command = named('btw', slashCommands({ ...actions(), ask, asked }))
+    expect(command.argument?.required).toBe(false)
+    await command.run('')
+    expect(asked).toHaveBeenCalledOnce()
+    expect(ask).not.toHaveBeenCalled()
+    await command.run('why?')
+    expect(ask).toHaveBeenCalledWith('why?')
+    expect(asked).toHaveBeenCalledOnce()
+  })
+
   it('has /fork, which takes nothing and forks the whole conversation', async () => {
     const { ask, fork, compact, goal } = actions()
     const command = named('fork', slashCommands({ ask, fork, compact, goal }))

@@ -569,3 +569,22 @@ describe('mergePending', () => {
     expect(ids(read)).toEqual(['msg_b'])
   })
 })
+
+describe('where the drawn part of a conversation begins', () => {
+  const messages = ['msg_1', 'msg_2', 'msg_3', 'msg_4', 'msg_5'].map((id) => ({ id }))
+
+  it('is the newest messages while no message is named', async () => {
+    const { drawnStart } = await import('../src/renderer/lib/chat')
+    expect(drawnStart(messages, null, 2)).toBe(3)
+    expect(drawnStart(messages, null, 10)).toBe(0)
+    expect(drawnStart([], null, 2)).toBe(0)
+  })
+
+  it('is the named message, or the next one when it is gone, and never fewer than the newest', async () => {
+    const { drawnStart } = await import('../src/renderer/lib/chat')
+    expect(drawnStart(messages, 'msg_2', 2)).toBe(1)
+    expect(drawnStart([{ id: 'msg_1' }, { id: 'msg_3' }, { id: 'msg_4' }], 'msg_2', 1)).toBe(1)
+    expect(drawnStart(messages, 'msg_5', 3)).toBe(2)
+    expect(drawnStart(messages, 'msg_9', 2)).toBe(3)
+  })
+})

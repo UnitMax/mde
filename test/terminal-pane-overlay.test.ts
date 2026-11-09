@@ -50,7 +50,7 @@ describe('TerminalPaneOverlay', () => {
     const active = renderOverlay({ visible: true, number: 2, active: true, isFullscreen: false })
     expect(active.querySelector('[data-testid="terminal-pane-overlay-number"]')?.textContent).toBe('2')
     expect(active.querySelector('[data-testid="terminal-pane-overlay-fullscreen"]')?.textContent)
-      .toBe('Ctrl+Shift+F · Fullscreen')
+      .toBe('Ctrl+Shift+Enter · Fullscreen')
 
     const inactive = renderOverlay({ visible: true, number: 3, active: false, isFullscreen: false })
     expect(inactive.querySelector('[data-testid="terminal-pane-overlay-number"]')?.textContent).toBe('3')
@@ -61,7 +61,7 @@ describe('TerminalPaneOverlay', () => {
     const container = renderOverlay({ visible: true, number: null, active: true, isFullscreen: true })
     expect(container.querySelector('[data-testid="terminal-pane-overlay-number"]')).toBeNull()
     expect(container.querySelector('[data-testid="terminal-pane-overlay-fullscreen"]')?.textContent)
-      .toBe('Ctrl+Shift+F · Exit fullscreen')
+      .toBe('Ctrl+Shift+Enter · Exit fullscreen')
   })
 
   it('renders nothing for an unfocused pane without a number', () => {

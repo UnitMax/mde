@@ -3,9 +3,9 @@
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ChatAsideRequest, ChatMessage, ChatMessagesPage, InboxFolder, InboxThread } from '../src/shared/types'
+import type { ChatAsideEntry, ChatAsideRequest, ChatMessage, ChatMessagesPage, InboxFolder, InboxThread } from '../src/shared/types'
 import { InboxThreadView } from '../src/renderer/components/InboxThreadView'
-import { useInboxAside } from '../src/renderer/store/inbox-aside'
+import { asideCount, resetAsideLoads, shownAside, useInboxAside } from '../src/renderer/store/inbox-aside'
 import { useInboxChat } from '../src/renderer/store/inbox-chat'
 import { useWorkspace } from '../src/renderer/store/workspace'
 import { messageInput, pressMessageKey, setMessageText } from './helpers/chat-input'
@@ -34,7 +34,12 @@ const conversation: ChatMessage[] = [
 let page: ChatMessagesPage
 /** What the next side question does; a function so that a test can hold the answer back. */
 let answer: (request: ChatAsideRequest) => Promise<{ text: string }>
-const aside = vi.fn((request: ChatAsideRequest) => answer(request))
+let kept = 0
+const aside = vi.fn(async (request: ChatAsideRequest) => {
+  const { text } = await answer(request)
+  return { text, entry: { id: `aside_${kept += 1}`, question: request.question, answer: text, askedAt: Date.now() } }
+})
+const asideHistory = vi.fn(async (_request: { threadId: string }): Promise<ChatAsideEntry[]> => [])
 const send = vi.fn(async (_request: unknown) => null)
 const interrupt = vi.fn(async (_request: unknown) => undefined)
 const writeText = vi.fn(async (_text: string) => undefined)
@@ -52,6 +57,7 @@ const api = {
     send,
     interrupt,
     aside,
+    asideHistory,
     mcp: vi.fn(async () => ({ servers: [] })),
     requests: vi.fn(async () => ({ permissions: [], forms: [] })),
     subscribe: vi.fn(async () => undefined),
@@ -111,7 +117,10 @@ beforeEach(() => {
     activeWorkspaceView: 'inbox',
   })
   useInboxChat.setState({ folders: [folder], composer: { folderId: 'fld_app' }, foldersLoaded: true, options: {}, threads: {}, recent: [], titleRegenerations: {} })
-  useInboxAside.setState({ asides: {} })
+  asideHistory.mockReset()
+  asideHistory.mockResolvedValue([])
+  resetAsideLoads()
+  useInboxAside.setState({ threads: {} })
 })
 afterEach(async () => {
   for (const root of roots.splice(0)) await act(async () => root.unmount())
@@ -210,7 +219,7 @@ describe('/btw in a conversation', () => {
     expect(text('chat-aside-body')).toContain('Second time lucky.')
   })
 
-  it('replaces the card with the next question', async () => {
+  it('shows the next question in the same card', async () => {
     const container = await render()
     await submit(container, '/btw first?')
     await settled()
@@ -251,7 +260,7 @@ describe('/btw in a conversation', () => {
     expect(down.defaultPrevented).toBe(true)
     await act(async () => byId('chat-aside-dismiss')!.click())
     expect(panel()).toBeNull()
-    expect(useInboxAside.getState().asides).toEqual({})
+    expect(shownAside(useInboxAside.getState().threads.ses_one)).toBeNull()
   })
 
   it('is closed with Escape from the box, when no list is open', async () => {
@@ -282,9 +291,10 @@ describe('/btw in a conversation', () => {
   })
 
   it('shows only the thread\'s own question', async () => {
-    useInboxAside.setState({ asides: { ses_other: { id: 99, question: 'Someone else\'s?', status: 'done', answer: 'Not here.', error: null } } })
+    useInboxAside.setState({ threads: { ses_other: { history: [{ id: 'aside_99', question: 'Someone else\'s?', answer: 'Not here.', askedAt: 1 }], pending: null, at: 0 } } })
     await render()
     expect(panel()).toBeNull()
+    expect(byId('chat-aside-history')).toBeNull()
     expect(document.body.textContent).not.toContain('Someone else')
   })
 
@@ -296,7 +306,7 @@ describe('/btw in a conversation', () => {
     // The person looks at another thread meanwhile; the answer lands in the store all the same.
     await act(async () => { useWorkspace.setState({ inboxThreads: [thread(), thread('ses_two')], selectedInboxThreadId: 'ses_two' }) })
     await act(async () => control.resolve('It was the trim.'))
-    expect(useInboxAside.getState().asides.ses_one?.status).toBe('done')
+    expect(shownAside(useInboxAside.getState().threads.ses_one)?.status).toBe('done')
     await act(async () => { useWorkspace.setState({ selectedInboxThreadId: 'ses_one' }) })
     await vi.waitFor(() => expect(panel()).not.toBeNull())
     expect(text('chat-aside-body')).toContain('It was the trim.')
@@ -313,5 +323,86 @@ describe('/btw in a conversation', () => {
     await pressMessageKey(box, 'Enter')
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'ses_one', text: '/etc/hosts is wrong' }))
     expect(aside).not.toHaveBeenCalled()
+  })
+
+  describe('history', () => {
+    const position = (): string => text('chat-aside-position').replace(/\s+/g, ' ')
+
+    it('keeps a dismissed answer: the toolbar chip counts the side questions and opens the card again', async () => {
+      const container = await render()
+      expect(byId('chat-aside-history')).toBeNull()
+      await submit(container, '/btw why?')
+      await settled()
+      const chip = byId('chat-aside-history')!
+      expect(chip.textContent).toBe('1')
+      expect(chip.getAttribute('aria-pressed')).toBe('true')
+      // One question has nothing to step to.
+      expect(byId('chat-aside-pager')).toBeNull()
+      await act(async () => byId('chat-aside-dismiss')!.click())
+      expect(panel()).toBeNull()
+      expect(byId('chat-aside-history')!.getAttribute('aria-pressed')).toBe('false')
+      expect(byId('chat-aside-history')!.getAttribute('aria-label')).toBe('Show 1 side question')
+      const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+      byId('chat-aside-history')!.dispatchEvent(down)
+      expect(down.defaultPrevented).toBe(true)
+      await act(async () => byId('chat-aside-history')!.click())
+      expect(text('chat-aside-question')).toBe('why?')
+      expect(text('chat-aside-body')).toContain('the hashes were made without trimming.')
+      expect(byId('chat-aside-time')).not.toBeNull()
+      await act(async () => byId('chat-aside-history')!.click())
+      expect(panel()).toBeNull()
+    })
+
+    it('steps through earlier side questions with the pager', async () => {
+      const container = await render()
+      await submit(container, '/btw first?')
+      await settled()
+      answer = async () => ({ text: 'The second answer.' })
+      await submit(container, '/btw second?')
+      await settled()
+      expect(byId('chat-aside-history')!.textContent).toBe('2')
+      expect(position()).toContain('2 / 2')
+      expect((byId('chat-aside-next') as HTMLButtonElement).disabled).toBe(true)
+      await act(async () => byId('chat-aside-previous')!.click())
+      expect(position()).toContain('1 / 2')
+      expect(text('chat-aside-question')).toBe('first?')
+      await vi.waitFor(() => expect(text('chat-aside-body')).toContain('the hashes were made without trimming.'))
+      expect((byId('chat-aside-previous') as HTMLButtonElement).disabled).toBe(true)
+      await act(async () => byId('chat-aside-next')!.click())
+      expect(text('chat-aside-question')).toBe('second?')
+    })
+
+    it('shows what was kept from before, closed until it is asked for', async () => {
+      asideHistory.mockResolvedValue([
+        { id: 'aside_a', question: 'Yesterday?', answer: 'An old answer.', askedAt: Date.now() - 86_400_000 },
+        { id: 'aside_b', question: 'This morning?', answer: 'A newer answer.', askedAt: Date.now() - 3_600_000 },
+      ])
+      await render()
+      await vi.waitFor(() => expect(byId('chat-aside-history')?.textContent).toBe('2'))
+      expect(asideHistory).toHaveBeenCalledWith({ threadId: 'ses_one' })
+      expect(panel()).toBeNull()
+      await act(async () => byId('chat-aside-history')!.click())
+      expect(text('chat-aside-question')).toBe('This morning?')
+      expect(aside).not.toHaveBeenCalled()
+    })
+
+    it('opens the history with /btw on its own, which without a history still asks for a question', async () => {
+      const container = await render()
+      // The first Enter writes the command out, the second runs it.
+      await submit(container, '/btw')
+      await pressMessageKey(messageInput(container), 'Enter')
+      expect(panel()).toBeNull()
+      expect(container.textContent).toContain('Add your question after /btw.')
+      await submit(container, '/btw why?')
+      await settled()
+      await act(async () => byId('chat-aside-dismiss')!.click())
+      aside.mockClear()
+      await submit(container, '/btw')
+      await pressMessageKey(messageInput(container), 'Enter')
+      await vi.waitFor(() => expect(panel()).not.toBeNull())
+      expect(text('chat-aside-question')).toBe('why?')
+      expect(aside).not.toHaveBeenCalled()
+      expect(asideCount(useInboxAside.getState().threads.ses_one)).toBe(1)
+    })
   })
 })

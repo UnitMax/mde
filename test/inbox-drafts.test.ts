@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -19,9 +19,53 @@ const draftKey = 'draft:drf_one' as const
 const folder = { folderId: 'fld_one' }
 
 describe('Inbox saved drafts', () => {
+  it('keeps typing in memory and writes it only when asked to save, or once typing has paused', async () => {
+    const path = await fs.mkdtemp(join(tmpdir(), 'mde-drafts-test-'))
+    directories.push(path)
+    const store = new InboxDraftStore(path, undefined, undefined, undefined, 30)
+    await store.text(key, 'First words')
+    await store.text(key, 'First words, and more')
+    expect((await store.get(key)).text).toBe('First words, and more')
+    await expect(fs.access(join(path, 'index.json'))).rejects.toThrow()
+    await store.save()
+    expect((await new InboxDraftStore(path).get(key)).text).toBe('First words, and more')
+    // Left alone, the newest text reaches the disk by itself.
+    await store.text(key, 'Typed and left')
+    await vi.waitFor(async () => expect((await new InboxDraftStore(path).get(key)).text).toBe('Typed and left'))
+    // The index is replaced, not added to: no temporary file stays behind.
+    expect((await fs.readdir(path)).sort()).toEqual(['attachments', 'index.json'])
+  })
+
+  it('does not fail a change when the index cannot be written, and writes it the next time', async () => {
+    const { path, store } = await setup()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await store.text(key, 'Kept')
+      await store.save()
+      // A directory in the way of the index is a rename that cannot succeed.
+      await fs.rm(join(path, 'index.json'))
+      await fs.mkdir(join(path, 'index.json', 'blocked'), { recursive: true })
+      await store.text(key, 'Kept and changed')
+      await store.add(key, 'note.txt', 'text/plain', new Uint8Array([1]))
+      await store.save()
+      await store.save()
+      expect((await store.get(key)).text).toBe('Kept and changed')
+      expect((await store.get(key)).attachments).toHaveLength(1)
+      // Said once, with no path in it.
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(String(warn.mock.calls[0]![0])).not.toContain(path)
+      await fs.rm(join(path, 'index.json'), { recursive: true })
+      await store.flush()
+      const restored = await new InboxDraftStore(path).get(key)
+      expect(restored.text).toBe('Kept and changed')
+      expect(restored.attachments).toHaveLength(1)
+    } finally { warn.mockRestore() }
+  })
+
   it('restores a new thread draft with its chosen chat interface', async () => {
     const { path, store } = await setup()
     await store.text(draftKey, 'Review this', { ...folder, choice: { mode: 'terminal', agent: 'plan', model: { id: 'm', providerId: 'p' } } })
+    await store.save()
     const restarted = new InboxDraftStore(path)
     expect((await restarted.list())[0]?.choice).toMatchObject({ mode: 'terminal', agent: 'plan' })
     await restarted.setMeta(draftKey, { ...folder, choice: { mode: 'gui', agent: 'plan' } })
@@ -157,10 +201,13 @@ describe('Inbox new-thread drafts', () => {
     const { path, store } = await setup()
     await store.text(draftKey, '', folder)
     expect(await store.list()).toEqual([])
-    expect(JSON.parse(await fs.readFile(join(path, 'index.json'), 'utf8')).drafts).toEqual({})
+    // Nothing was kept, so there is nothing to write either.
+    await store.save()
+    await expect(fs.access(join(path, 'index.json'))).rejects.toThrow()
     await store.text(draftKey, 'Something', folder)
     await store.text(draftKey, '   \n', folder)
     expect(await store.list()).toEqual([])
+    await store.save()
     expect(JSON.parse(await fs.readFile(join(path, 'index.json'), 'utf8')).drafts).toEqual({})
     // Taking the last file off leaves it empty too, and the copy goes.
     await store.add(draftKey, 'a.txt', 'text/plain', new Uint8Array([1]), folder)
@@ -178,6 +225,7 @@ describe('Inbox new-thread drafts', () => {
     clock.now = 5_000
     await store.text(draftKey, 'Carry on', folder)
     expect(await store.get(draftKey)).toEqual({ revision: 1, text: 'Carry on', attachments: [] })
+    await store.save()
     const restarted = new InboxDraftStore(path, undefined, undefined, () => 9_000)
     expect(await restarted.list()).toEqual([{ id: 'drf_one', folderId: 'fld_one', preview: 'Carry on', attachments: 0, updatedAt: 5_000 }])
   })
@@ -197,6 +245,7 @@ describe('Inbox new-thread drafts', () => {
     // A thread's draft has no folder to move.
     await store.text(key, 'Hi')
     await store.setMeta(key, { folderId: 'fld_two' })
+    await store.save()
     expect(JSON.parse(await fs.readFile(join(path, 'index.json'), 'utf8')).drafts[key]).not.toHaveProperty('folderId')
   })
 
@@ -204,6 +253,7 @@ describe('Inbox new-thread drafts', () => {
     const { path, store } = await setup()
     await store.text(draftKey, 'Still mine', folder)
     const asked: string[] = []
+    await store.save()
     const restarted = new InboxDraftStore(path, undefined, (owner) => { asked.push(owner); return !owner.startsWith('thread:') })
     expect((await restarted.list()).map((draft) => draft.id)).toEqual(['drf_one'])
     expect(asked).toEqual(['draft:drf_one'])
@@ -213,6 +263,7 @@ describe('Inbox new-thread drafts', () => {
     const { path, store } = await setup()
     await store.add('thread:ses_one', 'kept.txt', 'text/plain', new Uint8Array([7]))
     const { attachments } = await store.get('thread:ses_one')
+    await store.save()
     const index = JSON.parse(await fs.readFile(join(path, 'index.json'), 'utf8'))
     index.drafts['folder:fld_old'] = { revision: 3, text: 'Written before drafts were listed', attachments }
     index.drafts['folder:fld_blank'] = { revision: 1, text: '  ', attachments: [] }
@@ -236,6 +287,7 @@ describe('Inbox new-thread drafts', () => {
       const { path, store } = await setup()
       await store.text(draftKey, 'Try it', { ...folder, choice })
       expect((await store.list())[0]).toMatchObject({ id: 'drf_one', choice })
+      await store.save()
       expect((await new InboxDraftStore(path).list())[0]!.choice).toEqual(choice)
       // The composer is given the text and files only.
       expect(await store.get(draftKey)).toEqual({ revision: 1, text: 'Try it', attachments: [] })
@@ -258,6 +310,7 @@ describe('Inbox new-thread drafts', () => {
     it('is not stored for a thread, whose box has no start to choose', async () => {
       const { path, store } = await setup()
       await store.text(key, 'Hi', { choice })
+      await store.save()
       expect((await raw(path))[key]).not.toHaveProperty('choice')
     })
 
@@ -283,6 +336,7 @@ describe('Inbox new-thread drafts', () => {
       await store.text(draftKey, 'One', { ...folder, choice })
       await store.text(other, 'Two', { folderId: 'fld_two', choice })
       await store.text(third, 'Three', { folderId: 'fld_three', choice })
+      await store.save()
       const drafts = await raw(path)
       drafts[draftKey].choice = { agent: 7, model: { id: 'free-1' }, worktree: { base: '' }, extra: true }
       drafts[other].choice = 'build'
@@ -316,6 +370,7 @@ describe('Inbox new-thread drafts', () => {
   it('refuses a folder that is not a folder id', async () => {
     const { path, store } = await setup()
     await store.text(draftKey, 'Hello', folder)
+    await store.save()
     const index = JSON.parse(await fs.readFile(join(path, 'index.json'), 'utf8'))
     index.drafts[draftKey].folderId = '../outside'
     await fs.writeFile(join(path, 'index.json'), JSON.stringify(index))

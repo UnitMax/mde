@@ -1,4 +1,5 @@
 import type { ChatDraftList, ChatDraftRequest } from '@shared/types'
+import type { InboxAsideHistory } from './asides'
 import type { InboxDraftStore } from './drafts'
 import { readSessionAttachment } from '../files/tree'
 import { randomUUID } from 'node:crypto'
@@ -6,6 +7,8 @@ import type {
   ChatAgent,
   ChatCreateRequest,
   ChatAsideAnswer,
+  ChatAsideEntry,
+  ChatAsideHistoryRequest,
   ChatAsideRequest,
   ChatDiscardPendingRequest,
   ChatEvent,
@@ -140,6 +143,8 @@ export const ASIDE_TIMEOUT_MS = 180_000
 
 export interface InboxChatDependencies {
   drafts?: InboxDraftStore
+  /** Where answered side questions are kept; without it they are not kept. */
+  asides?: InboxAsideHistory
   /** Git worktrees for threads; without it, worktree mode is unavailable. */
   worktrees?: Pick<InboxWorktrees, 'info' | 'create' | 'remove' | 'discard'>
   thumbnail?(bytes: Buffer): string | undefined
@@ -485,6 +490,8 @@ export class InboxChatService {
     if (request.action === 'clear') await store.remove(request.key)
     // Reading or looking again at a draft is how the page says it now shows it for another folder, or with other choices.
     if ((request.action === 'load' || request.action === 'flush') && meta) await store.setMeta(request.key, meta)
+    // Opening a draft, or looking at it again, is also when typing that is still only in memory is written.
+    if (request.action === 'load' || request.action === 'flush') await store.save()
     return store.get(request.key)
   }
 
@@ -498,6 +505,7 @@ export class InboxChatService {
   }
 
   async removeDraft(key: `thread:${string}`): Promise<void> { await this.dependencies.drafts?.remove(key) }
+  async removeAsides(threadId: string): Promise<void> { await this.dependencies.asides?.remove(threadId) }
 
   async create(request: ChatCreateRequest): Promise<InboxThread> {
     this.assertEnabled()
@@ -773,7 +781,14 @@ export class InboxChatService {
     }
     const text = parseGeneratedText(answer)
     if (!text) throw new Error('OpenCode gave no answer. Try asking again.')
-    return { text }
+    const entry = await this.dependencies.asides?.add(thread.id, question, text)
+      ?? { id: `${this.dependencies.now()}`, question, answer: text, askedAt: this.dependencies.now() }
+    return { text, entry }
+  }
+
+  /** The thread's answered side questions, oldest first. */
+  async asideHistory(request: ChatAsideHistoryRequest): Promise<ChatAsideEntry[]> {
+    return await this.dependencies.asides?.list(request.threadId) ?? []
   }
 
   /**
