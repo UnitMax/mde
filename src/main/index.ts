@@ -110,6 +110,8 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => mainWindow?.show())
   mainWindow.on('focus', () => taskbarAttention.windowFocused())
+  // Leaving the window is one of the quiet moments at which unsent Inbox drafts are written to disk.
+  mainWindow.on('blur', () => { void inboxDrafts?.save() })
   mainWindow.on('closed', () => {
     taskbarAttention.dispose()
     miniWindow.reset()

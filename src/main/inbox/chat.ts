@@ -485,6 +485,8 @@ export class InboxChatService {
     if (request.action === 'clear') await store.remove(request.key)
     // Reading or looking again at a draft is how the page says it now shows it for another folder, or with other choices.
     if ((request.action === 'load' || request.action === 'flush') && meta) await store.setMeta(request.key, meta)
+    // Opening a draft, or looking at it again, is also when typing that is still only in memory is written.
+    if (request.action === 'load' || request.action === 'flush') await store.save()
     return store.get(request.key)
   }
 

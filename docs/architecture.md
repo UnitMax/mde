@@ -1750,8 +1750,18 @@ reads only browser-provided File objects; source-tree reads remain in the main p
 same real-path containment checks as the viewer. Binary attachment reads have a separate 20 MiB
 limit and do not enlarge the text viewer's limit.
 
-`InboxDraftStore` serializes mutations and atomically saves each text edit and attachment change
-under `inbox-drafts/` in user data. Copies use opaque filenames and private permissions. Drafts
+`InboxDraftStore` serializes mutations and keeps the drafts in memory; `inbox-drafts/index.json` in
+user data is a copy of them that is replaced atomically at a few moments only. A change that is not
+typing (a file added or removed, a draft sent, moved or deleted, a quote put above the text) writes it
+at once. Typing does not: text is written when a draft is opened or looked at again (the `load` and
+`flush` draft actions), when the main window loses focus, before MDE quits, and once typing has
+paused for five seconds (`DRAFT_IDLE_SAVE_MS`). A crash can therefore lose the last few seconds of
+typing. A write that fails is never an error for the change that caused it: the index stays marked
+as unsaved, the failure is logged once without the path, and the next of those moments, or the
+five-second timer, writes it again. This matters on Windows, where a security scanner that has the
+file open makes the replacing rename fail with `EPERM`; `renameOver` in `store/atomic-json.ts`, which
+the other JSON stores share through `writeTextAtomic`, also tries such a refused rename a few more
+times over about half a second. Copies use opaque filenames and private permissions. Drafts
 belong to a thread (`thread:<id>`) or are a new thread not yet started (`draft:drf_<uuid>`), and
 survive restart. Native create/send requests carry attachment IDs and a draft revision; a create
 also names the draft it starts from (`draftId`). The main process validates ownership, sends copied
