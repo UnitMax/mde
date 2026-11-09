@@ -58,6 +58,7 @@ import {
 } from '@shared/session-colors'
 import { SESSION_ICONS, sessionIconOption } from '@shared/session-icons'
 import { InboxPanel } from '@/components/InboxPanel'
+import { HiddenTerminalIndicator } from '@/components/inbox/HiddenTerminalIndicator'
 
 function customSessionColor(color: Session['color']): Session['color'] {
   return color && color !== DEFAULT_SESSION_COLOR ? color : undefined
@@ -772,6 +773,7 @@ export function Sidebar({
         </div>
       </div>
 
+      {activeSection === 'inbox' && <HiddenTerminalIndicator />}
       {activeSection !== 'inbox' && <div className="flex shrink-0 items-center gap-1 border-t border-line p-2">
         <div className="min-w-0 flex-1">
           <SidebarCreateActions

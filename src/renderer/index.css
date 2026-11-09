@@ -883,6 +883,17 @@
   }
 }
 
+/* The reminder that the floating terminal is hidden (HiddenTerminalIndicator) settles in the same way. */
+.hidden-terminal-indicator {
+  animation: mde-pending-in 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hidden-terminal-indicator {
+    animation: none;
+  }
+}
+
 /* The answer to a side question (ChatAside) settles in the same way. */
 .chat-aside {
   animation: mde-pending-in 180ms ease-out;
