@@ -5,6 +5,7 @@ import { isInboxFolderColor, isInboxFolderEmoji, isInboxFolderSymbol } from '@sh
 import { isSessionColor } from '@shared/session-colors'
 import { isSessionIcon } from '@shared/session-icons'
 import { MCP_SERVER_NAME } from '@shared/mcp'
+import { PROMPT_CONTROL_CHARACTERS, PROMPT_TEXT_LIMIT } from '@shared/prompt-text'
 import { worktreeBranchProblem } from '@shared/worktree-branch'
 import { ATTENTION_COUNT_LIMIT } from '@shared/taskbar-attention'
 
@@ -122,8 +123,8 @@ const draftChoice = object({
   worktree: optional(object({ base: worktreeBase, branch: optional(string(256)) })),
 })
 /** Prompt text: newlines and tabs are fine, other control characters are not. */
-const promptText: Validator = (value) => typeof value === 'string' && value.length <= 100_000 &&
-  !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value)
+const promptText: Validator = (value) => typeof value === 'string' && value.length <= PROMPT_TEXT_LIMIT &&
+  !PROMPT_CONTROL_CHARACTERS.test(value)
 const chatThread = object({ threadId: opencodeSessionId })
 /** A goal's objective; OpenCode's own limit and its reserved words are checked here as well as there. */
 const goalObjective: Validator = (value) => promptText(value) && goalObjectiveProblem(String(value)) === null

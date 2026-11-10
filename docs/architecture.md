@@ -544,6 +544,13 @@ on an empty item it leaves the list.
 markers rather than rendering HTML, so pasted HTML, links and images remain literal text.
 Code fences stay literal, and drafts, skill positions and sent messages keep plain Markdown
 without converting it through HTML. Clipboard images still go through the attachment controls.
+Pasted and dropped text, and quoted selections, are cleaned first (`cleanPromptText` in
+`src/shared/prompt-text.ts`): terminal escape sequences such as the colour codes in CI logs are
+taken out whole, a vertical tab or form feed becomes a line break, and any other control character
+except tab and line breaks is dropped. The main process refuses prompt text holding them, so a
+pasted GitLab log would otherwise fail as an invalid `chat:draft` payload. A typed, pasted or dropped
+edit that would take the message (with its quotes) past 100,000 characters is refused whole, and the
+box says how much a message can hold.
 In an existing thread, Up in an empty message box recalls the user's earlier nonempty messages,
 newest first; Down moves forward and returns to the empty box after the newest recalled message.
 Editing a recalled message ends history navigation. Recall uses this thread's visible conversation

@@ -13,6 +13,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
 import { quoteLines } from '@/lib/chat-quote'
+import { cleanPromptText } from '@shared/prompt-text'
 
 const externalChange = Annotation.define<boolean>()
 const continueList = insertNewlineContinueMarkupCommand({ nonTightLists: false })
@@ -141,6 +142,10 @@ interface ChatInputProps {
   onSelect: (text: string, caret: number) => void
   onKeyDown: (event: KeyboardEvent) => void
   onPaste: (event: ClipboardEvent) => void
+  /** The most text the box takes from typing, pasting or dropping; an edit that would go past it is refused. */
+  maxLength?: number
+  /** An edit was refused for going past `maxLength`. */
+  onTooLong?: () => void
   /**
    * Where the text starts with the name of a command, if it does. That part is shown as a command. The
    * function is read as the text changes, and again when a different one is given.
@@ -188,6 +193,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             provide: (field) => EditorView.decorations.from(field),
           }),
           history(),
+          // What is dropped in is cleaned as the paste handler below cleans what is pasted.
+          EditorView.clipboardInputFilter.of((text) => cleanPromptText(text)),
+          // Text that would make the message longer than it may be is refused whole, not cut.
+          EditorState.transactionFilter.of((transaction) => {
+            const limit = latest.current.maxLength
+            if (limit === undefined || !transaction.docChanged || !transaction.isUserEvent('input')) return transaction
+            if (transaction.newDoc.length <= limit || transaction.newDoc.length <= transaction.startState.doc.length) return transaction
+            queueMicrotask(() => latest.current.onTooLong?.())
+            return []
+          }),
           keymap.of([{ key: 'Backspace', run: deleteMarkupBackward }, ...standardKeymap.filter((binding) => binding.key !== 'Enter'), ...historyKeymap]),
           EditorView.lineWrapping,
           inputTheme,
@@ -203,8 +218,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
               latest.current.onPaste(event)
               if (event.defaultPrevented) return true
               if (!event.clipboardData) return false
-              // Ignore text/html even when the clipboard supplies it alongside plain text.
-              editor.dispatch(editor.state.replaceSelection(event.clipboardData.getData('text/plain')), { userEvent: 'input.paste', scrollIntoView: true })
+              // Ignore text/html even when the clipboard supplies it alongside plain text. Terminal output (CI logs)
+              // brings colour codes and other control characters, which a message must not hold.
+              const pasted = cleanPromptText(event.clipboardData.getData('text/plain'))
+              editor.dispatch(editor.state.replaceSelection(pasted), { userEvent: 'input.paste', scrollIntoView: true })
               return true
             },
           })),
