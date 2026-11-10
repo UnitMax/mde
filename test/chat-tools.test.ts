@@ -531,7 +531,7 @@ describe('the compact layout', () => {
     expect(draw([step('a', [read('r1'), subagent, read('r2')])])).toEqual({ a: ['group:3'] })
   })
 
-  it.each(['read', 'write', 'edit', 'patch', 'apply_patch', 'question', 'subagent', 'task', 'shell', 'bash', 'grep', 'glob', 'webfetch', 'websearch', 'lookup', 'todo', 'skill', 'execute', 'custom-tool'])(
+  it.each(['read', 'write', 'edit', 'patch', 'apply_patch', 'subagent', 'task', 'shell', 'bash', 'grep', 'glob', 'webfetch', 'websearch', 'lookup', 'todo', 'skill', 'execute', 'custom-tool'])(
     'keeps %s in one compact group across pending, running, completed and failed states', (name) => {
       for (const status of ['pending', 'running', 'completed', 'error'] as const) {
         const call = tool(name, { patchText: '*** Begin Patch\n*** Add File: a.ts\n+hello\n*** End Patch', questions: [{ question: 'Which?' }] }, { id: 'call', status, answers: [['A']] })
@@ -540,6 +540,49 @@ describe('the compact layout', () => {
       }
     },
   )
+
+  describe('around a question', () => {
+    const question = (id: string, extra: Partial<ToolPart> = {}): ChatPart => tool('question', { questions: [{ question: 'Which?' }] }, { id, ...extra })
+
+    it('shows the words that lead up to a question, and the question, in every state', () => {
+      for (const status of ['pending', 'running', 'completed', 'error'] as const) {
+        expect(draw([step('a', [read('r1'), thought(), text('Two ways to fix it: A or B.'), question('q', { status, answers: [['A']] })])]))
+          .toEqual({ a: ['group:2', 'text', 'q'] })
+      }
+    })
+
+    it('ends the stretch at the question, so the work after the answer is a line of its own', () => {
+      expect(draw([
+        step('a', [text('Looking.'), read('r1'), text('Found two causes.'), question('q')]),
+        step('b', [thought(), edit('e1'), shell('s1')]),
+        step('c', [text('Fixed.')]),
+      ])).toEqual({ a: ['group:2', 'text', 'q'], b: ['group:3'], c: ['text'] })
+    })
+
+    it('shows only the words since the last tool call before the question', () => {
+      expect(draw([step('a', [text('I will look.'), read('r1'), text('The cause is X.'), text('Which fix?'), question('q')])]))
+        .toEqual({ a: ['group:2', 'text', 'text', 'q'] })
+      // The words may end one step and the question start the next.
+      expect(draw([step('a', [shell('s1'), text('Pick one.')]), step('b', [question('q')])])).toEqual({ a: ['group:1', 'text'], b: ['q'] })
+    })
+
+    it('keeps a thought between the words and the question as a line of its own', () => {
+      expect(draw([step('a', [read('r1'), text('Two options.'), thought(), question('q')])])).toEqual({ a: ['group:1', 'text', 'group:1', 'q'] })
+    })
+
+    it('draws a question asked with no words before it on its own', () => {
+      expect(draw([step('a', [read('r1'), question('q'), read('r2')])])).toEqual({ a: ['group:1', 'q', 'group:1'] })
+      expect(draw([step('a', [question('q')])])).toEqual({ a: ['q'] })
+    })
+
+    it('has no live group while the agent waits for an answer, and a new live one once it works on', () => {
+      const groups = (steps: FlowStep[]) => [...compactFlow(steps).values()].flat()
+        .filter((block): block is Extract<RenderBlock, { kind: 'activity' }> => block.kind === 'activity')
+        .map((group) => group.live)
+      expect(groups([step('a', [read('r1'), text('Which?'), question('q', { status: 'running' })], true)])).toEqual([false])
+      expect(groups([step('a', [read('r1'), text('Which?'), question('q')]), step('b', [shell('s1')], true)])).toEqual([false, true])
+    })
+  })
 
   it('runs a stretch on across the steps of the agent, and draws it where it starts', () => {
     const flow = compactFlow([

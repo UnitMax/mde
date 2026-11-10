@@ -669,27 +669,52 @@ function isWork(part: ChatPart): boolean {
   return part.kind === 'tool' || (part.kind === 'reasoning' && part.text.trim() !== '')
 }
 
+/** Whether a part is a question the agent asked the person. */
+function isQuestion(part: ChatPart): boolean {
+  return part.kind === 'tool' && toolKind(part.name) === 'question'
+}
+
+/**
+ * The texts of a stretch that are the agent talking its way through its work rather than saying something to the
+ * person, as `step:part` keys: those with more work after them. Thoughts and further words do not count, but a text
+ * with a thought after it and nothing more is talking too (it thought on after it). A question is not more work: the
+ * words just before it are what it asks about.
+ */
+function talkingTexts(steps: readonly FlowStep[]): Set<string> {
+  const talking = new Set<string>()
+  // What comes next, looking back from the end: no tool call, a question, or other work; and whether a thought is first.
+  let next: 'none' | 'question' | 'work' = 'none'
+  let thought = false
+  for (let stepIndex = steps.length - 1; stepIndex >= 0; stepIndex--) {
+    const step = steps[stepIndex]!
+    if (step.note) {
+      if (step.note.activity === 'shell' || step.note.activity === 'skill') [next, thought] = ['work', false]
+      continue
+    }
+    for (let index = step.parts.length - 1; index >= 0; index--) {
+      const part = step.parts[index]!
+      if (part.kind === 'tool') [next, thought] = [isQuestion(part) ? 'question' : 'work', false]
+      else if (part.kind === 'reasoning') thought ||= part.text.trim() !== ''
+      else if (part.kind === 'text' && part.text.trim() && (next === 'work' || (next === 'none' && thought))) talking.add(`${stepIndex}:${index}`)
+    }
+  }
+  return talking
+}
+
 /**
  * The compact layout of consecutive steps of the agent, with nothing from the person between them. Everything that is
- * not an answer is folded into one group per stretch, however short: thoughts and tool calls, and also the words the
- * agent wrote on its way, since models often think out loud in their text rather than in their thinking. Only the
- * text after the last piece of work, the answer, is drawn as it is. All tools join the group, including file changes,
- * answered questions and subagents; their full views remain inside it. A stretch runs on across the steps: the agent starts a new step for every
- * round of tool calls, so a turn is many steps, and its activity should still read as one line. The group is drawn in
- * the step where it starts, and the steps that contributed the rest draw whatever else they hold (an empty one draws
- * nothing). Returns the blocks to draw by step.
+ * not said to the person is folded into one group per stretch, however short: thoughts and tool calls, and also the
+ * words the agent wrote on its way, since models often think out loud in their text rather than in their thinking.
+ * What is drawn as it is: the answer (the text after the last piece of work), and each question the agent asked with
+ * the words that lead up to it (the text since the last tool call before it), which the question is usually about.
+ * A question ends the stretch, so the work before it and the work after the answer are two lines. All other tools join
+ * the group, including file changes and subagents; their full views remain inside it. A stretch runs on across the
+ * steps: the agent starts a new step for every round of tool calls, so a turn is many steps, and its activity should
+ * still read as one line. The group is drawn in the step where it starts, and the steps that contributed the rest draw
+ * whatever else they hold (an empty one draws nothing). Returns the blocks to draw by step.
  */
 export function compactFlow(steps: readonly FlowStep[]): Map<string, RenderBlock[]> {
-  // Where the last piece of work is: the text before it is the agent talking its way through, and the text after it the answer.
-  let lastWork: [step: number, part: number] | null = null
-  for (const [stepIndex, step] of steps.entries()) {
-    if (step.note?.activity === 'shell' || step.note?.activity === 'skill') lastWork = [stepIndex, 0]
-    for (const [index, part] of step.parts.entries()) if (isWork(part)) lastWork = [stepIndex, index]
-  }
-  const end = lastWork as [number, number] | null
-  const beforeLastWork = (stepIndex: number, index: number): boolean =>
-    end !== null && (stepIndex < end[0] || (stepIndex === end[0] && index < end[1]))
-
+  const talking = talkingTexts(steps)
   const plan = new Map<string, RenderBlock[]>()
   let open: ActivityBlock | null = null
   let last: RenderBlock | null = null
@@ -710,8 +735,7 @@ export function compactFlow(steps: readonly FlowStep[]): Map<string, RenderBlock
     for (const [index, part] of step.parts.entries()) {
       // Empty text or thinking has nothing to show yet, and does not end the stretch.
       if ((part.kind === 'text' || part.kind === 'reasoning') && !part.text.trim()) continue
-      const talking = part.kind === 'text' && beforeLastWork(stepIndex, index)
-      if (talking || isWork(part)) {
+      if (!isQuestion(part) && (isWork(part) || talking.has(`${stepIndex}:${index}`))) {
         if (!open) {
           open = { kind: 'activity', items: [], index, live: false }
           blocks.push(open)
@@ -721,9 +745,9 @@ export function compactFlow(steps: readonly FlowStep[]): Map<string, RenderBlock
         continue
       }
       open = null
-      const answer: RenderBlock = { kind: 'part', part, index }
-      blocks.push(answer)
-      last = answer
+      const shown: RenderBlock = { kind: 'part', part, index }
+      blocks.push(shown)
+      last = shown
     }
   }
   // The group the agent is at the end of is live while the last step is being written.

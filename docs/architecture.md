@@ -1087,6 +1087,11 @@ out loud in their text, so any text before the turn's last piece of work (a tool
 step of the group too, shown inside it as a "Said …" row that opens onto the whole text and counted in the
 line ("wrote 2 updates"), and only the text after the last piece of work, the answer, is drawn as it is. A
 text still being written after the work is the answer so far, and joins the line if more work follows it.
+A question the agent asks (the `question` tool) is a stopping point like the answer: the text since the
+last tool call before it, which the question is usually about, is drawn as it is, the question is drawn
+on its own (the answered-question card once answered), and the stretch ends there, so the work before the
+question and the work after the answer are two lines. A thought between those words and the question is a
+line of its own and does not fold the words.
 OpenCode starts a new assistant message for every round of tool calls, so a turn is many messages and its
 work would otherwise show up as a line per message: `compactPlans` (`lib/chat-tools.ts`) therefore lays out
 each run of assistant messages and routine notifications together. Background-process notifications,
@@ -1097,9 +1102,9 @@ on across the messages. The group is drawn in the message where it
 starts, and a message left with nothing to draw (and no error) renders nothing. Layouts are reused when
 they did not change, so streaming does not redraw the earlier messages. The group never opens by itself,
 not even while the agent is at it: it spins and shimmers in the present tense ("Running 2 commands"),
-keeps the failed count, and opens on a click. All tools use this same grouping rule, including writes,
-edits, patches, answered questions, subagents and unknown tools. Opening the group shows their full
-views: file changes start shut with their counts, questions retain their answers, and consecutive
+keeps the failed count, and opens on a click. All other tools use this same grouping rule, including writes,
+edits, patches, subagents and unknown tools. Opening the group shows their full
+views: file changes start shut with their counts, and consecutive
 subagents from the same step retain their grouped cards and model labels. Active permission and
 question requests remain outside the activity group so they can be answered. The summary is worked
 out from the tool calls with no model involved ("Thought, wrote 1 file and ran 3 commands"). Turning
