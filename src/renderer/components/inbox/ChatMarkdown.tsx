@@ -27,7 +27,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
       injectCSS: false,
       editorProps: {
         attributes: {
-          class: 'markdown-prose chat-markdown',
+          class: variant === 'reasoning' ? 'markdown-prose chat-markdown' : 'markdown-prose chat-markdown chat-reply',
           'aria-label': label ?? (variant === 'reasoning' ? 'Assistant reasoning' : 'Assistant message'),
         },
       },
@@ -64,9 +64,10 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   return (
     <div
       className={cn(
-        'min-w-0 break-words leading-[1.6]',
-        // Reasoning is shown on the rail of its row, which is its left edge.
-        variant === 'reasoning' ? 'text-[13px] text-fg-muted' : 'text-[15px] text-fg',
+        'min-w-0 break-words',
+        // Reasoning is shown on the rail of its row, which is its left edge. The line height comes after the size:
+        // cn treats a text size as also setting the line height, so it would drop a leading class placed before it.
+        variant === 'reasoning' ? 'text-[13px] text-fg-muted' : 'text-[14px] leading-[1.65] text-[var(--chat-text)]',
       )}
       onClick={onClick}
       // The agent's replies are searched; its reasoning is not.

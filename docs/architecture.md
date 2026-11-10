@@ -120,9 +120,14 @@ expanded or streamed afterward; code preview font selection is independent of th
 The interface text is set in Inter, bundled with the app (`@fontsource-variable/inter`, imported by
 `main.tsx`; SIL Open Font License, listed in `THIRD_PARTY_NOTICES.md`), so every system draws the same
 letters; `--font-sans` falls back to Segoe UI and the system font. In Inbox chat replies (`.chat-markdown`)
-the text is 15px with a line height of 1.6 and the width of the column is unchanged. Inline code uses the
-code preview font at 0.88em in regular weight (it does not take on the bold of the text around it),
-list items sit close together, and headings are sized in `em` so the smaller reasoning text scales with them.
+the text is 14px with a line height of 1.65 (the user's own messages match) and the width of the column is
+unchanged. A reply has two levels of text: its words use `--chat-text`, the theme's text color mixed a little
+toward the background, and its headings, bold and inline code use `--chat-strong`, a little brighter than the
+text color (toward white in a dark theme, black in a light one). The high-contrast themes keep the words at full
+contrast. Headings have more space above them than below, so each sits with the section it opens. Reasoning
+keeps its own muted color. Inline code uses the code preview font at 0.88em in regular weight on a faint tint
+(it does not take on the bold of the text around it), list items sit close together, and headings are sized in
+`em` so the smaller reasoning text scales with them.
 
 The Appearance section also has a **Card terminals** switch (`terminalCards` in the local terminal
 settings, off by default). Off, panes tile edge to edge, divided by a 1px line. On, `TerminalView` draws
