@@ -19,7 +19,7 @@ const GIT_COMMAND_TIMEOUT_MS = 10_000
 /** A checkout writes a whole working tree, so it gets far longer than a status query. */
 const GIT_MUTATION_TIMEOUT_MS = 120_000
 const GIT_REF_LIMIT = 300
-const GIT_DIFF_CONTEXT_LINES = 80
+export const GIT_DIFF_CONTEXT_LINES = 80
 const GIT_MAX_BUFFER = 8 * 1024 * 1024
 const GIT_EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 
@@ -100,16 +100,17 @@ function runNativeGit(
   file: string,
   args: string[],
   cwd: string,
-  timeoutMs = GIT_COMMAND_TIMEOUT_MS
+  timeoutMs = GIT_COMMAND_TIMEOUT_MS,
+  policy: Record<string, string> = gitEnvironment
 ): Promise<GitCommandResult> {
   const environment: NodeJS.ProcessEnv = { ...process.env }
   // GIT_CONFIG only affects `git config`: inheriting it would make the filter
   // probe inspect another file while the subsequent operation reads the repo.
-  const replaced = new Set(['GIT_CONFIG', ...Object.keys(gitEnvironment)].map((key) => key.toUpperCase()))
+  const replaced = new Set(['GIT_CONFIG', ...Object.keys(policy)].map((key) => key.toUpperCase()))
   for (const key of Object.keys(environment)) {
     if (replaced.has(key.toUpperCase())) delete environment[key]
   }
-  Object.assign(environment, gitEnvironment)
+  Object.assign(environment, policy)
   return new Promise((resolve) => {
     execFile(
       file,
@@ -138,7 +139,8 @@ function runNativeGit(
 async function runWindowsGit(
   args: string[],
   workspaceDirectory: string,
-  timeoutMs?: number
+  timeoutMs?: number,
+  policy?: Record<string, string>
 ): Promise<GitCommandResult> {
   try {
     const executable = await resolveWindowsGitExecutable(workspaceDirectory)
@@ -146,7 +148,8 @@ async function runWindowsGit(
       executable,
       ['-C', workspaceDirectory, ...args],
       win32.dirname(executable),
-      timeoutMs
+      timeoutMs,
+      policy
     )
   } catch {
     return { stdout: '', stderr: '', code: 1, launchError: true }
@@ -157,7 +160,8 @@ function createTransportRunner(
   session: DirectoryContext,
   workspaceDirectory: string,
   platform: NodeJS.Platform,
-  timeoutMs?: number
+  timeoutMs?: number,
+  policy: Record<string, string> = gitEnvironment
 ): GitCommandRunner {
   if (session.kind === 'wsl') {
     if (platform !== 'win32') {
@@ -172,7 +176,7 @@ function createTransportRunner(
       const result = await runWslCommand(distro, [
         '/usr/bin/env',
         '-u', 'GIT_CONFIG',
-        ...Object.entries(gitEnvironment).map(([key, value]) => `${key}=${value}`),
+        ...Object.entries(policy).map(([key, value]) => `${key}=${value}`),
         'git',
         ...args,
       ], {
@@ -183,8 +187,8 @@ function createTransportRunner(
     }
   }
 
-  if (platform === 'win32') return (args) => runWindowsGit(args, workspaceDirectory, timeoutMs)
-  return (args) => runNativeGit('git', args, workspaceDirectory, timeoutMs)
+  if (platform === 'win32') return (args) => runWindowsGit(args, workspaceDirectory, timeoutMs, policy)
+  return (args) => runNativeGit('git', args, workspaceDirectory, timeoutMs, policy)
 }
 
 function createSafeGitRunner(
@@ -238,6 +242,86 @@ export function createGitMutationRunner(
 ): GitCommandRunner {
   const transport = createTransportRunner(session, workspaceDirectory, platform, timeoutMs)
   return createSafeGitRunner(transport, 'interactive')
+}
+
+/**
+ * The protocols a fetch the person asked for may use. `ext::` and other remote helpers stay
+ * denied, so a remote URL cannot name a program to run.
+ */
+export const GIT_FETCH_PROTOCOLS = 'file:git:http:https:ssh'
+const GIT_FETCH_TIMEOUT_MS = 120_000
+
+const gitFetchEnvironment = {
+  ...gitEnvironment,
+  GIT_ALLOW_PROTOCOL: GIT_FETCH_PROTOCOLS,
+}
+
+/**
+ * The options every fetch carries. They match the ordinary safety options except that the
+ * network is allowed, along with the person's own credential helper and SSH command. Hooks,
+ * fsmonitor, submodules and automatic maintenance stay off.
+ */
+const gitFetchSafetyArgs = [
+  '--no-pager',
+  '--no-optional-locks',
+  '-c',
+  'core.fsmonitor=false',
+  '-c',
+  `core.hooksPath=${GIT_DISABLED_HOOKS_PATH}`,
+  '-c',
+  'core.askpass=',
+  '-c',
+  'submodule.recurse=false',
+  '-c',
+  'fetch.recurseSubmodules=false',
+  '-c',
+  'maintenance.auto=false',
+  '-c',
+  'gc.auto=0',
+]
+
+/**
+ * Settings that make Git run a program during a fetch. They are honored only from the person's
+ * own (global or system) configuration: a repository can be someone else's, so its own
+ * configuration must not choose a program for MDE to start.
+ */
+const FETCH_PROGRAM_KEYS: Array<[RegExp, string]> = [
+  [/^credential\.(?:.+\.)?helper$/, 'credential.helper'],
+  [/^core\.sshcommand$/, 'core.sshCommand'],
+  [/^core\.gitproxy$/, 'core.gitProxy'],
+  [/^remote\..+\.uploadpack$/, 'remote.<name>.uploadpack'],
+  [/^remote\..+\.receivepack$/, 'remote.<name>.receivepack'],
+  [/^remote\..+\.vcs$/, 'remote.<name>.vcs'],
+]
+
+/**
+ * Parses `git config --list --show-scope -z` output and names the program-choosing settings that
+ * come from the repository itself (its own configuration, files it includes, or a worktree's).
+ */
+export function repositoryFetchPrograms(stdout: string): string[] {
+  const found = new Set<string>()
+  const fields = stdout.split('\0')
+  for (let index = 0; index + 1 < fields.length; index += 2) {
+    const scope = fields[index]!
+    if (scope !== 'local' && scope !== 'worktree') continue
+    const key = (fields[index + 1]!.split('\n', 1)[0] ?? '').toLowerCase()
+    const match = FETCH_PROGRAM_KEYS.find(([pattern]) => pattern.test(key))
+    if (match) found.add(match[1])
+  }
+  return [...found]
+}
+
+/**
+ * A runner for `git fetch`, the one Git command MDE lets reach the network, and only when the
+ * person asks for it. It shares the process pool at interactive priority.
+ */
+export function createGitFetchRunner(
+  session: DirectoryContext,
+  workspaceDirectory = session.path,
+  platform: NodeJS.Platform = process.platform
+): GitCommandRunner {
+  const transport = createTransportRunner(session, workspaceDirectory, platform, GIT_FETCH_TIMEOUT_MS, gitFetchEnvironment)
+  return (args) => gitSpawns.run('interactive', () => transport([...gitFetchSafetyArgs, ...args]))
 }
 
 export interface GitRef {
@@ -607,7 +691,7 @@ export function parseGitFileNumstat(output: string): Map<string, GitLineChangeCo
 }
 
 /** Always run from the checkout root: porcelain paths are relative to that root. */
-async function checkoutRunner(run: GitCommandRunner): Promise<{ root: string; run: GitCommandRunner } | null> {
+export async function checkoutRunner(run: GitCommandRunner): Promise<{ root: string; run: GitCommandRunner } | null> {
   if (!(await ensureRepository(run))) return null
   const root = await run(['--no-pager', 'rev-parse', '--show-toplevel'])
   if (root.code !== 0 || !root.stdout.trim()) throw commandError('worktree', root)
@@ -679,10 +763,14 @@ export async function readGitCheckoutDiffWithRunner(
   if (!checkout) throw new Error('This folder is not a Git repository.')
   // The existing reader accepts only paths present in current Git status.
   const result = await readGitDiffWithRunner(checkout.run, path, nullDevice)
-  const bytes = Buffer.from(result.diff, 'utf8')
+  return { ...result, ...diffPreview(result.diff) }
+}
+
+/** A diff cut to the preview size, and whether it was cut. */
+export function diffPreview(diff: string): { diff: string; truncated: boolean } {
+  const bytes = Buffer.from(diff, 'utf8')
   const truncated = bytes.length > INBOX_DIFF_PREVIEW_BYTES
   // Cutting inside a multi-byte character leaves one replacement character at the end; drop it.
   // A diff that fits is returned as it is.
-  const diff = truncated ? bytes.subarray(0, INBOX_DIFF_PREVIEW_BYTES).toString('utf8').replace(/\ufffd$/, '') : result.diff
-  return { ...result, diff, truncated }
+  return { diff: truncated ? bytes.subarray(0, INBOX_DIFF_PREVIEW_BYTES).toString('utf8').replace(/\ufffd$/, '') : diff, truncated }
 }

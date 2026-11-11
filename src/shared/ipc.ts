@@ -46,6 +46,13 @@ import type {
   InboxChangesRequest,
   InboxChangeDiffRequest,
   InboxChangeDiff,
+  GitRootRequest,
+  GitGraphRequest,
+  InboxGitGraph,
+  GitCommitRequest,
+  GitCommitDiffRequest,
+  InboxGitCommitDetails,
+  InboxGitFetchResult,
   ChatMessagesPage,
   ChatMessagesRequest,
   ChatSearchRequest,
@@ -149,6 +156,12 @@ export const IpcChannels = {
   pathRevealTreeFolder: 'path:reveal-tree-folder',
 
   gitTerminalInfo: 'git:terminal-info',
+  gitGraph: 'git:graph',
+  gitCommit: 'git:commit',
+  gitFetch: 'git:fetch',
+  gitChanges: 'git:changes',
+  gitChangeDiff: 'git:change-diff',
+  gitCommitDiff: 'git:commit-diff',
 
   filesList: 'files:list',
   filesRead: 'files:read',
@@ -524,6 +537,17 @@ export interface RendererApi {
   }
   git: {
     terminalInfo(req: GitTerminalInfoRequest): Promise<GitTerminalInfoResponse | null>
+    /** The commit graph of a thread's or a terminal's checkout. */
+    graph(req: GitGraphRequest): Promise<InboxGitGraph>
+    commit(req: GitCommitRequest): Promise<InboxGitCommitDetails>
+    /** Fetches every remote of the checkout: the one Git call that may use the network. */
+    fetch(req: GitRootRequest): Promise<InboxGitFetchResult>
+    /** The uncommitted changes of the checkout, with the file list. */
+    changes(req: GitRootRequest): Promise<InboxChangesResponse>
+    /** One uncommitted file's diff; the path must still be in the checkout's Git status. */
+    changeDiff(req: GitRootRequest & { path: string }): Promise<InboxChangeDiff>
+    /** One file's change in a commit, against its first parent. */
+    commitDiff(req: GitCommitDiffRequest): Promise<InboxChangeDiff>
   }
   files: {
     list(req: FilesListRequest): Promise<FileTreeListResponse>

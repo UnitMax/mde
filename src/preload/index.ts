@@ -114,7 +114,13 @@ const api: RendererApi = {
     revealTreeFolder: (req) => ipcRenderer.invoke(IpcChannels.pathRevealTreeFolder, req)
   },
   git: {
-    terminalInfo: (req) => ipcRenderer.invoke(IpcChannels.gitTerminalInfo, req)
+    terminalInfo: (req) => ipcRenderer.invoke(IpcChannels.gitTerminalInfo, req),
+    graph: (req) => ipcRenderer.invoke(IpcChannels.gitGraph, req),
+    commit: (req) => ipcRenderer.invoke(IpcChannels.gitCommit, req),
+    fetch: (req) => ipcRenderer.invoke(IpcChannels.gitFetch, req),
+    changes: (req) => ipcRenderer.invoke(IpcChannels.gitChanges, req),
+    changeDiff: (req) => ipcRenderer.invoke(IpcChannels.gitChangeDiff, req),
+    commitDiff: (req) => ipcRenderer.invoke(IpcChannels.gitCommitDiff, req)
   },
   files: {
     list: (req) => ipcRenderer.invoke(IpcChannels.filesList, req),

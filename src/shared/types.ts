@@ -1083,3 +1083,92 @@ export interface InboxChangesResponse {
   uncounted?: number
   files?: InboxChangedFile[]
 }
+
+export type GitGraphScope = 'all' | 'local' | 'head'
+
+/**
+ * The checkout a Git graph request reads: an Inbox thread's (its recorded directory) or a
+ * Sessions terminal's (its current directory, verified by main). Exactly one is given.
+ */
+export type GitRootRequest = { threadId: string } | { terminalId: string }
+
+/** The commit graph of a checkout, read when the Git graph view opens. Memory only. */
+export type GitGraphRequest = GitRootRequest & {
+  /** How many commits to read, newest first; the view asks for more as the person scrolls. */
+  limit: number
+  /**
+   * `all`: every local branch, remote-tracking branch and tag; `local`: local branches and tags;
+   * `head`: only what HEAD can reach.
+   */
+  scope: GitGraphScope
+}
+
+export interface GitGraphCommit {
+  hash: string
+  parents: string[]
+  author: string
+  /** Author date, in seconds since the epoch. */
+  time: number
+  subject: string
+}
+
+export interface GitGraphRef {
+  /** The commit the ref points at (a tag's target commit, not the tag object). */
+  hash: string
+  /** `main`, `origin/main` or `v1.0`. */
+  name: string
+  kind: 'branch' | 'remote' | 'tag'
+}
+
+export interface InboxGitGraph {
+  available: boolean
+  reason?: string
+  /** The checkout's root. */
+  worktree: string | null
+  /** The commit checked out; null in a repository with no commits yet. */
+  head: string | null
+  /** The branch checked out; null for a detached HEAD. */
+  branch: string | null
+  /** The current branch's upstream, with how far the branch is ahead of and behind it. */
+  upstream: { name: string; ahead: number; behind: number } | null
+  remotes: string[]
+  refs: GitGraphRef[]
+  commits: GitGraphCommit[]
+  /** More commits exist past the limit. */
+  more: boolean
+}
+
+export type GitCommitRequest = GitRootRequest & { hash: string }
+
+/** One file's change in a commit; the path must be one the commit changed. */
+export type GitCommitDiffRequest = GitRootRequest & { hash: string; path: string }
+
+export interface InboxGitCommitFile {
+  path: string
+  /** The old path of a renamed or copied file. */
+  from?: string
+  status: GitChangeStatus
+  additions: number
+  deletions: number
+  binary: boolean
+}
+
+export interface InboxGitCommitDetails {
+  hash: string
+  parents: string[]
+  author: string
+  authorTime: number
+  committer: string
+  commitTime: number
+  /** The full message: subject and body. */
+  message: string
+  /** Files changed against the first parent (the empty tree for a root commit). */
+  files: InboxGitCommitFile[]
+  /** Files past the listing limit were left out. */
+  truncated: boolean
+}
+
+export interface InboxGitFetchResult {
+  /** The remotes fetched. */
+  remotes: string[]
+}

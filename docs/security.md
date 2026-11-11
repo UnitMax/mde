@@ -339,7 +339,27 @@ the same policy:
   Removal also inspects the target worktree's settings before its cleanliness check.
 - Branch discovery uses repository/ref metadata only. Local and cached
   remote-tracking branches remain available without scanning files or fetching
-  objects. Submodule recursion/diffs and automatic maintenance are disabled
+  objects. The Git graph (Inbox and Sessions) reads history the same way (`log`,
+  `for-each-ref`, `diff-tree` without external diff or textconv), and `git:commit`
+  accepts only a full 40- or 64-digit object name. `git:commit-diff` also takes a
+  path, which must be one of the files that commit changed. The `git:*` graph channels take
+  either an Inbox thread ID or a terminal ID (exactly one, never a path); a terminal
+  resolves to its live current directory, verified on disk like its Git chip's.
+- **User-started fetch.** `git:fetch` (a thread or terminal ID, nothing else) is the one call
+  allowed to reach the network, and the renderer sends it only from the Git graph's Fetch
+  button. It uses a separate runner, `createGitFetchRunner`, with `GIT_ALLOW_PROTOCOL` set to
+  `file:git:http:https:ssh` (remote helpers such as `ext::` stay denied), hooks and fsmonitor
+  disabled, askpass and terminal prompts off, and no submodule recursion or automatic
+  maintenance. It keeps the person's credential helper and SSH command so they can sign in, so
+  it first lists configuration with `--show-scope --includes` and refuses when a `local` or
+  `worktree` scope (including files those include) sets `credential.helper` or
+  `credential.<url>.helper`, `core.sshCommand`, `core.gitProxy`, or a remote's `uploadpack`,
+  `receivepack` or `vcs`. Global, system and environment settings are the person's own. The
+  command is fixed (`fetch --all --prune --no-recurse-submodules`); the renderer chooses no
+  remote, refspec or URL. Error text shown in the UI keeps Git's `fatal:`/`error:` lines with
+  URL credentials and control characters removed. A real-Git test fetches over `file://`,
+  refuses a planted `remote.origin.uploadpack` without running it, and fails an `ext::` remote
+  without running it. Submodule recursion/diffs and automatic maintenance are disabled
   in MDE-owned calls to avoid child operations with another execution context.
 
 Real-Git regression fixtures cover info attributes, local/global/included/worktree
