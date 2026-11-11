@@ -10,6 +10,8 @@ import {
   MAX_FILE_VIEW_BYTES,
   READ_WSL_FILE_SCRIPT,
   isSafeRelativePath,
+  isWithinRoot,
+  treeFolderPath,
   listSessionDirectory,
   readSessionFile,
   parseFindOutput,
@@ -54,6 +56,30 @@ describe('isSafeRelativePath', () => {
     for (const path of ['..', 'src/..', './src', '/etc', 'a\\b', 'a//b', 'src/', 'a\u0000b', 'a\nb']) {
       expect(isSafeRelativePath(path), path).toBe(false)
     }
+  })
+})
+
+describe('treeFolderPath and isWithinRoot', () => {
+  it('joins a tree folder onto its root', () => {
+    const wsl: DirectoryContext = { id: 's', name: 'S', kind: 'wsl', distro: 'Ubuntu', path: '/home/me/app/', createdAt: '' }
+    expect(treeFolderPath(wsl, '')).toBe('/home/me/app/')
+    expect(treeFolderPath(wsl, 'src/lib')).toBe('/home/me/app/src/lib')
+    const native: DirectoryContext = { id: 's', name: 'S', kind: 'native', path: join(tmpdir(), 'app'), createdAt: '' }
+    expect(treeFolderPath(native, 'src/lib')).toBe(join(tmpdir(), 'app', 'src', 'lib'))
+  })
+
+  it('accepts the root and folders below it, nothing else', () => {
+    expect(isWithinRoot('wsl', '/home/me/app', '/home/me/app')).toBe(true)
+    expect(isWithinRoot('wsl', '/home/me/app', '/home/me/app/src')).toBe(true)
+    expect(isWithinRoot('wsl', '/', '/etc')).toBe(true)
+    expect(isWithinRoot('wsl', '/home/me/app', '/home/me/app2')).toBe(false)
+    expect(isWithinRoot('wsl', '/home/me/app', '/home/me')).toBe(false)
+    const root = join(tmpdir(), 'app')
+    expect(isWithinRoot('native', root, root)).toBe(true)
+    expect(isWithinRoot('native', root, join(root, '..foo'))).toBe(true)
+    expect(isWithinRoot('native', root, join(root, 'src'))).toBe(true)
+    expect(isWithinRoot('native', root, join(tmpdir(), 'app2'))).toBe(false)
+    expect(isWithinRoot('native', root, tmpdir())).toBe(false)
   })
 })
 

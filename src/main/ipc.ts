@@ -148,7 +148,7 @@ import { readGitTerminalInfo } from './git'
 import { readInboxGitChanges, readInboxGitDiff } from './inbox/changes'
 import { terminalSessionResolver } from './inbox/terminal'
 import { INBOX_TERMINAL_SESSION_ID, inboxTerminalSession, type InboxTerminalConfiguration, type InboxTerminalSettings } from '@shared/inbox-terminal'
-import { isSafeRelativePath, listSessionDirectory, readSessionFile } from './files/tree'
+import { isSafeRelativePath, isWithinRoot, listSessionDirectory, readSessionFile, treeFolderPath } from './files/tree'
 import {
   createTodoProject,
   createTodoTask,
@@ -283,6 +283,19 @@ async function verifiedDirectory(session: Session, directory: string, quiet = fa
 
   const result = await runWslCommand(distro, directoryCheckArgs(canonical))
   return result.code === 0 ? canonical : reject(`not a directory in ${distro}`)
+}
+
+/** `verifiedDirectory`, but always the real path: links resolved on the host or inside the distro. */
+async function realDirectory(session: Session, directory: string): Promise<string | null> {
+  const verified = await verifiedDirectory(session, directory)
+  if (!verified) return null
+  // A WSL folder comes back from `verifiedDirectory` canonical when `realpath` worked; insist on that here.
+  if (session.kind === 'wsl') return (await canonicalizeWslPath(session.distro!, verified)) === verified ? verified : null
+  try {
+    return await fs.realpath(verified)
+  } catch {
+    return null
+  }
 }
 
 async function revealDirectory(session: Session, directory: string): Promise<void> {
@@ -773,6 +786,23 @@ export function registerIpcHandlers(
   handle<string, void>(IpcChannels.pathOpenInboxInVsCode, async (id) => {
     const folder = await inboxDirectory(id, canOpenSessionInVsCode)
     if (folder) await openDirectoryInVsCode(folder.session, folder.directory)
+  })
+  // A folder the Files tree shows, named relative to the tree's root like a listing. Both ends are resolved
+  // to their real paths, so a folder that is (or was swapped for) a link out of the root is refused.
+  handle<FilesListRequest, void>(IpcChannels.pathRevealTreeFolder, async (req) => {
+    if (!isFileRoot(req) || typeof req.path !== 'string' || !isSafeRelativePath(req.path)) {
+      throw new Error('Invalid folder request.')
+    }
+    const context = await fileRoot(req)
+    if (!canRevealSession(context)) return
+    const root = await realDirectory(context, context.path)
+    if (!root) return
+    const directory = req.path ? await realDirectory(context, treeFolderPath(context, req.path)) : root
+    if (!directory || !isWithinRoot(context.kind, root, directory)) {
+      console.warn('[path] not opening a Files tree folder outside its root')
+      return
+    }
+    await revealDirectory(context, directory)
   })
 
   handle<GitTerminalInfoRequest, GitTerminalInfoResponse | null>(

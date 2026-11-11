@@ -145,6 +145,7 @@ export const IpcChannels = {
   pathOpenTerminalInVsCode: 'path:open-terminal-in-vscode',
   pathRevealInbox: 'path:reveal-inbox',
   pathOpenInboxInVsCode: 'path:open-inbox-in-vscode',
+  pathRevealTreeFolder: 'path:reveal-tree-folder',
 
   gitTerminalInfo: 'git:terminal-info',
 
@@ -505,6 +506,8 @@ export interface RendererApi {
     revealInbox(id: string): Promise<void>
     /** Opens the folder of an Inbox thread or project in Windows VS Code; WSL folders on Windows only. */
     openInboxInVsCode(id: string): Promise<void>
+    /** Opens a folder of the Files tree in the file manager; `path` is relative to the tree's root ('' for the root). */
+    revealTreeFolder(req: FilesListRequest): Promise<void>
   }
   git: {
     terminalInfo(req: GitTerminalInfoRequest): Promise<GitTerminalInfoResponse | null>

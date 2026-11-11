@@ -218,6 +218,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.pathOpenTerminalInVsCode]: id,
   [IpcChannels.pathRevealInbox]: id,
   [IpcChannels.pathOpenInboxInVsCode]: id,
+  [IpcChannels.pathRevealTreeFolder]: rooted({ path: listPath }),
   [IpcChannels.gitTerminalInfo]: terminalId,
   [IpcChannels.filesList]: rooted({ path: listPath }),
   [IpcChannels.filesRead]: rooted({ path: relativePath }),

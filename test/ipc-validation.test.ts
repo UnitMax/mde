@@ -66,6 +66,7 @@ const validPayloads = {
   [IpcChannels.pathOpenTerminalInVsCode]: 'pane',
   [IpcChannels.pathRevealInbox]: 'ses_thread',
   [IpcChannels.pathOpenInboxInVsCode]: 'fld_1234',
+  [IpcChannels.pathRevealTreeFolder]: { terminalId: 'pane', directory: '/home/me', path: 'src/lib' },
   [IpcChannels.gitTerminalInfo]: terminalId,
   [IpcChannels.filesList]: { sessionId: 'session', path: '' },
   [IpcChannels.filesRead]: { sessionId: 'session', path: 'src/file.ts' },

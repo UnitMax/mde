@@ -16,6 +16,7 @@ const containers: HTMLDivElement[] = []
 const list = vi.fn()
 const reveal = vi.fn(async () => undefined)
 const openInVsCode = vi.fn(async () => undefined)
+const revealTreeFolder = vi.fn(async () => undefined)
 
 const session: DirectoryContext = {
   id: 'session-1',
@@ -50,11 +51,12 @@ describe('FileTreePanel', () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     Object.defineProperty(window, 'api', {
       configurable: true,
-      value: { files: { list }, paths: { revealTerminal: reveal, openTerminalInVsCode: openInVsCode } }
+      value: { files: { list }, paths: { revealTerminal: reveal, openTerminalInVsCode: openInVsCode, revealTreeFolder } }
     })
     list.mockReset()
     reveal.mockClear()
     openInVsCode.mockClear()
+    revealTreeFolder.mockClear()
     list.mockImplementation(async ({ path }: { path: string }) => {
       if (path === '') {
         return {
@@ -246,5 +248,31 @@ describe('FileTreePanel', () => {
       container.querySelector<HTMLButtonElement>('[aria-label="Open folder in VS Code"]')?.click()
     })
     expect(openInVsCode).toHaveBeenCalledWith('pane-1')
+  })
+
+  it('opens a right-clicked folder, a file\'s folder, or the root from empty space in File Explorer', async () => {
+    const fileRoot = { terminalId: 'pane-1', directory: '/home/me/current' }
+    const container = await renderPanel(session, fileRoot)
+    await act(async () => treeItem(container, 'src').click())
+
+    const rightClickAndOpen = async (element: Element, label: string): Promise<void> => {
+      await act(async () => {
+        element.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 20, button: 2 }))
+      })
+      const item = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+        .find((candidate) => candidate.textContent?.trim() === label)
+      if (!item) throw new Error(`Missing menu item: ${label}`)
+      await act(async () => item.click())
+    }
+
+    await rightClickAndOpen(treeItem(container, 'src'), 'Open folder in File Explorer')
+    expect(revealTreeFolder).toHaveBeenLastCalledWith({ ...fileRoot, path: 'src' })
+
+    await rightClickAndOpen(treeItem(container, 'src/index.ts'), 'Open containing folder in File Explorer')
+    expect(revealTreeFolder).toHaveBeenLastCalledWith({ ...fileRoot, path: 'src' })
+
+    await rightClickAndOpen(container.querySelector('[role="tree"]')!, 'Open folder in File Explorer')
+    expect(revealTreeFolder).toHaveBeenLastCalledWith({ ...fileRoot, path: '' })
+    expect(revealTreeFolder).toHaveBeenCalledTimes(3)
   })
 })

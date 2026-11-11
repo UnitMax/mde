@@ -109,7 +109,8 @@ const api: RendererApi = {
     openTerminalInVsCode: (terminalId) =>
       ipcRenderer.invoke(IpcChannels.pathOpenTerminalInVsCode, terminalId),
     revealInbox: (id) => ipcRenderer.invoke(IpcChannels.pathRevealInbox, id),
-    openInboxInVsCode: (id) => ipcRenderer.invoke(IpcChannels.pathOpenInboxInVsCode, id)
+    openInboxInVsCode: (id) => ipcRenderer.invoke(IpcChannels.pathOpenInboxInVsCode, id),
+    revealTreeFolder: (req) => ipcRenderer.invoke(IpcChannels.pathRevealTreeFolder, req)
   },
   git: {
     terminalInfo: (req) => ipcRenderer.invoke(IpcChannels.gitTerminalInfo, req)
