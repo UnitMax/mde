@@ -110,6 +110,11 @@ export class PtyManager {
     private readonly directoryStore?: TerminalDirectoryStore,
   ) {}
 
+  /** Sets the folder a terminal that has not started yet opens in, through the same record a restart reads. */
+  rememberDirectory(terminalId: string, session: Session, directory: string): void {
+    this.directoryStore?.remember(terminalId, session, directory)
+  }
+
   savedDirectory(terminalId: string, session: Session): string | undefined {
     return this.directoryStore?.get(terminalId, session)
   }

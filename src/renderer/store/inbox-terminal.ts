@@ -1,7 +1,8 @@
 import { terminalPaneIds } from '@shared/terminal-layouts'
 import { create } from 'zustand'
 import type { PtyExitInfo, Session } from '@shared/types'
-import { INBOX_TERMINAL_SESSION_ID } from '@shared/inbox-terminal'
+import type { FilesListRequest } from '@shared/ipc'
+import { INBOX_TERMINAL_SESSION_ID, inboxTerminalSession } from '@shared/inbox-terminal'
 import { getInboxTerminalDistro, getInboxTerminalLayout, saveInboxTerminalDistro, saveInboxTerminalLayout } from '@/lib/inbox-settings'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { useWorkspace } from '@/store/workspace'
@@ -45,6 +46,11 @@ interface Store {
   /** What the terminal looks like: its arrangement and panes. Their shells run in the main process. */
   layout: SessionTerminalLayout
   splitPane: (terminalId: string, side: TerminalSplitSide) => void
+  /**
+   * Adds a pane whose shell starts in a folder of the Files tree, beside the pane last used. The folder must be
+   * where the terminal runs (the same WSL distro, or the host); a folder elsewhere is refused with a reason.
+   */
+  openInFolder: (folder: FilesListRequest, where: Pick<Session, 'kind' | 'distro'>, side: TerminalSplitSide) => Promise<void>
   resize: (splitId: string, ratio: number) => void
   reorder: (terminalIds: readonly string[]) => void
   titlePane: (terminalId: string, title: string | null) => void
@@ -121,6 +127,32 @@ export const useInboxTerminal = create<Store>((set, get) => {
       commit(next)
       const added = next.panes.find((pane) => !previous.panes.includes(pane))
       if (added) focusTerminalWhenReady(added.terminalId)
+    },
+
+    openInFolder: async (folder, where, side) => {
+      const platform = useWorkspace.getState().platform
+      let session = platform?.isWindows ? get().session : inboxTerminalSession(platform?.platform ?? '', [])
+      if (platform?.isWindows && session === undefined) {
+        await get().configureDistro(get().distro)
+        session = get().session
+      }
+      if (!session) throw new Error(get().error ?? 'The terminal needs a WSL distribution, and none was found.')
+      if (session.kind !== where.kind || (session.kind === 'wsl' && session.distro !== where.distro)) {
+        const name = (place: Pick<Session, 'kind' | 'distro'>): string =>
+          place.kind === 'wsl' ? `in WSL (${place.distro ?? 'no distribution'})` : platform?.isWindows ? 'on Windows' : 'on this computer'
+        throw new Error(`This folder is ${name(where)}, but the Inbox terminal runs ${name(session)}.`)
+      }
+      const previous = get().layout
+      const source = previous.panes.find((pane) => pane.terminalId === focused) ?? previous.panes.at(-1)
+      const next = source && splitRuntimePane(INBOX_TERMINAL_SESSION_ID, INBOX_TERMINAL_TAB.id, previous, source.terminalId, side)
+      const added = next?.panes.find((pane) => !previous.panes.includes(pane))
+      if (!next || !added) throw new Error('The terminal has no room for another pane.')
+      await window.api.pty.startInFolder({ terminalId: added.terminalId, sessionId: INBOX_TERMINAL_SESSION_ID, folder })
+      // Panes added or closed meanwhile would make this pane's place stale; start over from what is there now.
+      if (get().layout !== previous) return get().openInFolder(folder, where, side)
+      commit(next)
+      focused = added.terminalId
+      focusTerminalWhenReady(added.terminalId)
     },
 
     resize: (splitId, ratio) => commit(layoutResized(get().layout, splitId, ratio), false),

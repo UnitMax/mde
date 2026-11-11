@@ -130,6 +130,7 @@ export const IpcChannels = {
   ptyStatuses: 'pty:statuses',
   ptyDirectories: 'pty:directories',
   ptyDropFiles: 'pty:drop-files',
+  ptyStartInFolder: 'pty:start-in-folder',
 
   clipboardWriteText: 'clipboard:write-text',
   clipboardPaste: 'clipboard:paste',
@@ -291,6 +292,16 @@ export interface EnsurePtyRequest {
 }
 
 export type RestartPtyRequest = EnsurePtyRequest
+
+/**
+ * A terminal about to be created (a new tab's pane, or a new pane of the Inbox terminal) and the folder of the
+ * Files tree its shell should start in: the tree's root and the folder relative to it, as for a listing.
+ */
+export interface StartTerminalInFolderRequest {
+  terminalId: string
+  sessionId: string
+  folder: FilesListRequest
+}
 
 export interface TerminalPalette {
   foreground: string
@@ -487,6 +498,8 @@ export interface RendererApi {
     statuses(): Promise<Record<string, PtyStatus>>
     directories(): Promise<Record<string, string>>
     dropFiles(req: RendererDropPtyFilesRequest): Promise<PtyDropResult>
+    /** Makes a terminal that has not started yet open its shell in a folder of the Files tree. */
+    startInFolder(req: StartTerminalInFolderRequest): Promise<void>
     onData(listener: (chunk: PtyDataChunk) => void): () => void
     onDirectory(listener: (update: PtyDirectoryUpdate) => void): () => void
     onExit(listener: (info: PtyExitInfo) => void): () => void

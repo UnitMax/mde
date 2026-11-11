@@ -22,6 +22,7 @@ import {
   type EnsurePtyRequest,
   type RestartPtyRequest,
   type FilesListRequest,
+  type StartTerminalInFolderRequest,
   type FilesReadRequest,
   type MoveTodoTaskRequest,
   type PlatformInfo,
@@ -296,6 +297,12 @@ async function realDirectory(session: Session, directory: string): Promise<strin
   } catch {
     return null
   }
+}
+
+/** Where a folder or shell lives, for a message: "in WSL (Ubuntu)", "on Windows". */
+function environmentName(session: Session): string {
+  if (session.kind === 'wsl') return `in WSL (${session.distro ?? 'no distribution'})`
+  return process.platform === 'win32' ? 'on Windows' : 'on this computer'
 }
 
 async function revealDirectory(session: Session, directory: string): Promise<void> {
@@ -789,20 +796,42 @@ export function registerIpcHandlers(
   })
   // A folder the Files tree shows, named relative to the tree's root like a listing. Both ends are resolved
   // to their real paths, so a folder that is (or was swapped for) a link out of the root is refused.
-  handle<FilesListRequest, void>(IpcChannels.pathRevealTreeFolder, async (req) => {
+  const treeFolder = async (
+    req: FilesListRequest,
+    allowed: (session: Session) => boolean = () => true,
+  ): Promise<{ context: DirectoryContext; directory: string } | null> => {
     if (!isFileRoot(req) || typeof req.path !== 'string' || !isSafeRelativePath(req.path)) {
       throw new Error('Invalid folder request.')
     }
     const context = await fileRoot(req)
-    if (!canRevealSession(context)) return
+    if (!allowed(context)) return null
     const root = await realDirectory(context, context.path)
-    if (!root) return
+    if (!root) return null
     const directory = req.path ? await realDirectory(context, treeFolderPath(context, req.path)) : root
     if (!directory || !isWithinRoot(context.kind, root, directory)) {
-      console.warn('[path] not opening a Files tree folder outside its root')
-      return
+      console.warn('[path] not using a Files tree folder outside its root')
+      return null
     }
-    await revealDirectory(context, directory)
+    return { context, directory }
+  }
+  handle<FilesListRequest, void>(IpcChannels.pathRevealTreeFolder, async (req) => {
+    const folder = await treeFolder(req, canRevealSession)
+    if (folder) await revealDirectory(folder.context, folder.directory)
+  })
+  // The new terminal's shell starts there through the saved-directory record, which the launch checks again.
+  handle<StartTerminalInFolderRequest, void>(IpcChannels.ptyStartInFolder, async (req) => {
+    if (inboxTerminalThreadId(req.sessionId) || !req.terminalId.startsWith(`${req.sessionId}:tab:`)) {
+      throw new Error('Invalid terminal.')
+    }
+    if (ptyManager.terminalInfo(req.terminalId)) throw new Error('That terminal is already running.')
+    const session = await getTerminalSession(req.sessionId)
+    if (!session) throw new Error('Session no longer exists.')
+    const folder = await treeFolder(req.folder)
+    if (!folder) throw new Error('Folder not found.')
+    if (folder.context.kind !== session.kind || (session.kind === 'wsl' && folder.context.distro !== session.distro)) {
+      throw new Error(`This folder is ${environmentName(folder.context)}, but the terminal runs ${environmentName(session)}.`)
+    }
+    ptyManager.rememberDirectory(req.terminalId, session, folder.directory)
   })
 
   handle<GitTerminalInfoRequest, GitTerminalInfoResponse | null>(

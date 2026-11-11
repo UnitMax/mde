@@ -53,6 +53,7 @@ const validPayloads = {
   [IpcChannels.ptyDispose]: 'pane',
   [IpcChannels.ptyStatuses]: undefined,
   [IpcChannels.ptyDirectories]: undefined,
+  [IpcChannels.ptyStartInFolder]: { terminalId: 'session:tab:t:pane:p', sessionId: 'session', folder: { sessionId: 'ses_thread', path: 'src' } },
   [IpcChannels.ptyDropFiles]: { terminalId: 'pane', files: [{ name: 'test.txt', nativePath: '/tmp/test.txt' }], mode: 'shell', treeEntry: undefined },
   [IpcChannels.clipboardWriteText]: 'copied\ntext',
   [IpcChannels.clipboardPaste]: undefined,

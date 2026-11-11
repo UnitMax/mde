@@ -200,6 +200,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.ptyDispose]: id,
   [IpcChannels.ptyStatuses]: noPayload,
   [IpcChannels.ptyDirectories]: noPayload,
+  [IpcChannels.ptyStartInFolder]: object({ terminalId: id, sessionId: id, folder: rooted({ path: listPath }) }),
   [IpcChannels.ptyDropFiles]: object({
     terminalId: id,
     files: array(object({ name: optionalPath, nativePath: optional(path), fileUri: optional(path) }), IPC_LIMITS.droppedFiles),

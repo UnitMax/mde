@@ -7,11 +7,13 @@ import {
   FolderOpen,
   PanelRightClose,
   PanelRightOpen,
-  RefreshCw
+  RefreshCw,
+  SquareTerminal,
+  X
 } from 'lucide-react'
 import { FILE_TREE_DROP_TYPE } from '@/terminal/drop'
 import type { Session } from '@shared/types'
-import type { FileRoot } from '@shared/ipc'
+import type { FileRoot, FilesListRequest } from '@shared/ipc'
 import { fileRootKey } from '@/lib/file-root'
 import { Button } from '@/components/ui/button'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
@@ -60,7 +62,8 @@ function FileTree({
   onCollapse,
   browseOnly,
   heading,
-  fill
+  fill,
+  openInTerminal
 }: {
   session: FileTreeContext
   root: FileRoot | null
@@ -68,6 +71,7 @@ function FileTree({
   browseOnly: boolean
   heading?: ReactNode
   fill: boolean
+  openInTerminal?: (folder: FilesListRequest) => Promise<void>
 }): JSX.Element {
   const [cache, setCache] = useState<Map<string, FileTreeDirectoryState>>(() => new Map())
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
@@ -75,6 +79,7 @@ function FileTree({
   const [draggedPath, setDraggedPath] = useState<string | null>(null)
   // What a right-click points at: a folder row, a file row (its folder), or empty space (the root, '').
   const [menuTarget, setMenuTarget] = useState<{ path: string; containing: boolean }>({ path: '', containing: false })
+  const [menuError, setMenuError] = useState<string | null>(null)
   const dragPreviewRef = useRef<HTMLElement | null>(null)
   const generation = useRef(0)
   const expandedRef = useRef(expanded)
@@ -206,7 +211,16 @@ function FileTree({
   }
 
   const revealMenuTarget = (): void => {
+    setMenuError(null)
     if (root) void window.api.paths.revealTreeFolder({ ...root, path: menuTarget.path })
+  }
+
+  const openMenuTargetInTerminal = (): void => {
+    setMenuError(null)
+    if (!root || !openInTerminal) return
+    void openInTerminal({ ...root, path: menuTarget.path }).catch((error: unknown) => {
+      setMenuError(ipcErrorMessage(error, 'Could not open a terminal in that folder.'))
+    })
   }
 
   const tree = (
@@ -355,9 +369,23 @@ function FileTree({
               <FolderOpen aria-hidden className="h-3.5 w-3.5" />
               {menuTarget.containing ? 'Open containing folder in File Explorer' : 'Open folder in File Explorer'}
             </ContextMenuItem>
+            {openInTerminal && (
+              <ContextMenuItem onSelect={openMenuTargetInTerminal}>
+                <SquareTerminal aria-hidden className="h-3.5 w-3.5" />
+                {menuTarget.containing ? 'Open containing folder in Terminal' : 'Open in Terminal'}
+              </ContextMenuItem>
+            )}
           </ContextMenuContent>
         </ContextMenu>
       ) : tree}
+      {menuError && (
+        <div role="alert" className="mx-2 mb-2 flex items-start gap-2 rounded border border-line bg-panel p-2 text-[11px] leading-snug text-danger">
+          <span className="min-w-0 flex-1">{menuError}</span>
+          <button type="button" className="shrink-0 text-fg-subtle hover:text-fg" aria-label="Dismiss" onClick={() => setMenuError(null)}>
+            <X aria-hidden className="h-3 w-3" />
+          </button>
+        </div>
+      )}
       {browseOnly && (
         <div className="flex shrink-0 items-center gap-1 border-t border-line px-2 py-1">
           {folderTarget && <OpenFolderButtons target={folderTarget} kind={session.kind} distro={session.distro} />}
@@ -381,7 +409,8 @@ export function FileTreePanel({
   root: requestedRoot,
   browseOnly = false,
   heading,
-  fill = false
+  fill = false,
+  openInTerminal
 }: {
   session: FileTreeContext
   /** Omit for an Inbox folder; null keeps the panel loading until a terminal reports its directory. */
@@ -391,6 +420,8 @@ export function FileTreePanel({
   heading?: ReactNode
   /** Takes the width of its container instead of its own 260px, for a host whose sidebar can be resized. */
   fill?: boolean
+  /** Offers "Open in Terminal" in the tree's right-click menu: a new terminal whose shell starts in that folder. */
+  openInTerminal?: (folder: FilesListRequest) => Promise<void>
 }): JSX.Element {
   const root = useMemo<FileRoot | null>(
     () => {
@@ -420,5 +451,5 @@ export function FileTreePanel({
     )
   }
 
-  return <FileTree key={root ? fileRootKey(root) : 'pending'} session={session} root={root} onCollapse={toggleFileTree} browseOnly={browseOnly} heading={heading} fill={fill} />
+  return <FileTree key={root ? fileRootKey(root) : 'pending'} session={session} root={root} onCollapse={toggleFileTree} browseOnly={browseOnly} heading={heading} fill={fill} openInTerminal={openInTerminal} />
 }

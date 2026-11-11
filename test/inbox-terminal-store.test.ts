@@ -182,4 +182,65 @@ describe('the Inbox terminal store', () => {
       expect(stop).toHaveBeenCalled()
     })
   })
+
+  describe('opening a Files tree folder', () => {
+    const wsl = (distro: string) => ({ id: 'inbox-terminal', name: 'Terminal', kind: 'wsl' as const, distro, createdAt: '' })
+    const folder = { sessionId: 'ses_thread', path: 'src' }
+
+    async function loadOnWindows() {
+      const store = await load()
+      const { useWorkspace } = await import('../src/renderer/store/workspace')
+      useWorkspace.setState({ platform: { platform: 'win32', isWindows: true } })
+      return store
+    }
+
+    it('adds a pane below the one last used, after main has set its folder', async () => {
+      const startInFolder = vi.fn(async () => {})
+      vi.stubGlobal('api', { pty: { startInFolder } })
+      const store = await loadOnWindows()
+      store.setState({ session: wsl('Ubuntu') })
+
+      await store.getState().openInFolder(folder, { kind: 'wsl', distro: 'Ubuntu' }, 'bottom')
+
+      expect(startInFolder).toHaveBeenCalledWith({ terminalId: ID(2), sessionId: 'inbox-terminal', folder })
+      expect(store.getState().layout.panes.map((pane) => pane.terminalId)).toEqual([ID(1), ID(2)])
+      expect(store.getState().layout.tree).toMatchObject({ type: 'split', axis: 'row' })
+      expect(focus).toHaveBeenLastCalledWith(ID(2))
+    })
+
+    it('sets up the terminal first when it has not been opened yet', async () => {
+      const configureInbox = vi.fn(async () => ({ session: wsl('Ubuntu'), changed: false }))
+      const startInFolder = vi.fn(async () => {})
+      vi.stubGlobal('api', { pty: { configureInbox, startInFolder } })
+      const store = await loadOnWindows()
+
+      await store.getState().openInFolder(folder, { kind: 'wsl', distro: 'Ubuntu' }, 'right')
+
+      expect(configureInbox).toHaveBeenCalled()
+      expect(startInFolder).toHaveBeenCalledTimes(1)
+    })
+
+    it('refuses a folder in another environment and adds no pane', async () => {
+      const startInFolder = vi.fn(async () => {})
+      vi.stubGlobal('api', { pty: { startInFolder } })
+      const store = await loadOnWindows()
+      store.setState({ session: wsl('Ubuntu') })
+
+      await expect(store.getState().openInFolder(folder, { kind: 'native', distro: undefined }, 'right'))
+        .rejects.toThrow('This folder is on Windows, but the Inbox terminal runs in WSL (Ubuntu).')
+      await expect(store.getState().openInFolder(folder, { kind: 'wsl', distro: 'Debian' }, 'right'))
+        .rejects.toThrow('in WSL (Debian)')
+      expect(startInFolder).not.toHaveBeenCalled()
+      expect(store.getState().layout.panes).toHaveLength(1)
+    })
+
+    it('adds no pane when main refuses the folder', async () => {
+      vi.stubGlobal('api', { pty: { startInFolder: vi.fn(async () => { throw new Error('Folder not found.') }) } })
+      const store = await loadOnWindows()
+      store.setState({ session: wsl('Ubuntu') })
+
+      await expect(store.getState().openInFolder(folder, { kind: 'wsl', distro: 'Ubuntu' }, 'right')).rejects.toThrow('Folder not found.')
+      expect(store.getState().layout.panes).toHaveLength(1)
+    })
+  })
 })

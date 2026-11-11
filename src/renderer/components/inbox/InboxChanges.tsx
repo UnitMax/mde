@@ -9,6 +9,8 @@ import { ScrollStrip } from '@/components/ui/scroll-strip'
 import { FloatingTerminalNotice, FloatTerminalButton } from './FloatingTerminal'
 import { focusInboxTerminalWhenShown, InboxTerminal } from './InboxTerminal'
 import { useInboxFloatingTerminal } from '@/store/inbox-floating-terminal'
+import { useInboxTerminal } from '@/store/inbox-terminal'
+import type { FilesListRequest } from '@shared/ipc'
 import { InboxSidebarFrame } from './InboxSidebarFrame'
 import { parseUnifiedDiff } from '@/lib/diff'
 import { ipcErrorMessage } from '@/lib/ipc-error'
@@ -603,6 +605,17 @@ function TerminalAside({ threadId }: { threadId?: string }): JSX.Element {
 }
 
 /**
+ * "Open in Terminal" from the Files tree: a new pane of the Inbox terminal, starting in that folder, and the
+ * terminal brought into view. Floating, the pane goes beside the last one; in the narrow sidebar, below it.
+ */
+async function openInInboxTerminal(folder: FilesListRequest, where: DirectoryContext): Promise<void> {
+  const floating = useInboxFloatingTerminal.getState()
+  await useInboxTerminal.getState().openInFolder(folder, where, floating.floating ? 'right' : 'bottom')
+  if (floating.floating) floating.show()
+  else useInboxChanges.getState().setTab('terminal')
+}
+
+/**
  * The right-hand sidebar of the Inbox: the files of the open thread's folder (or of the folder a new thread
  * starts in), the thread's Git changes, and the terminal. A new thread has no changes yet, so it offers
  * only the other two. It can be dragged wider, which the terminal in particular wants.
@@ -629,7 +642,13 @@ export function InboxSidebar({ session, threadId }: { session: DirectoryContext;
         className={tab === 'files' ? 'contents' : 'hidden'}
         data-testid="inbox-files-panel"
       >
-        <FileTreePanel session={session} browseOnly fill heading={tab === 'files' ? <SidebarTabs threadId={threadId} /> : undefined} />
+        <FileTreePanel
+          session={session}
+          browseOnly
+          fill
+          heading={tab === 'files' ? <SidebarTabs threadId={threadId} /> : undefined}
+          openInTerminal={(folder) => openInInboxTerminal(folder, session)}
+        />
       </div>
       {tab === 'changes' && threadId && <ChangesAside threadId={threadId} />}
       {tab === 'terminal' && <TerminalAside threadId={threadId} />}

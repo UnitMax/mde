@@ -3,7 +3,7 @@
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { TerminalDirectoryRequest } from '../src/shared/ipc'
+import type { FilesListRequest, TerminalDirectoryRequest } from '../src/shared/ipc'
 import { fileRootKey } from '../src/renderer/lib/file-root'
 import type { DirectoryContext } from '../src/shared/types'
 import { FILE_TREE_DROP_TYPE, readFileTreeDrop } from '../src/renderer/terminal/drop'
@@ -26,7 +26,11 @@ const session: DirectoryContext = {
   createdAt: '2026-01-01T00:00:00.000Z'
 }
 
-async function renderPanel(target: DirectoryContext = session, fileRoot?: TerminalDirectoryRequest | null): Promise<HTMLElement> {
+async function renderPanel(
+  target: DirectoryContext = session,
+  fileRoot?: TerminalDirectoryRequest | null,
+  openInTerminal?: (folder: FilesListRequest) => Promise<void>,
+): Promise<HTMLElement> {
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
@@ -34,7 +38,7 @@ async function renderPanel(target: DirectoryContext = session, fileRoot?: Termin
   containers.push(container)
 
   await act(async () => {
-    root.render(createElement(FileTreePanel, { session: target, root: fileRoot }))
+    root.render(createElement(FileTreePanel, { session: target, root: fileRoot, openInTerminal }))
   })
 
   return container
@@ -274,5 +278,42 @@ describe('FileTreePanel', () => {
     await rightClickAndOpen(container.querySelector('[role="tree"]')!, 'Open folder in File Explorer')
     expect(revealTreeFolder).toHaveBeenLastCalledWith({ ...fileRoot, path: '' })
     expect(revealTreeFolder).toHaveBeenCalledTimes(3)
+  })
+
+  it('opens a new terminal in a right-clicked folder and shows why when it cannot', async () => {
+    const fileRoot = { terminalId: 'pane-1', directory: '/home/me/current' }
+    const openInTerminal = vi.fn(async (_folder: FilesListRequest) => {})
+    const container = await renderPanel(session, fileRoot, openInTerminal)
+    await act(async () => treeItem(container, 'src').click())
+
+    const rightClickAndOpen = async (element: Element, label: string): Promise<void> => {
+      await act(async () => {
+        element.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 20, button: 2 }))
+      })
+      const item = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+        .find((candidate) => candidate.textContent?.trim() === label)
+      if (!item) throw new Error(`Missing menu item: ${label}`)
+      await act(async () => item.click())
+    }
+
+    await rightClickAndOpen(treeItem(container, 'src'), 'Open in Terminal')
+    expect(openInTerminal).toHaveBeenLastCalledWith({ ...fileRoot, path: 'src' })
+    await rightClickAndOpen(treeItem(container, 'src/index.ts'), 'Open containing folder in Terminal')
+    expect(openInTerminal).toHaveBeenLastCalledWith({ ...fileRoot, path: 'src' })
+    await rightClickAndOpen(container.querySelector('[role="tree"]')!, 'Open in Terminal')
+    expect(openInTerminal).toHaveBeenLastCalledWith({ ...fileRoot, path: '' })
+
+    openInTerminal.mockRejectedValueOnce(new Error("Error invoking remote method 'pty:start-in-folder': Error: Folder not found."))
+    await rightClickAndOpen(treeItem(container, 'src'), 'Open in Terminal')
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('Folder not found.')
+  })
+
+  it('offers no terminal item when the host has none', async () => {
+    const container = await renderPanel(session, { terminalId: 'pane-1', directory: '/home/me/current' })
+    await act(async () => {
+      container.querySelector('[role="tree"]')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 20, button: 2 }))
+    })
+    const labels = Array.from(document.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent?.trim())
+    expect(labels).toEqual(['Open folder in File Explorer'])
   })
 })
