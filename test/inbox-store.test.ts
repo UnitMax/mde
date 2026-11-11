@@ -95,6 +95,16 @@ describe('inbox thread validation', () => {
     }
   })
 
+  it('keeps the mark of a thread an agent started, with or without its parent', () => {
+    expect(validateInboxThread(thread({ spawnedBy: { threadId: 'ses_parent' } }))).toEqual(thread({ spawnedBy: { threadId: 'ses_parent' } }))
+    expect(validateInboxThread(thread({ spawnedBy: {} }))).toEqual(thread({ spawnedBy: {} }))
+    // A parent pointer that is not a thread is dropped; the thread stays marked.
+    expect(validateInboxThread({ ...thread(), spawnedBy: { threadId: '../x' } })).toEqual(thread({ spawnedBy: {} }))
+    for (const spawnedBy of ['ses_parent', 5, null, []]) {
+      expect(validateInboxThread({ ...thread(), spawnedBy })).toEqual(thread())
+    }
+  })
+
   it('rejects malformed threads', () => {
     for (const bad of [
       thread({ id: 'not-a-session' }),

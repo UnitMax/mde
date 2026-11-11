@@ -137,6 +137,7 @@ const api: RendererApi = {
     remove: (req) => ipcRenderer.invoke(IpcChannels.inboxRemove, req),
     onChanged: (listener) => subscribe<InboxThread>(IpcEvents.inboxChanged, listener),
     folders: () => ipcRenderer.invoke(IpcChannels.inboxFolders),
+    onFoldersChanged: (listener) => subscribe<void>(IpcEvents.inboxFoldersChanged, () => listener()),
     addFolder: (req) => ipcRenderer.invoke(IpcChannels.inboxFoldersAdd, req),
     updateFolder: (req) => ipcRenderer.invoke(IpcChannels.inboxFoldersUpdate, req),
     removeFolder: (req) => ipcRenderer.invoke(IpcChannels.inboxFoldersRemove, req),
@@ -180,6 +181,11 @@ const api: RendererApi = {
     read: (req) => ipcRenderer.invoke(IpcChannels.opencodeConfigRead, req),
     preview: (req) => ipcRenderer.invoke(IpcChannels.opencodeConfigPreview, req),
     save: (req) => ipcRenderer.invoke(IpcChannels.opencodeConfigSave, req)
+  },
+  mdeMcp: {
+    status: (req) => ipcRenderer.invoke(IpcChannels.mdeMcpStatus, req),
+    install: (req) => ipcRenderer.invoke(IpcChannels.mdeMcpInstall, req),
+    remove: (req) => ipcRenderer.invoke(IpcChannels.mdeMcpRemove, req)
   },
   windowMode: {
     get: () => ipcRenderer.invoke(IpcChannels.windowModeGet),

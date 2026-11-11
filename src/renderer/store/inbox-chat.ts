@@ -265,6 +265,14 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
       configure()
       const unsubscribeSettings = subscribeTerminalSettings(configure)
       const unsubscribeEvents = window.api.chat.onEvent((event) => get().applyEvent(event))
+      // An agent added a project (or a worktree) through the MDE MCP. Only the list is read again: the
+      // new-thread page's own choice is the person's, and stays.
+      const unsubscribeFolders = window.api.inbox.onFoldersChanged?.(() => {
+        void Promise.resolve()
+          .then(() => window.api.inbox.folders())
+          .then((state) => { if (state) set({ folders: state.folders }) })
+          .catch(() => undefined)
+      })
       void Promise.resolve()
         .then(() => window.api.inbox.folders())
         .then((state) => set({ folders: state?.folders ?? [], composer: state?.composer ?? {}, foldersLoaded: true }))
@@ -272,6 +280,7 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
       return () => {
         unsubscribeSettings()
         unsubscribeEvents()
+        unsubscribeFolders?.()
       }
     },
 

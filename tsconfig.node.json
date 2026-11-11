@@ -104,6 +104,7 @@
     "src/renderer/components/InboxPanel.tsx",
     "src/renderer/components/InboxThreadView.tsx",
     "src/renderer/components/SettingsDialog.tsx",
+    "src/renderer/components/inbox/MdeMcpSettings.tsx",
     "src/renderer/components/inbox/*.tsx",
     "src/renderer/lib/chat.ts",
     "src/renderer/lib/model-favorites.ts",

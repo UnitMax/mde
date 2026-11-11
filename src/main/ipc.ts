@@ -8,6 +8,7 @@ import type {
   OpenCodeConfigSnapshot,
   OpenCodeConfigTarget
 } from '@shared/opencode-config'
+import type { MdeMcpStatus } from '@shared/mde-mcp'
 import { inboxTerminalThreadId, inboxThreadTerminalId } from '@shared/inbox-thread-terminal'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import {
@@ -68,6 +69,7 @@ import type {
   InboxAddFolderRequest,
   InboxComposerState,
   InboxFolder,
+  OpenCodeTarget,
   InboxFoldersState,
   InboxGitInfo,
   GitRootRequest,
@@ -247,6 +249,28 @@ async function validatePath(req: ValidatePathRequest): Promise<PathCheckResult> 
 }
 
 /**
+ * A folder the Inbox may start threads in, resolved into its target's format and checked to be a directory
+ * there. OpenCode's service runs where the folder lives: in WSL on Windows, natively on macOS. Used for a
+ * folder the person adds and for one an agent names through the MDE MCP.
+ */
+export async function checkedInboxFolderPlace(
+  kind: 'native' | 'wsl',
+  distro: string | undefined,
+  path: string,
+): Promise<{ directory: string; target: OpenCodeTarget }> {
+  if (process.platform === 'win32' && kind !== 'wsl') throw new Error('On Windows, Inbox folders must be in WSL.')
+  if (process.platform !== 'win32' && kind !== 'native') throw new Error('WSL folders are only available on Windows.')
+  const resolution = await resolveForTarget(kind, distro, path)
+  const place = resolution.distro ?? distro
+  const check = await validatePath({ kind, ...(place ? { distro: place } : {}), path: resolution.path })
+  if (!check.exists) throw new Error(check.error ?? 'That folder does not exist.')
+  return {
+    directory: resolution.path,
+    target: kind === 'wsl' ? { kind: 'wsl', distro: place as string } : { kind: 'native' },
+  }
+}
+
+/**
  * Resolves a path selected by a terminal or persisted session into one this
  * process is willing to hand to the desktop or a new PTY.
  *
@@ -355,7 +379,13 @@ export function registerIpcHandlers(
   ptyManager: PtyManager,
   miniWindow: MiniWindowController,
   titleBar: TitleBarController,
-  inbox: { recorder: InboxRecorder; chat: InboxChatService; openCodeConfig: OpenCodeConfigService },
+  inbox: {
+    recorder: InboxRecorder
+    chat: InboxChatService
+    openCodeConfig: OpenCodeConfigService
+    /** The command OpenCode in this target starts the MDE MCP bridge with: this copy of MDE. */
+    mdeMcpCommand?: (target: OpenCodeTarget) => Promise<string[]>
+  },
   taskbar?: TaskbarAttention,
   floatingTerminalKey?: FloatingTerminalKey
 ): void {
@@ -537,16 +567,9 @@ export function registerIpcHandlers(
   })
   handle<void, InboxFoldersState>(IpcChannels.inboxFolders, () => chat.folders())
   handle<InboxAddFolderRequest, InboxFolder>(IpcChannels.inboxFoldersAdd, async (req) => {
-    // OpenCode's service runs where the folder lives: in WSL on Windows, natively on macOS.
-    if (process.platform === 'win32' && req.kind !== 'wsl') throw new Error('On Windows, Inbox folders must be in WSL.')
-    if (process.platform !== 'win32' && req.kind !== 'native') throw new Error('WSL folders are only available on Windows.')
-    const resolution = await resolveForTarget(req.kind, req.distro, req.path)
-    const distro = resolution.distro ?? req.distro
-    const check = await validatePath({ kind: req.kind, ...(distro ? { distro } : {}), path: resolution.path })
-    if (!check.exists) throw new Error(check.error ?? 'That folder does not exist.')
+    const place = await checkedInboxFolderPlace(req.kind, req.distro, req.path)
     return chat.addFolder({
-      directory: resolution.path,
-      target: req.kind === 'wsl' ? { kind: 'wsl', distro: distro as string } : { kind: 'native' },
+      ...place,
       ...(req.name !== undefined ? { name: req.name } : {}),
       ...(req.icon ? { icon: req.icon } : {}),
     })
@@ -574,6 +597,24 @@ export function registerIpcHandlers(
     inbox.openCodeConfig.preview(await configTarget(req), req.draft))
   handle<OpenCodeConfigSaveRequest, OpenCodeConfigSnapshot>(IpcChannels.opencodeConfigSave, async (req) =>
     inbox.openCodeConfig.save(await configTarget(req), req.draft, req.revision))
+  const mdeMcpPlace = async (req: OpenCodeConfigTarget): Promise<{ target: OpenCodeConfigTarget; command: string[] }> => {
+    if (!inbox.mdeMcpCommand) throw new Error('The MDE MCP is not available in this build.')
+    const target = await configTarget(req)
+    const command = await inbox.mdeMcpCommand(target.kind === 'wsl' ? { kind: 'wsl', distro: target.distro as string } : { kind: 'native' })
+    return { target, command }
+  }
+  handle<OpenCodeConfigRequest, MdeMcpStatus>(IpcChannels.mdeMcpStatus, async (req) => {
+    const place = await mdeMcpPlace(req)
+    return inbox.openCodeConfig.mdeMcpStatus(place.target, place.command)
+  })
+  handle<OpenCodeConfigRequest, MdeMcpStatus>(IpcChannels.mdeMcpInstall, async (req) => {
+    const place = await mdeMcpPlace(req)
+    return inbox.openCodeConfig.installMdeMcp(place.target, place.command)
+  })
+  handle<OpenCodeConfigRequest, MdeMcpStatus>(IpcChannels.mdeMcpRemove, async (req) => {
+    const place = await mdeMcpPlace(req)
+    return inbox.openCodeConfig.removeMdeMcp(place.target, place.command)
+  })
 
   handle<ChatConfigureRequest, void>(IpcChannels.chatConfigure, (req) => chat.configure(req.executable))
   handle<ChatOptionsRequest, ChatOptions>(IpcChannels.chatOptions, (req) => chat.chatOptions(req))

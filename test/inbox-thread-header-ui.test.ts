@@ -111,6 +111,26 @@ describe('Inbox thread header', () => {
     expect(header().querySelector('dl')).toBeNull()
   })
 
+  it('names the thread whose agent started this one, and opens it', async () => {
+    useWorkspace.setState({
+      inboxThreads: [thread({ spawnedBy: { threadId: 'ses_parent' } }), thread({ id: 'ses_parent', title: 'Plan the release' })],
+    })
+    await render()
+    const link = header().querySelector<HTMLButtonElement>('[data-testid="inbox-spawned-by"]')!
+    expect(link.textContent).toBe('Started by Plan the release')
+    await act(async () => link.click())
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_parent')
+  })
+
+  it('says only that an agent started it when the parent is unknown or gone', async () => {
+    useWorkspace.setState({ inboxThreads: [thread({ spawnedBy: {} })] })
+    await render()
+    expect(header().querySelector('[data-testid="inbox-spawned-by"]')?.textContent).toBe('Started by an agent')
+    useWorkspace.setState({ inboxThreads: [thread({ spawnedBy: { threadId: 'ses_gone' } })] })
+    await render()
+    expect(header().querySelector('[data-testid="inbox-spawned-by"]')?.textContent).toBe('Started by a thread that is no longer in the Inbox')
+  })
+
   it('keeps the details in tooltips: the full path and when the thread was last active', async () => {
     await render()
     expect(header().querySelector('[data-testid="inbox-thread-folder"]')?.getAttribute('title')).toBe('/home/me/app')

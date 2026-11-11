@@ -121,6 +121,9 @@ const validPayloads = {
   [IpcChannels.chatSubscribe]: { threadId: 'ses_thread' },
   [IpcChannels.chatUnsubscribe]: { threadId: 'ses_thread' },
   [IpcChannels.opencodeConfigRead]: { kind: 'wsl', distro: 'Ubuntu-24.04' },
+  [IpcChannels.mdeMcpStatus]: { kind: 'wsl', distro: 'Ubuntu-24.04' },
+  [IpcChannels.mdeMcpInstall]: { kind: 'native' },
+  [IpcChannels.mdeMcpRemove]: { kind: 'wsl', distro: 'Ubuntu-24.04' },
   [IpcChannels.opencodeConfigPreview]: { kind: 'native', draft: configDraft },
   [IpcChannels.opencodeConfigSave]: { kind: 'wsl', distro: 'Ubuntu-24.04', draft: configDraft, revision: 'a'.repeat(64) },
   [IpcChannels.windowModeGet]: undefined,
@@ -687,6 +690,15 @@ describe('OpenCode configuration validation', () => {
     rejects(IpcChannels.opencodeConfigRead, { kind: 'wsl', distro: '../etc' })
     rejects(IpcChannels.opencodeConfigRead, { kind: 'native', path: '/etc/passwd' })
     rejects(IpcChannels.opencodeConfigRead, { kind: 'native', configPath: '/etc/passwd' })
+  })
+
+  it('takes only a target for the MDE MCP, never a command or a path', () => {
+    for (const channel of [IpcChannels.mdeMcpStatus, IpcChannels.mdeMcpInstall, IpcChannels.mdeMcpRemove]) {
+      expect(() => assertIpcPayload(channel, { kind: 'native' })).not.toThrow()
+      rejects(channel, { kind: 'wsl', distro: '../etc' })
+      rejects(channel, { kind: 'native', command: ['/bin/sh'] })
+      rejects(channel, { kind: 'native', path: '/etc/passwd' })
+    }
   })
 
   it('rejects malformed rules, providers and models, and fields that do not belong', () => {

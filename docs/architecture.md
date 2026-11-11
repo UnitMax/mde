@@ -227,6 +227,51 @@ together with a revision check and serialized, atomic writes. The security prope
 few seconds (verified against OpenCode 2.2.6), so there is no restart step; after a save MDE only drops
 the model list it cached for the Inbox so that the model picker asks again.
 
+### MDE MCP
+
+Agents can start Inbox threads through MDE's own MCP server, `mde`. Settings → OpenCode → **MDE MCP**
+(`MdeMcpSettings`; on Windows for the WSL distro chosen there) shows whether OpenCode's global configuration
+has it and offers **Install**, **Update** (the entry starts another copy of MDE, or was edited) and
+**Remove**. The MCP chip's menu links there when no `mde` server is listed. OpenCode picks the change up
+within a few seconds (verified with 2.2.6), so there is no restart.
+
+The entry is `mcp.servers.mde = { type: "local", command: [<MDE>, --mcp-bridge, --mcp-target=<target>] }`.
+An MDE started with its own data folder (`--user-data-dir`, as a second, development copy is) adds
+`--mcp-user-data=<that folder>`, since its socket and token live there; Electron does not apply
+`--user-data-dir` to the bridge, which never becomes ready. OpenCode starts that command once per project folder (in that folder) when it first needs the folder's MCP
+servers. In WSL `<MDE>` is the Windows executable's `/mnt/...` path, run through WSL's interop; in
+development it is Electron followed by the app folder. MDE in bridge mode (`src/main/mcp/bridge-main.ts`) does
+nothing but serve MCP on stdio (`protocol.ts`, JSON-RPC 2.0, newline-framed): it answers `initialize`,
+`ping` and `tools/list` from the fixed list in `src/shared/mde-mcp.ts`, and passes each `tools/call` to the
+running MDE over a local socket or named pipe (`bridge.ts`, `endpoint.ts`), one connection per call, so the
+bridge outlives MDE being closed and opened again. On Windows the bridge reads OpenCode's requests from file
+descriptor 0 directly: Electron gives a GUI program's main process a `process.stdin` that ends at once, even
+when the parent (OpenCode in WSL, through interop) passed a pipe, and the bridge then quit before reading
+anything. The Windows build also writes a stray CRLF to stdout before any of MDE's code runs; OpenCode 2.2.6
+skips that blank line. With MDE closed a call returns "MDE is not running" as a
+tool error. The listener (`listener.ts`) checks the token and the request's shape and hands it to
+`MdeMcpTools` (`tools.ts`), which `src/main/mcp/index.ts` wires to the Inbox store and chat service.
+
+Tools:
+
+- `list_projects`: the Inbox projects of the caller's OpenCode (name, directory, and the worktree's branch
+  and base for a worktree project).
+- `create_thread({ prompt, directory?, agent?, model?, mode?, worktree? })`: starts a thread and returns its
+  ID, title, project and directory at once. OpenCode sends the calling session in each call's `_meta`, so the
+  thread whose agent asked (the parent) is known when it is an Inbox thread. Defaults: the parent's directory
+  (else the bridge's working directory), preferring the parent's project when several match; the parent's
+  model (else the new-thread page's); the page's agent (else `build`); GUI mode. A directory that is not a
+  project yet is checked like **Add project** and added without becoming the page's choice. `worktree: {}`
+  cuts a worktree from the directory's current branch (`base` and `branch` can be given), never from a
+  worktree project. The new-thread page's saved agent and model are not changed. If the first message
+  cannot be sent, the thread stays idle with the prompt as its draft, and the tool reports an error.
+
+A thread started this way carries `spawnedBy: { threadId? }` in `inbox.json`. The header shows "Started by
+<parent>" (a link to it) or "Started by an agent", and the sidebar row a small bot icon. It appears like any
+other new thread, under Working, without taking focus; projects an agent adds reach the window through the
+`inbox:folders-changed` event. Limits: 10 threads a minute across all agents, and chains stop at three levels
+of agent-started threads. Security details are in `docs/security.md` under "MDE MCP boundary".
+
 ### Inbox
 
 The Inbox is selected in the title bar beside Sessions and To Do. It lists OpenCode conversations

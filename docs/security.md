@@ -6,7 +6,8 @@ Security-relevant design and maintenance notes. The privacy and network statemen
 ## Network boundary
 
 MDE has no telemetry, remote crash uploader, updater, direct provider client or
-remote MCP client. The application HTTP client accepts loopback OpenCode origins
+remote MCP client. Its own MCP server (the MDE MCP) is a local bridge over a Unix socket or named pipe,
+not a network listener. The application HTTP client accepts loopback OpenCode origins
 and rejects redirects. This is not a guarantee of no external traffic: OpenCode,
 launched commands, OS network mounts and login-shell startup have their own network
 behavior. See [`PRIVACY.md`](../PRIVACY.md).
@@ -502,6 +503,51 @@ Regression coverage: `test/opencode-config-edit.test.ts`, `test/jsonc-edit.test.
 a seeded fuzz that parses every result), `test/opencode-config-files.test.ts` (real temporary directories,
 symbolic links, modes, conflicts, WSL paths), `test/ipc-opencode-config.test.ts` and the validator cases in
 `test/ipc-validation.test.ts`.
+
+### MDE MCP boundary
+
+The MDE MCP lets an agent start Inbox threads (`src/main/mcp/`, `src/shared/mde-mcp.ts`). It adds the one
+place where something other than the window can ask the main process to act, so it is kept narrow.
+
+- **Two processes, no network.** OpenCode starts MDE's own executable with `--mcp-bridge` as a stdio MCP
+  server (`mcp.servers.mde` in its configuration). `src/main/index.ts` checks for that flag before
+  registering the renderer scheme or taking the single-instance lock: the bridge opens no window, touches no
+  store and sends console output to stderr, since stdout carries the protocol. It answers `initialize`,
+  `ping` and `tools/list` itself and sends each `tools/call` to the running MDE as one JSON line on a fresh
+  connection to a Unix socket (`<userData>/mcp.sock`, mode `0600`; a temporary-folder path when that one is
+  too long for `sun_path`) or, on Windows, a named pipe (`\\.\pipe\mde-mcp-<hash of userData>`). Nothing
+  listens on TCP. The Electron `runAsNode` fuse stays off; the bridge is the full app binary in a different
+  mode, not a Node interpreter.
+- **Token.** Every request carries the 256-bit secret from `<userData>/mcp-token` (mode `0600`), compared in
+  constant time. The socket's mode and the user-data folder already keep other accounts out on the Mac; the
+  token also covers the Windows pipe, whose default ACL lets other local accounts open it for reading.
+- **Limits.** One request per connection, at most 1 MB, read within 10 s; at most 16 connections at once;
+  agents may start at most 10 threads a minute in all, and a chain of agent-started threads stops at three
+  levels (`spawnedBy`). The listener runs only where the Inbox does (macOS and Windows) and is closed on quit.
+- **Same checks as the window.** `create_thread` refuses unknown arguments and checks the prompt (length,
+  control characters), agent name, `provider/model`, mode and worktree branch with the rules the IPC
+  validator and `worktreeBranchProblem` use. A directory must be a plain absolute path (or a
+  `\\wsl.localhost\<distro>` path in the caller's distro); an unknown one goes through the same
+  resolve-and-check (`checkedInboxFolderPlace`) as **Add project**, so it must be an existing directory on the
+  caller's target. Then it calls `InboxChatService.create`: the thread is an ordinary Inbox thread, and its
+  agent runs with OpenCode's permission rules like any other. The request's target must be the one this
+  platform runs threads in (WSL on Windows, native on macOS).
+- **Who asked.** OpenCode 2.2.6 puts the calling session in each call's `_meta["ai.opencode/sessionID"]`.
+  It is only used to look up the parent thread (for the marker, the default directory and model, and the
+  depth limit); a session that is not an Inbox thread simply has none.
+- **Reach.** Any process running as the same user that can read the token can start threads, which run
+  agents with your OpenCode configuration and cost model usage. That is no more than such a process could do
+  through OpenCode's own service password or the terminal. Agents that have the MCP installed can do the
+  same, within the limits above. Removing the entry (Settings → OpenCode → MDE MCP → Remove) stops it.
+- **Install** writes only `mcp.servers.mde` = `{ type: "local", command: [...] }` into OpenCode's global
+  configuration, with the configuration editor's guarantees (surgical JSONC edit, re-parse, serialized atomic
+  write, nothing written to a file that does not parse). The command is built in the main process from
+  `process.execPath` (plus the app folder in development; inside WSL, the path `wslpath -u` gives; plus
+  `--mcp-user-data=<folder>` when MDE runs with its own `--user-data-dir`, which the bridge accepts only as an
+  absolute path); the renderer names only a target.
+
+Regression coverage: `test/mde-mcp.test.ts` (protocol, framing, bridge ↔ listener over a real socket, token,
+tools, configuration edits) and the validator cases in `test/ipc-validation.test.ts`.
 
 ## Windows executable selection
 

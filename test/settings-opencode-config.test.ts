@@ -5,6 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SettingsDialog } from '../src/renderer/components/SettingsDialog'
 import { getTerminalSettings, saveTerminalSettings } from '../src/renderer/terminal/terminal-settings'
 import { useWorkspace } from '../src/renderer/store/workspace'
+import type { MdeMcpStatus } from '../src/shared/mde-mcp'
+
+const missing: MdeMcpStatus = { state: 'missing', file: '~/.config/opencode/opencode.jsonc', parseError: null }
+const mdeMcp = {
+  status: vi.fn(async (_req: unknown): Promise<MdeMcpStatus> => missing),
+  install: vi.fn(async (_req: unknown): Promise<MdeMcpStatus> => ({ ...missing, state: 'installed' })),
+  remove: vi.fn(async (_req: unknown) => missing),
+}
 
 describe('Settings → OpenCode', () => {
   let root: Root
@@ -22,7 +30,7 @@ describe('Settings → OpenCode', () => {
 
   beforeEach(() => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-    vi.stubGlobal('api', { pty: { resize: vi.fn() } })
+    vi.stubGlobal('api', { pty: { resize: vi.fn() }, wsl: { distros: vi.fn(async () => []) }, mdeMcp })
     container = document.createElement('div')
     document.body.append(container)
     root = createRoot(container)
@@ -87,5 +95,60 @@ describe('Settings → OpenCode', () => {
     await act(async () => entry()!.querySelector<HTMLButtonElement>('button')!.click())
     expect(useWorkspace.getState().settingsDialog.open).toBe(false)
     expect(useWorkspace.getState().opencodeConfigDialog.open).toBe(true)
+  })
+
+  describe('MDE MCP', () => {
+    const card = (): HTMLElement | null => document.body.querySelector<HTMLElement>('[data-testid="mde-mcp-settings"]')
+    const button = (id: string): HTMLButtonElement | null => document.body.querySelector<HTMLButtonElement>(`[data-testid="${id}"]`)
+    beforeEach(() => {
+      mdeMcp.status.mockClear()
+      mdeMcp.install.mockClear()
+      mdeMcp.remove.mockClear()
+    })
+
+    it('installs it in this computer’s OpenCode and then offers to remove it', async () => {
+      await show('darwin')
+      expect(mdeMcp.status).toHaveBeenCalledWith({ kind: 'native' })
+      expect(card()?.textContent).toContain('Not installed.')
+      expect(button('mde-mcp-remove')).toBeNull()
+      await act(async () => button('mde-mcp-install')!.click())
+      expect(mdeMcp.install).toHaveBeenCalledWith({ kind: 'native' })
+      expect(card()?.textContent).toContain('Installed.')
+      expect(button('mde-mcp-install')).toBeNull()
+      await act(async () => button('mde-mcp-remove')!.click())
+      expect(mdeMcp.remove).toHaveBeenCalledWith({ kind: 'native' })
+      expect(card()?.textContent).toContain('Not installed.')
+    })
+
+    it('offers to update an entry that starts another copy of MDE', async () => {
+      mdeMcp.status.mockResolvedValueOnce({ ...missing, state: 'outdated' })
+      await show('darwin')
+      expect(button('mde-mcp-install')?.textContent).toBe('Update')
+      expect(button('mde-mcp-remove')).not.toBeNull()
+    })
+
+    it('leaves a file it cannot read alone and says why', async () => {
+      mdeMcp.status.mockResolvedValueOnce({ ...missing, parseError: 'ValueExpected at offset 9' })
+      await show('darwin')
+      expect(card()?.textContent).toContain('cannot be read (ValueExpected at offset 9)')
+      expect(button('mde-mcp-install')).toBeNull()
+    })
+
+    it('shows what went wrong', async () => {
+      mdeMcp.install.mockRejectedValueOnce(new Error("Error invoking remote method 'mde-mcp:install': Error: Disk full"))
+      await show('darwin')
+      await act(async () => button('mde-mcp-install')!.click())
+      expect(document.body.querySelector('[data-testid="mde-mcp-error"]')?.textContent).toContain('Disk full')
+    })
+
+    it('works in the default WSL distro on Windows', async () => {
+      useWorkspace.setState({
+        distros: [{ name: 'Debian', isDefault: false }, { name: 'Ubuntu-24.04', isDefault: true }],
+        refreshDistros: vi.fn(async () => {}),
+      } as never)
+      await show('win32')
+      expect(mdeMcp.status).toHaveBeenCalledWith({ kind: 'wsl', distro: 'Ubuntu-24.04' })
+      expect(button('mde-mcp-distro')).not.toBeNull()
+    })
   })
 })

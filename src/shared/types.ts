@@ -183,6 +183,11 @@ export interface InboxThread {
   folderId: string
   /** The thread this one was forked from, which may since have been removed. */
   forkedFrom?: string
+  /**
+   * Set when an agent started this thread through the MDE MCP: `threadId` is the Inbox thread whose agent
+   * asked (it may since have been removed), absent when the caller was not an Inbox thread.
+   */
+  spawnedBy?: { threadId?: string }
   /** Set when the thread runs in a Git worktree MDE created; `directory` is then inside `root`. */
   worktree?: InboxWorktree
 }

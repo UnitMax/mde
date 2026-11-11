@@ -170,6 +170,7 @@ export class InboxRecorder {
     model: OpenCodeModelRef
     directory?: string
     worktree?: InboxWorktree
+    spawnedBy?: InboxThread['spawnedBy']
   }): InboxThread {
     const now = this.dependencies.now()
     const existing = this.store.get(input.id)
@@ -189,6 +190,7 @@ export class InboxRecorder {
       readAt: now,
       archived: false,
       folderId: input.folder.id,
+      ...(input.spawnedBy ? { spawnedBy: input.spawnedBy } : {}),
       ...(input.worktree ? { worktree: input.worktree } : {})
     }
     this.insert(created)

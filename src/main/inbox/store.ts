@@ -99,6 +99,7 @@ export function validateInboxThread(raw: unknown): InboxThread | null {
   if (typeof record.archived !== 'boolean') return null
   if (!isInboxFolderId(record.folderId)) return null
   const worktree = validateWorktree(record.worktree)
+  const spawnedBy = validateSpawnedBy(record.spawnedBy)
   return {
     id: record.id,
     ...(record.mode === 'terminal' ? { mode: 'terminal' as const } : {}),
@@ -118,9 +119,17 @@ export function validateInboxThread(raw: unknown): InboxThread | null {
     folderId: record.folderId,
     // Only a pointer for the header, so a bad one is dropped instead of losing the thread.
     ...(isInboxThreadId(record.forkedFrom) ? { forkedFrom: record.forkedFrom } : {}),
+    ...(spawnedBy ? { spawnedBy } : {}),
     // Without its record the thread still works; only removing its worktree from the Inbox is lost.
     ...(worktree ? { worktree } : {})
   }
+}
+
+/** Only a pointer for the header too; a parent id that is not one is dropped and the thread stays marked. */
+function validateSpawnedBy(raw: unknown): InboxThread['spawnedBy'] | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const threadId = (raw as Record<string, unknown>).threadId
+  return isInboxThreadId(threadId) ? { threadId } : {}
 }
 
 function validateWorktree(raw: unknown): InboxWorktree | null {

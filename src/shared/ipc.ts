@@ -1,5 +1,6 @@
 import type { InboxTerminalConfiguration, InboxTerminalSettings } from './inbox-terminal'
 import type { TaskbarAttentionRequest } from './taskbar-attention'
+import type { MdeMcpStatus } from './mde-mcp'
 import type {
   Distro,
   GitTerminalInfoResponse,
@@ -215,6 +216,9 @@ export const IpcChannels = {
   opencodeConfigRead: 'opencode-config:read',
   opencodeConfigPreview: 'opencode-config:preview',
   opencodeConfigSave: 'opencode-config:save',
+  mdeMcpStatus: 'mde-mcp:status',
+  mdeMcpInstall: 'mde-mcp:install',
+  mdeMcpRemove: 'mde-mcp:remove',
 
   windowModeGet: 'window-mode:get',
   windowModeSet: 'window-mode:set',
@@ -233,6 +237,8 @@ export const IpcEvents = {
   ptyExit: 'pty:exit',
   ptyDirectory: 'pty:directory',
   inboxChanged: 'inbox:changed',
+  /** The projects changed outside the window (an agent added one through the MDE MCP); read them again. */
+  inboxFoldersChanged: 'inbox:folders-changed',
   chatEvent: 'chat:event',
   windowModeChanged: 'window-mode:changed',
   floatingTerminalToggle: 'floating-terminal:toggle',
@@ -564,6 +570,7 @@ export interface RendererApi {
     remove(req: InboxRemoveRequest): Promise<void>
     onChanged(listener: (thread: InboxThread) => void): () => void
     folders(): Promise<InboxFoldersState>
+    onFoldersChanged(listener: () => void): () => void
     addFolder(req: InboxAddFolderRequest): Promise<InboxFolder>
     updateFolder(req: InboxUpdateFolderRequest): Promise<InboxFolder>
     removeFolder(req: InboxRemoveFolderRequest): Promise<void>
@@ -643,6 +650,15 @@ export interface RendererApi {
      * the one the revision came from. Returns the file as it is afterwards.
      */
     save(req: OpenCodeConfigSaveRequest): Promise<OpenCodeConfigSnapshot>
+  }
+  /**
+   * The MDE MCP in OpenCode's configuration for a target: whether it is there and starts this copy of MDE, and
+   * adding or removing it. Only `mcp.servers.mde` is written; the command is worked out in the main process.
+   */
+  mdeMcp: {
+    status(req: OpenCodeConfigRequest): Promise<MdeMcpStatus>
+    install(req: OpenCodeConfigRequest): Promise<MdeMcpStatus>
+    remove(req: OpenCodeConfigRequest): Promise<MdeMcpStatus>
   }
   windowMode: {
     get(): Promise<WindowMode>

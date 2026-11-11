@@ -254,6 +254,9 @@ export const ipcPayloadValidators = {
   [IpcChannels.gitCommitDiff]: gitRoot({ hash: commitHash, path }),
   [IpcChannels.opencodeConfigRead]: object({ kind, distro: optional(distro) }),
   [IpcChannels.opencodeConfigPreview]: object({ kind, distro: optional(distro), draft: configDraft }),
+  [IpcChannels.mdeMcpStatus]: object({ kind, distro: optional(distro) }),
+  [IpcChannels.mdeMcpInstall]: object({ kind, distro: optional(distro) }),
+  [IpcChannels.mdeMcpRemove]: object({ kind, distro: optional(distro) }),
   [IpcChannels.opencodeConfigSave]: object({ kind, distro: optional(distro), draft: configDraft, revision: string(128) }),
   [IpcChannels.chatConfigure]: object({ executable: path }),
   [IpcChannels.chatOptions]: (value) => object({ folderId: optional(inboxFolderId), threadId: optional(opencodeSessionId) })(value) &&

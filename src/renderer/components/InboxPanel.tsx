@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import {
+  Bot,
   Car,
   ChevronDown,
   ChevronRight,
@@ -249,6 +250,11 @@ function InboxThreadRow({
                   data-testid={`inbox-thread-fork-mark-${thread.id}`}
                   className="h-3 w-3 shrink-0 text-fg-subtle"
                 />
+              )}
+              {thread.spawnedBy && (
+                <span title="Started by an agent" data-testid={`inbox-thread-spawned-mark-${thread.id}`}>
+                  <Bot role="img" aria-label="Started by an agent" className="h-3 w-3 shrink-0 text-fg-subtle" />
+                </span>
               )}
               {thread.mode === 'terminal' && (
                 <span title="Terminal thread" data-testid={`inbox-thread-terminal-mark-${thread.id}`}>
