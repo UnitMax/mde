@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { AlertCircle, FileDiff, GitBranch, LoaderCircle, PanelRightClose, RefreshCw, X } from 'lucide-react'
+import { AlertCircle, FileDiff, GitBranch, GitGraph, LoaderCircle, PanelRightClose, RefreshCw, X } from 'lucide-react'
 import type { GitChangeStatus, InboxChangeDiff, InboxChangedFile, InboxChangesResponse, DirectoryContext } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { FileTreePanel } from '@/components/FileTreePanel'
@@ -49,7 +49,7 @@ function splitPath(path: string): { directory: string; name: string } {
   return { directory: path.slice(0, slash), name: path.slice(slash) }
 }
 
-function StatusMark({ status }: { status: GitChangeStatus }): JSX.Element {
+export function StatusMark({ status }: { status: GitChangeStatus }): JSX.Element {
   const { mark, label, tone } = STATUS[status]
   return (
     <span
@@ -64,7 +64,7 @@ function StatusMark({ status }: { status: GitChangeStatus }): JSX.Element {
 }
 
 /** `+12 −3`; a side with nothing on it is left out, and a binary file has no line counts to give. */
-function ChangeCounts({ additions, deletions, binary = false }: { additions: number; deletions: number; binary?: boolean }): JSX.Element | null {
+export function ChangeCounts({ additions, deletions, binary = false }: { additions: number; deletions: number; binary?: boolean }): JSX.Element | null {
   if (binary) return <span className="shrink-0 text-fg-subtle">binary</span>
   if (additions === 0 && deletions === 0) return null
   return (
@@ -532,6 +532,7 @@ function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
 /** The Changes tab: the same view as the popover, in the sidebar, for the thread that is open. */
 function ChangesAside({ threadId }: { threadId: string }): JSX.Element {
   const state = useInboxChanges((s) => s.entries[inboxChangesKey(threadId)])
+  const graphOpen = useInboxChanges((s) => s.graphThreadId === threadId)
   const toggle = useWorkspace((s) => s.toggleFileTree)
   useEffect(() => {
     const stop = useInboxChanges.getState().watch(threadId, true)
@@ -559,7 +560,23 @@ function ChangesAside({ threadId }: { threadId: string }): JSX.Element {
           <ListMessage role="status">Loading changes…</ListMessage>
         )}
       </div>
-      <div className="flex shrink-0 justify-end border-t border-line px-2 py-1">
+      <div className="flex shrink-0 justify-between gap-2 border-t border-line px-2 py-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          title={graphOpen ? 'Close the Git graph' : 'Show every commit, branch and tag in a graph'}
+          aria-pressed={graphOpen}
+          data-testid="inbox-git-graph-button"
+          className={cn(graphOpen && 'bg-active text-fg')}
+          onClick={() => {
+            const store = useInboxChanges.getState()
+            if (graphOpen) store.closeGraph()
+            else store.openGraph(threadId)
+          }}
+        >
+          <GitGraph className="h-3.5 w-3.5" />
+          Git graph
+        </Button>
         <Button
           variant="ghost"
           size="sm"
@@ -724,7 +741,8 @@ export function InboxChangeViewer({ threadId }: { threadId: string }): JSX.Eleme
   const patch = preview?.threadId === threadId && preview.path === file?.path ? preview : null
   const hunks = useMemo(() => parseUnifiedDiff(patch?.value?.diff ?? ''), [patch?.value?.diff])
   if (!file) return null
-  const close = (): void => useInboxChanges.getState().closeFile()
+  // Closing goes back to the Git graph when the file was chosen there.
+  const close = (): void => useInboxChanges.getState().closeFile(true)
   const checkout = state?.value?.available ? state.value : undefined
   const binary = patch?.value?.binary || file.binary
 

@@ -8,7 +8,8 @@ MDE contains no telemetry, analytics, remote crash uploader, automatic update ch
 model-provider or remote MCP client. Its application HTTP client connects to OpenCode's loopback
 service. This does not guarantee that using MDE produces no external traffic: MDE invokes Git,
 shells and OpenCode, and reads paths through the operating system. MDE's Git calls now deny remote transports and
-suppress external filters; the network section explains the remaining boundaries.
+suppress external filters, except the **Fetch** button in the Inbox Git graph, which you press to
+fetch a repository's remotes; the network section explains the remaining boundaries.
 
 ## What MDE stores locally
 
@@ -201,6 +202,16 @@ Counts and diff previews stay in memory; MDE does not save them or create a snap
 store. Viewing changes does not read conversation history, contact OpenCode or a model
 provider, or modify files.
 
+The **Git graph** (a button in the Changes tab) reads the checkout's commit history, branches,
+remote-tracking branches and tags with local Git commands when it opens, and a commit's message and
+changed files when you choose one. Author names, messages and hashes stay in memory and are not
+saved; only the branches you chose to show (All, Local or Current) are kept, in the renderer's
+`localStorage`. Its **Fetch** button runs `git fetch --all --prune` in that checkout, which contacts
+every remote the repository names, over the network, with your own Git credential helper and SSH
+setup. It runs only when you press it. It updates the repository's remote-tracking branches and
+removes those deleted on the remote, as a fetch in a terminal would; it does not change your
+branches or files.
+
 The Inbox's **Regenerate title** button asks that same local service to run OpenCode's
 native title agent on the current conversation. OpenCode may send conversation context
 to the model provider selected by its title-agent configuration. MDE does not make that
@@ -277,6 +288,12 @@ OpenCode executable to find the background service. These helpers are relevant t
   before converting operations and disable those driver commands for the invocation. Missing objects
   produce an error rather than a download. Branch listing uses local metadata and includes cached
   remote-tracking branches; it does not refresh them.
+- The Git graph's **Fetch** button is the exception: when you press it, Git connects to the
+  repository's remotes over `https`, `http`, `ssh`, `git` or `file`, and can use your global or
+  system credential helper and SSH command. Remote helpers such as `ext::` stay denied. A
+  repository whose own configuration names a credential helper, SSH command, proxy command or
+  upload-pack program is refused rather than fetched. Hooks, submodules and automatic maintenance
+  stay disabled.
 - Worktree checkout keeps Git's built-in line-ending conversion, but refuses a checkout that selects
   a configured external filter instead of running that program or silently skipping needed conversion.
   Create such worktrees in a terminal, then add their folders to Inbox. Removal can likewise refuse

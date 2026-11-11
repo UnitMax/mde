@@ -445,6 +445,43 @@ the tree or leaving the thread. Patch previews are capped at 64 KiB and marked w
 Binary files have no text preview. The only thing persisted is the thread-list switch above.
 The file tree keeps its open folders while Changes is showing.
 
+**Git graph.** The Changes tab's footer has a **Git graph** button, which lays the history of the
+thread's checkout over the conversation (`GitGraphView`), in the place of a diff review: a file
+opened for review, or from the tree, closes it, and opening it closes them. Pressing the button
+again, Escape, or leaving the thread closes it. Each commit is a row with its lane in the graph,
+its message, author, age and short hash. Lanes are laid out in the renderer
+(`src/renderer/lib/git-graph.ts`), newest commit first: a lane waits for the parent of the commit
+above it, a merge opens a lane for its other parent, and lanes meet where they reach the same
+commit. Their colors come from the theme. Branches, remote branches and tags are chips on the
+commit they point at; the checked-out branch comes first with a check mark, a remote branch of the
+same name at the same commit folds into the local chip as a cloud, and a detached HEAD has its own
+chip. HEAD is a ring. When the checkout has uncommitted changes, a dashed row above HEAD says how
+many files; choosing it lists those files beside the graph, like a commit's, and choosing a file
+there reviews its diff, whose close (or Escape) comes back to the graph with the row still chosen. The header names the branch and how far it is ahead
+of and behind its upstream, as of the last fetch.
+
+**All**, **Local** and **Current** choose the history read: every local branch, remote-tracking
+branch and tag, then local branches and tags, then only what HEAD reaches (always with HEAD). The
+choice is kept in `localStorage` (`mde.inbox.gitGraph.scope`). Rows are drawn only near the
+visible part of the list. The first 400 commits are read, and 400 more when the list scrolls near
+its end, up to 5,000. Find dims the commits whose message, author, ref or hash prefix does not
+match, and Enter (Shift+Enter) goes to the next (previous) match. The arrow keys, Page Up/Down,
+Home and End move through the commits, and the crosshair goes to HEAD. Choosing a commit opens its
+details beside the list: the full message (the wrapped lines of a plain paragraph joined), author
+and date, parents (go to one by choosing it), a copy button for the full hash, and the files it
+changed with their line counts, against the first parent for a merge, at most 500. The graph is
+read again after a Changes refresh with a different summary (a commit in the thread clears its
+changes), after a fetch, and with Refresh.
+
+`inbox:git-graph` takes the thread ID, a commit limit (1 to 5,000) and the scope; the main process
+resolves the thread's checkout and reads it from the root with `rev-parse`, `symbolic-ref`,
+`for-each-ref` (at most 2,000 refs, an annotated tag peeled to its commit) and one
+`git log --date-order` with a fixed format, plus `rev-list --left-right --count` for the upstream.
+No file is read. Only refs pointing at a commit in the list are returned. `inbox:git-commit` takes
+the thread ID and a full object name (40 or 64 hex digits, so never an option, a range or a ref
+name) and runs `log -1` and `diff-tree --name-status`/`--numstat` without external diff or
+textconv. **Fetch** is the one Git command in MDE that reaches the network; see Git below.
+
 ### Inbox chat
 
 Right-click a thread and choose **Rename thread** to set a custom Inbox name, or
@@ -1704,9 +1741,25 @@ also inspects the target worktree's filter configuration and refuses rather than
 clean filter; failed-start cleanup can force-remove the fresh, unused worktree. Mutations retain
 the two-minute timeout; read commands retain ten seconds.
 
+**Fetch** in the Inbox Git graph is the one exception to the denied network, and it runs only when
+the person presses it (`inbox:git-fetch`, a thread ID). It runs `git fetch --all --prune
+--no-recurse-submodules` from the checkout root through its own runner (`createGitFetchRunner`),
+with a two-minute timeout. That runner still disables hooks, fsmonitor, askpass prompts, submodules
+and automatic maintenance, and allows only the `file`, `git`, `http`, `https` and `ssh` protocols,
+so `ext::` and other remote helpers stay denied. It does not clear the credential helper or the SSH
+command, so the person's own Git setup (Git Credential Manager, an SSH agent) can sign in. Before
+fetching, main lists the configuration with its scopes and refuses when the repository's own
+configuration (its `.git/config`, files that includes, or a worktree's) sets a credential helper,
+`core.sshCommand`, `core.gitProxy` or a remote's `uploadpack`, `receivepack` or `vcs`: those name
+programs Git would start, and a repository can come from anyone. The refusal names the settings and
+suggests fetching in a terminal. Git cannot prompt (`GIT_TERMINAL_PROMPT=0`), so a remote that needs
+a password nothing supplies fails with Git's message. The message shown is Git's `fatal:`/`error:`
+lines, with credentials written into a URL and control characters removed.
+
 The new-thread branch picker uses only repository detection, symbolic HEAD and `for-each-ref`;
 it no longer scans status/diffs. Local and already cached remote-tracking branches remain listed
-with missing blobs and without remote access. The picker does not refresh remote branches.
+with missing blobs and without remote access. The picker does not refresh remote branches; a fetch
+from the Git graph does.
 
 Regression evidence and platform limits are in
 [`docs/security.md`](security.md#git-execution-boundary).

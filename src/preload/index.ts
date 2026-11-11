@@ -123,6 +123,9 @@ const api: RendererApi = {
   inbox: {
     changes: (req) => ipcRenderer.invoke(IpcChannels.inboxChanges, req),
     changeDiff: (req) => ipcRenderer.invoke(IpcChannels.inboxChangeDiff, req),
+    gitGraph: (req) => ipcRenderer.invoke(IpcChannels.inboxGitGraph, req),
+    gitCommit: (req) => ipcRenderer.invoke(IpcChannels.inboxGitCommit, req),
+    gitFetch: (req) => ipcRenderer.invoke(IpcChannels.inboxGitFetch, req),
     list: () => ipcRenderer.invoke(IpcChannels.inboxList),
     setRead: (req) => ipcRenderer.invoke(IpcChannels.inboxSetRead, req),
     setArchived: (req) => ipcRenderer.invoke(IpcChannels.inboxSetArchived, req),

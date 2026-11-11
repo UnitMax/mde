@@ -46,6 +46,12 @@ import type {
   InboxChangesRequest,
   InboxChangeDiffRequest,
   InboxChangeDiff,
+  InboxGitGraphRequest,
+  InboxGitGraph,
+  InboxGitCommitRequest,
+  InboxGitCommitDetails,
+  InboxGitFetchRequest,
+  InboxGitFetchResult,
   ChatMessagesPage,
   ChatMessagesRequest,
   ChatSearchRequest,
@@ -171,6 +177,9 @@ export const IpcChannels = {
   chatCreate: 'chat:create',
   inboxChanges: 'inbox:changes',
   inboxChangeDiff: 'inbox:change-diff',
+  inboxGitGraph: 'inbox:git-graph',
+  inboxGitCommit: 'inbox:git-commit',
+  inboxGitFetch: 'inbox:git-fetch',
   chatMessages: 'chat:messages',
   chatSearch: 'chat:search',
   chatFiles: 'chat:files',
@@ -532,6 +541,10 @@ export interface RendererApi {
   inbox: {
     changes(req: InboxChangesRequest): Promise<InboxChangesResponse>
     changeDiff(req: InboxChangeDiffRequest): Promise<InboxChangeDiff>
+    gitGraph(req: InboxGitGraphRequest): Promise<InboxGitGraph>
+    gitCommit(req: InboxGitCommitRequest): Promise<InboxGitCommitDetails>
+    /** Fetches every remote of the thread's checkout: the one Git call that may use the network. */
+    gitFetch(req: InboxGitFetchRequest): Promise<InboxGitFetchResult>
     list(): Promise<InboxThread[]>
     setRead(req: InboxSetReadRequest): Promise<InboxThread | null>
     setArchived(req: InboxSetArchivedRequest): Promise<InboxThread | null>

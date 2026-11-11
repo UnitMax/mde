@@ -20,9 +20,20 @@ interface Store {
   setTab: (tab: 'files' | 'changes' | 'terminal') => void
   /** The changed file open in the review above the conversation. */
   selectedPath: { threadId: string; path: string } | null
-  /** Selects the thread and shows one of its changed files in the review. */
-  openFile: (threadId: string, path: string) => void
-  closeFile: () => void
+  /**
+   * Selects the thread and shows one of its changed files in the review. `fromGraph`: the file was
+   * chosen in the Git graph, which the review then returns to when it is closed.
+   */
+  openFile: (threadId: string, path: string, fromGraph?: boolean) => void
+  /** `back` returns to the Git graph the file was opened from, if it was. */
+  closeFile: (back?: boolean) => void
+  /** The thread whose Git graph a file review was opened from. */
+  graphReturn: string | null
+  /** The thread whose Git graph is open above the conversation. */
+  graphThreadId: string | null
+  /** Shows the thread's Git graph in place of the conversation, closing any file under review. */
+  openGraph: (threadId: string) => void
+  closeGraph: () => void
   /** `refresh` reads again even when a fresh result is already held. */
   load: (threadId: string, details?: boolean, refresh?: boolean) => Promise<void>
   scheduleRefresh: (threadId: string) => void
@@ -60,21 +71,32 @@ export function inboxChangesKey(threadId: string): string {
 }
 
 export const useInboxChanges = create<Store>((set, get) => ({
-  entries: {}, selectedPath: null, tab: 'files',
+  entries: {}, selectedPath: null, graphThreadId: null, graphReturn: null, tab: 'files',
   sidebarChanges: getInboxSidebarChanges(),
   setSidebarChanges: (on) => {
     saveInboxSidebarChanges(on)
     set({ sidebarChanges: on })
   },
   setTab: (tab) => set({ tab }),
-  openFile: (threadId, path) => {
+  openFile: (threadId, path, fromGraph = false) => {
     const workspace = useWorkspace.getState()
     workspace.selectInboxThread(threadId)
     // Only one review at a time: a file opened from the tree gives way to the diff.
     workspace.closeFile(threadId)
-    set({ selectedPath: { threadId, path } })
+    set({ selectedPath: { threadId, path }, graphThreadId: null, graphReturn: fromGraph ? threadId : null })
   },
-  closeFile: () => set({ selectedPath: null }),
+  closeFile: (back = false) => {
+    const { graphReturn, selectedPath } = get()
+    const toGraph = back && graphReturn !== null && graphReturn === selectedPath?.threadId
+    set({ selectedPath: null, graphReturn: null, ...(toGraph ? { graphThreadId: graphReturn } : {}) })
+  },
+  openGraph: (threadId) => {
+    const workspace = useWorkspace.getState()
+    workspace.selectInboxThread(threadId)
+    workspace.closeFile(threadId)
+    set({ graphThreadId: threadId, selectedPath: null, graphReturn: null })
+  },
+  closeGraph: () => set({ graphThreadId: null }),
   load: async (threadId, details = false, refresh = false) => {
     if (!useWorkspace.getState().inboxThreads.some((t) => t.id === threadId)) return
     const key = inboxChangesKey(threadId)

@@ -70,6 +70,12 @@ import type {
   InboxFolder,
   InboxFoldersState,
   InboxGitInfo,
+  InboxGitGraphRequest,
+  InboxGitGraph,
+  InboxGitCommitRequest,
+  InboxGitCommitDetails,
+  InboxGitFetchRequest,
+  InboxGitFetchResult,
   InboxGitInfoRequest,
   InboxRemoveFolderRequest,
   InboxRemoveRequest,
@@ -146,7 +152,7 @@ import { listWslDirectories } from './wsl/browse'
 import { buildVsCodeRemoteUri } from './vscode'
 import { safeVsCodeRemoteUrl } from './external-links'
 import { readGitTerminalInfo } from './git'
-import { readInboxGitChanges, readInboxGitDiff } from './inbox/changes'
+import { fetchInboxGit, readInboxGitChanges, readInboxGitCommit, readInboxGitDiff, readInboxGitGraph } from './inbox/changes'
 import { terminalSessionResolver } from './inbox/terminal'
 import { INBOX_TERMINAL_SESSION_ID, inboxTerminalSession, type InboxTerminalConfiguration, type InboxTerminalSettings } from '@shared/inbox-terminal'
 import { isSafeRelativePath, isWithinRoot, listSessionDirectory, readSessionFile, treeFolderPath } from './files/tree'
@@ -578,6 +584,9 @@ export function registerIpcHandlers(
   }
   handle<InboxChangesRequest, InboxChangesResponse>(IpcChannels.inboxChanges, (req) => readInboxGitChanges(inboxGitRoot(req.threadId), req.details))
   handle<InboxChangeDiffRequest, InboxChangeDiff>(IpcChannels.inboxChangeDiff, (req) => readInboxGitDiff(inboxGitRoot(req.threadId), req.path))
+  handle<InboxGitGraphRequest, InboxGitGraph>(IpcChannels.inboxGitGraph, (req) => readInboxGitGraph(inboxGitRoot(req.threadId), req.limit, req.scope))
+  handle<InboxGitCommitRequest, InboxGitCommitDetails>(IpcChannels.inboxGitCommit, (req) => readInboxGitCommit(inboxGitRoot(req.threadId), req.hash))
+  handle<InboxGitFetchRequest, InboxGitFetchResult>(IpcChannels.inboxGitFetch, (req) => fetchInboxGit(inboxGitRoot(req.threadId)))
   handle<ChatMessagesRequest, ChatMessagesPage>(IpcChannels.chatMessages, (req) => chat.messages(req))
   handle<ChatSearchRequest, ChatSearchResponse>(IpcChannels.chatSearch, (req) => chat.search(req))
   handle<ChatFilesRequest, ChatFileEntry[]>(IpcChannels.chatFiles, (req) => chat.files(req))

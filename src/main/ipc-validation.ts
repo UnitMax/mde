@@ -94,6 +94,9 @@ const dimension: Validator = (value) => typeof value === 'number' && Number.isIn
 const size = object({ cols: dimension, rows: dimension })
 const layout: Validator = isPersistedTerminalLayout
 const tab = object({ sessionId: id, tabId: id })
+/** A full SHA-1 or SHA-256 object name: never an option, a range or a ref name. */
+const commitHash: Validator = (value) => typeof value === 'string' && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(value)
+const graphLimit: Validator = (value) => typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5000
 const opencodeSessionId: Validator = (value) => id(value) && /^ses_[A-Za-z0-9_-]+$/.test(value as string)
 const ptyRequest = { terminalId: id, sessionId: id, size, palette }
 const relativePath: Validator = (value) => path(value) && !(value as string).startsWith('/') &&
@@ -237,6 +240,9 @@ export const ipcPayloadValidators = {
   [IpcChannels.inboxGitInfo]: object({ folderId: inboxFolderId }),
   [IpcChannels.inboxChangeDiff]: object({ threadId: opencodeSessionId, path }),
   [IpcChannels.inboxChanges]: object({ threadId: opencodeSessionId, details: optional(boolean) }),
+  [IpcChannels.inboxGitGraph]: object({ threadId: opencodeSessionId, limit: graphLimit, scope: oneOf('all', 'local', 'head') }),
+  [IpcChannels.inboxGitCommit]: object({ threadId: opencodeSessionId, hash: commitHash }),
+  [IpcChannels.inboxGitFetch]: object({ threadId: opencodeSessionId }),
   [IpcChannels.opencodeConfigRead]: object({ kind, distro: optional(distro) }),
   [IpcChannels.opencodeConfigPreview]: object({ kind, distro: optional(distro), draft: configDraft }),
   [IpcChannels.opencodeConfigSave]: object({ kind, distro: optional(distro), draft: configDraft, revision: string(128) }),
