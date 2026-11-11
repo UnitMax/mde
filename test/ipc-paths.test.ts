@@ -893,4 +893,27 @@ describe('Files tree folder IPC', () => {
       await fs.rm(directory, { recursive: true, force: true })
     }
   })
+
+  it.skipIf(process.platform === 'win32')('reads the Git graph of a live terminal from its verified folder, never a path it is given', async () => {
+    const directory = await fs.mkdtemp(join(tmpdir(), 'mde-terminal-graph-'))
+    try {
+      const native = wslSession({ kind: 'native', distro: undefined })
+      workspaceMock.getSession.mockResolvedValue(native)
+      register()
+      const graph = handler(IpcChannels.gitGraph)
+      const terminalId = 'session-1:tab:t1:pane:p1'
+
+      await expect(graph(trustedEvent, { terminalId, limit: 10, scope: 'all' })).rejects.toThrow('no longer running')
+      terminalInfo.mockReturnValue({ sessionId: 'session-1', directory: join(directory, 'gone') })
+      await expect(graph(trustedEvent, { terminalId, limit: 10, scope: 'all' })).rejects.toThrow('could not be found')
+      terminalInfo.mockReturnValue({ sessionId: 'session-1', directory })
+      await expect(graph(trustedEvent, { terminalId, limit: 10, scope: 'all' }))
+        .resolves.toMatchObject({ available: false, reason: 'This folder is not a Git repository.' })
+      // A thread and a terminal at once, or a path, are refused at the boundary.
+      await expect(graph(trustedEvent, { terminalId, threadId: 'ses_thread', limit: 10, scope: 'all' })).rejects.toThrow('Invalid IPC payload')
+      await expect(graph(trustedEvent, { terminalId, path: directory, limit: 10, scope: 'all' })).rejects.toThrow('Invalid IPC payload')
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true })
+    }
+  })
 })

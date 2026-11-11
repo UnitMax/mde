@@ -8,7 +8,7 @@ MDE contains no telemetry, analytics, remote crash uploader, automatic update ch
 model-provider or remote MCP client. Its application HTTP client connects to OpenCode's loopback
 service. This does not guarantee that using MDE produces no external traffic: MDE invokes Git,
 shells and OpenCode, and reads paths through the operating system. MDE's Git calls now deny remote transports and
-suppress external filters, except the **Fetch** button in the Inbox Git graph, which you press to
+suppress external filters, except the **Fetch** button in the Git graph, which you press to
 fetch a repository's remotes; the network section explains the remaining boundaries.
 
 ## What MDE stores locally
@@ -202,7 +202,8 @@ Counts and diff previews stay in memory; MDE does not save them or create a snap
 store. Viewing changes does not read conversation history, contact OpenCode or a model
 provider, or modify files.
 
-The **Git graph** (a button in the Changes tab) reads the checkout's commit history, branches,
+The **Git graph** (a button in the Inbox Changes tab, or a terminal's Git chip in Sessions) reads the
+checkout's commit history, branches,
 remote-tracking branches and tags with local Git commands when it opens, and a commit's message and
 changed files when you choose one. Author names, messages and hashes stay in memory and are not
 saved; only the branches you chose to show (All, Local or Current) are kept, in the renderer's

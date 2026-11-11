@@ -11,6 +11,7 @@ import {
   parseGitGraphLog,
   parseGitGraphRefs,
   parseGitNameStatus,
+  readGitCommitDiffWithRunner,
   readGitCommitWithRunner,
   readGitGraphWithRunner,
 } from '../src/main/git-graph'
@@ -166,6 +167,32 @@ describe.skipIf(!hasPosixGit)('Git graph against a real repository', () => {
     expect(root.parents).toEqual([])
     expect(root.files.map((f) => f.path)).toEqual(['a.txt'])
     await expect(readGitCommitWithRunner(createGitCommandRunner(session), 'f'.repeat(40))).rejects.toThrow(/not in this repository/)
+  })
+
+  it('shows one file of a commit against its parent, and only a file the commit changed', async () => {
+    const graph = await readGitGraphWithRunner(createGitCommandRunner(session), 100, 'head')
+    const run = createGitCommandRunner(session)
+    const second = graph.commits.find((c) => c.subject === 'Second')!
+    const diff = await readGitCommitDiffWithRunner(run, second.hash, 'b.txt')
+    expect(diff).toMatchObject({ path: 'b.txt', binary: false, truncated: false })
+    expect(diff.diff).toContain('+Second')
+    // The root commit is shown against the empty tree; a merge against its first parent.
+    const first = graph.commits.find((c) => c.subject === 'First')!
+    expect((await readGitCommitDiffWithRunner(run, first.hash, 'a.txt')).diff).toContain('+First')
+    expect((await readGitCommitDiffWithRunner(run, graph.commits[0]!.hash, 'c.txt')).diff).toContain('+Feature work')
+    await expect(readGitCommitDiffWithRunner(run, second.hash, 'a.txt')).rejects.toThrow('not changed in this commit')
+    await expect(readGitCommitDiffWithRunner(run, second.hash, '*')).rejects.toThrow('not changed in this commit')
+  })
+
+  it('shows a renamed file with its old path', async () => {
+    await git(clone, 'checkout', '--quiet', '-b', 'rename')
+    await git(clone, 'mv', 'a.txt', 'renamed.txt')
+    await git(clone, 'commit', '--quiet', '-m', 'Rename')
+    const head = (await git(clone, 'rev-parse', 'HEAD')).stdout.trim()
+    await git(clone, 'checkout', '--quiet', 'main')
+    const diff = await readGitCommitDiffWithRunner(createGitCommandRunner(session), head, 'renamed.txt')
+    expect(diff.diff).toContain('rename from a.txt')
+    expect(diff.diff).toContain('rename to renamed.txt')
   })
 
   it('fetches new remote commits and shows the branch behind its upstream', async () => {

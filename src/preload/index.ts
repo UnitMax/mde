@@ -114,7 +114,13 @@ const api: RendererApi = {
     revealTreeFolder: (req) => ipcRenderer.invoke(IpcChannels.pathRevealTreeFolder, req)
   },
   git: {
-    terminalInfo: (req) => ipcRenderer.invoke(IpcChannels.gitTerminalInfo, req)
+    terminalInfo: (req) => ipcRenderer.invoke(IpcChannels.gitTerminalInfo, req),
+    graph: (req) => ipcRenderer.invoke(IpcChannels.gitGraph, req),
+    commit: (req) => ipcRenderer.invoke(IpcChannels.gitCommit, req),
+    fetch: (req) => ipcRenderer.invoke(IpcChannels.gitFetch, req),
+    changes: (req) => ipcRenderer.invoke(IpcChannels.gitChanges, req),
+    changeDiff: (req) => ipcRenderer.invoke(IpcChannels.gitChangeDiff, req),
+    commitDiff: (req) => ipcRenderer.invoke(IpcChannels.gitCommitDiff, req)
   },
   files: {
     list: (req) => ipcRenderer.invoke(IpcChannels.filesList, req),
@@ -123,9 +129,6 @@ const api: RendererApi = {
   inbox: {
     changes: (req) => ipcRenderer.invoke(IpcChannels.inboxChanges, req),
     changeDiff: (req) => ipcRenderer.invoke(IpcChannels.inboxChangeDiff, req),
-    gitGraph: (req) => ipcRenderer.invoke(IpcChannels.inboxGitGraph, req),
-    gitCommit: (req) => ipcRenderer.invoke(IpcChannels.inboxGitCommit, req),
-    gitFetch: (req) => ipcRenderer.invoke(IpcChannels.inboxGitFetch, req),
     list: () => ipcRenderer.invoke(IpcChannels.inboxList),
     setRead: (req) => ipcRenderer.invoke(IpcChannels.inboxSetRead, req),
     setArchived: (req) => ipcRenderer.invoke(IpcChannels.inboxSetArchived, req),

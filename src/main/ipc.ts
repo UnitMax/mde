@@ -70,11 +70,12 @@ import type {
   InboxFolder,
   InboxFoldersState,
   InboxGitInfo,
-  InboxGitGraphRequest,
+  GitRootRequest,
+  GitGraphRequest,
   InboxGitGraph,
-  InboxGitCommitRequest,
+  GitCommitRequest,
+  GitCommitDiffRequest,
   InboxGitCommitDetails,
-  InboxGitFetchRequest,
   InboxGitFetchResult,
   InboxGitInfoRequest,
   InboxRemoveFolderRequest,
@@ -152,7 +153,7 @@ import { listWslDirectories } from './wsl/browse'
 import { buildVsCodeRemoteUri } from './vscode'
 import { safeVsCodeRemoteUrl } from './external-links'
 import { readGitTerminalInfo } from './git'
-import { fetchInboxGit, readInboxGitChanges, readInboxGitCommit, readInboxGitDiff, readInboxGitGraph } from './inbox/changes'
+import { fetchInboxGit, readInboxGitChanges, readInboxGitCommit, readInboxGitCommitDiff, readInboxGitDiff, readInboxGitGraph } from './inbox/changes'
 import { terminalSessionResolver } from './inbox/terminal'
 import { INBOX_TERMINAL_SESSION_ID, inboxTerminalSession, type InboxTerminalConfiguration, type InboxTerminalSettings } from '@shared/inbox-terminal'
 import { isSafeRelativePath, isWithinRoot, listSessionDirectory, readSessionFile, treeFolderPath } from './files/tree'
@@ -584,9 +585,31 @@ export function registerIpcHandlers(
   }
   handle<InboxChangesRequest, InboxChangesResponse>(IpcChannels.inboxChanges, (req) => readInboxGitChanges(inboxGitRoot(req.threadId), req.details))
   handle<InboxChangeDiffRequest, InboxChangeDiff>(IpcChannels.inboxChangeDiff, (req) => readInboxGitDiff(inboxGitRoot(req.threadId), req.path))
-  handle<InboxGitGraphRequest, InboxGitGraph>(IpcChannels.inboxGitGraph, (req) => readInboxGitGraph(inboxGitRoot(req.threadId), req.limit, req.scope))
-  handle<InboxGitCommitRequest, InboxGitCommitDetails>(IpcChannels.inboxGitCommit, (req) => readInboxGitCommit(inboxGitRoot(req.threadId), req.hash))
-  handle<InboxGitFetchRequest, InboxGitFetchResult>(IpcChannels.inboxGitFetch, (req) => fetchInboxGit(inboxGitRoot(req.threadId)))
+  /**
+   * The checkout a Git graph request names: a thread's recorded directory, or a live terminal's
+   * current directory, verified on disk as for the terminal's Git chip. The renderer never names a path.
+   */
+  const gitGraphRoot = async (req: GitRootRequest): Promise<DirectoryContext> => {
+    if ('threadId' in req) return inboxGitRoot(req.threadId)
+    const terminal = ptyManager.terminalInfo(req.terminalId)
+    if (!terminal) throw new Error('This terminal is no longer running.')
+    const session = await getTerminalSession(terminal.sessionId)
+    const directory = session && terminal.directory ? await verifiedDirectory(session, terminal.directory) : null
+    if (!session || !directory) throw new Error('The folder of this terminal could not be found.')
+    return { ...session, path: directory }
+  }
+  handle<GitGraphRequest, InboxGitGraph>(IpcChannels.gitGraph, async (req) => readInboxGitGraph(await gitGraphRoot(req), req.limit, req.scope))
+  handle<GitCommitRequest, InboxGitCommitDetails>(IpcChannels.gitCommit, async (req) => readInboxGitCommit(await gitGraphRoot(req), req.hash))
+  handle<GitRootRequest, InboxGitFetchResult>(IpcChannels.gitFetch, async (req) => fetchInboxGit(await gitGraphRoot(req)))
+  handle<GitRootRequest, InboxChangesResponse>(IpcChannels.gitChanges, async (req) => readInboxGitChanges(await gitGraphRoot(req), true))
+  handle<GitCommitDiffRequest, InboxChangeDiff>(IpcChannels.gitCommitDiff, async (req) => {
+    const { hash, path, ...root } = req
+    return readInboxGitCommitDiff(await gitGraphRoot(root), hash, path)
+  })
+  handle<GitRootRequest & { path: string }, InboxChangeDiff>(IpcChannels.gitChangeDiff, async (req) => {
+    const { path, ...root } = req
+    return readInboxGitDiff(await gitGraphRoot(root), path)
+  })
   handle<ChatMessagesRequest, ChatMessagesPage>(IpcChannels.chatMessages, (req) => chat.messages(req))
   handle<ChatSearchRequest, ChatSearchResponse>(IpcChannels.chatSearch, (req) => chat.search(req))
   handle<ChatFilesRequest, ChatFileEntry[]>(IpcChannels.chatFiles, (req) => chat.files(req))

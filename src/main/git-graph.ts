@@ -3,11 +3,15 @@ import type {
   GitGraphCommit,
   GitGraphRef,
   GitGraphScope,
+  InboxChangeDiff,
   InboxGitCommitDetails,
   InboxGitCommitFile,
   InboxGitGraph,
 } from '@shared/types'
-import { checkoutRunner, parseGitFileNumstat, repositoryFetchPrograms, type GitCommandResult, type GitCommandRunner } from './git'
+import {
+  checkoutRunner, diffPreview, GIT_DIFF_CONTEXT_LINES, isBinaryGitDiff, parseGitFileNumstat, repositoryFetchPrograms,
+  type GitCommandResult, type GitCommandRunner,
+} from './git'
 
 /** The most commits one request reads; the view asks for more in steps. */
 export const GIT_GRAPH_MAX_COMMITS = 5000
@@ -211,6 +215,29 @@ export async function readGitCommitWithRunner(source: GitCommandRunner, hash: st
     files,
     truncated: listed.length > GIT_COMMIT_FILE_LIMIT,
   }
+}
+
+/**
+ * One file's change in a commit, against its first parent (the empty tree for a root commit), as
+ * the commit details list it. The path must be one the commit changed, so the renderer cannot ask
+ * for another file or a pathspec; a renamed file is shown with its old path.
+ */
+export async function readGitCommitDiffWithRunner(source: GitCommandRunner, hash: string, path: string): Promise<InboxChangeDiff> {
+  const checkout = await checkoutRunner(source)
+  if (!checkout) throw new Error('This folder is not a Git repository.')
+  const run = checkout.run
+  const parents = await run(['--no-pager', 'rev-list', '--parents', '-n', '1', `${hash}^{commit}`, '--'])
+  if (parents.code !== 0) throw new Error('That commit is not in this repository.')
+  const [full, first] = parents.stdout.trim().split(/\s+/)
+  const range = first ? [first, full!] : ['--root', full!]
+  const common = ['--no-pager', 'diff-tree', '-r', '--no-commit-id', '--find-renames', '--no-ext-diff', '--no-textconv', '--no-color']
+  const names = await run([...common, '-z', '--name-status', ...range, '--'])
+  if (names.code !== 0) throw failure('commit files', names)
+  const file = parseGitNameStatus(names.stdout).find((entry) => entry.path === path)
+  if (!file) throw new Error('That file is not changed in this commit.')
+  const patch = await run([...common, '-p', `--unified=${GIT_DIFF_CONTEXT_LINES}`, ...range, '--', ...(file.from ? [file.from] : []), file.path])
+  if (patch.code !== 0) throw failure('diff', patch)
+  return { path: file.path, binary: isBinaryGitDiff(patch.stdout), ...diffPreview(patch.stdout) }
 }
 
 /**

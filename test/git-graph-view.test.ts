@@ -41,6 +41,7 @@ const changes: InboxChangesResponse = { available: true, branch: 'main', worktre
 const gitGraph = vi.fn(async (): Promise<InboxGitGraph> => graph)
 const gitCommit = vi.fn(async (): Promise<InboxGitCommitDetails> => details)
 const gitFetch = vi.fn(async () => ({ remotes: ['origin'] }))
+const commitDiff = vi.fn(async () => ({ path: 'src/a.ts', diff: '@@ -1 +1,2 @@\n-old\n+new\n+more', binary: false, truncated: false }))
 let root: Root
 let container: HTMLDivElement
 
@@ -58,7 +59,8 @@ beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('IntersectionObserver', undefined)
   vi.stubGlobal('api', {
-    inbox: { changes: vi.fn(async () => changes), changeDiff: vi.fn(), setRead: vi.fn(async () => null), gitGraph, gitCommit, gitFetch },
+    inbox: { changes: vi.fn(async () => changes), changeDiff: vi.fn(), setRead: vi.fn(async () => null) },
+    git: { graph: gitGraph, commit: gitCommit, fetch: gitFetch, commitDiff },
     files: { list: vi.fn(async ({ path }: { path: string }) => ({ path, truncated: false, entries: [] })) },
     clipboard: { writeText: vi.fn(async () => undefined) },
   })
@@ -147,6 +149,22 @@ describe('Git graph view', () => {
     await act(async () => useInboxChanges.getState().openFile(thread.id, 'src/a.ts'))
     await act(async () => useInboxChanges.getState().closeFile(true))
     expect(view()).toBeNull()
+  })
+
+  it('reviews a file of a commit over the graph, and keeps the commit chosen after', async () => {
+    useInboxChanges.getState().openGraph(thread.id)
+    await render()
+    await click(row(h('b')))
+    await click(container.querySelector('[data-testid="git-graph-commit-file"]'))
+    expect(commitDiff).toHaveBeenCalledWith({ threadId: thread.id, hash: h('b'), path: 'src/a.ts' })
+    const viewer = container.querySelector<HTMLElement>('[data-testid="inbox-change-viewer"]')!
+    expect(viewer.textContent).toContain(`Commit ${h('b').slice(0, 7)}, against its parent.`)
+    expect(viewer.textContent).toContain('new')
+    await act(async () => { viewer.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+    expect(container.querySelector('[data-testid="inbox-change-viewer"]')).toBeNull()
+    expect(view()).not.toBeNull()
+    expect(container.querySelector('[data-testid="git-graph-details"]')).not.toBeNull()
+    expect(commitDiff).toHaveBeenCalledTimes(1)
   })
 
   it('moves through the commits with the arrow keys', async () => {

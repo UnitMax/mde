@@ -8,6 +8,7 @@ import { FileViewer } from '@/components/FileViewer'
 import { FloatingTerminal } from '@/components/inbox/FloatingTerminal'
 import { InboxChangeViewer, InboxSidebar } from '@/components/inbox/InboxChanges'
 import { GitGraphView } from '@/components/inbox/GitGraphView'
+import { SessionGitGraph } from '@/components/SessionGitGraph'
 import { NewTodoProjectDialog } from '@/components/NewTodoProjectDialog'
 import { Sidebar } from '@/components/Sidebar'
 import { SessionSwitcher } from '@/components/SessionSwitcher'
@@ -753,6 +754,11 @@ export function App(): JSX.Element {
                   onClose={() => closeOpenFile(selected.id, terminalFileRootId)}
                 />
               )}
+              <SessionGitGraph
+                sessionId={selected.id}
+                terminalIds={layoutForSession.panes.map((pane) => pane.terminalId)}
+                filePath={openFilePath}
+              />
             </>
           ) : (
             <EmptyState onNewSession={() => openNewSession()} />

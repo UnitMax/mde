@@ -339,10 +339,13 @@ the same policy:
   Removal also inspects the target worktree's settings before its cleanliness check.
 - Branch discovery uses repository/ref metadata only. Local and cached
   remote-tracking branches remain available without scanning files or fetching
-  objects. The Inbox Git graph reads history the same way (`log`, `for-each-ref`,
-  `diff-tree` without external diff or textconv), and `inbox:git-commit` accepts only
-  a full 40- or 64-digit object name.
-- **User-started fetch.** `inbox:git-fetch` (a thread ID, nothing else) is the one call
+  objects. The Git graph (Inbox and Sessions) reads history the same way (`log`,
+  `for-each-ref`, `diff-tree` without external diff or textconv), and `git:commit`
+  accepts only a full 40- or 64-digit object name. `git:commit-diff` also takes a
+  path, which must be one of the files that commit changed. The `git:*` graph channels take
+  either an Inbox thread ID or a terminal ID (exactly one, never a path); a terminal
+  resolves to its live current directory, verified on disk like its Git chip's.
+- **User-started fetch.** `git:fetch` (a thread or terminal ID, nothing else) is the one call
   allowed to reach the network, and the renderer sends it only from the Git graph's Fetch
   button. It uses a separate runner, `createGitFetchRunner`, with `GIT_ALLOW_PROTOCOL` set to
   `file:git:http:https:ssh` (remote helpers such as `ext::` stay denied), hooks and fsmonitor

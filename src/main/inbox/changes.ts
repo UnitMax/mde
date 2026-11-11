@@ -8,7 +8,7 @@ import type {
   InboxGitFetchResult,
 } from '@shared/types'
 import { createGitCommandRunner, createGitFetchRunner, readGitCheckoutChangesWithRunner, readGitCheckoutDiffWithRunner } from '../git'
-import { fetchGitWithRunners, readGitCommitWithRunner, readGitGraphWithRunner } from '../git-graph'
+import { fetchGitWithRunners, readGitCommitDiffWithRunner, readGitCommitWithRunner, readGitGraphWithRunner } from '../git-graph'
 
 function nullDevice(session: DirectoryContext): string {
   return session.kind === 'wsl' || process.platform !== 'win32' ? '/dev/null' : 'NUL'
@@ -44,4 +44,8 @@ export function fetchInboxGit(session: DirectoryContext): Promise<InboxGitFetchR
     createGitCommandRunner(session, process.platform, session.path),
     (root) => createGitFetchRunner(session, root),
   )
+}
+
+export function readInboxGitCommitDiff(session: DirectoryContext, hash: string, path: string): Promise<InboxChangeDiff> {
+  return readGitCommitDiffWithRunner(createGitCommandRunner(session, process.platform, session.path), hash, path)
 }

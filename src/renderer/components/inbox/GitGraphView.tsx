@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import {
   AlertCircle, ArrowDown, ArrowUp, Check, Cloud, CloudDownload, Copy, Crosshair, GitBranch, GitCommitHorizontal,
   GitGraph, LoaderCircle, RefreshCw, Search, Tag, X,
 } from 'lucide-react'
-import type { GitGraphCommit, GitGraphRef, GitGraphScope, InboxGitCommitDetails, InboxGitGraph } from '@shared/types'
+import type { GitGraphCommit, GitGraphRef, GitGraphScope, GitRootRequest, InboxChangesResponse, InboxGitCommitDetails, InboxGitCommitFile, InboxGitGraph } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { ipcErrorMessage } from '@/lib/ipc-error'
@@ -11,7 +11,7 @@ import { layoutGitGraph, relativeCommitTime, type GraphRow } from '@/lib/git-gra
 import { useInboxChanges, inboxChangesKey } from '@/store/inbox-changes'
 import { useWorkspace } from '@/store/workspace'
 import { codeViewerFontFamily, getTerminalSettings, subscribeTerminalSettings } from '@/terminal/terminal-settings'
-import { ChangeCounts, StatusMark } from './InboxChanges'
+import { ChangeCounts, ChangeDiffViewer, StatusMark } from './InboxChanges'
 
 /** Commits read at first, and added each time the list nears its end. */
 export const GRAPH_PAGE = 400
@@ -238,15 +238,17 @@ function UpstreamSummary({ value }: { value: InboxGitGraph }): JSX.Element {
 }
 
 function CommitDetails({
-  threadId, commit, chips, color, loaded, onSelect, onClose,
+  source, commit, chips, color, loaded, onSelect, onOpenFile, onClose,
 }: {
-  threadId: string
+  source: GitRootRequest
   commit: GitGraphCommit
   chips: RefChip[]
   color: string
   /** Whether a commit is in the list, so a parent past its end is shown but cannot be gone to. */
   loaded: (hash: string) => boolean
   onSelect: (hash: string) => void
+  /** Reviews one of the commit's files, against the commit's first parent. */
+  onOpenFile: (file: InboxGitCommitFile) => void
   onClose: () => void
 }): JSX.Element {
   const [state, setState] = useState<{ hash: string; value?: InboxGitCommitDetails; error?: string } | null>(null)
@@ -255,12 +257,12 @@ function CommitDetails({
     let current = true
     setState({ hash: commit.hash })
     setCopied(false)
-    window.api.inbox.gitCommit({ threadId, hash: commit.hash }).then(
+    window.api.git.commit({ ...source, hash: commit.hash }).then(
       (value) => { if (current) setState({ hash: commit.hash, value }) },
       (error) => { if (current) setState({ hash: commit.hash, error: ipcErrorMessage(error, 'Could not read the commit.') }) },
     )
     return () => { current = false }
-  }, [threadId, commit.hash])
+  }, [source, commit.hash])
   const details = state?.hash === commit.hash ? state.value : undefined
   const message = details?.message ?? commit.subject
   const newline = message.indexOf('\n')
@@ -355,15 +357,23 @@ function CommitDetails({
               {details.files.map((file) => {
                 const slash = file.path.lastIndexOf('/') + 1
                 return (
-                  <li key={file.path} className="flex min-w-0 items-center gap-2 rounded px-2 py-1 hover:bg-hover" title={file.from ? `${file.from} → ${file.path}` : file.path}>
-                    <StatusMark status={file.status} />
-                    <span className="inbox-code-font min-w-0 flex-1 truncate text-[11.5px]">
-                      <span className="text-fg">{file.path.slice(slash)}</span>
-                      {slash > 0 && <span className="ml-1.5 text-fg-subtle">{file.path.slice(0, slash)}</span>}
-                    </span>
-                    <span className="inbox-code-font text-[11px]">
-                      <ChangeCounts additions={file.additions} deletions={file.deletions} binary={file.binary} />
-                    </span>
+                  <li key={file.path}>
+                    <button
+                      type="button"
+                      data-testid="git-graph-commit-file"
+                      title={`${file.from ? `${file.from} → ${file.path}` : file.path}\nReview the change`}
+                      onClick={() => onOpenFile(file)}
+                      className="flex w-full min-w-0 items-center gap-2 rounded px-2 py-1 text-left hover:bg-hover focus-visible:bg-hover"
+                    >
+                      <StatusMark status={file.status} />
+                      <span className="inbox-code-font min-w-0 flex-1 truncate text-[11.5px]">
+                        <span className="text-fg">{file.path.slice(slash)}</span>
+                        {slash > 0 && <span className="ml-1.5 text-fg-subtle">{file.path.slice(0, slash)}</span>}
+                      </span>
+                      <span className="inbox-code-font text-[11px]">
+                        <ChangeCounts additions={file.additions} deletions={file.deletions} binary={file.binary} />
+                      </span>
+                    </button>
                   </li>
                 )
               })}
@@ -378,15 +388,13 @@ function CommitDetails({
 
 /**
  * The uncommitted changes, chosen from the dashed row above HEAD: the same files as the Changes tab.
- * Choosing one reviews its diff, and closing the review comes back here.
+ * With `onOpen`, choosing a file reviews its diff.
  */
-function WorkingDetails({ threadId, onClose }: { threadId: string; onClose: () => void }): JSX.Element {
-  const value = useInboxChanges((s) => s.entries[inboxChangesKey(threadId)]?.value)
-  useEffect(() => {
-    const stop = useInboxChanges.getState().watch(threadId, true)
-    void useInboxChanges.getState().load(threadId, true)
-    return stop
-  }, [threadId])
+export function WorkingPane({ value, onOpen, onClose }: {
+  value: InboxChangesResponse | undefined
+  onOpen?: (path: string) => void
+  onClose: () => void
+}): JSX.Element {
   const files = value?.available ? value.files : undefined
   return (
     <aside className="flex min-h-0 w-[min(400px,45%)] shrink-0 flex-col border-l border-line bg-panel" data-testid="git-graph-working" aria-label="Uncommitted changes">
@@ -402,8 +410,12 @@ function WorkingDetails({ threadId, onClose }: { threadId: string; onClose: () =
           {value?.available ? `${value.fileCount} ${value.fileCount === 1 ? 'file' : 'files'} changed` : 'Files'}
           {value?.available && <span className="inbox-code-font normal-case tracking-normal"><ChangeCounts additions={value.additions} deletions={value.deletions} /></span>}
         </p>
-        <p className="px-2 pb-2 text-[11.5px] leading-snug text-fg-subtle">Staged, unstaged and untracked, against HEAD. Choose a file to review its diff.</p>
-        {!files ? (
+        <p className="px-2 pb-2 text-[11.5px] leading-snug text-fg-subtle">
+          Staged, unstaged and untracked, against HEAD.{onOpen ? ' Choose a file to review its diff.' : ''}
+        </p>
+        {value && !value.available ? (
+          <p className="px-2 py-2 text-[12px] text-fg-muted">{value.reason ?? 'Git changes are not available here.'}</p>
+        ) : !files ? (
           <p role="status" className="flex items-center gap-2 px-2 py-2 text-[12px] text-fg-muted">
             <LoaderCircle className="h-3.5 w-3.5 shrink-0 motion-safe:animate-spin" aria-hidden />Loading changes…
           </p>
@@ -413,24 +425,35 @@ function WorkingDetails({ threadId, onClose }: { threadId: string; onClose: () =
           <ul className="space-y-px">
             {files.map((file) => {
               const slash = file.path.lastIndexOf('/') + 1
+              const content = (
+                <>
+                  <StatusMark status={file.status} />
+                  <span className="inbox-code-font min-w-0 flex-1 truncate text-[11.5px]">
+                    <span className="text-fg">{file.path.slice(slash)}</span>
+                    {slash > 0 && <span className="ml-1.5 text-fg-subtle">{file.path.slice(0, slash)}</span>}
+                  </span>
+                  <span className="inbox-code-font text-[11px]">
+                    <ChangeCounts additions={file.additions} deletions={file.deletions} binary={file.binary} />
+                  </span>
+                </>
+              )
               return (
                 <li key={file.path}>
-                  <button
-                    type="button"
-                    title={file.path}
-                    data-testid="git-graph-working-file"
-                    onClick={() => useInboxChanges.getState().openFile(threadId, file.path, true)}
-                    className="flex w-full min-w-0 items-center gap-2 rounded px-2 py-1 text-left hover:bg-hover focus-visible:bg-hover"
-                  >
-                    <StatusMark status={file.status} />
-                    <span className="inbox-code-font min-w-0 flex-1 truncate text-[11.5px]">
-                      <span className="text-fg">{file.path.slice(slash)}</span>
-                      {slash > 0 && <span className="ml-1.5 text-fg-subtle">{file.path.slice(0, slash)}</span>}
-                    </span>
-                    <span className="inbox-code-font text-[11px]">
-                      <ChangeCounts additions={file.additions} deletions={file.deletions} binary={file.binary} />
-                    </span>
-                  </button>
+                  {onOpen ? (
+                    <button
+                      type="button"
+                      title={file.path}
+                      data-testid="git-graph-working-file"
+                      onClick={() => onOpen(file.path)}
+                      className="flex w-full min-w-0 items-center gap-2 rounded px-2 py-1 text-left hover:bg-hover focus-visible:bg-hover"
+                    >
+                      {content}
+                    </button>
+                  ) : (
+                    <div title={file.path} data-testid="git-graph-working-file" className="flex min-w-0 items-center gap-2 rounded px-2 py-1">
+                      {content}
+                    </div>
+                  )}
                 </li>
               )
             })}
@@ -441,20 +464,79 @@ function WorkingDetails({ threadId, onClose }: { threadId: string; onClose: () =
   )
 }
 
+/** The Inbox thread's uncommitted changes, from the Changes store; a file opens the diff review. */
+function InboxWorking({ threadId, onClose }: { threadId: string; onClose: () => void }): JSX.Element {
+  const value = useInboxChanges((s) => s.entries[inboxChangesKey(threadId)]?.value)
+  useEffect(() => {
+    const stop = useInboxChanges.getState().watch(threadId, true)
+    void useInboxChanges.getState().load(threadId, true)
+    return stop
+  }, [threadId])
+  return <WorkingPane value={value} onOpen={(path) => useInboxChanges.getState().openFile(threadId, path, true)} onClose={onClose} />
+}
+
+export interface GitGraphPanelProps {
+  open: boolean
+  /** What the graph shows (a thread or a terminal); a new identity starts afresh. */
+  identity: string
+  source: GitRootRequest
+  onClose: () => void
+  /** The checkout's uncommitted files, shown as a dashed row above HEAD when there are any. */
+  workingCount: number
+  /** Changes when the checkout may have changed (a commit, a checkout); the graph is read again. */
+  refreshKey?: string
+  /** The pane shown beside the graph for the uncommitted changes. */
+  renderWorking: (close: () => void) => ReactNode
+}
+
 /**
- * The Git graph of a thread's checkout, laid over the conversation like a diff review: every
- * commit up to the newest with the lanes that join them, the branches, remote branches and tags
- * that point at them, and where HEAD is. Fetch brings the remote branches up to date.
+ * The Git graph of an Inbox thread's checkout, laid over the conversation like a diff review. It
+ * gives way to a file opened from the tree, and closes when the thread is left.
  */
 export function GitGraphView({ threadId }: { threadId: string }): JSX.Element | null {
   const open = useInboxChanges((s) => s.graphThreadId === threadId)
   const treeFile = useWorkspace((s) => s.openFiles[threadId])
   const changes = useInboxChanges((s) => s.entries[inboxChangesKey(threadId)]?.value)
+  const source = useMemo(() => ({ threadId }), [threadId])
+  useEffect(() => {
+    if (open && treeFile !== undefined) useInboxChanges.getState().closeGraph()
+  }, [open, treeFile])
+  // Leaving the thread, or the Inbox, closes the graph.
+  useEffect(() => () => {
+    if (useInboxChanges.getState().graphThreadId === threadId) useInboxChanges.getState().closeGraph()
+  }, [threadId])
+  return (
+    <GitGraphPanel
+      open={open}
+      identity={threadId}
+      source={source}
+      onClose={() => useInboxChanges.getState().closeGraph()}
+      workingCount={changes?.available ? changes.fileCount : 0}
+      // A commit made in the thread changes the working tree, which the Changes watcher notices.
+      refreshKey={changes ? JSON.stringify([changes.branch, changes.fileCount, changes.additions, changes.deletions]) : undefined}
+      renderWorking={(close) => <InboxWorking threadId={threadId} onClose={close} />}
+    />
+  )
+}
+
+/**
+ * The Git graph of a checkout: every commit up to the newest with the lanes that join them, the
+ * branches, remote branches and tags that point at them, and where HEAD is. Fetch brings the
+ * remote branches up to date. Laid over the conversation (Inbox) or the terminals (Sessions).
+ */
+export function GitGraphPanel({ open, identity, source, onClose, workingCount, refreshKey, renderWorking }: GitGraphPanelProps): JSX.Element | null {
   const [scope, setScope] = useState<GitGraphScope>(storedScope)
   const [limit, setLimit] = useState(GRAPH_PAGE)
   const [state, setState] = useState<GraphState>({ loading: true })
   const [fetching, setFetching] = useState<{ busy: boolean; error?: string; at?: number }>({ busy: false })
   const [selected, setSelected] = useState<string | null>(null)
+  /** A committed file under review, over the graph, which keeps its place beneath. */
+  const [review, setReview] = useState<{ hash: string; parents: number; file: InboxGitCommitFile } | null>(null)
+  const reviewHash = review?.hash
+  const readCommitDiff = useCallback(
+    (path: string) => window.api.git.commitDiff({ ...source, hash: reviewHash ?? '', path }),
+    [source, reviewHash],
+  )
   const [query, setQuery] = useState('')
   const [family, setFamily] = useState(() => getTerminalSettings().codeFamily)
   const [view, setView] = useState({ top: 0, height: 600 })
@@ -465,21 +547,22 @@ export function GitGraphView({ threadId }: { threadId: string }): JSX.Element | 
   const load = useCallback((nextLimit = limit, nextScope = scope) => {
     const id = ++request.current
     setState((previous) => ({ ...previous, loading: true }))
-    window.api.inbox.gitGraph({ threadId, limit: nextLimit, scope: nextScope }).then(
+    window.api.git.graph({ ...source, limit: nextLimit, scope: nextScope }).then(
       (value) => { if (id === request.current) setState({ value, loading: false }) },
       (error) => {
         if (id === request.current) setState((previous) => ({ value: previous.value, loading: false, error: ipcErrorMessage(error, 'Could not read the Git history.') }))
       },
     )
-  }, [threadId, limit, scope])
+  }, [source, limit, scope])
 
-  // Another thread starts afresh. Coming back (after a diff review opened from here) keeps the
-  // chosen commit and the search, and reads the graph again.
-  const shownThread = useRef(threadId)
+  // Another thread or terminal starts afresh. Coming back (after a diff review opened from here)
+  // keeps the chosen commit and the search, and reads the graph again.
+  const shown = useRef(identity)
   useEffect(() => {
     if (!open) return
-    if (shownThread.current !== threadId) {
-      shownThread.current = threadId
+    if (shown.current !== identity) {
+      shown.current = identity
+      setReview(null)
       setSelected(null)
       setQuery('')
       setFetching({ busy: false })
@@ -487,21 +570,19 @@ export function GitGraphView({ threadId }: { threadId: string }): JSX.Element | 
     }
     setLimit(GRAPH_PAGE)
     load(GRAPH_PAGE, scope)
-  }, [open, threadId])
+  }, [open, identity])
   // The list is drawn anew on coming back, so bring the chosen row into view once there are rows.
   const revealed = useRef(false)
   useEffect(() => { if (!open) revealed.current = false }, [open])
 
-  // A commit made in the thread changes the working tree, which the Changes watcher notices. Its
-  // polls hand over a new object each time, so only a different summary reads the graph again.
-  const summary = changes ? JSON.stringify([changes.branch, changes.fileCount, changes.additions, changes.deletions]) : undefined
-  const summaryRef = useRef(summary)
+  // Polls hand over a new object each time, so only a different summary reads the graph again.
+  const refreshRef = useRef(refreshKey)
   useEffect(() => {
-    const previous = summaryRef.current
-    summaryRef.current = summary
-    if (!open || previous === undefined || previous === summary) return
+    const previous = refreshRef.current
+    refreshRef.current = refreshKey
+    if (!open || previous === undefined || previous === refreshKey) return
     load()
-  }, [open, summary, load])
+  }, [open, refreshKey, load])
 
   useEffect(() => subscribeTerminalSettings(() => setFamily(getTerminalSettings().codeFamily)), [])
   // "Fetched 2 min ago" keeps its age.
@@ -511,18 +592,11 @@ export function GitGraphView({ threadId }: { threadId: string }): JSX.Element | 
     return () => window.clearInterval(timer)
   }, [open, fetching.at])
   useEffect(() => {
-    if (open && treeFile !== undefined) useInboxChanges.getState().closeGraph()
-  }, [open, treeFile])
-  // Leaving the thread, or the Inbox, closes the graph.
-  useEffect(() => () => {
-    if (useInboxChanges.getState().graphThreadId === threadId) useInboxChanges.getState().closeGraph()
-  }, [threadId])
-  useEffect(() => {
     if (!open) return
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
     list.current?.focus()
     return () => { if (previous?.isConnected) previous.focus() }
-  }, [open, threadId])
+  }, [open, identity])
 
   useLayoutEffect(() => {
     const element = list.current
@@ -535,7 +609,7 @@ export function GitGraphView({ threadId }: { threadId: string }): JSX.Element | 
   }, [open, state.value === undefined])
 
   const value = state.value?.available ? state.value : undefined
-  const working = Boolean(value?.head && changes?.available && changes.fileCount > 0)
+  const working = Boolean(value?.head && workingCount > 0)
   const rows = useMemo(() => {
     const commits = value?.commits ?? []
     const input = [
@@ -596,12 +670,12 @@ export function GitGraphView({ threadId }: { threadId: string }): JSX.Element | 
   }, [open, rows.input, selected, centerRow])
 
   if (!open) return null
-  const close = (): void => useInboxChanges.getState().closeGraph()
+  const close = onClose
 
   const fetch = (): void => {
     if (fetching.busy) return
     setFetching((previous) => ({ busy: true, at: previous.at }))
-    window.api.inbox.gitFetch({ threadId }).then(
+    window.api.git.fetch(source).then(
       () => {
         setFetching({ busy: false, at: Date.now() })
         load()
@@ -715,7 +789,7 @@ export function GitGraphView({ threadId }: { threadId: string }): JSX.Element | 
                 {chips.map((chip) => <Chip key={chip.key} chip={chip} color={laneColor(row.color)} />)}
                 {isWorking ? (
                   <span className="truncate italic text-fg-muted">
-                    Uncommitted changes · {changes?.available ? changes.fileCount : 0} {changes?.available && changes.fileCount === 1 ? 'file' : 'files'}
+                    Uncommitted changes · {workingCount} {workingCount === 1 ? 'file' : 'files'}
                   </span>
                 ) : (
                   <span className={cn('truncate', isHead ? 'font-medium text-fg' : 'text-fg/90', commit!.parents.length > 1 && 'text-fg-muted')}>
@@ -884,24 +958,29 @@ export function GitGraphView({ threadId }: { threadId: string }): JSX.Element | 
         >
           {body}
         </div>
-        {selected === WORKING && working && (
-          <WorkingDetails
-            threadId={threadId}
-            onClose={() => { setSelected(null); list.current?.focus() }}
-          />
-        )}
+        {selected === WORKING && working && renderWorking(() => { setSelected(null); list.current?.focus() })}
         {selectedCommit && (
           <CommitDetails
-            threadId={threadId}
+            source={source}
             commit={selectedCommit}
             color={laneColor(rows.layout[byHash.get(selectedCommit.hash) ?? 0]?.color ?? 0)}
             loaded={(hash) => byHash.has(hash)}
             chips={refChips(refsByCommit.get(selectedCommit.hash) ?? [], value?.branch ?? null, selectedCommit.hash === value?.head && !value?.branch)}
             onSelect={(hash) => select(hash)}
+            onOpenFile={(file) => setReview({ hash: selectedCommit.hash, parents: selectedCommit.parents.length, file })}
             onClose={() => { setSelected(null); list.current?.focus() }}
           />
         )}
       </div>
+      {review && (
+        <ChangeDiffViewer
+          identity={`${identity}\n${review.hash}`}
+          file={review.file}
+          note={`Commit ${short(review.hash)}, ${review.parents === 0 ? 'the first commit' : review.parents > 1 ? 'against its first parent' : 'against its parent'}.`}
+          readDiff={readCommitDiff}
+          onClose={() => setReview(null)}
+        />
+      )}
     </div>
   )
 }

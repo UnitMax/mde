@@ -702,35 +702,7 @@ export function InboxChangeViewer({ threadId }: { threadId: string }): JSX.Eleme
   const state = useInboxChanges((s) => s.entries[inboxChangesKey(threadId)])
   // A file opened from the tree lands beneath this review; it takes over.
   const treeFile = useWorkspace((s) => s.openFiles[threadId])
-  const [preview, setPreview] = useState<{ threadId: string; path: string; value?: InboxChangeDiff; error?: string } | null>(null)
-  const [family, setFamily] = useState(() => getTerminalSettings().codeFamily)
-  const ref = useRef<HTMLDivElement>(null)
   const file = selected?.threadId === threadId ? state?.value?.files?.find((f) => f.path === selected.path) : undefined
-  useEffect(() => {
-    if (!file) return
-    let current = true
-    setPreview((previous) => previous?.threadId === threadId && previous.path === file.path
-      ? { ...previous, error: undefined }
-      : { threadId, path: file.path })
-    void window.api.inbox.changeDiff({ threadId, path: file.path }).then(
-      (value) => { if (current) setPreview({ threadId, path: file.path, value }) },
-      (error) => {
-        if (current) setPreview((previous) => ({
-          threadId, path: file.path,
-          ...(previous?.threadId === threadId && previous.path === file.path ? { value: previous.value } : {}),
-          error: ipcErrorMessage(error, 'Could not read Git diff.'),
-        }))
-      },
-    )
-    return () => { current = false }
-  }, [threadId, file?.path, state?.value])
-  useEffect(() => subscribeTerminalSettings(() => setFamily(getTerminalSettings().codeFamily)), [])
-  useEffect(() => {
-    if (!file) return
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    ref.current?.focus()
-    return () => { if (previous?.isConnected) previous.focus() }
-  }, [file?.path])
   useEffect(() => {
     if (treeFile !== undefined) useInboxChanges.getState().closeFile()
   }, [treeFile])
@@ -738,12 +710,69 @@ export function InboxChangeViewer({ threadId }: { threadId: string }): JSX.Eleme
   useEffect(() => () => {
     if (useInboxChanges.getState().selectedPath?.threadId === threadId) useInboxChanges.getState().closeFile()
   }, [threadId])
-  const patch = preview?.threadId === threadId && preview.path === file?.path ? preview : null
-  const hunks = useMemo(() => parseUnifiedDiff(patch?.value?.diff ?? ''), [patch?.value?.diff])
+  const readDiff = useCallback((path: string) => window.api.inbox.changeDiff({ threadId, path }), [threadId])
   if (!file) return null
-  // Closing goes back to the Git graph when the file was chosen there.
-  const close = (): void => useInboxChanges.getState().closeFile(true)
   const checkout = state?.value?.available ? state.value : undefined
+  return (
+    <ChangeDiffViewer
+      identity={threadId}
+      file={file}
+      branch={checkout ? checkout.branch : undefined}
+      stale={state?.stale}
+      reloadKey={state?.value}
+      readDiff={readDiff}
+      // Closing goes back to the Git graph when the file was chosen there.
+      onClose={() => useInboxChanges.getState().closeFile(true)}
+    />
+  )
+}
+
+/**
+ * A read-only review of one uncommitted file's diff, laid over the conversation (Inbox) or the Git
+ * graph over the terminals (Sessions). `readDiff` reads it for the checkout the caller names, again
+ * whenever `reloadKey` changes; a failed read keeps the last diff shown under the error.
+ */
+export function ChangeDiffViewer({ identity, file, branch, note = GIT_CHANGES_NOTE, stale, reloadKey, readDiff, onClose }: {
+  /** The thread or terminal: another one starts without the previous diff. */
+  identity: string
+  file: InboxChangedFile
+  /** The checkout's branch (null for a detached HEAD); left out when it is not known. */
+  branch?: string | null
+  /** What the diff is against, under the header. */
+  note?: string
+  stale?: boolean
+  reloadKey?: unknown
+  readDiff: (path: string) => Promise<InboxChangeDiff>
+  onClose: () => void
+}): JSX.Element {
+  const [preview, setPreview] = useState<{ identity: string; path: string; value?: InboxChangeDiff; error?: string } | null>(null)
+  const [family, setFamily] = useState(() => getTerminalSettings().codeFamily)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    let current = true
+    setPreview((previous) => previous?.identity === identity && previous.path === file.path
+      ? { ...previous, error: undefined }
+      : { identity, path: file.path })
+    void readDiff(file.path).then(
+      (value) => { if (current) setPreview({ identity, path: file.path, value }) },
+      (error) => {
+        if (current) setPreview((previous) => ({
+          identity, path: file.path,
+          ...(previous?.identity === identity && previous.path === file.path ? { value: previous.value } : {}),
+          error: ipcErrorMessage(error, 'Could not read Git diff.'),
+        }))
+      },
+    )
+    return () => { current = false }
+  }, [identity, file.path, reloadKey, readDiff])
+  useEffect(() => subscribeTerminalSettings(() => setFamily(getTerminalSettings().codeFamily)), [])
+  useEffect(() => {
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    ref.current?.focus()
+    return () => { if (previous?.isConnected) previous.focus() }
+  }, [file.path])
+  const patch = preview?.identity === identity && preview.path === file.path ? preview : null
+  const hunks = useMemo(() => parseUnifiedDiff(patch?.value?.diff ?? ''), [patch?.value?.diff])
   const binary = patch?.value?.binary || file.binary
 
   let body: JSX.Element | null = null
@@ -776,8 +805,9 @@ export function InboxChangeViewer({ threadId }: { threadId: string }): JSX.Eleme
       tabIndex={-1}
       className="absolute inset-0 z-20 flex min-h-0 flex-col bg-bg outline-none"
       data-testid="inbox-change-viewer"
+      data-path={file.path}
       style={{ '--inbox-code-font': codeViewerFontFamily(family) } as CSSProperties}
-      onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}
+      onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); onClose() } }}
     >
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-line bg-panel pl-3 pr-1.5">
         <FileDiff className="h-3.5 w-3.5 shrink-0 text-fg-subtle" aria-hidden />
@@ -786,19 +816,19 @@ export function InboxChangeViewer({ threadId }: { threadId: string }): JSX.Eleme
         <span className="inbox-code-font text-[11.5px]">
           <ChangeCounts additions={file.additions} deletions={file.deletions} binary={file.binary} />
         </span>
-        <Button variant="ghost" size="icon-sm" className="shrink-0" aria-label="Close change review" title="Close (Esc)" onClick={close}>
+        <Button variant="ghost" size="icon-sm" className="shrink-0" aria-label="Close change review" title="Close (Esc)" onClick={onClose}>
           <X className="h-3.5 w-3.5" />
         </Button>
       </div>
       <p className="flex shrink-0 items-center gap-1.5 border-b border-line px-4 py-1.5 text-[11px] text-fg-subtle">
-        {checkout && (
+        {branch !== undefined && (
           <>
             <GitBranch className="h-3 w-3 shrink-0" aria-hidden />
-            <span className="max-w-[40%] shrink-0 truncate text-fg-muted">{checkout.branch ?? 'Detached HEAD'}</span>
+            <span className="max-w-[40%] shrink-0 truncate text-fg-muted">{branch ?? 'Detached HEAD'}</span>
             <span aria-hidden>·</span>
           </>
         )}
-        <span className="min-w-0 truncate">{GIT_CHANGES_NOTE}{state?.stale ? ' Previous counts may be out of date.' : ''}</span>
+        <span className="min-w-0 truncate">{note}{stale ? ' Previous counts may be out of date.' : ''}</span>
       </p>
       <div className="min-h-0 flex-1 overflow-auto">
         {patch?.error && <ViewerMessage tone="danger" role="alert">{patch.error}</ViewerMessage>}

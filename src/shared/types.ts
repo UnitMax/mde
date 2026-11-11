@@ -1086,9 +1086,14 @@ export interface InboxChangesResponse {
 
 export type GitGraphScope = 'all' | 'local' | 'head'
 
-/** The commit graph of the checkout a thread uses, read when the Git graph view opens. Memory only. */
-export interface InboxGitGraphRequest {
-  threadId: string
+/**
+ * The checkout a Git graph request reads: an Inbox thread's (its recorded directory) or a
+ * Sessions terminal's (its current directory, verified by main). Exactly one is given.
+ */
+export type GitRootRequest = { threadId: string } | { terminalId: string }
+
+/** The commit graph of a checkout, read when the Git graph view opens. Memory only. */
+export type GitGraphRequest = GitRootRequest & {
   /** How many commits to read, newest first; the view asks for more as the person scrolls. */
   limit: number
   /**
@@ -1133,10 +1138,10 @@ export interface InboxGitGraph {
   more: boolean
 }
 
-export interface InboxGitCommitRequest {
-  threadId: string
-  hash: string
-}
+export type GitCommitRequest = GitRootRequest & { hash: string }
+
+/** One file's change in a commit; the path must be one the commit changed. */
+export type GitCommitDiffRequest = GitRootRequest & { hash: string; path: string }
 
 export interface InboxGitCommitFile {
   path: string
@@ -1161,10 +1166,6 @@ export interface InboxGitCommitDetails {
   files: InboxGitCommitFile[]
   /** Files past the listing limit were left out. */
   truncated: boolean
-}
-
-export interface InboxGitFetchRequest {
-  threadId: string
 }
 
 export interface InboxGitFetchResult {

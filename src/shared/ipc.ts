@@ -46,11 +46,12 @@ import type {
   InboxChangesRequest,
   InboxChangeDiffRequest,
   InboxChangeDiff,
-  InboxGitGraphRequest,
+  GitRootRequest,
+  GitGraphRequest,
   InboxGitGraph,
-  InboxGitCommitRequest,
+  GitCommitRequest,
+  GitCommitDiffRequest,
   InboxGitCommitDetails,
-  InboxGitFetchRequest,
   InboxGitFetchResult,
   ChatMessagesPage,
   ChatMessagesRequest,
@@ -155,6 +156,12 @@ export const IpcChannels = {
   pathRevealTreeFolder: 'path:reveal-tree-folder',
 
   gitTerminalInfo: 'git:terminal-info',
+  gitGraph: 'git:graph',
+  gitCommit: 'git:commit',
+  gitFetch: 'git:fetch',
+  gitChanges: 'git:changes',
+  gitChangeDiff: 'git:change-diff',
+  gitCommitDiff: 'git:commit-diff',
 
   filesList: 'files:list',
   filesRead: 'files:read',
@@ -177,9 +184,6 @@ export const IpcChannels = {
   chatCreate: 'chat:create',
   inboxChanges: 'inbox:changes',
   inboxChangeDiff: 'inbox:change-diff',
-  inboxGitGraph: 'inbox:git-graph',
-  inboxGitCommit: 'inbox:git-commit',
-  inboxGitFetch: 'inbox:git-fetch',
   chatMessages: 'chat:messages',
   chatSearch: 'chat:search',
   chatFiles: 'chat:files',
@@ -533,6 +537,17 @@ export interface RendererApi {
   }
   git: {
     terminalInfo(req: GitTerminalInfoRequest): Promise<GitTerminalInfoResponse | null>
+    /** The commit graph of a thread's or a terminal's checkout. */
+    graph(req: GitGraphRequest): Promise<InboxGitGraph>
+    commit(req: GitCommitRequest): Promise<InboxGitCommitDetails>
+    /** Fetches every remote of the checkout: the one Git call that may use the network. */
+    fetch(req: GitRootRequest): Promise<InboxGitFetchResult>
+    /** The uncommitted changes of the checkout, with the file list. */
+    changes(req: GitRootRequest): Promise<InboxChangesResponse>
+    /** One uncommitted file's diff; the path must still be in the checkout's Git status. */
+    changeDiff(req: GitRootRequest & { path: string }): Promise<InboxChangeDiff>
+    /** One file's change in a commit, against its first parent. */
+    commitDiff(req: GitCommitDiffRequest): Promise<InboxChangeDiff>
   }
   files: {
     list(req: FilesListRequest): Promise<FileTreeListResponse>
@@ -541,10 +556,6 @@ export interface RendererApi {
   inbox: {
     changes(req: InboxChangesRequest): Promise<InboxChangesResponse>
     changeDiff(req: InboxChangeDiffRequest): Promise<InboxChangeDiff>
-    gitGraph(req: InboxGitGraphRequest): Promise<InboxGitGraph>
-    gitCommit(req: InboxGitCommitRequest): Promise<InboxGitCommitDetails>
-    /** Fetches every remote of the thread's checkout: the one Git call that may use the network. */
-    gitFetch(req: InboxGitFetchRequest): Promise<InboxGitFetchResult>
     list(): Promise<InboxThread[]>
     setRead(req: InboxSetReadRequest): Promise<InboxThread | null>
     setArchived(req: InboxSetArchivedRequest): Promise<InboxThread | null>

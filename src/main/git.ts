@@ -19,7 +19,7 @@ const GIT_COMMAND_TIMEOUT_MS = 10_000
 /** A checkout writes a whole working tree, so it gets far longer than a status query. */
 const GIT_MUTATION_TIMEOUT_MS = 120_000
 const GIT_REF_LIMIT = 300
-const GIT_DIFF_CONTEXT_LINES = 80
+export const GIT_DIFF_CONTEXT_LINES = 80
 const GIT_MAX_BUFFER = 8 * 1024 * 1024
 const GIT_EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 
@@ -763,10 +763,14 @@ export async function readGitCheckoutDiffWithRunner(
   if (!checkout) throw new Error('This folder is not a Git repository.')
   // The existing reader accepts only paths present in current Git status.
   const result = await readGitDiffWithRunner(checkout.run, path, nullDevice)
-  const bytes = Buffer.from(result.diff, 'utf8')
+  return { ...result, ...diffPreview(result.diff) }
+}
+
+/** A diff cut to the preview size, and whether it was cut. */
+export function diffPreview(diff: string): { diff: string; truncated: boolean } {
+  const bytes = Buffer.from(diff, 'utf8')
   const truncated = bytes.length > INBOX_DIFF_PREVIEW_BYTES
   // Cutting inside a multi-byte character leaves one replacement character at the end; drop it.
   // A diff that fits is returned as it is.
-  const diff = truncated ? bytes.subarray(0, INBOX_DIFF_PREVIEW_BYTES).toString('utf8').replace(/\ufffd$/, '') : result.diff
-  return { ...result, diff, truncated }
+  return { diff: truncated ? bytes.subarray(0, INBOX_DIFF_PREVIEW_BYTES).toString('utf8').replace(/\ufffd$/, '') : diff, truncated }
 }
