@@ -173,13 +173,173 @@ describe('the Inbox terminal store', () => {
       const store = await load()
       const stop = vi.fn()
       const onExit = vi.fn((_listener: (info: PtyExitInfo) => void) => stop)
-      vi.stubGlobal('api', { pty: { onExit } })
+      const stopAgents = vi.fn()
+      vi.stubGlobal('api', { pty: { onExit }, agentTerminals: { onOpen: vi.fn(() => stopAgents) } })
       store.getState().splitPane(ID(1), 'right')
       const unsubscribe = store.getState().init()
       onExit.mock.calls[0]![0](exit(ID(2)))
       expect(store.getState().layout.panes).toHaveLength(1)
       unsubscribe()
       expect(stop).toHaveBeenCalled()
+      expect(stopAgents).toHaveBeenCalled()
+    })
+  })
+
+  describe('opening a Files tree folder', () => {
+    const wsl = (distro: string) => ({ id: 'inbox-terminal', name: 'Terminal', kind: 'wsl' as const, distro, createdAt: '' })
+    const folder = { sessionId: 'ses_thread', path: 'src' }
+
+    async function loadOnWindows() {
+      const store = await load()
+      const { useWorkspace } = await import('../src/renderer/store/workspace')
+      useWorkspace.setState({ platform: { platform: 'win32', isWindows: true } })
+      return store
+    }
+
+    it('adds a pane below the one last used, after main has set its folder', async () => {
+      const startInFolder = vi.fn(async () => {})
+      vi.stubGlobal('api', { pty: { startInFolder } })
+      const store = await loadOnWindows()
+      store.setState({ session: wsl('Ubuntu') })
+
+      await store.getState().openInFolder(folder, { kind: 'wsl', distro: 'Ubuntu' }, 'bottom')
+
+      expect(startInFolder).toHaveBeenCalledWith({ terminalId: ID(2), sessionId: 'inbox-terminal', folder })
+      expect(store.getState().layout.panes.map((pane) => pane.terminalId)).toEqual([ID(1), ID(2)])
+      expect(store.getState().layout.tree).toMatchObject({ type: 'split', axis: 'row' })
+      expect(focus).toHaveBeenLastCalledWith(ID(2))
+    })
+
+    it('sets up the terminal first when it has not been opened yet', async () => {
+      const configureInbox = vi.fn(async () => ({ session: wsl('Ubuntu'), changed: false }))
+      const startInFolder = vi.fn(async () => {})
+      vi.stubGlobal('api', { pty: { configureInbox, startInFolder } })
+      const store = await loadOnWindows()
+
+      await store.getState().openInFolder(folder, { kind: 'wsl', distro: 'Ubuntu' }, 'right')
+
+      expect(configureInbox).toHaveBeenCalled()
+      expect(startInFolder).toHaveBeenCalledTimes(1)
+    })
+
+    it('refuses a folder in another environment and adds no pane', async () => {
+      const startInFolder = vi.fn(async () => {})
+      vi.stubGlobal('api', { pty: { startInFolder } })
+      const store = await loadOnWindows()
+      store.setState({ session: wsl('Ubuntu') })
+
+      await expect(store.getState().openInFolder(folder, { kind: 'native', distro: undefined }, 'right'))
+        .rejects.toThrow('This folder is on Windows, but the Inbox terminal runs in WSL (Ubuntu).')
+      await expect(store.getState().openInFolder(folder, { kind: 'wsl', distro: 'Debian' }, 'right'))
+        .rejects.toThrow('in WSL (Debian)')
+      expect(startInFolder).not.toHaveBeenCalled()
+      expect(store.getState().layout.panes).toHaveLength(1)
+    })
+
+    it('adds no pane when main refuses the folder', async () => {
+      vi.stubGlobal('api', { pty: { startInFolder: vi.fn(async () => { throw new Error('Folder not found.') }) } })
+      const store = await loadOnWindows()
+      store.setState({ session: wsl('Ubuntu') })
+
+      await expect(store.getState().openInFolder(folder, { kind: 'wsl', distro: 'Ubuntu' }, 'right')).rejects.toThrow('Folder not found.')
+      expect(store.getState().layout.panes).toHaveLength(1)
+    })
+  })
+
+  describe('panes agents open through the MDE MCP', () => {
+    const request = { requestId: 'req-1', title: 'Dev server', command: 'npm run dev', approval: true, from: 'Fix login' }
+    const native = () => ({ id: 'inbox-terminal', name: 'Terminal', kind: 'native' as const, createdAt: '' })
+
+    async function loadNative() {
+      const store = await load()
+      const { useWorkspace } = await import('../src/renderer/store/workspace')
+      useWorkspace.setState({ platform: { platform: 'darwin', isWindows: false } })
+      store.setState({ session: native() })
+      return store
+    }
+
+    it('adds a titled pane after main started its shell, without taking the keyboard, and keeps the command for approval', async () => {
+      const claim = vi.fn(async () => {})
+      const refuse = vi.fn(async () => {})
+      const decide = vi.fn(async () => {})
+      vi.stubGlobal('api', { agentTerminals: { claim, refuse, decide } })
+      const store = await loadNative()
+      focus.mockClear()
+
+      await store.getState().openForAgent(request)
+
+      expect(claim).toHaveBeenCalledWith({ requestId: 'req-1', terminalId: ID(2), palette: expect.objectContaining({ foreground: expect.any(String) }) })
+      expect(store.getState().layout.panes.map((pane) => [pane.terminalId, pane.title])).toEqual([[ID(1), undefined], [ID(2), 'Dev server']])
+      expect(focus).not.toHaveBeenCalled()
+      expect(store.getState().agentArrivals).toBe(1)
+      expect(store.getState().agentCommands).toEqual({ [ID(2)]: { command: 'npm run dev', from: 'Fix login' } })
+      expect(refuse).not.toHaveBeenCalled()
+
+      store.getState().decideAgentCommand(ID(2), 'run-for-hour')
+      expect(decide).toHaveBeenCalledWith({ terminalId: ID(2), decision: 'run-for-hour' })
+      expect(store.getState().agentCommands).toEqual({})
+      store.getState().decideAgentCommand(ID(2), 'run')
+      expect(decide).toHaveBeenCalledTimes(1)
+    })
+
+    it('keeps nothing to approve when the command runs at once', async () => {
+      vi.stubGlobal('api', { agentTerminals: { claim: vi.fn(async () => {}), refuse: vi.fn(async () => {}) } })
+      const store = await loadNative()
+      await store.getState().openForAgent({ ...request, approval: false })
+      expect(store.getState().agentCommands).toEqual({})
+      expect(store.getState().agentArrivals).toBe(1)
+    })
+
+    it('tells main when the terminal already has as many panes as agents may open into, and adds nothing', async () => {
+      const claim = vi.fn(async () => {})
+      const refuse = vi.fn(async () => {})
+      vi.stubGlobal('api', { agentTerminals: { claim, refuse } })
+      const store = await loadNative()
+      for (let index = 0; index < 8; index += 1) store.getState().splitPane(store.getState().layout.panes.at(-1)!.terminalId, 'right')
+      const panes = store.getState().layout.panes.length
+      await store.getState().openForAgent(request)
+      expect(claim).not.toHaveBeenCalled()
+      expect(refuse).toHaveBeenCalledWith({ requestId: 'req-1', reason: expect.stringContaining('already has 9 panes') })
+      expect(store.getState().layout.panes).toHaveLength(panes)
+      expect(store.getState().agentArrivals).toBe(0)
+    })
+
+    it('adds nothing when main refuses the claim, and does not answer twice', async () => {
+      const refuse = vi.fn(async () => {})
+      vi.stubGlobal('api', { agentTerminals: { claim: vi.fn(async () => { throw new Error('The directory is in WSL') }), refuse } })
+      const store = await loadNative()
+      await store.getState().openForAgent(request)
+      expect(store.getState().layout.panes).toHaveLength(1)
+      // The claim was refused before it was made, from main's side; the window says so once.
+      expect(refuse).toHaveBeenCalledTimes(1)
+    })
+
+    it('ends the shell instead of showing it elsewhere when the layout changed meanwhile', async () => {
+      let release: () => void = () => {}
+      const claim = vi.fn(() => new Promise<void>((resolve) => { release = resolve }))
+      vi.stubGlobal('api', { agentTerminals: { claim, refuse: vi.fn(async () => {}) } })
+      const store = await loadNative()
+      const opening = store.getState().openForAgent(request)
+      await vi.waitFor(() => expect(claim).toHaveBeenCalled())
+      // The person splits the last pane while main starts the shell: the agent's pane ID is taken.
+      store.getState().splitPane(ID(1), 'right')
+      release()
+      await opening
+      expect(dispose).toHaveBeenCalledWith(ID(2))
+      expect(store.getState().agentArrivals).toBe(0)
+    })
+
+    it('drops a waiting command when its pane closes or its shell ends', async () => {
+      const decide = vi.fn(async () => {})
+      vi.stubGlobal('api', { agentTerminals: { claim: vi.fn(async () => {}), refuse: vi.fn(async () => {}), decide } })
+      const store = await loadNative()
+      await store.getState().openForAgent(request)
+      await store.getState().openForAgent({ ...request, requestId: 'req-2' })
+      expect(Object.keys(store.getState().agentCommands)).toEqual([ID(2), ID(3)])
+      store.getState().closePane(ID(2))
+      store.getState().paneExited(exit(ID(3)))
+      expect(store.getState().agentCommands).toEqual({})
+      expect(decide).toHaveBeenCalledWith({ terminalId: ID(3), decision: 'cancel' })
     })
   })
 })

@@ -23,6 +23,7 @@ import {
 import type { ChatPart } from '@shared/types'
 import { FileChangeView, useSyntaxColors } from '@/components/inbox/ChatFileChange'
 import { McpCallView, Arguments } from '@/components/inbox/ChatMcpCall'
+import { ChatViewCall } from '@/components/inbox/ChatViewCall'
 import { McpServerNamesContext } from '@/components/inbox/mcp-context'
 import {
   ActivityRow,
@@ -36,6 +37,8 @@ import {
   TruncatedNote,
 } from '@/components/inbox/chat-ui'
 import { displayPath, skillCall } from '@/lib/chat'
+import { isViewPart } from '@/lib/chat-views'
+import { isViewCall } from '@shared/view-tool'
 import {
   answeredQuestions,
   humanizeTool,
@@ -901,6 +904,13 @@ export function ToolCallView({ part, directory }: ViewProps): JSX.Element {
   )
   // A failed edit keeps the plain row, which carries OpenCode's reason.
   if (changes && part.status !== 'error') return <FileChangeView part={part} changes={changes} directory={directory} />
+  // A view the agent shows is drawn in place; the other calls of the same script keep their row above it.
+  if (isViewPart(part)) {
+    const others = calls.filter((call) => !isViewCall(`${call.namespace}.${call.tool}`))
+    return others.length > 0 && part.calls
+      ? <><McpCallView part={part} calls={others} /><ChatViewCall part={part} /></>
+      : <ChatViewCall part={part} />
+  }
   if (calls.length > 0) return <McpCallView part={part} calls={calls} />
   switch (kind) {
     case 'shell':

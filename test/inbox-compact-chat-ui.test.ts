@@ -334,26 +334,51 @@ describe('a conversation in compact mode', () => {
     expect(q('[data-testid="chat-note-n_process"]')).not.toBeNull()
   })
 
-  it('keeps answered questions and subagent cards inside the group with their details intact', async () => {
-    const question = tool('question', { questions: [{ question: 'Which port?' }] }, { answers: [['8000']] })
+  it('keeps subagent cards inside the group with their details intact', async () => {
     const subagent = (id: string) => tool('subagent', { agent: 'general', description: `Review ${id}`, prompt: 'Check the server.' }, {
       output: 'Looks good.', subagent: { sessionId: `ses_${id}`, model: { id: 'review-model', providerId: 'p', variant: 'high' } },
     })
-    page = { messages: [prompt, step('a1', [question, subagent('one'), subagent('two')]), step('a2', [shell('npm test'), { kind: 'text', text: 'All done.' }])], older: null, running: false }
+    page = { messages: [prompt, step('a1', [subagent('one'), subagent('two')]), step('a2', [shell('npm test'), { kind: 'text', text: 'All done.' }])], older: null, running: false }
     useInboxView.setState({ compactChat: true })
     await render()
     await vi.waitFor(() => expect(q('[data-testid="chat-message-a2"]')).not.toBeNull())
     expect(all('[data-testid="chat-activity"]')).toHaveLength(1)
-    expect(q('[data-testid="chat-answered-question"]')).toBeNull()
     expect(q('[data-testid="chat-subagents"]')).toBeNull()
     await click(q('[data-testid="chat-activity"] button'))
-    expect(text(q('[data-testid="chat-answered-question"]'))).toContain('8000')
     expect(all('[data-testid="chat-subagents"]')).toHaveLength(1)
     expect(all('[data-testid^="chat-subagent-"]')).toHaveLength(2)
     expect(all('[aria-label="Model: review-model · high"]')).toHaveLength(2)
     await click(q(TOGGLE))
-    expect(q('[data-testid="chat-answered-question"]')).not.toBeNull()
     expect(q('[data-testid="chat-subagents"]')).not.toBeNull()
+  })
+
+  it('shows a question with the words that lead up to it, and starts a new line for the work after the answer', async () => {
+    const question = tool('question', { questions: [{ question: 'Which port?' }] }, { answers: [['8000']] })
+    page = {
+      messages: [
+        prompt,
+        step('a1', [{ kind: 'text', text: 'I will check the config.' }, read('server.py'), { kind: 'text', text: 'The server can listen on 8000 or 9000.' }, question]),
+        step('a2', [shell('python3 server.py'), shell('npm test')]),
+        step('a3', [{ kind: 'text', text: 'Running on 8000.' }]),
+      ],
+      older: null,
+      running: false,
+    }
+    useInboxView.setState({ compactChat: true })
+    await render()
+    await vi.waitFor(() => expect(q('[data-testid="chat-message-a3"]')).not.toBeNull())
+    const groups = all('[data-testid="chat-activity"]')
+    expect(groups.map((group) => text(group.querySelector('button')))).toEqual([
+      'Wrote an update and read 1 file',
+      'Ran 2 commands',
+    ])
+    const message = q('[data-testid="chat-message-a1"]')!
+    expect(text(message)).toContain('The server can listen on 8000 or 9000.')
+    expect(text(message)).not.toContain('I will check the config.')
+    const answered = q('[data-testid="chat-answered-question"]')!
+    expect(text(answered)).toContain('Which port?')
+    expect(text(answered)).toContain('8000')
+    expect(groups.some((group) => group.contains(answered))).toBe(false)
   })
 
   it('leaves active permission and question requests outside the collapsed activity', async () => {

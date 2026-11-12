@@ -9,7 +9,7 @@ import {
 } from '@shared/taskbar-attention'
 import { playAlertChoice } from './alert-sound'
 import type { AlertSettings } from './alert-settings'
-import { isInboxThreadUnread } from './inbox'
+import { inboxThreadListed, isInboxThreadUnread } from './inbox'
 
 /** A second sound this soon after one is dropped, unless it is more urgent. Threads often finish together. */
 export const ALERT_QUIET_MS = 1500
@@ -32,7 +32,7 @@ export function alertKind(previous: InboxThread | undefined, next: InboxThread):
 export function taskbarIndicator(threads: readonly InboxThread[]): TaskbarIndicator | null {
   const counts: Record<AlertKind, number> = { done: 0, input: 0, failed: 0 }
   for (const thread of threads) {
-    if (thread.archived) continue
+    if (!inboxThreadListed(thread)) continue
     if (thread.status === 'attention') counts.input += 1
     else if (thread.status === 'error' && isInboxThreadUnread(thread)) counts.failed += 1
     else if (thread.status === 'completed' && isInboxThreadUnread(thread)) counts.done += 1

@@ -8,6 +8,15 @@ import type {
   OpenCodeConfigSnapshot,
   OpenCodeConfigTarget
 } from '@shared/opencode-config'
+import type {
+  AgentTerminalClaim,
+  AgentTerminalDecision,
+  AgentTerminalRefusal,
+  MdeMcpStatus,
+  MdeMcpTerminalSettings,
+  MdeMcpTerminalSettingsUpdate,
+} from '@shared/mde-mcp'
+import type { AgentTerminals } from './mcp/agent-terminals'
 import { inboxTerminalThreadId, inboxThreadTerminalId } from '@shared/inbox-thread-terminal'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import {
@@ -19,9 +28,11 @@ import {
   type FileRoot,
   type GitTerminalInfoRequest,
   IpcChannels,
+  IpcEvents,
   type EnsurePtyRequest,
   type RestartPtyRequest,
   type FilesListRequest,
+  type StartTerminalInFolderRequest,
   type FilesReadRequest,
   type MoveTodoTaskRequest,
   type PlatformInfo,
@@ -67,13 +78,22 @@ import type {
   InboxAddFolderRequest,
   InboxComposerState,
   InboxFolder,
+  OpenCodeTarget,
   InboxFoldersState,
   InboxGitInfo,
+  GitRootRequest,
+  GitGraphRequest,
+  InboxGitGraph,
+  GitCommitRequest,
+  GitCommitDiffRequest,
+  InboxGitCommitDetails,
+  InboxGitFetchResult,
   InboxGitInfoRequest,
   InboxRemoveFolderRequest,
   InboxRemoveRequest,
   InboxSetArchivedRequest,
   InboxSetPinnedRequest,
+  InboxSetSnoozedRequest,
   InboxSetCustomTitleRequest,
   InboxSetReadRequest,
   InboxThread,
@@ -145,10 +165,10 @@ import { listWslDirectories } from './wsl/browse'
 import { buildVsCodeRemoteUri } from './vscode'
 import { safeVsCodeRemoteUrl } from './external-links'
 import { readGitTerminalInfo } from './git'
-import { readInboxGitChanges, readInboxGitDiff } from './inbox/changes'
+import { fetchInboxGit, readInboxGitChanges, readInboxGitCommit, readInboxGitCommitDiff, readInboxGitDiff, readInboxGitGraph } from './inbox/changes'
 import { terminalSessionResolver } from './inbox/terminal'
 import { INBOX_TERMINAL_SESSION_ID, inboxTerminalSession, type InboxTerminalConfiguration, type InboxTerminalSettings } from '@shared/inbox-terminal'
-import { isSafeRelativePath, listSessionDirectory, readSessionFile } from './files/tree'
+import { isSafeRelativePath, isWithinRoot, listSessionDirectory, readSessionFile, treeFolderPath } from './files/tree'
 import {
   createTodoProject,
   createTodoTask,
@@ -239,6 +259,28 @@ async function validatePath(req: ValidatePathRequest): Promise<PathCheckResult> 
 }
 
 /**
+ * A folder the Inbox may start threads in, resolved into its target's format and checked to be a directory
+ * there. OpenCode's service runs where the folder lives: in WSL on Windows, natively on macOS. Used for a
+ * folder the person adds and for one an agent names through the MDE MCP.
+ */
+export async function checkedInboxFolderPlace(
+  kind: 'native' | 'wsl',
+  distro: string | undefined,
+  path: string,
+): Promise<{ directory: string; target: OpenCodeTarget }> {
+  if (process.platform === 'win32' && kind !== 'wsl') throw new Error('On Windows, Inbox folders must be in WSL.')
+  if (process.platform !== 'win32' && kind !== 'native') throw new Error('WSL folders are only available on Windows.')
+  const resolution = await resolveForTarget(kind, distro, path)
+  const place = resolution.distro ?? distro
+  const check = await validatePath({ kind, ...(place ? { distro: place } : {}), path: resolution.path })
+  if (!check.exists) throw new Error(check.error ?? 'That folder does not exist.')
+  return {
+    directory: resolution.path,
+    target: kind === 'wsl' ? { kind: 'wsl', distro: place as string } : { kind: 'native' },
+  }
+}
+
+/**
  * Resolves a path selected by a terminal or persisted session into one this
  * process is willing to hand to the desktop or a new PTY.
  *
@@ -285,6 +327,25 @@ async function verifiedDirectory(session: Session, directory: string, quiet = fa
   return result.code === 0 ? canonical : reject(`not a directory in ${distro}`)
 }
 
+/** `verifiedDirectory`, but always the real path: links resolved on the host or inside the distro. */
+async function realDirectory(session: Session, directory: string): Promise<string | null> {
+  const verified = await verifiedDirectory(session, directory)
+  if (!verified) return null
+  // A WSL folder comes back from `verifiedDirectory` canonical when `realpath` worked; insist on that here.
+  if (session.kind === 'wsl') return (await canonicalizeWslPath(session.distro!, verified)) === verified ? verified : null
+  try {
+    return await fs.realpath(verified)
+  } catch {
+    return null
+  }
+}
+
+/** Where a folder or shell lives, for a message: "in WSL (Ubuntu)", "on Windows". */
+function environmentName(session: Session): string {
+  if (session.kind === 'wsl') return `in WSL (${session.distro ?? 'no distribution'})`
+  return process.platform === 'win32' ? 'on Windows' : 'on this computer'
+}
+
 async function revealDirectory(session: Session, directory: string): Promise<void> {
   if (session.kind === 'native') {
     await shell.openPath(directory)
@@ -328,7 +389,15 @@ export function registerIpcHandlers(
   ptyManager: PtyManager,
   miniWindow: MiniWindowController,
   titleBar: TitleBarController,
-  inbox: { recorder: InboxRecorder; chat: InboxChatService; openCodeConfig: OpenCodeConfigService },
+  inbox: {
+    recorder: InboxRecorder
+    chat: InboxChatService
+    openCodeConfig: OpenCodeConfigService
+    /** The command OpenCode in this target starts the MDE MCP bridge with: this copy of MDE. */
+    mdeMcpCommand?: (target: OpenCodeTarget) => Promise<string[]>
+    /** Inbox terminal panes agents open through the MDE MCP; this layer starts their shells. */
+    agentTerminals?: AgentTerminals
+  },
   taskbar?: TaskbarAttention,
   floatingTerminalKey?: FloatingTerminalKey
 ): void {
@@ -495,6 +564,9 @@ export function registerIpcHandlers(
   handle<InboxSetPinnedRequest, InboxThread | null>(IpcChannels.inboxSetPinned, (req) =>
     inboxRecorder.setPinned(req.id, req.pinned)
   )
+  handle<InboxSetSnoozedRequest, InboxThread | null>(IpcChannels.inboxSetSnoozed, (req) =>
+    inboxRecorder.setSnoozed(req.id, req.until)
+  )
   handle<InboxSetCustomTitleRequest, InboxThread | null>(IpcChannels.inboxSetCustomTitle, (req) =>
     inboxRecorder.setCustomTitle(req.id, req.customTitle)
   )
@@ -510,16 +582,9 @@ export function registerIpcHandlers(
   })
   handle<void, InboxFoldersState>(IpcChannels.inboxFolders, () => chat.folders())
   handle<InboxAddFolderRequest, InboxFolder>(IpcChannels.inboxFoldersAdd, async (req) => {
-    // OpenCode's service runs where the folder lives: in WSL on Windows, natively on macOS.
-    if (process.platform === 'win32' && req.kind !== 'wsl') throw new Error('On Windows, Inbox folders must be in WSL.')
-    if (process.platform !== 'win32' && req.kind !== 'native') throw new Error('WSL folders are only available on Windows.')
-    const resolution = await resolveForTarget(req.kind, req.distro, req.path)
-    const distro = resolution.distro ?? req.distro
-    const check = await validatePath({ kind: req.kind, ...(distro ? { distro } : {}), path: resolution.path })
-    if (!check.exists) throw new Error(check.error ?? 'That folder does not exist.')
+    const place = await checkedInboxFolderPlace(req.kind, req.distro, req.path)
     return chat.addFolder({
-      directory: resolution.path,
-      target: req.kind === 'wsl' ? { kind: 'wsl', distro: distro as string } : { kind: 'native' },
+      ...place,
       ...(req.name !== undefined ? { name: req.name } : {}),
       ...(req.icon ? { icon: req.icon } : {}),
     })
@@ -547,6 +612,79 @@ export function registerIpcHandlers(
     inbox.openCodeConfig.preview(await configTarget(req), req.draft))
   handle<OpenCodeConfigSaveRequest, OpenCodeConfigSnapshot>(IpcChannels.opencodeConfigSave, async (req) =>
     inbox.openCodeConfig.save(await configTarget(req), req.draft, req.revision))
+  const mdeMcpPlace = async (req: OpenCodeConfigTarget): Promise<{ target: OpenCodeConfigTarget; command: string[] }> => {
+    if (!inbox.mdeMcpCommand) throw new Error('The MDE MCP is not available in this build.')
+    const target = await configTarget(req)
+    const command = await inbox.mdeMcpCommand(target.kind === 'wsl' ? { kind: 'wsl', distro: target.distro as string } : { kind: 'native' })
+    return { target, command }
+  }
+  handle<OpenCodeConfigRequest, MdeMcpStatus>(IpcChannels.mdeMcpStatus, async (req) => {
+    const place = await mdeMcpPlace(req)
+    return inbox.openCodeConfig.mdeMcpStatus(place.target, place.command)
+  })
+  handle<OpenCodeConfigRequest, MdeMcpStatus>(IpcChannels.mdeMcpInstall, async (req) => {
+    const place = await mdeMcpPlace(req)
+    return inbox.openCodeConfig.installMdeMcp(place.target, place.command)
+  })
+  handle<OpenCodeConfigRequest, MdeMcpStatus>(IpcChannels.mdeMcpRemove, async (req) => {
+    const place = await mdeMcpPlace(req)
+    return inbox.openCodeConfig.removeMdeMcp(place.target, place.command)
+  })
+
+  // Terminals agents open: main starts the pane's shell itself, so it runs while no view shows it.
+  const agentTerminals = inbox.agentTerminals
+  agentTerminals?.attach({
+    send: (request) => {
+      const contents = security.getWebContents()
+      if (!contents || contents.isDestroyed()) return false
+      contents.send(IpcEvents.agentTerminalOpen, request)
+      return true
+    },
+    start: async (terminalId, target, directory, palette) => {
+      // Only a new pane of the Inbox terminal: never a thread's own terminal or a Sessions pane.
+      if (!terminalId.startsWith(`${INBOX_TERMINAL_SESSION_ID}:tab:`) || inboxTerminalThreadId(terminalId)) {
+        throw new Error('MDE could not add the pane to its terminal.')
+      }
+      if (ptyManager.terminalInfo(terminalId) || pendingEnsures.has(terminalId)) throw new Error('MDE could not add the pane to its terminal.')
+      const generation = inboxTerminalGeneration
+      const session = await getShellSession(INBOX_TERMINAL_SESSION_ID)
+      if (!session) throw new Error('The Inbox terminal has no WSL distribution to run in.')
+      const where = target.kind === 'wsl' ? { kind: 'wsl' as const, distro: target.distro } : { kind: 'native' as const }
+      if (session.kind !== where.kind || (session.kind === 'wsl' && session.distro !== where.distro)) {
+        throw new Error(`The directory is ${where.kind === 'wsl' ? `in WSL (${where.distro})` : 'on this computer'}, but the Inbox terminal runs ${environmentName(session)}. The person can choose its distribution in MDE's terminal settings.`)
+      }
+      // The ordinary launch checks the folder once more (a directory, and one the user may enter).
+      ptyManager.rememberDirectory(terminalId, session, directory)
+      const size = { cols: 120, rows: 32 }
+      const launch = await restoredShellLaunch({ terminalId, sessionId: INBOX_TERMINAL_SESSION_ID, size, palette }, session)
+      if (!launch) {
+        ptyManager.dispose(terminalId)
+        throw new Error(`The terminal cannot start in ${directory}.`)
+      }
+      if (generation !== inboxTerminalGeneration || ptyManager.terminalInfo(terminalId) || pendingEnsures.has(terminalId)) {
+        throw new Error('The Inbox terminal changed meanwhile. Try again.')
+      }
+      ptyManager.ensure(terminalId, session, size, validateTerminalPalette(palette), { ...launch, background: true })
+    },
+    run: (terminalId, command) => {
+      ptyManager.writeWhenStarted(terminalId, `${command}\r`)
+    },
+    now: () => Date.now(),
+  })
+  handle<void, MdeMcpTerminalSettings>(IpcChannels.mdeMcpTerminalSettings, async () => {
+    if (!agentTerminals) throw new Error('The MDE MCP is not available in this build.')
+    return agentTerminals.settings()
+  })
+  handle<MdeMcpTerminalSettingsUpdate, MdeMcpTerminalSettings>(IpcChannels.mdeMcpSetTerminalSettings, async (req) => {
+    if (!agentTerminals) throw new Error('The MDE MCP is not available in this build.')
+    return agentTerminals.setSettings(req)
+  })
+  handle<AgentTerminalClaim, void>(IpcChannels.agentTerminalClaim, async (req) => {
+    if (!agentTerminals) throw new Error('The MDE MCP is not available in this build.')
+    await agentTerminals.claim(req)
+  })
+  handle<AgentTerminalRefusal, void>(IpcChannels.agentTerminalRefuse, (req) => agentTerminals?.refuse(req))
+  handle<AgentTerminalDecision, void>(IpcChannels.agentTerminalDecide, (req) => agentTerminals?.decide(req))
 
   handle<ChatConfigureRequest, void>(IpcChannels.chatConfigure, (req) => chat.configure(req.executable))
   handle<ChatOptionsRequest, ChatOptions>(IpcChannels.chatOptions, (req) => chat.chatOptions(req))
@@ -558,6 +696,31 @@ export function registerIpcHandlers(
   }
   handle<InboxChangesRequest, InboxChangesResponse>(IpcChannels.inboxChanges, (req) => readInboxGitChanges(inboxGitRoot(req.threadId), req.details))
   handle<InboxChangeDiffRequest, InboxChangeDiff>(IpcChannels.inboxChangeDiff, (req) => readInboxGitDiff(inboxGitRoot(req.threadId), req.path))
+  /**
+   * The checkout a Git graph request names: a thread's recorded directory, or a live terminal's
+   * current directory, verified on disk as for the terminal's Git chip. The renderer never names a path.
+   */
+  const gitGraphRoot = async (req: GitRootRequest): Promise<DirectoryContext> => {
+    if ('threadId' in req) return inboxGitRoot(req.threadId)
+    const terminal = ptyManager.terminalInfo(req.terminalId)
+    if (!terminal) throw new Error('This terminal is no longer running.')
+    const session = await getTerminalSession(terminal.sessionId)
+    const directory = session && terminal.directory ? await verifiedDirectory(session, terminal.directory) : null
+    if (!session || !directory) throw new Error('The folder of this terminal could not be found.')
+    return { ...session, path: directory }
+  }
+  handle<GitGraphRequest, InboxGitGraph>(IpcChannels.gitGraph, async (req) => readInboxGitGraph(await gitGraphRoot(req), req.limit, req.scope))
+  handle<GitCommitRequest, InboxGitCommitDetails>(IpcChannels.gitCommit, async (req) => readInboxGitCommit(await gitGraphRoot(req), req.hash))
+  handle<GitRootRequest, InboxGitFetchResult>(IpcChannels.gitFetch, async (req) => fetchInboxGit(await gitGraphRoot(req)))
+  handle<GitRootRequest, InboxChangesResponse>(IpcChannels.gitChanges, async (req) => readInboxGitChanges(await gitGraphRoot(req), true))
+  handle<GitCommitDiffRequest, InboxChangeDiff>(IpcChannels.gitCommitDiff, async (req) => {
+    const { hash, path, ...root } = req
+    return readInboxGitCommitDiff(await gitGraphRoot(root), hash, path)
+  })
+  handle<GitRootRequest & { path: string }, InboxChangeDiff>(IpcChannels.gitChangeDiff, async (req) => {
+    const { path, ...root } = req
+    return readInboxGitDiff(await gitGraphRoot(root), path)
+  })
   handle<ChatMessagesRequest, ChatMessagesPage>(IpcChannels.chatMessages, (req) => chat.messages(req))
   handle<ChatSearchRequest, ChatSearchResponse>(IpcChannels.chatSearch, (req) => chat.search(req))
   handle<ChatFilesRequest, ChatFileEntry[]>(IpcChannels.chatFiles, (req) => chat.files(req))
@@ -615,6 +778,7 @@ export function registerIpcHandlers(
         ptyManager.terminalInfo(id)?.sessionId === INBOX_TERMINAL_SESSION_ID)
       // At startup, saved directories already carry their distro; preserve matching ones.
       if (hasShells) ptyManager.disposeForSourceSession(INBOX_TERMINAL_SESSION_ID)
+      inbox.agentTerminals?.forgetAll()
     }
     getShellSession.setInboxSession(next)
     return { session: next, changed }
@@ -673,6 +837,7 @@ export function registerIpcHandlers(
   })
   handle<string, void>(IpcChannels.ptyDispose, (sessionId) => {
     pendingEnsures.delete(sessionId)
+    inbox.agentTerminals?.forget(sessionId)
     ptyManager.dispose(sessionId)
   })
   handle<void, Record<string, PtyStatus>>(IpcChannels.ptyStatuses, () => ptyManager.statuses())
@@ -773,6 +938,45 @@ export function registerIpcHandlers(
   handle<string, void>(IpcChannels.pathOpenInboxInVsCode, async (id) => {
     const folder = await inboxDirectory(id, canOpenSessionInVsCode)
     if (folder) await openDirectoryInVsCode(folder.session, folder.directory)
+  })
+  // A folder the Files tree shows, named relative to the tree's root like a listing. Both ends are resolved
+  // to their real paths, so a folder that is (or was swapped for) a link out of the root is refused.
+  const treeFolder = async (
+    req: FilesListRequest,
+    allowed: (session: Session) => boolean = () => true,
+  ): Promise<{ context: DirectoryContext; directory: string } | null> => {
+    if (!isFileRoot(req) || typeof req.path !== 'string' || !isSafeRelativePath(req.path)) {
+      throw new Error('Invalid folder request.')
+    }
+    const context = await fileRoot(req)
+    if (!allowed(context)) return null
+    const root = await realDirectory(context, context.path)
+    if (!root) return null
+    const directory = req.path ? await realDirectory(context, treeFolderPath(context, req.path)) : root
+    if (!directory || !isWithinRoot(context.kind, root, directory)) {
+      console.warn('[path] not using a Files tree folder outside its root')
+      return null
+    }
+    return { context, directory }
+  }
+  handle<FilesListRequest, void>(IpcChannels.pathRevealTreeFolder, async (req) => {
+    const folder = await treeFolder(req, canRevealSession)
+    if (folder) await revealDirectory(folder.context, folder.directory)
+  })
+  // The new terminal's shell starts there through the saved-directory record, which the launch checks again.
+  handle<StartTerminalInFolderRequest, void>(IpcChannels.ptyStartInFolder, async (req) => {
+    if (inboxTerminalThreadId(req.sessionId) || !req.terminalId.startsWith(`${req.sessionId}:tab:`)) {
+      throw new Error('Invalid terminal.')
+    }
+    if (ptyManager.terminalInfo(req.terminalId)) throw new Error('That terminal is already running.')
+    const session = await getTerminalSession(req.sessionId)
+    if (!session) throw new Error('Session no longer exists.')
+    const folder = await treeFolder(req.folder)
+    if (!folder) throw new Error('Folder not found.')
+    if (folder.context.kind !== session.kind || (session.kind === 'wsl' && folder.context.distro !== session.distro)) {
+      throw new Error(`This folder is ${environmentName(folder.context)}, but the terminal runs ${environmentName(session)}.`)
+    }
+    ptyManager.rememberDirectory(req.terminalId, session, folder.directory)
   })
 
   handle<GitTerminalInfoRequest, GitTerminalInfoResponse | null>(

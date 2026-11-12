@@ -120,9 +120,14 @@ expanded or streamed afterward; code preview font selection is independent of th
 The interface text is set in Inter, bundled with the app (`@fontsource-variable/inter`, imported by
 `main.tsx`; SIL Open Font License, listed in `THIRD_PARTY_NOTICES.md`), so every system draws the same
 letters; `--font-sans` falls back to Segoe UI and the system font. In Inbox chat replies (`.chat-markdown`)
-the text is 15px with a line height of 1.6 and the width of the column is unchanged. Inline code uses the
-code preview font at 0.88em in regular weight (it does not take on the bold of the text around it),
-list items sit close together, and headings are sized in `em` so the smaller reasoning text scales with them.
+the text is 14px with a line height of 1.65 (the user's own messages match) and the width of the column is
+unchanged. A reply has two levels of text: its words use `--chat-text`, the theme's text color mixed a little
+toward the background, and its headings, bold and inline code use `--chat-strong`, a little brighter than the
+text color (toward white in a dark theme, black in a light one). The high-contrast themes keep the words at full
+contrast. Headings have more space above them than below, so each sits with the section it opens. Reasoning
+keeps its own muted color. Inline code uses the code preview font at 0.88em in regular weight on a faint tint
+(it does not take on the bold of the text around it), list items sit close together, and headings are sized in
+`em` so the smaller reasoning text scales with them.
 
 The Appearance section also has a **Card terminals** switch (`terminalCards` in the local terminal
 settings, off by default). Off, panes tile edge to edge, divided by a 1px line. On, `TerminalView` draws
@@ -222,6 +227,113 @@ together with a revision check and serialized, atomic writes. The security prope
 few seconds (verified against OpenCode 2.2.6), so there is no restart step; after a save MDE only drops
 the model list it cached for the Inbox so that the model picker asks again.
 
+### MDE MCP
+
+Agents can start Inbox threads through MDE's own MCP server, `mde`. Settings → OpenCode → **MDE MCP**
+(`MdeMcpSettings`; on Windows for the WSL distro chosen there) shows whether OpenCode's global configuration
+has it and offers **Install**, **Update** (the entry starts another copy of MDE, or was edited) and
+**Remove**. The MCP chip's menu links there when no `mde` server is listed. OpenCode picks the change up
+within a few seconds (verified with 2.2.6), so there is no restart.
+
+The entry is `mcp.servers.mde = { type: "local", command: [<MDE>, --mcp-bridge, --mcp-target=<target>] }`.
+An MDE started with its own data folder (`--user-data-dir`, as a second, development copy is) adds
+`--mcp-user-data=<that folder>`, since its socket and token live there; Electron does not apply
+`--user-data-dir` to the bridge, which never becomes ready. OpenCode starts that command once per project folder (in that folder) when it first needs the folder's MCP
+servers. In WSL `<MDE>` is the Windows executable's `/mnt/...` path, run through WSL's interop; in
+development it is Electron followed by the app folder. MDE in bridge mode (`src/main/mcp/bridge-main.ts`) does
+nothing but serve MCP on stdio (`protocol.ts`, JSON-RPC 2.0, newline-framed): it answers `initialize`,
+`ping` and `tools/list` from the fixed list in `src/shared/mde-mcp.ts`, and passes each `tools/call` to the
+running MDE over a local socket or named pipe (`bridge.ts`, `endpoint.ts`), one connection per call, so the
+bridge outlives MDE being closed and opened again. On Windows the bridge reads OpenCode's requests from file
+descriptor 0 directly: Electron gives a GUI program's main process a `process.stdin` that ends at once, even
+when the parent (OpenCode in WSL, through interop) passed a pipe, and the bridge then quit before reading
+anything. The Windows build also writes a stray CRLF to stdout before any of MDE's code runs; OpenCode 2.2.6
+skips that blank line. With MDE closed a call returns "MDE is not running" as a
+tool error. The listener (`listener.ts`) checks the token and the request's shape and hands it to
+`MdeMcpTools` (`tools.ts`), which `src/main/mcp/index.ts` wires to the Inbox store and chat service.
+
+Tools:
+
+- `list_projects`: the Inbox projects of the caller's OpenCode (name, directory, and the worktree's branch
+  and base for a worktree project).
+- `create_thread({ prompt, directory?, agent?, model?, mode?, worktree? })`: starts a thread and returns its
+  ID, title, project and directory at once. OpenCode sends the calling session in each call's `_meta`, so the
+  thread whose agent asked (the parent) is known when it is an Inbox thread. Defaults: the parent's directory
+  (else the bridge's working directory), preferring the parent's project when several match; the parent's
+  model (else the new-thread page's); the page's agent (else `build`); GUI mode. A directory that is not a
+  project yet is checked like **Add project** and added without becoming the page's choice. `worktree: {}`
+  cuts a worktree from the directory's current branch (`base` and `branch` can be given), never from a
+  worktree project. The new-thread page's saved agent and model are not changed. If the first message
+  cannot be sent, the thread stays idle with the prompt as its draft, and the tool reports an error.
+
+A thread started this way carries `spawnedBy: { threadId? }` in `inbox.json`. The header shows "Started by
+<parent>" (a link to it) or "Started by an agent", and the sidebar row a small bot icon. It appears like any
+other new thread, under Working, without taking focus; projects an agent adds reach the window through the
+`inbox:folders-changed` event. Limits: 10 threads a minute across all agents, and chains stop at three levels
+of agent-started threads. Security details are in `docs/security.md` under "MDE MCP boundary".
+
+**Terminals agents open.** `open_terminal({ command?, directory?, title? })` adds a pane to the Inbox terminal
+(the one in the sidebar's Terminal tab, or floating) whose shell starts in the directory (default: the
+parent thread's, else the bridge's working directory), and returns once the shell has started, saying whether
+the command runs, waits for approval, or there is none. The agent never sees the terminal's output; the tool
+is for things the person should see or keep running. `MdeMcpTools` checks the arguments; the directory is
+resolved and checked like a project folder (but not added as one); then `AgentTerminals`
+(`src/main/mcp/agent-terminals.ts`) sends `agent-terminal:open` to the window. The window's
+`useInboxTerminal.openForAgent` (configuring the WSL distro first if the terminal was never shown) picks the
+pane: split off the last pane, to the right when floating, below in the sidebar; refused once there are nine
+panes. It answers `agent-terminal:claim` with the new pane's terminal ID, and main starts that pane's shell
+itself (`start` in `ipc.ts`): only a new pane of the Inbox terminal (not a thread's terminal or a Sessions
+pane, not one already running), only when the directory is in the environment the Inbox terminal runs in, and
+through the saved-directory record so the ordinary launch checks the folder again. The PTY starts with
+`background: true`: `PtyManager` keeps its output (the last 2 MB) until a view attaches (the renderer's next
+`pty:ensure` for it), so the shell runs while nothing shows it, for instance while the floating terminal is
+hidden with F11. While its output is kept, main answers the shell's terminal queries itself
+(`src/main/pty/held-queries.ts`: device attributes and status reports as xterm.js would, other reports left
+unanswered) and takes them out of the kept output; otherwise xterm.js answered them only when the pane
+appeared, and a reply such as `ESC[?1;2c` landed at the prompt as typed text (`1;2c`) in front of the command. Only then does the window add the pane to the layout, with the title, without taking the
+keyboard and without showing a hidden terminal; if the layout changed meanwhile so that the pane would get
+another ID, the shell is ended instead. A window that cannot add the pane answers `agent-terminal:refuse` with
+the reason; one that does not answer within 20 s fails the call; at most four requests wait at once, and
+agents may open ten terminals a minute.
+
+The command is typed by main from its own copy (`writeWhenStarted`: on the shell's first output, or after
+3 s, followed by Enter). Settings → OpenCode → MDE MCP → **Commands in terminals agents open** chooses **Ask
+me first** (the default) or **Run without asking**, kept in `mde-mcp.json` in the user-data folder. When
+asking, the pane shows an approval bar (`AgentCommandBar`, through `TerminalView`'s `paneNotice`) with the
+whole command, the thread that asked, and **Run**, **Run, and allow for an hour**, **Don't run**
+(`agent-terminal:decide`). The hour is kept in memory only, shown under the setting with **Ask again now**,
+and a change to the setting made while a pane is being added still applies to it. Closing the pane or its
+shell ending drops a waiting command.
+
+While the floating terminal is hidden, the reminder at the foot of the thread list (`HiddenTerminalIndicator`)
+lights up for 4 s when an agent opens a terminal ("New agent terminal"): the button glows, a small
+terminal icon drops into it and its dot pings (`hidden-terminal-arrival` in `index.css`; without motion only
+the words change). While commands wait, it says so ("1 command to approve") until they are answered.
+
+**Views agents show.** `show_view({ title?, root, elements })` shows the person a dashboard, chart or table in
+the chat, where the agent called it. The format follows the idea of Vercel's json-render (a `root` and a flat map
+of `elements`, each `{ type, props, children }`), with MDE's own small set of components and its own code:
+layout (`Stack`, `Grid`, `Card`, `Tabs`), content (`Heading`, `Text`, `Callout`, `Badge`, `Divider`, `Stat`,
+`Progress`, `KeyValue`, `Table`) and charts (`BarChart`, `LineChart`, `AreaChart`, `DonutChart`, `Sparkline`).
+`src/shared/view-spec.ts` holds the catalog, which also becomes the tool's description, and `checkView`, which
+turns the flat elements into a checked tree or lists what is wrong by JSON path: unknown components or props,
+an element without a place or with two, nesting deeper than 8, and the limits (150 elements, 6 series of 400
+points, 200 table rows, 6,000 numbers, 48,000 characters in all). The bridge answers the tool itself
+(`src/main/mcp/views.ts`) with that check, so it works while MDE is closed and the agent reads exactly what to
+fix. MDE does not store views: they live in the transcript as the call's arguments, which OpenCode keeps whole
+in Code Mode (`state.metadata.toolCalls[].input`, checked with OpenCode 2.2.6 for a 14,000-character view)
+and the parser keeps whole up to 64 KB (other calls' arguments are cut at 4 KB). The window checks them again
+(`viewEntries` in `src/renderer/lib/chat-views.ts`) and draws the checked tree, never the raw JSON
+(`ChatViewCall`, `components/views/`). A call still arriving shows "Preparing a view"; one that failed, was
+cut or does not pass shows "Could not show a view" with the reasons and the JSON. A view part breaks a run of
+grouped activity, and the compact layout draws it as it draws a question: with the words that lead up to it.
+Each view has a **JSON** toggle for what the agent sent, each bar or line chart a table of its numbers. Charts
+are SVG drawn by MDE (`ViewCharts.tsx`): one value axis, bars at most 24 px with a rounded end, 2 px lines, a
+legend from two series on, values on hover. Series take a fixed palette (`--view-series-1..6` in `index.css`,
+a dark and a light step), checked for colour-vision-deficiency and normal-vision separation, rather than the
+theme's colours; status colours keep their meaning. A grid drops columns as the chat narrows (a container
+query on `.view-frame`).
+
 ### Inbox
 
 The Inbox is selected in the title bar beside Sessions and To Do. It lists OpenCode conversations
@@ -233,15 +345,15 @@ threads have a terminal icon beside their title; GUI threads have no mode icon. 
 list can be searched by title, folder, branch and model, and filtered to All, Unread or Parked (see **Toolbar** below).
 Unread includes threads waiting for an answer or permission even after they have been opened, until
 they no longer need input. Parked threads stay under Parked. Hovering or focusing a row shows a car icon and a "Park" label; parked threads offer
-"Move to Inbox" instead. The context menu pins or unpins a thread, marks it read or unread, parks
+"Move to Inbox" instead. The context menu pins or unpins a thread, marks it read or unread, snoozes it (see **Snooze** below), parks
 it, forks it, or deletes it. Pinned threads appear first in the same list with a small pin icon and
 no separate heading; each group keeps the most recent activity first. Pins respect the search and
 status filter, so parked pinned threads stay under Parked. The optional `pinned` flag is saved in
 `inbox.json` through `inbox:set-pinned`; older records without it are unpinned.
 
-Ctrl-click (or Command-click on macOS) selects threads across the list and Working section without opening them.
+Ctrl-click (or Command-click on macOS) selects threads across the list and the Working and Snoozed sections without opening them.
 The open thread joins the selection when visible. The context menu of a selected thread applies its pin,
-read, and park actions to all selected threads, using the clicked thread's current state to choose the action.
+read, snooze and park actions to all selected threads, using the clicked thread's current state to choose the action.
 A regular click opens a thread and clears the selection; changing the
 search, filter, or project also clears it. If an operation fails, only the threads that failed remain selected.
 
@@ -259,6 +371,28 @@ threads are not listed anywhere else. It takes at most 45% of the sidebar's heig
 that, and the list above keeps a small minimum height. Both choices are kept in the renderer's
 `localStorage` (`mde.inbox-working-section`, off by default, and `mde.inbox-working-collapsed`, open
 by default; `store/inbox-view.ts`).
+
+**Snooze.** The context menu's **Snooze** submenu takes a thread out of the list for 1 hour, 5 hours, or until
+tomorrow morning (the next calendar day at 8:00 on this computer's clock); each choice shows when that is, and the
+time is worked out on the click. A snoozed thread carries `snoozedUntil` in `inbox.json` (through
+`inbox:set-snoozed`, whose validator takes only a whole number of milliseconds or null; the recorder refuses a time
+not in the future or more than a year away). It leaves the list, the Parked filter, the Working section, the unread
+counts and the taskbar badge, and sits in a **Snoozed** section at the foot of the sidebar, the first to come back
+first, with its wake time in place of its age ("14:30", "Tomorrow 08:00"). The section is there only while something
+in the project is snoozed, starts folded up (`mde.inbox-snoozed-open`, folded by default) and, like Working, ignores the
+status filter but not the search; a snoozed thread is in it even when pinned or working. On a snoozed thread the menu
+offers **Unsnooze**, which brings it back as it was. Parking a snoozed thread ends the snooze; snoozing a parked one
+moves it out of Parked. A multi-selection snoozes or unsnoozes every selected thread.
+
+The main process wakes threads (`InboxRecorder.wakeSnoozed`): once `inbox.json` is loaded, so a snooze that ran out
+while MDE was closed wakes at start; on a timer for the next one, which looks again at least every minute, since
+timers do not count time the computer slept and the clock can change; and on Electron's `powerMonitor` `resume`. Waking
+removes `snoozedUntil`, sets `woke`, and moves the thread to the top as new activity does, unread (`lastActivityAt` is
+kept past `readAt` even when the clock was turned back). Its status mark then says **Woke up** with an alarm clock, in
+the accent color, instead of Done, Failed or nothing; it stays after the thread is read and goes once its status
+changes. A wake plays no alert sound and does not flash a terminal thread's border, since the agent did nothing. New
+activity (done, failed, a question or permission) brings a snoozed thread back early without the Woke up mark, as a
+reply unsnoozes a mail; starting work does not.
 
 The same menu has a **Project icons** switch (`mde.inbox-title-icons`, off by default, also in
 `store/inbox-view.ts`). Off, a row shows its project's icon beside the project's name on the line
@@ -440,6 +574,51 @@ the tree or leaving the thread. Patch previews are capped at 64 KiB and marked w
 Binary files have no text preview. The only thing persisted is the thread-list switch above.
 The file tree keeps its open folders while Changes is showing.
 
+**Git graph.** The Changes tab's footer has a **Git graph** button, which lays the history of the
+thread's checkout over the conversation (`GitGraphView`), in the place of a diff review: a file
+opened for review, or from the tree, closes it, and opening it closes them. Pressing the button
+again, Escape, or leaving the thread closes it. Each commit is a row with its lane in the graph,
+its message, author, age and short hash. Lanes are laid out in the renderer
+(`src/renderer/lib/git-graph.ts`), newest commit first: a lane waits for the parent of the commit
+above it, a merge opens a lane for its other parent, and lanes meet where they reach the same
+commit. Their colors come from the theme. Branches, remote branches and tags are chips on the
+commit they point at; the checked-out branch comes first with a check mark, a remote branch of the
+same name at the same commit folds into the local chip as a cloud, and a detached HEAD has its own
+chip. HEAD is a ring. When the checkout has uncommitted changes, a dashed row above HEAD says how
+many files; choosing it lists those files beside the graph, like a commit's, and choosing a file
+there reviews its diff, whose close (or Escape) comes back to the graph with the row still chosen. The header names the branch and how far it is ahead
+of and behind its upstream, as of the last fetch.
+
+**All**, **Local** and **Current** choose the history read: every local branch, remote-tracking
+branch and tag, then local branches and tags, then only what HEAD reaches (always with HEAD). The
+choice is kept in `localStorage` (`mde.inbox.gitGraph.scope`). Rows are drawn only near the
+visible part of the list. The first 400 commits are read, and 400 more when the list scrolls near
+its end, up to 5,000. Find dims the commits whose message, author, ref or hash prefix does not
+match, and Enter (Shift+Enter) goes to the next (previous) match. The arrow keys, Page Up/Down,
+Home and End move through the commits, and the crosshair goes to HEAD. Choosing a commit opens its
+details beside the list: the full message (the wrapped lines of a plain paragraph joined), author
+and date, parents (go to one by choosing it), a copy button for the full hash, and the files it
+changed with their line counts, against the first parent for a merge, at most 500. Choosing one of
+those files reviews its change in that commit in the same read-only diff review as an uncommitted
+file, laid over the graph, which keeps its place beneath; Escape or the close button goes back to
+it. The graph is
+read again after a Changes refresh with a different summary (a commit in the thread clears its
+changes), after a fetch, and with Refresh.
+
+The same graph opens in Sessions from a terminal's Git chip (see Git below). `git:graph` takes a
+root (a thread ID or a terminal ID, never both and never a path), a commit limit (1 to 5,000) and the
+scope; the main process resolves the thread's recorded directory, or the terminal's current
+directory verified on disk as for the terminal's Git chip, and reads the checkout from its root with `rev-parse`, `symbolic-ref`,
+`for-each-ref` (at most 2,000 refs, an annotated tag peeled to its commit) and one
+`git log --date-order` with a fixed format, plus `rev-list --left-right --count` for the upstream.
+No file is read. Only refs pointing at a commit in the list are returned. `git:commit` takes
+the root and a full object name (40 or 64 hex digits, so never an option, a range or a ref
+name) and runs `log -1` and `diff-tree --name-status`/`--numstat` without external diff or
+textconv. `git:commit-diff` takes the root, a full object name and a path, which must be one the
+commit changed (listed again with `diff-tree --name-status`, so the renderer cannot name another
+file or a pathspec), and returns `diff-tree -p` for that file (and its old path for a rename)
+against the first parent, capped at 64 KiB like an uncommitted file's. **Fetch** is the one Git command in MDE that reaches the network; see Git below.
+
 ### Inbox chat
 
 Right-click a thread and choose **Rename thread** to set a custom Inbox name, or
@@ -498,6 +677,10 @@ The Inbox also shows a right-hand sidebar with three tabs, Files, Changes and Te
 
 **Opening a folder.** The Files tab's footer has the same Open folder in VS Code and Open folder in File Explorer buttons as the Sessions file sidebar (there they sit in the header, but the Inbox header is full with the three tabs at 260 px), and a thread's header has one **Open** button for chat and terminal threads alike (`OpenFolderMenu`): it opens the folder in the file manager, and where VS Code is offered a chevron beside it adds that choice. VS Code is offered for a WSL folder on Windows with WSL installed, as in Sessions; the file manager works for a folder on the Mac as well, and opens a WSL folder through its `\\wsl.localhost` path. The new-thread page's Files tab opens the project the new thread starts in. The renderer sends only the thread or project ID (`path:reveal-inbox`, `path:open-inbox-in-vscode`); the main process resolves it in the Inbox store and checks the folder like a terminal's directory (a plain absolute path that is still a directory in the distro, with symlinks resolved) before handing it to the desktop, and does nothing for an ID that is no longer in the Inbox.
 
+**Right-click in the Files tree.** In both views, right-clicking a folder in the Files tree offers **Open folder in File Explorer** for that folder, right-clicking a file offers its containing folder, and right-clicking empty space in the tree opens the folder the tree shows. The renderer sends the tree's root (terminal or Inbox ID, as for a listing) and the folder's path relative to it (`path:reveal-tree-folder`, `''` for the root); the main process checks the relative path like a listing's, verifies root and folder as directories, resolves both to their real paths (`realpath` inside the distro for WSL) and refuses a folder that is not the root or below it, so a link out of the tree opens nothing.
+
+The same menu has **Open in Terminal** (on a file, **Open containing folder in Terminal**): in Sessions it adds a pane to the open tab, beside the pane the tree follows, and in the Inbox it adds a pane to the shared Inbox terminal (below the last-used pane in the sidebar, beside it when the terminal floats) and brings the terminal into view. Before the new terminal mounts, the renderer sends its terminal ID, its session and the tree folder (`pty:start-in-folder`). Main accepts only a terminal ID of that session that is not running yet (never a thread's own terminal), resolves the folder exactly as for File Explorer, refuses a folder in another environment than the terminal's (a Windows folder for a WSL terminal, or another distro), and records it as the terminal's saved directory, so the ordinary launch checks it once more and starts the shell there. The pane is added only after main has accepted the folder; if main refuses it, no pane is added and the reason is shown under the tree. If the layout changed meanwhile so that the new pane would get another ID than the one main was told about, nothing is added.
+
 **Resizing.** Dragging the sidebar's left edge makes it wider (up to 70% of the window) or narrower (never under 260 px). The edge is a keyboard-operable separator: Left and Right arrows change the width by 16 px (64 with Shift), Home and End go to the limits, and a double-click restores 260 px. One width serves all three tabs and is kept in the renderer's `localStorage` (`mde.inbox-sidebar-width`).
 
 **Tab strip.** Files, Changes and Terminal sit in one row that never wraps: when they do not fit (the 260 px default with a change count and the float button is enough), the row scrolls sideways under an edge fade, the mouse wheel turns it, and ‹ › buttons appear on both sides and scroll it by most of its width. Left, Right, Home and End still switch tabs, and the shown tab is scrolled into view. It is the reusable `components/ui/scroll-strip.tsx`.
@@ -539,6 +722,13 @@ on an empty item it leaves the list.
 markers rather than rendering HTML, so pasted HTML, links and images remain literal text.
 Code fences stay literal, and drafts, skill positions and sent messages keep plain Markdown
 without converting it through HTML. Clipboard images still go through the attachment controls.
+Pasted and dropped text, and quoted selections, are cleaned first (`cleanPromptText` in
+`src/shared/prompt-text.ts`): terminal escape sequences such as the colour codes in CI logs are
+taken out whole, a vertical tab or form feed becomes a line break, and any other control character
+except tab and line breaks is dropped. The main process refuses prompt text holding them, so a
+pasted GitLab log would otherwise fail as an invalid `chat:draft` payload. A typed, pasted or dropped
+edit that would take the message (with its quotes) past 100,000 characters is refused whole, and the
+box says how much a message can hold.
 In an existing thread, Up in an empty message box recalls the user's earlier nonempty messages,
 newest first; Down moves forward and returns to the empty box after the newest recalled message.
 Editing a recalled message ends history navigation. Recall uses this thread's visible conversation
@@ -1087,6 +1277,11 @@ out loud in their text, so any text before the turn's last piece of work (a tool
 step of the group too, shown inside it as a "Said …" row that opens onto the whole text and counted in the
 line ("wrote 2 updates"), and only the text after the last piece of work, the answer, is drawn as it is. A
 text still being written after the work is the answer so far, and joins the line if more work follows it.
+A question the agent asks (the `question` tool) is a stopping point like the answer: the text since the
+last tool call before it, which the question is usually about, is drawn as it is, the question is drawn
+on its own (the answered-question card once answered), and the stretch ends there, so the work before the
+question and the work after the answer are two lines. A thought between those words and the question is a
+line of its own and does not fold the words.
 OpenCode starts a new assistant message for every round of tool calls, so a turn is many messages and its
 work would otherwise show up as a line per message: `compactPlans` (`lib/chat-tools.ts`) therefore lays out
 each run of assistant messages and routine notifications together. Background-process notifications,
@@ -1097,9 +1292,9 @@ on across the messages. The group is drawn in the message where it
 starts, and a message left with nothing to draw (and no error) renders nothing. Layouts are reused when
 they did not change, so streaming does not redraw the earlier messages. The group never opens by itself,
 not even while the agent is at it: it spins and shimmers in the present tense ("Running 2 commands"),
-keeps the failed count, and opens on a click. All tools use this same grouping rule, including writes,
-edits, patches, answered questions, subagents and unknown tools. Opening the group shows their full
-views: file changes start shut with their counts, questions retain their answers, and consecutive
+keeps the failed count, and opens on a click. All other tools use this same grouping rule, including writes,
+edits, patches, subagents and unknown tools. Opening the group shows their full
+views: file changes start shut with their counts, and consecutive
 subagents from the same step retain their grouped cards and model labels. Active permission and
 question requests remain outside the activity group so they can be answered. The summary is worked
 out from the tool calls with no model involved ("Thought, wrote 1 file and ran 3 commands"). Turning
@@ -1632,6 +1827,16 @@ Fenced `mermaid` blocks render with selectable text and follow the application's
 Wide diagrams scroll horizontally to keep their labels readable. Diagram HTML labels, interactive links,
 configuration directives, and frontmatter are disabled. Diagrams are limited to 16,000 characters
 and 200 edges; invalid or oversized diagrams show their source instead.
+LaTeX math renders in the same read-only Markdown (assistant replies and reasoning, Markdown previews; not the
+editable To Do description) with KaTeX (`src/renderer/lib/math-markdown.ts`): `$…$` and `\(…\)` inline, and
+`$$…$$` or `\[…\]` on lines of their own as display math. Models write these without being told, so no
+instructions are added to prompts. A dollar is also money, so `$…$` is math only as in Pandoc: no space after
+the opening `$` or before the closing one, no digit right after the closing one, all on one line ("$5 and $10"
+stays text). Code spans and code blocks stay code. KaTeX runs with `trust: false` (no `\href`, `\url`,
+`\includegraphics` or HTML commands), `maxSize` 20, `maxExpand` 500, a fresh macro table per formula and a
+4,000-character limit; a formula it cannot read shows as its source in monospace with the reason as a tooltip.
+Display math scrolls horizontally when wider than the reply. KaTeX's fonts and CSS are bundled; nothing loads
+from the network.
 
 ## Git
 
@@ -1639,10 +1844,19 @@ Each terminal header shows a compact chip with the branch and tracked line chang
 directory. Changes without line counts, including untracked entries and binary changes, show a
 changed-entry count, and a clean checkout shows the branch alone. Commits ahead, the worktree root
 and the clean state are in the chip's tooltip. In a pane narrower than 22rem the chip shrinks to the
-branch icon, plus a dot when there are changes, so the title keeps its room. The chip is informational
-and cannot be clicked. Queries run from the checkout root, so a terminal inside a subfolder still
-summarizes the whole repository. Changing directory clears the old metadata. The session sidebar
-shows the launch directory and environment; it has no Git view or Git polling.
+branch icon, plus a dot when there are changes, so the title keeps its room. Clicking the chip lays
+the checkout's Git graph over the session's terminals (`SessionGitGraph`), the same view as the
+Inbox's (see **Inbox changes**), and clicking it again, Escape or the close button hides it; the
+terminals stay mounted beneath it. It shows the folder the terminal is in when it opens (the
+terminal cannot change folder while the graph covers it). It is read again when the chip's summary
+changes, which a commit made in another pane does, and it closes when the pane closes, the tab or
+session changes, or a file is opened over the terminals. Its dashed row lists the uncommitted
+files (`git:changes`, the Inbox Changes reader for the terminal's checkout), and choosing one opens
+its diff (`git:change-diff`, which, like `inbox:change-diff`, accepts only a path still in Git
+status) in the same review as the Inbox's (`ChangeDiffViewer`), over the graph; closing it shows
+the graph again as it was. Queries run from the checkout root, so a terminal inside
+a subfolder still summarizes the whole repository. Changing directory clears the old metadata. The
+session sidebar shows the launch directory and environment; it has no Git view or Git polling.
 
 MDE polls terminal metadata every ten seconds, on directory changes and on window focus through
 `src/main/git.ts`, using read-only native, Windows and WSL commands. It never overlaps a header’s
@@ -1683,9 +1897,25 @@ also inspects the target worktree's filter configuration and refuses rather than
 clean filter; failed-start cleanup can force-remove the fresh, unused worktree. Mutations retain
 the two-minute timeout; read commands retain ten seconds.
 
+**Fetch** in the Inbox Git graph is the one exception to the denied network, and it runs only when
+the person presses it (`git:fetch`, a thread or terminal ID). It runs `git fetch --all --prune
+--no-recurse-submodules` from the checkout root through its own runner (`createGitFetchRunner`),
+with a two-minute timeout. That runner still disables hooks, fsmonitor, askpass prompts, submodules
+and automatic maintenance, and allows only the `file`, `git`, `http`, `https` and `ssh` protocols,
+so `ext::` and other remote helpers stay denied. It does not clear the credential helper or the SSH
+command, so the person's own Git setup (Git Credential Manager, an SSH agent) can sign in. Before
+fetching, main lists the configuration with its scopes and refuses when the repository's own
+configuration (its `.git/config`, files that includes, or a worktree's) sets a credential helper,
+`core.sshCommand`, `core.gitProxy` or a remote's `uploadpack`, `receivepack` or `vcs`: those name
+programs Git would start, and a repository can come from anyone. The refusal names the settings and
+suggests fetching in a terminal. Git cannot prompt (`GIT_TERMINAL_PROMPT=0`), so a remote that needs
+a password nothing supplies fails with Git's message. The message shown is Git's `fatal:`/`error:`
+lines, with credentials written into a URL and control characters removed.
+
 The new-thread branch picker uses only repository detection, symbolic HEAD and `for-each-ref`;
 it no longer scans status/diffs. Local and already cached remote-tracking branches remain listed
-with missing blobs and without remote access. The picker does not refresh remote branches.
+with missing blobs and without remote access. The picker does not refresh remote branches; a fetch
+from the Git graph does.
 
 Regression evidence and platform limits are in
 [`docs/security.md`](security.md#git-execution-boundary).

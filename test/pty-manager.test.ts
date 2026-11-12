@@ -116,6 +116,104 @@ describe('PtyManager runtime terminal identities', () => {
     })
   })
 
+  it('keeps a background terminal\'s output until a view attaches, then sends it on once', () => {
+    const events = { onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() }
+    const manager = new PtyManager(events)
+    const source = sourceSession()
+
+    manager.ensure('pane-a', source, { cols: 120, rows: 32 }, palette, { background: true })
+    const child = ptyMock.children.get('pane-1')
+    child?.dataListener?.('prompt$ ')
+    child?.dataListener?.('npm run dev\r\n')
+    expect(events.onData).not.toHaveBeenCalled()
+
+    manager.ensure('pane-a', source, { cols: 90, rows: 20 }, palette)
+    expect(events.onData).toHaveBeenCalledOnce()
+    expect(events.onData).toHaveBeenCalledWith({ terminalId: 'pane-a', data: 'prompt$ npm run dev\r\n' })
+    expect(child?.resize).toHaveBeenCalledWith(90, 20)
+
+    child?.dataListener?.('ready')
+    manager.ensure('pane-a', source, { cols: 90, rows: 20 }, palette)
+    expect(events.onData).toHaveBeenCalledTimes(2)
+    expect(events.onData).toHaveBeenLastCalledWith({ terminalId: 'pane-a', data: 'ready' })
+  })
+
+  it('answers a background shell\'s terminal queries itself, so the view never answers them late into the prompt', () => {
+    const events = { onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() }
+    const manager = new PtyManager(events)
+    manager.ensure('pane-a', sourceSession(), { cols: 120, rows: 32 }, palette, { background: true })
+    const child = ptyMock.children.get('pane-1')
+    manager.writeWhenStarted('pane-a', 'npm run dev\r')
+    child?.dataListener?.('\u001b[c~/app ❯ ')
+    // The answer first: a shell waiting for it must not read the command as part of it.
+    expect(child?.write.mock.calls).toEqual([['\u001b[?1;2c'], ['npm run dev\r']])
+    manager.ensure('pane-a', sourceSession(), { cols: 120, rows: 32 }, palette)
+    expect(events.onData).toHaveBeenCalledWith({ terminalId: 'pane-a', data: '~/app ❯ ' })
+    // Shown, the terminal answers for itself again.
+    child?.write.mockClear()
+    child?.dataListener?.('\u001b[c')
+    expect(child?.write).not.toHaveBeenCalled()
+    expect(events.onData).toHaveBeenLastCalledWith({ terminalId: 'pane-a', data: '\u001b[c' })
+  })
+
+  it('drops the oldest kept output of a background terminal past the limit', async () => {
+    const { HELD_OUTPUT_LIMIT } = await import('../src/main/pty/manager')
+    const events = { onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() }
+    const manager = new PtyManager(events)
+    manager.ensure('pane-a', sourceSession(), { cols: 80, rows: 24 }, palette, { background: true })
+    const child = ptyMock.children.get('pane-1')
+    const chunk = 'x'.repeat(HELD_OUTPUT_LIMIT / 4)
+    child?.dataListener?.('first')
+    for (let index = 0; index < 5; index += 1) child?.dataListener?.(chunk)
+    manager.ensure('pane-a', sourceSession(), { cols: 80, rows: 24 }, palette)
+    const sent = (events.onData.mock.calls[0]?.[0] as { data: string }).data
+    expect(sent.startsWith('first')).toBe(false)
+    expect(sent.length).toBeLessThanOrEqual(HELD_OUTPUT_LIMIT)
+  })
+
+  it('types input into a shell once it has written something, or after a silent wait', () => {
+    vi.useFakeTimers()
+    try {
+      const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() })
+      manager.ensure('pane-a', sourceSession(), { cols: 80, rows: 24 }, palette)
+      manager.ensure('pane-b', sourceSession(), { cols: 80, rows: 24 }, palette)
+      const first = ptyMock.children.get('pane-1')
+      const second = ptyMock.children.get('pane-2')
+
+      expect(manager.writeWhenStarted('pane-a', 'npm run dev\r')).toBe(true)
+      expect(first?.write).not.toHaveBeenCalled()
+      first?.dataListener?.('$ ')
+      expect(first?.write).toHaveBeenCalledWith('npm run dev\r')
+      manager.writeWhenStarted('pane-a', 'ls\r')
+      expect(first?.write).toHaveBeenLastCalledWith('ls\r')
+
+      manager.writeWhenStarted('pane-b', 'make\r')
+      vi.advanceTimersByTime(2999)
+      expect(second?.write).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(1)
+      expect(second?.write).toHaveBeenCalledWith('make\r')
+
+      expect(manager.writeWhenStarted('missing', 'x\r')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('never types waiting input into a shell that was disposed', () => {
+    vi.useFakeTimers()
+    try {
+      const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() })
+      manager.ensure('pane-a', sourceSession(), { cols: 80, rows: 24 }, palette)
+      const child = ptyMock.children.get('pane-1')
+      manager.writeWhenStarted('pane-a', 'rm -rf build\r')
+      manager.dispose('pane-a')
+      vi.advanceTimersByTime(5000)
+      expect(child?.write).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('synchronizes an existing PTY size when the renderer reattaches', () => {
     const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() })
     const source = sourceSession()

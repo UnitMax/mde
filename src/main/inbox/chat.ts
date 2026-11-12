@@ -313,11 +313,13 @@ export class InboxChatService {
    * Adds a folder the IPC layer already resolved and checked, or reuses the same one. A name or an icon
    * that comes with it is applied either way: the person has just chosen it for this project.
    */
-  addFolder({ directory, target, name, icon }: {
+  addFolder({ directory, target, name, icon, select = true }: {
     directory: string
     target: OpenCodeTarget
     name?: string
     icon?: InboxFolderIcon
+    /** Make it the new-thread page's project; false when an agent added it, not the person. */
+    select?: boolean
   }): InboxFolder {
     const now = this.dependencies.now()
     const existing = this.dependencies.store.folders().find((folder) =>
@@ -337,7 +339,7 @@ export class InboxChatService {
     if (icon && !clean) throw new Error('That icon is not available.')
     const folder: InboxFolder = { ...base, ...(label ? { name: label } : {}), ...(clean ? { icon: clean } : {}) }
     this.dependencies.store.putFolder(folder)
-    this.dependencies.store.setComposer({ ...this.dependencies.store.composer(), folderId: folder.id })
+    if (select) this.dependencies.store.setComposer({ ...this.dependencies.store.composer(), folderId: folder.id })
     return folder
   }
 
@@ -507,7 +509,11 @@ export class InboxChatService {
   async removeDraft(key: `thread:${string}`): Promise<void> { await this.dependencies.drafts?.remove(key) }
   async removeAsides(threadId: string): Promise<void> { await this.dependencies.asides?.remove(threadId) }
 
-  async create(request: ChatCreateRequest): Promise<InboxThread> {
+  /**
+   * Starts a thread. `spawnedBy` marks one an agent asked for through the MDE MCP: it is not the person's
+   * choice of agent and model, so the new-thread page's selection is left alone.
+   */
+  async create(request: ChatCreateRequest, options: { spawnedBy?: InboxThread['spawnedBy'] } = {}): Promise<InboxThread> {
     this.assertEnabled()
     const folder = this.folder(request.folderId)
     // A worktree folder already is one: threads started in it run in it, and a new worktree is cut from the real folder.
@@ -536,6 +542,7 @@ export class InboxChatService {
         title: created.title,
         folder,
         model: request.model,
+        ...(options.spawnedBy ? { spawnedBy: options.spawnedBy } : {}),
         // A thread started in a worktree folder runs in it, and carries the folder's worktree record.
         ...(place ? { directory: place.directory, worktree: place.worktree } : folder.worktree ? { worktree: folder.worktree } : {}),
       })
@@ -546,7 +553,7 @@ export class InboxChatService {
     }
     this.dependencies.store.putFolder({ ...folder, lastUsedAt: this.dependencies.now() })
     if (place) this.addWorktreeFolder(folder, place)
-    this.dependencies.store.setComposer({ folderId: folder.id, agent: request.agent, model: request.model })
+    if (!options.spawnedBy) this.dependencies.store.setComposer({ folderId: folder.id, agent: request.agent, model: request.model })
     if (draftKey) await this.dependencies.drafts?.move(draftKey, `thread:${thread.id}`)
     try {
       await this.dependencies.client.request(folder.target, 'session.prompt', {
@@ -555,6 +562,8 @@ export class InboxChatService {
       })
     } catch (error) {
       this.dependencies.recorder.markStatus(thread.id, 'idle')
+      // An agent's prompt has no draft behind it; it becomes the thread's draft, so the person can send it.
+      if (options.spawnedBy) await this.dependencies.drafts?.text(`thread:${thread.id}`, text).catch(() => undefined)
       if (this.dependencies.drafts) return { ...(this.dependencies.store.get(thread.id) ?? thread), sendError: 'Could not send the first message. Your draft has been kept; try sending again.' }
       throw error
     }

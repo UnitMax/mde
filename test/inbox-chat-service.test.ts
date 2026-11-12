@@ -2174,3 +2174,40 @@ describe('Inbox chat service worktrees', () => {
     service.stop()
   })
 })
+
+describe('threads an agent starts through the MDE MCP', () => {
+  it('marks the thread and leaves the new-thread page’s choices alone', async () => {
+    const { service, store, folder } = setup({ 'session.create': { data: { id: 'ses_child', title: 'Child' } } })
+    const before = store.composer()
+    const thread = await service.create({ folderId: folder.id, text: 'Write the tests', agent: 'build', model }, { spawnedBy: { threadId: 'ses_parent' } })
+    expect(thread).toMatchObject({ id: 'ses_child', spawnedBy: { threadId: 'ses_parent' }, status: 'working' })
+    expect(store.get('ses_child')?.spawnedBy).toEqual({ threadId: 'ses_parent' })
+    expect(store.composer()).toEqual(before)
+    service.stop()
+  })
+
+  it('keeps the agent’s prompt as the thread’s draft when it could not be sent', async () => {
+    const path = await fs.mkdtemp(join(tmpdir(), 'mde-chat-spawn-'))
+    const drafts = new InboxDraftStore(path)
+    const { service, store, folder } = setup({
+      'session.create': { data: { id: 'ses_child' } },
+      'session.prompt': new Error('Model unavailable'),
+    }, drafts)
+    try {
+      const thread = await service.create({ folderId: folder.id, text: 'Write the tests', agent: 'build', model }, { spawnedBy: {} })
+      expect(thread.sendError).toBeTruthy()
+      expect(store.get('ses_child')).toMatchObject({ status: 'idle', spawnedBy: {} })
+      await expect(service.draft({ key: 'thread:ses_child', action: 'load' })).resolves.toMatchObject({ text: 'Write the tests' })
+    } finally {
+      service.stop()
+      await fs.rm(path, { recursive: true, force: true })
+    }
+  })
+
+  it('adds a folder without making it the page’s project', () => {
+    const { service, store, folder } = setup()
+    const added = service.addFolder({ directory: '/home/me/other', target: wsl, select: false })
+    expect(added.id).not.toBe(folder.id)
+    expect(store.composer().folderId).toBe(folder.id)
+  })
+})

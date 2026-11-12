@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { AlertCircle, FileDiff, GitBranch, LoaderCircle, PanelRightClose, RefreshCw, X } from 'lucide-react'
+import { AlertCircle, FileDiff, GitBranch, GitGraph, LoaderCircle, PanelRightClose, RefreshCw, X } from 'lucide-react'
 import type { GitChangeStatus, InboxChangeDiff, InboxChangedFile, InboxChangesResponse, DirectoryContext } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { FileTreePanel } from '@/components/FileTreePanel'
@@ -9,6 +9,8 @@ import { ScrollStrip } from '@/components/ui/scroll-strip'
 import { FloatingTerminalNotice, FloatTerminalButton } from './FloatingTerminal'
 import { focusInboxTerminalWhenShown, InboxTerminal } from './InboxTerminal'
 import { useInboxFloatingTerminal } from '@/store/inbox-floating-terminal'
+import { useInboxTerminal } from '@/store/inbox-terminal'
+import type { FilesListRequest } from '@shared/ipc'
 import { InboxSidebarFrame } from './InboxSidebarFrame'
 import { parseUnifiedDiff } from '@/lib/diff'
 import { ipcErrorMessage } from '@/lib/ipc-error'
@@ -47,7 +49,7 @@ function splitPath(path: string): { directory: string; name: string } {
   return { directory: path.slice(0, slash), name: path.slice(slash) }
 }
 
-function StatusMark({ status }: { status: GitChangeStatus }): JSX.Element {
+export function StatusMark({ status }: { status: GitChangeStatus }): JSX.Element {
   const { mark, label, tone } = STATUS[status]
   return (
     <span
@@ -62,7 +64,7 @@ function StatusMark({ status }: { status: GitChangeStatus }): JSX.Element {
 }
 
 /** `+12 −3`; a side with nothing on it is left out, and a binary file has no line counts to give. */
-function ChangeCounts({ additions, deletions, binary = false }: { additions: number; deletions: number; binary?: boolean }): JSX.Element | null {
+export function ChangeCounts({ additions, deletions, binary = false }: { additions: number; deletions: number; binary?: boolean }): JSX.Element | null {
   if (binary) return <span className="shrink-0 text-fg-subtle">binary</span>
   if (additions === 0 && deletions === 0) return null
   return (
@@ -530,6 +532,7 @@ function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
 /** The Changes tab: the same view as the popover, in the sidebar, for the thread that is open. */
 function ChangesAside({ threadId }: { threadId: string }): JSX.Element {
   const state = useInboxChanges((s) => s.entries[inboxChangesKey(threadId)])
+  const graphOpen = useInboxChanges((s) => s.graphThreadId === threadId)
   const toggle = useWorkspace((s) => s.toggleFileTree)
   useEffect(() => {
     const stop = useInboxChanges.getState().watch(threadId, true)
@@ -557,7 +560,23 @@ function ChangesAside({ threadId }: { threadId: string }): JSX.Element {
           <ListMessage role="status">Loading changes…</ListMessage>
         )}
       </div>
-      <div className="flex shrink-0 justify-end border-t border-line px-2 py-1">
+      <div className="flex shrink-0 justify-between gap-2 border-t border-line px-2 py-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          title={graphOpen ? 'Close the Git graph' : 'Show every commit, branch and tag in a graph'}
+          aria-pressed={graphOpen}
+          data-testid="inbox-git-graph-button"
+          className={cn(graphOpen && 'bg-active text-fg')}
+          onClick={() => {
+            const store = useInboxChanges.getState()
+            if (graphOpen) store.closeGraph()
+            else store.openGraph(threadId)
+          }}
+        >
+          <GitGraph className="h-3.5 w-3.5" />
+          Git graph
+        </Button>
         <Button
           variant="ghost"
           size="sm"
@@ -603,6 +622,17 @@ function TerminalAside({ threadId }: { threadId?: string }): JSX.Element {
 }
 
 /**
+ * "Open in Terminal" from the Files tree: a new pane of the Inbox terminal, starting in that folder, and the
+ * terminal brought into view. Floating, the pane goes beside the last one; in the narrow sidebar, below it.
+ */
+async function openInInboxTerminal(folder: FilesListRequest, where: DirectoryContext): Promise<void> {
+  const floating = useInboxFloatingTerminal.getState()
+  await useInboxTerminal.getState().openInFolder(folder, where, floating.floating ? 'right' : 'bottom')
+  if (floating.floating) floating.show()
+  else useInboxChanges.getState().setTab('terminal')
+}
+
+/**
  * The right-hand sidebar of the Inbox: the files of the open thread's folder (or of the folder a new thread
  * starts in), the thread's Git changes, and the terminal. A new thread has no changes yet, so it offers
  * only the other two. It can be dragged wider, which the terminal in particular wants.
@@ -629,7 +659,13 @@ export function InboxSidebar({ session, threadId }: { session: DirectoryContext;
         className={tab === 'files' ? 'contents' : 'hidden'}
         data-testid="inbox-files-panel"
       >
-        <FileTreePanel session={session} browseOnly fill heading={tab === 'files' ? <SidebarTabs threadId={threadId} /> : undefined} />
+        <FileTreePanel
+          session={session}
+          browseOnly
+          fill
+          heading={tab === 'files' ? <SidebarTabs threadId={threadId} /> : undefined}
+          openInTerminal={(folder) => openInInboxTerminal(folder, session)}
+        />
       </div>
       {tab === 'changes' && threadId && <ChangesAside threadId={threadId} />}
       {tab === 'terminal' && <TerminalAside threadId={threadId} />}
@@ -666,35 +702,7 @@ export function InboxChangeViewer({ threadId }: { threadId: string }): JSX.Eleme
   const state = useInboxChanges((s) => s.entries[inboxChangesKey(threadId)])
   // A file opened from the tree lands beneath this review; it takes over.
   const treeFile = useWorkspace((s) => s.openFiles[threadId])
-  const [preview, setPreview] = useState<{ threadId: string; path: string; value?: InboxChangeDiff; error?: string } | null>(null)
-  const [family, setFamily] = useState(() => getTerminalSettings().codeFamily)
-  const ref = useRef<HTMLDivElement>(null)
   const file = selected?.threadId === threadId ? state?.value?.files?.find((f) => f.path === selected.path) : undefined
-  useEffect(() => {
-    if (!file) return
-    let current = true
-    setPreview((previous) => previous?.threadId === threadId && previous.path === file.path
-      ? { ...previous, error: undefined }
-      : { threadId, path: file.path })
-    void window.api.inbox.changeDiff({ threadId, path: file.path }).then(
-      (value) => { if (current) setPreview({ threadId, path: file.path, value }) },
-      (error) => {
-        if (current) setPreview((previous) => ({
-          threadId, path: file.path,
-          ...(previous?.threadId === threadId && previous.path === file.path ? { value: previous.value } : {}),
-          error: ipcErrorMessage(error, 'Could not read Git diff.'),
-        }))
-      },
-    )
-    return () => { current = false }
-  }, [threadId, file?.path, state?.value])
-  useEffect(() => subscribeTerminalSettings(() => setFamily(getTerminalSettings().codeFamily)), [])
-  useEffect(() => {
-    if (!file) return
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    ref.current?.focus()
-    return () => { if (previous?.isConnected) previous.focus() }
-  }, [file?.path])
   useEffect(() => {
     if (treeFile !== undefined) useInboxChanges.getState().closeFile()
   }, [treeFile])
@@ -702,11 +710,69 @@ export function InboxChangeViewer({ threadId }: { threadId: string }): JSX.Eleme
   useEffect(() => () => {
     if (useInboxChanges.getState().selectedPath?.threadId === threadId) useInboxChanges.getState().closeFile()
   }, [threadId])
-  const patch = preview?.threadId === threadId && preview.path === file?.path ? preview : null
-  const hunks = useMemo(() => parseUnifiedDiff(patch?.value?.diff ?? ''), [patch?.value?.diff])
+  const readDiff = useCallback((path: string) => window.api.inbox.changeDiff({ threadId, path }), [threadId])
   if (!file) return null
-  const close = (): void => useInboxChanges.getState().closeFile()
   const checkout = state?.value?.available ? state.value : undefined
+  return (
+    <ChangeDiffViewer
+      identity={threadId}
+      file={file}
+      branch={checkout ? checkout.branch : undefined}
+      stale={state?.stale}
+      reloadKey={state?.value}
+      readDiff={readDiff}
+      // Closing goes back to the Git graph when the file was chosen there.
+      onClose={() => useInboxChanges.getState().closeFile(true)}
+    />
+  )
+}
+
+/**
+ * A read-only review of one uncommitted file's diff, laid over the conversation (Inbox) or the Git
+ * graph over the terminals (Sessions). `readDiff` reads it for the checkout the caller names, again
+ * whenever `reloadKey` changes; a failed read keeps the last diff shown under the error.
+ */
+export function ChangeDiffViewer({ identity, file, branch, note = GIT_CHANGES_NOTE, stale, reloadKey, readDiff, onClose }: {
+  /** The thread or terminal: another one starts without the previous diff. */
+  identity: string
+  file: InboxChangedFile
+  /** The checkout's branch (null for a detached HEAD); left out when it is not known. */
+  branch?: string | null
+  /** What the diff is against, under the header. */
+  note?: string
+  stale?: boolean
+  reloadKey?: unknown
+  readDiff: (path: string) => Promise<InboxChangeDiff>
+  onClose: () => void
+}): JSX.Element {
+  const [preview, setPreview] = useState<{ identity: string; path: string; value?: InboxChangeDiff; error?: string } | null>(null)
+  const [family, setFamily] = useState(() => getTerminalSettings().codeFamily)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    let current = true
+    setPreview((previous) => previous?.identity === identity && previous.path === file.path
+      ? { ...previous, error: undefined }
+      : { identity, path: file.path })
+    void readDiff(file.path).then(
+      (value) => { if (current) setPreview({ identity, path: file.path, value }) },
+      (error) => {
+        if (current) setPreview((previous) => ({
+          identity, path: file.path,
+          ...(previous?.identity === identity && previous.path === file.path ? { value: previous.value } : {}),
+          error: ipcErrorMessage(error, 'Could not read Git diff.'),
+        }))
+      },
+    )
+    return () => { current = false }
+  }, [identity, file.path, reloadKey, readDiff])
+  useEffect(() => subscribeTerminalSettings(() => setFamily(getTerminalSettings().codeFamily)), [])
+  useEffect(() => {
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    ref.current?.focus()
+    return () => { if (previous?.isConnected) previous.focus() }
+  }, [file.path])
+  const patch = preview?.identity === identity && preview.path === file.path ? preview : null
+  const hunks = useMemo(() => parseUnifiedDiff(patch?.value?.diff ?? ''), [patch?.value?.diff])
   const binary = patch?.value?.binary || file.binary
 
   let body: JSX.Element | null = null
@@ -739,8 +805,9 @@ export function InboxChangeViewer({ threadId }: { threadId: string }): JSX.Eleme
       tabIndex={-1}
       className="absolute inset-0 z-20 flex min-h-0 flex-col bg-bg outline-none"
       data-testid="inbox-change-viewer"
+      data-path={file.path}
       style={{ '--inbox-code-font': codeViewerFontFamily(family) } as CSSProperties}
-      onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}
+      onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); onClose() } }}
     >
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-line bg-panel pl-3 pr-1.5">
         <FileDiff className="h-3.5 w-3.5 shrink-0 text-fg-subtle" aria-hidden />
@@ -749,19 +816,19 @@ export function InboxChangeViewer({ threadId }: { threadId: string }): JSX.Eleme
         <span className="inbox-code-font text-[11.5px]">
           <ChangeCounts additions={file.additions} deletions={file.deletions} binary={file.binary} />
         </span>
-        <Button variant="ghost" size="icon-sm" className="shrink-0" aria-label="Close change review" title="Close (Esc)" onClick={close}>
+        <Button variant="ghost" size="icon-sm" className="shrink-0" aria-label="Close change review" title="Close (Esc)" onClick={onClose}>
           <X className="h-3.5 w-3.5" />
         </Button>
       </div>
       <p className="flex shrink-0 items-center gap-1.5 border-b border-line px-4 py-1.5 text-[11px] text-fg-subtle">
-        {checkout && (
+        {branch !== undefined && (
           <>
             <GitBranch className="h-3 w-3 shrink-0" aria-hidden />
-            <span className="max-w-[40%] shrink-0 truncate text-fg-muted">{checkout.branch ?? 'Detached HEAD'}</span>
+            <span className="max-w-[40%] shrink-0 truncate text-fg-muted">{branch ?? 'Detached HEAD'}</span>
             <span aria-hidden>·</span>
           </>
         )}
-        <span className="min-w-0 truncate">{GIT_CHANGES_NOTE}{state?.stale ? ' Previous counts may be out of date.' : ''}</span>
+        <span className="min-w-0 truncate">{note}{stale ? ' Previous counts may be out of date.' : ''}</span>
       </p>
       <div className="min-h-0 flex-1 overflow-auto">
         {patch?.error && <ViewerMessage tone="danger" role="alert">{patch.error}</ViewerMessage>}

@@ -53,6 +53,7 @@ const validPayloads = {
   [IpcChannels.ptyDispose]: 'pane',
   [IpcChannels.ptyStatuses]: undefined,
   [IpcChannels.ptyDirectories]: undefined,
+  [IpcChannels.ptyStartInFolder]: { terminalId: 'session:tab:t:pane:p', sessionId: 'session', folder: { sessionId: 'ses_thread', path: 'src' } },
   [IpcChannels.ptyDropFiles]: { terminalId: 'pane', files: [{ name: 'test.txt', nativePath: '/tmp/test.txt' }], mode: 'shell', treeEntry: undefined },
   [IpcChannels.clipboardWriteText]: 'copied\ntext',
   [IpcChannels.clipboardPaste]: undefined,
@@ -66,6 +67,7 @@ const validPayloads = {
   [IpcChannels.pathOpenTerminalInVsCode]: 'pane',
   [IpcChannels.pathRevealInbox]: 'ses_thread',
   [IpcChannels.pathOpenInboxInVsCode]: 'fld_1234',
+  [IpcChannels.pathRevealTreeFolder]: { terminalId: 'pane', directory: '/home/me', path: 'src/lib' },
   [IpcChannels.gitTerminalInfo]: terminalId,
   [IpcChannels.filesList]: { sessionId: 'session', path: '' },
   [IpcChannels.filesRead]: { sessionId: 'session', path: 'src/file.ts' },
@@ -73,6 +75,7 @@ const validPayloads = {
   [IpcChannels.inboxSetRead]: { id: 'ses_thread', read: true },
   [IpcChannels.inboxSetArchived]: { id: 'ses_thread', archived: false },
   [IpcChannels.inboxSetPinned]: { id: 'ses_thread', pinned: true },
+  [IpcChannels.inboxSetSnoozed]: { id: 'ses_thread', until: 1_800_000_000_000 },
   [IpcChannels.inboxSetCustomTitle]: { id: 'ses_thread', customTitle: 'My task' },
   [IpcChannels.inboxRemove]: { id: 'ses_thread' },
   [IpcChannels.inboxFolders]: undefined,
@@ -87,6 +90,12 @@ const validPayloads = {
   [IpcChannels.chatDrafts]: undefined,
   [IpcChannels.chatCreate]: { folderId: 'fld_1234', text: 'Fix the login\n\tplease', agent: 'build', model },
   [IpcChannels.inboxChangeDiff]: { threadId: 'ses_thread', path: 'src/app.ts' },
+  [IpcChannels.gitGraph]: { threadId: 'ses_thread', limit: 400, scope: 'all' },
+  [IpcChannels.gitCommit]: { terminalId: 'session-1:tab:tab-1:pane:pane-1', hash: 'a'.repeat(40) },
+  [IpcChannels.gitFetch]: { threadId: 'ses_thread' },
+  [IpcChannels.gitChanges]: { terminalId: 'session-1:tab:tab-1:pane:pane-1' },
+  [IpcChannels.gitChangeDiff]: { terminalId: 'session-1:tab:tab-1:pane:pane-1', path: 'src/a.ts' },
+  [IpcChannels.gitCommitDiff]: { threadId: 'ses_thread', hash: 'b'.repeat(40), path: 'src/a.ts' },
   [IpcChannels.inboxChanges]: { threadId: 'ses_thread', details: true },
   [IpcChannels.chatMessages]: { threadId: 'ses_thread', cursor: 'eyJpZCI6Im1zZyJ9' },
   [IpcChannels.chatSearch]: { query: 'login redirect' },
@@ -113,6 +122,14 @@ const validPayloads = {
   [IpcChannels.chatSubscribe]: { threadId: 'ses_thread' },
   [IpcChannels.chatUnsubscribe]: { threadId: 'ses_thread' },
   [IpcChannels.opencodeConfigRead]: { kind: 'wsl', distro: 'Ubuntu-24.04' },
+  [IpcChannels.mdeMcpStatus]: { kind: 'wsl', distro: 'Ubuntu-24.04' },
+  [IpcChannels.mdeMcpInstall]: { kind: 'native' },
+  [IpcChannels.mdeMcpRemove]: { kind: 'wsl', distro: 'Ubuntu-24.04' },
+  [IpcChannels.mdeMcpTerminalSettings]: undefined,
+  [IpcChannels.mdeMcpSetTerminalSettings]: { commands: 'ask', allowedUntil: null },
+  [IpcChannels.agentTerminalClaim]: { requestId: 'req-1', terminalId: 'inbox-terminal:tab:default:pane:2', palette },
+  [IpcChannels.agentTerminalRefuse]: { requestId: 'req-1', reason: 'The terminal has no room for another pane.' },
+  [IpcChannels.agentTerminalDecide]: { terminalId: 'inbox-terminal:tab:default:pane:2', decision: 'run-for-hour' },
   [IpcChannels.opencodeConfigPreview]: { kind: 'native', draft: configDraft },
   [IpcChannels.opencodeConfigSave]: { kind: 'wsl', distro: 'Ubuntu-24.04', draft: configDraft, revision: 'a'.repeat(64) },
   [IpcChannels.windowModeGet]: undefined,
@@ -179,6 +196,12 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.inboxSetPinned, { id: 'thread', pinned: true })
     rejects(IpcChannels.inboxSetPinned, { id: 'ses_thread', pinned: 'yes' })
     rejects(IpcChannels.inboxSetPinned, { id: 'ses_thread' })
+    expect(() => assertIpcPayload(IpcChannels.inboxSetSnoozed, { id: 'ses_thread', until: null })).not.toThrow()
+    rejects(IpcChannels.inboxSetSnoozed, { id: 'ses_thread' })
+    rejects(IpcChannels.inboxSetSnoozed, { id: 'ses_thread', until: '1800000000000' })
+    rejects(IpcChannels.inboxSetSnoozed, { id: 'ses_thread', until: 1.5 })
+    rejects(IpcChannels.inboxSetSnoozed, { id: 'ses_thread', until: Infinity })
+    rejects(IpcChannels.inboxSetSnoozed, { id: 'thread', until: null })
     rejects(IpcChannels.inboxRemove, { id: '' })
     expect(() => assertIpcPayload(IpcChannels.inboxRemove, { id: 'ses_thread', removeWorktree: true })).not.toThrow()
     rejects(IpcChannels.inboxRemove, { id: 'ses_thread', removeWorktree: 'yes' })
@@ -679,6 +702,15 @@ describe('OpenCode configuration validation', () => {
     rejects(IpcChannels.opencodeConfigRead, { kind: 'wsl', distro: '../etc' })
     rejects(IpcChannels.opencodeConfigRead, { kind: 'native', path: '/etc/passwd' })
     rejects(IpcChannels.opencodeConfigRead, { kind: 'native', configPath: '/etc/passwd' })
+  })
+
+  it('takes only a target for the MDE MCP, never a command or a path', () => {
+    for (const channel of [IpcChannels.mdeMcpStatus, IpcChannels.mdeMcpInstall, IpcChannels.mdeMcpRemove]) {
+      expect(() => assertIpcPayload(channel, { kind: 'native' })).not.toThrow()
+      rejects(channel, { kind: 'wsl', distro: '../etc' })
+      rejects(channel, { kind: 'native', command: ['/bin/sh'] })
+      rejects(channel, { kind: 'native', path: '/etc/passwd' })
+    }
   })
 
   it('rejects malformed rules, providers and models, and fields that do not belong', () => {

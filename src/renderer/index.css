@@ -49,6 +49,21 @@
   --agent-color-strength: 58%;
 }
 
+/* The two text levels of a chat reply (see .chat-markdown); a high-contrast theme keeps its words at full contrast. */
+:root {
+  --chat-text: color-mix(in oklab, var(--color-fg) 82%, var(--color-bg));
+  --chat-strong: color-mix(in oklab, var(--color-fg) 70%, #fff);
+}
+
+:root[data-mode='light'] {
+  --chat-text: color-mix(in oklab, var(--color-fg) 85%, var(--color-bg));
+  --chat-strong: color-mix(in oklab, var(--color-fg) 75%, #000);
+}
+
+:root[data-theme^='high-contrast'] {
+  --chat-text: var(--color-fg);
+}
+
 @layer base {
   * {
     border-color: var(--color-line);
@@ -316,10 +331,23 @@
 
   /*
    * The reading text of the Inbox chat. Sizes are in em, so the quieter reasoning text scales with it.
+   * A reply has two levels of text: the words are set a little dimmer than the theme's text color
+   * (--chat-text), and headings, bold and inline code a little brighter (--chat-strong), so a heading
+   * stands apart by contrast and not only by size. Headings get more space above than below, which
+   * ties each one to the section it opens.
    * Code follows the code font from Settings and sits a little smaller than the words around it (a
    * monospace font has a larger x-height, so at the same size it reads bigger and darker), and never takes
    * on the bold of the text it is in. Lists keep their items close and set off from the text before them.
    */
+  .chat-markdown p,
+  .chat-markdown ul,
+  .chat-markdown ol,
+  .chat-markdown blockquote,
+  .chat-markdown pre,
+  .chat-markdown table {
+    margin: 0.75em 0;
+  }
+
   .chat-markdown strong {
     font-weight: 600;
   }
@@ -332,24 +360,35 @@
   }
 
   .chat-markdown code {
-    border: 1px solid var(--color-line);
-    padding: 0.1em 0.35em;
+    border-radius: 0.3rem;
+    background-color: color-mix(in oklab, var(--color-fg) 9%, transparent);
+    padding: 0.12em 0.38em;
+  }
+
+  .chat-markdown pre {
+    border-radius: 0.5rem;
+    padding: 0.75rem 0.9rem;
+    line-height: 1.55;
   }
 
   .chat-markdown pre code {
-    border: 0;
+    background-color: transparent;
+    padding: 0;
     font-size: 1em;
-  }
-
-  .chat-markdown ul,
-  .chat-markdown ol {
-    margin: 0.6rem 0;
   }
 
   .chat-markdown li > p,
   .chat-markdown li > ul,
   .chat-markdown li > ol {
-    margin: 0.25rem 0;
+    margin: 0.2em 0;
+  }
+
+  .chat-markdown li + li {
+    margin-top: 0.3em;
+  }
+
+  .chat-markdown li::marker {
+    color: var(--color-fg-subtle);
   }
 
   .chat-markdown h1,
@@ -358,17 +397,18 @@
   .chat-markdown h4,
   .chat-markdown h5,
   .chat-markdown h6 {
-    margin: 1.1em 0 0.35em;
+    margin: 1.5rem 0 0.4rem;
     font-weight: 600;
     line-height: 1.3;
+    letter-spacing: -0.012em;
   }
 
   .chat-markdown h1 {
-    font-size: 1.4em;
+    font-size: 1.45em;
   }
 
   .chat-markdown h2 {
-    font-size: 1.25em;
+    font-size: 1.3em;
   }
 
   .chat-markdown h3 {
@@ -383,6 +423,11 @@
 
   .chat-markdown > :first-child {
     margin-top: 0;
+  }
+
+  .chat-reply :is(h1, h2, h3, h4, h5, h6, strong),
+  .chat-reply :not(pre) > code {
+    color: var(--chat-strong);
   }
 
   .chat-markdown a {
@@ -888,8 +933,68 @@
   animation: mde-pending-in 180ms ease-out;
 }
 
+/* An agent opened a terminal while it was hidden: the reminder glows, a small terminal drops into it, and its dot
+   pings (also while a command waits for approval). Without motion only the words change. */
+.hidden-terminal-arrival {
+  animation: mde-terminal-arrival 1800ms ease-out both;
+}
+
+.hidden-terminal-arrival-icon {
+  animation: mde-terminal-drop 650ms cubic-bezier(0.2, 1.5, 0.4, 1) both;
+}
+
+.hidden-terminal-ping::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: var(--color-accent);
+  animation: mde-status-ping 1.6s cubic-bezier(0, 0, 0.2, 1) 3;
+}
+
+@keyframes mde-terminal-arrival {
+  0% {
+    border-color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 55%, transparent);
+  }
+  45% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+  100% {
+    border-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
+    background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@keyframes mde-terminal-drop {
+  0% {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.6);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .hidden-terminal-indicator {
+  .hidden-terminal-indicator,
+  .hidden-terminal-arrival,
+  .hidden-terminal-arrival-icon,
+  .hidden-terminal-ping::after {
+    animation: none;
+  }
+}
+
+/* The approval bar for a command an agent asked to run in a terminal it opened (AgentCommandBar). */
+.agent-command-bar {
+  animation: mde-pending-in 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-command-bar {
     animation: none;
   }
 }
@@ -1068,4 +1173,76 @@
 
 .fancy-thread-effect {
   mix-blend-mode: normal;
+}
+
+/*
+ * Views agents show in the chat. Chart series take a fixed categorical palette rather than the theme's colours, which
+ * are not chosen to tell series apart (a theme's syntax colours can repeat a hue or put red in a series). The six
+ * slots, in this order, pass the colour-vision-deficiency and normal-vision separation checks on both MDE's dark and
+ * light surfaces; on light, three of them sit below 3:1 against the surface, so every chart has a legend or labels,
+ * values on hover and a table view.
+ */
+:root {
+  --view-series-1: #3987e5;
+  --view-series-2: #d95926;
+  --view-series-3: #199e70;
+  --view-series-4: #c98500;
+  --view-series-5: #d55181;
+  --view-series-6: #9085e9;
+}
+
+:root[data-mode='light'] {
+  --view-series-1: #2a78d6;
+  --view-series-2: #eb6834;
+  --view-series-3: #1baf7a;
+  --view-series-4: #eda100;
+  --view-series-5: #e87ba4;
+  --view-series-6: #6250d6;
+}
+
+/* A grid keeps its columns while each one has room, and drops them as the chat narrows. */
+.view-frame {
+  container-type: inline-size;
+}
+
+.view-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(var(--view-columns, 2), minmax(0, 1fr));
+}
+
+.view-grid[data-columns='1'] { --view-columns: 1; }
+.view-grid[data-columns='2'] { --view-columns: 2; }
+.view-grid[data-columns='3'] { --view-columns: 3; }
+.view-grid[data-columns='4'] { --view-columns: 4; }
+
+@container (max-width: 640px) {
+  .view-grid[data-columns='3'],
+  .view-grid[data-columns='4'] { --view-columns: 2; }
+}
+
+@container (max-width: 400px) {
+  .view-grid { --view-columns: 1 !important; }
+}
+
+/* LaTeX math in read-only Markdown (math-markdown.ts). A wide formula scrolls on its own instead of widening the reply. */
+.math-block {
+  margin: 0.75em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.math-block .katex-display {
+  margin: 0;
+}
+
+.math-inline .katex,
+.math-block .katex {
+  font-size: 1.1em;
+}
+
+[data-math][data-math-error] {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--color-fg-muted);
 }

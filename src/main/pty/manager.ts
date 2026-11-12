@@ -14,6 +14,7 @@ import type {
 } from '@shared/types'
 import { buildLaunchSpec, type LaunchContext } from './launch'
 import { TerminalQueryResponder } from './terminal-queries'
+import { HeldQueryAnswerer } from './held-queries'
 import type { TerminalDirectoryStore } from './directories'
 import { resolveWindowsShell, resolveWslExecutable } from '../windows-executable'
 
@@ -24,7 +25,21 @@ interface PtySession {
   currentDirectory: string | null
   disposeListeners: () => void
   queryResponder: TerminalQueryResponder
+  /** Output kept while no view shows the terminal yet (a shell started in the background); null once shown. */
+  held: string[] | null
+  heldLength: number
+  /** Answers the shell's terminal queries while its output is kept, so none is answered late. */
+  heldQueries: HeldQueryAnswerer | null
+  /** Whether the shell has written anything yet; input waiting for that is in `pendingInput`. */
+  started: boolean
+  pendingInput: string[]
+  pendingInputTimer?: NodeJS.Timeout
 }
+
+/** How much output a terminal started in the background keeps until it is shown; older output is dropped. */
+export const HELD_OUTPUT_LIMIT = 2 * 1024 * 1024
+/** How long typed-ahead input waits for a silent shell before it is written anyway. */
+const START_INPUT_FALLBACK_MS = 3000
 
 export interface PtyEvents {
   onData(chunk: PtyDataChunk): void
@@ -42,6 +57,11 @@ export interface PtyLaunchOptions {
   environment?: Record<string, string>
   directory?: string
   agent?: AgentCommand
+  /**
+   * Started before any view shows it: its output is kept (up to `HELD_OUTPUT_LIMIT`) and sent on when a view
+   * first attaches, which is the renderer's next `ensure` for it.
+   */
+  background?: boolean
 }
 
 function clampSize(size: PtySize): PtySize {
@@ -110,6 +130,11 @@ export class PtyManager {
     private readonly directoryStore?: TerminalDirectoryStore,
   ) {}
 
+  /** Sets the folder a terminal that has not started yet opens in, through the same record a restart reads. */
+  rememberDirectory(terminalId: string, session: Session, directory: string): void {
+    this.directoryStore?.remember(terminalId, session, directory)
+  }
+
   savedDirectory(terminalId: string, session: Session): string | undefined {
     return this.directoryStore?.get(terminalId, session)
   }
@@ -154,6 +179,7 @@ export class PtyManager {
     if (existing) {
       existing.queryResponder.setPalette(palette)
       this.resize(terminalId, size)
+      this.release(terminalId, existing)
       return existing.status
     }
 
@@ -197,7 +223,22 @@ export class PtyManager {
         this.directoryStore?.remember(terminalId, session, currentDirectory)
         this.events.onDirectory({ terminalId, directory: currentDirectory })
       }
-      if (result.data) this.events.onData({ terminalId, data: result.data })
+      const current = this.sessions.get(terminalId)
+      if (current?.held) {
+        if (result.data) {
+          const kept = current.heldQueries ? current.heldQueries.process(result.data) : { data: result.data, responses: [] }
+          for (const response of kept.responses) child.write(response)
+          if (kept.data) {
+            current.held.push(kept.data)
+            current.heldLength += kept.data.length
+            while (current.heldLength > HELD_OUTPUT_LIMIT && current.held.length > 1) current.heldLength -= current.held.shift()!.length
+          }
+        }
+      } else if (result.data) {
+        this.events.onData({ terminalId, data: result.data })
+      }
+      // Typed-ahead input goes after any answer to a query, which the shell may be waiting to read first.
+      if (current && !current.started) this.markStarted(current)
     })
     const exitListener = child.onExit(({ exitCode, signal }) => {
       const pending = queryResponder.flush()
@@ -215,6 +256,11 @@ export class PtyManager {
       status: 'running',
       currentDirectory,
       queryResponder,
+      held: options?.background ? [] : null,
+      heldLength: 0,
+      heldQueries: options?.background ? new HeldQueryAnswerer() : null,
+      started: false,
+      pendingInput: [],
       disposeListeners: () => {
         dataListener.dispose()
         exitListener.dispose()
@@ -237,6 +283,46 @@ export class PtyManager {
   ): PtyStatus {
     this.dispose(terminalId, false)
     return this.ensure(terminalId, session, size, palette, options)
+  }
+
+  /** Sends a background terminal's kept output to the view that now shows it, and stops keeping it. */
+  private release(terminalId: string, session: PtySession): void {
+    const held = session.held
+    if (!held) return
+    const rest = session.heldQueries?.flush()
+    if (rest) held.push(rest)
+    session.held = null
+    session.heldLength = 0
+    session.heldQueries = null
+    if (held.length) this.events.onData({ terminalId, data: held.join('') })
+  }
+
+  private markStarted(session: PtySession): void {
+    session.started = true
+    clearTimeout(session.pendingInputTimer)
+    session.pendingInputTimer = undefined
+    const input = session.pendingInput.splice(0)
+    if (session.status === 'running') for (const data of input) session.pty.write(data)
+  }
+
+  /**
+   * Types input into a shell once it has started: at once if it has written anything, otherwise on its first
+   * output, or after a few seconds of silence. The terminal driver keeps what is typed ahead until the shell
+   * reads it, so this only avoids writing into a process that is still being created.
+   */
+  writeWhenStarted(terminalId: string, data: string): boolean {
+    const session = this.sessions.get(terminalId)
+    if (!session || session.status !== 'running') return false
+    if (session.started) {
+      session.pty.write(data)
+      return true
+    }
+    session.pendingInput.push(data)
+    session.pendingInputTimer ??= setTimeout(() => {
+      const current = this.sessions.get(terminalId)
+      if (current === session && !session.started) this.markStarted(session)
+    }, START_INPUT_FALLBACK_MS)
+    return true
   }
 
   write(terminalId: string, data: string): void {
@@ -266,6 +352,7 @@ export class PtyManager {
     const session = this.sessions.get(terminalId)
     if (!session) return
     this.sessions.delete(terminalId)
+    clearTimeout(session.pendingInputTimer)
     this.events.onDirectory({ terminalId, directory: null })
     session.disposeListeners()
     if (session.status === 'running') {

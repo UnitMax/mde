@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import {
   ChevronRight,
   File,
@@ -7,13 +7,16 @@ import {
   FolderOpen,
   PanelRightClose,
   PanelRightOpen,
-  RefreshCw
+  RefreshCw,
+  SquareTerminal,
+  X
 } from 'lucide-react'
 import { FILE_TREE_DROP_TYPE } from '@/terminal/drop'
 import type { Session } from '@shared/types'
-import type { FileRoot } from '@shared/ipc'
+import type { FileRoot, FilesListRequest } from '@shared/ipc'
 import { fileRootKey } from '@/lib/file-root'
 import { Button } from '@/components/ui/button'
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { OpenFolderButtons, type OpenFolderTarget } from '@/components/OpenFolderButtons'
 import { useWorkspace } from '@/store/workspace'
 import { cn } from '@/lib/utils'
@@ -59,7 +62,8 @@ function FileTree({
   onCollapse,
   browseOnly,
   heading,
-  fill
+  fill,
+  openInTerminal
 }: {
   session: FileTreeContext
   root: FileRoot | null
@@ -67,11 +71,15 @@ function FileTree({
   browseOnly: boolean
   heading?: ReactNode
   fill: boolean
+  openInTerminal?: (folder: FilesListRequest) => Promise<void>
 }): JSX.Element {
   const [cache, setCache] = useState<Map<string, FileTreeDirectoryState>>(() => new Map())
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   const [focusedPath, setFocusedPath] = useState<string | null>(null)
   const [draggedPath, setDraggedPath] = useState<string | null>(null)
+  // What a right-click points at: a folder row, a file row (its folder), or empty space (the root, '').
+  const [menuTarget, setMenuTarget] = useState<{ path: string; containing: boolean }>({ path: '', containing: false })
+  const [menuError, setMenuError] = useState<string | null>(null)
   const dragPreviewRef = useRef<HTMLElement | null>(null)
   const generation = useRef(0)
   const expandedRef = useRef(expanded)
@@ -194,6 +202,118 @@ function FileTree({
     }
   }
 
+  const pickMenuTarget = (event: MouseEvent<HTMLDivElement>): void => {
+    const element = (event.target as Element).closest<HTMLElement>('[role="treeitem"][data-path]')
+    const row = element ? entryRows.find((candidate) => candidate.path === element.dataset.path) : undefined
+    if (!row) setMenuTarget({ path: '', containing: false })
+    else if (row.kind === 'directory') setMenuTarget({ path: row.path, containing: false })
+    else setMenuTarget({ path: parentPath(row.path) ?? '', containing: true })
+  }
+
+  const revealMenuTarget = (): void => {
+    setMenuError(null)
+    if (root) void window.api.paths.revealTreeFolder({ ...root, path: menuTarget.path })
+  }
+
+  const openMenuTargetInTerminal = (): void => {
+    setMenuError(null)
+    if (!root || !openInTerminal) return
+    void openInTerminal({ ...root, path: menuTarget.path }).catch((error: unknown) => {
+      setMenuError(ipcErrorMessage(error, 'Could not open a terminal in that folder.'))
+    })
+  }
+
+  const tree = (
+    <div
+      ref={treeRef}
+      role="tree"
+      aria-label={directory ? `Files in ${directory}` : 'Files'}
+      aria-busy={!root || !terminalReady}
+      className="min-h-0 flex-1 overflow-y-auto px-1 pb-2 text-[12px]"
+    >
+      {rows.map((row) => {
+        if (row.type !== 'entry') {
+          return (
+            <div
+              key={`${row.type}:${row.path}`}
+              role="none"
+              className={cn(
+                'truncate py-1 pr-2 text-[11px]',
+                row.type === 'error' ? 'text-danger' : 'text-fg-subtle'
+              )}
+              style={{ paddingLeft: rowPadding(row.depth) + 16 }}
+              title={row.type === 'error' ? row.message : undefined}
+            >
+              {statusText(row)}
+            </div>
+          )
+        }
+
+        const isDirectory = row.kind === 'directory'
+        const isOpen = !isDirectory && row.path === openFilePath
+        return (
+          <div
+            key={row.path}
+            role="treeitem"
+            data-path={row.path}
+            draggable
+            aria-level={row.depth + 1}
+            aria-expanded={isDirectory ? row.expanded : undefined}
+            aria-selected={isDirectory ? undefined : isOpen}
+            tabIndex={row.path === tabStopPath ? 0 : -1}
+            className={cn(
+              'flex cursor-default items-center gap-1 rounded py-[3px] pr-2 text-fg-muted hover:bg-hover hover:text-fg focus:bg-active focus:text-fg focus:outline-none',
+              isOpen && 'bg-active text-fg',
+              draggedPath === row.path && 'opacity-40'
+            )}
+            style={{ paddingLeft: rowPadding(row.depth) }}
+            title={row.path}
+            onDragStart={(event) => {
+              event.dataTransfer.effectAllowed = 'copy'
+              event.dataTransfer.setData(FILE_TREE_DROP_TYPE, JSON.stringify({
+                ...root,
+                path: row.path,
+              }))
+              const preview = document.createElement('div')
+              preview.className = 'file-tree-drag-preview'
+              preview.style.left = `${event.clientX}px`
+              preview.style.top = `${event.clientY}px`
+              const icon = event.currentTarget.querySelectorAll('svg')[1]?.cloneNode(true)
+              if (icon) preview.append(icon)
+              const label = document.createElement('span')
+              label.textContent = row.name
+              preview.append(label)
+              document.body.append(preview)
+              dragPreviewRef.current = preview
+              event.dataTransfer.setDragImage(preview, 18, 18)
+              // Chromium captures the drag image after this event finishes.
+              window.setTimeout(() => preview.remove(), 0)
+              setDraggedPath(row.path)
+            }}
+            onDragEnd={endDrag}
+            onFocus={() => setFocusedPath(row.path)}
+            onClick={() => {
+              if (isDirectory) setDirectoryExpanded(row.path, !row.expanded)
+              else if (rootId) openFile(rootId, row.path)
+            }}
+            onKeyDown={(event) => onRowKeyDown(event, row)}
+          >
+            <ChevronRight
+              className={cn(
+                'h-3 w-3 shrink-0 text-fg-subtle transition-transform',
+                !isDirectory && 'invisible',
+                row.expanded && 'rotate-90'
+              )}
+              aria-hidden="true"
+            />
+            <EntryIcon row={row} />
+            <span className="truncate">{row.name}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+
   return (
     <aside
       data-testid="file-tree-panel"
@@ -239,94 +359,33 @@ function FileTree({
           {root.directory}
         </div>
       )}
-      <div
-        ref={treeRef}
-        role="tree"
-        aria-label={directory ? `Files in ${directory}` : 'Files'}
-        aria-busy={!root || !terminalReady}
-        className="min-h-0 flex-1 overflow-y-auto px-1 pb-2 text-[12px]"
-      >
-        {rows.map((row) => {
-          if (row.type !== 'entry') {
-            return (
-              <div
-                key={`${row.type}:${row.path}`}
-                role="none"
-                className={cn(
-                  'truncate py-1 pr-2 text-[11px]',
-                  row.type === 'error' ? 'text-danger' : 'text-fg-subtle'
-                )}
-                style={{ paddingLeft: rowPadding(row.depth) + 16 }}
-                title={row.type === 'error' ? row.message : undefined}
-              >
-                {statusText(row)}
-              </div>
-            )
-          }
-
-          const isDirectory = row.kind === 'directory'
-          const isOpen = !isDirectory && row.path === openFilePath
-          return (
-            <div
-              key={row.path}
-              role="treeitem"
-              data-path={row.path}
-              draggable
-              aria-level={row.depth + 1}
-              aria-expanded={isDirectory ? row.expanded : undefined}
-              aria-selected={isDirectory ? undefined : isOpen}
-              tabIndex={row.path === tabStopPath ? 0 : -1}
-              className={cn(
-                'flex cursor-default items-center gap-1 rounded py-[3px] pr-2 text-fg-muted hover:bg-hover hover:text-fg focus:bg-active focus:text-fg focus:outline-none',
-                isOpen && 'bg-active text-fg',
-                draggedPath === row.path && 'opacity-40'
-              )}
-              style={{ paddingLeft: rowPadding(row.depth) }}
-              title={row.path}
-              onDragStart={(event) => {
-                event.dataTransfer.effectAllowed = 'copy'
-                event.dataTransfer.setData(FILE_TREE_DROP_TYPE, JSON.stringify({
-                  ...root,
-                  path: row.path,
-                }))
-                const preview = document.createElement('div')
-                preview.className = 'file-tree-drag-preview'
-                preview.style.left = `${event.clientX}px`
-                preview.style.top = `${event.clientY}px`
-                const icon = event.currentTarget.querySelectorAll('svg')[1]?.cloneNode(true)
-                if (icon) preview.append(icon)
-                const label = document.createElement('span')
-                label.textContent = row.name
-                preview.append(label)
-                document.body.append(preview)
-                dragPreviewRef.current = preview
-                event.dataTransfer.setDragImage(preview, 18, 18)
-                // Chromium captures the drag image after this event finishes.
-                window.setTimeout(() => preview.remove(), 0)
-                setDraggedPath(row.path)
-              }}
-              onDragEnd={endDrag}
-              onFocus={() => setFocusedPath(row.path)}
-              onClick={() => {
-                if (isDirectory) setDirectoryExpanded(row.path, !row.expanded)
-                else if (rootId) openFile(rootId, row.path)
-              }}
-              onKeyDown={(event) => onRowKeyDown(event, row)}
-            >
-              <ChevronRight
-                className={cn(
-                  'h-3 w-3 shrink-0 text-fg-subtle transition-transform',
-                  !isDirectory && 'invisible',
-                  row.expanded && 'rotate-90'
-                )}
-                aria-hidden="true"
-              />
-              <EntryIcon row={row} />
-              <span className="truncate">{row.name}</span>
-            </div>
-          )
-        })}
-      </div>
+      {root && folderTarget ? (
+        <ContextMenu>
+          <ContextMenuTrigger asChild onContextMenuCapture={pickMenuTarget}>
+            {tree}
+          </ContextMenuTrigger>
+          <ContextMenuContent>
+            <ContextMenuItem onSelect={revealMenuTarget}>
+              <FolderOpen aria-hidden className="h-3.5 w-3.5" />
+              {menuTarget.containing ? 'Open containing folder in File Explorer' : 'Open folder in File Explorer'}
+            </ContextMenuItem>
+            {openInTerminal && (
+              <ContextMenuItem onSelect={openMenuTargetInTerminal}>
+                <SquareTerminal aria-hidden className="h-3.5 w-3.5" />
+                {menuTarget.containing ? 'Open containing folder in Terminal' : 'Open in Terminal'}
+              </ContextMenuItem>
+            )}
+          </ContextMenuContent>
+        </ContextMenu>
+      ) : tree}
+      {menuError && (
+        <div role="alert" className="mx-2 mb-2 flex items-start gap-2 rounded border border-line bg-panel p-2 text-[11px] leading-snug text-danger">
+          <span className="min-w-0 flex-1">{menuError}</span>
+          <button type="button" className="shrink-0 text-fg-subtle hover:text-fg" aria-label="Dismiss" onClick={() => setMenuError(null)}>
+            <X aria-hidden className="h-3 w-3" />
+          </button>
+        </div>
+      )}
       {browseOnly && (
         <div className="flex shrink-0 items-center gap-1 border-t border-line px-2 py-1">
           {folderTarget && <OpenFolderButtons target={folderTarget} kind={session.kind} distro={session.distro} />}
@@ -350,7 +409,8 @@ export function FileTreePanel({
   root: requestedRoot,
   browseOnly = false,
   heading,
-  fill = false
+  fill = false,
+  openInTerminal
 }: {
   session: FileTreeContext
   /** Omit for an Inbox folder; null keeps the panel loading until a terminal reports its directory. */
@@ -360,6 +420,8 @@ export function FileTreePanel({
   heading?: ReactNode
   /** Takes the width of its container instead of its own 260px, for a host whose sidebar can be resized. */
   fill?: boolean
+  /** Offers "Open in Terminal" in the tree's right-click menu: a new terminal whose shell starts in that folder. */
+  openInTerminal?: (folder: FilesListRequest) => Promise<void>
 }): JSX.Element {
   const root = useMemo<FileRoot | null>(
     () => {
@@ -389,5 +451,5 @@ export function FileTreePanel({
     )
   }
 
-  return <FileTree key={root ? fileRootKey(root) : 'pending'} session={session} root={root} onCollapse={toggleFileTree} browseOnly={browseOnly} heading={heading} fill={fill} />
+  return <FileTree key={root ? fileRootKey(root) : 'pending'} session={session} root={root} onCollapse={toggleFileTree} browseOnly={browseOnly} heading={heading} fill={fill} openInTerminal={openInTerminal} />
 }

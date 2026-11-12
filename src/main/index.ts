@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, nativeImage, nativeTheme, screen, session, shell } from 'electron'
+import { app, BrowserWindow, nativeImage, nativeTheme, powerMonitor, screen, session, shell } from 'electron'
 import { IpcEvents } from '@shared/ipc'
 import { registerIpcHandlers } from './ipc'
 import { rendererEntryUrl } from './ipc-security'
@@ -25,6 +25,12 @@ import { adjustZoomFactor, DEFAULT_ZOOM_FACTOR, getZoomAction } from './zoom'
 import { handleWindowOpen } from './external-links'
 import { installPermissionPolicy } from './permissions'
 import { installRendererProtocol, registerRendererScheme } from './renderer-protocol'
+import { isMcpBridgeLaunch, mdeMcpCommand, startMdeMcp } from './mcp'
+import { startMcpBridge } from './mcp/bridge-main'
+import { AgentTerminals } from './mcp/agent-terminals'
+import type { McpListener } from './mcp/listener'
+import { checkedInboxFolderPlace } from './ipc'
+import { toWsl } from './wsl/paths'
 
 let mainWindow: BrowserWindow | null = null
 let inboxStore: InboxStore | null = null
@@ -32,7 +38,10 @@ let inboxRecorder: InboxRecorder | null = null
 let inboxDrafts: InboxDraftStore | null = null
 let inboxAsides: InboxAsideHistory | null = null
 let inboxChat: InboxChatService | null = null
+let mdeMcp: McpListener | null = null
 let quitPrepared = false
+/** The Inbox (and with it the MDE MCP) runs OpenCode natively on macOS and inside WSL on Windows. */
+const inboxEnabled = (): boolean => process.platform === 'darwin' || process.platform === 'win32'
 const rendererUrl = rendererEntryUrl(app.isPackaged, process.env.ELECTRON_RENDERER_URL)
 
 // Shrinks this window into the always-on-top Inbox list; the screen module is only
@@ -163,10 +172,15 @@ function createWindow(): void {
 // headroom for the overshoot while a layout change swaps panes.
 app.commandLine.appendSwitch('max-active-webgl-contexts', '32')
 
-registerRendererScheme()
+// OpenCode starts MDE with `--mcp-bridge` as its `mde` MCP server: that process only relays tool calls to the
+// running MDE, so it takes no lock, opens no window and registers nothing.
+const bridgeLaunch = isMcpBridgeLaunch(process.argv)
+if (!bridgeLaunch) registerRendererScheme()
 
+if (bridgeLaunch) {
+  startMcpBridge(process.argv)
 // Two instances would race each other writing workspace.json.
-if (!app.requestSingleInstanceLock()) {
+} else if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   app.on('second-instance', () => {
@@ -202,6 +216,9 @@ if (!app.requestSingleInstanceLock()) {
         }
       }
     })
+    // Snoozes that ran out while MDE was closed wake now; the rest on time, and on waking from sleep.
+    inboxRecorder.wakeSnoozed()
+    powerMonitor.on('resume', () => inboxRecorder?.wakeSnoozed())
     const serviceClient = new OpenCodeServiceClient({
       discover: discoverOpenCodeService,
       executable: () => inboxChat?.executable() ?? 'opencode'
@@ -233,7 +250,7 @@ if (!app.requestSingleInstanceLock()) {
       store: inboxStore,
       recorder: inboxRecorder,
       now: () => Date.now(),
-      enabled: () => process.platform === 'darwin' || process.platform === 'win32',
+      enabled: inboxEnabled,
       send: (event) => {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send(IpcEvents.chatEvent, event)
@@ -242,12 +259,34 @@ if (!app.requestSingleInstanceLock()) {
     })
     // Threads that were still working when MDE last quit start receiving their events again.
     inboxChat.start()
+    const self = {
+      executable: process.execPath,
+      ...(app.isPackaged ? {} : { appPath: app.getAppPath() }),
+      // A second MDE kept apart with --user-data-dir has its own socket and token, so its bridge needs the same folder.
+      ...(app.commandLine.hasSwitch('user-data-dir') ? { userDataDir: app.getPath('userData') } : {}),
+    }
+    const agentTerminals = new AgentTerminals(app.getPath('userData'))
+    // Agents can only start threads where the Inbox runs; elsewhere nothing listens and no token is made.
+    mdeMcp = !inboxEnabled() ? null : await startMdeMcp({
+      userData: app.getPath('userData'),
+      platform: process.platform,
+      chat: inboxChat,
+      store: inboxStore,
+      available: inboxEnabled,
+      checkFolder: (target, directory) =>
+        checkedInboxFolderPlace(target.kind, target.kind === 'wsl' ? target.distro : undefined, directory),
+      foldersChanged: () => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcEvents.inboxFoldersChanged)
+      },
+      terminals: agentTerminals,
+      now: () => Date.now(),
+    })
     registerIpcHandlers(
       { getWebContents: () => mainWindow?.webContents ?? null, rendererUrl },
       ptyManager,
       miniWindow,
       titleBar,
-      { recorder: inboxRecorder, chat: inboxChat, openCodeConfig },
+      { recorder: inboxRecorder, chat: inboxChat, openCodeConfig, mdeMcpCommand: (target) => mdeMcpCommand(target, self, toWsl), agentTerminals },
       taskbarAttention,
       floatingTerminalKey
     )
@@ -267,6 +306,8 @@ if (!app.requestSingleInstanceLock()) {
     quitPrepared = true
     ptyManager.disposeAll()
     inboxChat?.stop()
+    inboxRecorder?.dispose()
+    void mdeMcp?.close()
     // Save the last pane directories and Inbox state before exiting.
     event.preventDefault()
     void Promise.all([terminalDirectories.flush(), inboxStore?.flush(), inboxDrafts?.flush(), inboxAsides?.flush()])

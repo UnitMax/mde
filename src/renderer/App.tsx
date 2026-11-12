@@ -7,6 +7,8 @@ import { FileTreePanel } from '@/components/FileTreePanel'
 import { FileViewer } from '@/components/FileViewer'
 import { FloatingTerminal } from '@/components/inbox/FloatingTerminal'
 import { InboxChangeViewer, InboxSidebar } from '@/components/inbox/InboxChanges'
+import { GitGraphView } from '@/components/inbox/GitGraphView'
+import { SessionGitGraph } from '@/components/SessionGitGraph'
 import { NewTodoProjectDialog } from '@/components/NewTodoProjectDialog'
 import { Sidebar } from '@/components/Sidebar'
 import { SessionSwitcher } from '@/components/SessionSwitcher'
@@ -52,7 +54,7 @@ import {
   type TerminalSplitSide,
 } from '@/terminal/layout'
 import type { PersistedTerminalLayout, Session, TodoTask } from '@shared/types'
-import type { TerminalDirectoryRequest } from '@shared/ipc'
+import type { FilesListRequest, TerminalDirectoryRequest } from '@shared/ipc'
 import { fileRootKey } from '@/lib/file-root'
 import { useInboxChat } from '@/store/inbox-chat'
 import { useInboxTerminal } from '@/store/inbox-terminal'
@@ -535,6 +537,31 @@ export function App(): JSX.Element {
     if (added) setPendingTerminalFocus({ sessionId, tabId, terminalId: added.terminalId })
   }
 
+  /**
+   * "Open in Terminal" from the Files tree: a new pane in the tab, beside the one the tree follows, whose shell
+   * starts in that folder. Main is told the folder first, so the pane is only added once its shell can start there.
+   */
+  const openTerminalInFolder = async (sessionId: string, tabId: string, besideTerminalId: string, folder: FilesListRequest): Promise<void> => {
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (!session) return
+    const existing = layoutForTab(session, tabId)
+    const next = splitRuntimePane(sessionId, tabId, existing, besideTerminalId, 'right')
+    const added = next?.panes.find((pane) => !existing.panes.includes(pane))
+    if (!next || !added) throw new Error('This tab has no room for another terminal.')
+    await window.api.pty.startInFolder({ terminalId: added.terminalId, sessionId, folder })
+    // The tab may have changed while main checked the folder: split what is there now. If that names another
+    // pane than the one main was told about, nothing is added rather than a shell started in the wrong place.
+    const current = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (!current) return
+    const latest = layoutForTab(current, tabId)
+    const settled = splitRuntimePane(sessionId, tabId, latest, besideTerminalId, 'right')
+    if (!settled?.panes.some((pane) => pane.terminalId === added.terminalId && !latest.panes.includes(pane))) return
+    setRuntimeLayout(sessionId, tabId, settled)
+    queueLayoutPersistence(sessionId, tabId, settled, true)
+    terminalFocusRequestId.current += 1
+    setPendingTerminalFocus({ sessionId, tabId, terminalId: added.terminalId })
+  }
+
   const closeTerminalPane = (sessionId: string, tabId: string, terminalId: string): void => {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!session) return
@@ -671,6 +698,7 @@ export function App(): JSX.Element {
             <>
               <InboxThreadView />
               {selectedInboxThreadId && <InboxChangeViewer threadId={selectedInboxThreadId} />}
+              {selectedInboxThreadId && <GitGraphView threadId={selectedInboxThreadId} />}
               {inboxRoot && inboxOpenFilePath !== undefined && (
                 <FileViewer
                   key={`viewer:${inboxRoot.id}`}
@@ -726,13 +754,20 @@ export function App(): JSX.Element {
                   onClose={() => closeOpenFile(selected.id, terminalFileRootId)}
                 />
               )}
+              <SessionGitGraph
+                sessionId={selected.id}
+                terminalIds={layoutForSession.panes.map((pane) => pane.terminalId)}
+                filePath={openFilePath}
+              />
             </>
           ) : (
             <EmptyState onNewSession={() => openNewSession()} />
           )}
         </main>
 
-        {ready && activeWorkspaceView === 'sessions' && selected && <FileTreePanel session={selected} root={terminalFileRoot} />}
+        {ready && activeWorkspaceView === 'sessions' && selected && <FileTreePanel session={selected} root={terminalFileRoot} openInTerminal={activeTab && activeTerminalId
+            ? (folder) => openTerminalInFolder(selected.id, activeTab.id, activeTerminalId, folder)
+            : undefined} />}
         {ready && inboxRoot && <InboxSidebar session={inboxRoot} threadId={selectedInboxThreadId ?? undefined} />}
         {/* Over everything below the title bar: both sidebars and the conversation. */}
         {ready && activeWorkspaceView === 'inbox' && <FloatingTerminal />}

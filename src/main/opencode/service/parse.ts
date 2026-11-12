@@ -1,4 +1,6 @@
 import { GOAL_OBJECTIVE_LIMIT } from '@shared/goal'
+import { isViewCall, isViewTool } from '@shared/view-tool'
+import { VIEW_INPUT_LIMIT } from '@shared/view-spec'
 import { FILE_MENTION_LIMIT, isMentionablePath } from '@shared/file-mentions'
 import { MCP_SERVER_NAME } from '@shared/mcp'
 import type {
@@ -307,17 +309,21 @@ function errorText(value: unknown): string | undefined {
   return message || short(error.type) || 'Unknown error'
 }
 
-/** Tool input is shown as JSON; a still-streaming input arrives as a raw string. */
-function toolInput(value: unknown): { text: string; truncated: boolean } {
-  if (typeof value === 'string') return body(value, CHAT_TOOL_TEXT_LIMIT)
+/**
+ * Tool input is shown as JSON; a still-streaming input arrives as a raw string. A view's input is what MDE draws,
+ * so it is kept whole up to its own limit, and compact: pretty-printing a long list of numbers would double it.
+ */
+function toolInput(value: unknown, view = false): { text: string; truncated: boolean } {
+  const limit = view ? VIEW_INPUT_LIMIT : CHAT_TOOL_TEXT_LIMIT
+  if (typeof value === 'string') return body(value, limit)
   if (value === undefined) return { text: '', truncated: false }
   let text: string
   try {
-    text = JSON.stringify(value, null, 2) ?? ''
+    text = (view ? JSON.stringify(value) : JSON.stringify(value, null, 2)) ?? ''
   } catch {
     text = ''
   }
-  return body(text, CHAT_TOOL_TEXT_LIMIT)
+  return body(text, limit)
 }
 
 function toolOutput(content: unknown): { text: string; truncated: boolean } {
@@ -358,10 +364,14 @@ function parsePatches(metadata: Json | null): { patches: ChatFilePatch[]; trunca
   return { patches, truncated }
 }
 
-/** A Code Mode script makes at most 20 tool calls; each call's arguments and all of them together are cut. */
+/**
+ * A Code Mode script makes at most 20 tool calls; each call's arguments and all of them together are cut. A view's
+ * arguments are what MDE draws, so they are kept whole up to their own limit, from a budget of their own.
+ */
 const MAX_TOOL_CALLS = 20
 const MAX_CALL_INPUT = 4 * 1024
 const MAX_CALLS_INPUT = 32 * 1024
+const MAX_VIEWS_INPUT = 4 * VIEW_INPUT_LIMIT
 const CALL_STATUSES: Record<string, ChatToolStatus> = {
   pending: 'pending',
   streaming: 'pending',
@@ -379,6 +389,7 @@ const CALL_STATUSES: Record<string, ChatToolStatus> = {
 function parseToolCalls(metadata: Json | null, fallback: ChatToolStatus): ChatToolCall[] | undefined {
   const calls: ChatToolCall[] = []
   let budget = MAX_CALLS_INPUT
+  let viewBudget = MAX_VIEWS_INPUT
   for (const entry of list(metadata?.toolCalls).slice(0, MAX_TOOL_CALLS)) {
     const call = record(entry)
     const tool = short(call?.tool, 200)
@@ -389,8 +400,13 @@ function parseToolCalls(metadata: Json | null, fallback: ChatToolStatus): ChatTo
     } catch {
       input = ''
     }
-    input = input.slice(0, Math.max(0, Math.min(MAX_CALL_INPUT, budget)))
-    budget -= input.length
+    if (isViewCall(tool)) {
+      input = input.slice(0, Math.max(0, Math.min(VIEW_INPUT_LIMIT, viewBudget)))
+      viewBudget -= input.length
+    } else {
+      input = input.slice(0, Math.max(0, Math.min(MAX_CALL_INPUT, budget)))
+      budget -= input.length
+    }
     const status = typeof call.status === 'string' ? CALL_STATUSES[call.status] : undefined
     calls.push({ tool, status: status ?? fallback, input })
   }
@@ -445,7 +461,7 @@ function parsePart(value: unknown): ChatPart | null {
   }
   const status = typeof state.status === 'string' ? statuses[state.status] : undefined
   if (!status) return null
-  const input = toolInput(state.input)
+  const input = toolInput(state.input, isViewTool(name))
   const output = toolOutput(state.content)
   const error = status === 'error' ? errorText(state.error) : undefined
   const metadata = record(state.metadata)

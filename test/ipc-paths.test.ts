@@ -810,3 +810,110 @@ describe('file tree IPC', () => {
     expect(wslDistrosMock.runWslCommand).not.toHaveBeenCalled()
   })
 })
+
+describe('Files tree folder IPC', () => {
+  const rememberDirectory = vi.fn()
+  const terminalInfo = vi.fn()
+
+  const register = (): void => {
+    registerIpcHandlers(
+      security,
+      { terminalInfo, ensure: vi.fn(), savedDirectory: vi.fn(), restart: vi.fn(), dispose: vi.fn(), rememberDirectory } as never,
+      {} as never,
+      {} as never,
+      { chat: { fileRoot: inboxFileRoot }, recorder: {} } as never
+    )
+  }
+
+  beforeEach(() => {
+    electronMock.handlers.clear()
+    electronMock.shell.openPath.mockClear()
+    inboxFileRoot.mockReset().mockReturnValue(null)
+    rememberDirectory.mockReset()
+    terminalInfo.mockReset().mockReturnValue(null)
+    workspaceMock.getSession.mockReset()
+    wslPathsMock.canonicalizeWslPath.mockReset()
+    wslPathsMock.toWindows.mockReset()
+    wslPathsMock.uncPathFor.mockReset()
+    wslDistrosMock.runWslCommand.mockReset()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('shows a WSL tree folder, and nothing when its real path leaves the root', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    inboxFileRoot.mockReturnValue({ ...wslSession({ id: 'ses_thread' }), path: '/home/me/app' })
+    wslDistrosMock.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
+    wslPathsMock.canonicalizeWslPath.mockImplementation(async (_distro: string, path: string) => path === '/home/me/app/escape' ? '/etc' : path)
+    wslPathsMock.toWindows.mockImplementation(async (_distro: string, path: string) => `\\\\wsl.localhost\\Ubuntu-24.04${path.replaceAll('/', '\\')}`)
+    register()
+    const reveal = handler(IpcChannels.pathRevealTreeFolder)
+
+    await reveal(trustedEvent, { sessionId: 'ses_thread', path: 'src/lib' })
+    expect(electronMock.shell.openPath).toHaveBeenLastCalledWith('\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\app\\src\\lib')
+    await reveal(trustedEvent, { sessionId: 'ses_thread', path: '' })
+    expect(electronMock.shell.openPath).toHaveBeenLastCalledWith('\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\app')
+
+    electronMock.shell.openPath.mockClear()
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await reveal(trustedEvent, { sessionId: 'ses_thread', path: 'escape' })
+    expect(electronMock.shell.openPath).not.toHaveBeenCalled()
+    await expect(reveal(trustedEvent, { sessionId: 'ses_thread', path: '../etc' })).rejects.toThrow('Invalid IPC payload')
+  })
+
+  it('starts a new terminal in a native tree folder, and only a new one in the same environment', async () => {
+    const directory = await fs.mkdtemp(join(tmpdir(), 'mde-tree-folder-'))
+    try {
+      await fs.mkdir(join(directory, 'src'))
+      const native = wslSession({ kind: 'native', distro: undefined })
+      workspaceMock.getSession.mockResolvedValue(native)
+      inboxFileRoot.mockReturnValue({ ...native, id: 'ses_thread', path: directory })
+      register()
+      const start = handler(IpcChannels.ptyStartInFolder)
+      const terminalId = 'session-1:tab:t2:pane:p1'
+
+      await start(trustedEvent, { terminalId, sessionId: 'session-1', folder: { sessionId: 'ses_thread', path: 'src' } })
+      expect(rememberDirectory).toHaveBeenCalledWith(terminalId, native, await fs.realpath(join(directory, 'src')))
+
+      await expect(start(trustedEvent, { terminalId: 'other:tab:t:pane:p', sessionId: 'session-1', folder: { sessionId: 'ses_thread', path: '' } }))
+        .rejects.toThrow('Invalid terminal.')
+      terminalInfo.mockReturnValueOnce({ sessionId: 'session-1', directory })
+      await expect(start(trustedEvent, { terminalId, sessionId: 'session-1', folder: { sessionId: 'ses_thread', path: '' } }))
+        .rejects.toThrow('already running')
+      await expect(start(trustedEvent, { terminalId, sessionId: 'session-1', folder: { sessionId: 'ses_thread', path: 'missing' } }))
+        .rejects.toThrow('Folder not found.')
+
+      workspaceMock.getSession.mockResolvedValue(wslSession())
+      await expect(start(trustedEvent, { terminalId, sessionId: 'session-1', folder: { sessionId: 'ses_thread', path: 'src' } }))
+        .rejects.toThrow('but the terminal runs in WSL (Ubuntu-24.04)')
+      expect(rememberDirectory).toHaveBeenCalledTimes(1)
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it.skipIf(process.platform === 'win32')('reads the Git graph of a live terminal from its verified folder, never a path it is given', async () => {
+    const directory = await fs.mkdtemp(join(tmpdir(), 'mde-terminal-graph-'))
+    try {
+      const native = wslSession({ kind: 'native', distro: undefined })
+      workspaceMock.getSession.mockResolvedValue(native)
+      register()
+      const graph = handler(IpcChannels.gitGraph)
+      const terminalId = 'session-1:tab:t1:pane:p1'
+
+      await expect(graph(trustedEvent, { terminalId, limit: 10, scope: 'all' })).rejects.toThrow('no longer running')
+      terminalInfo.mockReturnValue({ sessionId: 'session-1', directory: join(directory, 'gone') })
+      await expect(graph(trustedEvent, { terminalId, limit: 10, scope: 'all' })).rejects.toThrow('could not be found')
+      terminalInfo.mockReturnValue({ sessionId: 'session-1', directory })
+      await expect(graph(trustedEvent, { terminalId, limit: 10, scope: 'all' }))
+        .resolves.toMatchObject({ available: false, reason: 'This folder is not a Git repository.' })
+      // A thread and a terminal at once, or a path, are refused at the boundary.
+      await expect(graph(trustedEvent, { terminalId, threadId: 'ses_thread', limit: 10, scope: 'all' })).rejects.toThrow('Invalid IPC payload')
+      await expect(graph(trustedEvent, { terminalId, path: directory, limit: 10, scope: 'all' })).rejects.toThrow('Invalid IPC payload')
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true })
+    }
+  })
+})

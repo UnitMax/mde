@@ -6,7 +6,8 @@ import {
   type DragEvent as ReactDragEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
-  type CSSProperties
+  type CSSProperties,
+  type ReactNode
 } from 'react'
 import { ClipboardPaste, Copy, FolderOpen, MessageSquarePlus, MessageSquareQuote, Plus } from 'lucide-react'
 import type { FileTreeDropEntry } from '@shared/ipc'
@@ -117,6 +118,8 @@ interface TerminalViewProps {
   onClosePane: (terminalId: string) => void
   onPaneFocus: (terminalId: string) => void
   onPaneTitleChange: (terminalId: string, title: string | null) => void
+  /** Drawn under a pane's header, above its screen: the Inbox's approval bar for a command an agent asked for. */
+  paneNotice?: (terminalId: string) => ReactNode
 }
 
 interface TerminalSurfaceProps {
@@ -641,6 +644,7 @@ function TerminalPane({
   paneOverlayActive = false,
   splitControlsVisible = false,
   cards = false,
+  notice,
   onSplit,
 }: {
   session: Session
@@ -656,6 +660,8 @@ function TerminalPane({
   paneOverlayNumber?: number | null
   paneOverlayActive?: boolean
   splitControlsVisible?: boolean
+  /** Drawn under the header, above the screen. */
+  notice?: ReactNode
   /** Draw the pane as a rounded card that stands out when it is the active one (the card layout setting). */
   cards?: boolean
   onSplit: (side: TerminalSplitSide) => void
@@ -747,6 +753,7 @@ function TerminalPane({
           </Button>
         </div>
       )}
+      {notice}
       <TerminalSurface
         session={session}
         pane={pane}
@@ -1010,7 +1017,8 @@ export function TerminalView({
   onPaneOrderChange,
   onClosePane,
   onPaneFocus,
-  onPaneTitleChange
+  onPaneTitleChange,
+  paneNotice
 }: TerminalViewProps): JSX.Element {
   const [splitModifierHeld, setSplitModifierHeld] = useState(false)
   const [reorderModifierHeld, setReorderModifierHeld] = useState(false)
@@ -1426,6 +1434,7 @@ export function TerminalView({
           onPaneFocus(pane.terminalId)
         }}
         onTitleChange={(title) => onPaneTitleChange(pane.terminalId, title)}
+        notice={paneNotice?.(pane.terminalId)}
         isFullscreen={isFullscreen}
         onToggleFullscreen={() => toggleFullscreen(pane.terminalId)}
         reorderState={

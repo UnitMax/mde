@@ -115,6 +115,7 @@ function completionKey(text: string, caret: number, hasCommands: boolean, hasFil
 }
 
 const NO_SKILLS: ChatSkill[] = []
+const TOO_LONG = `A message can hold up to ${MESSAGE_TEXT_LIMIT.toLocaleString('en-US')} characters. Attach long logs as a file instead.`
 const NO_COMMANDS: readonly SlashCommand[] = []
 const NO_ITEMS: CompletionItem[] = []
 const NO_FILES: ChatFileEntry[] = []
@@ -463,10 +464,15 @@ export const ChatComposer = forwardRef(function ChatComposer({
   // Text after a command that takes none: Enter says so instead of running it.
   const strayArgument = Boolean(invocation && !invocation.command.argument && invocation.args)
 
+  // How much of the message the attached quotes take (with the blank line after them); the box takes the rest.
+  const quotesLength = quotes.length ? joinQuotes(quotes.map((quote) => quote.text), '').length + 2 : 0
+
   // Keeps the text with the quotes attached to it, as the draft.
   const persist = (next: string, attached: readonly Quote[] = quotes): void => {
     if (draftKey) {
       const kept = joinQuotes(attached.map((quote) => quote.text), next)
+      // The main process would refuse it; the box says so when it is sent.
+      if (kept.length > MESSAGE_TEXT_LIMIT) return
       void mutate({ key: draftKey, action: 'text', text: kept }).catch((reason) => setError(ipcErrorMessage(reason, 'Could not save the draft.')))
     }
   }
@@ -640,6 +646,7 @@ export const ChatComposer = forwardRef(function ChatComposer({
     setError(null)
     try {
       const message = joinQuotes(quotes.map((quote) => quote.text), text)
+      if (message.length > MESSAGE_TEXT_LIMIT) throw new Error(TOO_LONG)
       let value: ChatDraft | undefined
       if (draftKey) {
         value = await mutate({ key: draftKey, action: 'text', text: message })
@@ -832,6 +839,8 @@ export const ChatComposer = forwardRef(function ChatComposer({
             if (images.length) { event.preventDefault(); void addFiles(images) }
           }}
           onKeyDown={onKeyDown}
+          maxLength={MESSAGE_TEXT_LIMIT - quotesLength}
+          onTooLong={() => setError(TOO_LONG)}
         />
         {/*
           What runs the message (attach, model, agent) sits on the left, what it knows (MCP, context) and the way

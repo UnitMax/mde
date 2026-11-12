@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { inboxTerminalSession } from '@shared/inbox-terminal'
 import { TerminalView } from '@/components/TerminalView'
+import { AgentCommandBar } from '@/components/inbox/AgentCommandBar'
 import { TerminalSelectionActionsContext, type TerminalSelectionActions } from '@/components/terminal-selection-actions'
 import { sendTextToNewThread, sendTextToThread } from '@/lib/inbox-thread-input'
 import { focusTerminalWhenReady } from '@/terminal/focus'
 import { INBOX_TERMINAL_TAB, useInboxTerminal } from '@/store/inbox-terminal'
 import { useWorkspace } from '@/store/workspace'
+
+const agentCommandBar = (terminalId: string): JSX.Element => <AgentCommandBar terminalId={terminalId} />
 
 /** Set when the tab was chosen with the pointer, so the terminal that appears takes the keyboard. */
 let focusWhenShown = false
@@ -88,6 +91,7 @@ export function InboxTerminal({ focusOnMount = false }: { focusOnMount?: boolean
       onClosePane={closePane}
       onPaneFocus={paneFocused}
       onPaneTitleChange={titlePane}
+      paneNotice={agentCommandBar}
     />
     </TerminalSelectionActionsContext.Provider>
   )

@@ -5,6 +5,7 @@ import { isInboxFolderColor, isInboxFolderEmoji, isInboxFolderSymbol } from '@sh
 import { isSessionColor } from '@shared/session-colors'
 import { isSessionIcon } from '@shared/session-icons'
 import { MCP_SERVER_NAME } from '@shared/mcp'
+import { PROMPT_CONTROL_CHARACTERS, PROMPT_TEXT_LIMIT } from '@shared/prompt-text'
 import { worktreeBranchProblem } from '@shared/worktree-branch'
 import { ATTENTION_COUNT_LIMIT } from '@shared/taskbar-attention'
 
@@ -93,7 +94,18 @@ const dimension: Validator = (value) => typeof value === 'number' && Number.isIn
 const size = object({ cols: dimension, rows: dimension })
 const layout: Validator = isPersistedTerminalLayout
 const tab = object({ sessionId: id, tabId: id })
+/** A full SHA-1 or SHA-256 object name: never an option, a range or a ref name. */
+const commitHash: Validator = (value) => typeof value === 'string' && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(value)
+const graphLimit: Validator = (value) => typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5000
+/** A moment as milliseconds since the epoch; whether it is in the future is the recorder's to check against its clock. */
+const epochMs: Validator = (value) => typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= 8.64e15
 const opencodeSessionId: Validator = (value) => id(value) && /^ses_[A-Za-z0-9_-]+$/.test(value as string)
+/** A Git graph root: an Inbox thread or a live terminal, never both and never a path. */
+const gitRoot = (fields: Record<string, Validator>): Validator => {
+  const thread = object({ threadId: opencodeSessionId, ...fields })
+  const terminal = object({ terminalId: id, ...fields })
+  return (value) => thread(value) || terminal(value)
+}
 const ptyRequest = { terminalId: id, sessionId: id, size, palette }
 const relativePath: Validator = (value) => path(value) && !(value as string).startsWith('/') &&
   !(value as string).includes('\\') && (value as string).split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..')
@@ -122,8 +134,8 @@ const draftChoice = object({
   worktree: optional(object({ base: worktreeBase, branch: optional(string(256)) })),
 })
 /** Prompt text: newlines and tabs are fine, other control characters are not. */
-const promptText: Validator = (value) => typeof value === 'string' && value.length <= 100_000 &&
-  !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value)
+const promptText: Validator = (value) => typeof value === 'string' && value.length <= PROMPT_TEXT_LIMIT &&
+  !PROMPT_CONTROL_CHARACTERS.test(value)
 const chatThread = object({ threadId: opencodeSessionId })
 /** A goal's objective; OpenCode's own limit and its reserved words are checked here as well as there. */
 const goalObjective: Validator = (value) => promptText(value) && goalObjectiveProblem(String(value)) === null
@@ -199,6 +211,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.ptyDispose]: id,
   [IpcChannels.ptyStatuses]: noPayload,
   [IpcChannels.ptyDirectories]: noPayload,
+  [IpcChannels.ptyStartInFolder]: object({ terminalId: id, sessionId: id, folder: rooted({ path: listPath }) }),
   [IpcChannels.ptyDropFiles]: object({
     terminalId: id,
     files: array(object({ name: optionalPath, nativePath: optional(path), fileUri: optional(path) }), IPC_LIMITS.droppedFiles),
@@ -217,6 +230,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.pathOpenTerminalInVsCode]: id,
   [IpcChannels.pathRevealInbox]: id,
   [IpcChannels.pathOpenInboxInVsCode]: id,
+  [IpcChannels.pathRevealTreeFolder]: rooted({ path: listPath }),
   [IpcChannels.gitTerminalInfo]: terminalId,
   [IpcChannels.filesList]: rooted({ path: listPath }),
   [IpcChannels.filesRead]: rooted({ path: relativePath }),
@@ -224,6 +238,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.inboxSetRead]: object({ id: opencodeSessionId, read: boolean }),
   [IpcChannels.inboxSetArchived]: object({ id: opencodeSessionId, archived: boolean }),
   [IpcChannels.inboxSetPinned]: object({ id: opencodeSessionId, pinned: boolean }),
+  [IpcChannels.inboxSetSnoozed]: object({ id: opencodeSessionId, until: nullable(epochMs) }),
   [IpcChannels.inboxSetCustomTitle]: object({ id: opencodeSessionId, customTitle: nullable(string(512)) }),
   [IpcChannels.inboxRemove]: object({ id: opencodeSessionId, removeWorktree: optional(boolean) }),
   [IpcChannels.inboxFolders]: noPayload,
@@ -234,8 +249,22 @@ export const ipcPayloadValidators = {
   [IpcChannels.inboxGitInfo]: object({ folderId: inboxFolderId }),
   [IpcChannels.inboxChangeDiff]: object({ threadId: opencodeSessionId, path }),
   [IpcChannels.inboxChanges]: object({ threadId: opencodeSessionId, details: optional(boolean) }),
+  [IpcChannels.gitGraph]: gitRoot({ limit: graphLimit, scope: oneOf('all', 'local', 'head') }),
+  [IpcChannels.gitCommit]: gitRoot({ hash: commitHash }),
+  [IpcChannels.gitFetch]: gitRoot({}),
+  [IpcChannels.gitChanges]: gitRoot({}),
+  [IpcChannels.gitChangeDiff]: gitRoot({ path }),
+  [IpcChannels.gitCommitDiff]: gitRoot({ hash: commitHash, path }),
   [IpcChannels.opencodeConfigRead]: object({ kind, distro: optional(distro) }),
   [IpcChannels.opencodeConfigPreview]: object({ kind, distro: optional(distro), draft: configDraft }),
+  [IpcChannels.mdeMcpStatus]: object({ kind, distro: optional(distro) }),
+  [IpcChannels.mdeMcpInstall]: object({ kind, distro: optional(distro) }),
+  [IpcChannels.mdeMcpRemove]: object({ kind, distro: optional(distro) }),
+  [IpcChannels.mdeMcpTerminalSettings]: noPayload,
+  [IpcChannels.mdeMcpSetTerminalSettings]: object({ commands: oneOf('ask', 'run'), allowedUntil: optional((value) => value === null) }),
+  [IpcChannels.agentTerminalClaim]: object({ requestId: id, terminalId: id, palette }),
+  [IpcChannels.agentTerminalRefuse]: object({ requestId: id, reason: string(1000) }),
+  [IpcChannels.agentTerminalDecide]: object({ terminalId: id, decision: oneOf('run', 'run-for-hour', 'cancel') }),
   [IpcChannels.opencodeConfigSave]: object({ kind, distro: optional(distro), draft: configDraft, revision: string(128) }),
   [IpcChannels.chatConfigure]: object({ executable: path }),
   [IpcChannels.chatOptions]: (value) => object({ folderId: optional(inboxFolderId), threadId: optional(opencodeSessionId) })(value) &&

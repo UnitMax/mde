@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Copy, Ellipsis, FolderGit2, GitBranch, GitFork, LoaderCircle, PenLine, RefreshCw } from 'lucide-react'
+import { Bot, Copy, Ellipsis, FolderGit2, GitBranch, GitFork, LoaderCircle, PenLine, RefreshCw } from 'lucide-react'
 import type { InboxThread } from '@shared/types'
 import { InboxStatusBadge, useInboxClock } from '@/components/InboxPanel'
 import { CompactChatToggle } from '@/components/inbox/CompactChatToggle'
@@ -70,6 +70,36 @@ function ForkedFrom({ source }: { source: string }): JSX.Element {
       type="button"
       data-testid="inbox-forked-from"
       onClick={() => select(original.id)}
+      title={`Open ${name}. ${explanation}`}
+      className={cn(className, 'rounded hover:text-fg')}
+    >
+      {body}
+    </button>
+  )
+}
+
+/** "Started by <thread>": an agent asked MDE for this thread through the MDE MCP. */
+function SpawnedBy({ parentId }: { parentId?: string }): JSX.Element {
+  const parent = useWorkspace((state) => (parentId ? state.inboxThreads.find((item) => item.id === parentId) : undefined))
+  const select = useWorkspace((state) => state.selectInboxThread)
+  const explanation = 'An agent started this thread through the MDE MCP.'
+  const name = parent ? (parent.customTitle ?? parent.title) : null
+  const label = name ? `Started by ${name}` : parentId ? 'Started by a thread that is no longer in the Inbox' : 'Started by an agent'
+  const body = (
+    <>
+      <Bot aria-hidden className={ICON} />
+      <span className="min-w-0 max-w-[14rem] truncate">{label}</span>
+    </>
+  )
+  const className = '@max-[56rem]/thread:hidden flex shrink-0 items-center gap-1'
+  if (!parent) {
+    return <span data-testid="inbox-spawned-by" title={explanation} className={className}>{body}</span>
+  }
+  return (
+    <button
+      type="button"
+      data-testid="inbox-spawned-by"
+      onClick={() => select(parent.id)}
       title={`Open ${name}. ${explanation}`}
       className={cn(className, 'rounded hover:text-fg')}
     >
@@ -155,6 +185,7 @@ export function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
             </Fact>
           )}
           {thread.forkedFrom && <ForkedFrom source={thread.forkedFrom} />}
+          {thread.spawnedBy && <SpawnedBy parentId={thread.spawnedBy.threadId} />}
         </div>
         <div className="min-w-2 flex-1" />
         <div className="flex shrink-0 items-center gap-0.5">

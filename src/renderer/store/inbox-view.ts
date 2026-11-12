@@ -6,6 +6,7 @@ import {
   getInboxModelQuickSwitch,
   getInboxProjectFilter,
   getInboxSidebarWidth,
+  getInboxSnoozedOpen,
   getInboxTitleIcons,
   getInboxWorkingCollapsed,
   getInboxWorkingSection,
@@ -14,6 +15,7 @@ import {
   saveInboxModelQuickSwitch,
   saveInboxProjectFilter,
   saveInboxSidebarWidth,
+  saveInboxSnoozedOpen,
   saveInboxTitleIcons,
   saveInboxWorkingCollapsed,
   saveInboxWorkingSection,
@@ -50,6 +52,9 @@ interface Store {
   /** The Drafts section is folded up, leaving only its header. */
   draftsCollapsed: boolean
   setDraftsCollapsed: (collapsed: boolean) => void
+  /** The Snoozed section is open; it starts folded up to its header. */
+  snoozedOpen: boolean
+  setSnoozedOpen: (open: boolean) => void
   /** How wide the right-hand sidebar (files, changes, terminal) is, in pixels. */
   sidebarWidth: number
   /** Dragging sets the width without keeping it; `keep` is for the last step, so storage is written once. */
@@ -92,6 +97,11 @@ export const useInboxView = create<Store>((set) => ({
   setDraftsCollapsed: (collapsed) => {
     saveInboxDraftsCollapsed(collapsed)
     set({ draftsCollapsed: collapsed })
+  },
+  snoozedOpen: getInboxSnoozedOpen(),
+  setSnoozedOpen: (open) => {
+    saveInboxSnoozedOpen(open)
+    set({ snoozedOpen: open })
   },
   sidebarWidth: getInboxSidebarWidth(),
   setSidebarWidth: (width, keep = true) => {

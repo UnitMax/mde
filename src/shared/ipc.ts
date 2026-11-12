@@ -1,6 +1,15 @@
 import type { InboxTerminalConfiguration, InboxTerminalSettings } from './inbox-terminal'
 import type { TaskbarAttentionRequest } from './taskbar-attention'
 import type {
+  AgentTerminalClaim,
+  AgentTerminalDecision,
+  AgentTerminalOpenRequest,
+  AgentTerminalRefusal,
+  MdeMcpStatus,
+  MdeMcpTerminalSettings,
+  MdeMcpTerminalSettingsUpdate,
+} from './mde-mcp'
+import type {
   Distro,
   GitTerminalInfoResponse,
   HostPlatform,
@@ -33,6 +42,7 @@ import type {
   InboxRemoveRequest,
   InboxSetArchivedRequest,
   InboxSetPinnedRequest,
+  InboxSetSnoozedRequest,
   InboxSetCustomTitleRequest,
   InboxSetReadRequest,
   InboxThread,
@@ -46,6 +56,13 @@ import type {
   InboxChangesRequest,
   InboxChangeDiffRequest,
   InboxChangeDiff,
+  GitRootRequest,
+  GitGraphRequest,
+  InboxGitGraph,
+  GitCommitRequest,
+  GitCommitDiffRequest,
+  InboxGitCommitDetails,
+  InboxGitFetchResult,
   ChatMessagesPage,
   ChatMessagesRequest,
   ChatSearchRequest,
@@ -130,6 +147,7 @@ export const IpcChannels = {
   ptyStatuses: 'pty:statuses',
   ptyDirectories: 'pty:directories',
   ptyDropFiles: 'pty:drop-files',
+  ptyStartInFolder: 'pty:start-in-folder',
 
   clipboardWriteText: 'clipboard:write-text',
   clipboardPaste: 'clipboard:paste',
@@ -145,8 +163,15 @@ export const IpcChannels = {
   pathOpenTerminalInVsCode: 'path:open-terminal-in-vscode',
   pathRevealInbox: 'path:reveal-inbox',
   pathOpenInboxInVsCode: 'path:open-inbox-in-vscode',
+  pathRevealTreeFolder: 'path:reveal-tree-folder',
 
   gitTerminalInfo: 'git:terminal-info',
+  gitGraph: 'git:graph',
+  gitCommit: 'git:commit',
+  gitFetch: 'git:fetch',
+  gitChanges: 'git:changes',
+  gitChangeDiff: 'git:change-diff',
+  gitCommitDiff: 'git:commit-diff',
 
   filesList: 'files:list',
   filesRead: 'files:read',
@@ -155,6 +180,7 @@ export const IpcChannels = {
   inboxSetRead: 'inbox:set-read',
   inboxSetArchived: 'inbox:set-archived',
   inboxSetPinned: 'inbox:set-pinned',
+  inboxSetSnoozed: 'inbox:set-snoozed',
   inboxSetCustomTitle: 'inbox:set-custom-title',
   inboxRemove: 'inbox:remove',
   inboxFolders: 'inbox:folders',
@@ -200,6 +226,14 @@ export const IpcChannels = {
   opencodeConfigRead: 'opencode-config:read',
   opencodeConfigPreview: 'opencode-config:preview',
   opencodeConfigSave: 'opencode-config:save',
+  mdeMcpStatus: 'mde-mcp:status',
+  mdeMcpInstall: 'mde-mcp:install',
+  mdeMcpRemove: 'mde-mcp:remove',
+  mdeMcpTerminalSettings: 'mde-mcp:terminal-settings',
+  mdeMcpSetTerminalSettings: 'mde-mcp:set-terminal-settings',
+  agentTerminalClaim: 'agent-terminal:claim',
+  agentTerminalRefuse: 'agent-terminal:refuse',
+  agentTerminalDecide: 'agent-terminal:decide',
 
   windowModeGet: 'window-mode:get',
   windowModeSet: 'window-mode:set',
@@ -218,9 +252,13 @@ export const IpcEvents = {
   ptyExit: 'pty:exit',
   ptyDirectory: 'pty:directory',
   inboxChanged: 'inbox:changed',
+  /** The projects changed outside the window (an agent added one through the MDE MCP); read them again. */
+  inboxFoldersChanged: 'inbox:folders-changed',
   chatEvent: 'chat:event',
   windowModeChanged: 'window-mode:changed',
   floatingTerminalToggle: 'floating-terminal:toggle',
+  /** An agent asked, through the MDE MCP, for a new pane in the Inbox terminal. */
+  agentTerminalOpen: 'agent-terminal:open',
 } as const
 
 export interface PlatformInfo {
@@ -290,6 +328,16 @@ export interface EnsurePtyRequest {
 }
 
 export type RestartPtyRequest = EnsurePtyRequest
+
+/**
+ * A terminal about to be created (a new tab's pane, or a new pane of the Inbox terminal) and the folder of the
+ * Files tree its shell should start in: the tree's root and the folder relative to it, as for a listing.
+ */
+export interface StartTerminalInFolderRequest {
+  terminalId: string
+  sessionId: string
+  folder: FilesListRequest
+}
 
 export interface TerminalPalette {
   foreground: string
@@ -486,6 +534,8 @@ export interface RendererApi {
     statuses(): Promise<Record<string, PtyStatus>>
     directories(): Promise<Record<string, string>>
     dropFiles(req: RendererDropPtyFilesRequest): Promise<PtyDropResult>
+    /** Makes a terminal that has not started yet open its shell in a folder of the Files tree. */
+    startInFolder(req: StartTerminalInFolderRequest): Promise<void>
     onData(listener: (chunk: PtyDataChunk) => void): () => void
     onDirectory(listener: (update: PtyDirectoryUpdate) => void): () => void
     onExit(listener: (info: PtyExitInfo) => void): () => void
@@ -505,9 +555,22 @@ export interface RendererApi {
     revealInbox(id: string): Promise<void>
     /** Opens the folder of an Inbox thread or project in Windows VS Code; WSL folders on Windows only. */
     openInboxInVsCode(id: string): Promise<void>
+    /** Opens a folder of the Files tree in the file manager; `path` is relative to the tree's root ('' for the root). */
+    revealTreeFolder(req: FilesListRequest): Promise<void>
   }
   git: {
     terminalInfo(req: GitTerminalInfoRequest): Promise<GitTerminalInfoResponse | null>
+    /** The commit graph of a thread's or a terminal's checkout. */
+    graph(req: GitGraphRequest): Promise<InboxGitGraph>
+    commit(req: GitCommitRequest): Promise<InboxGitCommitDetails>
+    /** Fetches every remote of the checkout: the one Git call that may use the network. */
+    fetch(req: GitRootRequest): Promise<InboxGitFetchResult>
+    /** The uncommitted changes of the checkout, with the file list. */
+    changes(req: GitRootRequest): Promise<InboxChangesResponse>
+    /** One uncommitted file's diff; the path must still be in the checkout's Git status. */
+    changeDiff(req: GitRootRequest & { path: string }): Promise<InboxChangeDiff>
+    /** One file's change in a commit, against its first parent. */
+    commitDiff(req: GitCommitDiffRequest): Promise<InboxChangeDiff>
   }
   files: {
     list(req: FilesListRequest): Promise<FileTreeListResponse>
@@ -520,10 +583,12 @@ export interface RendererApi {
     setRead(req: InboxSetReadRequest): Promise<InboxThread | null>
     setArchived(req: InboxSetArchivedRequest): Promise<InboxThread | null>
     setPinned(req: InboxSetPinnedRequest): Promise<InboxThread | null>
+    setSnoozed(req: InboxSetSnoozedRequest): Promise<InboxThread | null>
     setCustomTitle(req: InboxSetCustomTitleRequest): Promise<InboxThread | null>
     remove(req: InboxRemoveRequest): Promise<void>
     onChanged(listener: (thread: InboxThread) => void): () => void
     folders(): Promise<InboxFoldersState>
+    onFoldersChanged(listener: () => void): () => void
     addFolder(req: InboxAddFolderRequest): Promise<InboxFolder>
     updateFolder(req: InboxUpdateFolderRequest): Promise<InboxFolder>
     removeFolder(req: InboxRemoveFolderRequest): Promise<void>
@@ -603,6 +668,28 @@ export interface RendererApi {
      * the one the revision came from. Returns the file as it is afterwards.
      */
     save(req: OpenCodeConfigSaveRequest): Promise<OpenCodeConfigSnapshot>
+  }
+  /**
+   * The MDE MCP in OpenCode's configuration for a target: whether it is there and starts this copy of MDE, and
+   * adding or removing it. Only `mcp.servers.mde` is written; the command is worked out in the main process.
+   */
+  mdeMcp: {
+    status(req: OpenCodeConfigRequest): Promise<MdeMcpStatus>
+    install(req: OpenCodeConfigRequest): Promise<MdeMcpStatus>
+    remove(req: OpenCodeConfigRequest): Promise<MdeMcpStatus>
+    /** Whether commands agents ask to run in a terminal they open run at once or wait for approval. */
+    terminalSettings(): Promise<MdeMcpTerminalSettings>
+    setTerminalSettings(req: MdeMcpTerminalSettingsUpdate): Promise<MdeMcpTerminalSettings>
+  }
+  /**
+   * Inbox terminal panes agents open through the MDE MCP. Main asks for a pane; the window answers with the
+   * pane it adds (main then starts its shell) or why it cannot; the approval bar answers a waiting command.
+   */
+  agentTerminals: {
+    onOpen(listener: (request: AgentTerminalOpenRequest) => void): () => void
+    claim(req: AgentTerminalClaim): Promise<void>
+    refuse(req: AgentTerminalRefusal): Promise<void>
+    decide(req: AgentTerminalDecision): Promise<void>
   }
   windowMode: {
     get(): Promise<WindowMode>

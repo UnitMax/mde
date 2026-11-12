@@ -8,7 +8,8 @@ MDE contains no telemetry, analytics, remote crash uploader, automatic update ch
 model-provider or remote MCP client. Its application HTTP client connects to OpenCode's loopback
 service. This does not guarantee that using MDE produces no external traffic: MDE invokes Git,
 shells and OpenCode, and reads paths through the operating system. MDE's Git calls now deny remote transports and
-suppress external filters; the network section explains the remaining boundaries.
+suppress external filters, except the **Fetch** button in the Git graph, which you press to
+fetch a repository's remotes; the network section explains the remaining boundaries.
 
 ## What MDE stores locally
 
@@ -69,13 +70,18 @@ backed-up locations can place copies elsewhere. These stores are not encrypted b
   OpenCode conversation you started in the Inbox, with its session ID, OpenCode title, optional custom name, folder, terminal chat mode
   when chosen (older threads use GUI chat), target (Mac
   or WSL distro), Git branch, model and provider identifiers and the selected model variant (reasoning effort), last status, timestamps (including,
-  while a conversation is working, when its current run began), read, archived and pinned flags, and for a forked conversation the session ID of the one it was forked from. For a conversation started in a Git worktree it also holds that worktree's root path, the repository's path, and the names of the new branch and the branch it was cut from. It also holds the Inbox folders (projects) you add (path, target, name, the icon you picked for it — the name of a built-in icon and its color, or one emoji — and timestamps; at most 200), the worktrees MDE created for you (the same record and a name made from the folder and branch; at most 100, so that more conversations can be started in them) and the folder, model and agent
+  while a conversation is working, when its current run began), read, archived and pinned flags, when a snoozed conversation comes back and whether it came back from a snooze, for a forked conversation the session ID of the one it was forked from, and for a conversation an agent started through the MDE MCP a mark saying so with the session ID of the conversation that asked. For a conversation started in a Git worktree it also holds that worktree's root path, the repository's path, and the names of the new branch and the branch it was cut from. It also holds the Inbox folders (projects) you add (path, target, name, the icon you picked for it — the name of a built-in icon and its color, or one emoji — and timestamps; at most 200), the worktrees MDE created for you (the same record and a name made from the folder and branch; at most 100, so that more conversations can be started in them) and the folder, model and agent
   you last chose in the Inbox composer. It never holds prompts, messages or tool data. It keeps at
   most 1,000 conversations; deleting a conversation from the Inbox removes only MDE's record.
 
+- `mcp-token` under Electron's user-data directory, once MDE has started on the Mac or Windows: a random
+  secret (64 hex characters, readable only by your account) that the MDE MCP bridge must present. It
+  identifies nothing. On the Mac, `mcp.sock` beside it is the socket the bridge connects to while MDE runs.
+- `mde-mcp.json` under Electron's user-data directory, once you change **Commands in terminals agents open**
+  (Settings, OpenCode, MDE MCP): only that choice (`ask` or `run`). "Allow for an hour" is not written down.
 - OpenCode's own global configuration file (`opencode.jsonc`, or `opencode.json`, in OpenCode's
   configuration folder), only when you use the **OpenCode configuration** editor (Settings, OpenCode) and
-  press Save. This is OpenCode's file, not an MDE store; see the paragraph on the editor below for what
+  press Save, or press Install or Remove for the **MDE MCP**. This is OpenCode's file, not an MDE store; see the paragraph on the editor below for what
   is read and written.
 
 Older versions may have left status-plugin files, temporary snapshots and reporting/alert preference
@@ -161,11 +167,32 @@ The Inbox's MCP list asks the same local service which MCP servers OpenCode has 
 thread and how each stands: name, title, connected, failed or needs a sign-in, and a short error with
 credentials and paths removed. MDE drops everything else in the answer (commands, URLs, headers and
 environment variables), keeps the list in memory only and stores nothing. Switching a server off or on
-there tells the service to disconnect or connect it until OpenCode restarts. MDE does not start,
-contact or configure MCP servers itself and leaves the MCP part of OpenCode's configuration alone;
-OpenCode starts and contacts them, and may send them what the model passes to their tools, as it does
+there tells the service to disconnect or connect it until OpenCode restarts. Apart from its own MDE MCP
+(below), MDE does not start, contact or configure MCP servers itself and leaves the MCP part of OpenCode's
+configuration alone; OpenCode starts and contacts them, and may send them what the model passes to their tools, as it does
 in a terminal. What a tool is called with and returns is part of the conversation, which is fetched
 from the service, kept in memory only and not written to disk by MDE.
+
+The **MDE MCP** (Settings, OpenCode, MDE MCP) lets agents start Inbox threads. **Install** writes one entry,
+`mcp.servers.mde`, into the same global OpenCode configuration file as the editor below (and the same way:
+only that entry, through a temporary file); **Remove** takes it out again. The entry holds only the path of
+the MDE program and the arguments `--mcp-bridge --mcp-target=<native or wsl:distro>`. OpenCode then starts
+MDE's program as that MCP server, once per project folder, and it passes each tool call to the running MDE
+over a local socket (a Unix socket file `mcp.sock` in MDE's user-data directory on the Mac, or a named pipe
+on Windows, reached from WSL through WSL's interop); it is not a network connection and nothing leaves the
+computer. Each call carries a random secret that MDE keeps in `mcp-token` in its user-data directory
+(readable only by you), the calling OpenCode session's ID and folder, and the tool's arguments, which for a
+new thread include its prompt. MDE uses them to start the thread as if you had started it, and keeps only
+what it keeps for any thread, plus the ID of the thread that asked. A folder an agent names that is not a
+project yet is added as one. Nothing about the calls is logged except a short error when one fails.
+An agent can also open a pane in the Inbox terminal (`open_terminal`): the call carries the directory, an
+optional pane title and an optional command line. MDE starts a shell there like any terminal you open, shows
+the command for your approval unless you chose otherwise, and keeps none of it beyond the pane's title in the
+terminal layout it already remembers; the shell's output is never sent back to the agent.
+An agent can also show you a view in the chat (`show_view`): a chart, table or dashboard described as data
+in the call's arguments, which OpenCode keeps in the conversation like any tool call. The bridge checks it
+and answers without contacting MDE; MDE draws it from the conversation and stores nothing more. A view
+cannot load anything: it holds no links, images or other addresses, and drawing it makes no network request.
 
 The **OpenCode configuration** editor (Settings, OpenCode, Edit configuration; on the Mac and, for a WSL
 distro, on Windows) reads and writes OpenCode's own global configuration file: `opencode.jsonc` or
@@ -200,6 +227,17 @@ The file list loads when the list or tab is opened and file diffs when a file is
 Counts and diff previews stay in memory; MDE does not save them or create a snapshot
 store. Viewing changes does not read conversation history, contact OpenCode or a model
 provider, or modify files.
+
+The **Git graph** (a button in the Inbox Changes tab, or a terminal's Git chip in Sessions) reads the
+checkout's commit history, branches,
+remote-tracking branches and tags with local Git commands when it opens, and a commit's message and
+changed files when you choose one. Author names, messages and hashes stay in memory and are not
+saved; only the branches you chose to show (All, Local or Current) are kept, in the renderer's
+`localStorage`. Its **Fetch** button runs `git fetch --all --prune` in that checkout, which contacts
+every remote the repository names, over the network, with your own Git credential helper and SSH
+setup. It runs only when you press it. It updates the repository's remote-tracking branches and
+removes those deleted on the remote, as a fetch in a terminal would; it does not change your
+branches or files.
 
 The Inbox's **Regenerate title** button asks that same local service to run OpenCode's
 native title agent on the current conversation. OpenCode may send conversation context
@@ -277,6 +315,12 @@ OpenCode executable to find the background service. These helpers are relevant t
   before converting operations and disable those driver commands for the invocation. Missing objects
   produce an error rather than a download. Branch listing uses local metadata and includes cached
   remote-tracking branches; it does not refresh them.
+- The Git graph's **Fetch** button is the exception: when you press it, Git connects to the
+  repository's remotes over `https`, `http`, `ssh`, `git` or `file`, and can use your global or
+  system credential helper and SSH command. Remote helpers such as `ext::` stay denied. A
+  repository whose own configuration names a credential helper, SSH command, proxy command or
+  upload-pack program is refused rather than fetched. Hooks, submodules and automatic maintenance
+  stay disabled.
 - Worktree checkout keeps Git's built-in line-ending conversion, but refuses a checkout that selects
   a configured external filter instead of running that program or silently skipping needed conversion.
   Create such worktrees in a terminal, then add their folders to Inbox. Removal can likewise refuse
