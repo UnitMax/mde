@@ -27,6 +27,7 @@ import { installPermissionPolicy } from './permissions'
 import { installRendererProtocol, registerRendererScheme } from './renderer-protocol'
 import { isMcpBridgeLaunch, mdeMcpCommand, startMdeMcp } from './mcp'
 import { startMcpBridge } from './mcp/bridge-main'
+import { AgentTerminals } from './mcp/agent-terminals'
 import type { McpListener } from './mcp/listener'
 import { checkedInboxFolderPlace } from './ipc'
 import { toWsl } from './wsl/paths'
@@ -261,6 +262,7 @@ if (bridgeLaunch) {
       // A second MDE kept apart with --user-data-dir has its own socket and token, so its bridge needs the same folder.
       ...(app.commandLine.hasSwitch('user-data-dir') ? { userDataDir: app.getPath('userData') } : {}),
     }
+    const agentTerminals = new AgentTerminals(app.getPath('userData'))
     // Agents can only start threads where the Inbox runs; elsewhere nothing listens and no token is made.
     mdeMcp = !inboxEnabled() ? null : await startMdeMcp({
       userData: app.getPath('userData'),
@@ -273,6 +275,7 @@ if (bridgeLaunch) {
       foldersChanged: () => {
         if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcEvents.inboxFoldersChanged)
       },
+      terminals: agentTerminals,
       now: () => Date.now(),
     })
     registerIpcHandlers(
@@ -280,7 +283,7 @@ if (bridgeLaunch) {
       ptyManager,
       miniWindow,
       titleBar,
-      { recorder: inboxRecorder, chat: inboxChat, openCodeConfig, mdeMcpCommand: (target) => mdeMcpCommand(target, self, toWsl) },
+      { recorder: inboxRecorder, chat: inboxChat, openCodeConfig, mdeMcpCommand: (target) => mdeMcpCommand(target, self, toWsl), agentTerminals },
       taskbarAttention,
       floatingTerminalKey
     )

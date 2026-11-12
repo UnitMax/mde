@@ -2,6 +2,9 @@ import { posix } from 'node:path'
 import {
   MDE_MCP_MAX_DEPTH,
   MDE_MCP_SPAWNS_PER_MINUTE,
+  MDE_MCP_TERMINAL_TITLE_LIMIT,
+  MDE_MCP_TERMINALS_PER_MINUTE,
+  terminalCommandProblem,
   type MdeMcpRequest,
   type MdeMcpResponse,
 } from '@shared/mde-mcp'
@@ -24,6 +27,21 @@ import { parseWslUncPath } from '../wsl/paths'
  * same Inbox code: a thread an agent starts is an ordinary Inbox thread.
  */
 
+/** A terminal an agent asked for, with its directory checked and resolved. */
+export interface McpTerminalRequest {
+  target: OpenCodeTarget
+  directory: string
+  title: string
+  command: string | null
+  /** The calling thread, when it is an Inbox thread. */
+  parent?: InboxThread
+}
+
+export interface McpTerminalResult {
+  /** Whether the command runs now, waits for the person's approval, or there is none. */
+  command: 'none' | 'running' | 'waiting'
+}
+
 export interface McpThreadOptions {
   /** The thread whose agent asked; absent when the caller is not an Inbox thread. */
   parentId?: string
@@ -44,12 +62,18 @@ export interface MdeMcpHost {
   addFolder(target: OpenCodeTarget, directory: string): Promise<InboxFolder>
   currentBranch(folder: InboxFolder): Promise<string | null>
   create(request: ChatCreateRequest, options: McpThreadOptions): Promise<InboxThread>
+  /**
+   * Resolves and checks the directory like a project's (`addFolder` without adding it), then opens a pane in the
+   * Inbox terminal whose shell starts there. Resolves once the shell has started.
+   */
+  openTerminal(request: McpTerminalRequest): Promise<McpTerminalResult & { directory: string }>
   now(): number
 }
 
 const AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 const CONTROLS = /[\u0000-\u001f\u007f-\u009f]/
 const CREATE_KEYS = new Set(['prompt', 'directory', 'agent', 'model', 'mode', 'worktree'])
+const TERMINAL_KEYS = new Set(['command', 'directory', 'title'])
 
 class ToolError extends Error {}
 
@@ -110,6 +134,7 @@ export function callerDirectory(target: OpenCodeTarget, cwd: string): string | n
 
 export class MdeMcpTools {
   private spawns: number[] = []
+  private terminals: number[] = []
 
   constructor(private readonly host: MdeMcpHost) {}
 
@@ -119,6 +144,7 @@ export class MdeMcpTools {
     try {
       if (request.tool === 'list_projects') return this.listProjects(request)
       if (request.tool === 'create_thread') return await this.createThread(request)
+      if (request.tool === 'open_terminal') return await this.openTerminal(request)
       return { ok: false, error: `Unknown tool: ${request.tool}` }
     } catch (error) {
       if (error instanceof ToolError) return { ok: false, error: error.message }
@@ -237,6 +263,56 @@ export class MdeMcpTools {
     return {
       ok: true,
       text: `Started thread ${thread.id} in ${thread.directory}${thread.worktree ? ` (new worktree on branch ${thread.worktree.branch})` : ''}. It works on its own; the person follows it in MDE.\n${JSON.stringify(data, null, 2)}`,
+      data,
+    }
+  }
+
+  private async openTerminal(request: MdeMcpRequest): Promise<MdeMcpResponse> {
+    const args = request.arguments
+    const unknown = Object.keys(args).find((key) => !TERMINAL_KEYS.has(key))
+    if (unknown) throw new ToolError(`Unknown argument \`${unknown}\`.`)
+    let command: string | null = null
+    if (args.command !== undefined && args.command !== null) {
+      if (typeof args.command !== 'string') throw new ToolError('`command` must be a string.')
+      // The command is shown and typed exactly as given, so it is checked as given, not trimmed into shape.
+      const problem = terminalCommandProblem(args.command)
+      if (problem) throw new ToolError(`\`command\` ${problem}.`)
+      command = args.command.trim()
+    }
+    const directoryText = optionalText(args, 'directory', 4096)
+    const title = optionalText(args, 'title', MDE_MCP_TERMINAL_TITLE_LIMIT)
+    if (title && terminalCommandProblem(title)) throw new ToolError('`title` is not valid.')
+
+    const now = this.host.now()
+    this.terminals = this.terminals.filter((at) => now - at < 60_000)
+    if (this.terminals.length >= MDE_MCP_TERMINALS_PER_MINUTE) {
+      throw new ToolError(`Agents may open at most ${MDE_MCP_TERMINALS_PER_MINUTE} terminals a minute. Wait a moment and try again.`)
+    }
+
+    const target = request.target
+    const parent = this.parent(request)
+    const directory = directoryText
+      ? directoryArgument(target, directoryText)
+      : parent?.directory ?? callerDirectory(target, request.cwd)
+    if (!directory) throw new ToolError('MDE cannot tell which directory the terminal starts in. Pass `directory`.')
+
+    this.terminals.push(now)
+    const paneTitle = title ?? (command ? (command.length > MDE_MCP_TERMINAL_TITLE_LIMIT ? `${command.slice(0, MDE_MCP_TERMINAL_TITLE_LIMIT - 1)}…` : command) : 'Agent terminal')
+    let result: McpTerminalResult & { directory: string }
+    try {
+      result = await this.host.openTerminal({ target, directory, title: paneTitle, command, ...(parent ? { parent } : {}) })
+    } catch (error) {
+      throw new ToolError(error instanceof Error ? error.message : String(error))
+    }
+    const status = result.command === 'running'
+      ? `It is running \`${command}\`.`
+      : result.command === 'waiting'
+        ? `\`${command}\` waits for the person to approve it in MDE; it has not run yet.`
+        : 'It is an empty shell.'
+    const data = { directory: result.directory, title: paneTitle, command: result.command }
+    return {
+      ok: true,
+      text: `Opened a terminal in ${result.directory}. ${status} You cannot see its output; the person follows it in MDE.\n${JSON.stringify(data, null, 2)}`,
       data,
     }
   }

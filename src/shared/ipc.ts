@@ -1,6 +1,14 @@
 import type { InboxTerminalConfiguration, InboxTerminalSettings } from './inbox-terminal'
 import type { TaskbarAttentionRequest } from './taskbar-attention'
-import type { MdeMcpStatus } from './mde-mcp'
+import type {
+  AgentTerminalClaim,
+  AgentTerminalDecision,
+  AgentTerminalOpenRequest,
+  AgentTerminalRefusal,
+  MdeMcpStatus,
+  MdeMcpTerminalSettings,
+  MdeMcpTerminalSettingsUpdate,
+} from './mde-mcp'
 import type {
   Distro,
   GitTerminalInfoResponse,
@@ -219,6 +227,11 @@ export const IpcChannels = {
   mdeMcpStatus: 'mde-mcp:status',
   mdeMcpInstall: 'mde-mcp:install',
   mdeMcpRemove: 'mde-mcp:remove',
+  mdeMcpTerminalSettings: 'mde-mcp:terminal-settings',
+  mdeMcpSetTerminalSettings: 'mde-mcp:set-terminal-settings',
+  agentTerminalClaim: 'agent-terminal:claim',
+  agentTerminalRefuse: 'agent-terminal:refuse',
+  agentTerminalDecide: 'agent-terminal:decide',
 
   windowModeGet: 'window-mode:get',
   windowModeSet: 'window-mode:set',
@@ -242,6 +255,8 @@ export const IpcEvents = {
   chatEvent: 'chat:event',
   windowModeChanged: 'window-mode:changed',
   floatingTerminalToggle: 'floating-terminal:toggle',
+  /** An agent asked, through the MDE MCP, for a new pane in the Inbox terminal. */
+  agentTerminalOpen: 'agent-terminal:open',
 } as const
 
 export interface PlatformInfo {
@@ -659,6 +674,19 @@ export interface RendererApi {
     status(req: OpenCodeConfigRequest): Promise<MdeMcpStatus>
     install(req: OpenCodeConfigRequest): Promise<MdeMcpStatus>
     remove(req: OpenCodeConfigRequest): Promise<MdeMcpStatus>
+    /** Whether commands agents ask to run in a terminal they open run at once or wait for approval. */
+    terminalSettings(): Promise<MdeMcpTerminalSettings>
+    setTerminalSettings(req: MdeMcpTerminalSettingsUpdate): Promise<MdeMcpTerminalSettings>
+  }
+  /**
+   * Inbox terminal panes agents open through the MDE MCP. Main asks for a pane; the window answers with the
+   * pane it adds (main then starts its shell) or why it cannot; the approval bar answers a waiting command.
+   */
+  agentTerminals: {
+    onOpen(listener: (request: AgentTerminalOpenRequest) => void): () => void
+    claim(req: AgentTerminalClaim): Promise<void>
+    refuse(req: AgentTerminalRefusal): Promise<void>
+    decide(req: AgentTerminalDecision): Promise<void>
   }
   windowMode: {
     get(): Promise<WindowMode>

@@ -8,7 +8,15 @@ import type {
   OpenCodeConfigSnapshot,
   OpenCodeConfigTarget
 } from '@shared/opencode-config'
-import type { MdeMcpStatus } from '@shared/mde-mcp'
+import type {
+  AgentTerminalClaim,
+  AgentTerminalDecision,
+  AgentTerminalRefusal,
+  MdeMcpStatus,
+  MdeMcpTerminalSettings,
+  MdeMcpTerminalSettingsUpdate,
+} from '@shared/mde-mcp'
+import type { AgentTerminals } from './mcp/agent-terminals'
 import { inboxTerminalThreadId, inboxThreadTerminalId } from '@shared/inbox-thread-terminal'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import {
@@ -20,6 +28,7 @@ import {
   type FileRoot,
   type GitTerminalInfoRequest,
   IpcChannels,
+  IpcEvents,
   type EnsurePtyRequest,
   type RestartPtyRequest,
   type FilesListRequest,
@@ -385,6 +394,8 @@ export function registerIpcHandlers(
     openCodeConfig: OpenCodeConfigService
     /** The command OpenCode in this target starts the MDE MCP bridge with: this copy of MDE. */
     mdeMcpCommand?: (target: OpenCodeTarget) => Promise<string[]>
+    /** Inbox terminal panes agents open through the MDE MCP; this layer starts their shells. */
+    agentTerminals?: AgentTerminals
   },
   taskbar?: TaskbarAttention,
   floatingTerminalKey?: FloatingTerminalKey
@@ -616,6 +627,61 @@ export function registerIpcHandlers(
     return inbox.openCodeConfig.removeMdeMcp(place.target, place.command)
   })
 
+  // Terminals agents open: main starts the pane's shell itself, so it runs while no view shows it.
+  const agentTerminals = inbox.agentTerminals
+  agentTerminals?.attach({
+    send: (request) => {
+      const contents = security.getWebContents()
+      if (!contents || contents.isDestroyed()) return false
+      contents.send(IpcEvents.agentTerminalOpen, request)
+      return true
+    },
+    start: async (terminalId, target, directory, palette) => {
+      // Only a new pane of the Inbox terminal: never a thread's own terminal or a Sessions pane.
+      if (!terminalId.startsWith(`${INBOX_TERMINAL_SESSION_ID}:tab:`) || inboxTerminalThreadId(terminalId)) {
+        throw new Error('MDE could not add the pane to its terminal.')
+      }
+      if (ptyManager.terminalInfo(terminalId) || pendingEnsures.has(terminalId)) throw new Error('MDE could not add the pane to its terminal.')
+      const generation = inboxTerminalGeneration
+      const session = await getShellSession(INBOX_TERMINAL_SESSION_ID)
+      if (!session) throw new Error('The Inbox terminal has no WSL distribution to run in.')
+      const where = target.kind === 'wsl' ? { kind: 'wsl' as const, distro: target.distro } : { kind: 'native' as const }
+      if (session.kind !== where.kind || (session.kind === 'wsl' && session.distro !== where.distro)) {
+        throw new Error(`The directory is ${where.kind === 'wsl' ? `in WSL (${where.distro})` : 'on this computer'}, but the Inbox terminal runs ${environmentName(session)}. The person can choose its distribution in MDE's terminal settings.`)
+      }
+      // The ordinary launch checks the folder once more (a directory, and one the user may enter).
+      ptyManager.rememberDirectory(terminalId, session, directory)
+      const size = { cols: 120, rows: 32 }
+      const launch = await restoredShellLaunch({ terminalId, sessionId: INBOX_TERMINAL_SESSION_ID, size, palette }, session)
+      if (!launch) {
+        ptyManager.dispose(terminalId)
+        throw new Error(`The terminal cannot start in ${directory}.`)
+      }
+      if (generation !== inboxTerminalGeneration || ptyManager.terminalInfo(terminalId) || pendingEnsures.has(terminalId)) {
+        throw new Error('The Inbox terminal changed meanwhile. Try again.')
+      }
+      ptyManager.ensure(terminalId, session, size, validateTerminalPalette(palette), { ...launch, background: true })
+    },
+    run: (terminalId, command) => {
+      ptyManager.writeWhenStarted(terminalId, `${command}\r`)
+    },
+    now: () => Date.now(),
+  })
+  handle<void, MdeMcpTerminalSettings>(IpcChannels.mdeMcpTerminalSettings, async () => {
+    if (!agentTerminals) throw new Error('The MDE MCP is not available in this build.')
+    return agentTerminals.settings()
+  })
+  handle<MdeMcpTerminalSettingsUpdate, MdeMcpTerminalSettings>(IpcChannels.mdeMcpSetTerminalSettings, async (req) => {
+    if (!agentTerminals) throw new Error('The MDE MCP is not available in this build.')
+    return agentTerminals.setSettings(req)
+  })
+  handle<AgentTerminalClaim, void>(IpcChannels.agentTerminalClaim, async (req) => {
+    if (!agentTerminals) throw new Error('The MDE MCP is not available in this build.')
+    await agentTerminals.claim(req)
+  })
+  handle<AgentTerminalRefusal, void>(IpcChannels.agentTerminalRefuse, (req) => agentTerminals?.refuse(req))
+  handle<AgentTerminalDecision, void>(IpcChannels.agentTerminalDecide, (req) => agentTerminals?.decide(req))
+
   handle<ChatConfigureRequest, void>(IpcChannels.chatConfigure, (req) => chat.configure(req.executable))
   handle<ChatOptionsRequest, ChatOptions>(IpcChannels.chatOptions, (req) => chat.chatOptions(req))
   handle<ChatCreateRequest, InboxThread>(IpcChannels.chatCreate, (req) => chat.create(req))
@@ -708,6 +774,7 @@ export function registerIpcHandlers(
         ptyManager.terminalInfo(id)?.sessionId === INBOX_TERMINAL_SESSION_ID)
       // At startup, saved directories already carry their distro; preserve matching ones.
       if (hasShells) ptyManager.disposeForSourceSession(INBOX_TERMINAL_SESSION_ID)
+      inbox.agentTerminals?.forgetAll()
     }
     getShellSession.setInboxSession(next)
     return { session: next, changed }
@@ -766,6 +833,7 @@ export function registerIpcHandlers(
   })
   handle<string, void>(IpcChannels.ptyDispose, (sessionId) => {
     pendingEnsures.delete(sessionId)
+    inbox.agentTerminals?.forget(sessionId)
     ptyManager.dispose(sessionId)
   })
   handle<void, Record<string, PtyStatus>>(IpcChannels.ptyStatuses, () => ptyManager.statuses())

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { LoaderCircle } from 'lucide-react'
 import type { OpenCodeConfigTarget } from '@shared/opencode-config'
-import type { MdeMcpStatus } from '@shared/mde-mcp'
+import type { MdeMcpStatus, MdeMcpTerminalCommands, MdeMcpTerminalSettings } from '@shared/mde-mcp'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -10,7 +10,7 @@ import { useWorkspace } from '@/store/workspace'
 
 const STATE_TEXT: Record<MdeMcpStatus['state'], string> = {
   missing: 'Not installed.',
-  installed: 'Installed. Agents can start threads in MDE with tools.mde.create_thread.',
+  installed: 'Installed. Agents can start threads with tools.mde.create_thread and open terminals with tools.mde.open_terminal.',
   outdated: 'Installed for another copy of MDE, or changed by hand. Update it to point at this one.',
 }
 
@@ -69,7 +69,8 @@ export function MdeMcpSettings(): JSX.Element {
         <div className="min-w-0 flex-1">
           <h4 className="text-xs font-medium text-fg">MDE MCP</h4>
           <p className="mt-0.5 text-[11px] text-fg-subtle">
-            Lets agents start new Inbox threads, for example to hand off independent work. Adds an <code>mde</code> MCP
+            Lets agents start new Inbox threads, for example to hand off independent work, and open panes in the Inbox
+            terminal, for example to run a dev server. Adds an <code>mde</code> MCP
             server to OpenCode’s global configuration; OpenCode picks it up within seconds.
           </p>
         </div>
@@ -131,6 +132,80 @@ export function MdeMcpSettings(): JSX.Element {
         </>
       )}
       {error && <p className="text-[11px] text-danger" data-testid="mde-mcp-error">{error}</p>}
+      <AgentTerminalCommandsSetting />
+    </div>
+  )
+}
+
+const COMMAND_CHOICES: Record<MdeMcpTerminalCommands, string> = {
+  ask: 'Ask me first',
+  run: 'Run without asking',
+}
+
+/**
+ * Whether a command an agent asks to run in a terminal it opens runs at once or waits on an approval bar in that
+ * pane. Running it skips OpenCode's own permission rules for shell commands, so asking is the default.
+ */
+function AgentTerminalCommandsSetting(): JSX.Element {
+  const [settings, setSettings] = useState<MdeMcpTerminalSettings | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let live = true
+    window.api.mdeMcp.terminalSettings()
+      .then((value) => { if (live) setSettings(value) })
+      .catch((failure: unknown) => { if (live) setError(ipcErrorMessage(failure, 'MDE could not read this setting.')) })
+    return () => { live = false }
+  }, [])
+
+  const change = async (update: Parameters<typeof window.api.mdeMcp.setTerminalSettings>[0]): Promise<void> => {
+    setError(null)
+    try {
+      setSettings(await window.api.mdeMcp.setTerminalSettings(update))
+    } catch (failure) {
+      setError(ipcErrorMessage(failure, 'MDE could not change this setting.'))
+    }
+  }
+
+  const until = settings?.commands === 'ask' && settings.allowedUntil !== null
+    ? new Date(settings.allowedUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : null
+  return (
+    <div className="space-y-1.5 border-t border-line pt-2" data-testid="mde-mcp-terminal-commands">
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <Label htmlFor="mde-mcp-terminal-commands" className="text-xs font-medium text-fg">Commands in terminals agents open</Label>
+          <p className="mt-0.5 text-[11px] text-fg-subtle">
+            Asking shows the command over the new pane with Run, Run and allow for an hour, and Don’t run. Running
+            without asking skips OpenCode’s own permission rules for shell commands.
+          </p>
+        </div>
+        <div className="w-40 shrink-0">
+          <Select
+            value={settings?.commands ?? ''}
+            disabled={!settings}
+            onValueChange={(value) => void change({ commands: value as MdeMcpTerminalCommands })}
+          >
+            <SelectTrigger id="mde-mcp-terminal-commands" data-testid="mde-mcp-terminal-commands-select">
+              <SelectValue placeholder="…" />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.keys(COMMAND_CHOICES) as MdeMcpTerminalCommands[]).map((choice) => (
+                <SelectItem key={choice} value={choice}>{COMMAND_CHOICES[choice]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      {until && settings && (
+        <p className="flex items-center gap-2 text-[11px] text-fg-muted" data-testid="mde-mcp-terminal-allowed">
+          Commands run without asking until {until}.
+          <Button type="button" variant="ghost" size="sm" onClick={() => void change({ commands: settings.commands, allowedUntil: null })}>
+            Ask again now
+          </Button>
+        </p>
+      )}
+      {error && <p className="text-[11px] text-danger">{error}</p>}
     </div>
   )
 }

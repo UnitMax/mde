@@ -4,14 +4,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { MDE_MCP_MAX_DEPTH, MDE_MCP_SPAWNS_PER_MINUTE, MDE_MCP_TOOLS, type MdeMcpRequest } from '../src/shared/mde-mcp'
+import { MDE_MCP_MAX_DEPTH, MDE_MCP_SPAWNS_PER_MINUTE, MDE_MCP_TERMINALS_PER_MINUTE, MDE_MCP_TOOLS, terminalCommandProblem, type MdeMcpRequest } from '../src/shared/mde-mcp'
 import type { ChatCreateRequest, InboxComposerState, InboxFolder, InboxThread, OpenCodeTarget } from '../src/shared/types'
 import { LineSplitter } from '../src/main/mcp/lines'
 import { McpStdioServer, MCP_PROTOCOL_VERSIONS } from '../src/main/mcp/protocol'
 import { bridgeCommand, bridgeDataFolder, bridgeTarget, callMde, isMcpBridgeLaunch, MDE_NOT_RUNNING, runBridge } from '../src/main/mcp/bridge'
 import { ensureMcpToken, mcpEndpoint, readMcpToken } from '../src/main/mcp/endpoint'
 import { McpListener, parseMcpRequest } from '../src/main/mcp/listener'
-import { callerDirectory, MdeMcpTools, parseModelArgument, type MdeMcpHost, type McpThreadOptions } from '../src/main/mcp/tools'
+import { callerDirectory, MdeMcpTools, parseModelArgument, type MdeMcpHost, type McpTerminalRequest, type McpThreadOptions } from '../src/main/mcp/tools'
 import { mdeMcpCommand } from '../src/main/mcp'
 import { bridgeInput } from '../src/main/mcp/bridge-main'
 import { installMdeMcp, readMdeMcpState, removeMdeMcp } from '../src/main/opencode/config/mde-mcp'
@@ -239,12 +239,13 @@ function folderOf(id: string, directory: string, extra: Partial<InboxFolder> = {
   return { id, name: directory.split('/').at(-1) ?? id, directory, target: wsl, createdAt: 1, lastUsedAt: 1, ...extra }
 }
 
-function tools(options: { threads?: InboxThread[]; folders?: InboxFolder[]; composer?: InboxComposerState; branch?: string | null } = {}) {
+function tools(options: { threads?: InboxThread[]; folders?: InboxFolder[]; composer?: InboxComposerState; branch?: string | null; terminal?: 'running' | 'waiting' | 'none' | Error } = {}) {
   let now = 100_000
   const threads = new Map((options.threads ?? []).map((item) => [item.id, item]))
   const folders = [...(options.folders ?? [folderOf('fld_app', '/home/me/app')])]
   const created: { request: ChatCreateRequest; options: McpThreadOptions }[] = []
   const added: string[] = []
+  const terminals: McpTerminalRequest[] = []
   const host: MdeMcpHost = {
     available: () => true,
     targetAllowed: (target) => target.kind === 'wsl',
@@ -271,13 +272,86 @@ function tools(options: { threads?: InboxThread[]; folders?: InboxFolder[]; comp
       threads.set(made.id, made)
       return made
     },
+    openTerminal: async (request) => {
+      terminals.push(request)
+      if (options.terminal instanceof Error) throw options.terminal
+      return { command: options.terminal ?? (request.command ? 'waiting' : 'none'), directory: request.directory }
+    },
     now: () => now,
   }
   const instance = new MdeMcpTools(host)
   const call = (args: Record<string, unknown>, extra: Partial<MdeMcpRequest> = {}) =>
     instance.handle({ version: 1, token: 't', target: wsl, cwd: '\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\app', tool: 'create_thread', arguments: args, ...extra })
-  return { host, created, added, call, folders, advance: (ms: number) => { now += ms } }
+  const openTerminal = (args: Record<string, unknown>, extra: Partial<MdeMcpRequest> = {}) => call(args, { tool: 'open_terminal', ...extra })
+  return { host, created, added, terminals, call, openTerminal, folders, advance: (ms: number) => { now += ms } }
 }
+
+describe('MDE MCP open_terminal', () => {
+  it('opens a pane in the calling thread\'s directory and says the command waits for approval', async () => {
+    const parent = thread('ses_parent', { directory: '/home/me/app', title: 'Fix login' })
+    const { openTerminal, terminals } = tools({ threads: [parent] })
+    const response = await openTerminal({ command: 'npm run dev', title: 'Dev server' }, { sessionId: 'ses_parent', cwd: '/elsewhere' })
+    expect(response).toMatchObject({ ok: true, data: { directory: '/home/me/app', title: 'Dev server', command: 'waiting' } })
+    expect(response.ok && response.text).toContain('has not run yet')
+    expect(terminals[0]).toMatchObject({ target: wsl, directory: '/home/me/app', command: 'npm run dev', title: 'Dev server', parent: { id: 'ses_parent' } })
+  })
+
+  it('says when the command is running, and titles the pane after the command', async () => {
+    const { openTerminal, terminals } = tools({ terminal: 'running' })
+    const response = await openTerminal({ command: '  npm test -- --watch  ' })
+    expect(response).toMatchObject({ ok: true, data: { command: 'running', directory: '/home/me/app' } })
+    expect(terminals[0]).toMatchObject({ command: 'npm test -- --watch', title: 'npm test -- --watch' })
+    expect(response.ok && response.text).toContain('It is running `npm test -- --watch`.')
+  })
+
+  it('opens an empty shell without a command, in a named directory', async () => {
+    const { openTerminal, terminals } = tools()
+    const response = await openTerminal({ directory: '\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\lib' })
+    expect(response).toMatchObject({ ok: true, data: { command: 'none', directory: '/home/me/lib', title: 'Agent terminal' } })
+    expect(terminals[0]?.command).toBeNull()
+  })
+
+  it.each([
+    ['two lines', { command: 'echo hi\nrm -rf ~' }],
+    ['a carriage return', { command: 'echo hi\rrm -rf ~' }],
+    ['an escape sequence', { command: 'echo \u001b[200~hi' }],
+    ['a bidirectional override', { command: 'echo \u202egnp.exe' }],
+    ['an over-long command', { command: 'x'.repeat(2001) }],
+    ['a command that is not text', { command: ['ls'] }],
+    ['an unknown argument', { command: 'ls', shell: 'bash' }],
+    ['a relative directory', { directory: 'app' }],
+    ['a directory with ..', { directory: '/home/me/../../etc' }],
+    ['a directory in another distro', { directory: '\\\\wsl.localhost\\Debian\\home' }],
+    ['a title with a line break', { title: 'a\nb' }],
+  ])('refuses %s before anything opens', async (_name, args) => {
+    const { openTerminal, terminals } = tools()
+    expect(await openTerminal(args)).toMatchObject({ ok: false })
+    expect(terminals).toHaveLength(0)
+  })
+
+  it('limits how many terminals agents open a minute', async () => {
+    const { openTerminal, advance } = tools()
+    for (let index = 0; index < MDE_MCP_TERMINALS_PER_MINUTE; index += 1) expect(await openTerminal({})).toMatchObject({ ok: true })
+    expect(await openTerminal({})).toMatchObject({ ok: false, error: expect.stringContaining('at most') })
+    advance(60_000)
+    expect(await openTerminal({})).toMatchObject({ ok: true })
+  })
+
+  it('passes on why MDE could not open the terminal', async () => {
+    const { openTerminal } = tools({ terminal: new Error('The Inbox terminal has no room for another pane.') })
+    expect(await openTerminal({ command: 'ls' })).toEqual({ ok: false, error: 'The Inbox terminal has no room for another pane.' })
+  })
+
+  it('is listed with its arguments', () => {
+    const tool = MDE_MCP_TOOLS.find((item) => item.name === 'open_terminal')
+    expect(Object.keys((tool?.inputSchema as { properties: object }).properties)).toEqual(['command', 'directory', 'title'])
+  })
+
+  it('accepts ordinary shell lines as commands', () => {
+    expect(terminalCommandProblem('npm run dev -- --port 5173 && echo "ready ✓"')).toBeNull()
+    expect(terminalCommandProblem('   ')).toBe('is empty')
+  })
+})
 
 describe('MDE MCP tools', () => {
   it('lists the projects of the caller’s OpenCode only', async () => {

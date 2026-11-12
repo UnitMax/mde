@@ -2,6 +2,7 @@ import type { OpenCodeTarget } from '@shared/types'
 import type { InboxChatService } from '../inbox/chat'
 import type { InboxStore } from '../inbox/store'
 import { serviceTargetKey } from '../opencode/service/discovery'
+import type { AgentTerminals } from './agent-terminals'
 import { bridgeCommand } from './bridge'
 import { ensureMcpToken, mcpEndpoint } from './endpoint'
 import { McpListener } from './listener'
@@ -19,6 +20,8 @@ export interface MdeMcpOptions {
   checkFolder(target: OpenCodeTarget, directory: string): Promise<{ directory: string; target: OpenCodeTarget }>
   /** Tells the window its projects changed. */
   foldersChanged(): void
+  /** Opens agents' panes in the Inbox terminal. */
+  terminals: AgentTerminals
   now(): number
 }
 
@@ -48,6 +51,19 @@ export async function startMdeMcp(options: MdeMcpOptions): Promise<McpListener |
         // A worktree thread adds the worktree as a project.
         if (store.folders().length !== before) options.foldersChanged()
       }
+    },
+    openTerminal: async ({ target, directory, title, command, parent }) => {
+      // Checked as a project folder would be, but not added as one: a terminal is not a thread.
+      const place = await options.checkFolder(target, directory)
+      if (serviceTargetKey(place.target) !== serviceTargetKey(target)) throw new Error('That folder is in another WSL distro.')
+      const outcome = await options.terminals.open({
+        target: place.target,
+        directory: place.directory,
+        title,
+        command,
+        from: parent ? parent.customTitle ?? parent.title : null,
+      })
+      return { command: outcome.command, directory: place.directory }
     },
     now: options.now,
   })

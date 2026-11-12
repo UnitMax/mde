@@ -272,6 +272,44 @@ other new thread, under Working, without taking focus; projects an agent adds re
 `inbox:folders-changed` event. Limits: 10 threads a minute across all agents, and chains stop at three levels
 of agent-started threads. Security details are in `docs/security.md` under "MDE MCP boundary".
 
+**Terminals agents open.** `open_terminal({ command?, directory?, title? })` adds a pane to the Inbox terminal
+(the one in the sidebar's Terminal tab, or floating) whose shell starts in the directory (default: the
+parent thread's, else the bridge's working directory), and returns once the shell has started, saying whether
+the command runs, waits for approval, or there is none. The agent never sees the terminal's output; the tool
+is for things the person should see or keep running. `MdeMcpTools` checks the arguments; the directory is
+resolved and checked like a project folder (but not added as one); then `AgentTerminals`
+(`src/main/mcp/agent-terminals.ts`) sends `agent-terminal:open` to the window. The window's
+`useInboxTerminal.openForAgent` (configuring the WSL distro first if the terminal was never shown) picks the
+pane: split off the last pane, to the right when floating, below in the sidebar; refused once there are nine
+panes. It answers `agent-terminal:claim` with the new pane's terminal ID, and main starts that pane's shell
+itself (`start` in `ipc.ts`): only a new pane of the Inbox terminal (not a thread's terminal or a Sessions
+pane, not one already running), only when the directory is in the environment the Inbox terminal runs in, and
+through the saved-directory record so the ordinary launch checks the folder again. The PTY starts with
+`background: true`: `PtyManager` keeps its output (the last 2 MB) until a view attaches (the renderer's next
+`pty:ensure` for it), so the shell runs while nothing shows it, for instance while the floating terminal is
+hidden with F11. While its output is kept, main answers the shell's terminal queries itself
+(`src/main/pty/held-queries.ts`: device attributes and status reports as xterm.js would, other reports left
+unanswered) and takes them out of the kept output; otherwise xterm.js answered them only when the pane
+appeared, and a reply such as `ESC[?1;2c` landed at the prompt as typed text (`1;2c`) in front of the command. Only then does the window add the pane to the layout, with the title, without taking the
+keyboard and without showing a hidden terminal; if the layout changed meanwhile so that the pane would get
+another ID, the shell is ended instead. A window that cannot add the pane answers `agent-terminal:refuse` with
+the reason; one that does not answer within 20 s fails the call; at most four requests wait at once, and
+agents may open ten terminals a minute.
+
+The command is typed by main from its own copy (`writeWhenStarted`: on the shell's first output, or after
+3 s, followed by Enter). Settings → OpenCode → MDE MCP → **Commands in terminals agents open** chooses **Ask
+me first** (the default) or **Run without asking**, kept in `mde-mcp.json` in the user-data folder. When
+asking, the pane shows an approval bar (`AgentCommandBar`, through `TerminalView`'s `paneNotice`) with the
+whole command, the thread that asked, and **Run**, **Run, and allow for an hour**, **Don't run**
+(`agent-terminal:decide`). The hour is kept in memory only, shown under the setting with **Ask again now**,
+and a change to the setting made while a pane is being added still applies to it. Closing the pane or its
+shell ending drops a waiting command.
+
+While the floating terminal is hidden, the reminder at the foot of the thread list (`HiddenTerminalIndicator`)
+lights up for 4 s when an agent opens a terminal ("New agent terminal"): the button glows, a small
+terminal icon drops into it and its dot pings (`hidden-terminal-arrival` in `index.css`; without motion only
+the words change). While commands wait, it says so ("1 command to approve") until they are answered.
+
 ### Inbox
 
 The Inbox is selected in the title bar beside Sessions and To Do. It lists OpenCode conversations

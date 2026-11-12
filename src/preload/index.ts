@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IpcChannels, IpcEvents, type RendererApi } from '@shared/ipc'
+import type { AgentTerminalOpenRequest } from '@shared/mde-mcp'
 import type {
   ChatEvent,
   InboxThread,
@@ -185,7 +186,15 @@ const api: RendererApi = {
   mdeMcp: {
     status: (req) => ipcRenderer.invoke(IpcChannels.mdeMcpStatus, req),
     install: (req) => ipcRenderer.invoke(IpcChannels.mdeMcpInstall, req),
-    remove: (req) => ipcRenderer.invoke(IpcChannels.mdeMcpRemove, req)
+    remove: (req) => ipcRenderer.invoke(IpcChannels.mdeMcpRemove, req),
+    terminalSettings: () => ipcRenderer.invoke(IpcChannels.mdeMcpTerminalSettings),
+    setTerminalSettings: (req) => ipcRenderer.invoke(IpcChannels.mdeMcpSetTerminalSettings, req)
+  },
+  agentTerminals: {
+    onOpen: (listener) => subscribe<AgentTerminalOpenRequest>(IpcEvents.agentTerminalOpen, listener),
+    claim: (req) => ipcRenderer.invoke(IpcChannels.agentTerminalClaim, req),
+    refuse: (req) => ipcRenderer.invoke(IpcChannels.agentTerminalRefuse, req),
+    decide: (req) => ipcRenderer.invoke(IpcChannels.agentTerminalDecide, req)
   },
   windowMode: {
     get: () => ipcRenderer.invoke(IpcChannels.windowModeGet),

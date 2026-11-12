@@ -506,7 +506,7 @@ symbolic links, modes, conflicts, WSL paths), `test/ipc-opencode-config.test.ts`
 
 ### MDE MCP boundary
 
-The MDE MCP lets an agent start Inbox threads (`src/main/mcp/`, `src/shared/mde-mcp.ts`). It adds the one
+The MDE MCP lets an agent start Inbox threads and open Inbox terminal panes (`src/main/mcp/`, `src/shared/mde-mcp.ts`). It adds the one
 place where something other than the window can ask the main process to act, so it is kept narrow.
 
 - **Two processes, no network.** OpenCode starts MDE's own executable with `--mcp-bridge` as a stdio MCP
@@ -546,8 +546,27 @@ place where something other than the window can ask the main process to act, so 
   `--mcp-user-data=<folder>` when MDE runs with its own `--user-data-dir`, which the bridge accepts only as an
   absolute path); the renderer names only a target.
 
+- **Terminals agents open.** `open_terminal` can make a shell run a command, which OpenCode's own permission
+  rules for shell commands (a `bash` rule of `ask` or `deny`, the plan agent) do not see. So commands wait
+  for the person by default: the pane shows the whole command on an approval bar and nothing is typed until
+  **Run**. **Run without asking** (Settings → OpenCode → MDE MCP, kept in `mde-mcp.json`) and **Run, and allow
+  for an hour** (in memory only; the settings can only clear it, `agent-terminal:decide` and the settings
+  channel cannot set or extend it) are the person's choice. A command must be one line of at most 2,000
+  characters with no control characters (no second command through a line break, no escape sequences for the
+  terminal or the line editor) and no bidirectional formatting characters (which could make the bar show
+  something other than what runs). Main types the command from its own copy, keyed by the terminal it
+  started; the window only names a terminal and an answer, so it cannot change the command or run one main is
+  not keeping. Main starts the shell itself only for a pane ID of the Inbox terminal that is not running yet
+  (never a thread's terminal or a Sessions pane), only for a directory checked like a project folder and in
+  the environment the Inbox terminal runs in, and through the ordinary launch's folder checks. The pane never
+  takes the keyboard, so nothing the person types goes into it by surprise. Limits: ten terminals a minute,
+  four requests waiting for the window at once, none once the terminal has nine panes, and a background
+  shell's kept output is capped at 2 MB.
+
 Regression coverage: `test/mde-mcp.test.ts` (protocol, framing, bridge ↔ listener over a real socket, token,
-tools, configuration edits) and the validator cases in `test/ipc-validation.test.ts`.
+tools, configuration edits), `test/mde-mcp-agent-terminals.test.ts` (approval, the hour, refusals, timeouts),
+the agent-pane cases in `test/ipc-inbox-terminal.test.ts`, `test/pty-manager.test.ts` (kept output, typed input)
+and the validator cases in `test/ipc-validation.test.ts`.
 
 ## Windows executable selection
 

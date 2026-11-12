@@ -5,13 +5,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SettingsDialog } from '../src/renderer/components/SettingsDialog'
 import { getTerminalSettings, saveTerminalSettings } from '../src/renderer/terminal/terminal-settings'
 import { useWorkspace } from '../src/renderer/store/workspace'
-import type { MdeMcpStatus } from '../src/shared/mde-mcp'
+import type { MdeMcpStatus, MdeMcpTerminalSettings, MdeMcpTerminalSettingsUpdate } from '../src/shared/mde-mcp'
 
 const missing: MdeMcpStatus = { state: 'missing', file: '~/.config/opencode/opencode.jsonc', parseError: null }
 const mdeMcp = {
   status: vi.fn(async (_req: unknown): Promise<MdeMcpStatus> => missing),
   install: vi.fn(async (_req: unknown): Promise<MdeMcpStatus> => ({ ...missing, state: 'installed' })),
   remove: vi.fn(async (_req: unknown) => missing),
+  terminalSettings: vi.fn(async (): Promise<MdeMcpTerminalSettings> => ({ commands: 'ask', allowedUntil: null })),
+  setTerminalSettings: vi.fn(async (req: MdeMcpTerminalSettingsUpdate): Promise<MdeMcpTerminalSettings> => ({ commands: req.commands, allowedUntil: null })),
 }
 
 describe('Settings → OpenCode', () => {
@@ -132,6 +134,19 @@ describe('Settings → OpenCode', () => {
       await show('darwin')
       expect(card()?.textContent).toContain('cannot be read (ValueExpected at offset 9)')
       expect(button('mde-mcp-install')).toBeNull()
+    })
+
+    it('says until when commands in agents\' terminals run without asking, and asks again on request', async () => {
+      mdeMcp.terminalSettings.mockResolvedValueOnce({ commands: 'ask', allowedUntil: Date.now() + 30 * 60_000 })
+      await show('darwin')
+      const setting = document.body.querySelector<HTMLElement>('[data-testid="mde-mcp-terminal-commands"]')!
+      expect(setting.textContent).toContain('Commands in terminals agents open')
+      expect(setting.textContent).toContain('Ask me first')
+      expect(setting.textContent).toContain('run without asking until')
+      const again = Array.from(setting.querySelectorAll('button')).find((item) => item.textContent === 'Ask again now')!
+      await act(async () => again.click())
+      expect(mdeMcp.setTerminalSettings).toHaveBeenCalledWith({ commands: 'ask', allowedUntil: null })
+      expect(setting.textContent).not.toContain('run without asking until')
     })
 
     it('shows what went wrong', async () => {

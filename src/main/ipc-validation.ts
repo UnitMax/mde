@@ -257,6 +257,11 @@ export const ipcPayloadValidators = {
   [IpcChannels.mdeMcpStatus]: object({ kind, distro: optional(distro) }),
   [IpcChannels.mdeMcpInstall]: object({ kind, distro: optional(distro) }),
   [IpcChannels.mdeMcpRemove]: object({ kind, distro: optional(distro) }),
+  [IpcChannels.mdeMcpTerminalSettings]: noPayload,
+  [IpcChannels.mdeMcpSetTerminalSettings]: object({ commands: oneOf('ask', 'run'), allowedUntil: optional((value) => value === null) }),
+  [IpcChannels.agentTerminalClaim]: object({ requestId: id, terminalId: id, palette }),
+  [IpcChannels.agentTerminalRefuse]: object({ requestId: id, reason: string(1000) }),
+  [IpcChannels.agentTerminalDecide]: object({ terminalId: id, decision: oneOf('run', 'run-for-hour', 'cancel') }),
   [IpcChannels.opencodeConfigSave]: object({ kind, distro: optional(distro), draft: configDraft, revision: string(128) }),
   [IpcChannels.chatConfigure]: object({ executable: path }),
   [IpcChannels.chatOptions]: (value) => object({ folderId: optional(inboxFolderId), threadId: optional(opencodeSessionId) })(value) &&

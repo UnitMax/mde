@@ -1,3 +1,4 @@
+import type { TerminalPalette } from './ipc'
 import type { OpenCodeTarget } from './types'
 
 /**
@@ -27,6 +28,16 @@ export const MDE_MCP_SPAWNS_PER_MINUTE = 10
 export const MDE_MCP_MAX_DEPTH = 3
 /** The most bytes one request on the socket may hold (a prompt is at most 100,000 characters). */
 export const MDE_MCP_REQUEST_BYTES = 1_000_000
+/** Terminals agents may open, across all of them, within a minute. */
+export const MDE_MCP_TERMINALS_PER_MINUTE = 10
+/** Agents open no pane once the Inbox terminal has this many (the largest layout it offers). */
+export const MDE_MCP_TERMINAL_PANE_LIMIT = 9
+/** The longest command an agent may have typed into a terminal it opens. */
+export const MDE_MCP_COMMAND_LIMIT = 2000
+/** The longest title an agent may give a terminal pane. */
+export const MDE_MCP_TERMINAL_TITLE_LIMIT = 60
+/** "Allow for the next hour" on a command's approval bar. */
+export const MDE_MCP_ALLOW_COMMANDS_MS = 60 * 60 * 1000
 
 export interface McpToolDefinition {
   name: string
@@ -75,9 +86,29 @@ export const MDE_MCP_TOOLS: McpToolDefinition[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'open_terminal',
+    title: 'Open an MDE terminal',
+    description: [
+      'Opens a new pane in the MDE Inbox terminal, the shell the person keeps beside their threads, and returns at once.',
+      'Use it to launch something the person should see or keep running, such as a dev server or a watcher, rather',
+      'than for commands whose output you need: you do not see this terminal. The shell starts in this thread\'s',
+      'directory unless `directory` names another. `command` is typed into the new shell and run; depending on the',
+      'person\'s settings MDE may first ask them to approve it, and the answer says whether it is running or waiting.',
+    ].join(' '),
+    inputSchema: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', description: 'One shell command line to run in the new terminal, for example "npm run dev". Leave it out to open an empty shell.' },
+        directory: { type: 'string', description: 'Absolute directory the shell starts in. Defaults to this thread\'s directory.' },
+        title: { type: 'string', description: 'Short title for the pane, for example "Dev server". Defaults to the command.' },
+      },
+      additionalProperties: false,
+    },
+  },
 ]
 
-export type MdeMcpToolName = 'list_projects' | 'create_thread'
+export type MdeMcpToolName = 'list_projects' | 'create_thread' | 'open_terminal'
 
 /** One tool call, sent by the bridge as the only line of a connection. */
 export interface MdeMcpRequest {
@@ -122,4 +153,70 @@ export function parseMdeMcpTarget(value: string): OpenCodeTarget | null {
   if (!value.startsWith('wsl:')) return null
   const distro = value.slice(4)
   return DISTRO_NAME.test(distro) ? { kind: 'wsl', distro } : null
+}
+
+/** Bidirectional formatting characters, which can make a command read differently from what runs. */
+const BIDI_CONTROLS = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/
+const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/
+
+/**
+ * Why text cannot be a command an agent has typed into a terminal, or null. One visible line only: no line
+ * breaks (which would run a second command), no escape or other control characters (which a terminal or the
+ * shell's line editor would act on) and no bidirectional overrides (which could make the approval bar show
+ * something other than what runs).
+ */
+export function terminalCommandProblem(command: string): string | null {
+  if (!command.trim()) return 'is empty'
+  if (command.length > MDE_MCP_COMMAND_LIMIT) return `is longer than ${MDE_MCP_COMMAND_LIMIT} characters`
+  if (CONTROL_CHARACTERS.test(command)) return 'must be one line without control characters'
+  if (BIDI_CONTROLS.test(command)) return 'holds bidirectional formatting characters'
+  return null
+}
+
+/** Whether a command an agent asks to run in a terminal it opens runs at once, or waits for the person. */
+export type MdeMcpTerminalCommands = 'ask' | 'run'
+
+export interface MdeMcpTerminalSettings {
+  commands: MdeMcpTerminalCommands
+  /** Until when commands run without asking although `commands` is `ask` ("Allow for the next hour"); null if not. */
+  allowedUntil: number | null
+}
+
+/** Changes the setting; `allowedUntil` may only be cleared from the settings, never extended. */
+export interface MdeMcpTerminalSettingsUpdate {
+  commands: MdeMcpTerminalCommands
+  allowedUntil?: null
+}
+
+/** Main asks the window for a new Inbox terminal pane an agent opens. */
+export interface AgentTerminalOpenRequest {
+  requestId: string
+  /** The pane's title. */
+  title: string
+  /** The command main will type into the shell, shown on the approval bar; null for an empty shell. */
+  command: string | null
+  /** The command waits for the person's approval. */
+  approval: boolean
+  /** The thread whose agent asked, for the approval bar. */
+  from: string | null
+}
+
+/** The window's answer: the pane it is adding, whose shell main then starts in the agent's directory. */
+export interface AgentTerminalClaim {
+  requestId: string
+  terminalId: string
+  palette: TerminalPalette
+}
+
+/** The window could not add the pane; the agent reads the reason. */
+export interface AgentTerminalRefusal {
+  requestId: string
+  reason: string
+}
+
+export type AgentTerminalDecisionKind = 'run' | 'run-for-hour' | 'cancel'
+
+export interface AgentTerminalDecision {
+  terminalId: string
+  decision: AgentTerminalDecisionKind
 }

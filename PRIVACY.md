@@ -77,6 +77,8 @@ backed-up locations can place copies elsewhere. These stores are not encrypted b
 - `mcp-token` under Electron's user-data directory, once MDE has started on the Mac or Windows: a random
   secret (64 hex characters, readable only by your account) that the MDE MCP bridge must present. It
   identifies nothing. On the Mac, `mcp.sock` beside it is the socket the bridge connects to while MDE runs.
+- `mde-mcp.json` under Electron's user-data directory, once you change **Commands in terminals agents open**
+  (Settings, OpenCode, MDE MCP): only that choice (`ask` or `run`). "Allow for an hour" is not written down.
 - OpenCode's own global configuration file (`opencode.jsonc`, or `opencode.json`, in OpenCode's
   configuration folder), only when you use the **OpenCode configuration** editor (Settings, OpenCode) and
   press Save, or press Install or Remove for the **MDE MCP**. This is OpenCode's file, not an MDE store; see the paragraph on the editor below for what
@@ -183,6 +185,10 @@ computer. Each call carries a random secret that MDE keeps in `mcp-token` in its
 new thread include its prompt. MDE uses them to start the thread as if you had started it, and keeps only
 what it keeps for any thread, plus the ID of the thread that asked. A folder an agent names that is not a
 project yet is added as one. Nothing about the calls is logged except a short error when one fails.
+An agent can also open a pane in the Inbox terminal (`open_terminal`): the call carries the directory, an
+optional pane title and an optional command line. MDE starts a shell there like any terminal you open, shows
+the command for your approval unless you chose otherwise, and keeps none of it beyond the pane's title in the
+terminal layout it already remembers; the shell's output is never sent back to the agent.
 
 The **OpenCode configuration** editor (Settings, OpenCode, Edit configuration; on the Mac and, for a WSL
 distro, on Windows) reads and writes OpenCode's own global configuration file: `opencode.jsonc` or
