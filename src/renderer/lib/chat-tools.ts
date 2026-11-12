@@ -1,6 +1,7 @@
 import type { ChatMessage, ChatPart, ChatToolStatus } from '@shared/types'
 import { displayPath, type MessageBlock } from '@/lib/chat'
 import { countChanges, type DiffHunk, type DiffLine, type FileChange } from '@/lib/diff'
+import { isShownView } from '@/lib/chat-views'
 
 type ToolPart = Extract<ChatPart, { kind: 'tool' }>
 
@@ -608,6 +609,7 @@ function joinPhrases(phrases: readonly string[]): string {
 /** A tool call that is drawn as a card of its own rather than as one row among others: a file change or an answered question. */
 export function isFeaturedTool(part: ChatPart): boolean {
   if (part.kind !== 'tool') return false
+  if (isShownView(part)) return true
   const kind = toolKind(part.name)
   if (part.status === 'error') return false
   if (kind === 'edit' || kind === 'write') return true
@@ -669,9 +671,12 @@ function isWork(part: ChatPart): boolean {
   return part.kind === 'tool' || (part.kind === 'reasoning' && part.text.trim() !== '')
 }
 
-/** Whether a part is a question the agent asked the person. */
+/**
+ * Whether a part is a question the agent asked the person, or a view it showed them. Either is said to the person,
+ * so the compact layout draws it, with the words that lead up to it, rather than folding it among the work.
+ */
 function isQuestion(part: ChatPart): boolean {
-  return part.kind === 'tool' && toolKind(part.name) === 'question'
+  return part.kind === 'tool' && (toolKind(part.name) === 'question' || isShownView(part))
 }
 
 /**

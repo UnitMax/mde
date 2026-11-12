@@ -563,7 +563,21 @@ place where something other than the window can ask the main process to act, so 
   four requests waiting for the window at once, none once the terminal has nine panes, and a background
   shell's kept output is capped at 2 MB.
 
-Regression coverage: `test/mde-mcp.test.ts` (protocol, framing, bridge ↔ listener over a real socket, token,
+- **Views agents show.** `show_view` sends data, never code: the view is a JSON tree of MDE's own components,
+  checked against a fixed catalog (`checkView` in `src/shared/view-spec.ts`) by the bridge before it answers
+  and again by the window before drawing; only the checked copy is drawn. No component takes HTML, Markdown,
+  styles, colours, class names, URLs, images, media or scripts, and nothing in a view acts on a click beyond
+  the view itself (tabs, sorting, the table and JSON toggles): no action reaches the agent, a link or the
+  system, so a prompt-injected agent cannot make a view do anything, only show something, and every view is
+  marked "From the agent" with its JSON one click away. Text reaches the page only as React text; control
+  and bidirectional formatting characters are refused. Size limits keep drawing cheap (48,000 characters,
+  150 elements, 8 levels, 6,000 numbers, 400 points per series, 200 rows). Views add no network access and no
+  new stored data; the renderer's Content-Security-Policy (`script-src 'self'`, `img-src 'self' data:`,
+  `connect-src 'self'`, no `unsafe-eval`) stays as it is, so even a fault in the view code could not load or
+  send anything. A drawing fault is caught per view by an error boundary.
+
+Regression coverage: `test/view-spec.test.ts` and `test/inbox-views-ui.test.ts` (views: the check, the bridge's
+answer, the parser keeping a view whole, drawing), `test/mde-mcp.test.ts` (protocol, framing, bridge ↔ listener over a real socket, token,
 tools, configuration edits), `test/mde-mcp-agent-terminals.test.ts` (approval, the hour, refusals, timeouts),
 the agent-pane cases in `test/ipc-inbox-terminal.test.ts`, `test/pty-manager.test.ts` (kept output, typed input)
 and the validator cases in `test/ipc-validation.test.ts`.

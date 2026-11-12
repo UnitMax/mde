@@ -4,6 +4,7 @@ import {
   MDE_MCP_DATA_FLAG,
   MDE_MCP_REQUEST_BYTES,
   MDE_MCP_TARGET_FLAG,
+  MDE_VIEW_TOOL,
   parseMdeMcpTarget,
   type MdeMcpRequest,
   type MdeMcpResponse,
@@ -11,6 +12,7 @@ import {
 import type { OpenCodeTarget } from '@shared/types'
 import { LineSplitter } from './lines'
 import { McpStdioServer, type McpToolCall, type McpToolOutcome } from './protocol'
+import { showView } from './views'
 
 /**
  * The bridge: the process OpenCode starts as the `mde` MCP server. It speaks MCP on stdin/stdout, and hands each
@@ -117,6 +119,7 @@ export function runBridge(options: BridgeOptions): Promise<void> {
     version: options.version,
     write: (line) => options.write(`${line}\n`),
     callTool: async (call: McpToolCall): Promise<McpToolOutcome> => {
+      if (call.name === MDE_VIEW_TOOL) return showView(call.arguments)
       const response = await callMde(options, {
         version: 1,
         target: options.target,

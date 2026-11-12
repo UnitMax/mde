@@ -1,5 +1,6 @@
 import type { TerminalPalette } from './ipc'
 import type { OpenCodeTarget } from './types'
+import { VIEW_COMPONENTS, viewCatalogText } from './view-spec'
 
 /**
  * The MDE MCP server: OpenCode starts MDE's own executable with `--mcp-bridge` as a local (stdio) MCP server,
@@ -38,6 +39,9 @@ export const MDE_MCP_COMMAND_LIMIT = 2000
 export const MDE_MCP_TERMINAL_TITLE_LIMIT = 60
 /** "Allow for the next hour" on a command's approval bar. */
 export const MDE_MCP_ALLOW_COMMANDS_MS = 60 * 60 * 1000
+
+/** The tool that shows the person a view (see view-spec.ts). The bridge answers it itself; MDE draws it from the transcript. */
+export const MDE_VIEW_TOOL = 'show_view'
 
 export interface McpToolDefinition {
   name: string
@@ -106,9 +110,48 @@ export const MDE_MCP_TOOLS: McpToolDefinition[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: MDE_VIEW_TOOL,
+    title: 'Show a view in MDE',
+    description: [
+      'Shows the person a view in the MDE chat, right where you call it: a dashboard, chart, table or summary card,',
+      'drawn by MDE from the JSON you pass. Use it when numbers, comparisons or trends read better as a picture than',
+      'as text. The answer says whether it was shown or what is wrong with the JSON; fix that and call again. The',
+      'person sees the view, so do not repeat its data in your reply. MDE draws views only in its chat, not in a terminal.',
+      '',
+      viewCatalogText(),
+      '',
+      'Example: {"title":"Test run","root":"g","elements":{"g":{"type":"Grid","props":{"columns":2},"children":["s","c"]},',
+      '"s":{"type":"Stat","props":{"label":"Passed","value":412,"delta":12,"deltaLabel":"vs main"}},',
+      '"c":{"type":"BarChart","props":{"categories":["unit","e2e"],"series":[{"name":"seconds","data":[38,124]}],"unit":"s"}}}}',
+    ].join('\n'),
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'A short title above the view.' },
+        root: { type: 'string', description: 'The id of the outermost element.' },
+        elements: {
+          type: 'object',
+          description: 'Every element of the view, by id.',
+          additionalProperties: {
+            type: 'object',
+            properties: {
+              type: { type: 'string', enum: Object.keys(VIEW_COMPONENTS) },
+              props: { type: 'object', description: 'The component\'s props, as the description lists them.' },
+              children: { type: 'array', items: { type: 'string' }, description: 'Ids of the child elements, for components that have children.' },
+            },
+            required: ['type'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['root', 'elements'],
+      additionalProperties: false,
+    },
+  },
 ]
 
-export type MdeMcpToolName = 'list_projects' | 'create_thread' | 'open_terminal'
+export type MdeMcpToolName = 'list_projects' | 'create_thread' | 'open_terminal' | typeof MDE_VIEW_TOOL
 
 /** One tool call, sent by the bridge as the only line of a connection. */
 export interface MdeMcpRequest {

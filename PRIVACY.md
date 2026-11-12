@@ -189,6 +189,10 @@ An agent can also open a pane in the Inbox terminal (`open_terminal`): the call 
 optional pane title and an optional command line. MDE starts a shell there like any terminal you open, shows
 the command for your approval unless you chose otherwise, and keeps none of it beyond the pane's title in the
 terminal layout it already remembers; the shell's output is never sent back to the agent.
+An agent can also show you a view in the chat (`show_view`): a chart, table or dashboard described as data
+in the call's arguments, which OpenCode keeps in the conversation like any tool call. The bridge checks it
+and answers without contacting MDE; MDE draws it from the conversation and stores nothing more. A view
+cannot load anything: it holds no links, images or other addresses, and drawing it makes no network request.
 
 The **OpenCode configuration** editor (Settings, OpenCode, Edit configuration; on the Mac and, for a WSL
 distro, on Windows) reads and writes OpenCode's own global configuration file: `opencode.jsonc` or

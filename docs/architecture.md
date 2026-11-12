@@ -310,6 +310,30 @@ lights up for 4 s when an agent opens a terminal ("New agent terminal"): the but
 terminal icon drops into it and its dot pings (`hidden-terminal-arrival` in `index.css`; without motion only
 the words change). While commands wait, it says so ("1 command to approve") until they are answered.
 
+**Views agents show.** `show_view({ title?, root, elements })` shows the person a dashboard, chart or table in
+the chat, where the agent called it. The format follows the idea of Vercel's json-render (a `root` and a flat map
+of `elements`, each `{ type, props, children }`), with MDE's own small set of components and its own code:
+layout (`Stack`, `Grid`, `Card`, `Tabs`), content (`Heading`, `Text`, `Callout`, `Badge`, `Divider`, `Stat`,
+`Progress`, `KeyValue`, `Table`) and charts (`BarChart`, `LineChart`, `AreaChart`, `DonutChart`, `Sparkline`).
+`src/shared/view-spec.ts` holds the catalog, which also becomes the tool's description, and `checkView`, which
+turns the flat elements into a checked tree or lists what is wrong by JSON path: unknown components or props,
+an element without a place or with two, nesting deeper than 8, and the limits (150 elements, 6 series of 400
+points, 200 table rows, 6,000 numbers, 48,000 characters in all). The bridge answers the tool itself
+(`src/main/mcp/views.ts`) with that check, so it works while MDE is closed and the agent reads exactly what to
+fix. MDE does not store views: they live in the transcript as the call's arguments, which OpenCode keeps whole
+in Code Mode (`state.metadata.toolCalls[].input`, checked with OpenCode 2.2.6 for a 14,000-character view)
+and the parser keeps whole up to 64 KB (other calls' arguments are cut at 4 KB). The window checks them again
+(`viewEntries` in `src/renderer/lib/chat-views.ts`) and draws the checked tree, never the raw JSON
+(`ChatViewCall`, `components/views/`). A call still arriving shows "Preparing a view"; one that failed, was
+cut or does not pass shows "Could not show a view" with the reasons and the JSON. A view part breaks a run of
+grouped activity, and the compact layout draws it as it draws a question: with the words that lead up to it.
+Each view has a **JSON** toggle for what the agent sent, each bar or line chart a table of its numbers. Charts
+are SVG drawn by MDE (`ViewCharts.tsx`): one value axis, bars at most 24 px with a rounded end, 2 px lines, a
+legend from two series on, values on hover. Series take a fixed palette (`--view-series-1..6` in `index.css`,
+a dark and a light step), checked for colour-vision-deficiency and normal-vision separation, rather than the
+theme's colours; status colours keep their meaning. A grid drops columns as the chat narrows (a container
+query on `.view-frame`).
+
 ### Inbox
 
 The Inbox is selected in the title bar beside Sessions and To Do. It lists OpenCode conversations

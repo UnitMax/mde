@@ -37,7 +37,7 @@ const METHOD_NOT_FOUND = -32601
 const INVALID_PARAMS = -32602
 
 const INSTRUCTIONS =
-  'MDE is the desktop app this agent runs in. Its tools start new agent threads in the MDE Inbox; each one works on its own and the person follows it in MDE.'
+  'MDE is the desktop app this agent runs in. Its tools start new agent threads in the MDE Inbox (each one works on its own and the person follows it in MDE), open terminals beside them, and show the person views (charts, tables, dashboards) in the chat.'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)

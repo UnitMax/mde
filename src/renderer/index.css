@@ -1174,3 +1174,53 @@
 .fancy-thread-effect {
   mix-blend-mode: normal;
 }
+
+/*
+ * Views agents show in the chat. Chart series take a fixed categorical palette rather than the theme's colours, which
+ * are not chosen to tell series apart (a theme's syntax colours can repeat a hue or put red in a series). The six
+ * slots, in this order, pass the colour-vision-deficiency and normal-vision separation checks on both MDE's dark and
+ * light surfaces; on light, three of them sit below 3:1 against the surface, so every chart has a legend or labels,
+ * values on hover and a table view.
+ */
+:root {
+  --view-series-1: #3987e5;
+  --view-series-2: #d95926;
+  --view-series-3: #199e70;
+  --view-series-4: #c98500;
+  --view-series-5: #d55181;
+  --view-series-6: #9085e9;
+}
+
+:root[data-mode='light'] {
+  --view-series-1: #2a78d6;
+  --view-series-2: #eb6834;
+  --view-series-3: #1baf7a;
+  --view-series-4: #eda100;
+  --view-series-5: #e87ba4;
+  --view-series-6: #6250d6;
+}
+
+/* A grid keeps its columns while each one has room, and drops them as the chat narrows. */
+.view-frame {
+  container-type: inline-size;
+}
+
+.view-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(var(--view-columns, 2), minmax(0, 1fr));
+}
+
+.view-grid[data-columns='1'] { --view-columns: 1; }
+.view-grid[data-columns='2'] { --view-columns: 2; }
+.view-grid[data-columns='3'] { --view-columns: 3; }
+.view-grid[data-columns='4'] { --view-columns: 4; }
+
+@container (max-width: 640px) {
+  .view-grid[data-columns='3'],
+  .view-grid[data-columns='4'] { --view-columns: 2; }
+}
+
+@container (max-width: 400px) {
+  .view-grid { --view-columns: 1 !important; }
+}
