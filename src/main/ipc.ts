@@ -93,6 +93,7 @@ import type {
   InboxRemoveRequest,
   InboxSetArchivedRequest,
   InboxSetPinnedRequest,
+  InboxSetSnoozedRequest,
   InboxSetCustomTitleRequest,
   InboxSetReadRequest,
   InboxThread,
@@ -562,6 +563,9 @@ export function registerIpcHandlers(
   )
   handle<InboxSetPinnedRequest, InboxThread | null>(IpcChannels.inboxSetPinned, (req) =>
     inboxRecorder.setPinned(req.id, req.pinned)
+  )
+  handle<InboxSetSnoozedRequest, InboxThread | null>(IpcChannels.inboxSetSnoozed, (req) =>
+    inboxRecorder.setSnoozed(req.id, req.until)
   )
   handle<InboxSetCustomTitleRequest, InboxThread | null>(IpcChannels.inboxSetCustomTitle, (req) =>
     inboxRecorder.setCustomTitle(req.id, req.customTitle)

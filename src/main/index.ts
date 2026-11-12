@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, nativeImage, nativeTheme, screen, session, shell } from 'electron'
+import { app, BrowserWindow, nativeImage, nativeTheme, powerMonitor, screen, session, shell } from 'electron'
 import { IpcEvents } from '@shared/ipc'
 import { registerIpcHandlers } from './ipc'
 import { rendererEntryUrl } from './ipc-security'
@@ -216,6 +216,9 @@ if (bridgeLaunch) {
         }
       }
     })
+    // Snoozes that ran out while MDE was closed wake now; the rest on time, and on waking from sleep.
+    inboxRecorder.wakeSnoozed()
+    powerMonitor.on('resume', () => inboxRecorder?.wakeSnoozed())
     const serviceClient = new OpenCodeServiceClient({
       discover: discoverOpenCodeService,
       executable: () => inboxChat?.executable() ?? 'opencode'
@@ -303,6 +306,7 @@ if (bridgeLaunch) {
     quitPrepared = true
     ptyManager.disposeAll()
     inboxChat?.stop()
+    inboxRecorder?.dispose()
     void mdeMcp?.close()
     // Save the last pane directories and Inbox state before exiting.
     event.preventDefault()

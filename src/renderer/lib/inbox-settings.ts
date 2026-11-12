@@ -6,6 +6,7 @@ export const INBOX_SIDEBAR_CHANGES_STORAGE_KEY = 'mde.inbox-sidebar-changes'
 export const INBOX_WORKING_SECTION_STORAGE_KEY = 'mde.inbox-working-section'
 export const INBOX_WORKING_COLLAPSED_STORAGE_KEY = 'mde.inbox-working-collapsed'
 export const INBOX_DRAFTS_COLLAPSED_STORAGE_KEY = 'mde.inbox-drafts-collapsed'
+export const INBOX_SNOOZED_OPEN_STORAGE_KEY = 'mde.inbox-snoozed-open'
 export const INBOX_TITLE_ICONS_STORAGE_KEY = 'mde.inbox-title-icons'
 export const INBOX_COMPACT_CHAT_STORAGE_KEY = 'mde.inbox-compact-chat'
 export const INBOX_MODEL_QUICK_SWITCH_STORAGE_KEY = 'mde.inbox-model-quick-switch'
@@ -143,6 +144,15 @@ export function getInboxDraftsCollapsed(): boolean {
 
 export function saveInboxDraftsCollapsed(collapsed: boolean): void {
   writeSwitch(INBOX_DRAFTS_COLLAPSED_STORAGE_KEY, collapsed)
+}
+
+/** Whether the Snoozed section is open. Folded unless it was opened, and folded when unreadable. */
+export function getInboxSnoozedOpen(): boolean {
+  return readSwitch(INBOX_SNOOZED_OPEN_STORAGE_KEY)
+}
+
+export function saveInboxSnoozedOpen(open: boolean): void {
+  writeSwitch(INBOX_SNOOZED_OPEN_STORAGE_KEY, open)
 }
 
 /** A width in pixels the sidebar can have, whatever was stored or dragged to. */

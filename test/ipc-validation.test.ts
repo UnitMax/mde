@@ -75,6 +75,7 @@ const validPayloads = {
   [IpcChannels.inboxSetRead]: { id: 'ses_thread', read: true },
   [IpcChannels.inboxSetArchived]: { id: 'ses_thread', archived: false },
   [IpcChannels.inboxSetPinned]: { id: 'ses_thread', pinned: true },
+  [IpcChannels.inboxSetSnoozed]: { id: 'ses_thread', until: 1_800_000_000_000 },
   [IpcChannels.inboxSetCustomTitle]: { id: 'ses_thread', customTitle: 'My task' },
   [IpcChannels.inboxRemove]: { id: 'ses_thread' },
   [IpcChannels.inboxFolders]: undefined,
@@ -195,6 +196,12 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.inboxSetPinned, { id: 'thread', pinned: true })
     rejects(IpcChannels.inboxSetPinned, { id: 'ses_thread', pinned: 'yes' })
     rejects(IpcChannels.inboxSetPinned, { id: 'ses_thread' })
+    expect(() => assertIpcPayload(IpcChannels.inboxSetSnoozed, { id: 'ses_thread', until: null })).not.toThrow()
+    rejects(IpcChannels.inboxSetSnoozed, { id: 'ses_thread' })
+    rejects(IpcChannels.inboxSetSnoozed, { id: 'ses_thread', until: '1800000000000' })
+    rejects(IpcChannels.inboxSetSnoozed, { id: 'ses_thread', until: 1.5 })
+    rejects(IpcChannels.inboxSetSnoozed, { id: 'ses_thread', until: Infinity })
+    rejects(IpcChannels.inboxSetSnoozed, { id: 'thread', until: null })
     rejects(IpcChannels.inboxRemove, { id: '' })
     expect(() => assertIpcPayload(IpcChannels.inboxRemove, { id: 'ses_thread', removeWorktree: true })).not.toThrow()
     rejects(IpcChannels.inboxRemove, { id: 'ses_thread', removeWorktree: 'yes' })

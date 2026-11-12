@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import {
+  AlarmClock,
+  AlarmClockOff,
   Bot,
   Car,
   ChevronDown,
@@ -41,6 +43,9 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger
 } from '@/components/ui/context-menu'
 import {
@@ -58,9 +63,14 @@ import {
   inboxCueActive,
   inboxModelLabel,
   inboxStatusChip,
+  inboxSnoozeOptions,
+  inboxSnoozeTime,
+  inboxThreadListed,
+  isInboxThreadSnoozed,
   isInboxThreadUnread,
   sessionAge,
   sessionDate,
+  snoozedInboxThreads,
   visibleInboxThreads,
   workingInboxThreads,
   type InboxFilter
@@ -111,7 +121,7 @@ export function InboxStatusBadge({
       // A new key replays the pop each time something new happens in the thread being read.
       key={cued ? cueAt : 'still'}
       tone={chip.tone}
-      glyph={statusGlyph(thread.status)}
+      glyph={thread.woke && chip.tone === 'accent' && thread.status !== 'attention' ? 'alarm' : statusGlyph(thread.status)}
       data-testid="inbox-status-chip"
       data-cue={cued || undefined}
       className={cn(cued && 'inbox-cue-pop')}
@@ -158,6 +168,7 @@ function InboxThreadRow({
   multiSelected,
   bulkPending,
   onBulk,
+  onBulkSnooze,
   now,
   forking,
   onSelect,
@@ -168,6 +179,8 @@ function InboxThreadRow({
   multiSelected: boolean
   bulkPending: boolean
   onBulk: (action: BulkAction, value: boolean) => void
+  /** Snoozes the selected threads until then, or brings them back with null. */
+  onBulkSnooze: (until: number | null) => void
   now: number
   /** A fork is being made, so another one waits. */
   forking: boolean
@@ -177,6 +190,12 @@ function InboxThreadRow({
   const setRead = useWorkspace((state) => state.setInboxThreadRead)
   const setArchived = useWorkspace((state) => state.setInboxThreadArchived)
   const setPinned = useWorkspace((state) => state.setInboxThreadPinned)
+  const setSnoozed = useWorkspace((state) => state.setInboxThreadSnoozed)
+  const snoozed = isInboxThreadSnoozed(thread)
+  const snooze = (until: number | null): void => {
+    if (multiSelected) onBulkSnooze(until)
+    else void setSnoozed(thread.id, until).catch(() => undefined)
+  }
   const rename = useThreadRename(thread)
   const { saving: savingName, error: nameError, renaming } = rename
   const pinLabel = thread.pinned ? 'Unpin thread' : 'Pin thread'
@@ -278,13 +297,26 @@ function InboxThreadRow({
               >
                 {thread.customTitle ?? thread.title}
               </span>
-              <time
-                dateTime={new Date(thread.lastActivityAt).toISOString()}
-                title={sessionDate(thread.lastActivityAt)}
-                className={cn('shrink-0 text-[11px] group-hover:hidden group-focus-within:hidden', unread ? 'font-semibold text-fg' : 'text-fg-muted')}
-              >
-                {sessionAge(thread.lastActivityAt, now)}
-              </time>
+              {snoozed && thread.snoozedUntil !== undefined ? (
+                // A snoozed thread says when it comes back instead of when it last did something.
+                <time
+                  dateTime={new Date(thread.snoozedUntil).toISOString()}
+                  title={`Snoozed until ${sessionDate(thread.snoozedUntil)}`}
+                  data-testid={`inbox-thread-snoozed-until-${thread.id}`}
+                  className="flex shrink-0 items-center gap-1 text-[11px] text-fg-muted group-hover:hidden group-focus-within:hidden"
+                >
+                  <AlarmClock aria-hidden="true" className="h-3 w-3" />
+                  {inboxSnoozeTime(thread.snoozedUntil, now)}
+                </time>
+              ) : (
+                <time
+                  dateTime={new Date(thread.lastActivityAt).toISOString()}
+                  title={sessionDate(thread.lastActivityAt)}
+                  className={cn('shrink-0 text-[11px] group-hover:hidden group-focus-within:hidden', unread ? 'font-semibold text-fg' : 'text-fg-muted')}
+                >
+                  {sessionAge(thread.lastActivityAt, now)}
+                </time>
+              )}
             </span>
             {/* With the icon in front of the title, the lines below start where the title does. */}
             <span className={cn('flex w-full min-w-0 items-center gap-1 text-[11px] text-fg-muted', titleIcons && 'pl-5')}>
@@ -368,6 +400,37 @@ function InboxThreadRow({
             {unread ? <MailOpen className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />}
             {unread ? 'Mark as read' : 'Mark as unread'}
           </ContextMenuItem>
+          {snoozed ? (
+            <ContextMenuItem
+              data-testid={`inbox-thread-unsnooze-${thread.id}`}
+              disabled={multiSelected && bulkPending}
+              onSelect={() => snooze(null)}
+            >
+              <AlarmClockOff aria-hidden="true" className="h-3.5 w-3.5" />
+              Unsnooze
+            </ContextMenuItem>
+          ) : (
+            <ContextMenuSub>
+              <ContextMenuSubTrigger data-testid={`inbox-thread-snooze-${thread.id}`} disabled={multiSelected && bulkPending}>
+                <AlarmClock aria-hidden="true" className="h-3.5 w-3.5" />
+                <span className="flex-1">Snooze</span>
+                <ChevronRight aria-hidden="true" className="h-3.5 w-3.5 text-fg-subtle" />
+              </ContextMenuSubTrigger>
+              <ContextMenuSubContent>
+                {inboxSnoozeOptions(now).map((option) => (
+                  <ContextMenuItem
+                    key={option.id}
+                    data-testid={`inbox-snooze-${option.id}`}
+                    // Worked out again on the click, so "1 hour" is an hour from then, however long the menu was open.
+                    onSelect={() => snooze(inboxSnoozeOptions().find((choice) => choice.id === option.id)!.until)}
+                  >
+                    <span className="flex-1">{option.label}</span>
+                    <span className="pl-4 text-[11px] text-fg-subtle">{option.detail}</span>
+                  </ContextMenuItem>
+                ))}
+              </ContextMenuSubContent>
+            </ContextMenuSub>
+          )}
           <ContextMenuItem disabled={multiSelected && bulkPending} onSelect={() => multiSelected ? onBulk('park', !thread.archived) : void setArchived(thread.id, !thread.archived)}>
             <ParkIcon aria-hidden="true" className="h-3.5 w-3.5" />
             {parkLabel}
@@ -466,77 +529,80 @@ function emptyMessage(filter: InboxFilter, query: string, workingShown: boolean,
   return project ? `No threads in ${project} yet.` : 'No threads yet.'
 }
 
-/**
- * Unpinned threads that are working, in a section under the list that folds up to its header. They are
- * here and not in the list, and go back to the list when they stop. The filter tabs do not apply,
- * so a glance tells what is running; the search does, since this is the only place to find them by it.
- */
-function InboxWorkingSection({
-  threads,
-  searching,
-  project,
-  selectedId,
-  selectedIds,
-  bulkPending,
-  onBulk,
-  now,
-  forking,
-  onSelect,
-  onFork
-}: {
+interface ThreadSectionRows {
   threads: InboxThread[]
-  /** A search is narrowing the threads. */
-  searching: boolean
-  /** The name of the project the Inbox is narrowed to, if it is. */
-  project?: string
   selectedId: string | null
   selectedIds: Set<string>
   bulkPending: boolean
   onBulk: (action: BulkAction, value: boolean) => void
+  onBulkSnooze: (until: number | null) => void
   now: number
   forking: boolean
   onSelect: (thread: InboxThread, event: MouseEvent<HTMLButtonElement>) => void
   onFork: (thread: InboxThread) => void
+}
+
+/** A section of threads under the list that folds up to its header: Working, Snoozed. */
+function InboxThreadSection({
+  id,
+  title,
+  label,
+  open,
+  onOpenChange,
+  empty,
+  threads,
+  selectedId,
+  selectedIds,
+  bulkPending,
+  onBulk,
+  onBulkSnooze,
+  now,
+  forking,
+  onSelect,
+  onFork
+}: ThreadSectionRows & {
+  /** Names the test IDs and the list's element ID: `inbox-${id}-section`, `-toggle`, `-count`, `-list`. */
+  id: string
+  title: string
+  label: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  /** What the open section says when it has no threads. */
+  empty: string
 }): JSX.Element {
-  const collapsed = useInboxView((state) => state.workingCollapsed)
-  const setCollapsed = useInboxView((state) => state.setWorkingCollapsed)
-  const Chevron = collapsed ? ChevronRight : ChevronDown
+  const Chevron = open ? ChevronDown : ChevronRight
   return (
     <section
-      data-testid="inbox-working-section"
-      aria-label="Working threads"
+      data-testid={`inbox-${id}-section`}
+      aria-label={label}
       // A direct child of the panel, so the percentage is of the panel; the list above keeps its own minimum.
       className="flex max-h-[45%] min-h-0 shrink flex-col border-t border-line pt-1"
     >
       <button
         type="button"
-        data-testid="inbox-working-toggle"
-        aria-expanded={!collapsed}
-        aria-controls="inbox-working-list"
-        onClick={() => setCollapsed(!collapsed)}
+        data-testid={`inbox-${id}-toggle`}
+        aria-expanded={open}
+        aria-controls={`inbox-${id}-list`}
+        onClick={() => onOpenChange(!open)}
         className="flex h-6 w-full shrink-0 items-center gap-1 rounded px-1 text-left text-[11px] font-medium uppercase tracking-wide text-fg-subtle transition-colors hover:bg-hover hover:text-fg"
       >
         <Chevron aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-        <span>Working</span>
+        <span>{title}</span>
         <span
-          data-testid="inbox-working-count"
+          data-testid={`inbox-${id}-count`}
           className="rounded bg-elevated px-1.5 py-px text-[10px] font-medium normal-case tracking-normal text-fg-muted"
         >
           {threads.length}
         </span>
       </button>
-      {!collapsed && (
+      {open && (
         <div
-          id="inbox-working-list"
-          data-testid="inbox-working-list"
+          id={`inbox-${id}-list`}
+          data-testid={`inbox-${id}-list`}
           className="mt-0.5 min-h-0 flex-1 overflow-y-auto"
         >
           {threads.length === 0 ? (
-            <p className="px-2 py-1 text-xs text-fg-subtle">
-              {searching
-                ? 'No working threads match your search.'
-                : project ? `No threads are working in ${project}.` : 'No threads are working.'}
-            </p>
+            <p className="px-2 py-1 text-xs text-fg-subtle">{empty}</p>
           ) : (
             <div className="flex flex-col gap-1">
               {threads.map((thread) => (
@@ -547,6 +613,7 @@ function InboxWorkingSection({
                   multiSelected={selectedIds.has(thread.id)}
                   bulkPending={bulkPending}
                   onBulk={onBulk}
+                  onBulkSnooze={onBulkSnooze}
                   now={now}
                   forking={forking}
                   onSelect={(event) => onSelect(thread, event)}
@@ -558,6 +625,58 @@ function InboxWorkingSection({
         </div>
       )}
     </section>
+  )
+}
+
+/**
+ * Unpinned threads that are working, in a section under the list that folds up to its header. They are
+ * here and not in the list, and go back to the list when they stop. The filter tabs do not apply,
+ * so a glance tells what is running; the search does, since this is the only place to find them by it.
+ */
+function InboxWorkingSection({
+  searching,
+  project,
+  ...rows
+}: ThreadSectionRows & {
+  /** A search is narrowing the threads. */
+  searching: boolean
+  /** The name of the project the Inbox is narrowed to, if it is. */
+  project?: string
+}): JSX.Element {
+  const collapsed = useInboxView((state) => state.workingCollapsed)
+  const setCollapsed = useInboxView((state) => state.setWorkingCollapsed)
+  return (
+    <InboxThreadSection
+      id="working"
+      title="Working"
+      label="Working threads"
+      open={!collapsed}
+      onOpenChange={(open) => setCollapsed(!open)}
+      empty={searching
+        ? 'No working threads match your search.'
+        : project ? `No threads are working in ${project}.` : 'No threads are working.'}
+      {...rows}
+    />
+  )
+}
+
+/**
+ * Snoozed threads, in a section under the list that starts folded up: out of the way until their time comes,
+ * when they go back to the list unread. The first to come back is first.
+ */
+function InboxSnoozedSection({ searching, ...rows }: ThreadSectionRows & { searching: boolean }): JSX.Element {
+  const open = useInboxView((state) => state.snoozedOpen)
+  const setOpen = useInboxView((state) => state.setSnoozedOpen)
+  return (
+    <InboxThreadSection
+      id="snoozed"
+      title="Snoozed"
+      label="Snoozed threads"
+      open={open}
+      onOpenChange={setOpen}
+      empty={searching ? 'No snoozed threads match your search.' : 'No threads are snoozed.'}
+      {...rows}
+    />
   )
 }
 
@@ -623,6 +742,9 @@ export function InboxPanel(): JSX.Element {
   const projectThreads = inboxThreadsInProject(threads, project, folders)
   const visible = visibleInboxThreads(projectThreads, filter, query, showWorking)
   const working = showWorking ? workingInboxThreads(projectThreads, query) : []
+  const snoozed = snoozedInboxThreads(projectThreads, query)
+  // Like the drafts, the section is there while anything in the project is snoozed, whatever the search finds.
+  const anySnoozed = projectThreads.some(isInboxThreadSnoozed)
   const selectedThreads = threads.filter((thread) => selectedIds.has(thread.id))
   const clearSelection = (): void => { setSelectedIds(new Set()); setBulkError(null) }
   const selectRow = (thread: InboxThread, event: MouseEvent<HTMLButtonElement>): void => {
@@ -630,7 +752,7 @@ export function InboxPanel(): JSX.Element {
     if (event.ctrlKey || event.metaKey) {
       setSelectedIds((previous) => {
         const next = new Set(previous)
-        if (previous.size === 0 && selectedId && selectedId !== thread.id && [...visible, ...working].some((item) => item.id === selectedId)) next.add(selectedId)
+        if (previous.size === 0 && selectedId && selectedId !== thread.id && [...visible, ...working, ...snoozed].some((item) => item.id === selectedId)) next.add(selectedId)
         if (next.has(thread.id)) next.delete(thread.id)
         else next.add(thread.id)
         return next
@@ -641,21 +763,24 @@ export function InboxPanel(): JSX.Element {
       selectThread(thread.id)
     }
   }
-  const runBulk = async (action: BulkAction, value: boolean): Promise<void> => {
-    setBulkPending(true)
-    setBulkError(null)
+  const runBulk = (action: BulkAction, value: boolean): Promise<void> => {
     const workspace = useWorkspace.getState()
-    const results = await Promise.allSettled(selectedThreads.map((thread) => (
+    return updateSelected((thread) => (
       action === 'pin' ? workspace.setInboxThreadPinned(thread.id, value)
         : action === 'read' ? workspace.setInboxThreadRead(thread.id, value)
           : workspace.setInboxThreadArchived(thread.id, value)
-    )))
+    ))
+  }
+  const updateSelected = async (update: (thread: InboxThread) => Promise<void>): Promise<void> => {
+    setBulkPending(true)
+    setBulkError(null)
+    const results = await Promise.allSettled(selectedThreads.map(update))
     const failed = selectedThreads.filter((_, index) => results[index]?.status === 'rejected')
     setSelectedIds(new Set(failed.map((thread) => thread.id)))
     if (failed.length) setBulkError(`Could not update ${failed.length} ${failed.length === 1 ? 'thread' : 'threads'}. Try again.`)
     setBulkPending(false)
   }
-  const workingShown = showWorking && projectThreads.some((thread) => !thread.pinned && inboxThreadWorking(thread))
+  const workingShown = showWorking && projectThreads.some((thread) => !thread.pinned && inboxThreadWorking(thread) && !isInboxThreadSnoozed(thread))
   const projectSummaries = inboxProjectSummaries(threads, folders)
   const startFork = (thread: InboxThread): void => {
     if (fork.pending) return
@@ -664,6 +789,18 @@ export function InboxPanel(): JSX.Element {
       () => setFork({ pending: false, error: null }),
       (error: unknown) => setFork({ pending: false, error: ipcErrorMessage(error, 'Could not fork the thread.') })
     )
+  }
+
+  const sectionRows = {
+    selectedId,
+    selectedIds,
+    bulkPending,
+    onBulk: (action: BulkAction, value: boolean) => void runBulk(action, value),
+    onBulkSnooze: (until: number | null) => void updateSelected((thread) => useWorkspace.getState().setInboxThreadSnoozed(thread.id, until)),
+    now,
+    forking: fork.pending,
+    onSelect: selectRow,
+    onFork: startFork,
   }
 
   if (lock) return <InboxLockedNotice compact />
@@ -683,7 +820,7 @@ export function InboxPanel(): JSX.Element {
         onFilterChange={(value) => { clearSelection(); setFilter(value) }}
         summaries={projectSummaries}
         project={project}
-        total={threads.filter((thread) => !thread.archived).length}
+        total={threads.filter(inboxThreadListed).length}
         unread={countUnreadInboxThreads(threads)}
         onProjectChange={(value) => { clearSelection(); setProjectFilter(value) }}
       />
@@ -731,7 +868,8 @@ export function InboxPanel(): JSX.Element {
                 selected={thread.id === selectedId}
                 multiSelected={selectedIds.has(thread.id)}
                 bulkPending={bulkPending}
-                onBulk={(action, value) => void runBulk(action, value)}
+                onBulk={sectionRows.onBulk}
+                onBulkSnooze={sectionRows.onBulkSnooze}
                 now={now}
                 forking={fork.pending}
                 onSelect={(event) => selectRow(thread, event)}
@@ -752,20 +890,9 @@ export function InboxPanel(): JSX.Element {
         />
       )}
       {showWorking && (
-        <InboxWorkingSection
-          threads={working}
-          searching={query.trim() !== ''}
-          project={project?.name}
-          selectedId={selectedId}
-          selectedIds={selectedIds}
-          bulkPending={bulkPending}
-          onBulk={(action, value) => void runBulk(action, value)}
-          now={now}
-          forking={fork.pending}
-          onSelect={selectRow}
-          onFork={startFork}
-        />
+        <InboxWorkingSection threads={working} searching={query.trim() !== ''} project={project?.name} {...sectionRows} />
       )}
+      {anySnoozed && <InboxSnoozedSection threads={snoozed} searching={query.trim() !== ''} {...sectionRows} />}
     </div>
   )
 }

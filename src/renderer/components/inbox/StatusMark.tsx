@@ -1,10 +1,13 @@
 import type { HTMLAttributes, ReactNode } from 'react'
-import { Check, LoaderCircle, X } from 'lucide-react'
+import { AlarmClock, Check, LoaderCircle, X } from 'lucide-react'
 import type { InboxStatusChip } from '@/lib/inbox'
 import { cn } from '@/lib/utils'
 
-/** What leads the label: a spinner while working, a beating dot where the person is wanted, a mark for how it ended. */
-export type StatusGlyph = 'spinner' | 'pulse' | 'check' | 'cross' | 'none'
+/**
+ * What leads the label: a spinner while working, a beating dot where the person is wanted, a mark for how it ended,
+ * an alarm clock for a thread back from a snooze.
+ */
+export type StatusGlyph = 'spinner' | 'pulse' | 'check' | 'cross' | 'alarm' | 'none'
 
 /**
  * What state a thread is in, as a glyph and a label with no box around them (see `.status-mark` in index.css), so
@@ -29,6 +32,7 @@ export function StatusMark({
       {glyph === 'pulse' && <span aria-hidden="true" className="status-pulse" />}
       {glyph === 'check' && <Check aria-hidden="true" strokeWidth={3} className="status-mark-glyph" />}
       {glyph === 'cross' && <X aria-hidden="true" strokeWidth={3} className="status-mark-glyph" />}
+      {glyph === 'alarm' && <AlarmClock aria-hidden="true" strokeWidth={2.5} className="status-mark-glyph" />}
       {children}
     </span>
   )

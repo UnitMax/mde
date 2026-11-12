@@ -97,6 +97,8 @@ const tab = object({ sessionId: id, tabId: id })
 /** A full SHA-1 or SHA-256 object name: never an option, a range or a ref name. */
 const commitHash: Validator = (value) => typeof value === 'string' && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(value)
 const graphLimit: Validator = (value) => typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5000
+/** A moment as milliseconds since the epoch; whether it is in the future is the recorder's to check against its clock. */
+const epochMs: Validator = (value) => typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= 8.64e15
 const opencodeSessionId: Validator = (value) => id(value) && /^ses_[A-Za-z0-9_-]+$/.test(value as string)
 /** A Git graph root: an Inbox thread or a live terminal, never both and never a path. */
 const gitRoot = (fields: Record<string, Validator>): Validator => {
@@ -236,6 +238,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.inboxSetRead]: object({ id: opencodeSessionId, read: boolean }),
   [IpcChannels.inboxSetArchived]: object({ id: opencodeSessionId, archived: boolean }),
   [IpcChannels.inboxSetPinned]: object({ id: opencodeSessionId, pinned: boolean }),
+  [IpcChannels.inboxSetSnoozed]: object({ id: opencodeSessionId, until: nullable(epochMs) }),
   [IpcChannels.inboxSetCustomTitle]: object({ id: opencodeSessionId, customTitle: nullable(string(512)) }),
   [IpcChannels.inboxRemove]: object({ id: opencodeSessionId, removeWorktree: optional(boolean) }),
   [IpcChannels.inboxFolders]: noPayload,

@@ -24,9 +24,61 @@ export function inboxCueActive(at: number | undefined, now = Date.now()): boolea
   return at !== undefined && now - at < INBOX_CUE_MS
 }
 
-/** Unread threads that are not parked, for the tab badge. */
+/** Whether a thread is snoozed: out of the list, in the Snoozed section, until its time comes. */
+export function isInboxThreadSnoozed(thread: InboxThread): boolean {
+  return thread.snoozedUntil !== undefined && !thread.archived
+}
+
+/** A thread the list shows: neither parked nor snoozed. */
+export function inboxThreadListed(thread: InboxThread): boolean {
+  return !thread.archived && !isInboxThreadSnoozed(thread)
+}
+
+/** Unread threads that are neither parked nor snoozed, for the tab badge. */
 export function countUnreadInboxThreads(threads: readonly InboxThread[]): number {
-  return threads.filter((thread) => !thread.archived && isInboxThreadUnread(thread)).length
+  return threads.filter((thread) => inboxThreadListed(thread) && isInboxThreadUnread(thread)).length
+}
+
+export type InboxSnoozeChoice = 'hour' | 'hours' | 'morning'
+
+export interface InboxSnoozeOption {
+  id: InboxSnoozeChoice
+  label: string
+  /** When the thread comes back, as the menu shows it beside the label. */
+  detail: string
+  until: number
+}
+
+/** The hour "Tomorrow morning" wakes threads at, on this computer's clock. */
+export const INBOX_SNOOZE_MORNING_HOUR = 8
+
+/** The times a thread can be snoozed until, from `now`. Tomorrow morning is the next calendar day at 8:00, local time. */
+export function inboxSnoozeOptions(now = Date.now()): InboxSnoozeOption[] {
+  const today = new Date(now)
+  const morning = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1, INBOX_SNOOZE_MORNING_HOUR).getTime()
+  const options: Array<Omit<InboxSnoozeOption, 'detail'>> = [
+    { id: 'hour', label: '1 hour', until: now + 60 * 60 * 1000 },
+    { id: 'hours', label: '5 hours', until: now + 5 * 60 * 60 * 1000 },
+    { id: 'morning', label: 'Tomorrow morning', until: morning },
+  ]
+  return options.map((option) => ({ ...option, detail: inboxSnoozeTime(option.until, now) }))
+}
+
+function sameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+}
+
+/** When a snoozed thread comes back, short: "14:30", "Tomorrow 08:00", or "Fri 08:00" further out. */
+export function inboxSnoozeTime(until: number, now = Date.now()): string {
+  const date = new Date(until)
+  const time = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  const today = new Date(now)
+  if (sameDay(date, today)) return time
+  const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)
+  if (sameDay(date, tomorrow)) return `Tomorrow ${time}`
+  const sixDays = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 6)
+  if (date < sixDays) return `${date.toLocaleDateString(undefined, { weekday: 'short' })} ${time}`
+  return `${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${time}`
 }
 
 export function inboxModelLabel(model: OpenCodeModelRef | undefined): string | null {
@@ -87,7 +139,7 @@ export function inboxThreadsInProject(
   return threads.filter((thread) => inboxThreadFolder(thread, folders)?.id === project.id)
 }
 
-/** A project with how many of its threads are in the Inbox (not parked) and how many of those are unread. */
+/** A project with how many of its threads are in the Inbox (not parked or snoozed) and how many of those are unread. */
 export interface InboxProjectSummary {
   project: InboxFolder
   threads: number
@@ -101,7 +153,7 @@ export function inboxProjectSummaries(
 ): InboxProjectSummary[] {
   const counts = new Map<string, { threads: number; unread: number }>()
   for (const thread of threads) {
-    if (thread.archived) continue
+    if (!inboxThreadListed(thread)) continue
     const id = inboxThreadFolder(thread, folders)?.id
     if (!id) continue
     const count = counts.get(id) ?? { threads: 0, unread: 0 }
@@ -149,6 +201,10 @@ export interface InboxStatusChip {
 }
 
 export function inboxStatusChip(thread: InboxThread): InboxStatusChip | null {
+  // Back from a snooze: what it is waiting for is the person, not the agent, until something happens in it.
+  if (thread.woke && thread.status !== 'working' && thread.status !== 'attention') {
+    return { label: 'Woke up', tone: 'accent' }
+  }
   switch (thread.status) {
     case 'attention':
       return {
@@ -176,7 +232,7 @@ export function inboxThreadWorking(thread: InboxThread): boolean {
 
 function matchesFilter(thread: InboxThread, filter: InboxFilter, workingElsewhere: boolean): boolean {
   if (filter === 'archived') return thread.archived
-  if (thread.archived) return false
+  if (!inboxThreadListed(thread)) return false
   if (workingElsewhere && !thread.pinned && inboxThreadWorking(thread)) return false
   if (filter === 'unread') return isInboxThreadUnread(thread) || thread.status === 'attention'
   return true
@@ -219,8 +275,19 @@ export function workingInboxThreads(threads: readonly InboxThread[], query = '')
   const started = (thread: InboxThread): number => thread.workingSince ?? thread.lastActivityAt
   const tokens = queryTokens(query)
   return threads
-    .filter((thread) => !thread.pinned && inboxThreadWorking(thread) && matchesQuery(thread, tokens))
+    .filter((thread) => !thread.pinned && inboxThreadWorking(thread) && !isInboxThreadSnoozed(thread) && matchesQuery(thread, tokens))
     .sort((a, b) => started(b) - started(a) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
+}
+
+/**
+ * Snoozed threads, for the Snoozed section: the first to come back first. Like the Working section it ignores the
+ * filter tabs but not the search. A snoozed thread is here even when it is pinned or working.
+ */
+export function snoozedInboxThreads(threads: readonly InboxThread[], query = ''): InboxThread[] {
+  const tokens = queryTokens(query)
+  return threads
+    .filter((thread) => isInboxThreadSnoozed(thread) && matchesQuery(thread, tokens))
+    .sort((a, b) => (a.snoozedUntil ?? 0) - (b.snoozedUntil ?? 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
 }
 
 /**

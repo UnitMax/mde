@@ -134,6 +134,7 @@ const api: RendererApi = {
     setRead: (req) => ipcRenderer.invoke(IpcChannels.inboxSetRead, req),
     setArchived: (req) => ipcRenderer.invoke(IpcChannels.inboxSetArchived, req),
     setPinned: (req) => ipcRenderer.invoke(IpcChannels.inboxSetPinned, req),
+    setSnoozed: (req) => ipcRenderer.invoke(IpcChannels.inboxSetSnoozed, req),
     setCustomTitle: (req) => ipcRenderer.invoke(IpcChannels.inboxSetCustomTitle, req),
     remove: (req) => ipcRenderer.invoke(IpcChannels.inboxRemove, req),
     onChanged: (listener) => subscribe<InboxThread>(IpcEvents.inboxChanged, listener),

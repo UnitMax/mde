@@ -179,6 +179,13 @@ export interface InboxThread {
   archived: boolean
   /** Keeps the thread at the top of the sidebar list, including while it is working. */
   pinned?: boolean
+  /**
+   * Set while the thread is snoozed: when it comes back, on this computer's clock. Until then it is out of the
+   * list, in the Snoozed section. New activity (done, failed, a question) brings it back early.
+   */
+  snoozedUntil?: number
+  /** The thread came back from a snooze and nothing has happened in it since; shown as "Woke up". */
+  woke?: boolean
   /** The Inbox folder the thread was started in. */
   folderId: string
   /** The thread this one was forked from, which may since have been removed. */
@@ -861,6 +868,12 @@ export interface InboxSetCustomTitleRequest {
 export interface InboxSetPinnedRequest {
   id: string
   pinned: boolean
+}
+
+export interface InboxSetSnoozedRequest {
+  id: string
+  /** When the thread comes back (ms since the epoch), or null to bring it back now. */
+  until: number | null
 }
 
 export interface InboxRemoveRequest {

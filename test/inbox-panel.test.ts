@@ -193,7 +193,7 @@ describe('Inbox', () => {
     expect(panel.querySelectorAll('[aria-label$=", selected"]')).toHaveLength(2)
     expect(second.getAttribute('aria-label')).toBe('Second, selected')
     await openThreadMenu(second)
-    expect(Array.from(document.body.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent?.trim())).toEqual(['Pin thread', 'Mark as unread', 'Park'])
+    expect(Array.from(document.body.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent?.trim())).toEqual(['Pin thread', 'Mark as unread', 'Snooze', 'Park'])
     await chooseThreadAction(label)
     expect(window.api.inbox[method]).toHaveBeenCalledTimes(2)
     expect(window.api.inbox[method]).toHaveBeenCalledWith({ id: 'ses_one', ...values })
@@ -513,7 +513,7 @@ describe('Inbox thread fork', () => {
     const panel = await render(createElement(InboxPanel))
     await openMenu(panel)
     const labels = Array.from(document.body.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent?.trim())
-    expect(labels).toEqual(['Rename thread', 'Clear custom name', 'Pin thread', 'Mark as read', 'Park', 'Fork thread', 'Delete from Inbox'])
+    expect(labels).toEqual(['Rename thread', 'Clear custom name', 'Pin thread', 'Mark as read', 'Snooze', 'Park', 'Fork thread', 'Delete from Inbox'])
     expect(fork).not.toHaveBeenCalled()
   })
 

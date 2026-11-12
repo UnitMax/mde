@@ -321,15 +321,15 @@ threads have a terminal icon beside their title; GUI threads have no mode icon. 
 list can be searched by title, folder, branch and model, and filtered to All, Unread or Parked (see **Toolbar** below).
 Unread includes threads waiting for an answer or permission even after they have been opened, until
 they no longer need input. Parked threads stay under Parked. Hovering or focusing a row shows a car icon and a "Park" label; parked threads offer
-"Move to Inbox" instead. The context menu pins or unpins a thread, marks it read or unread, parks
+"Move to Inbox" instead. The context menu pins or unpins a thread, marks it read or unread, snoozes it (see **Snooze** below), parks
 it, forks it, or deletes it. Pinned threads appear first in the same list with a small pin icon and
 no separate heading; each group keeps the most recent activity first. Pins respect the search and
 status filter, so parked pinned threads stay under Parked. The optional `pinned` flag is saved in
 `inbox.json` through `inbox:set-pinned`; older records without it are unpinned.
 
-Ctrl-click (or Command-click on macOS) selects threads across the list and Working section without opening them.
+Ctrl-click (or Command-click on macOS) selects threads across the list and the Working and Snoozed sections without opening them.
 The open thread joins the selection when visible. The context menu of a selected thread applies its pin,
-read, and park actions to all selected threads, using the clicked thread's current state to choose the action.
+read, snooze and park actions to all selected threads, using the clicked thread's current state to choose the action.
 A regular click opens a thread and clears the selection; changing the
 search, filter, or project also clears it. If an operation fails, only the threads that failed remain selected.
 
@@ -347,6 +347,28 @@ threads are not listed anywhere else. It takes at most 45% of the sidebar's heig
 that, and the list above keeps a small minimum height. Both choices are kept in the renderer's
 `localStorage` (`mde.inbox-working-section`, off by default, and `mde.inbox-working-collapsed`, open
 by default; `store/inbox-view.ts`).
+
+**Snooze.** The context menu's **Snooze** submenu takes a thread out of the list for 1 hour, 5 hours, or until
+tomorrow morning (the next calendar day at 8:00 on this computer's clock); each choice shows when that is, and the
+time is worked out on the click. A snoozed thread carries `snoozedUntil` in `inbox.json` (through
+`inbox:set-snoozed`, whose validator takes only a whole number of milliseconds or null; the recorder refuses a time
+not in the future or more than a year away). It leaves the list, the Parked filter, the Working section, the unread
+counts and the taskbar badge, and sits in a **Snoozed** section at the foot of the sidebar, the first to come back
+first, with its wake time in place of its age ("14:30", "Tomorrow 08:00"). The section is there only while something
+in the project is snoozed, starts folded up (`mde.inbox-snoozed-open`, folded by default) and, like Working, ignores the
+status filter but not the search; a snoozed thread is in it even when pinned or working. On a snoozed thread the menu
+offers **Unsnooze**, which brings it back as it was. Parking a snoozed thread ends the snooze; snoozing a parked one
+moves it out of Parked. A multi-selection snoozes or unsnoozes every selected thread.
+
+The main process wakes threads (`InboxRecorder.wakeSnoozed`): once `inbox.json` is loaded, so a snooze that ran out
+while MDE was closed wakes at start; on a timer for the next one, which looks again at least every minute, since
+timers do not count time the computer slept and the clock can change; and on Electron's `powerMonitor` `resume`. Waking
+removes `snoozedUntil`, sets `woke`, and moves the thread to the top as new activity does, unread (`lastActivityAt` is
+kept past `readAt` even when the clock was turned back). Its status mark then says **Woke up** with an alarm clock, in
+the accent color, instead of Done, Failed or nothing; it stays after the thread is read and goes once its status
+changes. A wake plays no alert sound and does not flash a terminal thread's border, since the agent did nothing. New
+activity (done, failed, a question or permission) brings a snoozed thread back early without the Woke up mark, as a
+reply unsnoozes a mail; starting work does not.
 
 The same menu has a **Project icons** switch (`mde.inbox-title-icons`, off by default, also in
 `store/inbox-view.ts`). Off, a row shows its project's icon beside the project's name on the line
