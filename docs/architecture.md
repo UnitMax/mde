@@ -1827,6 +1827,16 @@ Fenced `mermaid` blocks render with selectable text and follow the application's
 Wide diagrams scroll horizontally to keep their labels readable. Diagram HTML labels, interactive links,
 configuration directives, and frontmatter are disabled. Diagrams are limited to 16,000 characters
 and 200 edges; invalid or oversized diagrams show their source instead.
+LaTeX math renders in the same read-only Markdown (assistant replies and reasoning, Markdown previews; not the
+editable To Do description) with KaTeX (`src/renderer/lib/math-markdown.ts`): `$…$` and `\(…\)` inline, and
+`$$…$$` or `\[…\]` on lines of their own as display math. Models write these without being told, so no
+instructions are added to prompts. A dollar is also money, so `$…$` is math only as in Pandoc: no space after
+the opening `$` or before the closing one, no digit right after the closing one, all on one line ("$5 and $10"
+stays text). Code spans and code blocks stay code. KaTeX runs with `trust: false` (no `\href`, `\url`,
+`\includegraphics` or HTML commands), `maxSize` 20, `maxExpand` 500, a fresh macro table per formula and a
+4,000-character limit; a formula it cannot read shows as its source in monospace with the reason as a tooltip.
+Display math scrolls horizontally when wider than the reply. KaTeX's fonts and CSS are bundled; nothing loads
+from the network.
 
 ## Git
 

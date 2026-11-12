@@ -669,6 +669,12 @@ dependency versions:
 | Mermaid → KaTeX 0.18.2 | Fixes [inherited trust options](https://github.com/advisories/GHSA-238p-pmpm-9mq7). Mermaid's declared 0.16.x range excludes the fix. | Mermaid adopts a patched KaTeX release. |
 | @electron/get → global-agent 4.1.3 | Removes the roarr → sprintf-js chain affected by [unbounded formatting precision](https://github.com/advisories/GHSA-hp3w-g68c-fv3c). global-agent 4 no longer depends on roarr and retains the downloader's `bootstrap()` API. | Electron builder's downloader adopts a version without the vulnerable chain. |
 
+KaTeX is also a direct dependency, pinned to the same 0.18.2, for LaTeX math in read-only Markdown. It renders
+with `trust: false`, so commands that produce links, images or HTML attributes (`\href`, `\url`,
+`\includegraphics`, `\htmlClass` and the like) are refused, with `maxSize`/`maxExpand` limits, a fresh macro
+table per formula and a 4,000-character cap; failures show the source as text. `test/math-markdown.test.ts`
+covers the delimiters, prices that must stay text, and refused commands.
+
 `test/mermaid-runtime.test.ts` exercises real diagram rendering, Mermaid's math
 integration, and rejection of inherited KaTeX trust options. The math integration
 test enables HTML labels only in its isolated test configuration; the app keeps

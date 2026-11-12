@@ -40,6 +40,7 @@
     "src/renderer/terminal/sessions.ts",
     "src/renderer/lib/utils.ts",
     "src/renderer/lib/chat-views.ts",
+    "src/renderer/lib/math-markdown.ts",
     "src/renderer/lib/view-format.ts",
     "src/renderer/components/views/ViewCharts.tsx",
     "src/renderer/components/views/ViewRenderer.tsx",
