@@ -165,7 +165,8 @@ describe('MDE MCP bridge and listener', () => {
 
   async function listen(handle: (request: MdeMcpRequest) => Promise<{ ok: true; text: string } | { ok: false; error: string }>) {
     const token = await ensureMcpToken(folder)
-    const path = join(folder, 'mcp.sock')
+    // Where MDE itself would listen: a socket file in the folder, or a named pipe on Windows.
+    const path = mcpEndpoint(folder, process.platform)
     listener = new McpListener({ path, platform: process.platform, token: () => token, handle })
     await listener.start()
     return { path, connection: { connect: () => createConnection(path), readToken: () => readMcpToken(folder) } }

@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, posix } from 'node:path'
 
 /**
  * Where the running MDE listens for the bridge, and the secret the bridge must show. Both are derived from MDE's
@@ -20,9 +20,10 @@ function folderHash(userData: string): string {
 /** A named pipe on Windows; a socket file in the data folder elsewhere, or in the temporary folder when that path is too long. */
 export function mcpEndpoint(userData: string, platform: NodeJS.Platform): string {
   if (platform === 'win32') return `\\\\.\\pipe\\mde-mcp-${folderHash(userData)}`
-  const inData = join(userData, SOCKET_FILE)
+  // A socket file is a POSIX path, whatever the platform this code was built on (the tests also run on Windows).
+  const inData = posix.join(userData, SOCKET_FILE)
   if (Buffer.byteLength(inData) <= UNIX_SOCKET_PATH_MAX) return inData
-  return join(tmpdir(), `mde-mcp-${folderHash(userData)}.sock`)
+  return posix.join(tmpdir(), `mde-mcp-${folderHash(userData)}.sock`)
 }
 
 const TOKEN = /^[0-9a-f]{64}$/
