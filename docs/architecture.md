@@ -530,6 +530,17 @@ without losing the thread. A thread evicted by the 1,000-thread limit leaves its
 for the user to remove with `git worktree remove`. The renderer loads the list once at startup (`inbox:list`) and then follows `inbox:changed` pushes,
 so opening the Inbox never waits for OpenCode or Git.
 
+**Usage.** The chart button beside Projects in the Inbox toolbar opens `InboxUsageDialog`, an overview of OpenCode's
+own statistics (what `opencode stats` prints): token, cost, session and active-day totals, the token mix (input, cache
+read and write, output, reasoning), model calls per day as bars (per week, from Monday, for All time), and the models
+and tools used most. `chat:usage` names a folder; main asks that folder's OpenCode service for
+`GET /api/experimental/session/stats` with `tools=detail`, the range's start (local midnight, `from`, epoch ms) and
+the renderer's IANA time zone, which OpenCode uses to cut days. `parseUsageStats` keeps the numbers, merges a model's
+variants into one row and orders models by tokens and tools by calls. Each OpenCode service counts only its own
+sessions, so with folders in more than one place (several WSL distros) the dialog offers one tab per service, the
+filtered project's first. An OpenCode without the route answers 404 and the dialog asks for an update. Nothing is
+cached: opening the dialog, changing the range and Refresh read again.
+
 ### Inbox changes
 
 The Git changes in a thread's checkout show up in two places, both as the same view: its

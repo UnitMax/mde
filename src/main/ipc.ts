@@ -129,6 +129,8 @@ import type {
   ChatMcpRequest,
   ChatMcpSetRequest,
   ChatMcpState,
+  ChatUsageRequest,
+  ChatUsageState,
   ChatBackgroundState,
   ChatSetDeliveryRequest,
   ChatAsideRequest,
@@ -744,6 +746,7 @@ export function registerIpcHandlers(
   handle<ChatAsideRequest, ChatAsideAnswer>(IpcChannels.chatAside, (req) => chat.aside(req))
   handle<ChatAsideHistoryRequest, ChatAsideEntry[]>(IpcChannels.chatAsideHistory, (req) => chat.asideHistory(req))
   handle<ChatMcpRequest, ChatMcpState>(IpcChannels.chatMcp, (req) => chat.mcpList(req))
+  handle<ChatUsageRequest, ChatUsageState>(IpcChannels.chatUsage, (req) => chat.usage(req))
   handle<ChatMcpSetRequest, void>(IpcChannels.chatMcpSet, (req) => chat.mcpSetEnabled(req))
   handle<ChatThreadRequest, void>(IpcChannels.chatInterrupt, (req) => chat.interrupt(req.threadId))
   handle<ChatThreadRequest, void>(IpcChannels.chatCompact, (req) => chat.compact(req.threadId))

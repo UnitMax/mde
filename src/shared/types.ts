@@ -417,6 +417,65 @@ export interface ChatUsage {
   cost: number
 }
 
+/**
+ * OpenCode's usage overview, from one OpenCode service (macOS, or one WSL distro): every session it holds, not
+ * only Inbox threads. `since` (epoch ms) narrows it to recent days; `timezone` (IANA) decides where a day ends.
+ */
+export interface ChatUsageRequest {
+  folderId: string
+  since?: number
+  timezone?: string
+}
+
+/** One model's share of the usage. */
+export interface ChatUsageModel {
+  model: OpenCodeModelRef
+  steps: number
+  tokens: ChatTokens
+  cost: number
+}
+
+/** How often one tool was called, and how often it failed. */
+export interface ChatUsageTool {
+  name: string
+  calls: number
+  failed: number
+  /** The median time a call took, in ms, when OpenCode reports it. */
+  medianMs?: number
+}
+
+export interface ChatUsageStats {
+  /** The span OpenCode counted, epoch ms. */
+  from: number
+  to: number
+  sessions: number
+  /** Sessions a subagent ran in; part of `sessions`. */
+  subagents: number
+  prompts: number
+  /** Model calls; OpenCode counts activity in these. */
+  steps: number
+  tokens: ChatTokens
+  /** In US dollars, as OpenCode reports it; free and local models count 0. */
+  cost: number
+  activeDays: number
+  /** Days in a row with activity, up to the last one. */
+  streak: number
+  /** Model calls per day (`YYYY-MM-DD`, in the requested time zone), oldest first; days without any are left out. */
+  activity: { date: string; steps: number }[]
+  /** Most tokens first. */
+  models: ChatUsageModel[]
+  toolCalls: number
+  toolFailures: number
+  /** Most calls first. */
+  tools: ChatUsageTool[]
+}
+
+/** `supported` is false for an OpenCode without the statistics route; `stats` is then null. */
+export interface ChatUsageState {
+  supported: boolean
+  stats: ChatUsageStats | null
+}
+
 export type ChatToolStatus = 'pending' | 'running' | 'completed' | 'error'
 
 /** One file's change as OpenCode reports it: a unified diff, possibly truncated. */

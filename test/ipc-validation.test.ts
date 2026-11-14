@@ -115,6 +115,7 @@ const validPayloads = {
   [IpcChannels.chatAsideHistory]: { threadId: 'ses_thread' },
   [IpcChannels.chatMcp]: { threadId: 'ses_thread' },
   [IpcChannels.chatMcpSet]: { folderId: 'fld_1234', server: 'context 7', enabled: false },
+  [IpcChannels.chatUsage]: { folderId: 'fld_1234', since: 1_700_000_000_000, timezone: 'Europe/Berlin' },
   [IpcChannels.chatRevert]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a', files: false },
   [IpcChannels.chatFork]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a' },
   [IpcChannels.chatRegenerateTitle]: { threadId: 'ses_thread' },
@@ -397,6 +398,17 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.chatMcpSet, { threadId: 'ses_thread', server: 'demo_math', enabled: 'yes' })
     rejects(IpcChannels.chatMcpSet, { server: 'demo_math', enabled: true })
     rejects(IpcChannels.chatMcpSet, { folderId: 'fld_1234', threadId: 'ses_thread', server: 'demo_math', enabled: true })
+  })
+
+  it('accepts a usage overview for one folder, with an optional start and time zone', () => {
+    expect(() => assertIpcPayload(IpcChannels.chatUsage, { folderId: 'fld_1234' })).not.toThrow()
+    expect(() => assertIpcPayload(IpcChannels.chatUsage, { folderId: 'fld_1234', timezone: 'America/Argentina/Buenos_Aires' })).not.toThrow()
+    rejects(IpcChannels.chatUsage, {})
+    rejects(IpcChannels.chatUsage, { threadId: 'ses_thread' })
+    rejects(IpcChannels.chatUsage, { folderId: 'fld_1234', since: -1 })
+    rejects(IpcChannels.chatUsage, { folderId: 'fld_1234', since: 1.5 })
+    rejects(IpcChannels.chatUsage, { folderId: 'fld_1234', timezone: '../etc' })
+    rejects(IpcChannels.chatUsage, { folderId: 'fld_1234', timezone: 'Europe/Berlin&tools=none' })
   })
 
   it('rejects getters without executing them and inherited/unknown nested fields', () => {

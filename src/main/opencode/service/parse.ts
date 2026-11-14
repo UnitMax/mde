@@ -30,6 +30,9 @@ import type {
   ChatToolCall,
   ChatToolStatus,
   ChatUsage,
+  ChatUsageModel,
+  ChatUsageStats,
+  ChatUsageTool,
   OpenCodeModelRef,
 } from '@shared/types'
 
@@ -1002,4 +1005,99 @@ function goalNote(text: string): { text: string; detail?: string; goal: ChatGoal
     return { text: 'Goal not met yet, working on it', ...(found ? { detail: found } : {}), goal: 'continue' }
   }
   return null
+}
+
+/** The most days, models and tools a usage overview keeps; a real answer has far fewer models and tools. */
+const USAGE_DAYS = 5000
+const USAGE_MODELS = 100
+const USAGE_TOOLS = 100
+const DAY = /^\d{4}-\d{2}-\d{2}$/
+
+function dollars(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value < 1e9 ? value : 0
+}
+
+function addTokens(a: ChatTokens, b: ChatTokens): ChatTokens {
+  return {
+    input: a.input + b.input,
+    output: a.output + b.output,
+    reasoning: a.reasoning + b.reasoning,
+    cacheRead: a.cacheRead + b.cacheRead,
+    cacheWrite: a.cacheWrite + b.cacheWrite,
+  }
+}
+
+export function totalTokens(tokens: ChatTokens): number {
+  return tokens.input + tokens.output + tokens.reasoning + tokens.cacheRead + tokens.cacheWrite
+}
+
+/**
+ * OpenCode's session statistics (`GET /api/experimental/session/stats`, what `opencode stats` shows). A model used
+ * with several variants (effort levels) is counted once. Throws when the answer is not statistics at all.
+ */
+export function parseUsageStats(value: unknown): ChatUsageStats {
+  const stats = record(data(value, 'session statistics'))
+  const range = record(stats?.range)
+  const tokens = parseTokens(stats?.tokens)
+  if (!stats || !tokens) throw new ServiceShapeError('session statistics')
+
+  const activity: ChatUsageStats['activity'] = []
+  for (const entry of list(stats.activity).slice(0, USAGE_DAYS)) {
+    const day = record(entry)
+    const steps = count(day?.steps)
+    if (typeof day?.date === 'string' && DAY.test(day.date) && steps !== undefined) activity.push({ date: day.date, steps })
+  }
+  activity.sort((a, b) => a.date.localeCompare(b.date))
+
+  const models = new Map<string, ChatUsageModel>()
+  for (const entry of list(stats.models).slice(0, USAGE_MODELS)) {
+    const usage = record(entry)
+    const ref = parseModelRef(usage?.model)
+    const used = parseTokens(usage?.tokens)
+    if (!ref || !used) continue
+    const key = `${ref.providerId}/${ref.id}`
+    const known = models.get(key)
+    const steps = count(usage?.steps) ?? 0
+    const cost = dollars(usage?.cost)
+    models.set(key, known
+      ? { ...known, steps: known.steps + steps, tokens: addTokens(known.tokens, used), cost: known.cost + cost }
+      : { model: { id: ref.id, providerId: ref.providerId }, steps, tokens: used, cost })
+  }
+
+  const toolStats = record(stats.tools)
+  const totals = record(toolStats?.totals)
+  const tools: ChatUsageTool[] = []
+  for (const entry of list(toolStats?.usage).slice(0, USAGE_TOOLS)) {
+    const tool = record(entry)
+    const name = short(tool?.name, 128)
+    const calls = count(tool?.calls)
+    if (!name || calls === undefined) continue
+    const median = tool?.durationP50
+    tools.push({
+      name,
+      calls,
+      failed: Math.min(count(tool?.failed) ?? 0, calls),
+      ...(typeof median === 'number' && Number.isFinite(median) && median >= 0 ? { medianMs: median } : {}),
+    })
+  }
+
+  const from = typeof range?.from === 'number' && Number.isFinite(range.from) ? range.from : 0
+  const to = typeof range?.to === 'number' && Number.isFinite(range.to) ? range.to : from
+  return {
+    from,
+    to,
+    sessions: count(stats.sessions) ?? 0,
+    subagents: count(stats.subagents) ?? 0,
+    prompts: count(stats.prompts) ?? 0,
+    steps: count(stats.steps) ?? 0,
+    tokens,
+    cost: dollars(stats.cost),
+    activeDays: count(stats.activeDays) ?? 0,
+    streak: count(stats.streak) ?? 0,
+    activity,
+    models: [...models.values()].sort((a, b) => totalTokens(b.tokens) - totalTokens(a.tokens) || b.steps - a.steps),
+    toolCalls: count(totals?.calls) ?? tools.reduce((sum, tool) => sum + tool.calls, 0),
+    toolFailures: count(totals?.failed) ?? tools.reduce((sum, tool) => sum + tool.failed, 0),
+    tools: tools.sort((a, b) => b.calls - a.calls || a.name.localeCompare(b.name)),
+  }
 }

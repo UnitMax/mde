@@ -76,6 +76,8 @@ import type {
   ChatMcpRequest,
   ChatMcpSetRequest,
   ChatMcpState,
+  ChatUsageRequest,
+  ChatUsageState,
   ChatOptions,
   ChatOptionsRequest,
   ChatPermissionReplyRequest,
@@ -211,6 +213,7 @@ export const IpcChannels = {
   chatAsideHistory: 'chat:aside-history',
   chatMcp: 'chat:mcp',
   chatMcpSet: 'chat:mcp-set',
+  chatUsage: 'chat:usage',
   chatDraft: 'chat:draft',
   chatDrafts: 'chat:drafts',
   chatInterrupt: 'chat:interrupt',
@@ -640,6 +643,8 @@ export interface RendererApi {
     mcp(req: ChatMcpRequest): Promise<ChatMcpState>
     /** Connects or disconnects one MCP server for the running OpenCode; its configuration is not changed. */
     setMcp(req: ChatMcpSetRequest): Promise<void>
+    /** OpenCode's usage overview (tokens, cost, activity, models, tools) from the service a folder's threads run in. */
+    usage(req: ChatUsageRequest): Promise<ChatUsageState>
     interrupt(req: ChatThreadRequest): Promise<void>
     /**
      * Summarizes the conversation to free up context. OpenCode does it in the background and writes the

@@ -166,6 +166,7 @@ const api: RendererApi = {
     asideHistory: (req) => ipcRenderer.invoke(IpcChannels.chatAsideHistory, req),
     mcp: (req) => ipcRenderer.invoke(IpcChannels.chatMcp, req),
     setMcp: (req) => ipcRenderer.invoke(IpcChannels.chatMcpSet, req),
+    usage: (req) => ipcRenderer.invoke(IpcChannels.chatUsage, req),
     interrupt: (req) => ipcRenderer.invoke(IpcChannels.chatInterrupt, req),
     compact: (req) => ipcRenderer.invoke(IpcChannels.chatCompact, req),
     goal: (req) => ipcRenderer.invoke(IpcChannels.chatGoal, req),

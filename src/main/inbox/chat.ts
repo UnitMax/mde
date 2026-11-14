@@ -18,6 +18,8 @@ import type {
   ChatGoal,
   ChatGoalRequest,
   ChatMcpRequest,
+  ChatUsageRequest,
+  ChatUsageState,
   ChatMcpServer,
   ChatMcpSetRequest,
   ChatMcpState,
@@ -76,6 +78,7 @@ import {
   parseGoalAnswer,
   parseGoalChange,
   parseMcpServers,
+  parseUsageStats,
   parseMessagesPage,
   parseModels,
   holdsCompaction,
@@ -436,6 +439,24 @@ export class InboxChatService {
         return { servers, supported: true }
       }
       await this.pause(MCP_RETRY_MS)
+    }
+  }
+
+  /**
+   * OpenCode's usage overview from the service the folder's threads run in: every session it holds, MDE's or not,
+   * as `opencode stats` counts them. An OpenCode without the statistics route says it is not supported.
+   */
+  async usage(request: ChatUsageRequest): Promise<ChatUsageState> {
+    this.assertEnabled()
+    const { target } = this.folder(request.folderId)
+    const query: Record<string, string> = { tools: 'detail' }
+    if (request.since !== undefined) query.from = String(request.since)
+    if (request.timezone) query.timezone = request.timezone
+    try {
+      return { supported: true, stats: parseUsageStats(await this.dependencies.client.request(target, 'session.stats', { query })) }
+    } catch (error) {
+      if (error instanceof OpenCodeServiceError && error.status === 404 && !error.tag) return { supported: false, stats: null }
+      throw error
     }
   }
 

@@ -47,6 +47,8 @@ export const SERVICE_OPERATIONS = {
   'mcp.list': { method: 'GET', path: '/api/mcp' },
   'mcp.connect': { method: 'POST', path: '/api/experimental/mcp/{server}/connect' },
   'mcp.disconnect': { method: 'POST', path: '/api/experimental/mcp/{server}/disconnect' },
+  // Usage over all sessions the service holds (`opencode stats`): tokens, cost, activity per day, models, tools.
+  'session.stats': { method: 'GET', path: '/api/experimental/session/stats' },
 } as const satisfies Record<string, { method: 'GET' | 'POST' | 'PATCH' | 'DELETE'; path: string }>
 
 export type ServiceOperation = keyof typeof SERVICE_OPERATIONS
@@ -69,6 +71,10 @@ const QUERY_PARAMETERS: Record<string, RegExp> = {
   order: /^(asc|desc)$/,
   cursor: /^[A-Za-z0-9_=.-]{1,2048}$/,
   'location[directory]': /^[^\u0000-\u001f\u007f-\u009f]{1,4096}$/,
+  // The usage statistics: epoch ms, an IANA time zone, and how much about tools.
+  from: /^\d{1,16}$/,
+  timezone: /^[A-Za-z][A-Za-z0-9_+\/-]{0,63}$/,
+  tools: /^(none|summary|detail)$/,
 }
 
 export const SERVICE_REQUEST_TIMEOUT_MS = 30_000

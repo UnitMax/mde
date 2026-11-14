@@ -138,6 +138,8 @@ const draftChoice = object({
 const promptText: Validator = (value) => typeof value === 'string' && value.length <= PROMPT_TEXT_LIMIT &&
   !PROMPT_CONTROL_CHARACTERS.test(value)
 const chatThread = object({ threadId: opencodeSessionId })
+/** An IANA time zone name, such as `Europe/Berlin`. */
+const timezone: Validator = (value) => typeof value === 'string' && /^[A-Za-z][A-Za-z0-9_+/-]{0,63}$/.test(value)
 /** A goal's objective; OpenCode's own limit and its reserved words are checked here as well as there. */
 const goalObjective: Validator = (value) => promptText(value) && goalObjectiveProblem(String(value)) === null
 /** A request about a folder (new thread) or a thread names exactly one of them. */
@@ -301,6 +303,7 @@ export const ipcPayloadValidators = {
     exactlyOnePlace(value),
   [IpcChannels.chatMcpSet]: (value) => object({ folderId: optional(inboxFolderId), threadId: optional(opencodeSessionId), server: mcpServerName, enabled: boolean })(value) &&
     exactlyOnePlace(value),
+  [IpcChannels.chatUsage]: object({ folderId: inboxFolderId, since: optional(epochMs), timezone: optional(timezone) }),
   [IpcChannels.chatInterrupt]: chatThread,
   [IpcChannels.chatCompact]: chatThread,
   [IpcChannels.chatGoal]: chatThread,

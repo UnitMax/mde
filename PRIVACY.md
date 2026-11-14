@@ -175,6 +175,12 @@ configuration alone; OpenCode starts and contacts them, and may send them what t
 in a terminal. What a tool is called with and returns is part of the conversation, which is fetched
 from the service, kept in memory only and not written to disk by MDE.
 
+The Inbox's **Usage** overview (the chart button in the Inbox toolbar) asks the same local service for OpenCode's own
+session statistics, the numbers `opencode stats` shows: sessions, prompts, token counts, the cost OpenCode reports,
+model calls per day, and calls per model and per tool. It covers every session that OpenCode service holds, including
+ones started outside MDE. MDE sends the start of the chosen range and your time zone name, so that days end at your
+midnight; it shows the answer while the dialog is open and stores nothing.
+
 The **MDE MCP** (Settings, OpenCode, MDE MCP) lets agents start Inbox threads. **Install** writes one entry,
 `mcp.servers.mde`, into the same global OpenCode configuration file as the editor below (and the same way:
 only that entry, through a temporary file); **Remove** takes it out again. The entry holds only the path of

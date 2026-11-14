@@ -3,6 +3,7 @@ import { Layers, ListFilter, PenSquare, Search, X } from 'lucide-react'
 import type { InboxFolder } from '@shared/types'
 import { InboxProjectsButton } from '@/components/inbox/InboxProjectsButton'
 import { InboxSettingsMenu } from '@/components/inbox/InboxSettingsMenu'
+import { InboxUsageButton } from '@/components/inbox/InboxUsageButton'
 import { ProjectIcon } from '@/components/inbox/ProjectIcon'
 import { Input } from '@/components/ui/input'
 import {
@@ -220,6 +221,7 @@ export function InboxToolbar({
           </DropdownMenuContent>
         </DropdownMenu>
         <div className="ml-auto flex shrink-0 items-center">
+          <InboxUsageButton project={project} />
           <InboxProjectsButton />
           <InboxSettingsMenu />
         </div>
