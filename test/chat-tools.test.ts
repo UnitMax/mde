@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatMessage, ChatPart } from '../src/shared/types'
-import { messageBlocks } from '../src/renderer/lib/chat'
 import {
-  activityBlocks,
   activitySummary,
   answeredQuestions,
   compactFlow,
@@ -416,38 +414,11 @@ describe('activity groups', () => {
   const read = (id: string, extra: Partial<ToolPart> = {}): ChatPart => tool('read', { path: `/app/${id}.ts` }, { id, ...extra })
   const shell = (id: string, extra: Partial<ToolPart> = {}): ChatPart => tool('shell', { command: 'ls' }, { id, ...extra })
   const thought: ChatPart = { kind: 'reasoning', text: 'Hmm' }
-  const text: ChatPart = { kind: 'text', text: 'Done' }
   const edit = (id: string): ChatPart => tool('edit', { filePath: 'a.ts', oldString: 'a', newString: 'b' }, { id })
 
-  const lay = (parts: ChatPart[]) => activityBlocks(messageBlocks(parts)).map((block) => block.kind === 'activity'
-    ? `group:${block.items.length}`
-    : block.kind === 'subagents' ? 'subagents' : block.part.kind === 'tool' ? block.part.id : block.part.kind)
-
-  it('folds three or more steps in a row into one group', () => {
-    expect(lay([thought, read('r1'), read('r2'), text])).toEqual(['group:3', 'text'])
-    expect(lay([read('r1'), shell('s1'), read('r2'), shell('s2')])).toEqual(['group:4'])
-  })
-
-  it('leaves one or two steps as rows', () => {
-    expect(lay([thought, read('r1'), text])).toEqual(['reasoning', 'r1', 'text'])
-    expect(lay([read('r1')])).toEqual(['r1'])
-  })
-
-  it('breaks a run at text, at a file change and at subagents', () => {
-    expect(lay([read('r1'), read('r2'), text, read('r3'), read('r4'), read('r5')])).toEqual(['r1', 'r2', 'text', 'group:3'])
-    expect(lay([read('r1'), read('r2'), edit('e1'), read('r3'), read('r4')])).toEqual(['r1', 'r2', 'e1', 'r3', 'r4'])
-    const subagent = tool('subagent', { agent: 'general', description: 'd', prompt: 'p' }, { id: 'sub' })
-    expect(lay([read('r1'), read('r2'), subagent, read('r3')])).toEqual(['r1', 'r2', 'subagents', 'r3'])
-  })
-
-  it('does not count a thought with no words', () => {
-    expect(lay([{ kind: 'reasoning', text: '  ' }, read('r1'), read('r2')])).toEqual(['reasoning', 'r1', 'r2'])
-  })
-
-  it('keeps a failed edit among the rows, with its reason', () => {
+  it('draws a failed edit as a row, with its reason', () => {
     expect(isFeaturedTool(edit('e1'))).toBe(true)
     expect(isFeaturedTool(tool('edit', {}, { status: 'error', error: 'No match' }))).toBe(false)
-    expect(lay([read('r1'), tool('edit', {}, { id: 'bad', status: 'error', error: 'No match' }), read('r2')])).toEqual(['group:3'])
   })
 
   it('draws an answered question as a card and an unanswered one as a row', () => {

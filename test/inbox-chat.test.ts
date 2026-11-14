@@ -839,11 +839,8 @@ describe('Inbox conversation', () => {
     expect(view.querySelector('[data-testid="chat-skill-demo"]')?.textContent).toBe('Demo skill')
     expect(view.querySelector('[data-testid="chat-message-msg_1"]')?.textContent).toContain('use $demo please')
 
-    // Three steps in a row are folded into one line; opening it shows the steps.
-    const group = view.querySelector<HTMLElement>('[data-testid="chat-activity"]')!
-    expect(group.textContent).toContain('Loading 3 skills')
-    expect(view.querySelector('[data-testid="chat-tool-call_skill"]')).toBeNull()
-    await act(async () => group.querySelector<HTMLButtonElement>('[data-testid="chat-activity-header"] > button')!.click())
+    // Every step is a row of its own.
+    expect(view.querySelector('[data-testid="chat-activity"]')).toBeNull()
     const loaded = view.querySelector('[data-testid="chat-tool-call_skill"]')!
     expect(loaded.textContent).toContain('Loaded the demo skill')
     expect(loaded.textContent).not.toContain('PINEAPPLE')

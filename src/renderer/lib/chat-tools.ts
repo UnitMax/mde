@@ -626,34 +626,6 @@ export type RenderBlock =
   | { kind: 'part'; part: ChatPart; index: number }
   | { kind: 'activity'; items: ActivityItem[]; index: number; live?: boolean }
 
-/** A run of this many rows or more is folded into one line that sums it up. */
-export const GROUP_MIN = 3
-
-/**
- * Lays out the blocks of a message for drawing: runs of three or more ordinary steps (thinking, reading,
- * searching, commands) become one group, and everything else (text, file changes, answers, subagents)
- * stays as it is and breaks the run.
- */
-export function activityBlocks(blocks: readonly MessageBlock[]): RenderBlock[] {
-  const result: RenderBlock[] = []
-  let run: Array<{ part: ChatPart; index: number }> = []
-  const flush = (): void => {
-    if (run.length >= GROUP_MIN) result.push({ kind: 'activity', items: run, index: run[0]!.index })
-    else for (const item of run) result.push({ kind: 'part', part: item.part, index: item.index })
-    run = []
-  }
-  for (const block of blocks) {
-    if (block.kind === 'part' && isGroupable(block.part)) {
-      run.push({ part: block.part, index: block.index })
-      continue
-    }
-    flush()
-    result.push(block)
-  }
-  flush()
-  return result
-}
-
 type ActivityBlock = Extract<RenderBlock, { kind: 'activity' }>
 
 /** How the compact layout is set up. */
@@ -819,10 +791,4 @@ export function compactPlans(
   }
   flush()
   return plans
-}
-
-function isGroupable(part: ChatPart): boolean {
-  if (part.kind === 'text') return false
-  if (part.kind === 'reasoning') return part.text.trim() !== ''
-  return !isFeaturedTool(part)
 }

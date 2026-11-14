@@ -53,15 +53,19 @@
 :root {
   --chat-text: color-mix(in oklab, var(--color-fg) 82%, var(--color-bg));
   --chat-strong: color-mix(in oklab, var(--color-fg) 70%, #fff);
+  /* What a step of the agent's work was about (a command, a file): a level below its words, so a row reads as an aside. */
+  --chat-step: color-mix(in oklab, var(--color-fg) 62%, var(--color-bg));
 }
 
 :root[data-mode='light'] {
   --chat-text: color-mix(in oklab, var(--color-fg) 85%, var(--color-bg));
   --chat-strong: color-mix(in oklab, var(--color-fg) 75%, #000);
+  --chat-step: color-mix(in oklab, var(--color-fg) 68%, var(--color-bg));
 }
 
 :root[data-theme^='high-contrast'] {
   --chat-text: var(--color-fg);
+  --chat-step: var(--color-fg);
 }
 
 @layer base {
@@ -137,6 +141,43 @@
 }
 
 @layer components {
+  /*
+   * The conversation, spaced by what meets what (see FlowKind in chat-ui.tsx). Rows of steps stack with no gap, so a
+   * run of them reads as one list; the agent's words keep a little room from the rows around them, and a paragraph's
+   * room from each other; the person's message has the most room, as it starts a turn. Anything else gets 1rem.
+   */
+  .chat-flow {
+    display: flex;
+    flex-direction: column;
+  }
+  .chat-flow > * + * {
+    margin-top: 1rem;
+  }
+  .chat-flow > [data-flow-end='step'] + [data-flow-start='step'] {
+    margin-top: 0;
+  }
+  .chat-flow > [data-flow-end='text'] + [data-flow-start='step'],
+  .chat-flow > [data-flow-end='step'] + [data-flow-start='text'] {
+    margin-top: 0.5rem;
+  }
+  .chat-flow > [data-flow-end='text'] + [data-flow-start='text'] {
+    margin-top: 0.75rem;
+  }
+  .chat-flow > * + [data-flow-start='footer'] {
+    margin-top: 0.5rem;
+  }
+  .chat-flow > * + [data-flow-start='user'],
+  .chat-flow > [data-flow-end='user'] + * {
+    margin-top: 1.75rem;
+  }
+  .chat-flow > [data-flow-end='footer'] + [data-flow-start='user'] {
+    margin-top: 1.75rem;
+  }
+  /* A row's icon lines up with the words; the padding of its hover background reaches out past them. */
+  .chat-flow > [data-flow-row] {
+    margin-inline: -0.375rem;
+  }
+
   /* The OS title bar is hidden, so the custom bar is what the window is dragged by. */
   .app-drag {
     -webkit-app-region: drag;

@@ -1,5 +1,6 @@
 import { Clock3 } from 'lucide-react'
 import { ElapsedTime } from '@/components/ElapsedTime'
+import { flowAttrs } from '@/components/inbox/chat-ui'
 import { formatDuration, formatRate, spokenDuration } from '@/lib/duration'
 
 /**
@@ -11,6 +12,7 @@ export function TurnDuration({ ms, tokensPerSecond = null }: { ms: number; token
     <div
       className="flex items-center gap-2 px-1.5 text-[11.5px] text-fg-muted"
       data-testid="chat-turn-duration"
+      {...flowAttrs('footer', 'footer', true)}
       title={spokenDuration(ms)}
     >
       <Clock3 aria-hidden className="h-3 w-3 shrink-0" />
@@ -43,7 +45,7 @@ export function TurnDuration({ ms, tokensPerSecond = null }: { ms: number; token
  */
 export function WorkingFor({ since }: { since: number | null }): JSX.Element {
   return (
-    <div className="flex items-center gap-2 px-1.5 text-[11.5px] text-fg-muted" data-testid="chat-working">
+    <div className="flex items-center gap-2 px-1.5 text-[11.5px] text-fg-muted" data-testid="chat-working" {...flowAttrs('footer', 'footer', true)}>
       <Clock3 aria-hidden className="h-3 w-3 shrink-0" />
       <span className="shrink-0">
         Working for <ElapsedTime since={since} className="text-fg" />

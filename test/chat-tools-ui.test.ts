@@ -4,6 +4,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PREVIEW_HOLD_MS, ThoughtRow } from '../src/renderer/components/inbox/ChatActivity'
 import { ChatMessageView } from '../src/renderer/components/inbox/ChatMessageView'
+import { CompactChatContext } from '../src/renderer/components/inbox/chat-ui'
+import { compactPlans } from '../src/renderer/lib/chat-tools'
 import { ToolCallView } from '../src/renderer/components/inbox/ChatTools'
 import type { ChatMessage, ChatPart } from '../src/shared/types'
 
@@ -512,12 +514,18 @@ describe('the preview of a thought being written', () => {
   })
 })
 
+/** A message as the compact layout draws it, where runs of steps fold; `working` makes it the live step. */
+function compacted(msg: ChatMessage, working = false): ReturnType<typeof createElement> {
+  const plan = compactPlans([msg], working ? msg.id : undefined).get(msg.id)
+  return createElement(CompactChatContext.Provider, { value: true }, createElement(ChatMessageView, { message: msg, directory: DIR, plan, working }))
+}
+
 describe('a run of steps', () => {
   const read = (name: string): ToolPart => tool('read', { path: `${DIR}/${name}` }, { output: '1: x' })
   const steps = (): ChatPart[] => [read('a.ts'), read('b.ts'), tool('shell', { command: 'ls' }, { exitCode: 0, output: 'a' }), { kind: 'text', text: 'Done.' }]
 
   it('folds into one line that sums it up, shut once the message is complete', async () => {
-    const view = await message(assistant(steps()))
+    const view = await mount(compacted(assistant(steps())))
     const group = q('[data-testid="chat-activity"]', view)!
     expect(text(q('[data-testid="chat-activity-summary"]', group))).toBe('Read 2 files and ran 1 command')
     expect(group.hasAttribute('data-open')).toBe(false)
@@ -526,61 +534,44 @@ describe('a run of steps', () => {
   })
 
   it('opens on a click, and shows its steps', async () => {
-    const view = await message(assistant(steps()))
+    const view = await mount(compacted(assistant(steps())))
     await open(q('[data-testid="chat-activity"]', view)!)
     expect(all('[data-testid^="chat-tool-"]', view)).toHaveLength(3)
     expect(q('[data-testid="chat-activity"]', view)!.hasAttribute('data-open')).toBe(true)
   })
 
-  it('stays open while the message is at its end and being written, and shuts when it is not', async () => {
+  it('spins while the agent is at it, shut until it is opened', async () => {
     const running = tool('shell', { command: 'npm test' }, { status: 'running' })
     const parts: ChatPart[] = [read('a.ts'), read('b.ts'), running]
-    const view = await mount(createElement(ChatMessageView, { message: assistant(parts, { completed: false }), directory: DIR }))
+    const view = await mount(compacted(assistant(parts, { completed: false }), true))
     const group = q('[data-testid="chat-activity"]', view)!
-    expect(group.hasAttribute('data-open')).toBe(true)
+    expect(group.hasAttribute('data-open')).toBe(false)
     expect(group.hasAttribute('data-live')).toBe(true)
     expect(text(q('[data-testid="chat-activity-summary"]', group))).toBe('Read 2 files and running 1 command')
+    await open(group)
     expect(q(`[data-testid="chat-tool-${running.id}"]`, group)?.getAttribute('data-status')).toBe('running')
-
-    // The agent goes on to say something: the group shuts by itself.
-    await rerender(createElement(ChatMessageView, {
-      message: assistant([...parts.slice(0, 2), { ...running, status: 'completed', exitCode: 0 }, { kind: 'text', text: 'Now writing' }], { completed: false }),
-      directory: DIR,
-    }))
-    expect(q('[data-testid="chat-activity"]', view)!.hasAttribute('data-open')).toBe(false)
   })
 
   it('keeps what the person chose when the work goes on', async () => {
     const parts: ChatPart[] = [read('a.ts'), read('b.ts'), read('c.ts')]
-    const view = await mount(createElement(ChatMessageView, { message: assistant(parts, { completed: false }), directory: DIR }))
-    // Shut by hand while it is still live.
+    const view = await mount(compacted(assistant(parts, { completed: false }), true))
+    // Opened by hand while it is still live.
     await open(q('[data-testid="chat-activity"]', view)!)
-    expect(q('[data-testid="chat-activity"]', view)!.hasAttribute('data-open')).toBe(false)
-    await rerender(createElement(ChatMessageView, {
-      message: assistant([...parts, { kind: 'text', text: 'Hi' }], { completed: false }),
-      directory: DIR,
-    }))
-    expect(q('[data-testid="chat-activity"]', view)!.hasAttribute('data-open')).toBe(false)
+    expect(q('[data-testid="chat-activity"]', view)!.hasAttribute('data-open')).toBe(true)
+    await rerender(compacted(assistant([...parts, read('d.ts')], { completed: false }), true))
+    expect(q('[data-testid="chat-activity"]', view)!.hasAttribute('data-open')).toBe(true)
   })
 
   it('counts the steps that went wrong', async () => {
     const parts: ChatPart[] = [read('a.ts'), tool('read', { path: `${DIR}/b.ts` }, { status: 'error', error: 'nope' }), tool('shell', { command: 'false' }, { exitCode: 1 })]
-    const view = await message(assistant(parts))
+    const view = await mount(compacted(assistant(parts)))
     expect(text(q('[data-testid="chat-activity"]', view))).toContain('2 failed')
   })
 
-  it('does not fold two steps', async () => {
-    const view = await message(assistant([read('a.ts'), read('b.ts')]))
+  it('is not folded in the Every step layout, however many steps there are', async () => {
+    const view = await message(assistant([read('a.ts'), read('b.ts'), read('c.ts'), read('d.ts')]))
     expect(q('[data-testid="chat-activity"]', view)).toBeNull()
-    expect(all('[data-testid^="chat-tool-"]', view)).toHaveLength(2)
-  })
-
-  it('leaves a file change, an answered question and text outside the group', async () => {
-    const edit = tool('edit', { filePath: `${DIR}/a.ts`, oldString: 'a', newString: 'b' })
-    const view = await message(assistant([read('a.ts'), read('b.ts'), read('c.ts'), edit, read('d.ts'), read('e.ts')]))
-    expect(all('[data-testid="chat-activity"]', view)).toHaveLength(1)
-    expect(q('[data-testid="chat-diff"]', view)).not.toBeNull()
-    expect(all('[data-testid^="chat-tool-"]', view).map((element) => element.getAttribute('data-testid'))).toEqual([`chat-tool-${edit.id}`, expect.any(String), expect.any(String)])
+    expect(all('[data-testid^="chat-tool-"]', view)).toHaveLength(4)
   })
 })
 
@@ -631,7 +622,7 @@ describe('shutting a long panel from far down in it', () => {
 
   /** The run of steps inside a conversation that scrolls, with the boxes a browser would give them. */
   async function scrolled(parts: ChatPart[]): Promise<{ scroller: HTMLElement; group: HTMLElement }> {
-    const view = await mount(createElement('div', { 'data-chat-scroller': '' }, createElement(ChatMessageView, { message: assistant(parts), directory: DIR })))
+    const view = await mount(createElement('div', { 'data-chat-scroller': '' }, compacted(assistant(parts))))
     const scroller = view.firstElementChild as HTMLElement
     let scrollTop = SCROLLED
     Object.defineProperty(scroller, 'scrollTop', { configurable: true, get: () => scrollTop, set: (value: number) => { scrollTop = value } })

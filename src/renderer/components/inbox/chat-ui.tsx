@@ -20,6 +20,21 @@ export function useCompactChat(): boolean {
   return useContext(CompactChatContext)
 }
 
+/**
+ * What a piece of the conversation is, which sets the room around it (see `.chat-flow` in index.css): the person's
+ * message, the agent's words, a step of its work (a row), or the line under a turn. Spacing by what meets what, rather
+ * than by OpenCode's messages (one per round of tools), keeps the rhythm even where those messages break.
+ */
+export type FlowKind = 'user' | 'text' | 'step' | 'footer'
+
+/**
+ * The attributes that place a piece in the flow: what it starts and ends with, and whether it is a row whose icon sits
+ * at the edge of the text column (its hover background reaching out past it) rather than indented from it.
+ */
+export function flowAttrs(start: FlowKind, end: FlowKind = start, row = false): Record<`data-flow-${string}`, string | undefined> {
+  return { 'data-flow-start': start, 'data-flow-end': end, 'data-flow-row': row ? '' : undefined }
+}
+
 /** Horizontal placement shared by a row and the rail under it: the rail runs down the middle of the row's icon. */
 const RAIL = 'ml-[13px] border-l border-line'
 
@@ -189,7 +204,7 @@ export function ActivityRow({
       {subject !== undefined && subject !== null && (
         <>
           {' '}
-          <span className={cn('min-w-0 flex-1 truncate', bad ? 'text-danger/90' : 'text-fg')}>{subject}</span>
+          <span className={cn('min-w-0 flex-1 truncate', bad ? 'text-danger/90' : 'text-[var(--chat-step)] transition-colors group-hover/row:text-fg')}>{subject}</span>
         </>
       )}
       {(subject === undefined || subject === null) && <span className="flex-1" />}

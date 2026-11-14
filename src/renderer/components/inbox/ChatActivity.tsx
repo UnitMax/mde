@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Brain, ChevronRight, Info, LoaderCircle, MessageSquareText } from 'lucide-react'
 import type { ChatMessage, ChatModel, ChatPart } from '@shared/types'
-import { ActivityRow, Chip, CodeText, Rail, Surface, useCompactChat, useFoldAnchor, useStuck } from '@/components/inbox/chat-ui'
+import { ActivityRow, Chip, CodeText, Rail, Surface, useFoldAnchor, useStuck } from '@/components/inbox/chat-ui'
 import { ChatMarkdown } from '@/components/inbox/ChatMarkdown'
 import { ToolCallView } from '@/components/inbox/ChatTools'
 import { SubagentGroup } from '@/components/inbox/ChatSubagents'
@@ -91,10 +91,8 @@ export function NoteRow({ message }: { message: Extract<ChatMessage, { kind: 'no
 }
 
 /**
- * A run of steps (thoughts, reads, searches, commands) folded into one line that sums them up. It is open while the
- * agent is still at it, so that the work can be followed, and shuts when the agent moves on to something else; in the
- * compact layout it is never open of itself, and a live one only spins and shimmers. A click on it is the person's
- * choice, and stays.
+ * A run of steps (thoughts, reads, searches, commands) folded into one line that sums them up, in the compact layouts.
+ * It is never open of itself: a live one spins and shimmers. A click on it is the person's choice, and stays.
  */
 export function ActivityGroup({
   items,
@@ -108,15 +106,13 @@ export function ActivityGroup({
   live: boolean
   models?: readonly ChatModel[]
 }): JSX.Element {
-  const compact = useCompactChat()
-  const [chosen, setChosen] = useState<boolean | null>(null)
-  const open = chosen ?? (live && !compact)
+  const [open, setOpen] = useState(false)
   const { headerRef, keepPlace } = useFoldAnchor<HTMLButtonElement>(open)
   const sentinel = useRef<HTMLDivElement>(null)
   const stuck = useStuck(sentinel, open)
   const choose = (next: boolean, clientY?: number): void => {
     if (!next) keepPlace(clientY)
-    setChosen(next)
+    setOpen(next)
   }
   const parts = items.map((item) => item.part)
   const failed = parts.filter(toolFailed).length

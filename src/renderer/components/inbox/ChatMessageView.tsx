@@ -6,9 +6,9 @@ import { ChatMarkdown } from '@/components/inbox/ChatMarkdown'
 import { ChatQuoteCard } from '@/components/inbox/ChatQuoteCard'
 import { SubagentGroup } from '@/components/inbox/ChatSubagents'
 import { ToolCallView } from '@/components/inbox/ChatTools'
-import { ActivityRow, Surface } from '@/components/inbox/chat-ui'
+import { ActivityRow, flowAttrs, Surface, type FlowKind } from '@/components/inbox/chat-ui'
 import { formatTokens, messageBlocks } from '@/lib/chat'
-import { activityBlocks, type RenderBlock } from '@/lib/chat-tools'
+import type { RenderBlock } from '@/lib/chat-tools'
 import { splitQuotes } from '@/lib/chat-quote'
 import { splitMentions } from '@/lib/file-mentions'
 import { cn } from '@/lib/utils'
@@ -101,7 +101,7 @@ export const ChatMessageView = memo(function ChatMessageView({
 }): JSX.Element | null {
   if (message.kind === 'user') {
     return (
-      <div className="group flex items-start justify-end gap-1.5" data-testid={`chat-message-${message.id}`} data-chat-message={message.id}>
+      <div className="group flex items-start justify-end gap-1.5" data-testid={`chat-message-${message.id}`} data-chat-message={message.id} {...flowAttrs('user')}>
         {onFork && (
           <button
             type="button"
@@ -132,7 +132,7 @@ export const ChatMessageView = memo(function ChatMessageView({
   }
   if (message.kind === 'note' && message.compaction?.status === 'running') {
     return (
-      <div role="status" data-testid={`chat-message-${message.id}`} data-chat-message={message.id} data-compaction="running" className="-my-1">
+      <div role="status" data-testid={`chat-message-${message.id}`} data-chat-message={message.id} data-compaction="running" {...flowAttrs('step', 'step', true)}>
         <ActivityRow icon={FoldVertical} status="running" verb={message.text} shimmer />
       </div>
     )
@@ -144,7 +144,7 @@ export const ChatMessageView = memo(function ChatMessageView({
     // What the goal wrote into the conversation: the objective when it was set or resumed, and what the reviewer found
     // missing each time it sent the agent back to work. Prose, not code.
     return (
-      <div data-testid={`chat-message-${message.id}`} data-chat-message={message.id} data-goal-note={message.goal} className="-my-1">
+      <div data-testid={`chat-message-${message.id}`} data-chat-message={message.id} data-goal-note={message.goal} {...flowAttrs('step', 'step', true)}>
         <ActivityRow
           icon={Target}
           iconClassName="text-accent"
@@ -163,7 +163,7 @@ export const ChatMessageView = memo(function ChatMessageView({
   if (message.kind === 'note') {
     if (plan?.length === 0) return null
     return (
-      <div data-testid={`chat-message-${message.id}`} data-chat-message={message.id} className="-my-1">
+      <div data-testid={`chat-message-${message.id}`} data-chat-message={message.id} {...flowAttrs('step', 'step', true)}>
         {plan ? plan.map((block) => block.kind === 'activity'
           ? <ActivityGroup key={`activity-${block.index}`} items={block.items} directory={directory} models={models} live={block.live ?? false} />
           : null) : <NoteRow message={message} />}
@@ -224,21 +224,37 @@ function AssistantMessage({
   // The step is live while it is being written and the agent is at work; one that was left unfinished is not.
   const live = !message.completed && working
   const lastIndex = message.parts.length - 1
-  const blocks = useMemo(() => plan ?? activityBlocks(messageBlocks(message.parts)), [plan, message.parts])
+  const blocks = useMemo(() => plan ?? messageBlocks(message.parts), [plan, message.parts])
+  // Words or a thought with nothing in them draw nothing, and take no room in the flow either.
+  const drawn = useMemo(
+    () => blocks.filter((block) => block.kind !== 'part' || block.part.kind === 'tool' || block.part.text.trim()),
+    [blocks],
+  )
   // In the compact layout the activity of a step may be drawn with an earlier one; a step left with nothing draws nothing.
-  if (plan && blocks.length === 0 && !message.error) return null
+  if (plan && drawn.length === 0 && !message.error) return null
+  const kinds = drawn.map(blockFlow)
   return (
-    <div className="flex min-w-0 flex-col gap-1.5" data-testid={`chat-message-${message.id}`} data-chat-message={message.id}>
-      {blocks.map((block, position) => {
-        const tail = position === blocks.length - 1
-        if (block.kind === 'subagents') return <SubagentGroup key={`subagents-${block.index}`} parts={block.parts} models={models} />
-        if (block.kind === 'activity') {
-          return <ActivityGroup key={`activity-${block.index}`} items={block.items} directory={directory} models={models} live={block.live ?? (live && tail)} />
+    <div
+      className="chat-flow min-w-0"
+      data-testid={`chat-message-${message.id}`}
+      data-chat-message={message.id}
+      {...flowAttrs(kinds[0] ?? 'text', message.error ? 'text' : kinds[kinds.length - 1] ?? 'text')}
+    >
+      {drawn.map((block, position) => {
+        const tail = position === drawn.length - 1
+        const kind = kinds[position]!
+        const key = block.kind === 'part' && block.part.kind === 'tool' ? block.part.id : `${block.kind}-${block.index}`
+        let body: JSX.Element
+        if (block.kind === 'subagents') body = <SubagentGroup parts={block.parts} models={models} />
+        else if (block.kind === 'activity') {
+          body = <ActivityGroup items={block.items} directory={directory} models={models} live={block.live ?? (live && tail)} />
+        } else {
+          const { part, index } = block
+          if (part.kind === 'text') body = <ChatMarkdown text={part.text} />
+          else if (part.kind === 'reasoning') body = <ThoughtRow text={part.text} live={live && index === lastIndex} />
+          else body = <ToolCallView part={part} directory={directory} />
         }
-        const { part, index } = block
-        if (part.kind === 'text') return part.text.trim() ? <ChatMarkdown key={index} text={part.text} /> : null
-        if (part.kind === 'reasoning') return <ThoughtRow key={index} text={part.text} live={live && index === lastIndex} />
-        return <ToolCallView key={part.id} part={part} directory={directory} />
+        return <div key={key} className="min-w-0" {...flowAttrs(kind, kind, kind === 'step')}>{body}</div>
       })}
       {message.error && (
         <div role="alert" className="flex items-start gap-2 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-[12.5px] text-danger">
@@ -248,4 +264,9 @@ function AssistantMessage({
       )}
     </div>
   )
+}
+
+/** Words are text in the flow of the conversation; everything else the agent did is a step. */
+function blockFlow(block: RenderBlock): FlowKind {
+  return block.kind === 'part' && block.part.kind === 'text' ? 'text' : 'step'
 }

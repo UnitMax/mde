@@ -129,6 +129,16 @@ keeps its own muted color. Inline code uses the code preview font at 0.88em in r
 (it does not take on the bold of the text around it), list items sit close together, and headings are sized in
 `em` so the smaller reasoning text scales with them.
 
+What a step of the agent's work was about (the command, the file of a row) uses `--chat-step`, a level below
+the words (full contrast in the high-contrast themes), and brightens when the row is hovered. The conversation
+is spaced by what meets what, not by OpenCode's messages, which break at every round of tool calls: the
+transcript and each agent message are a `.chat-flow`, and each piece carries `data-flow-start` and
+`data-flow-end` (`user`, `text`, `step` or `footer`, from `flowAttrs` in `chat-ui.tsx`). Rows stack with no gap,
+so a run of steps reads as one list. The agent's words keep 0.5rem from the rows around them and 0.75rem from
+each other, the line under a turn sits 0.5rem below it, and the person's message has 1.75rem on either side.
+Rows and that line (`data-flow-row`) reach 0.375rem out to the left, so their icons line up with the words and
+the padding of the hover background sits outside the column.
+
 The Appearance section also has a **Card terminals** switch (`terminalCards` in the local terminal
 settings, off by default). Off, panes tile edge to edge, divided by a 1px line. On, `TerminalView` draws
 every pane as a rounded card on the panel background with a 6px margin around and between the cards
@@ -1301,14 +1311,12 @@ alike (`toolKind` in `lib/chat-tools.ts`). An `apply_patch` call is drawn as dif
 `patchText`, with files added, changed, moved and deleted. A question the person has answered
 (`metadata.answers`, kept as `answers`) is a card with the question and the answer chosen.
 
-A run of three or more ordinary steps (thoughts, reads, searches, commands, skills, tool calls) in a
-message is folded into one line that sums it up in the tense of what is still going on: "Read 4 files,
-searched 2 times, running 1 command", with a red "N failed" tag when a step failed or a command
-exited with an error. The group is open while the agent is writing the message and the run is at
-its end, so the work can be followed, and shuts by itself when the agent moves on to text or a file
-change; a click on it is the person's choice and stays. A message the agent left unfinished is not
-live, so its thoughts do not go on shimmering. File changes, answered questions and subagent cards
-are never folded; they break the run. While a thought is written its row previews what it is on: the latest
+In the Every step layout each step is a row of its own; nothing is folded. The compact layouts fold
+runs of ordinary steps (thoughts, reads, searches, commands, skills, tool calls) into one line that sums
+them up in the tense of what is still going on: "Read 4 files, searched 2 times, running 1 command",
+with a red "N failed" tag when a step failed or a command exited with an error (see Compact mode). A
+message the agent left unfinished is not live, so its thoughts do not go on shimmering. File changes,
+answered questions and subagent cards are never folded; they break the run. While a thought is written its row previews what it is on: the latest
 finished heading (`**Title**`) in it, or else its latest finished sentence. A line that is half written is never shown, each preview
 stays up for at least 2.6 seconds (what arrives in between is skipped), and a new one fades in, so the text does not churn
 with every streamed token. Once the thought is done the row says "Thought" and the heading it began with.
