@@ -806,8 +806,11 @@ attaches the quote after the menu has closed, so that the box is free to take th
 
 A quote is attached to the message like a file, not typed into it: it shows as a card above the box
 (`ChatQuoteCard`), and the box stays free for what the person writes, however much was quoted. A card
-is a bar beside the quoted text, cut to two lines (with an ellipsis), with a chevron to open all of a long
-quote (up to a height, then it scrolls) and an X to take it off the message. Whether a quote is long
+is an accent bar beside the quoted text (a bar of its own, so it stays straight against the rounded
+corners), cut to two lines (with an ellipsis), with a chevron to open all of a long quote (up to a height,
+then it scrolls) and an X to take it off the message. A click on the text of a long quote opens or shuts it
+too, unless the click ends a selection. Shut, a long quote's lines run on (`white-space: normal`) so that the
+preview is full lines rather than ending at the first line break; the text itself is unchanged. Whether a quote is long
 is measured, since it depends on the width: a single line that wraps past two lines is long too. Taking
 a card off, or attaching one, gives the focus back to the box. The cards scroll inside a fixed height when
 there are many, and the one just added is brought into view. The same quote is not attached twice. The
@@ -829,8 +832,8 @@ in, not in a code fence) with a bar and muted text; a line without the mark is n
 new line (Shift+Enter) ends it. One scanner in `lib/chat-quote.ts` decides what is a quote for all of this.
 
 In the conversation, the quotes of a sent message are shown as quote cards among the text, without
-their marks and in the same style, cut to three lines with **Show more** / **Show less** under a long
-one. **Copy message as Markdown** still copies the message as written, marks included, and the prompt
+their marks and in the same style (on a darker ground and without the border, so it is not a box in the
+bubble's box), cut to three lines, with the same chevron and click on the text to open a long one. **Copy message as Markdown** still copies the message as written, marks included, and the prompt
 timeline names a message by what was written, not by what it quoted. There is no keyboard shortcut for
 quoting, so the shortcut list has no entry for it.
 

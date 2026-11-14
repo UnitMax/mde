@@ -543,16 +543,40 @@ describe('quotes in a sent message', () => {
     const bubble = view.querySelector('[data-chat-message="msg_4"]')!
     const text = bubble.querySelector<HTMLElement>('[data-testid="chat-quote-text"]')!
     expect(text.className).toContain('line-clamp-3')
+    // Shut, its lines run on, so that the three lines shown are full ones.
+    expect(text.className).toContain('whitespace-normal')
     const toggle = bubble.querySelector<HTMLElement>('[data-testid="chat-quote-toggle"]')!
-    expect(toggle.textContent).toBe('Show more')
+    expect(toggle.getAttribute('aria-label')).toBe('Show all of the quote')
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
 
     await act(async () => toggle.click())
     expect(text.className).not.toContain('line-clamp-3')
-    expect(toggle.textContent).toBe('Show less')
+    expect(text.className).toContain('whitespace-pre-wrap')
+    expect(toggle.getAttribute('aria-label')).toBe('Show less of the quote')
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
     // All of it is there either way; the cut is only how it is drawn.
     expect(text.textContent).toBe(LONG_QUOTE)
+  })
+
+  it('open and shut a long quote with a click on its text, but not when the click ends a selection', async () => {
+    const view = await render()
+    const bubble = view.querySelector('[data-chat-message="msg_4"]')!
+    const text = bubble.querySelector<HTMLElement>('[data-testid="chat-quote-text"]')!
+    const toggle = bubble.querySelector<HTMLElement>('[data-testid="chat-quote-toggle"]')!
+    await act(async () => text.click())
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    await act(async () => text.click())
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+
+    const range = document.createRange()
+    range.selectNodeContents(text)
+    window.getSelection()!.addRange(range)
+    await act(async () => text.click())
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    window.getSelection()!.removeAllRanges()
+    // A short quote has nothing to open.
+    const short = view.querySelector<HTMLElement>('[data-chat-message="msg_3"] [data-testid="chat-quote-text"]')!
+    expect(short.className).not.toContain('cursor-pointer')
   })
 
   it('are cut at three lines in a message, so that a quote of three lines is shown whole', async () => {
