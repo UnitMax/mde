@@ -3,8 +3,8 @@ import type { ChatMessage, ChatPart } from '../src/shared/types'
 import {
   activitySummary,
   commandName,
-  commandNames,
-  commandNamesText,
+  activityNames,
+  activityNamesText,
   answeredQuestions,
   compactFlow,
   compactPlans,
@@ -735,11 +735,27 @@ describe('the names of the commands a line ran', () => {
     expect(commandName('   ')).toBeNull()
   })
 
+  it('counts and names each tool a Code Mode script called, and the tools called on their own', () => {
+    const script = tool('execute', { code: 'await tool.search()' }, {
+      calls: [
+        { tool: 'tool.search', status: 'completed', input: '{"query":"show_view"}' },
+        { tool: 'tool.search', status: 'completed', input: '{"query":"view"}' },
+        { tool: 'mde.show_view', status: 'completed', input: '{}' },
+      ],
+    })
+    const parts: ChatPart[] = [{ kind: 'reasoning', text: 'Hmm' }, script, tool('shell', { command: 'echo a' }), tool('mde_open_terminal', {})]
+    expect(activitySummary(parts)).toBe('Thought, ran 1 command and called 4 tools')
+    expect(activityNames(parts)).toEqual(['tool.search', 'mde.show_view', 'echo', 'mde_open_terminal'])
+    // A script that has not called anything yet is one tool, with no name to give.
+    expect(activitySummary([tool('execute', { code: '' })])).toBe('Called 1 tool')
+    expect(activityNames([tool('execute', { code: '' })])).toEqual([])
+  })
+
   it('lists each command once, in order, and says how many more there are', () => {
     const shell = (command: string): ChatPart => tool('shell', { command })
     const parts: ChatPart[] = [shell('echo a'), { kind: 'reasoning', text: 'Hmm' }, shell('curl x'), shell('echo b'), tool('read', { path: 'a.ts' })]
-    expect(commandNames(parts)).toEqual(['echo', 'curl'])
-    expect(commandNamesText(['echo', 'curl'])).toBe('echo, curl')
-    expect(commandNamesText(['echo', 'curl', 'git status', 'ls', 'make'])).toBe('echo, curl, git status +2')
+    expect(activityNames(parts)).toEqual(['echo', 'curl'])
+    expect(activityNamesText(['echo', 'curl'])).toBe('echo, curl')
+    expect(activityNamesText(['echo', 'curl', 'git status', 'ls', 'make'])).toBe('echo, curl, git status +2')
   })
 })

@@ -95,9 +95,9 @@ export function InboxSettingsMenu(): JSX.Element {
           onCheckedChange={(checked) => setCommandNames(checked === true)}
         >
           <span className="min-w-0">
-            <span className="block">Command names</span>
+            <span className="block">Command and tool names</span>
             <span className="mt-0.5 block text-[11px] leading-snug text-fg-subtle">
-              In compact mode, a folded line names the commands it ran, such as echo, curl or git status.
+              In compact mode, a folded line names the commands and tools it ran, such as echo, git status or mde.show_view.
             </span>
           </span>
         </DropdownMenuCheckboxItem>

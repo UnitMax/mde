@@ -50,7 +50,7 @@ backed-up locations can place copies elsewhere. These stores are not encrypted b
 - The renderer's local storage (`mde.inbox-turn-changes`): whether compact mode shows the files each turn
   changed in a panel at the end of the turn (the word `on` or `off`).
 - The renderer's local storage (`mde.inbox-command-names`): whether a folded line of steps in compact mode
-  names the commands it ran (the word `on` or `off`).
+  names the commands and tools it ran (the word `on` or `off`).
 - The renderer's local storage (`mde.inbox-compact-text`): whether compact mode is the Compact with text
   layout, which shows the text the model writes between its steps (the word `on` or `off`).
 - The renderer's local storage (`mde.model-favorites`): provider and model identifiers for models

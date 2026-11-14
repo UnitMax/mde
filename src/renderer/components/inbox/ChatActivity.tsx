@@ -6,7 +6,7 @@ import { ChatMarkdown } from '@/components/inbox/ChatMarkdown'
 import { ToolCallView } from '@/components/inbox/ChatTools'
 import { SubagentGroup } from '@/components/inbox/ChatSubagents'
 import { isSubagentCall } from '@/lib/chat'
-import { activitySummary, commandNames, commandNamesText, reasoningPreview, reasoningTitle, textHeadline, toolFailed, type ActivityItem } from '@/lib/chat-tools'
+import { activityNames, activityNamesText, activitySummary, reasoningPreview, reasoningTitle, textHeadline, toolFailed, type ActivityItem } from '@/lib/chat-tools'
 import { cn } from '@/lib/utils'
 import { useInboxView } from '@/store/inbox-view'
 
@@ -120,7 +120,7 @@ export function ActivityGroup({
   const parts = items.map((item) => item.part)
   const failed = parts.filter(toolFailed).length
   const namesOn = useInboxView((view) => view.commandNames)
-  const names = namesOn ? commandNames(parts) : []
+  const names = namesOn ? activityNames(parts) : []
   const rows: Array<
     { kind: 'item'; item: ActivityItem; position: number }
     | { kind: 'subagents'; parts: Extract<ChatPart, { kind: 'tool' }>[]; messageId?: string }
@@ -172,7 +172,7 @@ export function ActivityGroup({
           <span data-testid="chat-activity-summary" className={cn('min-w-0 truncate', names.length === 0 && 'flex-1', live ? 'chat-shimmer' : 'text-fg-muted transition-colors group-hover/row:text-fg')}>
             {activitySummary(parts, live)}
           </span>
-          {/* The commands give way first when the line is short of room; the summary keeps its words. */}
+          {/* The names give way first when the line is short of room; the summary keeps its words. */}
           {names.length > 0 && (
             <span
               data-testid="chat-activity-commands"
@@ -181,7 +181,7 @@ export function ActivityGroup({
             >
               {' '}
               <span aria-hidden className="font-sans">·</span>{' '}
-              {commandNamesText(names)}
+              {activityNamesText(names)}
             </span>
           )}
           {failed > 0 && <Chip tone="danger">{failed} failed</Chip>}

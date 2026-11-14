@@ -587,7 +587,7 @@ export function activitySummary(parts: readonly ActivityPart[], live = false): s
   parts.forEach((part, index) => {
     const category = activityCategory(part)
     const entry = counts.get(category) ?? { count: 0, active: false }
-    entry.count += 1
+    entry.count += category === 'tool' ? toolCount(part) : 1
     // The thought being written is the last part of a message that is still streaming.
     entry.active ||= part.kind === 'tool' ? isActiveTool(part) : part.kind === 'reasoning' && live && index === parts.length - 1
     counts.set(category, entry)
@@ -655,19 +655,43 @@ export function commandName(command: string): string | null {
   return fallback
 }
 
-/** The names of the commands among these steps, each once, in the order they were first run. */
-export function commandNames(parts: readonly ActivityPart[]): string[] {
+/**
+ * How many tools a step called: each call of a Code Mode script (`execute`), which runs several in one step, or else
+ * the step itself.
+ */
+function toolCount(part: ActivityPart): number {
+  return part.kind === 'tool' && part.calls && part.calls.length > 0 ? part.calls.length : 1
+}
+
+/**
+ * The names of the tools a step called that is not one of the agent's own kinds of work: each call of a Code Mode
+ * script (`mde.show_view`), or the tool's own name. A script that has not called anything yet names nothing.
+ */
+function toolNames(part: Extract<ActivityPart, { kind: 'tool' }>): string[] {
+  if (part.calls && part.calls.length > 0) return part.calls.map((call) => call.tool)
+  return toolKind(part.name) === 'execute' ? [] : [part.name]
+}
+
+/**
+ * The names of the commands and tools among these steps, each once, in the order they were first run: `echo`, `git
+ * status`, `mde.show_view`.
+ */
+export function activityNames(parts: readonly ActivityPart[]): string[] {
   const names: string[] = []
-  for (const part of parts) {
-    if (part.kind !== 'tool' || toolKind(part.name) !== 'shell') continue
-    const name = commandName(shellInfo(part).command)
+  const add = (name: string | null): void => {
     if (name && !names.includes(name)) names.push(name)
+  }
+  for (const part of parts) {
+    if (part.kind !== 'tool') continue
+    const category = activityCategory(part)
+    if (category === 'shell') add(commandName(shellInfo(part).command))
+    else if (category === 'tool') toolNames(part).forEach(add)
   }
   return names
 }
 
 /** "echo, curl", or "echo, curl, git status +2" when there are more than `COMMAND_NAMES_SHOWN`. */
-export function commandNamesText(names: readonly string[]): string {
+export function activityNamesText(names: readonly string[]): string {
   const shown = names.slice(0, COMMAND_NAMES_SHOWN).join(', ')
   return names.length > COMMAND_NAMES_SHOWN ? `${shown} +${names.length - COMMAND_NAMES_SHOWN}` : shown
 }
