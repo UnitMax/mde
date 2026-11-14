@@ -16,6 +16,11 @@ export interface SlashCommand {
   description: string
   /** What the command takes after its name; left out for a command that takes nothing. */
   argument?: { hint: string; required: boolean }
+  /**
+   * The quotes attached to the message go with what is written after the name, as block quotes before it, and
+   * leave the box. Only when something is written: a command run on its own leaves them for the next message.
+   */
+  takesQuotes?: boolean
   /** Does the work. A rejection puts the text back in the box and is shown under it. */
   run: (args: string) => void | Promise<void>
 }
@@ -105,6 +110,8 @@ export function slashCommands(actions: SlashActions): SlashCommand[] {
       description: 'Ask a side question. It is answered from this conversation and not added to it.',
       // On its own it opens the earlier side questions, once there are any.
       argument: { hint: 'your question', required: !actions.asked },
+      // A question about a quoted passage needs the passage: the model cannot tell which part was meant.
+      takesQuotes: true,
       run: (question) => question ? actions.ask(question) : actions.asked?.(),
     },
     {

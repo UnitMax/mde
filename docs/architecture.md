@@ -1136,7 +1136,9 @@ more entry there, with whatever it needs from the thread added to `SlashActions`
 **Side questions (`/btw`).** `/btw <question>` asks something about the conversation without becoming
 part of it, as OpenCode's own `/btw` does: the answer is written from the conversation as it stands, no
 message is added to the thread, and the agent is neither interrupted nor told, so it also works while the
-agent is busy, which is what it is for. The main process (`InboxChatService.aside`, the `chat:aside`
+agent is busy, which is what it is for. The quotes attached in the message box go with the question, as
+block quotes in front of it the way a message carries them, and leave the box (a command marks this with
+`takesQuotes`; `/btw` on its own, and the other commands, leave them for the next message). The main process (`InboxChatService.aside`, the `chat:aside`
 channel) sends OpenCode's `POST /api/session/{sessionID}/generate`, which generates text from the session's
 context without writing to its history, with OpenCode's own preamble in front of the question ("a quick
 side question about the conversation so far; answer directly and concisely in markdown; do not call any
@@ -1186,7 +1188,8 @@ dark and calm, and the breakdown shows the size before and the summary's size in
 composition. The first finished reply after the compaction measures it again.
 
 A side question is shown as a card of its own above the message box (`ChatAside`), not in the conversation:
-a `btw` mark and the question (two lines, the rest in the tooltip), a thinking state while the answer is on
+a `btw` mark and the question (two lines, the rest in the tooltip), the quotes it was asked about as quote
+cards under it, a thinking state while the answer is on
 its way, then the answer as Markdown with the same renderer as the agent's messages (it scrolls when it is
 long), a Copy button and a dismiss button, and a line saying that it is not added to the conversation, with
 the time the answer arrived (and the day, when that was not today). A failure shows the reason and a Retry

@@ -564,18 +564,27 @@ export const ChatComposer = forwardRef(function ChatComposer({
       setError(`/${command.name} takes nothing after it.`)
       return
     }
+    const attached = command.takesQuotes && args ? quotes : []
+    const argument = attached.length ? joinQuotes(attached.map((quote) => quote.text), args) : args
+    if (argument.length > MESSAGE_TEXT_LIMIT) {
+      setError(TOO_LONG)
+      return
+    }
     resetHistory()
     setError(null)
     const written = text
+    const kept = attached.length ? [] : quotes
     setText('')
     setCursor({ text: '', at: 0 })
-    persist('')
+    if (attached.length) setQuotes(kept)
+    persist('', kept)
     try {
-      await command.run(args)
+      await command.run(argument)
     } catch (reason) {
       setText(written)
       setCursor({ text: written, at: written.length })
-      persist(written)
+      if (attached.length) setQuotes(attached)
+      persist(written, quotes)
       setError(ipcErrorMessage(reason, `Could not run /${command.name}.`))
     } finally {
       setFocusAt(0)

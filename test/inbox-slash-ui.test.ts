@@ -16,7 +16,7 @@ const skills: ChatSkill[] = [{ id: 'demo', name: 'demo', description: 'A demo sk
 
 /** A command that asks for a question, like /btw, and one that takes nothing and one that takes an optional argument. */
 function makeCommands(): { ask: SlashCommand; clear: SlashCommand; compact: SlashCommand; all: SlashCommand[] } {
-  const ask: SlashCommand = { name: 'btw', description: 'Ask a side question', argument: { hint: 'your question', required: true }, run: vi.fn() }
+  const ask: SlashCommand = { name: 'btw', description: 'Ask a side question', argument: { hint: 'your question', required: true }, takesQuotes: true, run: vi.fn() }
   const clear: SlashCommand = { name: 'clear', aliases: ['reset'], description: 'Start over', run: vi.fn() }
   const compact: SlashCommand = { name: 'compact', description: 'Summarize the conversation', argument: { hint: 'what to keep', required: false }, run: vi.fn() }
   return { ask, clear, compact, all: [ask, clear, compact] }
@@ -237,6 +237,41 @@ describe('running a command', () => {
     expect(send).not.toHaveBeenCalled()
     expect(request).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'text', text: '' }))
     expect(alert(container)).toBeUndefined()
+  })
+
+  it('takes the attached quotes with a question, in front of it as block quotes, and takes their cards off', async () => {
+    const { ask, all } = makeCommands()
+    const { container, box, request } = await setup({ commands: all, initial: '> the hashes are trimmed\n\n' })
+    await vi.waitFor(() => expect(container.querySelectorAll('[data-testid="chat-quote"]')).toHaveLength(1))
+    await type(box, '/btw why?')
+    await press(box, 'Enter')
+    expect(ask.run).toHaveBeenCalledWith('> the hashes are trimmed\n\nwhy?')
+    expect(container.querySelector('[data-testid="chat-quote"]')).toBeNull()
+    expect(request).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'text', text: '' }))
+  })
+
+  it('leaves the quotes for the next message with a command that does not take them', async () => {
+    const { compact, all } = makeCommands()
+    const { container, box, request } = await setup({ commands: all, initial: '> the hashes are trimmed\n\n' })
+    await vi.waitFor(() => expect(container.querySelectorAll('[data-testid="chat-quote"]')).toHaveLength(1))
+    await type(box, '/compact the login work')
+    await press(box, 'Enter')
+    expect(compact.run).toHaveBeenCalledWith('the login work')
+    expect(container.querySelectorAll('[data-testid="chat-quote"]')).toHaveLength(1)
+    expect(request).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'text', text: '> the hashes are trimmed' }))
+  })
+
+  it('gives the quotes back with the text when the command fails', async () => {
+    const { ask, all } = makeCommands()
+    ask.run = vi.fn(async () => { throw new Error('No service') })
+    const { container, box } = await setup({ commands: all, initial: '> the hashes are trimmed\n\n' })
+    await vi.waitFor(() => expect(container.querySelectorAll('[data-testid="chat-quote"]')).toHaveLength(1))
+    await type(box, '/btw why?')
+    await press(box, 'Enter')
+    await flush()
+    expect(text(box)).toBe('/btw why?')
+    expect(container.querySelectorAll('[data-testid="chat-quote"]')).toHaveLength(1)
+    expect(alert(container)).toContain('No service')
   })
 
   it('does not wait for the command: the box can be typed in while it is still working', async () => {
