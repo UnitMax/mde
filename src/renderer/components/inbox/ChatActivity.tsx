@@ -92,7 +92,9 @@ export function NoteRow({ message }: { message: Extract<ChatMessage, { kind: 'no
 
 /**
  * A run of steps (thoughts, reads, searches, commands) folded into one line that sums them up, in the compact layouts.
- * It is never open of itself: a live one spins and shimmers. A click on it is the person's choice, and stays.
+ * It is never open of itself: a live one spins and shimmers. A click on it is the person's choice, and stays. A run of
+ * one step is that step's own row: it takes the same room and says more ("Ran npm test" rather than "Ran 1 command"),
+ * and it opens onto the step in one click rather than two. A subagent, whose card is more than a row, keeps its line.
  */
 export function ActivityGroup({
   items,
@@ -120,7 +122,10 @@ export function ActivityGroup({
     { kind: 'item'; item: ActivityItem; position: number }
     | { kind: 'subagents'; parts: Extract<ChatPart, { kind: 'tool' }>[]; messageId?: string }
   > = []
-  for (const [position, item] of (open ? items.entries() : [])) {
+  // A subagent is a card rather than a row, so one keeps its line.
+  const only = items.length === 1 ? items[0]!.part : undefined
+  const single = only !== undefined && !(only.kind === 'tool' && isSubagentCall(only))
+  for (const [position, item] of (open || single ? items.entries() : [])) {
     const part = item.part
     if (part.kind === 'tool' && isSubagentCall(part)) {
       const previous = rows[rows.length - 1]
@@ -128,6 +133,17 @@ export function ActivityGroup({
       else rows.push({ kind: 'subagents', parts: [part], messageId: item.messageId })
     } else rows.push({ kind: 'item', item, position })
   }
+  const drawRow = (row: (typeof rows)[number]): JSX.Element => {
+    if (row.kind === 'subagents') return <SubagentGroup key={row.parts[0]!.id} parts={row.parts} models={models} />
+    const { part, index, messageId } = row.item
+    if (part.kind === 'tool') return <ToolCallView key={part.id} part={part} directory={directory} />
+    if (part.kind === 'note') return <NoteRow key={part.id} message={part} />
+    // The thought being written is the last step. Text joins a group only in the compact layout.
+    const key = `${messageId ?? ''}:${index}`
+    if (part.kind === 'text') return <SaidRow key={key} text={part.text} />
+    return <ThoughtRow key={key} text={part.text} live={live && row.position === items.length - 1} />
+  }
+  if (single && rows[0]) return drawRow(rows[0])
   return (
     <div data-testid="chat-activity" data-open={open ? '' : undefined} data-live={live ? '' : undefined} className="min-w-0">
       {/* Open, the line stays at the top of the conversation while what it opened onto scrolls under it, so it can be shut
@@ -159,16 +175,7 @@ export function ActivityGroup({
       {open && (
         <Rail tight onCollapse={(clientY) => choose(false, clientY)}>
           <div className="flex min-w-0 flex-col">
-            {rows.map((row) => {
-              if (row.kind === 'subagents') return <SubagentGroup key={row.parts[0]!.id} parts={row.parts} models={models} />
-              const { part, index, messageId } = row.item
-              if (part.kind === 'tool') return <ToolCallView key={part.id} part={part} directory={directory} />
-              if (part.kind === 'note') return <NoteRow key={part.id} message={part} />
-              // The thought being written is the last step. Text joins a group only in the compact layout.
-              const key = `${messageId ?? ''}:${index}`
-              if (part.kind === 'text') return <SaidRow key={key} text={part.text} />
-              return <ThoughtRow key={key} text={part.text} live={live && row.position === items.length - 1} />
-            })}
+            {rows.map(drawRow)}
           </div>
         </Rail>
       )}

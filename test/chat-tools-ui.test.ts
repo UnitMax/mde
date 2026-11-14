@@ -568,6 +568,18 @@ describe('a run of steps', () => {
     expect(text(q('[data-testid="chat-activity"]', view))).toContain('2 failed')
   })
 
+  it('is the step itself when there is only one, which opens in one click', async () => {
+    const view = await mount(compacted(assistant([{ kind: 'reasoning', text: 'Check **the config** first.' }, { kind: 'text', text: 'Done.' }])))
+    expect(q('[data-testid="chat-activity"]', view)).toBeNull()
+    const row = q('[data-testid="chat-reasoning"]', view)!
+    await open(row)
+    expect(text(row)).toContain('Check the config first.')
+
+    const command = await mount(compacted(assistant([tool('shell', { command: 'npm test' }, { exitCode: 0, output: 'ok' }), { kind: 'text', text: 'Done.' }])))
+    expect(q('[data-testid="chat-activity"]', command)).toBeNull()
+    expect(text(q('[data-testid^="chat-tool-"]', command))).toContain('Ran npm test')
+  })
+
   it('is not folded in the Every step layout, however many steps there are', async () => {
     const view = await message(assistant([read('a.ts'), read('b.ts'), read('c.ts'), read('d.ts')]))
     expect(q('[data-testid="chat-activity"]', view)).toBeNull()

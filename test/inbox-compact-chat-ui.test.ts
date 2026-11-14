@@ -193,10 +193,10 @@ describe('a conversation in compact mode', () => {
     }
     useInboxView.setState({ compactChat: true })
     await render()
-    await vi.waitFor(() => expect(q('[data-testid="chat-activity-summary"]')).not.toBeNull())
-    expect(text(q('[data-testid="chat-activity-summary"]'))).toBe('Received 1 update')
+    // One step is drawn as its own row, rather than as a line that opens onto it.
+    await vi.waitFor(() => expect(q('[data-testid="chat-note-n_context"]')).not.toBeNull())
+    expect(q('[data-testid="chat-activity"]')).toBeNull()
     expect(text(q('[data-testid="chat-message-a_answer"]'))).toBe('Ready.')
-    await click(q('[data-testid="chat-activity"] button'))
     expect(text(q('[data-testid="chat-note-n_context"]'))).toBe('Job finished')
   })
 
@@ -276,7 +276,9 @@ describe('a conversation in compact mode', () => {
     await vi.waitFor(() => expect(q('[data-testid="chat-message-a3"]')).not.toBeNull())
     expect(text(q('[data-testid="chat-message-a1"]'))).toContain('Let me look at the handler.')
     expect(text(q('[data-testid="chat-message-a2"]'))).toContain('The cause is clear now.')
-    expect(all('[data-testid="chat-activity-summary"]').map((line) => text(line))).toEqual(['Thought and read 1 file', 'Ran 1 command'])
+    expect(all('[data-testid="chat-activity-summary"]').map((line) => text(line))).toEqual(['Thought and read 1 file'])
+    // A command alone is its own row, which names it.
+    expect(text(q('[data-testid="chat-message-a2"] [data-testid^="chat-tool-"]'))).toContain('Ran npm test')
     expect(q('[data-testid="chat-said"]')).toBeNull()
 
     // Plain compact folds the words back into one line.
@@ -292,7 +294,8 @@ describe('a conversation in compact mode', () => {
     await render()
     await vi.waitFor(() => expect(q('[data-testid="chat-message-a1"]')).not.toBeNull())
     expect(text(q('[data-testid="chat-message-a1"]'))).toContain('The test fails because')
-    expect(q('[data-testid="chat-activity"]')!.hasAttribute('data-live')).toBe(false)
+    expect(q('[data-testid="chat-activity"]')).toBeNull()
+    expect(q('[data-testid^="chat-tool-"]')!.getAttribute('data-status')).toBe('completed')
     expect(q('[data-testid="chat-said"]')).toBeNull()
   })
 
@@ -433,15 +436,27 @@ describe('a conversation in compact mode', () => {
     useInboxView.setState({ compactChat: true })
     await render()
     await vi.waitFor(() => expect(q('[data-testid="chat-question-form_active"]')).not.toBeNull())
-    const group = q('[data-testid="chat-activity"]')!
-    expect(group.querySelector('button')?.getAttribute('aria-expanded')).toBe('false')
+    // The write alone is its own row, and starts shut.
+    const group = q('[data-testid="chat-message-a1"] [data-testid^="chat-tool-"]')!
+    expect(group.querySelector('button')?.getAttribute('aria-expanded') ?? 'false').toBe('false')
     expect(q('[data-testid="chat-permission-per_active"]')).not.toBeNull()
     expect(group.contains(q('[data-testid="chat-permission-per_active"]'))).toBe(false)
     expect(group.contains(q('[data-testid="chat-question-form_active"]'))).toBe(false)
     expect(q('[data-testid="chat-permission-per_active"] button')?.hasAttribute('disabled')).toBe(false)
   })
 
-  it.each(['write', 'edit', 'subagent'])('keeps failed %s activity visible in the collapsed failure count', async (name) => {
+  it.each(['write', 'edit'])('shows a failed %s alone as its own row, shut and marked failed', async (name) => {
+    page = { messages: [prompt, step('a1', [tool(name, {}, { status: 'error', error: 'Operation failed.' })]), step('a2', [{ kind: 'text', text: 'It failed.' }])], older: null, running: false }
+    useInboxView.setState({ compactChat: true })
+    await render()
+    await vi.waitFor(() => expect(q('[data-testid="chat-message-a1"] [data-testid^="chat-tool-"]')).not.toBeNull())
+    expect(q('[data-testid="chat-activity"]')).toBeNull()
+    const row = q('[data-testid="chat-message-a1"] [data-testid^="chat-tool-"]')!
+    expect(row.hasAttribute('data-failed')).toBe(true)
+    expect(row.querySelector('button')?.getAttribute('aria-expanded') ?? 'false').toBe('false')
+  })
+
+  it.each(['subagent'])('keeps failed %s activity visible in the collapsed failure count', async (name) => {
     page = { messages: [prompt, step('a1', [tool(name, {}, { status: 'error', error: 'Operation failed.' })]), step('a2', [{ kind: 'text', text: 'It failed.' }])], older: null, running: false }
     useInboxView.setState({ compactChat: true })
     await render()

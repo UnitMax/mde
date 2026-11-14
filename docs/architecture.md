@@ -1355,7 +1355,10 @@ edits, patches, subagents and unknown tools. Opening the group shows their full
 views: file changes start shut with their counts, and consecutive
 subagents from the same step retain their grouped cards and model labels. Active permission and
 question requests remain outside the activity group so they can be answered. The summary is worked
-out from the tool calls with no model involved ("Thought, wrote 1 file and ran 3 commands"). Choosing
+out from the tool calls with no model involved ("Thought, wrote 1 file and ran 3 commands"). A stretch of a
+single step is not folded: it is drawn as that step's own row ("Ran npm test" rather than "Ran 1 command"),
+which takes the same room, says more and opens onto the step in one click; a file change in it still starts
+shut. A single subagent keeps its line, since its card is more than a row. Choosing
 Every step restores the normal layout.
 
 **Compact with text.** The third layout keeps compact mode from folding the agent's words: every text it
