@@ -1301,6 +1301,17 @@ question requests remain outside the activity group so they can be answered. The
 out from the tool calls with no model involved ("Thought, wrote 1 file and ran 3 commands"). Turning
 the switch off restores the normal layout.
 
+**Changes after each turn.** Since compact mode folds file changes into the line, it ends each finished turn
+with a panel of the files the turn changed (`ChatTurnChanges`, worked out by `turnChanges` in
+`lib/turn-changes.ts`; a setting in the Inbox gear menu, kept in `mde.inbox-turn-changes`, on by default).
+A turn starts with a message from the person or a goal, as for the turn's time, and the panel goes under
+its last assistant message, above that time. It counts the completed `edit`, `write` and patch calls; a
+call that failed changed nothing, and a file removed by a shell command is not seen. Shut, the panel is one
+line ("Changed 3 files", `+added −removed`); open, it lists a row per file, keyed by its path relative to
+the thread's folder, and a row opens onto the file's diff: every change the turn made to it, one after
+the other, with the counts added up. A file is shown as deleted when its last change deleted it, created
+when its first created it, and edited otherwise. The turn still going is left out until it ends.
+
 **File changes.** The `edit` and `write` tools are drawn as diffs instead of raw JSON, one row per
 file (`ChatFileChange`), the same activity row as every other step with no box around it: the verb
 ("Edited", "Created", "Overwrote"), the path relative to the thread's folder, and `+added −removed`

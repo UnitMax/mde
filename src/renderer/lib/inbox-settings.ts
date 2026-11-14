@@ -9,6 +9,7 @@ export const INBOX_DRAFTS_COLLAPSED_STORAGE_KEY = 'mde.inbox-drafts-collapsed'
 export const INBOX_SNOOZED_OPEN_STORAGE_KEY = 'mde.inbox-snoozed-open'
 export const INBOX_TITLE_ICONS_STORAGE_KEY = 'mde.inbox-title-icons'
 export const INBOX_COMPACT_CHAT_STORAGE_KEY = 'mde.inbox-compact-chat'
+export const INBOX_TURN_CHANGES_STORAGE_KEY = 'mde.inbox-turn-changes'
 export const INBOX_MODEL_QUICK_SWITCH_STORAGE_KEY = 'mde.inbox-model-quick-switch'
 export const INBOX_PROJECT_FILTER_STORAGE_KEY = 'mde.inbox-project-filter'
 export const INBOX_SIDEBAR_WIDTH_STORAGE_KEY = 'mde.inbox-sidebar-width'
@@ -99,6 +100,15 @@ export function getInboxCompactChat(): boolean {
 
 export function saveInboxCompactChat(on: boolean): void {
   writeSwitch(INBOX_COMPACT_CHAT_STORAGE_KEY, on)
+}
+
+/** Whether compact mode sums up each turn's file changes in a panel at its end. On unless turned off. */
+export function getInboxTurnChanges(): boolean {
+  return readSwitchOnByDefault(INBOX_TURN_CHANGES_STORAGE_KEY)
+}
+
+export function saveInboxTurnChanges(on: boolean): void {
+  writeSwitch(INBOX_TURN_CHANGES_STORAGE_KEY, on)
 }
 
 /** Whether the favorite models are offered as buttons above the message box. On unless turned off. */

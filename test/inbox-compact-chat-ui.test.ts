@@ -8,7 +8,7 @@ vi.mock('../src/renderer/components/inbox/InboxTerminal', () => ({
   focusInboxTerminalWhenShown: vi.fn(),
 }))
 import { InboxThreadView } from '../src/renderer/components/InboxThreadView'
-import { getInboxCompactChat, INBOX_COMPACT_CHAT_STORAGE_KEY, saveInboxCompactChat } from '../src/renderer/lib/inbox-settings'
+import { getInboxCompactChat, getInboxTurnChanges, INBOX_COMPACT_CHAT_STORAGE_KEY, INBOX_TURN_CHANGES_STORAGE_KEY, saveInboxCompactChat } from '../src/renderer/lib/inbox-settings'
 import { useInboxChat } from '../src/renderer/store/inbox-chat'
 import { useInboxView } from '../src/renderer/store/inbox-view'
 import { useWorkspace } from '../src/renderer/store/workspace'
@@ -449,5 +449,81 @@ describe('a conversation in compact mode', () => {
     await vi.waitFor(() => expect(q('[data-testid="chat-message-a2"]')).not.toBeNull())
     expect(text(q('[data-testid="chat-message-a2"]'))).toBe('The provider closed the connection.')
     expect(text(q('[data-testid="chat-activity-summary"]'))).toBe('Ran 2 commands')
+  })
+})
+
+describe('the changes after each turn', () => {
+  const PANEL = '[data-testid="chat-turn-changes"]'
+  const write = (name: string, content: string, existed = false): ChatPart =>
+    tool('write', { filePath: `/home/me/app/${name}`, content }, { existed })
+  const removal = (name: string): ChatPart => tool('patch', { patchText: `*** Begin Patch\n*** Delete File: ${name}\n*** End Patch` })
+  const changedTurn = (): ChatMessage[] => [
+    prompt,
+    step('a1', [{ kind: 'text', text: 'Fixing it.' }, edit(), write('new.ts', 'one\ntwo\n')]),
+    step('a2', [edit(), removal('old.ts')]),
+    step('a3', [{ kind: 'text', text: 'Done.' }]),
+  ]
+
+  beforeEach(() => {
+    useInboxView.setState({ compactChat: true, turnChanges: true })
+  })
+
+  it('ends a turn with one shut line of how many files changed and the lines that came and went', async () => {
+    page = { messages: changedTurn(), older: null, running: false }
+    await render()
+    await vi.waitFor(() => expect(q(PANEL)).not.toBeNull())
+    // Under the turn's last message, after its answer.
+    expect(q(`[data-testid="chat-message-a3"] + ${PANEL}`)).not.toBeNull()
+    expect(text(q('[data-testid="chat-turn-changes-toggle"]'))).toBe('Changed 3 files+4−2')
+    expect(q('[data-testid="chat-turn-changes-toggle"]')!.getAttribute('aria-expanded')).toBe('false')
+    expect(q('[data-testid="chat-turn-change"]')).toBeNull()
+  })
+
+  it('lists each file once with what happened to it, and opens a file onto all its diffs', async () => {
+    page = { messages: changedTurn(), older: null, running: false }
+    await render()
+    await vi.waitFor(() => expect(q(PANEL)).not.toBeNull())
+    await click(q('[data-testid="chat-turn-changes-toggle"]'))
+    const rows = all('[data-testid="chat-turn-change"]')
+    expect(rows.map((row) => row.getAttribute('aria-label'))).toEqual(['Edited a.ts', 'Created new.ts', 'Deleted old.ts'])
+    expect(all('.file-diff-row')).toHaveLength(0)
+
+    // The file edited twice shows both edits, one after the other.
+    await click(rows[0]!.querySelector('button'))
+    expect(text(rows[0]!.querySelector('[data-testid="chat-diff-stats"]'))).toBe('+2−2')
+    expect(all('.file-diff-row')).toHaveLength(6)
+    expect(all('.file-diff-gap')).toHaveLength(1)
+  })
+
+  it('leaves out turns that changed nothing and the turn still going', async () => {
+    page = { messages: [...changedTurn(), { ...prompt, id: 'u2' } as ChatMessage, step('b1', [edit()], false)], older: null, running: true }
+    await render()
+    await vi.waitFor(() => expect(q(PANEL)).not.toBeNull())
+    expect(all(PANEL)).toHaveLength(1)
+
+    page = { messages: turn(), older: null, running: false }
+    useInboxChat.setState({ threads: {} })
+    await act(async () => root.unmount())
+    root = createRoot(container)
+    await render()
+    await vi.waitFor(() => expect(q('[data-testid="chat-message-a4"]')).not.toBeNull())
+    expect(q(PANEL)).toBeNull()
+  })
+
+  it('is only in compact mode, and goes when the setting is turned off', async () => {
+    page = { messages: changedTurn(), older: null, running: false }
+    useInboxView.setState({ compactChat: false })
+    await render()
+    await vi.waitFor(() => expect(q('[data-testid="chat-message-a3"]')).not.toBeNull())
+    expect(q(PANEL)).toBeNull()
+
+    await click(q(TOGGLE))
+    expect(q(PANEL)).not.toBeNull()
+    await act(async () => useInboxView.getState().setTurnChanges(false))
+    expect(q(PANEL)).toBeNull()
+    expect(localStorage.getItem(INBOX_TURN_CHANGES_STORAGE_KEY)).toBe('off')
+    expect(getInboxTurnChanges()).toBe(false)
+    localStorage.removeItem(INBOX_TURN_CHANGES_STORAGE_KEY)
+    expect(getInboxTurnChanges()).toBe(true)
   })
 })

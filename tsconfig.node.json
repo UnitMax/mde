@@ -137,6 +137,7 @@
     "src/renderer/store/inbox-find.ts",
     "src/renderer/lib/duration.ts",
     "src/renderer/lib/diff.ts",
+    "src/renderer/lib/turn-changes.ts",
     "src/renderer/lib/diff-highlight.ts",
     "src/renderer/lib/git-graph.ts",
     "src/renderer/store/session-git-graph.ts",

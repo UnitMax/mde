@@ -21,10 +21,12 @@ import { ChatScrollToBottom } from '@/components/inbox/ChatScrollToBottom'
 import { ChatTimeline } from '@/components/inbox/ChatTimeline'
 import { ChatTranscriptMenu } from '@/components/inbox/ChatTranscriptMenu'
 import { CompactChatContext } from '@/components/inbox/chat-ui'
+import { ChatTurnChanges } from '@/components/inbox/ChatTurnChanges'
 import { TurnDuration, WorkingFor } from '@/components/inbox/ChatTurnTime'
 import { registerThreadInput } from '@/lib/inbox-thread-input'
 import { scrollBehavior, TIMELINE_MIN_PROMPTS, timelineEntries } from '@/lib/chat-timeline'
 import { compactPlans, type RenderBlock } from '@/lib/chat-tools'
+import { turnChanges } from '@/lib/turn-changes'
 import { cn } from '@/lib/utils'
 import { compactionState, contextUsage, drawnStart, findModel, goalPhase, hideReverted, initialChoice, mergeLive, revertedMessageCount, sameModelRef, turnStats } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
@@ -381,6 +383,12 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
     lastPlans.current = next
     return next
   }, [compact, messages, running, lastAssistantId])
+  // In compact mode, each finished turn ends with the files it changed, which its compact line folds away.
+  const showTurnChanges = useInboxView((view) => view.turnChanges)
+  const changesByTurn = useMemo(
+    () => (compact && showTurnChanges ? turnChanges(messages, thread.directory, running) : undefined),
+    [compact, showTurnChanges, messages, thread.directory, running],
+  )
 
   // Compacting summarizes the conversation to free up context. OpenCode does it in the background and writes it
   // into the conversation as a note, so this only asks, and refuses what would make a second, failing note:
@@ -496,6 +504,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
           <CompactChatContext.Provider value={compact}>
             {drawn.map((message) => {
               const took = turns.finished.get(message.id)
+              const changed = changesByTurn?.get(message.id)
               return (
                 <Fragment key={message.id}>
                   <ChatMessageView
@@ -507,6 +516,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
                     onRevert={message.kind === 'user' ? askRevert : undefined}
                     onFork={message.kind === 'user' ? forkFrom : undefined}
                   />
+                  {changed && <ChatTurnChanges changes={changed} directory={thread.directory} />}
                   {took !== undefined && <TurnDuration ms={took.ms} tokensPerSecond={took.tokensPerSecond} />}
                 </Fragment>
               )

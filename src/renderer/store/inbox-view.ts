@@ -8,6 +8,7 @@ import {
   getInboxSidebarWidth,
   getInboxSnoozedOpen,
   getInboxTitleIcons,
+  getInboxTurnChanges,
   getInboxWorkingCollapsed,
   getInboxWorkingSection,
   saveInboxCompactChat,
@@ -17,6 +18,7 @@ import {
   saveInboxSidebarWidth,
   saveInboxSnoozedOpen,
   saveInboxTitleIcons,
+  saveInboxTurnChanges,
   saveInboxWorkingCollapsed,
   saveInboxWorkingSection,
 } from '@/lib/inbox-settings'
@@ -37,6 +39,12 @@ interface Store {
    */
   compactChat: boolean
   setCompactChat: (on: boolean) => void
+  /**
+   * In compact mode, a panel at the end of each turn lists the files the turn changed, with its diffs a click away
+   * (a preference, on by default).
+   */
+  turnChanges: boolean
+  setTurnChanges: (on: boolean) => void
   /** Offer the favorite models as buttons above the message box (a preference, on by default). */
   modelQuickSwitch: boolean
   setModelQuickSwitch: (on: boolean) => void
@@ -87,6 +95,11 @@ export const useInboxView = create<Store>((set) => ({
   setCompactChat: (on) => {
     saveInboxCompactChat(on)
     set({ compactChat: on })
+  },
+  turnChanges: getInboxTurnChanges(),
+  setTurnChanges: (on) => {
+    saveInboxTurnChanges(on)
+    set({ turnChanges: on })
   },
   workingCollapsed: getInboxWorkingCollapsed(),
   setWorkingCollapsed: (collapsed) => {
