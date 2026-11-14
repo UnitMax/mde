@@ -1355,7 +1355,14 @@ edits, patches, subagents and unknown tools. Opening the group shows their full
 views: file changes start shut with their counts, and consecutive
 subagents from the same step retain their grouped cards and model labels. Active permission and
 question requests remain outside the activity group so they can be answered. The summary is worked
-out from the tool calls with no model involved ("Thought, wrote 1 file and ran 3 commands"). A stretch of a
+out from the tool calls with no model involved ("Thought, wrote 1 file and ran 3 commands"). After it, the
+line names the commands it ran, each once and in order, in the code font and a level dimmer ("· echo, curl,
+git status +2" past three); they give way first when the line is short of room, and the full list is the
+tooltip. A name is the program without its folder, the `NAME=value` settings and wrappers (`sudo`, `env`,
+`timeout`, …) in front of it, and with the subcommand for programs that have them (`git status`, `npm run
+build`); in a chain the first step that does more than set up (`cd`, `export`) is named (`commandName` in
+`lib/chat-tools.ts`). The **Command names** switch in the Inbox gear menu (`mde.inbox-command-names`, on by
+default) turns this off. A stretch of a
 single step is not folded: it is drawn as that step's own row ("Ran npm test" rather than "Ran 1 command"),
 which takes the same room, says more and opens onto the step in one click; a file change in it still starts
 shut. A single subagent keeps its line, since its card is more than a row. Choosing

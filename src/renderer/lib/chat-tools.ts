@@ -600,6 +600,78 @@ export function activitySummary(parts: readonly ActivityPart[], live = false): s
   return text ? `${text[0]!.toUpperCase()}${text.slice(1)}` : 'Activity'
 }
 
+/** Words in front of the command that only change how it runs. */
+const COMMAND_WRAPPERS = new Set(['sudo', 'doas', 'env', 'time', 'nohup', 'exec', 'command', 'builtin', 'nice', 'ionice', 'timeout', 'stdbuf'])
+/** Steps of a chain that only set up for the command that follows. */
+const COMMAND_SETUP = new Set(['cd', 'pushd', 'popd', 'export', 'set', 'unset', 'source', '.', 'true', ':'])
+/** Programs whose first word after them says more than the program itself: `git status`, `npm test`. */
+const COMMAND_SUBCOMMANDS = new Set([
+  'apt', 'apt-get', 'brew', 'bun', 'bunx', 'cargo', 'composer', 'deno', 'docker', 'dotnet', 'gh', 'git', 'go', 'helm', 'kubectl',
+  'npm', 'npx', 'pip', 'pip3', 'pnpm', 'poetry', 'podman', 'systemctl', 'terraform', 'uv', 'uvx', 'wsl', 'yarn',
+])
+/** Subcommands that are themselves followed by what is run: `npm run build`. */
+const COMMAND_RUNNERS = new Set(['run', 'exec', 'x', 'dlx'])
+/** How many commands a line names before it says how many more there are. */
+export const COMMAND_NAMES_SHOWN = 3
+
+/** The first words of a piece of shell, with quotes taken off and a word that holds one cut short; enough for its name. */
+function leadingWords(text: string, count: number): string[] {
+  const words: string[] = []
+  for (const match of text.matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g)) {
+    words.push(match[1] ?? match[2] ?? match[3] ?? '')
+    if (words.length >= count) break
+  }
+  return words
+}
+
+/**
+ * What a command runs, as a person would name it: the program, without its folder, the settings and wrappers in front of
+ * it (`FOO=1 sudo /usr/bin/python3 x.py` is `python3`), and with the subcommand for programs that have them (`git
+ * status`, `npm run build`). In a chain (`cd app && npm test`) the first step that does more than set up is named.
+ * Null when there is nothing to name.
+ */
+export function commandName(command: string): string | null {
+  const firstLine = command.split('\n').find((line) => line.trim() && !line.trim().startsWith('#')) ?? ''
+  let fallback: string | null = null
+  for (const segment of firstLine.split(/&&|\|\||;|\|/)) {
+    const words = leadingWords(segment.trim().replace(/^[({\s]+/, ''), 12)
+    while (words.length > 0 && (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0]!) || COMMAND_WRAPPERS.has(words[0]!))) words.shift()
+    // A wrapper's own options (`sudo -u me`, `timeout 30`) stand between it and the command.
+    while (words.length > 1 && (words[0]!.startsWith('-') || /^\d+[smhd]?$/.test(words[0]!))) words.shift()
+    const program = words[0]?.replace(/^.*[\\/]/, '').replace(/\.exe$/i, '')
+    if (!program) continue
+    if (COMMAND_SETUP.has(program)) {
+      fallback ??= program
+      continue
+    }
+    const plain = (word: string | undefined): word is string => word !== undefined && /^[a-z][\w:.-]*$/i.test(word)
+    const name = [program]
+    if (COMMAND_SUBCOMMANDS.has(program) && plain(words[1])) {
+      name.push(words[1])
+      if (COMMAND_RUNNERS.has(words[1]) && plain(words[2])) name.push(words[2])
+    }
+    return name.join(' ')
+  }
+  return fallback
+}
+
+/** The names of the commands among these steps, each once, in the order they were first run. */
+export function commandNames(parts: readonly ActivityPart[]): string[] {
+  const names: string[] = []
+  for (const part of parts) {
+    if (part.kind !== 'tool' || toolKind(part.name) !== 'shell') continue
+    const name = commandName(shellInfo(part).command)
+    if (name && !names.includes(name)) names.push(name)
+  }
+  return names
+}
+
+/** "echo, curl", or "echo, curl, git status +2" when there are more than `COMMAND_NAMES_SHOWN`. */
+export function commandNamesText(names: readonly string[]): string {
+  const shown = names.slice(0, COMMAND_NAMES_SHOWN).join(', ')
+  return names.length > COMMAND_NAMES_SHOWN ? `${shown} +${names.length - COMMAND_NAMES_SHOWN}` : shown
+}
+
 /** "a", "a and b", "a, b and c". */
 function joinPhrases(phrases: readonly string[]): string {
   if (phrases.length <= 1) return phrases[0] ?? ''

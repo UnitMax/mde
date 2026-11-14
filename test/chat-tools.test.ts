@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 import type { ChatMessage, ChatPart } from '../src/shared/types'
 import {
   activitySummary,
+  commandName,
+  commandNames,
+  commandNamesText,
   answeredQuestions,
   compactFlow,
   compactPlans,
@@ -705,5 +708,38 @@ describe('the compact layout', () => {
       expect(samePlan(grown.get('a1')!, after.get('a1')!)).toBe(false)
       expect(grown.get('a2')).toEqual([])
     })
+  })
+})
+
+describe('the names of the commands a line ran', () => {
+  it('names the program, without its folder, settings or wrappers', () => {
+    expect(commandName('echo "step 2"')).toBe('echo')
+    expect(commandName('curl -s https://example.com | jq .')).toBe('curl')
+    expect(commandName('FOO=1 sudo /usr/bin/python3 x.py')).toBe('python3')
+    expect(commandName('timeout 30 node build.js')).toBe('node')
+    expect(commandName('C:\\Tools\\rg.exe foo')).toBe('rg')
+  })
+
+  it('keeps the subcommand of programs that have them', () => {
+    expect(commandName('git status --short')).toBe('git status')
+    expect(commandName('npm run build -- --watch')).toBe('npm run build')
+    expect(commandName('npx vitest run')).toBe('npx vitest')
+    expect(commandName('git -C app log')).toBe('git')
+  })
+
+  it('names the first step of a chain that does more than set up', () => {
+    expect(commandName('cd app && npm test')).toBe('npm test')
+    expect(commandName('export X=1; make')).toBe('make')
+    expect(commandName('cd app')).toBe('cd')
+    expect(commandName('# list them\nls -la')).toBe('ls')
+    expect(commandName('   ')).toBeNull()
+  })
+
+  it('lists each command once, in order, and says how many more there are', () => {
+    const shell = (command: string): ChatPart => tool('shell', { command })
+    const parts: ChatPart[] = [shell('echo a'), { kind: 'reasoning', text: 'Hmm' }, shell('curl x'), shell('echo b'), tool('read', { path: 'a.ts' })]
+    expect(commandNames(parts)).toEqual(['echo', 'curl'])
+    expect(commandNamesText(['echo', 'curl'])).toBe('echo, curl')
+    expect(commandNamesText(['echo', 'curl', 'git status', 'ls', 'make'])).toBe('echo, curl, git status +2')
   })
 })

@@ -414,7 +414,7 @@ describe('a conversation in compact mode', () => {
     const groups = all('[data-testid="chat-activity"]')
     expect(groups.map((group) => text(group.querySelector('button')))).toEqual([
       'Wrote an update and read 1 file',
-      'Ran 2 commands',
+      'Ran 2 commands · python3, npm test',
     ])
     const message = q('[data-testid="chat-message-a1"]')!
     expect(text(message)).toContain('The server can listen on 8000 or 9000.')

@@ -6,6 +6,7 @@ import { PREVIEW_HOLD_MS, ThoughtRow } from '../src/renderer/components/inbox/Ch
 import { ChatMessageView } from '../src/renderer/components/inbox/ChatMessageView'
 import { CompactChatContext } from '../src/renderer/components/inbox/chat-ui'
 import { compactPlans } from '../src/renderer/lib/chat-tools'
+import { useInboxView } from '../src/renderer/store/inbox-view'
 import { ToolCallView } from '../src/renderer/components/inbox/ChatTools'
 import type { ChatMessage, ChatPart } from '../src/shared/types'
 
@@ -578,6 +579,21 @@ describe('a run of steps', () => {
     const command = await mount(compacted(assistant([tool('shell', { command: 'npm test' }, { exitCode: 0, output: 'ok' }), { kind: 'text', text: 'Done.' }])))
     expect(q('[data-testid="chat-activity"]', command)).toBeNull()
     expect(text(q('[data-testid^="chat-tool-"]', command))).toContain('Ran npm test')
+  })
+
+  it('names the commands it ran after its summary, unless that is turned off', async () => {
+    const parts: ChatPart[] = [{ kind: 'reasoning', text: 'Hmm' }, tool('shell', { command: 'echo "step 2"' }, { exitCode: 0 }), tool('shell', { command: 'cd app && curl -s x' }, { exitCode: 0 })]
+    const view = await mount(compacted(assistant(parts)))
+    expect(text(q('[data-testid="chat-activity-summary"]', view))).toBe('Thought and ran 2 commands')
+    expect(text(q('[data-testid="chat-activity-commands"]', view))).toBe('· echo, curl')
+
+    useInboxView.setState({ commandNames: false })
+    try {
+      await rerender(compacted(assistant(parts)))
+      expect(q('[data-testid="chat-activity-commands"]', view)).toBeNull()
+    } finally {
+      useInboxView.setState({ commandNames: true })
+    }
   })
 
   it('is not folded in the Every step layout, however many steps there are', async () => {

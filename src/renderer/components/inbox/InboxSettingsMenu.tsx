@@ -18,6 +18,8 @@ export function InboxSettingsMenu(): JSX.Element {
   const setWorkingSection = useInboxView((state) => state.setWorkingSection)
   const titleIcons = useInboxView((state) => state.titleIcons)
   const setTitleIcons = useInboxView((state) => state.setTitleIcons)
+  const commandNames = useInboxView((state) => state.commandNames)
+  const setCommandNames = useInboxView((state) => state.setCommandNames)
   const turnChanges = useInboxView((state) => state.turnChanges)
   const setTurnChanges = useInboxView((state) => state.setTurnChanges)
   const modelQuickSwitch = useInboxView((state) => state.modelQuickSwitch)
@@ -84,6 +86,18 @@ export function InboxSettingsMenu(): JSX.Element {
             <span className="block">Changes after each turn</span>
             <span className="mt-0.5 block text-[11px] leading-snug text-fg-subtle">
               In compact mode, a panel at the end of each turn lists the files it edited, wrote and deleted, with their diffs.
+            </span>
+          </span>
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem
+          data-testid="inbox-setting-command-names"
+          checked={commandNames}
+          onCheckedChange={(checked) => setCommandNames(checked === true)}
+        >
+          <span className="min-w-0">
+            <span className="block">Command names</span>
+            <span className="mt-0.5 block text-[11px] leading-snug text-fg-subtle">
+              In compact mode, a folded line names the commands it ran, such as echo, curl or git status.
             </span>
           </span>
         </DropdownMenuCheckboxItem>

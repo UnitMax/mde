@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import {
   clampInboxSidebarWidth,
+  getInboxCommandNames,
   getInboxCompactChat,
   getInboxCompactText,
   getInboxDraftsCollapsed,
@@ -12,6 +13,7 @@ import {
   getInboxTurnChanges,
   getInboxWorkingCollapsed,
   getInboxWorkingSection,
+  saveInboxCommandNames,
   saveInboxCompactChat,
   saveInboxCompactText,
   saveInboxDraftsCollapsed,
@@ -53,6 +55,9 @@ interface Store {
    */
   turnChanges: boolean
   setTurnChanges: (on: boolean) => void
+  /** A folded line of steps names the commands it ran after its summary (a preference, on by default). */
+  commandNames: boolean
+  setCommandNames: (on: boolean) => void
   /** Offer the favorite models as buttons above the message box (a preference, on by default). */
   modelQuickSwitch: boolean
   setModelQuickSwitch: (on: boolean) => void
@@ -113,6 +118,11 @@ export const useInboxView = create<Store>((set) => ({
   setTurnChanges: (on) => {
     saveInboxTurnChanges(on)
     set({ turnChanges: on })
+  },
+  commandNames: getInboxCommandNames(),
+  setCommandNames: (on) => {
+    saveInboxCommandNames(on)
+    set({ commandNames: on })
   },
   workingCollapsed: getInboxWorkingCollapsed(),
   setWorkingCollapsed: (collapsed) => {

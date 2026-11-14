@@ -6,8 +6,9 @@ import { ChatMarkdown } from '@/components/inbox/ChatMarkdown'
 import { ToolCallView } from '@/components/inbox/ChatTools'
 import { SubagentGroup } from '@/components/inbox/ChatSubagents'
 import { isSubagentCall } from '@/lib/chat'
-import { activitySummary, reasoningPreview, reasoningTitle, textHeadline, toolFailed, type ActivityItem } from '@/lib/chat-tools'
+import { activitySummary, commandNames, commandNamesText, reasoningPreview, reasoningTitle, textHeadline, toolFailed, type ActivityItem } from '@/lib/chat-tools'
 import { cn } from '@/lib/utils'
+import { useInboxView } from '@/store/inbox-view'
 
 /** How long one line of the preview stays up before the next one may take its place. */
 export const PREVIEW_HOLD_MS = 2600
@@ -118,6 +119,8 @@ export function ActivityGroup({
   }
   const parts = items.map((item) => item.part)
   const failed = parts.filter(toolFailed).length
+  const namesOn = useInboxView((view) => view.commandNames)
+  const names = namesOn ? commandNames(parts) : []
   const rows: Array<
     { kind: 'item'; item: ActivityItem; position: number }
     | { kind: 'subagents'; parts: Extract<ChatPart, { kind: 'tool' }>[]; messageId?: string }
@@ -166,9 +169,21 @@ export function ActivityGroup({
           ) : (
             <ChevronRight aria-hidden className={cn('h-3.5 w-3.5 shrink-0 text-fg-subtle transition-transform duration-150', open && 'rotate-90')} />
           )}
-          <span data-testid="chat-activity-summary" className={cn('min-w-0 flex-1 truncate', live ? 'chat-shimmer' : 'text-fg-muted transition-colors group-hover/row:text-fg')}>
+          <span data-testid="chat-activity-summary" className={cn('min-w-0 truncate', names.length === 0 && 'flex-1', live ? 'chat-shimmer' : 'text-fg-muted transition-colors group-hover/row:text-fg')}>
             {activitySummary(parts, live)}
           </span>
+          {/* The commands give way first when the line is short of room; the summary keeps its words. */}
+          {names.length > 0 && (
+            <span
+              data-testid="chat-activity-commands"
+              title={names.join(', ')}
+              className="inbox-code-font -ml-0.5 min-w-0 flex-1 basis-0 truncate text-[12px] text-fg-subtle transition-colors group-hover/row:text-fg-muted"
+            >
+              {' '}
+              <span aria-hidden className="font-sans">·</span>{' '}
+              {commandNamesText(names)}
+            </span>
+          )}
           {failed > 0 && <Chip tone="danger">{failed} failed</Chip>}
         </button>
       </div>
