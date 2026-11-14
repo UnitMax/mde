@@ -144,6 +144,7 @@
     "src/renderer/lib/git-graph.ts",
     "src/renderer/store/session-git-graph.ts",
     "src/renderer/components/SessionGitGraph.tsx",
+    "src/renderer/components/inbox/InboxTerminalGitGraph.tsx",
     "src/renderer/lib/syntax-style.ts",
     "src/renderer/store/inbox-chat.ts",
     "src/renderer/store/model-favorites.ts",

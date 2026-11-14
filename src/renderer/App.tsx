@@ -8,6 +8,7 @@ import { FileViewer } from '@/components/FileViewer'
 import { FloatingTerminal } from '@/components/inbox/FloatingTerminal'
 import { InboxChangeViewer, InboxSidebar } from '@/components/inbox/InboxChanges'
 import { GitGraphView } from '@/components/inbox/GitGraphView'
+import { InboxTerminalGitGraph } from '@/components/inbox/InboxTerminalGitGraph'
 import { SessionGitGraph } from '@/components/SessionGitGraph'
 import { NewTodoProjectDialog } from '@/components/NewTodoProjectDialog'
 import { Sidebar } from '@/components/Sidebar'
@@ -613,6 +614,8 @@ export function App(): JSX.Element {
     return folder ? inboxFileRoot(folder) : null
   }, [activeWorkspaceView, inboxLock, inboxThreads, selectedInboxThreadId, inboxFolders, inboxComposerFolderId])
   const inboxOpenFilePath = inboxRoot ? openFiles[inboxRoot.id] : undefined
+  /** The conversation area, which a floating terminal over it gives up when something opens there. */
+  const mainRef = useRef<HTMLElement>(null)
 
   const closeOpenFile = (sessionId: string, rootId = sessionId): void => {
     closeFileAction(rootId)
@@ -696,12 +699,13 @@ export function App(): JSX.Element {
           onNewSession={openNewSession}
         />
 
-        <main className="relative h-full min-w-0 flex-1">
+        <main ref={mainRef} className="relative h-full min-w-0 flex-1">
           {!ready ? null : activeWorkspaceView === 'inbox' ? (
             <>
               <InboxThreadView />
               {selectedInboxThreadId && <InboxChangeViewer threadId={selectedInboxThreadId} />}
               {selectedInboxThreadId && <GitGraphView threadId={selectedInboxThreadId} />}
+              <InboxTerminalGitGraph area={mainRef} filePath={inboxOpenFilePath} />
               {inboxRoot && inboxOpenFilePath !== undefined && (
                 <FileViewer
                   key={`viewer:${inboxRoot.id}`}
