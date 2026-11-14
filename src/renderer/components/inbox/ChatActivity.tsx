@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Brain, ChevronRight, Info, LoaderCircle, MessageSquareText } from 'lucide-react'
 import type { ChatMessage, ChatModel, ChatPart } from '@shared/types'
-import { ActivityRow, Chip, CodeText, Rail, Surface, useCompactChat } from '@/components/inbox/chat-ui'
+import { ActivityRow, Chip, CodeText, Rail, Surface, useCompactChat, useFoldAnchor, useStuck } from '@/components/inbox/chat-ui'
 import { ChatMarkdown } from '@/components/inbox/ChatMarkdown'
 import { ToolCallView } from '@/components/inbox/ChatTools'
 import { SubagentGroup } from '@/components/inbox/ChatSubagents'
@@ -111,6 +111,13 @@ export function ActivityGroup({
   const compact = useCompactChat()
   const [chosen, setChosen] = useState<boolean | null>(null)
   const open = chosen ?? (live && !compact)
+  const { headerRef, keepPlace } = useFoldAnchor<HTMLButtonElement>(open)
+  const sentinel = useRef<HTMLDivElement>(null)
+  const stuck = useStuck(sentinel, open)
+  const choose = (next: boolean, clientY?: number): void => {
+    if (!next) keepPlace(clientY)
+    setChosen(next)
+  }
   const parts = items.map((item) => item.part)
   const failed = parts.filter(toolFailed).length
   const rows: Array<
@@ -127,24 +134,34 @@ export function ActivityGroup({
   }
   return (
     <div data-testid="chat-activity" data-open={open ? '' : undefined} data-live={live ? '' : undefined} className="min-w-0">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setChosen(!open)}
-        className="group/row flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-[5px] text-left text-[12.5px] leading-5 transition-colors hover:bg-hover/70 focus-visible:bg-hover/70 focus-visible:outline-none"
+      {/* Open, the line stays at the top of the conversation while what it opened onto scrolls under it, so it can be shut
+          from anywhere in a long run of steps. */}
+      <div ref={sentinel} aria-hidden className="h-0" />
+      <div
+        className={cn(open && 'sticky top-0 z-10 bg-bg', stuck && 'border-b border-line shadow-[0_6px_10px_-8px_rgb(0_0_0/0.5)]')}
+        data-stuck={stuck ? '' : undefined}
+        data-testid="chat-activity-header"
       >
-        {live ? (
-          <LoaderCircle aria-hidden className="h-3.5 w-3.5 shrink-0 animate-spin text-accent motion-reduce:animate-none" />
-        ) : (
-          <ChevronRight aria-hidden className={cn('h-3.5 w-3.5 shrink-0 text-fg-subtle transition-transform duration-150', open && 'rotate-90')} />
-        )}
-        <span data-testid="chat-activity-summary" className={cn('min-w-0 flex-1 truncate', live ? 'chat-shimmer' : 'text-fg-muted transition-colors group-hover/row:text-fg')}>
-          {activitySummary(parts, live)}
-        </span>
-        {failed > 0 && <Chip tone="danger">{failed} failed</Chip>}
-      </button>
+        <button
+          ref={headerRef}
+          type="button"
+          aria-expanded={open}
+          onClick={() => choose(!open)}
+          className="group/row flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-[5px] text-left text-[12.5px] leading-5 transition-colors hover:bg-hover/70 focus-visible:bg-hover/70 focus-visible:outline-none"
+        >
+          {live ? (
+            <LoaderCircle aria-hidden className="h-3.5 w-3.5 shrink-0 animate-spin text-accent motion-reduce:animate-none" />
+          ) : (
+            <ChevronRight aria-hidden className={cn('h-3.5 w-3.5 shrink-0 text-fg-subtle transition-transform duration-150', open && 'rotate-90')} />
+          )}
+          <span data-testid="chat-activity-summary" className={cn('min-w-0 flex-1 truncate', live ? 'chat-shimmer' : 'text-fg-muted transition-colors group-hover/row:text-fg')}>
+            {activitySummary(parts, live)}
+          </span>
+          {failed > 0 && <Chip tone="danger">{failed} failed</Chip>}
+        </button>
+      </div>
       {open && (
-        <Rail tight>
+        <Rail tight onCollapse={(clientY) => choose(false, clientY)}>
           <div className="flex min-w-0 flex-col">
             {rows.map((row) => {
               if (row.kind === 'subagents') return <SubagentGroup key={row.parts[0]!.id} parts={row.parts} models={models} />

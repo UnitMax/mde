@@ -59,8 +59,8 @@ async function call(part: ToolPart): Promise<HTMLElement> {
   return q(`[data-testid="chat-tool-${part.id}"]`, view)!
 }
 
-/** Opens a row: the first button in the row's container. */
-const open = (row: HTMLElement) => click(row.querySelector<HTMLButtonElement>(':scope > button'))
+/** Opens a row: the first button in the row's container, or in the header a run of steps holds it in. */
+const open = (row: HTMLElement) => click(row.querySelector<HTMLButtonElement>(':scope > button, :scope > [data-testid="chat-activity-header"] > button'))
 
 function assistant(parts: ChatPart[], extra: Partial<Extract<ChatMessage, { kind: 'assistant' }>> = {}): ChatMessage {
   return { kind: 'assistant', id: 'msg_a', time: 1, agent: 'build', model: MODEL, parts, completed: true, ...extra }
@@ -619,5 +619,74 @@ describe('notes', () => {
     expect(q('[data-goal-note="set"]', view)).not.toBeNull()
     await click(q('[data-goal-note="set"] button', view))
     expect(text(q('[data-testid="chat-goal-note-detail"]', view))).toBe('Ship the export')
+  })
+})
+
+describe('shutting a long panel from far down in it', () => {
+  const read = (name: string): ToolPart => tool('read', { path: `${DIR}/${name}` }, { output: '1: x' })
+  const ROW_HEIGHT = 20
+  /** Where the line of the run of steps is in the conversation, and how far down it is scrolled to begin with. */
+  const LINE_AT = 1000
+  const SCROLLED = 900
+
+  /** The run of steps inside a conversation that scrolls, with the boxes a browser would give them. */
+  async function scrolled(parts: ChatPart[]): Promise<{ scroller: HTMLElement; group: HTMLElement }> {
+    const view = await mount(createElement('div', { 'data-chat-scroller': '' }, createElement(ChatMessageView, { message: assistant(parts), directory: DIR })))
+    const scroller = view.firstElementChild as HTMLElement
+    let scrollTop = SCROLLED
+    Object.defineProperty(scroller, 'scrollTop', { configurable: true, get: () => scrollTop, set: (value: number) => { scrollTop = value } })
+    const box = (top: number, height: number) => ({ top, bottom: top + height, height, left: 0, right: 600, width: 600, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this === scroller) return box(0, 600)
+      if (this.parentElement?.getAttribute('data-testid') === 'chat-activity-header') return box(LINE_AT - scrollTop, ROW_HEIGHT)
+      return box(0, ROW_HEIGHT)
+    })
+    return { scroller, group: q('[data-testid="chat-activity"]', view)! }
+  }
+  const clickAt = (element: HTMLElement, clientY: number) => act(async () => {
+    element.dispatchEvent(new MouseEvent('click', { bubbles: true, clientY }))
+  })
+
+  it('holds the line of an open run of steps at the top, and lets it go when shut', async () => {
+    const { group } = await scrolled([read('a.ts'), read('b.ts'), read('c.ts')])
+    const header = q('[data-testid="chat-activity-header"]', group)!
+    expect(header.className).not.toContain('sticky')
+    await open(group)
+    expect(header.className).toContain('sticky')
+    await open(group)
+    expect(header.className).not.toContain('sticky')
+  })
+
+  it('shuts a run of steps from a click on its rail, and puts its line where the pointer was', async () => {
+    const { scroller, group } = await scrolled([read('a.ts'), read('b.ts'), read('c.ts')])
+    await open(group)
+    const rails = all('[data-testid="chat-rail-collapse"]', group)
+    expect(rails).toHaveLength(1)
+    await clickAt(rails[0]!, 300)
+    expect(group.hasAttribute('data-open')).toBe(false)
+    expect(q('[data-testid="chat-rail-collapse"]', group)).toBeNull()
+    // The line is centred on the pointer, so it is 300 - 10 from the top of the conversation's window.
+    expect(LINE_AT - scroller.scrollTop).toBe(300 - ROW_HEIGHT / 2)
+  })
+
+  it('keeps the line where it was when it is shut from the line itself', async () => {
+    const { scroller, group } = await scrolled([read('a.ts'), read('b.ts'), read('c.ts')])
+    await open(group)
+    await open(group)
+    expect(group.hasAttribute('data-open')).toBe(false)
+    expect(scroller.scrollTop).toBe(SCROLLED)
+  })
+
+  it('shuts only the step whose rail was clicked, inside an open run of steps', async () => {
+    const shell = tool('shell', { command: 'npm test' }, { exitCode: 0, output: 'ok' })
+    const { group } = await scrolled([read('a.ts'), read('b.ts'), shell])
+    await open(group)
+    const step = q(`[data-testid="chat-tool-${shell.id}"]`, group)!
+    await open(step)
+    expect(q('[data-testid="chat-shell"]', step)).not.toBeNull()
+    const inner = q('[data-testid="chat-rail-collapse"]', step)!
+    await clickAt(inner, 200)
+    expect(q('[data-testid="chat-shell"]', step)).toBeNull()
+    expect(group.hasAttribute('data-open')).toBe(true)
   })
 })

@@ -1312,6 +1312,18 @@ the thread's folder, and a row opens onto the file's diff: every change the turn
 the other, with the counts added up. A file is shown as deleted when its last change deleted it, created
 when its first created it, and edited otherwise. The turn still going is left out until it ends.
 
+**Shutting a long panel.** A panel opened under a row can be far longer than the window, so it can be shut
+from wherever it is being read. The line of an open run of steps (`ActivityGroup`) and of an open changes
+panel stays at the top of the conversation (`position: sticky`) while what it opened onto scrolls under it,
+with a divider once it is held there (`useStuck`, an `IntersectionObserver` on a marker where the line would
+be); it lets go when the panel's end scrolls past. The rail a row's panel hangs from shuts the row when
+clicked anywhere along it (a strip 12 px wide over the 1 px line, lit up under the pointer, `Rail`'s
+`onCollapse`); a rail inside an open run of steps shuts only its own row. Shutting keeps the view in place
+(`useFoldAnchor`): from the line, the line stays where it was on screen; from the rail, the line lands
+centred on the pointer, so what came after the panel follows straight under it. It finds the conversation
+by its `data-chat-scroller` marker. The changes panel is not clipped (`overflow-hidden`), which would keep
+its line from staying at the top, and rounds its corners by hand.
+
 **File changes.** The `edit` and `write` tools are drawn as diffs instead of raw JSON, one row per
 file (`ChatFileChange`), the same activity row as every other step with no box around it: the verb
 ("Edited", "Created", "Overwrote"), the path relative to the thread's folder, and `+added −removed`

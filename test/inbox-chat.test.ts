@@ -843,7 +843,7 @@ describe('Inbox conversation', () => {
     const group = view.querySelector<HTMLElement>('[data-testid="chat-activity"]')!
     expect(group.textContent).toContain('Loading 3 skills')
     expect(view.querySelector('[data-testid="chat-tool-call_skill"]')).toBeNull()
-    await act(async () => group.querySelector<HTMLButtonElement>(':scope > button')!.click())
+    await act(async () => group.querySelector<HTMLButtonElement>('[data-testid="chat-activity-header"] > button')!.click())
     const loaded = view.querySelector('[data-testid="chat-tool-call_skill"]')!
     expect(loaded.textContent).toContain('Loaded the demo skill')
     expect(loaded.textContent).not.toContain('PINEAPPLE')

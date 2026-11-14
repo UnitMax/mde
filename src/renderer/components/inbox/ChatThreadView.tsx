@@ -480,7 +480,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
     >
       <div className="relative flex min-h-0 flex-1 flex-col">
       <ChatTranscriptMenu messages={messages} complete={!state?.older} transcriptRef={scrollRef} onCopyError={setCopyError} onQuote={quote}>
-      <div ref={scrollRef} onScroll={onScroll} className="chat-selectable min-h-0 flex-1 overflow-y-auto" data-testid="chat-transcript">
+      <div ref={scrollRef} onScroll={onScroll} className="chat-selectable min-h-0 flex-1 overflow-y-auto" data-testid="chat-transcript" data-chat-scroller="">
         <div ref={contentRef} className={cn('mx-auto flex w-full max-w-3xl flex-col gap-4 px-6 py-5', railGutter)}>
           {(first > 0 || state?.older) && (
             <button

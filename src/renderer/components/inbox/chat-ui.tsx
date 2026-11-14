@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Check, ChevronRight, CircleAlert, CircleDashed, Copy, LoaderCircle, type LucideIcon } from 'lucide-react'
 import type { ChatToolStatus } from '@shared/types'
 import { plural } from '@/lib/chat-tools'
@@ -22,6 +22,76 @@ export function useCompactChat(): boolean {
 
 /** Horizontal placement shared by a row and the rail under it: the rail runs down the middle of the row's icon. */
 const RAIL = 'ml-[13px] border-l border-line'
+
+/** Marks the element the conversation scrolls in, so that a row folding away can keep its place in it. */
+export const CHAT_SCROLLER_ATTR = 'data-chat-scroller'
+
+function chatScroller(element: Element): HTMLElement | null {
+  return element.closest<HTMLElement>(`[${CHAT_SCROLLER_ATTR}]`)
+}
+
+export interface FoldAnchor<T extends HTMLElement> {
+  /** The row that opens and shuts. */
+  headerRef: RefObject<T>
+  /**
+   * Called just before the row shuts: once it has, the view scrolls so that the row is at `clientY` (where the pointer
+   * was), or else where it was on screen, so that shutting a long panel from far down in it does not throw the view
+   * somewhere else.
+   */
+  keepPlace: (clientY?: number) => void
+}
+
+/** Keeps a row that shuts where it was on screen (see `FoldAnchor`). `open` is whether the row is open. */
+export function useFoldAnchor<T extends HTMLElement>(open: boolean): FoldAnchor<T> {
+  const headerRef = useRef<T>(null)
+  const wanted = useRef<number | null>(null)
+  const keepPlace = (clientY?: number): void => {
+    const header = headerRef.current
+    const scroller = header && chatScroller(header)
+    if (!header || !scroller) return
+    const box = scroller.getBoundingClientRect()
+    const height = header.getBoundingClientRect().height
+    const top = clientY === undefined ? header.getBoundingClientRect().top : clientY - height / 2
+    wanted.current = Math.min(Math.max(top, box.top), Math.max(box.top, box.bottom - height))
+  }
+  useLayoutEffect(() => {
+    const top = wanted.current
+    wanted.current = null
+    const header = headerRef.current
+    const scroller = header && chatScroller(header)
+    if (top === null || open || !header || !scroller) return
+    const moved = header.getBoundingClientRect().top - top
+    if (Math.abs(moved) >= 1) scroller.scrollTop += moved
+  }, [open])
+  return { headerRef, keepPlace }
+}
+
+/**
+ * Whether a header held at the top of the conversation (`position: sticky`) is stuck there now, the rest of its panel
+ * scrolled up under it. `sentinel` sits where the header would be if it did not stick. Only watched while `active`.
+ */
+export function useStuck(sentinel: RefObject<HTMLElement>, active: boolean): boolean {
+  const [stuck, setStuck] = useState(false)
+  useEffect(() => {
+    const element = sentinel.current
+    const root = element && chatScroller(element)
+    if (!active || !element || !root || typeof IntersectionObserver === 'undefined') {
+      setStuck(false)
+      return undefined
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry) return
+        const top = entry.rootBounds?.top ?? root.getBoundingClientRect().top
+        setStuck(!entry.isIntersecting && entry.boundingClientRect.top < top)
+      },
+      { root, threshold: [0, 1] },
+    )
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [sentinel, active])
+  return stuck
+}
 
 /** The mark in front of a row: its kind of work, a spinner while it runs, a warning when it went wrong. */
 export function Glyph({
@@ -103,6 +173,12 @@ export function ActivityRow({
 }: ActivityRowProps): JSX.Element {
   const [own, setOwn] = useState(defaultOpen)
   const open = controlled ?? own
+  const { headerRef, keepPlace } = useFoldAnchor<HTMLButtonElement>(open)
+  const toggle = (next: boolean, clientY?: number): void => {
+    if (!next) keepPlace(clientY)
+    onToggle?.(next)
+    if (controlled === undefined) setOwn(next)
+  }
   const expandable = detail !== undefined && detail !== null && detail !== false
   const active = status === 'running' || status === 'pending'
   const bad = failed || status === 'error'
@@ -143,13 +219,11 @@ export function ActivityRow({
     >
       {expandable ? (
         <button
+          ref={headerRef}
           type="button"
           aria-expanded={open}
           title={title}
-          onClick={() => {
-            onToggle?.(!open)
-            if (controlled === undefined) setOwn(!open)
-          }}
+          onClick={() => toggle(!open)}
           className={cn(base, 'transition-colors hover:bg-hover/70 focus-visible:bg-hover/70 focus-visible:outline-none')}
         >
           {line}
@@ -159,14 +233,49 @@ export function ActivityRow({
           {line}
         </div>
       )}
-      {expandable && open && <Rail>{detail}</Rail>}
+      {expandable && open && <Rail onCollapse={(clientY) => toggle(false, clientY)}>{detail}</Rail>}
     </div>
   )
 }
 
-/** What a row opens onto: hung from a line that runs down from the row's icon. */
-export function Rail({ children, tight = false }: { children: ReactNode; tight?: boolean }): JSX.Element {
-  return <div className={cn(RAIL, 'min-w-0 pb-1 pt-0.5', tight ? 'pl-1' : 'pl-[17px]')}>{children}</div>
+/**
+ * What a row opens onto: hung from a line that runs down from the row's icon. With `onCollapse`, the line shuts the row
+ * when clicked anywhere along it, so a long panel can be shut from where it is read; it lights up under the pointer.
+ */
+export function Rail({
+  children,
+  tight = false,
+  onCollapse,
+}: {
+  children: ReactNode
+  tight?: boolean
+  /** Shuts the row; given where the click was, so the row can land there. */
+  onCollapse?: (clientY: number) => void
+}): JSX.Element {
+  return (
+    <div className={cn(RAIL, 'relative min-w-0 pb-1 pt-0.5', tight ? 'pl-1' : 'pl-[17px]')}>
+      {onCollapse && (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label="Collapse"
+          title="Collapse"
+          onClick={(event) => {
+            event.stopPropagation()
+            onCollapse(event.clientY)
+          }}
+          className="group/rail absolute -left-[6.5px] bottom-0 top-0 z-[1] w-3 cursor-pointer focus-visible:outline-none"
+          data-testid="chat-rail-collapse"
+        >
+          <span
+            aria-hidden
+            className="absolute bottom-0 left-[5px] top-0 w-0.5 rounded-full bg-transparent transition-colors duration-100 group-hover/rail:bg-fg-muted"
+          />
+        </button>
+      )}
+      {children}
+    </div>
+  )
 }
 
 /** The panel that shows a tool's input, output or results. */
