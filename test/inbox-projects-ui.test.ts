@@ -649,7 +649,7 @@ describe('Inbox project icons in front of the titles', () => {
     expect(item.getAttribute('aria-checked')).toBe('false')
     expect(item.textContent).toContain('Project icons')
     const order = Array.from(document.body.querySelectorAll('[role="menuitemcheckbox"]')).map((entry) => entry.getAttribute('data-testid'))
-    expect(order).toEqual(['inbox-setting-changes', 'inbox-setting-working', 'inbox-setting-title-icons', 'inbox-setting-turn-changes', 'inbox-setting-command-names', 'inbox-setting-quick-switch'])
+    expect(order).toEqual(['inbox-setting-changes', 'inbox-setting-working', 'inbox-setting-title-icons', 'inbox-setting-quick-switch'])
 
     await act(async () => item.click())
     expect(titleIcon('ses_a')).not.toBeNull()

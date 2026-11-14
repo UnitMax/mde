@@ -1328,6 +1328,8 @@ rule across the conversation that opens onto the summary.
 **Compact mode.** A layout menu in the thread's header (not to be confused with compacting the context, above) (chat threads only; `CompactChatToggle`)
 chooses between three layouts: **Every step** (the normal layout), **Compact** and **Compact with text**. It is
 kept in `mde.inbox-compact-chat` (compact or not, off by default) and `mde.inbox-compact-text` (with text or not).
+Below the layouts, under **Compact layouts**, are the two switches that only matter there: **Changes after
+each turn** and **Command and tool names** (both described below).
 Compact lays the conversation out with less in it. Everything before the answer
 becomes a group however short, so a single read or a lone thought is one line
 ("Read 1 file") rather than a row. That includes the words the agent wrote on its way: models often think
@@ -1362,7 +1364,7 @@ git status +2" past three); they give way first when the line is short of room, 
 tooltip. A name is the program without its folder, the `NAME=value` settings and wrappers (`sudo`, `env`,
 `timeout`, …) in front of it, and with the subcommand for programs that have them (`git status`, `npm run
 build`); in a chain the first step that does more than set up (`cd`, `export`) is named (`commandName` in
-`lib/chat-tools.ts`). The **Command and tool names** switch in the Inbox gear menu (`mde.inbox-command-names`, on by
+`lib/chat-tools.ts`). The **Command and tool names** switch under Compact layouts in the layout menu (`mde.inbox-command-names`, on by
 default) turns this off. A stretch of a
 single step is not folded: it is drawn as that step's own row ("Ran npm test" rather than "Ran 1 command"),
 which takes the same room, says more and opens onto the step in one click; a file change in it still starts
@@ -1376,7 +1378,7 @@ panel of changes are as above.
 
 **Changes after each turn.** Since compact mode folds file changes into the line, it ends each finished turn
 with a panel of the files the turn changed (`ChatTurnChanges`, worked out by `turnChanges` in
-`lib/turn-changes.ts`; a setting in the Inbox gear menu, kept in `mde.inbox-turn-changes`, on by default).
+`lib/turn-changes.ts`; a switch under Compact layouts in the layout menu, kept in `mde.inbox-turn-changes`, on by default).
 A turn starts with a message from the person or a goal, as for the turn's time, and the panel goes under
 its last assistant message, above that time. It counts the completed `edit`, `write` and patch calls; a
 call that failed changed nothing, and a file removed by a shell command is not seen. Shut, the panel is one

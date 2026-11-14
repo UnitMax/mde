@@ -2,10 +2,12 @@ import { List, ListCollapse, TextQuote, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
@@ -40,6 +42,10 @@ export function CompactChatToggle(): JSX.Element {
   const showText = useInboxView((state) => state.compactText)
   const setCompact = useInboxView((state) => state.setCompactChat)
   const setShowText = useInboxView((state) => state.setCompactText)
+  const commandNames = useInboxView((state) => state.commandNames)
+  const setCommandNames = useInboxView((state) => state.setCommandNames)
+  const turnChanges = useInboxView((state) => state.turnChanges)
+  const setTurnChanges = useInboxView((state) => state.setTurnChanges)
   const layout: ChatLayout = !compact ? 'full' : showText ? 'compact-text' : 'compact'
   const current = LAYOUTS.find((option) => option.value === layout)!
   const Icon = current.icon
@@ -79,6 +85,33 @@ export function CompactChatToggle(): JSX.Element {
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
+        {/* What the compact layouts show besides their lines; Every step shows all of it anyway. */}
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>Compact layouts</DropdownMenuLabel>
+        <DropdownMenuCheckboxItem
+          data-testid="inbox-setting-turn-changes"
+          checked={turnChanges}
+          onCheckedChange={(checked) => setTurnChanges(checked === true)}
+        >
+          <span className="min-w-0">
+            <span className="block">Changes after each turn</span>
+            <span className="mt-0.5 block text-[11px] leading-snug text-fg-subtle">
+              A panel at the end of each turn lists the files it edited, wrote and deleted, with their diffs.
+            </span>
+          </span>
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem
+          data-testid="inbox-setting-command-names"
+          checked={commandNames}
+          onCheckedChange={(checked) => setCommandNames(checked === true)}
+        >
+          <span className="min-w-0">
+            <span className="block">Command and tool names</span>
+            <span className="mt-0.5 block text-[11px] leading-snug text-fg-subtle">
+              A folded line names the commands and tools it ran, such as echo, git status or mde.show_view.
+            </span>
+          </span>
+        </DropdownMenuCheckboxItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )

@@ -156,16 +156,4 @@ describe('Inbox display setting for the model quick switch', () => {
     await openMenu()
     expect(entry().getAttribute('aria-checked')).toBe('false')
   })
-
-  it('has a switch for the changes after each turn, on at first, that turns them off', async () => {
-    useInboxView.setState({ turnChanges: true })
-    await act(async () => root.render(createElement(InboxPanel)))
-    await openMenu()
-    const entry = (): HTMLElement => document.body.querySelector<HTMLElement>('[data-testid="inbox-setting-turn-changes"]')!
-    expect(entry().textContent).toContain('Changes after each turn')
-    expect(entry().getAttribute('aria-checked')).toBe('true')
-    await act(async () => entry().click())
-    expect(useInboxView.getState().turnChanges).toBe(false)
-    expect(localStorage.getItem('mde.inbox-turn-changes')).toBe('off')
-  })
 })

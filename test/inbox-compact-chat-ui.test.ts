@@ -106,6 +106,26 @@ afterEach(async () => {
 })
 
 describe('the layout menu', () => {
+  it('holds the switches of the compact layouts, which turn their changes panel and names off', async () => {
+    useInboxView.setState({ turnChanges: true, commandNames: true })
+    await render()
+    const open = () => act(async () => { q(TOGGLE)!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+    const entry = (id: string): HTMLElement => document.body.querySelector<HTMLElement>(`[data-testid="${id}"]`)!
+    await open()
+    expect(entry('inbox-setting-turn-changes').textContent).toContain('Changes after each turn')
+    expect(entry('inbox-setting-turn-changes').getAttribute('aria-checked')).toBe('true')
+    await act(async () => entry('inbox-setting-turn-changes').click())
+    expect(useInboxView.getState().turnChanges).toBe(false)
+    expect(localStorage.getItem('mde.inbox-turn-changes')).toBe('off')
+
+    await open()
+    expect(entry('inbox-setting-command-names').textContent).toContain('Command and tool names')
+    await act(async () => entry('inbox-setting-command-names').click())
+    expect(useInboxView.getState().commandNames).toBe(false)
+    expect(localStorage.getItem('mde.inbox-command-names')).toBe('off')
+    useInboxView.setState({ turnChanges: true, commandNames: true })
+  })
+
   it('is in the header of a conversation, showing every step until another layout is chosen', async () => {
     await render()
     const toggle = q(`[data-testid="inbox-thread-view"] ${TOGGLE}`)!

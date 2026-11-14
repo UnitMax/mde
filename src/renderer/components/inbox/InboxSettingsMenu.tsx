@@ -18,10 +18,6 @@ export function InboxSettingsMenu(): JSX.Element {
   const setWorkingSection = useInboxView((state) => state.setWorkingSection)
   const titleIcons = useInboxView((state) => state.titleIcons)
   const setTitleIcons = useInboxView((state) => state.setTitleIcons)
-  const commandNames = useInboxView((state) => state.commandNames)
-  const setCommandNames = useInboxView((state) => state.setCommandNames)
-  const turnChanges = useInboxView((state) => state.turnChanges)
-  const setTurnChanges = useInboxView((state) => state.setTurnChanges)
   const modelQuickSwitch = useInboxView((state) => state.modelQuickSwitch)
   const setModelQuickSwitch = useInboxView((state) => state.setModelQuickSwitch)
   return (
@@ -72,32 +68,6 @@ export function InboxSettingsMenu(): JSX.Element {
             <span className="block">Project icons</span>
             <span className="mt-0.5 block text-[11px] leading-snug text-fg-subtle">
               Shows each project&rsquo;s icon in front of the thread title, instead of beside the project name.
-            </span>
-          </span>
-        </DropdownMenuCheckboxItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel>Conversation</DropdownMenuLabel>
-        <DropdownMenuCheckboxItem
-          data-testid="inbox-setting-turn-changes"
-          checked={turnChanges}
-          onCheckedChange={(checked) => setTurnChanges(checked === true)}
-        >
-          <span className="min-w-0">
-            <span className="block">Changes after each turn</span>
-            <span className="mt-0.5 block text-[11px] leading-snug text-fg-subtle">
-              In compact mode, a panel at the end of each turn lists the files it edited, wrote and deleted, with their diffs.
-            </span>
-          </span>
-        </DropdownMenuCheckboxItem>
-        <DropdownMenuCheckboxItem
-          data-testid="inbox-setting-command-names"
-          checked={commandNames}
-          onCheckedChange={(checked) => setCommandNames(checked === true)}
-        >
-          <span className="min-w-0">
-            <span className="block">Command and tool names</span>
-            <span className="mt-0.5 block text-[11px] leading-snug text-fg-subtle">
-              In compact mode, a folded line names the commands and tools it ran, such as echo, git status or mde.show_view.
             </span>
           </span>
         </DropdownMenuCheckboxItem>
