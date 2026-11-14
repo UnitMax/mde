@@ -404,7 +404,6 @@ describe('Inbox sidebar with projects', () => {
         thread('ses_gone', { folderId: 'fld_removed', directory: '/home/me/removed' }),
       ],
       selectedInboxThreadId: null,
-      inboxMarkedUnread: {},
       inboxCues: {},
       activeWorkspaceView: 'inbox',
     })
@@ -534,7 +533,6 @@ describe('Inbox project icons in front of the titles', () => {
         thread('ses_run', { folderId: 'fld_docs', directory: '/home/me/docs', status: 'working', workingSince: Date.now() - 5_000 }),
       ],
       selectedInboxThreadId: null,
-      inboxMarkedUnread: {},
       inboxCues: {},
       activeWorkspaceView: 'inbox',
     })

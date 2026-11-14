@@ -224,7 +224,6 @@ describe('the Inbox panel narrowed to a project', () => {
       platform: { platform: 'darwin', isWindows: false },
       inboxThreads: threads,
       selectedInboxThreadId: null,
-      inboxMarkedUnread: {},
       inboxCues: {},
       activeWorkspaceView: 'inbox',
     })

@@ -82,7 +82,6 @@ beforeEach(() => {
   useWorkspace.setState({
     inboxThreads: [thread()],
     selectedInboxThreadId: 'ses_one',
-    inboxMarkedUnread: {},
     inboxCues: {},
     activeWorkspaceView: 'inbox',
     fileTreeCollapsed: false,

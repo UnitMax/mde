@@ -52,7 +52,6 @@ describe('Inbox snooze', () => {
         thread({ id: 'ses_woke', title: 'Back again', woke: true, readAt: 0 }),
       ],
       selectedInboxThreadId: null,
-      inboxMarkedUnread: {},
       inboxCues: {},
       activeWorkspaceView: 'inbox',
     })

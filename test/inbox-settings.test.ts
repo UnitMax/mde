@@ -39,7 +39,6 @@ describe('Inbox display setting for Git changes', () => {
       platform: { platform: 'darwin', isWindows: false },
       inboxThreads: [thread],
       selectedInboxThreadId: null,
-      inboxMarkedUnread: {},
       inboxCues: {},
       activeWorkspaceView: 'inbox',
     })
@@ -118,7 +117,7 @@ describe('Inbox display setting for the model quick switch', () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     vi.stubGlobal('IntersectionObserver', undefined)
     vi.stubGlobal('api', { inbox: { changes, setRead: vi.fn(async () => null), setArchived: vi.fn(async () => null) } })
-    useWorkspace.setState({ platform: { platform: 'darwin', isWindows: false }, inboxThreads: [thread], selectedInboxThreadId: null, inboxMarkedUnread: {}, inboxCues: {}, activeWorkspaceView: 'inbox' })
+    useWorkspace.setState({ platform: { platform: 'darwin', isWindows: false }, inboxThreads: [thread], selectedInboxThreadId: null, inboxCues: {}, activeWorkspaceView: 'inbox' })
     useInboxChanges.setState({ entries: {}, selectedPath: null, tab: 'files', sidebarChanges: false })
     useInboxView.setState({ modelQuickSwitch: true })
     container = document.createElement('div')

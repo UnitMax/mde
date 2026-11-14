@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { InboxLockedNotice, useInboxLock } from '@/components/InboxPanel'
 import { ChatThreadView } from '@/components/inbox/ChatThreadView'
 import { ThreadHeader } from '@/components/inbox/ThreadHeader'
@@ -17,17 +16,13 @@ export function InboxThreadView(): JSX.Element {
   const markSeen = useWorkspace((state) => state.markOpenInboxThreadSeen)
   const thread = threads.find((item) => item.id === selectedId) ?? null
 
-  // Coming back to the window counts as seeing what the open thread did meanwhile.
-  useEffect(() => {
-    window.addEventListener('focus', markSeen)
-    return () => window.removeEventListener('focus', markSeen)
-  }, [markSeen])
-
   if (lock) return <InboxLockedNotice />
   if (!thread) return <NewThreadView />
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    // Something new in the open thread stays unread until the person acts in it: a click anywhere in the thread,
+    // or a key (typing a reply). Capture, so a terminal or editor that stops the event still counts.
+    <div className="flex h-full min-h-0 flex-col" onPointerDownCapture={markSeen} onKeyDownCapture={markSeen}>
       <ThreadHeader thread={thread} />
       {thread.mode === 'terminal'
         ? <TerminalThreadView key={thread.id} thread={thread} />

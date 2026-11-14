@@ -86,7 +86,6 @@ beforeEach(() => {
     wslAvailable: true,
     inboxThreads: [],
     selectedInboxThreadId: null,
-    inboxMarkedUnread: {},
     inboxCues: {},
     activeWorkspaceView: 'inbox',
     settingsDialog: { open: false, section: 'appearance' }
@@ -397,17 +396,19 @@ describe('Inbox', () => {
     expect(panel.querySelector('[data-testid="inbox-thread-cue-ses_one"]')).not.toBe(first)
   })
 
-  it('counts the open thread as seen when the window comes back, unless it was marked unread by hand', async () => {
+  it('keeps the open thread unread when the window comes back, until a click or a key in the thread', async () => {
     useWorkspace.setState({ inboxThreads: [thread()], selectedInboxThreadId: 'ses_one' })
-    await render(createElement(InboxThreadView))
-    expect(setRead).not.toHaveBeenCalled()
+    const view = await render(createElement(InboxThreadView))
     await act(async () => { window.dispatchEvent(new Event('focus')) })
+    expect(setRead).not.toHaveBeenCalled()
+
+    const inside = view.firstElementChild!.lastElementChild!
+    await act(async () => { inside.dispatchEvent(new Event('pointerdown', { bubbles: true })) })
     expect(setRead).toHaveBeenCalledWith({ id: 'ses_one', read: true })
 
     setRead.mockClear()
-    useWorkspace.setState({ inboxMarkedUnread: { ses_one: true } })
-    await act(async () => { window.dispatchEvent(new Event('focus')) })
-    expect(setRead).not.toHaveBeenCalled()
+    await act(async () => { inside.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true })) })
+    expect(setRead).toHaveBeenCalledWith({ id: 'ses_one', read: true })
   })
 
   it('filters and searches the list', async () => {

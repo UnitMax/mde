@@ -50,7 +50,7 @@ beforeEach(() => {
   })
   changes.mockReset().mockResolvedValue(value)
   changeDiff.mockReset().mockResolvedValue(diff)
-  useWorkspace.setState({ inboxThreads: [thread], selectedInboxThreadId: thread.id, inboxMarkedUnread: {}, inboxCues: {}, activeWorkspaceView: 'inbox', fileTreeCollapsed: false, openFiles: {} })
+  useWorkspace.setState({ inboxThreads: [thread], selectedInboxThreadId: thread.id, inboxCues: {}, activeWorkspaceView: 'inbox', fileTreeCollapsed: false, openFiles: {} })
   useInboxChanges.setState({ entries: {}, selectedPath: null, tab: 'files' })
   container = document.createElement('div')
   document.body.append(container)

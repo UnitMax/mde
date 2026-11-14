@@ -451,15 +451,16 @@ box) sets what was typed aside and shows a blank page, without leaving it; a not
 says where the draft went and fades after four seconds. It is offered only on the new-thread page and
 only once there is text or a file.
 
-Opening a thread counts it as read, and so does something new happening in the thread you are
-looking at (the Inbox showing and the window in front), as with an open mail. Since that leaves no
-dot to see, the row glows and its status chip, in the list and in the thread's header, pops for
-about two seconds (`inboxCues` in the workspace store, `.inbox-cue` in `index.css`; with reduced
-motion only the glow remains). Only new activity counts: something that happens while the window is
-in the background leaves the thread unread until the window comes back to the front. A thread you
-mark unread by hand stays unread, even while it is the open one and after the window loses and
-regains focus, until you open it again (its row, or returning to the Inbox) or something new
-happens in it (`inboxMarkedUnread`).
+Opening a thread counts it as read (clicking its row, even when it is already the open one, or
+"Mark as read" in its context menu). Something new happening in the thread you are looking at does
+not: it stays unread, with its dot, bold title and taskbar count, until you act in the thread, by
+clicking anywhere in it or pressing a key there such as typing a reply (`onPointerDownCapture` and
+`onKeyDownCapture` on the thread view call `markOpenInboxThreadSeen`). Coming back to the window and
+scrolling do not count, so a reply that lands while you look elsewhere is not lost. While the window
+is in front, new activity in the open thread also makes its row glow and its status chip, in the
+list and in the thread's header, pop for about two seconds (`inboxCues` in the workspace store,
+`.inbox-cue` in `index.css`; with reduced motion only the glow remains). A thread marked unread by
+hand stays unread the same way.
 
 The Inbox talks to OpenCode's background service directly (see Inbox chat). It is locked, with an explanation, anywhere MDE
 cannot reach that service: everywhere except macOS and Windows with WSL. The main area shows the

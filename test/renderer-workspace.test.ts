@@ -598,7 +598,6 @@ describe('renderer workspace event bridge', () => {
         activeWorkspaceView: 'inbox',
         selectedInboxThreadId: 'ses_one',
         inboxThreads: [inboxThread({ lastActivityAt: 200, readAt: 200 })],
-        inboxMarkedUnread: {},
         inboxCues: {}
       })
     }
@@ -618,16 +617,27 @@ describe('renderer workspace event bridge', () => {
       vi.stubGlobal('window', { api })
     })
 
-    it('counts new activity as seen straight away, and cues it instead of leaving a dot', async () => {
+    it('leaves new activity unread and cues it, until the person acts in the thread', async () => {
       useWorkspace.getState().upsertInboxThread(inboxThread({ lastActivityAt: 300, readAt: 200, status: 'completed' }))
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      expect(readCalls(true)).toBe(0)
+      expect(thread().readAt).toBe(200)
+      expect(Date.now() - useWorkspace.getState().inboxCues.ses_one!).toBeLessThan(5_000)
+
+      useWorkspace.getState().markOpenInboxThreadSeen()
       await vi.waitFor(() => expect(thread().readAt).toBe(300))
       expect(readCalls(true)).toBe(1)
-      expect(Date.now() - useWorkspace.getState().inboxCues.ses_one!).toBeLessThan(5_000)
-      // The reply that makes it read is not new activity: no second cue, no second request.
-      const cue = useWorkspace.getState().inboxCues.ses_one
-      await new Promise((resolve) => setTimeout(resolve, 5))
-      expect(useWorkspace.getState().inboxCues.ses_one).toBe(cue)
+      // Acting again on a read thread asks for nothing.
+      useWorkspace.getState().markOpenInboxThreadSeen()
       expect(readCalls(true)).toBe(1)
+    })
+
+    it('does not cue activity that happens while the window is in the background', async () => {
+      focused(false)
+      useWorkspace.getState().upsertInboxThread(inboxThread({ lastActivityAt: 300, readAt: 200 }))
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      expect(readCalls(true)).toBe(0)
+      expect(useWorkspace.getState().inboxCues).toEqual({})
     })
 
     it('keeps new activity unread while only the mini Inbox is visible', async () => {
@@ -643,48 +653,20 @@ describe('renderer workspace event bridge', () => {
       await vi.waitFor(() => expect(thread().readAt).toBe(300))
     })
 
-    it('keeps a thread marked unread by hand unread while it stays open', async () => {
+    it('keeps a thread marked unread by hand unread, until it is opened again or acted in', async () => {
       await useWorkspace.getState().setInboxThreadRead('ses_one', false)
       expect(thread().readAt).toBe(0)
-      await new Promise((resolve) => setTimeout(resolve, 5))
-      expect(thread().readAt).toBe(0)
-      expect(readCalls(true)).toBe(0)
-      expect(useWorkspace.getState().inboxMarkedUnread).toEqual({ ses_one: true })
-      expect(useWorkspace.getState().inboxCues).toEqual({})
-    })
-
-    it('does not let coming back to the window clear a thread marked unread by hand', async () => {
-      await useWorkspace.getState().setInboxThreadRead('ses_one', false)
-      useWorkspace.getState().markOpenInboxThreadSeen()
-      await new Promise((resolve) => setTimeout(resolve, 5))
-      expect(readCalls(true)).toBe(0)
-      expect(thread().readAt).toBe(0)
-    })
-
-    it('reads it again when it is opened again, or when something new happens in it', async () => {
-      await useWorkspace.getState().setInboxThreadRead('ses_one', false)
-      useWorkspace.getState().selectInboxThread('ses_one')
-      await vi.waitFor(() => expect(thread().readAt).toBe(200))
-      expect(useWorkspace.getState().inboxMarkedUnread).toEqual({})
-
-      await useWorkspace.getState().setInboxThreadRead('ses_one', false)
       useWorkspace.getState().upsertInboxThread(inboxThread({ lastActivityAt: 400, readAt: 0, status: 'error' }))
-      await vi.waitFor(() => expect(thread().readAt).toBe(400))
-      expect(useWorkspace.getState().inboxMarkedUnread).toEqual({})
-      expect(useWorkspace.getState().inboxCues.ses_one).toBeDefined()
-    })
-
-    it('leaves activity that happens while the window is in the background unread, until it comes back', async () => {
-      focused(false)
-      useWorkspace.getState().upsertInboxThread(inboxThread({ lastActivityAt: 300, readAt: 200 }))
       await new Promise((resolve) => setTimeout(resolve, 5))
+      expect(thread().readAt).toBe(0)
       expect(readCalls(true)).toBe(0)
-      expect(thread().readAt).toBe(200)
-      expect(useWorkspace.getState().inboxCues).toEqual({})
 
-      focused(true)
+      useWorkspace.getState().selectInboxThread('ses_one')
+      await vi.waitFor(() => expect(thread().readAt).toBe(400))
+
+      await useWorkspace.getState().setInboxThreadRead('ses_one', false)
       useWorkspace.getState().markOpenInboxThreadSeen()
-      await vi.waitFor(() => expect(thread().readAt).toBe(300))
+      await vi.waitFor(() => expect(thread().readAt).toBe(400))
     })
 
     it('only counts the open thread, and only in the Inbox', async () => {
@@ -701,10 +683,9 @@ describe('renderer workspace event bridge', () => {
       expect(readCalls(true)).toBe(0)
     })
 
-    it('forgets a deleted thread\'s marker and cue', async () => {
-      useWorkspace.setState({ inboxMarkedUnread: { ses_one: true }, inboxCues: { ses_one: Date.now() } })
+    it('forgets a deleted thread\'s cue', async () => {
+      useWorkspace.setState({ inboxCues: { ses_one: Date.now() } })
       await useWorkspace.getState().removeInboxThread('ses_one')
-      expect(useWorkspace.getState().inboxMarkedUnread).toEqual({})
       expect(useWorkspace.getState().inboxCues).toEqual({})
     })
   })

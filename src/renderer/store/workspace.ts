@@ -73,8 +73,6 @@ interface WorkspaceState {
   /** MDE's own record of OpenCode threads, newest activity first. */
   inboxThreads: InboxThread[]
   selectedInboxThreadId: string | null
-  /** Threads marked unread by hand and not opened since; they stay unread while open, even after a refocus. */
-  inboxMarkedUnread: Record<string, true>
   /** When something new last happened in a thread being read, by thread; drives a brief cue. */
   inboxCues: Record<string, number>
   settingsDialog: SettingsDialogState
@@ -142,7 +140,7 @@ interface WorkspaceState {
   closeOpenCodeConfig: () => void
   selectInboxThread: (id: string | null) => void
   setInboxThreadRead: (id: string, read: boolean) => Promise<void>
-  /** Counts the open thread as seen when the window comes back to the front, unless it was marked unread by hand. */
+  /** Counts the open thread as read; called when the person clicks or types in it. */
   markOpenInboxThreadSeen: () => void
   setInboxThreadArchived: (id: string, archived: boolean) => Promise<void>
   setInboxThreadPinned: (id: string, pinned: boolean) => Promise<void>
@@ -169,7 +167,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   exits: {},
   inboxThreads: [],
   selectedInboxThreadId: null,
-  inboxMarkedUnread: {},
   inboxCues: {},
   settingsDialog: { open: false, section: 'appearance' },
   opencodeConfigDialog: { open: false },
@@ -515,18 +512,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   },
 
   setInboxThreadRead: async (id, read) => {
-    // Marking a thread unread has to survive it being the open one: it stays unread until it is opened again.
-    set((state) => {
-      const { [id]: _released, ...others } = state.inboxMarkedUnread
-      return { inboxMarkedUnread: read ? others : { ...others, [id]: true } }
-    })
     const thread = await window.api.inbox.setRead({ id, read })
     if (thread) get().upsertInboxThread(thread)
   },
 
   markOpenInboxThreadSeen: () => {
-    const { activeWorkspaceView, windowMode, selectedInboxThreadId, inboxThreads, inboxMarkedUnread } = get()
-    if (windowMode !== 'normal' || activeWorkspaceView !== 'inbox' || !selectedInboxThreadId || inboxMarkedUnread[selectedInboxThreadId]) return
+    const { activeWorkspaceView, windowMode, selectedInboxThreadId, inboxThreads } = get()
+    if (windowMode !== 'normal' || activeWorkspaceView !== 'inbox' || !selectedInboxThreadId) return
     const thread = inboxThreads.find((item) => item.id === selectedInboxThreadId)
     if (thread && isInboxThreadUnread(thread)) void get().setInboxThreadRead(thread.id, true)
   },
@@ -559,13 +551,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     get().clearExit(terminalId)
     get().setTerminalDirectory({ terminalId, directory: null })
     set((state) => {
-      const { [id]: _marked, ...inboxMarkedUnread } = state.inboxMarkedUnread
       const { [id]: _cue, ...inboxCues } = state.inboxCues
       const { [id]: _highlight, ...inboxTerminalHighlights } = state.inboxTerminalHighlights
       return {
         inboxThreads: state.inboxThreads.filter((thread) => thread.id !== id),
         selectedInboxThreadId: state.selectedInboxThreadId === id ? null : state.selectedInboxThreadId,
-        inboxMarkedUnread,
         inboxCues,
         inboxTerminalHighlights,
       }
@@ -585,11 +575,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         },
       } : {}),
     })
-    // New activity on the thread being read is seen immediately, like an open mail. Only new activity
-    // counts: a thread that was just marked unread is still the open one, and has to stay unread.
-    const activity = !previous || thread.lastActivityAt > previous.lastActivityAt
+    // New activity on the thread being read stays unread until the person clicks or types in it (or opens it
+    // again), so a reply that lands while they look elsewhere is not lost. It is also cued, for a moment.
     if (
-      activity &&
+      previous &&
+      thread.lastActivityAt > previous.lastActivityAt &&
       state.windowMode === 'normal' &&
       state.activeWorkspaceView === 'inbox' &&
       state.selectedInboxThreadId === thread.id &&
@@ -597,9 +587,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       typeof document !== 'undefined' &&
       document.hasFocus()
     ) {
-      void get().setInboxThreadRead(thread.id, true)
-      // Nothing is left marking it unread, so the list and header say, briefly, that something happened.
-      if (previous) set((current) => ({ inboxCues: { ...current.inboxCues, [thread.id]: Date.now() } }))
+      set((current) => ({ inboxCues: { ...current.inboxCues, [thread.id]: Date.now() } }))
     }
   },
 

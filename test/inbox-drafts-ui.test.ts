@@ -139,7 +139,6 @@ describe('Inbox Drafts section', () => {
       platform: { platform: 'darwin', isWindows: false },
       inboxThreads: [thread()],
       selectedInboxThreadId: 'ses_one',
-      inboxMarkedUnread: {},
       inboxCues: {},
       activeWorkspaceView: 'inbox',
     })
