@@ -1315,10 +1315,12 @@ with every streamed token. Once the thought is done the row says "Thought" and t
 Notes (agent switches, errors, goals) are quiet rows of the same kind, and a finished compaction is a
 rule across the conversation that opens onto the summary.
 
-**Thread header.** One row of 44 px (`ThreadHeader`), so the conversation gets the height. The title is the only strong text; double-clicking it opens the Rename dialog (shared with the sidebar's, `ThreadRename`). Beside it, in muted type: a status mark only while the thread is working, needs input or failed (never "Done", which is what a thread normally is and the sidebar shows), the project's name and icon (the tooltip has the full path and, in WSL, the distro, as the title's tooltip has the last activity), the branch, and for a fork where it came from. These three drop out as the pane narrows, by container query on the header: the fork mark first, then the branch, then the folder; with a long title they are clipped before the title is shortened. The model is not in the header: the composer's model chip shows and changes it. At the end are **Open**, the compact toggle (chat threads only) and the thread menu. Errors from regenerating the title, forking or copying are shown in a line under the row.
+**Thread header.** One row of 44 px (`ThreadHeader`), so the conversation gets the height. The title is the only strong text; double-clicking it opens the Rename dialog (shared with the sidebar's, `ThreadRename`). Beside it, in muted type: a status mark only while the thread is working, needs input or failed (never "Done", which is what a thread normally is and the sidebar shows), the project's name and icon (the tooltip has the full path and, in WSL, the distro, as the title's tooltip has the last activity), the branch, and for a fork where it came from. These three drop out as the pane narrows, by container query on the header: the fork mark first, then the branch, then the folder; with a long title they are clipped before the title is shortened. The model is not in the header: the composer's model chip shows and changes it. At the end are **Open**, the layout menu (chat threads only) and the thread menu. Errors from regenerating the title, forking or copying are shown in a line under the row.
 
-**Compact mode.** A switch in the thread's header (not to be confused with compacting the context, above) (chat threads only; `CompactChatToggle`,
-kept in `mde.inbox-compact-chat`, off by default) lays the conversation out with less in it. Everything before the answer
+**Compact mode.** A layout menu in the thread's header (not to be confused with compacting the context, above) (chat threads only; `CompactChatToggle`)
+chooses between three layouts: **Every step** (the normal layout), **Compact** and **Compact with text**. It is
+kept in `mde.inbox-compact-chat` (compact or not, off by default) and `mde.inbox-compact-text` (with text or not).
+Compact lays the conversation out with less in it. Everything before the answer
 becomes a group however short, so a single read or a lone thought is one line
 ("Read 1 file") rather than a row. That includes the words the agent wrote on its way: models often think
 out loud in their text, so any text before the turn's last piece of work (a tool call or a thought) is a
@@ -1345,8 +1347,13 @@ edits, patches, subagents and unknown tools. Opening the group shows their full
 views: file changes start shut with their counts, and consecutive
 subagents from the same step retain their grouped cards and model labels. Active permission and
 question requests remain outside the activity group so they can be answered. The summary is worked
-out from the tool calls with no model involved ("Thought, wrote 1 file and ran 3 commands"). Turning
-the switch off restores the normal layout.
+out from the tool calls with no model involved ("Thought, wrote 1 file and ran 3 commands"). Choosing
+Every step restores the normal layout.
+
+**Compact with text.** The third layout keeps compact mode from folding the agent's words: every text it
+writes is drawn as it is, wherever it falls, and ends the stretch before it, so only the thoughts and tool
+calls between two texts fold into a line (`compactFlow` with `showText`). Questions, the answer and the
+panel of changes are as above.
 
 **Changes after each turn.** Since compact mode folds file changes into the line, it ends each finished turn
 with a panel of the files the turn changed (`ChatTurnChanges`, worked out by `turnChanges` in

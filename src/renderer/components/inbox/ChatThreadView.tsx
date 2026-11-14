@@ -387,12 +387,13 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   // The compact layout folds the activity of the agent's steps together, across steps. A step whose layout did not
   // change keeps the one it had, so that streaming a new step does not draw all the earlier ones again.
   const compact = useInboxView((view) => view.compactChat)
+  const showText = useInboxView((view) => view.compactText)
   const lastPlans = useRef<ReadonlyMap<string, RenderBlock[]>>()
   const plans = useMemo(() => {
-    const next = compact ? compactPlans(messages, running ? lastAssistantId : undefined, lastPlans.current) : undefined
+    const next = compact ? compactPlans(messages, running ? lastAssistantId : undefined, lastPlans.current, { showText }) : undefined
     lastPlans.current = next
     return next
-  }, [compact, messages, running, lastAssistantId])
+  }, [compact, showText, messages, running, lastAssistantId])
   // In compact mode, each finished turn ends with the files it changed, which its compact line folds away.
   const showTurnChanges = useInboxView((view) => view.turnChanges)
   const changesByTurn = useMemo(

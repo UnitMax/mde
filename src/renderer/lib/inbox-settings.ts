@@ -10,6 +10,7 @@ export const INBOX_SNOOZED_OPEN_STORAGE_KEY = 'mde.inbox-snoozed-open'
 export const INBOX_TITLE_ICONS_STORAGE_KEY = 'mde.inbox-title-icons'
 export const INBOX_COMPACT_CHAT_STORAGE_KEY = 'mde.inbox-compact-chat'
 export const INBOX_TURN_CHANGES_STORAGE_KEY = 'mde.inbox-turn-changes'
+export const INBOX_COMPACT_TEXT_STORAGE_KEY = 'mde.inbox-compact-text'
 export const INBOX_MODEL_QUICK_SWITCH_STORAGE_KEY = 'mde.inbox-model-quick-switch'
 export const INBOX_PROJECT_FILTER_STORAGE_KEY = 'mde.inbox-project-filter'
 export const INBOX_SIDEBAR_WIDTH_STORAGE_KEY = 'mde.inbox-sidebar-width'
@@ -109,6 +110,15 @@ export function getInboxTurnChanges(): boolean {
 
 export function saveInboxTurnChanges(on: boolean): void {
   writeSwitch(INBOX_TURN_CHANGES_STORAGE_KEY, on)
+}
+
+/** Whether compact mode draws the text the agent writes between its steps instead of folding it. Off unless turned on. */
+export function getInboxCompactText(): boolean {
+  return readSwitch(INBOX_COMPACT_TEXT_STORAGE_KEY)
+}
+
+export function saveInboxCompactText(on: boolean): void {
+  writeSwitch(INBOX_COMPACT_TEXT_STORAGE_KEY, on)
 }
 
 /** Whether the favorite models are offered as buttons above the message box. On unless turned off. */

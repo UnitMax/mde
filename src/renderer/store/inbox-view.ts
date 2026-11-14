@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import {
   clampInboxSidebarWidth,
   getInboxCompactChat,
+  getInboxCompactText,
   getInboxDraftsCollapsed,
   getInboxModelQuickSwitch,
   getInboxProjectFilter,
@@ -12,6 +13,7 @@ import {
   getInboxWorkingCollapsed,
   getInboxWorkingSection,
   saveInboxCompactChat,
+  saveInboxCompactText,
   saveInboxDraftsCollapsed,
   saveInboxModelQuickSwitch,
   saveInboxProjectFilter,
@@ -39,6 +41,12 @@ interface Store {
    */
   compactChat: boolean
   setCompactChat: (on: boolean) => void
+  /**
+   * In compact mode, the text the agent writes between its steps is drawn as it is instead of folded into the line;
+   * thoughts and tool calls still fold (a preference, off by default).
+   */
+  compactText: boolean
+  setCompactText: (on: boolean) => void
   /**
    * In compact mode, a panel at the end of each turn lists the files the turn changed, with its diffs a click away
    * (a preference, on by default).
@@ -95,6 +103,11 @@ export const useInboxView = create<Store>((set) => ({
   setCompactChat: (on) => {
     saveInboxCompactChat(on)
     set({ compactChat: on })
+  },
+  compactText: getInboxCompactText(),
+  setCompactText: (on) => {
+    saveInboxCompactText(on)
+    set({ compactText: on })
   },
   turnChanges: getInboxTurnChanges(),
   setTurnChanges: (on) => {

@@ -524,6 +524,32 @@ describe('the compact layout', () => {
     expect(draw([step('a', [thought(), text('The answer.')])])).toEqual({ a: ['group:1', 'text'] })
   })
 
+  describe('with the text between steps shown', () => {
+    const drawText = (steps: FlowStep[]): Record<string, string[]> =>
+      Object.fromEntries(
+        [...compactFlow(steps, { showText: true })].map(([id, blocks]) => [
+          id,
+          blocks.map((block) => block.kind === 'activity' ? `group:${block.items.length}` : block.kind === 'part' && block.part.kind === 'tool' ? block.part.id : block.kind === 'part' ? block.part.kind : block.kind),
+        ]),
+      )
+
+    it('draws every text the agent writes, and folds only the thoughts and tool calls between them', () => {
+      expect(drawText([step('a', [text('I will look.'), thought(), read('r1'), text('Now the fix.'), shell('s1'), edit('e1'), text('All done.')])]))
+        .toEqual({ a: ['text', 'group:2', 'text', 'group:2', 'text'] })
+      expect(drawText([step('a', [text('Hmm.'), thought()])])).toEqual({ a: ['text', 'group:1'] })
+    })
+
+    it('still runs a stretch with no words in it on across the steps', () => {
+      expect(drawText([step('a', [shell('s1')]), step('b', [read('r1'), thought()]), step('c', [text('Found it.')]), step('d', [read('r2')])]))
+        .toEqual({ a: ['group:3'], b: [], c: ['text'], d: ['group:1'] })
+    })
+
+    it('keeps the live line at the end of what the agent is doing', () => {
+      const flow = compactFlow([step('a', [text('Looking.'), read('r1')], true)], { showText: true })
+      expect(flow.get('a')!.map((block) => block.kind === 'activity' ? block.live : 'text')).toEqual(['text', true])
+    })
+  })
+
   it('keeps file changes and subagents inside the same stretch of activity', () => {
     expect(draw([step('a', [read('r1'), text('Fixing it.'), edit('e1'), shell('s1'), text('Done.')])])).toEqual({ a: ['group:4', 'text'] })
     expect(draw([step('a', [text('Fixing it.'), edit('e1'), text('Done.')])])).toEqual({ a: ['group:2', 'text'] })

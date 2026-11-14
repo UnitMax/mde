@@ -67,6 +67,14 @@ const all = (selector: string): HTMLElement[] => Array.from(container.querySelec
 const text = (element: Element | null | undefined): string => (element?.textContent ?? '').replace(/\s+/g, ' ').trim()
 const click = (element: HTMLElement | null): Promise<void> => act(async () => element!.click())
 
+/** Opens the layout menu in the thread's header and chooses a layout from it. */
+async function chooseLayout(layout: 'full' | 'compact' | 'compact-text'): Promise<void> {
+  await act(async () => { q(TOGGLE)!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+  const item = document.body.querySelector<HTMLElement>(`[data-testid="chat-layout-${layout}"]`)
+  expect(item).not.toBeNull()
+  await act(async () => item!.click())
+}
+
 async function render(): Promise<void> {
   await act(async () => root.render(createElement(InboxThreadView)))
   await vi.waitFor(() => expect(q('[data-testid="inbox-thread-view"]')).not.toBeNull())
@@ -75,8 +83,8 @@ async function render(): Promise<void> {
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('api', api)
-  try { localStorage.removeItem(INBOX_COMPACT_CHAT_STORAGE_KEY) } catch { /* the default is off */ }
-  useInboxView.setState({ compactChat: false })
+  try { localStorage.removeItem(INBOX_COMPACT_CHAT_STORAGE_KEY); localStorage.removeItem('mde.inbox-compact-text') } catch { /* the default is off */ }
+  useInboxView.setState({ compactChat: false, compactText: false })
   page = { messages: turn(), older: null, running: false }
   useInboxChat.setState({ folders: [], composer: {}, foldersLoaded: true, options: {}, threads: {}, recent: [], titleRegenerations: {} })
   useWorkspace.setState({
@@ -97,12 +105,12 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-describe('the compact mode switch', () => {
-  it('is in the header of a conversation, off until it is turned on', async () => {
+describe('the layout menu', () => {
+  it('is in the header of a conversation, showing every step until another layout is chosen', async () => {
     await render()
     const toggle = q(`[data-testid="inbox-thread-view"] ${TOGGLE}`)!
-    expect(toggle.getAttribute('aria-label')).toBe('Compact mode')
-    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    expect(toggle.getAttribute('aria-label')).toBe('Layout: Every step')
+    expect(toggle.dataset.layout).toBe('full')
   })
 
   it('is not offered for a thread that is a terminal', async () => {
@@ -112,18 +120,26 @@ describe('the compact mode switch', () => {
     expect(q(TOGGLE)).toBeNull()
   })
 
-  it('turns on and off, and remembers what it was left at', async () => {
+  it('offers the three layouts, and remembers the one chosen', async () => {
     await render()
-    await click(q(TOGGLE))
-    expect(q(TOGGLE)!.getAttribute('aria-pressed')).toBe('true')
-    expect(useInboxView.getState().compactChat).toBe(true)
+    await chooseLayout('compact')
+    expect(q(TOGGLE)!.dataset.layout).toBe('compact')
+    expect(useInboxView.getState()).toMatchObject({ compactChat: true, compactText: false })
     expect(localStorage.getItem(INBOX_COMPACT_CHAT_STORAGE_KEY)).toBe('on')
     expect(getInboxCompactChat()).toBe(true)
 
-    await click(q(TOGGLE))
-    expect(q(TOGGLE)!.getAttribute('aria-pressed')).toBe('false')
+    await chooseLayout('compact-text')
+    expect(q(TOGGLE)!.getAttribute('aria-label')).toBe('Layout: Compact with text')
+    expect(useInboxView.getState()).toMatchObject({ compactChat: true, compactText: true })
+    expect(localStorage.getItem('mde.inbox-compact-text')).toBe('on')
+
+    await chooseLayout('full')
+    expect(q(TOGGLE)!.dataset.layout).toBe('full')
     expect(localStorage.getItem(INBOX_COMPACT_CHAT_STORAGE_KEY)).toBe('off')
     expect(getInboxCompactChat()).toBe(false)
+
+    await chooseLayout('compact')
+    expect(useInboxView.getState()).toMatchObject({ compactChat: true, compactText: false })
   })
 
   it('is off when nothing was saved, and when storage cannot be read', () => {
@@ -164,7 +180,7 @@ describe('a conversation in compact mode', () => {
     expect(text(row)).toContain('python3 server.py')
     await click(row.querySelector('button'))
     expect(text(row)).toContain('received SIGTERM and exited cleanly')
-    await click(q(TOGGLE))
+    await chooseLayout('full')
     expect(all('[data-testid="chat-activity"]')).toHaveLength(0)
     expect(q('[data-testid="chat-message-n_process"]')).not.toBeNull()
     expect(q('[data-testid="chat-reasoning"]')).not.toBeNull()
@@ -244,6 +260,31 @@ describe('a conversation in compact mode', () => {
     expect(text(said[1]!)).toContain('I will fix it.')
   })
 
+  it('shows the words between the tool calls with the text setting, still folding the calls and thoughts', async () => {
+    page = {
+      messages: [
+        prompt,
+        step('a1', [{ kind: 'text', text: 'Let me look at the **handler**.' }, read('reset.ts')]),
+        step('a2', [{ kind: 'reasoning', text: 'Hmm' }, { kind: 'text', text: 'The cause is clear now.' }, shell('npm test')]),
+        step('a3', [{ kind: 'text', text: 'Fixed it.' }]),
+      ],
+      older: null,
+      running: false,
+    }
+    useInboxView.setState({ compactChat: true, compactText: true })
+    await render()
+    await vi.waitFor(() => expect(q('[data-testid="chat-message-a3"]')).not.toBeNull())
+    expect(text(q('[data-testid="chat-message-a1"]'))).toContain('Let me look at the handler.')
+    expect(text(q('[data-testid="chat-message-a2"]'))).toContain('The cause is clear now.')
+    expect(all('[data-testid="chat-activity-summary"]').map((line) => text(line))).toEqual(['Thought and read 1 file', 'Ran 1 command'])
+    expect(q('[data-testid="chat-said"]')).toBeNull()
+
+    // Plain compact folds the words back into one line.
+    await chooseLayout('compact')
+    expect(all('[data-testid="chat-activity"]')).toHaveLength(1)
+    expect(text(q('[data-testid="chat-message-a3"]'))).toBe('Fixed it.')
+  })
+
   it('draws the words being written as they are, while no more work has followed them', async () => {
     page = { messages: [prompt, step('a1', [shell('npm test'), { kind: 'text', text: 'The test fails because' }], false)], older: null, running: true }
     useWorkspace.setState({ inboxThreads: [thread({ status: 'working' })] })
@@ -276,11 +317,11 @@ describe('a conversation in compact mode', () => {
     await vi.waitFor(() => expect(q('[data-testid="chat-message-a4"]')).not.toBeNull())
     expect(all('[data-testid="chat-activity"]')).toHaveLength(1)
 
-    await click(q(TOGGLE))
+    await chooseLayout('full')
     expect(all('[data-testid="chat-activity"]')).toHaveLength(0)
     for (const id of ['a1', 'a2', 'a3']) expect(q(`[data-testid="chat-message-${id}"]`)).not.toBeNull()
 
-    await click(q(TOGGLE))
+    await chooseLayout('compact')
     expect(all('[data-testid="chat-activity"]')).toHaveLength(1)
     expect(q('[data-testid="chat-message-a2"]')).toBeNull()
   })
@@ -302,7 +343,7 @@ describe('a conversation in compact mode', () => {
     expect(all('.file-diff-row')).toHaveLength(3)
 
     // Not compact, it is open as it always was; and what was chosen by hand stays.
-    await click(q(TOGGLE))
+    await chooseLayout('full')
     expect(all('.file-diff-row')).toHaveLength(3)
   })
 
@@ -348,7 +389,7 @@ describe('a conversation in compact mode', () => {
     expect(all('[data-testid="chat-subagents"]')).toHaveLength(1)
     expect(all('[data-testid^="chat-subagent-"]')).toHaveLength(2)
     expect(all('[aria-label="Model: review-model · high"]')).toHaveLength(2)
-    await click(q(TOGGLE))
+    await chooseLayout('full')
     expect(q('[data-testid="chat-subagents"]')).not.toBeNull()
   })
 
@@ -517,7 +558,7 @@ describe('the changes after each turn', () => {
     await vi.waitFor(() => expect(q('[data-testid="chat-message-a3"]')).not.toBeNull())
     expect(q(PANEL)).toBeNull()
 
-    await click(q(TOGGLE))
+    await chooseLayout('compact')
     expect(q(PANEL)).not.toBeNull()
     await act(async () => useInboxView.getState().setTurnChanges(false))
     expect(q(PANEL)).toBeNull()

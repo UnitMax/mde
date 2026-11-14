@@ -157,10 +157,10 @@ describe('Inbox thread header', () => {
     expect(header().querySelector('[data-testid="inbox-status-chip"]')?.textContent).toBe('Failed')
   })
 
-  it('has the folder button, compact mode and one menu, and no labelled Regenerate button', async () => {
+  it('has the folder button, the layout menu and one menu, and no labelled Regenerate button', async () => {
     await render()
     expect(byLabel('Open folder in File Explorer')).not.toBeNull()
-    expect(byLabel('Compact mode')).not.toBeNull()
+    expect(byLabel('Layout: Every step')).not.toBeNull()
     expect(byLabel('Thread actions')).not.toBeNull()
     expect(byLabel('Regenerate title')).toBeNull()
     expect(header().textContent).not.toContain('Regenerate title')

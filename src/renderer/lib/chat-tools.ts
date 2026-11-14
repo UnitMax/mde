@@ -656,6 +656,12 @@ export function activityBlocks(blocks: readonly MessageBlock[]): RenderBlock[] {
 
 type ActivityBlock = Extract<RenderBlock, { kind: 'activity' }>
 
+/** How the compact layout is set up. */
+export interface CompactOptions {
+  /** Draw the text the agent writes between its steps instead of folding it into the line (the Inbox setting "Text between steps"). */
+  showText?: boolean
+}
+
 /** One step of the agent (an assistant message) as the compact layout sees it. */
 export interface FlowStep {
   id: string
@@ -717,9 +723,12 @@ function talkingTexts(steps: readonly FlowStep[]): Set<string> {
  * steps: the agent starts a new step for every round of tool calls, so a turn is many steps, and its activity should
  * still read as one line. The group is drawn in the step where it starts, and the steps that contributed the rest draw
  * whatever else they hold (an empty one draws nothing). Returns the blocks to draw by step.
+ *
+ * With `showText`, no words are folded: every text the agent wrote is drawn as it is, and ends the stretch before it,
+ * so only the thoughts and tool calls between the texts fold into their lines.
  */
-export function compactFlow(steps: readonly FlowStep[]): Map<string, RenderBlock[]> {
-  const talking = talkingTexts(steps)
+export function compactFlow(steps: readonly FlowStep[], options: CompactOptions = {}): Map<string, RenderBlock[]> {
+  const talking = options.showText ? new Set<string>() : talkingTexts(steps)
   const plan = new Map<string, RenderBlock[]>()
   let open: ActivityBlock | null = null
   let last: RenderBlock | null = null
@@ -790,11 +799,12 @@ export function compactPlans(
   messages: readonly ChatMessage[],
   liveId: string | undefined,
   previous?: ReadonlyMap<string, RenderBlock[]>,
+  options: CompactOptions = {},
 ): Map<string, RenderBlock[]> {
   const plans = new Map<string, RenderBlock[]>()
   let run: FlowStep[] = []
   const flush = (): void => {
-    for (const [id, blocks] of compactFlow(run)) {
+    for (const [id, blocks] of compactFlow(run, options)) {
       const before = previous?.get(id)
       plans.set(id, before && samePlan(before, blocks) ? before : blocks)
     }
