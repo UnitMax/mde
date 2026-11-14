@@ -7,6 +7,17 @@ import { MermaidCodeBlock } from '@/lib/mermaid-code-block'
 
 const starterKitOptions = { link: { openOnClick: false } }
 
+/**
+ * Read-only Markdown also keeps links to files written as `file://…` or `C:\…`, which a chat reply uses to name a
+ * file of the project. They are only ever opened in MDE's own viewer: a click on a link that is not http(s) never
+ * leaves the app.
+ */
+const previewLinkOptions = {
+  openOnClick: false,
+  isAllowedUri: (url: string, context: { defaultValidate: (url: string) => boolean }) =>
+    context.defaultValidate(url) || /^file:\/\//i.test(url) || /^[a-z]:[\\/]/i.test(url),
+}
+
 const sharedMarkdownExtensions = [
   TableKit,
   Markdown.configure({
@@ -29,7 +40,7 @@ export const markdownExtensions = [
  * list then grew by a blank line the moment it was clicked.
  */
 export const markdownPreviewExtensions = [
-  StarterKit.configure({ ...starterKitOptions, codeBlock: false, trailingNode: false }),
+  StarterKit.configure({ link: previewLinkOptions, codeBlock: false, trailingNode: false }),
   ...sharedMarkdownExtensions,
   MermaidCodeBlock,
   MathBlock,

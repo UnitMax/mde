@@ -1915,6 +1915,16 @@ stays text). Code spans and code blocks stay code. KaTeX runs with `trust: false
 4,000-character limit; a formula it cannot read shows as its source in monospace with the reason as a tooltip.
 Display math scrolls horizontally when wider than the reply. KaTeX's fonts and CSS are bundled; nothing loads
 from the network.
+In an Inbox GUI chat, a web (http/https) link carries a globe icon before it, so a click that opens the browser
+is seen coming. A file of the thread's folder that a reply or its reasoning names, as inline code (`src/a.ts`,
+`src/a.ts:12`) or as a link (relative, absolute under the folder, `file://`, or `#L12`), becomes a chip with a
+file icon; clicking it, or Enter on it, opens the file in the file viewer (at its top: the viewer has no line
+jump). `src/renderer/lib/chat-file-links.ts` reads the written path, and a ProseMirror decoration marks it only
+once the file is found, by listing the folder it would be in through the same `files:list` channel as the Files
+tree (one listing per folder, kept 10 seconds). Folders, paths outside the thread's folder or climbing out of it,
+and bare words without an extension stay as written. A thread whose worktree was deleted shows no chips. The
+read-only preview keeps `file://` and `C:\…` link targets so they can be chips; a click on a link that is not
+http(s) never leaves MDE.
 
 ## Git
 

@@ -10,7 +10,7 @@ import { ModelQuickSwitch } from '@/components/inbox/ModelQuickSwitch'
 import { ChatComposer, type ChatComposerHandle } from '@/components/inbox/ChatComposer'
 import { ChatGoalCard, type GoalAction } from '@/components/inbox/ChatGoalCard'
 import { McpChip } from '@/components/inbox/McpChip'
-import { McpServerNamesContext } from '@/components/inbox/mcp-context'
+import { ChatFileSourceContext, McpServerNamesContext } from '@/components/inbox/mcp-context'
 import { ChatMessageView } from '@/components/inbox/ChatMessageView'
 import { ChatPendingView } from '@/components/inbox/ChatPendingView'
 import { ChatQuoteButton } from '@/components/inbox/ChatQuoteButton'
@@ -25,6 +25,7 @@ import { ChatTurnChanges } from '@/components/inbox/ChatTurnChanges'
 import { ReadOnlyThreadNotice } from '@/components/inbox/ReadOnlyThreadNotice'
 import { TurnDuration, WorkingFor } from '@/components/inbox/ChatTurnTime'
 import { registerThreadInput } from '@/lib/inbox-thread-input'
+import { createFileLookup, type ChatFileSource } from '@/lib/chat-file-links'
 import { scrollBehavior, TIMELINE_MIN_PROMPTS, timelineEntries } from '@/lib/chat-timeline'
 import { compactPlans, type RenderBlock } from '@/lib/chat-tools'
 import { turnChanges } from '@/lib/turn-changes'
@@ -38,6 +39,7 @@ import { optionsKey, useInboxChat, type ChatThreadState } from '@/store/inbox-ch
 import { useInboxFind } from '@/store/inbox-find'
 import { useInboxMcp, type McpPlace } from '@/store/inbox-mcp'
 import { useInboxView } from '@/store/inbox-view'
+import { useWorkspace } from '@/store/workspace'
 import { codeViewerFontFamily, getTerminalSettings, subscribeTerminalSettings } from '@/terminal/terminal-settings'
 
 const NO_SERVERS: readonly string[] = []
@@ -96,6 +98,13 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   useEffect(() => { void loadAsides(thread.id) }, [loadAsides, thread.id])
   const askAside = useInboxAside((store) => store.ask)
   const dismissAside = useInboxAside((store) => store.dismiss)
+  // The files the replies name open in the viewer over the conversation. A deleted worktree has none to open.
+  const removed = thread.worktreeRemovedAt !== undefined
+  const fileSource = useMemo<ChatFileSource | null>(() => removed ? null : {
+    directory: thread.directory,
+    exists: createFileLookup((path) => window.api.files.list({ sessionId: thread.id, path })),
+    open: ({ path }) => useWorkspace.getState().openFile(thread.id, path),
+  }, [removed, thread.directory, thread.id])
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const composerSlot = useRef<HTMLDivElement>(null)
@@ -472,6 +481,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   }, [loadOlder, thread.id])
 
   return (
+    <ChatFileSourceContext.Provider value={fileSource}>
     <McpServerNamesContext.Provider value={mcpNames}>
     <div
       ref={rootRef}
@@ -660,5 +670,6 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
       />
     </div>
     </McpServerNamesContext.Provider>
+    </ChatFileSourceContext.Provider>
   )
 }
