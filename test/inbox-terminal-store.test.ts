@@ -290,6 +290,40 @@ describe('the Inbox terminal store', () => {
       expect(store.getState().agentArrivals).toBe(1)
     })
 
+    it('shows a toast for each pane, saying when its command waits, and a click on it brings the pane into view', async () => {
+      vi.stubGlobal('api', { agentTerminals: { claim: vi.fn(async () => {}), refuse: vi.fn(async () => {}) } })
+      const store = await loadNative()
+      const { useToasts } = await import('../src/renderer/store/toasts')
+      const { useWorkspace } = await import('../src/renderer/store/workspace')
+      const { useInboxChanges } = await import('../src/renderer/store/inbox-changes')
+      useWorkspace.setState({ activeWorkspaceView: 'sessions', fileTreeCollapsed: true })
+
+      await store.getState().openForAgent(request)
+      await store.getState().openForAgent({ ...request, requestId: 'req-2', title: 'Watcher', command: null, approval: false, from: null })
+
+      const [waiting, opened] = useToasts.getState().toasts
+      expect(waiting).toMatchObject({ icon: 'approval', label: 'Command waits for approval', title: 'npm run dev', detail: 'Dev server · From Fix login' })
+      expect(opened).toMatchObject({ icon: 'agent-terminal', label: 'Agent opened a terminal', title: 'Watcher' })
+      expect(opened!.detail).toBeUndefined()
+
+      focus.mockClear()
+      waiting!.onOpen!()
+      expect(useWorkspace.getState()).toMatchObject({ activeWorkspaceView: 'inbox', fileTreeCollapsed: false })
+      expect(useInboxChanges.getState().tab).toBe('terminal')
+      expect(focus).toHaveBeenCalledWith(ID(2))
+    })
+
+    it('shows no toast when they are turned off', async () => {
+      vi.stubGlobal('api', { agentTerminals: { claim: vi.fn(async () => {}), refuse: vi.fn(async () => {}) } })
+      const store = await loadNative()
+      const { saveAlertSettings, getAlertSettings } = await import('../src/renderer/lib/alert-settings')
+      const { useToasts } = await import('../src/renderer/store/toasts')
+      saveAlertSettings({ ...getAlertSettings(), toasts: false })
+      await store.getState().openForAgent(request)
+      expect(useToasts.getState().toasts).toEqual([])
+      expect(store.getState().agentArrivals).toBe(1)
+    })
+
     it('tells main when the terminal already has as many panes as agents may open into, and adds nothing', async () => {
       const claim = vi.fn(async () => {})
       const refuse = vi.fn(async () => {})

@@ -30,6 +30,8 @@ import { isInboxSearchShortcut } from '@/lib/inbox-search'
 import { InboxSearchDialog } from '@/components/inbox/InboxSearchDialog'
 import { isTodoSearchShortcut } from '@/lib/todo-search'
 import { startAlerts } from '@/lib/alert-controller'
+import { startToasts } from '@/lib/toast-controller'
+import { Toaster } from '@/components/Toaster'
 import { useWorkspace } from '@/store/workspace'
 import { useFancyBackgroundOn } from '@/store/fancy-mode'
 import { focusTerminalWhenReady } from '@/terminal/focus'
@@ -135,6 +137,7 @@ export function App(): JSX.Element {
   useEffect(() => useInboxChat.getState().init(), [])
   useEffect(() => useInboxTerminal.getState().init(), [])
   useEffect(() => startAlerts(), [])
+  useEffect(() => startToasts(), [])
 
   useEffect(() => {
     void init()
@@ -811,6 +814,7 @@ export function App(): JSX.Element {
         <SessionSwitcher open={sessionSwitcherOpen} onOpenChange={setSessionSwitcherOpen} />
         <InboxSearchDialog open={inboxSearchOpen} onOpenChange={setInboxSearchOpen} />
       </div>
+      <Toaster />
     </div>
   )
 }

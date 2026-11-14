@@ -22,6 +22,8 @@ export interface AlertSettings {
   badge: boolean
   /** Play sounds only while MDE is in the background. */
   onlyWhenAway: boolean
+  /** Small cards in the corner of the window: a thread is done or needs input, an agent did something through the MDE MCP. */
+  toasts: boolean
 }
 
 export const ALERT_SETTINGS_STORAGE_KEY = 'mde.alert-settings'
@@ -33,7 +35,8 @@ export const DEFAULT_ALERT_SETTINGS: AlertSettings = {
   sounds: { done: 'chime', input: 'bell', failed: 'pluck' },
   flash: 'brief',
   badge: true,
-  onlyWhenAway: false
+  onlyWhenAway: false,
+  toasts: true
 }
 
 function isChoice(value: unknown): value is AlertSoundChoice {
@@ -62,7 +65,8 @@ export function normalizeAlertSettings(value: unknown): AlertSettings {
     sounds,
     flash: isFlash(stored.flash) ? stored.flash : DEFAULT_ALERT_SETTINGS.flash,
     badge: typeof stored.badge === 'boolean' ? stored.badge : DEFAULT_ALERT_SETTINGS.badge,
-    onlyWhenAway: typeof stored.onlyWhenAway === 'boolean' ? stored.onlyWhenAway : DEFAULT_ALERT_SETTINGS.onlyWhenAway
+    onlyWhenAway: typeof stored.onlyWhenAway === 'boolean' ? stored.onlyWhenAway : DEFAULT_ALERT_SETTINGS.onlyWhenAway,
+    toasts: typeof stored.toasts === 'boolean' ? stored.toasts : DEFAULT_ALERT_SETTINGS.toasts
   }
 }
 

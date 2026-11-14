@@ -25,6 +25,7 @@ import { mcpTargetKey } from '@/lib/mcp'
 import { useInboxMcp } from '@/store/inbox-mcp'
 import { getTerminalSettings, subscribeTerminalSettings } from '@/terminal/terminal-settings'
 import { useWorkspace } from '@/store/workspace'
+import { backgroundThreadToast, notify } from '@/lib/toasts'
 
 export interface ChatThreadState {
   messages: ChatMessage[]
@@ -349,6 +350,8 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
       workspace.upsertInboxThread(thread)
       // A failed first prompt keeps its draft in the thread; open it so the error and retry are visible.
       if (!options?.background || thread.sendError) workspace.selectInboxThread(thread.id)
+      // Out of sight, so a toast says where it went and takes the person there.
+      else notify(backgroundThreadToast(thread, { project: get().folders.find((folder) => folder.id === input.folderId)?.name }))
       // A new worktree was added to the folder list by main, so that more threads can be started in it.
       if (input.worktree) void get().reloadFolders()
       return thread

@@ -1723,6 +1723,30 @@ None of this needs anything installed: these are window states Windows draws its
 release is enough. Windows toast notifications are left out on purpose, because they need a Start Menu
 shortcut with an AppUserModelID.
 
+#### Toasts
+
+MDE also shows small cards (toasts) in the bottom-right corner of its own window, over everything else. Settings →
+Notifications → Toasts turns them off (on by default). There is no history: a toast that goes is gone. They come from:
+
+- **A thread changing** (`lib/toast-controller.ts`, watching `inboxThreads` like the alerts): Done, Failed, Needs
+  input or Needs permission (the same `alertKind`), and Woke up when a snooze ends. They show even for the thread that
+  is open; the list loaded at startup shows none.
+- **A chat started in the background** with Ctrl/Cmd+Enter (`createThread` in `store/inbox-chat.ts`).
+- **The MDE MCP:** a thread an agent started (a new thread with `spawnedBy`, created in the last two minutes, with the
+  calling thread's title) and a terminal pane an agent opened (`openForAgent` in `store/inbox-terminal.ts`), which
+  says when its command waits for approval. `list_projects` changes nothing, so it shows none, and `show_view` is drawn
+  in the chat itself.
+
+A click on a toast goes there: it opens the thread (and reads it), or for a terminal brings the Inbox terminal into
+view, in the sidebar's Terminal tab or the floating window, and focuses that pane. Each toast has a key, so a thread's
+newer news takes the place of its older toast; at most four are on screen and the oldest goes first. A toast stays
+6 s, or 10 s for Failed, a question, a permission or a command to approve. A 2 px bar at its foot shows the time left
+(a CSS animation whose `animationend` dismisses it); it stops while the pointer or keyboard is on the toasts and while
+MDE is not the focused window, so news is not missed by looking away. Esc or the X dismisses one. Nothing is shown
+while MDE is in the mini window, and going into it clears them. The pure rules are in `lib/toasts.ts`, the list in
+`store/toasts.ts` and the cards in `components/Toaster.tsx` (mounted in `App`); the setting is the `toasts` field of
+`mde.alert-settings`.
+
 ### Mini Inbox window
 
 F12 shrinks the main window into a small always-on-top list of Inbox threads, with a status summary

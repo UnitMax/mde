@@ -6,6 +6,8 @@ import { MDE_MCP_TERMINAL_PANE_LIMIT, type AgentTerminalDecisionKind, type Agent
 import { INBOX_TERMINAL_SESSION_ID, inboxTerminalSession } from '@shared/inbox-terminal'
 import { getInboxTerminalDistro, getInboxTerminalLayout, saveInboxTerminalDistro, saveInboxTerminalLayout } from '@/lib/inbox-settings'
 import { ipcErrorMessage } from '@/lib/ipc-error'
+import { notify, TOAST_URGENT_DURATION_MS } from '@/lib/toasts'
+import { useInboxChanges } from '@/store/inbox-changes'
 import { useInboxFloatingTerminal } from '@/store/inbox-floating-terminal'
 import { useWorkspace } from '@/store/workspace'
 import { getTerminalSettings } from '@/terminal/terminal-settings'
@@ -66,6 +68,8 @@ interface Store {
   decideAgentCommand: (terminalId: string, decision: AgentTerminalDecisionKind) => void
   /** Counts panes agents opened, so the hidden-terminal reminder can play its animation for each. */
   agentArrivals: number
+  /** Brings the terminal into view, in the sidebar or floating, and gives a pane the keyboard if it is still there. */
+  reveal: (terminalId?: string) => void
   resize: (splitId: string, ratio: number) => void
   reorder: (terminalIds: readonly string[]) => void
   titlePane: (terminalId: string, title: string | null) => void
@@ -187,6 +191,21 @@ export const useInboxTerminal = create<Store>((set, get) => {
     agentCommands: {},
     agentArrivals: 0,
 
+    reveal: (terminalId) => {
+      const workspace = useWorkspace.getState()
+      if (workspace.activeWorkspaceView !== 'inbox') workspace.setWorkspaceView('inbox')
+      const floating = useInboxFloatingTerminal.getState()
+      if (floating.floating) floating.show()
+      else {
+        useWorkspace.setState({ fileTreeCollapsed: false })
+        useInboxChanges.getState().setTab('terminal')
+      }
+      if (terminalId && get().layout.panes.some((pane) => pane.terminalId === terminalId)) {
+        focused = terminalId
+        focusTerminalWhenReady(terminalId)
+      }
+    },
+
     openForAgent: async (request) => {
       let claimed: string | null = null
       try {
@@ -217,12 +236,34 @@ export const useInboxTerminal = create<Store>((set, get) => {
           return
         }
         commit(layoutTitled(settled, added.terminalId, request.title) ?? settled)
+        const waiting = request.approval && request.command !== null
         set({
           agentArrivals: get().agentArrivals + 1,
-          ...(request.approval && request.command !== null
-            ? { agentCommands: { ...get().agentCommands, [added.terminalId]: { command: request.command, from: request.from } } }
+          ...(waiting
+            ? { agentCommands: { ...get().agentCommands, [added.terminalId]: { command: request.command!, from: request.from } } }
             : {}),
         })
+        const from = request.from ? `From ${request.from}` : undefined
+        notify(waiting
+          ? {
+              key: `terminal:${added.terminalId}`,
+              tone: 'accent',
+              icon: 'approval',
+              label: 'Command waits for approval',
+              title: request.command!,
+              detail: from ? `${request.title} · ${from}` : request.title,
+              duration: TOAST_URGENT_DURATION_MS,
+              onOpen: () => get().reveal(added.terminalId),
+            }
+          : {
+              key: `terminal:${added.terminalId}`,
+              tone: 'muted',
+              icon: 'agent-terminal',
+              label: 'Agent opened a terminal',
+              title: request.title,
+              ...(from ? { detail: from } : {}),
+              onOpen: () => get().reveal(added.terminalId),
+            })
       } catch (error) {
         // Main already told the agent when it refused the claim itself.
         if (claimed === null) {
