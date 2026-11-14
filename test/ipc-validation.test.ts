@@ -84,6 +84,8 @@ const validPayloads = {
   [IpcChannels.inboxFoldersRemove]: { id: 'fld_1234' },
   [IpcChannels.inboxComposerSet]: { folderId: 'fld_1234', agent: 'plan', model },
   [IpcChannels.inboxGitInfo]: { folderId: 'fld_1234' },
+  [IpcChannels.inboxWorktrees]: undefined,
+  [IpcChannels.inboxWorktreeRemove]: { target: { kind: 'wsl', distro: 'Ubuntu' }, root: '/home/me/.mde/worktrees/app-1234/abcd1234', force: true, deleteBranch: false },
   [IpcChannels.chatConfigure]: { executable: 'opencode' },
   [IpcChannels.chatOptions]: { folderId: 'fld_1234' },
   [IpcChannels.chatDraft]: { key: 'thread:ses_one', action: 'load' },
@@ -207,6 +209,9 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.inboxRemove, { id: 'ses_thread', removeWorktree: 'yes' })
     rejects(IpcChannels.inboxGitInfo, { folderId: '../fld' })
     rejects(IpcChannels.inboxGitInfo, { folderId: 'fld_1234', directory: '/home/me/app' })
+    rejects(IpcChannels.inboxWorktreeRemove, { target: { kind: 'native', distro: 'Ubuntu' }, root: '/home/me/x' })
+    rejects(IpcChannels.inboxWorktreeRemove, { target: { kind: 'wsl' }, root: '/home/me/x' })
+    rejects(IpcChannels.inboxWorktreeRemove, { target: { kind: 'native' }, root: '/home/me/x', force: 'yes' })
     rejects(IpcChannels.inboxList, { id: 'ses_thread' })
   })
 

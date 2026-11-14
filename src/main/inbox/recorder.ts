@@ -111,7 +111,8 @@ function sameThread(a: InboxThread, b: InboxThread): boolean {
     Boolean(a.pinned) === Boolean(b.pinned) &&
     a.snoozedUntil === b.snoozedUntil &&
     Boolean(a.woke) === Boolean(b.woke) &&
-    a.folderId === b.folderId
+    a.folderId === b.folderId &&
+    a.worktreeRemovedAt === b.worktreeRemovedAt
 }
 
 /**
@@ -213,6 +214,17 @@ export class InboxRecorder {
     // Parking a snoozed thread ends the snooze: a parked thread stays parked until it is moved back.
     const { snoozedUntil: _until, ...rest } = thread
     return this.save(thread, archived ? { ...rest, archived } : { ...thread, archived })
+  }
+
+  /**
+   * Keeps a thread whose worktree was deleted to be read only: parked with the other old threads, no longer
+   * pinned or snoozed, and marked so that nothing is started in its folder again.
+   */
+  markWorktreeRemoved(id: string, at: number): InboxThread | null {
+    const thread = this.store.get(id)
+    if (!thread) return null
+    const { snoozedUntil: _until, pinned: _pinned, woke: _woke, ...rest } = thread
+    return this.save(thread, { ...rest, archived: true, worktreeRemovedAt: at })
   }
 
   setCustomTitle(id: string, value: string | null): InboxThread | null {

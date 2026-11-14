@@ -655,7 +655,8 @@ Inbox settings gear in the Inbox toolbar, or from "Manage projects…" in the ne
 page's project menu (`InboxProjectsDialog`). It lists the projects by name with their folder, the WSL
 distro and how many threads each has (a thread in a worktree counts for the project the worktree was
 cut from), and offers Add project, Edit and Remove. Worktrees MDE made for threads are folders too
-(`InboxFolder.worktree`) but are not projects and are not listed; they go with the thread's Delete.
+(`InboxFolder.worktree`) but are not projects and are not listed; they have the dialog's second tab,
+**Worktrees** (see "The worktree manager").
 Adding uses the same form as the new-thread page's "Add project…", with an optional name and icon.
 Editing changes the name and the icon only: the folder, its target and when it was last used stay as
 they are, so a project keeps its place in the new-thread menu (which is ordered by use) and its
@@ -901,6 +902,35 @@ before the thread is forgotten, so Git refusing because of uncommitted changes l
 place with Git's reason shown, and unticking the box deletes the thread alone. The branch is always
 kept. The main process checks again that no other thread shares the worktree and that its root is
 inside `~/.mde/worktrees`, and a worktree already deleted by hand counts as removed.
+
+**The worktree manager.** The **Worktrees** tab of the Projects dialog (`InboxWorktreesPanel`) lists every
+worktree MDE made, by the project it was cut from. It also opens from the worktree marker in a thread's
+header, or "Manage worktrees…" in its menu, with that worktree outlined. `inbox:worktrees` builds the
+list in main (`InboxWorktrees.list`) from what MDE recorded (the worktree folder entries, and the threads
+that run in one) and from `git worktree list --porcelain` in every project's own folder, keeping only
+the roots inside `~/.mde/worktrees`. That way a worktree whose threads were all deleted is still found,
+and one recorded but gone from disk shows as "Missing on disk". For each one Git is asked what is in it:
+`git status --porcelain` gives the uncommitted files, untracked ones included. `git rev-list --count
+refs/heads/‹branch› --not --exclude=‹branch› --branches --remotes` gives the commits no other branch has,
+which is what deleting the branch would lose. At most four Git commands run at once. Each row shows the
+branch, its base and age, that state, and the threads that run in it (forks too); a thread opens on
+click. A row with a thread can be opened in the file manager or VS Code through that thread.
+
+Deleting asks first, for one row or for the checked rows ("Select the N with no threads" checks the
+unused ones). The dialog names every thread that goes with the worktree. A thread still working or
+waiting for an answer blocks it until it is stopped, and main checks that again. Uncommitted changes
+are shown as a warning, and only then is the removal forced (`git worktree remove --force`); a
+worktree shown as clean is removed without force, so Git still refuses what appeared since. The
+branch is kept unless "Also delete the branch" is ticked, which says how many commits only it has, and
+then runs `git branch -D`; a refusal there is reported but the worktree stays deleted.
+`inbox:worktree-remove { target, root, force?, deleteBranch? }` acts only on a root that the same
+listing finds in `~/.mde/worktrees`. Afterwards its folder entry goes, the threads' unsent drafts go,
+and each thread is kept to be read: `worktreeRemovedAt` is set on it, and it is archived, unpinned and
+unsnoozed. Such a thread shows its conversation with a notice in place of the composer (a terminal
+thread is shown as a chat). Its sidebar's Files and Changes tabs say that the folder is gone instead of
+trying to list it, and nothing asks Git about it any more. Its header marker is struck through, its sidebar row has a folder-with-a-cross
+mark, and Open and Fork are gone. Main refuses to send, fork, undo, redo, compact, set a goal for or
+start a terminal in it.
 
 **Conversation.** The thread view shows the newest 50 messages and loads older ones when you
 scroll up. User messages are bubbles; assistant text and reasoning are Markdown rendered read-only

@@ -72,7 +72,7 @@ backed-up locations can place copies elsewhere. These stores are not encrypted b
   OpenCode conversation you started in the Inbox, with its session ID, OpenCode title, optional custom name, folder, terminal chat mode
   when chosen (older threads use GUI chat), target (Mac
   or WSL distro), Git branch, model and provider identifiers and the selected model variant (reasoning effort), last status, timestamps (including,
-  while a conversation is working, when its current run began), read, archived and pinned flags, when a snoozed conversation comes back and whether it came back from a snooze, for a forked conversation the session ID of the one it was forked from, and for a conversation an agent started through the MDE MCP a mark saying so with the session ID of the conversation that asked. For a conversation started in a Git worktree it also holds that worktree's root path, the repository's path, and the names of the new branch and the branch it was cut from. It also holds the Inbox folders (projects) you add (path, target, name, the icon you picked for it — the name of a built-in icon and its color, or one emoji — and timestamps; at most 200), the worktrees MDE created for you (the same record and a name made from the folder and branch; at most 100, so that more conversations can be started in them) and the folder, model and agent
+  while a conversation is working, when its current run began), read, archived and pinned flags, when a snoozed conversation comes back and whether it came back from a snooze, for a forked conversation the session ID of the one it was forked from, and for a conversation an agent started through the MDE MCP a mark saying so with the session ID of the conversation that asked. For a conversation started in a Git worktree it also holds that worktree's root path, the repository's path, and the names of the new branch and the branch it was cut from, and, once you delete that worktree, when you did. It also holds the Inbox folders (projects) you add (path, target, name, the icon you picked for it — the name of a built-in icon and its color, or one emoji — and timestamps; at most 200), the worktrees MDE created for you (the same record and a name made from the folder and branch; at most 100, so that more conversations can be started in them) and the folder, model and agent
   you last chose in the Inbox composer. It never holds prompts, messages or tool data. It keeps at
   most 1,000 conversations; deleting a conversation from the Inbox removes only MDE's record.
 
@@ -256,7 +256,10 @@ Windows), on a new branch: the name you typed, or `mde/` followed by eight hex d
 left it empty. The folder itself is named from random digits, not from the branch. It holds ordinary
 working files and sits outside MDE's user-data directory, so MDE's own cleanup does not cover it.
 It stays until you remove it: tick **Also remove the worktree** when you delete the conversation,
-or run `git worktree remove` yourself. The new branch is kept either way. A worktree you created is also listed in the Inbox's folder menu until you remove it there (which only forgets it) or delete it with a conversation. MDE reads local branch
+delete it from the **Worktrees** tab of the Projects dialog, or run `git worktree remove` yourself.
+The new branch is kept unless you tick **Also delete the branch** in that tab. Deleting a worktree
+there can throw away its uncommitted changes, after a warning that says how many files have them.
+The conversations that ran in it stay in the Inbox to read, marked with the time it was deleted. A worktree you created is also listed in the Inbox's folder menu until you remove it there (which only forgets it) or delete it with a conversation. MDE reads local branch
 names to fill the picker and never contacts a remote.
 
 ## Inbox attachments and saved drafts

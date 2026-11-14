@@ -197,6 +197,11 @@ export interface InboxThread {
   spawnedBy?: { threadId?: string }
   /** Set when the thread runs in a Git worktree MDE created; `directory` is then inside `root`. */
   worktree?: InboxWorktree
+  /**
+   * When the thread's worktree was deleted from the worktree manager. The thread is kept to be read, but its
+   * folder is gone, so nothing can run in it again: no message, fork, undo or terminal.
+   */
+  worktreeRemovedAt?: number
 }
 
 /** The Git worktree an Inbox thread was started in. Forks of the thread share it. */
@@ -219,6 +224,46 @@ export interface InboxGitBranch {
 
 export interface InboxGitInfoRequest {
   folderId: string
+}
+
+/**
+ * One worktree MDE made, as the worktree manager lists it: from the threads and folder entries that record it,
+ * and from what Git lists for each project, so one no thread uses any more is found too.
+ */
+export interface InboxWorktreeEntry {
+  target: OpenCodeTarget
+  /** The worktree's root directory, in the target's own format; with `target`, what names it. */
+  root: string
+  /** The directory Git commands for it run in: the project it was cut from. */
+  repository: string
+  /** The branch checked out in it; null for a detached HEAD. */
+  branch: string | null
+  /** The branch it was cut from, when MDE recorded it. */
+  base?: string
+  /** When MDE first recorded it (its folder entry or its first thread), if it did. */
+  createdAt?: number
+  /** Its folder no longer exists. */
+  missing: boolean
+  /** Files with uncommitted changes, untracked ones included; null when Git could not tell. */
+  changes: number | null
+  /** Commits on its branch that no other branch or remote-tracking branch has; null when unknown. */
+  unmerged: number | null
+}
+
+export interface InboxWorktreeRemoveRequest {
+  target: OpenCodeTarget
+  root: string
+  /** Remove it even with uncommitted changes, which are lost. */
+  force?: boolean
+  /** Delete its branch too, even with commits no other branch has. */
+  deleteBranch?: boolean
+}
+
+export interface InboxWorktreeRemoveResult {
+  /** The threads that ran in it, kept read-only. */
+  threads: string[]
+  /** Set when the branch was to be deleted and Git refused; the worktree itself is gone. */
+  branchError?: string
 }
 
 /** What the new-thread page needs to offer Git worktree mode for a folder. */

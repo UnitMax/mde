@@ -1,8 +1,9 @@
 import { useState, type ReactNode } from 'react'
-import { Bot, Copy, Ellipsis, FolderGit2, GitBranch, GitFork, LoaderCircle, PenLine, RefreshCw } from 'lucide-react'
+import { Bot, Copy, Ellipsis, FolderGit2, FolderX, GitBranch, GitFork, LoaderCircle, PenLine, RefreshCw } from 'lucide-react'
 import type { InboxThread } from '@shared/types'
 import { InboxStatusBadge, useInboxClock } from '@/components/InboxPanel'
 import { CompactChatToggle } from '@/components/inbox/CompactChatToggle'
+import { InboxProjectsDialog } from '@/components/inbox/InboxProjectsDialog'
 import { ProjectIcon } from '@/components/inbox/ProjectIcon'
 import { ThreadRenameDialog, useThreadRename } from '@/components/inbox/ThreadRename'
 import { OpenFolderMenu } from '@/components/OpenFolderButtons'
@@ -16,6 +17,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { inboxFolderLabel, inboxThreadFolder, inboxThreadHome, sessionAge, sessionDate } from '@/lib/inbox'
+import { worktreeKey } from '@/lib/inbox-worktrees'
 import { cn } from '@/lib/utils'
 import { useInboxChat } from '@/store/inbox-chat'
 import { useWorkspace } from '@/store/workspace'
@@ -122,6 +124,9 @@ export function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
   const rename = useThreadRename(thread)
   const [fork, setFork] = useState<{ pending: boolean; error: string | null }>({ pending: false, error: null })
   const [copyError, setCopyError] = useState(false)
+  const [managing, setManaging] = useState(false)
+  // Its worktree was deleted: kept to read, with nothing left to open or fork.
+  const removed = thread.worktreeRemovedAt !== undefined
 
   const title = thread.customTitle ?? thread.title
   const home = inboxThreadHome(thread)
@@ -169,18 +174,31 @@ export function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
           >
             {project?.name ?? inboxFolderLabel(home)}
           </Fact>
-          {branch && (
-            <Fact
-              testId={thread.worktree ? 'inbox-thread-worktree' : 'inbox-thread-branch'}
+          {branch && thread.worktree ? (
+            // The worktree's own place: the manager, with this one shown first.
+            <button
+              type="button"
+              data-testid="inbox-thread-worktree"
+              data-removed={removed ? '' : undefined}
+              onClick={() => setManaging(true)}
               title={
-                thread.worktree
-                  ? `Runs in a worktree of ${thread.worktree.repository}, started from ${thread.worktree.base}: ${thread.directory}`
-                  : `Branch ${branch}`
+                removed
+                  ? `Its worktree was deleted. It ran in a worktree of ${thread.worktree.repository}, started from ${thread.worktree.base}.`
+                  : `Runs in a worktree of ${thread.worktree.repository}, started from ${thread.worktree.base}: ${thread.directory}. Click to manage worktrees.`
               }
-              icon={thread.worktree ? <FolderGit2 aria-hidden className={ICON} /> : <GitBranch aria-hidden className={ICON} />}
+              className="flex shrink-0 items-center gap-1 rounded px-1 -mx-1 hover:bg-hover hover:text-fg @max-[44rem]/thread:hidden"
+            >
+              {removed ? <FolderX aria-hidden className={ICON} /> : <FolderGit2 aria-hidden className={ICON} />}
+              <span className="sr-only">{removed ? 'Deleted worktree ' : 'Worktree '}</span>
+              <span className={cn('min-w-0 max-w-[14rem] truncate', removed && 'line-through')}>{branch}</span>
+            </button>
+          ) : branch && (
+            <Fact
+              testId="inbox-thread-branch"
+              title={`Branch ${branch}`}
+              icon={<GitBranch aria-hidden className={ICON} />}
               className="@max-[44rem]/thread:hidden"
             >
-              {thread.worktree && <span className="sr-only">Worktree </span>}
               {branch}
             </Fact>
           )}
@@ -189,11 +207,13 @@ export function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
         </div>
         <div className="min-w-2 flex-1" />
         <div className="flex shrink-0 items-center gap-0.5">
-          <OpenFolderMenu
-            target={{ inboxId: thread.id }}
-            kind={thread.target.kind}
-            distro={wsl}
-          />
+          {!removed && (
+            <OpenFolderMenu
+              target={{ inboxId: thread.id }}
+              kind={thread.target.kind}
+              distro={wsl}
+            />
+          )}
           {thread.mode !== 'terminal' && <CompactChatToggle />}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -210,10 +230,16 @@ export function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
                 <PenLine className="h-3.5 w-3.5" />
                 Rename thread
               </DropdownMenuItem>
-              <DropdownMenuItem disabled={fork.pending} onSelect={startFork}>
+              <DropdownMenuItem disabled={fork.pending || removed} onSelect={startFork}>
                 <GitFork className="h-3.5 w-3.5" />
                 Fork thread
               </DropdownMenuItem>
+              {thread.worktree && (
+                <DropdownMenuItem data-testid="thread-manage-worktree" onSelect={() => setManaging(true)}>
+                  <FolderGit2 className="h-3.5 w-3.5" />
+                  Manage worktrees…
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={copyPath}>
                 <Copy className="h-3.5 w-3.5" />
@@ -225,6 +251,13 @@ export function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
       </div>
       {error && <p role="alert" className="-mt-1 pb-2 text-xs text-danger">{error}</p>}
       <ThreadRenameDialog thread={thread} rename={rename} />
+      {thread.worktree && (
+        <InboxProjectsDialog
+          open={managing}
+          onOpenChange={setManaging}
+          start={{ tab: 'worktrees', ...(removed ? {} : { focus: worktreeKey({ target: thread.target, root: thread.worktree.root }) }) }}
+        />
+      )}
     </header>
   )
 }

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { access, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -59,7 +59,8 @@ describeGit('Inbox worktrees against real Git', () => {
   })
 
   beforeAll(async () => {
-    root = await mkdtemp(join(tmpdir(), 'mde-inbox-worktree.'))
+    // Git names worktrees by their real path, so the test folder must not sit behind a symlink (macOS /var).
+    root = await realpath(await mkdtemp(join(tmpdir(), 'mde-inbox-worktree.')))
     home = join(root, 'home')
     origin = join(root, 'origin')
     clone = join(root, 'clone')
@@ -255,6 +256,63 @@ describeGit('Inbox worktrees against real Git', () => {
     await service().discard({ kind: 'native' }, worktree)
     expect(await exists(worktree.root)).toBe(false)
     expect(await git(clone, 'branch', '--list', worktree.branch)).toBe('')
+  })
+
+  describe('for the worktree manager', () => {
+    const native = { kind: 'native' } as const
+
+    it('lists the worktrees in MDE’s folder that no thread records, with what is in them, and nothing else', async () => {
+      ids = ['a1a1a1a1']
+      const { worktree } = await service().create(folderFor(clone), 'main')
+      const elsewhere = join(root, 'elsewhere')
+      await git(clone, 'worktree', 'add', '--quiet', '-b', 'not-ours', elsewhere, 'main')
+      const listed = await service().list([{ target: native, directory: clone }], [], { status: true })
+      const entry = listed.find((item) => item.root === worktree.root)
+      expect(entry).toEqual({ target: native, root: worktree.root, repository: clone, branch: 'mde/a1a1a1a1', missing: false, changes: 0, unmerged: 0 })
+      expect(listed.map((item) => item.root)).not.toContain(elsewhere)
+      expect(listed.map((item) => item.root)).not.toContain(clone)
+
+      await writeFile(join(worktree.root, 'README.md'), 'two\n')
+      await writeFile(join(worktree.root, 'new.txt'), 'new\n')
+      await git(worktree.root, 'add', 'new.txt')
+      await git(worktree.root, 'commit', '--quiet', '-m', 'Only here')
+      await writeFile(join(worktree.root, 'loose.txt'), 'loose\n')
+      const after = (await service().list([{ target: native, directory: clone }], [], { status: true })).find((item) => item.root === worktree.root)
+      expect(after).toMatchObject({ changes: 2, unmerged: 1 })
+      await git(clone, 'worktree', 'remove', '--force', elsewhere)
+    })
+
+    it('fills in what MDE recorded, and marks a recorded worktree deleted by hand as missing', async () => {
+      ids = ['a2a2a2a2', 'a3a3a3a3']
+      const kept = await service().create(folderFor(clone), 'main')
+      const gone = await service().create(folderFor(clone), 'main')
+      await rm(gone.worktree.root, { recursive: true })
+      await git(clone, 'worktree', 'prune')
+      const records = [kept.worktree, gone.worktree].map((worktree) => ({ target: native, ...worktree, createdAt: 5 }))
+      const listed = await service().list([], records, { status: true })
+      expect(listed.find((item) => item.root === kept.worktree.root)).toMatchObject({ base: 'main', createdAt: 5, missing: false, changes: 0 })
+      expect(listed.find((item) => item.root === gone.worktree.root)).toMatchObject({ branch: 'mde/a3a3a3a3', missing: true, changes: null })
+    })
+
+    it('removes a worktree with uncommitted changes only when forced, and deletes its branch only when asked', async () => {
+      ids = ['a4a4a4a4']
+      const { worktree } = await service().create(folderFor(clone), 'main')
+      await writeFile(join(worktree.root, 'README.md'), 'changed\n')
+      await expect(service().removeRoot(native, clone, worktree.root)).rejects.toThrow(/Could not remove the worktree/)
+      expect(await exists(worktree.root)).toBe(true)
+      await service().removeRoot(native, clone, worktree.root, { force: true })
+      expect(await exists(worktree.root)).toBe(false)
+      expect(await git(clone, 'branch', '--list', worktree.branch)).toContain(worktree.branch)
+      expect(await service().deleteBranch(native, clone, worktree.branch)).toBeNull()
+      expect(await git(clone, 'branch', '--list', worktree.branch)).toBe('')
+      expect(await service().deleteBranch(native, clone, worktree.branch)).toMatch(/Could not delete the branch/)
+    })
+
+    it('will not remove a folder outside MDE’s worktree folder, even when forced', async () => {
+      await expect(service().removeRoot(native, clone, plain, { force: true })).rejects.toThrow(/not in MDE/)
+      await expect(service().removeRoot(native, clone, `${home}/.mde/worktrees/`, { force: true })).rejects.toThrow(/not in MDE/)
+      expect(await exists(plain)).toBe(true)
+    })
   })
 })
 

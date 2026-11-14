@@ -124,7 +124,8 @@ export function validateInboxThread(raw: unknown): InboxThread | null {
     ...(isInboxThreadId(record.forkedFrom) ? { forkedFrom: record.forkedFrom } : {}),
     ...(spawnedBy ? { spawnedBy } : {}),
     // Without its record the thread still works; only removing its worktree from the Inbox is lost.
-    ...(worktree ? { worktree } : {})
+    ...(worktree ? { worktree } : {}),
+    ...(worktree && timestamp(record.worktreeRemovedAt) ? { worktreeRemovedAt: record.worktreeRemovedAt } : {})
   }
 }
 

@@ -22,6 +22,7 @@ import { ChatTimeline } from '@/components/inbox/ChatTimeline'
 import { ChatTranscriptMenu } from '@/components/inbox/ChatTranscriptMenu'
 import { CompactChatContext } from '@/components/inbox/chat-ui'
 import { ChatTurnChanges } from '@/components/inbox/ChatTurnChanges'
+import { ReadOnlyThreadNotice } from '@/components/inbox/ReadOnlyThreadNotice'
 import { TurnDuration, WorkingFor } from '@/components/inbox/ChatTurnTime'
 import { registerThreadInput } from '@/lib/inbox-thread-input'
 import { scrollBehavior, TIMELINE_MIN_PROMPTS, timelineEntries } from '@/lib/chat-timeline'
@@ -601,6 +602,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
             onRetry={() => void askAside(thread.id, aside.question)}
           />
         )}
+        {thread.worktreeRemovedAt !== undefined ? <ReadOnlyThreadNotice thread={thread} /> : <>
         <ComposerDock>
           <ChatBackgroundTasks key={`background:${thread.id}`} threadId={thread.id} />
           {ready && <ModelQuickSwitch models={ready.models} value={model} onChange={setModel} />}
@@ -642,6 +644,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
             })
           }}
         />
+        </>}
       </div>
       <ChatRevertDialog
         message={revertTarget}

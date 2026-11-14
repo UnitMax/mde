@@ -413,6 +413,16 @@ object takes no other key, so the renderer cannot name a path, a remote or a com
   `git worktree remove` without `--force` from the recorded repository, so uncommitted changes
   make Git refuse and the refusal is shown; the branch is kept. The renderer can request
   removal only for a thread ID, never for a path.
+- **The worktree manager names a root, which main must find itself.** `inbox:worktrees` takes no
+  payload. `inbox:worktree-remove` takes `{ target, root, force?, deleteBranch? }`: an OpenCode target
+  (`native`, or `wsl` with a distro name) and a path, with optional booleans and no other key. Main
+  lists the worktrees again from its own records and from `git worktree list` in the projects' folders,
+  and acts only when that listing has this root for this target, inside `<home>/.mde/worktrees/`. It
+  refuses while a thread in it is working or waiting for an answer. `--force` (losing uncommitted
+  changes) and `git branch -D -- ‹branch›` happen only when the request asks; the branch is the one Git
+  lists as checked out in that worktree (or MDE's record when the folder is gone), never a name from
+  the renderer. The threads that ran in it are marked read-only, and main refuses every request that
+  would run something in their directory again.
 - **Failed starts clean up after themselves.** A worktree whose session could not be created is
   removed with `--force` together with its branch, which is safe because nothing has run in it;
   cleanup errors are swallowed and the original error is reported.

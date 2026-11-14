@@ -810,4 +810,14 @@ describe('Inbox thread deletion and worktrees', () => {
     expect(marker?.getAttribute('title')).toContain('started from main')
     expect(marker?.getAttribute('title')).toContain(worktree.root)
   })
+
+  it('keeps a thread whose worktree was deleted to read, with nothing to send, fork or open', async () => {
+    useWorkspace.setState({ inboxThreads: [inWorktree({ worktreeRemovedAt: Date.UTC(2026, 10, 14), archived: true })], selectedInboxThreadId: 'ses_one' })
+    const view = await render(createElement(InboxThreadView))
+    const marker = view.querySelector('[data-testid="inbox-thread-worktree"]')
+    expect(marker?.hasAttribute('data-removed')).toBe(true)
+    expect(marker?.getAttribute('title')).toContain('was deleted')
+    expect(view.querySelector('[data-testid="inbox-thread-read-only"]')?.textContent).toContain('mde/1a2b3c4d')
+    expect(view.querySelector('[data-testid="chat-composer"]')).toBeNull()
+  })
 })

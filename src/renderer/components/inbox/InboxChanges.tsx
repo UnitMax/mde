@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { AlertCircle, FileDiff, GitBranch, GitGraph, LoaderCircle, PanelRightClose, RefreshCw, X } from 'lucide-react'
+import { AlertCircle, FileDiff, FolderX, GitBranch, GitGraph, LoaderCircle, PanelRightClose, RefreshCw, X } from 'lucide-react'
 import type { GitChangeStatus, InboxChangeDiff, InboxChangedFile, InboxChangesResponse, DirectoryContext } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { FileTreePanel } from '@/components/FileTreePanel'
@@ -594,6 +594,40 @@ function ChangesAside({ threadId }: { threadId: string }): JSX.Element {
 }
 
 /**
+ * The Files or Changes tab of a thread whose worktree was deleted: its folder is gone, so there is nothing to list
+ * and nothing to ask Git about. It says so once, calmly, instead of the error either would end in.
+ */
+function DeletedWorktreeAside({ threadId, branch, tab }: { threadId: string; branch?: string; tab: 'files' | 'changes' }): JSX.Element {
+  const toggle = useWorkspace((s) => s.toggleFileTree)
+  return (
+    <aside data-testid="inbox-deleted-worktree-panel" className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-line bg-panel">
+      <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
+        <SidebarTabs threadId={threadId} />
+        <Button variant="ghost" size="icon-sm" className="shrink-0" title="Collapse sidebar" aria-label="Collapse sidebar" onClick={toggle}>
+          <PanelRightClose className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      <div
+        role="tabpanel"
+        id={`inbox-${tab}-panel`}
+        aria-labelledby={`inbox-${tab}-tab`}
+        className="flex min-h-0 flex-1 flex-col items-center gap-2 border-t border-line px-6 py-10 text-center"
+      >
+        <FolderX aria-hidden className="h-5 w-5 text-fg-subtle" />
+        <p className="text-[13px] text-fg-muted">
+          {tab === 'files' ? 'No files to show.' : 'No changes to show.'} This thread’s worktree was deleted, so its folder is gone.
+        </p>
+        <p className="text-[12px] text-fg-subtle">
+          {tab === 'files'
+            ? 'What the agent wrote is still in the conversation.'
+            : <>The edits it made are still in the conversation{branch && <>, and any commits stay on the branch <span className="inbox-code-font">{branch}</span> unless it was deleted too</>}.</>}
+        </p>
+      </div>
+    </aside>
+  )
+}
+
+/**
  * The Terminal tab: the Inbox's one terminal. It is the same whichever thread is open, so it is not tied to
  * one, and it is shown with the new-thread page as well.
  */
@@ -643,16 +677,26 @@ export function InboxSidebar({ session, threadId }: { session: DirectoryContext;
   // Changes belong to a thread. Without one, that tab is not offered and Files shows in its place.
   const tab = tabsFor(threadId).includes(stored) ? stored : 'files'
   const shown = Boolean(threadId) && !collapsed
+  // A thread whose worktree was deleted has no folder: nothing to list, and nothing to ask Git about.
+  const gone = useWorkspace((s) => (threadId ? s.inboxThreads.find((item) => item.id === threadId)?.worktreeRemovedAt !== undefined : false))
+  const goneBranch = useWorkspace((s) => (threadId ? s.inboxThreads.find((item) => item.id === threadId)?.worktree?.branch : undefined))
   // The tab's count stays current while the sidebar is open: one thread, so one cheap read.
   useEffect(() => {
-    if (threadId && shown) return useInboxChanges.getState().watch(threadId)
-  }, [threadId, shown])
+    if (threadId && shown && !gone) return useInboxChanges.getState().watch(threadId)
+  }, [threadId, shown, gone])
+  if (gone && threadId && !collapsed && tab !== 'terminal') {
+    return (
+      <InboxSidebarFrame>
+        <DeletedWorktreeAside threadId={threadId} tab={tab} {...(goneBranch ? { branch: goneBranch } : {})} />
+      </InboxSidebarFrame>
+    )
+  }
   if (collapsed) return <FileTreePanel session={session} browseOnly />
   return (
     <InboxSidebarFrame>
       {/* Kept mounted while another tab is showing, so the tree comes back with its folders open. Only the
-          copy on screen carries the tabs. */}
-      <div
+          copy on screen carries the tabs. A thread whose folder is gone has no tree to keep. */}
+      {!gone && <div
         role="tabpanel"
         id="inbox-files-panel"
         aria-labelledby="inbox-files-tab"
@@ -666,7 +710,7 @@ export function InboxSidebar({ session, threadId }: { session: DirectoryContext;
           heading={tab === 'files' ? <SidebarTabs threadId={threadId} /> : undefined}
           openInTerminal={(folder) => openInInboxTerminal(folder, session)}
         />
-      </div>
+      </div>}
       {tab === 'changes' && threadId && <ChangesAside threadId={threadId} />}
       {tab === 'terminal' && <TerminalAside threadId={threadId} />}
     </InboxSidebarFrame>

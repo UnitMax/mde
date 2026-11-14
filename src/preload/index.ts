@@ -144,7 +144,9 @@ const api: RendererApi = {
     updateFolder: (req) => ipcRenderer.invoke(IpcChannels.inboxFoldersUpdate, req),
     removeFolder: (req) => ipcRenderer.invoke(IpcChannels.inboxFoldersRemove, req),
     setComposer: (req) => ipcRenderer.invoke(IpcChannels.inboxComposerSet, req),
-    gitInfo: (req) => ipcRenderer.invoke(IpcChannels.inboxGitInfo, req)
+    gitInfo: (req) => ipcRenderer.invoke(IpcChannels.inboxGitInfo, req),
+    worktrees: () => ipcRenderer.invoke(IpcChannels.inboxWorktrees),
+    removeWorktree: (req) => ipcRenderer.invoke(IpcChannels.inboxWorktreeRemove, req)
   },
   chat: {
     backgroundTasks: (req) => ipcRenderer.invoke(IpcChannels.chatBackground, req),

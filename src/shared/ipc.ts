@@ -47,6 +47,9 @@ import type {
   InboxSetReadRequest,
   InboxThread,
   InboxUpdateFolderRequest,
+  InboxWorktreeEntry,
+  InboxWorktreeRemoveRequest,
+  InboxWorktreeRemoveResult,
   ChatConfigureRequest,
   ChatDiscardPendingRequest,
   ChatCreateRequest,
@@ -189,6 +192,8 @@ export const IpcChannels = {
   inboxFoldersUpdate: 'inbox:folders-update',
   inboxComposerSet: 'inbox:composer-set',
   inboxGitInfo: 'inbox:git-info',
+  inboxWorktrees: 'inbox:worktrees',
+  inboxWorktreeRemove: 'inbox:worktree-remove',
 
   chatConfigure: 'chat:configure',
   chatOptions: 'chat:options',
@@ -594,6 +599,8 @@ export interface RendererApi {
     removeFolder(req: InboxRemoveFolderRequest): Promise<void>
     setComposer(req: InboxComposerState): Promise<InboxComposerState>
     gitInfo(req: InboxGitInfoRequest): Promise<InboxGitInfo>
+    worktrees(): Promise<InboxWorktreeEntry[]>
+    removeWorktree(req: InboxWorktreeRemoveRequest): Promise<InboxWorktreeRemoveResult>
   }
   chat: {
     backgroundTasks(req: ChatThreadRequest): Promise<ChatBackgroundState>

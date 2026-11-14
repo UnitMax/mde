@@ -44,6 +44,9 @@ import type {
   InboxFolderIcon,
   InboxFoldersState,
   InboxGitInfo,
+  InboxWorktreeEntry,
+  InboxWorktreeRemoveRequest,
+  InboxWorktreeRemoveResult,
   InboxGitInfoRequest,
   InboxThread,
   InboxUpdateFolderRequest,
@@ -96,7 +99,7 @@ import { mentionAttachments, resolveFile } from './file-mentions'
 import type { InboxRecorder } from './recorder'
 import { InboxSearch } from './search'
 import { isChatAgentId, type InboxStore } from './store'
-import type { CreatedWorktree, InboxWorktrees } from './worktree'
+import type { CreatedWorktree, InboxWorktrees, WorktreeRecord } from './worktree'
 
 export const CHAT_PAGE_SIZE = 50
 export const CHAT_TEXT_MAX_LENGTH = 100_000
@@ -146,7 +149,7 @@ export interface InboxChatDependencies {
   /** Where answered side questions are kept; without it they are not kept. */
   asides?: InboxAsideHistory
   /** Git worktrees for threads; without it, worktree mode is unavailable. */
-  worktrees?: Pick<InboxWorktrees, 'info' | 'create' | 'remove' | 'discard'>
+  worktrees?: Pick<InboxWorktrees, 'info' | 'create' | 'remove' | 'discard' | 'list' | 'removeRoot' | 'deleteBranch'>
   thumbnail?(bytes: Buffer): string | undefined
   client: Pick<OpenCodeServiceClient, 'request' | 'openEvents' | 'reset' | 'endpoint'>
   store: InboxStore
@@ -278,7 +281,7 @@ export class InboxChatService {
   /** Only Inbox terminal threads may launch their recorded conversation in a PTY. */
   terminalSession(threadId: string): Session {
     this.assertEnabled()
-    const thread = this.thread(threadId)
+    const thread = this.liveThread(threadId)
     if (thread.mode !== 'terminal') throw new Error('This thread uses GUI chat.')
     this.streams.ensure(thread.target)
     return inboxThreadTerminalSession(thread)
@@ -595,6 +598,63 @@ export class InboxChatService {
     }
   }
 
+  /** What MDE recorded about its worktrees: the threads that run in one (not those kept after it was deleted) and the folder entries. */
+  private worktreeRecords(): WorktreeRecord[] {
+    const records: WorktreeRecord[] = []
+    for (const folder of this.dependencies.store.folders()) {
+      if (folder.worktree) records.push({ target: folder.target, ...folder.worktree, createdAt: folder.createdAt })
+    }
+    for (const thread of this.dependencies.store.list()) {
+      if (thread.worktree && thread.worktreeRemovedAt === undefined) records.push({ target: thread.target, ...thread.worktree, createdAt: thread.createdAt })
+    }
+    return records
+  }
+
+  /** The projects' own folders, whose repositories Git is asked about for worktrees MDE made in them. */
+  private worktreeRepositories(): { target: OpenCodeTarget; directory: string }[] {
+    return this.dependencies.store.folders().filter((folder) => !folder.worktree).map(({ target, directory }) => ({ target, directory }))
+  }
+
+  /** Every worktree MDE made, with what is in it now, for the worktree manager. */
+  async worktreeList(): Promise<InboxWorktreeEntry[]> {
+    this.assertEnabled()
+    if (!this.dependencies.worktrees) return []
+    return this.dependencies.worktrees.list(this.worktreeRepositories(), this.worktreeRecords(), { status: true })
+  }
+
+  /**
+   * Deletes a worktree from the worktree manager. It must be one MDE made, and nothing may be running in it.
+   * Its threads are kept to be read, its folder entry goes, and, when asked, its branch too.
+   */
+  async removeWorktree(request: InboxWorktreeRemoveRequest): Promise<InboxWorktreeRemoveResult> {
+    this.assertEnabled()
+    const worktrees = this.dependencies.worktrees
+    if (!worktrees) throw new Error('Git worktrees are unavailable.')
+    const key = serviceTargetKey(request.target)
+    const entry = (await worktrees.list(this.worktreeRepositories(), this.worktreeRecords()))
+      .find((item) => item.root === request.root && serviceTargetKey(item.target) === key)
+    if (!entry) throw new Error('MDE did not make this worktree, or it is already gone.')
+    const threads = this.dependencies.store.list().filter((thread) =>
+      thread.worktree?.root === entry.root && thread.worktreeRemovedAt === undefined && serviceTargetKey(thread.target) === key)
+    if (threads.some((thread) => thread.status === 'working' || thread.status === 'attention')) {
+      throw new Error('A thread is still running in this worktree. Stop it first.')
+    }
+    await worktrees.removeRoot(entry.target, entry.repository, entry.root, { force: request.force })
+    for (const folder of this.dependencies.store.folders()) {
+      if (folder.worktree?.root === entry.root && serviceTargetKey(folder.target) === key) this.dependencies.store.removeFolder(folder.id)
+    }
+    const now = this.dependencies.now()
+    for (const thread of threads) {
+      this.dependencies.recorder.markWorktreeRemoved(thread.id, now)
+      // Nothing can be sent from it any more.
+      await this.dependencies.drafts?.remove(`thread:${thread.id}`).catch(() => undefined)
+    }
+    const branchError = request.deleteBranch && entry.branch
+      ? await worktrees.deleteBranch(entry.target, entry.repository, entry.branch)
+      : null
+    return { threads: threads.map((thread) => thread.id), ...(branchError ? { branchError } : {}) }
+  }
+
   /** Lists a worktree that was just created in the folder chooser, so more threads can be started in it. */
   private addWorktreeFolder(source: InboxFolder, place: CreatedWorktree): void {
     const now = this.dependencies.now()
@@ -692,7 +752,7 @@ export class InboxChatService {
    */
   async send(request: ChatSendRequest): Promise<ChatPendingMessage | null> {
     this.assertEnabled()
-    const thread = this.thread(request.threadId)
+    const thread = this.liveThread(request.threadId)
     const text = this.promptText(request.text, request.attachmentIds)
     const files = request.attachmentIds?.length ? await this.dependencies.drafts?.files(`thread:${thread.id}`, request.attachmentIds, request.draftRevision) : undefined
     this.streams.ensure(thread.target)
@@ -808,7 +868,7 @@ export class InboxChatService {
    */
   async compact(threadId: string): Promise<void> {
     this.assertEnabled()
-    const thread = this.thread(threadId)
+    const thread = this.liveThread(threadId)
     this.streams.ensure(thread.target)
     try {
       await this.dependencies.client.request(thread.target, 'session.compact', {
@@ -850,7 +910,7 @@ export class InboxChatService {
    */
   async setGoal(request: ChatGoalRequest): Promise<void> {
     this.assertEnabled()
-    const thread = this.thread(request.threadId)
+    const thread = this.liveThread(request.threadId)
     let text: string
     if (request.action === 'set') {
       const problem = goalObjectiveProblem(request.objective)
@@ -887,7 +947,7 @@ export class InboxChatService {
    */
   async redo(threadId: string): Promise<void> {
     this.assertEnabled()
-    const thread = this.thread(threadId)
+    const thread = this.liveThread(threadId)
     this.streams.ensure(thread.target)
     try {
       await this.dependencies.client.request(thread.target, 'session.revert.clear', { params: { sessionID: thread.id } })
@@ -911,7 +971,7 @@ export class InboxChatService {
    */
   async revert(request: ChatRevertRequest): Promise<ChatRevert> {
     this.assertEnabled()
-    const thread = this.thread(request.threadId)
+    const thread = this.liveThread(request.threadId)
     this.streams.ensure(thread.target)
     // Interrupting a thread that is idle does nothing.
     await this.dependencies.client.request(thread.target, 'session.interrupt', { params: { sessionID: thread.id } })
@@ -948,7 +1008,7 @@ export class InboxChatService {
    */
   async fork(request: ChatForkRequest): Promise<ChatForkResult> {
     this.assertEnabled()
-    const source = this.thread(request.threadId)
+    const source = this.liveThread(request.threadId)
     this.streams.ensure(source.target)
     const { before, text } = request.messageId ? { before: request.messageId, text: undefined } : await this.forkBoundary(source)
     let answer: unknown
@@ -1291,6 +1351,13 @@ export class InboxChatService {
   private thread(id: string): InboxThread {
     const thread = this.dependencies.store.get(id)
     if (!thread) throw new Error('This thread is no longer in the Inbox.')
+    return thread
+  }
+
+  /** A thread something is to run in: not one whose worktree was deleted, which is kept only to be read. */
+  private liveThread(id: string): InboxThread {
+    const thread = this.thread(id)
+    if (thread.worktreeRemovedAt !== undefined) throw new Error('This thread’s worktree was deleted, so it can only be read.')
     return thread
   }
 

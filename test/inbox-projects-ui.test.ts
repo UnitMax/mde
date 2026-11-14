@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { InboxPanel } from '../src/renderer/components/InboxPanel'
-import { InboxProjectsDialog } from '../src/renderer/components/inbox/InboxProjectsDialog'
+import { InboxProjectsDialog, type ProjectsDialogStart } from '../src/renderer/components/inbox/InboxProjectsDialog'
 import { ProjectIcon } from '../src/renderer/components/inbox/ProjectIcon'
 import { getInboxTitleIcons, INBOX_TITLE_ICONS_STORAGE_KEY, saveInboxTitleIcons } from '../src/renderer/lib/inbox-settings'
 import { INBOX_FOLDER_SYMBOLS } from '../src/shared/inbox-folder-icons'
@@ -21,6 +21,8 @@ import type {
   InboxFolderSymbol,
   InboxThread,
   InboxUpdateFolderRequest,
+  InboxWorktreeEntry,
+  InboxWorktreeRemoveRequest,
 } from '../src/shared/types'
 
 function folder(id: string, name: string, overrides: Partial<InboxFolder> = {}): InboxFolder {
@@ -151,7 +153,8 @@ describe('Inbox project manager', () => {
     expect(row('app').textContent).toContain('/home/me/app · 3 threads')
     expect(row('docs').textContent).toContain('/home/me/docs · 1 thread')
     expect(document.body.textContent).not.toContain('ab12cd34 ·')
-    expect(document.body.textContent).toContain('Worktrees that MDE made for threads are not listed here.')
+    // Worktrees have a tab of their own.
+    expect(q('inbox-projects-tab-worktrees')?.getAttribute('aria-selected')).toBe('false')
     // The icon each project has; the plain folder for one without.
     expect(rowIcon('app')).toBe('folder')
     expect(rowIcon('docs')).toBe('book')
@@ -163,7 +166,6 @@ describe('Inbox project manager', () => {
     await open()
     expect(q('inbox-projects-empty')?.textContent).toContain('No projects yet')
     expect(q('inbox-project-add')).not.toBeNull()
-    expect(document.body.textContent).not.toContain('are not listed here')
   })
 
   it('names the WSL distro of a project that lives in one', async () => {
@@ -660,5 +662,146 @@ describe('Inbox project icons in front of the titles', () => {
     expect(titleIcon('ses_a')).toBeNull()
     expect(nameLineIcon('ses_a')?.getAttribute('data-icon')).toBe('emoji')
     expect(localStorage.getItem(INBOX_TITLE_ICONS_STORAGE_KEY)).toBe('off')
+  })
+})
+
+describe('Inbox worktree manager', () => {
+  let root: Root
+  let container: HTMLDivElement
+  const worktrees = vi.fn()
+  const removeWorktree = vi.fn()
+  const folders = vi.fn()
+  const onOpenChange = vi.fn()
+  const orphanRoot = '/home/me/.mde/worktrees/app-abc/ffff0000'
+  const used: InboxWorktreeEntry = { target: { kind: 'native' }, root: worktree.root, repository: '/home/me/app', branch: worktree.branch, base: 'main', createdAt: 1, missing: false, changes: 3, unmerged: 4 }
+  const orphan: InboxWorktreeEntry = { target: { kind: 'native' }, root: orphanRoot, repository: '/home/me/app', branch: 'mde/ffff0000', missing: false, changes: 0, unmerged: 0 }
+
+  const q = (testId: string): HTMLElement | null => document.body.querySelector<HTMLElement>(`[data-testid="${testId}"]`)
+  const all = (testId: string): HTMLElement[] => Array.from(document.body.querySelectorAll<HTMLElement>(`[data-testid="${testId}"]`))
+  const settle = async (): Promise<void> => { await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) }) }
+  const click = async (element: Element | null | undefined): Promise<void> => {
+    if (!element) throw new Error('Nothing to click')
+    await act(async () => (element as HTMLElement).click())
+  }
+  const row = (branch: string): HTMLElement => {
+    const found = all('inbox-worktree-row').find((item) => item.querySelector('[data-testid="inbox-worktree-branch"]')?.textContent === branch)
+    if (!found) throw new Error(`No worktree ${branch}`)
+    return found
+  }
+  const open = async (start?: ProjectsDialogStart): Promise<void> => {
+    await act(async () => root.render(createElement(InboxProjectsDialog, { open: true, onOpenChange, ...(start ? { start } : {}) })))
+    await settle()
+  }
+
+  beforeEach(() => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    worktrees.mockReset().mockResolvedValue([orphan, used])
+    removeWorktree.mockReset().mockImplementation(async (request: InboxWorktreeRemoveRequest) => ({ threads: request.root === worktree.root ? ['ses_d'] : [] }))
+    folders.mockReset().mockResolvedValue({ folders: [app], composer: {} })
+    onOpenChange.mockReset()
+    vi.stubGlobal('api', { inbox: { worktrees, removeWorktree, folders }, paths: { browse: vi.fn(async () => null), resolve: vi.fn() } })
+    useWorkspace.setState({
+      platform: { platform: 'darwin', isWindows: false },
+      inboxThreads: [
+        thread('ses_a'),
+        thread('ses_d', { title: 'Fix the toasts', folderId: 'fld_tree', directory: worktree.root, worktree, createdAt: 2 }),
+        // Kept from an earlier deletion: it is not one of the worktree's threads any more.
+        thread('ses_old', { title: 'Old one', directory: orphanRoot, worktree: { ...worktree, root: orphanRoot }, worktreeRemovedAt: 5, archived: true }),
+      ],
+      selectedInboxThreadId: null,
+      activeWorkspaceView: 'inbox',
+    })
+    useInboxChat.setState({ folders: [app, tree], composer: {}, foldersLoaded: true })
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+  })
+  afterEach(async () => {
+    await act(async () => root.unmount())
+    document.body.innerHTML = ''
+    vi.unstubAllGlobals()
+  })
+
+  it('lists every worktree under its project, with what is in it and the threads that run in it', async () => {
+    await open()
+    await click(q('inbox-projects-tab-worktrees'))
+    await settle()
+    expect(worktrees).toHaveBeenCalledTimes(1)
+    expect(document.body.querySelector('section[aria-label="app"]')).not.toBeNull()
+    expect(row('mde/ab12cd34').textContent).toContain('from main')
+    expect(row('mde/ab12cd34').querySelector('[data-testid="inbox-worktree-state"]')?.textContent).toContain('3 changed files')
+    expect(row('mde/ab12cd34').textContent).toContain('4 unmerged commits')
+    expect(row('mde/ab12cd34').querySelectorAll('[data-testid="inbox-worktree-thread"]')).toHaveLength(1)
+    expect(row('mde/ab12cd34').textContent).toContain('Fix the toasts')
+    expect(row('mde/ffff0000').textContent).toContain('No threads use it.')
+    expect(row('mde/ffff0000').textContent).not.toContain('Old one')
+    expect(row('mde/ffff0000').querySelector('[data-testid="inbox-worktree-state"]')?.getAttribute('data-state')).toBe('clean')
+  })
+
+  it('offers to select the unused worktrees only when there are some', async () => {
+    worktrees.mockResolvedValue([used])
+    await open({ tab: 'worktrees' })
+    expect(q('inbox-worktrees-select-unused')).toBeNull()
+  })
+
+  it('opens on a worktree when asked, and opens a thread from it', async () => {
+    await open({ tab: 'worktrees', focus: `native\0${worktree.root}` })
+    expect(row('mde/ab12cd34').hasAttribute('data-focused')).toBe(true)
+    expect(row('mde/ffff0000').hasAttribute('data-focused')).toBe(false)
+    await click(row('mde/ab12cd34').querySelector('[data-testid="inbox-worktree-thread"]'))
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_d')
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('names the threads that go with a worktree, warns about changes, and keeps the branch unless asked', async () => {
+    await open({ tab: 'worktrees' })
+    await click(row('mde/ab12cd34').querySelector('[data-testid="inbox-worktree-delete"]'))
+    expect(q('inbox-worktree-delete-threads')?.textContent).toContain('Fix the toasts')
+    expect(q('inbox-worktree-delete-changes')?.textContent).toContain('3 files with uncommitted changes will be lost')
+    expect(q('inbox-worktree-delete-dialog')?.textContent).toContain('4 commits no other branch has would be lost')
+    expect(q('inbox-worktree-delete-confirm')?.textContent).toContain('keep 1 thread read-only')
+    await click(q('inbox-worktree-delete-confirm'))
+    await settle()
+    expect(removeWorktree).toHaveBeenCalledWith({ target: { kind: 'native' }, root: worktree.root, force: true })
+    expect(q('inbox-worktree-delete-dialog')).toBeNull()
+    // The list and the folder chooser are read again.
+    expect(worktrees).toHaveBeenCalledTimes(2)
+    expect(folders).toHaveBeenCalled()
+  })
+
+  it('deletes the branch when asked, and does not force a clean worktree', async () => {
+    await open({ tab: 'worktrees' })
+    await click(row('mde/ffff0000').querySelector('[data-testid="inbox-worktree-delete"]'))
+    expect(q('inbox-worktree-delete-changes')).toBeNull()
+    expect(q('inbox-worktree-delete-dialog')?.textContent).toContain('No thread uses it.')
+    await click(q('inbox-worktree-delete-branch'))
+    await click(q('inbox-worktree-delete-confirm'))
+    await settle()
+    expect(removeWorktree).toHaveBeenCalledWith({ target: { kind: 'native' }, root: orphanRoot, deleteBranch: true })
+  })
+
+  it('will not delete while a thread in it is running', async () => {
+    useWorkspace.setState({ inboxThreads: [thread('ses_d', { title: 'Fix the toasts', directory: worktree.root, worktree, status: 'working' })] })
+    await open({ tab: 'worktrees' })
+    await click(row('mde/ab12cd34').querySelector('[data-testid="inbox-worktree-delete"]'))
+    expect(q('inbox-worktree-delete-threads')?.textContent).toContain('still running, stop it first')
+    expect((q('inbox-worktree-delete-confirm') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('selects the worktrees no thread uses and deletes them together, showing what Git refused', async () => {
+    removeWorktree.mockImplementation(async () => ({ threads: [], branchError: 'Could not delete the branch mde/ffff0000: not found' }))
+    await open({ tab: 'worktrees' })
+    expect((q('inbox-worktrees-delete-selected') as HTMLButtonElement).disabled).toBe(true)
+    expect(q('inbox-worktrees-delete-selected')?.textContent).toBe('Delete selected')
+    expect(q('inbox-worktrees-select-unused')?.textContent).toBe('Select the one with no threads')
+    await click(q('inbox-worktrees-select-unused'))
+    expect(all('inbox-worktree-select').map((box) => (box as HTMLInputElement).checked)).toEqual([false, true])
+    expect(q('inbox-worktrees-delete-selected')?.textContent).toBe('Delete 1 worktree')
+    await click(q('inbox-worktrees-delete-selected'))
+    await click(q('inbox-worktree-delete-branch'))
+    await click(q('inbox-worktree-delete-confirm'))
+    await settle()
+    expect(removeWorktree).toHaveBeenCalledTimes(1)
+    expect(q('inbox-worktree-delete-error')?.textContent).toContain('not found')
   })
 })

@@ -458,6 +458,27 @@ it('shows the changes on the Changes tab, the same view as the popover, and revi
   expect(container.querySelector('[data-testid="inbox-change-viewer"]')).not.toBeNull()
 })
 
+it('says the folder is gone for a thread whose worktree was deleted, and asks nothing of it', async () => {
+  const worktree = { repository: '/home/me/app', root: '/home/me/.mde/worktrees/app-abc/1a2b3c4d', branch: 'mde/1a2b3c4d', base: 'main' }
+  useWorkspace.setState({ inboxThreads: [{ ...thread, worktree, worktreeRemovedAt: 5 }] })
+  const list = (window as unknown as { api: { files: { list: ReturnType<typeof vi.fn> } } }).api.files.list
+  list.mockClear()
+  changes.mockClear()
+  await sidebar()
+  const panel = (): HTMLElement | null => container.querySelector('[data-testid="inbox-deleted-worktree-panel"]')
+  expect(panel()?.textContent).toContain('No files to show.')
+  expect(container.querySelector('[data-testid="file-tree-panel"]')).toBeNull()
+  await act(async () => tab('changes')!.click())
+  expect(panel()?.textContent).toContain('No changes to show.')
+  expect(panel()?.textContent).toContain('mde/1a2b3c4d')
+  expect(changesPanel()).toBeNull()
+  // The terminal is the Inbox's own, not the thread's, so it stays.
+  await act(async () => tab('terminal')!.click())
+  expect(panel()).toBeNull()
+  expect(list).not.toHaveBeenCalled()
+  expect(changes).not.toHaveBeenCalled()
+})
+
 it('keeps the file tree mounted behind Changes, so it comes back as it was', async () => {
   await sidebar()
   const tree = container.querySelector('[data-testid="file-tree-panel"]')

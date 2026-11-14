@@ -89,6 +89,9 @@ import type {
   InboxGitCommitDetails,
   InboxGitFetchResult,
   InboxGitInfoRequest,
+  InboxWorktreeEntry,
+  InboxWorktreeRemoveRequest,
+  InboxWorktreeRemoveResult,
   InboxRemoveFolderRequest,
   InboxRemoveRequest,
   InboxSetArchivedRequest,
@@ -593,6 +596,14 @@ export function registerIpcHandlers(
   handle<InboxRemoveFolderRequest, void>(IpcChannels.inboxFoldersRemove, (req) => chat.removeFolder(req.id))
   handle<InboxComposerState, InboxComposerState>(IpcChannels.inboxComposerSet, (req) => chat.setComposer(req))
   handle<InboxGitInfoRequest, InboxGitInfo>(IpcChannels.inboxGitInfo, (req) => chat.gitInfo(req))
+  handle<void, InboxWorktreeEntry[]>(IpcChannels.inboxWorktrees, () => chat.worktreeList())
+  handle<InboxWorktreeRemoveRequest, InboxWorktreeRemoveResult>(IpcChannels.inboxWorktreeRemove, async (req) => {
+    const result = await chat.removeWorktree(req)
+    // The worktree's entry in the folder chooser went with it.
+    const contents = security.getWebContents()
+    if (contents && !contents.isDestroyed()) contents.send(IpcEvents.inboxFoldersChanged)
+    return result
+  })
 
   // OpenCode runs where its configuration lives: inside WSL on Windows, on this computer elsewhere. The renderer
   // only names which; the folder and file are worked out in the main process.

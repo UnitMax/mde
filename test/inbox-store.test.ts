@@ -86,6 +86,10 @@ describe('inbox thread validation', () => {
     const worktree = { repository: '/home/me/app', root: '/home/me/.mde/worktrees/app-abc/1a2b3c4d', branch: 'mde/1a2b3c4d', base: 'origin/main' }
     expect(validateInboxThread(thread({ worktree }))).toEqual(thread({ worktree }))
     expect(validateInboxThread({ ...thread({ worktree }), worktree: { ...worktree, extra: 'dropped' } })).toEqual(thread({ worktree }))
+    // A thread kept after its worktree was deleted stays read only; the mark means nothing without a worktree.
+    expect(validateInboxThread(thread({ worktree, worktreeRemovedAt: 5 }))).toEqual(thread({ worktree, worktreeRemovedAt: 5 }))
+    expect(validateInboxThread({ ...thread({ worktree }), worktreeRemovedAt: 'soon' })).toEqual(thread({ worktree }))
+    expect(validateInboxThread({ ...thread(), worktreeRemovedAt: 5 })).toEqual(thread())
     // A bad worktree record costs the thread its worktree, never the thread.
     for (const bad of ['x', null, [], {}, { ...worktree, root: '' }, { ...worktree, branch: 5 }, { ...worktree, base: 'a\nb' }, { ...worktree, repository: 'x'.repeat(5000) }]) {
       expect(validateInboxThread({ ...thread(), worktree: bad })).toEqual(thread())

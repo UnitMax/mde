@@ -24,7 +24,8 @@ export function InboxThreadView(): JSX.Element {
     // or a key (typing a reply). Capture, so a terminal or editor that stops the event still counts.
     <div className="flex h-full min-h-0 flex-col" onPointerDownCapture={markSeen} onKeyDownCapture={markSeen}>
       <ThreadHeader thread={thread} />
-      {thread.mode === 'terminal'
+      {/* A terminal thread whose worktree was deleted has no folder to start in; its conversation is read as a chat. */}
+      {thread.mode === 'terminal' && thread.worktreeRemovedAt === undefined
         ? <TerminalThreadView key={thread.id} thread={thread} />
         : <ChatThreadView key={thread.id} thread={thread} />}
     </div>

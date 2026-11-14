@@ -6,6 +6,7 @@ import {
   Car,
   ChevronDown,
   ChevronRight,
+  FolderX,
   GitBranch,
   GitFork,
   Inbox,
@@ -209,7 +210,7 @@ function InboxThreadRow({
   const [removing, setRemoving] = useState(false)
   const [removeError, setRemoveError] = useState<string | null>(null)
   // A worktree another thread (a fork of this one, say) still runs in is not offered for removal.
-  const ownsWorktree = useWorkspace((state) => Boolean(thread.worktree) && !inboxWorktreeShared(thread, state.inboxThreads))
+  const ownsWorktree = useWorkspace((state) => Boolean(thread.worktree) && thread.worktreeRemovedAt === undefined && !inboxWorktreeShared(thread, state.inboxThreads))
   const unread = isInboxThreadUnread(thread)
   // Fancy mode lights the row: a storm while it is unread, digital rain while it works (unread comes first).
   const effect = unread ? 'unread' : inboxThreadWorking(thread) ? 'working' : null
@@ -273,6 +274,11 @@ function InboxThreadRow({
               {thread.spawnedBy && (
                 <span title="Started by an agent" data-testid={`inbox-thread-spawned-mark-${thread.id}`}>
                   <Bot role="img" aria-label="Started by an agent" className="h-3 w-3 shrink-0 text-fg-subtle" />
+                </span>
+              )}
+              {thread.worktreeRemovedAt !== undefined && (
+                <span title="Its worktree was deleted; kept to read" data-testid={`inbox-thread-read-only-mark-${thread.id}`}>
+                  <FolderX role="img" aria-label="Read only: its worktree was deleted" className="h-3 w-3 shrink-0 text-fg-subtle" />
                 </span>
               )}
               {thread.mode === 'terminal' && (

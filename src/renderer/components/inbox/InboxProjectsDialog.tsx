@@ -17,12 +17,17 @@ import { Label } from '@/components/ui/label'
 import { AddProjectForm, PROJECT_NAME_MAX_LENGTH } from '@/components/inbox/AddInboxFolderDialog'
 import { ProjectIcon } from '@/components/inbox/ProjectIcon'
 import { ProjectIconPicker } from '@/components/inbox/ProjectIconPicker'
+import { InboxWorktreesPanel } from '@/components/inbox/InboxWorktreesPanel'
 import { inboxThreadFolder } from '@/lib/inbox'
 import { ipcErrorMessage } from '@/lib/ipc-error'
+import { cn } from '@/lib/utils'
 import { useInboxChat } from '@/store/inbox-chat'
 import { useWorkspace } from '@/store/workspace'
 
-type View = { kind: 'list' } | { kind: 'add' } | { kind: 'edit'; id: string }
+type View = { kind: 'list' } | { kind: 'add' } | { kind: 'edit'; id: string } | { kind: 'worktrees' }
+
+/** Which list the dialog opens on, and, for the worktrees, the one to show first (by `worktreeKey`). */
+export type ProjectsDialogStart = { tab: 'projects' } | { tab: 'worktrees'; focus?: string }
 
 /** Where a project is, for its row: the folder, and the WSL distro it is in. */
 function placeOf(folder: InboxFolder): string {
@@ -147,37 +152,43 @@ function ProjectRow({
 
 /**
  * The project manager: every folder the Inbox can start threads in, with their icons. A project can be added,
- * renamed, given another icon, or removed. Worktrees MDE made for threads are not projects and are not listed.
+ * renamed, given another icon, or removed. Worktrees MDE made for threads are not projects: they have a tab of
+ * their own, the worktree manager.
  */
 export function InboxProjectsDialog({
   open,
   onOpenChange,
+  start = { tab: 'projects' },
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  start?: ProjectsDialogStart
 }): JSX.Element {
   const folders = useInboxChat((state) => state.folders)
   const removeFolder = useInboxChat((state) => state.removeFolder)
   const threads = useWorkspace((state) => state.inboxThreads)
-  const [view, setView] = useState<View>({ kind: 'list' })
+  const startView: View = start.tab === 'worktrees' ? { kind: 'worktrees' } : { kind: 'list' }
+  const [view, setView] = useState<View>(startView)
   const [removing, setRemoving] = useState<InboxFolder | null>(null)
   const [removeBusy, setRemoveBusy] = useState(false)
   const [removeError, setRemoveError] = useState<string | null>(null)
 
-  // Closed, it forgets where it was: the next opening starts at the list.
+  // Opened, it starts where it was asked to; closed, it forgets where it was.
+  const startTab = start.tab
   useEffect(() => {
-    if (open) return
-    setView({ kind: 'list' })
+    if (open) {
+      setView(startTab === 'worktrees' ? { kind: 'worktrees' } : { kind: 'list' })
+      return
+    }
     setRemoving(null)
     setRemoveError(null)
-  }, [open])
+  }, [open, startTab])
 
   // By name, so a project keeps its place while it is used; the chooser on the new-thread page is by use.
   const projects = useMemo(
     () => folders.filter((folder) => !folder.worktree).sort((a, b) => a.name.localeCompare(b.name)),
     [folders]
   )
-  const worktrees = folders.length - projects.length
   const counts = useMemo(() => {
     const result = new Map<string, number>()
     for (const thread of threads) {
@@ -196,9 +207,9 @@ export function InboxProjectsDialog({
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         {/* The icon picker makes the form tall; in a short window the dialog scrolls instead of running off the screen. */}
-        <DialogContent className="max-h-[calc(100vh-2rem)] max-w-lg overflow-y-auto" data-testid="inbox-projects">
+        <DialogContent className={cn('max-h-[calc(100vh-2rem)] overflow-y-auto', shown.kind === 'worktrees' ? 'max-w-2xl' : 'max-w-lg')} data-testid="inbox-projects">
           <DialogHeader>
-            {shown.kind !== 'list' && (
+            {(shown.kind === 'add' || shown.kind === 'edit') && (
               <Button
                 type="button"
                 variant="ghost"
@@ -211,16 +222,44 @@ export function InboxProjectsDialog({
                 Projects
               </Button>
             )}
-            <DialogTitle>{shown.kind === 'add' ? 'Add a project' : shown.kind === 'edit' ? 'Edit project' : 'Projects'}</DialogTitle>
+            <DialogTitle>
+              {shown.kind === 'add' ? 'Add a project' : shown.kind === 'edit' ? 'Edit project' : shown.kind === 'worktrees' ? 'Worktrees' : 'Projects'}
+            </DialogTitle>
             <DialogDescription>
               {shown.kind === 'list'
                 ? 'The folders OpenCode works in. A project’s icon shows beside its threads in the sidebar.'
-                : shown.kind === 'add'
+                : shown.kind === 'worktrees'
+                  ? 'The Git worktrees MDE made for threads, and the threads in each. Deleting one keeps its threads to read.'
+                  : shown.kind === 'add'
                   ? 'New threads start OpenCode in this folder. Projects are separate from your terminal sessions.'
                   : 'Rename the project or give it another icon.'}
             </DialogDescription>
           </DialogHeader>
 
+          {(shown.kind === 'list' || shown.kind === 'worktrees') && (
+            <div role="tablist" aria-label="Projects and worktrees" className="-mt-1 flex gap-1 border-b border-line pb-2">
+              {([['list', 'Projects'], ['worktrees', 'Worktrees']] as const).map(([kind, label]) => (
+                <button
+                  key={kind}
+                  type="button"
+                  role="tab"
+                  aria-selected={shown.kind === kind}
+                  tabIndex={shown.kind === kind ? 0 : -1}
+                  data-testid={`inbox-projects-tab-${kind === 'list' ? 'projects' : 'worktrees'}`}
+                  onClick={() => setView({ kind })}
+                  className={cn(
+                    'rounded px-3 py-1 text-[13px] transition-colors',
+                    shown.kind === kind ? 'bg-hover text-fg' : 'text-fg-muted hover:bg-hover hover:text-fg',
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          {shown.kind === 'worktrees' && (
+            <InboxWorktreesPanel focus={start.tab === 'worktrees' ? start.focus : undefined} onClose={() => onOpenChange(false)} />
+          )}
           {shown.kind === 'add' && <AddProjectForm onClose={back} />}
           {shown.kind === 'edit' && editing && <EditProjectForm key={editing.id} folder={editing} onClose={back} />}
           {shown.kind === 'list' && (
@@ -244,11 +283,6 @@ export function InboxProjectsDialog({
                     />
                   ))}
                 </ul>
-              )}
-              {worktrees > 0 && (
-                <p className="mt-2 text-[11px] text-fg-subtle">
-                  Worktrees that MDE made for threads are not listed here.
-                </p>
               )}
               <DialogFooter>
                 <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Close</Button>

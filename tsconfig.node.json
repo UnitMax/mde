@@ -105,6 +105,7 @@
     "src/renderer/components/ui/select.tsx",
     "src/renderer/components/ui/switch.tsx",
     "src/renderer/lib/inbox.ts",
+    "src/renderer/lib/inbox-worktrees.ts",
     "src/renderer/components/ElapsedTime.tsx",
     "src/renderer/components/InboxPanel.tsx",
     "src/renderer/components/InboxThreadView.tsx",

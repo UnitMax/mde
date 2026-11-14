@@ -80,6 +80,7 @@ const attentionCount: Validator = (value) =>
 const distro: Validator = (value) => typeof value === 'string' && value.length <= 128 && !controls.test(value) &&
   /^[A-Za-z0-9][A-Za-z0-9._ -]{0,127}$/.test(value.trim())
 const kind = oneOf('native', 'wsl')
+const openCodeTarget: Validator = (value) => object({ kind: oneOf('native') })(value) || object({ kind: oneOf('wsl'), distro })(value)
 const sessionId = object({ sessionId: id })
 const terminalId = object({ terminalId: id })
 const terminalDirectory = { terminalId: id, directory: path }
@@ -247,6 +248,8 @@ export const ipcPayloadValidators = {
   [IpcChannels.inboxFoldersRemove]: object({ id: inboxFolderId }),
   [IpcChannels.inboxComposerSet]: object({ folderId: optional(inboxFolderId), agent: optional(agentId), model: optional(modelRef) }),
   [IpcChannels.inboxGitInfo]: object({ folderId: inboxFolderId }),
+  [IpcChannels.inboxWorktrees]: noPayload,
+  [IpcChannels.inboxWorktreeRemove]: object({ target: openCodeTarget, root: path, force: optional(boolean), deleteBranch: optional(boolean) }),
   [IpcChannels.inboxChangeDiff]: object({ threadId: opencodeSessionId, path }),
   [IpcChannels.inboxChanges]: object({ threadId: opencodeSessionId, details: optional(boolean) }),
   [IpcChannels.gitGraph]: gitRoot({ limit: graphLimit, scope: oneOf('all', 'local', 'head') }),

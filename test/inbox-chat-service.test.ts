@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { InboxDraftStore } from '../src/main/inbox/drafts'
 import { describe, expect, it, vi } from 'vitest'
-import type { ChatEvent } from '../src/shared/types'
+import type { ChatEvent, InboxWorktreeEntry } from '../src/shared/types'
 import { ASIDE_PREAMBLE, ASIDE_TIMEOUT_MS, InboxChatService, type InboxChatDependencies } from '../src/main/inbox/chat'
 import { InboxRecorder, isInboxThreadUnread } from '../src/main/inbox/recorder'
 import { InboxStore } from '../src/main/inbox/store'
@@ -497,6 +497,7 @@ describe('Inbox chat service', () => {
       const worktrees = {
         info: vi.fn(), remove: vi.fn(async () => {}), discard: vi.fn(async () => {}),
         create: vi.fn(async () => ({ directory: root, worktree })),
+        list: vi.fn(async () => []), removeRoot: vi.fn(async () => {}), deleteBranch: vi.fn(async () => null),
       }
       const { service, folder, calls } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'skill.list': skillList('demo') }, undefined, worktrees)
       await service.create({ folderId: folder.id, text: '$demo go', agent: 'build', model, worktree: { base: 'origin/main' } })
@@ -1824,6 +1825,9 @@ describe('Inbox chat service worktrees', () => {
       create: vi.fn(async () => made),
       remove: vi.fn(async () => {}),
       discard: vi.fn(async () => {}),
+      list: vi.fn(async (): Promise<InboxWorktreeEntry[]> => []),
+      removeRoot: vi.fn(async () => {}),
+      deleteBranch: vi.fn(async (): Promise<string | null> => null),
     }
   }
 
@@ -1972,6 +1976,84 @@ describe('Inbox chat service worktrees', () => {
       await service.removeThreadWorktree('ses_new')
       expect(store.folders().filter((item) => item.worktree).map((item) => item.id)).toEqual(['fld_other'])
       service.stop()
+    })
+
+    describe('from the worktree manager', () => {
+      const entry = { target: wsl, root: worktree.root, repository: worktree.repository, branch: worktree.branch, missing: false, changes: 0, unmerged: 0 }
+
+      async function started(worktrees: ReturnType<typeof fake>) {
+        const made = setup({ 'session.create': { data: { id: 'ses_new' } } }, undefined, worktrees)
+        await made.service.create({ folderId: made.folder.id, text: 'Hi', agent: 'build', model, worktree: { base: 'main' } })
+        const idle = (id: string) => made.store.put({ ...made.store.get(id)!, status: 'idle' })
+        return { ...made, idle }
+      }
+
+      it('lists from the projects’ own folders and from what MDE recorded, with what is in each', async () => {
+        const worktrees = fake()
+        worktrees.list.mockResolvedValue([entry])
+        const { service, folder } = await started(worktrees)
+        await expect(service.worktreeList()).resolves.toEqual([entry])
+        const [repositories, records, options] = worktrees.list.mock.calls[0] as unknown as Parameters<NonNullable<InboxChatDependencies['worktrees']>['list']>
+        expect(repositories).toEqual([{ target: wsl, directory: folder.directory }])
+        expect(records).toEqual(expect.arrayContaining([expect.objectContaining({ target: wsl, root: worktree.root, base: worktree.base })]))
+        expect(options).toEqual({ status: true })
+        service.stop()
+      })
+
+      it('removes it, drops its folder entry and keeps its threads to be read only', async () => {
+        const worktrees = fake()
+        worktrees.list.mockResolvedValue([entry])
+        const { service, store, idle } = await started(worktrees)
+        idle('ses_new')
+        store.put({ ...store.get('ses_new')!, pinned: true })
+        await expect(service.removeWorktree({ target: wsl, root: worktree.root, force: true })).resolves.toEqual({ threads: ['ses_new'] })
+        expect(worktrees.removeRoot).toHaveBeenCalledWith(wsl, worktree.repository, worktree.root, { force: true })
+        expect(worktrees.deleteBranch).not.toHaveBeenCalled()
+        expect(store.folders().filter((item) => item.worktree)).toEqual([])
+        expect(store.get('ses_new')).toMatchObject({ archived: true, worktreeRemovedAt: expect.any(Number), worktree })
+        expect(store.get('ses_new')?.pinned).toBeUndefined()
+        // Nothing runs in a folder that is gone.
+        await expect(service.send({ threadId: 'ses_new', text: 'More' })).rejects.toThrow('can only be read')
+        await expect(service.fork({ threadId: 'ses_new' })).rejects.toThrow('can only be read')
+        await expect(service.redo('ses_new')).rejects.toThrow('can only be read')
+        service.stop()
+      })
+
+      it('deletes the branch only when asked, and says when Git refused', async () => {
+        const worktrees = fake()
+        worktrees.list.mockResolvedValue([entry])
+        worktrees.deleteBranch.mockResolvedValue('Could not delete the branch mde/1a2b3c4d: it is checked out')
+        const { service, idle } = await started(worktrees)
+        idle('ses_new')
+        await expect(service.removeWorktree({ target: wsl, root: worktree.root, deleteBranch: true }))
+          .resolves.toEqual({ threads: ['ses_new'], branchError: 'Could not delete the branch mde/1a2b3c4d: it is checked out' })
+        expect(worktrees.deleteBranch).toHaveBeenCalledWith(wsl, worktree.repository, worktree.branch)
+        service.stop()
+      })
+
+      it('refuses while a thread runs in it, and a worktree MDE does not list', async () => {
+        const worktrees = fake()
+        worktrees.list.mockResolvedValue([entry])
+        const { service, store } = await started(worktrees)
+        await expect(service.removeWorktree({ target: wsl, root: worktree.root })).rejects.toThrow('Stop it first')
+        await expect(service.removeWorktree({ target: wsl, root: '/home/me/app' })).rejects.toThrow('did not make')
+        await expect(service.removeWorktree({ target: { kind: 'native' }, root: worktree.root })).rejects.toThrow('did not make')
+        expect(worktrees.removeRoot).not.toHaveBeenCalled()
+        expect(store.get('ses_new')?.worktreeRemovedAt).toBeUndefined()
+        service.stop()
+      })
+
+      it('leaves the threads as they were when Git refuses', async () => {
+        const worktrees = fake()
+        worktrees.list.mockResolvedValue([entry])
+        worktrees.removeRoot.mockRejectedValue(new Error('Could not remove the worktree: it has changes'))
+        const { service, store, idle } = await started(worktrees)
+        idle('ses_new')
+        await expect(service.removeWorktree({ target: wsl, root: worktree.root })).rejects.toThrow('it has changes')
+        expect(store.get('ses_new')).toMatchObject({ archived: false })
+        expect(store.folders().filter((item) => item.worktree)).toHaveLength(1)
+        service.stop()
+      })
     })
   })
 

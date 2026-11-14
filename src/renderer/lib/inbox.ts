@@ -101,7 +101,7 @@ export function inboxThreadHome(thread: Pick<InboxThread, 'directory' | 'worktre
   return thread.worktree?.repository ?? thread.directory
 }
 
-function sameInboxTarget(a: OpenCodeTarget, b: OpenCodeTarget): boolean {
+export function sameInboxTarget(a: OpenCodeTarget, b: OpenCodeTarget): boolean {
   return a.kind === b.kind && (a.kind === 'native' || (b.kind === 'wsl' && a.distro === b.distro))
 }
 
@@ -171,7 +171,7 @@ export function inboxWorktreeShared(thread: InboxThread, threads: readonly Inbox
   const worktree = thread.worktree
   if (!worktree) return false
   return threads.some((other) =>
-    other.id !== thread.id && other.worktree?.root === worktree.root && sameInboxTarget(other.target, thread.target))
+    other.id !== thread.id && other.worktreeRemovedAt === undefined && other.worktree?.root === worktree.root && sameInboxTarget(other.target, thread.target))
 }
 
 /**
