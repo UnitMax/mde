@@ -551,6 +551,15 @@ sessions, so with folders in more than one place (several WSL distros) the dialo
 filtered project's first. An OpenCode without the route answers 404 and the dialog asks for an update. Nothing is
 cached: opening the dialog, changing the range and Refresh read again.
 
+### Inbox sidebar tabs
+
+The right-hand sidebar's tabs (Files, Changes, Tools, Terminal) are pills with an icon, so all of them fit at the
+sidebar's 260 px default without scrolling. Below a strip width of 23.5rem (a container query on the strip;
+four named tabs need about 22.5rem) only the tab being shown carries its name, and the others are icons
+with their count (changed files, tool calls) as a small mark on the corner; their name and count are in the
+tooltip and the accessible name. Wider, every tab is named, with its count beside it. The strip still scrolls
+sideways as a last resort.
+
 ### Inbox tool calls
 
 The **Tools** tab in the right-hand sidebar (between Changes and Terminal) lists every tool call of the open

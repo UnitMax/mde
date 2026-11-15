@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { AlertCircle, FileDiff, FolderX, GitBranch, GitGraph, LoaderCircle, PanelRightClose, RefreshCw, X } from 'lucide-react'
+import { AlertCircle, FileDiff, Folder, FolderX, GitBranch, GitGraph, LoaderCircle, PanelRightClose, RefreshCw, SquareTerminal, Wrench, X, type LucideIcon } from 'lucide-react'
 import type { GitChangeStatus, InboxChangeDiff, InboxChangedFile, InboxChangesResponse, InboxThread, DirectoryContext } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { FileTreePanel } from '@/components/FileTreePanel'
@@ -446,6 +446,7 @@ export function InboxChangesBadge({ threadId }: { threadId: string }): JSX.Eleme
 const SIDEBAR_TABS = ['files', 'changes', 'tools', 'terminal'] as const
 type SidebarTab = (typeof SIDEBAR_TABS)[number]
 const SIDEBAR_TAB_LABELS: Record<SidebarTab, string> = { files: 'Files', changes: 'Changes', tools: 'Tools', terminal: 'Terminal' }
+const SIDEBAR_TAB_ICONS: Record<SidebarTab, LucideIcon> = { files: Folder, changes: FileDiff, tools: Wrench, terminal: SquareTerminal }
 /**
  * A thread has changes to show; the page for a new one has none yet, so it offers Files and Terminal. Tool calls
  * are only known for a GUI thread: a terminal thread's agent runs where MDE cannot see its calls.
@@ -499,11 +500,11 @@ function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
       ref={strip}
       role="tablist"
       aria-label="Thread sidebar"
-      wrapperClassName="flex-1"
+      // The strip is the container the tabs measure: below 23.5rem (all four named need about 22.5) only the shown tab is named .
+      wrapperClassName="@container/tabs flex-1"
       revealKey={tab}
-      // Room below the tabs for the shown tab's underline, which the scrolling list would clip, taken back
-      // from the layout so the header keeps its height.
-      className="-mb-1.5 gap-x-3 pb-1.5"
+      // Room above for the count marks on the icons' corners, which the scrolling list would clip.
+      className="-mt-1.5 gap-1 pt-1.5"
       onKeyDown={(event) => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
         event.preventDefault()
@@ -516,6 +517,12 @@ function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
     >
       {tabs.map((item) => {
         const selected = tab === item
+        const Icon = SIDEBAR_TAB_ICONS[item]
+        const label = SIDEBAR_TAB_LABELS[item]
+        const badge = item === 'changes' ? count : item === 'tools' ? toolCount : 0
+        const spoken = item === 'changes' ? `${label}, ${fileCountLabel(badge)} changed` : item === 'tools' ? `${label}, ${badge} ${badge === 1 ? 'call' : 'calls'}` : label
+        // Narrow, the tab that is shown keeps its name and the others are icons; wide enough, all are named.
+        const named = selected ? '' : 'hidden @min-[23.5rem]/tabs:inline'
         return (
           <button
             key={item}
@@ -526,21 +533,36 @@ function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
             id={`inbox-${item}-tab`}
             aria-selected={selected}
             aria-controls={`inbox-${item}-panel`}
+            aria-label={badge > 0 ? spoken : label}
+            title={badge > 0 ? spoken : label}
             tabIndex={selected ? 0 : -1}
             onClick={(event) => choose(item, event.detail > 0)}
             className={cn(
-              'relative flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[11px] font-medium uppercase tracking-wide transition-colors',
+              'relative flex h-6 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md text-[12px] font-medium transition-colors',
+              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent',
               selected
-                ? 'text-fg after:absolute after:inset-x-0 after:-bottom-1.5 after:h-0.5 after:rounded-full after:bg-accent'
-                : 'text-fg-subtle hover:text-fg-muted'
+                ? 'bg-elevated px-2 text-fg ring-1 ring-inset ring-line-strong'
+                : 'px-1.5 text-fg-subtle hover:bg-hover hover:text-fg @min-[23.5rem]/tabs:px-2'
             )}
           >
-            {SIDEBAR_TAB_LABELS[item]}
-            {item === 'changes' && count > 0 && (
-              <span className="rounded-full bg-fg/10 px-1.5 py-px text-[10px] normal-case leading-none tabular-nums text-fg-muted">{count}</span>
+            <Icon aria-hidden className="h-3.5 w-3.5 shrink-0" />
+            <span className={named}>{label}</span>
+            {badge > 0 && (
+              <span
+                data-testid={item === 'tools' ? 'inbox-tools-count' : undefined}
+                className={cn('rounded-full bg-fg/10 px-1.5 py-px text-[10px] leading-none tabular-nums text-fg-muted', named)}
+              >
+                {badge}
+              </span>
             )}
-            {item === 'tools' && toolCount > 0 && (
-              <span data-testid="inbox-tools-count" className="rounded-full bg-fg/10 px-1.5 py-px text-[10px] normal-case leading-none tabular-nums text-fg-muted">{toolCount}</span>
+            {badge > 0 && !selected && (
+              // An icon alone carries its count as a small mark on its corner.
+              <span
+                aria-hidden
+                className="absolute -right-1.5 -top-1 flex h-3 min-w-3 items-center justify-center rounded-full bg-active px-[3px] text-[8.5px] font-semibold leading-none tabular-nums text-fg-muted ring-[1.5px] ring-panel @min-[23.5rem]/tabs:hidden"
+              >
+                {badge > 99 ? '99+' : badge}
+              </span>
             )}
           </button>
         )
