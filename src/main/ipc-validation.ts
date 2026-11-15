@@ -228,6 +228,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.clipboardPaste]: noPayload,
   [IpcChannels.wslAvailable]: noPayload,
   [IpcChannels.wslDistros]: noPayload,
+  [IpcChannels.wslResourcesWatch]: object({ enabled: boolean }),
   [IpcChannels.pathBrowse]: noPayload,
   [IpcChannels.pathResolve]: object({ kind, distro: optional(distro), rawPath: optionalPath }),
   [IpcChannels.pathValidate]: object({ kind, distro: optional(distro), path: optionalPath }),

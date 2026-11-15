@@ -59,6 +59,7 @@ const validPayloads = {
   [IpcChannels.clipboardPaste]: undefined,
   [IpcChannels.wslAvailable]: undefined,
   [IpcChannels.wslDistros]: undefined,
+  [IpcChannels.wslResourcesWatch]: { enabled: true },
   [IpcChannels.pathBrowse]: undefined,
   [IpcChannels.pathResolve]: { kind: 'wsl', distro: undefined, rawPath: '' },
   [IpcChannels.pathValidate]: { kind: 'native', path: 'C:\\src\\project' },
@@ -491,6 +492,8 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.attentionBeep, {})
     rejects(IpcChannels.floatingTerminalActive, { active: 'yes' })
     rejects(IpcChannels.floatingTerminalActive, {})
+    rejects(IpcChannels.wslResourcesWatch, { enabled: 1 })
+    rejects(IpcChannels.wslResourcesWatch, undefined)
     expect(() => assertIpcPayload(IpcChannels.attentionUpdate, { indicator: null })).not.toThrow()
     expect(() => assertIpcPayload(IpcChannels.attentionUpdate, { indicator: { tone: 'input', count: 99 }, flash: 'continuous' })).not.toThrow()
     expect(() => assertIpcPayload(IpcChannels.windowChromeSet, { color: '#FFF', symbolColor: '#aBc123' })).not.toThrow()

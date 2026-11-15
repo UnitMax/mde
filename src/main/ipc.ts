@@ -157,6 +157,7 @@ import { fileTreeDropFile, resolveTerminalDrop } from './pty/drop'
 import type { InboxRecorder } from './inbox/recorder'
 import type { TaskbarAttention } from './taskbar-attention'
 import type { FloatingTerminalKey } from './floating-terminal-key'
+import type { WslResourceMonitor } from './wsl/resources'
 import type { TaskbarAttentionRequest } from '@shared/taskbar-attention'
 import type { InboxChatService } from './inbox/chat'
 import type { OpenCodeConfigService } from './opencode/config'
@@ -412,7 +413,8 @@ export function registerIpcHandlers(
     agentTerminals?: AgentTerminals
   },
   taskbar?: TaskbarAttention,
-  floatingTerminalKey?: FloatingTerminalKey
+  floatingTerminalKey?: FloatingTerminalKey,
+  wslResources?: WslResourceMonitor
 ): void {
   const inboxRecorder = inbox.recorder
   const chat = inbox.chat
@@ -916,6 +918,7 @@ export function registerIpcHandlers(
 
   handle<void, boolean>(IpcChannels.wslAvailable, () => isWslAvailable())
   handle<void, Distro[]>(IpcChannels.wslDistros, () => listDistros())
+  handle<{ enabled: boolean }, void>(IpcChannels.wslResourcesWatch, ({ enabled }) => wslResources?.setEnabled(enabled))
 
   handle<void, string | null>(IpcChannels.pathBrowse, async (_req, event) => {
     const window = BrowserWindow.fromWebContents(event.sender)

@@ -16,6 +16,8 @@ export interface TerminalSettings {
    * highlighted active one, instead of tiling edge to edge. Applies to every terminal layout.
    */
   terminalCards: boolean
+  /** Whether the title bar shows WSL's CPU and memory. Only offered on Windows. */
+  wslResourceMeter: boolean
   /**
    * How much confirmation a program needs before OSC 52 may set the host
    * clipboard. Hidden, unfocused and idle panes are refused under every value.
@@ -74,6 +76,7 @@ export function defaultTerminalSettings(
     theme: 'slate',
     escapeExitsFullscreen: false,
     terminalCards: false,
+    wslResourceMeter: false,
     osc52Policy: 'notify',
     openCodeExecutable: DEFAULT_OPENCODE_EXECUTABLE
   }
@@ -117,6 +120,8 @@ export function resolveTerminalSettings(
         : fallback.escapeExitsFullscreen,
     terminalCards:
       typeof record.terminalCards === 'boolean' ? record.terminalCards : fallback.terminalCards,
+    wslResourceMeter:
+      typeof record.wslResourceMeter === 'boolean' ? record.wslResourceMeter : fallback.wslResourceMeter,
     osc52Policy: isOsc52Policy(record.osc52Policy) ? record.osc52Policy : fallback.osc52Policy,
     openCodeExecutable:
       typeof record.openCodeExecutable === 'string' ? record.openCodeExecutable : fallback.openCodeExecutable

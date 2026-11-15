@@ -165,6 +165,7 @@ export const IpcChannels = {
 
   wslAvailable: 'wsl:available',
   wslDistros: 'wsl:distros',
+  wslResourcesWatch: 'wsl:resources-watch',
 
   pathBrowse: 'path:browse',
   pathResolve: 'path:resolve',
@@ -277,12 +278,39 @@ export const IpcEvents = {
   floatingTerminalToggle: 'floating-terminal:toggle',
   /** An agent asked, through the MDE MCP, for a new pane in the Inbox terminal. */
   agentTerminalOpen: 'agent-terminal:open',
+  /** A reading of WSL's CPU and memory, while the title bar meter is shown. */
+  wslResources: 'wsl:resources',
 } as const
 
 export interface PlatformInfo {
   platform: HostPlatform
   isWindows: boolean
 }
+
+/**
+ * CPU and memory of WSL. All WSL 2 distros share one virtual machine, so the numbers are for WSL
+ * as a whole. Loads are from 0 to 1, sizes are in bytes.
+ */
+export type WslResourceSample =
+  /** Not Windows, so there is no WSL. */
+  | { state: 'unavailable' }
+  /** No WSL 2 distro is running. */
+  | { state: 'stopped' }
+  | {
+      state: 'running'
+      /** The distro the numbers were read in. */
+      distro: string
+      /** Null for the first reading: a load is the difference between two readings. */
+      cpu: number | null
+      /** The load of each logical processor; empty for the first reading. */
+      cores: number[]
+      coreCount: number
+      memoryTotal: number
+      /** Total minus available, so caches that can be given back do not count as used. */
+      memoryUsed: number
+      swapTotal: number
+      swapUsed: number
+    }
 
 export interface AppInfo {
   name: string
@@ -561,6 +589,9 @@ export interface RendererApi {
   wsl: {
     available(): Promise<boolean>
     distros(): Promise<Distro[]>
+    /** Starts or stops the readings behind the title bar meter. */
+    watchResources(enabled: boolean): Promise<void>
+    onResources(listener: (sample: WslResourceSample) => void): () => void
   }
   paths: {
     browse(): Promise<string | null>

@@ -464,6 +464,16 @@ object takes no other key, so the renderer cannot name a path, a remote or a com
 base) on the thread and on the folder entry, and is validated on load like every other field; a
 malformed record on a folder is dropped and the folder stays.
 
+### WSL resource meter boundary
+
+The title bar meter (see **WSL resource meter** in `docs/architecture.md`) has one channel,
+`wsl:resources-watch`, whose only value is a boolean: on or off. The renderer names no distro, path or
+command. The main process picks a running WSL 2 distro itself and runs a constant script through
+`wsl.exe -e sh -c`, into which no outside value is placed; it reads the `cpu` lines of `/proc/stat` and
+four lines of `/proc/meminfo`, both readable by any user. What reaches the window is numbers and the
+distro's name. Output that does not parse as a reading is dropped, and the loop is stopped if it writes
+a megabyte without completing one.
+
 ### WSL folder browser boundary
 
 The Windows file dialog cannot show a WSL distro's own filesystem, so choosing a WSL folder uses a

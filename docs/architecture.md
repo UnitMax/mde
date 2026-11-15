@@ -2339,6 +2339,30 @@ Regression evidence and platform limits are in
   (`OPENCODE_CONFIG_DIR`, else `XDG_CONFIG_HOME`, else `~/.config`) and reads and writes the file
   through `\\wsl.localhost\<distro>\...`; links are resolved with `realpath` inside the distro.
 
+### WSL resource meter
+
+Settings → Appearance → **WSL resource meter** (Windows only, off by default, saved with the local
+terminal settings) puts WSL's CPU and memory use in the title bar of the full window
+(`WslResourceMeter`): the processor load as a percentage and the memory in use, each with a thin bar
+that turns amber from 75% and red from 90%. Clicking it opens a panel with the load over the last two
+minutes, one bar for each logical processor, and memory and swap. With no distro running it reads
+"WSL idle".
+
+The numbers come from `/proc/stat` and `/proc/meminfo` inside a distro (`src/main/wsl/resources.ts`).
+All WSL 2 distros run in one virtual machine, so they describe WSL as a whole, whichever distro they
+are read in. A load is the difference between two readings, so the first reading has memory only.
+Memory in use is `MemTotal − MemAvailable`, which leaves out caches Linux can give back; Task Manager's
+figure for WSL includes them and is usually higher.
+
+Because every `wsl.exe` costs about 100 ms, there is no process for each reading. While the meter is
+mounted, the main process keeps one `wsl.exe` running a fixed `sh` loop that writes a reading every two
+seconds, and sends each one to the window (`wsl:resources`). The renderer starts and stops it
+(`wsl:resources-watch`) by mounting and unmounting the meter; it also stops when the page reloads, the
+window closes or MDE quits, and the loop ends by itself once its output is closed. The loop is only
+started in a distro that is already running (`wsl.exe --list --running`), so the meter never starts WSL;
+with none running the main process looks again every ten seconds. While the loop runs it counts as
+activity in the distro, so WSL does not shut down for being idle as long as the meter is shown.
+
 Native Windows shells also resolve before PTY creation: the default PowerShell
 and built-in PowerShell/cmd aliases use system locations. Custom Windows shells,
 including PowerShell 7, need a full drive-qualified `.exe`/`.com` path; ambiguous

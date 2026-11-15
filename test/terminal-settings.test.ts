@@ -52,6 +52,7 @@ describe('terminal settings', () => {
       theme: 'slate',
       escapeExitsFullscreen: false,
       terminalCards: false,
+      wslResourceMeter: false,
       osc52Policy: 'notify',
       openCodeExecutable: 'opencode'
     })
@@ -72,6 +73,7 @@ describe('terminal settings', () => {
       theme: 'slate',
       escapeExitsFullscreen: false,
       terminalCards: false,
+      wslResourceMeter: false,
       osc52Policy: 'notify',
       openCodeExecutable: 'opencode'
     })
@@ -94,6 +96,7 @@ describe('terminal settings', () => {
       theme: 'frost',
       escapeExitsFullscreen: false,
       terminalCards: false,
+      wslResourceMeter: false,
       osc52Policy: 'notify',
       openCodeExecutable: 'opencode'
     })
@@ -105,6 +108,7 @@ describe('terminal settings', () => {
     ).toMatchObject({
       escapeExitsFullscreen: false,
       terminalCards: false,
+      wslResourceMeter: false,
       osc52Policy: 'notify',
       openCodeExecutable: 'opencode'
     })
@@ -156,6 +160,7 @@ describe('terminal settings', () => {
       theme: 'slate',
       escapeExitsFullscreen: false,
       terminalCards: false,
+      wslResourceMeter: false,
       osc52Policy: 'notify',
       openCodeExecutable: 'opencode'
     })
@@ -172,6 +177,7 @@ describe('terminal settings', () => {
       theme: 'ember' as const,
       escapeExitsFullscreen: false,
       terminalCards: true,
+      wslResourceMeter: false,
       osc52Policy: 'ask' as const,
       openCodeExecutable: 'opencode'
     }

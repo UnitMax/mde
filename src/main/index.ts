@@ -7,6 +7,7 @@ import { getMiniWindowAction, MiniWindowController } from './mini-window'
 import { TitleBarController } from './window-chrome'
 import { TaskbarAttention } from './taskbar-attention'
 import { FloatingTerminalKey } from './floating-terminal-key'
+import { WslResourceMonitor } from './wsl/resources'
 import { BADGE_SIZE, badgeBitmap } from './taskbar-badge'
 import { PtyManager } from './pty/manager'
 import { TerminalDirectoryStore } from './pty/directories'
@@ -67,6 +68,10 @@ const titleBar = new TitleBarController({
 
 /** Whether F11 belongs to the Inbox's floating terminal; the renderer says so while it has one. */
 const floatingTerminalKey = new FloatingTerminalKey()
+/** Reads WSL's CPU and memory while the renderer shows the title bar meter. */
+const wslResources = new WslResourceMonitor((sample) => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcEvents.wslResources, sample)
+})
 // Flashes, colours and badges the taskbar button when a thread needs the person; the renderer decides when.
 const taskbarAttention = new TaskbarAttention({
   platform: process.platform,
@@ -127,6 +132,7 @@ function createWindow(): void {
   mainWindow.on('blur', () => { void inboxDrafts?.save() })
   mainWindow.on('closed', () => {
     taskbarAttention.dispose()
+    wslResources.dispose()
     miniWindow.reset()
     mainWindow = null
   })
@@ -140,6 +146,8 @@ function createWindow(): void {
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault())
   // A reloaded page has no floating terminal until it says so again.
   mainWindow.webContents.on('did-start-loading', () => floatingTerminalKey.setActive(false))
+  // Nor a meter: the page asks for the readings again when it shows one.
+  mainWindow.webContents.on('did-start-loading', () => wslResources.setEnabled(false))
   mainWindow.webContents.on('before-input-event', (event, input) => {
     // Handled here rather than in the renderer so it works from every pane and
     // dialog, and so the terminal never receives F12's escape sequence.
@@ -291,7 +299,8 @@ if (bridgeLaunch) {
       titleBar,
       { recorder: inboxRecorder, chat: inboxChat, openCodeConfig, mdeMcpCommand: (target) => mdeMcpCommand(target, self, toWsl), agentTerminals },
       taskbarAttention,
-      floatingTerminalKey
+      floatingTerminalKey,
+      wslResources
     )
     createWindow()
 
@@ -308,6 +317,7 @@ if (bridgeLaunch) {
     if (quitPrepared) return
     quitPrepared = true
     ptyManager.disposeAll()
+    wslResources.dispose()
     inboxChat?.stop()
     inboxRecorder?.dispose()
     void mdeMcp?.close()

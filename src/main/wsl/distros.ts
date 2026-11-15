@@ -209,3 +209,21 @@ export async function listDistros(): Promise<Distro[]> {
 
   return parseDistroList(result.stdout).filter((distro) => distro.version === 2)
 }
+
+/**
+ * Names of the WSL 2 distros that are running, the default one first. Asking does not start WSL.
+ *
+ * `--running --quiet` prints only names, in every display language. With nothing running it prints
+ * a sentence instead, which is why the names are checked against the list of distros.
+ */
+export async function listRunningDistros(): Promise<string[]> {
+  const distros = await listDistros()
+  if (distros.length === 0) return []
+  const result = await runWslClient(['--list', '--running', '--quiet'])
+  if (result.code !== 0) return []
+  const running = new Set(result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean))
+  return distros
+    .filter((distro) => running.has(distro.name))
+    .sort((a, b) => Number(b.isDefault) - Number(a.isDefault))
+    .map((distro) => distro.name)
+}

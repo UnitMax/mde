@@ -16,6 +16,8 @@ import { SessionSwitcher } from '@/components/SessionSwitcher'
 import { InboxThreadSwitcher } from '@/components/inbox/InboxThreadSwitcher'
 import { TerminalView } from '@/components/TerminalView'
 import { TitleBar, TitleBarButton } from '@/components/TitleBar'
+import { WslResourceMeter } from '@/components/WslResourceMeter'
+import { getTerminalSettings, subscribeTerminalSettings } from '@/terminal/terminal-settings'
 import { WorkspaceNavigation } from '@/components/WorkspaceNavigation'
 import { TodoProjectView } from '@/components/TodoProjectView'
 import { InboxThreadView } from '@/components/InboxThreadView'
@@ -106,6 +108,9 @@ export function App(): JSX.Element {
   const updateTabLayoutAction = useWorkspace((state) => state.updateTabLayout)
   const removeTabAction = useWorkspace((state) => state.removeTab)
   const [newSessionOpen, setNewSessionOpen] = useState(false)
+  const isWindows = useWorkspace((state) => state.platform?.isWindows === true)
+  const [resourceMeter, setResourceMeter] = useState(() => getTerminalSettings().wslResourceMeter)
+  useEffect(() => subscribeTerminalSettings(() => setResourceMeter(getTerminalSettings().wslResourceMeter)), [])
   const [newTodoProjectOpen, setNewTodoProjectOpen] = useState(false)
   const [todoProjectSettingsOpen, setTodoProjectSettingsOpen] = useState(false)
   const [todoTaskDialogOpen, setTodoTaskDialogOpen] = useState(false)
@@ -707,6 +712,7 @@ export function App(): JSX.Element {
         title="MDE"
         navigation={<WorkspaceNavigation />}
       >
+        {resourceMeter && isWindows && <WslResourceMeter />}
         <TitleBarButton
           data-testid="mini-window-open"
           onClick={() => void setWindowMode('mini')}

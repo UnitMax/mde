@@ -314,6 +314,16 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
                     onClick={() => updateSettings({ terminalCards: !settings.terminalCards })}
                   />
 
+                  {platform?.isWindows && (
+                    <SwitchRow
+                      checked={settings.wslResourceMeter}
+                      label="WSL resource meter"
+                      description="Show the CPU and memory use of WSL in the title bar. Click it for each processor and a graph. While it is shown, WSL does not shut down for being idle."
+                      testId="wsl-resource-meter-setting"
+                      onClick={() => updateSettings({ wslResourceMeter: !settings.wslResourceMeter })}
+                    />
+                  )}
+
                   <FancyModeSettings />
                 </div>
               </section>

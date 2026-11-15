@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import { IpcChannels, IpcEvents, type RendererApi } from '@shared/ipc'
+import { IpcChannels, IpcEvents, type RendererApi, type WslResourceSample } from '@shared/ipc'
 import type { AgentTerminalOpenRequest } from '@shared/mde-mcp'
 import type {
   ChatEvent,
@@ -99,7 +99,9 @@ const api: RendererApi = {
   },
   wsl: {
     available: () => ipcRenderer.invoke(IpcChannels.wslAvailable),
-    distros: () => ipcRenderer.invoke(IpcChannels.wslDistros)
+    distros: () => ipcRenderer.invoke(IpcChannels.wslDistros),
+    watchResources: (enabled) => ipcRenderer.invoke(IpcChannels.wslResourcesWatch, { enabled }),
+    onResources: (listener) => subscribe<WslResourceSample>(IpcEvents.wslResources, listener)
   },
   paths: {
     browse: () => ipcRenderer.invoke(IpcChannels.pathBrowse),
