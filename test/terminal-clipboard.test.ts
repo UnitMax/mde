@@ -49,7 +49,7 @@ describe('terminal mouse clipboard behavior', () => {
     expect(terminalPrimarySelectionMode('linux', 'wsl')).toBe('native')
     expect(terminalPrimarySelectionMode('win32', 'wsl')).toBe('local')
     expect(terminalPrimarySelectionMode('win32', 'native')).toBe('none')
-    expect(terminalPrimarySelectionMode('darwin', 'native')).toBe('none')
+    expect(terminalPrimarySelectionMode('darwin', 'native')).toBe('local')
   })
 
   it('opens the menu on right click unless a program has the mouse, and Shift takes the click back', () => {

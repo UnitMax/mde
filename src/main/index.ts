@@ -73,6 +73,7 @@ const taskbarAttention = new TaskbarAttention({
   getWindow: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
   badge: (tone, count) =>
     nativeImage.createFromBitmap(badgeBitmap(tone, count), { width: BADGE_SIZE, height: BADGE_SIZE }),
+  setDockBadge: (text) => app.dock?.setBadge(text),
   setInterval: (callback, ms) => setInterval(callback, ms),
   clearInterval: (timer) => clearInterval(timer as ReturnType<typeof setInterval>)
 })

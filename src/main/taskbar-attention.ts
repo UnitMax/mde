@@ -14,6 +14,8 @@ export interface TaskbarAttentionDependencies {
   getWindow(): AttentionWindow | null
   /** The badge image for a tone and count. Only asked for on Windows, where the taskbar has overlay icons. */
   badge(tone: AlertKind, count: number): unknown
+  /** Sets the text of the Dock icon's badge, '' for none. Only asked for on macOS. */
+  setDockBadge?(text: string): void
   setInterval(callback: () => void, ms: number): unknown
   clearInterval(timer: unknown): void
 }
@@ -41,7 +43,8 @@ export function indicatorDescription(indicator: TaskbarIndicator): string {
 /**
  * The window's button in the taskbar (or dock): flashing it, colouring it and putting a badge on it. All of it
  * is plain Win32/Electron window state, so nothing has to be installed. Windows is the only platform with a
- * coloured progress bar and an overlay icon; the flash is also an urgency hint on Linux and a dock bounce on macOS.
+ * coloured progress bar and an overlay icon; macOS shows the count as the Dock icon's badge, which the system
+ * always draws red. The flash is also an urgency hint on Linux and a Dock bounce on macOS.
  */
 export class TaskbarAttention {
   private timer: unknown = null
@@ -91,10 +94,15 @@ export class TaskbarAttention {
   }
 
   private showIndicator(window: AttentionWindow, indicator: TaskbarIndicator | null): void {
-    if (this.dependencies.platform !== 'win32') return
+    const { platform } = this.dependencies
+    if (platform !== 'win32' && platform !== 'darwin') return
     const key = indicator ? `${indicator.tone}:${indicator.count}` : ''
     if (key === this.indicatorKey) return
     this.indicatorKey = key
+    if (platform === 'darwin') {
+      this.dependencies.setDockBadge?.(indicator ? String(indicator.count) : '')
+      return
+    }
     if (!indicator) {
       window.setProgressBar(-1)
       window.setOverlayIcon(null, '')

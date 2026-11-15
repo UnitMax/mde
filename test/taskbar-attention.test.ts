@@ -17,6 +17,7 @@ function setup(platform = 'win32') {
     setProgressBar: vi.fn(),
     setOverlayIcon: vi.fn()
   }
+  const setDockBadge = vi.fn()
   const timers = new Map<number, () => void>()
   let next = 1
   const clearInterval = vi.fn((timer: unknown) => { timers.delete(timer as number) })
@@ -25,10 +26,11 @@ function setup(platform = 'win32') {
     getWindow: () => window as AttentionWindow,
     badge: (tone, count) => `${tone}:${count}`,
     setInterval: (callback) => { timers.set(next, callback); return next++ },
-    clearInterval
+    clearInterval,
+    setDockBadge
   })
   const tick = (): void => timers.forEach((callback) => callback())
-  return { window, controller, timers, tick, clearInterval }
+  return { window, controller, timers, tick, clearInterval, setDockBadge }
 }
 
 describe('TaskbarAttention flashing', () => {
@@ -129,11 +131,23 @@ describe('TaskbarAttention indicator', () => {
     expect(window.setProgressBar).toHaveBeenCalledTimes(3)
   })
 
-  it('leaves the colour and badge to Windows, which is the only place with them', () => {
-    const { window, controller } = setup('linux')
+  it('shows the count as the Dock badge on macOS, without the Windows colour and overlay', () => {
+    const { window, controller, setDockBadge } = setup('darwin')
+    controller.update({ indicator: { tone: 'input', count: 2 } })
+    controller.update({ indicator: { tone: 'input', count: 2 } })
+    expect(setDockBadge).toHaveBeenCalledExactlyOnceWith('2')
+    controller.update({ indicator: null })
+    expect(setDockBadge).toHaveBeenLastCalledWith('')
+    expect(window.setProgressBar).not.toHaveBeenCalled()
+    expect(window.setOverlayIcon).not.toHaveBeenCalled()
+  })
+
+  it('shows no colour or badge on Linux, which has neither', () => {
+    const { window, controller, setDockBadge } = setup('linux')
     controller.update({ indicator: { tone: 'input', count: 1 }, flash: 'brief' })
     expect(window.setProgressBar).not.toHaveBeenCalled()
     expect(window.setOverlayIcon).not.toHaveBeenCalled()
+    expect(setDockBadge).not.toHaveBeenCalled()
     expect(window.flashFrame).toHaveBeenCalledWith(true)
   })
 

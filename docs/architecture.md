@@ -1967,7 +1967,8 @@ When an Inbox thread becomes Done, needs input (a question or a permission) or F
 sound, flash its taskbar button and colour it, so that a long run does not have to be watched. Settings →
 Notifications has a switch and volume for the sounds, a sound for each of the three states (with a play
 button), a switch to stay quiet while MDE is the window in use, how the taskbar flashes, and, on Windows, a
-switch for the colour and badge, which stay on for as long as threads are unread or waiting. All of it is on by default except that last quiet switch.
+switch for the colour and badge, which stay on for as long as threads are unread or waiting. On macOS the same
+switch is called Dock badge and shows the count on MDE's Dock icon. All of it is on by default except that last quiet switch.
 
 The renderer decides, because it has the threads, the open thread and the window's focus
 (`lib/alerts.ts`, started by `lib/alert-controller.ts` from `App`). It watches `inboxThreads` and compares each
@@ -1999,6 +2000,8 @@ are read or answered. Only the flash is for when MDE is not in use, and the focu
   Needs input, `normal` (green) for Done.
 - **Badge (Windows only):** an overlay icon with the number, 16 x 16. It is drawn in code as raw pixels
   (`taskbar-badge.ts`: a disc and a 3 x 5 pixel font), so no image or font ships.
+- **Dock badge (macOS only):** the same count as the Dock icon's badge (`app.dock.setBadge`). The system draws
+  it and it is always red, so the three colours are not shown there. Not checked on a real Mac.
 
 None of this needs anything installed: these are window states Windows draws itself, which is why the ZIP
 release is enough. Windows toast notifications are left out on purpose, because they need a Start Menu
@@ -2092,7 +2095,8 @@ shared `TerminalSurface`, and `TerminalSelectionActionsContext` is how a termina
 and Paste.
 On Linux, left-dragged text also becomes the desktop's separate PRIMARY selection, which middle-click
 pastes without changing the normal clipboard. WSL terminals on Windows provide the same middle-click
-workflow within MDE using an in-app transient selection; native Windows terminals do not.
+workflow within MDE using an in-app transient selection, and so do terminals on macOS; native Windows
+terminals do not.
 
 ### Files and drag and drop
 
