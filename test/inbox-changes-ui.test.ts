@@ -756,7 +756,12 @@ describe('Tools tab', () => {
     expect(row('t2')).not.toContain('Shell')
     expect(row('t4')).not.toContain('Code Mode')
     // A direct MCP call keeps its tool's name: that is what it did.
-    expect(row('t3')).toContain('search_issues')
+    expect(row('t3')).toContain('github.search_issues')
+    expect(row('t3')).toContain('query: flaky')
+    // Every row says it in the same code type, with nothing in a chip or in the plain type of a heading.
+    const rows = Array.from(toolsPanel()!.querySelectorAll('li[data-testid^="inbox-tool-"] button'))
+    expect(rows.every((item) => item.querySelector('.inbox-code-font [data-testid="inbox-tool-name"]'))).toBe(true)
+    expect(rows.some((item) => item.querySelector('.font-medium'))).toBe(false)
     expect(toolsPanel()!.querySelector('[data-testid="inbox-tool-t2"] button')!.getAttribute('title')).toBe('Shell: npm test')
   })
 

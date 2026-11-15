@@ -1,7 +1,7 @@
 import type { ChatMessage, ChatPart } from '@shared/types'
 import { displayPath, skillCall } from '@/lib/chat'
 import { commandName, humanizeTool, inputText, shellInfo, toolFailed, toolInputOf, toolKind, toolPath, type ToolKind } from '@/lib/chat-tools'
-import { argsPreview, mcpCalls, type McpCall } from '@/lib/mcp'
+import { argsPreview, mcpCalls, scriptOf, type McpCall } from '@/lib/mcp'
 
 type ToolPart = Extract<ChatPart, { kind: 'tool' }>
 
@@ -129,6 +129,24 @@ export function toolEntry(part: ToolPart, messageId: string, servers: readonly s
     failed: toolFailed(part),
     active: part.status === 'running' || part.status === 'pending',
   }
+}
+
+/**
+ * What the Tools tab's row says, in code type like a command: what the call did and, after it in fainter type, its
+ * arguments. A command, a file or a script's calls say it on their own; a direct MCP call and a tool MDE does not
+ * know give their name (`server.tool`), then the arguments; a call with nothing to say gives the tool's name.
+ */
+export function rowText(entry: ToolEntry): { name: string; args: string } {
+  const { part } = entry
+  const direct = entry.kind !== 'execute' && entry.calls.length === 1 ? entry.calls[0]! : null
+  if (direct) return { name: direct.namespace ? `${direct.namespace}.${direct.tool}` : direct.tool, args: entry.subject }
+  if (entry.kind === 'other') return { name: part.name, args: entry.subject }
+  if (entry.subject) return { name: entry.subject, args: '' }
+  if (entry.kind === 'execute') {
+    const line = scriptOf(part)?.split('\n').map((item) => item.trim()).find(Boolean)
+    if (line) return { name: line, args: '' }
+  }
+  return { name: part.name, args: '' }
 }
 
 /** Every tool call in these messages, under the message of the person's that it answered. Turns without calls are left out. */

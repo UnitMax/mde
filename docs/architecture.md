@@ -602,13 +602,14 @@ GUI thread, for review after the fact; its label carries the number of calls. By
 after another; the **Show messages** button beside the search box (kept in `localStorage` as
 `mde.inbox-tool-turns`, off by default) groups them under the message of the person's they answered (`#1`, `#2`,
 …, with calls before the first loaded message under "Earlier calls"), and each such header folds. A row shows the icon of
-its kind of call and what it did (a command, a path, the tools a Code Mode script called), with the kind's name
-(Shell, Read, Code Mode) in its tooltip and opened detail; a direct MCP call keeps its tool's name, as does a call
-with nothing else to show. In the floating card the Tools section keeps the card's width, where Files and Changes
-widen it; the search box gives way to the toolbar's buttons. A row names the kind of call (Read, Shell, Code Mode, or an MCP
-tool's own name beside its server), what it was about (a path relative to the thread, a command's first line,
-a pattern, the arguments) and how long it took; a failed call, including a command with a non-zero exit, is
-red. Opening a row shows the tool's OpenCode name, the exit code, its input as key/value pairs, the output
+its kind of call and, all in code type, what it did (a command's first line, a path relative to the thread, a
+pattern, the tools a Code Mode script called), with the kind's name (Shell, Read, Code Mode) in its tooltip and
+opened detail. A direct MCP call and a tool MDE does not know give their name (`github.search_issues`) and then
+their arguments in fainter type; a call with nothing else to show gives a Code Mode script's first line or the
+tool's OpenCode name (`rowText` in `lib/tool-review.ts`). No row has a chip or a heading in plain type, so every
+row reads alike. Each row ends with how long the call took; a failed call, including a command with a non-zero
+exit, is red. In the floating card the Tools section keeps the card's width, where Files and Changes widen it; the
+search box gives way to the toolbar's buttons. Opening a row shows the tool's OpenCode name, the exit code, its input as key/value pairs, the output
 (an MCP result laid out as JSON or Markdown), the error and, for a Code Mode script, each call it made and the
 script itself, each with a copy button.
 

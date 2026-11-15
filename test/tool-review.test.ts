@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { filterTurns, toolCallCount, toolCounts, toolTurns } from '../src/renderer/lib/tool-review'
+import { filterTurns, rowText, toolCallCount, toolCounts, toolEntry, toolTurns } from '../src/renderer/lib/tool-review'
 import type { ChatMessage, ChatPart } from '../src/shared/types'
 
 type ToolPart = Extract<ChatPart, { kind: 'tool' }>
@@ -102,4 +102,25 @@ describe('filterTurns', () => {
 it('counts tool calls for the tab badge', () => {
   expect(toolCallCount(messages)).toBe(6)
   expect(toolCallCount([])).toBe(0)
+})
+
+describe('rowText', () => {
+  const entry = (name: string, input: unknown, extra: Record<string, unknown> = {}) =>
+    toolEntry({ kind: 'tool', id: 'x', name, status: 'completed', input: JSON.stringify(input), ...extra } as never, 'm', ['github'], DIR)
+
+  it('says a command, a file or a script\'s calls on their own', () => {
+    expect(rowText(entry('bash', { command: 'echo test' }))).toEqual({ name: 'echo test', args: '' })
+    expect(rowText(entry('read', { filePath: `${DIR}/src/a.ts` }))).toEqual({ name: 'src/a.ts', args: '' })
+  })
+
+  it('names a direct MCP call and an unknown tool, then gives their arguments', () => {
+    expect(rowText(entry('github_search_issues', { query: 'flaky' }))).toEqual({ name: 'github.search_issues', args: 'query: flaky' })
+    expect(rowText(entry('mystery_tool', { command: 'echo test' }))).toEqual({ name: 'mystery_tool', args: 'command: echo test' })
+  })
+
+  it('falls back to a script\'s first line, then to the tool\'s name, never to a heading like "Code Mode"', () => {
+    expect(rowText(entry('execute', { code: '\n  await run()\nmore' }))).toEqual({ name: 'await run()', args: '' })
+    expect(rowText(entry('execute', {}, { status: 'error' }))).toEqual({ name: 'execute', args: '' })
+    expect(rowText(entry('todowrite', { todos: [] }))).toEqual({ name: 'todowrite', args: '' })
+  })
 })

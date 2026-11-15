@@ -28,7 +28,7 @@ import { Chip, CodeText, CopyButton, Glyph, Label, Surface, SurfaceHeader, Trunc
 import { hideReverted } from '@/lib/chat'
 import { shellOutput, type ToolKind } from '@/lib/chat-tools'
 import { mcpKey, scriptDuration, scriptOf } from '@/lib/mcp'
-import { filterTurns, toolCounts, toolTurns, type ToolEntry, type ToolFilter, type ToolTurn } from '@/lib/tool-review'
+import { filterTurns, rowText, toolCounts, toolTurns, type ToolEntry, type ToolFilter, type ToolTurn } from '@/lib/tool-review'
 import { cn } from '@/lib/utils'
 import { useInboxChat } from '@/store/inbox-chat'
 import { useInboxMcp } from '@/store/inbox-mcp'
@@ -148,15 +148,10 @@ function EntryDetail({ entry }: { entry: ToolEntry }): JSX.Element {
   )
 }
 
-/**
- * One call: the icon stands for the kind of call and the row shows what it did; the kind's name is in the tooltip and
- * the opened detail. A direct MCP call keeps its tool's name, which is what it did, and a call with nothing more to
- * say keeps its kind.
- */
+/** One call: the icon stands for the kind of call, the row says what it did; the kind's name is in the tooltip and the detail. */
 function EntryRow({ entry, open, onToggle }: { entry: ToolEntry; open: boolean; onToggle: () => void }): JSX.Element {
   const { part } = entry
-  const direct = entry.kind !== 'execute' && entry.calls.length === 1 ? entry.calls[0]! : null
-  const showTitle = direct !== null || !entry.subject
+  const { name, args } = rowText(entry)
   const icon = entry.calls.length > 0 ? Plug : ICONS[entry.kind]
   const time = part.durationMs !== undefined ? scriptDuration(part.durationMs) : ''
   return (
@@ -174,22 +169,25 @@ function EntryRow({ entry, open, onToggle }: { entry: ToolEntry; open: boolean; 
         )}
       >
         <Glyph icon={icon} status={part.status} failed={entry.failed} />
-        {direct && (
-          <Chip tone={direct.server ? 'accent' : 'neutral'} title={direct.server ? `MCP server ${direct.server}` : direct.namespace} className="max-w-[35%] px-1 text-[10.5px] leading-4">
-            <span className="truncate">{direct.server ?? direct.namespace}</span>
-          </Chip>
-        )}
-        {showTitle && (
-          <span className={cn('font-medium', direct ? 'min-w-0 truncate' : 'shrink-0', entry.failed ? 'text-danger' : 'text-fg-muted', entry.active && 'chat-shimmer')}>
-            {entry.title}
+        {/* The name takes what it needs and truncates only when the row cannot hold it; the arguments get what is
+            left. Either way the time stays at the end. */}
+        <span className="inbox-code-font flex min-w-0 flex-1 items-baseline gap-1.5 text-[11.5px]">
+          <span
+            data-testid="inbox-tool-name"
+            className={cn(
+              'min-w-0 truncate',
+              !args && 'flex-1',
+              entry.failed ? 'text-danger' : 'text-fg-muted group-hover/row:text-fg',
+              entry.active && 'chat-shimmer',
+            )}
+          >
+            {name}
           </span>
-        )}
-        <span className={cn(
-          'inbox-code-font min-w-0 flex-1 basis-0 truncate text-[11.5px]',
-          entry.failed ? 'text-danger/80' : showTitle ? 'text-fg-subtle group-hover/row:text-fg-muted' : 'text-fg-muted group-hover/row:text-fg',
-          !showTitle && entry.active && 'chat-shimmer',
-        )}>
-          {entry.subject}
+          {args && (
+            <span className={cn('min-w-0 flex-1 truncate', entry.failed ? 'text-danger/70' : 'text-fg-subtle group-hover/row:text-fg-muted')}>
+              {args}
+            </span>
+          )}
         </span>
         {time && <span className="shrink-0 pl-1 text-[11px] tabular-nums text-fg-subtle">{time}</span>}
         <ChevronRight
