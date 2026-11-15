@@ -904,6 +904,15 @@ checkmark after a successful copy. Each block copies its current contents, inclu
 streams. The button stays in place while long code scrolls sideways. Clipboard failures show an
 error toast. This also applies to expanded reasoning; Mermaid blocks keep their diagram preview.
 
+Fenced code blocks use their language label for syntax highlighting, reusing the installed CodeMirror
+language packs and the file viewer/diff preview's theme colors (`lib/syntax-style.ts`). Supported
+labels include C/C++ (`c`, `cpp`, `c++`), JavaScript/TypeScript (including JSX/TSX), Python, Rust,
+Go, Java, JSON, CSS, HTML, XML, Markdown, YAML, SQL, shell, PowerShell, TOML and Dockerfile.
+Parsers load lazily and are shared across blocks and diffs. ProseMirror inline decorations color
+the original text, including partial streamed code, without changing selection, search or copying.
+Unlabelled, unsupported and oversized blocks (over 200,000 characters), or a failed parser load,
+stay plain text. Theme changes update the colors through CSS variables without parsing again.
+
 **Right-click menus.** Right-clicking the conversation opens a menu that depends on what is under
 the cursor. **Copy** copies the selected text, but only when the click lands on the selection;
 right-clicking elsewhere does not copy text the pointer has left. **Quote**, next to it, adds the

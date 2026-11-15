@@ -80,6 +80,18 @@ describe('Inbox code block copy buttons', () => {
     }
   })
 
+  it('copies the original C++ code after syntax highlighting adds colored spans', async () => {
+    const code = 'int main() {\n  return 42;\n}'
+    await render(`\`\`\`cpp\n${code}\n\`\`\``)
+    await act(async () => {
+      await vi.waitFor(() => expect(container.querySelector('pre code span[style*="--color-syntax-keyword"]')).not.toBeNull())
+    })
+    await act(async () => button().click())
+    expect(writeText).toHaveBeenLastCalledWith(code)
+    expect(button().getAttribute('aria-label')).toBe('Copied')
+    expect(menuTarget(container.querySelector('pre code span')!, container).code).toBe(code)
+  })
+
   it('copies the current contents after a streaming update, including an unfinished fence', async () => {
     await render('```sh\necho first')
     await render('```sh\necho first\necho second')

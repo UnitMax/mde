@@ -1,5 +1,6 @@
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react'
 import { CopyButton } from '@/components/inbox/chat-ui'
+import { chatCodeHighlighting } from '@/lib/chat-code-highlight'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { MermaidCodeBlock } from '@/lib/mermaid-code-block'
 import { useToasts } from '@/store/toasts'
@@ -34,6 +35,9 @@ function ChatCodeBlockView({ node }: NodeViewProps): JSX.Element {
 
 /** Inbox code blocks have a copy control; Mermaid keeps its diagram view. */
 export const ChatCodeBlock = MermaidCodeBlock.extend({
+  addProseMirrorPlugins() {
+    return [...(this.parent?.() ?? []), chatCodeHighlighting()]
+  },
   addNodeView() {
     const diagram = this.parent!()!
     const code = ReactNodeViewRenderer(ChatCodeBlockView, {

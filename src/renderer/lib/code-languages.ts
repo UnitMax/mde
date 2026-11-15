@@ -81,6 +81,25 @@ const byFileName: Record<string, { name: string; load: LanguageLoader }> = {
   '.profile': { name: 'Shell', load: shell }
 }
 
+const fenceAliases: Record<string, string> = {
+  typescript: 'ts',
+  javascript: 'js',
+  python: 'py',
+  rust: 'rs',
+  'c++': 'cpp',
+  shell: 'sh',
+  shellscript: 'sh',
+  powershell: 'ps1',
+}
+
+/** A Markdown fence's language label, using the same lazy parsers as the file viewer. */
+export function languageForFence(label: string): { name: string; load: LanguageLoader } | null {
+  const name = label.trim().split(/\s+/, 1)[0]?.toLowerCase() ?? ''
+  const extension = Object.hasOwn(fenceAliases, name) ? fenceAliases[name]! : name
+  if (Object.hasOwn(byExtension, extension)) return byExtension[extension]!
+  return name === 'dockerfile' ? byFileName.dockerfile! : null
+}
+
 /** The syntax for a file, chosen by name, or null for plain text. */
 export function languageForPath(path: string): { name: string; load: LanguageLoader } | null {
   const name = path.slice(path.lastIndexOf('/') + 1).toLowerCase()
