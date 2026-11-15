@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, ChevronDown, Eye, FilePen, GlobeLock, LoaderCircle, Shield, ShieldOff, ShieldQuestion, type LucideIcon } from 'lucide-react'
+import { Check, Eye, FilePen, GlobeLock, LoaderCircle, Shield, ShieldOff, ShieldQuestion, type LucideIcon } from 'lucide-react'
 import {
   THREAD_PERMISSION_MODE_INFO,
   threadPermissionModeInfo,
@@ -12,7 +12,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { barTrigger } from '@/components/inbox/ComposerBar'
 import { HoverChevron, toolbarChip, useComposerSize } from '@/components/inbox/composer-toolbar'
 import { atLeast } from '@/lib/composer-size'
 import { ipcErrorMessage } from '@/lib/ipc-error'
@@ -33,22 +32,19 @@ export function permissionModeTone(mode: ThreadPermissionMode): string | undefin
 }
 
 /**
- * How much a thread's agent may do without asking. On the new-thread page it is a chip of the strip under the box
- * and only picks; in a thread it sits in the box's toolbar and changes the running thread, which OpenCode applies at
- * the agent's next step. There the default mode is a quiet shield, and any other mode shows its name when there is room.
+ * How much a thread's agent may do without asking, a chip in the box's toolbar. On the new-thread page it only picks;
+ * in a thread it changes the running thread, which OpenCode applies at the agent's next step. The default mode is a
+ * quiet shield, and any other mode shows its name when there is room.
  */
 export function PermissionModePicker({
   value,
   onChange,
-  placement,
   running = false,
   disabled = false,
 }: {
   value: ThreadPermissionMode
   /** A promise that rejects keeps the menu open with the reason, and the mode as it was. */
   onChange: (mode: ThreadPermissionMode) => void | Promise<void>
-  /** `bar`: the strip under the new-thread box. `toolbar`: the box's own toolbar in a thread. */
-  placement: 'bar' | 'toolbar'
   /** The agent is working: a change applies from its next step, which the menu says. */
   running?: boolean
   disabled?: boolean
@@ -60,7 +56,7 @@ export function PermissionModePicker({
   const active = threadPermissionModeInfo(value)
   const Icon = PERMISSION_MODE_ICONS[value]
   const tone = permissionModeTone(value)
-  const label = placement === 'bar' || (value !== 'default' && atLeast(size, 'medium'))
+  const label = value !== 'default' && atLeast(size, 'medium')
   const description = `Permissions: ${active.label}. ${active.description}`
 
   const choose = (mode: ThreadPermissionMode): void => {
@@ -102,21 +98,17 @@ export function PermissionModePicker({
           title={description}
           data-testid="permission-mode-picker"
           data-mode={value}
-          className={placement === 'bar'
-            ? barTrigger
-            : cn(toolbarChip, 'shrink-0', label ? 'px-2' : 'w-7 justify-center px-0')}
+          className={cn(toolbarChip, 'shrink-0', label ? 'px-2' : 'w-7 justify-center px-0')}
         >
-          <Icon aria-hidden className={cn(placement === 'bar' ? 'h-3.5 w-3.5' : 'h-4 w-4', 'shrink-0', tone)} />
+          <Icon aria-hidden className={cn('h-4 w-4 shrink-0', tone)} />
           {label && <span className="truncate">{active.label}</span>}
-          {placement === 'bar'
-            ? <ChevronDown aria-hidden className="h-3 w-3 shrink-0 opacity-70" />
-            : label && <HoverChevron />}
+          {label && <HoverChevron />}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
-        side={placement === 'toolbar' ? 'top' : 'bottom'}
+        side="top"
         align="start"
-        sideOffset={placement === 'toolbar' ? 8 : 4}
+        sideOffset={8}
         className="w-72"
         data-testid="permission-mode-menu"
       >

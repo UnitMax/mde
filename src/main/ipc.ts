@@ -81,6 +81,7 @@ import type {
   OpenCodeTarget,
   InboxFoldersState,
   InboxGitInfo,
+  GitFetchRequest,
   GitRootRequest,
   GitGraphRequest,
   InboxGitGraph,
@@ -729,7 +730,12 @@ export function registerIpcHandlers(
   }
   handle<GitGraphRequest, InboxGitGraph>(IpcChannels.gitGraph, async (req) => readInboxGitGraph(await gitGraphRoot(req), req.limit, req.scope))
   handle<GitCommitRequest, InboxGitCommitDetails>(IpcChannels.gitCommit, async (req) => readInboxGitCommit(await gitGraphRoot(req), req.hash))
-  handle<GitRootRequest, InboxGitFetchResult>(IpcChannels.gitFetch, async (req) => fetchInboxGit(await gitGraphRoot(req)))
+  handle<GitFetchRequest, InboxGitFetchResult>(IpcChannels.gitFetch, async (req) => {
+    if (!('folderId' in req)) return fetchInboxGit(await gitGraphRoot(req))
+    const folder = chat.fileRoot(req.folderId)
+    if (!folder) throw new Error('This folder is no longer in the Inbox.')
+    return fetchInboxGit(folder)
+  })
   handle<GitRootRequest, InboxChangesResponse>(IpcChannels.gitChanges, async (req) => readInboxGitChanges(await gitGraphRoot(req), true))
   handle<GitCommitDiffRequest, InboxChangeDiff>(IpcChannels.gitCommitDiff, async (req) => {
     const { hash, path, ...root } = req

@@ -65,7 +65,7 @@ afterEach(async () => {
 describe('Inbox permission modes', () => {
   it('starts a new thread with the default permissions, which sends no mode', async () => {
     await render()
-    await vi.waitFor(() => expect(picker().textContent).toBe('Default permissions'))
+    await vi.waitFor(() => expect(picker().getAttribute('aria-label')).toMatch(/^Permissions: Default permissions./))
     await setMessageText(messageInput(container), 'Fix it')
     await act(async () => button('Send').click())
     expect(api.chat.create).toHaveBeenCalledTimes(1)

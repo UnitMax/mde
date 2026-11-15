@@ -684,7 +684,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
           }}
           extraPickers={<>
             <PermissionModePicker
-              placement="toolbar"
+             
               value={thread.permissionMode ?? 'default'}
               running={running}
               onChange={(mode) => setPermissionMode(thread.id, mode)}

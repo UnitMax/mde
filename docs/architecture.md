@@ -952,7 +952,11 @@ Next to it is a **New branch name** field. Left empty, which is the default, MDE
 `mde/‹id›`; typed in, the name is used as it is. The page checks the name as you type (plain ASCII
 letters, digits and `. _ - / +`, Git's other branch-name rules, at most 100 characters, and not a
 local branch that exists or one that would sit inside or on top of another, since `feature` and
-`feature/login` cannot both exist) and disables sending while it is invalid. MDE never runs `git fetch`, so a remote branch is as current as the last fetch. Every visit and
+`feature/login` cannot both exist) and disables sending while it is invalid. The remote branches are the
+remote-tracking refs Git already has, as current as the last fetch; MDE does not fetch by itself. The branch
+picker has a **Fetch** button beside its search field (`git:fetch` with the folder's ID, the same
+`git fetch --all --prune` as the Git graph's), after which the branches are read again; a failure is shown in the
+picker. Opening the picker reaches no network. Every visit and
 every folder change starts in **Current directory**, so a worktree is always a deliberate choice;
 the choice is not remembered between visits, only with a draft, which opens with it again (but not in
 another folder, whose branches differ). The strip is absent when the folder is not a repository or Git cannot
@@ -1799,8 +1803,8 @@ only when it is in the list for the thread's folder, so a thread cannot reach an
 whose worktree was deleted lists none; an OpenCode without the routes (an untagged 404) lists none either.
 
 **Permission modes.** A thread can run with permissions of its own instead of the OpenCode configuration's
-(`PermissionModePicker`). On the new-thread page it is a chip in the strip under the box, after the GUI/Terminal
-chip; in a GUI thread it is a chip in the composer's toolbar, before the MCP chip, a quiet shield for the default and
+(`PermissionModePicker`). It is a chip in the composer's toolbar, before the MCP chip, on the new-thread page as in a
+GUI thread (there it only picks; in a thread it changes the running thread), a quiet shield for the default and
 the mode's icon and name otherwise (the name goes below the medium toolbar size). A sidebar row shows a small mark
 for a thread that is not on the default, in the warning colour for the two full-access modes. Every fresh new-thread
 page starts on the default; only a saved draft keeps another mode (`ChatDraftChoice.permissionMode`), and nothing

@@ -1283,6 +1283,9 @@ export type GitGraphScope = 'all' | 'local' | 'head'
  */
 export type GitRootRequest = { threadId: string } | { terminalId: string }
 
+/** A fetch can also be for a project folder, from the branch picker of a new thread's worktree. */
+export type GitFetchRequest = GitRootRequest | { folderId: string }
+
 /** The commit graph of a checkout, read when the Git graph view opens. Memory only. */
 export type GitGraphRequest = GitRootRequest & {
   /** How many commits to read, newest first; the view asks for more as the person scrolls. */

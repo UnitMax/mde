@@ -362,9 +362,10 @@ the same policy:
   runner) which entries of a listed folder Git ignores. The paths are the ones OpenCode's
   `/api/fs/list` returned for a folder that passed `isMentionablePath` (relative, no `..`), passed
   after `--`, and the folder or thread is named by its ID, never by a path from the renderer.
-- **User-started fetch.** `git:fetch` (a thread or terminal ID, nothing else) is the one call
+- **User-started fetch.** `git:fetch` (a thread, terminal or Inbox folder ID, nothing else; the
+  folder is resolved by `InboxChatService.fileRoot`, never a path from the renderer) is the one call
   allowed to reach the network, and the renderer sends it only from the Git graph's Fetch
-  button. It uses a separate runner, `createGitFetchRunner`, with `GIT_ALLOW_PROTOCOL` set to
+  button and the Fetch button of the new-thread worktree branch picker. It uses a separate runner, `createGitFetchRunner`, with `GIT_ALLOW_PROTOCOL` set to
   `file:git:http:https:ssh` (remote helpers such as `ext::` stay denied), hooks and fsmonitor
   disabled, askpass and terminal prompts off, and no submodule recursion or automatic
   maintenance. It keeps the person's credential helper and SSH command so they can sign in, so

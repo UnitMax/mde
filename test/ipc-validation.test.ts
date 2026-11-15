@@ -163,6 +163,16 @@ describe('IPC payload boundary', () => {
     expect(() => assertIpcPayload(channel, structuredClone(validPayloads[channel]))).not.toThrow()
   })
 
+  it('fetches for a thread, a terminal or a project folder, and for nothing else', () => {
+    expect(() => assertIpcPayload(IpcChannels.gitFetch, { folderId: 'fld_1234' })).not.toThrow()
+    expect(() => assertIpcPayload(IpcChannels.gitFetch, { terminalId: 'session-1:tab:tab-1:pane:pane-1' })).not.toThrow()
+    rejects(IpcChannels.gitFetch, { folderId: 'ses_thread' })
+    rejects(IpcChannels.gitFetch, { folderId: 'fld_1234', threadId: 'ses_thread' })
+    rejects(IpcChannels.gitFetch, { folderId: '/home/me/app' })
+    // Only the fetch takes a folder: the graph channels still name a thread or a terminal.
+    rejects(IpcChannels.gitGraph, { folderId: 'fld_1234', limit: 400, scope: 'all' })
+  })
+
   it.each(channels)('rejects malformed, oversized and prototype-shaped requests on %s', (channel) => {
     for (const value of [null, true, 42, [], new Date(), Object.create({ name: 'Inherited' }),
       JSON.parse('{"__proto__":{"polluted":true}}'), 'x'.repeat(IPC_LIMITS.text + 1)]) {

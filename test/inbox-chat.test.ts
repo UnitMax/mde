@@ -639,6 +639,32 @@ describe('Inbox worktree mode', () => {
     })
   })
 
+  it('fetches from the branch picker on request, and lists the remote branches Git has then', async () => {
+    api.inbox.gitInfo.mockResolvedValue(repo)
+    const fetch = vi.fn(async () => ({ remotes: ['origin'] }))
+    vi.stubGlobal('api', { ...api, git: { fetch } })
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="worktree-bar"]')).not.toBeNull())
+    await open(view.querySelector('[data-testid="worktree-mode-picker"]')!)
+    await choose('New worktree')
+    await open(view.querySelector('[data-testid="worktree-branch-picker"]')!)
+    const button = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLButtonElement>('[data-testid="worktree-branch-fetch"]')
+      expect(found).not.toBeNull()
+      return found!
+    })
+    // Opening the picker alone reaches no network.
+    expect(fetch).not.toHaveBeenCalled()
+    api.inbox.gitInfo.mockResolvedValue({ ...repo, branches: [...repo.branches, { name: 'origin/new-on-github', remote: true }] })
+    await act(async () => button.click())
+    expect(fetch).toHaveBeenCalledWith({ folderId: 'fld_app' })
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="worktree-branch-list"]')?.textContent).toContain('origin/new-on-github'))
+
+    fetch.mockRejectedValueOnce(new Error('Could not fetch: fatal: Authentication failed'))
+    await act(async () => button.click())
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="worktree-branch-fetch-error"]')?.textContent).toContain('Authentication failed'))
+  })
+
   it('filters the branch list as the user types', async () => {
     api.inbox.gitInfo.mockResolvedValue(repo)
     const view = await render()

@@ -60,6 +60,7 @@ import type {
   InboxChangesRequest,
   InboxChangeDiffRequest,
   InboxChangeDiff,
+  GitFetchRequest,
   GitRootRequest,
   GitGraphRequest,
   InboxGitGraph,
@@ -581,7 +582,7 @@ export interface RendererApi {
     graph(req: GitGraphRequest): Promise<InboxGitGraph>
     commit(req: GitCommitRequest): Promise<InboxGitCommitDetails>
     /** Fetches every remote of the checkout: the one Git call that may use the network. */
-    fetch(req: GitRootRequest): Promise<InboxGitFetchResult>
+    fetch(req: GitFetchRequest): Promise<InboxGitFetchResult>
     /** The uncommitted changes of the checkout, with the file list. */
     changes(req: GitRootRequest): Promise<InboxChangesResponse>
     /** One uncommitted file's diff; the path must still be in the checkout's Git status. */

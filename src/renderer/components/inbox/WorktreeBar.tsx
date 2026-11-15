@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Check, ChevronDown, Folder, FolderGit2, GitBranch, Search } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Check, ChevronDown, Folder, FolderGit2, GitBranch, LoaderCircle, RefreshCw, Search } from 'lucide-react'
 import type { InboxGitBranch, InboxGitInfo } from '@shared/types'
 import {
   DropdownMenu,
@@ -8,17 +8,19 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { barTrigger as trigger, ComposerBar } from '@/components/inbox/ComposerBar'
+import { ipcErrorMessage } from '@/lib/ipc-error'
 import { cn } from '@/lib/utils'
 
 export type WorktreeMode = 'current' | 'worktree'
 
 /**
- * What Git says about a folder, read afresh whenever the folder changes. Anything that goes wrong
- * (not a repository, Git missing, the folder gone) is the same as no Git: the page just has no
- * worktree bar.
+ * What Git says about a folder, read afresh whenever the folder changes, and again when `reload` is called (after a
+ * fetch). Anything that goes wrong (not a repository, Git missing, the folder gone) is the same as no Git: the page
+ * just has no worktree bar.
  */
-export function useInboxGit(folderId: string | undefined): InboxGitInfo | null {
+export function useInboxGit(folderId: string | undefined): [InboxGitInfo | null, () => void] {
   const [state, setState] = useState<{ folderId: string; info: InboxGitInfo } | null>(null)
+  const [round, setRound] = useState(0)
   useEffect(() => {
     if (!folderId) return
     let cancelled = false
@@ -29,9 +31,10 @@ export function useInboxGit(folderId: string | undefined): InboxGitInfo | null {
         () => { if (!cancelled) setState(null) }
       )
     return () => { cancelled = true }
-  }, [folderId])
-  if (!state || state.folderId !== folderId || !state.info.repository) return null
-  return state.info
+  }, [folderId, round])
+  const reload = useCallback(() => setRound((value) => value + 1), [])
+  if (!state || state.folderId !== folderId || !state.info.repository) return [null, reload]
+  return [state.info, reload]
 }
 
 const MODES: ReadonlyArray<{ id: WorktreeMode; label: string; description: string }> = [
@@ -39,21 +42,43 @@ const MODES: ReadonlyArray<{ id: WorktreeMode; label: string; description: strin
   { id: 'worktree', label: 'New worktree', description: 'Work on a new branch in a separate checkout, and leave the folder alone.' },
 ]
 
+/** Where the picker's Fetch button is: running, or what went wrong last time. */
+type FetchState = { busy: boolean; error?: string }
+
 function BranchPicker({
   branches,
   current,
   value,
   onChange,
+  folderId,
+  onFetched,
   disabled,
 }: {
   branches: InboxGitBranch[]
   current: string | null
   value: string | null
   onChange: (name: string) => void
+  /** The project folder the Fetch button fetches for; without it there is no button. */
+  folderId?: string
+  /** A fetch finished: read the branches again. */
+  onFetched?: () => void
   disabled?: boolean
 }): JSX.Element {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const [fetching, setFetching] = useState<FetchState>({ busy: false })
+  // The only way this picker reaches the network: the person's click, as with the Git graph's Fetch button.
+  const fetch = (): void => {
+    if (!folderId || fetching.busy) return
+    setFetching({ busy: true })
+    window.api.git.fetch({ folderId }).then(
+      () => {
+        setFetching({ busy: false })
+        onFetched?.()
+      },
+      (error) => setFetching({ busy: false, error: ipcErrorMessage(error, 'Could not fetch.') }),
+    )
+  }
   const shown = useMemo(() => {
     const needle = query.trim().toLowerCase()
     return needle ? branches.filter((branch) => branch.name.toLowerCase().includes(needle)) : branches
@@ -73,21 +98,43 @@ function BranchPicker({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-72 p-0">
-        <div className="relative border-b border-line p-1.5">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-subtle" />
-          <input
-            autoFocus
-            aria-label="Search branches"
-            placeholder="Search branches"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            // Typing must reach the field, not the menu's type-ahead.
-            onKeyDown={(event) => {
-              if (event.key !== 'Escape' && event.key !== 'ArrowDown' && event.key !== 'ArrowUp') event.stopPropagation()
-            }}
-            className="h-7 w-full rounded bg-panel pl-7 pr-2 text-xs text-fg outline-none placeholder:text-fg-subtle"
-          />
+        <div className="flex items-center gap-1 border-b border-line p-1.5">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-subtle" />
+            <input
+              autoFocus
+              aria-label="Search branches"
+              placeholder="Search branches"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              // Typing must reach the field, not the menu's type-ahead.
+              onKeyDown={(event) => {
+                if (event.key !== 'Escape' && event.key !== 'ArrowDown' && event.key !== 'ArrowUp') event.stopPropagation()
+              }}
+              className="h-7 w-full rounded bg-panel pl-7 pr-2 text-xs text-fg outline-none placeholder:text-fg-subtle"
+            />
+          </div>
+          {folderId && (
+            <button
+              type="button"
+              onClick={fetch}
+              disabled={fetching.busy}
+              aria-label="Fetch remote branches"
+              title="Fetch every remote, so new remote branches show (git fetch --all --prune)"
+              data-testid="worktree-branch-fetch"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-fg-muted outline-none hover:bg-hover hover:text-fg focus-visible:ring-1 focus-visible:ring-accent/60 disabled:opacity-60"
+            >
+              {fetching.busy
+                ? <LoaderCircle aria-hidden className="h-3.5 w-3.5 motion-safe:animate-spin" />
+                : <RefreshCw aria-hidden className="h-3.5 w-3.5" />}
+            </button>
+          )}
         </div>
+        {fetching.error && (
+          <p role="alert" data-testid="worktree-branch-fetch-error" className="border-b border-line px-2 py-1.5 text-[11px] leading-snug text-danger">
+            {fetching.error}
+          </p>
+        )}
         <div className="max-h-72 overflow-y-auto p-1" data-testid="worktree-branch-list">
           {groups.length === 0 && <p className="px-2 py-1.5 text-xs text-fg-subtle">No branches match.</p>}
           {groups.map((group) => (
@@ -174,10 +221,16 @@ export function WorktreeBar({
   onModeChange,
   onBaseChange,
   onBranchNameChange,
+  folderId,
+  onFetched,
   disabled,
 }: {
   children?: ReactNode
   info: InboxGitInfo
+  /** The project folder, for the branch picker's Fetch button. */
+  folderId?: string
+  /** A fetch finished; Git's answer should be read again. */
+  onFetched?: () => void
   mode: WorktreeMode
   /** The branch a new worktree starts from; null when the repository has none yet. */
   base: string | null
@@ -239,7 +292,7 @@ export function WorktreeBar({
               branchProblem && !nameFocused && 'ring-1 ring-danger/70'
             )}
           />
-          <BranchPicker branches={info.branches} current={info.branch} value={base} onChange={onBaseChange} disabled={disabled} />
+          <BranchPicker branches={info.branches} current={info.branch} value={base} onChange={onBaseChange} folderId={folderId} onFetched={onFetched} disabled={disabled} />
         </div>
       ) : (
         <span className="flex h-6 min-w-0 items-center gap-1.5 px-1.5 text-[12px] text-fg-subtle" data-testid="worktree-current-branch" title="The folder's current branch">

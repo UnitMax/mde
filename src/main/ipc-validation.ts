@@ -259,7 +259,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.inboxChanges]: object({ threadId: opencodeSessionId, details: optional(boolean) }),
   [IpcChannels.gitGraph]: gitRoot({ limit: graphLimit, scope: oneOf('all', 'local', 'head') }),
   [IpcChannels.gitCommit]: gitRoot({ hash: commitHash }),
-  [IpcChannels.gitFetch]: gitRoot({}),
+  [IpcChannels.gitFetch]: (value) => gitRoot({})(value) || object({ folderId: inboxFolderId })(value),
   [IpcChannels.gitChanges]: gitRoot({}),
   [IpcChannels.gitChangeDiff]: gitRoot({ path }),
   [IpcChannels.gitCommitDiff]: gitRoot({ hash: commitHash, path }),

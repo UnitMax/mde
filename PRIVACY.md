@@ -8,8 +8,8 @@ MDE contains no telemetry, analytics, remote crash uploader, automatic update ch
 model-provider or remote MCP client. Its application HTTP client connects to OpenCode's loopback
 service. This does not guarantee that using MDE produces no external traffic: MDE invokes Git,
 shells and OpenCode, and reads paths through the operating system. MDE's Git calls now deny remote transports and
-suppress external filters, except the **Fetch** button in the Git graph, which you press to
-fetch a repository's remotes; the network section explains the remaining boundaries.
+suppress external filters, except the **Fetch** buttons in the Git graph and in the new-thread
+branch picker, which you press to fetch a repository's remotes; the network section explains the remaining boundaries.
 
 ## What MDE stores locally
 
@@ -259,7 +259,8 @@ saved; only the branches you chose to show (All, Local or Current) are kept, in 
 every remote the repository names, over the network, with your own Git credential helper and SSH
 setup. It runs only when you press it. It updates the repository's remote-tracking branches and
 removes those deleted on the remote, as a fetch in a terminal would; it does not change your
-branches or files.
+branches or files. The branch picker of a new thread's worktree has the same **Fetch** button, which
+runs the same fetch in the project's folder so newly pushed remote branches can be chosen.
 
 The Inbox's **Regenerate title** button asks that same local service to run OpenCode's
 native title agent on the current conversation. OpenCode may send conversation context
