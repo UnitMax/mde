@@ -3,6 +3,7 @@
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { undo } from '@codemirror/commands'
+import { EditorView } from '@codemirror/view'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChatComposer, type ChatComposerProps } from '../src/renderer/components/inbox/ChatComposer'
 import type { ChatDraft, ChatDraftRequest } from '../src/shared/types'
@@ -231,6 +232,30 @@ describe('Inbox bullet list input', () => {
     expect(input.state.doc.toString()).toBe(text)
     expect(input.contentDOM.querySelectorAll('.chat-input-bullet')).toHaveLength(1)
     expect(input.contentDOM.querySelector('script, iframe, img[src], a')).toBeNull()
+  })
+
+  it('takes terminal colour codes and control characters out of pasted and dropped text', async () => {
+    const { input, request } = await setup()
+    const log = '\u001b[0KRunning with gitlab-runner\u001b[0;m\nsection_start:1:build\r\u001b[0K\u001b[36;1mBuild\u001b[0;m\u0000 \u2588\u2591'
+    const event = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'clipboardData', { value: { files: [], getData: () => log } })
+    await act(async () => { input.contentDOM.dispatchEvent(event) })
+    expect(input.state.doc.toString()).toBe('Running with gitlab-runner\nsection_start:1:build\nBuild \u2588\u2591')
+    expect(request).toHaveBeenLastCalledWith({ key: 'thread:ses_one', action: 'text', text: input.state.doc.toString() })
+    const filter = input.state.facet(EditorView.clipboardInputFilter)
+    expect(filter.reduce((text, clean) => clean(text, input.state), '\u001b[31mred\u001b[0m')).toBe('red')
+  })
+
+  it('refuses a paste that would make the message too long and says why', async () => {
+    const { input, request } = await setup('Kept')
+    const event = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'clipboardData', { value: { files: [], getData: () => 'x'.repeat(100_000) } })
+    request.mockClear()
+    await act(async () => { input.contentDOM.dispatchEvent(event) })
+    await act(async () => { await Promise.resolve() })
+    expect(input.state.doc.toString()).toBe('Kept')
+    expect(request).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('A message can hold up to 100,000 characters.')
   })
 
   it('does not carry undo history between thread drafts', async () => {

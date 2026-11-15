@@ -78,6 +78,17 @@ describe('Settings → Notifications', () => {
     expect(query('[data-testid="alert-sound"]').getAttribute('aria-checked')).toBe('false')
   })
 
+  it('turns the toasts off and on, on by default', async () => {
+    expect(query('[data-testid="alert-toasts"]').getAttribute('aria-checked')).toBe('true')
+    await click(query('[data-testid="alert-toasts"]'))
+    expect(stored().toasts).toBe(false)
+    await act(async () => useWorkspace.getState().closeSettings())
+    await act(async () => useWorkspace.getState().openSettings('notifications'))
+    expect(query('[data-testid="alert-toasts"]').getAttribute('aria-checked')).toBe('false')
+    await click(query('[data-testid="alert-toasts"]'))
+    expect(stored().toasts).toBe(true)
+  })
+
   it('saves a volume', async () => {
     const volume = query('[data-testid="alert-volume"]') as HTMLInputElement
     await act(async () => {

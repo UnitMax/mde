@@ -154,7 +154,6 @@ beforeEach(() => {
     inboxThreads: [existing],
     selectedInboxThreadId: null,
     activeWorkspaceView: 'inbox',
-    inboxMarkedUnread: {},
     inboxCues: {},
   })
   useInboxChat.setState({

@@ -7,9 +7,12 @@
  * what a quote is.
  */
 
+import { cleanPromptText, PROMPT_TEXT_LIMIT } from '@shared/prompt-text'
+
 /** The text of a selection as it is quoted: no space at the ends of lines, and no blank lines around it or two in a row. */
 export function tidySelection(selection: string): string {
-  return selection
+  // Tool output can carry terminal colour codes, which a message must not hold.
+  return cleanPromptText(selection)
     .replace(/\r\n?/g, '\n')
     // A rendered page gives non-breaking spaces where a space would be collapsed.
     .replace(/\u00a0/g, ' ')
@@ -27,7 +30,7 @@ export function quoteBlock(selection: string): string | null {
 }
 
 /** The longest message the main process takes, and the longest draft it keeps. */
-export const MESSAGE_TEXT_LIMIT = 100_000
+export const MESSAGE_TEXT_LIMIT = PROMPT_TEXT_LIMIT
 
 /**
  * The quotes with one more: the selection as it is tidied. The same list comes back when there is nothing in

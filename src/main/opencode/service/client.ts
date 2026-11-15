@@ -11,8 +11,12 @@ export const SERVICE_OPERATIONS = {
   'skill.list': { method: 'GET', path: '/api/skill' },
   // The files and folders of a directory ranked for a few typed letters; it leaves out what Git ignores.
   'fs.find': { method: 'GET', path: '/api/fs/find' },
+  // What is directly in one folder of a directory, Git-ignored or not; the folder is checked by the caller.
+  'fs.list': { method: 'GET', path: '/api/fs/list' },
   'session.create': { method: 'POST', path: '/api/session' },
   'session.active': { method: 'GET', path: '/api/session/active' },
+  // Only ever asked for the children of a recorded thread (`parentID`), to find a running subagent's session.
+  'session.children': { method: 'GET', path: '/api/session' },
   'job.list': { method: 'GET', path: '/api/experimental/job' },
   'session.get': { method: 'GET', path: '/api/session/{sessionID}' },
   'session.update': { method: 'PATCH', path: '/api/session/{sessionID}' },
@@ -40,6 +44,14 @@ export const SERVICE_OPERATIONS = {
   'session.switchModel': { method: 'POST', path: '/api/session/{sessionID}/model' },
   'session.permission.list': { method: 'GET', path: '/api/session/{sessionID}/permission' },
   'session.permission.reply': { method: 'POST', path: '/api/session/{sessionID}/permission/{requestID}/reply' },
+  // The "Always allow" approvals OpenCode saved for the project of a directory (`location[directory]`), and
+  // forgetting one of them. OpenCode saves no rejections.
+  'permission.saved.list': { method: 'GET', path: '/api/permission/saved' },
+  'permission.saved.remove': { method: 'DELETE', path: '/api/permission/saved/{savedID}' },
+  // Every pending permission request and question of a directory (`location[directory]`), subagents' included:
+  // OpenCode files a subagent's under its own session, which MDE only learns of here.
+  'permission.request.list': { method: 'GET', path: '/api/permission/request' },
+  'form.list': { method: 'GET', path: '/api/form' },
   'session.form.list': { method: 'GET', path: '/api/session/{sessionID}/form' },
   'session.form.reply': { method: 'POST', path: '/api/session/{sessionID}/form/{formID}/reply' },
   // MCP servers: the list, and turning one on or off for the running service (OpenCode keeps neither across a restart
@@ -47,6 +59,8 @@ export const SERVICE_OPERATIONS = {
   'mcp.list': { method: 'GET', path: '/api/mcp' },
   'mcp.connect': { method: 'POST', path: '/api/experimental/mcp/{server}/connect' },
   'mcp.disconnect': { method: 'POST', path: '/api/experimental/mcp/{server}/disconnect' },
+  // Usage over all sessions the service holds (`opencode stats`): tokens, cost, activity per day, models, tools.
+  'session.stats': { method: 'GET', path: '/api/experimental/session/stats' },
 } as const satisfies Record<string, { method: 'GET' | 'POST' | 'PATCH' | 'DELETE'; path: string }>
 
 export type ServiceOperation = keyof typeof SERVICE_OPERATIONS
@@ -56,6 +70,7 @@ const PATH_PARAMETERS: Record<string, RegExp> = {
   requestID: /^per_[A-Za-z0-9_-]{1,200}$/,
   inboxID: /^msg_[A-Za-z0-9_-]{1,200}$/,
   formID: /^frm_[A-Za-z0-9_-]{1,200}$/,
+  savedID: /^psv_[A-Za-z0-9_-]{1,200}$/,
   // Whatever the user wrote in the OpenCode configuration; see MCP_SERVER_NAME.
   server: MCP_SERVER_NAME,
 }
@@ -69,6 +84,12 @@ const QUERY_PARAMETERS: Record<string, RegExp> = {
   order: /^(asc|desc)$/,
   cursor: /^[A-Za-z0-9_=.-]{1,2048}$/,
   'location[directory]': /^[^\u0000-\u001f\u007f-\u009f]{1,4096}$/,
+  // The usage statistics: epoch ms, an IANA time zone, and how much about tools.
+  from: /^\d{1,16}$/,
+  timezone: /^[A-Za-z][A-Za-z0-9_+\/-]{0,63}$/,
+  tools: /^(none|summary|detail)$/,
+  // A folder to list, relative to the directory; that it stays inside it is checked before the request.
+  path: /^[^\u0000-\u001f\u007f-\u009f]{1,1000}$/,
 }
 
 export const SERVICE_REQUEST_TIMEOUT_MS = 30_000

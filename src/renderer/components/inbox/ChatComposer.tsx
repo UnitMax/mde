@@ -5,7 +5,7 @@ import type { ChatDelivery, ChatDraft, ChatDraftChoice, ChatDraftKey, ChatDraftR
 import { fileMentionTokens, fileTriggerAt } from '@shared/file-mentions'
 import { skillTriggerAt } from '@shared/skills'
 import { addQuote, joinQuotes, leadingQuotes, MESSAGE_TEXT_LIMIT } from '@/lib/chat-quote'
-import { applyFile, describeFile } from '@/lib/file-mentions'
+import { applyFile, describeFile, enterFolder } from '@/lib/file-mentions'
 import { applySkill, filterSkills } from '@/lib/skills'
 import { applyCommand, filterCommands, parseInvocation, slashTriggerAt, type SlashCommand, type SlashInvocation } from '@/lib/slash-commands'
 import {
@@ -115,6 +115,7 @@ function completionKey(text: string, caret: number, hasCommands: boolean, hasFil
 }
 
 const NO_SKILLS: ChatSkill[] = []
+const TOO_LONG = `A message can hold up to ${MESSAGE_TEXT_LIMIT.toLocaleString('en-US')} characters. Attach long logs as a file instead.`
 const NO_COMMANDS: readonly SlashCommand[] = []
 const NO_ITEMS: CompletionItem[] = []
 const NO_FILES: ChatFileEntry[] = []
@@ -192,6 +193,13 @@ export interface ChatComposerProps {
    * it the box has no file picker.
    */
   fileScope?: { folderId: string } | { threadId: string }
+  /**
+   * The message suggested next, shown as ghost text while the box is empty (nothing typed, quoted or attached).
+   * Tab (or the right arrow) takes it into the box to send or change; Enter never sends it untaken.
+   */
+  suggestion?: string | null
+  /** Escape in the empty box put the suggestion away. */
+  onDismissSuggestion?: () => void
 }
 
 /** What the page around the box can ask of it. */
@@ -201,6 +209,8 @@ export interface ChatComposerHandle {
    * draft is still loading or a send is under way, the quote waits for the box to be ready for it.
    */
   quote: (text: string) => void
+  /** Whether nothing is typed, quoted or attached, as a suggestion needs before it is worth asking for. */
+  isBlank: () => boolean
 }
 
 /** A quote attached to the message; the id keeps a card's state with it when another is taken off. */
@@ -238,6 +248,8 @@ export const ChatComposer = forwardRef(function ChatComposer({
   commands = NO_COMMANDS,
   onEscape,
   fileScope,
+  suggestion = null,
+  onDismissSuggestion,
 }: ChatComposerProps, ref: ForwardedRef<ChatComposerHandle>): JSX.Element {
   // What is typed. The quotes attached to the message are kept apart from it, as cards above the box, and are
   // joined to it as block quotes where the draft is kept and where the message is sent.
@@ -379,7 +391,9 @@ export const ChatComposer = forwardRef(function ChatComposer({
     () => (!slashTrigger && scopeKey && cursor?.text === text ? fileTriggerAt(text, cursor.at) : null),
     [slashTrigger, scopeKey, cursor, text],
   )
-  const [fileResults, setFileResults] = useState<{ scope: string; entries: ChatFileEntry[] } | null>(null)
+  const [fileResults, setFileResults] = useState<{ scope: string; query: string; entries: ChatFileEntry[] } | null>(null)
+  // The folder Tab last stepped into: Tab again before its list has come finishes it, as the list would.
+  const enteredFolder = useRef<string | null>(null)
   const fileQuery = fileTrigger?.query ?? null
   useEffect(() => {
     if (fileQuery === null || !scopeKey) {
@@ -392,7 +406,7 @@ export const ChatComposer = forwardRef(function ChatComposer({
       Promise.resolve()
         .then(() => window.api.chat.files({ ...scope.current!, query: fileQuery }))
         .catch((): ChatFileEntry[] => [])
-        .then((entries) => { if (current) setFileResults({ scope: scopeKey, entries }) })
+        .then((entries) => { if (current) setFileResults({ scope: scopeKey, query: fileQuery, entries }) })
     }, FILE_SEARCH_MS)
     return () => { current = false; window.clearTimeout(timer) }
   }, [fileQuery, scopeKey])
@@ -452,6 +466,18 @@ export const ChatComposer = forwardRef(function ChatComposer({
   const listLength = slashTrigger ? commandMatches.length : fileTrigger ? fileEntries.length : matches.length
   const pickerOpen = completionWord !== null && listLength > 0 && completionWord !== dismissed && !disabled && !sending && loaded
   const activeIndex = Math.min(activeItem, Math.max(listLength - 1, 0))
+  // The suggested next message shows only in a box with nothing in it, and goes as soon as anything is typed.
+  const blank = loaded && text === '' && quotes.length === 0 && draft.attachments.length === 0
+  const ghost = suggestion && blank && !disabled && !sending ? suggestion : null
+  const takeSuggestion = (value: string): void => {
+    resetHistory()
+    pendingCaret.current = value.length
+    setText(value)
+    setCursor({ text: value, at: value.length })
+    // A suggestion that ends in a $word or is one slash word is ready to send, without opening a list.
+    setDismissed(completionKey(value, value.length, commands.length > 0, scopeKey !== null))
+    persist(value)
+  }
   // The message as a command, when it starts with the name of one.
   const invocation = useMemo(() => parseInvocation(commands, text), [commands, text])
   const commandToken = useCallback((value: string) => {
@@ -463,10 +489,15 @@ export const ChatComposer = forwardRef(function ChatComposer({
   // Text after a command that takes none: Enter says so instead of running it.
   const strayArgument = Boolean(invocation && !invocation.command.argument && invocation.args)
 
+  // How much of the message the attached quotes take (with the blank line after them); the box takes the rest.
+  const quotesLength = quotes.length ? joinQuotes(quotes.map((quote) => quote.text), '').length + 2 : 0
+
   // Keeps the text with the quotes attached to it, as the draft.
   const persist = (next: string, attached: readonly Quote[] = quotes): void => {
     if (draftKey) {
       const kept = joinQuotes(attached.map((quote) => quote.text), next)
+      // The main process would refuse it; the box says so when it is sent.
+      if (kept.length > MESSAGE_TEXT_LIMIT) return
       void mutate({ key: draftKey, action: 'text', text: kept }).catch((reason) => setError(ipcErrorMessage(reason, 'Could not save the draft.')))
     }
   }
@@ -494,12 +525,30 @@ export const ChatComposer = forwardRef(function ChatComposer({
       if (boxReady) attachQuotes([selection])
       else waitingQuotes.current.push(selection)
     },
+    isBlank: () => blank,
   }))
   useEffect(() => {
     if (!boxReady || waitingQuotes.current.length === 0) return
     attachQuotes(waitingQuotes.current.splice(0))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boxReady])
+  // Ctrl+C with nothing selected empties the box: the text, the quote cards and the attached files.
+  const clearMessage = (): void => {
+    resetHistory()
+    pendingCaret.current = 0
+    setQuotes([])
+    setText('')
+    setCursor({ text: '', at: 0 })
+    persist('', [])
+    const files = draft.attachments
+    if (!draftKey || files.length === 0) return
+    setDraft((current) => ({ ...current, attachments: [] }))
+    void (async () => {
+      let value: ChatDraft | undefined
+      for (const file of files) value = await mutate({ key: draftKey, action: 'remove', attachmentId: file.id })
+      if (value) setDraft(value)
+    })().catch((reason) => setError(ipcErrorMessage(reason, 'Could not remove the attached files.')))
+  }
   const removeQuote = (id: number): void => {
     const next = quotes.filter((quote) => quote.id !== id)
     setQuotes(next)
@@ -525,6 +574,18 @@ export const ChatComposer = forwardRef(function ChatComposer({
     persist(next.text)
     // A new object each time, so the box renders and puts the caret in place even when the text is unchanged.
     setCursor({ text: next.text, at: next.caret })
+  }
+  // Tab on a folder: the word becomes the folder, still open, and the list shows what is in it.
+  const stepIntoFolder = (entry: ChatFileEntry): void => {
+    if (!fileTrigger) return
+    resetHistory()
+    const next = enterFolder(text, fileTrigger, entry.path)
+    enteredFolder.current = entry.path
+    pendingCaret.current = next.caret
+    setText(next.text)
+    persist(next.text)
+    setCursor({ text: next.text, at: next.caret })
+    setActiveItem(0)
   }
   const pickFile = (entry: ChatFileEntry): void => {
     if (!fileTrigger) return
@@ -558,18 +619,27 @@ export const ChatComposer = forwardRef(function ChatComposer({
       setError(`/${command.name} takes nothing after it.`)
       return
     }
+    const attached = command.takesQuotes && args ? quotes : []
+    const argument = attached.length ? joinQuotes(attached.map((quote) => quote.text), args) : args
+    if (argument.length > MESSAGE_TEXT_LIMIT) {
+      setError(TOO_LONG)
+      return
+    }
     resetHistory()
     setError(null)
     const written = text
+    const kept = attached.length ? [] : quotes
     setText('')
     setCursor({ text: '', at: 0 })
-    persist('')
+    if (attached.length) setQuotes(kept)
+    persist('', kept)
     try {
-      await command.run(args)
+      await command.run(argument)
     } catch (reason) {
       setText(written)
       setCursor({ text: written, at: written.length })
-      persist(written)
+      if (attached.length) setQuotes(attached)
+      persist(written, quotes)
       setError(ipcErrorMessage(reason, `Could not run /${command.name}.`))
     } finally {
       setFocusAt(0)
@@ -580,8 +650,16 @@ export const ChatComposer = forwardRef(function ChatComposer({
   const choose = (index: number, completeOnly = false): void => {
     if (!slashTrigger) {
       if (fileTrigger) {
+        // Tab steps into a folder, like a shell; Tab on the folder itself (the first row once in it) and Enter finish.
+        // Before the list for a folder just stepped into has come, Tab finishes that folder and Enter waits.
+        if (fileResults?.query !== fileTrigger.query) {
+          if (completeOnly && enteredFolder.current === fileTrigger.query) pickFile({ path: fileTrigger.query, directory: true })
+          return
+        }
         const entry = fileEntries[index]
-        if (entry) pickFile(entry)
+        if (!entry) return
+        if (completeOnly && entry.directory && entry.path !== fileTrigger.query) stepIntoFolder(entry)
+        else pickFile(entry)
         return
       }
       const skill = matches[index]
@@ -640,6 +718,7 @@ export const ChatComposer = forwardRef(function ChatComposer({
     setError(null)
     try {
       const message = joinQuotes(quotes.map((quote) => quote.text), text)
+      if (message.length > MESSAGE_TEXT_LIMIT) throw new Error(TOO_LONG)
       let value: ChatDraft | undefined
       if (draftKey) {
         value = await mutate({ key: draftKey, action: 'text', text: message })
@@ -702,6 +781,26 @@ export const ChatComposer = forwardRef(function ChatComposer({
         return
       }
     }
+    if (event.key.toLowerCase() === 'c' && event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey &&
+      !blank && loaded && !sending && !adding && !messageRef.current?.hasSelection()) {
+      event.preventDefault()
+      clearMessage()
+      return
+    }
+    // The suggestion in the empty box: Tab or the right arrow takes it, Escape puts it away.
+    if (ghost && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      if (event.key === 'Tab' || event.key === 'ArrowRight') {
+        event.preventDefault()
+        takeSuggestion(ghost)
+        return
+      }
+      if (event.key === 'Escape' && onDismissSuggestion) {
+        event.preventDefault()
+        event.stopPropagation()
+        onDismissSuggestion()
+        return
+      }
+    }
     // With no list to close, Escape belongs to the page: it closes the side question shown above the box.
     if (event.key === 'Escape' && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && onEscape?.()) {
       event.preventDefault()
@@ -737,9 +836,11 @@ export const ChatComposer = forwardRef(function ChatComposer({
       : fileTrigger
         ? fileEntries.map((entry) => {
           const { name, folder } = describeFile(entry.path)
+          const self = entry.directory && entry.path === fileTrigger.query
           return {
             key: entry.path,
             label: name,
+            hint: self ? 'this folder' : undefined,
             description: folder || undefined,
             icon: entry.directory ? <Folder aria-hidden className="h-3.5 w-3.5" /> : <FileIcon aria-hidden className="h-3.5 w-3.5" />,
             testId: `file-option-${entry.path}`,
@@ -814,6 +915,7 @@ export const ChatComposer = forwardRef(function ChatComposer({
           value={text}
           disabled={disabled || sending || !loaded}
           placeholder={placeholder}
+          suggestion={ghost}
           onChange={(next, caret) => {
             resetHistory()
             setText(next)
@@ -832,6 +934,8 @@ export const ChatComposer = forwardRef(function ChatComposer({
             if (images.length) { event.preventDefault(); void addFiles(images) }
           }}
           onKeyDown={onKeyDown}
+          maxLength={MESSAGE_TEXT_LIMIT - quotesLength}
+          onTooLong={() => setError(TOO_LONG)}
         />
         {/*
           What runs the message (attach, model, agent) sits on the left, what it knows (MCP, context) and the way

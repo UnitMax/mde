@@ -11,7 +11,11 @@ both use OpenCode's API for thread activity. Choose GUI (the default) or Termina
 Add, rename, remove and give icons to the folders threads start in from Projects (the folder button
 beside the Inbox settings); the icon shows beside each project's threads. On macOS and in WSL,
 Settings → OpenCode → Edit configuration changes OpenCode's own configuration file: permission rules,
-custom OpenAI-compatible providers and disabled providers. See
+custom OpenAI-compatible providers and disabled providers, and Settings → OpenCode → MDE MCP → Install
+lets agents start new Inbox threads themselves (`tools.mde.create_thread`) and open panes in the Inbox
+terminal (`tools.mde.open_terminal`, for example to run a dev server; commands wait for your approval unless
+you choose otherwise there), and show you charts, tables and small dashboards in the chat
+(`tools.mde.show_view`, drawn by MDE from data, never code). See
 [`docs/architecture.md`](docs/architecture.md) for how each part behaves.
 
 Settings → Notifications plays a sound and flashes the taskbar button when an Inbox thread is done, needs

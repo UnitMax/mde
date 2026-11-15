@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { TodoProject, TodoTask } from '../src/shared/types'
 import {
   buildTodoSearchItems,
+  isTodoNewTaskShortcut,
   isTodoSearchShortcut,
   searchTodoTasks,
   todoDescriptionSnippet
@@ -116,6 +117,24 @@ describe('To Do search', () => {
       text: 'short needle',
       positions: [6]
     })
+  })
+})
+
+describe('To Do new-task shortcut', () => {
+  const base = { key: 'n', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false }
+
+  it('accepts Ctrl+N and Cmd+N, on any layout', () => {
+    expect(isTodoNewTaskShortcut({ ...base, ctrlKey: true })).toBe(true)
+    expect(isTodoNewTaskShortcut({ ...base, metaKey: true, type: 'keydown' })).toBe(true)
+    expect(isTodoNewTaskShortcut({ ...base, key: 'т', code: 'KeyN', ctrlKey: true })).toBe(true)
+  })
+
+  it('rejects other modifiers, composition, and key releases', () => {
+    expect(isTodoNewTaskShortcut(base)).toBe(false)
+    expect(isTodoNewTaskShortcut({ ...base, key: 'N', ctrlKey: true, shiftKey: true })).toBe(false)
+    expect(isTodoNewTaskShortcut({ ...base, ctrlKey: true, altKey: true })).toBe(false)
+    expect(isTodoNewTaskShortcut({ ...base, ctrlKey: true, isComposing: true })).toBe(false)
+    expect(isTodoNewTaskShortcut({ ...base, ctrlKey: true, type: 'keyup' })).toBe(false)
   })
 })
 

@@ -70,7 +70,6 @@ beforeEach(() => {
     wslAvailable: false,
     inboxThreads: [],
     selectedInboxThreadId: null,
-    inboxMarkedUnread: {},
     inboxCues: {},
     activeWorkspaceView: 'inbox',
     settingsDialog: { open: false, section: 'appearance' }

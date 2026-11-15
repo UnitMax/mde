@@ -131,7 +131,17 @@ export function DiffBody({
  * under it, hung from the rail. The row shuts the diff, and a long diff starts cut short. In the compact layout the
  * diff starts shut, leaving the line; opening it is the person's choice.
  */
-function FileDiffCard({ change, status, directory }: { change: FileChange; status: ToolPart['status']; directory: string }): JSX.Element {
+export function FileDiffCard({
+  change,
+  status,
+  directory,
+  testId = 'chat-diff',
+}: {
+  change: FileChange
+  status: ToolPart['status']
+  directory: string
+  testId?: string
+}): JSX.Element {
   const compact = useCompactChat()
   const [chosen, setChosen] = useState<boolean | null>(null)
   const [expanded, setExpanded] = useState(false)
@@ -140,7 +150,7 @@ function FileDiffCard({ change, status, directory }: { change: FileChange; statu
   const verb = VERBS[change.action][status === 'completed' ? 'done' : 'doing']
   return (
     <ActivityRow
-      testId="chat-diff"
+      testId={testId}
       attrs={{ 'data-path': change.path }}
       label={`${verb} ${shown}`}
       icon={ICONS[change.action]}

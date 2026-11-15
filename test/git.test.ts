@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createGitCommandRunner,
   createGitMutationRunner,
+  createGitFetchRunner,
   isBinaryGitDiff,
   parseGitRefs,
   readGitRefs,
@@ -673,6 +674,49 @@ describe('Git command hardening (SEC-008)', () => {
       'Ubuntu-24.04',
       wslGit(...hardened('--no-pager', 'status')),
       { cwd: '/home/me/src/app' }
+    )
+  })
+})
+
+describe('Git fetch runner', () => {
+  const fetchArgs = [
+    '--no-pager', '--no-optional-locks',
+    '-c', 'core.fsmonitor=false',
+    '-c', 'core.hooksPath=/nonexistent/mde-disabled-git-hooks',
+    '-c', 'core.askpass=',
+    '-c', 'submodule.recurse=false',
+    '-c', 'fetch.recurseSubmodules=false',
+    '-c', 'maintenance.auto=false',
+    '-c', 'gc.auto=0',
+  ]
+
+  it('allows only the plain network protocols, keeps hooks off, and leaves the credential helper to the person', async () => {
+    let call: { args: string[]; env: NodeJS.ProcessEnv } | undefined
+    mocks.execFile.mockImplementation(
+      (_file: string, args: string[], options: { env: NodeJS.ProcessEnv }, callback: (error: null, stdout: string, stderr: string) => void) => {
+        call = { args, env: options.env }
+        callback(null, '', '')
+      }
+    )
+    await createGitFetchRunner(nativeSession, '/workspace/native', 'linux')(['fetch', '--all'])
+    expect(call?.args).toEqual([...fetchArgs, 'fetch', '--all'])
+    expect(call?.args).not.toContain('credential.helper=')
+    expect(call?.args).not.toContain('core.sshCommand=false')
+    expect(call?.env).toMatchObject({ GIT_ALLOW_PROTOCOL: 'file:git:http:https:ssh', GIT_TERMINAL_PROMPT: '0', GIT_NO_LAZY_FETCH: '1' })
+  })
+
+  it('applies the same policy inside WSL', async () => {
+    mocks.runWslCommand.mockResolvedValue({ stdout: '', stderr: '', code: 0 })
+    await createGitFetchRunner(wslSession, '/home/me/src/app', 'win32')(['fetch', '--all'])
+    expect(mocks.runWslCommand).toHaveBeenCalledWith(
+      'Ubuntu-24.04',
+      [
+        '/usr/bin/env', '-u', 'GIT_CONFIG',
+        'GIT_OPTIONAL_LOCKS=0', 'GIT_TERMINAL_PROMPT=0', 'GIT_ASKPASS=',
+        'GIT_NO_LAZY_FETCH=1', 'GIT_ALLOW_PROTOCOL=file:git:http:https:ssh', 'GIT_PROTOCOL_FROM_USER=0', 'LC_ALL=C',
+        'git', ...fetchArgs, 'fetch', '--all',
+      ],
+      { cwd: '/home/me/src/app', timeoutMs: 120_000 }
     )
   })
 })

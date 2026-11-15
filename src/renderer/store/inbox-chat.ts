@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { ThreadPermissionMode } from '@shared/permission-modes'
 import type {
   ChatEvent,
   ChatCreateRequest,
@@ -23,8 +24,18 @@ import { appendLive, mergePending, pruneLive, type LivePart } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { mcpTargetKey } from '@/lib/mcp'
 import { useInboxMcp } from '@/store/inbox-mcp'
+import { useInboxSavedPermissions } from '@/store/inbox-saved-permissions'
 import { getTerminalSettings, subscribeTerminalSettings } from '@/terminal/terminal-settings'
 import { useWorkspace } from '@/store/workspace'
+import {
+  backgroundThreadToast,
+  notify,
+  notifyActionError,
+  openThreadFromToast,
+  threadDisplayTitle,
+  titleErrorToastKey,
+} from '@/lib/toasts'
+import { useToasts } from '@/store/toasts'
 
 export interface ChatThreadState {
   messages: ChatMessage[]
@@ -103,7 +114,8 @@ function mergeNewest(current: readonly ChatMessage[], newest: readonly ChatMessa
 }
 
 interface InboxChatStore {
-  titleRegenerations: Record<string, { pending: boolean; error: string | null }>
+  /** Threads whose title is being regenerated. A failure is told in a toast. */
+  titleRegenerations: Record<string, { pending: boolean }>
   regenerateTitle: (threadId: string) => Promise<void>
   folders: InboxFolder[]
   composer: InboxComposerState
@@ -164,6 +176,11 @@ interface InboxChatStore {
    * A rejection means no thread was made.
    */
   forkThread: (threadId: string, input?: { messageId: string; text: string }, options?: { focus?: boolean }) => Promise<InboxThread>
+  /**
+   * Gives a thread another permission mode; a working agent follows it from its next step. A rejection means the
+   * thread keeps the mode it had.
+   */
+  setPermissionMode: (threadId: string, mode: ThreadPermissionMode) => Promise<void>
   /**
    * Asks OpenCode to compact the conversation: it summarizes it to free up context, in the background, and
    * writes the result into the conversation. A request while the agent is busy waits for it to finish. A
@@ -238,15 +255,24 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
     titleRegenerations: {},
     regenerateTitle: async (threadId) => {
       if (get().titleRegenerations[threadId]?.pending) return
-      const patch = (pending: boolean, error: string | null): void => {
-        set((state) => ({ titleRegenerations: { ...state.titleRegenerations, [threadId]: { pending, error } } }))
+      const patch = (pending: boolean): void => {
+        set((state) => ({ titleRegenerations: { ...state.titleRegenerations, [threadId]: { pending } } }))
       }
-      patch(true, null)
+      patch(true)
+      useToasts.getState().dismissKey(titleErrorToastKey(threadId))
       try {
         await window.api.chat.regenerateTitle({ threadId })
-        patch(false, null)
+        patch(false)
       } catch (error) {
-        patch(false, ipcErrorMessage(error, 'Could not regenerate the title.'))
+        patch(false)
+        const thread = useWorkspace.getState().inboxThreads.find((item) => item.id === threadId)
+        notifyActionError({
+          key: titleErrorToastKey(threadId),
+          label: 'Title not regenerated',
+          title: thread ? threadDisplayTitle(thread) : 'Untitled thread',
+          detail: ipcErrorMessage(error, 'Could not regenerate the title.'),
+          onOpen: () => openThreadFromToast(threadId),
+        })
       }
     },
     folders: [],
@@ -265,6 +291,14 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
       configure()
       const unsubscribeSettings = subscribeTerminalSettings(configure)
       const unsubscribeEvents = window.api.chat.onEvent((event) => get().applyEvent(event))
+      // An agent added a project (or a worktree) through the MDE MCP. Only the list is read again: the
+      // new-thread page's own choice is the person's, and stays.
+      const unsubscribeFolders = window.api.inbox.onFoldersChanged?.(() => {
+        void Promise.resolve()
+          .then(() => window.api.inbox.folders())
+          .then((state) => { if (state) set({ folders: state.folders }) })
+          .catch(() => undefined)
+      })
       void Promise.resolve()
         .then(() => window.api.inbox.folders())
         .then((state) => set({ folders: state?.folders ?? [], composer: state?.composer ?? {}, foldersLoaded: true }))
@@ -272,6 +306,7 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
       return () => {
         unsubscribeSettings()
         unsubscribeEvents()
+        unsubscribeFolders?.()
       }
     },
 
@@ -340,6 +375,8 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
       workspace.upsertInboxThread(thread)
       // A failed first prompt keeps its draft in the thread; open it so the error and retry are visible.
       if (!options?.background || thread.sendError) workspace.selectInboxThread(thread.id)
+      // Out of sight, so a toast says where it went and takes the person there.
+      else notify(backgroundThreadToast(thread, { project: get().folders.find((folder) => folder.id === input.folderId)?.name }))
       // A new worktree was added to the folder list by main, so that more threads can be started in it.
       if (input.worktree) void get().reloadFolders()
       return thread
@@ -573,6 +610,11 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
       return result.thread
     },
 
+    setPermissionMode: async (threadId, mode) => {
+      const thread = await window.api.chat.setPermissionMode({ threadId, mode })
+      useWorkspace.getState().upsertInboxThread(thread)
+    },
+
     compactThread: async (threadId) => {
       await window.api.chat.compact({ threadId })
       // The service says a request was taken by events too; reading now shows a waiting one without them.
@@ -606,14 +648,19 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
     },
 
     replyPermission: async (threadId, requestId, decision) => {
-      await window.api.chat.replyPermission({ threadId, requestId, decision })
+      // A subagent's request is answered in the subagent's session.
+      const sessionId = get().threads[threadId]?.requests.permissions.find((item) => item.id === requestId)?.subagent?.sessionId
+      await window.api.chat.replyPermission({ threadId, requestId, decision, ...(sessionId ? { sessionId } : {}) })
+      // "Always allow" saved an approval for the project; the event says so too, but not before this returns.
+      if (decision === 'always') void useInboxSavedPermissions.getState().load(threadId)
       patchThread(threadId, (thread) => ({
         requests: { ...thread.requests, permissions: thread.requests.permissions.filter((item) => item.id !== requestId) },
       }))
     },
 
     replyForm: async (threadId, formId, answer) => {
-      await window.api.chat.replyForm({ threadId, formId, answer })
+      const sessionId = get().threads[threadId]?.requests.forms.find((item) => item.id === formId)?.subagent?.sessionId
+      await window.api.chat.replyForm({ threadId, formId, answer, ...(sessionId ? { sessionId } : {}) })
       patchThread(threadId, (thread) => ({
         requests: { ...thread.requests, forms: thread.requests.forms.filter((item) => item.id !== formId) },
       }))
@@ -636,6 +683,9 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
         case 'requests':
           void get().refreshRequests(event.threadId)
           return
+        case 'saved-permissions':
+          void useInboxSavedPermissions.getState().load(event.threadId)
+          return
         case 'running':
           patchThread(event.threadId, { running: event.running })
           scheduleRefresh(event.threadId)
@@ -649,6 +699,7 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
           scheduleRefresh(event.threadId)
           void get().refreshRequests(event.threadId)
           void get().refreshGoal(event.threadId)
+          if (useInboxSavedPermissions.getState().entries[event.threadId]) void useInboxSavedPermissions.getState().load(event.threadId)
       }
     },
   }

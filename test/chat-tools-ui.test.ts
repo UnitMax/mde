@@ -4,6 +4,9 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PREVIEW_HOLD_MS, ThoughtRow } from '../src/renderer/components/inbox/ChatActivity'
 import { ChatMessageView } from '../src/renderer/components/inbox/ChatMessageView'
+import { CompactChatContext } from '../src/renderer/components/inbox/chat-ui'
+import { compactPlans } from '../src/renderer/lib/chat-tools'
+import { useInboxView } from '../src/renderer/store/inbox-view'
 import { ToolCallView } from '../src/renderer/components/inbox/ChatTools'
 import type { ChatMessage, ChatPart } from '../src/shared/types'
 
@@ -59,8 +62,8 @@ async function call(part: ToolPart): Promise<HTMLElement> {
   return q(`[data-testid="chat-tool-${part.id}"]`, view)!
 }
 
-/** Opens a row: the first button in the row's container. */
-const open = (row: HTMLElement) => click(row.querySelector<HTMLButtonElement>(':scope > button'))
+/** Opens a row: the first button in the row's container, or in the header a run of steps holds it in. */
+const open = (row: HTMLElement) => click(row.querySelector<HTMLButtonElement>(':scope > button, :scope > [data-testid="chat-activity-header"] > button'))
 
 function assistant(parts: ChatPart[], extra: Partial<Extract<ChatMessage, { kind: 'assistant' }>> = {}): ChatMessage {
   return { kind: 'assistant', id: 'msg_a', time: 1, agent: 'build', model: MODEL, parts, completed: true, ...extra }
@@ -512,12 +515,18 @@ describe('the preview of a thought being written', () => {
   })
 })
 
+/** A message as the compact layout draws it, where runs of steps fold; `working` makes it the live step. */
+function compacted(msg: ChatMessage, working = false): ReturnType<typeof createElement> {
+  const plan = compactPlans([msg], working ? msg.id : undefined).get(msg.id)
+  return createElement(CompactChatContext.Provider, { value: true }, createElement(ChatMessageView, { message: msg, directory: DIR, plan, working }))
+}
+
 describe('a run of steps', () => {
   const read = (name: string): ToolPart => tool('read', { path: `${DIR}/${name}` }, { output: '1: x' })
   const steps = (): ChatPart[] => [read('a.ts'), read('b.ts'), tool('shell', { command: 'ls' }, { exitCode: 0, output: 'a' }), { kind: 'text', text: 'Done.' }]
 
   it('folds into one line that sums it up, shut once the message is complete', async () => {
-    const view = await message(assistant(steps()))
+    const view = await mount(compacted(assistant(steps())))
     const group = q('[data-testid="chat-activity"]', view)!
     expect(text(q('[data-testid="chat-activity-summary"]', group))).toBe('Read 2 files and ran 1 command')
     expect(group.hasAttribute('data-open')).toBe(false)
@@ -526,61 +535,71 @@ describe('a run of steps', () => {
   })
 
   it('opens on a click, and shows its steps', async () => {
-    const view = await message(assistant(steps()))
+    const view = await mount(compacted(assistant(steps())))
     await open(q('[data-testid="chat-activity"]', view)!)
     expect(all('[data-testid^="chat-tool-"]', view)).toHaveLength(3)
     expect(q('[data-testid="chat-activity"]', view)!.hasAttribute('data-open')).toBe(true)
   })
 
-  it('stays open while the message is at its end and being written, and shuts when it is not', async () => {
+  it('spins while the agent is at it, shut until it is opened', async () => {
     const running = tool('shell', { command: 'npm test' }, { status: 'running' })
     const parts: ChatPart[] = [read('a.ts'), read('b.ts'), running]
-    const view = await mount(createElement(ChatMessageView, { message: assistant(parts, { completed: false }), directory: DIR }))
+    const view = await mount(compacted(assistant(parts, { completed: false }), true))
     const group = q('[data-testid="chat-activity"]', view)!
-    expect(group.hasAttribute('data-open')).toBe(true)
+    expect(group.hasAttribute('data-open')).toBe(false)
     expect(group.hasAttribute('data-live')).toBe(true)
     expect(text(q('[data-testid="chat-activity-summary"]', group))).toBe('Read 2 files and running 1 command')
+    await open(group)
     expect(q(`[data-testid="chat-tool-${running.id}"]`, group)?.getAttribute('data-status')).toBe('running')
-
-    // The agent goes on to say something: the group shuts by itself.
-    await rerender(createElement(ChatMessageView, {
-      message: assistant([...parts.slice(0, 2), { ...running, status: 'completed', exitCode: 0 }, { kind: 'text', text: 'Now writing' }], { completed: false }),
-      directory: DIR,
-    }))
-    expect(q('[data-testid="chat-activity"]', view)!.hasAttribute('data-open')).toBe(false)
   })
 
   it('keeps what the person chose when the work goes on', async () => {
     const parts: ChatPart[] = [read('a.ts'), read('b.ts'), read('c.ts')]
-    const view = await mount(createElement(ChatMessageView, { message: assistant(parts, { completed: false }), directory: DIR }))
-    // Shut by hand while it is still live.
+    const view = await mount(compacted(assistant(parts, { completed: false }), true))
+    // Opened by hand while it is still live.
     await open(q('[data-testid="chat-activity"]', view)!)
-    expect(q('[data-testid="chat-activity"]', view)!.hasAttribute('data-open')).toBe(false)
-    await rerender(createElement(ChatMessageView, {
-      message: assistant([...parts, { kind: 'text', text: 'Hi' }], { completed: false }),
-      directory: DIR,
-    }))
-    expect(q('[data-testid="chat-activity"]', view)!.hasAttribute('data-open')).toBe(false)
+    expect(q('[data-testid="chat-activity"]', view)!.hasAttribute('data-open')).toBe(true)
+    await rerender(compacted(assistant([...parts, read('d.ts')], { completed: false }), true))
+    expect(q('[data-testid="chat-activity"]', view)!.hasAttribute('data-open')).toBe(true)
   })
 
   it('counts the steps that went wrong', async () => {
     const parts: ChatPart[] = [read('a.ts'), tool('read', { path: `${DIR}/b.ts` }, { status: 'error', error: 'nope' }), tool('shell', { command: 'false' }, { exitCode: 1 })]
-    const view = await message(assistant(parts))
+    const view = await mount(compacted(assistant(parts)))
     expect(text(q('[data-testid="chat-activity"]', view))).toContain('2 failed')
   })
 
-  it('does not fold two steps', async () => {
-    const view = await message(assistant([read('a.ts'), read('b.ts')]))
+  it('is the step itself when there is only one, which opens in one click', async () => {
+    const view = await mount(compacted(assistant([{ kind: 'reasoning', text: 'Check **the config** first.' }, { kind: 'text', text: 'Done.' }])))
     expect(q('[data-testid="chat-activity"]', view)).toBeNull()
-    expect(all('[data-testid^="chat-tool-"]', view)).toHaveLength(2)
+    const row = q('[data-testid="chat-reasoning"]', view)!
+    await open(row)
+    expect(text(row)).toContain('Check the config first.')
+
+    const command = await mount(compacted(assistant([tool('shell', { command: 'npm test' }, { exitCode: 0, output: 'ok' }), { kind: 'text', text: 'Done.' }])))
+    expect(q('[data-testid="chat-activity"]', command)).toBeNull()
+    expect(text(q('[data-testid^="chat-tool-"]', command))).toContain('Ran npm test')
   })
 
-  it('leaves a file change, an answered question and text outside the group', async () => {
-    const edit = tool('edit', { filePath: `${DIR}/a.ts`, oldString: 'a', newString: 'b' })
-    const view = await message(assistant([read('a.ts'), read('b.ts'), read('c.ts'), edit, read('d.ts'), read('e.ts')]))
-    expect(all('[data-testid="chat-activity"]', view)).toHaveLength(1)
-    expect(q('[data-testid="chat-diff"]', view)).not.toBeNull()
-    expect(all('[data-testid^="chat-tool-"]', view).map((element) => element.getAttribute('data-testid'))).toEqual([`chat-tool-${edit.id}`, expect.any(String), expect.any(String)])
+  it('names the commands it ran after its summary, unless that is turned off', async () => {
+    const parts: ChatPart[] = [{ kind: 'reasoning', text: 'Hmm' }, tool('shell', { command: 'echo "step 2"' }, { exitCode: 0 }), tool('shell', { command: 'cd app && curl -s x' }, { exitCode: 0 })]
+    const view = await mount(compacted(assistant(parts)))
+    expect(text(q('[data-testid="chat-activity-summary"]', view))).toBe('Thought and ran 2 commands')
+    expect(text(q('[data-testid="chat-activity-commands"]', view))).toBe('· echo, curl')
+
+    useInboxView.setState({ commandNames: false })
+    try {
+      await rerender(compacted(assistant(parts)))
+      expect(q('[data-testid="chat-activity-commands"]', view)).toBeNull()
+    } finally {
+      useInboxView.setState({ commandNames: true })
+    }
+  })
+
+  it('is not folded in the Every step layout, however many steps there are', async () => {
+    const view = await message(assistant([read('a.ts'), read('b.ts'), read('c.ts'), read('d.ts')]))
+    expect(q('[data-testid="chat-activity"]', view)).toBeNull()
+    expect(all('[data-testid^="chat-tool-"]', view)).toHaveLength(4)
   })
 })
 
@@ -619,5 +638,74 @@ describe('notes', () => {
     expect(q('[data-goal-note="set"]', view)).not.toBeNull()
     await click(q('[data-goal-note="set"] button', view))
     expect(text(q('[data-testid="chat-goal-note-detail"]', view))).toBe('Ship the export')
+  })
+})
+
+describe('shutting a long panel from far down in it', () => {
+  const read = (name: string): ToolPart => tool('read', { path: `${DIR}/${name}` }, { output: '1: x' })
+  const ROW_HEIGHT = 20
+  /** Where the line of the run of steps is in the conversation, and how far down it is scrolled to begin with. */
+  const LINE_AT = 1000
+  const SCROLLED = 900
+
+  /** The run of steps inside a conversation that scrolls, with the boxes a browser would give them. */
+  async function scrolled(parts: ChatPart[]): Promise<{ scroller: HTMLElement; group: HTMLElement }> {
+    const view = await mount(createElement('div', { 'data-chat-scroller': '' }, compacted(assistant(parts))))
+    const scroller = view.firstElementChild as HTMLElement
+    let scrollTop = SCROLLED
+    Object.defineProperty(scroller, 'scrollTop', { configurable: true, get: () => scrollTop, set: (value: number) => { scrollTop = value } })
+    const box = (top: number, height: number) => ({ top, bottom: top + height, height, left: 0, right: 600, width: 600, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this === scroller) return box(0, 600)
+      if (this.parentElement?.getAttribute('data-testid') === 'chat-activity-header') return box(LINE_AT - scrollTop, ROW_HEIGHT)
+      return box(0, ROW_HEIGHT)
+    })
+    return { scroller, group: q('[data-testid="chat-activity"]', view)! }
+  }
+  const clickAt = (element: HTMLElement, clientY: number) => act(async () => {
+    element.dispatchEvent(new MouseEvent('click', { bubbles: true, clientY }))
+  })
+
+  it('holds the line of an open run of steps at the top, and lets it go when shut', async () => {
+    const { group } = await scrolled([read('a.ts'), read('b.ts'), read('c.ts')])
+    const header = q('[data-testid="chat-activity-header"]', group)!
+    expect(header.className).not.toContain('sticky')
+    await open(group)
+    expect(header.className).toContain('sticky')
+    await open(group)
+    expect(header.className).not.toContain('sticky')
+  })
+
+  it('shuts a run of steps from a click on its rail, and puts its line where the pointer was', async () => {
+    const { scroller, group } = await scrolled([read('a.ts'), read('b.ts'), read('c.ts')])
+    await open(group)
+    const rails = all('[data-testid="chat-rail-collapse"]', group)
+    expect(rails).toHaveLength(1)
+    await clickAt(rails[0]!, 300)
+    expect(group.hasAttribute('data-open')).toBe(false)
+    expect(q('[data-testid="chat-rail-collapse"]', group)).toBeNull()
+    // The line is centred on the pointer, so it is 300 - 10 from the top of the conversation's window.
+    expect(LINE_AT - scroller.scrollTop).toBe(300 - ROW_HEIGHT / 2)
+  })
+
+  it('keeps the line where it was when it is shut from the line itself', async () => {
+    const { scroller, group } = await scrolled([read('a.ts'), read('b.ts'), read('c.ts')])
+    await open(group)
+    await open(group)
+    expect(group.hasAttribute('data-open')).toBe(false)
+    expect(scroller.scrollTop).toBe(SCROLLED)
+  })
+
+  it('shuts only the step whose rail was clicked, inside an open run of steps', async () => {
+    const shell = tool('shell', { command: 'npm test' }, { exitCode: 0, output: 'ok' })
+    const { group } = await scrolled([read('a.ts'), read('b.ts'), shell])
+    await open(group)
+    const step = q(`[data-testid="chat-tool-${shell.id}"]`, group)!
+    await open(step)
+    expect(q('[data-testid="chat-shell"]', step)).not.toBeNull()
+    const inner = q('[data-testid="chat-rail-collapse"]', step)!
+    await clickAt(inner, 200)
+    expect(q('[data-testid="chat-shell"]', step)).toBeNull()
+    expect(group.hasAttribute('data-open')).toBe(true)
   })
 })

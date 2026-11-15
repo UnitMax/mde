@@ -125,13 +125,59 @@ describe('the @ file picker in the message box', () => {
     const { container, box } = await setup()
     await type(box, '@sub')
     await until(() => expect(rows(container)).toEqual(['src/sub/']))
-    await press(box, 'Tab')
+    await press(box, 'Enter')
     expect(box.state.doc.toString()).toBe('@src/sub/ ')
     await type(box, 'and @notes')
     await until(() => expect(rows(container)).toEqual(['my notes.txt']))
     await press(box, 'Enter')
     expect(box.state.doc.toString()).toBe('and @"my notes.txt" ')
     expect(marked(container)).toEqual(['@"my notes.txt"'])
+  })
+
+  it('steps into a folder with Tab, like a shell, and finishes it with a second Tab or with Enter', async () => {
+    const listing = async ({ query }: ChatFilesRequest): Promise<ChatFileEntry[]> => query === 'src/'
+      ? [{ path: 'src/', directory: true }, { path: 'src/sub/', directory: true }, { path: 'src/app.ts', directory: false }]
+      : query === 'src/sub/' ? [{ path: 'src/sub/', directory: true }, { path: 'src/sub/deep.ts', directory: false }]
+        : [{ path: 'src/', directory: true }]
+    const { container, box } = await setup({ files: listing })
+    await type(box, 'see @sr')
+    await until(() => expect(rows(container)).toEqual(['src/']))
+    const tab = await press(box, 'Tab')
+    expect(tab.defaultPrevented).toBe(true)
+    expect(box.state.doc.toString()).toBe('see @src/')
+    await until(() => expect(rows(container)).toEqual(['src/', 'src/sub/', 'src/app.ts']))
+    expect(container.querySelector('[data-testid="file-option-src/"]')?.textContent).toContain('this folder')
+    // Down to the sub folder and into it.
+    await press(box, 'ArrowDown')
+    await press(box, 'Tab')
+    expect(box.state.doc.toString()).toBe('see @src/sub/')
+    await until(() => expect(rows(container)).toEqual(['src/sub/', 'src/sub/deep.ts']))
+    // Tab on the folder itself finishes it.
+    await press(box, 'Tab')
+    expect(box.state.doc.toString()).toBe('see @src/sub/ ')
+    expect(picker(container)).toBeNull()
+
+    // Enter on a folder finishes it at once.
+    await type(box, 'see @sr')
+    await until(() => expect(rows(container)).toEqual(['src/']))
+    await press(box, 'Enter')
+    expect(box.state.doc.toString()).toBe('see @src/ ')
+  })
+
+  it('finishes a folder just stepped into when Tab comes again before its list does', async () => {
+    let release: (() => void) | undefined
+    const listing = async ({ query }: ChatFilesRequest): Promise<ChatFileEntry[]> => {
+      if (query === 'src/') await new Promise<void>((resolve) => { release = resolve })
+      return [{ path: 'src/', directory: true }]
+    }
+    const { container, box } = await setup({ files: listing })
+    await type(box, '@sr')
+    await until(() => expect(rows(container)).toEqual(['src/']))
+    await press(box, 'Tab')
+    expect(box.state.doc.toString()).toBe('@src/')
+    await press(box, 'Tab')
+    expect(box.state.doc.toString()).toBe('@src/ ')
+    release?.()
   })
 
   it('moves with the arrow keys and writes the one that is clicked, without taking the caret out of the box', async () => {

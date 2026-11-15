@@ -6,7 +6,8 @@ Security-relevant design and maintenance notes. The privacy and network statemen
 ## Network boundary
 
 MDE has no telemetry, remote crash uploader, updater, direct provider client or
-remote MCP client. The application HTTP client accepts loopback OpenCode origins
+remote MCP client. Its own MCP server (the MDE MCP) is a local bridge over a Unix socket or named pipe,
+not a network listener. The application HTTP client accepts loopback OpenCode origins
 and rejects redirects. This is not a guarantee of no external traffic: OpenCode,
 launched commands, OS network mounts and login-shell startup have their own network
 behavior. See [`PRIVACY.md`](../PRIVACY.md).
@@ -175,9 +176,12 @@ the validated `chat:*` channels.
   Basic auth to that loopback origin, and never logged, stored or put in an
   error message. A 401 or connection failure drops it and rediscovers once.
 - **Operations.** `SERVICE_OPERATIONS` is a fixed allowlist of method
-  and path pairs (agents, skills, MCP servers, providers, models, session create/get/active, message
+  and path pairs (agents, skills, MCP servers, providers, models, session create/get/active, the child sessions of a
+  recorded thread (`parentID` only, to find a running subagent's session), message
   list, prompt, interrupt, agent and model switch, permission and form
-  list/reply, session update, staging or clearing a revert, fork, compact, one-off text generation for a
+  list/reply (a subagent's found in the directory's pending lists and answered in its session only when its parents
+  lead to the thread), the project's saved "Always allow" approvals (listed by the thread's folder; one is removed only when
+  that list holds it), session update, staging or clearing a revert, fork, compact, one-off text generation for a
   side question, running a slash command of the session, reading the goal plugin's state, listing or cancelling the inbox items the service holds for a busy agent, changing their
   delivery, and listing, connecting and disconnecting MCP servers). The skill list (`GET /api/skill`)
   takes only the `location[directory]` query. OpenCode answers with each skill's full text and file path;
@@ -220,6 +224,15 @@ the validated `chat:*` channels.
   it also reads pages of messages, keeping only the ID and text of the message the turn began with.
   OpenCode copies the messages and attachments inside the service, so the copy itself does not pass
   through MDE or the renderer, and the answer is reduced to the new session's ID, title and model.
+  When the original has a permission mode, the main process gives the fork the same mode's rules with
+  `PATCH /api/session/{sessionID}` (see `chat:permission-mode`).
+  The `chat:permission-mode` channel accepts only a recorded thread ID and one of the fixed mode names
+  (`default`, `read-only`, `ask`, `auto-edit`, `full`, `full-web-asks`), never rules: the main process turns the
+  name into rules from the table in `src/shared/permission-modes.ts` and sends
+  `PATCH /api/session/{sessionID}` with `{ permissions }` (an empty list for `default`). `chat:create` takes the
+  same optional name and sends its rules with `POST /api/session`. A mode can loosen what the OpenCode
+  configuration asks about or denies, so it is the person's choice in the composer and nothing else can set it:
+  an agent that starts a thread through the MDE MCP cannot pass one, and those threads use the configuration.
   The `chat:compact` channel accepts only a recorded thread ID and sends
   `POST /api/session/{sessionID}/compact` with the fixed body `{ delivery: 'queue' }`; the renderer cannot
   supply the delivery or any other field. OpenCode answers at once and summarizes in the background, so
@@ -339,7 +352,32 @@ the same policy:
   Removal also inspects the target worktree's settings before its cleanliness check.
 - Branch discovery uses repository/ref metadata only. Local and cached
   remote-tracking branches remain available without scanning files or fetching
-  objects. Submodule recursion/diffs and automatic maintenance are disabled
+  objects. The Git graph (Inbox and Sessions) reads history the same way (`log`,
+  `for-each-ref`, `diff-tree` without external diff or textconv), and `git:commit`
+  accepts only a full 40- or 64-digit object name. `git:commit-diff` also takes a
+  path, which must be one of the files that commit changed. The `git:*` graph channels take
+  either an Inbox thread ID or a terminal ID (exactly one, never a path); a terminal
+  resolves to its live current directory, verified on disk like its Git chip's.
+- The Inbox `@` picker asks `git check-ignore` (with `core.quotePath=false`, through the same hardened
+  runner) which entries of a listed folder Git ignores. The paths are the ones OpenCode's
+  `/api/fs/list` returned for a folder that passed `isMentionablePath` (relative, no `..`), passed
+  after `--`, and the folder or thread is named by its ID, never by a path from the renderer.
+- **User-started fetch.** `git:fetch` (a thread, terminal or Inbox folder ID, nothing else; the
+  folder is resolved by `InboxChatService.fileRoot`, never a path from the renderer) is the one call
+  allowed to reach the network, and the renderer sends it only from the Git graph's Fetch
+  button and the Fetch button of the new-thread worktree branch picker. It uses a separate runner, `createGitFetchRunner`, with `GIT_ALLOW_PROTOCOL` set to
+  `file:git:http:https:ssh` (remote helpers such as `ext::` stay denied), hooks and fsmonitor
+  disabled, askpass and terminal prompts off, and no submodule recursion or automatic
+  maintenance. It keeps the person's credential helper and SSH command so they can sign in, so
+  it first lists configuration with `--show-scope --includes` and refuses when a `local` or
+  `worktree` scope (including files those include) sets `credential.helper` or
+  `credential.<url>.helper`, `core.sshCommand`, `core.gitProxy`, `core.alternateRefsCommand`, or a remote's `uploadpack`,
+  `receivepack` or `vcs`. Global, system and environment settings are the person's own. The
+  command is fixed (`fetch --all --prune --no-recurse-submodules`); the renderer chooses no
+  remote, refspec or URL. Error text shown in the UI keeps Git's `fatal:`/`error:` lines with
+  URL credentials and control characters removed. A real-Git test fetches over `file://`,
+  refuses a planted `remote.origin.uploadpack` without running it, and fails an `ext::` remote
+  without running it. Submodule recursion/diffs and automatic maintenance are disabled
   in MDE-owned calls to avoid child operations with another execution context.
 
 Real-Git regression fixtures cover info attributes, local/global/included/worktree
@@ -392,6 +430,16 @@ object takes no other key, so the renderer cannot name a path, a remote or a com
   `git worktree remove` without `--force` from the recorded repository, so uncommitted changes
   make Git refuse and the refusal is shown; the branch is kept. The renderer can request
   removal only for a thread ID, never for a path.
+- **The worktree manager names a root, which main must find itself.** `inbox:worktrees` takes no
+  payload. `inbox:worktree-remove` takes `{ target, root, force?, deleteBranch? }`: an OpenCode target
+  (`native`, or `wsl` with a distro name) and a path, with optional booleans and no other key. Main
+  lists the worktrees again from its own records and from `git worktree list` in the projects' folders,
+  and acts only when that listing has this root for this target, inside `<home>/.mde/worktrees/`. It
+  refuses while a thread in it is working or waiting for an answer. `--force` (losing uncommitted
+  changes) and `git branch -D -- ‹branch›` happen only when the request asks; the branch is the one Git
+  lists as checked out in that worktree (or MDE's record when the folder is gone), never a name from
+  the renderer. The threads that ran in it are marked read-only, and main refuses every request that
+  would run something in their directory again.
 - **Failed starts clean up after themselves.** A worktree whose session could not be created is
   removed with `--force` together with its branch, which is safe because nothing has run in it;
   cleanup errors are swallowed and the original error is reported.
@@ -483,6 +531,84 @@ a seeded fuzz that parses every result), `test/opencode-config-files.test.ts` (r
 symbolic links, modes, conflicts, WSL paths), `test/ipc-opencode-config.test.ts` and the validator cases in
 `test/ipc-validation.test.ts`.
 
+### MDE MCP boundary
+
+The MDE MCP lets an agent start Inbox threads and open Inbox terminal panes (`src/main/mcp/`, `src/shared/mde-mcp.ts`). It adds the one
+place where something other than the window can ask the main process to act, so it is kept narrow.
+
+- **Two processes, no network.** OpenCode starts MDE's own executable with `--mcp-bridge` as a stdio MCP
+  server (`mcp.servers.mde` in its configuration). `src/main/index.ts` checks for that flag before
+  registering the renderer scheme or taking the single-instance lock: the bridge opens no window, touches no
+  store and sends console output to stderr, since stdout carries the protocol. It answers `initialize`,
+  `ping` and `tools/list` itself and sends each `tools/call` to the running MDE as one JSON line on a fresh
+  connection to a Unix socket (`<userData>/mcp.sock`, mode `0600`; a temporary-folder path when that one is
+  too long for `sun_path`) or, on Windows, a named pipe (`\\.\pipe\mde-mcp-<hash of userData>`). Nothing
+  listens on TCP. The Electron `runAsNode` fuse stays off; the bridge is the full app binary in a different
+  mode, not a Node interpreter.
+- **Token.** Every request carries the 256-bit secret from `<userData>/mcp-token` (mode `0600`), compared in
+  constant time. The socket's mode and the user-data folder already keep other accounts out on the Mac; the
+  token also covers the Windows pipe, whose default ACL lets other local accounts open it for reading.
+- **Limits.** One request per connection, at most 1 MB, read within 10 s; at most 16 connections at once;
+  agents may start at most 10 threads a minute in all, and a chain of agent-started threads stops at three
+  levels (`spawnedBy`). The listener runs only where the Inbox does (macOS and Windows) and is closed on quit.
+- **Same checks as the window.** `create_thread` refuses unknown arguments and checks the prompt (length,
+  control characters), agent name, `provider/model`, mode and worktree branch with the rules the IPC
+  validator and `worktreeBranchProblem` use. A directory must be a plain absolute path (or a
+  `\\wsl.localhost\<distro>` path in the caller's distro); an unknown one goes through the same
+  resolve-and-check (`checkedInboxFolderPlace`) as **Add project**, so it must be an existing directory on the
+  caller's target. Then it calls `InboxChatService.create`: the thread is an ordinary Inbox thread, and its
+  agent runs with OpenCode's permission rules like any other. The request's target must be the one this
+  platform runs threads in (WSL on Windows, native on macOS).
+- **Who asked.** OpenCode 2.2.6 puts the calling session in each call's `_meta["ai.opencode/sessionID"]`.
+  It is only used to look up the parent thread (for the marker, the default directory and model, and the
+  depth limit); a session that is not an Inbox thread simply has none.
+- **Reach.** Any process running as the same user that can read the token can start threads, which run
+  agents with your OpenCode configuration and cost model usage. That is no more than such a process could do
+  through OpenCode's own service password or the terminal. Agents that have the MCP installed can do the
+  same, within the limits above. Removing the entry (Settings → OpenCode → MDE MCP → Remove) stops it.
+- **Install** writes only `mcp.servers.mde` = `{ type: "local", command: [...] }` into OpenCode's global
+  configuration, with the configuration editor's guarantees (surgical JSONC edit, re-parse, serialized atomic
+  write, nothing written to a file that does not parse). The command is built in the main process from
+  `process.execPath` (plus the app folder in development; inside WSL, the path `wslpath -u` gives; plus
+  `--mcp-user-data=<folder>` when MDE runs with its own `--user-data-dir`, which the bridge accepts only as an
+  absolute path); the renderer names only a target.
+
+- **Terminals agents open.** `open_terminal` can make a shell run a command, which OpenCode's own permission
+  rules for shell commands (a `bash` rule of `ask` or `deny`, the plan agent) do not see. So commands wait
+  for the person by default: the pane shows the whole command on an approval bar and nothing is typed until
+  **Run**. **Run without asking** (Settings → OpenCode → MDE MCP, kept in `mde-mcp.json`) and **Run, and allow
+  for an hour** (in memory only; the settings can only clear it, `agent-terminal:decide` and the settings
+  channel cannot set or extend it) are the person's choice. A command must be one line of at most 2,000
+  characters with no control characters (no second command through a line break, no escape sequences for the
+  terminal or the line editor) and no bidirectional formatting characters (which could make the bar show
+  something other than what runs). Main types the command from its own copy, keyed by the terminal it
+  started; the window only names a terminal and an answer, so it cannot change the command or run one main is
+  not keeping. Main starts the shell itself only for a pane ID of the Inbox terminal that is not running yet
+  (never a thread's terminal or a Sessions pane), only for a directory checked like a project folder and in
+  the environment the Inbox terminal runs in, and through the ordinary launch's folder checks. The pane never
+  takes the keyboard, so nothing the person types goes into it by surprise. Limits: ten terminals a minute,
+  four requests waiting for the window at once, none once the terminal has nine panes, and a background
+  shell's kept output is capped at 2 MB.
+
+- **Views agents show.** `show_view` sends data, never code: the view is a JSON tree of MDE's own components,
+  checked against a fixed catalog (`checkView` in `src/shared/view-spec.ts`) by the bridge before it answers
+  and again by the window before drawing; only the checked copy is drawn. No component takes HTML, Markdown,
+  styles, colours, class names, URLs, images, media or scripts, and nothing in a view acts on a click beyond
+  the view itself (tabs, sorting, the table and JSON toggles): no action reaches the agent, a link or the
+  system, so a prompt-injected agent cannot make a view do anything, only show something, and every view is
+  marked "From the agent" with its JSON one click away. Text reaches the page only as React text; control
+  and bidirectional formatting characters are refused. Size limits keep drawing cheap (48,000 characters,
+  150 elements, 8 levels, 6,000 numbers, 400 points per series, 200 rows). Views add no network access and no
+  new stored data; the renderer's Content-Security-Policy (`script-src 'self'`, `img-src 'self' data:`,
+  `connect-src 'self'`, no `unsafe-eval`) stays as it is, so even a fault in the view code could not load or
+  send anything. A drawing fault is caught per view by an error boundary.
+
+Regression coverage: `test/view-spec.test.ts` and `test/inbox-views-ui.test.ts` (views: the check, the bridge's
+answer, the parser keeping a view whole, drawing), `test/mde-mcp.test.ts` (protocol, framing, bridge ↔ listener over a real socket, token,
+tools, configuration edits), `test/mde-mcp-agent-terminals.test.ts` (approval, the hour, refusals, timeouts),
+the agent-pane cases in `test/ipc-inbox-terminal.test.ts`, `test/pty-manager.test.ts` (kept output, typed input)
+and the validator cases in `test/ipc-validation.test.ts`.
+
 ## Windows executable selection
 
 `src/main/windows-executable.ts` resolves Windows host programs before launch.
@@ -569,6 +695,12 @@ dependency versions:
 | minimatch 7–10 → 11.0.1 | Fixes globparts amplification while retaining legacy callable APIs in older copies. | Packager dependencies adopt patched modern versions. |
 | Mermaid → KaTeX 0.18.2 | Fixes [inherited trust options](https://github.com/advisories/GHSA-238p-pmpm-9mq7). Mermaid's declared 0.16.x range excludes the fix. | Mermaid adopts a patched KaTeX release. |
 | @electron/get → global-agent 4.1.3 | Removes the roarr → sprintf-js chain affected by [unbounded formatting precision](https://github.com/advisories/GHSA-hp3w-g68c-fv3c). global-agent 4 no longer depends on roarr and retains the downloader's `bootstrap()` API. | Electron builder's downloader adopts a version without the vulnerable chain. |
+
+KaTeX is also a direct dependency, pinned to the same 0.18.2, for LaTeX math in read-only Markdown. It renders
+with `trust: false`, so commands that produce links, images or HTML attributes (`\href`, `\url`,
+`\includegraphics`, `\htmlClass` and the like) are refused, with `maxSize`/`maxExpand` limits, a fresh macro
+table per formula and a 4,000-character cap; failures show the source as text. `test/math-markdown.test.ts`
+covers the delimiters, prices that must stay text, and refused commands.
 
 `test/mermaid-runtime.test.ts` exercises real diagram rendering, Mermaid's math
 integration, and rejection of inherited KaTeX trust options. The math integration

@@ -18,6 +18,8 @@ export function inboxTerminalHighlightTone(
   next: InboxThread
 ): InboxTerminalHighlightTone | null {
   if (previous?.mode !== 'terminal' || next.mode !== 'terminal') return null
+  // Coming back from a snooze is not something the agent did.
+  if (next.woke && !previous.woke && previous.status === next.status) return null
   if (
     previous.status === next.status &&
     previous.attentionReason === next.attentionReason &&

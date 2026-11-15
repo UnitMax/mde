@@ -3,9 +3,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { InboxDraftStore } from '../src/main/inbox/drafts'
 import { describe, expect, it, vi } from 'vitest'
-import type { ChatEvent } from '../src/shared/types'
-import { ASIDE_PREAMBLE, ASIDE_TIMEOUT_MS, InboxChatService, type InboxChatDependencies } from '../src/main/inbox/chat'
+import type { ChatEvent, InboxWorktreeEntry } from '../src/shared/types'
+import { ASIDE_PREAMBLE, ASIDE_TIMEOUT_MS, InboxChatService, TITLE_TIMEOUT_MS, type InboxChatDependencies } from '../src/main/inbox/chat'
 import { InboxRecorder, isInboxThreadUnread } from '../src/main/inbox/recorder'
+import { SUGGEST_PREAMBLE, SUGGEST_TIMEOUT_MS } from '../src/main/inbox/suggestion'
 import { InboxStore } from '../src/main/inbox/store'
 import type { ServiceOperation, ServiceRequest } from '../src/main/opencode/service/client'
 import { OpenCodeServiceError, SERVICE_REQUEST_TIMEOUT_MS } from '../src/main/opencode/service/client'
@@ -162,7 +163,7 @@ describe('Inbox chat service', () => {
     calls.length = 0
     await service.regenerateTitle('ses_new')
     expect(calls).toEqual([
-      { operation: 'session.update', request: { params: { sessionID: 'ses_new' }, body: { title: '' } } },
+      { operation: 'session.update', request: { params: { sessionID: 'ses_new' }, body: { title: '' }, timeoutMs: TITLE_TIMEOUT_MS } },
       { operation: 'session.get', request: { params: { sessionID: 'ses_new' } } },
     ])
     expect(request).toHaveBeenCalledWith(wsl, 'session.update', expect.anything())
@@ -186,6 +187,23 @@ describe('Inbox chat service', () => {
     await Promise.all([first, second])
     expect(request.mock.calls.filter((call) => call[1] === 'session.update')).toHaveLength(1)
     expect(store.get('ses_new')?.title).toBe('Newest title')
+    service.stop()
+  })
+
+  it('counts a rename that arrives while the update waits as done, even when the update then times out', async () => {
+    const { service, folder, request } = setup({ 'session.create': { data: { id: 'ses_new', title: 'Original' } } })
+    await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+    let fail!: (error: Error) => void
+    const answer = request.getMockImplementation()!
+    request.mockImplementation((target, operation, req) => operation === 'session.update'
+      ? new Promise((_, reject) => { fail = reject }) : answer(target, operation, req))
+    const run = service.regenerateTitle('ses_new')
+    await vi.waitFor(() => expect(fail).toBeTypeOf('function'))
+    const emit = service as unknown as { onEvent(event: { type: string; data: Record<string, unknown> }): void }
+    emit.onEvent({ type: 'session.renamed', data: { sessionID: 'ses_new', title: 'Generated title' } })
+    fail(new Error('The OpenCode service did not answer in time.'))
+    await expect(run).resolves.toBeUndefined()
+    expect(request.mock.calls.filter((call) => call[1] === 'session.get')).toHaveLength(0)
     service.stop()
   })
 
@@ -497,6 +515,7 @@ describe('Inbox chat service', () => {
       const worktrees = {
         info: vi.fn(), remove: vi.fn(async () => {}), discard: vi.fn(async () => {}),
         create: vi.fn(async () => ({ directory: root, worktree })),
+        list: vi.fn(async () => []), removeRoot: vi.fn(async () => {}), deleteBranch: vi.fn(async () => null),
       }
       const { service, folder, calls } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'skill.list': skillList('demo') }, undefined, worktrees)
       await service.create({ folderId: folder.id, text: '$demo go', agent: 'build', model, worktree: { base: 'origin/main' } })
@@ -800,6 +819,76 @@ describe('Inbox chat service', () => {
       events.length = 0
       emit()
       expect(events).toEqual([])
+      service.stop()
+    })
+
+    const runningCall = (id: string, description: string) => ({
+      type: 'tool', id, name: 'subagent',
+      state: { status: 'running', input: { agent: 'explore', description }, metadata: {} },
+    })
+    const startRunning = async (answers: Record<string, unknown>) => {
+      const context = setup({
+        'session.create': { data: { id: 'ses_new' } },
+        'session.message.list': { data: [{ ...message, content: [runningCall('call_a', 'Look around'), runningCall('call_b', 'Same')] }] },
+        'session.active': { data: {} },
+        ...answers,
+      })
+      await context.service.create({ folderId: context.folder.id, text: 'Hi', agent: 'build', model })
+      return context
+    }
+
+    it('learns a running subagent’s session from OpenCode’s progress event and shows its model', async () => {
+      const { service, request, events } = await startRunning({ 'session.children': { data: [] } })
+      const previous = request.getMockImplementation()!
+      request.mockImplementation(async (target, operation, input) => {
+        if (operation === 'session.get' && input?.params?.sessionID === 'ses_child') {
+          return { data: { id: 'ses_child', parentID: 'ses_new', model: { id: 'child-model', providerID: 'p' } } }
+        }
+        return previous(target, operation, input)
+      })
+      service.subscribe('ses_new')
+      expect(parts(await service.messages({ threadId: 'ses_new' }))[0]).not.toHaveProperty('subagent')
+      const onEvent = (service as unknown as { onEvent(event: { type: string; data: Record<string, unknown> }, target: typeof wsl): void }).onEvent.bind(service)
+      onEvent({ type: 'session.tool.progress', data: { sessionID: 'ses_new', id: 'call_a', metadata: { sessionID: 'ses_bad id' } } }, wsl)
+      onEvent({ type: 'session.tool.progress', data: { sessionID: 'ses_new', id: 'call_a', metadata: { sessionID: 'ses_child', status: 'running' } } }, wsl)
+      expect(events.at(-1)).toEqual({ type: 'messages', threadId: 'ses_new' })
+      const page = parts(await service.messages({ threadId: 'ses_new' }))
+      expect(page[0]).toMatchObject({ subagent: { sessionId: 'ses_child', model: { id: 'child-model', providerId: 'p' } } })
+      expect(page[1]).not.toHaveProperty('subagent')
+      service.unsubscribe('ses_new')
+      service.subscribe('ses_new')
+      expect(parts(await service.messages({ threadId: 'ses_new' }))[0]).not.toHaveProperty('subagent')
+      service.stop()
+    })
+
+    it('finds a running subagent opened mid-run by the child session titled with its description', async () => {
+      const { service, request } = await startRunning({
+        'session.children': {
+          data: [
+            { id: 'ses_look', parentID: 'ses_new', title: 'Look around', model: { id: 'child-model', providerID: 'p', variant: 'high' } },
+            { id: 'ses_same1', parentID: 'ses_new', title: 'Same', model: { id: 'm', providerID: 'p' } },
+            { id: 'ses_same2', parentID: 'ses_new', title: 'Same', model: { id: 'm', providerID: 'p' } },
+            { id: 'ses_stray', parentID: 'ses_other', title: 'Look around', model: { id: 'm', providerID: 'p' } },
+          ],
+        },
+      })
+      const page = parts(await service.messages({ threadId: 'ses_new' }))
+      expect(page[0]).toMatchObject({ subagent: { sessionId: 'ses_look', model: { id: 'child-model', providerId: 'p', variant: 'high' } } })
+      // Two children carry the same description, so neither can be told to be this call's.
+      expect(page[1]).not.toHaveProperty('subagent')
+      const listing = request.mock.calls.find(([, operation]) => operation === 'session.children')
+      expect(listing?.[2]).toMatchObject({ query: { parentID: 'ses_new' } })
+      service.stop()
+    })
+
+    it('still loads the conversation when the child sessions cannot be listed', async () => {
+      const { service, request } = await startRunning({})
+      const previous = request.getMockImplementation()!
+      request.mockImplementation(async (target, operation, input) => {
+        if (operation === 'session.children') throw new Error('No listing')
+        return previous(target, operation, input)
+      })
+      expect(parts(await service.messages({ threadId: 'ses_new' }))).toHaveLength(2)
       service.stop()
     })
 
@@ -1126,6 +1215,36 @@ describe('Inbox chat service', () => {
         await down.service.create({ folderId: down.folder.id, text: 'Hi', agent: 'build', model })
         await expect(down.service.aside({ threadId: 'ses_new', question: 'Why?' })).rejects.toThrow('No model is available.')
         down.service.stop()
+      })
+    })
+
+    describe('next-message suggestions', () => {
+      it('asks the session for text behind the suggestion preamble only, and returns the cleaned guess', async () => {
+        const { service, folder, calls } = setup({
+          'session.create': { data: { id: 'ses_new' } },
+          'session.generate': { data: { text: '\n  "Run the tests."  \n' } },
+        })
+        await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+        calls.length = 0
+        await expect(service.suggest({ threadId: 'ses_new' })).resolves.toEqual({ text: 'Run the tests.' })
+        // Nothing is added to the conversation: one generate, no prompt, no interrupt.
+        expect(calls).toEqual([{
+          operation: 'session.generate',
+          request: { params: { sessionID: 'ses_new' }, body: { prompt: SUGGEST_PREAMBLE }, timeoutMs: SUGGEST_TIMEOUT_MS },
+        }])
+        service.stop()
+      })
+
+      it('gives null when the model has nothing to suggest, and refuses an unknown thread or a disabled Inbox without asking', async () => {
+        const { service, folder, calls, disable } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'session.generate': { data: { text: 'NONE' } } })
+        await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+        await expect(service.suggest({ threadId: 'ses_new' })).resolves.toEqual({ text: null })
+        calls.length = 0
+        await expect(service.suggest({ threadId: 'ses_unknown' })).rejects.toThrow()
+        disable()
+        await expect(service.suggest({ threadId: 'ses_new' })).rejects.toThrow()
+        expect(calls).toEqual([])
+        service.stop()
       })
     })
 
@@ -1584,6 +1703,150 @@ describe('Inbox chat service', () => {
     service.stop()
   })
 
+  describe('subagent requests', () => {
+    const session = (id: string, parentID?: string, title = 'Task') => ({ data: { id, title, ...(parentID ? { parentID } : {}) } })
+    async function started() {
+      const context = setup({ 'session.create': { data: { id: 'ses_new' } } })
+      await context.service.create({ folderId: context.folder.id, text: 'Hi', agent: 'build', model })
+      context.request.mockImplementation(async (_target: unknown, operation: ServiceOperation, req: ServiceRequest = {}) => {
+        context.calls.push({ operation, request: req })
+        switch (operation) {
+          case 'session.permission.list':
+            return { data: req.params?.sessionID === 'ses_child' ? [{ id: 'per_child', sessionID: 'ses_child', action: 'edit', resources: ['hello.txt'], save: ['*'] }] : [] }
+          case 'session.form.list': return { data: [] }
+          case 'permission.request.list': return {
+            data: [
+              { id: 'per_child', sessionID: 'ses_child', action: 'edit', resources: ['hello.txt'], save: ['*'] },
+              { id: 'per_grand', sessionID: 'ses_grand', action: 'shell', resources: ['ls'], save: ['ls *'] },
+              { id: 'per_other', sessionID: 'ses_stranger', action: 'shell', resources: ['rm x'] },
+              { id: 'per_own', sessionID: 'ses_new', action: 'read', resources: ['a'] },
+            ],
+          }
+          case 'form.list': return { data: [{ id: 'frm_child', sessionID: 'ses_child', title: 'Pick', fields: [] }] }
+          case 'session.get': {
+            const id = req.params?.sessionID
+            return id === 'ses_child' ? session('ses_child', 'ses_new', 'Write hello.txt file')
+              : id === 'ses_grand' ? session('ses_grand', 'ses_child', 'Look around')
+                : id === 'ses_stranger' ? session('ses_stranger', 'ses_elsewhere')
+                  : id === 'ses_elsewhere' ? session('ses_elsewhere') : null
+          }
+          default: return null
+        }
+      })
+      return context
+    }
+
+    it('lists what the thread\'s subagents ask, with the subagent, and leaves other sessions\' out', async () => {
+      const { service } = await started()
+      const requests = await service.requests('ses_new')
+      expect(requests.permissions).toEqual([
+        { id: 'per_child', action: 'edit', resources: ['hello.txt'], save: ['*'], subagent: { sessionId: 'ses_child', title: 'Write hello.txt file' } },
+        { id: 'per_grand', action: 'shell', resources: ['ls'], save: ['ls *'], subagent: { sessionId: 'ses_grand', title: 'Look around' } },
+      ])
+      expect(requests.forms).toEqual([{ id: 'frm_child', title: 'Pick', fields: [], unsupported: true, subagent: { sessionId: 'ses_child', title: 'Write hello.txt file' } }])
+      service.stop()
+    })
+
+    it('answers a subagent\'s request in its session, and only one that belongs to the thread', async () => {
+      const { service, calls } = await started()
+      await service.replyPermission({ threadId: 'ses_new', requestId: 'per_child', decision: 'always', sessionId: 'ses_child' })
+      expect(calls.at(-1)).toEqual({ operation: 'session.permission.reply', request: { params: { sessionID: 'ses_child', requestID: 'per_child' }, body: { decision: 'always' } } })
+      await service.replyForm({ threadId: 'ses_new', formId: 'frm_child', answer: { q0: 'x' }, sessionId: 'ses_child' })
+      expect(calls.at(-1)?.request.params).toEqual({ sessionID: 'ses_child', formID: 'frm_child' })
+      calls.length = 0
+      await expect(service.replyPermission({ threadId: 'ses_new', requestId: 'per_other', decision: 'reject', sessionId: 'ses_stranger' }))
+        .rejects.toThrow('not from this thread')
+      expect(calls.some((call) => call.operation === 'session.permission.reply')).toBe(false)
+      service.stop()
+    })
+
+    it('passes a subagent\'s request events on to its thread', async () => {
+      const { service, events, store } = await started()
+      const emit = (type: string, data: Record<string, unknown>) =>
+        (service as unknown as { onEvent(event: { type: string; data: Record<string, unknown> }, target: typeof wsl): void }).onEvent({ type, data }, wsl)
+      service.subscribe('ses_new')
+      emit('permission.asked', { sessionID: 'ses_child', id: 'per_child' })
+      await vi.waitFor(() => expect(store.get('ses_new')?.status).toBe('attention'))
+      expect(store.get('ses_new')?.attentionReason).toBe('permission')
+      expect(events).toContainEqual({ type: 'requests', threadId: 'ses_new' })
+      events.length = 0
+      emit('permission.replied', { sessionID: 'ses_child', requestID: 'per_child', reply: 'always' })
+      await vi.waitFor(() => expect(events).toContainEqual({ type: 'saved-permissions', threadId: 'ses_new' }))
+      expect(store.get('ses_new')?.status).toBe('working')
+      events.length = 0
+      // Another thread's session is not this one's business.
+      emit('permission.asked', { sessionID: 'ses_stranger', id: 'per_other' })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(events).toEqual([])
+      service.stop()
+    })
+  })
+
+  describe('saved permissions', () => {
+    const saved = {
+      data: [
+        { id: 'psv_2', projectID: 'p', action: 'edit', resource: '*', time: { created: 20, updated: 20 } },
+        { id: 'psv_1', projectID: 'p', action: 'shell', resource: 'git status *', time: { created: 10, updated: 10 } },
+        { id: 'bad', projectID: 'p', action: 'shell', resource: 'ls *', time: { created: 5, updated: 5 } },
+        { id: 'psv_3', projectID: 'p', action: 'shell', resource: '', time: { created: 5, updated: 5 } },
+      ],
+    }
+
+    it('lists the approvals of the thread\'s project by its folder, oldest first', async () => {
+      const { service, folder, calls } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'permission.saved.list': saved })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      calls.length = 0
+      await expect(service.savedPermissions('ses_new')).resolves.toEqual({
+        supported: true,
+        permissions: [
+          { id: 'psv_1', action: 'shell', resource: 'git status *', created: 10 },
+          { id: 'psv_2', action: 'edit', resource: '*', created: 20 },
+        ],
+      })
+      expect(calls).toEqual([{ operation: 'permission.saved.list', request: { query: { 'location[directory]': '/home/me/app' } } }])
+      service.stop()
+    })
+
+    it('says an OpenCode without the routes does not support them', async () => {
+      const { service, folder } = setup({
+        'session.create': { data: { id: 'ses_new' } },
+        'permission.saved.list': new OpenCodeServiceError('Not found', 404),
+      })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      await expect(service.savedPermissions('ses_new')).resolves.toEqual({ supported: false, permissions: [] })
+      service.stop()
+    })
+
+    it('removes only an approval listed for the thread\'s project', async () => {
+      const { service, folder, calls } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'permission.saved.list': saved })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      calls.length = 0
+      await service.removeSavedPermission({ threadId: 'ses_new', id: 'psv_1' })
+      expect(calls.at(-1)).toEqual({ operation: 'permission.saved.remove', request: { params: { savedID: 'psv_1' } } })
+      calls.length = 0
+      // Another project's (or an already removed) approval is not touched.
+      await service.removeSavedPermission({ threadId: 'ses_new', id: 'psv_other' })
+      expect(calls.map((call) => call.operation)).toEqual(['permission.saved.list'])
+      service.stop()
+    })
+
+    it('tells the renderer when a subscribed thread answered "Always allow"', async () => {
+      const { service, folder, events } = setup({ 'session.create': { data: { id: 'ses_new' } } })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      const emit = (data: Record<string, unknown>) =>
+        (service as unknown as { onEvent(event: { type: string; data: Record<string, unknown> }): void }).onEvent({ type: 'permission.replied', data })
+      service.subscribe('ses_new')
+      emit({ sessionID: 'ses_new', requestID: 'per_1', reply: 'once' })
+      emit({ sessionID: 'ses_new', requestID: 'per_2', reply: 'always' })
+      expect(events).toEqual([
+        { type: 'requests', threadId: 'ses_new' },
+        { type: 'requests', threadId: 'ses_new' },
+        { type: 'saved-permissions', threadId: 'ses_new' },
+      ])
+      service.stop()
+    })
+  })
+
   it('pushes live changes only for subscribed threads', async () => {
     const { service, folder, events, store } = setup({ 'session.create': { data: { id: 'ses_new' } } })
     await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
@@ -1824,6 +2087,9 @@ describe('Inbox chat service worktrees', () => {
       create: vi.fn(async () => made),
       remove: vi.fn(async () => {}),
       discard: vi.fn(async () => {}),
+      list: vi.fn(async (): Promise<InboxWorktreeEntry[]> => []),
+      removeRoot: vi.fn(async () => {}),
+      deleteBranch: vi.fn(async (): Promise<string | null> => null),
     }
   }
 
@@ -1972,6 +2238,84 @@ describe('Inbox chat service worktrees', () => {
       await service.removeThreadWorktree('ses_new')
       expect(store.folders().filter((item) => item.worktree).map((item) => item.id)).toEqual(['fld_other'])
       service.stop()
+    })
+
+    describe('from the worktree manager', () => {
+      const entry = { target: wsl, root: worktree.root, repository: worktree.repository, branch: worktree.branch, missing: false, changes: 0, unmerged: 0 }
+
+      async function started(worktrees: ReturnType<typeof fake>) {
+        const made = setup({ 'session.create': { data: { id: 'ses_new' } } }, undefined, worktrees)
+        await made.service.create({ folderId: made.folder.id, text: 'Hi', agent: 'build', model, worktree: { base: 'main' } })
+        const idle = (id: string) => made.store.put({ ...made.store.get(id)!, status: 'idle' })
+        return { ...made, idle }
+      }
+
+      it('lists from the projects’ own folders and from what MDE recorded, with what is in each', async () => {
+        const worktrees = fake()
+        worktrees.list.mockResolvedValue([entry])
+        const { service, folder } = await started(worktrees)
+        await expect(service.worktreeList()).resolves.toEqual([entry])
+        const [repositories, records, options] = worktrees.list.mock.calls[0] as unknown as Parameters<NonNullable<InboxChatDependencies['worktrees']>['list']>
+        expect(repositories).toEqual([{ target: wsl, directory: folder.directory }])
+        expect(records).toEqual(expect.arrayContaining([expect.objectContaining({ target: wsl, root: worktree.root, base: worktree.base })]))
+        expect(options).toEqual({ status: true })
+        service.stop()
+      })
+
+      it('removes it, drops its folder entry and keeps its threads to be read only', async () => {
+        const worktrees = fake()
+        worktrees.list.mockResolvedValue([entry])
+        const { service, store, idle } = await started(worktrees)
+        idle('ses_new')
+        store.put({ ...store.get('ses_new')!, pinned: true })
+        await expect(service.removeWorktree({ target: wsl, root: worktree.root, force: true })).resolves.toEqual({ threads: ['ses_new'] })
+        expect(worktrees.removeRoot).toHaveBeenCalledWith(wsl, worktree.repository, worktree.root, { force: true })
+        expect(worktrees.deleteBranch).not.toHaveBeenCalled()
+        expect(store.folders().filter((item) => item.worktree)).toEqual([])
+        expect(store.get('ses_new')).toMatchObject({ archived: true, worktreeRemovedAt: expect.any(Number), worktree })
+        expect(store.get('ses_new')?.pinned).toBeUndefined()
+        // Nothing runs in a folder that is gone.
+        await expect(service.send({ threadId: 'ses_new', text: 'More' })).rejects.toThrow('can only be read')
+        await expect(service.fork({ threadId: 'ses_new' })).rejects.toThrow('can only be read')
+        await expect(service.redo('ses_new')).rejects.toThrow('can only be read')
+        service.stop()
+      })
+
+      it('deletes the branch only when asked, and says when Git refused', async () => {
+        const worktrees = fake()
+        worktrees.list.mockResolvedValue([entry])
+        worktrees.deleteBranch.mockResolvedValue('Could not delete the branch mde/1a2b3c4d: it is checked out')
+        const { service, idle } = await started(worktrees)
+        idle('ses_new')
+        await expect(service.removeWorktree({ target: wsl, root: worktree.root, deleteBranch: true }))
+          .resolves.toEqual({ threads: ['ses_new'], branchError: 'Could not delete the branch mde/1a2b3c4d: it is checked out' })
+        expect(worktrees.deleteBranch).toHaveBeenCalledWith(wsl, worktree.repository, worktree.branch)
+        service.stop()
+      })
+
+      it('refuses while a thread runs in it, and a worktree MDE does not list', async () => {
+        const worktrees = fake()
+        worktrees.list.mockResolvedValue([entry])
+        const { service, store } = await started(worktrees)
+        await expect(service.removeWorktree({ target: wsl, root: worktree.root })).rejects.toThrow('Stop it first')
+        await expect(service.removeWorktree({ target: wsl, root: '/home/me/app' })).rejects.toThrow('did not make')
+        await expect(service.removeWorktree({ target: { kind: 'native' }, root: worktree.root })).rejects.toThrow('did not make')
+        expect(worktrees.removeRoot).not.toHaveBeenCalled()
+        expect(store.get('ses_new')?.worktreeRemovedAt).toBeUndefined()
+        service.stop()
+      })
+
+      it('leaves the threads as they were when Git refuses', async () => {
+        const worktrees = fake()
+        worktrees.list.mockResolvedValue([entry])
+        worktrees.removeRoot.mockRejectedValue(new Error('Could not remove the worktree: it has changes'))
+        const { service, store, idle } = await started(worktrees)
+        idle('ses_new')
+        await expect(service.removeWorktree({ target: wsl, root: worktree.root })).rejects.toThrow('it has changes')
+        expect(store.get('ses_new')).toMatchObject({ archived: false })
+        expect(store.folders().filter((item) => item.worktree)).toHaveLength(1)
+        service.stop()
+      })
     })
   })
 
@@ -2172,5 +2516,42 @@ describe('Inbox chat service worktrees', () => {
     await expect(service.removeThreadWorktree('ses_new')).rejects.toThrow('it has changes')
     await expect(service.removeThreadWorktree('ses_gone')).rejects.toThrow('no longer in the Inbox')
     service.stop()
+  })
+})
+
+describe('threads an agent starts through the MDE MCP', () => {
+  it('marks the thread and leaves the new-thread page’s choices alone', async () => {
+    const { service, store, folder } = setup({ 'session.create': { data: { id: 'ses_child', title: 'Child' } } })
+    const before = store.composer()
+    const thread = await service.create({ folderId: folder.id, text: 'Write the tests', agent: 'build', model }, { spawnedBy: { threadId: 'ses_parent' } })
+    expect(thread).toMatchObject({ id: 'ses_child', spawnedBy: { threadId: 'ses_parent' }, status: 'working' })
+    expect(store.get('ses_child')?.spawnedBy).toEqual({ threadId: 'ses_parent' })
+    expect(store.composer()).toEqual(before)
+    service.stop()
+  })
+
+  it('keeps the agent’s prompt as the thread’s draft when it could not be sent', async () => {
+    const path = await fs.mkdtemp(join(tmpdir(), 'mde-chat-spawn-'))
+    const drafts = new InboxDraftStore(path)
+    const { service, store, folder } = setup({
+      'session.create': { data: { id: 'ses_child' } },
+      'session.prompt': new Error('Model unavailable'),
+    }, drafts)
+    try {
+      const thread = await service.create({ folderId: folder.id, text: 'Write the tests', agent: 'build', model }, { spawnedBy: {} })
+      expect(thread.sendError).toBeTruthy()
+      expect(store.get('ses_child')).toMatchObject({ status: 'idle', spawnedBy: {} })
+      await expect(service.draft({ key: 'thread:ses_child', action: 'load' })).resolves.toMatchObject({ text: 'Write the tests' })
+    } finally {
+      service.stop()
+      await fs.rm(path, { recursive: true, force: true })
+    }
+  })
+
+  it('adds a folder without making it the page’s project', () => {
+    const { service, store, folder } = setup()
+    const added = service.addFolder({ directory: '/home/me/other', target: wsl, select: false })
+    expect(added.id).not.toBe(folder.id)
+    expect(store.composer().folderId).toBe(folder.id)
   })
 })

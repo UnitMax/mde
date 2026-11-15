@@ -37,7 +37,17 @@ const held = (id: string, text: string, delivery: ChatPendingMessage['delivery']
 let page: ChatMessagesPage
 /** What the next `chat.send` answers with. */
 let accepted: ChatPendingMessage | null
-const send = vi.fn(async (_request: unknown): Promise<ChatPendingMessage | null> => accepted)
+/**
+ * Like the service, the fake lists a message it holds from the moment it accepts it, so a refetch that starts after
+ * the send (the store's own, CHAT_REFRESH_DELAY_MS later) finds it however slowly the test goes on.
+ */
+const send = vi.fn(async (_request: unknown): Promise<ChatPendingMessage | null> => {
+  const pending = page.pending ?? []
+  if (accepted && page.running && !pending.some((entry) => entry.id === accepted!.id)) {
+    page = { ...page, pending: [...pending, accepted] }
+  }
+  return accepted
+})
 const discardPending = vi.fn(async (_request: unknown): Promise<void> => undefined)
 const setDelivery = vi.fn(async (_request: unknown): Promise<void> => undefined)
 const messages = vi.fn(async (): Promise<ChatMessagesPage> => page)

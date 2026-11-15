@@ -86,7 +86,6 @@ describe('Inbox Working section', () => {
       platform: { platform: 'darwin', isWindows: false },
       inboxThreads: threads,
       selectedInboxThreadId: null,
-      inboxMarkedUnread: {},
       inboxCues: {},
       activeWorkspaceView: 'inbox',
     })

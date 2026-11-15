@@ -15,7 +15,7 @@ export const ContextMenuSubTrigger = React.forwardRef<
     ref={ref}
     className={cn(
       'flex cursor-default select-none items-center gap-2 rounded px-2 py-1.5 text-[13px] leading-5 text-fg outline-none',
-      'data-[state=open]:bg-hover',
+      'data-[highlighted]:bg-hover data-[state=open]:bg-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-40',
       className
     )}
     {...props}

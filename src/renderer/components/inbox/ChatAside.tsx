@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, Copy, LoaderCircle, RefreshCw, X } from 'lucide-react'
 import { ChatMarkdown } from '@/components/inbox/ChatMarkdown'
+import { ChatQuoteCard } from '@/components/inbox/ChatQuoteCard'
 import { SlashCommandIcon } from '@/components/inbox/SlashCommandIcon'
+import { leadingQuotes } from '@/lib/chat-quote'
 import type { ChatAside as Aside } from '@/store/inbox-aside'
 
 /** How long the Copy button says it has copied. */
@@ -41,6 +43,8 @@ export function ChatAside({
   onRetry: () => void
 }): JSX.Element {
   const [copied, setCopied] = useState(false)
+  // A question about a quoted passage was sent with the passage in front of it, as block quotes.
+  const asked = useMemo(() => leadingQuotes(aside.question), [aside.question])
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => () => clearTimeout(timer.current), [])
   // Another question is another answer to copy.
@@ -77,10 +81,10 @@ export function ChatAside({
         </span>
         <p
           data-testid="chat-aside-question"
-          title={aside.question}
+          title={asked.body}
           className="chat-selectable line-clamp-2 min-w-0 flex-1 whitespace-pre-wrap break-words text-[13px] leading-5 text-fg-muted"
         >
-          {aside.question}
+          {asked.body}
         </p>
         <div className="-mr-1 flex shrink-0 items-center gap-0.5">
           {position && position.count > 1 && onStep && (
@@ -106,6 +110,11 @@ export function ChatAside({
           </button>
         </div>
       </header>
+      {asked.quotes.length > 0 && (
+        <div data-testid="chat-aside-quotes" className="flex max-h-32 flex-col gap-1.5 overflow-y-auto px-3.5 pt-2 text-[12.5px] text-fg-muted">
+          {asked.quotes.map((quote, index) => <ChatQuoteCard key={index} text={quote} />)}
+        </div>
+      )}
 
       <div
         // The editor ends an answer that ends in a list with an empty paragraph, which would be a blank line under it.

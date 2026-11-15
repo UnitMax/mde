@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IpcChannels, IpcEvents, type RendererApi } from '@shared/ipc'
+import type { AgentTerminalOpenRequest } from '@shared/mde-mcp'
 import type {
   ChatEvent,
   InboxThread,
@@ -54,6 +55,7 @@ const api: RendererApi = {
     remove: (req) => ipcRenderer.invoke(IpcChannels.tabsRemove, req)
   },
   pty: {
+    startInFolder: (req) => ipcRenderer.invoke(IpcChannels.ptyStartInFolder, req),
     configureInbox: (req) => ipcRenderer.invoke(IpcChannels.ptyConfigureInbox, req),
     ensure: (req) => ipcRenderer.invoke(IpcChannels.ptyEnsure, req),
     write: (req) => ipcRenderer.invoke(IpcChannels.ptyWrite, req),
@@ -109,10 +111,17 @@ const api: RendererApi = {
     openTerminalInVsCode: (terminalId) =>
       ipcRenderer.invoke(IpcChannels.pathOpenTerminalInVsCode, terminalId),
     revealInbox: (id) => ipcRenderer.invoke(IpcChannels.pathRevealInbox, id),
-    openInboxInVsCode: (id) => ipcRenderer.invoke(IpcChannels.pathOpenInboxInVsCode, id)
+    openInboxInVsCode: (id) => ipcRenderer.invoke(IpcChannels.pathOpenInboxInVsCode, id),
+    revealTreeFolder: (req) => ipcRenderer.invoke(IpcChannels.pathRevealTreeFolder, req)
   },
   git: {
-    terminalInfo: (req) => ipcRenderer.invoke(IpcChannels.gitTerminalInfo, req)
+    terminalInfo: (req) => ipcRenderer.invoke(IpcChannels.gitTerminalInfo, req),
+    graph: (req) => ipcRenderer.invoke(IpcChannels.gitGraph, req),
+    commit: (req) => ipcRenderer.invoke(IpcChannels.gitCommit, req),
+    fetch: (req) => ipcRenderer.invoke(IpcChannels.gitFetch, req),
+    changes: (req) => ipcRenderer.invoke(IpcChannels.gitChanges, req),
+    changeDiff: (req) => ipcRenderer.invoke(IpcChannels.gitChangeDiff, req),
+    commitDiff: (req) => ipcRenderer.invoke(IpcChannels.gitCommitDiff, req)
   },
   files: {
     list: (req) => ipcRenderer.invoke(IpcChannels.filesList, req),
@@ -125,15 +134,19 @@ const api: RendererApi = {
     setRead: (req) => ipcRenderer.invoke(IpcChannels.inboxSetRead, req),
     setArchived: (req) => ipcRenderer.invoke(IpcChannels.inboxSetArchived, req),
     setPinned: (req) => ipcRenderer.invoke(IpcChannels.inboxSetPinned, req),
+    setSnoozed: (req) => ipcRenderer.invoke(IpcChannels.inboxSetSnoozed, req),
     setCustomTitle: (req) => ipcRenderer.invoke(IpcChannels.inboxSetCustomTitle, req),
     remove: (req) => ipcRenderer.invoke(IpcChannels.inboxRemove, req),
     onChanged: (listener) => subscribe<InboxThread>(IpcEvents.inboxChanged, listener),
     folders: () => ipcRenderer.invoke(IpcChannels.inboxFolders),
+    onFoldersChanged: (listener) => subscribe<void>(IpcEvents.inboxFoldersChanged, () => listener()),
     addFolder: (req) => ipcRenderer.invoke(IpcChannels.inboxFoldersAdd, req),
     updateFolder: (req) => ipcRenderer.invoke(IpcChannels.inboxFoldersUpdate, req),
     removeFolder: (req) => ipcRenderer.invoke(IpcChannels.inboxFoldersRemove, req),
     setComposer: (req) => ipcRenderer.invoke(IpcChannels.inboxComposerSet, req),
-    gitInfo: (req) => ipcRenderer.invoke(IpcChannels.inboxGitInfo, req)
+    gitInfo: (req) => ipcRenderer.invoke(IpcChannels.inboxGitInfo, req),
+    worktrees: () => ipcRenderer.invoke(IpcChannels.inboxWorktrees),
+    removeWorktree: (req) => ipcRenderer.invoke(IpcChannels.inboxWorktreeRemove, req)
   },
   chat: {
     backgroundTasks: (req) => ipcRenderer.invoke(IpcChannels.chatBackground, req),
@@ -151,8 +164,10 @@ const api: RendererApi = {
     setDelivery: (req) => ipcRenderer.invoke(IpcChannels.chatSetDelivery, req),
     aside: (req) => ipcRenderer.invoke(IpcChannels.chatAside, req),
     asideHistory: (req) => ipcRenderer.invoke(IpcChannels.chatAsideHistory, req),
+    suggest: (req) => ipcRenderer.invoke(IpcChannels.chatSuggest, req),
     mcp: (req) => ipcRenderer.invoke(IpcChannels.chatMcp, req),
     setMcp: (req) => ipcRenderer.invoke(IpcChannels.chatMcpSet, req),
+    usage: (req) => ipcRenderer.invoke(IpcChannels.chatUsage, req),
     interrupt: (req) => ipcRenderer.invoke(IpcChannels.chatInterrupt, req),
     compact: (req) => ipcRenderer.invoke(IpcChannels.chatCompact, req),
     goal: (req) => ipcRenderer.invoke(IpcChannels.chatGoal, req),
@@ -160,9 +175,12 @@ const api: RendererApi = {
     redo: (req) => ipcRenderer.invoke(IpcChannels.chatRedo, req),
     revert: (req) => ipcRenderer.invoke(IpcChannels.chatRevert, req),
     fork: (req) => ipcRenderer.invoke(IpcChannels.chatFork, req),
+    setPermissionMode: (req) => ipcRenderer.invoke(IpcChannels.chatPermissionMode, req),
     regenerateTitle: (req) => ipcRenderer.invoke(IpcChannels.chatRegenerateTitle, req),
     requests: (req) => ipcRenderer.invoke(IpcChannels.chatRequests, req),
     replyPermission: (req) => ipcRenderer.invoke(IpcChannels.chatPermissionReply, req),
+    savedPermissions: (req) => ipcRenderer.invoke(IpcChannels.chatSavedPermissions, req),
+    removeSavedPermission: (req) => ipcRenderer.invoke(IpcChannels.chatSavedPermissionRemove, req),
     replyForm: (req) => ipcRenderer.invoke(IpcChannels.chatFormReply, req),
     subscribe: (req) => ipcRenderer.invoke(IpcChannels.chatSubscribe, req),
     unsubscribe: (req) => ipcRenderer.invoke(IpcChannels.chatUnsubscribe, req),
@@ -172,6 +190,19 @@ const api: RendererApi = {
     read: (req) => ipcRenderer.invoke(IpcChannels.opencodeConfigRead, req),
     preview: (req) => ipcRenderer.invoke(IpcChannels.opencodeConfigPreview, req),
     save: (req) => ipcRenderer.invoke(IpcChannels.opencodeConfigSave, req)
+  },
+  mdeMcp: {
+    status: (req) => ipcRenderer.invoke(IpcChannels.mdeMcpStatus, req),
+    install: (req) => ipcRenderer.invoke(IpcChannels.mdeMcpInstall, req),
+    remove: (req) => ipcRenderer.invoke(IpcChannels.mdeMcpRemove, req),
+    terminalSettings: () => ipcRenderer.invoke(IpcChannels.mdeMcpTerminalSettings),
+    setTerminalSettings: (req) => ipcRenderer.invoke(IpcChannels.mdeMcpSetTerminalSettings, req)
+  },
+  agentTerminals: {
+    onOpen: (listener) => subscribe<AgentTerminalOpenRequest>(IpcEvents.agentTerminalOpen, listener),
+    claim: (req) => ipcRenderer.invoke(IpcChannels.agentTerminalClaim, req),
+    refuse: (req) => ipcRenderer.invoke(IpcChannels.agentTerminalRefuse, req),
+    decide: (req) => ipcRenderer.invoke(IpcChannels.agentTerminalDecide, req)
   },
   windowMode: {
     get: () => ipcRenderer.invoke(IpcChannels.windowModeGet),

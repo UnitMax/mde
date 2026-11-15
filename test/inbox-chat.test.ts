@@ -11,6 +11,7 @@ import type { ChatCreateRequest, ChatDraft, ChatDraftRequest, ChatForkRequest, C
 import { InboxThreadView } from '../src/renderer/components/InboxThreadView'
 import { cancelScheduledRefreshes, useInboxChat } from '../src/renderer/store/inbox-chat'
 import { useModelFavorites } from '../src/renderer/store/model-favorites'
+import { useToasts } from '../src/renderer/store/toasts'
 import { useWorkspace } from '../src/renderer/store/workspace'
 import { getTerminalSettings, saveTerminalSettings, TERMINAL_SETTINGS_STORAGE_KEY } from '../src/renderer/terminal/terminal-settings'
 
@@ -131,6 +132,7 @@ beforeEach(() => {
   // A refresh that the last test asked for would otherwise fire in this one.
   cancelScheduledRefreshes()
   useInboxChat.setState({ folders: [folder], composer: { folderId: 'fld_app' }, foldersLoaded: true, options: {}, threads: {}, recent: [], titleRegenerations: {} })
+  useToasts.setState({ toasts: [] })
 })
 
 afterEach(async () => {
@@ -637,6 +639,32 @@ describe('Inbox worktree mode', () => {
     })
   })
 
+  it('fetches from the branch picker on request, and lists the remote branches Git has then', async () => {
+    api.inbox.gitInfo.mockResolvedValue(repo)
+    const fetch = vi.fn(async () => ({ remotes: ['origin'] }))
+    vi.stubGlobal('api', { ...api, git: { fetch } })
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="worktree-bar"]')).not.toBeNull())
+    await open(view.querySelector('[data-testid="worktree-mode-picker"]')!)
+    await choose('New worktree')
+    await open(view.querySelector('[data-testid="worktree-branch-picker"]')!)
+    const button = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLButtonElement>('[data-testid="worktree-branch-fetch"]')
+      expect(found).not.toBeNull()
+      return found!
+    })
+    // Opening the picker alone reaches no network.
+    expect(fetch).not.toHaveBeenCalled()
+    api.inbox.gitInfo.mockResolvedValue({ ...repo, branches: [...repo.branches, { name: 'origin/new-on-github', remote: true }] })
+    await act(async () => button.click())
+    expect(fetch).toHaveBeenCalledWith({ folderId: 'fld_app' })
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="worktree-branch-list"]')?.textContent).toContain('origin/new-on-github'))
+
+    fetch.mockRejectedValueOnce(new Error('Could not fetch: fatal: Authentication failed'))
+    await act(async () => button.click())
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="worktree-branch-fetch-error"]')?.textContent).toContain('Authentication failed'))
+  })
+
   it('filters the branch list as the user types', async () => {
     api.inbox.gitInfo.mockResolvedValue(repo)
     const view = await render()
@@ -766,19 +794,20 @@ describe('Inbox conversation', () => {
     expect(useWorkspace.getState().inboxThreads.find((item) => item.id === original.id)?.title).toBe('Updated title')
   })
 
-  it('shows title errors only on their thread and permits retry', async () => {
-    useWorkspace.setState({ inboxThreads: [thread(), thread({ id: 'ses_two' })], selectedInboxThreadId: 'ses_one' })
-    api.chat.regenerateTitle.mockRejectedValueOnce(new Error("Error invoking remote method 'chat:regenerate-title': Error: Service unavailable"))
+  it('tells of a title error in a toast that opens the thread, and takes it away on a retry', async () => {
+    useWorkspace.setState({ inboxThreads: [thread(), thread({ id: 'ses_two', title: 'Other' })], selectedInboxThreadId: 'ses_one' })
+    api.chat.regenerateTitle.mockRejectedValueOnce(new Error("Error invoking remote method 'chat:regenerate-title': Error: The OpenCode service did not answer in time."))
     const view = await render()
     await threadAction(view, 'Regenerate title')
-    expect(view.querySelector('[role="alert"]')?.textContent).toBe('Service unavailable')
+    expect(view.querySelector('[role="alert"]')).toBeNull()
     expect(view.querySelector('h2')?.textContent).toBe('Fix login')
+    const [toast] = useToasts.getState().toasts
+    expect(toast).toMatchObject({ tone: 'danger', label: 'Title not regenerated', title: 'Fix login', detail: 'The OpenCode service did not answer in time.' })
     await act(async () => useWorkspace.setState({ selectedInboxThreadId: 'ses_two' }))
-    expect(view.querySelector('[role="alert"]')).toBeNull()
-    await act(async () => useWorkspace.setState({ selectedInboxThreadId: 'ses_one' }))
-    expect(view.querySelector('[role="alert"]')?.textContent).toBe('Service unavailable')
+    await act(async () => toast!.onOpen?.())
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_one')
     await threadAction(view, 'Regenerate title')
-    expect(view.querySelector('[role="alert"]')).toBeNull()
+    expect(useToasts.getState().toasts.every((item) => item.leaving)).toBe(true)
     expect(api.chat.regenerateTitle).toHaveBeenCalledTimes(2)
   })
 
@@ -839,11 +868,8 @@ describe('Inbox conversation', () => {
     expect(view.querySelector('[data-testid="chat-skill-demo"]')?.textContent).toBe('Demo skill')
     expect(view.querySelector('[data-testid="chat-message-msg_1"]')?.textContent).toContain('use $demo please')
 
-    // Three steps in a row are folded into one line; opening it shows the steps.
-    const group = view.querySelector<HTMLElement>('[data-testid="chat-activity"]')!
-    expect(group.textContent).toContain('Loading 3 skills')
-    expect(view.querySelector('[data-testid="chat-tool-call_skill"]')).toBeNull()
-    await act(async () => group.querySelector<HTMLButtonElement>(':scope > button')!.click())
+    // Every step is a row of its own.
+    expect(view.querySelector('[data-testid="chat-activity"]')).toBeNull()
     const loaded = view.querySelector('[data-testid="chat-tool-call_skill"]')!
     expect(loaded.textContent).toContain('Loaded the demo skill')
     expect(loaded.textContent).not.toContain('PINEAPPLE')
@@ -1404,7 +1430,6 @@ describe('Inbox conversation', () => {
       await vi.waitFor(() => expect(meter(view)).not.toBeNull())
       expect(meter(view)?.getAttribute('aria-label')).toBe('Context: 150K of 200K tokens used (75%)')
       expect(meter(view)?.getAttribute('data-tone')).toBe('warn')
-      expect(meter(view)?.textContent).toBe('150K')
 
       await open(meter(view)!)
       const details = await vi.waitFor(() => {
@@ -1490,6 +1515,40 @@ describe('Inbox conversation', () => {
     await act(async () => question.querySelector<HTMLButtonElement>('[data-testid="chat-option-Tea"]')!.click())
     await act(async () => button(question, 'Send answer').click())
     expect(api.chat.replyForm).toHaveBeenCalledWith({ threadId: 'ses_one', formId: 'frm_1', answer: { q0: 'Tea' } })
+  })
+
+  it('shows which subagent asks, answers in its session, and says what Always allow saves', async () => {
+    requests = {
+      permissions: [
+        { id: 'per_1', action: 'edit', resources: ['hello.txt'], save: ['*'], subagent: { sessionId: 'ses_child', title: 'Write hello.txt file' } },
+        { id: 'per_2', action: 'shell', resources: ['git status --short'], save: ['git status *'] },
+      ],
+      forms: [{ id: 'frm_1', title: 'Pick one', unsupported: false, subagent: { sessionId: 'ses_child' },
+        fields: [{ key: 'q0', type: 'string', title: 'Colour', required: false, custom: true, options: [] }] }],
+    }
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-permission-per_1"]')).not.toBeNull())
+    const fromChild = view.querySelector<HTMLElement>('[data-testid="chat-permission-per_1"]')!
+    expect(fromChild.getAttribute('aria-label')).toBe('Subagent “Write hello.txt file”: Permission: Edit files')
+    expect(fromChild.querySelector('[data-testid="chat-request-subagent"]')?.textContent).toBe('Subagent “Write hello.txt file” asks')
+    // Edits save `*`: every edit in the project, which the card says before it is chosen.
+    const broad = fromChild.querySelector('[data-testid="chat-permission-always-hint"]')!
+    expect(broad.getAttribute('data-broad')).toBe('true')
+    expect(broad.textContent).toContain('every file edit in this project')
+    const own = view.querySelector<HTMLElement>('[data-testid="chat-permission-per_2"]')!
+    expect(own.querySelector('[data-testid="chat-request-subagent"]')).toBeNull()
+    expect(own.querySelector('[data-testid="chat-permission-always-hint"]')?.textContent).toContain('Always allow saves git status * for this project')
+    await act(async () => button(fromChild, 'Allow once').click())
+    expect(api.chat.replyPermission).toHaveBeenCalledWith({ threadId: 'ses_one', requestId: 'per_1', decision: 'once', sessionId: 'ses_child' })
+    const question = view.querySelector<HTMLElement>('[data-testid="chat-question-frm_1"]')!
+    expect(question.textContent).toContain('Subagent asks')
+    const input = question.querySelector<HTMLInputElement>('input')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Blue')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => button(question, 'Send answer').click())
+    expect(api.chat.replyForm).toHaveBeenCalledWith({ threadId: 'ses_one', formId: 'frm_1', answer: { q0: 'Blue' }, sessionId: 'ses_child' })
   })
 
   it('refetches when the service reports changes and unsubscribes on leave', async () => {
@@ -2335,7 +2394,6 @@ describe('Inbox compaction', () => {
   describe('in the conversation', () => {
     it('says compacted, instead of a stale count, until the next reply tells the new size', async () => {
       const view = await show([user, step(149_500), done])
-      expect(meter(view)?.textContent).toBe('Compacted')
       expect(meter(view)?.getAttribute('aria-label')).toBe('Context: compacted. Its new size shows after the next reply')
       expect(meter(view)?.getAttribute('data-tone')).toBe('normal')
       const item = await open(view)
@@ -2353,7 +2411,6 @@ describe('Inbox compaction', () => {
 
     it('measures again from the first reply after the compaction, and offers compacting again', async () => {
       const view = await show([user, step(149_500), done, { kind: 'user', id: 'msg_2', time: 4, text: 'Go on' }, step(12_000)])
-      expect(meter(view)?.textContent).toBe('12.5K')
       expect(meter(view)?.getAttribute('aria-label')).toBe('Context: 12.5K of 200K tokens used (6%)')
       const item = await open(view)
       expect(disabled(item)).toBe(false)
@@ -2362,7 +2419,7 @@ describe('Inbox compaction', () => {
 
     it('does not change the count for a compaction that failed or is still running', async () => {
       const failing = await show([user, step(9000), failed])
-      expect(meter(failing)?.textContent).toBe('9.5K')
+      expect(meter(failing)?.getAttribute('aria-label')).toContain('9.5K')
       expect(failing.querySelector('[data-testid="chat-message-msg_c1"]')?.textContent).toContain('Could not compact the conversation: Nothing to compact yet')
       const item = await open(failing)
       expect(disabled(item)).toBe(false)

@@ -1,15 +1,25 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { AlertCircle, FileDiff, GitBranch, LoaderCircle, PanelRightClose, RefreshCw, X } from 'lucide-react'
-import type { GitChangeStatus, InboxChangeDiff, InboxChangedFile, InboxChangesResponse, DirectoryContext } from '@shared/types'
+import { AlertCircle, FileDiff, Folder, FolderX, GitBranch, GitGraph, LoaderCircle, PanelRightClose, PictureInPicture2, RefreshCw, ShieldCheck, SquareTerminal, Wrench, X, type LucideIcon } from 'lucide-react'
+import type { GitChangeStatus, InboxChangeDiff, InboxChangedFile, InboxChangesResponse, InboxThread, DirectoryContext } from '@shared/types'
 import { Button } from '@/components/ui/button'
+import { SidebarFooter } from '@/components/ui/sidebar-footer'
 import { FileTreePanel } from '@/components/FileTreePanel'
 import { DiffBody } from './ChatFileChange'
 import { ScrollStrip } from '@/components/ui/scroll-strip'
 import { FloatingTerminalNotice, FloatTerminalButton } from './FloatingTerminal'
 import { focusInboxTerminalWhenShown, InboxTerminal } from './InboxTerminal'
 import { useInboxFloatingTerminal } from '@/store/inbox-floating-terminal'
+import { useInboxTerminal } from '@/store/inbox-terminal'
+import type { FilesListRequest } from '@shared/ipc'
 import { InboxSidebarFrame } from './InboxSidebarFrame'
+import { InboxToolCalls } from './InboxToolCalls'
+import { InboxSavedPermissions } from './InboxSavedPermissions'
+import { useInboxSavedPermissions, useSavedPermissionCount } from '@/store/inbox-saved-permissions'
+import { InboxSidebarMenu, InboxSidebarMenuButton } from './InboxSidebarMenu'
+import { useInboxView } from '@/store/inbox-view'
+import { toolCallCount } from '@/lib/tool-review'
+import { useInboxChat } from '@/store/inbox-chat'
 import { parseUnifiedDiff } from '@/lib/diff'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { cn } from '@/lib/utils'
@@ -47,7 +57,7 @@ function splitPath(path: string): { directory: string; name: string } {
   return { directory: path.slice(0, slash), name: path.slice(slash) }
 }
 
-function StatusMark({ status }: { status: GitChangeStatus }): JSX.Element {
+export function StatusMark({ status }: { status: GitChangeStatus }): JSX.Element {
   const { mark, label, tone } = STATUS[status]
   return (
     <span
@@ -62,7 +72,7 @@ function StatusMark({ status }: { status: GitChangeStatus }): JSX.Element {
 }
 
 /** `+12 −3`; a side with nothing on it is left out, and a binary file has no line counts to give. */
-function ChangeCounts({ additions, deletions, binary = false }: { additions: number; deletions: number; binary?: boolean }): JSX.Element | null {
+export function ChangeCounts({ additions, deletions, binary = false }: { additions: number; deletions: number; binary?: boolean }): JSX.Element | null {
   if (binary) return <span className="shrink-0 text-fg-subtle">binary</span>
   if (additions === 0 && deletions === 0) return null
   return (
@@ -438,11 +448,26 @@ export function InboxChangesBadge({ threadId }: { threadId: string }): JSX.Eleme
   )
 }
 
-const SIDEBAR_TABS = ['files', 'changes', 'terminal'] as const
+const SIDEBAR_TABS = ['files', 'changes', 'tools', 'permissions', 'terminal'] as const
 type SidebarTab = (typeof SIDEBAR_TABS)[number]
-const SIDEBAR_TAB_LABELS: Record<SidebarTab, string> = { files: 'Files', changes: 'Changes', terminal: 'Terminal' }
-/** A thread has changes to show; the page for a new one has none yet, so it offers the other two. */
-const tabsFor = (threadId: string | undefined): readonly SidebarTab[] => threadId ? SIDEBAR_TABS : SIDEBAR_TABS.filter((item) => item !== 'changes')
+const SIDEBAR_TAB_LABELS: Record<SidebarTab, string> = { files: 'Files', changes: 'Changes', tools: 'Tools', permissions: 'Permissions', terminal: 'Terminal' }
+const SIDEBAR_TAB_ICONS: Record<SidebarTab, LucideIcon> = { files: Folder, changes: FileDiff, tools: Wrench, permissions: ShieldCheck, terminal: SquareTerminal }
+/**
+ * A thread has changes to show; the page for a new one has none yet, so it offers Files and Terminal. Tool calls
+ * are only known for a GUI thread: a terminal thread's agent runs where MDE cannot see its calls. Permissions is
+ * there only while the thread's project has "Always allow" approvals saved.
+ */
+const tabsFor = (threadId: string | undefined, gui: boolean, saved: number): readonly SidebarTab[] =>
+  SIDEBAR_TABS.filter((item) =>
+    (item !== 'changes' || threadId) && (item !== 'tools' || (threadId && gui)) && (item !== 'permissions' || (threadId && saved > 0)))
+
+/** The open thread, when it is a GUI chat, whose tool calls the Tools tab lists. */
+function useGuiThread(threadId: string | undefined): InboxThread | undefined {
+  return useWorkspace((s) => {
+    const thread = threadId ? s.inboxThreads.find((item) => item.id === threadId) : undefined
+    return thread && thread.mode !== 'terminal' ? thread : undefined
+  })
+}
 /**
  * Each panel draws its own tabs in its header, so switching replaces the strip that has focus. The tab that was
  * chosen is focused again in the one that takes its place.
@@ -450,17 +475,20 @@ const tabsFor = (threadId: string | undefined): readonly SidebarTab[] => threadI
 let refocusTab: SidebarTab | null = null
 
 /**
- * Files, Changes (of an open thread) and Terminal, in the place of the file tree's title. Left and Right (or
+ * Files, Changes and Tools (of an open thread) and Terminal, in the place of the file tree's title. Left and Right (or
  * Home and End) move between them.
  */
 function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
   const stored = useInboxChanges((s) => s.tab)
-  const tabs = tabsFor(threadId)
+  const gui = Boolean(useGuiThread(threadId))
+  const saved = useSavedPermissionCount(threadId)
+  const tabs = tabsFor(threadId, gui, saved)
   const tab = tabs.includes(stored) ? stored : 'files'
   const count = useInboxChanges((s) => {
     const value = threadId ? s.entries[inboxChangesKey(threadId)]?.value : undefined
     return value?.available ? value.fileCount : 0
   })
+  const toolCount = useInboxChat((s) => (threadId && gui ? toolCallCount(s.threads[threadId]?.messages ?? []) : 0))
   const choose = (next: SidebarTab, pointer = false): void => {
     // Nothing is replaced when the tab is already showing, so nothing would take the focus back.
     if (tab === next) return
@@ -480,11 +508,11 @@ function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
       ref={strip}
       role="tablist"
       aria-label="Thread sidebar"
-      wrapperClassName="flex-1"
+      // The strip is the container the tabs measure: below 23.5rem (all four named need about 22.5) only the shown tab is named .
+      wrapperClassName="@container/tabs flex-1"
       revealKey={tab}
-      // Room below the tabs for the shown tab's underline, which the scrolling list would clip, taken back
-      // from the layout so the header keeps its height.
-      className="-mb-1.5 gap-x-3 pb-1.5"
+      // Room above for the count marks on the icons' corners, which the scrolling list would clip.
+      className="-mt-1.5 gap-1 pt-1.5"
       onKeyDown={(event) => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
         event.preventDefault()
@@ -497,6 +525,15 @@ function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
     >
       {tabs.map((item) => {
         const selected = tab === item
+        const Icon = SIDEBAR_TAB_ICONS[item]
+        const label = SIDEBAR_TAB_LABELS[item]
+        const badge = item === 'changes' ? count : item === 'tools' ? toolCount : item === 'permissions' ? saved : 0
+        const spoken = item === 'changes' ? `${label}, ${fileCountLabel(badge)} changed`
+          : item === 'tools' ? `${label}, ${badge} ${badge === 1 ? 'call' : 'calls'}`
+            : item === 'permissions' ? `${label}, ${badge} always allowed`
+              : label
+        // Narrow, the tab that is shown keeps its name and the others are icons; wide enough, all are named.
+        const named = selected ? '' : 'hidden @min-[23.5rem]/tabs:inline'
         return (
           <button
             key={item}
@@ -507,18 +544,36 @@ function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
             id={`inbox-${item}-tab`}
             aria-selected={selected}
             aria-controls={`inbox-${item}-panel`}
+            aria-label={badge > 0 ? spoken : label}
+            title={badge > 0 ? spoken : label}
             tabIndex={selected ? 0 : -1}
             onClick={(event) => choose(item, event.detail > 0)}
             className={cn(
-              'relative flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[11px] font-medium uppercase tracking-wide transition-colors',
+              'relative flex h-6 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md text-[12px] font-medium transition-colors',
+              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent',
               selected
-                ? 'text-fg after:absolute after:inset-x-0 after:-bottom-1.5 after:h-0.5 after:rounded-full after:bg-accent'
-                : 'text-fg-subtle hover:text-fg-muted'
+                ? 'bg-elevated px-2 text-fg ring-1 ring-inset ring-line-strong'
+                : 'px-1.5 text-fg-subtle hover:bg-hover hover:text-fg @min-[23.5rem]/tabs:px-2'
             )}
           >
-            {SIDEBAR_TAB_LABELS[item]}
-            {item === 'changes' && count > 0 && (
-              <span className="rounded-full bg-fg/10 px-1.5 py-px text-[10px] normal-case leading-none tabular-nums text-fg-muted">{count}</span>
+            <Icon aria-hidden className="h-3.5 w-3.5 shrink-0" />
+            <span className={named}>{label}</span>
+            {badge > 0 && (
+              <span
+                data-testid={item === 'tools' ? 'inbox-tools-count' : undefined}
+                className={cn('rounded-full bg-fg/10 px-1.5 py-px text-[10px] leading-none tabular-nums text-fg-muted', named)}
+              >
+                {badge}
+              </span>
+            )}
+            {badge > 0 && !selected && (
+              // An icon alone carries its count as a small mark on its corner.
+              <span
+                aria-hidden
+                className="absolute -right-1.5 -top-1 flex h-3 min-w-3 items-center justify-center rounded-full bg-active px-[3px] text-[8.5px] font-semibold leading-none tabular-nums text-fg-muted ring-[1.5px] ring-panel @min-[23.5rem]/tabs:hidden"
+              >
+                {badge > 99 ? '99+' : badge}
+              </span>
             )}
           </button>
         )
@@ -527,10 +582,96 @@ function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
   )
 }
 
+/** The buttons at the right end of every panel's footer: float the sidebar as a menu card, and collapse it. */
+function SidebarActions({ collapseLabel = 'Collapse sidebar' }: { collapseLabel?: string }): JSX.Element {
+  const toggle = useWorkspace((s) => s.toggleFileTree)
+  return (
+    <>
+      <Button variant="ghost" size="icon-sm" className="shrink-0" title="Float as a menu over the conversation" aria-label="Float as a menu" data-testid="inbox-sidebar-float" onClick={() => useInboxView.getState().setSidebarFloating(true)}>
+        <PictureInPicture2 className="h-3.5 w-3.5" />
+      </Button>
+      <Button variant="ghost" size="icon-sm" className="shrink-0" title={collapseLabel} aria-label={collapseLabel} onClick={toggle}>
+        <PanelRightClose className="h-3.5 w-3.5" />
+      </Button>
+    </>
+  )
+}
+
+/** The floating card's Changes, opened out below its row: the changed files, each opening its diff. */
+export function ChangesSection({ threadId }: { threadId: string }): JSX.Element {
+  const state = useInboxChanges((s) => s.entries[inboxChangesKey(threadId)])
+  useEffect(() => {
+    const stop = useInboxChanges.getState().watch(threadId, true)
+    void useInboxChanges.getState().load(threadId, true, true)
+    return stop
+  }, [threadId])
+  if (!state) return <ListMessage role="status">Loading changes…</ListMessage>
+  return (
+    <div className="flex min-w-0 flex-col" data-testid="inbox-menu-changes-section" onKeyDown={walkItems}>
+      {state.error && (
+        <p role="alert" className="flex items-start gap-1.5 border-b border-line bg-danger/10 px-3 py-2 text-[11.5px] leading-snug text-danger">
+          <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span>{state.error}{state.stale ? ' Showing the last result.' : ''}</span>
+        </p>
+      )}
+      <ChangesList
+        value={state.value}
+        state={state}
+        fill
+        threadId={threadId}
+        onOpen={(path) => useInboxChanges.getState().openFile(threadId, path)}
+      />
+      <div className="flex items-center justify-between gap-2 border-t border-line px-1.5 py-1">
+        <span className="min-w-0 truncate px-1 text-[11px] text-fg-subtle" title={GIT_CHANGES_NOTE}>Uncommitted, against HEAD</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 shrink-0"
+          title="Refresh changes"
+          aria-label="Refresh changes"
+          disabled={state.loading}
+          onClick={() => void useInboxChanges.getState().load(threadId, true, true)}
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/** The floating card's Files, opened out below its row: the folder's tree without the panel around it. */
+export function FilesSection({ session }: { session: DirectoryContext }): JSX.Element {
+  return (
+    <FileTreePanel
+      session={session}
+      browseOnly
+      fill
+      bare
+      openInTerminal={(folder) => openInInboxTerminal(folder, session)}
+    />
+  )
+}
+
+/**
+ * Brings the Inbox terminal into view. Floating, it shows; otherwise the sidebar shows its Terminal tab, which docks
+ * a floating menu card first: the terminal wants the room a docked sidebar has.
+ */
+export function showInboxTerminal(focus: boolean): void {
+  const floating = useInboxFloatingTerminal.getState()
+  if (floating.floating) {
+    floating.show()
+    return
+  }
+  if (focus) focusInboxTerminalWhenShown()
+  if (useInboxView.getState().sidebarFloating) useInboxView.getState().setSidebarFloating(false)
+  if (useWorkspace.getState().fileTreeCollapsed) useWorkspace.getState().toggleFileTree()
+  useInboxChanges.getState().setTab('terminal')
+}
+
 /** The Changes tab: the same view as the popover, in the sidebar, for the thread that is open. */
 function ChangesAside({ threadId }: { threadId: string }): JSX.Element {
   const state = useInboxChanges((s) => s.entries[inboxChangesKey(threadId)])
-  const toggle = useWorkspace((s) => s.toggleFileTree)
+  const graphOpen = useInboxChanges((s) => s.graphThreadId === threadId)
   useEffect(() => {
     const stop = useInboxChanges.getState().watch(threadId, true)
     void useInboxChanges.getState().load(threadId, true, true)
@@ -540,9 +681,6 @@ function ChangesAside({ threadId }: { threadId: string }): JSX.Element {
     <aside data-testid="inbox-changes-panel" className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-line bg-panel">
       <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
         <SidebarTabs threadId={threadId} />
-        <Button variant="ghost" size="icon-sm" className="shrink-0" title="Collapse sidebar" aria-label="Collapse sidebar" onClick={toggle}>
-          <PanelRightClose className="h-3.5 w-3.5" />
-        </Button>
       </div>
       <div
         role="tabpanel"
@@ -557,7 +695,23 @@ function ChangesAside({ threadId }: { threadId: string }): JSX.Element {
           <ListMessage role="status">Loading changes…</ListMessage>
         )}
       </div>
-      <div className="flex shrink-0 justify-end border-t border-line px-2 py-1">
+      <SidebarFooter actions={<SidebarActions />}>
+        <Button
+          variant="ghost"
+          size="sm"
+          title={graphOpen ? 'Close the Git graph' : 'Show every commit, branch and tag in a graph'}
+          aria-pressed={graphOpen}
+          data-testid="inbox-git-graph-button"
+          className={cn(graphOpen && 'bg-active text-fg')}
+          onClick={() => {
+            const store = useInboxChanges.getState()
+            if (graphOpen) store.closeGraph()
+            else store.openGraph(threadId)
+          }}
+        >
+          <GitGraph className="h-3.5 w-3.5" />
+          Git graph
+        </Button>
         <Button
           variant="ghost"
           size="sm"
@@ -569,7 +723,78 @@ function ChangesAside({ threadId }: { threadId: string }): JSX.Element {
           <RefreshCw className="h-3.5 w-3.5" />
           Refresh
         </Button>
+      </SidebarFooter>
+    </aside>
+  )
+}
+
+/** The Tools tab: every tool call of the open GUI thread, MCP calls included, to be looked over. */
+function ToolsAside({ thread }: { thread: InboxThread }): JSX.Element {
+  return (
+    <aside data-testid="inbox-tools-panel" className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-line bg-panel">
+      <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
+        <SidebarTabs threadId={thread.id} />
       </div>
+      <div
+        role="tabpanel"
+        id="inbox-tools-panel"
+        aria-labelledby="inbox-tools-tab"
+        className="flex min-h-0 flex-1 flex-col border-t border-line"
+      >
+        <InboxToolCalls thread={thread} />
+      </div>
+      <SidebarFooter actions={<SidebarActions />} />
+    </aside>
+  )
+}
+
+/** The Permissions tab: the "Always allow" approvals OpenCode saved for the thread's project, each removable. */
+function PermissionsAside({ thread }: { thread: InboxThread }): JSX.Element {
+  return (
+    <aside data-testid="inbox-permissions-panel" className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-line bg-panel">
+      <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
+        <SidebarTabs threadId={thread.id} />
+      </div>
+      <div
+        role="tabpanel"
+        id="inbox-permissions-panel"
+        aria-labelledby="inbox-permissions-tab"
+        className="flex min-h-0 flex-1 flex-col border-t border-line"
+      >
+        <InboxSavedPermissions thread={thread} />
+      </div>
+      <SidebarFooter actions={<SidebarActions />} />
+    </aside>
+  )
+}
+
+/**
+ * The Files or Changes tab of a thread whose worktree was deleted: its folder is gone, so there is nothing to list
+ * and nothing to ask Git about. It says so once, calmly, instead of the error either would end in.
+ */
+function DeletedWorktreeAside({ threadId, branch, tab }: { threadId: string; branch?: string; tab: 'files' | 'changes' }): JSX.Element {
+  return (
+    <aside data-testid="inbox-deleted-worktree-panel" className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-line bg-panel">
+      <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
+        <SidebarTabs threadId={threadId} />
+      </div>
+      <div
+        role="tabpanel"
+        id={`inbox-${tab}-panel`}
+        aria-labelledby={`inbox-${tab}-tab`}
+        className="flex min-h-0 flex-1 flex-col items-center gap-2 border-t border-line px-6 py-10 text-center"
+      >
+        <FolderX aria-hidden className="h-5 w-5 text-fg-subtle" />
+        <p className="text-[13px] text-fg-muted">
+          {tab === 'files' ? 'No files to show.' : 'No changes to show.'} This thread’s worktree was deleted, so its folder is gone.
+        </p>
+        <p className="text-[12px] text-fg-subtle">
+          {tab === 'files'
+            ? 'What the agent wrote is still in the conversation.'
+            : <>The edits it made are still in the conversation{branch && <>, and any commits stay on the branch <span className="inbox-code-font">{branch}</span> unless it was deleted too</>}.</>}
+        </p>
+      </div>
+      <SidebarFooter actions={<SidebarActions />} />
     </aside>
   )
 }
@@ -579,16 +804,11 @@ function ChangesAside({ threadId }: { threadId: string }): JSX.Element {
  * one, and it is shown with the new-thread page as well.
  */
 function TerminalAside({ threadId }: { threadId?: string }): JSX.Element {
-  const toggle = useWorkspace((s) => s.toggleFileTree)
   const floating = useInboxFloatingTerminal((s) => s.floating)
   return (
     <aside data-testid="inbox-terminal-panel" className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-line bg-panel">
       <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
         <SidebarTabs threadId={threadId} />
-        {!floating && <FloatTerminalButton />}
-        <Button variant="ghost" size="icon-sm" className="shrink-0" title="Collapse sidebar" aria-label="Collapse sidebar" onClick={toggle}>
-          <PanelRightClose className="h-3.5 w-3.5" />
-        </Button>
       </div>
       <div
         role="tabpanel"
@@ -598,8 +818,22 @@ function TerminalAside({ threadId }: { threadId?: string }): JSX.Element {
       >
         {floating ? <FloatingTerminalNotice /> : <InboxTerminal />}
       </div>
+      <SidebarFooter actions={<SidebarActions />}>
+        {!floating && <FloatTerminalButton />}
+      </SidebarFooter>
     </aside>
   )
+}
+
+/**
+ * "Open in Terminal" from the Files tree: a new pane of the Inbox terminal, starting in that folder, and the
+ * terminal brought into view. Floating, the pane goes beside the last one; in the narrow sidebar, below it.
+ */
+async function openInInboxTerminal(folder: FilesListRequest, where: DirectoryContext): Promise<void> {
+  const floating = useInboxFloatingTerminal.getState()
+  await useInboxTerminal.getState().openInFolder(folder, where, floating.floating ? 'right' : 'bottom')
+  if (floating.floating) floating.show()
+  else showInboxTerminal(false)
 }
 
 /**
@@ -607,31 +841,68 @@ function TerminalAside({ threadId }: { threadId?: string }): JSX.Element {
  * starts in), the thread's Git changes, and the terminal. A new thread has no changes yet, so it offers
  * only the other two. It can be dragged wider, which the terminal in particular wants.
  */
-export function InboxSidebar({ session, threadId }: { session: DirectoryContext; threadId?: string }): JSX.Element {
+export function InboxSidebar({ session, threadId }: { session: DirectoryContext; threadId?: string }): JSX.Element | null {
   const stored = useInboxChanges((s) => s.tab)
   const collapsed = useWorkspace((s) => s.fileTreeCollapsed)
-  // Changes belong to a thread. Without one, that tab is not offered and Files shows in its place.
-  const tab = tabsFor(threadId).includes(stored) ? stored : 'files'
+  const floating = useInboxView((s) => s.sidebarFloating)
+  const graphOpen = useInboxChanges((s) => s.graphThreadId !== null)
+  const guiThread = useGuiThread(threadId)
+  const thread = useWorkspace((s) => (threadId ? s.inboxThreads.find((item) => item.id === threadId) : undefined))
+  const saved = useSavedPermissionCount(threadId)
+  // Changes, Tools and Permissions belong to a thread. Without one, they are not offered and Files shows in their place.
+  const tab = tabsFor(threadId, Boolean(guiThread), saved).includes(stored) ? stored : 'files'
   const shown = Boolean(threadId) && !collapsed
+  // A thread whose worktree was deleted has no folder: nothing to list, and nothing to ask Git about.
+  const gone = useWorkspace((s) => (threadId ? s.inboxThreads.find((item) => item.id === threadId)?.worktreeRemovedAt !== undefined : false))
+  const goneBranch = useWorkspace((s) => (threadId ? s.inboxThreads.find((item) => item.id === threadId)?.worktree?.branch : undefined))
   // The tab's count stays current while the sidebar is open: one thread, so one cheap read.
   useEffect(() => {
-    if (threadId && shown) return useInboxChanges.getState().watch(threadId)
-  }, [threadId, shown])
+    if (threadId && shown && !gone) return useInboxChanges.getState().watch(threadId)
+  }, [threadId, shown, gone])
+  // Whether the project has approvals saved decides whether Permissions is offered at all, so it is read up front.
+  useEffect(() => {
+    if (threadId && !gone) return useInboxSavedPermissions.getState().watch(threadId)
+  }, [threadId, gone])
+  // Floating, the sidebar is a menu card over the conversation's corner, whose rows open out in place. It steps
+  // aside while the Git graph is over the conversation, and hidden it is one small button in that corner.
+  if (floating) {
+    if (graphOpen) return null
+    if (collapsed) return <InboxSidebarMenuButton threadId={threadId} />
+    return <InboxSidebarMenu session={session} gui={Boolean(guiThread)} {...(threadId ? { threadId } : {})} />
+  }
+  // Tool calls are in the conversation, which a deleted worktree leaves as it was.
+  if (gone && threadId && !collapsed && (tab === 'files' || tab === 'changes')) {
+    return (
+      <InboxSidebarFrame>
+        <DeletedWorktreeAside threadId={threadId} tab={tab} {...(goneBranch ? { branch: goneBranch } : {})} />
+      </InboxSidebarFrame>
+    )
+  }
   if (collapsed) return <FileTreePanel session={session} browseOnly />
   return (
     <InboxSidebarFrame>
       {/* Kept mounted while another tab is showing, so the tree comes back with its folders open. Only the
-          copy on screen carries the tabs. */}
-      <div
+          copy on screen carries the tabs. A thread whose folder is gone has no tree to keep. */}
+      {!gone && <div
         role="tabpanel"
         id="inbox-files-panel"
         aria-labelledby="inbox-files-tab"
         className={tab === 'files' ? 'contents' : 'hidden'}
         data-testid="inbox-files-panel"
       >
-        <FileTreePanel session={session} browseOnly fill heading={tab === 'files' ? <SidebarTabs threadId={threadId} /> : undefined} />
-      </div>
+        <FileTreePanel
+          session={session}
+          browseOnly
+          fill
+          heading={tab === 'files' ? <SidebarTabs threadId={threadId} /> : undefined}
+          actions={null}
+          footerActions={<SidebarActions collapseLabel="Collapse files" />}
+          openInTerminal={(folder) => openInInboxTerminal(folder, session)}
+        />
+      </div>}
       {tab === 'changes' && threadId && <ChangesAside threadId={threadId} />}
+      {tab === 'tools' && guiThread && <ToolsAside thread={guiThread} />}
+      {tab === 'permissions' && thread && <PermissionsAside thread={thread} />}
       {tab === 'terminal' && <TerminalAside threadId={threadId} />}
     </InboxSidebarFrame>
   )
@@ -666,35 +937,7 @@ export function InboxChangeViewer({ threadId }: { threadId: string }): JSX.Eleme
   const state = useInboxChanges((s) => s.entries[inboxChangesKey(threadId)])
   // A file opened from the tree lands beneath this review; it takes over.
   const treeFile = useWorkspace((s) => s.openFiles[threadId])
-  const [preview, setPreview] = useState<{ threadId: string; path: string; value?: InboxChangeDiff; error?: string } | null>(null)
-  const [family, setFamily] = useState(() => getTerminalSettings().codeFamily)
-  const ref = useRef<HTMLDivElement>(null)
   const file = selected?.threadId === threadId ? state?.value?.files?.find((f) => f.path === selected.path) : undefined
-  useEffect(() => {
-    if (!file) return
-    let current = true
-    setPreview((previous) => previous?.threadId === threadId && previous.path === file.path
-      ? { ...previous, error: undefined }
-      : { threadId, path: file.path })
-    void window.api.inbox.changeDiff({ threadId, path: file.path }).then(
-      (value) => { if (current) setPreview({ threadId, path: file.path, value }) },
-      (error) => {
-        if (current) setPreview((previous) => ({
-          threadId, path: file.path,
-          ...(previous?.threadId === threadId && previous.path === file.path ? { value: previous.value } : {}),
-          error: ipcErrorMessage(error, 'Could not read Git diff.'),
-        }))
-      },
-    )
-    return () => { current = false }
-  }, [threadId, file?.path, state?.value])
-  useEffect(() => subscribeTerminalSettings(() => setFamily(getTerminalSettings().codeFamily)), [])
-  useEffect(() => {
-    if (!file) return
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    ref.current?.focus()
-    return () => { if (previous?.isConnected) previous.focus() }
-  }, [file?.path])
   useEffect(() => {
     if (treeFile !== undefined) useInboxChanges.getState().closeFile()
   }, [treeFile])
@@ -702,11 +945,69 @@ export function InboxChangeViewer({ threadId }: { threadId: string }): JSX.Eleme
   useEffect(() => () => {
     if (useInboxChanges.getState().selectedPath?.threadId === threadId) useInboxChanges.getState().closeFile()
   }, [threadId])
-  const patch = preview?.threadId === threadId && preview.path === file?.path ? preview : null
-  const hunks = useMemo(() => parseUnifiedDiff(patch?.value?.diff ?? ''), [patch?.value?.diff])
+  const readDiff = useCallback((path: string) => window.api.inbox.changeDiff({ threadId, path }), [threadId])
   if (!file) return null
-  const close = (): void => useInboxChanges.getState().closeFile()
   const checkout = state?.value?.available ? state.value : undefined
+  return (
+    <ChangeDiffViewer
+      identity={threadId}
+      file={file}
+      branch={checkout ? checkout.branch : undefined}
+      stale={state?.stale}
+      reloadKey={state?.value}
+      readDiff={readDiff}
+      // Closing goes back to the Git graph when the file was chosen there.
+      onClose={() => useInboxChanges.getState().closeFile(true)}
+    />
+  )
+}
+
+/**
+ * A read-only review of one uncommitted file's diff, laid over the conversation (Inbox) or the Git
+ * graph over the terminals (Sessions). `readDiff` reads it for the checkout the caller names, again
+ * whenever `reloadKey` changes; a failed read keeps the last diff shown under the error.
+ */
+export function ChangeDiffViewer({ identity, file, branch, note = GIT_CHANGES_NOTE, stale, reloadKey, readDiff, onClose }: {
+  /** The thread or terminal: another one starts without the previous diff. */
+  identity: string
+  file: InboxChangedFile
+  /** The checkout's branch (null for a detached HEAD); left out when it is not known. */
+  branch?: string | null
+  /** What the diff is against, under the header. */
+  note?: string
+  stale?: boolean
+  reloadKey?: unknown
+  readDiff: (path: string) => Promise<InboxChangeDiff>
+  onClose: () => void
+}): JSX.Element {
+  const [preview, setPreview] = useState<{ identity: string; path: string; value?: InboxChangeDiff; error?: string } | null>(null)
+  const [family, setFamily] = useState(() => getTerminalSettings().codeFamily)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    let current = true
+    setPreview((previous) => previous?.identity === identity && previous.path === file.path
+      ? { ...previous, error: undefined }
+      : { identity, path: file.path })
+    void readDiff(file.path).then(
+      (value) => { if (current) setPreview({ identity, path: file.path, value }) },
+      (error) => {
+        if (current) setPreview((previous) => ({
+          identity, path: file.path,
+          ...(previous?.identity === identity && previous.path === file.path ? { value: previous.value } : {}),
+          error: ipcErrorMessage(error, 'Could not read Git diff.'),
+        }))
+      },
+    )
+    return () => { current = false }
+  }, [identity, file.path, reloadKey, readDiff])
+  useEffect(() => subscribeTerminalSettings(() => setFamily(getTerminalSettings().codeFamily)), [])
+  useEffect(() => {
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    ref.current?.focus()
+    return () => { if (previous?.isConnected) previous.focus() }
+  }, [file.path])
+  const patch = preview?.identity === identity && preview.path === file.path ? preview : null
+  const hunks = useMemo(() => parseUnifiedDiff(patch?.value?.diff ?? ''), [patch?.value?.diff])
   const binary = patch?.value?.binary || file.binary
 
   let body: JSX.Element | null = null
@@ -739,8 +1040,9 @@ export function InboxChangeViewer({ threadId }: { threadId: string }): JSX.Eleme
       tabIndex={-1}
       className="absolute inset-0 z-20 flex min-h-0 flex-col bg-bg outline-none"
       data-testid="inbox-change-viewer"
+      data-path={file.path}
       style={{ '--inbox-code-font': codeViewerFontFamily(family) } as CSSProperties}
-      onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); close() } }}
+      onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); onClose() } }}
     >
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-line bg-panel pl-3 pr-1.5">
         <FileDiff className="h-3.5 w-3.5 shrink-0 text-fg-subtle" aria-hidden />
@@ -749,19 +1051,19 @@ export function InboxChangeViewer({ threadId }: { threadId: string }): JSX.Eleme
         <span className="inbox-code-font text-[11.5px]">
           <ChangeCounts additions={file.additions} deletions={file.deletions} binary={file.binary} />
         </span>
-        <Button variant="ghost" size="icon-sm" className="shrink-0" aria-label="Close change review" title="Close (Esc)" onClick={close}>
+        <Button variant="ghost" size="icon-sm" className="shrink-0" aria-label="Close change review" title="Close (Esc)" onClick={onClose}>
           <X className="h-3.5 w-3.5" />
         </Button>
       </div>
       <p className="flex shrink-0 items-center gap-1.5 border-b border-line px-4 py-1.5 text-[11px] text-fg-subtle">
-        {checkout && (
+        {branch !== undefined && (
           <>
             <GitBranch className="h-3 w-3 shrink-0" aria-hidden />
-            <span className="max-w-[40%] shrink-0 truncate text-fg-muted">{checkout.branch ?? 'Detached HEAD'}</span>
+            <span className="max-w-[40%] shrink-0 truncate text-fg-muted">{branch ?? 'Detached HEAD'}</span>
             <span aria-hidden>·</span>
           </>
         )}
-        <span className="min-w-0 truncate">{GIT_CHANGES_NOTE}{state?.stale ? ' Previous counts may be out of date.' : ''}</span>
+        <span className="min-w-0 truncate">{note}{stale ? ' Previous counts may be out of date.' : ''}</span>
       </p>
       <div className="min-h-0 flex-1 overflow-auto">
         {patch?.error && <ViewerMessage tone="danger" role="alert">{patch.error}</ViewerMessage>}

@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { GitBranch } from 'lucide-react'
 import type { GitTerminalInfoResponse } from '@shared/types'
 import { useWorkspace } from '@/store/workspace'
+import { useSessionGitGraph } from '@/store/session-git-graph'
+import { cn } from '@/lib/utils'
 import { formatGitCount, gitStatusAccessibleLabel, gitStatusBranchLabel } from '@/lib/git'
 
 const REFRESH_INTERVAL_MS = 10_000
@@ -10,6 +12,7 @@ export function TerminalGitInfo({ terminalId }: { terminalId: string }): JSX.Ele
   const directory = useWorkspace((state) => state.terminalDirectories[terminalId])
   const status = useWorkspace((state) => state.statuses[terminalId] ?? 'none')
   const [info, setInfo] = useState<GitTerminalInfoResponse | null>(null)
+  const graphOpen = useSessionGitGraph((state) => state.terminalId === terminalId)
 
   useEffect(() => {
     let cancelled = false
@@ -55,14 +58,24 @@ export function TerminalGitInfo({ terminalId }: { terminalId: string }): JSX.Ele
   // The chip never shrinks (the title is the one flexible item in the header, so it is the one that
   // gets an ellipsis). Instead, in a narrow pane (`@container/pane` is the header) the text goes and
   // only the icon and a dot for uncommitted changes remain. The label and tooltip always carry the
-  // detail the chip leaves out (ahead, worktree, clean).
+  // detail the chip leaves out (ahead, worktree, clean). Clicking it shows the checkout's Git graph
+  // over the terminals, and clicking again hides it.
   return (
-    <div
-      role="img"
-      className="flex h-5 shrink-0 items-center gap-1.5 rounded px-1.5 text-[11px] text-fg-muted"
+    <button
+      type="button"
+      className={cn(
+        'flex h-5 shrink-0 items-center gap-1.5 rounded px-1.5 text-[11px] text-fg-muted transition-colors hover:bg-hover hover:text-fg',
+        graphOpen && 'bg-active text-fg',
+      )}
       data-testid={`terminal-git-info-${terminalId}`}
-      aria-label={accessibleLabel}
-      title={accessibleLabel}
+      aria-label={`${accessibleLabel}. ${graphOpen ? 'Close' : 'Open'} the Git graph`}
+      aria-pressed={graphOpen}
+      title={`${accessibleLabel}\n${graphOpen ? 'Close' : 'Open'} the Git graph`}
+      onClick={(event) => {
+        event.stopPropagation()
+        useSessionGitGraph.getState().toggle(terminalId)
+      }}
+      onDoubleClick={(event) => event.stopPropagation()}
     >
       <GitBranch className="h-3 w-3 shrink-0 text-accent" aria-hidden="true" />
       <span className="max-w-[8rem] truncate @max-[22rem]/pane:hidden">{gitStatusBranchLabel(info)}</span>
@@ -81,6 +94,6 @@ export function TerminalGitInfo({ terminalId }: { terminalId: string }): JSX.Ele
           />
         </>
       )}
-    </div>
+    </button>
   )
 }

@@ -251,6 +251,20 @@ describe('/btw in a conversation', () => {
     expect(byId('chat-aside-question')?.title).toBe(long)
   })
 
+  it('shows a question asked about a quote as the question, with the quote as a card under it', async () => {
+    const container = await render()
+    await submit(container, '/btw why?')
+    await settled()
+    expect(byId('chat-aside-quotes')).toBeNull()
+    const entry = { id: 'aside_q', question: '> The hashes are trimmed.\n\nwhy?', answer: 'Because.', askedAt: Date.now() }
+    aside.mockImplementationOnce(async () => ({ text: entry.answer, entry }))
+    await submit(container, '/btw why?')
+    await settled()
+    expect(text('chat-aside-question')).toBe('why?')
+    expect(byId('chat-aside-question')?.title).toBe('why?')
+    expect(byId('chat-aside-quotes')?.querySelector('[data-testid="chat-quote-text"]')?.textContent).toBe('The hashes are trimmed.')
+  })
+
   it('is closed with its button, and a click does not take the caret out of the box', async () => {
     const container = await render()
     await submit(container, '/btw why?')

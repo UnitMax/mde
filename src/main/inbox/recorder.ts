@@ -8,6 +8,7 @@ import type {
   InboxThreadStatus,
   Session
 } from '@shared/types'
+import type { ThreadPermissionMode } from '@shared/permission-modes'
 import { targetSession } from '../opencode/service/discovery'
 import type { ServiceEvent } from '../opencode/service/events'
 import { serviceEventSessionId } from '../opencode/service/events'
@@ -15,12 +16,22 @@ import { parseModelRef } from '../opencode/service/parse'
 import type { InboxStore } from './store'
 
 export const UNTITLED_THREAD = 'Untitled session'
+/** The furthest ahead a thread can be snoozed. */
+export const INBOX_SNOOZE_MAX_MS = 366 * 24 * 60 * 60 * 1000
+/**
+ * The longest the wake timer waits before looking again. Timers do not count time the computer slept, and the
+ * clock can be changed, so a long wait could wake a thread far too late; looking each minute bounds that.
+ */
+export const INBOX_SNOOZE_CHECK_MS = 60_000
 
 export interface InboxRecorderDependencies {
   now(): number
   /** Branch of `directory`, or null outside a repository or on a detached HEAD. Throws on failure. */
   readBranch(session: Session, directory: string): Promise<string | null>
   onChanged(thread: InboxThread): void
+  /** Defaults to the global timers; tests pass fakes. */
+  setTimer?(callback: () => void, ms: number): unknown
+  clearTimer?(timer: unknown): void
 }
 
 /** Statuses that count as the agent doing something the user should look at. */
@@ -99,7 +110,11 @@ function sameThread(a: InboxThread, b: InboxThread): boolean {
     a.readAt === b.readAt &&
     a.archived === b.archived &&
     Boolean(a.pinned) === Boolean(b.pinned) &&
-    a.folderId === b.folderId
+    a.snoozedUntil === b.snoozedUntil &&
+    Boolean(a.woke) === Boolean(b.woke) &&
+    a.folderId === b.folderId &&
+    a.worktreeRemovedAt === b.worktreeRemovedAt &&
+    a.permissionMode === b.permissionMode
 }
 
 /**
@@ -109,10 +124,73 @@ function sameThread(a: InboxThread, b: InboxThread): boolean {
  * busy thread does not keep jumping.
  */
 export class InboxRecorder {
+  private wakeTimer: unknown = null
+
   constructor(
     private readonly store: InboxStore,
     private readonly dependencies: InboxRecorderDependencies
   ) {}
+
+  /**
+   * Wakes the threads whose snooze ran out, including while MDE was closed or the computer slept, and waits
+   * for the next one. Called once the store is loaded, and again whenever the clock may have jumped (resume).
+   */
+  wakeSnoozed(): void {
+    this.clearWakeTimer()
+    const now = this.dependencies.now()
+    let next = Infinity
+    for (const thread of this.store.list()) {
+      if (thread.snoozedUntil === undefined) continue
+      if (thread.snoozedUntil <= now) this.wake(thread, now)
+      else next = Math.min(next, thread.snoozedUntil)
+    }
+    if (next === Infinity) return
+    const delay = Math.max(0, Math.min(next - now, INBOX_SNOOZE_CHECK_MS))
+    const setTimer = this.dependencies.setTimer ?? ((callback: () => void, ms: number) => {
+      const timer = setTimeout(callback, ms)
+      timer.unref?.()
+      return timer
+    })
+    this.wakeTimer = setTimer(() => {
+      this.wakeTimer = null
+      this.wakeSnoozed()
+    }, delay)
+  }
+
+  /** Stops the wake timer, on quit. */
+  dispose(): void {
+    this.clearWakeTimer()
+  }
+
+  /**
+   * Snoozes a thread until `until`, or brings it back now with null. A snoozed thread leaves the list (and the
+   * parked threads) and comes back unread, as "Woke up". Bringing it back by hand marks nothing.
+   */
+  setSnoozed(id: string, until: number | null): InboxThread | null {
+    const thread = this.store.get(id)
+    if (!thread) return null
+    const now = this.dependencies.now()
+    if (until !== null && (!Number.isFinite(until) || until <= now || until - now > INBOX_SNOOZE_MAX_MS)) {
+      throw new Error('Choose a time in the future, within a year.')
+    }
+    const { snoozedUntil: _until, woke: _woke, ...rest } = thread
+    const saved = this.save(thread, until === null ? rest : { ...rest, archived: false, snoozedUntil: until })
+    this.wakeSnoozed()
+    return saved
+  }
+
+  private wake(thread: InboxThread, now: number): void {
+    const { snoozedUntil: _until, ...rest } = thread
+    // Back at the top and unread, like new activity; `readAt` can be ahead of the clock after it was changed.
+    this.save(thread, { ...rest, woke: true, lastActivityAt: Math.max(now, thread.readAt + 1) })
+  }
+
+  private clearWakeTimer(): void {
+    if (this.wakeTimer === null) return
+    const clearTimer = this.dependencies.clearTimer ?? ((timer: unknown) => clearTimeout(timer as ReturnType<typeof setTimeout>))
+    clearTimer(this.wakeTimer)
+    this.wakeTimer = null
+  }
 
   list(): InboxThread[] {
     return this.store.list()
@@ -135,7 +213,20 @@ export class InboxRecorder {
   setArchived(id: string, archived: boolean): InboxThread | null {
     const thread = this.store.get(id)
     if (!thread) return null
-    return this.save(thread, { ...thread, archived })
+    // Parking a snoozed thread ends the snooze: a parked thread stays parked until it is moved back.
+    const { snoozedUntil: _until, ...rest } = thread
+    return this.save(thread, archived ? { ...rest, archived } : { ...thread, archived })
+  }
+
+  /**
+   * Keeps a thread whose worktree was deleted to be read only: parked with the other old threads, no longer
+   * pinned or snoozed, and marked so that nothing is started in its folder again.
+   */
+  markWorktreeRemoved(id: string, at: number): InboxThread | null {
+    const thread = this.store.get(id)
+    if (!thread) return null
+    const { snoozedUntil: _until, pinned: _pinned, woke: _woke, ...rest } = thread
+    return this.save(thread, { ...rest, archived: true, worktreeRemovedAt: at })
   }
 
   setCustomTitle(id: string, value: string | null): InboxThread | null {
@@ -151,6 +242,14 @@ export class InboxRecorder {
     const thread = this.store.get(id)
     if (!thread) return null
     return this.save(thread, { ...thread, pinned })
+  }
+
+  /** Records the permission mode a thread was given; `default` takes the mark away. */
+  setPermissionMode(id: string, mode: ThreadPermissionMode): InboxThread | null {
+    const thread = this.store.get(id)
+    if (!thread) return null
+    const { permissionMode: _previous, ...rest } = thread
+    return this.save(thread, { ...rest, ...(mode !== 'default' ? { permissionMode: mode } : {}) })
   }
 
   /** Forgets MDE's record only; later events for the removed thread are ignored. */
@@ -170,6 +269,8 @@ export class InboxRecorder {
     model: OpenCodeModelRef
     directory?: string
     worktree?: InboxWorktree
+    spawnedBy?: InboxThread['spawnedBy']
+    permissionMode?: InboxThread['permissionMode']
   }): InboxThread {
     const now = this.dependencies.now()
     const existing = this.store.get(input.id)
@@ -189,7 +290,9 @@ export class InboxRecorder {
       readAt: now,
       archived: false,
       folderId: input.folder.id,
-      ...(input.worktree ? { worktree: input.worktree } : {})
+      ...(input.spawnedBy ? { spawnedBy: input.spawnedBy } : {}),
+      ...(input.worktree ? { worktree: input.worktree } : {}),
+      ...(input.permissionMode ? { permissionMode: input.permissionMode } : {})
     }
     this.insert(created)
     return created
@@ -199,7 +302,13 @@ export class InboxRecorder {
    * Records a thread forked from another: idle until it is given something to do, already read, and
    * in the source's folder, target and directory, which stay valid if the folder has been removed.
    */
-  recordForkedThread(input: { id: string; title?: string | null; source: InboxThread; model?: OpenCodeModelRef }): InboxThread {
+  recordForkedThread(input: {
+    id: string
+    title?: string | null
+    source: InboxThread
+    model?: OpenCodeModelRef
+    permissionMode?: InboxThread['permissionMode']
+  }): InboxThread {
     const now = this.dependencies.now()
     const existing = this.store.get(input.id)
     if (existing) return existing
@@ -221,7 +330,8 @@ export class InboxRecorder {
       forkedFrom: source.id,
       ...(source.mode === 'terminal' ? { mode: source.mode } : {}),
       // A fork shares the source's directory, so it shares the worktree too.
-      ...(source.worktree ? { worktree: source.worktree } : {})
+      ...(source.worktree ? { worktree: source.worktree } : {}),
+      ...(input.permissionMode ? { permissionMode: input.permissionMode } : {})
     }
     this.insert(created)
     return created
@@ -265,7 +375,9 @@ export class InboxRecorder {
     // A run goes on while the agent waits for an answer, so only a thread that was idle starts the clock.
     const busy = isBusy(status)
     const workingSince = busy ? (isBusy(existing.status) ? existing.workingSince ?? now : now) : undefined
-    const { attentionReason: _previousReason, workingSince: _previousSince, ...rest } = existing
+    // New activity brings a snoozed thread back early, like a reply to a snoozed mail, and anything that happens
+    // in a thread that woke up replaces "Woke up".
+    const { attentionReason: _previousReason, workingSince: _previousSince, snoozedUntil, woke, ...rest } = existing
     const next: InboxThread = {
       ...rest,
       status,
@@ -273,10 +385,13 @@ export class InboxRecorder {
       ...(workingSince !== undefined ? { workingSince } : {}),
       title: report.title ?? existing.title,
       ...(report.model ?? existing.model ? { model: report.model ?? existing.model } : {}),
+      ...(snoozedUntil !== undefined && !activity ? { snoozedUntil } : {}),
+      ...(woke && !changedStatus ? { woke } : {}),
       ...(activity ? { lastActivityAt: now, archived: false } : {})
     }
     const saved = this.save(existing, next)
     if (saved !== existing && activity) this.refreshBranch(saved)
+    if (snoozedUntil !== undefined && next.snoozedUntil === undefined) this.wakeSnoozed()
   }
 
   private save(previous: InboxThread, next: InboxThread): InboxThread {

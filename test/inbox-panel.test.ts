@@ -86,7 +86,6 @@ beforeEach(() => {
     wslAvailable: true,
     inboxThreads: [],
     selectedInboxThreadId: null,
-    inboxMarkedUnread: {},
     inboxCues: {},
     activeWorkspaceView: 'inbox',
     settingsDialog: { open: false, section: 'appearance' }
@@ -193,7 +192,7 @@ describe('Inbox', () => {
     expect(panel.querySelectorAll('[aria-label$=", selected"]')).toHaveLength(2)
     expect(second.getAttribute('aria-label')).toBe('Second, selected')
     await openThreadMenu(second)
-    expect(Array.from(document.body.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent?.trim())).toEqual(['Pin thread', 'Mark as unread', 'Park'])
+    expect(Array.from(document.body.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent?.trim())).toEqual(['Pin thread', 'Mark as unread', 'Snooze', 'Park'])
     await chooseThreadAction(label)
     expect(window.api.inbox[method]).toHaveBeenCalledTimes(2)
     expect(window.api.inbox[method]).toHaveBeenCalledWith({ id: 'ses_one', ...values })
@@ -397,17 +396,19 @@ describe('Inbox', () => {
     expect(panel.querySelector('[data-testid="inbox-thread-cue-ses_one"]')).not.toBe(first)
   })
 
-  it('counts the open thread as seen when the window comes back, unless it was marked unread by hand', async () => {
+  it('keeps the open thread unread when the window comes back, until a click or a key in the thread', async () => {
     useWorkspace.setState({ inboxThreads: [thread()], selectedInboxThreadId: 'ses_one' })
-    await render(createElement(InboxThreadView))
-    expect(setRead).not.toHaveBeenCalled()
+    const view = await render(createElement(InboxThreadView))
     await act(async () => { window.dispatchEvent(new Event('focus')) })
+    expect(setRead).not.toHaveBeenCalled()
+
+    const inside = view.firstElementChild!.lastElementChild!
+    await act(async () => { inside.dispatchEvent(new Event('pointerdown', { bubbles: true })) })
     expect(setRead).toHaveBeenCalledWith({ id: 'ses_one', read: true })
 
     setRead.mockClear()
-    useWorkspace.setState({ inboxMarkedUnread: { ses_one: true } })
-    await act(async () => { window.dispatchEvent(new Event('focus')) })
-    expect(setRead).not.toHaveBeenCalled()
+    await act(async () => { inside.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true })) })
+    expect(setRead).toHaveBeenCalledWith({ id: 'ses_one', read: true })
   })
 
   it('filters and searches the list', async () => {
@@ -513,7 +514,7 @@ describe('Inbox thread fork', () => {
     const panel = await render(createElement(InboxPanel))
     await openMenu(panel)
     const labels = Array.from(document.body.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent?.trim())
-    expect(labels).toEqual(['Rename thread', 'Clear custom name', 'Pin thread', 'Mark as read', 'Park', 'Fork thread', 'Delete from Inbox'])
+    expect(labels).toEqual(['Rename thread', 'Clear custom name', 'Pin thread', 'Mark as read', 'Snooze', 'Park', 'Fork thread', 'Delete from Inbox'])
     expect(fork).not.toHaveBeenCalled()
   })
 
@@ -642,6 +643,23 @@ describe('Inbox thread fork', () => {
     expect(alertText(panel)).toBe('Service unavailable')
     await act(async () => (panel.querySelector('[data-testid="inbox-fork-error"] button') as HTMLButtonElement).click())
     expect(alertText(panel)).toBeUndefined()
+  })
+})
+
+describe('Inbox permission mode marker', () => {
+  it('marks a thread with permissions of its own, and leaves default threads plain', async () => {
+    useWorkspace.setState({ inboxThreads: [
+      thread({ id: 'ses_plain', title: 'Plain' }),
+      thread({ id: 'ses_ro', title: 'Looking', permissionMode: 'read-only' }),
+      thread({ id: 'ses_full', title: 'Building', permissionMode: 'full' }),
+    ] })
+    const panel = await render(createElement(InboxPanel))
+    expect(panel.querySelector('[data-testid="inbox-thread-permission-mark-ses_plain"]')).toBeNull()
+    expect(panel.querySelector('[data-testid="inbox-thread-permission-mark-ses_ro"]')?.getAttribute('title')).toBe('Permissions: Read-only')
+    const full = panel.querySelector('[data-testid="inbox-thread-permission-mark-ses_full"]')
+    expect(full?.getAttribute('title')).toBe('Permissions: Full access')
+    // The modes that let the agent act without asking wear the warning colour.
+    expect(full?.querySelector('svg')?.getAttribute('class')).toContain('text-warn')
   })
 })
 
@@ -808,5 +826,15 @@ describe('Inbox thread deletion and worktrees', () => {
     expect(marker?.textContent).toContain('mde/1a2b3c4d')
     expect(marker?.getAttribute('title')).toContain('started from main')
     expect(marker?.getAttribute('title')).toContain(worktree.root)
+  })
+
+  it('keeps a thread whose worktree was deleted to read, with nothing to send, fork or open', async () => {
+    useWorkspace.setState({ inboxThreads: [inWorktree({ worktreeRemovedAt: Date.UTC(2026, 10, 14), archived: true })], selectedInboxThreadId: 'ses_one' })
+    const view = await render(createElement(InboxThreadView))
+    const marker = view.querySelector('[data-testid="inbox-thread-worktree"]')
+    expect(marker?.hasAttribute('data-removed')).toBe(true)
+    expect(marker?.getAttribute('title')).toContain('was deleted')
+    expect(view.querySelector('[data-testid="inbox-thread-read-only"]')?.textContent).toContain('mde/1a2b3c4d')
+    expect(view.querySelector('[data-testid="chat-composer"]')).toBeNull()
   })
 })

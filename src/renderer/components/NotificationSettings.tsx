@@ -61,10 +61,18 @@ export function NotificationSettings(): JSX.Element {
           Notifications
         </h3>
         <p className="mt-1 text-xs text-fg-subtle">
-          How MDE tells you that an Inbox thread is done, needs input or has failed. Nothing is sent anywhere: the sounds are made
-          by MDE itself and the taskbar changes are drawn by your system.
+          How MDE tells you that an Inbox thread is done, needs input or has failed. Nothing is sent anywhere: the toasts and
+          sounds are made by MDE itself and the taskbar changes are drawn by your system.
         </p>
       </div>
+
+      <SwitchRow
+        checked={settings.toasts}
+        label="Toasts"
+        description="Show a small card in the corner of MDE when a thread is done, needs input or fails, when a chat starts in the background, and when an agent uses the MDE MCP. Click one to go there."
+        testId="alert-toasts"
+        onClick={() => update({ toasts: !settings.toasts })}
+      />
 
       <div className="space-y-3">
         <SwitchRow

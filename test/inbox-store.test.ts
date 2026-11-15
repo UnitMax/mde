@@ -81,17 +81,39 @@ describe('inbox thread validation', () => {
       .toMatchObject({ branch: null })
   })
 
+  it('keeps a thread\'s permission mode, and drops one it does not know', () => {
+    expect(validateInboxThread(thread({ permissionMode: 'read-only' }))).toEqual(thread({ permissionMode: 'read-only' }))
+    // The default mode is the absence of one; OpenCode keeps the rules, so a bad mark only costs the chip its label.
+    for (const permissionMode of ['default', 'yolo', 5, null, [{ action: '*', resource: '*', effect: 'allow' }]]) {
+      expect(validateInboxThread({ ...thread(), permissionMode })).toEqual(thread())
+    }
+  })
+
   it('keeps the thread a fork came from, and drops a pointer that is not a thread', () => {
     expect(validateInboxThread(thread({ forkedFrom: 'ses_origin' }))).toEqual(thread({ forkedFrom: 'ses_origin' }))
     const worktree = { repository: '/home/me/app', root: '/home/me/.mde/worktrees/app-abc/1a2b3c4d', branch: 'mde/1a2b3c4d', base: 'origin/main' }
     expect(validateInboxThread(thread({ worktree }))).toEqual(thread({ worktree }))
     expect(validateInboxThread({ ...thread({ worktree }), worktree: { ...worktree, extra: 'dropped' } })).toEqual(thread({ worktree }))
+    // A thread kept after its worktree was deleted stays read only; the mark means nothing without a worktree.
+    expect(validateInboxThread(thread({ worktree, worktreeRemovedAt: 5 }))).toEqual(thread({ worktree, worktreeRemovedAt: 5 }))
+    expect(validateInboxThread({ ...thread({ worktree }), worktreeRemovedAt: 'soon' })).toEqual(thread({ worktree }))
+    expect(validateInboxThread({ ...thread(), worktreeRemovedAt: 5 })).toEqual(thread())
     // A bad worktree record costs the thread its worktree, never the thread.
     for (const bad of ['x', null, [], {}, { ...worktree, root: '' }, { ...worktree, branch: 5 }, { ...worktree, base: 'a\nb' }, { ...worktree, repository: 'x'.repeat(5000) }]) {
       expect(validateInboxThread({ ...thread(), worktree: bad })).toEqual(thread())
     }
     for (const forkedFrom of ['fld_one', '../x', 5, null, '']) {
       expect(validateInboxThread({ ...thread(), forkedFrom })).toEqual(thread())
+    }
+  })
+
+  it('keeps the mark of a thread an agent started, with or without its parent', () => {
+    expect(validateInboxThread(thread({ spawnedBy: { threadId: 'ses_parent' } }))).toEqual(thread({ spawnedBy: { threadId: 'ses_parent' } }))
+    expect(validateInboxThread(thread({ spawnedBy: {} }))).toEqual(thread({ spawnedBy: {} }))
+    // A parent pointer that is not a thread is dropped; the thread stays marked.
+    expect(validateInboxThread({ ...thread(), spawnedBy: { threadId: '../x' } })).toEqual(thread({ spawnedBy: {} }))
+    for (const spawnedBy of ['ses_parent', 5, null, []]) {
+      expect(validateInboxThread({ ...thread(), spawnedBy })).toEqual(thread())
     }
   })
 

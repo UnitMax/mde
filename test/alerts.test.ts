@@ -269,14 +269,15 @@ describe('alert settings', () => {
   })
 
   it('keeps what is valid and limits the volume', () => {
-    const settings = normalizeAlertSettings({ sound: false, volume: 4, flash: 'until-focus', badge: false, onlyWhenAway: true, sounds: { input: 'off', failed: 'beep' } })
+    const settings = normalizeAlertSettings({ sound: false, volume: 4, flash: 'until-focus', badge: false, onlyWhenAway: true, toasts: false, sounds: { input: 'off', failed: 'beep' } })
     expect(settings).toEqual({
       sound: false,
       volume: 1,
       sounds: { done: 'chime', input: 'off', failed: 'beep' },
       flash: 'until-focus',
       badge: false,
-      onlyWhenAway: true
+      onlyWhenAway: true,
+      toasts: false
     })
     expect(normalizeAlertSettings({ volume: -2 }).volume).toBe(0)
   })

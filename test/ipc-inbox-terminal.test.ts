@@ -237,3 +237,109 @@ describe('Inbox terminal chat launches over IPC', () => {
     expect(pty.dispose).not.toHaveBeenCalled()
   })
 })
+
+describe('Inbox terminal panes agents open', () => {
+  const pane = 'inbox-terminal:tab:inbox-terminal:tab:default:pane:pane-2'
+  let folder: string
+  let saved: Map<string, string>
+  let running: Set<string>
+  const pty = {
+    ensure: vi.fn((id: string, _session: Session, _size: unknown, _palette: unknown, _options?: unknown) => { running.add(id); return 'running' }),
+    savedDirectory: vi.fn((id: string) => saved.get(id)),
+    rememberDirectory: vi.fn((id: string, _session: Session, directory: string) => { saved.set(id, directory) }),
+    terminalInfo: vi.fn((id: string) => (running.has(id) ? { sessionId: 'inbox-terminal', directory: null } : null)),
+    dispose: vi.fn((id: string) => { saved.delete(id) }),
+    writeWhenStarted: vi.fn(() => true),
+    statuses: vi.fn(() => ({})),
+  }
+  let terminals: import('../src/main/mcp/agent-terminals').AgentTerminals
+  const send = vi.fn()
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    folder = await fs.mkdtemp(join(tmpdir(), 'mde-agent-pane-'))
+    saved = new Map()
+    running = new Set()
+    electronMock.handlers.clear()
+    const { AgentTerminals } = await import('../src/main/mcp/agent-terminals')
+    terminals = new AgentTerminals(folder)
+    // The window main asks is the trusted sender itself.
+    Object.assign(security.getWebContents()!, { send })
+    registerIpcHandlers(security, pty as never, {} as never, {} as never, { agentTerminals: terminals } as never)
+  })
+  afterEach(async () => {
+    vi.restoreAllMocks()
+    await fs.rm(folder, { recursive: true, force: true })
+  })
+
+  /** Opens through the coordinator and answers as the window would, with `terminalId`. */
+  const open = async (terminalId: string, target: { kind: 'native' } | { kind: 'wsl'; distro: string } = { kind: 'native' }, command: string | null = 'npm run dev') => {
+    const result = terminals.open({ target, directory: folder, title: 'Dev', command, from: null })
+    await vi.waitFor(() => expect(send).toHaveBeenCalled())
+    const request = send.mock.lastCall![1] as { requestId: string }
+    const claimed = handler(IpcChannels.agentTerminalClaim)(trustedEvent, { requestId: request.requestId, terminalId, palette })
+    return { result, claimed }
+  }
+
+  it.skipIf(process.platform === 'win32')('starts the new pane\'s shell in the background, in the checked directory, and keeps the command for approval', async () => {
+    const { result, claimed } = await open(pane)
+    await claimed
+    await expect(result).resolves.toEqual({ terminalId: pane, command: 'waiting' })
+    expect(pty.ensure).toHaveBeenCalledOnce()
+    const [id, session, , , options] = pty.ensure.mock.calls[0]!
+    expect(id).toBe(pane)
+    expect(session).toMatchObject({ id: 'inbox-terminal', kind: 'native' })
+    expect(options).toEqual({ directory: folder, background: true })
+    expect(pty.writeWhenStarted).not.toHaveBeenCalled()
+
+    await handler(IpcChannels.agentTerminalDecide)(trustedEvent, { terminalId: pane, decision: 'run' })
+    expect(pty.writeWhenStarted).toHaveBeenCalledWith(pane, 'npm run dev\r')
+  })
+
+  it.skipIf(process.platform === 'win32')('runs at once when the person chose so', async () => {
+    await handler(IpcChannels.mdeMcpSetTerminalSettings)(trustedEvent, { commands: 'run' })
+    const { result, claimed } = await open(pane)
+    await claimed
+    await expect(result).resolves.toMatchObject({ command: 'running' })
+    expect(pty.writeWhenStarted).toHaveBeenCalledWith(pane, 'npm run dev\r')
+  })
+
+  it.each([
+    ['a thread\'s own terminal', 'inbox-thread:ses_1'],
+    ['a Sessions pane', 'ses-1:tab:default:pane:pane-1'],
+  ])('refuses %s, so an agent cannot start a shell anywhere but a new Inbox pane', async (_name, terminalId) => {
+    const { result, claimed } = await open(terminalId)
+    await expect(claimed).rejects.toThrow()
+    await expect(result).rejects.toThrow('could not add the pane')
+    expect(pty.ensure).not.toHaveBeenCalled()
+  })
+
+  it('refuses a pane whose shell is already running', async () => {
+    running.add(pane)
+    const { result, claimed } = await open(pane)
+    await expect(claimed).rejects.toThrow()
+    await expect(result).rejects.toThrow()
+    expect(pty.ensure).not.toHaveBeenCalled()
+  })
+
+  it.skipIf(process.platform === 'win32')('refuses a directory in WSL when the Inbox terminal runs natively', async () => {
+    const { result, claimed } = await open(pane, { kind: 'wsl', distro: 'Ubuntu' })
+    await expect(claimed).rejects.toThrow()
+    await expect(result).rejects.toThrow('in WSL (Ubuntu), but the Inbox terminal runs')
+    expect(pty.ensure).not.toHaveBeenCalled()
+  })
+
+  it.skipIf(process.platform === 'win32')('refuses a directory that is gone by the time the shell starts', async () => {
+    await fs.rm(folder, { recursive: true, force: true })
+    const { result, claimed } = await open(pane)
+    await expect(claimed).rejects.toThrow()
+    await expect(result).rejects.toThrow('cannot start in')
+    expect(pty.ensure).not.toHaveBeenCalled()
+    expect(saved.has(pane)).toBe(false)
+  })
+
+  it('validates what the window sends: no other answer, and no extending the hour from outside', async () => {
+    await expect(Promise.resolve().then(() => handler(IpcChannels.agentTerminalDecide)(trustedEvent, { terminalId: pane, decision: 'run-forever' }))).rejects.toThrow('Invalid IPC payload')
+    await expect(Promise.resolve().then(() => handler(IpcChannels.mdeMcpSetTerminalSettings)(trustedEvent, { commands: 'ask', allowedUntil: Date.now() + 1e9 }))).rejects.toThrow('Invalid IPC payload')
+  })
+})

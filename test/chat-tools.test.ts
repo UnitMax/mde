@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatMessage, ChatPart } from '../src/shared/types'
-import { messageBlocks } from '../src/renderer/lib/chat'
 import {
-  activityBlocks,
   activitySummary,
+  commandName,
+  activityNames,
+  activityNamesText,
   answeredQuestions,
   compactFlow,
   compactPlans,
@@ -416,38 +417,11 @@ describe('activity groups', () => {
   const read = (id: string, extra: Partial<ToolPart> = {}): ChatPart => tool('read', { path: `/app/${id}.ts` }, { id, ...extra })
   const shell = (id: string, extra: Partial<ToolPart> = {}): ChatPart => tool('shell', { command: 'ls' }, { id, ...extra })
   const thought: ChatPart = { kind: 'reasoning', text: 'Hmm' }
-  const text: ChatPart = { kind: 'text', text: 'Done' }
   const edit = (id: string): ChatPart => tool('edit', { filePath: 'a.ts', oldString: 'a', newString: 'b' }, { id })
 
-  const lay = (parts: ChatPart[]) => activityBlocks(messageBlocks(parts)).map((block) => block.kind === 'activity'
-    ? `group:${block.items.length}`
-    : block.kind === 'subagents' ? 'subagents' : block.part.kind === 'tool' ? block.part.id : block.part.kind)
-
-  it('folds three or more steps in a row into one group', () => {
-    expect(lay([thought, read('r1'), read('r2'), text])).toEqual(['group:3', 'text'])
-    expect(lay([read('r1'), shell('s1'), read('r2'), shell('s2')])).toEqual(['group:4'])
-  })
-
-  it('leaves one or two steps as rows', () => {
-    expect(lay([thought, read('r1'), text])).toEqual(['reasoning', 'r1', 'text'])
-    expect(lay([read('r1')])).toEqual(['r1'])
-  })
-
-  it('breaks a run at text, at a file change and at subagents', () => {
-    expect(lay([read('r1'), read('r2'), text, read('r3'), read('r4'), read('r5')])).toEqual(['r1', 'r2', 'text', 'group:3'])
-    expect(lay([read('r1'), read('r2'), edit('e1'), read('r3'), read('r4')])).toEqual(['r1', 'r2', 'e1', 'r3', 'r4'])
-    const subagent = tool('subagent', { agent: 'general', description: 'd', prompt: 'p' }, { id: 'sub' })
-    expect(lay([read('r1'), read('r2'), subagent, read('r3')])).toEqual(['r1', 'r2', 'subagents', 'r3'])
-  })
-
-  it('does not count a thought with no words', () => {
-    expect(lay([{ kind: 'reasoning', text: '  ' }, read('r1'), read('r2')])).toEqual(['reasoning', 'r1', 'r2'])
-  })
-
-  it('keeps a failed edit among the rows, with its reason', () => {
+  it('draws a failed edit as a row, with its reason', () => {
     expect(isFeaturedTool(edit('e1'))).toBe(true)
     expect(isFeaturedTool(tool('edit', {}, { status: 'error', error: 'No match' }))).toBe(false)
-    expect(lay([read('r1'), tool('edit', {}, { id: 'bad', status: 'error', error: 'No match' }), read('r2')])).toEqual(['group:3'])
   })
 
   it('draws an answered question as a card and an unanswered one as a row', () => {
@@ -524,6 +498,32 @@ describe('the compact layout', () => {
     expect(draw([step('a', [thought(), text('The answer.')])])).toEqual({ a: ['group:1', 'text'] })
   })
 
+  describe('with the text between steps shown', () => {
+    const drawText = (steps: FlowStep[]): Record<string, string[]> =>
+      Object.fromEntries(
+        [...compactFlow(steps, { showText: true })].map(([id, blocks]) => [
+          id,
+          blocks.map((block) => block.kind === 'activity' ? `group:${block.items.length}` : block.kind === 'part' && block.part.kind === 'tool' ? block.part.id : block.kind === 'part' ? block.part.kind : block.kind),
+        ]),
+      )
+
+    it('draws every text the agent writes, and folds only the thoughts and tool calls between them', () => {
+      expect(drawText([step('a', [text('I will look.'), thought(), read('r1'), text('Now the fix.'), shell('s1'), edit('e1'), text('All done.')])]))
+        .toEqual({ a: ['text', 'group:2', 'text', 'group:2', 'text'] })
+      expect(drawText([step('a', [text('Hmm.'), thought()])])).toEqual({ a: ['text', 'group:1'] })
+    })
+
+    it('still runs a stretch with no words in it on across the steps', () => {
+      expect(drawText([step('a', [shell('s1')]), step('b', [read('r1'), thought()]), step('c', [text('Found it.')]), step('d', [read('r2')])]))
+        .toEqual({ a: ['group:3'], b: [], c: ['text'], d: ['group:1'] })
+    })
+
+    it('keeps the live line at the end of what the agent is doing', () => {
+      const flow = compactFlow([step('a', [text('Looking.'), read('r1')], true)], { showText: true })
+      expect(flow.get('a')!.map((block) => block.kind === 'activity' ? block.live : 'text')).toEqual(['text', true])
+    })
+  })
+
   it('keeps file changes and subagents inside the same stretch of activity', () => {
     expect(draw([step('a', [read('r1'), text('Fixing it.'), edit('e1'), shell('s1'), text('Done.')])])).toEqual({ a: ['group:4', 'text'] })
     expect(draw([step('a', [text('Fixing it.'), edit('e1'), text('Done.')])])).toEqual({ a: ['group:2', 'text'] })
@@ -531,7 +531,26 @@ describe('the compact layout', () => {
     expect(draw([step('a', [read('r1'), subagent, read('r2')])])).toEqual({ a: ['group:3'] })
   })
 
-  it.each(['read', 'write', 'edit', 'patch', 'apply_patch', 'question', 'subagent', 'task', 'shell', 'bash', 'grep', 'glob', 'webfetch', 'websearch', 'lookup', 'todo', 'skill', 'execute', 'custom-tool'])(
+  it('draws subagents as their cards when asked, ending the stretch before them', () => {
+    const subagent = (id: string) => tool('subagent', { agent: 'general', description: id, prompt: 'p' }, { id })
+    const drawCards = (steps: FlowStep[], showText = false): Record<string, string[]> =>
+      Object.fromEntries(
+        [...compactFlow(steps, { showSubagents: true, showText })].map(([id, blocks]) => [
+          id,
+          blocks.map((block) => block.kind === 'activity' ? `group:${block.items.length}` : block.kind === 'subagents' ? `subagents:${block.parts.map((part) => part.id).join(',')}` : block.part.kind),
+        ]),
+      )
+    expect(drawCards([step('a', [read('r1'), subagent('s1'), subagent('s2'), read('r2'), text('Done.')])]))
+      .toEqual({ a: ['group:1', 'subagents:s1,s2', 'group:1', 'text'] })
+    // Plain compact still folds the words before a subagent; with text they are drawn.
+    expect(drawCards([step('a', [text('Asking for help.'), subagent('s1'), text('Done.')])])).toEqual({ a: ['group:1', 'subagents:s1', 'text'] })
+    expect(drawCards([step('a', [text('Asking for help.'), subagent('s1'), text('Done.')])], true)).toEqual({ a: ['text', 'subagents:s1', 'text'] })
+    // Subagents in separate steps are separate groups; a stretch does not run on across them.
+    expect(drawCards([step('a', [shell('x'), subagent('s1')]), step('b', [subagent('s2'), read('r1')])]))
+      .toEqual({ a: ['group:1', 'subagents:s1'], b: ['subagents:s2', 'group:1'] })
+  })
+
+  it.each(['read', 'write', 'edit', 'patch', 'apply_patch', 'subagent', 'task', 'shell', 'bash', 'grep', 'glob', 'webfetch', 'websearch', 'lookup', 'todo', 'skill', 'execute', 'custom-tool'])(
     'keeps %s in one compact group across pending, running, completed and failed states', (name) => {
       for (const status of ['pending', 'running', 'completed', 'error'] as const) {
         const call = tool(name, { patchText: '*** Begin Patch\n*** Add File: a.ts\n+hello\n*** End Patch', questions: [{ question: 'Which?' }] }, { id: 'call', status, answers: [['A']] })
@@ -540,6 +559,49 @@ describe('the compact layout', () => {
       }
     },
   )
+
+  describe('around a question', () => {
+    const question = (id: string, extra: Partial<ToolPart> = {}): ChatPart => tool('question', { questions: [{ question: 'Which?' }] }, { id, ...extra })
+
+    it('shows the words that lead up to a question, and the question, in every state', () => {
+      for (const status of ['pending', 'running', 'completed', 'error'] as const) {
+        expect(draw([step('a', [read('r1'), thought(), text('Two ways to fix it: A or B.'), question('q', { status, answers: [['A']] })])]))
+          .toEqual({ a: ['group:2', 'text', 'q'] })
+      }
+    })
+
+    it('ends the stretch at the question, so the work after the answer is a line of its own', () => {
+      expect(draw([
+        step('a', [text('Looking.'), read('r1'), text('Found two causes.'), question('q')]),
+        step('b', [thought(), edit('e1'), shell('s1')]),
+        step('c', [text('Fixed.')]),
+      ])).toEqual({ a: ['group:2', 'text', 'q'], b: ['group:3'], c: ['text'] })
+    })
+
+    it('shows only the words since the last tool call before the question', () => {
+      expect(draw([step('a', [text('I will look.'), read('r1'), text('The cause is X.'), text('Which fix?'), question('q')])]))
+        .toEqual({ a: ['group:2', 'text', 'text', 'q'] })
+      // The words may end one step and the question start the next.
+      expect(draw([step('a', [shell('s1'), text('Pick one.')]), step('b', [question('q')])])).toEqual({ a: ['group:1', 'text'], b: ['q'] })
+    })
+
+    it('keeps a thought between the words and the question as a line of its own', () => {
+      expect(draw([step('a', [read('r1'), text('Two options.'), thought(), question('q')])])).toEqual({ a: ['group:1', 'text', 'group:1', 'q'] })
+    })
+
+    it('draws a question asked with no words before it on its own', () => {
+      expect(draw([step('a', [read('r1'), question('q'), read('r2')])])).toEqual({ a: ['group:1', 'q', 'group:1'] })
+      expect(draw([step('a', [question('q')])])).toEqual({ a: ['q'] })
+    })
+
+    it('has no live group while the agent waits for an answer, and a new live one once it works on', () => {
+      const groups = (steps: FlowStep[]) => [...compactFlow(steps).values()].flat()
+        .filter((block): block is Extract<RenderBlock, { kind: 'activity' }> => block.kind === 'activity')
+        .map((group) => group.live)
+      expect(groups([step('a', [read('r1'), text('Which?'), question('q', { status: 'running' })], true)])).toEqual([false])
+      expect(groups([step('a', [read('r1'), text('Which?'), question('q')]), step('b', [shell('s1')], true)])).toEqual([false, true])
+    })
+  })
 
   it('runs a stretch on across the steps of the agent, and draws it where it starts', () => {
     const flow = compactFlow([
@@ -665,5 +727,54 @@ describe('the compact layout', () => {
       expect(samePlan(grown.get('a1')!, after.get('a1')!)).toBe(false)
       expect(grown.get('a2')).toEqual([])
     })
+  })
+})
+
+describe('the names of the commands a line ran', () => {
+  it('names the program, without its folder, settings or wrappers', () => {
+    expect(commandName('echo "step 2"')).toBe('echo')
+    expect(commandName('curl -s https://example.com | jq .')).toBe('curl')
+    expect(commandName('FOO=1 sudo /usr/bin/python3 x.py')).toBe('python3')
+    expect(commandName('timeout 30 node build.js')).toBe('node')
+    expect(commandName('C:\\Tools\\rg.exe foo')).toBe('rg')
+  })
+
+  it('keeps the subcommand of programs that have them', () => {
+    expect(commandName('git status --short')).toBe('git status')
+    expect(commandName('npm run build -- --watch')).toBe('npm run build')
+    expect(commandName('npx vitest run')).toBe('npx vitest')
+    expect(commandName('git -C app log')).toBe('git')
+  })
+
+  it('names the first step of a chain that does more than set up', () => {
+    expect(commandName('cd app && npm test')).toBe('npm test')
+    expect(commandName('export X=1; make')).toBe('make')
+    expect(commandName('cd app')).toBe('cd')
+    expect(commandName('# list them\nls -la')).toBe('ls')
+    expect(commandName('   ')).toBeNull()
+  })
+
+  it('counts and names each tool a Code Mode script called, and the tools called on their own', () => {
+    const script = tool('execute', { code: 'await tool.search()' }, {
+      calls: [
+        { tool: 'tool.search', status: 'completed', input: '{"query":"show_view"}' },
+        { tool: 'tool.search', status: 'completed', input: '{"query":"view"}' },
+        { tool: 'mde.show_view', status: 'completed', input: '{}' },
+      ],
+    })
+    const parts: ChatPart[] = [{ kind: 'reasoning', text: 'Hmm' }, script, tool('shell', { command: 'echo a' }), tool('mde_open_terminal', {})]
+    expect(activitySummary(parts)).toBe('Thought, ran 1 command and called 4 tools')
+    expect(activityNames(parts)).toEqual(['tool.search', 'mde.show_view', 'echo', 'mde_open_terminal'])
+    // A script that has not called anything yet is one tool, with no name to give.
+    expect(activitySummary([tool('execute', { code: '' })])).toBe('Called 1 tool')
+    expect(activityNames([tool('execute', { code: '' })])).toEqual([])
+  })
+
+  it('lists each command once, in order, and says how many more there are', () => {
+    const shell = (command: string): ChatPart => tool('shell', { command })
+    const parts: ChatPart[] = [shell('echo a'), { kind: 'reasoning', text: 'Hmm' }, shell('curl x'), shell('echo b'), tool('read', { path: 'a.ts' })]
+    expect(activityNames(parts)).toEqual(['echo', 'curl'])
+    expect(activityNamesText(['echo', 'curl'])).toBe('echo, curl')
+    expect(activityNamesText(['echo', 'curl', 'git status', 'ls', 'make'])).toBe('echo, curl, git status +2')
   })
 })

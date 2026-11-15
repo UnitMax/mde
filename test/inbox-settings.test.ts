@@ -5,10 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { InboxPanel } from '../src/renderer/components/InboxPanel'
 import {
   getInboxModelQuickSwitch,
+  getInboxNextSuggestion,
   getInboxSidebarChanges,
   INBOX_MODEL_QUICK_SWITCH_STORAGE_KEY,
+  INBOX_NEXT_SUGGESTION_STORAGE_KEY,
   INBOX_SIDEBAR_CHANGES_STORAGE_KEY,
   saveInboxModelQuickSwitch,
+  saveInboxNextSuggestion,
   saveInboxSidebarChanges
 } from '../src/renderer/lib/inbox-settings'
 import { useInboxView } from '../src/renderer/store/inbox-view'
@@ -39,7 +42,6 @@ describe('Inbox display setting for Git changes', () => {
       platform: { platform: 'darwin', isWindows: false },
       inboxThreads: [thread],
       selectedInboxThreadId: null,
-      inboxMarkedUnread: {},
       inboxCues: {},
       activeWorkspaceView: 'inbox',
     })
@@ -118,7 +120,7 @@ describe('Inbox display setting for the model quick switch', () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     vi.stubGlobal('IntersectionObserver', undefined)
     vi.stubGlobal('api', { inbox: { changes, setRead: vi.fn(async () => null), setArchived: vi.fn(async () => null) } })
-    useWorkspace.setState({ platform: { platform: 'darwin', isWindows: false }, inboxThreads: [thread], selectedInboxThreadId: null, inboxMarkedUnread: {}, inboxCues: {}, activeWorkspaceView: 'inbox' })
+    useWorkspace.setState({ platform: { platform: 'darwin', isWindows: false }, inboxThreads: [thread], selectedInboxThreadId: null, inboxCues: {}, activeWorkspaceView: 'inbox' })
     useInboxChanges.setState({ entries: {}, selectedPath: null, tab: 'files', sidebarChanges: false })
     useInboxView.setState({ modelQuickSwitch: true })
     container = document.createElement('div')
@@ -156,5 +158,24 @@ describe('Inbox display setting for the model quick switch', () => {
     expect(localStorage.getItem(INBOX_MODEL_QUICK_SWITCH_STORAGE_KEY)).toBe('off')
     await openMenu()
     expect(entry().getAttribute('aria-checked')).toBe('false')
+  })
+})
+
+describe('Inbox setting for the next-message suggestion', () => {
+  beforeEach(() => localStorage.clear())
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('is off until it is turned on, and an unreadable or unknown stored value is off too', () => {
+    expect(getInboxNextSuggestion()).toBe(false)
+    saveInboxNextSuggestion(true)
+    expect(localStorage.getItem(INBOX_NEXT_SUGGESTION_STORAGE_KEY)).toBe('on')
+    expect(getInboxNextSuggestion()).toBe(true)
+    saveInboxNextSuggestion(false)
+    expect(localStorage.getItem(INBOX_NEXT_SUGGESTION_STORAGE_KEY)).toBe('off')
+    expect(getInboxNextSuggestion()).toBe(false)
+    localStorage.setItem(INBOX_NEXT_SUGGESTION_STORAGE_KEY, 'maybe')
+    expect(getInboxNextSuggestion()).toBe(false)
+    vi.stubGlobal('localStorage', { getItem: () => { throw new Error('blocked') } })
+    expect(getInboxNextSuggestion()).toBe(false)
   })
 })

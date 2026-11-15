@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { MdeMcpSettings } from '@/components/inbox/MdeMcpSettings'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { AboutSettingsPanel } from '@/components/AboutSettingsPanel'
@@ -428,6 +429,8 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
                     Edit configuration…
                   </Button>
                 </div>
+
+                <MdeMcpSettings />
               </section>
             )}
 

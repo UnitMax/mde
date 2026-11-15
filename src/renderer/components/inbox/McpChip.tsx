@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, LoaderCircle, Plug } from 'lucide-react'
+import { MDE_MCP_SERVER_NAME } from '@shared/mde-mcp'
 import type { ChatMcpServer, ChatMessage } from '@shared/types'
 import {
   DropdownMenu,
@@ -24,6 +25,7 @@ import {
 } from '@/lib/mcp'
 import { cn } from '@/lib/utils'
 import { useInboxMcp, type McpPlace } from '@/store/inbox-mcp'
+import { useWorkspace } from '@/store/workspace'
 
 const TONE_DOT: Record<McpTone, string> = {
   danger: 'bg-danger',
@@ -158,6 +160,7 @@ export function McpChip({
   const watch = useInboxMcp((state) => state.watch)
   const load = useInboxMcp((state) => state.load)
   const setEnabled = useInboxMcp((state) => state.setEnabled)
+  const openSettings = useWorkspace((state) => state.openSettings)
   const [announcement, setAnnouncement] = useState('')
   // The place is rebuilt on every render; what it points at only changes with these.
   useEffect(() => watch(place), [watch, key, place.request.folderId, place.request.threadId]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -216,6 +219,11 @@ export function McpChip({
               />
             ))}
           </div>
+          {!servers.some((server) => server.name === MDE_MCP_SERVER_NAME) && (
+            <DropdownMenuItem data-testid="chat-mcp-install-mde" onSelect={() => openSettings('opencode')} className="text-[12px] text-fg-muted">
+              Let agents start threads: install the MDE MCP…
+            </DropdownMenuItem>
+          )}
           <DropdownMenuSeparator />
           <p className="px-2 pb-1 pt-0.5 text-[11px] leading-snug text-fg-muted">
             Changes last until OpenCode restarts. Your configuration is not changed.

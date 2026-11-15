@@ -188,6 +188,8 @@ describe('trusted Windows Git executable resolution', () => {
       } finally {
         await rm(temporaryRoot, { recursive: true, force: true })
       }
-    }
+    },
+    // Five real Git processes; a busy Windows runner has taken longer than the default 5 s for them.
+    30_000,
   )
 })

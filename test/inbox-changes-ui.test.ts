@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act, createElement, Fragment, type ReactElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('../src/renderer/components/inbox/InboxTerminal', () => ({
   // The real one draws xterm.js, which needs a real browser; its own tests use a stand-in for the terminal view.
   InboxTerminal: () => createElement('div', { 'data-testid': 'inbox-terminal-stub' }),
@@ -12,7 +12,12 @@ import { useInboxFloatingTerminal } from '../src/renderer/store/inbox-floating-t
 import { CHANGES_LIST_LIMIT, InboxChangesBadge, InboxChangeViewer, InboxSidebar } from '../src/renderer/components/inbox/InboxChanges'
 import { useInboxChanges, inboxChangesKey } from '../src/renderer/store/inbox-changes'
 import { useWorkspace } from '../src/renderer/store/workspace'
-import type { InboxChangeDiff, InboxChangesResponse, InboxThread, DirectoryContext } from '../src/shared/types'
+import { useInboxChat } from '../src/renderer/store/inbox-chat'
+import { useInboxView } from '../src/renderer/store/inbox-view'
+import { useInboxMcp } from '../src/renderer/store/inbox-mcp'
+import { useInboxSavedPermissions } from '../src/renderer/store/inbox-saved-permissions'
+import { mcpKey } from '../src/renderer/lib/mcp'
+import type { ChatMessage, ChatPart, InboxChangeDiff, InboxChangesResponse, InboxThread, DirectoryContext } from '../src/shared/types'
 
 const thread: InboxThread = { id: 'ses_one', title: 'Fix', directory: '/home/me/app', target: { kind: 'native' }, branch: 'main', folderId: 'fld_app', createdAt: 1, lastActivityAt: 1, readAt: 0, archived: false, status: 'completed' }
 const value: InboxChangesResponse = { available: true, branch: 'main', worktree: '/home/me/app', additions: 2, deletions: 1, fileCount: 1, files: [{ path: 'src/a.ts', status: 'modified', additions: 2, deletions: 1 }] }
@@ -50,7 +55,7 @@ beforeEach(() => {
   })
   changes.mockReset().mockResolvedValue(value)
   changeDiff.mockReset().mockResolvedValue(diff)
-  useWorkspace.setState({ inboxThreads: [thread], selectedInboxThreadId: thread.id, inboxMarkedUnread: {}, inboxCues: {}, activeWorkspaceView: 'inbox', fileTreeCollapsed: false, openFiles: {} })
+  useWorkspace.setState({ inboxThreads: [thread], selectedInboxThreadId: thread.id, inboxCues: {}, activeWorkspaceView: 'inbox', fileTreeCollapsed: false, openFiles: {} })
   useInboxChanges.setState({ entries: {}, selectedPath: null, tab: 'files' })
   container = document.createElement('div')
   document.body.append(container)
@@ -424,13 +429,13 @@ it('accepts slow poll results instead of discarding them each time a timer fires
   }
 })
 
-const tab = (name: 'files' | 'changes' | 'terminal'): HTMLButtonElement | null => container.querySelector(`[data-testid="inbox-sidebar-tab-${name}"]`)
+const tab = (name: 'files' | 'changes' | 'tools' | 'permissions' | 'terminal'): HTMLButtonElement | null => container.querySelector(`[data-testid="inbox-sidebar-tab-${name}"]`)
 const changesPanel = (): HTMLElement | null => container.querySelector('[data-testid="inbox-changes-panel"]')
 const sidebar = (): Promise<void> => render(createElement(InboxSidebar, { session, threadId: thread.id }), viewerFor(thread.id))
 
-it('offers Files, Changes and Terminal tabs for an open thread, starting on Files', async () => {
+it('offers Files, Changes, Tools and Terminal tabs for an open thread, starting on Files', async () => {
   await sidebar()
-  expect(Array.from(container.querySelectorAll('[role="tab"]')).map((item) => item.textContent?.replace(/\d+$/, ''))).toEqual(['Files', 'Changes', 'Terminal'])
+  expect(Array.from(container.querySelectorAll('[role="tab"]')).map((item) => item.textContent?.replace(/\d+$/, ''))).toEqual(['Files', 'Changes', 'Tools', 'Terminal'])
   expect(tab('files')?.getAttribute('aria-selected')).toBe('true')
   expect(tab('changes')?.getAttribute('aria-selected')).toBe('false')
   expect(container.querySelector('[data-testid="file-tree-panel"]')?.textContent).toContain('README.md')
@@ -446,7 +451,7 @@ it('shows the changes on the Changes tab, the same view as the popover, and revi
   expect(changesPanel()?.textContent).toContain('Uncommitted changes against HEAD')
   expect(changes).toHaveBeenLastCalledWith({ threadId: thread.id, details: true })
   // Only the tab on screen carries tabs.
-  expect(container.querySelectorAll('[role="tab"]')).toHaveLength(3)
+  expect(container.querySelectorAll('[role="tab"]')).toHaveLength(4)
   const row = changesPanel()!.querySelector<HTMLButtonElement>('[data-testid="inbox-changes-file"]')!
   expect(row.getAttribute('aria-current')).toBeNull()
   await act(async () => row.click())
@@ -456,6 +461,27 @@ it('shows the changes on the Changes tab, the same view as the popover, and revi
   // The review stays while the tab changes; it is a file from the tree that replaces it.
   await act(async () => tab('files')!.click())
   expect(container.querySelector('[data-testid="inbox-change-viewer"]')).not.toBeNull()
+})
+
+it('says the folder is gone for a thread whose worktree was deleted, and asks nothing of it', async () => {
+  const worktree = { repository: '/home/me/app', root: '/home/me/.mde/worktrees/app-abc/1a2b3c4d', branch: 'mde/1a2b3c4d', base: 'main' }
+  useWorkspace.setState({ inboxThreads: [{ ...thread, worktree, worktreeRemovedAt: 5 }] })
+  const list = (window as unknown as { api: { files: { list: ReturnType<typeof vi.fn> } } }).api.files.list
+  list.mockClear()
+  changes.mockClear()
+  await sidebar()
+  const panel = (): HTMLElement | null => container.querySelector('[data-testid="inbox-deleted-worktree-panel"]')
+  expect(panel()?.textContent).toContain('No files to show.')
+  expect(container.querySelector('[data-testid="file-tree-panel"]')).toBeNull()
+  await act(async () => tab('changes')!.click())
+  expect(panel()?.textContent).toContain('No changes to show.')
+  expect(panel()?.textContent).toContain('mde/1a2b3c4d')
+  expect(changesPanel()).toBeNull()
+  // The terminal is the Inbox's own, not the thread's, so it stays.
+  await act(async () => tab('terminal')!.click())
+  expect(panel()).toBeNull()
+  expect(list).not.toHaveBeenCalled()
+  expect(changes).not.toHaveBeenCalled()
 })
 
 it('keeps the file tree mounted behind Changes, so it comes back as it was', async () => {
@@ -484,6 +510,8 @@ it('moves between the tabs with the arrow keys, Home and End', async () => {
   expect(tab('changes')?.getAttribute('aria-selected')).toBe('true')
   expect(document.activeElement).toBe(tab('changes'))
   await key('ArrowRight')
+  expect(useInboxChanges.getState().tab).toBe('tools')
+  await key('ArrowRight')
   expect(useInboxChanges.getState().tab).toBe('terminal')
   // The ends are joined, as in any set of tabs.
   await key('ArrowRight')
@@ -491,7 +519,7 @@ it('moves between the tabs with the arrow keys, Home and End', async () => {
   await key('ArrowLeft')
   expect(useInboxChanges.getState().tab).toBe('terminal')
   await key('ArrowLeft')
-  expect(tab('changes')?.getAttribute('aria-selected')).toBe('true')
+  expect(tab('tools')?.getAttribute('aria-selected')).toBe('true')
   await key('End')
   expect(useInboxChanges.getState().tab).toBe('terminal')
   await key('Home')
@@ -550,7 +578,7 @@ it('shows the terminal on the Terminal tab, with the tabs and the collapse butto
   await act(async () => tab('terminal')!.click())
   expect(tab('terminal')?.getAttribute('aria-selected')).toBe('true')
   expect(terminalPanel()?.querySelector('[data-testid="inbox-terminal-stub"]')).not.toBeNull()
-  expect(terminalPanel()?.querySelectorAll('[role="tab"]')).toHaveLength(3)
+  expect(terminalPanel()?.querySelectorAll('[role="tab"]')).toHaveLength(4)
   expect(terminalPanel()?.querySelector('[aria-label="Collapse sidebar"]')).not.toBeNull()
   expect(container.querySelector('[data-testid="file-tree-panel"]')).toBe(tree)
   expect(tree?.closest('[data-testid="inbox-files-panel"]')?.className).toContain('hidden')
@@ -595,6 +623,35 @@ it('takes the keyboard to the terminal when the tab is clicked, but not when it 
   expect(focusInboxTerminalWhenShown).toHaveBeenCalledTimes(1)
 })
 
+it('keeps the tab strip alone in the header, and gives every tab a footer with Float and Collapse at its right end', async () => {
+  useInboxChat.setState({ threads: {} })
+  await sidebar()
+  for (const name of ['files', 'changes', 'tools', 'terminal'] as const) {
+    await act(async () => tab(name)!.click())
+    const strip = container.querySelector('[role="tablist"]')!
+    const header = strip.parentElement!.parentElement!
+    expect(header.querySelectorAll('button:not([role="tab"]):not([data-testid^="scroll-strip"])')).toHaveLength(0)
+    const footers = Array.from(container.querySelectorAll<HTMLElement>('[data-testid="sidebar-footer"]')).filter((item) => item.closest('.hidden') === null)
+    expect(footers).toHaveLength(1)
+    expect(footers[0]!.className).toContain('h-9')
+    const buttons = Array.from(footers[0]!.querySelectorAll('button'))
+    expect(buttons.at(-2)?.getAttribute('aria-label')).toBe('Float as a menu')
+    expect(buttons.at(-1)?.getAttribute('aria-label')).toMatch(/^Collapse (sidebar|files)$/)
+  }
+})
+
+it('expands the collapsed sidebar from the bottom of its rail, where the footer collapsed it', async () => {
+  await sidebar()
+  const collapse = container.querySelector<HTMLButtonElement>('[data-testid="sidebar-footer"] [aria-label="Collapse files"]')!
+  await act(async () => collapse.click())
+  const rail = container.querySelector<HTMLElement>('[data-testid="file-tree-rail"]')!
+  expect(rail.className).toContain('justify-end')
+  const strip = rail.lastElementChild as HTMLElement
+  expect(strip.className).toContain('h-9')
+  expect(strip.querySelector('[aria-label="Expand files"]')).not.toBeNull()
+  useWorkspace.setState({ fileTreeCollapsed: false })
+})
+
 it('puts every panel in the resizable frame, but not the collapsed rail', async () => {
   await sidebar()
   expect(container.querySelector('[data-testid="inbox-sidebar-frame"] [data-testid="file-tree-panel"]')).not.toBeNull()
@@ -604,4 +661,309 @@ it('puts every panel in the resizable frame, but not the collapsed rail', async 
   await sidebar()
   expect(container.querySelector('[data-testid="inbox-sidebar-frame"]')).toBeNull()
   expect(container.querySelector('[aria-label="Expand files"]')).not.toBeNull()
+})
+
+describe('Tools tab', () => {
+  const toolPart = (id: string, name: string, input: unknown, extra: Partial<Extract<ChatPart, { kind: 'tool' }>> = {}): ChatPart =>
+    ({ kind: 'tool', id, name, status: 'completed', input: JSON.stringify(input), ...extra })
+  const conversation: ChatMessage[] = [
+    { kind: 'user', id: 'msg_1', time: 1, text: 'Fix the build' },
+    {
+      kind: 'assistant', id: 'msg_2', time: 2, agent: 'build', model: { id: 'm', providerId: 'p' }, completed: true, parts: [
+        toolPart('t1', 'read', { filePath: '/home/me/app/src/a.ts' }, { output: 'line one', durationMs: 12 }),
+        toolPart('t2', 'bash', { command: 'npm test' }, { status: 'error', error: 'Tests failed' }),
+        toolPart('t3', 'github_search_issues', { query: 'flaky' }, { output: '{"total":2}' }),
+      ],
+    },
+  ]
+  const toolsPanel = (): HTMLElement | null => container.querySelector('[data-testid="inbox-tools-panel"]')
+  const rowIds = (): string[] => Array.from(toolsPanel()?.querySelectorAll('li[data-testid^="inbox-tool-"]') ?? []).map((item) => item.getAttribute('data-testid')!.slice('inbox-tool-'.length))
+  const seed = (messages: ChatMessage[], older: string | null = null): void => {
+    useInboxChat.setState({ threads: { [thread.id]: { messages, older, running: false, loading: false, loadingOlder: false, error: null, requests: { permissions: [], forms: [] }, live: [], usage: null, revert: null, notice: null, pending: [], compactionHeld: false, goal: null } } })
+    useInboxMcp.setState({ entries: { [mcpKey(thread.target, thread.directory)]: { state: 'ready', servers: [], names: ['github'], busy: {}, rowError: {}, loadedAt: 1 } } } as never)
+  }
+  afterEach(() => {
+    useInboxChat.setState({ threads: {} })
+    useInboxMcp.setState({ entries: {} } as never)
+    useInboxView.setState({ toolTurns: false })
+    localStorage.removeItem('mde.inbox-tool-turns')
+  })
+
+  it('counts the calls on the tab and lists them one after another', async () => {
+    seed(conversation)
+    await sidebar()
+    expect(container.querySelector('[data-testid="inbox-tools-count"]')?.textContent).toBe('3')
+    await act(async () => tab('tools')!.click())
+    expect(toolsPanel()).not.toBeNull()
+    expect(toolsPanel()?.querySelector('[data-testid="inbox-tools-flat"]')).not.toBeNull()
+    expect(toolsPanel()?.querySelector('[data-testid="inbox-tool-turn-msg_1"]')).toBeNull()
+    // Commands and MCP calls by default; the file read shows with All.
+    expect(container.querySelector('[data-testid="inbox-tools-filter-actions"]')?.getAttribute('aria-checked')).toBe('true')
+    expect(rowIds()).toEqual(['t2', 't3'])
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="inbox-tools-filter-all"]')!.click())
+    expect(rowIds()).toEqual(['t1', 't2', 't3'])
+    expect(toolsPanel()?.querySelector('[data-testid="inbox-tool-t1"]')?.textContent).toContain('src/a.ts')
+    expect(toolsPanel()?.querySelector('[data-testid="inbox-tool-t3"]')?.textContent).toContain('github')
+    expect(toolsPanel()?.querySelector('[data-testid="inbox-tool-t2"]')?.hasAttribute('data-failed')).toBe(true)
+  })
+
+  it('narrows to MCP calls or failures, searches, and opens a call onto its input and output', async () => {
+    seed(conversation)
+    useInboxChanges.setState({ tab: 'tools' })
+    await sidebar()
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="inbox-tools-filter-mcp"]')!.click())
+    expect(rowIds()).toEqual(['t3'])
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="inbox-tools-filter-failed"]')!.click())
+    expect(rowIds()).toEqual(['t2'])
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="inbox-tools-filter-all"]')!.click())
+    const search = container.querySelector<HTMLInputElement>('[data-testid="inbox-tools-search"]')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'nothing like it')
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(rowIds()).toEqual([])
+    expect(container.querySelector('[data-testid="inbox-tools-empty"]')?.textContent).toContain('No tool calls match')
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Clear search"]')!.click())
+    expect(rowIds()).toEqual(['t1', 't2', 't3'])
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="inbox-tool-t2"] button')!.click())
+    const detail = container.querySelector('[data-testid="inbox-tool-t2"] [data-testid="inbox-tool-detail"]')
+    expect(detail?.textContent).toContain('npm test')
+    expect(detail?.textContent).toContain('Tests failed')
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="inbox-tool-t1"] button')!.click())
+    expect(container.querySelector('[data-testid="inbox-tool-t1"] [data-testid="inbox-tool-output"]')?.textContent).toBe('line one')
+  })
+
+  it('shows the messages the calls answered when asked, and remembers it', async () => {
+    seed(conversation)
+    useInboxChanges.setState({ tab: 'tools' })
+    await sidebar()
+    const toggle = container.querySelector<HTMLButtonElement>('[data-testid="inbox-tools-turns"]')!
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    await act(async () => toggle.click())
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    expect(toolsPanel()?.querySelector('[data-testid="inbox-tool-turn-msg_1"]')?.textContent).toContain('Fix the build')
+    expect(toolsPanel()?.querySelector('[data-testid="inbox-tools-flat"]')).toBeNull()
+    expect(rowIds()).toEqual(['t2', 't3'])
+    expect(localStorage.getItem('mde.inbox-tool-turns')).toBe('on')
+  })
+
+  it('shows an icon and what each call did, not the kind of call', async () => {
+    const execute = toolPart('t4', 'execute', { code: '' }, { calls: [{ tool: 'github.search', status: 'completed', input: '{}' }] })
+    seed([conversation[0]!, { ...(conversation[1] as Extract<ChatMessage, { kind: 'assistant' }>), parts: [...(conversation[1] as Extract<ChatMessage, { kind: 'assistant' }>).parts, execute] }])
+    useInboxChanges.setState({ tab: 'tools' })
+    await sidebar()
+    const row = (id: string): string => toolsPanel()!.querySelector(`[data-testid="inbox-tool-${id}"] button`)!.textContent ?? ''
+    expect(row('t2')).toContain('npm test')
+    expect(row('t2')).not.toContain('Shell')
+    expect(row('t4')).not.toContain('Code Mode')
+    // A direct MCP call keeps its tool's name: that is what it did.
+    expect(row('t3')).toContain('github.search_issues')
+    expect(row('t3')).toContain('query: flaky')
+    // Every row says it in the same code type, with nothing in a chip or in the plain type of a heading.
+    const rows = Array.from(toolsPanel()!.querySelectorAll('li[data-testid^="inbox-tool-"] button'))
+    expect(rows.every((item) => item.querySelector('.inbox-code-font [data-testid="inbox-tool-name"]'))).toBe(true)
+    expect(rows.some((item) => item.querySelector('.font-medium'))).toBe(false)
+    expect(toolsPanel()!.querySelector('[data-testid="inbox-tool-t2"] button')!.getAttribute('title')).toBe('Shell: npm test')
+  })
+
+  it('folds a turn, and offers to load earlier messages when the start is not loaded', async () => {
+    seed(conversation, 'cursor')
+    const loadOlder = vi.fn(async () => undefined)
+    useInboxChat.setState({ loadOlder })
+    useInboxChanges.setState({ tab: 'tools' })
+    useInboxView.setState({ toolTurns: true })
+    await sidebar()
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="inbox-tool-turn-msg_1"] > button')!.click())
+    expect(rowIds()).toEqual([])
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="inbox-tools-load-older"]')!.click())
+    expect(loadOlder).toHaveBeenCalledWith(thread.id)
+  })
+
+  it('offers every call when the default view has none of its own', async () => {
+    seed([conversation[0]!, { ...(conversation[1] as Extract<ChatMessage, { kind: 'assistant' }>), parts: [toolPart('t1', 'read', { filePath: '/home/me/app/a.ts' })] }])
+    useInboxChanges.setState({ tab: 'tools' })
+    await sidebar()
+    expect(rowIds()).toEqual([])
+    expect(container.querySelector('[data-testid="inbox-tools-empty"]')?.textContent).toContain('No commands or MCP calls yet')
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="inbox-tools-show-all"]')!.click())
+    expect(rowIds()).toEqual(['t1'])
+  })
+
+  it('says when there are no calls yet, and is not offered for a terminal thread', async () => {
+    seed([{ kind: 'user', id: 'msg_1', time: 1, text: 'Hi' }])
+    useInboxChanges.setState({ tab: 'tools' })
+    await sidebar()
+    expect(container.querySelector('[data-testid="inbox-tools-empty"]')?.textContent).toContain('No tool calls yet')
+    expect(container.querySelector('[data-testid="inbox-tools-count"]')).toBeNull()
+    useWorkspace.setState({ inboxThreads: [{ ...thread, mode: 'terminal' }] })
+    await sidebar()
+    expect(tab('tools')).toBeNull()
+    expect(tab('files')?.getAttribute('aria-selected')).toBe('true')
+  })
+})
+
+describe('Floating menu', () => {
+  const menu = (): HTMLElement | null => container.querySelector('[data-testid="inbox-sidebar-menu"]')
+  const click = (selector: string): Promise<void> => act(async () => { container.querySelector<HTMLElement>(selector)!.click() })
+  beforeEach(() => {
+    localStorage.clear()
+    useInboxView.setState({ sidebarFloating: false, floatingSection: null })
+    useInboxChat.setState({ threads: { [thread.id]: { messages: [
+      { kind: 'user', id: 'msg_1', time: 1, text: 'Go' },
+      { kind: 'assistant', id: 'msg_2', time: 2, agent: 'build', model: { id: 'm', providerId: 'p' }, completed: true, parts: [
+        { kind: 'tool', id: 't1', name: 'read', status: 'completed', input: '{}' },
+        { kind: 'tool', id: 't2', name: 'bash', status: 'completed', input: '{"command":"false"}', exitCode: 1 },
+      ] },
+    ], older: null, running: false, loading: false, loadingOlder: false, error: null, requests: { permissions: [], forms: [] }, live: [], usage: null, revert: null, notice: null, pending: [], compactionHeld: false, goal: null } } })
+  })
+  afterEach(() => {
+    useInboxView.setState({ sidebarFloating: false, floatingSection: null })
+    useInboxChat.setState({ threads: {} })
+    useInboxChanges.setState({ graphThreadId: null })
+  })
+
+  it('floats the docked sidebar as a menu card, kept between runs, and docks it again', async () => {
+    await sidebar()
+    expect(menu()).toBeNull()
+    await click('[data-testid="inbox-sidebar-float"]')
+    expect(useInboxView.getState().sidebarFloating).toBe(true)
+    expect(localStorage.getItem('mde.inbox-sidebar-floating')).toBe('on')
+    expect(menu()).not.toBeNull()
+    expect(container.querySelector('[data-testid="inbox-sidebar-frame"]')).toBeNull()
+    expect(container.querySelector('[role="tablist"]')).toBeNull()
+    await click('[data-testid="inbox-menu-dock"]')
+    expect(useInboxView.getState().sidebarFloating).toBe(false)
+    expect(menu()).toBeNull()
+    expect(container.querySelector('[role="tablist"]')).not.toBeNull()
+  })
+
+  it('sums up the changes and tool calls, and opens one section at a time below its row, inside the card', async () => {
+    useInboxView.setState({ sidebarFloating: true })
+    await sidebar()
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="inbox-menu-changes"]')?.textContent).toContain('+2'))
+    expect(container.querySelector('[data-testid="inbox-menu-changes"]')?.textContent).toContain('−1')
+    expect(container.querySelector('[data-testid="inbox-menu-graph"]')?.textContent).toContain('main')
+    expect(container.querySelector('[data-testid="inbox-menu-tools"]')?.textContent).toContain('1 action')
+    expect(container.querySelector('[data-testid="inbox-menu-tools"]')?.textContent).toContain('1 failed')
+    await click('[data-testid="inbox-menu-changes"]')
+    expect(menu()?.querySelector('[data-testid="inbox-menu-changes-panel"] [data-testid="inbox-changes-file"]')?.textContent).toContain('a.ts')
+    expect(container.querySelector('[data-testid="inbox-menu-changes"]')?.getAttribute('aria-expanded')).toBe('true')
+    // A changed file opens its diff over the conversation, as from the docked sidebar.
+    await click('[data-testid="inbox-menu-changes-panel"] [data-testid="inbox-changes-file"]')
+    expect(useInboxChanges.getState().selectedPath).toEqual({ threadId: thread.id, path: 'src/a.ts' })
+    await click('[data-testid="inbox-menu-tools"]')
+    expect(container.querySelector('[data-testid="inbox-menu-changes-panel"]')).toBeNull()
+    expect(menu()?.querySelector('[data-testid="inbox-menu-tools-section"] [data-testid="inbox-tool-t2"]')).not.toBeNull()
+    await click('[data-testid="inbox-menu-files"]')
+    expect(menu()?.querySelector('[data-testid="inbox-menu-files-section"] [role="tree"]')).not.toBeNull()
+    await click('[data-testid="inbox-menu-files"]')
+    expect(container.querySelector('[data-testid="inbox-menu-files-section"]')).toBeNull()
+    expect(container.querySelector('[data-testid="inbox-sidebar-frame"]')).toBeNull()
+  })
+
+  it('steps aside while the Git graph is open, and hides to a button and back', async () => {
+    useInboxView.setState({ sidebarFloating: true })
+    await sidebar()
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="inbox-menu-graph"]')).not.toBeNull())
+    await click('[data-testid="inbox-menu-graph"]')
+    expect(useInboxChanges.getState().graphThreadId).toBe(thread.id)
+    expect(menu()).toBeNull()
+    await act(async () => useInboxChanges.getState().closeGraph())
+    expect(menu()).not.toBeNull()
+    await click('[aria-label="Hide menu"]')
+    expect(menu()).toBeNull()
+    await click('[data-testid="inbox-sidebar-menu-show"]')
+    expect(menu()).not.toBeNull()
+  })
+
+  it('docks the sidebar on its Terminal tab, unless the terminal floats, which it shows instead', async () => {
+    useInboxView.setState({ sidebarFloating: true })
+    await sidebar()
+    await click('[data-testid="inbox-menu-terminal"]')
+    expect(useInboxView.getState().sidebarFloating).toBe(false)
+    expect(container.querySelector('[data-testid="inbox-terminal-panel"]')).not.toBeNull()
+    useInboxView.setState({ sidebarFloating: true })
+    useInboxFloatingTerminal.setState({ floating: true, visible: false })
+    await sidebar()
+    await click('[data-testid="inbox-menu-terminal"]')
+    expect(useInboxFloatingTerminal.getState().visible).toBe(true)
+    expect(useInboxView.getState().sidebarFloating).toBe(true)
+    useInboxFloatingTerminal.setState({ floating: false, visible: false })
+  })
+
+  it('offers Files and Terminal, but not changes or tools, on the new-thread page', async () => {
+    useInboxView.setState({ sidebarFloating: true })
+    await render(createElement(InboxSidebar, { session }))
+    expect(container.querySelector('[data-testid="inbox-menu-files"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="inbox-menu-terminal"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="inbox-menu-changes"]')).toBeNull()
+    expect(container.querySelector('[data-testid="inbox-menu-tools"]')).toBeNull()
+  })
+})
+
+describe('Permissions', () => {
+  const approvals = [
+    { id: 'psv_1', action: 'shell', resource: 'git status *', created: 10 },
+    { id: 'psv_2', action: 'edit', resource: '*', created: 20 },
+  ]
+  const savedPermissions = vi.fn()
+  const removeSavedPermission = vi.fn(async () => {})
+  const panel = (): HTMLElement | null => container.querySelector('[data-testid="inbox-permissions-panel"]')
+  beforeEach(() => {
+    savedPermissions.mockReset().mockResolvedValue({ supported: true, permissions: approvals })
+    removeSavedPermission.mockClear()
+    vi.stubGlobal('api', { ...(window as unknown as { api: object }).api, chat: { savedPermissions, removeSavedPermission } })
+    useInboxSavedPermissions.setState({ entries: {} })
+  })
+  afterEach(() => {
+    useInboxSavedPermissions.setState({ entries: {} })
+    useInboxView.setState({ sidebarFloating: false, floatingSection: null })
+  })
+
+  it('has no tab while the project has nothing allowed always', async () => {
+    savedPermissions.mockResolvedValue({ supported: true, permissions: [] })
+    await sidebar()
+    expect(savedPermissions).toHaveBeenCalledWith({ threadId: thread.id })
+    expect(tab('files')).not.toBeNull()
+    expect(tab('permissions')).toBeNull()
+  })
+
+  it('lists the saved approvals by tool and forgets one when asked', async () => {
+    await sidebar()
+    expect(tab('permissions')?.getAttribute('aria-label')).toBe('Permissions, 2 always allowed')
+    await act(async () => tab('permissions')!.click())
+    expect(panel()?.querySelector('[data-testid="inbox-saved-group-shell"]')?.textContent).toContain('git status *')
+    // A lone star reads as what it allows.
+    expect(panel()?.querySelector('[data-testid="inbox-saved-group-edit"]')?.textContent).toContain('Anything')
+    const groups = Array.from(panel()!.querySelectorAll('[data-testid^="inbox-saved-group-"]')).map((item) => item.getAttribute('data-testid'))
+    expect(groups).toEqual(['inbox-saved-group-shell', 'inbox-saved-group-edit'])
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="inbox-saved-permission-remove-psv_1"]')!.click())
+    expect(removeSavedPermission).toHaveBeenCalledWith({ threadId: thread.id, id: 'psv_1' })
+    expect(panel()?.querySelector('[data-testid="inbox-saved-permission-psv_1"]')).toBeNull()
+    expect(tab('permissions')?.getAttribute('aria-label')).toBe('Permissions, 1 always allowed')
+  })
+
+  it('drops the tab when the last approval is removed', async () => {
+    savedPermissions.mockResolvedValue({ supported: true, permissions: [approvals[0]] })
+    useInboxChanges.setState({ tab: 'permissions' })
+    await sidebar()
+    expect(panel()).not.toBeNull()
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="inbox-saved-permission-remove-psv_1"]')!.click())
+    expect(panel()).toBeNull()
+    expect(tab('permissions')).toBeNull()
+    expect(container.querySelector('[data-testid="inbox-files-panel"]')?.className).toBe('contents')
+  })
+
+  it('shows a row in the floating card only while there are approvals, opening out onto the list', async () => {
+    useInboxView.setState({ sidebarFloating: true })
+    savedPermissions.mockResolvedValue({ supported: true, permissions: [] })
+    await sidebar()
+    expect(container.querySelector('[data-testid="inbox-menu-permissions"]')).toBeNull()
+    savedPermissions.mockResolvedValue({ supported: true, permissions: approvals })
+    await act(async () => { await useInboxSavedPermissions.getState().load(thread.id) })
+    const row = container.querySelector<HTMLButtonElement>('[data-testid="inbox-menu-permissions"]')!
+    expect(row.textContent).toContain('2 allowed')
+    await act(async () => row.click())
+    expect(container.querySelector('[data-testid="inbox-menu-permissions-section"]')?.textContent).toContain('git status *')
+  })
 })

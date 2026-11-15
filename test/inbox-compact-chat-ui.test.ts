@@ -8,7 +8,7 @@ vi.mock('../src/renderer/components/inbox/InboxTerminal', () => ({
   focusInboxTerminalWhenShown: vi.fn(),
 }))
 import { InboxThreadView } from '../src/renderer/components/InboxThreadView'
-import { getInboxCompactChat, INBOX_COMPACT_CHAT_STORAGE_KEY, saveInboxCompactChat } from '../src/renderer/lib/inbox-settings'
+import { getInboxCompactChat, getInboxTurnChanges, INBOX_COMPACT_CHAT_STORAGE_KEY, INBOX_TURN_CHANGES_STORAGE_KEY, saveInboxCompactChat } from '../src/renderer/lib/inbox-settings'
 import { useInboxChat } from '../src/renderer/store/inbox-chat'
 import { useInboxView } from '../src/renderer/store/inbox-view'
 import { useWorkspace } from '../src/renderer/store/workspace'
@@ -67,6 +67,14 @@ const all = (selector: string): HTMLElement[] => Array.from(container.querySelec
 const text = (element: Element | null | undefined): string => (element?.textContent ?? '').replace(/\s+/g, ' ').trim()
 const click = (element: HTMLElement | null): Promise<void> => act(async () => element!.click())
 
+/** Opens the layout menu in the thread's header and chooses a layout from it. */
+async function chooseLayout(layout: 'full' | 'compact' | 'compact-text'): Promise<void> {
+  await act(async () => { q(TOGGLE)!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+  const item = document.body.querySelector<HTMLElement>(`[data-testid="chat-layout-${layout}"]`)
+  expect(item).not.toBeNull()
+  await act(async () => item!.click())
+}
+
 async function render(): Promise<void> {
   await act(async () => root.render(createElement(InboxThreadView)))
   await vi.waitFor(() => expect(q('[data-testid="inbox-thread-view"]')).not.toBeNull())
@@ -75,8 +83,8 @@ async function render(): Promise<void> {
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('api', api)
-  try { localStorage.removeItem(INBOX_COMPACT_CHAT_STORAGE_KEY) } catch { /* the default is off */ }
-  useInboxView.setState({ compactChat: false })
+  try { localStorage.removeItem(INBOX_COMPACT_CHAT_STORAGE_KEY); localStorage.removeItem('mde.inbox-compact-text') } catch { /* the default is off */ }
+  useInboxView.setState({ compactChat: false, compactText: false, compactSubagents: false })
   page = { messages: turn(), older: null, running: false }
   useInboxChat.setState({ folders: [], composer: {}, foldersLoaded: true, options: {}, threads: {}, recent: [], titleRegenerations: {} })
   useWorkspace.setState({
@@ -97,12 +105,40 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-describe('the compact mode switch', () => {
-  it('is in the header of a conversation, off until it is turned on', async () => {
+describe('the layout menu', () => {
+  it('holds the switches of the compact layouts, which turn their changes panel and names off', async () => {
+    useInboxView.setState({ turnChanges: true, commandNames: true })
+    await render()
+    const open = () => act(async () => { q(TOGGLE)!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+    const entry = (id: string): HTMLElement => document.body.querySelector<HTMLElement>(`[data-testid="${id}"]`)!
+    await open()
+    expect(entry('inbox-setting-turn-changes').textContent).toContain('Changes after each turn')
+    expect(entry('inbox-setting-turn-changes').getAttribute('aria-checked')).toBe('true')
+    await act(async () => entry('inbox-setting-turn-changes').click())
+    expect(useInboxView.getState().turnChanges).toBe(false)
+    expect(localStorage.getItem('mde.inbox-turn-changes')).toBe('off')
+
+    await open()
+    expect(entry('inbox-setting-command-names').textContent).toContain('Command and tool names')
+    await act(async () => entry('inbox-setting-command-names').click())
+    expect(useInboxView.getState().commandNames).toBe(false)
+    expect(localStorage.getItem('mde.inbox-command-names')).toBe('off')
+
+    await open()
+    expect(entry('inbox-setting-compact-subagents').textContent).toContain('Subagents')
+    expect(entry('inbox-setting-compact-subagents').getAttribute('aria-checked')).toBe('false')
+    await act(async () => entry('inbox-setting-compact-subagents').click())
+    expect(useInboxView.getState().compactSubagents).toBe(true)
+    expect(localStorage.getItem('mde.inbox-compact-subagents')).toBe('on')
+    useInboxView.setState({ compactSubagents: false })
+    useInboxView.setState({ turnChanges: true, commandNames: true })
+  })
+
+  it('is in the header of a conversation, showing every step until another layout is chosen', async () => {
     await render()
     const toggle = q(`[data-testid="inbox-thread-view"] ${TOGGLE}`)!
-    expect(toggle.getAttribute('aria-label')).toBe('Compact mode')
-    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    expect(toggle.getAttribute('aria-label')).toBe('Layout: Every step')
+    expect(toggle.dataset.layout).toBe('full')
   })
 
   it('is not offered for a thread that is a terminal', async () => {
@@ -112,18 +148,26 @@ describe('the compact mode switch', () => {
     expect(q(TOGGLE)).toBeNull()
   })
 
-  it('turns on and off, and remembers what it was left at', async () => {
+  it('offers the three layouts, and remembers the one chosen', async () => {
     await render()
-    await click(q(TOGGLE))
-    expect(q(TOGGLE)!.getAttribute('aria-pressed')).toBe('true')
-    expect(useInboxView.getState().compactChat).toBe(true)
+    await chooseLayout('compact')
+    expect(q(TOGGLE)!.dataset.layout).toBe('compact')
+    expect(useInboxView.getState()).toMatchObject({ compactChat: true, compactText: false })
     expect(localStorage.getItem(INBOX_COMPACT_CHAT_STORAGE_KEY)).toBe('on')
     expect(getInboxCompactChat()).toBe(true)
 
-    await click(q(TOGGLE))
-    expect(q(TOGGLE)!.getAttribute('aria-pressed')).toBe('false')
+    await chooseLayout('compact-text')
+    expect(q(TOGGLE)!.getAttribute('aria-label')).toBe('Layout: Compact with text')
+    expect(useInboxView.getState()).toMatchObject({ compactChat: true, compactText: true })
+    expect(localStorage.getItem('mde.inbox-compact-text')).toBe('on')
+
+    await chooseLayout('full')
+    expect(q(TOGGLE)!.dataset.layout).toBe('full')
     expect(localStorage.getItem(INBOX_COMPACT_CHAT_STORAGE_KEY)).toBe('off')
     expect(getInboxCompactChat()).toBe(false)
+
+    await chooseLayout('compact')
+    expect(useInboxView.getState()).toMatchObject({ compactChat: true, compactText: false })
   })
 
   it('is off when nothing was saved, and when storage cannot be read', () => {
@@ -164,7 +208,7 @@ describe('a conversation in compact mode', () => {
     expect(text(row)).toContain('python3 server.py')
     await click(row.querySelector('button'))
     expect(text(row)).toContain('received SIGTERM and exited cleanly')
-    await click(q(TOGGLE))
+    await chooseLayout('full')
     expect(all('[data-testid="chat-activity"]')).toHaveLength(0)
     expect(q('[data-testid="chat-message-n_process"]')).not.toBeNull()
     expect(q('[data-testid="chat-reasoning"]')).not.toBeNull()
@@ -177,10 +221,10 @@ describe('a conversation in compact mode', () => {
     }
     useInboxView.setState({ compactChat: true })
     await render()
-    await vi.waitFor(() => expect(q('[data-testid="chat-activity-summary"]')).not.toBeNull())
-    expect(text(q('[data-testid="chat-activity-summary"]'))).toBe('Received 1 update')
+    // One step is drawn as its own row, rather than as a line that opens onto it.
+    await vi.waitFor(() => expect(q('[data-testid="chat-note-n_context"]')).not.toBeNull())
+    expect(q('[data-testid="chat-activity"]')).toBeNull()
     expect(text(q('[data-testid="chat-message-a_answer"]'))).toBe('Ready.')
-    await click(q('[data-testid="chat-activity"] button'))
     expect(text(q('[data-testid="chat-note-n_context"]'))).toBe('Job finished')
   })
 
@@ -244,6 +288,33 @@ describe('a conversation in compact mode', () => {
     expect(text(said[1]!)).toContain('I will fix it.')
   })
 
+  it('shows the words between the tool calls with the text setting, still folding the calls and thoughts', async () => {
+    page = {
+      messages: [
+        prompt,
+        step('a1', [{ kind: 'text', text: 'Let me look at the **handler**.' }, read('reset.ts')]),
+        step('a2', [{ kind: 'reasoning', text: 'Hmm' }, { kind: 'text', text: 'The cause is clear now.' }, shell('npm test')]),
+        step('a3', [{ kind: 'text', text: 'Fixed it.' }]),
+      ],
+      older: null,
+      running: false,
+    }
+    useInboxView.setState({ compactChat: true, compactText: true })
+    await render()
+    await vi.waitFor(() => expect(q('[data-testid="chat-message-a3"]')).not.toBeNull())
+    expect(text(q('[data-testid="chat-message-a1"]'))).toContain('Let me look at the handler.')
+    expect(text(q('[data-testid="chat-message-a2"]'))).toContain('The cause is clear now.')
+    expect(all('[data-testid="chat-activity-summary"]').map((line) => text(line))).toEqual(['Thought and read 1 file'])
+    // A command alone is its own row, which names it.
+    expect(text(q('[data-testid="chat-message-a2"] [data-testid^="chat-tool-"]'))).toContain('Ran npm test')
+    expect(q('[data-testid="chat-said"]')).toBeNull()
+
+    // Plain compact folds the words back into one line.
+    await chooseLayout('compact')
+    expect(all('[data-testid="chat-activity"]')).toHaveLength(1)
+    expect(text(q('[data-testid="chat-message-a3"]'))).toBe('Fixed it.')
+  })
+
   it('draws the words being written as they are, while no more work has followed them', async () => {
     page = { messages: [prompt, step('a1', [shell('npm test'), { kind: 'text', text: 'The test fails because' }], false)], older: null, running: true }
     useWorkspace.setState({ inboxThreads: [thread({ status: 'working' })] })
@@ -251,7 +322,8 @@ describe('a conversation in compact mode', () => {
     await render()
     await vi.waitFor(() => expect(q('[data-testid="chat-message-a1"]')).not.toBeNull())
     expect(text(q('[data-testid="chat-message-a1"]'))).toContain('The test fails because')
-    expect(q('[data-testid="chat-activity"]')!.hasAttribute('data-live')).toBe(false)
+    expect(q('[data-testid="chat-activity"]')).toBeNull()
+    expect(q('[data-testid^="chat-tool-"]')!.getAttribute('data-status')).toBe('completed')
     expect(q('[data-testid="chat-said"]')).toBeNull()
   })
 
@@ -276,11 +348,11 @@ describe('a conversation in compact mode', () => {
     await vi.waitFor(() => expect(q('[data-testid="chat-message-a4"]')).not.toBeNull())
     expect(all('[data-testid="chat-activity"]')).toHaveLength(1)
 
-    await click(q(TOGGLE))
+    await chooseLayout('full')
     expect(all('[data-testid="chat-activity"]')).toHaveLength(0)
     for (const id of ['a1', 'a2', 'a3']) expect(q(`[data-testid="chat-message-${id}"]`)).not.toBeNull()
 
-    await click(q(TOGGLE))
+    await chooseLayout('compact')
     expect(all('[data-testid="chat-activity"]')).toHaveLength(1)
     expect(q('[data-testid="chat-message-a2"]')).toBeNull()
   })
@@ -302,7 +374,7 @@ describe('a conversation in compact mode', () => {
     expect(all('.file-diff-row')).toHaveLength(3)
 
     // Not compact, it is open as it always was; and what was chosen by hand stays.
-    await click(q(TOGGLE))
+    await chooseLayout('full')
     expect(all('.file-diff-row')).toHaveLength(3)
   })
 
@@ -334,26 +406,66 @@ describe('a conversation in compact mode', () => {
     expect(q('[data-testid="chat-note-n_process"]')).not.toBeNull()
   })
 
-  it('keeps answered questions and subagent cards inside the group with their details intact', async () => {
-    const question = tool('question', { questions: [{ question: 'Which port?' }] }, { answers: [['8000']] })
+  it('keeps subagent cards inside the group with their details intact', async () => {
     const subagent = (id: string) => tool('subagent', { agent: 'general', description: `Review ${id}`, prompt: 'Check the server.' }, {
       output: 'Looks good.', subagent: { sessionId: `ses_${id}`, model: { id: 'review-model', providerId: 'p', variant: 'high' } },
     })
-    page = { messages: [prompt, step('a1', [question, subagent('one'), subagent('two')]), step('a2', [shell('npm test'), { kind: 'text', text: 'All done.' }])], older: null, running: false }
+    page = { messages: [prompt, step('a1', [subagent('one'), subagent('two')]), step('a2', [shell('npm test'), { kind: 'text', text: 'All done.' }])], older: null, running: false }
     useInboxView.setState({ compactChat: true })
     await render()
     await vi.waitFor(() => expect(q('[data-testid="chat-message-a2"]')).not.toBeNull())
     expect(all('[data-testid="chat-activity"]')).toHaveLength(1)
-    expect(q('[data-testid="chat-answered-question"]')).toBeNull()
     expect(q('[data-testid="chat-subagents"]')).toBeNull()
     await click(q('[data-testid="chat-activity"] button'))
-    expect(text(q('[data-testid="chat-answered-question"]'))).toContain('8000')
     expect(all('[data-testid="chat-subagents"]')).toHaveLength(1)
     expect(all('[data-testid^="chat-subagent-"]')).toHaveLength(2)
     expect(all('[aria-label="Model: review-model · high"]')).toHaveLength(2)
-    await click(q(TOGGLE))
-    expect(q('[data-testid="chat-answered-question"]')).not.toBeNull()
+    await chooseLayout('full')
     expect(q('[data-testid="chat-subagents"]')).not.toBeNull()
+  })
+
+  it('draws the subagent cards between the lines when the Subagents switch is on', async () => {
+    const subagent = (id: string) => tool('subagent', { agent: 'general', description: `Review ${id}`, prompt: 'Check the server.' }, {
+      status: 'running', subagent: { sessionId: `ses_${id}`, model: { id: 'review-model', providerId: 'p' } },
+    })
+    page = { messages: [prompt, step('a1', [read('server.py'), subagent('one'), subagent('two')]), step('a2', [shell('npm test'), { kind: 'text', text: 'All done.' }])], older: null, running: false }
+    useInboxView.setState({ compactChat: true, compactSubagents: true })
+    await render()
+    await vi.waitFor(() => expect(q('[data-testid="chat-message-a2"]')).not.toBeNull())
+    expect(all('[data-testid="chat-subagents"]')).toHaveLength(1)
+    expect(all('[aria-label="Model: review-model"]')).toHaveLength(2)
+    expect(q('[data-testid="chat-activity"] [data-testid="chat-subagents"]')).toBeNull()
+    useInboxView.setState({ compactSubagents: false })
+    await vi.waitFor(() => expect(q('[data-testid="chat-subagents"]')).toBeNull())
+  })
+
+  it('shows a question with the words that lead up to it, and starts a new line for the work after the answer', async () => {
+    const question = tool('question', { questions: [{ question: 'Which port?' }] }, { answers: [['8000']] })
+    page = {
+      messages: [
+        prompt,
+        step('a1', [{ kind: 'text', text: 'I will check the config.' }, read('server.py'), { kind: 'text', text: 'The server can listen on 8000 or 9000.' }, question]),
+        step('a2', [shell('python3 server.py'), shell('npm test')]),
+        step('a3', [{ kind: 'text', text: 'Running on 8000.' }]),
+      ],
+      older: null,
+      running: false,
+    }
+    useInboxView.setState({ compactChat: true })
+    await render()
+    await vi.waitFor(() => expect(q('[data-testid="chat-message-a3"]')).not.toBeNull())
+    const groups = all('[data-testid="chat-activity"]')
+    expect(groups.map((group) => text(group.querySelector('button')))).toEqual([
+      'Wrote an update and read 1 file',
+      'Ran 2 commands · python3, npm test',
+    ])
+    const message = q('[data-testid="chat-message-a1"]')!
+    expect(text(message)).toContain('The server can listen on 8000 or 9000.')
+    expect(text(message)).not.toContain('I will check the config.')
+    const answered = q('[data-testid="chat-answered-question"]')!
+    expect(text(answered)).toContain('Which port?')
+    expect(text(answered)).toContain('8000')
+    expect(groups.some((group) => group.contains(answered))).toBe(false)
   })
 
   it('leaves active permission and question requests outside the collapsed activity', async () => {
@@ -367,15 +479,27 @@ describe('a conversation in compact mode', () => {
     useInboxView.setState({ compactChat: true })
     await render()
     await vi.waitFor(() => expect(q('[data-testid="chat-question-form_active"]')).not.toBeNull())
-    const group = q('[data-testid="chat-activity"]')!
-    expect(group.querySelector('button')?.getAttribute('aria-expanded')).toBe('false')
+    // The write alone is its own row, and starts shut.
+    const group = q('[data-testid="chat-message-a1"] [data-testid^="chat-tool-"]')!
+    expect(group.querySelector('button')?.getAttribute('aria-expanded') ?? 'false').toBe('false')
     expect(q('[data-testid="chat-permission-per_active"]')).not.toBeNull()
     expect(group.contains(q('[data-testid="chat-permission-per_active"]'))).toBe(false)
     expect(group.contains(q('[data-testid="chat-question-form_active"]'))).toBe(false)
     expect(q('[data-testid="chat-permission-per_active"] button')?.hasAttribute('disabled')).toBe(false)
   })
 
-  it.each(['write', 'edit', 'subagent'])('keeps failed %s activity visible in the collapsed failure count', async (name) => {
+  it.each(['write', 'edit'])('shows a failed %s alone as its own row, shut and marked failed', async (name) => {
+    page = { messages: [prompt, step('a1', [tool(name, {}, { status: 'error', error: 'Operation failed.' })]), step('a2', [{ kind: 'text', text: 'It failed.' }])], older: null, running: false }
+    useInboxView.setState({ compactChat: true })
+    await render()
+    await vi.waitFor(() => expect(q('[data-testid="chat-message-a1"] [data-testid^="chat-tool-"]')).not.toBeNull())
+    expect(q('[data-testid="chat-activity"]')).toBeNull()
+    const row = q('[data-testid="chat-message-a1"] [data-testid^="chat-tool-"]')!
+    expect(row.hasAttribute('data-failed')).toBe(true)
+    expect(row.querySelector('button')?.getAttribute('aria-expanded') ?? 'false').toBe('false')
+  })
+
+  it.each(['subagent'])('keeps failed %s activity visible in the collapsed failure count', async (name) => {
     page = { messages: [prompt, step('a1', [tool(name, {}, { status: 'error', error: 'Operation failed.' })]), step('a2', [{ kind: 'text', text: 'It failed.' }])], older: null, running: false }
     useInboxView.setState({ compactChat: true })
     await render()
@@ -424,5 +548,81 @@ describe('a conversation in compact mode', () => {
     await vi.waitFor(() => expect(q('[data-testid="chat-message-a2"]')).not.toBeNull())
     expect(text(q('[data-testid="chat-message-a2"]'))).toBe('The provider closed the connection.')
     expect(text(q('[data-testid="chat-activity-summary"]'))).toBe('Ran 2 commands')
+  })
+})
+
+describe('the changes after each turn', () => {
+  const PANEL = '[data-testid="chat-turn-changes"]'
+  const write = (name: string, content: string, existed = false): ChatPart =>
+    tool('write', { filePath: `/home/me/app/${name}`, content }, { existed })
+  const removal = (name: string): ChatPart => tool('patch', { patchText: `*** Begin Patch\n*** Delete File: ${name}\n*** End Patch` })
+  const changedTurn = (): ChatMessage[] => [
+    prompt,
+    step('a1', [{ kind: 'text', text: 'Fixing it.' }, edit(), write('new.ts', 'one\ntwo\n')]),
+    step('a2', [edit(), removal('old.ts')]),
+    step('a3', [{ kind: 'text', text: 'Done.' }]),
+  ]
+
+  beforeEach(() => {
+    useInboxView.setState({ compactChat: true, turnChanges: true })
+  })
+
+  it('ends a turn with one shut line of how many files changed and the lines that came and went', async () => {
+    page = { messages: changedTurn(), older: null, running: false }
+    await render()
+    await vi.waitFor(() => expect(q(PANEL)).not.toBeNull())
+    // Under the turn's last message, after its answer.
+    expect(q(`[data-testid="chat-message-a3"] + ${PANEL}`)).not.toBeNull()
+    expect(text(q('[data-testid="chat-turn-changes-toggle"]'))).toBe('Changed 3 files+4−2')
+    expect(q('[data-testid="chat-turn-changes-toggle"]')!.getAttribute('aria-expanded')).toBe('false')
+    expect(q('[data-testid="chat-turn-change"]')).toBeNull()
+  })
+
+  it('lists each file once with what happened to it, and opens a file onto all its diffs', async () => {
+    page = { messages: changedTurn(), older: null, running: false }
+    await render()
+    await vi.waitFor(() => expect(q(PANEL)).not.toBeNull())
+    await click(q('[data-testid="chat-turn-changes-toggle"]'))
+    const rows = all('[data-testid="chat-turn-change"]')
+    expect(rows.map((row) => row.getAttribute('aria-label'))).toEqual(['Edited a.ts', 'Created new.ts', 'Deleted old.ts'])
+    expect(all('.file-diff-row')).toHaveLength(0)
+
+    // The file edited twice shows both edits, one after the other.
+    await click(rows[0]!.querySelector('button'))
+    expect(text(rows[0]!.querySelector('[data-testid="chat-diff-stats"]'))).toBe('+2−2')
+    expect(all('.file-diff-row')).toHaveLength(6)
+    expect(all('.file-diff-gap')).toHaveLength(1)
+  })
+
+  it('leaves out turns that changed nothing and the turn still going', async () => {
+    page = { messages: [...changedTurn(), { ...prompt, id: 'u2' } as ChatMessage, step('b1', [edit()], false)], older: null, running: true }
+    await render()
+    await vi.waitFor(() => expect(q(PANEL)).not.toBeNull())
+    expect(all(PANEL)).toHaveLength(1)
+
+    page = { messages: turn(), older: null, running: false }
+    useInboxChat.setState({ threads: {} })
+    await act(async () => root.unmount())
+    root = createRoot(container)
+    await render()
+    await vi.waitFor(() => expect(q('[data-testid="chat-message-a4"]')).not.toBeNull())
+    expect(q(PANEL)).toBeNull()
+  })
+
+  it('is only in compact mode, and goes when the setting is turned off', async () => {
+    page = { messages: changedTurn(), older: null, running: false }
+    useInboxView.setState({ compactChat: false })
+    await render()
+    await vi.waitFor(() => expect(q('[data-testid="chat-message-a3"]')).not.toBeNull())
+    expect(q(PANEL)).toBeNull()
+
+    await chooseLayout('compact')
+    expect(q(PANEL)).not.toBeNull()
+    await act(async () => useInboxView.getState().setTurnChanges(false))
+    expect(q(PANEL)).toBeNull()
+    expect(localStorage.getItem(INBOX_TURN_CHANGES_STORAGE_KEY)).toBe('off')
+    expect(getInboxTurnChanges()).toBe(false)
+    localStorage.removeItem(INBOX_TURN_CHANGES_STORAGE_KEY)
+    expect(getInboxTurnChanges()).toBe(true)
   })
 })

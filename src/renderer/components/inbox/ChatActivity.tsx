@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Brain, ChevronRight, Info, LoaderCircle, MessageSquareText } from 'lucide-react'
 import type { ChatMessage, ChatModel, ChatPart } from '@shared/types'
-import { ActivityRow, Chip, CodeText, Rail, Surface, useCompactChat } from '@/components/inbox/chat-ui'
+import { ActivityRow, Chip, CodeText, Rail, Surface, useFoldAnchor, useStuck } from '@/components/inbox/chat-ui'
 import { ChatMarkdown } from '@/components/inbox/ChatMarkdown'
 import { ToolCallView } from '@/components/inbox/ChatTools'
 import { SubagentGroup } from '@/components/inbox/ChatSubagents'
 import { isSubagentCall } from '@/lib/chat'
-import { activitySummary, reasoningPreview, reasoningTitle, textHeadline, toolFailed, type ActivityItem } from '@/lib/chat-tools'
+import { activityNames, activityNamesText, activitySummary, reasoningPreview, reasoningTitle, textHeadline, toolFailed, type ActivityItem } from '@/lib/chat-tools'
 import { cn } from '@/lib/utils'
+import { useInboxView } from '@/store/inbox-view'
 
 /** How long one line of the preview stays up before the next one may take its place. */
 export const PREVIEW_HOLD_MS = 2600
@@ -91,10 +92,10 @@ export function NoteRow({ message }: { message: Extract<ChatMessage, { kind: 'no
 }
 
 /**
- * A run of steps (thoughts, reads, searches, commands) folded into one line that sums them up. It is open while the
- * agent is still at it, so that the work can be followed, and shuts when the agent moves on to something else; in the
- * compact layout it is never open of itself, and a live one only spins and shimmers. A click on it is the person's
- * choice, and stays.
+ * A run of steps (thoughts, reads, searches, commands) folded into one line that sums them up, in the compact layouts.
+ * It is never open of itself: a live one spins and shimmers. A click on it is the person's choice, and stays. A run of
+ * one step is that step's own row: it takes the same room and says more ("Ran npm test" rather than "Ran 1 command"),
+ * and it opens onto the step in one click rather than two. A subagent, whose card is more than a row, keeps its line.
  */
 export function ActivityGroup({
   items,
@@ -108,16 +109,26 @@ export function ActivityGroup({
   live: boolean
   models?: readonly ChatModel[]
 }): JSX.Element {
-  const compact = useCompactChat()
-  const [chosen, setChosen] = useState<boolean | null>(null)
-  const open = chosen ?? (live && !compact)
+  const [open, setOpen] = useState(false)
+  const { headerRef, keepPlace } = useFoldAnchor<HTMLButtonElement>(open)
+  const sentinel = useRef<HTMLDivElement>(null)
+  const stuck = useStuck(sentinel, open)
+  const choose = (next: boolean, clientY?: number): void => {
+    if (!next) keepPlace(clientY)
+    setOpen(next)
+  }
   const parts = items.map((item) => item.part)
   const failed = parts.filter(toolFailed).length
+  const namesOn = useInboxView((view) => view.commandNames)
+  const names = namesOn ? activityNames(parts) : []
   const rows: Array<
     { kind: 'item'; item: ActivityItem; position: number }
     | { kind: 'subagents'; parts: Extract<ChatPart, { kind: 'tool' }>[]; messageId?: string }
   > = []
-  for (const [position, item] of (open ? items.entries() : [])) {
+  // A subagent is a card rather than a row, so one keeps its line.
+  const only = items.length === 1 ? items[0]!.part : undefined
+  const single = only !== undefined && !(only.kind === 'tool' && isSubagentCall(only))
+  for (const [position, item] of (open || single ? items.entries() : [])) {
     const part = item.part
     if (part.kind === 'tool' && isSubagentCall(part)) {
       const previous = rows[rows.length - 1]
@@ -125,37 +136,61 @@ export function ActivityGroup({
       else rows.push({ kind: 'subagents', parts: [part], messageId: item.messageId })
     } else rows.push({ kind: 'item', item, position })
   }
+  const drawRow = (row: (typeof rows)[number]): JSX.Element => {
+    if (row.kind === 'subagents') return <SubagentGroup key={row.parts[0]!.id} parts={row.parts} models={models} />
+    const { part, index, messageId } = row.item
+    if (part.kind === 'tool') return <ToolCallView key={part.id} part={part} directory={directory} />
+    if (part.kind === 'note') return <NoteRow key={part.id} message={part} />
+    // The thought being written is the last step. Text joins a group only in the compact layout.
+    const key = `${messageId ?? ''}:${index}`
+    if (part.kind === 'text') return <SaidRow key={key} text={part.text} />
+    return <ThoughtRow key={key} text={part.text} live={live && row.position === items.length - 1} />
+  }
+  if (single && rows[0]) return drawRow(rows[0])
   return (
     <div data-testid="chat-activity" data-open={open ? '' : undefined} data-live={live ? '' : undefined} className="min-w-0">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setChosen(!open)}
-        className="group/row flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-[5px] text-left text-[12.5px] leading-5 transition-colors hover:bg-hover/70 focus-visible:bg-hover/70 focus-visible:outline-none"
+      {/* Open, the line stays at the top of the conversation while what it opened onto scrolls under it, so it can be shut
+          from anywhere in a long run of steps. */}
+      <div ref={sentinel} aria-hidden className="h-0" />
+      <div
+        className={cn(open && 'sticky top-0 z-10 bg-bg', stuck && 'border-b border-line shadow-[0_6px_10px_-8px_rgb(0_0_0/0.5)]')}
+        data-stuck={stuck ? '' : undefined}
+        data-testid="chat-activity-header"
       >
-        {live ? (
-          <LoaderCircle aria-hidden className="h-3.5 w-3.5 shrink-0 animate-spin text-accent motion-reduce:animate-none" />
-        ) : (
-          <ChevronRight aria-hidden className={cn('h-3.5 w-3.5 shrink-0 text-fg-subtle transition-transform duration-150', open && 'rotate-90')} />
-        )}
-        <span data-testid="chat-activity-summary" className={cn('min-w-0 flex-1 truncate', live ? 'chat-shimmer' : 'text-fg-muted transition-colors group-hover/row:text-fg')}>
-          {activitySummary(parts, live)}
-        </span>
-        {failed > 0 && <Chip tone="danger">{failed} failed</Chip>}
-      </button>
+        <button
+          ref={headerRef}
+          type="button"
+          aria-expanded={open}
+          onClick={() => choose(!open)}
+          className="chat-aside-line group/row flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-[5px] text-left text-[12.5px] leading-5 transition-colors hover:bg-hover/70 focus-visible:bg-hover/70 focus-visible:outline-none"
+        >
+          {live ? (
+            <LoaderCircle aria-hidden className="h-3.5 w-3.5 shrink-0 animate-spin text-accent motion-reduce:animate-none" />
+          ) : (
+            <ChevronRight aria-hidden className={cn('h-3.5 w-3.5 shrink-0 text-fg-subtle transition-transform duration-150', open && 'rotate-90')} />
+          )}
+          <span data-testid="chat-activity-summary" className={cn('min-w-0 truncate', names.length === 0 && 'flex-1', live ? 'chat-shimmer' : 'text-fg-muted transition-colors group-hover/row:text-fg')}>
+            {activitySummary(parts, live)}
+          </span>
+          {/* The names give way first when the line is short of room; the summary keeps its words. */}
+          {names.length > 0 && (
+            <span
+              data-testid="chat-activity-commands"
+              title={names.join(', ')}
+              className="inbox-code-font -ml-0.5 min-w-0 flex-1 basis-0 truncate text-[12px] text-fg-subtle transition-colors group-hover/row:text-fg-muted"
+            >
+              {' '}
+              <span aria-hidden className="font-sans">·</span>{' '}
+              {activityNamesText(names)}
+            </span>
+          )}
+          {failed > 0 && <Chip tone="danger">{failed} failed</Chip>}
+        </button>
+      </div>
       {open && (
-        <Rail tight>
+        <Rail tight onCollapse={(clientY) => choose(false, clientY)}>
           <div className="flex min-w-0 flex-col">
-            {rows.map((row) => {
-              if (row.kind === 'subagents') return <SubagentGroup key={row.parts[0]!.id} parts={row.parts} models={models} />
-              const { part, index, messageId } = row.item
-              if (part.kind === 'tool') return <ToolCallView key={part.id} part={part} directory={directory} />
-              if (part.kind === 'note') return <NoteRow key={part.id} message={part} />
-              // The thought being written is the last step. Text joins a group only in the compact layout.
-              const key = `${messageId ?? ''}:${index}`
-              if (part.kind === 'text') return <SaidRow key={key} text={part.text} />
-              return <ThoughtRow key={key} text={part.text} live={live && row.position === items.length - 1} />
-            })}
+            {rows.map(drawRow)}
           </div>
         </Rail>
       )}

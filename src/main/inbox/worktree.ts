@@ -5,6 +5,7 @@ import type {
   InboxGitInfo,
   InboxThread,
   InboxWorktree,
+  InboxWorktreeEntry,
   OpenCodeTarget,
 } from '@shared/types'
 import {
@@ -24,6 +25,8 @@ import { assertWslLinuxPath, readWslShellValue } from '../wsl/shell-value'
 const WORKTREES_DIRECTORY = '.mde/worktrees'
 const CREATE_ATTEMPTS = 3
 const MESSAGE_MAX_LENGTH = 200
+/** How many Git commands the worktree list runs at once. */
+const LIST_CONCURRENCY = 4
 
 export interface InboxWorktreeDependencies {
   /** A read-only runner for queries about the folder's repository. */
@@ -34,6 +37,57 @@ export interface InboxWorktreeDependencies {
   home(target: OpenCodeTarget): Promise<string>
   /** A fresh eight-character lowercase hex id for a worktree and its branch. */
   randomId(): string
+}
+
+/** What MDE itself recorded about a worktree: on a thread that runs in it, or on its folder entry. */
+export interface WorktreeRecord {
+  target: OpenCodeTarget
+  repository: string
+  root: string
+  branch?: string
+  base?: string
+  createdAt?: number
+}
+
+/** One entry of `git worktree list --porcelain`. */
+interface ListedWorktree {
+  root: string
+  branch: string | null
+  prunable: boolean
+}
+
+export function parseWorktreeList(output: string): ListedWorktree[] {
+  const result: ListedWorktree[] = []
+  for (const block of output.split(/\n\s*\n/)) {
+    const lines = block.split('\n')
+    const head = lines.find((line) => line.startsWith('worktree '))
+    if (!head) continue
+    const branch = lines.find((line) => line.startsWith('branch refs/heads/'))
+    result.push({
+      root: head.slice('worktree '.length),
+      branch: branch ? branch.slice('branch refs/heads/'.length) : null,
+      prunable: lines.some((line) => line === 'prunable' || line.startsWith('prunable ')),
+    })
+  }
+  return result
+}
+
+function targetKey(target: OpenCodeTarget): string {
+  return target.kind === 'native' ? 'native' : `wsl:${target.distro}`
+}
+
+/** Runs `work` over `items`, at most `limit` at a time, keeping their order. */
+async function pooled<T, R>(items: readonly T[], limit: number, work: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let next = 0
+  const lane = async (): Promise<void> => {
+    while (next < items.length) {
+      const index = next++
+      results[index] = await work(items[index]!)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, lane))
+  return results
 }
 
 export interface CreatedWorktree {
@@ -190,26 +244,34 @@ export class InboxWorktrees {
   async remove(thread: InboxThread, threads: readonly InboxThread[]): Promise<void> {
     const worktree = thread.worktree
     if (!worktree) throw new Error('This thread has no worktree.')
-    if (threads.some((other) => other.id !== thread.id && other.worktree?.root === worktree.root && sameTarget(other.target, thread.target))) {
+    if (threads.some((other) => other.id !== thread.id && !other.worktreeRemovedAt && other.worktree?.root === worktree.root && sameTarget(other.target, thread.target))) {
       throw new Error('Another thread still uses this worktree.')
     }
-    const home = await this.dependencies.home(thread.target)
-    const base = `${home.replace(/\/+$/, '')}/${WORKTREES_DIRECTORY}/`
-    if (!isPlainAbsolutePath(worktree.root) || !worktree.root.startsWith(base) || !inside(worktree.root, thread.directory)) {
+    if (!inside(worktree.root, thread.directory)) throw new Error('This worktree is not in MDE’s worktree folder, so MDE will not remove it.')
+    await this.removeRoot(thread.target, worktree.repository, worktree.root)
+  }
+
+  /**
+   * Removes the worktree at `root`, which must be in MDE's own worktree folder, keeping its branch. With
+   * `force`, uncommitted changes in it are thrown away; without, Git's refusal is passed on.
+   */
+  async removeRoot(target: OpenCodeTarget, repository: string, root: string, options: { force?: boolean } = {}): Promise<void> {
+    const base = await this.worktreesFolder(target)
+    if (!isPlainAbsolutePath(root) || !root.startsWith(base) || root.length <= base.length) {
       throw new Error('This worktree is not in MDE’s worktree folder, so MDE will not remove it.')
     }
-    const run = this.dependencies.mutate(thread.target, worktree.repository)
+    const run = this.dependencies.mutate(target, repository)
     // A missing target has no config to inspect and no files to remove. Prune
     // its stale registration before asking the guarded removal runner to enter it.
-    const read = this.dependencies.read(thread.target, worktree.repository)
-    const exists = await read(['-C', worktree.root, 'rev-parse', '--is-inside-work-tree'])
+    const read = this.dependencies.read(target, repository)
+    const exists = await read(['-C', root, 'rev-parse', '--is-inside-work-tree'])
     if (exists.code !== 0) {
       await run(['worktree', 'prune'])
       const listed = await read(['worktree', 'list', '--porcelain'])
-      if (listed.code === 0 && !listed.stdout.split('\n').includes(`worktree ${worktree.root}`)) return
+      if (listed.code === 0 && !parseWorktreeList(listed.stdout).some((item) => item.root === root)) return
       throw new Error('Could not inspect the worktree before removing it.')
     }
-    const result = await run(['worktree', 'remove', '--', worktree.root])
+    const result = await run(['worktree', 'remove', ...(options.force ? ['--force'] : []), '--', root])
     if (result.code === 0) return
     // Already deleted by hand: forget Git's record of it and call it done.
     if (/is not a working tree/i.test(result.stderr)) {
@@ -217,6 +279,104 @@ export class InboxWorktrees {
       return
     }
     throw new Error(`Could not remove the worktree: ${gitMessage(result)}`)
+  }
+
+  /** Deletes a worktree's branch, unmerged commits and all. Returns why Git refused, or null once it is gone. */
+  async deleteBranch(target: OpenCodeTarget, repository: string, branch: string): Promise<string | null> {
+    const result = await this.dependencies.mutate(target, repository)(['branch', '-D', '--', branch])
+    return result.code === 0 ? null : `Could not delete the branch ${branch}: ${gitMessage(result)}`
+  }
+
+  /**
+   * The worktrees MDE made: those it recorded, and those Git lists for each repository that are in MDE's
+   * worktree folder, which finds one whose threads are all gone. With `status`, each says what is in it:
+   * uncommitted files and commits no other branch has. Nothing here changes anything.
+   */
+  async list(repositories: readonly { target: OpenCodeTarget; directory: string }[], records: readonly WorktreeRecord[], options: { status?: boolean } = {}): Promise<InboxWorktreeEntry[]> {
+    const folders = new Map<string, string | null>()
+    const folderOf = async (target: OpenCodeTarget): Promise<string | null> => {
+      const key = targetKey(target)
+      if (!folders.has(key)) folders.set(key, await this.worktreesFolder(target).catch(() => null))
+      return folders.get(key) ?? null
+    }
+    const places = new Map<string, { target: OpenCodeTarget; directory: string }>()
+    for (const place of [...repositories, ...records.map((record) => ({ target: record.target, directory: record.repository }))]) {
+      places.set(`${targetKey(place.target)}\0${place.directory}`, place)
+    }
+    const entries = new Map<string, InboxWorktreeEntry & { listed: boolean }>()
+    const listed = await pooled([...places.values()], LIST_CONCURRENCY, async (place) => {
+      const folder = await folderOf(place.target)
+      if (!folder) return []
+      const result = await this.dependencies.read(place.target, place.directory)(['worktree', 'list', '--porcelain']).catch(() => null)
+      if (!result || result.code !== 0) return []
+      return parseWorktreeList(result.stdout)
+        .filter((item) => item.root.startsWith(folder) && item.root.length > folder.length && isPlainAbsolutePath(item.root))
+        .map((item) => ({ ...item, place }))
+    })
+    for (const item of listed.flat()) {
+      const key = `${targetKey(item.place.target)}\0${item.root}`
+      if (entries.has(key)) continue
+      entries.set(key, {
+        target: item.place.target,
+        root: item.root,
+        repository: item.place.directory,
+        branch: item.branch,
+        missing: item.prunable,
+        changes: null,
+        unmerged: null,
+        listed: true,
+      })
+    }
+    for (const record of records) {
+      const key = `${targetKey(record.target)}\0${record.root}`
+      const known = entries.get(key)
+      if (known) {
+        // MDE's record says where it was cut from and when; Git says what is there now.
+        known.repository = record.repository
+        if (record.base && !known.base) known.base = record.base
+        if (record.createdAt !== undefined && (known.createdAt === undefined || record.createdAt < known.createdAt)) known.createdAt = record.createdAt
+        continue
+      }
+      const folder = await folderOf(record.target)
+      if (!folder || !record.root.startsWith(folder)) continue
+      // Recorded but not listed by Git: deleted by hand, and perhaps pruned too.
+      entries.set(key, {
+        target: record.target,
+        root: record.root,
+        repository: record.repository,
+        branch: record.branch ?? null,
+        ...(record.base ? { base: record.base } : {}),
+        ...(record.createdAt !== undefined ? { createdAt: record.createdAt } : {}),
+        missing: true,
+        changes: null,
+        unmerged: null,
+        listed: false,
+      })
+    }
+    const result = [...entries.values()]
+    if (options.status) {
+      await pooled(result, LIST_CONCURRENCY, async (entry) => {
+        const read = this.dependencies.read(entry.target, entry.repository)
+        if (!entry.missing) {
+          const status = await read(['-C', entry.root, 'status', '--porcelain', '--untracked-files=normal']).catch(() => null)
+          if (status?.code === 0) entry.changes = status.stdout.split('\n').filter(Boolean).length
+          else if (status && !status.launchError) entry.missing = true
+        }
+        if (entry.branch && entry.listed) {
+          // The commits only this branch has: what deleting it would lose.
+          const count = await read(['rev-list', '--count', `refs/heads/${entry.branch}`, '--not', `--exclude=${entry.branch}`, '--branches', '--remotes']).catch(() => null)
+          const value = count?.code === 0 ? Number.parseInt(count.stdout.trim(), 10) : Number.NaN
+          if (Number.isFinite(value)) entry.unmerged = value
+        }
+      })
+    }
+    return result.map(({ listed: _listed, ...entry }) => entry)
+  }
+
+  /** MDE's worktree folder for a target, ending in a slash. */
+  private async worktreesFolder(target: OpenCodeTarget): Promise<string> {
+    const home = await this.dependencies.home(target)
+    return `${home.replace(/\/+$/, '')}/${WORKTREES_DIRECTORY}/`
   }
 
   /**

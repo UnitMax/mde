@@ -1,8 +1,9 @@
 import { useState, type ReactNode } from 'react'
-import { Copy, Ellipsis, FolderGit2, GitBranch, GitFork, LoaderCircle, PenLine, RefreshCw } from 'lucide-react'
+import { Bot, Copy, Ellipsis, FolderGit2, FolderX, GitBranch, GitFork, LoaderCircle, PenLine, RefreshCw } from 'lucide-react'
 import type { InboxThread } from '@shared/types'
 import { InboxStatusBadge, useInboxClock } from '@/components/InboxPanel'
 import { CompactChatToggle } from '@/components/inbox/CompactChatToggle'
+import { InboxProjectsDialog } from '@/components/inbox/InboxProjectsDialog'
 import { ProjectIcon } from '@/components/inbox/ProjectIcon'
 import { ThreadRenameDialog, useThreadRename } from '@/components/inbox/ThreadRename'
 import { OpenFolderMenu } from '@/components/OpenFolderButtons'
@@ -16,8 +17,11 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { inboxFolderLabel, inboxThreadFolder, inboxThreadHome, sessionAge, sessionDate } from '@/lib/inbox'
+import { worktreeKey } from '@/lib/inbox-worktrees'
+import { notifyActionError, openThreadFromToast, threadDisplayTitle } from '@/lib/toasts'
 import { cn } from '@/lib/utils'
 import { useInboxChat } from '@/store/inbox-chat'
+import { inboxChangesKey, useInboxChanges } from '@/store/inbox-changes'
 import { useWorkspace } from '@/store/workspace'
 
 /** One quiet fact about the thread: an icon and a few words, shown while there is room and always in its tooltip. */
@@ -78,6 +82,36 @@ function ForkedFrom({ source }: { source: string }): JSX.Element {
   )
 }
 
+/** "Started by <thread>": an agent asked MDE for this thread through the MDE MCP. */
+function SpawnedBy({ parentId }: { parentId?: string }): JSX.Element {
+  const parent = useWorkspace((state) => (parentId ? state.inboxThreads.find((item) => item.id === parentId) : undefined))
+  const select = useWorkspace((state) => state.selectInboxThread)
+  const explanation = 'An agent started this thread through the MDE MCP.'
+  const name = parent ? (parent.customTitle ?? parent.title) : null
+  const label = name ? `Started by ${name}` : parentId ? 'Started by a thread that is no longer in the Inbox' : 'Started by an agent'
+  const body = (
+    <>
+      <Bot aria-hidden className={ICON} />
+      <span className="min-w-0 max-w-[14rem] truncate">{label}</span>
+    </>
+  )
+  const className = '@max-[56rem]/thread:hidden flex shrink-0 items-center gap-1'
+  if (!parent) {
+    return <span data-testid="inbox-spawned-by" title={explanation} className={className}>{body}</span>
+  }
+  return (
+    <button
+      type="button"
+      data-testid="inbox-spawned-by"
+      onClick={() => select(parent.id)}
+      title={`Open ${name}. ${explanation}`}
+      className={cn(className, 'rounded hover:text-fg')}
+    >
+      {body}
+    </button>
+  )
+}
+
 /**
  * The open thread's header: one row. The title is the only strong text; the folder, the branch and a fork's origin
  * sit beside it in muted type and drop out, last one first, as the pane narrows. Opening the folder and compact
@@ -89,28 +123,43 @@ export function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
   const regenerateTitle = useInboxChat((state) => state.regenerateTitle)
   const forkThread = useInboxChat((state) => state.forkThread)
   const project = useInboxChat((state) => inboxThreadFolder(thread, state.folders))
+  const checkout = useInboxChanges((state) => state.entries[inboxChangesKey(thread.id)]?.value)
   const rename = useThreadRename(thread)
-  const [fork, setFork] = useState<{ pending: boolean; error: string | null }>({ pending: false, error: null })
-  const [copyError, setCopyError] = useState(false)
+  const [forking, setForking] = useState(false)
+  const [managing, setManaging] = useState(false)
+  // Its worktree was deleted: kept to read, with nothing left to open or fork.
+  const removed = thread.worktreeRemovedAt !== undefined
 
   const title = thread.customTitle ?? thread.title
   const home = inboxThreadHome(thread)
   const wsl = thread.target.kind === 'wsl' ? thread.target.distro : undefined
-  const branch = thread.branch ?? thread.worktree?.branch
+  // Match the sidebars' live checkout; a successful detached HEAD read has no branch.
+  const branch = checkout?.available ? checkout.branch : thread.branch ?? thread.worktree?.branch
   const pendingTitle = regeneration?.pending === true
-  const error = regeneration?.error ?? fork.error ?? (copyError ? 'Could not copy the folder path.' : null)
 
+  // What fails here is told in a toast: it is about one thing just asked for, not about the thread.
+  const actionError = (label: string, detail: string): void => {
+    notifyActionError({
+      key: `thread-action-error:${thread.id}`,
+      label,
+      title: threadDisplayTitle(thread),
+      detail,
+      onOpen: () => openThreadFromToast(thread.id),
+    })
+  }
   const startFork = (): void => {
-    if (fork.pending) return
-    setFork({ pending: true, error: null })
+    if (forking) return
+    setForking(true)
     forkThread(thread.id).then(
-      () => setFork({ pending: false, error: null }),
-      (reason: unknown) => setFork({ pending: false, error: ipcErrorMessage(reason, 'Could not fork the thread.') })
+      () => setForking(false),
+      (reason: unknown) => {
+        setForking(false)
+        actionError('Not forked', ipcErrorMessage(reason, 'Could not fork the thread.'))
+      }
     )
   }
   const copyPath = (): void => {
-    setCopyError(false)
-    navigator.clipboard.writeText(thread.directory).catch(() => setCopyError(true))
+    navigator.clipboard.writeText(thread.directory).catch(() => actionError('Not copied', 'Could not copy the folder path.'))
   }
 
   return (
@@ -139,30 +188,46 @@ export function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
           >
             {project?.name ?? inboxFolderLabel(home)}
           </Fact>
-          {branch && (
-            <Fact
-              testId={thread.worktree ? 'inbox-thread-worktree' : 'inbox-thread-branch'}
+          {branch && thread.worktree ? (
+            // The worktree's own place: the manager, with this one shown first.
+            <button
+              type="button"
+              data-testid="inbox-thread-worktree"
+              data-removed={removed ? '' : undefined}
+              onClick={() => setManaging(true)}
               title={
-                thread.worktree
-                  ? `Runs in a worktree of ${thread.worktree.repository}, started from ${thread.worktree.base}: ${thread.directory}`
-                  : `Branch ${branch}`
+                removed
+                  ? `Its worktree was deleted. It ran in a worktree of ${thread.worktree.repository}, started from ${thread.worktree.base}.`
+                  : `Runs in a worktree of ${thread.worktree.repository}, started from ${thread.worktree.base}: ${thread.directory}. Click to manage worktrees.`
               }
-              icon={thread.worktree ? <FolderGit2 aria-hidden className={ICON} /> : <GitBranch aria-hidden className={ICON} />}
+              className="flex shrink-0 items-center gap-1 rounded px-1 -mx-1 hover:bg-hover hover:text-fg @max-[44rem]/thread:hidden"
+            >
+              {removed ? <FolderX aria-hidden className={ICON} /> : <FolderGit2 aria-hidden className={ICON} />}
+              <span className="sr-only">{removed ? 'Deleted worktree ' : 'Worktree '}</span>
+              <span className={cn('min-w-0 max-w-[14rem] truncate', removed && 'line-through')}>{branch}</span>
+            </button>
+          ) : branch && (
+            <Fact
+              testId="inbox-thread-branch"
+              title={`Branch ${branch}`}
+              icon={<GitBranch aria-hidden className={ICON} />}
               className="@max-[44rem]/thread:hidden"
             >
-              {thread.worktree && <span className="sr-only">Worktree </span>}
               {branch}
             </Fact>
           )}
           {thread.forkedFrom && <ForkedFrom source={thread.forkedFrom} />}
+          {thread.spawnedBy && <SpawnedBy parentId={thread.spawnedBy.threadId} />}
         </div>
         <div className="min-w-2 flex-1" />
         <div className="flex shrink-0 items-center gap-0.5">
-          <OpenFolderMenu
-            target={{ inboxId: thread.id }}
-            kind={thread.target.kind}
-            distro={wsl}
-          />
+          {!removed && (
+            <OpenFolderMenu
+              target={{ inboxId: thread.id }}
+              kind={thread.target.kind}
+              distro={wsl}
+            />
+          )}
           {thread.mode !== 'terminal' && <CompactChatToggle />}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -179,10 +244,16 @@ export function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
                 <PenLine className="h-3.5 w-3.5" />
                 Rename thread
               </DropdownMenuItem>
-              <DropdownMenuItem disabled={fork.pending} onSelect={startFork}>
+              <DropdownMenuItem disabled={forking || removed} onSelect={startFork}>
                 <GitFork className="h-3.5 w-3.5" />
                 Fork thread
               </DropdownMenuItem>
+              {thread.worktree && (
+                <DropdownMenuItem data-testid="thread-manage-worktree" onSelect={() => setManaging(true)}>
+                  <FolderGit2 className="h-3.5 w-3.5" />
+                  Manage worktrees…
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={copyPath}>
                 <Copy className="h-3.5 w-3.5" />
@@ -192,8 +263,14 @@ export function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
           </DropdownMenu>
         </div>
       </div>
-      {error && <p role="alert" className="-mt-1 pb-2 text-xs text-danger">{error}</p>}
       <ThreadRenameDialog thread={thread} rename={rename} />
+      {thread.worktree && (
+        <InboxProjectsDialog
+          open={managing}
+          onOpenChange={setManaging}
+          start={{ tab: 'worktrees', ...(removed ? {} : { focus: worktreeKey({ target: thread.target, root: thread.worktree.root }) }) }}
+        />
+      )}
     </header>
   )
 }

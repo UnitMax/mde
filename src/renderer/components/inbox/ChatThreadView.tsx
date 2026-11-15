@@ -10,7 +10,8 @@ import { ModelQuickSwitch } from '@/components/inbox/ModelQuickSwitch'
 import { ChatComposer, type ChatComposerHandle } from '@/components/inbox/ChatComposer'
 import { ChatGoalCard, type GoalAction } from '@/components/inbox/ChatGoalCard'
 import { McpChip } from '@/components/inbox/McpChip'
-import { McpServerNamesContext } from '@/components/inbox/mcp-context'
+import { PermissionModePicker } from '@/components/inbox/PermissionModePicker'
+import { ChatFileSourceContext, McpServerNamesContext } from '@/components/inbox/mcp-context'
 import { ChatMessageView } from '@/components/inbox/ChatMessageView'
 import { ChatPendingView } from '@/components/inbox/ChatPendingView'
 import { ChatQuoteButton } from '@/components/inbox/ChatQuoteButton'
@@ -21,20 +22,28 @@ import { ChatScrollToBottom } from '@/components/inbox/ChatScrollToBottom'
 import { ChatTimeline } from '@/components/inbox/ChatTimeline'
 import { ChatTranscriptMenu } from '@/components/inbox/ChatTranscriptMenu'
 import { CompactChatContext } from '@/components/inbox/chat-ui'
+import { ChatTurnChanges } from '@/components/inbox/ChatTurnChanges'
+import { ReadOnlyThreadNotice } from '@/components/inbox/ReadOnlyThreadNotice'
 import { TurnDuration, WorkingFor } from '@/components/inbox/ChatTurnTime'
 import { registerThreadInput } from '@/lib/inbox-thread-input'
+import { createFileLookup, type ChatFileSource } from '@/lib/chat-file-links'
 import { scrollBehavior, TIMELINE_MIN_PROMPTS, timelineEntries } from '@/lib/chat-timeline'
 import { compactPlans, type RenderBlock } from '@/lib/chat-tools'
+import { hoverScrollbar } from '@/lib/hover-scrollbar'
+import { turnChanges } from '@/lib/turn-changes'
 import { cn } from '@/lib/utils'
 import { compactionState, contextUsage, drawnStart, findModel, goalPhase, hideReverted, initialChoice, mergeLive, revertedMessageCount, sameModelRef, turnStats } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { mcpKey } from '@/lib/mcp'
 import { slashCommands } from '@/lib/slash-commands'
+import { SUGGESTION_DELAY_MS, suggestionTurn } from '@/lib/next-suggestion'
 import { asideCount, shownAside, useInboxAside } from '@/store/inbox-aside'
 import { optionsKey, useInboxChat, type ChatThreadState } from '@/store/inbox-chat'
 import { useInboxFind } from '@/store/inbox-find'
 import { useInboxMcp, type McpPlace } from '@/store/inbox-mcp'
+import { shownSuggestion, useInboxSuggestion } from '@/store/inbox-suggestion'
 import { useInboxView } from '@/store/inbox-view'
+import { useWorkspace } from '@/store/workspace'
 import { codeViewerFontFamily, getTerminalSettings, subscribeTerminalSettings } from '@/terminal/terminal-settings'
 
 const NO_SERVERS: readonly string[] = []
@@ -65,6 +74,7 @@ type UserMessage = Extract<ChatMessage, { kind: 'user' }>
 /** The conversation of one thread with its composer. */
 export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element {
   const openThread = useInboxChat((state) => state.openThread)
+  const setPermissionMode = useInboxChat((state) => state.setPermissionMode)
   const state = useInboxChat((store) => store.threads[thread.id])
   const options = useInboxChat((store) => store.options[optionsKey({ threadId: thread.id })])
   const remembered = useInboxChat((store) => store.composer)
@@ -93,6 +103,13 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   useEffect(() => { void loadAsides(thread.id) }, [loadAsides, thread.id])
   const askAside = useInboxAside((store) => store.ask)
   const dismissAside = useInboxAside((store) => store.dismiss)
+  // The files the replies name open in the viewer over the conversation. A deleted worktree has none to open.
+  const removed = thread.worktreeRemovedAt !== undefined
+  const fileSource = useMemo<ChatFileSource | null>(() => removed ? null : {
+    directory: thread.directory,
+    exists: createFileLookup((path) => window.api.files.list({ sessionId: thread.id, path })),
+    open: ({ path }) => useWorkspace.getState().openFile(thread.id, path),
+  }, [removed, thread.directory, thread.id])
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const composerSlot = useRef<HTMLDivElement>(null)
@@ -271,8 +288,10 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   }, [messages, requests, pending])
 
   const prompts = useMemo(() => timelineEntries(messages), [messages])
-  // In a narrow pane the timeline's rail would touch the text, so the conversation and the composer both leave room for it.
-  const railGutter = prompts.length >= TIMELINE_MIN_PROMPTS && '@max-[50rem]:pr-9'
+  // The timeline's rail sits at the left edge (where the floating sidebar card never is) and is about 46 px wide.
+  // The centred 768 px column only clears it, cards and all, from a 54 rem pane on; narrower, the conversation and
+  // the composer both take a left margin wider than the rail.
+  const railGutter = prompts.length >= TIMELINE_MIN_PROMPTS && '@max-[54rem]:pl-14'
   // A prompt the timeline names that is not drawn yet: it is drawn first, and jumped to once it is there.
   const jumpAfterDraw = useRef<string | null>(null)
   const jumpToPrompt = useCallback((id: string) => {
@@ -375,12 +394,20 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   // The compact layout folds the activity of the agent's steps together, across steps. A step whose layout did not
   // change keeps the one it had, so that streaming a new step does not draw all the earlier ones again.
   const compact = useInboxView((view) => view.compactChat)
+  const showText = useInboxView((view) => view.compactText)
+  const showSubagents = useInboxView((view) => view.compactSubagents)
   const lastPlans = useRef<ReadonlyMap<string, RenderBlock[]>>()
   const plans = useMemo(() => {
-    const next = compact ? compactPlans(messages, running ? lastAssistantId : undefined, lastPlans.current) : undefined
+    const next = compact ? compactPlans(messages, running ? lastAssistantId : undefined, lastPlans.current, { showText, showSubagents }) : undefined
     lastPlans.current = next
     return next
-  }, [compact, messages, running, lastAssistantId])
+  }, [compact, showText, showSubagents, messages, running, lastAssistantId])
+  // In compact mode, each finished turn ends with the files it changed, which its compact line folds away.
+  const showTurnChanges = useInboxView((view) => view.turnChanges)
+  const changesByTurn = useMemo(
+    () => (compact && showTurnChanges ? turnChanges(messages, thread.directory, running) : undefined),
+    [compact, showTurnChanges, messages, thread.directory, running],
+  )
 
   // Compacting summarizes the conversation to free up context. OpenCode does it in the background and writes it
   // into the conversation as a note, so this only asks, and refuses what would make a second, failing note:
@@ -443,6 +470,29 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const turns = useMemo(() => turnStats(messages, running), [messages, running])
   const busySince = thread.status === 'working' || thread.status === 'attention' ? thread.workingSince : undefined
 
+  // The next message is guessed once per finished turn, after the turn has stood still for a while with the box
+  // empty, so a quick follow-up costs nothing. The guess shows as ghost text in the box (see ChatComposer).
+  const suggestionsOn = useInboxView((view) => view.nextSuggestion)
+  const suggestionFor = useMemo(
+    () => (suggestionsOn && !removed && !state?.loading && !state?.error
+      ? suggestionTurn(shown, { running, asking, held: pending?.length ?? 0, reverting: revert !== null })
+      : null),
+    [suggestionsOn, removed, state?.loading, state?.error, shown, running, asking, pending?.length, revert],
+  )
+  const suggestionEntry = useInboxSuggestion((store) => store.threads[thread.id])
+  const requestSuggestion = useInboxSuggestion((store) => store.request)
+  const dismissSuggestion = useInboxSuggestion((store) => store.dismiss)
+  useEffect(() => {
+    if (!suggestionFor || useInboxSuggestion.getState().threads[thread.id]?.turn === suggestionFor) return undefined
+    const timer = window.setTimeout(() => {
+      // Something typed (or quoted, or attached) is the next message already; there is nothing to guess.
+      if (composer.current && !composer.current.isBlank()) return
+      void requestSuggestion(thread.id, suggestionFor)
+    }, SUGGESTION_DELAY_MS)
+    return () => window.clearTimeout(timer)
+  }, [suggestionFor, requestSuggestion, thread.id])
+  const suggestion = shownSuggestion(suggestionEntry, suggestionFor)
+
   const previousMessage = useCallback(async (beforeId?: string): Promise<{ id: string; text: string } | null> => {
     for (;;) {
       const current = useInboxChat.getState().threads[thread.id]
@@ -463,6 +513,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   }, [loadOlder, thread.id])
 
   return (
+    <ChatFileSourceContext.Provider value={fileSource}>
     <McpServerNamesContext.Provider value={mcpNames}>
     <div
       ref={rootRef}
@@ -472,8 +523,16 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
     >
       <div className="relative flex min-h-0 flex-1 flex-col">
       <ChatTranscriptMenu messages={messages} complete={!state?.older} transcriptRef={scrollRef} onCopyError={setCopyError} onQuote={quote}>
-      <div ref={scrollRef} onScroll={onScroll} className="chat-selectable min-h-0 flex-1 overflow-y-auto" data-testid="chat-transcript">
-        <div ref={contentRef} className={cn('mx-auto flex w-full max-w-3xl flex-col gap-4 px-6 py-5', railGutter)}>
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        // Set on the element itself rather than through state: drawing the conversation again for it would cost.
+        {...hoverScrollbar}
+        className="hover-scrollbar chat-selectable min-h-0 flex-1 overflow-y-auto"
+        data-testid="chat-transcript"
+        data-chat-scroller=""
+      >
+        <div ref={contentRef} className={cn('chat-flow mx-auto w-full max-w-3xl px-6 py-5', railGutter)}>
           {(first > 0 || state?.older) && (
             <button
               type="button"
@@ -496,6 +555,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
           <CompactChatContext.Provider value={compact}>
             {drawn.map((message) => {
               const took = turns.finished.get(message.id)
+              const changed = changesByTurn?.get(message.id)
               return (
                 <Fragment key={message.id}>
                   <ChatMessageView
@@ -507,6 +567,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
                     onRevert={message.kind === 'user' ? askRevert : undefined}
                     onFork={message.kind === 'user' ? forkFrom : undefined}
                   />
+                  {changed && <ChatTurnChanges changes={changed} directory={thread.directory} />}
                   {took !== undefined && <TurnDuration ms={took.ms} tokensPerSecond={took.tokensPerSecond} />}
                 </Fragment>
               )
@@ -591,6 +652,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
             onRetry={() => void askAside(thread.id, aside.question)}
           />
         )}
+        {thread.worktreeRemovedAt !== undefined ? <ReadOnlyThreadNotice thread={thread} /> : <>
         <ComposerDock>
           <ChatBackgroundTasks key={`background:${thread.id}`} threadId={thread.id} />
           {ready && <ModelQuickSwitch models={ready.models} value={model} onChange={setModel} />}
@@ -613,12 +675,20 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
           context={context}
           compact={compactMenu}
           commands={commands}
+          suggestion={suggestion}
+          onDismissSuggestion={() => dismissSuggestion(thread.id)}
           onEscape={() => {
             if (!aside) return false
             closeAside()
             return true
           }}
           extraPickers={<>
+            <PermissionModePicker
+             
+              value={thread.permissionMode ?? 'default'}
+              running={running}
+              onChange={(mode) => setPermissionMode(thread.id, mode)}
+            />
             <McpChip place={mcpPlace} running={running} messages={shown} complete={!state?.older} />
             <AsideHistoryChip count={asidesKept} open={aside !== null} onToggle={() => aside ? closeAside() : openAsides(thread.id)} />
           </>}
@@ -632,6 +702,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
             })
           }}
         />
+        </>}
       </div>
       <ChatRevertDialog
         message={revertTarget}
@@ -647,5 +718,6 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
       />
     </div>
     </McpServerNamesContext.Provider>
+    </ChatFileSourceContext.Provider>
   )
 }

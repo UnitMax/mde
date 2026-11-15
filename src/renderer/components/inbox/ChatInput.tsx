@@ -13,6 +13,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
 import { quoteLines } from '@/lib/chat-quote'
+import { cleanPromptText } from '@shared/prompt-text'
 
 const externalChange = Annotation.define<boolean>()
 const continueList = insertNewlineContinueMarkupCommand({ nonTightLists: false })
@@ -112,7 +113,19 @@ const inputTheme = EditorView.theme({
     backgroundColor: 'color-mix(in srgb, var(--color-accent) 15%, transparent)',
     borderRadius: '4px',
   },
-  '.cm-placeholder': { color: 'var(--color-fg-subtle)' },
+  // Inline, not CodeMirror's inline-block: a placeholder that wraps (a long suggestion) would otherwise be one block
+  // several lines tall, and the caret in front of it is drawn as tall as that block.
+  '.cm-placeholder': { color: 'var(--color-fg-subtle)', display: 'inline' },
+  '.chat-input-suggestion-key': {
+    marginLeft: '8px',
+    padding: '0 5px',
+    border: '1px solid var(--color-line-strong)',
+    borderRadius: '4px',
+    fontSize: '10px',
+    lineHeight: '16px',
+    verticalAlign: '1px',
+    color: 'var(--color-fg-subtle)',
+  },
   '.cm-selectionBackground': { backgroundColor: 'var(--color-active)' },
 })
 
@@ -125,15 +138,34 @@ function inBulletList(state: EditorState): boolean {
   return false
 }
 
+/** The suggested message as the empty box shows it: the text, then the key that takes it. */
+function suggestionElement(text: string): HTMLElement {
+  const element = document.createElement('span')
+  element.dataset.testid = 'chat-suggestion'
+  element.append(text)
+  const key = document.createElement('kbd')
+  key.className = 'chat-input-suggestion-key'
+  key.textContent = 'Tab'
+  element.append(key)
+  return element
+}
+
 export interface ChatInputHandle {
   focus: (caret?: number) => void
   insertNewline: () => void
+  /** Whether any text in the box is selected. */
+  hasSelection: () => boolean
 }
 
 interface ChatInputProps {
   value: string
   disabled: boolean
   placeholder: string
+  /**
+   * The next message suggested for the empty box: shown instead of the placeholder, as ghost text with a Tab key
+   * hint. Taking it is the page's (the key goes to `onKeyDown`).
+   */
+  suggestion?: string | null
   autoFocus: boolean
   controls?: string
   activeDescendant?: string
@@ -141,6 +173,10 @@ interface ChatInputProps {
   onSelect: (text: string, caret: number) => void
   onKeyDown: (event: KeyboardEvent) => void
   onPaste: (event: ClipboardEvent) => void
+  /** The most text the box takes from typing, pasting or dropping; an edit that would go past it is refused. */
+  maxLength?: number
+  /** An edit was refused for going past `maxLength`. */
+  onTooLong?: () => void
   /**
    * Where the text starts with the name of a command, if it does. That part is shown as a command. The
    * function is read as the text changes, and again when a different one is given.
@@ -188,6 +224,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             provide: (field) => EditorView.decorations.from(field),
           }),
           history(),
+          // What is dropped in is cleaned as the paste handler below cleans what is pasted.
+          EditorView.clipboardInputFilter.of((text) => cleanPromptText(text)),
+          // Text that would make the message longer than it may be is refused whole, not cut.
+          EditorState.transactionFilter.of((transaction) => {
+            const limit = latest.current.maxLength
+            if (limit === undefined || !transaction.docChanged || !transaction.isUserEvent('input')) return transaction
+            if (transaction.newDoc.length <= limit || transaction.newDoc.length <= transaction.startState.doc.length) return transaction
+            queueMicrotask(() => latest.current.onTooLong?.())
+            return []
+          }),
           keymap.of([{ key: 'Backspace', run: deleteMarkupBackward }, ...standardKeymap.filter((binding) => binding.key !== 'Enter'), ...historyKeymap]),
           EditorView.lineWrapping,
           inputTheme,
@@ -203,8 +249,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
               latest.current.onPaste(event)
               if (event.defaultPrevented) return true
               if (!event.clipboardData) return false
-              // Ignore text/html even when the clipboard supplies it alongside plain text.
-              editor.dispatch(editor.state.replaceSelection(event.clipboardData.getData('text/plain')), { userEvent: 'input.paste', scrollIntoView: true })
+              // Ignore text/html even when the clipboard supplies it alongside plain text. Terminal output (CI logs)
+              // brings colour codes and other control characters, which a message must not hold.
+              const pasted = cleanPromptText(event.clipboardData.getData('text/plain'))
+              editor.dispatch(editor.state.replaceSelection(pasted), { userEvent: 'input.paste', scrollIntoView: true })
               return true
             },
           })),
@@ -236,9 +284,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       EditorState.readOnly.of(props.disabled),
       EditorView.editable.of(!props.disabled),
       EditorView.contentAttributes.of(attributes),
-      editorPlaceholder(props.placeholder),
+      editorPlaceholder(props.suggestion ? suggestionElement(props.suggestion) : props.placeholder),
     ]) })
-  }, [props.disabled, props.placeholder, props.controls, props.activeDescendant])
+  }, [props.disabled, props.placeholder, props.suggestion, props.controls, props.activeDescendant])
 
   useLayoutEffect(() => {
     viewRef.current?.dispatch({ effects: refreshCommandToken.of(null) })
@@ -275,6 +323,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       if (inBulletList(view.state) && continueList(view)) return
       view.dispatch(view.state.replaceSelection('\n'), { scrollIntoView: true, userEvent: 'input' })
     },
+    hasSelection: () => viewRef.current?.state.selection.ranges.some((range) => !range.empty) ?? false,
   }), [])
 
   const selectedText = (): string => {

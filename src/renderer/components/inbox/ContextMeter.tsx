@@ -1,21 +1,18 @@
 import type { CSSProperties } from 'react'
 import { FoldVertical, Gauge, LoaderCircle } from 'lucide-react'
 import type { ChatTokens } from '@shared/types'
-import { toolbarChip, useComposerSize } from '@/components/inbox/composer-toolbar'
+import { toolbarChip } from '@/components/inbox/composer-toolbar'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import {
-  CONTEXT_SEGMENTS,
   formatCost,
   formatExactTokens,
   formatPercent,
   formatTokens,
-  segmentFill,
   stepContext,
   type CompactionState,
   type ContextTone,
   type ContextUsage,
 } from '@/lib/chat'
-import { atLeast } from '@/lib/composer-size'
 import { cn } from '@/lib/utils'
 
 const TONE_COLOR: Record<ContextTone, string> = {
@@ -47,36 +44,7 @@ function describe(usage: ContextUsage): string {
     : `Context: ${used} tokens used`
 }
 
-function Segments({ usage, running }: { usage: ContextUsage; running: boolean }): JSX.Element {
-  const lit = Math.min(CONTEXT_SEGMENTS, Math.ceil(Math.min(usage.ratio ?? 0, 1) * CONTEXT_SEGMENTS))
-  return (
-    <span aria-hidden className="flex items-center gap-[3px]" data-testid="chat-context-segments">
-      {Array.from({ length: CONTEXT_SEGMENTS }, (_, index) => {
-        const fill = segmentFill(usage.ratio, index)
-        return (
-          <span key={index} className="relative h-1.5 w-[11px] rounded-full bg-line-strong">
-            {fill > 0 && (
-              // A partly filled segment is lit more dimly instead of cut short, which would read as a stray tick.
-              <span
-                className={cn('absolute inset-0 rounded-full', running && index === lit - 1 && 'motion-safe:animate-pulse')}
-                style={{
-                  opacity: 0.4 + 0.6 * fill,
-                  background: 'linear-gradient(90deg, color-mix(in srgb, var(--meter) 60%, transparent), var(--meter))',
-                  boxShadow: '0 0 6px color-mix(in srgb, var(--meter) 55%, transparent)',
-                }}
-              />
-            )}
-          </span>
-        )
-      })}
-    </span>
-  )
-}
-
-/**
- * The meter at a size too small for the segments: the same fill as a ring, so a narrow box still shows how full
- * the window is. It turns amber and red with the segments.
- */
+/** How full the window is, as a ring that fills and turns amber and red with it. */
 function Ring({ usage, running }: { usage: ContextUsage; running: boolean }): JSX.Element {
   const ratio = Math.min(Math.max(usage.ratio ?? 0, 0), 1)
   const radius = 6
@@ -240,21 +208,18 @@ function Details({ usage }: { usage: ContextUsage }): JSX.Element {
 }
 
 /**
- * A control for the composer's toolbar showing how full the model's context window is, as a gauge and a
- * token count. It turns amber and then red as the window fills; clicking it opens the breakdown.
+ * A control for the composer's toolbar showing how full the model's context window is, as a small ring. It turns
+ * amber and then red as the window fills; the count is in its label, and clicking it opens the breakdown.
  */
 export function ContextMeter({ usage, running = false, compact }: { usage: ContextUsage; running?: boolean; compact?: ContextCompact }): JSX.Element {
-  const size = useComposerSize()
   const label = describe(usage)
   const style = { '--meter': TONE_COLOR[usage.tone] } as CSSProperties
   const tinted = usage.tone === 'normal' ? undefined : { color: 'var(--meter)' }
-  // Wide, the segments; roomy enough for a number, the ring; below that the ring alone. Without a known
-  // window there is nothing to fill, so the gauge icon stands in.
+  // Without a known window there is nothing to fill, so the gauge icon stands in; after a compaction the fold icon
+  // does, until the next reply says what the conversation holds.
   const gauge = !usage.limit ? <Gauge aria-hidden className="h-3.5 w-3.5 shrink-0" style={tinted} />
-    : size === 'wide' ? <Segments usage={usage} running={running} />
-      : usage.compacted ? <FoldVertical aria-hidden className="h-3.5 w-3.5 shrink-0" style={tinted} />
-        : <Ring usage={usage} running={running} />
-  const numbered = atLeast(size, 'medium')
+    : usage.compacted ? <FoldVertical aria-hidden className="h-3.5 w-3.5 shrink-0" style={tinted} />
+      : <Ring usage={usage} running={running} />
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -265,14 +230,9 @@ export function ContextMeter({ usage, running = false, compact }: { usage: Conte
           data-testid="chat-context-meter"
           data-tone={usage.tone}
           style={style}
-          className={cn(toolbarChip, 'shrink-0 gap-2 text-[11.5px] tabular-nums', numbered ? 'px-2' : 'w-7 justify-center px-0')}
+          className={cn(toolbarChip, 'w-7 shrink-0 justify-center px-0')}
         >
           {gauge}
-          {numbered && (
-            <span className="font-medium" style={tinted}>
-              {usage.compacted ? 'Compacted' : formatTokens(usage.used)}
-            </span>
-          )}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="end" sideOffset={8} className="w-80 p-0" style={style}>

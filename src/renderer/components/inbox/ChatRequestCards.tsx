@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { LoaderCircle, MessageCircleQuestion, ShieldAlert } from 'lucide-react'
-import type { ChatForm, ChatFormField, ChatPermission } from '@shared/types'
+import { Bot, LoaderCircle, MessageCircleQuestion, ShieldAlert } from 'lucide-react'
+import type { ChatForm, ChatFormField, ChatPermission, ChatRequestSubagent } from '@shared/types'
+import { alwaysAllowHint } from '@/lib/saved-permissions'
 import { Button } from '@/components/ui/button'
 import { formAnswer, initialFormDraft, permissionTitle, type FormDraft } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
@@ -9,20 +10,31 @@ import { cn } from '@/lib/utils'
 function Card({
   icon,
   title,
+  subagent,
   children,
   testId,
 }: {
   icon: React.ReactNode
   title: string
+  /** A subagent of the thread asks, not the thread's own agent. */
+  subagent?: ChatRequestSubagent
   children: React.ReactNode
   testId: string
 }): JSX.Element {
+  const from = subagent ? `Subagent${subagent.title ? ` “${subagent.title}”` : ''}` : null
   return (
     <section
       data-testid={testId}
+      data-subagent={subagent?.sessionId}
       className="rounded-lg border border-warn/40 bg-warn/5 px-3.5 py-3"
-      aria-label={title}
+      aria-label={from ? `${from}: ${title}` : title}
     >
+      {from && (
+        <p className="mb-1 flex min-w-0 items-center gap-1.5 text-[11.5px] text-fg-muted" data-testid="chat-request-subagent">
+          <Bot aria-hidden className="h-3.5 w-3.5 shrink-0 text-fg-subtle" />
+          <span className="min-w-0 truncate" title={from}>{from} asks</span>
+        </p>
+      )}
       <h3 className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-fg">
         {icon}
         {title}
@@ -53,7 +65,12 @@ export function PermissionCard({
     }
   }
   return (
-    <Card testId={`chat-permission-${permission.id}`} icon={<ShieldAlert className="h-4 w-4 text-warn" />} title={`Permission: ${permissionTitle(permission.action)}`}>
+    <Card
+      testId={`chat-permission-${permission.id}`}
+      icon={<ShieldAlert className="h-4 w-4 text-warn" />}
+      title={`Permission: ${permissionTitle(permission.action)}`}
+      {...(permission.subagent ? { subagent: permission.subagent } : {})}
+    >
       {permission.message && <p className="mb-2 text-[13px] text-fg-muted">{permission.message}</p>}
       {permission.incomplete && <p role="alert" className="mb-2 text-[13px] text-warn">MDE cannot show this permission request completely. Review it in an OpenCode terminal, or reject it here.</p>}
       {permission.resources.length > 0 && (
@@ -79,8 +96,32 @@ export function PermissionCard({
           Reject
         </Button>
       </div>
+      <AlwaysAllowHint permission={permission} />
       {error && <p role="alert" className="mt-2 text-xs text-danger">{error}</p>}
     </Card>
+  )
+}
+
+/** What "Always allow" would save, said before it is chosen: it is for the whole project, and may be every such call. */
+function AlwaysAllowHint({ permission }: { permission: ChatPermission }): JSX.Element | null {
+  const hint = alwaysAllowHint(permission.action, permission.save)
+  if (!hint || permission.incomplete) return null
+  return (
+    <p data-testid="chat-permission-always-hint" data-broad={hint.broad || undefined} className={cn('mt-2 text-[12px] leading-snug', hint.broad ? 'text-warn' : 'text-fg-subtle')}>
+      {hint.broad
+        ? <>Always allow covers <strong className="font-semibold">every {hint.noun}</strong> in this project from now on, in all its threads, not just this one.</>
+        : <>
+            Always allow saves{' '}
+            {hint.patterns.map((pattern, index) => (
+              <span key={pattern}>
+                {index > 0 && ', '}
+                <code className="inbox-code-font rounded bg-bg px-1 text-[11.5px] text-fg-muted">{pattern}</code>
+              </span>
+            ))}{' '}
+            for this project, in all its threads.
+          </>}
+      {' '}You can remove it under Permissions in the sidebar.
+    </p>
   )
 }
 
@@ -216,7 +257,7 @@ export function QuestionCard({
 
   if (form.unsupported) {
     return (
-      <Card testId={`chat-question-${form.id}`} icon={<MessageCircleQuestion className="h-4 w-4 text-warn" />} title={form.title}>
+      <Card testId={`chat-question-${form.id}`} icon={<MessageCircleQuestion className="h-4 w-4 text-warn" />} title={form.title} {...(form.subagent ? { subagent: form.subagent } : {})}>
         <p className="text-[13px] text-fg-muted">
           This question uses fields MDE cannot show yet. Answer it in OpenCode in a terminal.
         </p>
@@ -241,7 +282,7 @@ export function QuestionCard({
   }
 
   return (
-    <Card testId={`chat-question-${form.id}`} icon={<MessageCircleQuestion className="h-4 w-4 text-warn" />} title={form.title}>
+    <Card testId={`chat-question-${form.id}`} icon={<MessageCircleQuestion className="h-4 w-4 text-warn" />} title={form.title} {...(form.subagent ? { subagent: form.subagent } : {})}>
       <form
         className="flex flex-col gap-3"
         onSubmit={(event) => {

@@ -107,7 +107,7 @@ describe('Settings → Terminal → Inbox sidebar terminal', () => {
   it('keeps the Inbox gear menu limited to display settings of the Inbox on Windows', async () => {
     await openMenu()
     const menu = query('[role="menu"]')
-    expect(menu.querySelectorAll('[role="menuitemcheckbox"]')).toHaveLength(4)
+    expect(menu.querySelectorAll('[role="menuitemcheckbox"]')).toHaveLength(5)
     expect(menu.textContent).not.toContain('terminal')
     expect(menu.querySelector('[role="menuitem"]')).toBeNull()
   })

@@ -147,7 +147,7 @@ function Rail({
 
   return (
     // The layer is as tall as the conversation so that the card can use its height; only the rail takes the pointer.
-    <div className="pointer-events-none absolute inset-y-0 right-3 z-20 flex items-center" data-testid="chat-timeline">
+    <div className="pointer-events-none absolute inset-y-0 left-3 z-20 flex items-center" data-testid="chat-timeline">
       <div ref={railRef} className="pointer-events-auto" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} onBlur={onBlur}>
         <button
           ref={triggerRef}
@@ -162,7 +162,7 @@ function Rail({
           }}
           onKeyDown={onTriggerKeyDown}
           className={cn(
-            'flex flex-col items-end rounded-lg px-2.5 py-2 transition-opacity focus-visible:outline-offset-0',
+            'flex flex-col items-start rounded-lg px-2.5 py-2 transition-opacity focus-visible:outline-offset-0',
             open && 'opacity-0',
           )}
           style={mask ? { maskImage: mask, WebkitMaskImage: mask } : undefined}
@@ -179,7 +179,7 @@ function Rail({
         </button>
         {open && (
           <div
-            className="chat-timeline-card absolute right-1 top-1/2 flex max-h-[calc(100%-1.5rem)] w-[min(19rem,70vw)] -translate-y-1/2 flex-col rounded-xl border border-line-strong bg-elevated p-1 shadow-xl shadow-shade/50"
+            className="chat-timeline-card absolute left-1 top-1/2 flex max-h-[calc(100%-1.5rem)] w-[min(19rem,70vw)] -translate-y-1/2 flex-col rounded-xl border border-line-strong bg-elevated p-1 shadow-xl shadow-shade/50"
             data-testid="chat-timeline-card"
           >
             <div
@@ -208,11 +208,10 @@ function Rail({
                       current ? 'text-fg' : 'text-fg-muted',
                     )}
                   >
+                    <span aria-hidden className="flex w-3.5 shrink-0">
+                      <span className={cn('block h-[2px] rounded-full transition-[width,background-color] duration-150', MARK_CLASS[markState(entry.id, place)])} />
+                    </span>
                     <span className="min-w-0 flex-1 truncate">{entry.label}</span>
-                    <span
-                      aria-hidden
-                      className={cn('block h-[2px] shrink-0 rounded-full transition-[width,background-color] duration-150', MARK_CLASS[markState(entry.id, place)])}
-                    />
                   </button>
                 )
               })}

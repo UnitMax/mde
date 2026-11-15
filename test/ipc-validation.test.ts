@@ -53,6 +53,7 @@ const validPayloads = {
   [IpcChannels.ptyDispose]: 'pane',
   [IpcChannels.ptyStatuses]: undefined,
   [IpcChannels.ptyDirectories]: undefined,
+  [IpcChannels.ptyStartInFolder]: { terminalId: 'session:tab:t:pane:p', sessionId: 'session', folder: { sessionId: 'ses_thread', path: 'src' } },
   [IpcChannels.ptyDropFiles]: { terminalId: 'pane', files: [{ name: 'test.txt', nativePath: '/tmp/test.txt' }], mode: 'shell', treeEntry: undefined },
   [IpcChannels.clipboardWriteText]: 'copied\ntext',
   [IpcChannels.clipboardPaste]: undefined,
@@ -66,6 +67,7 @@ const validPayloads = {
   [IpcChannels.pathOpenTerminalInVsCode]: 'pane',
   [IpcChannels.pathRevealInbox]: 'ses_thread',
   [IpcChannels.pathOpenInboxInVsCode]: 'fld_1234',
+  [IpcChannels.pathRevealTreeFolder]: { terminalId: 'pane', directory: '/home/me', path: 'src/lib' },
   [IpcChannels.gitTerminalInfo]: terminalId,
   [IpcChannels.filesList]: { sessionId: 'session', path: '' },
   [IpcChannels.filesRead]: { sessionId: 'session', path: 'src/file.ts' },
@@ -73,6 +75,7 @@ const validPayloads = {
   [IpcChannels.inboxSetRead]: { id: 'ses_thread', read: true },
   [IpcChannels.inboxSetArchived]: { id: 'ses_thread', archived: false },
   [IpcChannels.inboxSetPinned]: { id: 'ses_thread', pinned: true },
+  [IpcChannels.inboxSetSnoozed]: { id: 'ses_thread', until: 1_800_000_000_000 },
   [IpcChannels.inboxSetCustomTitle]: { id: 'ses_thread', customTitle: 'My task' },
   [IpcChannels.inboxRemove]: { id: 'ses_thread' },
   [IpcChannels.inboxFolders]: undefined,
@@ -81,12 +84,20 @@ const validPayloads = {
   [IpcChannels.inboxFoldersRemove]: { id: 'fld_1234' },
   [IpcChannels.inboxComposerSet]: { folderId: 'fld_1234', agent: 'plan', model },
   [IpcChannels.inboxGitInfo]: { folderId: 'fld_1234' },
+  [IpcChannels.inboxWorktrees]: undefined,
+  [IpcChannels.inboxWorktreeRemove]: { target: { kind: 'wsl', distro: 'Ubuntu' }, root: '/home/me/.mde/worktrees/app-1234/abcd1234', force: true, deleteBranch: false },
   [IpcChannels.chatConfigure]: { executable: 'opencode' },
   [IpcChannels.chatOptions]: { folderId: 'fld_1234' },
   [IpcChannels.chatDraft]: { key: 'thread:ses_one', action: 'load' },
   [IpcChannels.chatDrafts]: undefined,
   [IpcChannels.chatCreate]: { folderId: 'fld_1234', text: 'Fix the login\n\tplease', agent: 'build', model },
   [IpcChannels.inboxChangeDiff]: { threadId: 'ses_thread', path: 'src/app.ts' },
+  [IpcChannels.gitGraph]: { threadId: 'ses_thread', limit: 400, scope: 'all' },
+  [IpcChannels.gitCommit]: { terminalId: 'session-1:tab:tab-1:pane:pane-1', hash: 'a'.repeat(40) },
+  [IpcChannels.gitFetch]: { threadId: 'ses_thread' },
+  [IpcChannels.gitChanges]: { terminalId: 'session-1:tab:tab-1:pane:pane-1' },
+  [IpcChannels.gitChangeDiff]: { terminalId: 'session-1:tab:tab-1:pane:pane-1', path: 'src/a.ts' },
+  [IpcChannels.gitCommitDiff]: { threadId: 'ses_thread', hash: 'b'.repeat(40), path: 'src/a.ts' },
   [IpcChannels.inboxChanges]: { threadId: 'ses_thread', details: true },
   [IpcChannels.chatMessages]: { threadId: 'ses_thread', cursor: 'eyJpZCI6Im1zZyJ9' },
   [IpcChannels.chatSearch]: { query: 'login redirect' },
@@ -102,17 +113,30 @@ const validPayloads = {
   [IpcChannels.chatSetDelivery]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a', delivery: 'queue' },
   [IpcChannels.chatAside]: { threadId: 'ses_thread', question: 'Why did we pick SQLite?' },
   [IpcChannels.chatAsideHistory]: { threadId: 'ses_thread' },
+  [IpcChannels.chatSuggest]: { threadId: 'ses_thread' },
   [IpcChannels.chatMcp]: { threadId: 'ses_thread' },
   [IpcChannels.chatMcpSet]: { folderId: 'fld_1234', server: 'context 7', enabled: false },
+  [IpcChannels.chatUsage]: { folderId: 'fld_1234', since: 1_700_000_000_000, timezone: 'Europe/Berlin' },
   [IpcChannels.chatRevert]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a', files: false },
   [IpcChannels.chatFork]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a' },
+  [IpcChannels.chatPermissionMode]: { threadId: 'ses_thread', mode: 'read-only' },
   [IpcChannels.chatRegenerateTitle]: { threadId: 'ses_thread' },
   [IpcChannels.chatRequests]: { threadId: 'ses_thread' },
   [IpcChannels.chatPermissionReply]: { threadId: 'ses_thread', requestId: 'per_1', decision: 'once' },
+  [IpcChannels.chatSavedPermissions]: { threadId: 'ses_thread' },
+  [IpcChannels.chatSavedPermissionRemove]: { threadId: 'ses_thread', id: 'psv_1' },
   [IpcChannels.chatFormReply]: { threadId: 'ses_thread', formId: 'frm_1', answer: { q0: 'Red', q1: ['a', 'b'], q2: true, q3: 3 } },
   [IpcChannels.chatSubscribe]: { threadId: 'ses_thread' },
   [IpcChannels.chatUnsubscribe]: { threadId: 'ses_thread' },
   [IpcChannels.opencodeConfigRead]: { kind: 'wsl', distro: 'Ubuntu-24.04' },
+  [IpcChannels.mdeMcpStatus]: { kind: 'wsl', distro: 'Ubuntu-24.04' },
+  [IpcChannels.mdeMcpInstall]: { kind: 'native' },
+  [IpcChannels.mdeMcpRemove]: { kind: 'wsl', distro: 'Ubuntu-24.04' },
+  [IpcChannels.mdeMcpTerminalSettings]: undefined,
+  [IpcChannels.mdeMcpSetTerminalSettings]: { commands: 'ask', allowedUntil: null },
+  [IpcChannels.agentTerminalClaim]: { requestId: 'req-1', terminalId: 'inbox-terminal:tab:default:pane:2', palette },
+  [IpcChannels.agentTerminalRefuse]: { requestId: 'req-1', reason: 'The terminal has no room for another pane.' },
+  [IpcChannels.agentTerminalDecide]: { terminalId: 'inbox-terminal:tab:default:pane:2', decision: 'run-for-hour' },
   [IpcChannels.opencodeConfigPreview]: { kind: 'native', draft: configDraft },
   [IpcChannels.opencodeConfigSave]: { kind: 'wsl', distro: 'Ubuntu-24.04', draft: configDraft, revision: 'a'.repeat(64) },
   [IpcChannels.windowModeGet]: undefined,
@@ -137,6 +161,16 @@ describe('IPC payload boundary', () => {
 
   it.each(channels)('accepts structured-cloned normal requests on %s', (channel) => {
     expect(() => assertIpcPayload(channel, structuredClone(validPayloads[channel]))).not.toThrow()
+  })
+
+  it('fetches for a thread, a terminal or a project folder, and for nothing else', () => {
+    expect(() => assertIpcPayload(IpcChannels.gitFetch, { folderId: 'fld_1234' })).not.toThrow()
+    expect(() => assertIpcPayload(IpcChannels.gitFetch, { terminalId: 'session-1:tab:tab-1:pane:pane-1' })).not.toThrow()
+    rejects(IpcChannels.gitFetch, { folderId: 'ses_thread' })
+    rejects(IpcChannels.gitFetch, { folderId: 'fld_1234', threadId: 'ses_thread' })
+    rejects(IpcChannels.gitFetch, { folderId: '/home/me/app' })
+    // Only the fetch takes a folder: the graph channels still name a thread or a terminal.
+    rejects(IpcChannels.gitGraph, { folderId: 'fld_1234', limit: 400, scope: 'all' })
   })
 
   it.each(channels)('rejects malformed, oversized and prototype-shaped requests on %s', (channel) => {
@@ -179,11 +213,20 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.inboxSetPinned, { id: 'thread', pinned: true })
     rejects(IpcChannels.inboxSetPinned, { id: 'ses_thread', pinned: 'yes' })
     rejects(IpcChannels.inboxSetPinned, { id: 'ses_thread' })
+    expect(() => assertIpcPayload(IpcChannels.inboxSetSnoozed, { id: 'ses_thread', until: null })).not.toThrow()
+    rejects(IpcChannels.inboxSetSnoozed, { id: 'ses_thread' })
+    rejects(IpcChannels.inboxSetSnoozed, { id: 'ses_thread', until: '1800000000000' })
+    rejects(IpcChannels.inboxSetSnoozed, { id: 'ses_thread', until: 1.5 })
+    rejects(IpcChannels.inboxSetSnoozed, { id: 'ses_thread', until: Infinity })
+    rejects(IpcChannels.inboxSetSnoozed, { id: 'thread', until: null })
     rejects(IpcChannels.inboxRemove, { id: '' })
     expect(() => assertIpcPayload(IpcChannels.inboxRemove, { id: 'ses_thread', removeWorktree: true })).not.toThrow()
     rejects(IpcChannels.inboxRemove, { id: 'ses_thread', removeWorktree: 'yes' })
     rejects(IpcChannels.inboxGitInfo, { folderId: '../fld' })
     rejects(IpcChannels.inboxGitInfo, { folderId: 'fld_1234', directory: '/home/me/app' })
+    rejects(IpcChannels.inboxWorktreeRemove, { target: { kind: 'native', distro: 'Ubuntu' }, root: '/home/me/x' })
+    rejects(IpcChannels.inboxWorktreeRemove, { target: { kind: 'wsl' }, root: '/home/me/x' })
+    rejects(IpcChannels.inboxWorktreeRemove, { target: { kind: 'native' }, root: '/home/me/x', force: 'yes' })
     rejects(IpcChannels.inboxList, { id: 'ses_thread' })
   })
 
@@ -213,6 +256,22 @@ describe('IPC payload boundary', () => {
     // A fork of the whole conversation names no message.
     expect(() => assertIpcPayload(IpcChannels.chatFork, { threadId: 'ses_thread' })).not.toThrow()
     expect(() => assertIpcPayload(IpcChannels.chatFork, { threadId: 'ses_thread', messageId: 'msg_1' })).not.toThrow()
+  })
+
+  it('takes only a known permission mode for a thread', () => {
+    for (const mode of ['default', 'read-only', 'ask', 'auto-edit', 'full', 'full-web-asks']) {
+      expect(() => assertIpcPayload(IpcChannels.chatPermissionMode, { threadId: 'ses_thread', mode })).not.toThrow()
+    }
+    for (const bad of [
+      { threadId: 'ses_thread', mode: 'yolo' },
+      { threadId: 'ses_thread', mode: [{ action: '*', resource: '*', effect: 'allow' }] },
+      { threadId: 'ses_thread' },
+      { threadId: '../ses', mode: 'full' },
+      { threadId: 'ses_thread', mode: 'full', rules: [] },
+    ]) rejects(IpcChannels.chatPermissionMode, bad)
+    const started = { folderId: 'fld_1234', text: 'Hi', agent: 'build', model }
+    expect(() => assertIpcPayload(IpcChannels.chatCreate, { ...started, permissionMode: 'full' })).not.toThrow()
+    rejects(IpcChannels.chatCreate, { ...started, permissionMode: 'everything' })
     // Taking back a held message names the thread and the message, and nothing else.
     for (const bad of [
       {},
@@ -327,6 +386,8 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.chatMessages, { threadId: 'ses_thread', cursor: 'has space' })
     rejects(IpcChannels.chatPermissionReply, { threadId: 'ses_thread', requestId: 'per_1', decision: 'maybe' })
     rejects(IpcChannels.chatPermissionReply, { threadId: 'ses_thread', requestId: 'frm_1', decision: 'once' })
+    rejects(IpcChannels.chatSavedPermissionRemove, { threadId: 'ses_thread', id: 'per_1' })
+    rejects(IpcChannels.chatSavedPermissionRemove, { threadId: 'ses_thread', id: 'psv_../x' })
     rejects(IpcChannels.chatFormReply, { threadId: 'ses_thread', formId: 'frm_1', answer: { q0: { nested: true } } })
     rejects(IpcChannels.chatFormReply, { threadId: 'ses_thread', formId: 'frm_1', answer: [] })
     rejects(IpcChannels.chatFormReply, {
@@ -369,6 +430,17 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.chatMcpSet, { threadId: 'ses_thread', server: 'demo_math', enabled: 'yes' })
     rejects(IpcChannels.chatMcpSet, { server: 'demo_math', enabled: true })
     rejects(IpcChannels.chatMcpSet, { folderId: 'fld_1234', threadId: 'ses_thread', server: 'demo_math', enabled: true })
+  })
+
+  it('accepts a usage overview for one folder, with an optional start and time zone', () => {
+    expect(() => assertIpcPayload(IpcChannels.chatUsage, { folderId: 'fld_1234' })).not.toThrow()
+    expect(() => assertIpcPayload(IpcChannels.chatUsage, { folderId: 'fld_1234', timezone: 'America/Argentina/Buenos_Aires' })).not.toThrow()
+    rejects(IpcChannels.chatUsage, {})
+    rejects(IpcChannels.chatUsage, { threadId: 'ses_thread' })
+    rejects(IpcChannels.chatUsage, { folderId: 'fld_1234', since: -1 })
+    rejects(IpcChannels.chatUsage, { folderId: 'fld_1234', since: 1.5 })
+    rejects(IpcChannels.chatUsage, { folderId: 'fld_1234', timezone: '../etc' })
+    rejects(IpcChannels.chatUsage, { folderId: 'fld_1234', timezone: 'Europe/Berlin&tools=none' })
   })
 
   it('rejects getters without executing them and inherited/unknown nested fields', () => {
@@ -679,6 +751,15 @@ describe('OpenCode configuration validation', () => {
     rejects(IpcChannels.opencodeConfigRead, { kind: 'wsl', distro: '../etc' })
     rejects(IpcChannels.opencodeConfigRead, { kind: 'native', path: '/etc/passwd' })
     rejects(IpcChannels.opencodeConfigRead, { kind: 'native', configPath: '/etc/passwd' })
+  })
+
+  it('takes only a target for the MDE MCP, never a command or a path', () => {
+    for (const channel of [IpcChannels.mdeMcpStatus, IpcChannels.mdeMcpInstall, IpcChannels.mdeMcpRemove]) {
+      expect(() => assertIpcPayload(channel, { kind: 'native' })).not.toThrow()
+      rejects(channel, { kind: 'wsl', distro: '../etc' })
+      rejects(channel, { kind: 'native', command: ['/bin/sh'] })
+      rejects(channel, { kind: 'native', path: '/etc/passwd' })
+    }
   })
 
   it('rejects malformed rules, providers and models, and fields that do not belong', () => {

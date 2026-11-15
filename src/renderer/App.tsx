@@ -7,9 +7,13 @@ import { FileTreePanel } from '@/components/FileTreePanel'
 import { FileViewer } from '@/components/FileViewer'
 import { FloatingTerminal } from '@/components/inbox/FloatingTerminal'
 import { InboxChangeViewer, InboxSidebar } from '@/components/inbox/InboxChanges'
+import { GitGraphView } from '@/components/inbox/GitGraphView'
+import { InboxTerminalGitGraph } from '@/components/inbox/InboxTerminalGitGraph'
+import { SessionGitGraph } from '@/components/SessionGitGraph'
 import { NewTodoProjectDialog } from '@/components/NewTodoProjectDialog'
 import { Sidebar } from '@/components/Sidebar'
 import { SessionSwitcher } from '@/components/SessionSwitcher'
+import { InboxThreadSwitcher } from '@/components/inbox/InboxThreadSwitcher'
 import { TerminalView } from '@/components/TerminalView'
 import { TitleBar, TitleBarButton } from '@/components/TitleBar'
 import { WorkspaceNavigation } from '@/components/WorkspaceNavigation'
@@ -26,8 +30,10 @@ import { TodoTaskDialog } from '@/components/TodoTaskDialog'
 import { isSessionSwitcherShortcut } from '@/lib/session-switcher'
 import { isInboxSearchShortcut } from '@/lib/inbox-search'
 import { InboxSearchDialog } from '@/components/inbox/InboxSearchDialog'
-import { isTodoSearchShortcut } from '@/lib/todo-search'
+import { isTodoNewTaskShortcut, isTodoSearchShortcut } from '@/lib/todo-search'
 import { startAlerts } from '@/lib/alert-controller'
+import { startToasts } from '@/lib/toast-controller'
+import { Toaster } from '@/components/Toaster'
 import { useWorkspace } from '@/store/workspace'
 import { useFancyBackgroundOn } from '@/store/fancy-mode'
 import { focusTerminalWhenReady } from '@/terminal/focus'
@@ -52,7 +58,7 @@ import {
   type TerminalSplitSide,
 } from '@/terminal/layout'
 import type { PersistedTerminalLayout, Session, TodoTask } from '@shared/types'
-import type { TerminalDirectoryRequest } from '@shared/ipc'
+import type { FilesListRequest, TerminalDirectoryRequest } from '@shared/ipc'
 import { fileRootKey } from '@/lib/file-root'
 import { useInboxChat } from '@/store/inbox-chat'
 import { useInboxTerminal } from '@/store/inbox-terminal'
@@ -106,6 +112,7 @@ export function App(): JSX.Element {
   const [todoTaskDialogTaskId, setTodoTaskDialogTaskId] = useState<string | null>(null)
   const [todoTaskDialogColumnId, setTodoTaskDialogColumnId] = useState<string | null>(null)
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false)
+  const [threadSwitcherOpen, setThreadSwitcherOpen] = useState(false)
   const [inboxSearchOpen, setInboxSearchOpen] = useState(false)
   const [todoSearchOpen, setTodoSearchOpen] = useState(false)
   const [terminalLayouts, setTerminalLayouts] = useState<RuntimeLayouts>({})
@@ -133,6 +140,7 @@ export function App(): JSX.Element {
   useEffect(() => useInboxChat.getState().init(), [])
   useEffect(() => useInboxTerminal.getState().init(), [])
   useEffect(() => startAlerts(), [])
+  useEffect(() => startToasts(), [])
 
   useEffect(() => {
     void init()
@@ -316,6 +324,8 @@ export function App(): JSX.Element {
       if (
         !isSessionSwitcherShortcut(event) ||
         sessionSwitcherOpen ||
+        threadSwitcherOpen ||
+        inboxSearchOpen ||
         todoSearchOpen ||
         newSessionOpen ||
         newTodoProjectOpen ||
@@ -328,12 +338,17 @@ export function App(): JSX.Element {
 
       event.preventDefault()
       event.stopPropagation()
-      setSessionSwitcherOpen(true)
+      // In the Inbox, Ctrl+O switches between threads instead: the sessions are not what is on the screen there.
+      if (activeWorkspaceView === 'inbox') setThreadSwitcherOpen(true)
+      else setSessionSwitcherOpen(true)
     }
 
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [
+    activeWorkspaceView,
+    inboxSearchOpen,
+    threadSwitcherOpen,
     newSessionOpen,
     newTodoProjectOpen,
     opencodeConfigOpen,
@@ -402,6 +417,28 @@ export function App(): JSX.Element {
     todoTaskDialogOpen
   ])
 
+  // Ctrl+N in a To Do project opens the new-task dialog for the first column, like its + button.
+  const openNewTodoTaskRef = useRef<() => void>(() => {})
+  useEffect(() => {
+    if (!todoSearchAvailable) return
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (
+        !isTodoNewTaskShortcut(event) ||
+        event.repeat ||
+        document.querySelector('[role="dialog"], [role="alertdialog"]')
+      ) {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+      openNewTodoTaskRef.current()
+    }
+
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [todoSearchAvailable])
+
   const selected = sessions.find((session) => session.id === selectedSessionId) ?? null
   const selectedTodoProject =
     todoProjects.find((project) => project.id === selectedTodoProjectId) ?? null
@@ -424,6 +461,7 @@ export function App(): JSX.Element {
     setTodoTaskDialogColumnId(defaultColumnId)
     setTodoTaskDialogOpen(true)
   }
+  openNewTodoTaskRef.current = () => openNewTodoTask()
 
   const openTodoTask = (task: TodoTask): void => {
     setTodoTaskDialogTaskId(task.id)
@@ -535,6 +573,31 @@ export function App(): JSX.Element {
     if (added) setPendingTerminalFocus({ sessionId, tabId, terminalId: added.terminalId })
   }
 
+  /**
+   * "Open in Terminal" from the Files tree: a new pane in the tab, beside the one the tree follows, whose shell
+   * starts in that folder. Main is told the folder first, so the pane is only added once its shell can start there.
+   */
+  const openTerminalInFolder = async (sessionId: string, tabId: string, besideTerminalId: string, folder: FilesListRequest): Promise<void> => {
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (!session) return
+    const existing = layoutForTab(session, tabId)
+    const next = splitRuntimePane(sessionId, tabId, existing, besideTerminalId, 'right')
+    const added = next?.panes.find((pane) => !existing.panes.includes(pane))
+    if (!next || !added) throw new Error('This tab has no room for another terminal.')
+    await window.api.pty.startInFolder({ terminalId: added.terminalId, sessionId, folder })
+    // The tab may have changed while main checked the folder: split what is there now. If that names another
+    // pane than the one main was told about, nothing is added rather than a shell started in the wrong place.
+    const current = sessionsRef.current.find((candidate) => candidate.id === sessionId)
+    if (!current) return
+    const latest = layoutForTab(current, tabId)
+    const settled = splitRuntimePane(sessionId, tabId, latest, besideTerminalId, 'right')
+    if (!settled?.panes.some((pane) => pane.terminalId === added.terminalId && !latest.panes.includes(pane))) return
+    setRuntimeLayout(sessionId, tabId, settled)
+    queueLayoutPersistence(sessionId, tabId, settled, true)
+    terminalFocusRequestId.current += 1
+    setPendingTerminalFocus({ sessionId, tabId, terminalId: added.terminalId })
+  }
+
   const closeTerminalPane = (sessionId: string, tabId: string, terminalId: string): void => {
     const session = sessionsRef.current.find((candidate) => candidate.id === sessionId)
     if (!session) return
@@ -583,6 +646,8 @@ export function App(): JSX.Element {
     return folder ? inboxFileRoot(folder) : null
   }, [activeWorkspaceView, inboxLock, inboxThreads, selectedInboxThreadId, inboxFolders, inboxComposerFolderId])
   const inboxOpenFilePath = inboxRoot ? openFiles[inboxRoot.id] : undefined
+  /** The conversation area, which a floating terminal over it gives up when something opens there. */
+  const mainRef = useRef<HTMLElement>(null)
 
   const closeOpenFile = (sessionId: string, rootId = sessionId): void => {
     closeFileAction(rootId)
@@ -666,11 +731,13 @@ export function App(): JSX.Element {
           onNewSession={openNewSession}
         />
 
-        <main className="relative h-full min-w-0 flex-1">
+        <main ref={mainRef} className="relative h-full min-w-0 flex-1">
           {!ready ? null : activeWorkspaceView === 'inbox' ? (
             <>
               <InboxThreadView />
               {selectedInboxThreadId && <InboxChangeViewer threadId={selectedInboxThreadId} />}
+              {selectedInboxThreadId && <GitGraphView threadId={selectedInboxThreadId} />}
+              <InboxTerminalGitGraph area={mainRef} filePath={inboxOpenFilePath} />
               {inboxRoot && inboxOpenFilePath !== undefined && (
                 <FileViewer
                   key={`viewer:${inboxRoot.id}`}
@@ -726,13 +793,20 @@ export function App(): JSX.Element {
                   onClose={() => closeOpenFile(selected.id, terminalFileRootId)}
                 />
               )}
+              <SessionGitGraph
+                sessionId={selected.id}
+                terminalIds={layoutForSession.panes.map((pane) => pane.terminalId)}
+                filePath={openFilePath}
+              />
             </>
           ) : (
             <EmptyState onNewSession={() => openNewSession()} />
           )}
         </main>
 
-        {ready && activeWorkspaceView === 'sessions' && selected && <FileTreePanel session={selected} root={terminalFileRoot} />}
+        {ready && activeWorkspaceView === 'sessions' && selected && <FileTreePanel session={selected} root={terminalFileRoot} openInTerminal={activeTab && activeTerminalId
+            ? (folder) => openTerminalInFolder(selected.id, activeTab.id, activeTerminalId, folder)
+            : undefined} />}
         {ready && inboxRoot && <InboxSidebar session={inboxRoot} threadId={selectedInboxThreadId ?? undefined} />}
         {/* Over everything below the title bar: both sidebars and the conversation. */}
         {ready && activeWorkspaceView === 'inbox' && <FloatingTerminal />}
@@ -774,8 +848,10 @@ export function App(): JSX.Element {
           </>
         )}
         <SessionSwitcher open={sessionSwitcherOpen} onOpenChange={setSessionSwitcherOpen} />
+        <InboxThreadSwitcher open={threadSwitcherOpen} onOpenChange={setThreadSwitcherOpen} />
         <InboxSearchDialog open={inboxSearchOpen} onOpenChange={setInboxSearchOpen} />
       </div>
+      <Toaster />
     </div>
   )
 }

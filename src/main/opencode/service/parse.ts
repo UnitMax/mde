@@ -1,4 +1,6 @@
 import { GOAL_OBJECTIVE_LIMIT } from '@shared/goal'
+import { isViewCall, isViewTool } from '@shared/view-tool'
+import { VIEW_INPUT_LIMIT } from '@shared/view-spec'
 import { FILE_MENTION_LIMIT, isMentionablePath } from '@shared/file-mentions'
 import { MCP_SERVER_NAME } from '@shared/mcp'
 import type {
@@ -20,6 +22,7 @@ import type {
   ChatPart,
   ChatPendingMessage,
   ChatPermission,
+  ChatSavedPermission,
   ChatRevert,
   ChatRevertFile,
   ChatSkill,
@@ -28,6 +31,9 @@ import type {
   ChatToolCall,
   ChatToolStatus,
   ChatUsage,
+  ChatUsageModel,
+  ChatUsageStats,
+  ChatUsageTool,
   OpenCodeModelRef,
 } from '@shared/types'
 
@@ -307,17 +313,21 @@ function errorText(value: unknown): string | undefined {
   return message || short(error.type) || 'Unknown error'
 }
 
-/** Tool input is shown as JSON; a still-streaming input arrives as a raw string. */
-function toolInput(value: unknown): { text: string; truncated: boolean } {
-  if (typeof value === 'string') return body(value, CHAT_TOOL_TEXT_LIMIT)
+/**
+ * Tool input is shown as JSON; a still-streaming input arrives as a raw string. A view's input is what MDE draws,
+ * so it is kept whole up to its own limit, and compact: pretty-printing a long list of numbers would double it.
+ */
+function toolInput(value: unknown, view = false): { text: string; truncated: boolean } {
+  const limit = view ? VIEW_INPUT_LIMIT : CHAT_TOOL_TEXT_LIMIT
+  if (typeof value === 'string') return body(value, limit)
   if (value === undefined) return { text: '', truncated: false }
   let text: string
   try {
-    text = JSON.stringify(value, null, 2) ?? ''
+    text = (view ? JSON.stringify(value) : JSON.stringify(value, null, 2)) ?? ''
   } catch {
     text = ''
   }
-  return body(text, CHAT_TOOL_TEXT_LIMIT)
+  return body(text, limit)
 }
 
 function toolOutput(content: unknown): { text: string; truncated: boolean } {
@@ -358,10 +368,14 @@ function parsePatches(metadata: Json | null): { patches: ChatFilePatch[]; trunca
   return { patches, truncated }
 }
 
-/** A Code Mode script makes at most 20 tool calls; each call's arguments and all of them together are cut. */
+/**
+ * A Code Mode script makes at most 20 tool calls; each call's arguments and all of them together are cut. A view's
+ * arguments are what MDE draws, so they are kept whole up to their own limit, from a budget of their own.
+ */
 const MAX_TOOL_CALLS = 20
 const MAX_CALL_INPUT = 4 * 1024
 const MAX_CALLS_INPUT = 32 * 1024
+const MAX_VIEWS_INPUT = 4 * VIEW_INPUT_LIMIT
 const CALL_STATUSES: Record<string, ChatToolStatus> = {
   pending: 'pending',
   streaming: 'pending',
@@ -379,6 +393,7 @@ const CALL_STATUSES: Record<string, ChatToolStatus> = {
 function parseToolCalls(metadata: Json | null, fallback: ChatToolStatus): ChatToolCall[] | undefined {
   const calls: ChatToolCall[] = []
   let budget = MAX_CALLS_INPUT
+  let viewBudget = MAX_VIEWS_INPUT
   for (const entry of list(metadata?.toolCalls).slice(0, MAX_TOOL_CALLS)) {
     const call = record(entry)
     const tool = short(call?.tool, 200)
@@ -389,8 +404,13 @@ function parseToolCalls(metadata: Json | null, fallback: ChatToolStatus): ChatTo
     } catch {
       input = ''
     }
-    input = input.slice(0, Math.max(0, Math.min(MAX_CALL_INPUT, budget)))
-    budget -= input.length
+    if (isViewCall(tool)) {
+      input = input.slice(0, Math.max(0, Math.min(VIEW_INPUT_LIMIT, viewBudget)))
+      viewBudget -= input.length
+    } else {
+      input = input.slice(0, Math.max(0, Math.min(MAX_CALL_INPUT, budget)))
+      budget -= input.length
+    }
     const status = typeof call.status === 'string' ? CALL_STATUSES[call.status] : undefined
     calls.push({ tool, status: status ?? fallback, input })
   }
@@ -445,7 +465,7 @@ function parsePart(value: unknown): ChatPart | null {
   }
   const status = typeof state.status === 'string' ? statuses[state.status] : undefined
   if (!status) return null
-  const input = toolInput(state.input)
+  const input = toolInput(state.input, isViewTool(name))
   const output = toolOutput(state.content)
   const error = status === 'error' ? errorText(state.error) : undefined
   const metadata = record(state.metadata)
@@ -819,9 +839,34 @@ export function parsePermissions(value: unknown): ChatPermission[] {
       .filter(Boolean)
       .slice(0, 50)
     const message = body(request.message, 4000).text.trim()
-    permissions.push({ id, action, resources, ...(message ? { message } : {}), ...(incomplete ? { incomplete: true } : {}) })
+    const save = list(request.save)
+      .filter((pattern): pattern is string => typeof pattern === 'string' && Boolean(short(pattern, 4096)))
+      .slice(0, 20)
+    permissions.push({
+      id,
+      action,
+      resources,
+      ...(message ? { message } : {}),
+      ...(incomplete ? { incomplete: true } : {}),
+      ...(save.length > 0 ? { save } : {}),
+    })
   }
   return permissions
+}
+
+/** The approvals OpenCode saved for a project ("Always allow"), oldest first; malformed entries are left out. */
+export function parseSavedPermissions(value: unknown): ChatSavedPermission[] {
+  const saved: ChatSavedPermission[] = []
+  for (const item of list(data(value, 'a saved permission list')).slice(0, 2000)) {
+    const entry = record(item)
+    const id = short(entry?.id)
+    const action = short(entry?.action, 200)
+    const resource = short(entry?.resource, 4096)
+    if (!entry || !id || !/^psv_[A-Za-z0-9_-]{1,200}$/.test(id) || !action || !resource) continue
+    const created = record(entry.time)?.created
+    saved.push({ id, action, resource, created: typeof created === 'number' && Number.isFinite(created) ? created : 0 })
+  }
+  return saved.sort((a, b) => a.created - b.created)
 }
 
 function parseOptions(value: unknown): ChatFormOption[] {
@@ -899,11 +944,48 @@ export function parseSessionInfo(value: unknown): { agent: string | null; model:
   }
 }
 
+/** The session a request was filed under (`sessionID`), when it names one; used to find a subagent's requests. */
+export function requestSessionIds(value: unknown): Map<string, string> {
+  const sessions = new Map<string, string>()
+  for (const item of list(data(value, 'a request list'))) {
+    const request = record(item)
+    const id = short(request?.id)
+    const session = short(request?.sessionID)
+    if (id && session && /^ses_[A-Za-z0-9_-]{1,200}$/.test(session)) sessions.set(id, session)
+  }
+  return sessions
+}
+
+/** A session's parent (a subagent's session has one) and title; null when the answer is not that session. */
+export function parseSessionParent(value: unknown, sessionId: string): { parentId: string | null; title: string | null } | null {
+  const session = record(data(value, 'a session'))
+  if (session?.id !== sessionId) return null
+  const parent = short(session.parentID)
+  return { parentId: parent && /^ses_[A-Za-z0-9_-]{1,200}$/.test(parent) ? parent : null, title: short(session.title, 512) }
+}
+
 /** Only a confirmed child of the recorded thread may supply a subagent's model. */
 export function parseSubagentModel(value: unknown, sessionId: string, parentId: string): OpenCodeModelRef | null {
   const session = record(data(value, 'a subagent session'))
   if (session?.id !== sessionId || session.parentID !== parentId) return null
   return parseModelRef(session.model)
+}
+
+/**
+ * The child sessions OpenCode lists for a thread: their IDs and titles (a subagent's session is titled with the
+ * description it was given). Entries that are not confirmed children of the thread are left out.
+ */
+export function parseChildSessions(value: unknown, parentId: string): { id: string; title: string; model: OpenCodeModelRef | null }[] {
+  const list = data(value, 'a session list')
+  const items = Array.isArray(list) ? list : record(list)?.items
+  if (!Array.isArray(items)) return []
+  return items.flatMap((item) => {
+    const session = record(item)
+    const id = short(session?.id)
+    const title = short(session?.title, 512)
+    if (session?.parentID !== parentId || !id || !/^ses_[A-Za-z0-9_-]{1,200}$/.test(id) || !title) return []
+    return [{ id, title, model: parseModelRef(session.model) }]
+  })
 }
 
 const GOAL_STATUSES = new Set<ChatGoal['status']>(['active', 'paused', 'complete'])
@@ -986,4 +1068,99 @@ function goalNote(text: string): { text: string; detail?: string; goal: ChatGoal
     return { text: 'Goal not met yet, working on it', ...(found ? { detail: found } : {}), goal: 'continue' }
   }
   return null
+}
+
+/** The most days, models and tools a usage overview keeps; a real answer has far fewer models and tools. */
+const USAGE_DAYS = 5000
+const USAGE_MODELS = 100
+const USAGE_TOOLS = 100
+const DAY = /^\d{4}-\d{2}-\d{2}$/
+
+function dollars(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value < 1e9 ? value : 0
+}
+
+function addTokens(a: ChatTokens, b: ChatTokens): ChatTokens {
+  return {
+    input: a.input + b.input,
+    output: a.output + b.output,
+    reasoning: a.reasoning + b.reasoning,
+    cacheRead: a.cacheRead + b.cacheRead,
+    cacheWrite: a.cacheWrite + b.cacheWrite,
+  }
+}
+
+export function totalTokens(tokens: ChatTokens): number {
+  return tokens.input + tokens.output + tokens.reasoning + tokens.cacheRead + tokens.cacheWrite
+}
+
+/**
+ * OpenCode's session statistics (`GET /api/experimental/session/stats`, what `opencode stats` shows). A model used
+ * with several variants (effort levels) is counted once. Throws when the answer is not statistics at all.
+ */
+export function parseUsageStats(value: unknown): ChatUsageStats {
+  const stats = record(data(value, 'session statistics'))
+  const range = record(stats?.range)
+  const tokens = parseTokens(stats?.tokens)
+  if (!stats || !tokens) throw new ServiceShapeError('session statistics')
+
+  const activity: ChatUsageStats['activity'] = []
+  for (const entry of list(stats.activity).slice(0, USAGE_DAYS)) {
+    const day = record(entry)
+    const steps = count(day?.steps)
+    if (typeof day?.date === 'string' && DAY.test(day.date) && steps !== undefined) activity.push({ date: day.date, steps })
+  }
+  activity.sort((a, b) => a.date.localeCompare(b.date))
+
+  const models = new Map<string, ChatUsageModel>()
+  for (const entry of list(stats.models).slice(0, USAGE_MODELS)) {
+    const usage = record(entry)
+    const ref = parseModelRef(usage?.model)
+    const used = parseTokens(usage?.tokens)
+    if (!ref || !used) continue
+    const key = `${ref.providerId}/${ref.id}`
+    const known = models.get(key)
+    const steps = count(usage?.steps) ?? 0
+    const cost = dollars(usage?.cost)
+    models.set(key, known
+      ? { ...known, steps: known.steps + steps, tokens: addTokens(known.tokens, used), cost: known.cost + cost }
+      : { model: { id: ref.id, providerId: ref.providerId }, steps, tokens: used, cost })
+  }
+
+  const toolStats = record(stats.tools)
+  const totals = record(toolStats?.totals)
+  const tools: ChatUsageTool[] = []
+  for (const entry of list(toolStats?.usage).slice(0, USAGE_TOOLS)) {
+    const tool = record(entry)
+    const name = short(tool?.name, 128)
+    const calls = count(tool?.calls)
+    if (!name || calls === undefined) continue
+    const median = tool?.durationP50
+    tools.push({
+      name,
+      calls,
+      failed: Math.min(count(tool?.failed) ?? 0, calls),
+      ...(typeof median === 'number' && Number.isFinite(median) && median >= 0 ? { medianMs: median } : {}),
+    })
+  }
+
+  const from = typeof range?.from === 'number' && Number.isFinite(range.from) ? range.from : 0
+  const to = typeof range?.to === 'number' && Number.isFinite(range.to) ? range.to : from
+  return {
+    from,
+    to,
+    sessions: count(stats.sessions) ?? 0,
+    subagents: count(stats.subagents) ?? 0,
+    prompts: count(stats.prompts) ?? 0,
+    steps: count(stats.steps) ?? 0,
+    tokens,
+    cost: dollars(stats.cost),
+    activeDays: count(stats.activeDays) ?? 0,
+    streak: count(stats.streak) ?? 0,
+    activity,
+    models: [...models.values()].sort((a, b) => totalTokens(b.tokens) - totalTokens(a.tokens) || b.steps - a.steps),
+    toolCalls: count(totals?.calls) ?? tools.reduce((sum, tool) => sum + tool.calls, 0),
+    toolFailures: count(totals?.failed) ?? tools.reduce((sum, tool) => sum + tool.failed, 0),
+    tools: tools.sort((a, b) => b.calls - a.calls || a.name.localeCompare(b.name)),
+  }
 }

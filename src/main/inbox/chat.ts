@@ -1,8 +1,10 @@
 import type { ChatDraftList, ChatDraftRequest } from '@shared/types'
 import type { InboxAsideHistory } from './asides'
+import { cleanSuggestion, SUGGEST_PREAMBLE, SUGGEST_TIMEOUT_MS } from './suggestion'
 import type { InboxDraftStore } from './drafts'
 import { readSessionAttachment } from '../files/tree'
 import { randomUUID } from 'node:crypto'
+import { isThreadPermissionMode, threadPermissionRules } from '@shared/permission-modes'
 import type {
   ChatAgent,
   ChatCreateRequest,
@@ -10,14 +12,19 @@ import type {
   ChatAsideEntry,
   ChatAsideHistoryRequest,
   ChatAsideRequest,
+  ChatSuggestion,
+  ChatSuggestRequest,
   ChatDiscardPendingRequest,
   ChatEvent,
   ChatForkRequest,
+  ChatPermissionModeRequest,
   ChatForkResult,
   ChatFormReplyRequest,
   ChatGoal,
   ChatGoalRequest,
   ChatMcpRequest,
+  ChatUsageRequest,
+  ChatUsageState,
   ChatMcpServer,
   ChatMcpSetRequest,
   ChatMcpState,
@@ -31,6 +38,8 @@ import type {
   ChatPart,
   ChatPendingMessage,
   ChatPermissionReplyRequest,
+  ChatSavedPermissionRemoveRequest,
+  ChatSavedPermissions,
   ChatRequests,
   ChatSetDeliveryRequest,
   ChatRevert,
@@ -44,6 +53,9 @@ import type {
   InboxFolderIcon,
   InboxFoldersState,
   InboxGitInfo,
+  InboxWorktreeEntry,
+  InboxWorktreeRemoveRequest,
+  InboxWorktreeRemoveResult,
   InboxGitInfoRequest,
   InboxThread,
   InboxUpdateFolderRequest,
@@ -73,15 +85,20 @@ import {
   parseGoalAnswer,
   parseGoalChange,
   parseMcpServers,
+  parseUsageStats,
   parseMessagesPage,
   parseModels,
   holdsCompaction,
   parsePendingMessages,
   parsePermissions,
+  parseSavedPermissions,
+  parseSessionParent,
+  requestSessionIds,
   parsePromptAnswer,
   parseProviderNames,
   parseSessionInfo,
   parseSubagentModel,
+  parseChildSessions,
   parseSessionRevert,
   parseStagedRevert,
   parseSessionUsage,
@@ -92,17 +109,20 @@ import {
   type TurnMarker,
 } from '../opencode/service/parse'
 import { skillMentions } from '@shared/skills'
+import { isMentionablePath } from '@shared/file-mentions'
 import { mentionAttachments, resolveFile } from './file-mentions'
 import type { InboxRecorder } from './recorder'
 import { InboxSearch } from './search'
 import { isChatAgentId, type InboxStore } from './store'
-import type { CreatedWorktree, InboxWorktrees } from './worktree'
+import type { CreatedWorktree, InboxWorktrees, WorktreeRecord } from './worktree'
 
 export const CHAT_PAGE_SIZE = 50
 export const CHAT_TEXT_MAX_LENGTH = 100_000
 const OPTIONS_TTL_MS = 60_000
 /** The `@` picker lists at most this many files and folders at once; typing narrows them down. */
 const FILE_PICKER_LIMIT = 40
+/** The most entries of one folder the `@` picker looks at, and asks Git about. */
+const FOLDER_LIST_LIMIT = 1000
 /**
  * OpenCode answers the first agent request for a folder it has not loaded yet with an empty list
  * (the models are fine), and the next request is complete. Ask a few more times before giving up.
@@ -120,6 +140,8 @@ const SKILL_ATTEMPTS = 4
  * first answer of a place; after that an empty list is believed.
  */
 const MCP_ATTEMPTS = 6
+/** How many parents up a subagent's session is followed to find its thread (a subagent of a subagent…). */
+const SUBAGENT_DEPTH = 4
 const MCP_RETRY_MS = 750
 /**
  * OpenCode refuses to revert a conversation that is running, and an interrupt takes a moment to
@@ -140,13 +162,18 @@ export const ASIDE_PREAMBLE = [
 ].join(' ')
 /** A side question is a model call over the whole conversation, which takes longer than a read of the service. */
 export const ASIDE_TIMEOUT_MS = 180_000
+/**
+ * Clearing a title makes OpenCode run its title agent before it answers, a model call that a slow (often free) model
+ * can take well over the usual 30 s for.
+ */
+export const TITLE_TIMEOUT_MS = 120_000
 
 export interface InboxChatDependencies {
   drafts?: InboxDraftStore
   /** Where answered side questions are kept; without it they are not kept. */
   asides?: InboxAsideHistory
   /** Git worktrees for threads; without it, worktree mode is unavailable. */
-  worktrees?: Pick<InboxWorktrees, 'info' | 'create' | 'remove' | 'discard'>
+  worktrees?: Pick<InboxWorktrees, 'info' | 'create' | 'remove' | 'discard' | 'list' | 'removeRoot' | 'deleteBranch'>
   thumbnail?(bytes: Buffer): string | undefined
   client: Pick<OpenCodeServiceClient, 'request' | 'openEvents' | 'reset' | 'endpoint'>
   store: InboxStore
@@ -159,6 +186,17 @@ export interface InboxChatDependencies {
   createId?(): string
   /** Waits between agent list attempts; tests replace it. */
   sleep?(ms: number): Promise<void>
+  /**
+   * Which of these paths (relative to the root, a folder's ending in `/`) Git ignores there. Without it, or where
+   * it fails (not a repository), nothing counts as ignored.
+   */
+  ignored?(root: DirectoryContext, paths: string[]): Promise<Set<string>>
+}
+
+/** The last part of a project path, a folder's with its `/`. */
+function fileName(path: string): string {
+  const bare = path.endsWith('/') ? path.slice(0, -1) : path
+  return `${bare.slice(bare.lastIndexOf('/') + 1)}${path.endsWith('/') ? '/' : ''}`
 }
 
 function folderName(directory: string): string {
@@ -168,6 +206,15 @@ function folderName(directory: string): string {
 
 function modelBody(model: OpenCodeModelRef): { id: string; providerID: string; variant?: string } {
   return { id: model.id, providerID: model.providerId, ...(model.variant ? { variant: model.variant } : {}) }
+}
+
+/** The description a subagent call was given; OpenCode titles the child session with it. */
+function subagentDescription(input: string): string | null {
+  try {
+    const value: unknown = JSON.parse(input)
+    const description = value !== null && typeof value === 'object' ? (value as Record<string, unknown>).description : undefined
+    return typeof description === 'string' && description.trim() ? description.trim() : null
+  } catch { return null }
 }
 
 function sameModel(a: OpenCodeModelRef | null, b: OpenCodeModelRef): boolean {
@@ -227,6 +274,17 @@ export class InboxChatService {
   private readonly subscribed = new Map<string, number>()
   /** Child sessions whose model changes should refresh an open parent conversation. */
   private readonly subagentParents = new Map<string, string>()
+  /**
+   * The child session of each running subagent call, as OpenCode tells it in a passing progress event (keyed by
+   * thread and call ID). OpenCode saves it with the call only when the subagent has finished.
+   */
+  private readonly subagentCalls = new Map<string, string>()
+  /**
+   * The recorded thread each other session belongs to by its chain of parents (a subagent's, a subagent's subagent's),
+   * with the session's title, or null for a session that is no thread's. Keyed by target and session; a session's
+   * parent never changes, so an answer is kept.
+   */
+  private readonly sessionOwners = new Map<string, Promise<{ threadId: string; title: string | null } | null>>()
   private readonly options = new Map<string, { at: number; value: Promise<ChatOptions> }>()
   /** Places (service + directory) whose MCP list has been answered once, so an empty one is believed. */
   private readonly mcpSettled = new Set<string>()
@@ -268,6 +326,8 @@ export class InboxChatService {
   stop(): void {
     this.streams.stopAll()
     this.subagentParents.clear()
+    this.subagentCalls.clear()
+    this.sessionOwners.clear()
   }
 
   /** The OpenCode executable from Settings; discovery runs it to find each service. */
@@ -278,7 +338,7 @@ export class InboxChatService {
   /** Only Inbox terminal threads may launch their recorded conversation in a PTY. */
   terminalSession(threadId: string): Session {
     this.assertEnabled()
-    const thread = this.thread(threadId)
+    const thread = this.liveThread(threadId)
     if (thread.mode !== 'terminal') throw new Error('This thread uses GUI chat.')
     this.streams.ensure(thread.target)
     return inboxThreadTerminalSession(thread)
@@ -313,11 +373,13 @@ export class InboxChatService {
    * Adds a folder the IPC layer already resolved and checked, or reuses the same one. A name or an icon
    * that comes with it is applied either way: the person has just chosen it for this project.
    */
-  addFolder({ directory, target, name, icon }: {
+  addFolder({ directory, target, name, icon, select = true }: {
     directory: string
     target: OpenCodeTarget
     name?: string
     icon?: InboxFolderIcon
+    /** Make it the new-thread page's project; false when an agent added it, not the person. */
+    select?: boolean
   }): InboxFolder {
     const now = this.dependencies.now()
     const existing = this.dependencies.store.folders().find((folder) =>
@@ -337,7 +399,7 @@ export class InboxChatService {
     if (icon && !clean) throw new Error('That icon is not available.')
     const folder: InboxFolder = { ...base, ...(label ? { name: label } : {}), ...(clean ? { icon: clean } : {}) }
     this.dependencies.store.putFolder(folder)
-    this.dependencies.store.setComposer({ ...this.dependencies.store.composer(), folderId: folder.id })
+    if (select) this.dependencies.store.setComposer({ ...this.dependencies.store.composer(), folderId: folder.id })
     return folder
   }
 
@@ -435,6 +497,24 @@ export class InboxChatService {
   }
 
   /**
+   * OpenCode's usage overview from the service the folder's threads run in: every session it holds, MDE's or not,
+   * as `opencode stats` counts them. An OpenCode without the statistics route says it is not supported.
+   */
+  async usage(request: ChatUsageRequest): Promise<ChatUsageState> {
+    this.assertEnabled()
+    const { target } = this.folder(request.folderId)
+    const query: Record<string, string> = { tools: 'detail' }
+    if (request.since !== undefined) query.from = String(request.since)
+    if (request.timezone) query.timezone = request.timezone
+    try {
+      return { supported: true, stats: parseUsageStats(await this.dependencies.client.request(target, 'session.stats', { query })) }
+    } catch (error) {
+      if (error instanceof OpenCodeServiceError && error.status === 404 && !error.tag) return { supported: false, stats: null }
+      throw error
+    }
+  }
+
+  /**
    * Connects or disconnects one MCP server for the running OpenCode, like the OpenCode TUI's list. OpenCode keeps
    * neither across a restart and MDE changes no configuration. Only a server OpenCode lists can be named, and one
    * waiting for a sign-in is left alone: connecting it could start a browser login on the OpenCode host.
@@ -507,13 +587,19 @@ export class InboxChatService {
   async removeDraft(key: `thread:${string}`): Promise<void> { await this.dependencies.drafts?.remove(key) }
   async removeAsides(threadId: string): Promise<void> { await this.dependencies.asides?.remove(threadId) }
 
-  async create(request: ChatCreateRequest): Promise<InboxThread> {
+  /**
+   * Starts a thread. `spawnedBy` marks one an agent asked for through the MDE MCP: it is not the person's
+   * choice of agent and model, so the new-thread page's selection is left alone.
+   */
+  async create(request: ChatCreateRequest, options: { spawnedBy?: InboxThread['spawnedBy'] } = {}): Promise<InboxThread> {
     this.assertEnabled()
     const folder = this.folder(request.folderId)
     // A worktree folder already is one: threads started in it run in it, and a new worktree is cut from the real folder.
     if (request.worktree && folder.worktree) throw new Error('This folder is already a worktree. Start the thread in it, or start a new worktree from the folder it came from.')
     const text = this.promptText(request.text, request.attachmentIds)
     if (!isChatAgentId(request.agent)) throw new Error('Choose an agent.')
+    if (request.permissionMode !== undefined && !isThreadPermissionMode(request.permissionMode)) throw new Error('Choose a permission mode.')
+    const permissionMode = request.permissionMode && request.permissionMode !== 'default' ? request.permissionMode : undefined
     // The files come from the draft this starts from, and that draft is spent once the thread has its message.
     if (request.attachmentIds?.length && !request.draftId) throw new Error('The attachments do not belong to a draft.')
     const draftKey = request.draftId ? `draft:${request.draftId}` as const : undefined
@@ -528,7 +614,13 @@ export class InboxChatService {
     let thread: InboxThread
     try {
       created = parseCreatedSession(await this.dependencies.client.request(folder.target, 'session.create', {
-        body: { agent: request.agent, model: modelBody(request.model), location: { directory: place?.directory ?? folder.directory } },
+        body: {
+          agent: request.agent,
+          model: modelBody(request.model),
+          location: { directory: place?.directory ?? folder.directory },
+          // The default mode sends nothing, so the OpenCode configuration decides alone.
+          ...(permissionMode ? { permissions: threadPermissionRules(permissionMode) } : {}),
+        },
       }))
       thread = this.dependencies.recorder.recordChatThread({
         mode: request.mode,
@@ -536,6 +628,8 @@ export class InboxChatService {
         title: created.title,
         folder,
         model: request.model,
+        ...(permissionMode ? { permissionMode } : {}),
+        ...(options.spawnedBy ? { spawnedBy: options.spawnedBy } : {}),
         // A thread started in a worktree folder runs in it, and carries the folder's worktree record.
         ...(place ? { directory: place.directory, worktree: place.worktree } : folder.worktree ? { worktree: folder.worktree } : {}),
       })
@@ -546,7 +640,7 @@ export class InboxChatService {
     }
     this.dependencies.store.putFolder({ ...folder, lastUsedAt: this.dependencies.now() })
     if (place) this.addWorktreeFolder(folder, place)
-    this.dependencies.store.setComposer({ folderId: folder.id, agent: request.agent, model: request.model })
+    if (!options.spawnedBy) this.dependencies.store.setComposer({ folderId: folder.id, agent: request.agent, model: request.model })
     if (draftKey) await this.dependencies.drafts?.move(draftKey, `thread:${thread.id}`)
     try {
       await this.dependencies.client.request(folder.target, 'session.prompt', {
@@ -555,6 +649,8 @@ export class InboxChatService {
       })
     } catch (error) {
       this.dependencies.recorder.markStatus(thread.id, 'idle')
+      // An agent's prompt has no draft behind it; it becomes the thread's draft, so the person can send it.
+      if (options.spawnedBy) await this.dependencies.drafts?.text(`thread:${thread.id}`, text).catch(() => undefined)
       if (this.dependencies.drafts) return { ...(this.dependencies.store.get(thread.id) ?? thread), sendError: 'Could not send the first message. Your draft has been kept; try sending again.' }
       throw error
     }
@@ -584,6 +680,63 @@ export class InboxChatService {
       if (folder.worktree?.root !== root || serviceTargetKey(folder.target) !== serviceTargetKey(thread.target)) continue
       this.dependencies.store.removeFolder(folder.id)
     }
+  }
+
+  /** What MDE recorded about its worktrees: the threads that run in one (not those kept after it was deleted) and the folder entries. */
+  private worktreeRecords(): WorktreeRecord[] {
+    const records: WorktreeRecord[] = []
+    for (const folder of this.dependencies.store.folders()) {
+      if (folder.worktree) records.push({ target: folder.target, ...folder.worktree, createdAt: folder.createdAt })
+    }
+    for (const thread of this.dependencies.store.list()) {
+      if (thread.worktree && thread.worktreeRemovedAt === undefined) records.push({ target: thread.target, ...thread.worktree, createdAt: thread.createdAt })
+    }
+    return records
+  }
+
+  /** The projects' own folders, whose repositories Git is asked about for worktrees MDE made in them. */
+  private worktreeRepositories(): { target: OpenCodeTarget; directory: string }[] {
+    return this.dependencies.store.folders().filter((folder) => !folder.worktree).map(({ target, directory }) => ({ target, directory }))
+  }
+
+  /** Every worktree MDE made, with what is in it now, for the worktree manager. */
+  async worktreeList(): Promise<InboxWorktreeEntry[]> {
+    this.assertEnabled()
+    if (!this.dependencies.worktrees) return []
+    return this.dependencies.worktrees.list(this.worktreeRepositories(), this.worktreeRecords(), { status: true })
+  }
+
+  /**
+   * Deletes a worktree from the worktree manager. It must be one MDE made, and nothing may be running in it.
+   * Its threads are kept to be read, its folder entry goes, and, when asked, its branch too.
+   */
+  async removeWorktree(request: InboxWorktreeRemoveRequest): Promise<InboxWorktreeRemoveResult> {
+    this.assertEnabled()
+    const worktrees = this.dependencies.worktrees
+    if (!worktrees) throw new Error('Git worktrees are unavailable.')
+    const key = serviceTargetKey(request.target)
+    const entry = (await worktrees.list(this.worktreeRepositories(), this.worktreeRecords()))
+      .find((item) => item.root === request.root && serviceTargetKey(item.target) === key)
+    if (!entry) throw new Error('MDE did not make this worktree, or it is already gone.')
+    const threads = this.dependencies.store.list().filter((thread) =>
+      thread.worktree?.root === entry.root && thread.worktreeRemovedAt === undefined && serviceTargetKey(thread.target) === key)
+    if (threads.some((thread) => thread.status === 'working' || thread.status === 'attention')) {
+      throw new Error('A thread is still running in this worktree. Stop it first.')
+    }
+    await worktrees.removeRoot(entry.target, entry.repository, entry.root, { force: request.force })
+    for (const folder of this.dependencies.store.folders()) {
+      if (folder.worktree?.root === entry.root && serviceTargetKey(folder.target) === key) this.dependencies.store.removeFolder(folder.id)
+    }
+    const now = this.dependencies.now()
+    for (const thread of threads) {
+      this.dependencies.recorder.markWorktreeRemoved(thread.id, now)
+      // Nothing can be sent from it any more.
+      await this.dependencies.drafts?.remove(`thread:${thread.id}`).catch(() => undefined)
+    }
+    const branchError = request.deleteBranch && entry.branch
+      ? await worktrees.deleteBranch(entry.target, entry.repository, entry.branch)
+      : null
+    return { threads: threads.map((thread) => thread.id), ...(branchError ? { branchError } : {}) }
   }
 
   /** Lists a worktree that was just created in the folder chooser, so more threads can be started in it. */
@@ -643,13 +796,68 @@ export class InboxChatService {
     return this.searcher.search(request)
   }
 
+  /**
+   * Gives a running subagent call its child session, which OpenCode saves with the call only once it has finished:
+   * from the progress event when MDE saw it, otherwise the thread's child session titled with the call's description
+   * (only when exactly one unclaimed child is). The listing also carries each child's model.
+   */
+  private async findRunningSubagents(thread: InboxThread, page: ChatMessagesPage): Promise<Map<string, OpenCodeModelRef>> {
+    const models = new Map<string, OpenCodeModelRef>()
+    const unknown: Extract<ChatPart, { kind: 'tool' }>[] = []
+    const claimed = new Set<string>()
+    for (const message of page.messages) {
+      if (message.kind !== 'assistant') continue
+      for (const part of message.parts) {
+        if (part.kind !== 'tool' || (part.name !== 'subagent' && part.name !== 'task')) continue
+        const key = `${thread.id}\n${part.id}`
+        if (part.subagent) {
+          this.subagentCalls.delete(key)
+          claimed.add(part.subagent.sessionId)
+          continue
+        }
+        if (part.status !== 'running' && part.status !== 'pending') continue
+        const known = this.subagentCalls.get(key)
+        if (known) {
+          part.subagent = { sessionId: known }
+          claimed.add(known)
+        } else unknown.push(part)
+      }
+    }
+    if (unknown.length === 0) return models
+    try {
+      const children = parseChildSessions(await this.dependencies.client.request(thread.target, 'session.children', {
+        query: { parentID: thread.id, order: 'desc', limit: '50' },
+        timeoutMs: 2_000,
+      }), thread.id)
+      for (const part of unknown) {
+        const description = subagentDescription(part.input)
+        const matches = children.filter((child) => child.title.trim() === description && !claimed.has(child.id))
+        if (!description || matches.length !== 1) continue
+        const [child] = matches as [typeof matches[number]]
+        part.subagent = { sessionId: child.id }
+        claimed.add(child.id)
+        if (child.model) models.set(child.id, child.model)
+      }
+    } catch { /* The child sessions are an extra; the conversation still loads. */ }
+    return models
+  }
+
   /** Read only the child sessions named by these calls; a missing child must never hide the chat. */
   private async loadSubagentModels(thread: InboxThread, page: ChatMessagesPage): Promise<void> {
+    const listed = await this.findRunningSubagents(thread, page)
     const children = new Map<string, NonNullable<Extract<ChatPart, { kind: 'tool' }>['subagent']>[]>()
     for (const message of page.messages) {
       if (message.kind !== 'assistant') continue
       for (const part of message.parts) {
         if (part.kind !== 'tool' || !part.subagent) continue
+        const model = listed.get(part.subagent.sessionId)
+        if (model) {
+          part.subagent.model = model
+          if (this.subscribed.has(thread.id)) {
+            this.subagentParents.set(`${serviceTargetKey(thread.target)}\n${part.subagent.sessionId}`, thread.id)
+          }
+          continue
+        }
         const calls = children.get(part.subagent.sessionId) ?? []
         calls.push(part.subagent)
         children.set(part.subagent.sessionId, calls)
@@ -683,7 +891,7 @@ export class InboxChatService {
    */
   async send(request: ChatSendRequest): Promise<ChatPendingMessage | null> {
     this.assertEnabled()
-    const thread = this.thread(request.threadId)
+    const thread = this.liveThread(request.threadId)
     const text = this.promptText(request.text, request.attachmentIds)
     const files = request.attachmentIds?.length ? await this.dependencies.drafts?.files(`thread:${thread.id}`, request.attachmentIds, request.draftRevision) : undefined
     this.streams.ensure(thread.target)
@@ -792,6 +1000,21 @@ export class InboxChatService {
   }
 
   /**
+   * Guesses the message the person would most likely send next, from the conversation as it stands. Like a side
+   * question it adds nothing to the conversation and uses the thread's current model; unlike one it is not kept.
+   */
+  async suggest(request: ChatSuggestRequest): Promise<ChatSuggestion> {
+    this.assertEnabled()
+    const thread = this.thread(request.threadId)
+    const answer = await this.dependencies.client.request(thread.target, 'session.generate', {
+      params: { sessionID: thread.id },
+      body: { prompt: SUGGEST_PREAMBLE },
+      timeoutMs: SUGGEST_TIMEOUT_MS,
+    })
+    return { text: cleanSuggestion(parseGeneratedText(answer)) }
+  }
+
+  /**
    * Summarizes the conversation to free up context. OpenCode answers at once and does the work in the
    * background, so a failure of the work itself (nothing to compact yet, the model not answering) shows up as
    * a note in the conversation, not here. It is asked to wait for the agent when the agent is busy, so that
@@ -799,7 +1022,7 @@ export class InboxChatService {
    */
   async compact(threadId: string): Promise<void> {
     this.assertEnabled()
-    const thread = this.thread(threadId)
+    const thread = this.liveThread(threadId)
     this.streams.ensure(thread.target)
     try {
       await this.dependencies.client.request(thread.target, 'session.compact', {
@@ -841,7 +1064,7 @@ export class InboxChatService {
    */
   async setGoal(request: ChatGoalRequest): Promise<void> {
     this.assertEnabled()
-    const thread = this.thread(request.threadId)
+    const thread = this.liveThread(request.threadId)
     let text: string
     if (request.action === 'set') {
       const problem = goalObjectiveProblem(request.objective)
@@ -878,7 +1101,7 @@ export class InboxChatService {
    */
   async redo(threadId: string): Promise<void> {
     this.assertEnabled()
-    const thread = this.thread(threadId)
+    const thread = this.liveThread(threadId)
     this.streams.ensure(thread.target)
     try {
       await this.dependencies.client.request(thread.target, 'session.revert.clear', { params: { sessionID: thread.id } })
@@ -902,7 +1125,7 @@ export class InboxChatService {
    */
   async revert(request: ChatRevertRequest): Promise<ChatRevert> {
     this.assertEnabled()
-    const thread = this.thread(request.threadId)
+    const thread = this.liveThread(request.threadId)
     this.streams.ensure(thread.target)
     // Interrupting a thread that is idle does nothing.
     await this.dependencies.client.request(thread.target, 'session.interrupt', { params: { sessionID: thread.id } })
@@ -939,7 +1162,7 @@ export class InboxChatService {
    */
   async fork(request: ChatForkRequest): Promise<ChatForkResult> {
     this.assertEnabled()
-    const source = this.thread(request.threadId)
+    const source = this.liveThread(request.threadId)
     this.streams.ensure(source.target)
     const { before, text } = request.messageId ? { before: request.messageId, text: undefined } : await this.forkBoundary(source)
     let answer: unknown
@@ -958,13 +1181,52 @@ export class InboxChatService {
     }
     const created = parseCreatedSession(answer)
     const model = parseSessionInfo(answer).model
+    // A fork works with the same permissions as its source. They are given to it outright rather than trusting the
+    // copy to carry them; if that fails the fork still exists, and runs under the configuration alone, as it says.
+    let permissionMode = source.permissionMode
+    if (permissionMode) {
+      try {
+        await this.dependencies.client.request(source.target, 'session.update', {
+          params: { sessionID: created.id },
+          body: { permissions: threadPermissionRules(permissionMode) },
+        })
+      } catch {
+        permissionMode = undefined
+      }
+    }
     const thread = this.dependencies.recorder.recordForkedThread({
       id: created.id,
       title: created.title,
       source,
       ...(model ? { model } : {}),
+      ...(permissionMode ? { permissionMode } : {}),
     })
     return { thread, ...(text ? { text } : {}) }
+  }
+
+  /**
+   * Gives a thread another permission mode. OpenCode keeps the rules with the session and reads them at every check,
+   * so a working agent follows them from its next step; subagents already running keep the rules they started with.
+   * The default mode clears the rules, which leaves the OpenCode configuration to decide alone.
+   */
+  async setPermissionMode(request: ChatPermissionModeRequest): Promise<InboxThread> {
+    this.assertEnabled()
+    if (!isThreadPermissionMode(request.mode)) throw new Error('Choose a permission mode.')
+    const thread = this.liveThread(request.threadId)
+    this.streams.ensure(thread.target)
+    try {
+      await this.dependencies.client.request(thread.target, 'session.update', {
+        params: { sessionID: thread.id },
+        body: { permissions: threadPermissionRules(request.mode) },
+      })
+    } catch (error) {
+      // An OpenCode that does not know session permissions refuses the field it has never heard of.
+      if (error instanceof OpenCodeServiceError && error.status === 400) {
+        throw new Error('This OpenCode service does not support permissions per thread. Update OpenCode and try again.')
+      }
+      throw error
+    }
+    return this.dependencies.recorder.setPermissionMode(thread.id, request.mode) ?? thread
   }
 
   /**
@@ -1003,21 +1265,23 @@ export class InboxChatService {
     if (pending) return pending
     const run = (async () => {
       this.streams.ensure(thread.target)
-      try {
-        await this.dependencies.client.request(thread.target, 'session.update', {
-          params: { sessionID: threadId }, body: { title: '' },
-        })
-      } catch (error) {
-        if (error instanceof OpenCodeServiceError && (error.status === 405 || error.status === 501)) {
-          throw new Error('This OpenCode service does not support native title regeneration. Update OpenCode and try again.')
-        }
-        throw error
-      }
-      // The update returns no content. Read it back in case the event stream missed the rename.
-      // A rename received during this read is newer than its snapshot and must win.
+      // A rename received from here on is newer than any snapshot read below and must win. One that arrives while
+      // the update is still waiting also means the new title is there, even if the update itself then times out.
       const read = { renamed: false }
       this.titleReads.set(threadId, read)
       try {
+        try {
+          await this.dependencies.client.request(thread.target, 'session.update', {
+            params: { sessionID: threadId }, body: { title: '' }, timeoutMs: TITLE_TIMEOUT_MS,
+          })
+        } catch (error) {
+          if (read.renamed) return
+          if (error instanceof OpenCodeServiceError && (error.status === 405 || error.status === 501)) {
+            throw new Error('This OpenCode service does not support native title regeneration. Update OpenCode and try again.')
+          }
+          throw error
+        }
+        // The update returns no content. Read it back in case the event stream missed the rename.
         const session = parseSessionInfo(await this.dependencies.client.request(thread.target, 'session.get', {
           params: { sessionID: threadId },
         }))
@@ -1035,32 +1299,150 @@ export class InboxChatService {
     }
   }
 
+  /**
+   * What the thread waits for: its own permission requests and questions, and those of its subagents. OpenCode files
+   * a subagent's under the subagent's session, so they are found in the directory's lists and kept when that session
+   * belongs to this thread.
+   */
   async requests(threadId: string): Promise<ChatRequests> {
     const thread = this.thread(threadId)
-    const [permissions, forms] = await Promise.all([
+    const [permissions, forms, subagents] = await Promise.all([
       this.dependencies.client.request(thread.target, 'session.permission.list', { params: { sessionID: thread.id } }),
       this.dependencies.client.request(thread.target, 'session.form.list', { params: { sessionID: thread.id } }),
+      // A subagent's request that cannot be listed is no reason to hide the thread's own.
+      this.subagentRequests(thread).catch((): ChatRequests => ({ permissions: [], forms: [] })),
     ])
-    return { permissions: parsePermissions(permissions), forms: parseForms(forms) }
+    return {
+      permissions: [...parsePermissions(permissions), ...subagents.permissions],
+      forms: [...parseForms(forms), ...subagents.forms],
+    }
+  }
+
+  private async subagentRequests(thread: InboxThread): Promise<ChatRequests> {
+    if (thread.worktreeRemovedAt !== undefined) return { permissions: [], forms: [] }
+    const query = { 'location[directory]': thread.directory }
+    const listed = (operation: 'permission.request.list' | 'form.list') =>
+      this.dependencies.client.request(thread.target, operation, { query }).catch((error: unknown) => {
+        // An OpenCode without the route has nothing more to show.
+        if (error instanceof OpenCodeServiceError && error.status === 404 && !error.tag) return { data: [] }
+        throw error
+      })
+    const [permissionList, formList] = await Promise.all([listed('permission.request.list'), listed('form.list')])
+    const mine = async <T extends { id: string }>(items: T[], sessions: Map<string, string>): Promise<(T & { subagent: { sessionId: string; title?: string } })[]> => {
+      const found = await Promise.all(items.map(async (item) => {
+        const sessionId = sessions.get(item.id)
+        if (!sessionId || sessionId === thread.id) return null
+        const owner = await this.sessionOwner(thread.target, sessionId)
+        if (owner?.threadId !== thread.id) return null
+        return { ...item, subagent: { sessionId, ...(owner.title ? { title: owner.title } : {}) } }
+      }))
+      return found.filter((item) => item !== null)
+    }
+    const [permissions, forms] = await Promise.all([
+      mine(parsePermissions(permissionList), requestSessionIds(permissionList)),
+      mine(parseForms(formList), requestSessionIds(formList)),
+    ])
+    return { permissions, forms }
+  }
+
+  /**
+   * The recorded thread a session belongs to: itself, or the thread at the top of its chain of parents (at most a
+   * few subagents deep), with the session's own title. Null for a session that is no recorded thread's.
+   */
+  private sessionOwner(target: OpenCodeTarget, sessionId: string): Promise<{ threadId: string; title: string | null } | null> {
+    if (this.dependencies.store.get(sessionId)) return Promise.resolve({ threadId: sessionId, title: null })
+    const key = `${serviceTargetKey(target)}\n${sessionId}`
+    const known = this.sessionOwners.get(key)
+    if (known) return known.then((owner) => (owner && this.dependencies.store.get(owner.threadId) ? owner : null))
+    const lookup = (async () => {
+      let title: string | null = null
+      let current = sessionId
+      for (let depth = 0; depth < SUBAGENT_DEPTH; depth += 1) {
+        const session = parseSessionParent(
+          await this.dependencies.client.request(target, 'session.get', { params: { sessionID: current } }),
+          current,
+        )
+        if (!session) return null
+        if (depth === 0) title = session.title
+        if (!session.parentId) return null
+        const thread = this.dependencies.store.get(session.parentId)
+        if (thread) return serviceTargetKey(thread.target) === serviceTargetKey(target) ? { threadId: thread.id, title } : null
+        current = session.parentId
+      }
+      return null
+    })()
+    this.sessionOwners.set(key, lookup)
+    // A failed read is not an answer: the next request asks again.
+    lookup.catch(() => {
+      if (this.sessionOwners.get(key) === lookup) this.sessionOwners.delete(key)
+    })
+    return lookup
+  }
+
+  /** The session an answer goes to: the thread's own, or a subagent's that belongs to the thread. */
+  private async answeringSession(thread: InboxThread, sessionId: string | undefined): Promise<string> {
+    if (!sessionId || sessionId === thread.id) return thread.id
+    const owner = await this.sessionOwner(thread.target, sessionId)
+    if (owner?.threadId !== thread.id) throw new Error('That request is not from this thread or its subagents.')
+    return sessionId
   }
 
   async replyPermission(request: ChatPermissionReplyRequest): Promise<void> {
     const thread = this.thread(request.threadId)
+    const sessionId = await this.answeringSession(thread, request.sessionId)
     if (request.decision !== 'reject') {
-      const answer = await this.dependencies.client.request(thread.target, 'session.permission.list', { params: { sessionID: thread.id } })
+      const answer = await this.dependencies.client.request(thread.target, 'session.permission.list', { params: { sessionID: sessionId } })
       const permission = parsePermissions(answer).find((entry) => entry.id === request.requestId)
       if (!permission || permission.incomplete) throw new Error('Review this permission request in an OpenCode terminal, or reject it here.')
     }
     await this.dependencies.client.request(thread.target, 'session.permission.reply', {
-      params: { sessionID: thread.id, requestID: request.requestId },
+      params: { sessionID: sessionId, requestID: request.requestId },
       body: { decision: request.decision },
     })
   }
 
+  /**
+   * The "Always allow" approvals OpenCode saved for the project the thread works in (OpenCode keeps them per project,
+   * a Git repository and its worktrees being one). A thread whose worktree was deleted has no folder to name the
+   * project by, and an OpenCode without the routes has none to list.
+   */
+  async savedPermissions(threadId: string): Promise<ChatSavedPermissions> {
+    this.assertEnabled()
+    const thread = this.thread(threadId)
+    if (thread.worktreeRemovedAt !== undefined) return { supported: true, permissions: [] }
+    try {
+      const answer = await this.dependencies.client.request(thread.target, 'permission.saved.list', {
+        query: { 'location[directory]': thread.directory },
+      })
+      return { supported: true, permissions: parseSavedPermissions(answer) }
+    } catch (error) {
+      if (error instanceof OpenCodeServiceError && error.status === 404 && !error.tag) return { supported: false, permissions: [] }
+      throw error
+    }
+  }
+
+  /**
+   * Forgets one saved approval, so OpenCode asks again. Only one listed for the thread's project can be named: the
+   * renderer cannot reach another project's approvals through a thread.
+   */
+  async removeSavedPermission(request: ChatSavedPermissionRemoveRequest): Promise<void> {
+    const thread = this.thread(request.threadId)
+    const { permissions } = await this.savedPermissions(request.threadId)
+    // Already gone, removed elsewhere: what was asked for is true.
+    if (!permissions.some((entry) => entry.id === request.id)) return
+    try {
+      await this.dependencies.client.request(thread.target, 'permission.saved.remove', { params: { savedID: request.id } })
+    } catch (error) {
+      if (error instanceof OpenCodeServiceError && error.status === 404 && error.tag === 'PermissionSavedNotFoundError') return
+      throw error
+    }
+  }
+
   async replyForm(request: ChatFormReplyRequest): Promise<void> {
     const thread = this.thread(request.threadId)
+    const sessionId = await this.answeringSession(thread, request.sessionId)
     await this.dependencies.client.request(thread.target, 'session.form.reply', {
-      params: { sessionID: thread.id, formID: request.formId },
+      params: { sessionID: sessionId, formID: request.formId },
       body: { answer: request.answer },
     })
   }
@@ -1079,11 +1461,19 @@ export class InboxChatService {
       for (const [child, parent] of this.subagentParents) {
         if (parent === threadId) this.subagentParents.delete(child)
       }
+      for (const key of this.subagentCalls.keys()) {
+        if (key.startsWith(`${threadId}\n`)) this.subagentCalls.delete(key)
+      }
     }
   }
 
   private onEvent(event: ServiceEvent, target: OpenCodeTarget): void {
     this.dependencies.recorder.applyServiceEvent(event)
+    const sessionId = serviceEventSessionId(event)
+    // A subagent's permission request or question is filed under its own session, which is no thread.
+    if (sessionId && REQUEST_EVENTS.has(event.type) && !this.dependencies.store.get(sessionId)) {
+      void this.forwardSubagentRequest(event, target, sessionId)
+    }
     // Shell lifecycle events need not carry a session ID. Refresh open lists on this service,
     // including parents whose subagents own the shell. The list API supplies the actual scope.
     if (event.type.startsWith('shell.') || event.type.startsWith('session.shell.')) {
@@ -1138,8 +1528,35 @@ export class InboxChatService {
       event.type === 'session.execution.interrupted') {
       this.dependencies.send({ type: 'running', threadId, running: false })
     }
+    if (event.type === 'session.tool.progress') {
+      const metadata = event.data.metadata
+      const child = metadata !== null && typeof metadata === 'object' ? (metadata as Record<string, unknown>).sessionID : undefined
+      if (typeof event.data.id === 'string' && event.data.id.length <= 200 && typeof child === 'string' && /^ses_[A-Za-z0-9_-]{1,200}$/.test(child)) {
+        this.subagentCalls.set(`${threadId}\n${event.data.id}`, child)
+      }
+    }
     if (MESSAGE_EVENTS.has(event.type)) this.dependencies.send({ type: 'messages', threadId })
     if (REQUEST_EVENTS.has(event.type)) this.dependencies.send({ type: 'requests', threadId })
+    // An "Always allow", from MDE or an OpenCode terminal on the same session, saved an approval for the project.
+    if (event.type === 'permission.replied' && event.data.reply === 'always') {
+      this.dependencies.send({ type: 'saved-permissions', threadId })
+    }
+  }
+
+  /**
+   * Passes a subagent's request event on to the thread it belongs to, as if the thread had asked: the thread needs
+   * input (or goes back to work), an open one reads its requests again, and an "Always allow" changes its project's
+   * saved approvals.
+   */
+  private async forwardSubagentRequest(event: ServiceEvent, target: OpenCodeTarget, sessionId: string): Promise<void> {
+    const owner = await this.sessionOwner(target, sessionId).catch(() => null)
+    if (!owner) return
+    this.dependencies.recorder.applyServiceEvent({ ...event, data: { ...event.data, sessionID: owner.threadId } })
+    if (!this.subscribed.has(owner.threadId)) return
+    this.dependencies.send({ type: 'requests', threadId: owner.threadId })
+    if (event.type === 'permission.replied' && event.data.reply === 'always') {
+      this.dependencies.send({ type: 'saved-permissions', threadId: owner.threadId })
+    }
   }
 
   private async loadOptions(folder: { target: OpenCodeTarget; directory: string }): Promise<ChatOptions> {
@@ -1168,7 +1585,40 @@ export class InboxChatService {
    */
   async files(request: ChatFilesRequest): Promise<ChatFileEntry[]> {
     this.assertEnabled()
-    return this.findFiles(this.place(request), request.query)
+    const place = this.place(request)
+    const listed = request.query.includes('/') ? await this.folderFiles(request, place, request.query).catch(() => null) : null
+    return listed ?? this.findFiles(place, request.query)
+  }
+
+  /**
+   * What was typed after an `@` read like a path in a shell: `src/li` is what `src/` holds that starts with (then
+   * contains) `li`, folders first. With nothing after the `/` the folder itself leads the list, so it can be chosen as
+   * it is. Git-ignored entries and `.git` are left out, as the search leaves them out. Null, for the search to answer
+   * instead, when that is no folder of the project or nothing in it fits.
+   */
+  private async folderFiles(request: ChatOptionsRequest, place: { target: OpenCodeTarget; directory: string }, query: string): Promise<ChatFileEntry[] | null> {
+    const cut = query.lastIndexOf('/')
+    const folder = query.slice(0, cut + 1)
+    const typed = query.slice(cut + 1).toLowerCase()
+    if (!isMentionablePath(folder)) return null
+    const children = parseFileEntries(await this.dependencies.client.request(place.target, 'fs.list', {
+      query: { 'location[directory]': place.directory, path: folder },
+    })).filter((entry) => entry.path.startsWith(folder) && entry.path !== folder && fileName(entry.path) !== '.git/').slice(0, FOLDER_LIST_LIMIT)
+    const root = this.fileRoot(request.threadId ?? request.folderId ?? '')
+    const ignored = root && this.dependencies.ignored && children.length
+      ? await this.dependencies.ignored(root, children.map((entry) => entry.path)).catch(() => new Set<string>())
+      : new Set<string>()
+    const kept = children.filter((entry) => !ignored.has(entry.path))
+    const rank = (entry: ChatFileEntry): number => {
+      const name = fileName(entry.path).toLowerCase()
+      return name.startsWith(typed) ? 0 : name.includes(typed) ? 1 : -1
+    }
+    const fitting = kept
+      .filter((entry) => rank(entry) >= 0)
+      .sort((a, b) => rank(a) - rank(b) || Number(b.directory) - Number(a.directory) || a.path.localeCompare(b.path))
+      .slice(0, FILE_PICKER_LIMIT)
+    if (typed) return fitting.length ? fitting : null
+    return [{ path: folder, directory: true }, ...fitting.slice(0, FILE_PICKER_LIMIT - 1)]
   }
 
   /** Which of these paths the folder or thread has; the answer holds the ones it does, as they were written. */
@@ -1282,6 +1732,13 @@ export class InboxChatService {
   private thread(id: string): InboxThread {
     const thread = this.dependencies.store.get(id)
     if (!thread) throw new Error('This thread is no longer in the Inbox.')
+    return thread
+  }
+
+  /** A thread something is to run in: not one whose worktree was deleted, which is kept only to be read. */
+  private liveThread(id: string): InboxThread {
+    const thread = this.thread(id)
+    if (thread.worktreeRemovedAt !== undefined) throw new Error('This thread’s worktree was deleted, so it can only be read.')
     return thread
   }
 

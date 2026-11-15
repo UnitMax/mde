@@ -1,5 +1,5 @@
 import { promises as fs } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join, relative, sep } from 'node:path'
 import { readContainedFile } from './read'
 import type {
   FileReadResponse,
@@ -172,6 +172,25 @@ async function listNativeDirectory(
     if (code === 'EACCES' || code === 'EPERM') throw new Error('Permission denied.')
     throw new Error('Could not list folder.')
   }
+}
+
+/** The absolute path of a folder the tree names relative to its root. Check the name with `isSafeRelativePath` first. */
+export function treeFolderPath(session: DirectoryContext, relativePath: string): string {
+  if (session.kind === 'wsl') return joinWslPath(session.path, relativePath)
+  return relativePath ? join(session.path, ...relativePath.split('/')) : session.path
+}
+
+/**
+ * True when `path` is `root` or a folder below it. Both must already be resolved (realpath), so a symlinked
+ * folder that points elsewhere fails the check. WSL paths are POSIX; native ones use the host's path rules.
+ */
+export function isWithinRoot(kind: DirectoryContext['kind'], root: string, path: string): boolean {
+  if (kind === 'wsl') {
+    const base = root.replace(/\/+$/, '')
+    return path === root || path === base || path.startsWith(`${base}/`)
+  }
+  const rest = relative(root, path)
+  return rest === '' || (rest !== '..' && !rest.startsWith(`..${sep}`) && !isAbsolute(rest))
 }
 
 /** Lists one directory relative to a runtime filesystem root. */

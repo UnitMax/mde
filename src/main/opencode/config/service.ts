@@ -9,7 +9,9 @@ import {
   type OpenCodeConfigSnapshot,
   type OpenCodeConfigTarget,
 } from '@shared/opencode-config'
+import type { MdeMcpStatus } from '@shared/mde-mcp'
 import { applyDraft, readConfig, redactSecrets } from './edit'
+import { installMdeMcp, readMdeMcpState, removeMdeMcp } from './mde-mcp'
 import type { ConfigFileSystem } from './files'
 
 /** The file OpenCode 2 prefers when both exist, and the one a new configuration is created as. */
@@ -59,6 +61,41 @@ export class OpenCodeConfigService {
 
   save(target: OpenCodeConfigTarget, draft: OpenCodeConfigDraft, revision: string): Promise<OpenCodeConfigSnapshot> {
     const run = this.queue.then(() => this.write(target, draft, revision))
+    this.queue = run.catch(() => undefined)
+    return run
+  }
+
+  /** Whether the MDE MCP is in this target's configuration, and whether it starts `command` (this copy of MDE). */
+  async mdeMcpStatus(target: OpenCodeConfigTarget, command: string[]): Promise<MdeMcpStatus> {
+    const files = this.dependencies.fileSystem(target)
+    const [loaded, home] = await Promise.all([this.load(files), files.home().catch(() => null)])
+    return { ...readMdeMcpState(loaded.text, command), file: displayPath(loaded.path, home) }
+  }
+
+  /** Adds the MDE MCP to the configuration, or points an existing entry at `command`; nothing else changes. */
+  installMdeMcp(target: OpenCodeConfigTarget, command: string[]): Promise<MdeMcpStatus> {
+    return this.edit(target, command, (text) => installMdeMcp(text, command))
+  }
+
+  removeMdeMcp(target: OpenCodeConfigTarget, command: string[]): Promise<MdeMcpStatus> {
+    return this.edit(target, command, removeMdeMcp)
+  }
+
+  /** Changes the file text in place, in the save queue; a file that cannot be parsed is left alone. */
+  private edit(target: OpenCodeConfigTarget, command: string[], change: (text: string) => string): Promise<MdeMcpStatus> {
+    const run = this.queue.then(async () => {
+      const files = this.dependencies.fileSystem(target)
+      const loaded = await this.load(files)
+      const { parseError } = readMdeMcpState(loaded.text, command)
+      if (parseError) throw new Error(`OpenCode’s configuration cannot be read (${parseError}). Fix it by hand first.`)
+      const next = change(loaded.text)
+      if (next !== loaded.text) {
+        const destination = await files.realpath(loaded.path)
+        await files.writeText(destination, (loaded.bom ? '\ufeff' : '') + next, loaded.exists ? loaded.mode : NEW_FILE_MODE)
+        this.dependencies.onSaved(target)
+      }
+      return this.mdeMcpStatus(target, command)
+    })
     this.queue = run.catch(() => undefined)
     return run
   }

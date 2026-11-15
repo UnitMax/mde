@@ -23,6 +23,12 @@ describe('tidySelection', () => {
   })
 })
 
+describe('tidySelection of tool output', () => {
+  it('takes terminal colour codes out of quoted output', () => {
+    expect(tidySelection('\u001b[32;1m$ npm test\u001b[0;m\n\u001b[0Kok')).toBe('$ npm test\nok')
+  })
+})
+
 describe('quoteBlock', () => {
   it('puts a mark before each line and keeps a blank line inside the quote as an empty quoted line', () => {
     expect(quoteBlock('one\ntwo\n\nthree')).toBe('> one\n> two\n>\n> three')

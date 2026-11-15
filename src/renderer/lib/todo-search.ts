@@ -149,6 +149,18 @@ export function todoDescriptionSnippet(match: TodoDescriptionMatch): TodoDescrip
   }
 }
 
+/** Ctrl+N (Cmd+N on macOS) in a To Do project opens the new-task dialog, like the + button. */
+export function isTodoNewTaskShortcut(input: TodoSearchShortcutInput): boolean {
+  return (
+    (input.type === undefined || input.type === 'keydown') &&
+    (input.key.toLocaleLowerCase() === 'n' || input.code === 'KeyN') &&
+    (input.ctrlKey || input.metaKey) &&
+    !input.altKey &&
+    !input.shiftKey &&
+    !input.isComposing
+  )
+}
+
 export function isTodoSearchShortcut(input: TodoSearchShortcutInput): boolean {
   return (
     (input.type === undefined || input.type === 'keydown') &&

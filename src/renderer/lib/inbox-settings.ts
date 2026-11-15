@@ -6,9 +6,18 @@ export const INBOX_SIDEBAR_CHANGES_STORAGE_KEY = 'mde.inbox-sidebar-changes'
 export const INBOX_WORKING_SECTION_STORAGE_KEY = 'mde.inbox-working-section'
 export const INBOX_WORKING_COLLAPSED_STORAGE_KEY = 'mde.inbox-working-collapsed'
 export const INBOX_DRAFTS_COLLAPSED_STORAGE_KEY = 'mde.inbox-drafts-collapsed'
+export const INBOX_SNOOZED_OPEN_STORAGE_KEY = 'mde.inbox-snoozed-open'
 export const INBOX_TITLE_ICONS_STORAGE_KEY = 'mde.inbox-title-icons'
 export const INBOX_COMPACT_CHAT_STORAGE_KEY = 'mde.inbox-compact-chat'
+export const INBOX_TURN_CHANGES_STORAGE_KEY = 'mde.inbox-turn-changes'
+export const INBOX_SIDEBAR_FLOATING_STORAGE_KEY = 'mde.inbox-sidebar-floating'
+export const INBOX_TOOL_TURNS_STORAGE_KEY = 'mde.inbox-tool-turns'
+export const INBOX_COMMAND_NAMES_STORAGE_KEY = 'mde.inbox-command-names'
+export const INBOX_COMPACT_TEXT_STORAGE_KEY = 'mde.inbox-compact-text'
+/** The compact layouts draw subagents as their cards instead of folding them into the lines. */
+export const INBOX_COMPACT_SUBAGENTS_STORAGE_KEY = 'mde.inbox-compact-subagents'
 export const INBOX_MODEL_QUICK_SWITCH_STORAGE_KEY = 'mde.inbox-model-quick-switch'
+export const INBOX_NEXT_SUGGESTION_STORAGE_KEY = 'mde.inbox-next-suggestion'
 export const INBOX_PROJECT_FILTER_STORAGE_KEY = 'mde.inbox-project-filter'
 export const INBOX_SIDEBAR_WIDTH_STORAGE_KEY = 'mde.inbox-sidebar-width'
 export const INBOX_TERMINAL_LAYOUT_STORAGE_KEY = 'mde.inbox-terminal-layout'
@@ -100,6 +109,41 @@ export function saveInboxCompactChat(on: boolean): void {
   writeSwitch(INBOX_COMPACT_CHAT_STORAGE_KEY, on)
 }
 
+/** Whether compact mode sums up each turn's file changes in a panel at its end. On unless turned off. */
+export function getInboxTurnChanges(): boolean {
+  return readSwitchOnByDefault(INBOX_TURN_CHANGES_STORAGE_KEY)
+}
+
+export function saveInboxTurnChanges(on: boolean): void {
+  writeSwitch(INBOX_TURN_CHANGES_STORAGE_KEY, on)
+}
+
+/** Whether a folded line of steps names the commands it ran ("Ran 2 commands · echo, curl"). On unless turned off. */
+export function getInboxCommandNames(): boolean {
+  return readSwitchOnByDefault(INBOX_COMMAND_NAMES_STORAGE_KEY)
+}
+
+export function saveInboxCommandNames(on: boolean): void {
+  writeSwitch(INBOX_COMMAND_NAMES_STORAGE_KEY, on)
+}
+
+/** Whether compact mode draws the text the agent writes between its steps instead of folding it. Off unless turned on. */
+export function getInboxCompactText(): boolean {
+  return readSwitch(INBOX_COMPACT_TEXT_STORAGE_KEY)
+}
+
+export function saveInboxCompactText(on: boolean): void {
+  writeSwitch(INBOX_COMPACT_TEXT_STORAGE_KEY, on)
+}
+
+export function getInboxCompactSubagents(): boolean {
+  return readSwitch(INBOX_COMPACT_SUBAGENTS_STORAGE_KEY)
+}
+
+export function saveInboxCompactSubagents(on: boolean): void {
+  writeSwitch(INBOX_COMPACT_SUBAGENTS_STORAGE_KEY, on)
+}
+
 /** Whether the favorite models are offered as buttons above the message box. On unless turned off. */
 export function getInboxModelQuickSwitch(): boolean {
   return readSwitchOnByDefault(INBOX_MODEL_QUICK_SWITCH_STORAGE_KEY)
@@ -107,6 +151,18 @@ export function getInboxModelQuickSwitch(): boolean {
 
 export function saveInboxModelQuickSwitch(on: boolean): void {
   writeSwitch(INBOX_MODEL_QUICK_SWITCH_STORAGE_KEY, on)
+}
+
+/**
+ * Whether a finished turn suggests the next message as ghost text in the message box. Off unless it was turned on:
+ * each guess is a model call the person pays for.
+ */
+export function getInboxNextSuggestion(): boolean {
+  return readSwitch(INBOX_NEXT_SUGGESTION_STORAGE_KEY)
+}
+
+export function saveInboxNextSuggestion(on: boolean): void {
+  writeSwitch(INBOX_NEXT_SUGGESTION_STORAGE_KEY, on)
 }
 
 /** The project the thread list is narrowed to, as the user last left it: its folder ID, or none. */
@@ -145,10 +201,40 @@ export function saveInboxDraftsCollapsed(collapsed: boolean): void {
   writeSwitch(INBOX_DRAFTS_COLLAPSED_STORAGE_KEY, collapsed)
 }
 
+/** Whether the Snoozed section is open. Folded unless it was opened, and folded when unreadable. */
+export function getInboxSnoozedOpen(): boolean {
+  return readSwitch(INBOX_SNOOZED_OPEN_STORAGE_KEY)
+}
+
+export function saveInboxSnoozedOpen(open: boolean): void {
+  writeSwitch(INBOX_SNOOZED_OPEN_STORAGE_KEY, open)
+}
+
 /** A width in pixels the sidebar can have, whatever was stored or dragged to. */
 export function clampInboxSidebarWidth(width: number): number {
   if (!Number.isFinite(width)) return INBOX_SIDEBAR_DEFAULT_WIDTH
   return Math.round(Math.min(Math.max(width, INBOX_SIDEBAR_MIN_WIDTH), INBOX_SIDEBAR_MAX_WIDTH))
+}
+
+/**
+ * Whether the Inbox's right-hand sidebar floats over the conversation as a menu card, instead of standing beside it.
+ * Off (the docked sidebar) unless turned on.
+ */
+export function getInboxSidebarFloating(): boolean {
+  return readSwitch(INBOX_SIDEBAR_FLOATING_STORAGE_KEY)
+}
+
+export function saveInboxSidebarFloating(on: boolean): void {
+  writeSwitch(INBOX_SIDEBAR_FLOATING_STORAGE_KEY, on)
+}
+
+/** Whether the Tools tab groups its calls under the messages they answered; off by default, a flat list. */
+export function getInboxToolTurns(): boolean {
+  return readSwitch(INBOX_TOOL_TURNS_STORAGE_KEY)
+}
+
+export function saveInboxToolTurns(on: boolean): void {
+  writeSwitch(INBOX_TOOL_TURNS_STORAGE_KEY, on)
 }
 
 /** How wide the Inbox's right-hand sidebar was left. The default when never set, and when unreadable. */

@@ -175,7 +175,7 @@ export function InboxSearchDialog({ open, onOpenChange }: { open: boolean; onOpe
                   <div className={cn('flex items-baseline gap-2 px-2.5 pb-0.5 text-[12px]', index > 0 && 'mt-2 pt-1')}>
                     <span className="min-w-0 truncate font-medium text-fg">{row.thread.customTitle ?? row.thread.title}</span>
                     <span className="min-w-0 shrink-[3] truncate text-[11px] text-fg-subtle">
-                      {row.folder ? `${row.folder.name} · ` : ''}{sessionAge(row.thread.lastActivityAt)}{row.thread.archived ? ' · Archived' : ''}
+                      {row.folder ? `${row.folder.name} · ` : ''}{sessionAge(row.thread.lastActivityAt)}{row.thread.archived ? ' · Archived' : row.thread.snoozedUntil !== undefined ? ' · Snoozed' : ''}
                     </span>
                   </div>
                 )}

@@ -1,4 +1,5 @@
 import type { FileRoot } from './ipc'
+import type { ThreadPermissionMode } from './permission-modes'
 
 export type SessionKind = 'native' | 'wsl'
 
@@ -179,12 +180,34 @@ export interface InboxThread {
   archived: boolean
   /** Keeps the thread at the top of the sidebar list, including while it is working. */
   pinned?: boolean
+  /**
+   * Set while the thread is snoozed: when it comes back, on this computer's clock. Until then it is out of the
+   * list, in the Snoozed section. New activity (done, failed, a question) brings it back early.
+   */
+  snoozedUntil?: number
+  /** The thread came back from a snooze and nothing has happened in it since; shown as "Woke up". */
+  woke?: boolean
   /** The Inbox folder the thread was started in. */
   folderId: string
   /** The thread this one was forked from, which may since have been removed. */
   forkedFrom?: string
+  /**
+   * Set when an agent started this thread through the MDE MCP: `threadId` is the Inbox thread whose agent
+   * asked (it may since have been removed), absent when the caller was not an Inbox thread.
+   */
+  spawnedBy?: { threadId?: string }
   /** Set when the thread runs in a Git worktree MDE created; `directory` is then inside `root`. */
   worktree?: InboxWorktree
+  /**
+   * The permission mode the thread was given, which OpenCode keeps with the session as rules of its own. Absent
+   * means `default`: the OpenCode configuration alone decides.
+   */
+  permissionMode?: Exclude<ThreadPermissionMode, 'default'>
+  /**
+   * When the thread's worktree was deleted from the worktree manager. The thread is kept to be read, but its
+   * folder is gone, so nothing can run in it again: no message, fork, undo or terminal.
+   */
+  worktreeRemovedAt?: number
 }
 
 /** The Git worktree an Inbox thread was started in. Forks of the thread share it. */
@@ -207,6 +230,46 @@ export interface InboxGitBranch {
 
 export interface InboxGitInfoRequest {
   folderId: string
+}
+
+/**
+ * One worktree MDE made, as the worktree manager lists it: from the threads and folder entries that record it,
+ * and from what Git lists for each project, so one no thread uses any more is found too.
+ */
+export interface InboxWorktreeEntry {
+  target: OpenCodeTarget
+  /** The worktree's root directory, in the target's own format; with `target`, what names it. */
+  root: string
+  /** The directory Git commands for it run in: the project it was cut from. */
+  repository: string
+  /** The branch checked out in it; null for a detached HEAD. */
+  branch: string | null
+  /** The branch it was cut from, when MDE recorded it. */
+  base?: string
+  /** When MDE first recorded it (its folder entry or its first thread), if it did. */
+  createdAt?: number
+  /** Its folder no longer exists. */
+  missing: boolean
+  /** Files with uncommitted changes, untracked ones included; null when Git could not tell. */
+  changes: number | null
+  /** Commits on its branch that no other branch or remote-tracking branch has; null when unknown. */
+  unmerged: number | null
+}
+
+export interface InboxWorktreeRemoveRequest {
+  target: OpenCodeTarget
+  root: string
+  /** Remove it even with uncommitted changes, which are lost. */
+  force?: boolean
+  /** Delete its branch too, even with commits no other branch has. */
+  deleteBranch?: boolean
+}
+
+export interface InboxWorktreeRemoveResult {
+  /** The threads that ran in it, kept read-only. */
+  threads: string[]
+  /** Set when the branch was to be deleted and Git refused; the worktree itself is gone. */
+  branchError?: string
 }
 
 /** What the new-thread page needs to offer Git worktree mode for a folder. */
@@ -358,6 +421,65 @@ export interface ChatUsage {
   tokens: ChatTokens
   /** The cost OpenCode reports, in US dollars; many providers report 0. */
   cost: number
+}
+
+/**
+ * OpenCode's usage overview, from one OpenCode service (macOS, or one WSL distro): every session it holds, not
+ * only Inbox threads. `since` (epoch ms) narrows it to recent days; `timezone` (IANA) decides where a day ends.
+ */
+export interface ChatUsageRequest {
+  folderId: string
+  since?: number
+  timezone?: string
+}
+
+/** One model's share of the usage. */
+export interface ChatUsageModel {
+  model: OpenCodeModelRef
+  steps: number
+  tokens: ChatTokens
+  cost: number
+}
+
+/** How often one tool was called, and how often it failed. */
+export interface ChatUsageTool {
+  name: string
+  calls: number
+  failed: number
+  /** The median time a call took, in ms, when OpenCode reports it. */
+  medianMs?: number
+}
+
+export interface ChatUsageStats {
+  /** The span OpenCode counted, epoch ms. */
+  from: number
+  to: number
+  sessions: number
+  /** Sessions a subagent ran in; part of `sessions`. */
+  subagents: number
+  prompts: number
+  /** Model calls; OpenCode counts activity in these. */
+  steps: number
+  tokens: ChatTokens
+  /** In US dollars, as OpenCode reports it; free and local models count 0. */
+  cost: number
+  activeDays: number
+  /** Days in a row with activity, up to the last one. */
+  streak: number
+  /** Model calls per day (`YYYY-MM-DD`, in the requested time zone), oldest first; days without any are left out. */
+  activity: { date: string; steps: number }[]
+  /** Most tokens first. */
+  models: ChatUsageModel[]
+  toolCalls: number
+  toolFailures: number
+  /** Most calls first. */
+  tools: ChatUsageTool[]
+}
+
+/** `supported` is false for an OpenCode without the statistics route; `stats` is then null. */
+export interface ChatUsageState {
+  supported: boolean
+  stats: ChatUsageStats | null
 }
 
 export type ChatToolStatus = 'pending' | 'running' | 'completed' | 'error'
@@ -593,6 +715,16 @@ export interface ChatPermission {
   resources: string[]
   message?: string
   incomplete?: boolean
+  /** The patterns "Always allow" saves for the project (`git status *`, or `*` for every edit). */
+  save?: string[]
+  /** Set when a subagent of the thread asks: its session, where the answer goes, and its title (the task). */
+  subagent?: ChatRequestSubagent
+}
+
+/** The subagent session a permission request or question came from. */
+export interface ChatRequestSubagent {
+  sessionId: string
+  title?: string
 }
 
 export interface ChatFormOption {
@@ -619,6 +751,8 @@ export interface ChatForm {
   fields: ChatFormField[]
   /** Fields MDE cannot show; such a form has to be answered in a terminal. */
   unsupported: boolean
+  /** Set when a subagent of the thread asks. */
+  subagent?: ChatRequestSubagent
 }
 
 export interface ChatRequests {
@@ -697,10 +831,17 @@ export interface ChatCreateRequest {
    * names the new branch; without it MDE generates `mde/<id>`.
    */
   worktree?: { base: string; branch?: string }
+  /** Left out, or `default`, sends no rules: the OpenCode configuration decides. */
+  permissionMode?: ThreadPermissionMode
 }
 
 export interface ChatThreadRequest {
   threadId: string
+}
+
+export interface ChatPermissionModeRequest {
+  threadId: string
+  mode: ThreadPermissionMode
 }
 
 /** A running job owned by the thread or one of its subagents, as reported by OpenCode. */
@@ -809,16 +950,56 @@ export interface ChatAsideHistoryRequest {
   threadId: string
 }
 
+/**
+ * Asks for the message the person would most likely send next in a thread, guessed from the conversation as it
+ * stands. Like a side question, nothing is added to the conversation and the agent is not told.
+ */
+export interface ChatSuggestRequest {
+  threadId: string
+}
+
+export interface ChatSuggestion {
+  /** The suggested message, as plain text; null when the model had nothing obvious to suggest. */
+  text: string | null
+}
+
 export interface ChatPermissionReplyRequest {
   threadId: string
   requestId: string
   decision: 'once' | 'always' | 'reject'
+  /** The subagent session that asked, when it was not the thread itself. */
+  sessionId?: string
+}
+
+/**
+ * An "Always allow" OpenCode saved for the project a thread works in: the tool's action (`shell`, `edit`, an MCP
+ * tool's `<server>_<tool>`) and the pattern it allows (`git status *`, a path, `*`). OpenCode saves no rejections.
+ */
+export interface ChatSavedPermission {
+  id: string
+  action: string
+  resource: string
+  /** When it was saved, epoch ms. */
+  created: number
+}
+
+export interface ChatSavedPermissions {
+  /** False for an OpenCode without the saved-permissions routes. */
+  supported: boolean
+  permissions: ChatSavedPermission[]
+}
+
+export interface ChatSavedPermissionRemoveRequest {
+  threadId: string
+  id: string
 }
 
 export interface ChatFormReplyRequest {
   threadId: string
   formId: string
   answer: Record<string, ChatFormValue>
+  /** The subagent session that asked, when it was not the thread itself. */
+  sessionId?: string
 }
 
 /** Live changes for subscribed chat threads, pushed from the main process. */
@@ -829,6 +1010,8 @@ export type ChatEvent =
   | { type: 'messages'; threadId: string }
   /** Pending permissions or questions changed; refetch them. */
   | { type: 'requests'; threadId: string }
+  /** A permission request of the thread was answered "Always allow": its project's saved approvals changed. */
+  | { type: 'saved-permissions'; threadId: string }
   | { type: 'running'; threadId: string; running: boolean }
   /** The thread's goal was set, changed or cleared (null). */
   | { type: 'goal'; threadId: string; goal: ChatGoal | null }
@@ -856,6 +1039,12 @@ export interface InboxSetCustomTitleRequest {
 export interface InboxSetPinnedRequest {
   id: string
   pinned: boolean
+}
+
+export interface InboxSetSnoozedRequest {
+  id: string
+  /** When the thread comes back (ms since the epoch), or null to bring it back now. */
+  until: number | null
 }
 
 export interface InboxRemoveRequest {
@@ -1024,6 +1213,8 @@ export interface ChatDraftChoice {
   model?: OpenCodeModelRef
   /** The thread would run in a new Git worktree cut from `base`; `branch` is the name typed for it, valid or not yet. */
   worktree?: { base: string; branch?: string }
+  /** Left out for `default`. */
+  permissionMode?: Exclude<ThreadPermissionMode, 'default'>
 }
 
 /** One unsent new thread, as the Inbox sidebar lists it. Only what the row shows; the draft itself is read by its composer. */
@@ -1082,4 +1273,96 @@ export interface InboxChangesResponse {
   /** Untracked files past the counting limit: listed, but their line counts are left out of the totals. */
   uncounted?: number
   files?: InboxChangedFile[]
+}
+
+export type GitGraphScope = 'all' | 'local' | 'head'
+
+/**
+ * The checkout a Git graph request reads: an Inbox thread's (its recorded directory) or a
+ * Sessions terminal's (its current directory, verified by main). Exactly one is given.
+ */
+export type GitRootRequest = { threadId: string } | { terminalId: string }
+
+/** A fetch can also be for a project folder, from the branch picker of a new thread's worktree. */
+export type GitFetchRequest = GitRootRequest | { folderId: string }
+
+/** The commit graph of a checkout, read when the Git graph view opens. Memory only. */
+export type GitGraphRequest = GitRootRequest & {
+  /** How many commits to read, newest first; the view asks for more as the person scrolls. */
+  limit: number
+  /**
+   * `all`: every local branch, remote-tracking branch and tag; `local`: local branches and tags;
+   * `head`: only what HEAD can reach.
+   */
+  scope: GitGraphScope
+}
+
+export interface GitGraphCommit {
+  hash: string
+  parents: string[]
+  author: string
+  /** Author date, in seconds since the epoch. */
+  time: number
+  subject: string
+}
+
+export interface GitGraphRef {
+  /** The commit the ref points at (a tag's target commit, not the tag object). */
+  hash: string
+  /** `main`, `origin/main` or `v1.0`. */
+  name: string
+  kind: 'branch' | 'remote' | 'tag'
+}
+
+export interface InboxGitGraph {
+  available: boolean
+  reason?: string
+  /** The checkout's root. */
+  worktree: string | null
+  /** The commit checked out; null in a repository with no commits yet. */
+  head: string | null
+  /** The branch checked out; null for a detached HEAD. */
+  branch: string | null
+  /** The current branch's upstream, with how far the branch is ahead of and behind it. */
+  upstream: { name: string; ahead: number; behind: number } | null
+  remotes: string[]
+  refs: GitGraphRef[]
+  commits: GitGraphCommit[]
+  /** More commits exist past the limit. */
+  more: boolean
+}
+
+export type GitCommitRequest = GitRootRequest & { hash: string }
+
+/** One file's change in a commit; the path must be one the commit changed. */
+export type GitCommitDiffRequest = GitRootRequest & { hash: string; path: string }
+
+export interface InboxGitCommitFile {
+  path: string
+  /** The old path of a renamed or copied file. */
+  from?: string
+  status: GitChangeStatus
+  additions: number
+  deletions: number
+  binary: boolean
+}
+
+export interface InboxGitCommitDetails {
+  hash: string
+  parents: string[]
+  author: string
+  authorTime: number
+  committer: string
+  commitTime: number
+  /** The full message: subject and body. */
+  message: string
+  /** Files changed against the first parent (the empty tree for a root commit). */
+  files: InboxGitCommitFile[]
+  /** Files past the listing limit were left out. */
+  truncated: boolean
+}
+
+export interface InboxGitFetchResult {
+  /** The remotes fetched. */
+  remotes: string[]
 }

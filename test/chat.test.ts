@@ -24,7 +24,6 @@ import {
   orderAgents,
   pruneLive,
   revertedMessageCount,
-  segmentFill,
   stepContext,
   subagentInfo,
   subagentResult,
@@ -338,16 +337,6 @@ describe('context usage', () => {
   it('turns amber at 70% and red at 90%', () => {
     expect([0, 0.69, 0.7, 0.89, 0.9, 1.4].map(contextTone)).toEqual(['normal', 'normal', 'warn', 'warn', 'danger', 'danger'])
     expect(contextTone(null)).toBe('normal')
-  })
-
-  it('lights the gauge segment by segment, and leaves it dark without a window', () => {
-    const lit = (ratio: number | null): number[] => Array.from({ length: 5 }, (_, index) => Number(segmentFill(ratio, index).toFixed(2)))
-    expect(lit(0)).toEqual([0, 0, 0, 0, 0])
-    expect(lit(0.21)).toEqual([1, 0.05, 0, 0, 0])
-    expect(lit(0.75)).toEqual([1, 1, 1, 0.75, 0])
-    expect(lit(1)).toEqual([1, 1, 1, 1, 1])
-    expect(lit(1.6)).toEqual([1, 1, 1, 1, 1])
-    expect(lit(null)).toEqual([0, 0, 0, 0, 0])
   })
 
   it('writes counts, percentages and costs compactly', () => {

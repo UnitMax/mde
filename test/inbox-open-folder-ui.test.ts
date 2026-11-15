@@ -82,7 +82,6 @@ beforeEach(() => {
   useWorkspace.setState({
     inboxThreads: [thread()],
     selectedInboxThreadId: 'ses_one',
-    inboxMarkedUnread: {},
     inboxCues: {},
     activeWorkspaceView: 'inbox',
     fileTreeCollapsed: false,
@@ -138,8 +137,11 @@ describe('Inbox Files sidebar', () => {
     expect(footer.querySelector(`[aria-label="${FOLDER}"]`)).not.toBeNull()
     expect(header.querySelector(`[aria-label="${VS_CODE}"]`)).toBeNull()
     expect(header.querySelector(`[aria-label="${FOLDER}"]`)).toBeNull()
-    expect(header.querySelector('[aria-label="Collapse files"]')).not.toBeNull()
+    // The sidebar's own buttons are at the footer's right end too, which leaves the header to the tabs.
+    expect(header.querySelector('[aria-label="Collapse files"]')).toBeNull()
     expect(header.querySelector('[aria-label="Refresh files"]')).toBeNull()
+    expect(footer.parentElement!.querySelector('[aria-label="Collapse files"]')).not.toBeNull()
+    expect(footer.parentElement!.querySelector('[aria-label="Float as a menu"]')).not.toBeNull()
   })
 
   it('offers VS Code only for a WSL folder on Windows with WSL installed', async () => {

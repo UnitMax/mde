@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GitTerminalInfoResponse } from '../src/shared/types'
 import { TerminalGitInfo } from '../src/renderer/components/TerminalGitInfo'
 import { useWorkspace } from '../src/renderer/store/workspace'
+import { useSessionGitGraph } from '../src/renderer/store/session-git-graph'
 
 const roots: Root[] = []
 const terminalInfo = vi.fn()
@@ -42,9 +43,9 @@ describe('TerminalGitInfo', () => {
     vi.unstubAllGlobals()
   })
 
-  it('shows the branch and line changes as a non-interactive summary, with the rest in its label', async () => {
+  it('shows the branch and line changes, with the rest in its label, and opens the Git graph', async () => {
     const container = await renderInfo()
-    const info = container.querySelector('[role="img"]')
+    const info = container.querySelector('[data-testid^="terminal-git-info-"]')
     expect(info?.textContent).toContain('feature/terminal')
     expect(info?.textContent).toContain('+12')
     expect(info?.textContent).toContain('−3')
@@ -56,9 +57,15 @@ describe('TerminalGitInfo', () => {
       expect(label).toContain('Git worktree /workspace/repo')
     }
     expect(info?.querySelector('.bg-warn')).not.toBeNull()
-    expect(container.querySelector('button, [tabindex], [role="button"]')).toBeNull()
+    // Clicking opens the Git graph for this terminal, and clicking again closes it.
+    expect(info?.tagName).toBe('BUTTON')
+    expect(info?.getAttribute('aria-pressed')).toBe('false')
     await act(async () => info?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(useSessionGitGraph.getState().terminalId).not.toBeNull()
+    expect(info?.getAttribute('aria-pressed')).toBe('true')
+    expect(info?.getAttribute('aria-label')).toContain('Close the Git graph')
+    await act(async () => info?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(useSessionGitGraph.getState().terminalId).toBeNull()
   })
 
   it('renders nothing outside a repository', async () => {
@@ -71,7 +78,7 @@ describe('TerminalGitInfo', () => {
     const container = await renderInfo()
     expect(container.textContent).toContain('Detached HEAD')
     expect(container.textContent).toContain('2 changed')
-    expect(container.querySelector('[role="img"]')?.getAttribute('aria-label')).toContain('2 changed entries')
+    expect(container.querySelector('[data-testid^="terminal-git-info-"]')?.getAttribute('aria-label')).toContain('2 changed entries')
   })
 
   it('refreshes the summary after changing directory', async () => {
@@ -104,7 +111,7 @@ describe('TerminalGitInfo', () => {
     terminalInfo.mockResolvedValue({ ...snapshot, additions: 0, deletions: 0, changedFiles: 0, commitsAhead: null })
     await act(async () => window.dispatchEvent(new Event('focus')))
     expect(terminalInfo).toHaveBeenCalledTimes(2)
-    const info = container.querySelector('[role="img"]')
+    const info = container.querySelector('[data-testid^="terminal-git-info-"]')
     expect(info?.textContent).toBe('feature/terminal')
     expect(info?.getAttribute('aria-label')).toContain('Working tree clean')
     expect(info?.querySelector('.bg-warn')).toBeNull()

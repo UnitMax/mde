@@ -1,6 +1,7 @@
 import type { ChatMessage, ChatPart, ChatToolStatus } from '@shared/types'
-import { displayPath, type MessageBlock } from '@/lib/chat'
+import { displayPath, isSubagentCall, type MessageBlock } from '@/lib/chat'
 import { countChanges, type DiffHunk, type DiffLine, type FileChange } from '@/lib/diff'
+import { isShownView } from '@/lib/chat-views'
 
 type ToolPart = Extract<ChatPart, { kind: 'tool' }>
 
@@ -586,7 +587,7 @@ export function activitySummary(parts: readonly ActivityPart[], live = false): s
   parts.forEach((part, index) => {
     const category = activityCategory(part)
     const entry = counts.get(category) ?? { count: 0, active: false }
-    entry.count += 1
+    entry.count += category === 'tool' ? toolCount(part) : 1
     // The thought being written is the last part of a message that is still streaming.
     entry.active ||= part.kind === 'tool' ? isActiveTool(part) : part.kind === 'reasoning' && live && index === parts.length - 1
     counts.set(category, entry)
@@ -599,6 +600,102 @@ export function activitySummary(parts: readonly ActivityPart[], live = false): s
   return text ? `${text[0]!.toUpperCase()}${text.slice(1)}` : 'Activity'
 }
 
+/** Words in front of the command that only change how it runs. */
+const COMMAND_WRAPPERS = new Set(['sudo', 'doas', 'env', 'time', 'nohup', 'exec', 'command', 'builtin', 'nice', 'ionice', 'timeout', 'stdbuf'])
+/** Steps of a chain that only set up for the command that follows. */
+const COMMAND_SETUP = new Set(['cd', 'pushd', 'popd', 'export', 'set', 'unset', 'source', '.', 'true', ':'])
+/** Programs whose first word after them says more than the program itself: `git status`, `npm test`. */
+const COMMAND_SUBCOMMANDS = new Set([
+  'apt', 'apt-get', 'brew', 'bun', 'bunx', 'cargo', 'composer', 'deno', 'docker', 'dotnet', 'gh', 'git', 'go', 'helm', 'kubectl',
+  'npm', 'npx', 'pip', 'pip3', 'pnpm', 'poetry', 'podman', 'systemctl', 'terraform', 'uv', 'uvx', 'wsl', 'yarn',
+])
+/** Subcommands that are themselves followed by what is run: `npm run build`. */
+const COMMAND_RUNNERS = new Set(['run', 'exec', 'x', 'dlx'])
+/** How many commands a line names before it says how many more there are. */
+export const COMMAND_NAMES_SHOWN = 3
+
+/** The first words of a piece of shell, with quotes taken off and a word that holds one cut short; enough for its name. */
+function leadingWords(text: string, count: number): string[] {
+  const words: string[] = []
+  for (const match of text.matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g)) {
+    words.push(match[1] ?? match[2] ?? match[3] ?? '')
+    if (words.length >= count) break
+  }
+  return words
+}
+
+/**
+ * What a command runs, as a person would name it: the program, without its folder, the settings and wrappers in front of
+ * it (`FOO=1 sudo /usr/bin/python3 x.py` is `python3`), and with the subcommand for programs that have them (`git
+ * status`, `npm run build`). In a chain (`cd app && npm test`) the first step that does more than set up is named.
+ * Null when there is nothing to name.
+ */
+export function commandName(command: string): string | null {
+  const firstLine = command.split('\n').find((line) => line.trim() && !line.trim().startsWith('#')) ?? ''
+  let fallback: string | null = null
+  for (const segment of firstLine.split(/&&|\|\||;|\|/)) {
+    const words = leadingWords(segment.trim().replace(/^[({\s]+/, ''), 12)
+    while (words.length > 0 && (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0]!) || COMMAND_WRAPPERS.has(words[0]!))) words.shift()
+    // A wrapper's own options (`sudo -u me`, `timeout 30`) stand between it and the command.
+    while (words.length > 1 && (words[0]!.startsWith('-') || /^\d+[smhd]?$/.test(words[0]!))) words.shift()
+    const program = words[0]?.replace(/^.*[\\/]/, '').replace(/\.exe$/i, '')
+    if (!program) continue
+    if (COMMAND_SETUP.has(program)) {
+      fallback ??= program
+      continue
+    }
+    const plain = (word: string | undefined): word is string => word !== undefined && /^[a-z][\w:.-]*$/i.test(word)
+    const name = [program]
+    if (COMMAND_SUBCOMMANDS.has(program) && plain(words[1])) {
+      name.push(words[1])
+      if (COMMAND_RUNNERS.has(words[1]) && plain(words[2])) name.push(words[2])
+    }
+    return name.join(' ')
+  }
+  return fallback
+}
+
+/**
+ * How many tools a step called: each call of a Code Mode script (`execute`), which runs several in one step, or else
+ * the step itself.
+ */
+function toolCount(part: ActivityPart): number {
+  return part.kind === 'tool' && part.calls && part.calls.length > 0 ? part.calls.length : 1
+}
+
+/**
+ * The names of the tools a step called that is not one of the agent's own kinds of work: each call of a Code Mode
+ * script (`mde.show_view`), or the tool's own name. A script that has not called anything yet names nothing.
+ */
+function toolNames(part: Extract<ActivityPart, { kind: 'tool' }>): string[] {
+  if (part.calls && part.calls.length > 0) return part.calls.map((call) => call.tool)
+  return toolKind(part.name) === 'execute' ? [] : [part.name]
+}
+
+/**
+ * The names of the commands and tools among these steps, each once, in the order they were first run: `echo`, `git
+ * status`, `mde.show_view`.
+ */
+export function activityNames(parts: readonly ActivityPart[]): string[] {
+  const names: string[] = []
+  const add = (name: string | null): void => {
+    if (name && !names.includes(name)) names.push(name)
+  }
+  for (const part of parts) {
+    if (part.kind !== 'tool') continue
+    const category = activityCategory(part)
+    if (category === 'shell') add(commandName(shellInfo(part).command))
+    else if (category === 'tool') toolNames(part).forEach(add)
+  }
+  return names
+}
+
+/** "echo, curl", or "echo, curl, git status +2" when there are more than `COMMAND_NAMES_SHOWN`. */
+export function activityNamesText(names: readonly string[]): string {
+  const shown = names.slice(0, COMMAND_NAMES_SHOWN).join(', ')
+  return names.length > COMMAND_NAMES_SHOWN ? `${shown} +${names.length - COMMAND_NAMES_SHOWN}` : shown
+}
+
 /** "a", "a and b", "a, b and c". */
 function joinPhrases(phrases: readonly string[]): string {
   if (phrases.length <= 1) return phrases[0] ?? ''
@@ -608,6 +705,7 @@ function joinPhrases(phrases: readonly string[]): string {
 /** A tool call that is drawn as a card of its own rather than as one row among others: a file change or an answered question. */
 export function isFeaturedTool(part: ChatPart): boolean {
   if (part.kind !== 'tool') return false
+  if (isShownView(part)) return true
   const kind = toolKind(part.name)
   if (part.status === 'error') return false
   if (kind === 'edit' || kind === 'write') return true
@@ -624,35 +722,15 @@ export type RenderBlock =
   | { kind: 'part'; part: ChatPart; index: number }
   | { kind: 'activity'; items: ActivityItem[]; index: number; live?: boolean }
 
-/** A run of this many rows or more is folded into one line that sums it up. */
-export const GROUP_MIN = 3
-
-/**
- * Lays out the blocks of a message for drawing: runs of three or more ordinary steps (thinking, reading,
- * searching, commands) become one group, and everything else (text, file changes, answers, subagents)
- * stays as it is and breaks the run.
- */
-export function activityBlocks(blocks: readonly MessageBlock[]): RenderBlock[] {
-  const result: RenderBlock[] = []
-  let run: Array<{ part: ChatPart; index: number }> = []
-  const flush = (): void => {
-    if (run.length >= GROUP_MIN) result.push({ kind: 'activity', items: run, index: run[0]!.index })
-    else for (const item of run) result.push({ kind: 'part', part: item.part, index: item.index })
-    run = []
-  }
-  for (const block of blocks) {
-    if (block.kind === 'part' && isGroupable(block.part)) {
-      run.push({ part: block.part, index: block.index })
-      continue
-    }
-    flush()
-    result.push(block)
-  }
-  flush()
-  return result
-}
-
 type ActivityBlock = Extract<RenderBlock, { kind: 'activity' }>
+
+/** How the compact layout is set up. */
+export interface CompactOptions {
+  /** Draw the text the agent writes between its steps instead of folding it into the line (the Inbox setting "Text between steps"). */
+  showText?: boolean
+  /** Draw subagents as their cards, as Every step does, instead of folding them into the line (the "Subagents" switch). */
+  showSubagents?: boolean
+}
 
 /** One step of the agent (an assistant message) as the compact layout sees it. */
 export interface FlowStep {
@@ -670,26 +748,60 @@ function isWork(part: ChatPart): boolean {
 }
 
 /**
- * The compact layout of consecutive steps of the agent, with nothing from the person between them. Everything that is
- * not an answer is folded into one group per stretch, however short: thoughts and tool calls, and also the words the
- * agent wrote on its way, since models often think out loud in their text rather than in their thinking. Only the
- * text after the last piece of work, the answer, is drawn as it is. All tools join the group, including file changes,
- * answered questions and subagents; their full views remain inside it. A stretch runs on across the steps: the agent starts a new step for every
- * round of tool calls, so a turn is many steps, and its activity should still read as one line. The group is drawn in
- * the step where it starts, and the steps that contributed the rest draw whatever else they hold (an empty one draws
- * nothing). Returns the blocks to draw by step.
+ * Whether a part is a question the agent asked the person, or a view it showed them. Either is said to the person,
+ * so the compact layout draws it, with the words that lead up to it, rather than folding it among the work.
  */
-export function compactFlow(steps: readonly FlowStep[]): Map<string, RenderBlock[]> {
-  // Where the last piece of work is: the text before it is the agent talking its way through, and the text after it the answer.
-  let lastWork: [step: number, part: number] | null = null
-  for (const [stepIndex, step] of steps.entries()) {
-    if (step.note?.activity === 'shell' || step.note?.activity === 'skill') lastWork = [stepIndex, 0]
-    for (const [index, part] of step.parts.entries()) if (isWork(part)) lastWork = [stepIndex, index]
-  }
-  const end = lastWork as [number, number] | null
-  const beforeLastWork = (stepIndex: number, index: number): boolean =>
-    end !== null && (stepIndex < end[0] || (stepIndex === end[0] && index < end[1]))
+function isQuestion(part: ChatPart): boolean {
+  return part.kind === 'tool' && (toolKind(part.name) === 'question' || isShownView(part))
+}
 
+/**
+ * The texts of a stretch that are the agent talking its way through its work rather than saying something to the
+ * person, as `step:part` keys: those with more work after them. Thoughts and further words do not count, but a text
+ * with a thought after it and nothing more is talking too (it thought on after it). A question is not more work: the
+ * words just before it are what it asks about.
+ */
+function talkingTexts(steps: readonly FlowStep[]): Set<string> {
+  const talking = new Set<string>()
+  // What comes next, looking back from the end: no tool call, a question, or other work; and whether a thought is first.
+  let next: 'none' | 'question' | 'work' = 'none'
+  let thought = false
+  for (let stepIndex = steps.length - 1; stepIndex >= 0; stepIndex--) {
+    const step = steps[stepIndex]!
+    if (step.note) {
+      if (step.note.activity === 'shell' || step.note.activity === 'skill') [next, thought] = ['work', false]
+      continue
+    }
+    for (let index = step.parts.length - 1; index >= 0; index--) {
+      const part = step.parts[index]!
+      if (part.kind === 'tool') [next, thought] = [isQuestion(part) ? 'question' : 'work', false]
+      else if (part.kind === 'reasoning') thought ||= part.text.trim() !== ''
+      else if (part.kind === 'text' && part.text.trim() && (next === 'work' || (next === 'none' && thought))) talking.add(`${stepIndex}:${index}`)
+    }
+  }
+  return talking
+}
+
+/**
+ * The compact layout of consecutive steps of the agent, with nothing from the person between them. Everything that is
+ * not said to the person is folded into one group per stretch, however short: thoughts and tool calls, and also the
+ * words the agent wrote on its way, since models often think out loud in their text rather than in their thinking.
+ * What is drawn as it is: the answer (the text after the last piece of work), and each question the agent asked with
+ * the words that lead up to it (the text since the last tool call before it), which the question is usually about.
+ * A question ends the stretch, so the work before it and the work after the answer are two lines. All other tools join
+ * the group, including file changes and subagents; their full views remain inside it. A stretch runs on across the
+ * steps: the agent starts a new step for every round of tool calls, so a turn is many steps, and its activity should
+ * still read as one line. The group is drawn in the step where it starts, and the steps that contributed the rest draw
+ * whatever else they hold (an empty one draws nothing). Returns the blocks to draw by step.
+ *
+ * With `showText`, no words are folded: every text the agent wrote is drawn as it is, and ends the stretch before it,
+ * so only the thoughts and tool calls between the texts fold into their lines.
+ *
+ * With `showSubagents`, subagents are drawn as their cards (those started together as one group) and end the stretch
+ * before them, as a text does; they still count as work, so plain compact folds the words before them.
+ */
+export function compactFlow(steps: readonly FlowStep[], options: CompactOptions = {}): Map<string, RenderBlock[]> {
+  const talking = options.showText ? new Set<string>() : talkingTexts(steps)
   const plan = new Map<string, RenderBlock[]>()
   let open: ActivityBlock | null = null
   let last: RenderBlock | null = null
@@ -710,8 +822,18 @@ export function compactFlow(steps: readonly FlowStep[]): Map<string, RenderBlock
     for (const [index, part] of step.parts.entries()) {
       // Empty text or thinking has nothing to show yet, and does not end the stretch.
       if ((part.kind === 'text' || part.kind === 'reasoning') && !part.text.trim()) continue
-      const talking = part.kind === 'text' && beforeLastWork(stepIndex, index)
-      if (talking || isWork(part)) {
+      if (options.showSubagents && isSubagentCall(part)) {
+        open = null
+        const previous = blocks[blocks.length - 1]
+        if (previous?.kind === 'subagents' && previous === last) previous.parts.push(part)
+        else {
+          const group: RenderBlock = { kind: 'subagents', parts: [part], index }
+          blocks.push(group)
+          last = group
+        }
+        continue
+      }
+      if (!isQuestion(part) && (isWork(part) || talking.has(`${stepIndex}:${index}`))) {
         if (!open) {
           open = { kind: 'activity', items: [], index, live: false }
           blocks.push(open)
@@ -721,9 +843,9 @@ export function compactFlow(steps: readonly FlowStep[]): Map<string, RenderBlock
         continue
       }
       open = null
-      const answer: RenderBlock = { kind: 'part', part, index }
-      blocks.push(answer)
-      last = answer
+      const shown: RenderBlock = { kind: 'part', part, index }
+      blocks.push(shown)
+      last = shown
     }
   }
   // The group the agent is at the end of is live while the last step is being written.
@@ -761,11 +883,12 @@ export function compactPlans(
   messages: readonly ChatMessage[],
   liveId: string | undefined,
   previous?: ReadonlyMap<string, RenderBlock[]>,
+  options: CompactOptions = {},
 ): Map<string, RenderBlock[]> {
   const plans = new Map<string, RenderBlock[]>()
   let run: FlowStep[] = []
   const flush = (): void => {
-    for (const [id, blocks] of compactFlow(run)) {
+    for (const [id, blocks] of compactFlow(run, options)) {
       const before = previous?.get(id)
       plans.set(id, before && samePlan(before, blocks) ? before : blocks)
     }
@@ -780,10 +903,4 @@ export function compactPlans(
   }
   flush()
   return plans
-}
-
-function isGroupable(part: ChatPart): boolean {
-  if (part.kind === 'text') return false
-  if (part.kind === 'reasoning') return part.text.trim() !== ''
-  return !isFeaturedTool(part)
 }
