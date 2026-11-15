@@ -270,7 +270,8 @@
   .markdown-prose ol,
   .markdown-prose blockquote,
   .markdown-prose pre,
-  .markdown-prose table {
+  .markdown-prose table,
+  .markdown-prose .tableWrapper {
     margin: 0.5rem 0;
   }
 
@@ -351,6 +352,20 @@
     border-collapse: collapse;
   }
 
+  /*
+   * Tiptap draws each table inside a div.tableWrapper. A table wider than the text scrolls sideways inside it, instead
+   * of widening the page it sits in (in the Inbox, that made the whole conversation scroll sideways).
+   */
+  .markdown-prose .tableWrapper {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .markdown-prose .tableWrapper > table {
+    margin: 0;
+  }
+
   .markdown-prose th,
   .markdown-prose td {
     border: 1px solid var(--color-line-strong);
@@ -398,7 +413,8 @@
   .chat-markdown ol,
   .chat-markdown blockquote,
   .chat-markdown pre,
-  .chat-markdown table {
+  .chat-markdown table,
+  .chat-markdown .tableWrapper {
     margin: 0.75em 0;
   }
 
@@ -581,6 +597,12 @@
     overflow-x: auto;
     contain: layout paint;
     user-select: text;
+  }
+
+  /* A diagram in a chat reply that is wider than the reply scrolls on its own, as a table does. */
+  .chat-markdown .mermaid-diagram {
+    max-width: 100%;
+    overflow-x: auto;
   }
 
   .markdown-preview .mermaid-svg {
