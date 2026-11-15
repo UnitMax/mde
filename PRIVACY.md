@@ -57,6 +57,8 @@ backed-up locations can place copies elsewhere. These stores are not encrypted b
   starred in the Inbox model chooser. This does not store prompts or credentials.
 - The renderer's local storage (`mde.inbox-project-filter`): the project the Inbox's thread list is
   narrowed to, as that project's folder ID (`fld_…`), or absent when it shows all projects.
+- The renderer's local storage (`mde.inbox-sidebar-floating`): whether the Inbox's right-hand sidebar floats
+  over the conversation as a menu card instead of standing beside it.
 - The renderer's local storage (`mde.inbox-sidebar-width` and `mde.inbox-terminal-layout`): how wide
   the Inbox's right-hand sidebar is (a number of pixels), and the arrangement of the Inbox terminal
   (a tree of pane IDs, split IDs, horizontal or vertical directions, and numeric divider ratios).

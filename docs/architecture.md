@@ -560,6 +560,23 @@ with their count (changed files, tool calls) as a small mark on the corner; thei
 tooltip and the accessible name. Wider, every tab is named, with its count beside it. The strip still scrolls
 sideways as a last resort.
 
+### Floating sidebar menu
+
+The right-hand sidebar can float over the conversation instead of standing beside it: the docked header's
+**Float as a menu** button (beside Collapse) turns it into a card in the conversation's top right corner, below
+the thread header, and the card's **Dock as sidebar** row turns it back. The choice is kept in `localStorage`
+(`mde.inbox-sidebar-floating`), off by default. The card lists the project, Open in File Explorer (and VS Code where
+offered), Files and Terminal and, for a thread, its branch (opening the Git graph), Changes with the lines added
+and removed, and Tools with how many actions (commands and MCP calls) and failures.
+
+Files, Changes and Tools open out below their row, one at a time (`floatingSection` in `useInboxView`, not kept
+between runs): the file tree without its panel chrome, the changed files (each opening its diff over the
+conversation, with a refresh button), and the tool calls. The card widens to at least 22rem (or the sidebar's width)
+while a section is open and scrolls when it runs past the window. The card steps aside while the Git graph is open.
+Terminal shows the floating terminal when there is one (F11); otherwise it docks the sidebar on its Terminal tab, which
+needs the room. "Open in Terminal" from the file tree does the same. The card's hide button shrinks it to one small
+button in its corner (the same collapsed state as the docked sidebar's).
+
 ### Inbox tool calls
 
 The **Tools** tab in the right-hand sidebar (between Changes and Terminal) lists every tool call of the open

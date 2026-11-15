@@ -13,6 +13,7 @@ import { CHANGES_LIST_LIMIT, InboxChangesBadge, InboxChangeViewer, InboxSidebar 
 import { useInboxChanges, inboxChangesKey } from '../src/renderer/store/inbox-changes'
 import { useWorkspace } from '../src/renderer/store/workspace'
 import { useInboxChat } from '../src/renderer/store/inbox-chat'
+import { useInboxView } from '../src/renderer/store/inbox-view'
 import { useInboxMcp } from '../src/renderer/store/inbox-mcp'
 import { mcpKey } from '../src/renderer/lib/mcp'
 import type { ChatMessage, ChatPart, InboxChangeDiff, InboxChangesResponse, InboxThread, DirectoryContext } from '../src/shared/types'
@@ -731,5 +732,104 @@ describe('Tools tab', () => {
     await sidebar()
     expect(tab('tools')).toBeNull()
     expect(tab('files')?.getAttribute('aria-selected')).toBe('true')
+  })
+})
+
+describe('Floating menu', () => {
+  const menu = (): HTMLElement | null => container.querySelector('[data-testid="inbox-sidebar-menu"]')
+  const click = (selector: string): Promise<void> => act(async () => { container.querySelector<HTMLElement>(selector)!.click() })
+  beforeEach(() => {
+    localStorage.clear()
+    useInboxView.setState({ sidebarFloating: false, floatingSection: null })
+    useInboxChat.setState({ threads: { [thread.id]: { messages: [
+      { kind: 'user', id: 'msg_1', time: 1, text: 'Go' },
+      { kind: 'assistant', id: 'msg_2', time: 2, agent: 'build', model: { id: 'm', providerId: 'p' }, completed: true, parts: [
+        { kind: 'tool', id: 't1', name: 'read', status: 'completed', input: '{}' },
+        { kind: 'tool', id: 't2', name: 'bash', status: 'completed', input: '{"command":"false"}', exitCode: 1 },
+      ] },
+    ], older: null, running: false, loading: false, loadingOlder: false, error: null, requests: { permissions: [], forms: [] }, live: [], usage: null, revert: null, notice: null, pending: [], compactionHeld: false, goal: null } } })
+  })
+  afterEach(() => {
+    useInboxView.setState({ sidebarFloating: false, floatingSection: null })
+    useInboxChat.setState({ threads: {} })
+    useInboxChanges.setState({ graphThreadId: null })
+  })
+
+  it('floats the docked sidebar as a menu card, kept between runs, and docks it again', async () => {
+    await sidebar()
+    expect(menu()).toBeNull()
+    await click('[data-testid="inbox-sidebar-float"]')
+    expect(useInboxView.getState().sidebarFloating).toBe(true)
+    expect(localStorage.getItem('mde.inbox-sidebar-floating')).toBe('on')
+    expect(menu()).not.toBeNull()
+    expect(container.querySelector('[data-testid="inbox-sidebar-frame"]')).toBeNull()
+    expect(container.querySelector('[role="tablist"]')).toBeNull()
+    await click('[data-testid="inbox-menu-dock"]')
+    expect(useInboxView.getState().sidebarFloating).toBe(false)
+    expect(menu()).toBeNull()
+    expect(container.querySelector('[role="tablist"]')).not.toBeNull()
+  })
+
+  it('sums up the changes and tool calls, and opens one section at a time below its row, inside the card', async () => {
+    useInboxView.setState({ sidebarFloating: true })
+    await sidebar()
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="inbox-menu-changes"]')?.textContent).toContain('+2'))
+    expect(container.querySelector('[data-testid="inbox-menu-changes"]')?.textContent).toContain('−1')
+    expect(container.querySelector('[data-testid="inbox-menu-graph"]')?.textContent).toContain('main')
+    expect(container.querySelector('[data-testid="inbox-menu-tools"]')?.textContent).toContain('1 action')
+    expect(container.querySelector('[data-testid="inbox-menu-tools"]')?.textContent).toContain('1 failed')
+    await click('[data-testid="inbox-menu-changes"]')
+    expect(menu()?.querySelector('[data-testid="inbox-menu-changes-panel"] [data-testid="inbox-changes-file"]')?.textContent).toContain('a.ts')
+    expect(container.querySelector('[data-testid="inbox-menu-changes"]')?.getAttribute('aria-expanded')).toBe('true')
+    // A changed file opens its diff over the conversation, as from the docked sidebar.
+    await click('[data-testid="inbox-menu-changes-panel"] [data-testid="inbox-changes-file"]')
+    expect(useInboxChanges.getState().selectedPath).toEqual({ threadId: thread.id, path: 'src/a.ts' })
+    await click('[data-testid="inbox-menu-tools"]')
+    expect(container.querySelector('[data-testid="inbox-menu-changes-panel"]')).toBeNull()
+    expect(menu()?.querySelector('[data-testid="inbox-menu-tools-section"] [data-testid="inbox-tool-t2"]')).not.toBeNull()
+    await click('[data-testid="inbox-menu-files"]')
+    expect(menu()?.querySelector('[data-testid="inbox-menu-files-section"] [role="tree"]')).not.toBeNull()
+    await click('[data-testid="inbox-menu-files"]')
+    expect(container.querySelector('[data-testid="inbox-menu-files-section"]')).toBeNull()
+    expect(container.querySelector('[data-testid="inbox-sidebar-frame"]')).toBeNull()
+  })
+
+  it('steps aside while the Git graph is open, and hides to a button and back', async () => {
+    useInboxView.setState({ sidebarFloating: true })
+    await sidebar()
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="inbox-menu-graph"]')).not.toBeNull())
+    await click('[data-testid="inbox-menu-graph"]')
+    expect(useInboxChanges.getState().graphThreadId).toBe(thread.id)
+    expect(menu()).toBeNull()
+    await act(async () => useInboxChanges.getState().closeGraph())
+    expect(menu()).not.toBeNull()
+    await click('[aria-label="Hide menu"]')
+    expect(menu()).toBeNull()
+    await click('[data-testid="inbox-sidebar-menu-show"]')
+    expect(menu()).not.toBeNull()
+  })
+
+  it('docks the sidebar on its Terminal tab, unless the terminal floats, which it shows instead', async () => {
+    useInboxView.setState({ sidebarFloating: true })
+    await sidebar()
+    await click('[data-testid="inbox-menu-terminal"]')
+    expect(useInboxView.getState().sidebarFloating).toBe(false)
+    expect(container.querySelector('[data-testid="inbox-terminal-panel"]')).not.toBeNull()
+    useInboxView.setState({ sidebarFloating: true })
+    useInboxFloatingTerminal.setState({ floating: true, visible: false })
+    await sidebar()
+    await click('[data-testid="inbox-menu-terminal"]')
+    expect(useInboxFloatingTerminal.getState().visible).toBe(true)
+    expect(useInboxView.getState().sidebarFloating).toBe(true)
+    useInboxFloatingTerminal.setState({ floating: false, visible: false })
+  })
+
+  it('offers Files and Terminal, but not changes or tools, on the new-thread page', async () => {
+    useInboxView.setState({ sidebarFloating: true })
+    await render(createElement(InboxSidebar, { session }))
+    expect(container.querySelector('[data-testid="inbox-menu-files"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="inbox-menu-terminal"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="inbox-menu-changes"]')).toBeNull()
+    expect(container.querySelector('[data-testid="inbox-menu-tools"]')).toBeNull()
   })
 })

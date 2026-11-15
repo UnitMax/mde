@@ -214,3 +214,26 @@ export function filterTurns(turns: readonly ToolTurn[], filter: ToolFilter, quer
     return entries.length > 0 ? [{ ...turn, entries }] : []
   })
 }
+
+export interface ToolTally {
+  all: number
+  /** Commands, scripts and calls to tools MDE does not know: what the Actions view shows, counted without the server list. */
+  actions: number
+  failed: number
+}
+
+/** The thread's tool calls counted for a summary line, cheaply enough to do on every change. */
+export function toolTally(messages: readonly ChatMessage[]): ToolTally {
+  const tally: ToolTally = { all: 0, actions: 0, failed: 0 }
+  for (const message of messages) {
+    if (message.kind !== 'assistant') continue
+    for (const part of message.parts) {
+      if (part.kind !== 'tool') continue
+      tally.all += 1
+      const kind = toolKind(part.name)
+      if (kind === 'shell' || kind === 'execute' || kind === 'other' || (part.calls?.length ?? 0) > 0) tally.actions += 1
+      if (toolFailed(part)) tally.failed += 1
+    }
+  }
+  return tally
+}

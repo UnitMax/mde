@@ -7,6 +7,7 @@ import {
   getInboxDraftsCollapsed,
   getInboxModelQuickSwitch,
   getInboxProjectFilter,
+  getInboxSidebarFloating,
   getInboxSidebarWidth,
   getInboxSnoozedOpen,
   getInboxTitleIcons,
@@ -19,6 +20,7 @@ import {
   saveInboxDraftsCollapsed,
   saveInboxModelQuickSwitch,
   saveInboxProjectFilter,
+  saveInboxSidebarFloating,
   saveInboxSidebarWidth,
   saveInboxSnoozedOpen,
   saveInboxTitleIcons,
@@ -26,6 +28,9 @@ import {
   saveInboxWorkingCollapsed,
   saveInboxWorkingSection,
 } from '@/lib/inbox-settings'
+
+/** What the floating card can open out in place: the files, the thread's Git changes or its tool calls. */
+export type FloatingSection = 'files' | 'changes' | 'tools'
 
 interface Store {
   /** List the working threads in a section under the thread list (a preference, off by default). */
@@ -80,6 +85,15 @@ interface Store {
   sidebarWidth: number
   /** Dragging sets the width without keeping it; `keep` is for the last step, so storage is written once. */
   setSidebarWidth: (width: number, keep?: boolean) => void
+  /**
+   * The sidebar floats over the conversation as a menu card, which opens into a panel, instead of standing beside it
+   * (a preference, off by default).
+   */
+  sidebarFloating: boolean
+  setSidebarFloating: (on: boolean) => void
+  /** With the sidebar floating: the section of the card that is opened out below its row, or null. Not kept between runs. */
+  floatingSection: FloatingSection | null
+  setFloatingSection: (section: FloatingSection | null) => void
 }
 
 /** How the Inbox sidebar is laid out, as the user last left it. */
@@ -145,4 +159,11 @@ export const useInboxView = create<Store>((set) => ({
     if (keep) saveInboxSidebarWidth(next)
     set({ sidebarWidth: next })
   },
+  sidebarFloating: getInboxSidebarFloating(),
+  setSidebarFloating: (on) => {
+    saveInboxSidebarFloating(on)
+    set({ sidebarFloating: on, floatingSection: null })
+  },
+  floatingSection: null,
+  setFloatingSection: (section) => set({ floatingSection: section }),
 }))

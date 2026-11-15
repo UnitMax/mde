@@ -10,7 +10,7 @@ import { useWorkspace } from '@/store/workspace'
  */
 export type OpenFolderTarget = { terminalId: string; inboxId?: never } | { inboxId: string; terminalId?: never }
 
-function useOpenFolder(target: OpenFolderTarget, kind: 'native' | 'wsl', distro: string | undefined): {
+export function useOpenFolder(target: OpenFolderTarget, kind: 'native' | 'wsl', distro: string | undefined): {
   canOpenInVsCode: boolean
   openInVsCode: () => void
   reveal: () => void

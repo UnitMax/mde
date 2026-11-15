@@ -10,6 +10,7 @@ export const INBOX_SNOOZED_OPEN_STORAGE_KEY = 'mde.inbox-snoozed-open'
 export const INBOX_TITLE_ICONS_STORAGE_KEY = 'mde.inbox-title-icons'
 export const INBOX_COMPACT_CHAT_STORAGE_KEY = 'mde.inbox-compact-chat'
 export const INBOX_TURN_CHANGES_STORAGE_KEY = 'mde.inbox-turn-changes'
+export const INBOX_SIDEBAR_FLOATING_STORAGE_KEY = 'mde.inbox-sidebar-floating'
 export const INBOX_COMMAND_NAMES_STORAGE_KEY = 'mde.inbox-command-names'
 export const INBOX_COMPACT_TEXT_STORAGE_KEY = 'mde.inbox-compact-text'
 export const INBOX_MODEL_QUICK_SWITCH_STORAGE_KEY = 'mde.inbox-model-quick-switch'
@@ -189,6 +190,18 @@ export function saveInboxSnoozedOpen(open: boolean): void {
 export function clampInboxSidebarWidth(width: number): number {
   if (!Number.isFinite(width)) return INBOX_SIDEBAR_DEFAULT_WIDTH
   return Math.round(Math.min(Math.max(width, INBOX_SIDEBAR_MIN_WIDTH), INBOX_SIDEBAR_MAX_WIDTH))
+}
+
+/**
+ * Whether the Inbox's right-hand sidebar floats over the conversation as a menu card, instead of standing beside it.
+ * Off (the docked sidebar) unless turned on.
+ */
+export function getInboxSidebarFloating(): boolean {
+  return readSwitch(INBOX_SIDEBAR_FLOATING_STORAGE_KEY)
+}
+
+export function saveInboxSidebarFloating(on: boolean): void {
+  writeSwitch(INBOX_SIDEBAR_FLOATING_STORAGE_KEY, on)
 }
 
 /** How wide the Inbox's right-hand sidebar was left. The default when never set, and when unreadable. */

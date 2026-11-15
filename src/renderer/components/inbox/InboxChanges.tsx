@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { AlertCircle, FileDiff, Folder, FolderX, GitBranch, GitGraph, LoaderCircle, PanelRightClose, RefreshCw, SquareTerminal, Wrench, X, type LucideIcon } from 'lucide-react'
+import { AlertCircle, FileDiff, Folder, FolderX, GitBranch, GitGraph, LoaderCircle, PanelRightClose, PictureInPicture2, RefreshCw, SquareTerminal, Wrench, X, type LucideIcon } from 'lucide-react'
 import type { GitChangeStatus, InboxChangeDiff, InboxChangedFile, InboxChangesResponse, InboxThread, DirectoryContext } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { FileTreePanel } from '@/components/FileTreePanel'
@@ -13,6 +13,8 @@ import { useInboxTerminal } from '@/store/inbox-terminal'
 import type { FilesListRequest } from '@shared/ipc'
 import { InboxSidebarFrame } from './InboxSidebarFrame'
 import { InboxToolCalls } from './InboxToolCalls'
+import { InboxSidebarMenu, InboxSidebarMenuButton } from './InboxSidebarMenu'
+import { useInboxView } from '@/store/inbox-view'
 import { toolCallCount } from '@/lib/tool-review'
 import { useInboxChat } from '@/store/inbox-chat'
 import { parseUnifiedDiff } from '@/lib/diff'
@@ -571,11 +573,96 @@ function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
   )
 }
 
+/** The buttons at the end of a panel's header: float the sidebar as a menu card, and collapse it. */
+function SidebarHeaderActions({ collapseLabel = 'Collapse sidebar' }: { collapseLabel?: string }): JSX.Element {
+  const toggle = useWorkspace((s) => s.toggleFileTree)
+  return (
+    <>
+      <Button variant="ghost" size="icon-sm" className="shrink-0" title="Float as a menu over the conversation" aria-label="Float as a menu" data-testid="inbox-sidebar-float" onClick={() => useInboxView.getState().setSidebarFloating(true)}>
+        <PictureInPicture2 className="h-3.5 w-3.5" />
+      </Button>
+      <Button variant="ghost" size="icon-sm" className="shrink-0" title={collapseLabel} aria-label={collapseLabel} onClick={toggle}>
+        <PanelRightClose className="h-3.5 w-3.5" />
+      </Button>
+    </>
+  )
+}
+
+/** The floating card's Changes, opened out below its row: the changed files, each opening its diff. */
+export function ChangesSection({ threadId }: { threadId: string }): JSX.Element {
+  const state = useInboxChanges((s) => s.entries[inboxChangesKey(threadId)])
+  useEffect(() => {
+    const stop = useInboxChanges.getState().watch(threadId, true)
+    void useInboxChanges.getState().load(threadId, true, true)
+    return stop
+  }, [threadId])
+  if (!state) return <ListMessage role="status">Loading changes…</ListMessage>
+  return (
+    <div className="flex min-w-0 flex-col" data-testid="inbox-menu-changes-section" onKeyDown={walkItems}>
+      {state.error && (
+        <p role="alert" className="flex items-start gap-1.5 border-b border-line bg-danger/10 px-3 py-2 text-[11.5px] leading-snug text-danger">
+          <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span>{state.error}{state.stale ? ' Showing the last result.' : ''}</span>
+        </p>
+      )}
+      <ChangesList
+        value={state.value}
+        state={state}
+        fill
+        threadId={threadId}
+        onOpen={(path) => useInboxChanges.getState().openFile(threadId, path)}
+      />
+      <div className="flex items-center justify-between gap-2 border-t border-line px-1.5 py-1">
+        <span className="min-w-0 truncate px-1 text-[11px] text-fg-subtle" title={GIT_CHANGES_NOTE}>Uncommitted, against HEAD</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 shrink-0"
+          title="Refresh changes"
+          aria-label="Refresh changes"
+          disabled={state.loading}
+          onClick={() => void useInboxChanges.getState().load(threadId, true, true)}
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/** The floating card's Files, opened out below its row: the folder's tree without the panel around it. */
+export function FilesSection({ session }: { session: DirectoryContext }): JSX.Element {
+  return (
+    <FileTreePanel
+      session={session}
+      browseOnly
+      fill
+      bare
+      openInTerminal={(folder) => openInInboxTerminal(folder, session)}
+    />
+  )
+}
+
+/**
+ * Brings the Inbox terminal into view. Floating, it shows; otherwise the sidebar shows its Terminal tab, which docks
+ * a floating menu card first: the terminal wants the room a docked sidebar has.
+ */
+export function showInboxTerminal(focus: boolean): void {
+  const floating = useInboxFloatingTerminal.getState()
+  if (floating.floating) {
+    floating.show()
+    return
+  }
+  if (focus) focusInboxTerminalWhenShown()
+  if (useInboxView.getState().sidebarFloating) useInboxView.getState().setSidebarFloating(false)
+  if (useWorkspace.getState().fileTreeCollapsed) useWorkspace.getState().toggleFileTree()
+  useInboxChanges.getState().setTab('terminal')
+}
+
 /** The Changes tab: the same view as the popover, in the sidebar, for the thread that is open. */
 function ChangesAside({ threadId }: { threadId: string }): JSX.Element {
   const state = useInboxChanges((s) => s.entries[inboxChangesKey(threadId)])
   const graphOpen = useInboxChanges((s) => s.graphThreadId === threadId)
-  const toggle = useWorkspace((s) => s.toggleFileTree)
   useEffect(() => {
     const stop = useInboxChanges.getState().watch(threadId, true)
     void useInboxChanges.getState().load(threadId, true, true)
@@ -585,9 +672,7 @@ function ChangesAside({ threadId }: { threadId: string }): JSX.Element {
     <aside data-testid="inbox-changes-panel" className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-line bg-panel">
       <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
         <SidebarTabs threadId={threadId} />
-        <Button variant="ghost" size="icon-sm" className="shrink-0" title="Collapse sidebar" aria-label="Collapse sidebar" onClick={toggle}>
-          <PanelRightClose className="h-3.5 w-3.5" />
-        </Button>
+        <SidebarHeaderActions />
       </div>
       <div
         role="tabpanel"
@@ -637,14 +722,11 @@ function ChangesAside({ threadId }: { threadId: string }): JSX.Element {
 
 /** The Tools tab: every tool call of the open GUI thread, MCP calls included, to be looked over. */
 function ToolsAside({ thread }: { thread: InboxThread }): JSX.Element {
-  const toggle = useWorkspace((s) => s.toggleFileTree)
   return (
     <aside data-testid="inbox-tools-panel" className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-line bg-panel">
       <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
         <SidebarTabs threadId={thread.id} />
-        <Button variant="ghost" size="icon-sm" className="shrink-0" title="Collapse sidebar" aria-label="Collapse sidebar" onClick={toggle}>
-          <PanelRightClose className="h-3.5 w-3.5" />
-        </Button>
+        <SidebarHeaderActions />
       </div>
       <div
         role="tabpanel"
@@ -663,14 +745,11 @@ function ToolsAside({ thread }: { thread: InboxThread }): JSX.Element {
  * and nothing to ask Git about. It says so once, calmly, instead of the error either would end in.
  */
 function DeletedWorktreeAside({ threadId, branch, tab }: { threadId: string; branch?: string; tab: 'files' | 'changes' }): JSX.Element {
-  const toggle = useWorkspace((s) => s.toggleFileTree)
   return (
     <aside data-testid="inbox-deleted-worktree-panel" className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-line bg-panel">
       <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
         <SidebarTabs threadId={threadId} />
-        <Button variant="ghost" size="icon-sm" className="shrink-0" title="Collapse sidebar" aria-label="Collapse sidebar" onClick={toggle}>
-          <PanelRightClose className="h-3.5 w-3.5" />
-        </Button>
+        <SidebarHeaderActions />
       </div>
       <div
         role="tabpanel"
@@ -697,16 +776,13 @@ function DeletedWorktreeAside({ threadId, branch, tab }: { threadId: string; bra
  * one, and it is shown with the new-thread page as well.
  */
 function TerminalAside({ threadId }: { threadId?: string }): JSX.Element {
-  const toggle = useWorkspace((s) => s.toggleFileTree)
   const floating = useInboxFloatingTerminal((s) => s.floating)
   return (
     <aside data-testid="inbox-terminal-panel" className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-line bg-panel">
       <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
         <SidebarTabs threadId={threadId} />
         {!floating && <FloatTerminalButton />}
-        <Button variant="ghost" size="icon-sm" className="shrink-0" title="Collapse sidebar" aria-label="Collapse sidebar" onClick={toggle}>
-          <PanelRightClose className="h-3.5 w-3.5" />
-        </Button>
+        <SidebarHeaderActions />
       </div>
       <div
         role="tabpanel"
@@ -728,7 +804,7 @@ async function openInInboxTerminal(folder: FilesListRequest, where: DirectoryCon
   const floating = useInboxFloatingTerminal.getState()
   await useInboxTerminal.getState().openInFolder(folder, where, floating.floating ? 'right' : 'bottom')
   if (floating.floating) floating.show()
-  else useInboxChanges.getState().setTab('terminal')
+  else showInboxTerminal(false)
 }
 
 /**
@@ -736,9 +812,11 @@ async function openInInboxTerminal(folder: FilesListRequest, where: DirectoryCon
  * starts in), the thread's Git changes, and the terminal. A new thread has no changes yet, so it offers
  * only the other two. It can be dragged wider, which the terminal in particular wants.
  */
-export function InboxSidebar({ session, threadId }: { session: DirectoryContext; threadId?: string }): JSX.Element {
+export function InboxSidebar({ session, threadId }: { session: DirectoryContext; threadId?: string }): JSX.Element | null {
   const stored = useInboxChanges((s) => s.tab)
   const collapsed = useWorkspace((s) => s.fileTreeCollapsed)
+  const floating = useInboxView((s) => s.sidebarFloating)
+  const graphOpen = useInboxChanges((s) => s.graphThreadId !== null)
   const guiThread = useGuiThread(threadId)
   // Changes and Tools belong to a thread. Without one, they are not offered and Files shows in their place.
   const tab = tabsFor(threadId, Boolean(guiThread)).includes(stored) ? stored : 'files'
@@ -750,6 +828,13 @@ export function InboxSidebar({ session, threadId }: { session: DirectoryContext;
   useEffect(() => {
     if (threadId && shown && !gone) return useInboxChanges.getState().watch(threadId)
   }, [threadId, shown, gone])
+  // Floating, the sidebar is a menu card over the conversation's corner, whose rows open out in place. It steps
+  // aside while the Git graph is over the conversation, and hidden it is one small button in that corner.
+  if (floating) {
+    if (graphOpen) return null
+    if (collapsed) return <InboxSidebarMenuButton threadId={threadId} />
+    return <InboxSidebarMenu session={session} gui={Boolean(guiThread)} {...(threadId ? { threadId } : {})} />
+  }
   // Tool calls are in the conversation, which a deleted worktree leaves as it was.
   if (gone && threadId && !collapsed && (tab === 'files' || tab === 'changes')) {
     return (
@@ -775,6 +860,7 @@ export function InboxSidebar({ session, threadId }: { session: DirectoryContext;
           browseOnly
           fill
           heading={tab === 'files' ? <SidebarTabs threadId={threadId} /> : undefined}
+          actions={tab === 'files' ? <SidebarHeaderActions collapseLabel="Collapse files" /> : undefined}
           openInTerminal={(folder) => openInInboxTerminal(folder, session)}
         />
       </div>}

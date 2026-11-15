@@ -62,7 +62,9 @@ function FileTree({
   onCollapse,
   browseOnly,
   heading,
+  actions,
   fill,
+  bare,
   openInTerminal
 }: {
   session: FileTreeContext
@@ -70,6 +72,8 @@ function FileTree({
   onCollapse: () => void
   browseOnly: boolean
   heading?: ReactNode
+  actions?: ReactNode
+  bare: boolean
   fill: boolean
   openInTerminal?: (folder: FilesListRequest) => Promise<void>
 }): JSX.Element {
@@ -318,11 +322,11 @@ function FileTree({
     <aside
       data-testid="file-tree-panel"
       className={cn(
-        'fancy-glass flex h-full min-h-0 flex-col border-l border-line bg-panel',
-        fill ? 'w-full min-w-0' : 'w-[260px] shrink-0'
+        bare ? 'flex min-w-0 flex-col pt-1' : 'fancy-glass flex h-full min-h-0 flex-col border-l border-line bg-panel',
+        !bare && (fill ? 'w-full min-w-0' : 'w-[260px] shrink-0')
       )}
     >
-      <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
+      {!bare && <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
         {heading ?? (
           <span className="min-w-0 flex-1 truncate text-[11px] font-medium uppercase tracking-wide text-fg-muted" title={directory}>
             Files
@@ -342,17 +346,19 @@ function FileTree({
             <RefreshCw className="h-3.5 w-3.5" />
           </Button>
         )}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="shrink-0"
-          onClick={onCollapse}
-          title="Collapse files"
-          aria-label="Collapse files"
-        >
-          <PanelRightClose className="h-3.5 w-3.5" />
-        </Button>
-      </div>
+        {actions ?? (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="shrink-0"
+            onClick={onCollapse}
+            title="Collapse files"
+            aria-label="Collapse files"
+          >
+            <PanelRightClose className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>}
 
       {root?.directory && (
         <div data-testid="terminal-file-root" className="truncate px-3 pb-2 font-mono text-[10px] text-fg-subtle" title={root.directory}>
@@ -386,7 +392,7 @@ function FileTree({
           </button>
         </div>
       )}
-      {browseOnly && (
+      {browseOnly && !bare && (
         <div className="flex shrink-0 items-center gap-1 border-t border-line px-2 py-1">
           {folderTarget && <OpenFolderButtons target={folderTarget} kind={session.kind} distro={session.distro} />}
           <Button className="ml-auto" variant="ghost" size="sm" onClick={refresh} title="Refresh files" aria-label="Refresh files">
@@ -409,7 +415,9 @@ export function FileTreePanel({
   root: requestedRoot,
   browseOnly = false,
   heading,
+  actions,
   fill = false,
+  bare = false,
   openInTerminal
 }: {
   session: FileTreeContext
@@ -418,6 +426,10 @@ export function FileTreePanel({
   browseOnly?: boolean
   /** Replaces the "Files" title in the header, for a host that offers other tabs beside the files. */
   heading?: ReactNode
+  /** Replaces the collapse button at the end of the header, for a host with buttons of its own there. */
+  actions?: ReactNode
+  /** Only the tree, without header, footer or panel chrome, for a host that frames it itself (the floating card). */
+  bare?: boolean
   /** Takes the width of its container instead of its own 260px, for a host whose sidebar can be resized. */
   fill?: boolean
   /** Offers "Open in Terminal" in the tree's right-click menu: a new terminal whose shell starts in that folder. */
@@ -451,5 +463,5 @@ export function FileTreePanel({
     )
   }
 
-  return <FileTree key={root ? fileRootKey(root) : 'pending'} session={session} root={root} onCollapse={toggleFileTree} browseOnly={browseOnly} heading={heading} fill={fill} openInTerminal={openInTerminal} />
+  return <FileTree key={root ? fileRootKey(root) : 'pending'} session={session} root={root} onCollapse={toggleFileTree} browseOnly={browseOnly} heading={heading} actions={actions} fill={fill} bare={bare} openInTerminal={openInTerminal} />
 }
