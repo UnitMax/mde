@@ -897,6 +897,13 @@ starts with OpenCode's default model and the Build agent. Sending creates the Op
 the folder (or in a new worktree, below), records it as a chat thread, selects it, and sends the
 prompt.
 
+**Copying code blocks.** Inbox Markdown code blocks show a **Copy code** button in the upper right
+on hover or keyboard focus (always visible on devices without hover). It copies only the code,
+preserving whitespace, through the existing main-process clipboard channel, and briefly shows a
+checkmark after a successful copy. Each block copies its current contents, including while a reply
+streams. The button stays in place while long code scrolls sideways. Clipboard failures show an
+error toast. This also applies to expanded reasoning; Mermaid blocks keep their diagram preview.
+
 **Right-click menus.** Right-clicking the conversation opens a menu that depends on what is under
 the cursor. **Copy** copies the selected text, but only when the click lands on the selection;
 right-clicking elsewhere does not copy text the pointer has left. **Quote**, next to it, adds the

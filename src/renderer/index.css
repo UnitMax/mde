@@ -464,6 +464,37 @@
     font-size: 1em;
   }
 
+  .chat-code-block {
+    position: relative;
+    margin: 0.75em 0;
+  }
+
+  .chat-markdown .chat-code-block pre {
+    margin: 0;
+    padding-right: 3rem;
+  }
+
+  /* Outside the scrolling pre, so the button stays in reach when code scrolls sideways. */
+  .chat-code-copy {
+    position: absolute;
+    top: 0.4rem;
+    right: 0.4rem;
+    opacity: 0;
+    transition: opacity 120ms;
+    user-select: none;
+  }
+
+  .chat-code-block:hover .chat-code-copy,
+  .chat-code-block:focus-within .chat-code-copy {
+    opacity: 1;
+  }
+
+  @media (hover: none) {
+    .chat-code-copy {
+      opacity: 1;
+    }
+  }
+
   .chat-markdown li > p,
   .chat-markdown li > ul,
   .chat-markdown li > ol {
