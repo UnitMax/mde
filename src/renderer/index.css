@@ -513,18 +513,17 @@
   /*
    * A web link carries a globe before it, so a click that leaves the app is seen coming. A file of the thread's
    * folder that a reply names, in code or as a link, is a chip with a file icon that opens it in the viewer.
-   * The icons are drawn in the text's own color through a mask; being inline blocks, they take no underline.
+   * The icons are drawn in the text's own color through a mask, which also keeps the underline from under them.
+   * Each is a narrow no-break space with room for the icon rather than an inline block: a line may break after an
+   * inline block, which left the icon at the end of one line and the name on the next.
    */
   .chat-markdown a:is([href^='http://' i], [href^='https://' i])::before,
   .chat-markdown .chat-file-link::before {
-    content: '';
-    display: inline-block;
-    width: 0.92em;
-    height: 0.92em;
-    margin-right: 0.22em;
-    vertical-align: -0.13em;
+    content: '\202f';
+    padding-left: 0.92em;
+    font-family: system-ui, sans-serif;
     background-color: currentColor;
-    mask: var(--chat-link-icon) center / contain no-repeat;
+    mask: var(--chat-link-icon) left 0 bottom 0.05em / 0.92em 0.92em no-repeat;
   }
 
   .chat-markdown a:is([href^='http://' i], [href^='https://' i]) {
