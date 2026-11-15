@@ -24,6 +24,7 @@ import { appendLive, mergePending, pruneLive, type LivePart } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { mcpTargetKey } from '@/lib/mcp'
 import { useInboxMcp } from '@/store/inbox-mcp'
+import { useInboxSavedPermissions } from '@/store/inbox-saved-permissions'
 import { getTerminalSettings, subscribeTerminalSettings } from '@/terminal/terminal-settings'
 import { useWorkspace } from '@/store/workspace'
 import {
@@ -648,6 +649,8 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
 
     replyPermission: async (threadId, requestId, decision) => {
       await window.api.chat.replyPermission({ threadId, requestId, decision })
+      // "Always allow" saved an approval for the project; the event says so too, but not before this returns.
+      if (decision === 'always') void useInboxSavedPermissions.getState().load(threadId)
       patchThread(threadId, (thread) => ({
         requests: { ...thread.requests, permissions: thread.requests.permissions.filter((item) => item.id !== requestId) },
       }))
@@ -677,6 +680,9 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
         case 'requests':
           void get().refreshRequests(event.threadId)
           return
+        case 'saved-permissions':
+          void useInboxSavedPermissions.getState().load(event.threadId)
+          return
         case 'running':
           patchThread(event.threadId, { running: event.running })
           scheduleRefresh(event.threadId)
@@ -690,6 +696,7 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
           scheduleRefresh(event.threadId)
           void get().refreshRequests(event.threadId)
           void get().refreshGoal(event.threadId)
+          if (useInboxSavedPermissions.getState().entries[event.threadId]) void useInboxSavedPermissions.getState().load(event.threadId)
       }
     },
   }

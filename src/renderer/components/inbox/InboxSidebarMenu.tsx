@@ -1,8 +1,10 @@
 import { useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { ChangesSection, FilesSection, showInboxTerminal } from '@/components/inbox/InboxChanges'
 import { InboxToolCalls } from '@/components/inbox/InboxToolCalls'
+import { InboxSavedPermissions } from '@/components/inbox/InboxSavedPermissions'
+import { useSavedPermissionCount } from '@/store/inbox-saved-permissions'
 import { usePublishFloatingCardWidth } from '@/components/inbox/use-floating-reserve'
-import { ChevronRight, Code, FileDiff, Folder, FolderOpen, FolderX, GitBranch, PanelRight, PanelRightClose, PanelRightOpen, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react'
+import { ChevronRight, Code, FileDiff, Folder, FolderOpen, FolderX, GitBranch, PanelRight, PanelRightClose, PanelRightOpen, ShieldCheck, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react'
 import type { DirectoryContext, InboxThread } from '@shared/types'
 import { ProjectIcon } from '@/components/inbox/ProjectIcon'
 import { useOpenFolder } from '@/components/OpenFolderButtons'
@@ -111,7 +113,7 @@ function GoneNote(): JSX.Element {
 
 /**
  * The card's width with Files or Changes open: room for a tree of paths, at least the docked sidebar's width. Tools
- * keeps the card's own width: its rows are an icon and a command, and its toolbar gives way in the search box.
+ * and Permissions keep the card's own width: their rows are an icon and a command or pattern, which wrap.
  */
 const OPEN_WIDTH_REM = 22
 
@@ -156,10 +158,12 @@ export function InboxSidebarMenu({
   const stored = useInboxView((s) => s.floatingSection)
   const sidebarWidth = useInboxView((s) => s.sidebarWidth)
   const removed = thread?.worktreeRemovedAt !== undefined
+  const saved = useSavedPermissionCount(threadId)
   const card = useRef<HTMLElement>(null)
   usePublishFloatingCardWidth(card)
   // Changes and Tools belong to a thread, and Tools to a GUI one; a section that does not apply is shut.
-  const open: FloatingSection | null = stored === 'files' || (stored === 'changes' && threadId) || (stored === 'tools' && tally) ? stored : null
+  const open: FloatingSection | null = stored === 'files' || (stored === 'changes' && threadId) || (stored === 'tools' && tally) ||
+    (stored === 'permissions' && saved > 0) ? stored : null
   const toggle = (section: FloatingSection): void => useInboxView.getState().setFloatingSection(open === section ? null : section)
   const name = project?.name ?? inboxFolderLabel(thread ? inboxThreadHome(thread) : session.path)
   const kind = thread ? thread.target.kind : session.kind
@@ -172,7 +176,7 @@ export function InboxSidebarMenu({
       data-testid="inbox-sidebar-menu"
       data-open={open ?? undefined}
       onKeyDown={walkRows}
-      style={open && open !== 'tools' ? { width: `max(${OPEN_WIDTH_REM}rem, ${sidebarWidth}px)` } : undefined}
+      style={open === 'files' || open === 'changes' ? { width: `max(${OPEN_WIDTH_REM}rem, ${sidebarWidth}px)` } : undefined}
       className={cn(
         'absolute right-3 z-20 flex w-[17rem] max-w-[calc(100%-1.5rem)] flex-col overflow-hidden transition-[width] duration-150',
         threadId ? 'max-h-[calc(100%-4.25rem)]' : 'max-h-[calc(100%-1.5rem)]',
@@ -253,6 +257,22 @@ export function InboxSidebarMenu({
                 />
                 {open === 'tools' && (
                   <Section testId="inbox-menu-tools-section"><InboxToolCalls thread={thread} /></Section>
+                )}
+              </>
+            )}
+            {/* Only while the project has "Always allow" approvals saved: there is nothing to look at otherwise. */}
+            {saved > 0 && thread && (
+              <>
+                <Row
+                  icon={ShieldCheck}
+                  label="Permissions"
+                  expanded={open === 'permissions'}
+                  meta={<span title={`${saved} always allowed in this project`}>{saved} allowed</span>}
+                  onClick={() => toggle('permissions')}
+                  testId="inbox-menu-permissions"
+                />
+                {open === 'permissions' && (
+                  <Section testId="inbox-menu-permissions-section"><InboxSavedPermissions thread={thread} /></Section>
                 )}
               </>
             )}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { AlertCircle, FileDiff, Folder, FolderX, GitBranch, GitGraph, LoaderCircle, PanelRightClose, PictureInPicture2, RefreshCw, SquareTerminal, Wrench, X, type LucideIcon } from 'lucide-react'
+import { AlertCircle, FileDiff, Folder, FolderX, GitBranch, GitGraph, LoaderCircle, PanelRightClose, PictureInPicture2, RefreshCw, ShieldCheck, SquareTerminal, Wrench, X, type LucideIcon } from 'lucide-react'
 import type { GitChangeStatus, InboxChangeDiff, InboxChangedFile, InboxChangesResponse, InboxThread, DirectoryContext } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { SidebarFooter } from '@/components/ui/sidebar-footer'
@@ -14,6 +14,8 @@ import { useInboxTerminal } from '@/store/inbox-terminal'
 import type { FilesListRequest } from '@shared/ipc'
 import { InboxSidebarFrame } from './InboxSidebarFrame'
 import { InboxToolCalls } from './InboxToolCalls'
+import { InboxSavedPermissions } from './InboxSavedPermissions'
+import { useInboxSavedPermissions, useSavedPermissionCount } from '@/store/inbox-saved-permissions'
 import { InboxSidebarMenu, InboxSidebarMenuButton } from './InboxSidebarMenu'
 import { useInboxView } from '@/store/inbox-view'
 import { toolCallCount } from '@/lib/tool-review'
@@ -446,16 +448,18 @@ export function InboxChangesBadge({ threadId }: { threadId: string }): JSX.Eleme
   )
 }
 
-const SIDEBAR_TABS = ['files', 'changes', 'tools', 'terminal'] as const
+const SIDEBAR_TABS = ['files', 'changes', 'tools', 'permissions', 'terminal'] as const
 type SidebarTab = (typeof SIDEBAR_TABS)[number]
-const SIDEBAR_TAB_LABELS: Record<SidebarTab, string> = { files: 'Files', changes: 'Changes', tools: 'Tools', terminal: 'Terminal' }
-const SIDEBAR_TAB_ICONS: Record<SidebarTab, LucideIcon> = { files: Folder, changes: FileDiff, tools: Wrench, terminal: SquareTerminal }
+const SIDEBAR_TAB_LABELS: Record<SidebarTab, string> = { files: 'Files', changes: 'Changes', tools: 'Tools', permissions: 'Permissions', terminal: 'Terminal' }
+const SIDEBAR_TAB_ICONS: Record<SidebarTab, LucideIcon> = { files: Folder, changes: FileDiff, tools: Wrench, permissions: ShieldCheck, terminal: SquareTerminal }
 /**
  * A thread has changes to show; the page for a new one has none yet, so it offers Files and Terminal. Tool calls
- * are only known for a GUI thread: a terminal thread's agent runs where MDE cannot see its calls.
+ * are only known for a GUI thread: a terminal thread's agent runs where MDE cannot see its calls. Permissions is
+ * there only while the thread's project has "Always allow" approvals saved.
  */
-const tabsFor = (threadId: string | undefined, gui: boolean): readonly SidebarTab[] =>
-  SIDEBAR_TABS.filter((item) => (item !== 'changes' || threadId) && (item !== 'tools' || (threadId && gui)))
+const tabsFor = (threadId: string | undefined, gui: boolean, saved: number): readonly SidebarTab[] =>
+  SIDEBAR_TABS.filter((item) =>
+    (item !== 'changes' || threadId) && (item !== 'tools' || (threadId && gui)) && (item !== 'permissions' || (threadId && saved > 0)))
 
 /** The open thread, when it is a GUI chat, whose tool calls the Tools tab lists. */
 function useGuiThread(threadId: string | undefined): InboxThread | undefined {
@@ -477,7 +481,8 @@ let refocusTab: SidebarTab | null = null
 function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
   const stored = useInboxChanges((s) => s.tab)
   const gui = Boolean(useGuiThread(threadId))
-  const tabs = tabsFor(threadId, gui)
+  const saved = useSavedPermissionCount(threadId)
+  const tabs = tabsFor(threadId, gui, saved)
   const tab = tabs.includes(stored) ? stored : 'files'
   const count = useInboxChanges((s) => {
     const value = threadId ? s.entries[inboxChangesKey(threadId)]?.value : undefined
@@ -522,8 +527,11 @@ function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
         const selected = tab === item
         const Icon = SIDEBAR_TAB_ICONS[item]
         const label = SIDEBAR_TAB_LABELS[item]
-        const badge = item === 'changes' ? count : item === 'tools' ? toolCount : 0
-        const spoken = item === 'changes' ? `${label}, ${fileCountLabel(badge)} changed` : item === 'tools' ? `${label}, ${badge} ${badge === 1 ? 'call' : 'calls'}` : label
+        const badge = item === 'changes' ? count : item === 'tools' ? toolCount : item === 'permissions' ? saved : 0
+        const spoken = item === 'changes' ? `${label}, ${fileCountLabel(badge)} changed`
+          : item === 'tools' ? `${label}, ${badge} ${badge === 1 ? 'call' : 'calls'}`
+            : item === 'permissions' ? `${label}, ${badge} always allowed`
+              : label
         // Narrow, the tab that is shown keeps its name and the others are icons; wide enough, all are named.
         const named = selected ? '' : 'hidden @min-[23.5rem]/tabs:inline'
         return (
@@ -740,6 +748,26 @@ function ToolsAside({ thread }: { thread: InboxThread }): JSX.Element {
   )
 }
 
+/** The Permissions tab: the "Always allow" approvals OpenCode saved for the thread's project, each removable. */
+function PermissionsAside({ thread }: { thread: InboxThread }): JSX.Element {
+  return (
+    <aside data-testid="inbox-permissions-panel" className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-line bg-panel">
+      <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
+        <SidebarTabs threadId={thread.id} />
+      </div>
+      <div
+        role="tabpanel"
+        id="inbox-permissions-panel"
+        aria-labelledby="inbox-permissions-tab"
+        className="flex min-h-0 flex-1 flex-col border-t border-line"
+      >
+        <InboxSavedPermissions thread={thread} />
+      </div>
+      <SidebarFooter actions={<SidebarActions />} />
+    </aside>
+  )
+}
+
 /**
  * The Files or Changes tab of a thread whose worktree was deleted: its folder is gone, so there is nothing to list
  * and nothing to ask Git about. It says so once, calmly, instead of the error either would end in.
@@ -819,8 +847,10 @@ export function InboxSidebar({ session, threadId }: { session: DirectoryContext;
   const floating = useInboxView((s) => s.sidebarFloating)
   const graphOpen = useInboxChanges((s) => s.graphThreadId !== null)
   const guiThread = useGuiThread(threadId)
-  // Changes and Tools belong to a thread. Without one, they are not offered and Files shows in their place.
-  const tab = tabsFor(threadId, Boolean(guiThread)).includes(stored) ? stored : 'files'
+  const thread = useWorkspace((s) => (threadId ? s.inboxThreads.find((item) => item.id === threadId) : undefined))
+  const saved = useSavedPermissionCount(threadId)
+  // Changes, Tools and Permissions belong to a thread. Without one, they are not offered and Files shows in their place.
+  const tab = tabsFor(threadId, Boolean(guiThread), saved).includes(stored) ? stored : 'files'
   const shown = Boolean(threadId) && !collapsed
   // A thread whose worktree was deleted has no folder: nothing to list, and nothing to ask Git about.
   const gone = useWorkspace((s) => (threadId ? s.inboxThreads.find((item) => item.id === threadId)?.worktreeRemovedAt !== undefined : false))
@@ -829,6 +859,10 @@ export function InboxSidebar({ session, threadId }: { session: DirectoryContext;
   useEffect(() => {
     if (threadId && shown && !gone) return useInboxChanges.getState().watch(threadId)
   }, [threadId, shown, gone])
+  // Whether the project has approvals saved decides whether Permissions is offered at all, so it is read up front.
+  useEffect(() => {
+    if (threadId && !gone) return useInboxSavedPermissions.getState().watch(threadId)
+  }, [threadId, gone])
   // Floating, the sidebar is a menu card over the conversation's corner, whose rows open out in place. It steps
   // aside while the Git graph is over the conversation, and hidden it is one small button in that corner.
   if (floating) {
@@ -868,6 +902,7 @@ export function InboxSidebar({ session, threadId }: { session: DirectoryContext;
       </div>}
       {tab === 'changes' && threadId && <ChangesAside threadId={threadId} />}
       {tab === 'tools' && guiThread && <ToolsAside thread={guiThread} />}
+      {tab === 'permissions' && thread && <PermissionsAside thread={thread} />}
       {tab === 'terminal' && <TerminalAside threadId={threadId} />}
     </InboxSidebarFrame>
   )

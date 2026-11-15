@@ -75,6 +75,8 @@ import type {
   ChatFilesCheckRequest,
   ChatSearchResponse,
   ChatMcpRequest,
+  ChatSavedPermissions,
+  ChatSavedPermissionRemoveRequest,
   ChatMcpSetRequest,
   ChatMcpState,
   ChatUsageRequest,
@@ -232,6 +234,8 @@ export const IpcChannels = {
   chatRegenerateTitle: 'chat:regenerate-title',
   chatRequests: 'chat:requests',
   chatPermissionReply: 'chat:permission-reply',
+  chatSavedPermissions: 'chat:saved-permissions',
+  chatSavedPermissionRemove: 'chat:saved-permission-remove',
   chatFormReply: 'chat:form-reply',
   chatSubscribe: 'chat:subscribe',
   chatUnsubscribe: 'chat:unsubscribe',
@@ -676,6 +680,10 @@ export interface RendererApi {
     regenerateTitle(req: ChatThreadRequest): Promise<void>
     requests(req: ChatThreadRequest): Promise<ChatRequests>
     replyPermission(req: ChatPermissionReplyRequest): Promise<void>
+    /** The "Always allow" approvals OpenCode saved for the project the thread works in. */
+    savedPermissions(req: ChatThreadRequest): Promise<ChatSavedPermissions>
+    /** Forgets one of them, so OpenCode asks again. */
+    removeSavedPermission(req: ChatSavedPermissionRemoveRequest): Promise<void>
     replyForm(req: ChatFormReplyRequest): Promise<void>
     subscribe(req: ChatThreadRequest): Promise<void>
     unsubscribe(req: ChatThreadRequest): Promise<void>

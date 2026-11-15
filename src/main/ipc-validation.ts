@@ -325,6 +325,11 @@ export const ipcPayloadValidators = {
     requestId: (value) => typeof value === 'string' && /^per_[A-Za-z0-9_-]{1,200}$/.test(value),
     decision: oneOf('once', 'always', 'reject'),
   }),
+  [IpcChannels.chatSavedPermissions]: chatThread,
+  [IpcChannels.chatSavedPermissionRemove]: object({
+    threadId: opencodeSessionId,
+    id: (value) => typeof value === 'string' && /^psv_[A-Za-z0-9_-]{1,200}$/.test(value),
+  }),
   [IpcChannels.chatFormReply]: object({
     threadId: opencodeSessionId,
     formId: (value) => typeof value === 'string' && /^frm_[A-Za-z0-9_-]{1,200}$/.test(value),

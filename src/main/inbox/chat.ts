@@ -38,6 +38,8 @@ import type {
   ChatPart,
   ChatPendingMessage,
   ChatPermissionReplyRequest,
+  ChatSavedPermissionRemoveRequest,
+  ChatSavedPermissions,
   ChatRequests,
   ChatSetDeliveryRequest,
   ChatRevert,
@@ -89,6 +91,7 @@ import {
   holdsCompaction,
   parsePendingMessages,
   parsePermissions,
+  parseSavedPermissions,
   parsePromptAnswer,
   parseProviderNames,
   parseSessionInfo,
@@ -1293,6 +1296,43 @@ export class InboxChatService {
     })
   }
 
+  /**
+   * The "Always allow" approvals OpenCode saved for the project the thread works in (OpenCode keeps them per project,
+   * a Git repository and its worktrees being one). A thread whose worktree was deleted has no folder to name the
+   * project by, and an OpenCode without the routes has none to list.
+   */
+  async savedPermissions(threadId: string): Promise<ChatSavedPermissions> {
+    this.assertEnabled()
+    const thread = this.thread(threadId)
+    if (thread.worktreeRemovedAt !== undefined) return { supported: true, permissions: [] }
+    try {
+      const answer = await this.dependencies.client.request(thread.target, 'permission.saved.list', {
+        query: { 'location[directory]': thread.directory },
+      })
+      return { supported: true, permissions: parseSavedPermissions(answer) }
+    } catch (error) {
+      if (error instanceof OpenCodeServiceError && error.status === 404 && !error.tag) return { supported: false, permissions: [] }
+      throw error
+    }
+  }
+
+  /**
+   * Forgets one saved approval, so OpenCode asks again. Only one listed for the thread's project can be named: the
+   * renderer cannot reach another project's approvals through a thread.
+   */
+  async removeSavedPermission(request: ChatSavedPermissionRemoveRequest): Promise<void> {
+    const thread = this.thread(request.threadId)
+    const { permissions } = await this.savedPermissions(request.threadId)
+    // Already gone, removed elsewhere: what was asked for is true.
+    if (!permissions.some((entry) => entry.id === request.id)) return
+    try {
+      await this.dependencies.client.request(thread.target, 'permission.saved.remove', { params: { savedID: request.id } })
+    } catch (error) {
+      if (error instanceof OpenCodeServiceError && error.status === 404 && error.tag === 'PermissionSavedNotFoundError') return
+      throw error
+    }
+  }
+
   async replyForm(request: ChatFormReplyRequest): Promise<void> {
     const thread = this.thread(request.threadId)
     await this.dependencies.client.request(thread.target, 'session.form.reply', {
@@ -1386,6 +1426,10 @@ export class InboxChatService {
     }
     if (MESSAGE_EVENTS.has(event.type)) this.dependencies.send({ type: 'messages', threadId })
     if (REQUEST_EVENTS.has(event.type)) this.dependencies.send({ type: 'requests', threadId })
+    // An "Always allow", from MDE or an OpenCode terminal on the same session, saved an approval for the project.
+    if (event.type === 'permission.replied' && event.data.reply === 'always') {
+      this.dependencies.send({ type: 'saved-permissions', threadId })
+    }
   }
 
   private async loadOptions(folder: { target: OpenCodeTarget; directory: string }): Promise<ChatOptions> {

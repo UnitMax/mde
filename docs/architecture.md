@@ -553,7 +553,7 @@ cached: opening the dialog, changing the range and Refresh read again.
 
 ### Inbox sidebar tabs
 
-The right-hand sidebar's tabs (Files, Changes, Tools, Terminal) are pills with an icon, so all of them fit at the
+The right-hand sidebar's tabs (Files, Changes, Tools, Permissions, Terminal) are pills with an icon, so all of them fit at the
 sidebar's 260 px default without scrolling. Below a strip width of 23.5rem (a container query on the strip;
 four named tabs need about 22.5rem) only the tab being shown carries its name, and the others are icons
 with their count (changed files, tool calls) as a small mark on the corner; their name and count are in the
@@ -562,7 +562,7 @@ sideways as a last resort.
 
 The header holds only the tabs. Every tab has a footer of the same height (`SidebarFooter`, 36 px): the tab's own
 buttons on the left (Open folder and Refresh for Files, Git graph and Refresh for Changes, Float terminal for
-Terminal; Tools has none), and at the right end, set off by a short rule, Float as a menu and Collapse Collapsed,
+Terminal; Tools and Permissions have none), and at the right end, set off by a short rule, Float as a menu and Collapse Collapsed,
 the rail keeps its Expand button at the bottom, in a strip of the footer's height, where Collapse was.
 
 ### Floating sidebar menu
@@ -572,9 +572,10 @@ The right-hand sidebar can float over the conversation instead of standing besid
 the thread header, and the card's **Dock as sidebar** row turns it back. The choice is kept in `localStorage`
 (`mde.inbox-sidebar-floating`), off by default. The card lists the project, Open in File Explorer (and VS Code where
 offered), Files and Terminal and, for a thread, its branch (opening the Git graph), Changes with the lines added
-and removed, and Tools with how many actions (commands and MCP calls) and failures.
+and removed, Tools with how many actions (commands and MCP calls) and failures, and Permissions with how many
+approvals the project has saved (only while it has any).
 
-Files, Changes and Tools open out below their row, one at a time (`floatingSection` in `useInboxView`, not kept
+Files, Changes, Tools and Permissions open out below their row, one at a time (`floatingSection` in `useInboxView`, not kept
 between runs): the file tree without its panel chrome, the changed files (each opening its diff over the
 conversation, with a refresh button), and the tool calls. The card widens to at least 22rem (or the sidebar's width)
 while a section is open and scrolls when it runs past the window. The card steps aside while the Git graph is open.
@@ -1761,6 +1762,18 @@ removed only with the last thread that uses it.
 The new thread's header says "Forked from" with the original's title (a muted mark beside the folder and branch), a link while the original is
 still in the Inbox, and the sidebar row shows a small fork icon. `forkedFrom` is stored in
 `inbox.json` as a thread ID and dropped if it is not one; it is not otherwise used.
+
+**Saved approvals.** "Always allow" on a permission request makes OpenCode save an approval for the project (a Git
+repository and its worktrees are one project): the action (`shell`, `edit`, an MCP tool's `<server>_<tool>`) and the
+pattern the request offered to save (`git status *`, `*`). OpenCode saves no rejections, so there is no "always deny"
+to list. While the open thread's project has any, the sidebar has a **Permissions** tab, and the floating card a
+Permissions row, listing them grouped by tool (`InboxSavedPermissions`, labels in `lib/saved-permissions.ts`), each
+with a button that removes it so OpenCode asks again, in every thread of the project. MDE reads them with
+`GET /api/permission/saved?location[directory]=<the thread's folder>` when a thread opens, when the window gains
+focus, and when a subscribed thread's request is answered "Always allow" (`permission.replied` with `reply:
+"always"`, passed on as a `saved-permissions` chat event). Main removes one (`DELETE /api/permission/saved/{id}`)
+only when it is in the list for the thread's folder, so a thread cannot reach another project's approvals. A thread
+whose worktree was deleted lists none; an OpenCode without the routes (an untagged 404) lists none either.
 
 **Permission modes.** A thread can run with permissions of its own instead of the OpenCode configuration's
 (`PermissionModePicker`). On the new-thread page it is a chip in the strip under the box, after the GUI/Terminal

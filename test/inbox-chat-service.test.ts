@@ -1703,6 +1703,71 @@ describe('Inbox chat service', () => {
     service.stop()
   })
 
+  describe('saved permissions', () => {
+    const saved = {
+      data: [
+        { id: 'psv_2', projectID: 'p', action: 'edit', resource: '*', time: { created: 20, updated: 20 } },
+        { id: 'psv_1', projectID: 'p', action: 'shell', resource: 'git status *', time: { created: 10, updated: 10 } },
+        { id: 'bad', projectID: 'p', action: 'shell', resource: 'ls *', time: { created: 5, updated: 5 } },
+        { id: 'psv_3', projectID: 'p', action: 'shell', resource: '', time: { created: 5, updated: 5 } },
+      ],
+    }
+
+    it('lists the approvals of the thread\'s project by its folder, oldest first', async () => {
+      const { service, folder, calls } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'permission.saved.list': saved })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      calls.length = 0
+      await expect(service.savedPermissions('ses_new')).resolves.toEqual({
+        supported: true,
+        permissions: [
+          { id: 'psv_1', action: 'shell', resource: 'git status *', created: 10 },
+          { id: 'psv_2', action: 'edit', resource: '*', created: 20 },
+        ],
+      })
+      expect(calls).toEqual([{ operation: 'permission.saved.list', request: { query: { 'location[directory]': '/home/me/app' } } }])
+      service.stop()
+    })
+
+    it('says an OpenCode without the routes does not support them', async () => {
+      const { service, folder } = setup({
+        'session.create': { data: { id: 'ses_new' } },
+        'permission.saved.list': new OpenCodeServiceError('Not found', 404),
+      })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      await expect(service.savedPermissions('ses_new')).resolves.toEqual({ supported: false, permissions: [] })
+      service.stop()
+    })
+
+    it('removes only an approval listed for the thread\'s project', async () => {
+      const { service, folder, calls } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'permission.saved.list': saved })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      calls.length = 0
+      await service.removeSavedPermission({ threadId: 'ses_new', id: 'psv_1' })
+      expect(calls.at(-1)).toEqual({ operation: 'permission.saved.remove', request: { params: { savedID: 'psv_1' } } })
+      calls.length = 0
+      // Another project's (or an already removed) approval is not touched.
+      await service.removeSavedPermission({ threadId: 'ses_new', id: 'psv_other' })
+      expect(calls.map((call) => call.operation)).toEqual(['permission.saved.list'])
+      service.stop()
+    })
+
+    it('tells the renderer when a subscribed thread answered "Always allow"', async () => {
+      const { service, folder, events } = setup({ 'session.create': { data: { id: 'ses_new' } } })
+      await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+      const emit = (data: Record<string, unknown>) =>
+        (service as unknown as { onEvent(event: { type: string; data: Record<string, unknown> }): void }).onEvent({ type: 'permission.replied', data })
+      service.subscribe('ses_new')
+      emit({ sessionID: 'ses_new', requestID: 'per_1', reply: 'once' })
+      emit({ sessionID: 'ses_new', requestID: 'per_2', reply: 'always' })
+      expect(events).toEqual([
+        { type: 'requests', threadId: 'ses_new' },
+        { type: 'requests', threadId: 'ses_new' },
+        { type: 'saved-permissions', threadId: 'ses_new' },
+      ])
+      service.stop()
+    })
+  })
+
   it('pushes live changes only for subscribed threads', async () => {
     const { service, folder, events, store } = setup({ 'session.create': { data: { id: 'ses_new' } } })
     await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })

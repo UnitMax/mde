@@ -119,6 +119,8 @@ import type {
   ChatOptions,
   ChatOptionsRequest,
   ChatPermissionReplyRequest,
+  ChatSavedPermissions,
+  ChatSavedPermissionRemoveRequest,
   ChatRequests,
   ChatRevert,
   ChatForkRequest,
@@ -764,6 +766,8 @@ export function registerIpcHandlers(
   handle<ChatThreadRequest, void>(IpcChannels.chatRegenerateTitle, (req) => chat.regenerateTitle(req.threadId))
   handle<ChatThreadRequest, ChatRequests>(IpcChannels.chatRequests, (req) => chat.requests(req.threadId))
   handle<ChatPermissionReplyRequest, void>(IpcChannels.chatPermissionReply, (req) => chat.replyPermission(req))
+  handle<ChatThreadRequest, ChatSavedPermissions>(IpcChannels.chatSavedPermissions, (req) => chat.savedPermissions(req.threadId))
+  handle<ChatSavedPermissionRemoveRequest, void>(IpcChannels.chatSavedPermissionRemove, (req) => chat.removeSavedPermission(req))
   handle<ChatFormReplyRequest, void>(IpcChannels.chatFormReply, (req) => chat.replyForm(req))
   handle<ChatThreadRequest, void>(IpcChannels.chatSubscribe, (req) => chat.subscribe(req.threadId))
   handle<ChatThreadRequest, void>(IpcChannels.chatUnsubscribe, (req) => chat.unsubscribe(req.threadId))

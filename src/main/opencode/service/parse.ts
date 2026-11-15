@@ -22,6 +22,7 @@ import type {
   ChatPart,
   ChatPendingMessage,
   ChatPermission,
+  ChatSavedPermission,
   ChatRevert,
   ChatRevertFile,
   ChatSkill,
@@ -841,6 +842,21 @@ export function parsePermissions(value: unknown): ChatPermission[] {
     permissions.push({ id, action, resources, ...(message ? { message } : {}), ...(incomplete ? { incomplete: true } : {}) })
   }
   return permissions
+}
+
+/** The approvals OpenCode saved for a project ("Always allow"), oldest first; malformed entries are left out. */
+export function parseSavedPermissions(value: unknown): ChatSavedPermission[] {
+  const saved: ChatSavedPermission[] = []
+  for (const item of list(data(value, 'a saved permission list')).slice(0, 2000)) {
+    const entry = record(item)
+    const id = short(entry?.id)
+    const action = short(entry?.action, 200)
+    const resource = short(entry?.resource, 4096)
+    if (!entry || !id || !/^psv_[A-Za-z0-9_-]{1,200}$/.test(id) || !action || !resource) continue
+    const created = record(entry.time)?.created
+    saved.push({ id, action, resource, created: typeof created === 'number' && Number.isFinite(created) ? created : 0 })
+  }
+  return saved.sort((a, b) => a.created - b.created)
 }
 
 function parseOptions(value: unknown): ChatFormOption[] {

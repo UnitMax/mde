@@ -159,6 +159,8 @@
     "src/renderer/store/inbox-suggestion.ts",
     "src/renderer/lib/next-suggestion.ts",
     "src/renderer/store/inbox-mcp.ts",
+    "src/renderer/store/inbox-saved-permissions.ts",
+    "src/renderer/lib/saved-permissions.ts",
     "src/renderer/store/inbox-drafts.ts",
     "src/renderer/store/inbox-changes.ts",
     "src/renderer/store/inbox-view.ts",

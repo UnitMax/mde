@@ -123,6 +123,8 @@ const validPayloads = {
   [IpcChannels.chatRegenerateTitle]: { threadId: 'ses_thread' },
   [IpcChannels.chatRequests]: { threadId: 'ses_thread' },
   [IpcChannels.chatPermissionReply]: { threadId: 'ses_thread', requestId: 'per_1', decision: 'once' },
+  [IpcChannels.chatSavedPermissions]: { threadId: 'ses_thread' },
+  [IpcChannels.chatSavedPermissionRemove]: { threadId: 'ses_thread', id: 'psv_1' },
   [IpcChannels.chatFormReply]: { threadId: 'ses_thread', formId: 'frm_1', answer: { q0: 'Red', q1: ['a', 'b'], q2: true, q3: 3 } },
   [IpcChannels.chatSubscribe]: { threadId: 'ses_thread' },
   [IpcChannels.chatUnsubscribe]: { threadId: 'ses_thread' },
@@ -374,6 +376,8 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.chatMessages, { threadId: 'ses_thread', cursor: 'has space' })
     rejects(IpcChannels.chatPermissionReply, { threadId: 'ses_thread', requestId: 'per_1', decision: 'maybe' })
     rejects(IpcChannels.chatPermissionReply, { threadId: 'ses_thread', requestId: 'frm_1', decision: 'once' })
+    rejects(IpcChannels.chatSavedPermissionRemove, { threadId: 'ses_thread', id: 'per_1' })
+    rejects(IpcChannels.chatSavedPermissionRemove, { threadId: 'ses_thread', id: 'psv_../x' })
     rejects(IpcChannels.chatFormReply, { threadId: 'ses_thread', formId: 'frm_1', answer: { q0: { nested: true } } })
     rejects(IpcChannels.chatFormReply, { threadId: 'ses_thread', formId: 'frm_1', answer: [] })
     rejects(IpcChannels.chatFormReply, {

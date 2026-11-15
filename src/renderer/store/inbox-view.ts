@@ -36,7 +36,7 @@ import {
 } from '@/lib/inbox-settings'
 
 /** What the floating card can open out in place: the files, the thread's Git changes or its tool calls. */
-export type FloatingSection = 'files' | 'changes' | 'tools'
+export type FloatingSection = 'files' | 'changes' | 'tools' | 'permissions'
 
 interface Store {
   /** List the working threads in a section under the thread list (a preference, off by default). */

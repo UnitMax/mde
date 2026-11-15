@@ -42,6 +42,10 @@ export const SERVICE_OPERATIONS = {
   'session.switchModel': { method: 'POST', path: '/api/session/{sessionID}/model' },
   'session.permission.list': { method: 'GET', path: '/api/session/{sessionID}/permission' },
   'session.permission.reply': { method: 'POST', path: '/api/session/{sessionID}/permission/{requestID}/reply' },
+  // The "Always allow" approvals OpenCode saved for the project of a directory (`location[directory]`), and
+  // forgetting one of them. OpenCode saves no rejections.
+  'permission.saved.list': { method: 'GET', path: '/api/permission/saved' },
+  'permission.saved.remove': { method: 'DELETE', path: '/api/permission/saved/{savedID}' },
   'session.form.list': { method: 'GET', path: '/api/session/{sessionID}/form' },
   'session.form.reply': { method: 'POST', path: '/api/session/{sessionID}/form/{formID}/reply' },
   // MCP servers: the list, and turning one on or off for the running service (OpenCode keeps neither across a restart
@@ -60,6 +64,7 @@ const PATH_PARAMETERS: Record<string, RegExp> = {
   requestID: /^per_[A-Za-z0-9_-]{1,200}$/,
   inboxID: /^msg_[A-Za-z0-9_-]{1,200}$/,
   formID: /^frm_[A-Za-z0-9_-]{1,200}$/,
+  savedID: /^psv_[A-Za-z0-9_-]{1,200}$/,
   // Whatever the user wrote in the OpenCode configuration; see MCP_SERVER_NAME.
   server: MCP_SERVER_NAME,
 }

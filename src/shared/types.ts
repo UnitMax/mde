@@ -957,6 +957,29 @@ export interface ChatPermissionReplyRequest {
   decision: 'once' | 'always' | 'reject'
 }
 
+/**
+ * An "Always allow" OpenCode saved for the project a thread works in: the tool's action (`shell`, `edit`, an MCP
+ * tool's `<server>_<tool>`) and the pattern it allows (`git status *`, a path, `*`). OpenCode saves no rejections.
+ */
+export interface ChatSavedPermission {
+  id: string
+  action: string
+  resource: string
+  /** When it was saved, epoch ms. */
+  created: number
+}
+
+export interface ChatSavedPermissions {
+  /** False for an OpenCode without the saved-permissions routes. */
+  supported: boolean
+  permissions: ChatSavedPermission[]
+}
+
+export interface ChatSavedPermissionRemoveRequest {
+  threadId: string
+  id: string
+}
+
 export interface ChatFormReplyRequest {
   threadId: string
   formId: string
@@ -971,6 +994,8 @@ export type ChatEvent =
   | { type: 'messages'; threadId: string }
   /** Pending permissions or questions changed; refetch them. */
   | { type: 'requests'; threadId: string }
+  /** A permission request of the thread was answered "Always allow": its project's saved approvals changed. */
+  | { type: 'saved-permissions'; threadId: string }
   | { type: 'running'; threadId: string; running: boolean }
   /** The thread's goal was set, changed or cleared (null). */
   | { type: 'goal'; threadId: string; goal: ChatGoal | null }

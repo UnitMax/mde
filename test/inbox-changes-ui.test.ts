@@ -15,6 +15,7 @@ import { useWorkspace } from '../src/renderer/store/workspace'
 import { useInboxChat } from '../src/renderer/store/inbox-chat'
 import { useInboxView } from '../src/renderer/store/inbox-view'
 import { useInboxMcp } from '../src/renderer/store/inbox-mcp'
+import { useInboxSavedPermissions } from '../src/renderer/store/inbox-saved-permissions'
 import { mcpKey } from '../src/renderer/lib/mcp'
 import type { ChatMessage, ChatPart, InboxChangeDiff, InboxChangesResponse, InboxThread, DirectoryContext } from '../src/shared/types'
 
@@ -428,7 +429,7 @@ it('accepts slow poll results instead of discarding them each time a timer fires
   }
 })
 
-const tab = (name: 'files' | 'changes' | 'tools' | 'terminal'): HTMLButtonElement | null => container.querySelector(`[data-testid="inbox-sidebar-tab-${name}"]`)
+const tab = (name: 'files' | 'changes' | 'tools' | 'permissions' | 'terminal'): HTMLButtonElement | null => container.querySelector(`[data-testid="inbox-sidebar-tab-${name}"]`)
 const changesPanel = (): HTMLElement | null => container.querySelector('[data-testid="inbox-changes-panel"]')
 const sidebar = (): Promise<void> => render(createElement(InboxSidebar, { session, threadId: thread.id }), viewerFor(thread.id))
 
@@ -897,5 +898,72 @@ describe('Floating menu', () => {
     expect(container.querySelector('[data-testid="inbox-menu-terminal"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="inbox-menu-changes"]')).toBeNull()
     expect(container.querySelector('[data-testid="inbox-menu-tools"]')).toBeNull()
+  })
+})
+
+describe('Permissions', () => {
+  const approvals = [
+    { id: 'psv_1', action: 'shell', resource: 'git status *', created: 10 },
+    { id: 'psv_2', action: 'edit', resource: '*', created: 20 },
+  ]
+  const savedPermissions = vi.fn()
+  const removeSavedPermission = vi.fn(async () => {})
+  const panel = (): HTMLElement | null => container.querySelector('[data-testid="inbox-permissions-panel"]')
+  beforeEach(() => {
+    savedPermissions.mockReset().mockResolvedValue({ supported: true, permissions: approvals })
+    removeSavedPermission.mockClear()
+    vi.stubGlobal('api', { ...(window as unknown as { api: object }).api, chat: { savedPermissions, removeSavedPermission } })
+    useInboxSavedPermissions.setState({ entries: {} })
+  })
+  afterEach(() => {
+    useInboxSavedPermissions.setState({ entries: {} })
+    useInboxView.setState({ sidebarFloating: false, floatingSection: null })
+  })
+
+  it('has no tab while the project has nothing allowed always', async () => {
+    savedPermissions.mockResolvedValue({ supported: true, permissions: [] })
+    await sidebar()
+    expect(savedPermissions).toHaveBeenCalledWith({ threadId: thread.id })
+    expect(tab('files')).not.toBeNull()
+    expect(tab('permissions')).toBeNull()
+  })
+
+  it('lists the saved approvals by tool and forgets one when asked', async () => {
+    await sidebar()
+    expect(tab('permissions')?.getAttribute('aria-label')).toBe('Permissions, 2 always allowed')
+    await act(async () => tab('permissions')!.click())
+    expect(panel()?.querySelector('[data-testid="inbox-saved-group-shell"]')?.textContent).toContain('git status *')
+    // A lone star reads as what it allows.
+    expect(panel()?.querySelector('[data-testid="inbox-saved-group-edit"]')?.textContent).toContain('Anything')
+    const groups = Array.from(panel()!.querySelectorAll('[data-testid^="inbox-saved-group-"]')).map((item) => item.getAttribute('data-testid'))
+    expect(groups).toEqual(['inbox-saved-group-shell', 'inbox-saved-group-edit'])
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="inbox-saved-permission-remove-psv_1"]')!.click())
+    expect(removeSavedPermission).toHaveBeenCalledWith({ threadId: thread.id, id: 'psv_1' })
+    expect(panel()?.querySelector('[data-testid="inbox-saved-permission-psv_1"]')).toBeNull()
+    expect(tab('permissions')?.getAttribute('aria-label')).toBe('Permissions, 1 always allowed')
+  })
+
+  it('drops the tab when the last approval is removed', async () => {
+    savedPermissions.mockResolvedValue({ supported: true, permissions: [approvals[0]] })
+    useInboxChanges.setState({ tab: 'permissions' })
+    await sidebar()
+    expect(panel()).not.toBeNull()
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="inbox-saved-permission-remove-psv_1"]')!.click())
+    expect(panel()).toBeNull()
+    expect(tab('permissions')).toBeNull()
+    expect(container.querySelector('[data-testid="inbox-files-panel"]')?.className).toBe('contents')
+  })
+
+  it('shows a row in the floating card only while there are approvals, opening out onto the list', async () => {
+    useInboxView.setState({ sidebarFloating: true })
+    savedPermissions.mockResolvedValue({ supported: true, permissions: [] })
+    await sidebar()
+    expect(container.querySelector('[data-testid="inbox-menu-permissions"]')).toBeNull()
+    savedPermissions.mockResolvedValue({ supported: true, permissions: approvals })
+    await act(async () => { await useInboxSavedPermissions.getState().load(thread.id) })
+    const row = container.querySelector<HTMLButtonElement>('[data-testid="inbox-menu-permissions"]')!
+    expect(row.textContent).toContain('2 allowed')
+    await act(async () => row.click())
+    expect(container.querySelector('[data-testid="inbox-menu-permissions-section"]')?.textContent).toContain('git status *')
   })
 })
