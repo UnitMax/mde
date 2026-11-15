@@ -15,12 +15,17 @@ export function formatShare(share: number): string {
   return `${Math.round(Math.min(1, Math.max(0, share)) * 100)}%`
 }
 
-/** A size the way Task Manager writes it: binary units, labelled GB and MB. */
+/**
+ * A size the way Task Manager writes it: binary units, labelled GB and MB. Never more than four
+ * digits' worth of text ("999 MB", "99.9 GB", "128 GB"): the title bar gives it a fixed width, so
+ * a size just under a gigabyte is written "1.0 GB", not "1020 MB".
+ */
 export function formatMemory(bytes: number): string {
   const gigabytes = bytes / 1024 ** 3
-  if (gigabytes >= 100) return `${Math.round(gigabytes)} GB`
-  if (gigabytes >= 1) return `${gigabytes.toFixed(1)} GB`
-  return `${Math.round(bytes / 1024 ** 2)} MB`
+  const megabytes = Math.round(bytes / 1024 ** 2)
+  if (gigabytes >= 99.95) return `${Math.round(gigabytes)} GB`
+  if (megabytes >= 1000) return `${gigabytes.toFixed(1)} GB`
+  return `${megabytes} MB`
 }
 
 /** The history with one more reading, oldest first, no longer than the graph is wide. */

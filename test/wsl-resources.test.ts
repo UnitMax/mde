@@ -236,6 +236,11 @@ describe('meter formatting', () => {
     expect(formatMemory(512 * 1024 ** 2)).toBe('512 MB')
     expect(formatMemory(5.25 * 1024 ** 3)).toBe('5.3 GB')
     expect(formatMemory(128 * 1024 ** 3)).toBe('128 GB')
+    // Just under a gigabyte: no four-digit megabytes, which would not fit the title bar.
+    expect(formatMemory(999 * 1024 ** 2)).toBe('999 MB')
+    expect(formatMemory(1020 * 1024 ** 2)).toBe('1.0 GB')
+    expect(formatMemory(1000 * 1024 ** 2)).toBe('1.0 GB')
+    expect(formatMemory(99.97 * 1024 ** 3)).toBe('100 GB')
   })
 
   it('keeps a bounded history that ends at the right edge', () => {

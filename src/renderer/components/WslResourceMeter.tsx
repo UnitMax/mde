@@ -85,7 +85,7 @@ function Gauge({
     <span className="flex flex-col gap-[3px]" style={{ width }} data-testid={testId}>
       <span className="flex items-center gap-1 leading-none">
         {icon}
-        <span className="flex-1 text-right">{value}</span>
+        <span className="flex-1 whitespace-nowrap text-right">{value}</span>
       </span>
       <Track share={share} className="h-[2px] w-full" />
     </span>
@@ -202,7 +202,7 @@ export function WslResourceMeter(): JSX.Element | null {
   const { sample, history } = useWslResources()
   if (sample?.state === 'unavailable') return null
 
-  const chip = 'app-no-drag mr-1 flex h-6 items-center gap-2.5 rounded px-1.5 text-[11px] tabular-nums text-fg-muted'
+  const chip = 'app-no-drag mr-1 flex h-6 shrink-0 items-center gap-2.5 whitespace-nowrap rounded px-1.5 text-[11px] tabular-nums text-fg-muted'
 
   if (!sample || sample.state === 'stopped') {
     return (
