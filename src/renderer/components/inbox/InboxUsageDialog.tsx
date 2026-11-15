@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { LoaderCircle, RefreshCw } from 'lucide-react'
 import type { ChatTokens, ChatUsageState, ChatUsageStats, InboxFolder, OpenCodeTarget } from '@shared/types'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { hoverScrollbar } from '@/lib/hover-scrollbar'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { cn } from '@/lib/utils'
 import { useInboxChat } from '@/store/inbox-chat'
@@ -363,7 +364,8 @@ export function InboxUsageDialog({ open, onOpenChange, project }: { open: boolea
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-h-[calc(100vh-2rem)] max-w-3xl overflow-y-auto focus:outline-none"
+        {...hoverScrollbar}
+        className="hover-scrollbar max-h-[calc(100vh-2rem)] max-w-3xl overflow-y-auto focus:outline-none"
         data-testid="inbox-usage"
         // Not the first range button: its focus ring would read as the chosen range.
         onOpenAutoFocus={(event) => {

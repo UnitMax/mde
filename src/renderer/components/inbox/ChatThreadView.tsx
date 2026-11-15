@@ -28,6 +28,7 @@ import { registerThreadInput } from '@/lib/inbox-thread-input'
 import { createFileLookup, type ChatFileSource } from '@/lib/chat-file-links'
 import { scrollBehavior, TIMELINE_MIN_PROMPTS, timelineEntries } from '@/lib/chat-timeline'
 import { compactPlans, type RenderBlock } from '@/lib/chat-tools'
+import { hoverScrollbar } from '@/lib/hover-scrollbar'
 import { turnChanges } from '@/lib/turn-changes'
 import { cn } from '@/lib/utils'
 import { compactionState, contextUsage, drawnStart, findModel, goalPhase, hideReverted, initialChoice, mergeLive, revertedMessageCount, sameModelRef, turnStats } from '@/lib/chat'
@@ -496,8 +497,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
         ref={scrollRef}
         onScroll={onScroll}
         // Set on the element itself rather than through state: drawing the conversation again for it would cost.
-        onPointerEnter={(event) => event.currentTarget.setAttribute('data-scrollbar-shown', '')}
-        onPointerLeave={(event) => event.currentTarget.removeAttribute('data-scrollbar-shown')}
+        {...hoverScrollbar}
         className="hover-scrollbar chat-selectable min-h-0 flex-1 overflow-y-auto"
         data-testid="chat-transcript"
         data-chat-scroller=""

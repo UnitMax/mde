@@ -592,7 +592,8 @@ graph, the card keeps its place, so the conversation under the graph does not mo
 
 A GUI chat's scrollbar shows only while the pointer is over the conversation (`.hover-scrollbar` in `index.css`);
 otherwise it would run as a bar down the gap beside the card. Chromium does not repaint a scrollbar thumb on a
-plain `:hover` rule, so `ChatThreadView` sets a `data-scrollbar-shown` attribute on pointer enter and leave instead.
+plain `:hover` rule, so the pointer sets a `data-scrollbar-shown` attribute on enter and leave instead
+(`lib/hover-scrollbar.ts`, also used by the Usage dialog).
 
 ### Inbox tool calls
 

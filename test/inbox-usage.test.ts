@@ -203,6 +203,17 @@ describe('the usage dialog', () => {
     expect(testId('usage-tools')?.textContent).toContain('20 failed')
   })
 
+  it('shows its scrollbar only while the pointer is over it', async () => {
+    await render()
+    const dialog = testId('inbox-usage')!
+    expect(dialog.classList.contains('hover-scrollbar')).toBe(true)
+    expect(dialog.hasAttribute('data-scrollbar-shown')).toBe(false)
+    await act(async () => { dialog.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, relatedTarget: document.body })) })
+    expect(dialog.hasAttribute('data-scrollbar-shown')).toBe(true)
+    await act(async () => { dialog.dispatchEvent(new PointerEvent('pointerout', { bubbles: true, relatedTarget: document.body })) })
+    expect(dialog.hasAttribute('data-scrollbar-shown')).toBe(false)
+  })
+
   it('asks again for another range or another OpenCode', async () => {
     await render()
     await act(async () => testId('usage-range-all')!.click())
