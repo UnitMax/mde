@@ -684,7 +684,10 @@ above it, a merge opens a lane for its other parent, and lanes meet where they r
 commit. Their colors come from the theme. Branches, remote branches and tags are chips on the
 commit they point at; the checked-out branch comes first with a check mark, a remote branch of the
 same name at the same commit folds into the local chip as a cloud, and a detached HEAD has its own
-chip. HEAD is a ring. When the checkout has uncommitted changes, a dashed row above HEAD says how
+chip. A row shows as many chips as it has room for beside the thread marker and a readable part of
+the message (counted from the list's width and the names' lengths, `fitRefChips`); the rest go
+behind a `+N` chip that lists them, so a commit many worktree branches point at keeps its threads
+and message in view. The first chip, the checked-out branch when it is there, is always shown. HEAD is a ring. When the checkout has uncommitted changes, a dashed row above HEAD says how
 many files; choosing it lists those files beside the graph, like a commit's, and choosing a file
 there reviews its diff, whose close (or Escape) comes back to the graph with the row still chosen. The header names the branch and how far it is ahead
 of and behind its upstream, as of the last fetch.
@@ -704,6 +707,29 @@ file, laid over the graph, which keeps its place beneath; Escape or the close bu
 it. The graph is
 read again after a Changes refresh with a different summary (a commit in the thread clears its
 changes), after a fetch, and with Refresh.
+
+**Threads in the graph.** The graph also shows where the Inbox threads of the repository are: a
+thread runs in a checkout (the repository's main working tree or one of its worktrees), and that
+checkout's HEAD is the thread's place. The commit carries a small marker after its branch chips:
+one thread is a button with its state (the same glyphs as the thread list: working, needs input or
+permission, done, failed, woke up) and its title, which opens the thread; several at one commit are
+collected into one button (their glyphs and a count) that lists them, most pressing first, each
+opening its thread. The toolbar's Threads button (shown when the repository has any) lists every
+thread by checkout, the graph's own first; a checkout's line goes to its commit, or says *not
+shown* when that commit is not among those read (the Current scope, or further down than the
+commits loaded). Its switch **Show threads on the graph** takes the markers off or puts them back
+and is kept in `localStorage` (`mde.gitGraph.threads`, on by default). Opening a thread closes the
+graph. The graph is read again when a listed thread changes state or the number of threads
+changes, since an agent that stopped may have committed. `git:graph` takes an optional `threads`
+flag (sent by the Inbox and Sessions graphs alike); the main process then also runs
+`git worktree list --porcelain` and returns, for each thread that is not archived, whose worktree
+was not deleted, and that is on the same machine as the checkout (native, or the same WSL
+distribution), the checkout its recorded directory is in (the innermost, comparing Windows paths
+without regard to slashes and case) with that checkout's commit and branch. The renderer joins
+these with the threads it already has; no thread content is read. The pieces are
+`parseGitCheckoutHeads`/`threadsInCheckouts` in `src/main/git-graph.ts`,
+`readInboxGitGraphWithThreads` in `src/main/inbox/changes.ts` and
+`components/inbox/GitGraphThreads.tsx`.
 
 The same graph opens in Sessions from a terminal's Git chip (see Git below). `git:graph` takes a
 root (a thread ID or a terminal ID, never both and never a path), a commit limit (1 to 5,000) and the

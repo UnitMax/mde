@@ -171,6 +171,7 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.gitFetch, { folderId: '/home/me/app' })
     // Only the fetch takes a folder: the graph channels still name a thread or a terminal.
     rejects(IpcChannels.gitGraph, { folderId: 'fld_1234', limit: 400, scope: 'all' })
+    rejects(IpcChannels.gitGraph, { threadId: 'ses_thread', limit: 400, scope: 'all', threads: 'yes' })
   })
 
   it.each(channels)('rejects malformed, oversized and prototype-shaped requests on %s', (channel) => {

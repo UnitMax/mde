@@ -60,7 +60,7 @@ describe('Sessions Git graph', () => {
     expect(view()).toBeNull()
     await act(async () => useSessionGitGraph.getState().toggle(pane))
     expect(view()).not.toBeNull()
-    expect(graphRead).toHaveBeenCalledWith({ terminalId: pane, limit: 400, scope: 'all' })
+    expect(graphRead).toHaveBeenCalledWith({ terminalId: pane, limit: 400, scope: 'all', threads: true })
     const working = container.querySelector<HTMLElement>('[data-testid="git-graph-row"][data-hash="working-tree"]')!
     expect(working.textContent).toContain('Uncommitted changes · 2 files')
     await act(async () => working.click())

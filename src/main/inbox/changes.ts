@@ -6,9 +6,13 @@ import type {
   GitGraphScope,
   InboxGitCommitDetails,
   InboxGitFetchResult,
+  InboxThread,
 } from '@shared/types'
 import { createGitCommandRunner, createGitFetchRunner, readGitCheckoutChangesWithRunner, readGitCheckoutDiffWithRunner } from '../git'
-import { fetchGitWithRunners, readGitCommitDiffWithRunner, readGitCommitWithRunner, readGitGraphWithRunner } from '../git-graph'
+import {
+  fetchGitWithRunners, readGitCheckoutHeadsWithRunner, readGitCommitDiffWithRunner, readGitCommitWithRunner, readGitGraphWithRunner,
+  threadsInCheckouts,
+} from '../git-graph'
 
 function nullDevice(session: DirectoryContext): string {
   return session.kind === 'wsl' || process.platform !== 'win32' ? '/dev/null' : 'NUL'
@@ -45,6 +49,36 @@ export function readInboxGitDiff(session: DirectoryContext, path: string): Promi
 /** The commit graph for the Git graph view; refs and commit metadata only, no file is read. */
 export function readInboxGitGraph(session: DirectoryContext, limit: number, scope: GitGraphScope): Promise<InboxGitGraph> {
   return readGitGraphWithRunner(createGitCommandRunner(session, process.platform, session.path), limit, scope)
+}
+
+/**
+ * The graph, with the Inbox threads that run in the repository's checkouts (its main working tree
+ * and its worktrees) and the commit each is at. Only threads on the same machine as the checkout
+ * (native, or the same WSL distribution) are looked at, and archived ones and those whose worktree
+ * was deleted are left out. `own` is the thread the graph was opened from, which is in the graph's
+ * own checkout whatever its path is spelled like.
+ */
+export async function readInboxGitGraphWithThreads(
+  session: DirectoryContext,
+  limit: number,
+  scope: GitGraphScope,
+  threads: readonly InboxThread[],
+  own?: string,
+): Promise<InboxGitGraph> {
+  const run = createGitCommandRunner(session, process.platform, session.path)
+  const [graph, checkouts] = await Promise.all([
+    readGitGraphWithRunner(run, limit, scope),
+    readGitCheckoutHeadsWithRunner(run).catch(() => []),
+  ])
+  if (!graph.available) return graph
+  const here = threads.filter((thread) =>
+    !thread.archived && !thread.worktreeRemovedAt && thread.target.kind === session.kind &&
+    (thread.target.kind !== 'wsl' || thread.target.distro === session.distro))
+  const found = threadsInCheckouts(checkouts, here)
+  if (own && graph.worktree && !found.some((item) => item.threadId === own) && here.some((thread) => thread.id === own)) {
+    found.push({ threadId: own, head: graph.head, branch: graph.branch, root: graph.worktree })
+  }
+  return { ...graph, threads: found }
 }
 
 export function readInboxGitCommit(session: DirectoryContext, hash: string): Promise<InboxGitCommitDetails> {

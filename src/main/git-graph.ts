@@ -3,6 +3,7 @@ import type {
   GitGraphCommit,
   GitGraphRef,
   GitGraphScope,
+  GitGraphThread,
   InboxChangeDiff,
   InboxGitCommitDetails,
   InboxGitCommitFile,
@@ -141,6 +142,71 @@ export async function readGitGraphWithRunner(
     commits,
     more,
   }
+}
+
+/** One checkout of a repository: its main working tree or a linked worktree. */
+export interface GitCheckoutHead {
+  root: string
+  head: string | null
+  branch: string | null
+}
+
+/**
+ * Parses `git worktree list --porcelain`: every checkout of the repository with the commit and branch
+ * checked out in it. A bare repository has no checkout, and one whose folder is gone is left out.
+ */
+export function parseGitCheckoutHeads(stdout: string): GitCheckoutHead[] {
+  const checkouts: GitCheckoutHead[] = []
+  for (const block of stdout.split(/\r?\n\s*\r?\n/)) {
+    const lines = block.split(/\r?\n/)
+    const root = lines.find((line) => line.startsWith('worktree '))?.slice('worktree '.length)
+    if (!root || lines.includes('bare') || lines.some((line) => line === 'prunable' || line.startsWith('prunable '))) continue
+    const head = lines.find((line) => line.startsWith('HEAD '))?.slice('HEAD '.length)
+    const branch = lines.find((line) => line.startsWith('branch refs/heads/'))?.slice('branch refs/heads/'.length)
+    checkouts.push({
+      root,
+      // An unborn branch is listed with the all-zero object name.
+      head: head && /^[0-9a-f]{40,64}$/.test(head) && !/^0+$/.test(head) ? head : null,
+      branch: branch ?? null,
+    })
+  }
+  return checkouts
+}
+
+/** Every checkout of the repository the runner's folder is in; none when Git cannot say. */
+export async function readGitCheckoutHeadsWithRunner(run: GitCommandRunner): Promise<GitCheckoutHead[]> {
+  const result = await run(['--no-pager', 'worktree', 'list', '--porcelain'])
+  return result.code === 0 ? parseGitCheckoutHeads(result.stdout) : []
+}
+
+/**
+ * A path in a form two spellings of one folder share: no trailing slash, and for a Windows path
+ * (`C:\\repo` from MDE, `C:/repo` from Git) forward slashes and no difference in case.
+ */
+function comparablePath(path: string): string {
+  if (!/^[A-Za-z]:[\\/]|^\\\\/.test(path)) return path.length > 1 ? path.replace(/\/+$/, '') : path
+  return path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+}
+
+/**
+ * Which of the threads run in which checkout: a thread belongs to the checkout its directory is in,
+ * the innermost when one checkout lies inside another. Threads are given already narrowed to the
+ * machine (native, or one WSL distribution) the checkouts are on.
+ */
+export function threadsInCheckouts(
+  checkouts: readonly GitCheckoutHead[],
+  threads: readonly { id: string; directory: string }[],
+): GitGraphThread[] {
+  const roots = checkouts
+    .map((checkout) => ({ checkout, path: comparablePath(checkout.root) }))
+    .sort((a, b) => b.path.length - a.path.length)
+  const found: GitGraphThread[] = []
+  for (const thread of threads) {
+    const directory = comparablePath(thread.directory)
+    const match = roots.find(({ path }) => directory === path || directory.startsWith(path.endsWith('/') ? path : `${path}/`))
+    if (match) found.push({ threadId: thread.id, head: match.checkout.head, branch: match.checkout.branch, root: match.checkout.root })
+  }
+  return found
 }
 
 const STATUS_LETTERS: Record<string, GitChangeStatus> = {
