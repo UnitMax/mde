@@ -1088,6 +1088,16 @@ there is a query the earlier messages that are not loaded yet are loaded, so tha
 is searched, and the matches are found again as messages stream in. Text selected in the
 conversation when the bar is opened becomes the query. Nothing is stored.
 
+**Thread switcher.** Ctrl+O (Cmd+O on a Mac) opens the session switcher everywhere but the Inbox view, where it
+opens the same kind of overlay for threads (`InboxThreadSwitcher`, `lib/inbox-thread-switcher.ts`). With nothing
+typed it lists the threads of the sidebar list in its order, with the open thread highlighted; typed words search
+the title, the project and the branch of every thread, archived and snoozed ones too (those after the listed
+threads that match as well). Nothing is stored.
+
+**Clearing the message box.** Ctrl+C in the message box with no text selected clears it: the text, the quote
+cards and the attached files (each removed from the draft as the remove button would). With a selection Ctrl+C
+copies as usual; Cmd+C on a Mac only ever copies.
+
 **Search over all threads.** Ctrl+Shift+F (Cmd+Shift+F on a Mac), in the Inbox view only, opens an overlay like the session switcher (`InboxSearchDialog`). The
 conversations live in OpenCode, so the main process reads them (`main/inbox/search.ts`, `InboxSearch`):
 every thread, archived and terminal ones too, newest first, three at a time, all pages of messages (up to

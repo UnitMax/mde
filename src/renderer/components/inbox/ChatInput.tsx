@@ -153,6 +153,8 @@ function suggestionElement(text: string): HTMLElement {
 export interface ChatInputHandle {
   focus: (caret?: number) => void
   insertNewline: () => void
+  /** Whether any text in the box is selected. */
+  hasSelection: () => boolean
 }
 
 interface ChatInputProps {
@@ -321,6 +323,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       if (inBulletList(view.state) && continueList(view)) return
       view.dispatch(view.state.replaceSelection('\n'), { scrollIntoView: true, userEvent: 'input' })
     },
+    hasSelection: () => viewRef.current?.state.selection.ranges.some((range) => !range.empty) ?? false,
   }), [])
 
   const selectedText = (): string => {

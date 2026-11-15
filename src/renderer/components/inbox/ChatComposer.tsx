@@ -530,6 +530,23 @@ export const ChatComposer = forwardRef(function ChatComposer({
     attachQuotes(waitingQuotes.current.splice(0))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boxReady])
+  // Ctrl+C with nothing selected empties the box: the text, the quote cards and the attached files.
+  const clearMessage = (): void => {
+    resetHistory()
+    pendingCaret.current = 0
+    setQuotes([])
+    setText('')
+    setCursor({ text: '', at: 0 })
+    persist('', [])
+    const files = draft.attachments
+    if (!draftKey || files.length === 0) return
+    setDraft((current) => ({ ...current, attachments: [] }))
+    void (async () => {
+      let value: ChatDraft | undefined
+      for (const file of files) value = await mutate({ key: draftKey, action: 'remove', attachmentId: file.id })
+      if (value) setDraft(value)
+    })().catch((reason) => setError(ipcErrorMessage(reason, 'Could not remove the attached files.')))
+  }
   const removeQuote = (id: number): void => {
     const next = quotes.filter((quote) => quote.id !== id)
     setQuotes(next)
@@ -741,6 +758,12 @@ export const ChatComposer = forwardRef(function ChatComposer({
         setDismissed(completionWord)
         return
       }
+    }
+    if (event.key.toLowerCase() === 'c' && event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey &&
+      !blank && loaded && !sending && !adding && !messageRef.current?.hasSelection()) {
+      event.preventDefault()
+      clearMessage()
+      return
     }
     // The suggestion in the empty box: Tab or the right arrow takes it, Escape puts it away.
     if (ghost && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {

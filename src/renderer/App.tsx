@@ -13,6 +13,7 @@ import { SessionGitGraph } from '@/components/SessionGitGraph'
 import { NewTodoProjectDialog } from '@/components/NewTodoProjectDialog'
 import { Sidebar } from '@/components/Sidebar'
 import { SessionSwitcher } from '@/components/SessionSwitcher'
+import { InboxThreadSwitcher } from '@/components/inbox/InboxThreadSwitcher'
 import { TerminalView } from '@/components/TerminalView'
 import { TitleBar, TitleBarButton } from '@/components/TitleBar'
 import { WorkspaceNavigation } from '@/components/WorkspaceNavigation'
@@ -111,6 +112,7 @@ export function App(): JSX.Element {
   const [todoTaskDialogTaskId, setTodoTaskDialogTaskId] = useState<string | null>(null)
   const [todoTaskDialogColumnId, setTodoTaskDialogColumnId] = useState<string | null>(null)
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false)
+  const [threadSwitcherOpen, setThreadSwitcherOpen] = useState(false)
   const [inboxSearchOpen, setInboxSearchOpen] = useState(false)
   const [todoSearchOpen, setTodoSearchOpen] = useState(false)
   const [terminalLayouts, setTerminalLayouts] = useState<RuntimeLayouts>({})
@@ -322,6 +324,8 @@ export function App(): JSX.Element {
       if (
         !isSessionSwitcherShortcut(event) ||
         sessionSwitcherOpen ||
+        threadSwitcherOpen ||
+        inboxSearchOpen ||
         todoSearchOpen ||
         newSessionOpen ||
         newTodoProjectOpen ||
@@ -334,12 +338,17 @@ export function App(): JSX.Element {
 
       event.preventDefault()
       event.stopPropagation()
-      setSessionSwitcherOpen(true)
+      // In the Inbox, Ctrl+O switches between threads instead: the sessions are not what is on the screen there.
+      if (activeWorkspaceView === 'inbox') setThreadSwitcherOpen(true)
+      else setSessionSwitcherOpen(true)
     }
 
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [
+    activeWorkspaceView,
+    inboxSearchOpen,
+    threadSwitcherOpen,
     newSessionOpen,
     newTodoProjectOpen,
     opencodeConfigOpen,
@@ -839,6 +848,7 @@ export function App(): JSX.Element {
           </>
         )}
         <SessionSwitcher open={sessionSwitcherOpen} onOpenChange={setSessionSwitcherOpen} />
+        <InboxThreadSwitcher open={threadSwitcherOpen} onOpenChange={setThreadSwitcherOpen} />
         <InboxSearchDialog open={inboxSearchOpen} onOpenChange={setInboxSearchOpen} />
       </div>
       <Toaster />

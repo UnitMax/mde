@@ -55,7 +55,7 @@ export function getKeyboardShortcutGroups(
       label: 'Everywhere',
       where: 'Works in every view.',
       shortcuts: [
-        { id: 'session-switcher-open', keys: [`${primaryModifier}+O`], description: 'Switch to another session.' },
+        { id: 'session-switcher-open', keys: [`${primaryModifier}+O`], description: 'Switch to another session; in the Inbox, to another thread (archived and snoozed ones too when you type).' },
         { id: 'mini-window-toggle', keys: ['F12'], description: 'Shrink MDE into the always-on-top mini Inbox window, and back.' },
         {
           id: 'inbox-floating-terminal',
@@ -84,6 +84,7 @@ export function getKeyboardShortcutGroups(
         { id: 'inbox-cycle-agent', keys: ['Shift+Tab'], description: 'Cycle through the available agents in the message box.' },
         { id: 'inbox-newline', keys: ['Shift+Enter', 'Ctrl+J'], description: 'Insert a newline in the message box.' },
         { id: 'inbox-message-history', keys: ['Up'], description: 'In an empty message box, recall earlier messages; Down moves forward.' },
+        { id: 'inbox-clear-message', keys: ['Ctrl+C'], description: 'With nothing selected in the message box, clear it: the text, the quotes and the attached files.' },
         { id: 'inbox-take-suggestion', keys: ['Tab'], description: 'Take the suggested next message shown in the empty message box; Esc puts it away.' },
         { id: 'inbox-skill-picker', keys: ['$'], description: 'Start a word with $ to pick a skill.' },
         { id: 'inbox-slash-picker', keys: ['/'], description: 'Start a message with / to pick a command: /btw, /fork, /compact, /goal.' },
