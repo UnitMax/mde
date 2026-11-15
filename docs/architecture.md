@@ -600,7 +600,11 @@ The **Tools** tab in the right-hand sidebar (between Changes and Terminal) lists
 GUI thread, for review after the fact; its label carries the number of calls. By default the calls run one
 after another; the **Show messages** button beside the search box (kept in `localStorage` as
 `mde.inbox-tool-turns`, off by default) groups them under the message of the person's they answered (`#1`, `#2`,
-…, with calls before the first loaded message under "Earlier calls"), and each such header folds. A row names the kind of call (Read, Shell, Code Mode, or an MCP
+…, with calls before the first loaded message under "Earlier calls"), and each such header folds. A row shows the icon of
+its kind of call and what it did (a command, a path, the tools a Code Mode script called), with the kind's name
+(Shell, Read, Code Mode) in its tooltip and opened detail; a direct MCP call keeps its tool's name, as does a call
+with nothing else to show. In the floating card the Tools section keeps the card's width, where Files and Changes
+widen it; the search box gives way to the toolbar's buttons. A row names the kind of call (Read, Shell, Code Mode, or an MCP
 tool's own name beside its server), what it was about (a path relative to the thread, a command's first line,
 a pattern, the arguments) and how long it took; a failed call, including a command with a non-zero exit, is
 red. Opening a row shows the tool's OpenCode name, the exit code, its input as key/value pairs, the output

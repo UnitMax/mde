@@ -109,7 +109,10 @@ function GoneNote(): JSX.Element {
   )
 }
 
-/** The card's width with a section open: room for a list, at least the docked sidebar's width. */
+/**
+ * The card's width with Files or Changes open: room for a tree of paths, at least the docked sidebar's width. Tools
+ * keeps the card's own width: its rows are an icon and a command, and its toolbar gives way in the search box.
+ */
 const OPEN_WIDTH_REM = 22
 
 function Divider(): JSX.Element {
@@ -169,7 +172,7 @@ export function InboxSidebarMenu({
       data-testid="inbox-sidebar-menu"
       data-open={open ?? undefined}
       onKeyDown={walkRows}
-      style={open ? { width: `max(${OPEN_WIDTH_REM}rem, ${sidebarWidth}px)` } : undefined}
+      style={open && open !== 'tools' ? { width: `max(${OPEN_WIDTH_REM}rem, ${sidebarWidth}px)` } : undefined}
       className={cn(
         'absolute right-3 z-20 flex w-[17rem] max-w-[calc(100%-1.5rem)] flex-col overflow-hidden transition-[width] duration-150',
         threadId ? 'max-h-[calc(100%-4.25rem)]' : 'max-h-[calc(100%-1.5rem)]',

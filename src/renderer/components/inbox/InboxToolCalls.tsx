@@ -148,9 +148,15 @@ function EntryDetail({ entry }: { entry: ToolEntry }): JSX.Element {
   )
 }
 
+/**
+ * One call: the icon stands for the kind of call and the row shows what it did; the kind's name is in the tooltip and
+ * the opened detail. A direct MCP call keeps its tool's name, which is what it did, and a call with nothing more to
+ * say keeps its kind.
+ */
 function EntryRow({ entry, open, onToggle }: { entry: ToolEntry; open: boolean; onToggle: () => void }): JSX.Element {
   const { part } = entry
   const direct = entry.kind !== 'execute' && entry.calls.length === 1 ? entry.calls[0]! : null
+  const showTitle = direct !== null || !entry.subject
   const icon = entry.calls.length > 0 ? Plug : ICONS[entry.kind]
   const time = part.durationMs !== undefined ? scriptDuration(part.durationMs) : ''
   return (
@@ -160,7 +166,7 @@ function EntryRow({ entry, open, onToggle }: { entry: ToolEntry; open: boolean; 
         data-tool-row
         aria-expanded={open}
         onClick={onToggle}
-        title={entry.subject || entry.title}
+        title={entry.subject ? `${entry.title}: ${entry.subject}` : entry.title}
         className={cn(
           'group/row flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-[5px] text-left text-[12.5px] leading-5 transition-colors',
           'hover:bg-hover/70 focus-visible:bg-hover/70 focus-visible:outline-none',
@@ -169,17 +175,20 @@ function EntryRow({ entry, open, onToggle }: { entry: ToolEntry; open: boolean; 
       >
         <Glyph icon={icon} status={part.status} failed={entry.failed} />
         {direct && (
-          <Chip tone={direct.server ? 'accent' : 'neutral'} title={direct.server ? `MCP server ${direct.server}` : direct.namespace} className="max-w-[35%] px-1 text-[10.5px]">
+          <Chip tone={direct.server ? 'accent' : 'neutral'} title={direct.server ? `MCP server ${direct.server}` : direct.namespace} className="max-w-[35%] px-1 text-[10.5px] leading-4">
             <span className="truncate">{direct.server ?? direct.namespace}</span>
           </Chip>
         )}
-        <span className={cn('font-medium', direct ? 'min-w-0 truncate' : 'shrink-0', entry.failed ? 'text-danger' : 'text-fg-muted', entry.active && 'chat-shimmer')}>
-          {entry.title}
-        </span>
-        {entry.kind === 'execute' && entry.calls.length > 0 && (
-          <Chip tone={entry.mcp ? 'accent' : 'neutral'} className="px-1 text-[10.5px]">{entry.calls.length}</Chip>
+        {showTitle && (
+          <span className={cn('font-medium', direct ? 'min-w-0 truncate' : 'shrink-0', entry.failed ? 'text-danger' : 'text-fg-muted', entry.active && 'chat-shimmer')}>
+            {entry.title}
+          </span>
         )}
-        <span className={cn('inbox-code-font min-w-0 flex-1 basis-0 truncate text-[11.5px]', entry.failed ? 'text-danger/80' : 'text-fg-subtle group-hover/row:text-fg-muted')}>
+        <span className={cn(
+          'inbox-code-font min-w-0 flex-1 basis-0 truncate text-[11.5px]',
+          entry.failed ? 'text-danger/80' : showTitle ? 'text-fg-subtle group-hover/row:text-fg-muted' : 'text-fg-muted group-hover/row:text-fg',
+          !showTitle && entry.active && 'chat-shimmer',
+        )}>
           {entry.subject}
         </span>
         {time && <span className="shrink-0 pl-1 text-[11px] tabular-nums text-fg-subtle">{time}</span>}
@@ -284,7 +293,7 @@ export function InboxToolCalls({ thread }: { thread: InboxThread }): JSX.Element
             type="search"
             value={query}
             aria-label="Search tool calls"
-            placeholder="Search tools, files, commands…"
+            placeholder="Search calls…"
             data-testid="inbox-tools-search"
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
@@ -418,6 +427,7 @@ export function InboxToolCalls({ thread }: { thread: InboxThread }): JSX.Element
               onFold={() => setFolded((current) => toggle(current, turn.id))}
               opened={opened}
               onOpen={(id) => setOpened((current) => toggle(current, id))}
+             
             />
           ))
         )}

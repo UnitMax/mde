@@ -746,6 +746,20 @@ describe('Tools tab', () => {
     expect(localStorage.getItem('mde.inbox-tool-turns')).toBe('on')
   })
 
+  it('shows an icon and what each call did, not the kind of call', async () => {
+    const execute = toolPart('t4', 'execute', { code: '' }, { calls: [{ tool: 'github.search', status: 'completed', input: '{}' }] })
+    seed([conversation[0]!, { ...(conversation[1] as Extract<ChatMessage, { kind: 'assistant' }>), parts: [...(conversation[1] as Extract<ChatMessage, { kind: 'assistant' }>).parts, execute] }])
+    useInboxChanges.setState({ tab: 'tools' })
+    await sidebar()
+    const row = (id: string): string => toolsPanel()!.querySelector(`[data-testid="inbox-tool-${id}"] button`)!.textContent ?? ''
+    expect(row('t2')).toContain('npm test')
+    expect(row('t2')).not.toContain('Shell')
+    expect(row('t4')).not.toContain('Code Mode')
+    // A direct MCP call keeps its tool's name: that is what it did.
+    expect(row('t3')).toContain('search_issues')
+    expect(toolsPanel()!.querySelector('[data-testid="inbox-tool-t2"] button')!.getAttribute('title')).toBe('Shell: npm test')
+  })
+
   it('folds a turn, and offers to load earlier messages when the start is not loaded', async () => {
     seed(conversation, 'cursor')
     const loadOlder = vi.fn(async () => undefined)
