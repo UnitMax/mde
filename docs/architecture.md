@@ -684,7 +684,10 @@ above it, a merge opens a lane for its other parent, and lanes meet where they r
 commit. Their colors come from the theme. Branches, remote branches and tags are chips on the
 commit they point at; the checked-out branch comes first with a check mark, a remote branch of the
 same name at the same commit folds into the local chip as a cloud, and a detached HEAD has its own
-chip. HEAD is a ring. When the checkout has uncommitted changes, a dashed row above HEAD says how
+chip. A row shows as many chips as it has room for beside the thread marker and a readable part of
+the message (counted from the list's width and the names' lengths, `fitRefChips`); the rest go
+behind a `+N` chip that lists them, so a commit many worktree branches point at keeps its threads
+and message in view. The first chip, the checked-out branch when it is there, is always shown. HEAD is a ring. When the checkout has uncommitted changes, a dashed row above HEAD says how
 many files; choosing it lists those files beside the graph, like a commit's, and choosing a file
 there reviews its diff, whose close (or Escape) comes back to the graph with the row still chosen. The header names the branch and how far it is ahead
 of and behind its upstream, as of the last fetch.

@@ -81,7 +81,7 @@ function ThreadGlyph({ thread }: { thread: InboxThread }): JSX.Element {
  * menu would reach the commit row and the list too (choosing a commit, moving the selection, closing
  * the graph on Escape). They stop here.
  */
-const contain = (event: SyntheticEvent): void => event.stopPropagation()
+export const contain = (event: SyntheticEvent): void => event.stopPropagation()
 
 function ThreadItem({ item, current, onOpen }: { item: PlacedThread; current: boolean; onOpen: (threadId: string) => void }): JSX.Element {
   const chip = inboxStatusChip(item.thread)
@@ -108,8 +108,18 @@ const pill = 'inline-flex h-[18px] shrink-0 items-center gap-1 rounded-[5px] bor
   'text-fg-muted outline-none transition-colors hover:border-line-strong hover:bg-elevated hover:text-fg ' +
   'focus-visible:border-accent/60 focus-visible:text-fg data-[state=open]:border-line-strong data-[state=open]:bg-elevated data-[state=open]:text-fg'
 
+/**
+ * How wide a commit's thread marker is drawn, near enough to keep room for it in the row before the
+ * branch chips are counted: the title's length for one thread, the glyphs and the count for several.
+ */
+export function graphThreadMarkerWidth(threads: readonly PlacedThread[] | undefined): number {
+  if (!threads?.length) return 0
+  if (threads.length === 1) return Math.min(176, 30 + Math.ceil(graphThreadTitle(threads[0]!.thread).length * 6.2))
+  return 78 + Math.min(3, threads.length) * 14
+}
+
 /** Keys on a marker are its own, apart from Escape, which still closes what the graph has open. */
-const markerKey = (event: ReactKeyboardEvent): void => { if (event.key !== 'Escape') event.stopPropagation() }
+export const markerKey = (event: ReactKeyboardEvent): void => { if (event.key !== 'Escape') event.stopPropagation() }
 
 /**
  * The threads whose checkout is at a commit, in that commit's row. One thread is a small button

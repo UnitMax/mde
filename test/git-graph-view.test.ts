@@ -6,7 +6,7 @@ vi.mock('../src/renderer/components/inbox/InboxTerminal', () => ({
   InboxTerminal: () => createElement('div'),
   focusInboxTerminalWhenShown: vi.fn(),
 }))
-import { commitBodyParagraphs, GitGraphView, refChips } from '../src/renderer/components/inbox/GitGraphView'
+import { commitBodyParagraphs, fitRefChips, GitGraphView, refChipWidth, refChips } from '../src/renderer/components/inbox/GitGraphView'
 import { InboxSidebar } from '../src/renderer/components/inbox/InboxChanges'
 import { useInboxChanges } from '../src/renderer/store/inbox-changes'
 import { useWorkspace } from '../src/renderer/store/workspace'
@@ -352,6 +352,28 @@ describe('refChips', () => {
 
   it('marks a detached HEAD', () => {
     expect(refChips([], null, true)[0]).toMatchObject({ kind: 'head', name: 'HEAD', current: true })
+  })
+})
+
+describe('fitRefChips', () => {
+  const chips = refChips([
+    { hash: h('a'), name: 'mybranch', kind: 'branch' },
+    ...['3d9d875f', '5dfba40b', 'ed857ea2', '0a1b2c3d'].map((id) => ({ hash: h('a'), name: `mde/${id}`, kind: 'branch' as const })),
+  ], 'mybranch', false)
+  const width = (count: number): number => chips.slice(0, count).reduce((sum, chip) => sum + refChipWidth(chip) + 6, 0)
+
+  it('shows every chip when they fit, and in a row not yet measured', () => {
+    expect(fitRefChips(chips, width(5))).toBe(5)
+    expect(fitRefChips(chips, null)).toBe(5)
+  })
+
+  it('keeps room for the chip that stands for the rest, and always shows the first', () => {
+    expect(fitRefChips(chips, width(5) - 10)).toBe(4)
+    expect(fitRefChips(chips, width(4) + 10)).toBe(3)
+    expect(fitRefChips(chips, width(2) + 40)).toBe(2)
+    expect(fitRefChips(chips, 20)).toBe(1)
+    expect(fitRefChips(chips, -100)).toBe(1)
+    expect(fitRefChips(chips.slice(0, 1), 0)).toBe(1)
   })
 })
 
