@@ -288,8 +288,10 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   }, [messages, requests, pending])
 
   const prompts = useMemo(() => timelineEntries(messages), [messages])
-  // In a narrow pane the timeline's rail would touch the text, so the conversation and the composer both leave room for it.
-  const railGutter = prompts.length >= TIMELINE_MIN_PROMPTS && '@max-[50rem]:pr-9'
+  // The timeline's rail sits at the left edge (where the floating sidebar card never is) and is about 46 px wide.
+  // The centred 768 px column only clears it, cards and all, from a 54 rem pane on; narrower, the conversation and
+  // the composer both take a left margin wider than the rail.
+  const railGutter = prompts.length >= TIMELINE_MIN_PROMPTS && '@max-[54rem]:pl-14'
   // A prompt the timeline names that is not drawn yet: it is drawn first, and jumped to once it is there.
   const jumpAfterDraw = useRef<string | null>(null)
   const jumpToPrompt = useCallback((id: string) => {

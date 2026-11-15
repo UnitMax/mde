@@ -3,10 +3,12 @@
  * things, instead of each one truncating on its own rules, so a narrow box loses labels in a fixed order and
  * never turns a word into "M…". The model name is the only text that is ever cut short.
  *
- * - wide: everything, the context meter as segments, the provider after the model.
- * - medium: the provider goes, and the segments become a ring.
- * - narrow: the MCP count, the agent's name and the context number go; their icons, the badge and the ring stay.
+ * - wide: everything, the provider in front of the model.
+ * - medium: the provider goes.
+ * - narrow: the MCP count and the agent's name go; their icons and the badge stay.
  * - tight: the effort goes too.
+ *
+ * The context meter is always its small ring, at every size.
  */
 export type ComposerSize = 'wide' | 'medium' | 'narrow' | 'tight'
 
@@ -35,7 +37,7 @@ export function atLeast(size: ComposerSize, floor: ComposerSize): boolean {
 /** What the model chip's text is estimated to need per character, in pixels, at the toolbar's 12 px type. */
 const CHAR_PX = 6.5
 /** Everything else on the row at the wide size (attach, agent, MCP, context, send, the chip's own padding), with some slack. */
-const ROW_PX = 470
+const ROW_PX = 380
 
 /** The characters of the separators in `Provider / Model · Effort`, as the chip counts them. */
 const PROVIDER_SEPARATOR = 3

@@ -98,14 +98,6 @@ export const CONTEXT_DANGER_RATIO = 0.9
 
 export type ContextTone = 'normal' | 'warn' | 'danger'
 
-/** The gauge in the composer is this many segments, each worth an equal share of the window. */
-export const CONTEXT_SEGMENTS = 5
-
-/** How much of one gauge segment is lit, from 0 (dark) to 1 (full). */
-export function segmentFill(ratio: number | null, index: number): number {
-  if (ratio === null) return 0
-  return Math.min(1, Math.max(0, ratio * CONTEXT_SEGMENTS - index))
-}
 
 export interface ContextUsage {
   /** Tokens the conversation held after the latest model step. */

@@ -87,7 +87,7 @@ describe('the model chip', () => {
   it('leaves the provider out of a long name until the toolbar is wide enough for all of it', async () => {
     const long: ChatModel = { ...model, id: 'long', name: 'Claude Sonnet 4.5 (extended thinking)' }
     const value = { id: 'long', providerId: 'opencode', variant: 'medium' }
-    await at('wide', createElement(ModelPicker, { models: [long], value, onChange: () => {} }), 760)
+    await at('wide', createElement(ModelPicker, { models: [long], value, onChange: () => {} }), 680)
     expect(q('[data-testid="chat-model-provider"]')).toBeNull()
     expect(q('[data-testid="chat-model-picker"]')?.textContent).toBe('Claude Sonnet 4.5 (extended thinking)·Medium')
     await at('wide', createElement(ModelPicker, { models: [long], value, onChange: () => {} }), 1200)
@@ -151,22 +151,11 @@ describe('where the focus goes when a toolbar menu closes', () => {
 describe('the context meter', () => {
   const meter = (patch: Partial<ContextUsage> = {}): ReactElement => createElement(ContextMeter, { usage: usage(patch) })
 
-  it('draws segments and a number when wide, a ring and a number when medium, and the ring alone below that', async () => {
-    await at('wide', meter())
-    expect(q('[data-testid="chat-context-segments"]')).not.toBeNull()
-    expect(q('[data-testid="chat-context-ring"]')).toBeNull()
-    expect(q('[data-testid="chat-context-meter"]')?.textContent).toBe('21.3K')
-
-    await at('medium', meter())
-    expect(q('[data-testid="chat-context-segments"]')).toBeNull()
-    expect(q('[data-testid="chat-context-ring"]')).not.toBeNull()
-    expect(q('[data-testid="chat-context-meter"]')?.textContent).toBe('21.3K')
-
-    for (const size of ['narrow', 'tight'] as const) {
+  it('is a small ring at every size, with the count in its label', async () => {
+    for (const size of ['wide', 'medium', 'narrow', 'tight'] as const) {
       await at(size, meter())
       expect(q('[data-testid="chat-context-ring"]')).not.toBeNull()
       expect(q('[data-testid="chat-context-meter"]')?.textContent).toBe('')
-      // Nothing is lost: the number is still in the label.
       expect(q('[data-testid="chat-context-meter"]')?.getAttribute('aria-label')).toBe('Context: 21.3K of 200K tokens used (11%)')
     }
   })

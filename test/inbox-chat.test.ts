@@ -1404,7 +1404,6 @@ describe('Inbox conversation', () => {
       await vi.waitFor(() => expect(meter(view)).not.toBeNull())
       expect(meter(view)?.getAttribute('aria-label')).toBe('Context: 150K of 200K tokens used (75%)')
       expect(meter(view)?.getAttribute('data-tone')).toBe('warn')
-      expect(meter(view)?.textContent).toBe('150K')
 
       await open(meter(view)!)
       const details = await vi.waitFor(() => {
@@ -2369,7 +2368,6 @@ describe('Inbox compaction', () => {
   describe('in the conversation', () => {
     it('says compacted, instead of a stale count, until the next reply tells the new size', async () => {
       const view = await show([user, step(149_500), done])
-      expect(meter(view)?.textContent).toBe('Compacted')
       expect(meter(view)?.getAttribute('aria-label')).toBe('Context: compacted. Its new size shows after the next reply')
       expect(meter(view)?.getAttribute('data-tone')).toBe('normal')
       const item = await open(view)
@@ -2387,7 +2385,6 @@ describe('Inbox compaction', () => {
 
     it('measures again from the first reply after the compaction, and offers compacting again', async () => {
       const view = await show([user, step(149_500), done, { kind: 'user', id: 'msg_2', time: 4, text: 'Go on' }, step(12_000)])
-      expect(meter(view)?.textContent).toBe('12.5K')
       expect(meter(view)?.getAttribute('aria-label')).toBe('Context: 12.5K of 200K tokens used (6%)')
       const item = await open(view)
       expect(disabled(item)).toBe(false)
@@ -2396,7 +2393,7 @@ describe('Inbox compaction', () => {
 
     it('does not change the count for a compaction that failed or is still running', async () => {
       const failing = await show([user, step(9000), failed])
-      expect(meter(failing)?.textContent).toBe('9.5K')
+      expect(meter(failing)?.getAttribute('aria-label')).toContain('9.5K')
       expect(failing.querySelector('[data-testid="chat-message-msg_c1"]')?.textContent).toContain('Could not compact the conversation: Nothing to compact yet')
       const item = await open(failing)
       expect(disabled(item)).toBe(false)

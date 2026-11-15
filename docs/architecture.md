@@ -1066,8 +1066,8 @@ draws more by itself. A thread that stays open gathers every message of a long r
 left the store keeps only its newest 50 (`CHAT_KEPT_MESSAGES`) to show at once the next time, marked
 `cut`; the next read replaces them with the newest page and its cursor instead of adding to them.
 
-**Timeline and scrolling.** From the second prompt on, a slim rail at the right edge of the
-conversation has one short mark for each of the user's prompts (`ChatTimeline`, with the pure
+**Timeline and scrolling.** From the second prompt on, a slim rail at the left edge of the
+conversation (the left, because the floating sidebar card takes the top right corner and would cover it) has one short mark for each of the user's prompts (`ChatTimeline`, with the pure
 logic in `lib/chat-timeline.ts`). The marks follow the reading position: the turn being read, the
 last prompt to reach about a third of the way down the view (the last one once scrolled to the
 end), is brightest, other prompts on screen are lit, and the rest are dim. A long conversation draws
@@ -1079,8 +1079,8 @@ stop (Shift+Tab from the message box reaches it): Up, Down or Enter opens the ca
 current prompt, Up, Down, Home and End move, Enter jumps, Escape closes it. Only the loaded
 messages are listed, and held (steered or queued) messages are not prompts yet. While the view is
 scrolled up (more than 80 px from the newest message), a **Scroll to bottom** button floats above the
-message box; it takes the reader to the newest message and following new output again. In a pane narrower than 50 rem the conversation and the message box keep a wider
-right margin while the rail is there, so that it does not touch the text.
+message box; it takes the reader to the newest message and following new output again. In a pane narrower than 54 rem, where the centred column would come within reach of the
+rail, the conversation and the message box keep a left margin wider than the rail while it is there, so that it does not touch the text.
 
 **Find in a thread.** Ctrl+F (Cmd+F on a Mac) opens a search bar over the top right of a GUI
 thread (`ChatFindBar`, with the pure logic in `lib/chat-find.ts`), from the message box or anywhere
@@ -1586,14 +1586,13 @@ against a live OpenCode). An `execute` without calls, such as one still being wr
 row, and a lookup of a server's tools reads "Looked up demo_math tools".
 
 **Context usage.** Once a step of the conversation has finished, a control in the composer's bottom
-row, left of the send button, shows how full the model's context window is: a five-segment gauge
-and a token count (`ContextMeter`; a ring where the toolbar is narrower, see **Composer toolbar**). The count is the newest finished assistant step's own tokens
+row, left of the send button, shows how full the model's context window is: a small ring that fills
+(`ContextMeter`), with the token count in its tooltip and label. The count is the newest finished assistant step's own tokens
 (new input, cache read and write, output and reasoning), which is what the conversation held after
 that step; a step that is still streaming has no count yet. The window is the *chosen* model's
 `limit.context` from OpenCode's model list, so picking another model in the composer shows at once
-whether the thread still fits. The gauge turns amber from 70% and red from 90%, and its last lit
-segment pulses while the thread works. Without a known window it shows only the count with a gauge
-icon. Clicking it opens a
+whether the thread still fits. The ring turns amber from 70% and red from 90%, and pulses while the
+thread works. Without a known window a gauge icon stands in for it, and after a compaction a fold icon. Clicking it opens a
 breakdown: the count against the window, one bar split by kind of token, the thread's total tokens
 and the cost OpenCode reports (many providers report $0), and the model's window and reply limit.
 The thread totals come from `session.get`, requested with the newest page of messages only, so
@@ -1611,10 +1610,10 @@ in the normal one. The provider is shown only at the wide size and only when the
 (`providerFits` in `lib/composer-size.ts`, an estimate from the character count and the toolbar's width);
 otherwise it is left out and the name leads. The full `provider/model#effort` is always the tooltip. The toolbar measures its own width
 (`useMeasuredComposerSize`) and every control reads the same size from `ComposerSizeContext`, so a
-narrow box drops labels in one fixed order instead of each control truncating on its own: below 680 px
-the provider goes and the context segments become a ring; below 540 px the MCP count, the agent's name
-(its coloured icon stays, the name is the tooltip) and the context number go (the ring and the badge
-stay, the number is in the label and the breakdown); below 410 px the effort goes too. Only the model's
+narrow box drops labels in one fixed order instead of each control truncating on its own. The context
+meter is always its small ring, so it never takes room from the others. Below 680 px the provider goes; below 540 px the
+MCP count and the agent's name (its coloured icon stays, the name is the tooltip) go (the badge stays);
+below 410 px the effort goes too. Only the model's
 name is ever cut short, with an ellipsis, as a last resort. Send never hides; its Steer / Queue word
 stays for screen readers when the box has no room to show it.
 

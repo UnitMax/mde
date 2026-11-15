@@ -36,12 +36,13 @@ describe('providerFits', () => {
   it('shows the provider in front of a short name and effort once the toolbar has the room', () => {
     expect(providerFits('Beam Free', 'Medium', 'OpenCode', COMPOSER_SIZE_FLOORS.wide)).toBe(true)
     expect(providerFits('Beam Free', null, 'OpenCode', COMPOSER_SIZE_FLOORS.wide)).toBe(true)
-    expect(providerFits('GPT-5.1 Codex Max', 'Extra high', 'OpenAI', COMPOSER_SIZE_FLOORS.wide)).toBe(false)
+    expect(providerFits('GPT-5.1 Codex Max', 'Extra high', 'OpenAI', COMPOSER_SIZE_FLOORS.wide)).toBe(true)
+    expect(providerFits('Claude Opus 4.1 Thinking (extended)', 'Extra high', 'Anthropic', COMPOSER_SIZE_FLOORS.wide)).toBe(false)
   })
 
   it('leaves it out for a long name, until the toolbar is wide enough for the whole', () => {
     const long = 'Claude Sonnet 4.5 (extended thinking)'
-    expect(providerFits(long, 'Medium', 'OpenCode', 760)).toBe(false)
+    expect(providerFits(long, 'Medium', 'OpenCode', 680)).toBe(false)
     expect(providerFits(long, 'Medium', 'OpenCode', 1200)).toBe(true)
   })
 

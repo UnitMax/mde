@@ -1177,7 +1177,7 @@
 
 /* The prompt timeline (ChatTimeline) grows out of its rail, and the scroll-to-bottom pill (ChatScrollToBottom) settles in. */
 .chat-timeline-card {
-  transform-origin: right center;
+  transform-origin: left center;
   animation: mde-timeline-in 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
