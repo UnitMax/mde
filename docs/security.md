@@ -176,7 +176,8 @@ the validated `chat:*` channels.
   Basic auth to that loopback origin, and never logged, stored or put in an
   error message. A 401 or connection failure drops it and rediscovers once.
 - **Operations.** `SERVICE_OPERATIONS` is a fixed allowlist of method
-  and path pairs (agents, skills, MCP servers, providers, models, session create/get/active, message
+  and path pairs (agents, skills, MCP servers, providers, models, session create/get/active, the child sessions of a
+  recorded thread (`parentID` only, to find a running subagent's session), message
   list, prompt, interrupt, agent and model switch, permission and form
   list/reply, session update, staging or clearing a revert, fork, compact, one-off text generation for a
   side question, running a slash command of the session, reading the goal plugin's state, listing or cancelling the inbox items the service holds for a busy agent, changing their

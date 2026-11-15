@@ -925,6 +925,23 @@ export function parseSubagentModel(value: unknown, sessionId: string, parentId: 
   return parseModelRef(session.model)
 }
 
+/**
+ * The child sessions OpenCode lists for a thread: their IDs and titles (a subagent's session is titled with the
+ * description it was given). Entries that are not confirmed children of the thread are left out.
+ */
+export function parseChildSessions(value: unknown, parentId: string): { id: string; title: string; model: OpenCodeModelRef | null }[] {
+  const list = data(value, 'a session list')
+  const items = Array.isArray(list) ? list : record(list)?.items
+  if (!Array.isArray(items)) return []
+  return items.flatMap((item) => {
+    const session = record(item)
+    const id = short(session?.id)
+    const title = short(session?.title, 512)
+    if (session?.parentID !== parentId || !id || !/^ses_[A-Za-z0-9_-]{1,200}$/.test(id) || !title) return []
+    return [{ id, title, model: parseModelRef(session.model) }]
+  })
+}
+
 const GOAL_STATUSES = new Set<ChatGoal['status']>(['active', 'paused', 'complete'])
 
 /** Milliseconds since the epoch. Larger than any count, so it has its own bound (year 5138). */

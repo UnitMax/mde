@@ -93,6 +93,7 @@ import {
   parseProviderNames,
   parseSessionInfo,
   parseSubagentModel,
+  parseChildSessions,
   parseSessionRevert,
   parseStagedRevert,
   parseSessionUsage,
@@ -186,6 +187,15 @@ function modelBody(model: OpenCodeModelRef): { id: string; providerID: string; v
   return { id: model.id, providerID: model.providerId, ...(model.variant ? { variant: model.variant } : {}) }
 }
 
+/** The description a subagent call was given; OpenCode titles the child session with it. */
+function subagentDescription(input: string): string | null {
+  try {
+    const value: unknown = JSON.parse(input)
+    const description = value !== null && typeof value === 'object' ? (value as Record<string, unknown>).description : undefined
+    return typeof description === 'string' && description.trim() ? description.trim() : null
+  } catch { return null }
+}
+
 function sameModel(a: OpenCodeModelRef | null, b: OpenCodeModelRef): boolean {
   return a?.id === b.id && a.providerId === b.providerId && a.variant === b.variant
 }
@@ -243,6 +253,11 @@ export class InboxChatService {
   private readonly subscribed = new Map<string, number>()
   /** Child sessions whose model changes should refresh an open parent conversation. */
   private readonly subagentParents = new Map<string, string>()
+  /**
+   * The child session of each running subagent call, as OpenCode tells it in a passing progress event (keyed by
+   * thread and call ID). OpenCode saves it with the call only when the subagent has finished.
+   */
+  private readonly subagentCalls = new Map<string, string>()
   private readonly options = new Map<string, { at: number; value: Promise<ChatOptions> }>()
   /** Places (service + directory) whose MCP list has been answered once, so an empty one is believed. */
   private readonly mcpSettled = new Set<string>()
@@ -284,6 +299,7 @@ export class InboxChatService {
   stop(): void {
     this.streams.stopAll()
     this.subagentParents.clear()
+    this.subagentCalls.clear()
   }
 
   /** The OpenCode executable from Settings; discovery runs it to find each service. */
@@ -752,13 +768,68 @@ export class InboxChatService {
     return this.searcher.search(request)
   }
 
+  /**
+   * Gives a running subagent call its child session, which OpenCode saves with the call only once it has finished:
+   * from the progress event when MDE saw it, otherwise the thread's child session titled with the call's description
+   * (only when exactly one unclaimed child is). The listing also carries each child's model.
+   */
+  private async findRunningSubagents(thread: InboxThread, page: ChatMessagesPage): Promise<Map<string, OpenCodeModelRef>> {
+    const models = new Map<string, OpenCodeModelRef>()
+    const unknown: Extract<ChatPart, { kind: 'tool' }>[] = []
+    const claimed = new Set<string>()
+    for (const message of page.messages) {
+      if (message.kind !== 'assistant') continue
+      for (const part of message.parts) {
+        if (part.kind !== 'tool' || (part.name !== 'subagent' && part.name !== 'task')) continue
+        const key = `${thread.id}\n${part.id}`
+        if (part.subagent) {
+          this.subagentCalls.delete(key)
+          claimed.add(part.subagent.sessionId)
+          continue
+        }
+        if (part.status !== 'running' && part.status !== 'pending') continue
+        const known = this.subagentCalls.get(key)
+        if (known) {
+          part.subagent = { sessionId: known }
+          claimed.add(known)
+        } else unknown.push(part)
+      }
+    }
+    if (unknown.length === 0) return models
+    try {
+      const children = parseChildSessions(await this.dependencies.client.request(thread.target, 'session.children', {
+        query: { parentID: thread.id, order: 'desc', limit: '50' },
+        timeoutMs: 2_000,
+      }), thread.id)
+      for (const part of unknown) {
+        const description = subagentDescription(part.input)
+        const matches = children.filter((child) => child.title.trim() === description && !claimed.has(child.id))
+        if (!description || matches.length !== 1) continue
+        const [child] = matches as [typeof matches[number]]
+        part.subagent = { sessionId: child.id }
+        claimed.add(child.id)
+        if (child.model) models.set(child.id, child.model)
+      }
+    } catch { /* The child sessions are an extra; the conversation still loads. */ }
+    return models
+  }
+
   /** Read only the child sessions named by these calls; a missing child must never hide the chat. */
   private async loadSubagentModels(thread: InboxThread, page: ChatMessagesPage): Promise<void> {
+    const listed = await this.findRunningSubagents(thread, page)
     const children = new Map<string, NonNullable<Extract<ChatPart, { kind: 'tool' }>['subagent']>[]>()
     for (const message of page.messages) {
       if (message.kind !== 'assistant') continue
       for (const part of message.parts) {
         if (part.kind !== 'tool' || !part.subagent) continue
+        const model = listed.get(part.subagent.sessionId)
+        if (model) {
+          part.subagent.model = model
+          if (this.subscribed.has(thread.id)) {
+            this.subagentParents.set(`${serviceTargetKey(thread.target)}\n${part.subagent.sessionId}`, thread.id)
+          }
+          continue
+        }
         const calls = children.get(part.subagent.sessionId) ?? []
         calls.push(part.subagent)
         children.set(part.subagent.sessionId, calls)
@@ -1244,6 +1315,9 @@ export class InboxChatService {
       for (const [child, parent] of this.subagentParents) {
         if (parent === threadId) this.subagentParents.delete(child)
       }
+      for (const key of this.subagentCalls.keys()) {
+        if (key.startsWith(`${threadId}\n`)) this.subagentCalls.delete(key)
+      }
     }
   }
 
@@ -1302,6 +1376,13 @@ export class InboxChatService {
     if (event.type === 'session.execution.succeeded' || event.type === 'session.execution.failed' ||
       event.type === 'session.execution.interrupted') {
       this.dependencies.send({ type: 'running', threadId, running: false })
+    }
+    if (event.type === 'session.tool.progress') {
+      const metadata = event.data.metadata
+      const child = metadata !== null && typeof metadata === 'object' ? (metadata as Record<string, unknown>).sessionID : undefined
+      if (typeof event.data.id === 'string' && event.data.id.length <= 200 && typeof child === 'string' && /^ses_[A-Za-z0-9_-]{1,200}$/.test(child)) {
+        this.subagentCalls.set(`${threadId}\n${event.data.id}`, child)
+      }
     }
     if (MESSAGE_EVENTS.has(event.type)) this.dependencies.send({ type: 'messages', threadId })
     if (REQUEST_EVENTS.has(event.type)) this.dependencies.send({ type: 'requests', threadId })

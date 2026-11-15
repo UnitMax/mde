@@ -84,7 +84,7 @@ beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('api', api)
   try { localStorage.removeItem(INBOX_COMPACT_CHAT_STORAGE_KEY); localStorage.removeItem('mde.inbox-compact-text') } catch { /* the default is off */ }
-  useInboxView.setState({ compactChat: false, compactText: false })
+  useInboxView.setState({ compactChat: false, compactText: false, compactSubagents: false })
   page = { messages: turn(), older: null, running: false }
   useInboxChat.setState({ folders: [], composer: {}, foldersLoaded: true, options: {}, threads: {}, recent: [], titleRegenerations: {} })
   useWorkspace.setState({
@@ -123,6 +123,14 @@ describe('the layout menu', () => {
     await act(async () => entry('inbox-setting-command-names').click())
     expect(useInboxView.getState().commandNames).toBe(false)
     expect(localStorage.getItem('mde.inbox-command-names')).toBe('off')
+
+    await open()
+    expect(entry('inbox-setting-compact-subagents').textContent).toContain('Subagents')
+    expect(entry('inbox-setting-compact-subagents').getAttribute('aria-checked')).toBe('false')
+    await act(async () => entry('inbox-setting-compact-subagents').click())
+    expect(useInboxView.getState().compactSubagents).toBe(true)
+    expect(localStorage.getItem('mde.inbox-compact-subagents')).toBe('on')
+    useInboxView.setState({ compactSubagents: false })
     useInboxView.setState({ turnChanges: true, commandNames: true })
   })
 
@@ -414,6 +422,21 @@ describe('a conversation in compact mode', () => {
     expect(all('[aria-label="Model: review-model · high"]')).toHaveLength(2)
     await chooseLayout('full')
     expect(q('[data-testid="chat-subagents"]')).not.toBeNull()
+  })
+
+  it('draws the subagent cards between the lines when the Subagents switch is on', async () => {
+    const subagent = (id: string) => tool('subagent', { agent: 'general', description: `Review ${id}`, prompt: 'Check the server.' }, {
+      status: 'running', subagent: { sessionId: `ses_${id}`, model: { id: 'review-model', providerId: 'p' } },
+    })
+    page = { messages: [prompt, step('a1', [read('server.py'), subagent('one'), subagent('two')]), step('a2', [shell('npm test'), { kind: 'text', text: 'All done.' }])], older: null, running: false }
+    useInboxView.setState({ compactChat: true, compactSubagents: true })
+    await render()
+    await vi.waitFor(() => expect(q('[data-testid="chat-message-a2"]')).not.toBeNull())
+    expect(all('[data-testid="chat-subagents"]')).toHaveLength(1)
+    expect(all('[aria-label="Model: review-model"]')).toHaveLength(2)
+    expect(q('[data-testid="chat-activity"] [data-testid="chat-subagents"]')).toBeNull()
+    useInboxView.setState({ compactSubagents: false })
+    await vi.waitFor(() => expect(q('[data-testid="chat-subagents"]')).toBeNull())
   })
 
   it('shows a question with the words that lead up to it, and starts a new line for the work after the answer', async () => {

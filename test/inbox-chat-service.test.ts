@@ -822,6 +822,76 @@ describe('Inbox chat service', () => {
       service.stop()
     })
 
+    const runningCall = (id: string, description: string) => ({
+      type: 'tool', id, name: 'subagent',
+      state: { status: 'running', input: { agent: 'explore', description }, metadata: {} },
+    })
+    const startRunning = async (answers: Record<string, unknown>) => {
+      const context = setup({
+        'session.create': { data: { id: 'ses_new' } },
+        'session.message.list': { data: [{ ...message, content: [runningCall('call_a', 'Look around'), runningCall('call_b', 'Same')] }] },
+        'session.active': { data: {} },
+        ...answers,
+      })
+      await context.service.create({ folderId: context.folder.id, text: 'Hi', agent: 'build', model })
+      return context
+    }
+
+    it('learns a running subagent’s session from OpenCode’s progress event and shows its model', async () => {
+      const { service, request, events } = await startRunning({ 'session.children': { data: [] } })
+      const previous = request.getMockImplementation()!
+      request.mockImplementation(async (target, operation, input) => {
+        if (operation === 'session.get' && input?.params?.sessionID === 'ses_child') {
+          return { data: { id: 'ses_child', parentID: 'ses_new', model: { id: 'child-model', providerID: 'p' } } }
+        }
+        return previous(target, operation, input)
+      })
+      service.subscribe('ses_new')
+      expect(parts(await service.messages({ threadId: 'ses_new' }))[0]).not.toHaveProperty('subagent')
+      const onEvent = (service as unknown as { onEvent(event: { type: string; data: Record<string, unknown> }, target: typeof wsl): void }).onEvent.bind(service)
+      onEvent({ type: 'session.tool.progress', data: { sessionID: 'ses_new', id: 'call_a', metadata: { sessionID: 'ses_bad id' } } }, wsl)
+      onEvent({ type: 'session.tool.progress', data: { sessionID: 'ses_new', id: 'call_a', metadata: { sessionID: 'ses_child', status: 'running' } } }, wsl)
+      expect(events.at(-1)).toEqual({ type: 'messages', threadId: 'ses_new' })
+      const page = parts(await service.messages({ threadId: 'ses_new' }))
+      expect(page[0]).toMatchObject({ subagent: { sessionId: 'ses_child', model: { id: 'child-model', providerId: 'p' } } })
+      expect(page[1]).not.toHaveProperty('subagent')
+      service.unsubscribe('ses_new')
+      service.subscribe('ses_new')
+      expect(parts(await service.messages({ threadId: 'ses_new' }))[0]).not.toHaveProperty('subagent')
+      service.stop()
+    })
+
+    it('finds a running subagent opened mid-run by the child session titled with its description', async () => {
+      const { service, request } = await startRunning({
+        'session.children': {
+          data: [
+            { id: 'ses_look', parentID: 'ses_new', title: 'Look around', model: { id: 'child-model', providerID: 'p', variant: 'high' } },
+            { id: 'ses_same1', parentID: 'ses_new', title: 'Same', model: { id: 'm', providerID: 'p' } },
+            { id: 'ses_same2', parentID: 'ses_new', title: 'Same', model: { id: 'm', providerID: 'p' } },
+            { id: 'ses_stray', parentID: 'ses_other', title: 'Look around', model: { id: 'm', providerID: 'p' } },
+          ],
+        },
+      })
+      const page = parts(await service.messages({ threadId: 'ses_new' }))
+      expect(page[0]).toMatchObject({ subagent: { sessionId: 'ses_look', model: { id: 'child-model', providerId: 'p', variant: 'high' } } })
+      // Two children carry the same description, so neither can be told to be this call's.
+      expect(page[1]).not.toHaveProperty('subagent')
+      const listing = request.mock.calls.find(([, operation]) => operation === 'session.children')
+      expect(listing?.[2]).toMatchObject({ query: { parentID: 'ses_new' } })
+      service.stop()
+    })
+
+    it('still loads the conversation when the child sessions cannot be listed', async () => {
+      const { service, request } = await startRunning({})
+      const previous = request.getMockImplementation()!
+      request.mockImplementation(async (target, operation, input) => {
+        if (operation === 'session.children') throw new Error('No listing')
+        return previous(target, operation, input)
+      })
+      expect(parts(await service.messages({ threadId: 'ses_new' }))).toHaveLength(2)
+      service.stop()
+    })
+
     it.each([
       new Error('Child session unavailable'),
       null,

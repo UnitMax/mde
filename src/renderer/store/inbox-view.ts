@@ -4,6 +4,7 @@ import {
   getInboxCommandNames,
   getInboxCompactChat,
   getInboxCompactText,
+  getInboxCompactSubagents,
   getInboxDraftsCollapsed,
   getInboxModelQuickSwitch,
   getInboxNextSuggestion,
@@ -19,6 +20,7 @@ import {
   saveInboxCommandNames,
   saveInboxCompactChat,
   saveInboxCompactText,
+  saveInboxCompactSubagents,
   saveInboxDraftsCollapsed,
   saveInboxModelQuickSwitch,
   saveInboxNextSuggestion,
@@ -58,6 +60,9 @@ interface Store {
    */
   compactText: boolean
   setCompactText: (on: boolean) => void
+  /** The compact layouts draw subagents as their cards rather than folding them into the lines. */
+  compactSubagents: boolean
+  setCompactSubagents: (on: boolean) => void
   /**
    * In compact mode, a panel at the end of each turn lists the files the turn changed, with its diffs a click away
    * (a preference, on by default).
@@ -151,6 +156,11 @@ export const useInboxView = create<Store>((set) => ({
   setCompactText: (on) => {
     saveInboxCompactText(on)
     set({ compactText: on })
+  },
+  compactSubagents: getInboxCompactSubagents(),
+  setCompactSubagents: (on) => {
+    saveInboxCompactSubagents(on)
+    set({ compactSubagents: on })
   },
   turnChanges: getInboxTurnChanges(),
   setTurnChanges: (on) => {

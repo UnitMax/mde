@@ -393,12 +393,13 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   // change keeps the one it had, so that streaming a new step does not draw all the earlier ones again.
   const compact = useInboxView((view) => view.compactChat)
   const showText = useInboxView((view) => view.compactText)
+  const showSubagents = useInboxView((view) => view.compactSubagents)
   const lastPlans = useRef<ReadonlyMap<string, RenderBlock[]>>()
   const plans = useMemo(() => {
-    const next = compact ? compactPlans(messages, running ? lastAssistantId : undefined, lastPlans.current, { showText }) : undefined
+    const next = compact ? compactPlans(messages, running ? lastAssistantId : undefined, lastPlans.current, { showText, showSubagents }) : undefined
     lastPlans.current = next
     return next
-  }, [compact, showText, messages, running, lastAssistantId])
+  }, [compact, showText, showSubagents, messages, running, lastAssistantId])
   // In compact mode, each finished turn ends with the files it changed, which its compact line folds away.
   const showTurnChanges = useInboxView((view) => view.turnChanges)
   const changesByTurn = useMemo(

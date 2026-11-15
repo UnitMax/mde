@@ -1,5 +1,5 @@
 import type { ChatMessage, ChatPart, ChatToolStatus } from '@shared/types'
-import { displayPath, type MessageBlock } from '@/lib/chat'
+import { displayPath, isSubagentCall, type MessageBlock } from '@/lib/chat'
 import { countChanges, type DiffHunk, type DiffLine, type FileChange } from '@/lib/diff'
 import { isShownView } from '@/lib/chat-views'
 
@@ -728,6 +728,8 @@ type ActivityBlock = Extract<RenderBlock, { kind: 'activity' }>
 export interface CompactOptions {
   /** Draw the text the agent writes between its steps instead of folding it into the line (the Inbox setting "Text between steps"). */
   showText?: boolean
+  /** Draw subagents as their cards, as Every step does, instead of folding them into the line (the "Subagents" switch). */
+  showSubagents?: boolean
 }
 
 /** One step of the agent (an assistant message) as the compact layout sees it. */
@@ -794,6 +796,9 @@ function talkingTexts(steps: readonly FlowStep[]): Set<string> {
  *
  * With `showText`, no words are folded: every text the agent wrote is drawn as it is, and ends the stretch before it,
  * so only the thoughts and tool calls between the texts fold into their lines.
+ *
+ * With `showSubagents`, subagents are drawn as their cards (those started together as one group) and end the stretch
+ * before them, as a text does; they still count as work, so plain compact folds the words before them.
  */
 export function compactFlow(steps: readonly FlowStep[], options: CompactOptions = {}): Map<string, RenderBlock[]> {
   const talking = options.showText ? new Set<string>() : talkingTexts(steps)
@@ -817,6 +822,17 @@ export function compactFlow(steps: readonly FlowStep[], options: CompactOptions 
     for (const [index, part] of step.parts.entries()) {
       // Empty text or thinking has nothing to show yet, and does not end the stretch.
       if ((part.kind === 'text' || part.kind === 'reasoning') && !part.text.trim()) continue
+      if (options.showSubagents && isSubagentCall(part)) {
+        open = null
+        const previous = blocks[blocks.length - 1]
+        if (previous?.kind === 'subagents' && previous === last) previous.parts.push(part)
+        else {
+          const group: RenderBlock = { kind: 'subagents', parts: [part], index }
+          blocks.push(group)
+          last = group
+        }
+        continue
+      }
       if (!isQuestion(part) && (isWork(part) || talking.has(`${stepIndex}:${index}`))) {
         if (!open) {
           open = { kind: 'activity', items: [], index, live: false }

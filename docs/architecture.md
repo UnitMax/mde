@@ -1036,7 +1036,7 @@ scroll up. User messages are bubbles; assistant text and reasoning are Markdown 
 with the preview's extensions (raw HTML off, links opened through the external-link validator).
 Reasoning is a "Thought" row that updates as it streams, using the same Markdown renderer as
 replies; each tool call is a row too (see **Activity rows** below), whose input and output are each
-cut at 64 KB. Subagent calls (OpenCode's `subagent` tool) are shown as cards instead: the agent type, the selected model and variant, the title, its state (Working, Done, Stopped, Failed) and a one-line preview of the task. The model uses the same display name as the composer; hovering reveals the full provider/model ID. MDE reads the child session named by the tool's metadata (or its result/error wrapper), checks that it belongs to the recorded parent, and returns only its model. Reads are deduplicated per page, limited to four at once, and time out after two seconds; unavailable models do not prevent the conversation from loading. Model and agent selection events in these child sessions refresh the open parent. Subagents started together are grouped under one heading, and a card expands to the full task and the answer rendered as Markdown. The subagent's own steps are not shown. Agent and model switches, failures and stops appear as small notes. Text streams in as OpenCode
+cut at 64 KB. Subagent calls (OpenCode's `subagent` tool) are shown as cards instead: the agent type, the selected model and variant, the title, its state (Working, Done, Stopped, Failed) and a one-line preview of the task. The model uses the same display name as the composer; hovering reveals the full provider/model ID. MDE reads the child session named by the tool's metadata (or its result/error wrapper), checks that it belongs to the recorded parent, and returns only its model. OpenCode saves the child session with the call only once the subagent has finished; while it runs, it says so only in a passing `session.tool.progress` event (`metadata.sessionID`, keyed by the call ID), which MDE keeps per subscribed thread until the call carries the session itself. For a thread opened while a subagent is already running, MDE lists the thread's child sessions (`GET /api/session?parentID=…`, which carries each child's model) and takes the one titled with the call's description, only when exactly one child not already claimed by another call is; otherwise the card shows no model until the subagent finishes. So the model is shown from the moment the subagent starts. Reads are deduplicated per page, limited to four at once, and time out after two seconds; unavailable models do not prevent the conversation from loading. Model and agent selection events in these child sessions refresh the open parent. Subagents started together are grouped under one heading, and a card expands to the full task and the answer rendered as Markdown. The subagent's own steps are not shown. Agent and model switches, failures and stops appear as small notes. Text streams in as OpenCode
 produces it. Permission requests (Allow once, Always allow, Reject) and questions (option buttons,
 checkboxes, free text) are answered inline as cards; a question with field types MDE cannot show
 asks you to answer it in a terminal. While the thread works and the box is empty, the send button becomes Stop. A
@@ -1431,8 +1431,8 @@ rule across the conversation that opens onto the summary.
 **Compact mode.** A layout menu in the thread's header (not to be confused with compacting the context, above) (chat threads only; `CompactChatToggle`)
 chooses between three layouts: **Every step** (the normal layout), **Compact** and **Compact with text**. It is
 kept in `mde.inbox-compact-chat` (compact or not, off by default) and `mde.inbox-compact-text` (with text or not).
-Below the layouts, under **Compact layouts**, are the two switches that only matter there: **Changes after
-each turn** and **Command and tool names** (both described below).
+Below the layouts, under **Compact layouts**, are the three switches that only matter there: **Changes after
+each turn**, **Subagents** and **Command and tool names** (all described below).
 Compact lays the conversation out with less in it. Everything before the answer
 becomes a group however short, so a single read or a lone thought is one line
 ("Read 1 file") rather than a row. That includes the words the agent wrote on its way: models often think
@@ -1471,7 +1471,10 @@ build`); in a chain the first step that does more than set up (`cd`, `export`) i
 default) turns this off. A stretch of a
 single step is not folded: it is drawn as that step's own row ("Ran npm test" rather than "Ran 1 command"),
 which takes the same room, says more and opens onto the step in one click; a file change in it still starts
-shut. A single subagent keeps its line, since its card is more than a row. Choosing
+shut. A single subagent keeps its line, since its card is more than a row. The **Subagents** switch
+(`mde.inbox-compact-subagents`, off by default) draws subagents as their cards in both compact layouts instead,
+those started together as one group, with their model and state in view; a card ends the stretch before it, as
+a shown text does, but still counts as work, so plain Compact folds the words before it. Choosing
 Every step restores the normal layout.
 
 **Compact with text.** The third layout keeps compact mode from folding the agent's words: every text it

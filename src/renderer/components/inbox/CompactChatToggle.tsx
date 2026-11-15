@@ -44,6 +44,8 @@ export function CompactChatToggle(): JSX.Element {
   const setShowText = useInboxView((state) => state.setCompactText)
   const commandNames = useInboxView((state) => state.commandNames)
   const setCommandNames = useInboxView((state) => state.setCommandNames)
+  const showSubagents = useInboxView((state) => state.compactSubagents)
+  const setShowSubagents = useInboxView((state) => state.setCompactSubagents)
   const turnChanges = useInboxView((state) => state.turnChanges)
   const setTurnChanges = useInboxView((state) => state.setTurnChanges)
   const layout: ChatLayout = !compact ? 'full' : showText ? 'compact-text' : 'compact'
@@ -97,6 +99,18 @@ export function CompactChatToggle(): JSX.Element {
             <span className="block">Changes after each turn</span>
             <span className="mt-0.5 block text-[11px] leading-snug text-fg-subtle">
               A panel at the end of each turn lists the files it edited, wrote and deleted, with their diffs.
+            </span>
+          </span>
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem
+          data-testid="inbox-setting-compact-subagents"
+          checked={showSubagents}
+          onCheckedChange={(checked) => setShowSubagents(checked === true)}
+        >
+          <span className="min-w-0">
+            <span className="block">Subagents</span>
+            <span className="mt-0.5 block text-[11px] leading-snug text-fg-subtle">
+              Each subagent stays a card of its own, with its model and state, instead of folding into a line.
             </span>
           </span>
         </DropdownMenuCheckboxItem>

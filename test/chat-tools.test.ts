@@ -531,6 +531,25 @@ describe('the compact layout', () => {
     expect(draw([step('a', [read('r1'), subagent, read('r2')])])).toEqual({ a: ['group:3'] })
   })
 
+  it('draws subagents as their cards when asked, ending the stretch before them', () => {
+    const subagent = (id: string) => tool('subagent', { agent: 'general', description: id, prompt: 'p' }, { id })
+    const drawCards = (steps: FlowStep[], showText = false): Record<string, string[]> =>
+      Object.fromEntries(
+        [...compactFlow(steps, { showSubagents: true, showText })].map(([id, blocks]) => [
+          id,
+          blocks.map((block) => block.kind === 'activity' ? `group:${block.items.length}` : block.kind === 'subagents' ? `subagents:${block.parts.map((part) => part.id).join(',')}` : block.part.kind),
+        ]),
+      )
+    expect(drawCards([step('a', [read('r1'), subagent('s1'), subagent('s2'), read('r2'), text('Done.')])]))
+      .toEqual({ a: ['group:1', 'subagents:s1,s2', 'group:1', 'text'] })
+    // Plain compact still folds the words before a subagent; with text they are drawn.
+    expect(drawCards([step('a', [text('Asking for help.'), subagent('s1'), text('Done.')])])).toEqual({ a: ['group:1', 'subagents:s1', 'text'] })
+    expect(drawCards([step('a', [text('Asking for help.'), subagent('s1'), text('Done.')])], true)).toEqual({ a: ['text', 'subagents:s1', 'text'] })
+    // Subagents in separate steps are separate groups; a stretch does not run on across them.
+    expect(drawCards([step('a', [shell('x'), subagent('s1')]), step('b', [subagent('s2'), read('r1')])]))
+      .toEqual({ a: ['group:1', 'subagents:s1'], b: ['subagents:s2', 'group:1'] })
+  })
+
   it.each(['read', 'write', 'edit', 'patch', 'apply_patch', 'subagent', 'task', 'shell', 'bash', 'grep', 'glob', 'webfetch', 'websearch', 'lookup', 'todo', 'skill', 'execute', 'custom-tool'])(
     'keeps %s in one compact group across pending, running, completed and failed states', (name) => {
       for (const status of ['pending', 'running', 'completed', 'error'] as const) {

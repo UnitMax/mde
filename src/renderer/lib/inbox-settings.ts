@@ -14,6 +14,8 @@ export const INBOX_SIDEBAR_FLOATING_STORAGE_KEY = 'mde.inbox-sidebar-floating'
 export const INBOX_TOOL_TURNS_STORAGE_KEY = 'mde.inbox-tool-turns'
 export const INBOX_COMMAND_NAMES_STORAGE_KEY = 'mde.inbox-command-names'
 export const INBOX_COMPACT_TEXT_STORAGE_KEY = 'mde.inbox-compact-text'
+/** The compact layouts draw subagents as their cards instead of folding them into the lines. */
+export const INBOX_COMPACT_SUBAGENTS_STORAGE_KEY = 'mde.inbox-compact-subagents'
 export const INBOX_MODEL_QUICK_SWITCH_STORAGE_KEY = 'mde.inbox-model-quick-switch'
 export const INBOX_NEXT_SUGGESTION_STORAGE_KEY = 'mde.inbox-next-suggestion'
 export const INBOX_PROJECT_FILTER_STORAGE_KEY = 'mde.inbox-project-filter'
@@ -132,6 +134,14 @@ export function getInboxCompactText(): boolean {
 
 export function saveInboxCompactText(on: boolean): void {
   writeSwitch(INBOX_COMPACT_TEXT_STORAGE_KEY, on)
+}
+
+export function getInboxCompactSubagents(): boolean {
+  return readSwitch(INBOX_COMPACT_SUBAGENTS_STORAGE_KEY)
+}
+
+export function saveInboxCompactSubagents(on: boolean): void {
+  writeSwitch(INBOX_COMPACT_SUBAGENTS_STORAGE_KEY, on)
 }
 
 /** Whether the favorite models are offered as buttons above the message box. On unless turned off. */

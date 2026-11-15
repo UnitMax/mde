@@ -13,6 +13,8 @@ export const SERVICE_OPERATIONS = {
   'fs.find': { method: 'GET', path: '/api/fs/find' },
   'session.create': { method: 'POST', path: '/api/session' },
   'session.active': { method: 'GET', path: '/api/session/active' },
+  // Only ever asked for the children of a recorded thread (`parentID`), to find a running subagent's session.
+  'session.children': { method: 'GET', path: '/api/session' },
   'job.list': { method: 'GET', path: '/api/experimental/job' },
   'session.get': { method: 'GET', path: '/api/session/{sessionID}' },
   'session.update': { method: 'PATCH', path: '/api/session/{sessionID}' },
