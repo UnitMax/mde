@@ -402,7 +402,7 @@ function FileTree({
 /**
  * Files of a live terminal root or an Inbox folder. `browseOnly` is for Inbox folders: the folder opens in
  * VS Code or the file manager by its Inbox ID. Those buttons and Refresh sit in a footer there, because the
- * header's 260 px minimum is already full with the Files, Changes and Terminal tabs.
+ * header's 260 px minimum is already full with the Files, Changes, Tools and Terminal tabs.
  */
 export function FileTreePanel({
   session,

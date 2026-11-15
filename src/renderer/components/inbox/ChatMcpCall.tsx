@@ -31,7 +31,7 @@ const TOKEN_CLASS: Record<JsonToken['kind'], string> = {
 }
 
 /** The group a call went to: an MCP server, marked with a plug, or one of OpenCode's own tool groups. */
-function Badge({ call }: { call: McpCall }): JSX.Element {
+export function Badge({ call }: { call: McpCall }): JSX.Element {
   const known = call.server !== null
   const Icon = known ? Plug : Code
   const name = call.server ?? (call.namespace || 'tool')
@@ -101,7 +101,7 @@ function ResultText({ text, json }: { text: string; json: boolean }): JSX.Elemen
   )
 }
 
-function Result({ text }: { text: string }): JSX.Element {
+export function Result({ text }: { text: string }): JSX.Element {
   const view = useMemo(() => resultView(text), [text])
   return (
     <Block label="Result">

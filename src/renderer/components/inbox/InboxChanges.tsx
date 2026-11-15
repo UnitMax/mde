@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { AlertCircle, FileDiff, FolderX, GitBranch, GitGraph, LoaderCircle, PanelRightClose, RefreshCw, X } from 'lucide-react'
-import type { GitChangeStatus, InboxChangeDiff, InboxChangedFile, InboxChangesResponse, DirectoryContext } from '@shared/types'
+import type { GitChangeStatus, InboxChangeDiff, InboxChangedFile, InboxChangesResponse, InboxThread, DirectoryContext } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { FileTreePanel } from '@/components/FileTreePanel'
 import { DiffBody } from './ChatFileChange'
@@ -12,6 +12,9 @@ import { useInboxFloatingTerminal } from '@/store/inbox-floating-terminal'
 import { useInboxTerminal } from '@/store/inbox-terminal'
 import type { FilesListRequest } from '@shared/ipc'
 import { InboxSidebarFrame } from './InboxSidebarFrame'
+import { InboxToolCalls } from './InboxToolCalls'
+import { toolCallCount } from '@/lib/tool-review'
+import { useInboxChat } from '@/store/inbox-chat'
 import { parseUnifiedDiff } from '@/lib/diff'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { cn } from '@/lib/utils'
@@ -440,11 +443,23 @@ export function InboxChangesBadge({ threadId }: { threadId: string }): JSX.Eleme
   )
 }
 
-const SIDEBAR_TABS = ['files', 'changes', 'terminal'] as const
+const SIDEBAR_TABS = ['files', 'changes', 'tools', 'terminal'] as const
 type SidebarTab = (typeof SIDEBAR_TABS)[number]
-const SIDEBAR_TAB_LABELS: Record<SidebarTab, string> = { files: 'Files', changes: 'Changes', terminal: 'Terminal' }
-/** A thread has changes to show; the page for a new one has none yet, so it offers the other two. */
-const tabsFor = (threadId: string | undefined): readonly SidebarTab[] => threadId ? SIDEBAR_TABS : SIDEBAR_TABS.filter((item) => item !== 'changes')
+const SIDEBAR_TAB_LABELS: Record<SidebarTab, string> = { files: 'Files', changes: 'Changes', tools: 'Tools', terminal: 'Terminal' }
+/**
+ * A thread has changes to show; the page for a new one has none yet, so it offers Files and Terminal. Tool calls
+ * are only known for a GUI thread: a terminal thread's agent runs where MDE cannot see its calls.
+ */
+const tabsFor = (threadId: string | undefined, gui: boolean): readonly SidebarTab[] =>
+  SIDEBAR_TABS.filter((item) => (item !== 'changes' || threadId) && (item !== 'tools' || (threadId && gui)))
+
+/** The open thread, when it is a GUI chat, whose tool calls the Tools tab lists. */
+function useGuiThread(threadId: string | undefined): InboxThread | undefined {
+  return useWorkspace((s) => {
+    const thread = threadId ? s.inboxThreads.find((item) => item.id === threadId) : undefined
+    return thread && thread.mode !== 'terminal' ? thread : undefined
+  })
+}
 /**
  * Each panel draws its own tabs in its header, so switching replaces the strip that has focus. The tab that was
  * chosen is focused again in the one that takes its place.
@@ -452,17 +467,19 @@ const tabsFor = (threadId: string | undefined): readonly SidebarTab[] => threadI
 let refocusTab: SidebarTab | null = null
 
 /**
- * Files, Changes (of an open thread) and Terminal, in the place of the file tree's title. Left and Right (or
+ * Files, Changes and Tools (of an open thread) and Terminal, in the place of the file tree's title. Left and Right (or
  * Home and End) move between them.
  */
 function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
   const stored = useInboxChanges((s) => s.tab)
-  const tabs = tabsFor(threadId)
+  const gui = Boolean(useGuiThread(threadId))
+  const tabs = tabsFor(threadId, gui)
   const tab = tabs.includes(stored) ? stored : 'files'
   const count = useInboxChanges((s) => {
     const value = threadId ? s.entries[inboxChangesKey(threadId)]?.value : undefined
     return value?.available ? value.fileCount : 0
   })
+  const toolCount = useInboxChat((s) => (threadId && gui ? toolCallCount(s.threads[threadId]?.messages ?? []) : 0))
   const choose = (next: SidebarTab, pointer = false): void => {
     // Nothing is replaced when the tab is already showing, so nothing would take the focus back.
     if (tab === next) return
@@ -521,6 +538,9 @@ function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
             {SIDEBAR_TAB_LABELS[item]}
             {item === 'changes' && count > 0 && (
               <span className="rounded-full bg-fg/10 px-1.5 py-px text-[10px] normal-case leading-none tabular-nums text-fg-muted">{count}</span>
+            )}
+            {item === 'tools' && toolCount > 0 && (
+              <span data-testid="inbox-tools-count" className="rounded-full bg-fg/10 px-1.5 py-px text-[10px] normal-case leading-none tabular-nums text-fg-muted">{toolCount}</span>
             )}
           </button>
         )
@@ -588,6 +608,29 @@ function ChangesAside({ threadId }: { threadId: string }): JSX.Element {
           <RefreshCw className="h-3.5 w-3.5" />
           Refresh
         </Button>
+      </div>
+    </aside>
+  )
+}
+
+/** The Tools tab: every tool call of the open GUI thread, MCP calls included, to be looked over. */
+function ToolsAside({ thread }: { thread: InboxThread }): JSX.Element {
+  const toggle = useWorkspace((s) => s.toggleFileTree)
+  return (
+    <aside data-testid="inbox-tools-panel" className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-line bg-panel">
+      <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
+        <SidebarTabs threadId={thread.id} />
+        <Button variant="ghost" size="icon-sm" className="shrink-0" title="Collapse sidebar" aria-label="Collapse sidebar" onClick={toggle}>
+          <PanelRightClose className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      <div
+        role="tabpanel"
+        id="inbox-tools-panel"
+        aria-labelledby="inbox-tools-tab"
+        className="flex min-h-0 flex-1 flex-col border-t border-line"
+      >
+        <InboxToolCalls thread={thread} />
       </div>
     </aside>
   )
@@ -674,8 +717,9 @@ async function openInInboxTerminal(folder: FilesListRequest, where: DirectoryCon
 export function InboxSidebar({ session, threadId }: { session: DirectoryContext; threadId?: string }): JSX.Element {
   const stored = useInboxChanges((s) => s.tab)
   const collapsed = useWorkspace((s) => s.fileTreeCollapsed)
-  // Changes belong to a thread. Without one, that tab is not offered and Files shows in its place.
-  const tab = tabsFor(threadId).includes(stored) ? stored : 'files'
+  const guiThread = useGuiThread(threadId)
+  // Changes and Tools belong to a thread. Without one, they are not offered and Files shows in their place.
+  const tab = tabsFor(threadId, Boolean(guiThread)).includes(stored) ? stored : 'files'
   const shown = Boolean(threadId) && !collapsed
   // A thread whose worktree was deleted has no folder: nothing to list, and nothing to ask Git about.
   const gone = useWorkspace((s) => (threadId ? s.inboxThreads.find((item) => item.id === threadId)?.worktreeRemovedAt !== undefined : false))
@@ -684,7 +728,8 @@ export function InboxSidebar({ session, threadId }: { session: DirectoryContext;
   useEffect(() => {
     if (threadId && shown && !gone) return useInboxChanges.getState().watch(threadId)
   }, [threadId, shown, gone])
-  if (gone && threadId && !collapsed && tab !== 'terminal') {
+  // Tool calls are in the conversation, which a deleted worktree leaves as it was.
+  if (gone && threadId && !collapsed && (tab === 'files' || tab === 'changes')) {
     return (
       <InboxSidebarFrame>
         <DeletedWorktreeAside threadId={threadId} tab={tab} {...(goneBranch ? { branch: goneBranch } : {})} />
@@ -712,6 +757,7 @@ export function InboxSidebar({ session, threadId }: { session: DirectoryContext;
         />
       </div>}
       {tab === 'changes' && threadId && <ChangesAside threadId={threadId} />}
+      {tab === 'tools' && guiThread && <ToolsAside thread={guiThread} />}
       {tab === 'terminal' && <TerminalAside threadId={threadId} />}
     </InboxSidebarFrame>
   )

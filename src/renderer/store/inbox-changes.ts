@@ -16,8 +16,8 @@ interface Store {
   sidebarChanges: boolean
   setSidebarChanges: (on: boolean) => void
   /** Which tab the right-hand sidebar shows. */
-  tab: 'files' | 'changes' | 'terminal'
-  setTab: (tab: 'files' | 'changes' | 'terminal') => void
+  tab: 'files' | 'changes' | 'tools' | 'terminal'
+  setTab: (tab: 'files' | 'changes' | 'tools' | 'terminal') => void
   /** The changed file open in the review above the conversation. */
   selectedPath: { threadId: string; path: string } | null
   /**

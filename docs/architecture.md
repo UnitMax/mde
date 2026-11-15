@@ -551,13 +551,35 @@ sessions, so with folders in more than one place (several WSL distros) the dialo
 filtered project's first. An OpenCode without the route answers 404 and the dialog asks for an update. Nothing is
 cached: opening the dialog, changing the range and Refresh read again.
 
+### Inbox tool calls
+
+The **Tools** tab in the right-hand sidebar (between Changes and Terminal) lists every tool call of the open
+GUI thread, for review after the fact; its label carries the number of calls. Calls are grouped under the
+message of the person's they answered (`#1`, `#2`, …, with calls before the first loaded message under
+"Earlier calls"), and each turn header folds. A row names the kind of call (Read, Shell, Code Mode, or an MCP
+tool's own name beside its server), what it was about (a path relative to the thread, a command's first line,
+a pattern, the arguments) and how long it took; a failed call, including a command with a non-zero exit, is
+red. Opening a row shows the tool's OpenCode name, the exit code, its input as key/value pairs, the output
+(an MCP result laid out as JSON or Markdown), the error and, for a Code Mode script, each call it made and the
+script itself, each with a copy button.
+
+By default the tab shows **Actions**: shell commands, MCP calls, Code Mode scripts, and tools MDE does not know
+(often MCP tools whose server list has not loaded), the calls that reach beyond reading and editing files.
+**All** adds reads, edits, searches, fetches, questions and the rest; **MCP** and **Failed** narrow further, and
+an empty view offers to show all calls. The choice goes back to Actions when another thread is opened. The search box matches names, subjects, MCP servers and namespaces,
+the input and the error, every word having to match. A call counts as MCP when it went to a known server of the
+thread's place (`useInboxMcp`), the same rule the chat uses, so nothing counts as MCP until the server list has
+loaded. The tab reads only the messages already in `useInboxChat` (reverted ones are left out); when older
+messages are not loaded, a button loads the next page through the chat's own `loadOlder`. It asks nothing of
+the main process. Terminal threads do not offer the tab: their agent runs in a terminal MDE cannot see into.
+
 ### Inbox changes
 
 The Git changes in a thread's checkout show up in two places, both as the same view: its
 branch, the files and lines added and removed, and the list of changed files. Choosing a file
 reviews its diff.
 
-- **The Changes tab** in the right-hand sidebar, beside Files and Terminal, for the thread that is open.
+- **The Changes tab** in the right-hand sidebar, beside Files, Tools and Terminal, for the thread that is open.
   It is always available, and it shows the number of changed files, so the open thread's
   changes are read while the sidebar is open. A new thread, which has no changes yet, does not
   offer it.
