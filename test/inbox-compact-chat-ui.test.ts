@@ -551,6 +551,34 @@ describe('a conversation in compact mode', () => {
   })
 })
 
+describe('run failure messages', () => {
+  it.each(['full', 'compact', 'compact-text'] as const)('shows the boxed error once in the %s layout', async (layout) => {
+    const failure = parseMessage({ id: 'n1', type: 'idle', outcome: 'failed', error: { message: 'Rate limited' }, time: { created: 3 } })!
+    page = {
+      messages: [prompt, { ...step('a1', []), error: 'Rate limited' } as ChatMessage, failure],
+      older: null, running: false,
+    }
+    useInboxView.setState({ compactChat: layout !== 'full', compactText: layout === 'compact-text' })
+    await render()
+    await vi.waitFor(() => expect(text(q('[data-testid="chat-message-a1"] [role="alert"]'))).toBe('Rate limited'))
+    expect(q('[data-testid="chat-message-n1"]')).toBeNull()
+    expect(useInboxChat.getState().threads.ses_one?.messages).toContainEqual(failure)
+  })
+
+  it('retains a failure note until its matching assistant error has loaded', async () => {
+    const failure = parseMessage({ id: 'n1', type: 'idle', outcome: 'failed', error: { message: 'Rate limited' }, time: { created: 3 } })!
+    page = { messages: [failure], older: 'older-page', running: false }
+    await render()
+    await vi.waitFor(() => expect(text(q('[data-testid="chat-note-n1"]'))).toBe('Rate limited'))
+    await act(async () => useInboxChat.setState((state) => ({ threads: {
+      ...state.threads,
+      ses_one: { ...state.threads.ses_one!, messages: [prompt, { ...step('a1', []), error: 'Rate limited' } as ChatMessage, failure], older: null },
+    } })))
+    await vi.waitFor(() => expect(text(q('[data-testid="chat-message-a1"] [role="alert"]'))).toBe('Rate limited'))
+    expect(q('[data-testid="chat-message-n1"]')).toBeNull()
+  })
+})
+
 describe('the changes after each turn', () => {
   const PANEL = '[data-testid="chat-turn-changes"]'
   const write = (name: string, content: string, existed = false): ChatPart =>

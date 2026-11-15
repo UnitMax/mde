@@ -167,6 +167,15 @@ describe('the toast controller', () => {
     expect(useToasts.getState().toasts.map((toast) => toast.label)).toEqual(['Done'])
   })
 
+  it('announces a failed open thread once, without repeating the toast when it is refreshed', () => {
+    useWorkspace.setState({ inboxThreads: [thread()], selectedInboxThreadId: 'ses_one', activeWorkspaceView: 'inbox' })
+    useWorkspace.setState({ inboxThreads: [thread({ status: 'error' })] })
+    const id = useToasts.getState().toasts[0]?.id
+    expect(useToasts.getState().toasts).toEqual([expect.objectContaining({ id, label: 'Failed', tone: 'danger' })])
+    useWorkspace.setState({ inboxThreads: [thread({ status: 'error', readAt: Date.now() + 1 })] })
+    expect(useToasts.getState().toasts.map((toast) => toast.id)).toEqual([id])
+  })
+
   it('takes the toasts away when they are turned off or MDE goes to the mini window', () => {
     notify(news())
     saveAlertSettings({ ...getAlertSettings(), toasts: false })

@@ -32,7 +32,7 @@ import { compactPlans, type RenderBlock } from '@/lib/chat-tools'
 import { hoverScrollbar } from '@/lib/hover-scrollbar'
 import { turnChanges } from '@/lib/turn-changes'
 import { cn } from '@/lib/utils'
-import { compactionState, contextUsage, drawnStart, findModel, goalPhase, hideReverted, initialChoice, mergeLive, revertedMessageCount, sameModelRef, turnStats } from '@/lib/chat'
+import { compactionState, contextUsage, drawnStart, findModel, goalPhase, hideRepeatedRunFailures, hideReverted, initialChoice, mergeLive, revertedMessageCount, sameModelRef, turnStats } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { mcpKey } from '@/lib/mcp'
 import { slashCommands } from '@/lib/slash-commands'
@@ -192,7 +192,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   )
   const latest = useMemo(() => lastAssistant(shown), [shown])
   const messages = useMemo(
-    () => (state ? mergeLive(shown, state.live, latest ?? (thread.model ? { agent: 'build', model: thread.model } : undefined)) : []),
+    () => (state ? hideRepeatedRunFailures(mergeLive(shown, state.live, latest ?? (thread.model ? { agent: 'build', model: thread.model } : undefined))) : []),
     [state, shown, latest, thread.model],
   )
 

@@ -666,7 +666,7 @@ describe('OpenCode service parsing', () => {
     expect(parseMessage({ id: 'msg_1', type: 'agent-switched', agent: 'plan', time: { created: 1 } }))
       .toEqual({ kind: 'note', id: 'msg_1', time: 1, tone: 'info', text: 'Switched to the plan agent' })
     expect(parseMessage({ id: 'msg_2', type: 'idle', outcome: 'failed', error: { type: 'x', message: 'Rate limited' }, time: { created: 2 } }))
-      .toMatchObject({ tone: 'error', text: 'Rate limited' })
+      .toMatchObject({ tone: 'error', runFailure: true, text: 'Rate limited' })
     expect(parseMessage({ id: 'msg_3', type: 'idle', outcome: 'succeeded', time: { created: 3 } })).toBeNull()
     expect(parseMessage({ id: 'msg_4', type: 'future-type', time: { created: 4 } })).toBeNull()
   })

@@ -647,7 +647,7 @@ export function parseMessage(value: unknown, thumbnail?: (bytes: Buffer) => stri
     }
     case 'idle':
       if (message.outcome === 'failed') {
-        return { kind: 'note', id, time: at, tone: 'error', text: errorText(message.error) ?? 'The run failed' }
+        return { kind: 'note', id, time: at, tone: 'error', runFailure: true, text: errorText(message.error) ?? 'The run failed' }
       }
       if (message.outcome === 'interrupted') return { kind: 'note', id, time: at, tone: 'info', text: 'Stopped' }
       return null

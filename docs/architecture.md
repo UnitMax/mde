@@ -2041,6 +2041,10 @@ Notifications → Toasts turns them off (on by default). There is no history: a 
 - **A thread changing** (`lib/toast-controller.ts`, watching `inboxThreads` like the alerts): Done, Failed, Needs
   input or Needs permission (the same `alertKind`), and Woke up when a snooze ends. They show even for the thread that
   is open; the list loaded at startup shows none.
+  The conversation keeps the boxed error on the assistant's response. A run-ending failure note is hidden when it
+  repeats that response's error without adding detail; the existing Failed toast announces the failure. Notes with
+  different errors, extra detail, or no preceding loaded assistant error remain visible. This is a display filter
+  over the loaded conversation, so a match across pages is recognized once both records are loaded.
 - **A chat started in the background** with Ctrl/Cmd+Enter (`createThread` in `store/inbox-chat.ts`).
 - **The MDE MCP:** a thread an agent started (a new thread with `spawnedBy`, created in the last two minutes, with the
   calling thread's title) and a terminal pane an agent opened (`openForAgent` in `store/inbox-terminal.ts`), which

@@ -561,6 +561,8 @@ export type ChatMessage =
       tone: 'info' | 'error'
       text: string
       detail?: string
+      /** The run ended with a failure; may repeat the preceding assistant message's error. */
+      runFailure?: boolean
       compaction?: ChatCompaction
       goal?: ChatGoalNote
       /** Routine work or context notifications that can join a compact activity group. */
