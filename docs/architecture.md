@@ -648,6 +648,8 @@ These are uncommitted changes against HEAD: staged and unstaged tracked changes 
 files, across the whole checkout even when the thread starts in a subfolder. Threads and forks
 using the same checkout show the same changes. Commits clear the corresponding changes, and
 switching branches updates the line and the branch shown on the thread.
+The thread heading uses this same live checkout result as both sidebars, falling back to the
+recorded branch until Git status is available. A detached HEAD leaves out the branch name.
 
 The main process reads Git directly through the existing hardened native/Windows/WSL
 runner and shared spawn limiter. It does not read conversation history, snapshots, turn

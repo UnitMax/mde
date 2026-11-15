@@ -15,7 +15,7 @@ import { useInboxChanges } from '../src/renderer/store/inbox-changes'
 import { useInboxChat } from '../src/renderer/store/inbox-chat'
 import { useToasts } from '../src/renderer/store/toasts'
 import { useWorkspace } from '../src/renderer/store/workspace'
-import type { InboxThread } from '../src/shared/types'
+import type { InboxChangesResponse, InboxThread } from '../src/shared/types'
 
 function thread(overrides: Partial<InboxThread> = {}): InboxThread {
   return {
@@ -149,6 +149,47 @@ describe('Inbox thread header', () => {
     await render()
     expect(header().querySelector('[data-testid="inbox-thread-branch"]')).toBeNull()
   })
+
+  it.each([
+    { name: 'native', overrides: {} },
+    { name: 'WSL', overrides: { target: { kind: 'wsl', distro: 'Ubuntu-24.04' } } },
+    {
+      name: 'worktree',
+      overrides: {
+        directory: '/home/me/worktrees/app',
+        worktree: { repository: '/home/me/app', root: '/home/me/worktrees/app', branch: 'feature/login', base: 'main' },
+      },
+    },
+  ] satisfies { name: string; overrides: Partial<InboxThread> }[])(
+    'updates the $name heading from the same Git refresh as the sidebars',
+    async ({ overrides }) => {
+      const item = thread(overrides)
+      useWorkspace.setState({ inboxThreads: [item] })
+      const branchFact = (): Element | null => header().querySelector('[data-testid="inbox-thread-branch"], [data-testid="inbox-thread-worktree"]')
+      const refresh = async (branch: string | null, available = true): Promise<void> => {
+        const value: InboxChangesResponse = { available, branch, worktree: item.directory, additions: 0, deletions: 0, fileCount: 0 }
+        vi.mocked(window.api.inbox.changes).mockResolvedValue(value)
+        await act(async () => useInboxChanges.getState().load(item.id, false, true))
+      }
+      await render()
+      expect(branchFact()?.textContent).toContain('feature/login')
+
+      await refresh('feature/current')
+      expect(branchFact()?.textContent).toContain('feature/current')
+      expect(branchFact()?.textContent).not.toContain('feature/login')
+      if (!item.worktree) expect(branchFact()?.getAttribute('title')).toBe('Branch feature/current')
+
+      await refresh('main')
+      expect(branchFact()?.textContent).toContain('main')
+      // A detached HEAD is a successful read with no branch; do not revive the saved name.
+      await refresh(null)
+      expect(branchFact()).toBeNull()
+      // If Git is unavailable, the thread's recorded branch still serves as a fallback.
+      await refresh(null, false)
+      expect(branchFact()?.textContent).toContain('feature/login')
+      expect(useWorkspace.getState().inboxThreads[0]?.branch).toBe('feature/login')
+    },
+  )
 
   it('shows a status only while something is going on: not "Done", but Working, and a failure', async () => {
     await render()

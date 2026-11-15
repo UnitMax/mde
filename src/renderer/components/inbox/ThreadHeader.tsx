@@ -21,6 +21,7 @@ import { worktreeKey } from '@/lib/inbox-worktrees'
 import { notifyActionError, openThreadFromToast, threadDisplayTitle } from '@/lib/toasts'
 import { cn } from '@/lib/utils'
 import { useInboxChat } from '@/store/inbox-chat'
+import { inboxChangesKey, useInboxChanges } from '@/store/inbox-changes'
 import { useWorkspace } from '@/store/workspace'
 
 /** One quiet fact about the thread: an icon and a few words, shown while there is room and always in its tooltip. */
@@ -122,6 +123,7 @@ export function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
   const regenerateTitle = useInboxChat((state) => state.regenerateTitle)
   const forkThread = useInboxChat((state) => state.forkThread)
   const project = useInboxChat((state) => inboxThreadFolder(thread, state.folders))
+  const checkout = useInboxChanges((state) => state.entries[inboxChangesKey(thread.id)]?.value)
   const rename = useThreadRename(thread)
   const [forking, setForking] = useState(false)
   const [managing, setManaging] = useState(false)
@@ -131,7 +133,8 @@ export function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
   const title = thread.customTitle ?? thread.title
   const home = inboxThreadHome(thread)
   const wsl = thread.target.kind === 'wsl' ? thread.target.distro : undefined
-  const branch = thread.branch ?? thread.worktree?.branch
+  // Match the sidebars' live checkout; a successful detached HEAD read has no branch.
+  const branch = checkout?.available ? checkout.branch : thread.branch ?? thread.worktree?.branch
   const pendingTitle = regeneration?.pending === true
 
   // What fails here is told in a toast: it is about one thing just asked for, not about the thread.
