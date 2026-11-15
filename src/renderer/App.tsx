@@ -29,7 +29,7 @@ import { TodoTaskDialog } from '@/components/TodoTaskDialog'
 import { isSessionSwitcherShortcut } from '@/lib/session-switcher'
 import { isInboxSearchShortcut } from '@/lib/inbox-search'
 import { InboxSearchDialog } from '@/components/inbox/InboxSearchDialog'
-import { isTodoSearchShortcut } from '@/lib/todo-search'
+import { isTodoNewTaskShortcut, isTodoSearchShortcut } from '@/lib/todo-search'
 import { startAlerts } from '@/lib/alert-controller'
 import { startToasts } from '@/lib/toast-controller'
 import { Toaster } from '@/components/Toaster'
@@ -408,6 +408,28 @@ export function App(): JSX.Element {
     todoTaskDialogOpen
   ])
 
+  // Ctrl+N in a To Do project opens the new-task dialog for the first column, like its + button.
+  const openNewTodoTaskRef = useRef<() => void>(() => {})
+  useEffect(() => {
+    if (!todoSearchAvailable) return
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (
+        !isTodoNewTaskShortcut(event) ||
+        event.repeat ||
+        document.querySelector('[role="dialog"], [role="alertdialog"]')
+      ) {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+      openNewTodoTaskRef.current()
+    }
+
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [todoSearchAvailable])
+
   const selected = sessions.find((session) => session.id === selectedSessionId) ?? null
   const selectedTodoProject =
     todoProjects.find((project) => project.id === selectedTodoProjectId) ?? null
@@ -430,6 +452,7 @@ export function App(): JSX.Element {
     setTodoTaskDialogColumnId(defaultColumnId)
     setTodoTaskDialogOpen(true)
   }
+  openNewTodoTaskRef.current = () => openNewTodoTask()
 
   const openTodoTask = (task: TodoTask): void => {
     setTodoTaskDialogTaskId(task.id)

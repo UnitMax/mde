@@ -137,7 +137,9 @@ export function getKeyboardShortcutGroups(
       label: 'Files and To Do',
       where: 'Works in the file viewer and in a To Do project.',
       shortcuts: [
-        { id: 'find-in-view', keys: [`${primaryModifier}+F`], description: 'Search the open file, or the tasks of the open To Do project.' }
+        { id: 'find-in-view', keys: [`${primaryModifier}+F`], description: 'Search the open file, or the tasks of the open To Do project.' },
+        { id: 'todo-new-task', keys: [`${primaryModifier}+N`], description: 'Open the new-task dialog in a To Do project.' },
+        { id: 'todo-save-task', keys: ['Enter', `${primaryModifier}+Enter`], description: 'Save the task: Enter in its title, Ctrl+Enter in its description.' }
       ]
     }
   ]

@@ -114,9 +114,28 @@ export function TodoTaskDialog({
                 value={title}
                 placeholder="What needs to be done?"
                 onChange={(event) => setTitle(event.target.value)}
+                onKeyDown={(event) => {
+                  // Enter in the title saves the task, like the Save / Create task button.
+                  if (event.key !== 'Enter' || event.nativeEvent.isComposing || event.shiftKey || event.altKey) return
+                  event.preventDefault()
+                  void save()
+                }}
               />
             </div>
-            <div className="space-y-1.5">
+            <div
+              className="space-y-1.5"
+              onKeyDownCapture={(event) => {
+                // Ctrl+Enter (Cmd+Enter) in the description saves the task. Caught before the editor, whose own
+                // Mod-Enter would insert a line break; plain Enter still starts a new paragraph.
+                if (
+                  event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey ||
+                  event.nativeEvent.isComposing
+                ) return
+                event.preventDefault()
+                event.stopPropagation()
+                void save()
+              }}
+            >
               <Label htmlFor="todo-task-description">Description</Label>
               <MarkdownEditor
                 key={task?.id ?? 'new'}
