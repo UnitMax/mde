@@ -371,7 +371,7 @@ the same policy:
   maintenance. It keeps the person's credential helper and SSH command so they can sign in, so
   it first lists configuration with `--show-scope --includes` and refuses when a `local` or
   `worktree` scope (including files those include) sets `credential.helper` or
-  `credential.<url>.helper`, `core.sshCommand`, `core.gitProxy`, or a remote's `uploadpack`,
+  `credential.<url>.helper`, `core.sshCommand`, `core.gitProxy`, `core.alternateRefsCommand`, or a remote's `uploadpack`,
   `receivepack` or `vcs`. Global, system and environment settings are the person's own. The
   command is fixed (`fetch --all --prune --no-recurse-submodules`); the renderer chooses no
   remote, refspec or URL. Error text shown in the UI keeps Git's `fatal:`/`error:` lines with

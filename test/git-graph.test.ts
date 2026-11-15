@@ -62,9 +62,10 @@ describe('Git graph parsing', () => {
       'local', 'remote.origin.uploadpack\nevil',
       'worktree', 'core.sshcommand\nevil',
       'command', 'core.gitproxy\nx',
+      'local', 'core.alternaterefscommand\nevil',
       'local', 'remote.origin.url\nhttps://example.com/x.git',
     ].join('\0') + '\0'
-    expect(repositoryFetchPrograms(listing)).toEqual(['credential.helper', 'remote.<name>.uploadpack', 'core.sshCommand'])
+    expect(repositoryFetchPrograms(listing)).toEqual(['credential.helper', 'remote.<name>.uploadpack', 'core.sshCommand', 'core.alternateRefsCommand'])
   })
 
   it('shows what a failed fetch said, without credentials in a URL or control characters', () => {
@@ -224,6 +225,23 @@ describe.skipIf(!hasPosixGit)('Git graph against a real repository', () => {
       expect(await readdir(sentinels)).toEqual([])
     } finally {
       await git(clone, 'config', '--unset', 'remote.origin.uploadpack')
+    }
+  })
+
+  it('refuses to fetch when the repository names a program for its alternates, and never starts it', async () => {
+    const sentinels = join(root, 'alternate-sentinels')
+    await mkdir(sentinels, { recursive: true })
+    // Git runs this setting through the shell during a fetch when the repository borrows objects from another.
+    const alternates = join(clone, '.git', 'objects', 'info', 'alternates')
+    await writeFile(alternates, `${join(origin, 'objects')}\n`)
+    await git(clone, 'config', 'core.alternateRefsCommand', `touch '${join(sentinels, 'alternate')}'; :`)
+    try {
+      await expect(fetchGitWithRunners(createGitCommandRunner(session), (dir) => createGitFetchRunner(session, dir)))
+        .rejects.toThrow(/core\.alternateRefsCommand.*Fetch it in a terminal/)
+      expect(await readdir(sentinels)).toEqual([])
+    } finally {
+      await git(clone, 'config', '--unset', 'core.alternateRefsCommand')
+      await rm(alternates, { force: true })
     }
   })
 

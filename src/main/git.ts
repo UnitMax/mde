@@ -289,6 +289,8 @@ const FETCH_PROGRAM_KEYS: Array<[RegExp, string]> = [
   [/^credential\.(?:.+\.)?helper$/, 'credential.helper'],
   [/^core\.sshcommand$/, 'core.sshCommand'],
   [/^core\.gitproxy$/, 'core.gitProxy'],
+  // Run through the shell when the repository borrows objects from another (`objects/info/alternates`).
+  [/^core\.alternaterefscommand$/, 'core.alternateRefsCommand'],
   [/^remote\..+\.uploadpack$/, 'remote.<name>.uploadpack'],
   [/^remote\..+\.receivepack$/, 'remote.<name>.receivepack'],
   [/^remote\..+\.vcs$/, 'remote.<name>.vcs'],

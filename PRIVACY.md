@@ -344,8 +344,8 @@ OpenCode executable to find the background service. These helpers are relevant t
 - The Git graph's **Fetch** button is the exception: when you press it, Git connects to the
   repository's remotes over `https`, `http`, `ssh`, `git` or `file`, and can use your global or
   system credential helper and SSH command. Remote helpers such as `ext::` stay denied. A
-  repository whose own configuration names a credential helper, SSH command, proxy command or
-  upload-pack program is refused rather than fetched. Hooks, submodules and automatic maintenance
+  repository whose own configuration names a credential helper, SSH command, proxy command,
+  alternate-refs command or upload-pack program is refused rather than fetched. Hooks, submodules and automatic maintenance
   stay disabled.
 - Worktree checkout keeps Git's built-in line-ending conversion, but refuses a checkout that selects
   a configured external filter instead of running that program or silently skipping needed conversion.
