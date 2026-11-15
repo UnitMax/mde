@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { InboxDraftStore } from '../src/main/inbox/drafts'
 import { describe, expect, it, vi } from 'vitest'
 import type { ChatEvent, InboxWorktreeEntry } from '../src/shared/types'
-import { ASIDE_PREAMBLE, ASIDE_TIMEOUT_MS, InboxChatService, type InboxChatDependencies } from '../src/main/inbox/chat'
+import { ASIDE_PREAMBLE, ASIDE_TIMEOUT_MS, InboxChatService, TITLE_TIMEOUT_MS, type InboxChatDependencies } from '../src/main/inbox/chat'
 import { InboxRecorder, isInboxThreadUnread } from '../src/main/inbox/recorder'
 import { InboxStore } from '../src/main/inbox/store'
 import type { ServiceOperation, ServiceRequest } from '../src/main/opencode/service/client'
@@ -162,7 +162,7 @@ describe('Inbox chat service', () => {
     calls.length = 0
     await service.regenerateTitle('ses_new')
     expect(calls).toEqual([
-      { operation: 'session.update', request: { params: { sessionID: 'ses_new' }, body: { title: '' } } },
+      { operation: 'session.update', request: { params: { sessionID: 'ses_new' }, body: { title: '' }, timeoutMs: TITLE_TIMEOUT_MS } },
       { operation: 'session.get', request: { params: { sessionID: 'ses_new' } } },
     ])
     expect(request).toHaveBeenCalledWith(wsl, 'session.update', expect.anything())
@@ -186,6 +186,23 @@ describe('Inbox chat service', () => {
     await Promise.all([first, second])
     expect(request.mock.calls.filter((call) => call[1] === 'session.update')).toHaveLength(1)
     expect(store.get('ses_new')?.title).toBe('Newest title')
+    service.stop()
+  })
+
+  it('counts a rename that arrives while the update waits as done, even when the update then times out', async () => {
+    const { service, folder, request } = setup({ 'session.create': { data: { id: 'ses_new', title: 'Original' } } })
+    await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+    let fail!: (error: Error) => void
+    const answer = request.getMockImplementation()!
+    request.mockImplementation((target, operation, req) => operation === 'session.update'
+      ? new Promise((_, reject) => { fail = reject }) : answer(target, operation, req))
+    const run = service.regenerateTitle('ses_new')
+    await vi.waitFor(() => expect(fail).toBeTypeOf('function'))
+    const emit = service as unknown as { onEvent(event: { type: string; data: Record<string, unknown> }): void }
+    emit.onEvent({ type: 'session.renamed', data: { sessionID: 'ses_new', title: 'Generated title' } })
+    fail(new Error('The OpenCode service did not answer in time.'))
+    await expect(run).resolves.toBeUndefined()
+    expect(request.mock.calls.filter((call) => call[1] === 'session.get')).toHaveLength(0)
     service.stop()
   })
 

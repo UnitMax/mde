@@ -11,6 +11,7 @@ import type { ChatCreateRequest, ChatDraft, ChatDraftRequest, ChatForkRequest, C
 import { InboxThreadView } from '../src/renderer/components/InboxThreadView'
 import { cancelScheduledRefreshes, useInboxChat } from '../src/renderer/store/inbox-chat'
 import { useModelFavorites } from '../src/renderer/store/model-favorites'
+import { useToasts } from '../src/renderer/store/toasts'
 import { useWorkspace } from '../src/renderer/store/workspace'
 import { getTerminalSettings, saveTerminalSettings, TERMINAL_SETTINGS_STORAGE_KEY } from '../src/renderer/terminal/terminal-settings'
 
@@ -131,6 +132,7 @@ beforeEach(() => {
   // A refresh that the last test asked for would otherwise fire in this one.
   cancelScheduledRefreshes()
   useInboxChat.setState({ folders: [folder], composer: { folderId: 'fld_app' }, foldersLoaded: true, options: {}, threads: {}, recent: [], titleRegenerations: {} })
+  useToasts.setState({ toasts: [] })
 })
 
 afterEach(async () => {
@@ -766,19 +768,20 @@ describe('Inbox conversation', () => {
     expect(useWorkspace.getState().inboxThreads.find((item) => item.id === original.id)?.title).toBe('Updated title')
   })
 
-  it('shows title errors only on their thread and permits retry', async () => {
-    useWorkspace.setState({ inboxThreads: [thread(), thread({ id: 'ses_two' })], selectedInboxThreadId: 'ses_one' })
-    api.chat.regenerateTitle.mockRejectedValueOnce(new Error("Error invoking remote method 'chat:regenerate-title': Error: Service unavailable"))
+  it('tells of a title error in a toast that opens the thread, and takes it away on a retry', async () => {
+    useWorkspace.setState({ inboxThreads: [thread(), thread({ id: 'ses_two', title: 'Other' })], selectedInboxThreadId: 'ses_one' })
+    api.chat.regenerateTitle.mockRejectedValueOnce(new Error("Error invoking remote method 'chat:regenerate-title': Error: The OpenCode service did not answer in time."))
     const view = await render()
     await threadAction(view, 'Regenerate title')
-    expect(view.querySelector('[role="alert"]')?.textContent).toBe('Service unavailable')
+    expect(view.querySelector('[role="alert"]')).toBeNull()
     expect(view.querySelector('h2')?.textContent).toBe('Fix login')
+    const [toast] = useToasts.getState().toasts
+    expect(toast).toMatchObject({ tone: 'danger', label: 'Title not regenerated', title: 'Fix login', detail: 'The OpenCode service did not answer in time.' })
     await act(async () => useWorkspace.setState({ selectedInboxThreadId: 'ses_two' }))
-    expect(view.querySelector('[role="alert"]')).toBeNull()
-    await act(async () => useWorkspace.setState({ selectedInboxThreadId: 'ses_one' }))
-    expect(view.querySelector('[role="alert"]')?.textContent).toBe('Service unavailable')
+    await act(async () => toast!.onOpen?.())
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_one')
     await threadAction(view, 'Regenerate title')
-    expect(view.querySelector('[role="alert"]')).toBeNull()
+    expect(useToasts.getState().toasts.every((item) => item.leaving)).toBe(true)
     expect(api.chat.regenerateTitle).toHaveBeenCalledTimes(2)
   })
 

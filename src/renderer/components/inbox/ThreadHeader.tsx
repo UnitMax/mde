@@ -18,6 +18,7 @@ import {
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { inboxFolderLabel, inboxThreadFolder, inboxThreadHome, sessionAge, sessionDate } from '@/lib/inbox'
 import { worktreeKey } from '@/lib/inbox-worktrees'
+import { notifyActionError, openThreadFromToast, threadDisplayTitle } from '@/lib/toasts'
 import { cn } from '@/lib/utils'
 import { useInboxChat } from '@/store/inbox-chat'
 import { useWorkspace } from '@/store/workspace'
@@ -122,8 +123,7 @@ export function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
   const forkThread = useInboxChat((state) => state.forkThread)
   const project = useInboxChat((state) => inboxThreadFolder(thread, state.folders))
   const rename = useThreadRename(thread)
-  const [fork, setFork] = useState<{ pending: boolean; error: string | null }>({ pending: false, error: null })
-  const [copyError, setCopyError] = useState(false)
+  const [forking, setForking] = useState(false)
   const [managing, setManaging] = useState(false)
   // Its worktree was deleted: kept to read, with nothing left to open or fork.
   const removed = thread.worktreeRemovedAt !== undefined
@@ -133,19 +133,30 @@ export function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
   const wsl = thread.target.kind === 'wsl' ? thread.target.distro : undefined
   const branch = thread.branch ?? thread.worktree?.branch
   const pendingTitle = regeneration?.pending === true
-  const error = regeneration?.error ?? fork.error ?? (copyError ? 'Could not copy the folder path.' : null)
 
+  // What fails here is told in a toast: it is about one thing just asked for, not about the thread.
+  const actionError = (label: string, detail: string): void => {
+    notifyActionError({
+      key: `thread-action-error:${thread.id}`,
+      label,
+      title: threadDisplayTitle(thread),
+      detail,
+      onOpen: () => openThreadFromToast(thread.id),
+    })
+  }
   const startFork = (): void => {
-    if (fork.pending) return
-    setFork({ pending: true, error: null })
+    if (forking) return
+    setForking(true)
     forkThread(thread.id).then(
-      () => setFork({ pending: false, error: null }),
-      (reason: unknown) => setFork({ pending: false, error: ipcErrorMessage(reason, 'Could not fork the thread.') })
+      () => setForking(false),
+      (reason: unknown) => {
+        setForking(false)
+        actionError('Not forked', ipcErrorMessage(reason, 'Could not fork the thread.'))
+      }
     )
   }
   const copyPath = (): void => {
-    setCopyError(false)
-    navigator.clipboard.writeText(thread.directory).catch(() => setCopyError(true))
+    navigator.clipboard.writeText(thread.directory).catch(() => actionError('Not copied', 'Could not copy the folder path.'))
   }
 
   return (
@@ -230,7 +241,7 @@ export function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
                 <PenLine className="h-3.5 w-3.5" />
                 Rename thread
               </DropdownMenuItem>
-              <DropdownMenuItem disabled={fork.pending || removed} onSelect={startFork}>
+              <DropdownMenuItem disabled={forking || removed} onSelect={startFork}>
                 <GitFork className="h-3.5 w-3.5" />
                 Fork thread
               </DropdownMenuItem>
@@ -249,7 +260,6 @@ export function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
           </DropdownMenu>
         </div>
       </div>
-      {error && <p role="alert" className="-mt-1 pb-2 text-xs text-danger">{error}</p>}
       <ThreadRenameDialog thread={thread} rename={rename} />
       {thread.worktree && (
         <InboxProjectsDialog

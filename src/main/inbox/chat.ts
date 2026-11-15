@@ -148,6 +148,11 @@ export const ASIDE_PREAMBLE = [
 ].join(' ')
 /** A side question is a model call over the whole conversation, which takes longer than a read of the service. */
 export const ASIDE_TIMEOUT_MS = 180_000
+/**
+ * Clearing a title makes OpenCode run its title agent before it answers, a model call that a slow (often free) model
+ * can take well over the usual 30 s for.
+ */
+export const TITLE_TIMEOUT_MS = 120_000
 
 export interface InboxChatDependencies {
   drafts?: InboxDraftStore
@@ -1143,21 +1148,23 @@ export class InboxChatService {
     if (pending) return pending
     const run = (async () => {
       this.streams.ensure(thread.target)
-      try {
-        await this.dependencies.client.request(thread.target, 'session.update', {
-          params: { sessionID: threadId }, body: { title: '' },
-        })
-      } catch (error) {
-        if (error instanceof OpenCodeServiceError && (error.status === 405 || error.status === 501)) {
-          throw new Error('This OpenCode service does not support native title regeneration. Update OpenCode and try again.')
-        }
-        throw error
-      }
-      // The update returns no content. Read it back in case the event stream missed the rename.
-      // A rename received during this read is newer than its snapshot and must win.
+      // A rename received from here on is newer than any snapshot read below and must win. One that arrives while
+      // the update is still waiting also means the new title is there, even if the update itself then times out.
       const read = { renamed: false }
       this.titleReads.set(threadId, read)
       try {
+        try {
+          await this.dependencies.client.request(thread.target, 'session.update', {
+            params: { sessionID: threadId }, body: { title: '' }, timeoutMs: TITLE_TIMEOUT_MS,
+          })
+        } catch (error) {
+          if (read.renamed) return
+          if (error instanceof OpenCodeServiceError && (error.status === 405 || error.status === 501)) {
+            throw new Error('This OpenCode service does not support native title regeneration. Update OpenCode and try again.')
+          }
+          throw error
+        }
+        // The update returns no content. Read it back in case the event stream missed the rename.
         const session = parseSessionInfo(await this.dependencies.client.request(thread.target, 'session.get', {
           params: { sessionID: threadId },
         }))

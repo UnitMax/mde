@@ -24,7 +24,8 @@ const ICONS: Record<ToastIcon, LucideIcon> = {
   background: Send,
   'agent-thread': Bot,
   'agent-terminal': SquareTerminal,
-  approval: TerminalSquare
+  approval: TerminalSquare,
+  error: CircleAlert
 }
 
 function ToastCard({ toast }: { toast: Toast }): JSX.Element {

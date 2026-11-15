@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Toaster } from '../src/renderer/components/Toaster'
 import { getAlertSettings, resetAlertSettingsCache, saveAlertSettings } from '../src/renderer/lib/alert-settings'
 import { startToasts } from '../src/renderer/lib/toast-controller'
-import { backgroundThreadToast, notify, spawnedThreadToast, threadToast } from '../src/renderer/lib/toasts'
+import { backgroundThreadToast, notify, notifyActionError, spawnedThreadToast, threadToast, titleErrorToastKey } from '../src/renderer/lib/toasts'
 import { useInboxChat } from '../src/renderer/store/inbox-chat'
 import { TOAST_LEAVE_MS, TOAST_LIMIT, useToasts, type ToastInput } from '../src/renderer/store/toasts'
 import { useWorkspace } from '../src/renderer/store/workspace'
@@ -54,6 +54,14 @@ describe('the toast store', () => {
     expect(useToasts.getState().toasts[0]).toMatchObject({ id, leaving: true })
     vi.advanceTimersByTime(TOAST_LEAVE_MS)
     expect(useToasts.getState().toasts).toEqual([])
+  })
+
+  it('dismisses by key, and leaves the others', () => {
+    useToasts.getState().show(news({ key: 'thread:a' }))
+    useToasts.getState().show(news({ key: 'thread:b' }))
+    useToasts.getState().dismissKey('thread:a')
+    useToasts.getState().dismissKey('thread:missing')
+    expect(useToasts.getState().toasts.map((toast) => [toast.key, toast.leaving ?? false])).toEqual([['thread:a', true], ['thread:b', false]])
   })
 })
 
@@ -111,6 +119,12 @@ describe('notify', () => {
     expect(useToasts.getState().toasts).toHaveLength(1)
   })
 
+  it('still tells of an action that failed when toasts are turned off', () => {
+    saveAlertSettings({ ...getAlertSettings(), toasts: false })
+    notifyActionError({ label: 'Not forked', title: 'Fix login', detail: 'Service unavailable' })
+    expect(useToasts.getState().toasts).toMatchObject([{ tone: 'danger', icon: 'error', label: 'Not forked', detail: 'Service unavailable' }])
+  })
+
   it('is on by default', () => {
     expect(getAlertSettings().toasts).toBe(true)
   })
@@ -136,6 +150,15 @@ describe('the toast controller', () => {
     // A thread the person started is not news.
     useWorkspace.setState({ inboxThreads: [...useWorkspace.getState().inboxThreads, thread({ id: 'ses_mine' })] })
     expect(useToasts.getState().toasts).toHaveLength(2)
+  })
+
+  it('takes away a title error once the new title arrives after all', () => {
+    useWorkspace.setState({ inboxThreads: [thread()] })
+    notifyActionError({ key: titleErrorToastKey('ses_one'), label: 'Title not regenerated', title: 'Fix login' })
+    useWorkspace.setState({ inboxThreads: [thread({ status: 'attention', attentionReason: 'question' })] })
+    expect(useToasts.getState().toasts.find((toast) => toast.key === titleErrorToastKey('ses_one'))?.leaving).toBeUndefined()
+    useWorkspace.setState({ inboxThreads: [thread({ status: 'attention', attentionReason: 'question', title: 'Generated title' })] })
+    expect(useToasts.getState().toasts.find((toast) => toast.key === titleErrorToastKey('ses_one'))?.leaving).toBe(true)
   })
 
   it('still tells of the thread that is open', () => {

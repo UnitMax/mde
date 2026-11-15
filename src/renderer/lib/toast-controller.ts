@@ -3,7 +3,7 @@ import { useInboxChat } from '@/store/inbox-chat'
 import { useToasts } from '@/store/toasts'
 import { useWorkspace } from '@/store/workspace'
 import { ALERT_SETTINGS_CHANGE_EVENT, getAlertSettings } from './alert-settings'
-import { notify, spawnedThreadToast, threadDisplayTitle, threadToast } from './toasts'
+import { notify, spawnedThreadToast, threadDisplayTitle, threadToast, titleErrorToastKey } from './toasts'
 
 function projectName(thread: InboxThread): string | undefined {
   return useInboxChat.getState().folders.find((folder) => folder.id === thread.folderId)?.name
@@ -25,6 +25,8 @@ export function startToasts(): () => void {
       if (previous === thread) continue
       const project = projectName(thread)
       if (previous) {
+        // OpenCode can still rename the thread after the request for it gave up waiting; the new title answers it.
+        if (previous.title !== thread.title) useToasts.getState().dismissKey(titleErrorToastKey(thread.id))
         const toast = threadToast(previous, thread, { project })
         if (toast) notify(toast)
         continue

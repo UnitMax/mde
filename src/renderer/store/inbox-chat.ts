@@ -26,7 +26,15 @@ import { mcpTargetKey } from '@/lib/mcp'
 import { useInboxMcp } from '@/store/inbox-mcp'
 import { getTerminalSettings, subscribeTerminalSettings } from '@/terminal/terminal-settings'
 import { useWorkspace } from '@/store/workspace'
-import { backgroundThreadToast, notify } from '@/lib/toasts'
+import {
+  backgroundThreadToast,
+  notify,
+  notifyActionError,
+  openThreadFromToast,
+  threadDisplayTitle,
+  titleErrorToastKey,
+} from '@/lib/toasts'
+import { useToasts } from '@/store/toasts'
 
 export interface ChatThreadState {
   messages: ChatMessage[]
@@ -105,7 +113,8 @@ function mergeNewest(current: readonly ChatMessage[], newest: readonly ChatMessa
 }
 
 interface InboxChatStore {
-  titleRegenerations: Record<string, { pending: boolean; error: string | null }>
+  /** Threads whose title is being regenerated. A failure is told in a toast. */
+  titleRegenerations: Record<string, { pending: boolean }>
   regenerateTitle: (threadId: string) => Promise<void>
   folders: InboxFolder[]
   composer: InboxComposerState
@@ -245,15 +254,24 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
     titleRegenerations: {},
     regenerateTitle: async (threadId) => {
       if (get().titleRegenerations[threadId]?.pending) return
-      const patch = (pending: boolean, error: string | null): void => {
-        set((state) => ({ titleRegenerations: { ...state.titleRegenerations, [threadId]: { pending, error } } }))
+      const patch = (pending: boolean): void => {
+        set((state) => ({ titleRegenerations: { ...state.titleRegenerations, [threadId]: { pending } } }))
       }
-      patch(true, null)
+      patch(true)
+      useToasts.getState().dismissKey(titleErrorToastKey(threadId))
       try {
         await window.api.chat.regenerateTitle({ threadId })
-        patch(false, null)
+        patch(false)
       } catch (error) {
-        patch(false, ipcErrorMessage(error, 'Could not regenerate the title.'))
+        patch(false)
+        const thread = useWorkspace.getState().inboxThreads.find((item) => item.id === threadId)
+        notifyActionError({
+          key: titleErrorToastKey(threadId),
+          label: 'Title not regenerated',
+          title: thread ? threadDisplayTitle(thread) : 'Untitled thread',
+          detail: ipcErrorMessage(error, 'Could not regenerate the title.'),
+          onOpen: () => openThreadFromToast(threadId),
+        })
       }
     },
     folders: [],

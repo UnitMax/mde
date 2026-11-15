@@ -726,8 +726,11 @@ agent to regenerate the current title (`PATCH /api/session/{sessionID}` with `ti
 including while the conversation is running or parked. OpenCode chooses the title model
 and conversation context using its own configuration. It may keep the same title when
 generation is disabled, fails internally, or produces the existing title. MDE never sends
-a chat prompt or creates another session for this action. Pending state and request errors
-are kept per thread in memory. The main process coalesces concurrent requests, follows
+a chat prompt or creates another session for this action. OpenCode answers the request only after
+its title agent has run, a model call, so it waits up to two minutes instead of the usual 30 s. A
+rename that arrives while it waits counts as success even if the request then times out. A failure
+is shown in an error toast (see **Toasts**), which a new title arriving after all takes away. Pending
+state is kept per thread in memory. The main process coalesces concurrent requests, follows
 `session.renamed`, and reads the title back after completion in case an event was missed.
 Newer rename events take precedence over an in-flight readback; deleted threads stay deleted.
 Updating a title preserves the thread's status, activity time, read state and parked flag (`archived`).
@@ -1394,7 +1397,7 @@ with every streamed token. Once the thought is done the row says "Thought" and t
 Notes (agent switches, errors, goals) are quiet rows of the same kind, and a finished compaction is a
 rule across the conversation that opens onto the summary.
 
-**Thread header.** One row of 44 px (`ThreadHeader`), so the conversation gets the height. The title is the only strong text; double-clicking it opens the Rename dialog (shared with the sidebar's, `ThreadRename`). Beside it, in muted type: a status mark only while the thread is working, needs input or failed (never "Done", which is what a thread normally is and the sidebar shows), the project's name and icon (the tooltip has the full path and, in WSL, the distro, as the title's tooltip has the last activity), the branch, and for a fork where it came from. These three drop out as the pane narrows, by container query on the header: the fork mark first, then the branch, then the folder; with a long title they are clipped before the title is shortened. The model is not in the header: the composer's model chip shows and changes it. At the end are **Open**, the layout menu (chat threads only) and the thread menu. Errors from regenerating the title, forking or copying are shown in a line under the row.
+**Thread header.** One row of 44 px (`ThreadHeader`), so the conversation gets the height. The title is the only strong text; double-clicking it opens the Rename dialog (shared with the sidebar's, `ThreadRename`). Beside it, in muted type: a status mark only while the thread is working, needs input or failed (never "Done", which is what a thread normally is and the sidebar shows), the project's name and icon (the tooltip has the full path and, in WSL, the distro, as the title's tooltip has the last activity), the branch, and for a fork where it came from. These three drop out as the pane narrows, by container query on the header: the fork mark first, then the branch, then the folder; with a long title they are clipped before the title is shortened. The model is not in the header: the composer's model chip shows and changes it. At the end are **Open**, the layout menu (chat threads only) and the thread menu. Errors from regenerating the title, forking or copying are shown in error toasts (see **Toasts**).
 
 **Compact mode.** A layout menu in the thread's header (not to be confused with compacting the context, above) (chat threads only; `CompactChatToggle`)
 chooses between three layouts: **Every step** (the normal layout), **Compact** and **Compact with text**. It is
@@ -1942,11 +1945,14 @@ Notifications → Toasts turns them off (on by default). There is no history: a 
   calling thread's title) and a terminal pane an agent opened (`openForAgent` in `store/inbox-terminal.ts`), which
   says when its command waits for approval. `list_projects` changes nothing, so it shows none, and `show_view` is drawn
   in the chat itself.
+- **An action that failed** (`notifyActionError` in `lib/toasts.ts`): Regenerate title, Fork thread or Copy folder
+  path in the thread header's menu. These show even with toasts turned off, since the switch is about news from
+  threads and the failure would otherwise go unseen. A title error goes when the thread's title changes after all.
 
 A click on a toast goes there: it opens the thread (and reads it), or for a terminal brings the Inbox terminal into
 view, in the sidebar's Terminal tab or the floating window, and focuses that pane. Each toast has a key, so a thread's
 newer news takes the place of its older toast; at most four are on screen and the oldest goes first. A toast stays
-6 s, or 10 s for Failed, a question, a permission or a command to approve. A 2 px bar at its foot shows the time left
+6 s, or 10 s for Failed, a question, a permission, a command to approve or a failed action. A 2 px bar at its foot shows the time left
 (a CSS animation whose `animationend` dismisses it); it stops while the pointer or keyboard is on the toasts and while
 MDE is not the focused window, so news is not missed by looking away. Esc or the X dismisses one. Nothing is shown
 while MDE is in the mini window, and going into it clears them. The pure rules are in `lib/toasts.ts`, the list in

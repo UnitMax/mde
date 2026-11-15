@@ -14,6 +14,7 @@ export type ToastIcon =
   | 'agent-thread'
   | 'agent-terminal'
   | 'approval'
+  | 'error'
 
 export interface ToastInput {
   /** A toast with the same key takes the place of the one already shown, so one thread never stacks up. */
@@ -50,6 +51,8 @@ interface Store {
   show: (toast: ToastInput) => string
   /** Lets a toast play its way out, then removes it. */
   dismiss: (id: string) => void
+  /** Lets the toast with this key play its way out, if one is shown. */
+  dismissKey: (key: string) => void
   clear: () => void
 }
 
@@ -77,6 +80,11 @@ export const useToasts = create<Store>((set, get) => ({
     if (!toast || toast.leaving) return
     set((state) => ({ toasts: state.toasts.map((item) => (item.id === id ? { ...item, leaving: true } : item)) }))
     window.setTimeout(() => set((state) => ({ toasts: state.toasts.filter((item) => item.id !== id) })), TOAST_LEAVE_MS)
+  },
+
+  dismissKey: (key) => {
+    const toast = get().toasts.find((item) => item.key === key && !item.leaving)
+    if (toast) get().dismiss(toast.id)
   },
 
   clear: () => set({ toasts: [] }),

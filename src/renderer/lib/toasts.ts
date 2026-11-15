@@ -19,6 +19,20 @@ export function notify(toast: ToastInput): void {
   useToasts.getState().show(toast)
 }
 
+/**
+ * Says that something the person just asked for did not work, such as forking a thread. Unlike news, it shows even
+ * with toasts turned off in Settings: the switch is about being told what threads do, and without this the failure
+ * would go unseen.
+ */
+export function notifyActionError(toast: Omit<ToastInput, 'tone' | 'icon'>): void {
+  useToasts.getState().show({ ...toast, tone: 'danger', icon: 'error', duration: toast.duration ?? TOAST_URGENT_DURATION_MS })
+}
+
+/** The key of the toast that says a thread's title could not be regenerated; the new title arriving after all takes it away. */
+export function titleErrorToastKey(threadId: string): string {
+  return `title-error:${threadId}`
+}
+
 /** Opens a thread a toast is about, in the Inbox, if it is still there. */
 export function openThreadFromToast(threadId: string): void {
   const workspace = useWorkspace.getState()

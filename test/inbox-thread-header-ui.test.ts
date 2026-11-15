@@ -13,6 +13,7 @@ vi.mock('../src/renderer/components/inbox/TerminalThreadView', () => ({
 import { InboxThreadView } from '../src/renderer/components/InboxThreadView'
 import { useInboxChanges } from '../src/renderer/store/inbox-changes'
 import { useInboxChat } from '../src/renderer/store/inbox-chat'
+import { useToasts } from '../src/renderer/store/toasts'
 import { useWorkspace } from '../src/renderer/store/workspace'
 import type { InboxThread } from '../src/shared/types'
 
@@ -57,6 +58,7 @@ beforeEach(() => {
   Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
   fork.mockReset()
   setCustomTitle.mockReset()
+  useToasts.setState({ toasts: [] })
   writeText.mockClear()
   vi.stubGlobal('api', {
     paths: { revealInbox: vi.fn(), openInboxInVsCode: vi.fn() },
@@ -204,7 +206,10 @@ describe('Inbox thread header', () => {
     await render()
     await choose('Fork thread')
     expect(fork).toHaveBeenCalledWith({ threadId: 'ses_one' })
-    expect(header().querySelector('[role="alert"]')?.textContent).toBe('This OpenCode service does not support forking.')
+    await vi.waitFor(() => expect(useToasts.getState().toasts).toMatchObject([
+      { tone: 'danger', label: 'Not forked', detail: 'This OpenCode service does not support forking.' },
+    ]))
+    expect(header().querySelector('[role="alert"]')).toBeNull()
   })
 
   it('copies the folder path', async () => {
