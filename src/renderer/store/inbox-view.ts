@@ -6,6 +6,7 @@ import {
   getInboxCompactText,
   getInboxDraftsCollapsed,
   getInboxModelQuickSwitch,
+  getInboxNextSuggestion,
   getInboxProjectFilter,
   getInboxSidebarFloating,
   getInboxToolTurns,
@@ -20,6 +21,7 @@ import {
   saveInboxCompactText,
   saveInboxDraftsCollapsed,
   saveInboxModelQuickSwitch,
+  saveInboxNextSuggestion,
   saveInboxProjectFilter,
   saveInboxSidebarFloating,
   saveInboxToolTurns,
@@ -68,6 +70,12 @@ interface Store {
   /** Offer the favorite models as buttons above the message box (a preference, on by default). */
   modelQuickSwitch: boolean
   setModelQuickSwitch: (on: boolean) => void
+  /**
+   * After a turn, the thread's model guesses the next message and the message box shows it as ghost text that Tab
+   * takes (a preference, on by default). Each guess is one more call to the model.
+   */
+  nextSuggestion: boolean
+  setNextSuggestion: (on: boolean) => void
   /**
    * The project the thread list, the Working section and the drafts are narrowed to: its folder ID, or null for
    * all of them. Kept between runs. An ID with no project behind it (removed since) narrows nothing.
@@ -123,6 +131,11 @@ export const useInboxView = create<Store>((set) => ({
   setModelQuickSwitch: (on) => {
     saveInboxModelQuickSwitch(on)
     set({ modelQuickSwitch: on })
+  },
+  nextSuggestion: getInboxNextSuggestion(),
+  setNextSuggestion: (on) => {
+    saveInboxNextSuggestion(on)
+    set({ nextSuggestion: on })
   },
   projectFilter: getInboxProjectFilter(),
   setProjectFilter: (projectId) => {

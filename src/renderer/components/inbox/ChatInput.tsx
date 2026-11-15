@@ -113,7 +113,19 @@ const inputTheme = EditorView.theme({
     backgroundColor: 'color-mix(in srgb, var(--color-accent) 15%, transparent)',
     borderRadius: '4px',
   },
-  '.cm-placeholder': { color: 'var(--color-fg-subtle)' },
+  // Inline, not CodeMirror's inline-block: a placeholder that wraps (a long suggestion) would otherwise be one block
+  // several lines tall, and the caret in front of it is drawn as tall as that block.
+  '.cm-placeholder': { color: 'var(--color-fg-subtle)', display: 'inline' },
+  '.chat-input-suggestion-key': {
+    marginLeft: '8px',
+    padding: '0 5px',
+    border: '1px solid var(--color-line-strong)',
+    borderRadius: '4px',
+    fontSize: '10px',
+    lineHeight: '16px',
+    verticalAlign: '1px',
+    color: 'var(--color-fg-subtle)',
+  },
   '.cm-selectionBackground': { backgroundColor: 'var(--color-active)' },
 })
 
@@ -126,6 +138,18 @@ function inBulletList(state: EditorState): boolean {
   return false
 }
 
+/** The suggested message as the empty box shows it: the text, then the key that takes it. */
+function suggestionElement(text: string): HTMLElement {
+  const element = document.createElement('span')
+  element.dataset.testid = 'chat-suggestion'
+  element.append(text)
+  const key = document.createElement('kbd')
+  key.className = 'chat-input-suggestion-key'
+  key.textContent = 'Tab'
+  element.append(key)
+  return element
+}
+
 export interface ChatInputHandle {
   focus: (caret?: number) => void
   insertNewline: () => void
@@ -135,6 +159,11 @@ interface ChatInputProps {
   value: string
   disabled: boolean
   placeholder: string
+  /**
+   * The next message suggested for the empty box: shown instead of the placeholder, as ghost text with a Tab key
+   * hint. Taking it is the page's (the key goes to `onKeyDown`).
+   */
+  suggestion?: string | null
   autoFocus: boolean
   controls?: string
   activeDescendant?: string
@@ -253,9 +282,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       EditorState.readOnly.of(props.disabled),
       EditorView.editable.of(!props.disabled),
       EditorView.contentAttributes.of(attributes),
-      editorPlaceholder(props.placeholder),
+      editorPlaceholder(props.suggestion ? suggestionElement(props.suggestion) : props.placeholder),
     ]) })
-  }, [props.disabled, props.placeholder, props.controls, props.activeDescendant])
+  }, [props.disabled, props.placeholder, props.suggestion, props.controls, props.activeDescendant])
 
   useLayoutEffect(() => {
     viewRef.current?.dispatch({ effects: refreshCommandToken.of(null) })

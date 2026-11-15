@@ -113,6 +113,7 @@ const validPayloads = {
   [IpcChannels.chatSetDelivery]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a', delivery: 'queue' },
   [IpcChannels.chatAside]: { threadId: 'ses_thread', question: 'Why did we pick SQLite?' },
   [IpcChannels.chatAsideHistory]: { threadId: 'ses_thread' },
+  [IpcChannels.chatSuggest]: { threadId: 'ses_thread' },
   [IpcChannels.chatMcp]: { threadId: 'ses_thread' },
   [IpcChannels.chatMcpSet]: { folderId: 'fld_1234', server: 'context 7', enabled: false },
   [IpcChannels.chatUsage]: { folderId: 'fld_1234', since: 1_700_000_000_000, timezone: 'Europe/Berlin' },

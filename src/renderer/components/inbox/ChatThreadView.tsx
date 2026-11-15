@@ -36,10 +36,12 @@ import { compactionState, contextUsage, drawnStart, findModel, goalPhase, hideRe
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { mcpKey } from '@/lib/mcp'
 import { slashCommands } from '@/lib/slash-commands'
+import { SUGGESTION_DELAY_MS, suggestionTurn } from '@/lib/next-suggestion'
 import { asideCount, shownAside, useInboxAside } from '@/store/inbox-aside'
 import { optionsKey, useInboxChat, type ChatThreadState } from '@/store/inbox-chat'
 import { useInboxFind } from '@/store/inbox-find'
 import { useInboxMcp, type McpPlace } from '@/store/inbox-mcp'
+import { shownSuggestion, useInboxSuggestion } from '@/store/inbox-suggestion'
 import { useInboxView } from '@/store/inbox-view'
 import { useWorkspace } from '@/store/workspace'
 import { codeViewerFontFamily, getTerminalSettings, subscribeTerminalSettings } from '@/terminal/terminal-settings'
@@ -465,6 +467,29 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const turns = useMemo(() => turnStats(messages, running), [messages, running])
   const busySince = thread.status === 'working' || thread.status === 'attention' ? thread.workingSince : undefined
 
+  // The next message is guessed once per finished turn, after the turn has stood still for a while with the box
+  // empty, so a quick follow-up costs nothing. The guess shows as ghost text in the box (see ChatComposer).
+  const suggestionsOn = useInboxView((view) => view.nextSuggestion)
+  const suggestionFor = useMemo(
+    () => (suggestionsOn && !removed && !state?.loading && !state?.error
+      ? suggestionTurn(shown, { running, asking, held: pending?.length ?? 0, reverting: revert !== null })
+      : null),
+    [suggestionsOn, removed, state?.loading, state?.error, shown, running, asking, pending?.length, revert],
+  )
+  const suggestionEntry = useInboxSuggestion((store) => store.threads[thread.id])
+  const requestSuggestion = useInboxSuggestion((store) => store.request)
+  const dismissSuggestion = useInboxSuggestion((store) => store.dismiss)
+  useEffect(() => {
+    if (!suggestionFor || useInboxSuggestion.getState().threads[thread.id]?.turn === suggestionFor) return undefined
+    const timer = window.setTimeout(() => {
+      // Something typed (or quoted, or attached) is the next message already; there is nothing to guess.
+      if (composer.current && !composer.current.isBlank()) return
+      void requestSuggestion(thread.id, suggestionFor)
+    }, SUGGESTION_DELAY_MS)
+    return () => window.clearTimeout(timer)
+  }, [suggestionFor, requestSuggestion, thread.id])
+  const suggestion = shownSuggestion(suggestionEntry, suggestionFor)
+
   const previousMessage = useCallback(async (beforeId?: string): Promise<{ id: string; text: string } | null> => {
     for (;;) {
       const current = useInboxChat.getState().threads[thread.id]
@@ -647,6 +672,8 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
           context={context}
           compact={compactMenu}
           commands={commands}
+          suggestion={suggestion}
+          onDismissSuggestion={() => dismissSuggestion(thread.id)}
           onEscape={() => {
             if (!aside) return false
             closeAside()

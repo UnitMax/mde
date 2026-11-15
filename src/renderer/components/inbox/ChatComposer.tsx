@@ -193,6 +193,13 @@ export interface ChatComposerProps {
    * it the box has no file picker.
    */
   fileScope?: { folderId: string } | { threadId: string }
+  /**
+   * The message suggested next, shown as ghost text while the box is empty (nothing typed, quoted or attached).
+   * Tab (or the right arrow) takes it into the box to send or change; Enter never sends it untaken.
+   */
+  suggestion?: string | null
+  /** Escape in the empty box put the suggestion away. */
+  onDismissSuggestion?: () => void
 }
 
 /** What the page around the box can ask of it. */
@@ -202,6 +209,8 @@ export interface ChatComposerHandle {
    * draft is still loading or a send is under way, the quote waits for the box to be ready for it.
    */
   quote: (text: string) => void
+  /** Whether nothing is typed, quoted or attached, as a suggestion needs before it is worth asking for. */
+  isBlank: () => boolean
 }
 
 /** A quote attached to the message; the id keeps a card's state with it when another is taken off. */
@@ -239,6 +248,8 @@ export const ChatComposer = forwardRef(function ChatComposer({
   commands = NO_COMMANDS,
   onEscape,
   fileScope,
+  suggestion = null,
+  onDismissSuggestion,
 }: ChatComposerProps, ref: ForwardedRef<ChatComposerHandle>): JSX.Element {
   // What is typed. The quotes attached to the message are kept apart from it, as cards above the box, and are
   // joined to it as block quotes where the draft is kept and where the message is sent.
@@ -453,6 +464,18 @@ export const ChatComposer = forwardRef(function ChatComposer({
   const listLength = slashTrigger ? commandMatches.length : fileTrigger ? fileEntries.length : matches.length
   const pickerOpen = completionWord !== null && listLength > 0 && completionWord !== dismissed && !disabled && !sending && loaded
   const activeIndex = Math.min(activeItem, Math.max(listLength - 1, 0))
+  // The suggested next message shows only in a box with nothing in it, and goes as soon as anything is typed.
+  const blank = loaded && text === '' && quotes.length === 0 && draft.attachments.length === 0
+  const ghost = suggestion && blank && !disabled && !sending ? suggestion : null
+  const takeSuggestion = (value: string): void => {
+    resetHistory()
+    pendingCaret.current = value.length
+    setText(value)
+    setCursor({ text: value, at: value.length })
+    // A suggestion that ends in a $word or is one slash word is ready to send, without opening a list.
+    setDismissed(completionKey(value, value.length, commands.length > 0, scopeKey !== null))
+    persist(value)
+  }
   // The message as a command, when it starts with the name of one.
   const invocation = useMemo(() => parseInvocation(commands, text), [commands, text])
   const commandToken = useCallback((value: string) => {
@@ -500,6 +523,7 @@ export const ChatComposer = forwardRef(function ChatComposer({
       if (boxReady) attachQuotes([selection])
       else waitingQuotes.current.push(selection)
     },
+    isBlank: () => blank,
   }))
   useEffect(() => {
     if (!boxReady || waitingQuotes.current.length === 0) return
@@ -718,6 +742,20 @@ export const ChatComposer = forwardRef(function ChatComposer({
         return
       }
     }
+    // The suggestion in the empty box: Tab or the right arrow takes it, Escape puts it away.
+    if (ghost && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      if (event.key === 'Tab' || event.key === 'ArrowRight') {
+        event.preventDefault()
+        takeSuggestion(ghost)
+        return
+      }
+      if (event.key === 'Escape' && onDismissSuggestion) {
+        event.preventDefault()
+        event.stopPropagation()
+        onDismissSuggestion()
+        return
+      }
+    }
     // With no list to close, Escape belongs to the page: it closes the side question shown above the box.
     if (event.key === 'Escape' && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && onEscape?.()) {
       event.preventDefault()
@@ -830,6 +868,7 @@ export const ChatComposer = forwardRef(function ChatComposer({
           value={text}
           disabled={disabled || sending || !loaded}
           placeholder={placeholder}
+          suggestion={ghost}
           onChange={(next, caret) => {
             resetHistory()
             setText(next)

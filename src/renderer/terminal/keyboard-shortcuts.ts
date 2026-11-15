@@ -84,6 +84,7 @@ export function getKeyboardShortcutGroups(
         { id: 'inbox-cycle-agent', keys: ['Shift+Tab'], description: 'Cycle through the available agents in the message box.' },
         { id: 'inbox-newline', keys: ['Shift+Enter', 'Ctrl+J'], description: 'Insert a newline in the message box.' },
         { id: 'inbox-message-history', keys: ['Up'], description: 'In an empty message box, recall earlier messages; Down moves forward.' },
+        { id: 'inbox-take-suggestion', keys: ['Tab'], description: 'Take the suggested next message shown in the empty message box; Esc puts it away.' },
         { id: 'inbox-skill-picker', keys: ['$'], description: 'Start a word with $ to pick a skill.' },
         { id: 'inbox-slash-picker', keys: ['/'], description: 'Start a message with / to pick a command: /btw, /fork, /compact, /goal.' },
         {

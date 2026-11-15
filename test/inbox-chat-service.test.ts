@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { ChatEvent, InboxWorktreeEntry } from '../src/shared/types'
 import { ASIDE_PREAMBLE, ASIDE_TIMEOUT_MS, InboxChatService, TITLE_TIMEOUT_MS, type InboxChatDependencies } from '../src/main/inbox/chat'
 import { InboxRecorder, isInboxThreadUnread } from '../src/main/inbox/recorder'
+import { SUGGEST_PREAMBLE, SUGGEST_TIMEOUT_MS } from '../src/main/inbox/suggestion'
 import { InboxStore } from '../src/main/inbox/store'
 import type { ServiceOperation, ServiceRequest } from '../src/main/opencode/service/client'
 import { OpenCodeServiceError, SERVICE_REQUEST_TIMEOUT_MS } from '../src/main/opencode/service/client'
@@ -1144,6 +1145,36 @@ describe('Inbox chat service', () => {
         await down.service.create({ folderId: down.folder.id, text: 'Hi', agent: 'build', model })
         await expect(down.service.aside({ threadId: 'ses_new', question: 'Why?' })).rejects.toThrow('No model is available.')
         down.service.stop()
+      })
+    })
+
+    describe('next-message suggestions', () => {
+      it('asks the session for text behind the suggestion preamble only, and returns the cleaned guess', async () => {
+        const { service, folder, calls } = setup({
+          'session.create': { data: { id: 'ses_new' } },
+          'session.generate': { data: { text: '\n  "Run the tests."  \n' } },
+        })
+        await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+        calls.length = 0
+        await expect(service.suggest({ threadId: 'ses_new' })).resolves.toEqual({ text: 'Run the tests.' })
+        // Nothing is added to the conversation: one generate, no prompt, no interrupt.
+        expect(calls).toEqual([{
+          operation: 'session.generate',
+          request: { params: { sessionID: 'ses_new' }, body: { prompt: SUGGEST_PREAMBLE }, timeoutMs: SUGGEST_TIMEOUT_MS },
+        }])
+        service.stop()
+      })
+
+      it('gives null when the model has nothing to suggest, and refuses an unknown thread or a disabled Inbox without asking', async () => {
+        const { service, folder, calls, disable } = setup({ 'session.create': { data: { id: 'ses_new' } }, 'session.generate': { data: { text: 'NONE' } } })
+        await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
+        await expect(service.suggest({ threadId: 'ses_new' })).resolves.toEqual({ text: null })
+        calls.length = 0
+        await expect(service.suggest({ threadId: 'ses_unknown' })).rejects.toThrow()
+        disable()
+        await expect(service.suggest({ threadId: 'ses_new' })).rejects.toThrow()
+        expect(calls).toEqual([])
+        service.stop()
       })
     })
 

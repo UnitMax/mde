@@ -1,5 +1,6 @@
 import type { ChatDraftList, ChatDraftRequest } from '@shared/types'
 import type { InboxAsideHistory } from './asides'
+import { cleanSuggestion, SUGGEST_PREAMBLE, SUGGEST_TIMEOUT_MS } from './suggestion'
 import type { InboxDraftStore } from './drafts'
 import { readSessionAttachment } from '../files/tree'
 import { randomUUID } from 'node:crypto'
@@ -11,6 +12,8 @@ import type {
   ChatAsideEntry,
   ChatAsideHistoryRequest,
   ChatAsideRequest,
+  ChatSuggestion,
+  ChatSuggestRequest,
   ChatDiscardPendingRequest,
   ChatEvent,
   ChatForkRequest,
@@ -895,6 +898,21 @@ export class InboxChatService {
   /** The thread's answered side questions, oldest first. */
   async asideHistory(request: ChatAsideHistoryRequest): Promise<ChatAsideEntry[]> {
     return await this.dependencies.asides?.list(request.threadId) ?? []
+  }
+
+  /**
+   * Guesses the message the person would most likely send next, from the conversation as it stands. Like a side
+   * question it adds nothing to the conversation and uses the thread's current model; unlike one it is not kept.
+   */
+  async suggest(request: ChatSuggestRequest): Promise<ChatSuggestion> {
+    this.assertEnabled()
+    const thread = this.thread(request.threadId)
+    const answer = await this.dependencies.client.request(thread.target, 'session.generate', {
+      params: { sessionID: thread.id },
+      body: { prompt: SUGGEST_PREAMBLE },
+      timeoutMs: SUGGEST_TIMEOUT_MS,
+    })
+    return { text: cleanSuggestion(parseGeneratedText(answer)) }
   }
 
   /**

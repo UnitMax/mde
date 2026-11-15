@@ -15,6 +15,7 @@ export const INBOX_TOOL_TURNS_STORAGE_KEY = 'mde.inbox-tool-turns'
 export const INBOX_COMMAND_NAMES_STORAGE_KEY = 'mde.inbox-command-names'
 export const INBOX_COMPACT_TEXT_STORAGE_KEY = 'mde.inbox-compact-text'
 export const INBOX_MODEL_QUICK_SWITCH_STORAGE_KEY = 'mde.inbox-model-quick-switch'
+export const INBOX_NEXT_SUGGESTION_STORAGE_KEY = 'mde.inbox-next-suggestion'
 export const INBOX_PROJECT_FILTER_STORAGE_KEY = 'mde.inbox-project-filter'
 export const INBOX_SIDEBAR_WIDTH_STORAGE_KEY = 'mde.inbox-sidebar-width'
 export const INBOX_TERMINAL_LAYOUT_STORAGE_KEY = 'mde.inbox-terminal-layout'
@@ -140,6 +141,15 @@ export function getInboxModelQuickSwitch(): boolean {
 
 export function saveInboxModelQuickSwitch(on: boolean): void {
   writeSwitch(INBOX_MODEL_QUICK_SWITCH_STORAGE_KEY, on)
+}
+
+/** Whether a finished turn suggests the next message as ghost text in the message box. On unless turned off. */
+export function getInboxNextSuggestion(): boolean {
+  return readSwitchOnByDefault(INBOX_NEXT_SUGGESTION_STORAGE_KEY)
+}
+
+export function saveInboxNextSuggestion(on: boolean): void {
+  writeSwitch(INBOX_NEXT_SUGGESTION_STORAGE_KEY, on)
 }
 
 /** The project the thread list is narrowed to, as the user last left it: its folder ID, or none. */

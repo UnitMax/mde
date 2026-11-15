@@ -938,6 +938,19 @@ export interface ChatAsideHistoryRequest {
   threadId: string
 }
 
+/**
+ * Asks for the message the person would most likely send next in a thread, guessed from the conversation as it
+ * stands. Like a side question, nothing is added to the conversation and the agent is not told.
+ */
+export interface ChatSuggestRequest {
+  threadId: string
+}
+
+export interface ChatSuggestion {
+  /** The suggested message, as plain text; null when the model had nothing obvious to suggest. */
+  text: string | null
+}
+
 export interface ChatPermissionReplyRequest {
   threadId: string
   requestId: string

@@ -20,6 +20,8 @@ export function InboxSettingsMenu(): JSX.Element {
   const setTitleIcons = useInboxView((state) => state.setTitleIcons)
   const modelQuickSwitch = useInboxView((state) => state.modelQuickSwitch)
   const setModelQuickSwitch = useInboxView((state) => state.setModelQuickSwitch)
+  const nextSuggestion = useInboxView((state) => state.nextSuggestion)
+  const setNextSuggestion = useInboxView((state) => state.setNextSuggestion)
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -82,6 +84,18 @@ export function InboxSettingsMenu(): JSX.Element {
             <span className="block">Model quick switch</span>
             <span className="mt-0.5 block text-[11px] leading-snug text-fg-subtle">
               Shows up to five favorite models as buttons above the message box. Star models in the model menu.
+            </span>
+          </span>
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem
+          data-testid="inbox-setting-next-suggestion"
+          checked={nextSuggestion}
+          onCheckedChange={(checked) => setNextSuggestion(checked === true)}
+        >
+          <span className="min-w-0">
+            <span className="block">Suggest next message</span>
+            <span className="mt-0.5 block text-[11px] leading-snug text-fg-subtle">
+              Five seconds after a turn ends, the thread&rsquo;s model guesses your next message and shows it in the empty box. Tab takes it. Costs one model call per turn.
             </span>
           </span>
         </DropdownMenuCheckboxItem>

@@ -138,6 +138,8 @@ import type {
   ChatAsideAnswer,
   ChatAsideEntry,
   ChatAsideHistoryRequest,
+  ChatSuggestRequest,
+  ChatSuggestion,
   ChatGoal,
   ChatGoalRequest,
   ChatThreadRequest,
@@ -746,6 +748,7 @@ export function registerIpcHandlers(
   handle<ChatSetDeliveryRequest, void>(IpcChannels.chatSetDelivery, (req) => chat.setDelivery(req))
   handle<ChatAsideRequest, ChatAsideAnswer>(IpcChannels.chatAside, (req) => chat.aside(req))
   handle<ChatAsideHistoryRequest, ChatAsideEntry[]>(IpcChannels.chatAsideHistory, (req) => chat.asideHistory(req))
+  handle<ChatSuggestRequest, ChatSuggestion>(IpcChannels.chatSuggest, (req) => chat.suggest(req))
   handle<ChatMcpRequest, ChatMcpState>(IpcChannels.chatMcp, (req) => chat.mcpList(req))
   handle<ChatUsageRequest, ChatUsageState>(IpcChannels.chatUsage, (req) => chat.usage(req))
   handle<ChatMcpSetRequest, void>(IpcChannels.chatMcpSet, (req) => chat.mcpSetEnabled(req))

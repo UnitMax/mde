@@ -1314,6 +1314,24 @@ box's toolbar (`AsideHistoryChip`, the `btw` mark and the count, shown once the 
 question), which opens the card on the newest one and closes it again; `/btw` with no question does the
 same once there is a history (without one it still asks for a question).
 
+**Next-message suggestion.** Once a GUI thread's turn has ended and stood still for five seconds
+(`SUGGESTION_DELAY_MS`) with the message box empty (nothing typed, quoted or attached), the thread's own model
+guesses the message the person would most likely send next, and the empty box shows it as ghost text with a
+Tab key hint. Tab (or the right arrow) takes it into the box, where it can be changed or sent; Enter in the
+empty box never sends it untaken. Typing hides it and clearing the box shows it again; Escape in the empty
+box puts it away for the rest of the turn (before it closes a side-question card). The guess goes through the
+same `generate` route as a side question (`InboxChatService.suggest`, `chat:suggest`), so it adds nothing to
+the conversation, emits no session events (verified live with OpenCode 2.2.6: the thread does not flip to
+working, so no done sound or toast) and uses the thread's current model; `SUGGEST_PREAMBLE` in
+`src/main/inbox/suggestion.ts` asks for one line in the person's voice, or `NONE`, and `cleanSuggestion` strips
+labels, quotes and list markers and cuts it at 240 characters. A turn is suggested after only when the
+conversation ends with a finished step without an error and nothing is pending: no permission or question
+card, no held message, no staged revert (`suggestionTurn` in `lib/next-suggestion.ts`). Each turn is asked
+about at most once, including after a failure, which shows nothing; the guess is kept in memory per thread
+(`store/inbox-suggestion.ts`) and becomes stale with the next turn. Opening a thread whose last turn has no
+guess yet asks after the same five seconds. The Inbox settings menu turns it off ("Suggest next message", on
+by default, `mde.inbox-next-suggestion`); each guess is one extra model call. Terminal threads have none.
+
 **Goals (`/goal`).** A goal keeps the agent working on an objective until a reviewer decides it is met.
 It is OpenCode's own `opencode.goal` plugin; MDE only starts, controls and shows it, and keeps no goal
 state of its own. `/goal <objective>` sets one, and `/goal pause`, `/goal resume` and `/goal clear` (in any

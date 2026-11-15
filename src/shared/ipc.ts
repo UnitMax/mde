@@ -94,6 +94,8 @@ import type {
   ChatAsideAnswer,
   ChatAsideEntry,
   ChatAsideHistoryRequest,
+  ChatSuggestRequest,
+  ChatSuggestion,
   ChatGoal,
   ChatGoalRequest,
   ChatThreadRequest,
@@ -212,6 +214,7 @@ export const IpcChannels = {
   chatSetDelivery: 'chat:set-delivery',
   chatAside: 'chat:aside',
   chatAsideHistory: 'chat:aside-history',
+  chatSuggest: 'chat:suggest',
   chatMcp: 'chat:mcp',
   chatMcpSet: 'chat:mcp-set',
   chatUsage: 'chat:usage',
@@ -641,6 +644,8 @@ export interface RendererApi {
     aside(req: ChatAsideRequest): Promise<ChatAsideAnswer>
     /** A thread's answered side questions, oldest first. */
     asideHistory(req: ChatAsideHistoryRequest): Promise<ChatAsideEntry[]>
+    /** Guesses the message the person would most likely send next in a thread; nothing is added to the conversation. */
+    suggest(req: ChatSuggestRequest): Promise<ChatSuggestion>
     /** The MCP servers OpenCode has for a folder or thread, with how each stands. Never cached. */
     mcp(req: ChatMcpRequest): Promise<ChatMcpState>
     /** Connects or disconnects one MCP server for the running OpenCode; its configuration is not changed. */

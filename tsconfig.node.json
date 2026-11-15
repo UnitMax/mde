@@ -155,6 +155,8 @@
     "src/renderer/store/inbox-chat.ts",
     "src/renderer/store/model-favorites.ts",
     "src/renderer/store/inbox-aside.ts",
+    "src/renderer/store/inbox-suggestion.ts",
+    "src/renderer/lib/next-suggestion.ts",
     "src/renderer/store/inbox-mcp.ts",
     "src/renderer/store/inbox-drafts.ts",
     "src/renderer/store/inbox-changes.ts",

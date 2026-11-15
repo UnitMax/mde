@@ -150,6 +150,11 @@ you chose, as it does for any message. It does not add either to the conversatio
 answered question and its answer for the thread in `inbox-asides.json` (see above), unencrypted, so they
 can be read again; a question that failed is not kept.
 
+The next-message suggestion (on by default; Inbox settings → "Suggest next message") works the same way:
+five seconds after a GUI thread's turn ends, MDE asks the same local service to guess your next message from
+the conversation, which may send the conversation to the model provider you chose. Nothing is added to the
+conversation, and the guess is kept only in memory until the next turn.
+
 Compacting a conversation (the `/compact` command or the context pill's Compact conversation button) asks
 the same local service to summarize the conversation, which sends the conversation to the model provider
 you chose, as any message does. OpenCode writes the summary into the conversation it stores for the
