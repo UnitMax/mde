@@ -257,7 +257,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.inboxWorktreeRemove]: object({ target: openCodeTarget, root: path, force: optional(boolean), deleteBranch: optional(boolean) }),
   [IpcChannels.inboxChangeDiff]: object({ threadId: opencodeSessionId, path }),
   [IpcChannels.inboxChanges]: object({ threadId: opencodeSessionId, details: optional(boolean) }),
-  [IpcChannels.gitGraph]: gitRoot({ limit: graphLimit, scope: oneOf('all', 'local', 'head') }),
+  [IpcChannels.gitGraph]: gitRoot({ limit: graphLimit, scope: oneOf('all', 'local', 'head'), threads: optional(boolean) }),
   [IpcChannels.gitCommit]: gitRoot({ hash: commitHash }),
   [IpcChannels.gitFetch]: (value) => gitRoot({})(value) || object({ folderId: inboxFolderId })(value),
   [IpcChannels.gitChanges]: gitRoot({}),

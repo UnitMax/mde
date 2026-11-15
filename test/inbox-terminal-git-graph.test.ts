@@ -65,7 +65,7 @@ describe('the Git chip of an Inbox terminal pane', () => {
     expect(view()).toBeNull()
     await act(async () => useSessionGitGraph.getState().toggle(pane))
     expect(view()).not.toBeNull()
-    expect(window.api.git.graph).toHaveBeenCalledWith({ terminalId: pane, limit: 400, scope: 'all' })
+    expect(window.api.git.graph).toHaveBeenCalledWith({ terminalId: pane, limit: 400, scope: 'all', threads: true })
     await act(async () => useSessionGitGraph.getState().toggle(pane))
     expect(view()).toBeNull()
   })

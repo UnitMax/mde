@@ -705,6 +705,29 @@ it. The graph is
 read again after a Changes refresh with a different summary (a commit in the thread clears its
 changes), after a fetch, and with Refresh.
 
+**Threads in the graph.** The graph also shows where the Inbox threads of the repository are: a
+thread runs in a checkout (the repository's main working tree or one of its worktrees), and that
+checkout's HEAD is the thread's place. The commit carries a small marker after its branch chips:
+one thread is a button with its state (the same glyphs as the thread list: working, needs input or
+permission, done, failed, woke up) and its title, which opens the thread; several at one commit are
+collected into one button (their glyphs and a count) that lists them, most pressing first, each
+opening its thread. The toolbar's Threads button (shown when the repository has any) lists every
+thread by checkout, the graph's own first; a checkout's line goes to its commit, or says *not
+shown* when that commit is not among those read (the Current scope, or further down than the
+commits loaded). Its switch **Show threads on the graph** takes the markers off or puts them back
+and is kept in `localStorage` (`mde.gitGraph.threads`, on by default). Opening a thread closes the
+graph. The graph is read again when a listed thread changes state or the number of threads
+changes, since an agent that stopped may have committed. `git:graph` takes an optional `threads`
+flag (sent by the Inbox and Sessions graphs alike); the main process then also runs
+`git worktree list --porcelain` and returns, for each thread that is not archived, whose worktree
+was not deleted, and that is on the same machine as the checkout (native, or the same WSL
+distribution), the checkout its recorded directory is in (the innermost, comparing Windows paths
+without regard to slashes and case) with that checkout's commit and branch. The renderer joins
+these with the threads it already has; no thread content is read. The pieces are
+`parseGitCheckoutHeads`/`threadsInCheckouts` in `src/main/git-graph.ts`,
+`readInboxGitGraphWithThreads` in `src/main/inbox/changes.ts` and
+`components/inbox/GitGraphThreads.tsx`.
+
 The same graph opens in Sessions from a terminal's Git chip (see Git below). `git:graph` takes a
 root (a thread ID or a terminal ID, never both and never a path), a commit limit (1 to 5,000) and the
 scope; the main process resolves the thread's recorded directory, or the terminal's current

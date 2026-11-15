@@ -1295,6 +1295,8 @@ export type GitGraphRequest = GitRootRequest & {
    * `head`: only what HEAD can reach.
    */
   scope: GitGraphScope
+  /** Also say which Inbox threads run in a checkout of this repository, and at which commit. */
+  threads?: boolean
 }
 
 export interface GitGraphCommit {
@@ -1314,6 +1316,17 @@ export interface GitGraphRef {
   kind: 'branch' | 'remote' | 'tag'
 }
 
+/** An Inbox thread that runs in a checkout (the main one or a worktree) of the repository a graph shows. */
+export interface GitGraphThread {
+  threadId: string
+  /** The commit checked out where the thread runs; null in a checkout with no commits yet. */
+  head: string | null
+  /** The branch checked out there; null for a detached HEAD. */
+  branch: string | null
+  /** That checkout's root, which tells the threads of one checkout from those of another. */
+  root: string
+}
+
 export interface InboxGitGraph {
   available: boolean
   reason?: string
@@ -1330,6 +1343,8 @@ export interface InboxGitGraph {
   commits: GitGraphCommit[]
   /** More commits exist past the limit. */
   more: boolean
+  /** Only when asked for: the Inbox threads in this repository's checkouts. Archived threads are left out. */
+  threads?: GitGraphThread[]
 }
 
 export type GitCommitRequest = GitRootRequest & { hash: string }

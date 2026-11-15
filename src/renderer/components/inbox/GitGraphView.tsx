@@ -12,6 +12,10 @@ import { useInboxChanges, inboxChangesKey } from '@/store/inbox-changes'
 import { useWorkspace } from '@/store/workspace'
 import { codeViewerFontFamily, getTerminalSettings, subscribeTerminalSettings } from '@/terminal/terminal-settings'
 import { ChangeCounts, ChangeDiffViewer, StatusMark } from './InboxChanges'
+import {
+  GraphThreadMarker, GraphThreadsMenu, placeGraphThreads, saveGraphThreadsShown, storedGraphThreadsShown, threadCheckouts,
+  type PlacedThread,
+} from './GitGraphThreads'
 
 /** Commits read at first, and added each time the list nears its end. */
 export const GRAPH_PAGE = 400
@@ -487,6 +491,11 @@ export interface GitGraphPanelProps {
   refreshKey?: string
   /** The pane shown beside the graph for the uncommitted changes. */
   renderWorking: (close: () => void) => ReactNode
+  /**
+   * Opens an Inbox thread. With it, the graph also shows which threads run in the repository's
+   * checkouts and at which commit; without it, threads are not read at all.
+   */
+  onOpenThread?: (threadId: string) => void
 }
 
 /**
@@ -511,6 +520,11 @@ export function GitGraphView({ threadId }: { threadId: string }): JSX.Element | 
       identity={threadId}
       source={source}
       onClose={() => useInboxChanges.getState().closeGraph()}
+      // Another thread takes the graph's place; this one is beneath it already.
+      onOpenThread={(id) => {
+        useInboxChanges.getState().closeGraph()
+        if (id !== threadId) useWorkspace.getState().selectInboxThread(id)
+      }}
       workingCount={changes?.available ? changes.fileCount : 0}
       // A commit made in the thread changes the working tree, which the Changes watcher notices.
       refreshKey={changes ? JSON.stringify([changes.branch, changes.fileCount, changes.additions, changes.deletions]) : undefined}
@@ -524,7 +538,7 @@ export function GitGraphView({ threadId }: { threadId: string }): JSX.Element | 
  * branches, remote branches and tags that point at them, and where HEAD is. Fetch brings the
  * remote branches up to date. Laid over the conversation (Inbox) or the terminals (Sessions).
  */
-export function GitGraphPanel({ open, identity, source, onClose, workingCount, refreshKey, renderWorking }: GitGraphPanelProps): JSX.Element | null {
+export function GitGraphPanel({ open, identity, source, onClose, workingCount, refreshKey, renderWorking, onOpenThread }: GitGraphPanelProps): JSX.Element | null {
   const [scope, setScope] = useState<GitGraphScope>(storedScope)
   const [limit, setLimit] = useState(GRAPH_PAGE)
   const [state, setState] = useState<GraphState>({ loading: true })
@@ -543,17 +557,20 @@ export function GitGraphPanel({ open, identity, source, onClose, workingCount, r
   const [, setTick] = useState(0)
   const list = useRef<HTMLDivElement>(null)
   const request = useRef(0)
+  const withThreads = Boolean(onOpenThread)
+  const [threadsShown, setThreadsShown] = useState(storedGraphThreadsShown)
+  const inboxThreads = useWorkspace((s) => s.inboxThreads)
 
   const load = useCallback((nextLimit = limit, nextScope = scope) => {
     const id = ++request.current
     setState((previous) => ({ ...previous, loading: true }))
-    window.api.git.graph({ ...source, limit: nextLimit, scope: nextScope }).then(
+    window.api.git.graph({ ...source, limit: nextLimit, scope: nextScope, ...(withThreads ? { threads: true } : {}) }).then(
       (value) => { if (id === request.current) setState({ value, loading: false }) },
       (error) => {
         if (id === request.current) setState((previous) => ({ value: previous.value, loading: false, error: ipcErrorMessage(error, 'Could not read the Git history.') }))
       },
     )
-  }, [source, limit, scope])
+  }, [source, limit, scope, withThreads])
 
   // Another thread or terminal starts afresh. Coming back (after a diff review opened from here)
   // keeps the chosen commit and the search, and reads the graph again.
@@ -624,6 +641,25 @@ export function GitGraphPanel({ open, identity, source, onClose, workingCount, r
     return map
   }, [value?.refs])
   const byHash = useMemo(() => new Map((value?.commits ?? []).map((commit, index) => [commit.hash, index + (working ? 1 : 0)])), [value?.commits, working])
+  const placed = useMemo(() => placeGraphThreads(value?.threads, inboxThreads), [value?.threads, inboxThreads])
+  const threadsByCommit = useMemo(() => {
+    const map = new Map<string, PlacedThread[]>()
+    for (const item of placed) if (item.head) map.set(item.head, [...(map.get(item.head) ?? []), item])
+    return map
+  }, [placed])
+  const checkouts = useMemo(() => threadCheckouts(placed, value?.worktree ?? null), [placed, value?.worktree])
+  // A thread that starts, stops or is added may have moved its checkout: the graph is read again.
+  // What a new reading brings is not itself a change.
+  const threadsKey = withThreads
+    ? `${inboxThreads.filter((thread) => !thread.archived).length}|${placed.map((item) => `${item.thread.id}:${item.thread.status}`).sort().join(',')}`
+    : ''
+  const threadsSeen = useRef<{ value: InboxGitGraph | undefined; key: string }>()
+  useEffect(() => {
+    const previous = threadsSeen.current
+    threadsSeen.current = { value: state.value, key: threadsKey }
+    if (!open || !withThreads || !previous || previous.value !== state.value || previous.key === threadsKey) return
+    load()
+  }, [open, withThreads, state.value, threadsKey, load])
   const lanes = Math.min(MAX_DRAWN_LANES, rows.layout.reduce((max, row) => Math.max(max, row.width), 1))
   const graphWidth = lanes * LANE_WIDTH + 8
   const needle = query.trim().toLowerCase()
@@ -689,6 +725,17 @@ export function GitGraphPanel({ open, identity, source, onClose, workingCount, r
     saveScope(next)
     setLimit(GRAPH_PAGE)
     load(GRAPH_PAGE, next)
+  }
+  const currentThreadId = 'threadId' in source ? source.threadId : undefined
+  const locateCommit = (hash: string): void => {
+    const index = byHash.get(hash)
+    if (index === undefined) return
+    setSelected(hash)
+    centerRow(index)
+  }
+  const changeThreadsShown = (next: boolean): void => {
+    setThreadsShown(next)
+    saveGraphThreadsShown(next)
   }
   const locateHead = (): void => {
     if (!value?.head) return
@@ -760,6 +807,7 @@ export function GitGraphPanel({ open, identity, source, onClose, workingCount, r
           const chips = refChips(refs, value?.branch ?? null, isHead && !value?.branch)
           const dim = Boolean(needle) && (isWorking || !found.includes(index))
           const isSelected = selected === item.hash
+          const here = threadsShown && onOpenThread ? threadsByCommit.get(item.hash) : undefined
           return (
             <div
               key={item.hash}
@@ -787,6 +835,7 @@ export function GitGraphPanel({ open, identity, source, onClose, workingCount, r
               />
               <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
                 {chips.map((chip) => <Chip key={chip.key} chip={chip} color={laneColor(row.color)} />)}
+                {here && onOpenThread && <GraphThreadMarker threads={here} currentId={currentThreadId} onOpen={onOpenThread} />}
                 {isWorking ? (
                   <span className="truncate italic text-fg-muted">
                     Uncommitted changes · {workingCount} {workingCount === 1 ? 'file' : 'files'}
@@ -900,6 +949,18 @@ export function GitGraphPanel({ open, identity, source, onClose, workingCount, r
         <span className="flex-1" />
         {fetching.at && !fetching.busy && (
           <span className="text-[11px] text-fg-subtle" data-testid="git-graph-fetched">Fetched {relativeCommitTime(fetching.at / 1000)}</span>
+        )}
+        {onOpenThread && placed.length > 0 && (
+          <GraphThreadsMenu
+            checkouts={checkouts}
+            count={placed.length}
+            shown={threadsShown}
+            currentId={currentThreadId}
+            inGraph={(hash) => byHash.has(hash)}
+            onShownChange={changeThreadsShown}
+            onLocate={locateCommit}
+            onOpen={onOpenThread}
+          />
         )}
         <Button
           variant="ghost"

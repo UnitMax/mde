@@ -176,7 +176,10 @@ import { listWslDirectories } from './wsl/browse'
 import { buildVsCodeRemoteUri } from './vscode'
 import { safeVsCodeRemoteUrl } from './external-links'
 import { readGitTerminalInfo } from './git'
-import { fetchInboxGit, readInboxGitChanges, readInboxGitCommit, readInboxGitCommitDiff, readInboxGitDiff, readInboxGitGraph } from './inbox/changes'
+import {
+  fetchInboxGit, readInboxGitChanges, readInboxGitCommit, readInboxGitCommitDiff, readInboxGitDiff, readInboxGitGraph,
+  readInboxGitGraphWithThreads,
+} from './inbox/changes'
 import { terminalSessionResolver } from './inbox/terminal'
 import { INBOX_TERMINAL_SESSION_ID, inboxTerminalSession, type InboxTerminalConfiguration, type InboxTerminalSettings } from '@shared/inbox-terminal'
 import { isSafeRelativePath, isWithinRoot, listSessionDirectory, readSessionFile, treeFolderPath } from './files/tree'
@@ -728,7 +731,11 @@ export function registerIpcHandlers(
     if (!session || !directory) throw new Error('The folder of this terminal could not be found.')
     return { ...session, path: directory }
   }
-  handle<GitGraphRequest, InboxGitGraph>(IpcChannels.gitGraph, async (req) => readInboxGitGraph(await gitGraphRoot(req), req.limit, req.scope))
+  handle<GitGraphRequest, InboxGitGraph>(IpcChannels.gitGraph, async (req) => {
+    const root = await gitGraphRoot(req)
+    if (!req.threads) return readInboxGitGraph(root, req.limit, req.scope)
+    return readInboxGitGraphWithThreads(root, req.limit, req.scope, inboxRecorder.list(), 'threadId' in req ? req.threadId : undefined)
+  })
   handle<GitCommitRequest, InboxGitCommitDetails>(IpcChannels.gitCommit, async (req) => readInboxGitCommit(await gitGraphRoot(req), req.hash))
   handle<GitFetchRequest, InboxGitFetchResult>(IpcChannels.gitFetch, async (req) => {
     if (!('folderId' in req)) return fetchInboxGit(await gitGraphRoot(req))
