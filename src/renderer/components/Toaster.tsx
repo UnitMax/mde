@@ -48,7 +48,7 @@ function ToastCard({ toast }: { toast: Toast }): JSX.Element {
         <div className="pt-2">
           <div
             role="status"
-            className="mde-toast group relative overflow-hidden rounded-lg border border-line-strong bg-elevated shadow-xl shadow-shade/50"
+            className="mde-toast group relative overflow-hidden rounded-lg border border-line-strong bg-elevated"
             data-tone={toast.tone}
             data-testid="toast"
             onKeyDown={onKeyDown}
