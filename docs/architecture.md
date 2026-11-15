@@ -560,10 +560,15 @@ with their count (changed files, tool calls) as a small mark on the corner; thei
 tooltip and the accessible name. Wider, every tab is named, with its count beside it. The strip still scrolls
 sideways as a last resort.
 
+The header holds only the tabs. Every tab has a footer of the same height (`SidebarFooter`, 36 px): the tab's own
+buttons on the left (Open folder and Refresh for Files, Git graph and Refresh for Changes, Float terminal for
+Terminal; Tools has none), and at the right end, set off by a short rule, Float as a menu and Collapse Collapsed,
+the rail keeps its Expand button at the bottom, in a strip of the footer's height, where Collapse was.
+
 ### Floating sidebar menu
 
-The right-hand sidebar can float over the conversation instead of standing beside it: the docked header's
-**Float as a menu** button (beside Collapse) turns it into a card in the conversation's top right corner, below
+The right-hand sidebar can float over the conversation instead of standing beside it: the docked sidebar's
+**Float as a menu** button (beside Collapse, at the right end of every tab's footer) turns it into a card in the conversation's top right corner, below
 the thread header, and the card's **Dock as sidebar** row turns it back. The choice is kept in `localStorage`
 (`mde.inbox-sidebar-floating`), off by default. The card lists the project, Open in File Explorer (and VS Code where
 offered), Files and Terminal and, for a thread, its branch (opening the Git graph), Changes with the lines added

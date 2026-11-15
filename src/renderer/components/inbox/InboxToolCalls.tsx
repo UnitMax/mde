@@ -270,7 +270,10 @@ export function InboxToolCalls({ thread }: { thread: InboxThread }): JSX.Element
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="inbox-tools-list">
       <div className="flex shrink-0 flex-col gap-2 border-b border-line px-3 py-2">
-        <div className="relative">
+        {/* Expand all sits beside the search box, whose input gives way to it: the filters below need the whole
+            width of a narrow sidebar. */}
+        <div className="flex min-w-0 items-center gap-1">
+        <div className="relative min-w-0 flex-1">
           <Search aria-hidden className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-subtle" />
           <input
             type="search"
@@ -298,8 +301,19 @@ export function InboxToolCalls({ thread }: { thread: InboxThread }): JSX.Element
             </button>
           )}
         </div>
-        <div className="flex min-w-0 items-center gap-2">
-          <div role="radiogroup" aria-label="Show" className="flex min-w-0 shrink-0 items-center gap-0.5 rounded-md bg-fg/5 p-0.5">
+          <button
+            type="button"
+            aria-label={allOpen ? 'Collapse all calls' : 'Expand all calls'}
+            title={allOpen ? 'Collapse all calls' : 'Expand all calls'}
+            disabled={shown.length === 0}
+            onClick={() => setOpened(allOpen ? new Set() : new Set(shown.flatMap((turn) => turn.entries.map((entry) => entry.id))))}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-fg-subtle transition-colors hover:bg-hover hover:text-fg disabled:pointer-events-none disabled:opacity-40"
+          >
+            {allOpen ? <ChevronsDownUp aria-hidden className="h-3.5 w-3.5" /> : <ChevronsUpDown aria-hidden className="h-3.5 w-3.5" />}
+          </button>
+        </div>
+        <div className="flex min-w-0 items-center">
+          <div role="radiogroup" aria-label="Show" className="flex min-w-0 flex-1 items-center gap-0.5 rounded-md bg-fg/5 p-0.5">
             {FILTERS.map((item) => {
               const count = counts[item.value]
               const selected = filter === item.value
@@ -313,28 +327,17 @@ export function InboxToolCalls({ thread }: { thread: InboxThread }): JSX.Element
                   data-testid={`inbox-tools-filter-${item.value}`}
                   onClick={() => setFilter(item.value)}
                   className={cn(
-                    'flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 text-[11.5px] transition-colors',
+                    // Sized by what each says and sharing the row, so the four fit the narrowest sidebar.
+                    'flex min-w-0 flex-auto items-center justify-center gap-1 whitespace-nowrap rounded px-1 py-0.5 text-[11.5px] transition-colors',
                     selected ? 'bg-panel text-fg shadow-sm' : 'text-fg-subtle hover:text-fg-muted',
                   )}
                 >
-                  {item.label}
-                  <span className={cn('tabular-nums text-[10.5px]', item.value === 'failed' && count > 0 ? 'text-danger' : 'text-fg-subtle')}>{count}</span>
+                  <span className="min-w-0 truncate">{item.label}</span>
+                  <span className={cn('shrink-0 tabular-nums text-[10.5px]', item.value === 'failed' && count > 0 ? 'text-danger' : 'text-fg-subtle')}>{count}</span>
                 </button>
               )
             })}
           </div>
-          <span className="flex-1" />
-          {shown.length > 0 && (
-            <button
-              type="button"
-              aria-label={allOpen ? 'Collapse all calls' : 'Expand all calls'}
-              title={allOpen ? 'Collapse all calls' : 'Expand all calls'}
-              onClick={() => setOpened(allOpen ? new Set() : new Set(shown.flatMap((turn) => turn.entries.map((entry) => entry.id))))}
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-fg-subtle transition-colors hover:bg-hover hover:text-fg"
-            >
-              {allOpen ? <ChevronsDownUp aria-hidden className="h-3.5 w-3.5" /> : <ChevronsUpDown aria-hidden className="h-3.5 w-3.5" />}
-            </button>
-          )}
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto" onKeyDown={walkRows}>

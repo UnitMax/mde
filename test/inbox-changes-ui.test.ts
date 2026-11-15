@@ -622,6 +622,35 @@ it('takes the keyboard to the terminal when the tab is clicked, but not when it 
   expect(focusInboxTerminalWhenShown).toHaveBeenCalledTimes(1)
 })
 
+it('keeps the tab strip alone in the header, and gives every tab a footer with Float and Collapse at its right end', async () => {
+  useInboxChat.setState({ threads: {} })
+  await sidebar()
+  for (const name of ['files', 'changes', 'tools', 'terminal'] as const) {
+    await act(async () => tab(name)!.click())
+    const strip = container.querySelector('[role="tablist"]')!
+    const header = strip.parentElement!.parentElement!
+    expect(header.querySelectorAll('button:not([role="tab"]):not([data-testid^="scroll-strip"])')).toHaveLength(0)
+    const footers = Array.from(container.querySelectorAll<HTMLElement>('[data-testid="sidebar-footer"]')).filter((item) => item.closest('.hidden') === null)
+    expect(footers).toHaveLength(1)
+    expect(footers[0]!.className).toContain('h-9')
+    const buttons = Array.from(footers[0]!.querySelectorAll('button'))
+    expect(buttons.at(-2)?.getAttribute('aria-label')).toBe('Float as a menu')
+    expect(buttons.at(-1)?.getAttribute('aria-label')).toMatch(/^Collapse (sidebar|files)$/)
+  }
+})
+
+it('expands the collapsed sidebar from the bottom of its rail, where the footer collapsed it', async () => {
+  await sidebar()
+  const collapse = container.querySelector<HTMLButtonElement>('[data-testid="sidebar-footer"] [aria-label="Collapse files"]')!
+  await act(async () => collapse.click())
+  const rail = container.querySelector<HTMLElement>('[data-testid="file-tree-rail"]')!
+  expect(rail.className).toContain('justify-end')
+  const strip = rail.lastElementChild as HTMLElement
+  expect(strip.className).toContain('h-9')
+  expect(strip.querySelector('[aria-label="Expand files"]')).not.toBeNull()
+  useWorkspace.setState({ fileTreeCollapsed: false })
+})
+
 it('puts every panel in the resizable frame, but not the collapsed rail', async () => {
   await sidebar()
   expect(container.querySelector('[data-testid="inbox-sidebar-frame"] [data-testid="file-tree-panel"]')).not.toBeNull()

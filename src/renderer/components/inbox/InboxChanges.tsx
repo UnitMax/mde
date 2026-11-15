@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { AlertCircle, FileDiff, Folder, FolderX, GitBranch, GitGraph, LoaderCircle, PanelRightClose, PictureInPicture2, RefreshCw, SquareTerminal, Wrench, X, type LucideIcon } from 'lucide-react'
 import type { GitChangeStatus, InboxChangeDiff, InboxChangedFile, InboxChangesResponse, InboxThread, DirectoryContext } from '@shared/types'
 import { Button } from '@/components/ui/button'
+import { SidebarFooter } from '@/components/ui/sidebar-footer'
 import { FileTreePanel } from '@/components/FileTreePanel'
 import { DiffBody } from './ChatFileChange'
 import { ScrollStrip } from '@/components/ui/scroll-strip'
@@ -573,8 +574,8 @@ function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
   )
 }
 
-/** The buttons at the end of a panel's header: float the sidebar as a menu card, and collapse it. */
-function SidebarHeaderActions({ collapseLabel = 'Collapse sidebar' }: { collapseLabel?: string }): JSX.Element {
+/** The buttons at the right end of every panel's footer: float the sidebar as a menu card, and collapse it. */
+function SidebarActions({ collapseLabel = 'Collapse sidebar' }: { collapseLabel?: string }): JSX.Element {
   const toggle = useWorkspace((s) => s.toggleFileTree)
   return (
     <>
@@ -672,7 +673,6 @@ function ChangesAside({ threadId }: { threadId: string }): JSX.Element {
     <aside data-testid="inbox-changes-panel" className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-line bg-panel">
       <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
         <SidebarTabs threadId={threadId} />
-        <SidebarHeaderActions />
       </div>
       <div
         role="tabpanel"
@@ -687,7 +687,7 @@ function ChangesAside({ threadId }: { threadId: string }): JSX.Element {
           <ListMessage role="status">Loading changes…</ListMessage>
         )}
       </div>
-      <div className="flex shrink-0 justify-between gap-2 border-t border-line px-2 py-1">
+      <SidebarFooter actions={<SidebarActions />}>
         <Button
           variant="ghost"
           size="sm"
@@ -715,7 +715,7 @@ function ChangesAside({ threadId }: { threadId: string }): JSX.Element {
           <RefreshCw className="h-3.5 w-3.5" />
           Refresh
         </Button>
-      </div>
+      </SidebarFooter>
     </aside>
   )
 }
@@ -726,7 +726,6 @@ function ToolsAside({ thread }: { thread: InboxThread }): JSX.Element {
     <aside data-testid="inbox-tools-panel" className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-line bg-panel">
       <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
         <SidebarTabs threadId={thread.id} />
-        <SidebarHeaderActions />
       </div>
       <div
         role="tabpanel"
@@ -736,6 +735,7 @@ function ToolsAside({ thread }: { thread: InboxThread }): JSX.Element {
       >
         <InboxToolCalls thread={thread} />
       </div>
+      <SidebarFooter actions={<SidebarActions />} />
     </aside>
   )
 }
@@ -749,7 +749,6 @@ function DeletedWorktreeAside({ threadId, branch, tab }: { threadId: string; bra
     <aside data-testid="inbox-deleted-worktree-panel" className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-line bg-panel">
       <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
         <SidebarTabs threadId={threadId} />
-        <SidebarHeaderActions />
       </div>
       <div
         role="tabpanel"
@@ -767,6 +766,7 @@ function DeletedWorktreeAside({ threadId, branch, tab }: { threadId: string; bra
             : <>The edits it made are still in the conversation{branch && <>, and any commits stay on the branch <span className="inbox-code-font">{branch}</span> unless it was deleted too</>}.</>}
         </p>
       </div>
+      <SidebarFooter actions={<SidebarActions />} />
     </aside>
   )
 }
@@ -781,8 +781,6 @@ function TerminalAside({ threadId }: { threadId?: string }): JSX.Element {
     <aside data-testid="inbox-terminal-panel" className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-line bg-panel">
       <div className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-3">
         <SidebarTabs threadId={threadId} />
-        {!floating && <FloatTerminalButton />}
-        <SidebarHeaderActions />
       </div>
       <div
         role="tabpanel"
@@ -792,6 +790,9 @@ function TerminalAside({ threadId }: { threadId?: string }): JSX.Element {
       >
         {floating ? <FloatingTerminalNotice /> : <InboxTerminal />}
       </div>
+      <SidebarFooter actions={<SidebarActions />}>
+        {!floating && <FloatTerminalButton />}
+      </SidebarFooter>
     </aside>
   )
 }
@@ -860,7 +861,8 @@ export function InboxSidebar({ session, threadId }: { session: DirectoryContext;
           browseOnly
           fill
           heading={tab === 'files' ? <SidebarTabs threadId={threadId} /> : undefined}
-          actions={tab === 'files' ? <SidebarHeaderActions collapseLabel="Collapse files" /> : undefined}
+          actions={null}
+          footerActions={<SidebarActions collapseLabel="Collapse files" />}
           openInTerminal={(folder) => openInInboxTerminal(folder, session)}
         />
       </div>}

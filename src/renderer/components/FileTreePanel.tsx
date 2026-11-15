@@ -16,6 +16,7 @@ import type { Session } from '@shared/types'
 import type { FileRoot, FilesListRequest } from '@shared/ipc'
 import { fileRootKey } from '@/lib/file-root'
 import { Button } from '@/components/ui/button'
+import { SidebarFooter } from '@/components/ui/sidebar-footer'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { OpenFolderButtons, type OpenFolderTarget } from '@/components/OpenFolderButtons'
 import { useWorkspace } from '@/store/workspace'
@@ -63,6 +64,7 @@ function FileTree({
   browseOnly,
   heading,
   actions,
+  footerActions,
   fill,
   bare,
   openInTerminal
@@ -73,6 +75,7 @@ function FileTree({
   browseOnly: boolean
   heading?: ReactNode
   actions?: ReactNode
+  footerActions?: ReactNode
   bare: boolean
   fill: boolean
   openInTerminal?: (folder: FilesListRequest) => Promise<void>
@@ -346,7 +349,7 @@ function FileTree({
             <RefreshCw className="h-3.5 w-3.5" />
           </Button>
         )}
-        {actions ?? (
+        {actions !== undefined ? actions : (
           <Button
             variant="ghost"
             size="icon-sm"
@@ -393,13 +396,13 @@ function FileTree({
         </div>
       )}
       {browseOnly && !bare && (
-        <div className="flex shrink-0 items-center gap-1 border-t border-line px-2 py-1">
+        <SidebarFooter actions={footerActions}>
           {folderTarget && <OpenFolderButtons target={folderTarget} kind={session.kind} distro={session.distro} />}
-          <Button className="ml-auto" variant="ghost" size="sm" onClick={refresh} title="Refresh files" aria-label="Refresh files">
+          <Button variant="ghost" size="sm" onClick={refresh} title="Refresh files" aria-label="Refresh files">
             <RefreshCw className="h-3.5 w-3.5" />
             Refresh
           </Button>
-        </div>
+        </SidebarFooter>
       )}
     </aside>
   )
@@ -407,8 +410,8 @@ function FileTree({
 
 /**
  * Files of a live terminal root or an Inbox folder. `browseOnly` is for Inbox folders: the folder opens in
- * VS Code or the file manager by its Inbox ID. Those buttons and Refresh sit in a footer there, because the
- * header's 260 px minimum is already full with the Files, Changes, Tools and Terminal tabs.
+ * VS Code or the file manager by its Inbox ID. Those buttons and Refresh sit in a footer there, with the host's
+ * `footerActions` at its right end, because the header's 260 px minimum is left to the Inbox sidebar's tabs.
  */
 export function FileTreePanel({
   session,
@@ -416,6 +419,7 @@ export function FileTreePanel({
   browseOnly = false,
   heading,
   actions,
+  footerActions,
   fill = false,
   bare = false,
   openInTerminal
@@ -426,8 +430,10 @@ export function FileTreePanel({
   browseOnly?: boolean
   /** Replaces the "Files" title in the header, for a host that offers other tabs beside the files. */
   heading?: ReactNode
-  /** Replaces the collapse button at the end of the header, for a host with buttons of its own there. */
+  /** Replaces the collapse button at the end of the header, for a host with buttons of its own there; `null` for none. */
   actions?: ReactNode
+  /** Buttons at the right end of the footer of an Inbox folder (`browseOnly`), such as collapsing the sidebar. */
+  footerActions?: ReactNode
   /** Only the tree, without header, footer or panel chrome, for a host that frames it itself (the floating card). */
   bare?: boolean
   /** Takes the width of its container instead of its own 260px, for a host whose sidebar can be resized. */
@@ -448,20 +454,29 @@ export function FileTreePanel({
   const toggleFileTree = useWorkspace((state) => state.toggleFileTree)
 
   if (collapsed) {
-    return (
-      <aside className="fancy-glass flex h-full min-h-0 w-11 shrink-0 flex-col items-center border-l border-line bg-panel py-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={toggleFileTree}
-          title="Expand files"
-          aria-label="Expand files"
-        >
-          <PanelRightOpen className="h-4 w-4" />
-        </Button>
+    const expand = (
+      <Button
+        variant="ghost"
+        size={browseOnly ? 'icon-sm' : 'icon'}
+        onClick={toggleFileTree}
+        title="Expand files"
+        aria-label="Expand files"
+      >
+        <PanelRightOpen className={browseOnly ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
+      </Button>
+    )
+    // In the Inbox the sidebar collapses from its footer, so it expands from the same place: a strip of the
+    // footer's height at the bottom of the rail.
+    return browseOnly ? (
+      <aside data-testid="file-tree-rail" className="fancy-glass flex h-full min-h-0 w-11 shrink-0 flex-col justify-end border-l border-line bg-panel">
+        <div className="flex h-9 shrink-0 items-center justify-center border-t border-line">{expand}</div>
+      </aside>
+    ) : (
+      <aside data-testid="file-tree-rail" className="fancy-glass flex h-full min-h-0 w-11 shrink-0 flex-col items-center border-l border-line bg-panel py-2">
+        {expand}
       </aside>
     )
   }
 
-  return <FileTree key={root ? fileRootKey(root) : 'pending'} session={session} root={root} onCollapse={toggleFileTree} browseOnly={browseOnly} heading={heading} actions={actions} fill={fill} bare={bare} openInTerminal={openInTerminal} />
+  return <FileTree key={root ? fileRootKey(root) : 'pending'} session={session} root={root} onCollapse={toggleFileTree} browseOnly={browseOnly} heading={heading} actions={actions} footerActions={footerActions} fill={fill} bare={bare} openInTerminal={openInTerminal} />
 }
