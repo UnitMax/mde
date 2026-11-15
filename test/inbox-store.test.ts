@@ -81,6 +81,14 @@ describe('inbox thread validation', () => {
       .toMatchObject({ branch: null })
   })
 
+  it('keeps a thread\'s permission mode, and drops one it does not know', () => {
+    expect(validateInboxThread(thread({ permissionMode: 'read-only' }))).toEqual(thread({ permissionMode: 'read-only' }))
+    // The default mode is the absence of one; OpenCode keeps the rules, so a bad mark only costs the chip its label.
+    for (const permissionMode of ['default', 'yolo', 5, null, [{ action: '*', resource: '*', effect: 'allow' }]]) {
+      expect(validateInboxThread({ ...thread(), permissionMode })).toEqual(thread())
+    }
+  })
+
   it('keeps the thread a fork came from, and drops a pointer that is not a thread', () => {
     expect(validateInboxThread(thread({ forkedFrom: 'ses_origin' }))).toEqual(thread({ forkedFrom: 'ses_origin' }))
     const worktree = { repository: '/home/me/app', root: '/home/me/.mde/worktrees/app-abc/1a2b3c4d', branch: 'mde/1a2b3c4d', base: 'origin/main' }

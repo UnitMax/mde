@@ -72,6 +72,18 @@ describe('Inbox saved drafts', () => {
     expect((await new InboxDraftStore(path).list())[0]?.choice).toEqual({ mode: 'gui', agent: 'plan' })
   })
 
+  it('restores a new thread draft with its permission mode, and forgets one it does not know', async () => {
+    const { path, store } = await setup()
+    await store.text(draftKey, 'Look around', { ...folder, choice: { agent: 'build', permissionMode: 'read-only' } })
+    await store.save()
+    expect((await new InboxDraftStore(path).list())[0]?.choice).toEqual({ agent: 'build', permissionMode: 'read-only' })
+    const file = join(path, 'index.json')
+    const raw = JSON.parse(await fs.readFile(file, 'utf8')) as { drafts: Record<string, { choice: Record<string, unknown> }> }
+    raw.drafts[draftKey]!.choice.permissionMode = 'everything'
+    await fs.writeFile(file, JSON.stringify(raw))
+    expect((await new InboxDraftStore(path).list())[0]?.choice).toEqual({ agent: 'build' })
+  })
+
   it('restores copied contents and text after restarting, independently of the original', async () => {
     const { path, store } = await setup()
     const bytes = new Uint8Array([1, 2, 3])

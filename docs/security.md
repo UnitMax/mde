@@ -221,6 +221,15 @@ the validated `chat:*` channels.
   it also reads pages of messages, keeping only the ID and text of the message the turn began with.
   OpenCode copies the messages and attachments inside the service, so the copy itself does not pass
   through MDE or the renderer, and the answer is reduced to the new session's ID, title and model.
+  When the original has a permission mode, the main process gives the fork the same mode's rules with
+  `PATCH /api/session/{sessionID}` (see `chat:permission-mode`).
+  The `chat:permission-mode` channel accepts only a recorded thread ID and one of the fixed mode names
+  (`default`, `read-only`, `ask`, `auto-edit`, `full`, `full-web-asks`), never rules: the main process turns the
+  name into rules from the table in `src/shared/permission-modes.ts` and sends
+  `PATCH /api/session/{sessionID}` with `{ permissions }` (an empty list for `default`). `chat:create` takes the
+  same optional name and sends its rules with `POST /api/session`. A mode can loosen what the OpenCode
+  configuration asks about or denies, so it is the person's choice in the composer and nothing else can set it:
+  an agent that starts a thread through the MDE MCP cannot pass one, and those threads use the configuration.
   The `chat:compact` channel accepts only a recorded thread ID and sends
   `POST /api/session/{sessionID}/compact` with the fixed body `{ delivery: 'queue' }`; the renderer cannot
   supply the delivery or any other field. OpenCode answers at once and summarizes in the background, so

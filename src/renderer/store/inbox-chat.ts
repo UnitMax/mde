@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { ThreadPermissionMode } from '@shared/permission-modes'
 import type {
   ChatEvent,
   ChatCreateRequest,
@@ -165,6 +166,11 @@ interface InboxChatStore {
    * A rejection means no thread was made.
    */
   forkThread: (threadId: string, input?: { messageId: string; text: string }, options?: { focus?: boolean }) => Promise<InboxThread>
+  /**
+   * Gives a thread another permission mode; a working agent follows it from its next step. A rejection means the
+   * thread keeps the mode it had.
+   */
+  setPermissionMode: (threadId: string, mode: ThreadPermissionMode) => Promise<void>
   /**
    * Asks OpenCode to compact the conversation: it summarizes it to free up context, in the background, and
    * writes the result into the conversation. A request while the agent is busy waits for it to finish. A
@@ -583,6 +589,11 @@ export const useInboxChat = create<InboxChatStore>((set, get) => {
         set((state) => ({ threads: { ...state.threads, [forkId]: { ...(state.threads[forkId] ?? emptyThread()), notice: `The thread was forked, but the message could not be put in its box: ${ipcErrorMessage(error, 'the draft could not be saved.')}` } } }))
       }
       return result.thread
+    },
+
+    setPermissionMode: async (threadId, mode) => {
+      const thread = await window.api.chat.setPermissionMode({ threadId, mode })
+      useWorkspace.getState().upsertInboxThread(thread)
     },
 
     compactThread: async (threadId) => {

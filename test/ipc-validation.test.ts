@@ -118,6 +118,7 @@ const validPayloads = {
   [IpcChannels.chatUsage]: { folderId: 'fld_1234', since: 1_700_000_000_000, timezone: 'Europe/Berlin' },
   [IpcChannels.chatRevert]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a', files: false },
   [IpcChannels.chatFork]: { threadId: 'ses_thread', messageId: 'msg_1995ecb990017ppXoSN0T9zH6a' },
+  [IpcChannels.chatPermissionMode]: { threadId: 'ses_thread', mode: 'read-only' },
   [IpcChannels.chatRegenerateTitle]: { threadId: 'ses_thread' },
   [IpcChannels.chatRequests]: { threadId: 'ses_thread' },
   [IpcChannels.chatPermissionReply]: { threadId: 'ses_thread', requestId: 'per_1', decision: 'once' },
@@ -242,6 +243,22 @@ describe('IPC payload boundary', () => {
     // A fork of the whole conversation names no message.
     expect(() => assertIpcPayload(IpcChannels.chatFork, { threadId: 'ses_thread' })).not.toThrow()
     expect(() => assertIpcPayload(IpcChannels.chatFork, { threadId: 'ses_thread', messageId: 'msg_1' })).not.toThrow()
+  })
+
+  it('takes only a known permission mode for a thread', () => {
+    for (const mode of ['default', 'read-only', 'ask', 'auto-edit', 'full', 'full-web-asks']) {
+      expect(() => assertIpcPayload(IpcChannels.chatPermissionMode, { threadId: 'ses_thread', mode })).not.toThrow()
+    }
+    for (const bad of [
+      { threadId: 'ses_thread', mode: 'yolo' },
+      { threadId: 'ses_thread', mode: [{ action: '*', resource: '*', effect: 'allow' }] },
+      { threadId: 'ses_thread' },
+      { threadId: '../ses', mode: 'full' },
+      { threadId: 'ses_thread', mode: 'full', rules: [] },
+    ]) rejects(IpcChannels.chatPermissionMode, bad)
+    const started = { folderId: 'fld_1234', text: 'Hi', agent: 'build', model }
+    expect(() => assertIpcPayload(IpcChannels.chatCreate, { ...started, permissionMode: 'full' })).not.toThrow()
+    rejects(IpcChannels.chatCreate, { ...started, permissionMode: 'everything' })
     // Taking back a held message names the thread and the message, and nothing else.
     for (const bad of [
       {},

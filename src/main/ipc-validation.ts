@@ -5,6 +5,7 @@ import { isInboxFolderColor, isInboxFolderEmoji, isInboxFolderSymbol } from '@sh
 import { isSessionColor } from '@shared/session-colors'
 import { isSessionIcon } from '@shared/session-icons'
 import { MCP_SERVER_NAME } from '@shared/mcp'
+import { isThreadPermissionMode } from '@shared/permission-modes'
 import { PROMPT_CONTROL_CHARACTERS, PROMPT_TEXT_LIMIT } from '@shared/prompt-text'
 import { worktreeBranchProblem } from '@shared/worktree-branch'
 import { ATTENTION_COUNT_LIMIT } from '@shared/taskbar-attention'
@@ -128,8 +129,10 @@ const modelRef = object({ id: string(512), providerId: string(512), variant: opt
  * How a new thread's draft would start. The branch is only remembered text, so it is not held to the rules
  * for a real branch name while it is being typed; creating the thread checks it as it does any other.
  */
+const permissionMode: Validator = (value) => isThreadPermissionMode(value)
 const draftChoice = object({
   mode: optional(oneOf('gui', 'terminal')),
+  permissionMode: optional((value) => isThreadPermissionMode(value) && value !== 'default'),
   agent: optional(agentId),
   model: optional(modelRef),
   worktree: optional(object({ base: worktreeBase, branch: optional(string(256)) })),
@@ -287,7 +290,7 @@ export const ipcPayloadValidators = {
       object({ key, action: oneOf('remove'), attachmentId: string(64), folderId, choice })(value)
   },
   [IpcChannels.chatDrafts]: noPayload,
-  [IpcChannels.chatCreate]: object({ mode: optional(oneOf('gui', 'terminal')), attachmentIds: optional(array(string(64), 10)), draftRevision: optional((v) => Number.isSafeInteger(v) && Number(v) >= 0), draftId: optional((v) => typeof v === 'string' && /^drf_[A-Za-z0-9-]{1,64}$/.test(v)), folderId: inboxFolderId, text: promptText, agent: agentId, model: modelRef, worktree: optional(object({ base: worktreeBase, branch: optional(worktreeBranch) })) }),
+  [IpcChannels.chatCreate]: object({ mode: optional(oneOf('gui', 'terminal')), attachmentIds: optional(array(string(64), 10)), draftRevision: optional((v) => Number.isSafeInteger(v) && Number(v) >= 0), draftId: optional((v) => typeof v === 'string' && /^drf_[A-Za-z0-9-]{1,64}$/.test(v)), folderId: inboxFolderId, text: promptText, agent: agentId, model: modelRef, worktree: optional(object({ base: worktreeBase, branch: optional(worktreeBranch) })), permissionMode: optional(permissionMode) }),
   [IpcChannels.chatMessages]: object({ threadId: opencodeSessionId, cursor: optional((value) => typeof value === 'string' && /^[A-Za-z0-9_=.-]{1,2048}$/.test(value)) }),
   [IpcChannels.chatSearch]: object({ query: string(200, true) }),
   [IpcChannels.chatFiles]: (value) => object({ folderId: optional(inboxFolderId), threadId: optional(opencodeSessionId), query: string(300, true) })(value) &&
@@ -313,6 +316,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.chatRedo]: chatThread,
   [IpcChannels.chatRevert]: object({ threadId: opencodeSessionId, messageId, files: optional(boolean) }),
   [IpcChannels.chatFork]: object({ threadId: opencodeSessionId, messageId: optional(messageId) }),
+  [IpcChannels.chatPermissionMode]: object({ threadId: opencodeSessionId, mode: permissionMode }),
   [IpcChannels.chatRegenerateTitle]: chatThread,
   [IpcChannels.chatRequests]: chatThread,
   [IpcChannels.chatPermissionReply]: object({

@@ -1,4 +1,5 @@
 import type { FileRoot } from './ipc'
+import type { ThreadPermissionMode } from './permission-modes'
 
 export type SessionKind = 'native' | 'wsl'
 
@@ -197,6 +198,11 @@ export interface InboxThread {
   spawnedBy?: { threadId?: string }
   /** Set when the thread runs in a Git worktree MDE created; `directory` is then inside `root`. */
   worktree?: InboxWorktree
+  /**
+   * The permission mode the thread was given, which OpenCode keeps with the session as rules of its own. Absent
+   * means `default`: the OpenCode configuration alone decides.
+   */
+  permissionMode?: Exclude<ThreadPermissionMode, 'default'>
   /**
    * When the thread's worktree was deleted from the worktree manager. The thread is kept to be read, but its
    * folder is gone, so nothing can run in it again: no message, fork, undo or terminal.
@@ -813,10 +819,17 @@ export interface ChatCreateRequest {
    * names the new branch; without it MDE generates `mde/<id>`.
    */
   worktree?: { base: string; branch?: string }
+  /** Left out, or `default`, sends no rules: the OpenCode configuration decides. */
+  permissionMode?: ThreadPermissionMode
 }
 
 export interface ChatThreadRequest {
   threadId: string
+}
+
+export interface ChatPermissionModeRequest {
+  threadId: string
+  mode: ThreadPermissionMode
 }
 
 /** A running job owned by the thread or one of its subagents, as reported by OpenCode. */
@@ -1146,6 +1159,8 @@ export interface ChatDraftChoice {
   model?: OpenCodeModelRef
   /** The thread would run in a new Git worktree cut from `base`; `branch` is the name typed for it, valid or not yet. */
   worktree?: { base: string; branch?: string }
+  /** Left out for `default`. */
+  permissionMode?: Exclude<ThreadPermissionMode, 'default'>
 }
 
 /** One unsent new thread, as the Inbox sidebar lists it. Only what the row shows; the draft itself is read by its composer. */

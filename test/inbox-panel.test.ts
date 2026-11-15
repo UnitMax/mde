@@ -646,6 +646,23 @@ describe('Inbox thread fork', () => {
   })
 })
 
+describe('Inbox permission mode marker', () => {
+  it('marks a thread with permissions of its own, and leaves default threads plain', async () => {
+    useWorkspace.setState({ inboxThreads: [
+      thread({ id: 'ses_plain', title: 'Plain' }),
+      thread({ id: 'ses_ro', title: 'Looking', permissionMode: 'read-only' }),
+      thread({ id: 'ses_full', title: 'Building', permissionMode: 'full' }),
+    ] })
+    const panel = await render(createElement(InboxPanel))
+    expect(panel.querySelector('[data-testid="inbox-thread-permission-mark-ses_plain"]')).toBeNull()
+    expect(panel.querySelector('[data-testid="inbox-thread-permission-mark-ses_ro"]')?.getAttribute('title')).toBe('Permissions: Read-only')
+    const full = panel.querySelector('[data-testid="inbox-thread-permission-mark-ses_full"]')
+    expect(full?.getAttribute('title')).toBe('Permissions: Full access')
+    // The modes that let the agent act without asking wear the warning colour.
+    expect(full?.querySelector('svg')?.getAttribute('class')).toContain('text-warn')
+  })
+})
+
 describe('Inbox fork marker', () => {
   const original = (): InboxThread => thread({ id: 'ses_one', title: 'Fix login' })
   const fork = (): InboxThread => thread({ id: 'ses_fork', title: 'Fix login (fork #1)', forkedFrom: 'ses_one', status: 'idle', readAt: Date.now() })

@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { ChatDraft, ChatDraftChoice, ChatDraftKey, ChatDraftSummary } from '@shared/types'
+import { isThreadPermissionMode } from '@shared/permission-modes'
 import { renameOver } from '../store/atomic-json'
 
 export const ATTACHMENT_LIMIT = 20 * 1024 * 1024
@@ -43,9 +44,10 @@ const short = (value: unknown, max: number): value is string => typeof value ===
  */
 function cleanChoice(value: unknown): ChatDraftChoice | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
-  const { agent, model, worktree, mode } = value as Record<string, unknown>
+  const { agent, model, worktree, mode, permissionMode } = value as Record<string, unknown>
   const choice: ChatDraftChoice = {}
   if (mode === 'gui' || mode === 'terminal') choice.mode = mode
+  if (isThreadPermissionMode(permissionMode) && permissionMode !== 'default') choice.permissionMode = permissionMode
   if (short(agent, 128)) choice.agent = agent
   if (model && typeof model === 'object') {
     const { id, providerId, variant } = model as Record<string, unknown>

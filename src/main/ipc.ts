@@ -103,6 +103,7 @@ import type {
   InboxUpdateFolderRequest,
   ChatConfigureRequest,
   ChatCreateRequest,
+  ChatPermissionModeRequest,
   ChatFormReplyRequest,
   InboxChangesResponse,
   InboxChangesRequest,
@@ -756,6 +757,7 @@ export function registerIpcHandlers(
   handle<ChatThreadRequest, void>(IpcChannels.chatRedo, (req) => chat.redo(req.threadId))
   handle<ChatRevertRequest, ChatRevert>(IpcChannels.chatRevert, (req) => chat.revert(req))
   handle<ChatForkRequest, ChatForkResult>(IpcChannels.chatFork, (req) => chat.fork(req))
+  handle<ChatPermissionModeRequest, InboxThread>(IpcChannels.chatPermissionMode, (req) => chat.setPermissionMode(req))
   handle<ChatThreadRequest, void>(IpcChannels.chatRegenerateTitle, (req) => chat.regenerateTitle(req.threadId))
   handle<ChatThreadRequest, ChatRequests>(IpcChannels.chatRequests, (req) => chat.requests(req.threadId))
   handle<ChatPermissionReplyRequest, void>(IpcChannels.chatPermissionReply, (req) => chat.replyPermission(req))

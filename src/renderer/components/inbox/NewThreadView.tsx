@@ -20,6 +20,8 @@ import { InboxProjectsDialog } from '@/components/inbox/InboxProjectsDialog'
 import { McpChip } from '@/components/inbox/McpChip'
 import { ProjectIcon } from '@/components/inbox/ProjectIcon'
 import { ThreadModePicker } from '@/components/inbox/ThreadModePicker'
+import { PermissionModePicker } from '@/components/inbox/PermissionModePicker'
+import type { ThreadPermissionMode } from '@shared/permission-modes'
 import { WorktreeBar, useInboxGit, type WorktreeMode } from '@/components/inbox/WorktreeBar'
 import { findModel, initialChoice } from '@/lib/chat'
 import { defaultWorktreeBase, inboxThreadFolder, inboxWorktreeSource } from '@/lib/inbox'
@@ -94,12 +96,14 @@ function FolderItem({
 interface Picked {
   pageId: string
   mode?: InboxThreadMode
+  permissionMode?: ThreadPermissionMode
   agent?: string
   model?: OpenCodeModelRef
 }
 
 const pickedFrom = (choice: ChatDraftChoice | undefined): Omit<Picked, 'pageId'> => ({
   ...(choice?.mode ? { mode: choice.mode } : {}),
+  ...(choice?.permissionMode ? { permissionMode: choice.permissionMode } : {}),
   ...(choice?.agent ? { agent: choice.agent } : {}),
   ...(choice?.model ? { model: choice.model } : {}),
 })
@@ -164,6 +168,7 @@ export function NewThreadView(): JSX.Element {
   const [picked, setPicked] = useState<Picked>(() => ({ pageId: page.id, ...pickedFrom(page.choice) }))
   const pick: Picked = picked.pageId === page.id ? picked : { pageId: page.id, ...pickedFrom(page.choice) }
   const mode = pick.mode ?? 'gui'
+  const permissionMode = pick.permissionMode ?? 'default'
   // Where the thread runs. Every blank page starts in the folder itself, so a worktree is always a choice; a
   // draft that had one chosen has it again, and changing the folder takes it away, since the branches differ.
   const [where, setWhere] = useState<Where>(() => ({ pageId: page.id, folderId, ...whereFrom(page.folderId === folderId ? page.choice : undefined) }))
@@ -206,6 +211,14 @@ export function NewThreadView(): JSX.Element {
   }
   // How the thread is shown is picked for this page only: the next fresh page starts as GUI again.
   const chooseMode = (next: InboxThreadMode): void => setPicked({ ...pick, mode: next })
+  // So are the permissions: every fresh page starts with the default ones, and only a draft keeps another mode.
+  const choosePermissionMode = (next: ThreadPermissionMode): void => setPicked({ ...pick, permissionMode: next })
+  const pickers = (
+    <>
+      <ThreadModePicker value={mode} onChange={chooseMode} />
+      <PermissionModePicker placement="bar" value={permissionMode} onChange={choosePermissionMode} />
+    </>
+  )
 
   // What the draft remembers of how it would start: the agent and model once they are known, and a worktree
   // when one is chosen, whether or not Git has answered yet. Left out until then, so a draft keeps what it had.
@@ -215,6 +228,7 @@ export function NewThreadView(): JSX.Element {
         agent,
         model,
         ...(mode === 'terminal' ? { mode } : {}),
+        ...(permissionMode !== 'default' ? { permissionMode } : {}),
         ...(!locked && here.mode === 'worktree' && savedBase ? { worktree: { base: savedBase, ...(chosenBranch ? { branch: chosenBranch } : {}) } } : {}),
       }
     : undefined
@@ -345,16 +359,16 @@ export function NewThreadView(): JSX.Element {
                 onBaseChange={(next) => setHere({ base: next })}
                 onBranchNameChange={(next) => setHere({ branch: next })}
               >
-                <ThreadModePicker value={mode} onChange={chooseMode} />
+                {pickers}
               </WorktreeBar>
             ) : (
               <ComposerBar testId="thread-bar" className="justify-start">
-                <ThreadModePicker value={mode} onChange={chooseMode} />
+                <div className="flex min-w-0 items-center gap-1">{pickers}</div>
               </ComposerBar>
             )}
             onSend={async (text, { background, ...attachments } = {}) => {
               if (!agent || !model) return
-              await createThread({ folderId: folder.id, text, agent, model, draftId: page.id, ...attachments, ...(mode === 'terminal' ? { mode } : {}), ...(worktree ? { worktree } : {}) }, { background })
+              await createThread({ folderId: folder.id, text, agent, model, draftId: page.id, ...attachments, ...(mode === 'terminal' ? { mode } : {}), ...(worktree ? { worktree } : {}), ...(permissionMode !== 'default' ? { permissionMode } : {}) }, { background })
               const drafts = useInboxDrafts.getState()
               if (background && drafts.page.id === page.id) {
                 drafts.leave()

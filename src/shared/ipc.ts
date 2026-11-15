@@ -53,6 +53,7 @@ import type {
   ChatConfigureRequest,
   ChatDiscardPendingRequest,
   ChatCreateRequest,
+  ChatPermissionModeRequest,
   ChatEvent,
   ChatFormReplyRequest,
   InboxChangesResponse,
@@ -224,6 +225,7 @@ export const IpcChannels = {
   chatRedo: 'chat:redo',
   chatRevert: 'chat:revert',
   chatFork: 'chat:fork',
+  chatPermissionMode: 'chat:permission-mode',
   chatRegenerateTitle: 'chat:regenerate-title',
   chatRequests: 'chat:requests',
   chatPermissionReply: 'chat:permission-reply',
@@ -661,6 +663,11 @@ export interface RendererApi {
     redo(req: ChatThreadRequest): Promise<void>
     revert(req: ChatRevertRequest): Promise<ChatRevert>
     fork(req: ChatForkRequest): Promise<ChatForkResult>
+    /**
+     * Gives a thread another permission mode. OpenCode keeps the mode's rules with the session and reads them at every
+     * check, so a working agent follows them from its next step. Answers the thread as recorded with its new mode.
+     */
+    setPermissionMode(req: ChatPermissionModeRequest): Promise<InboxThread>
     regenerateTitle(req: ChatThreadRequest): Promise<void>
     requests(req: ChatThreadRequest): Promise<ChatRequests>
     replyPermission(req: ChatPermissionReplyRequest): Promise<void>

@@ -3,6 +3,7 @@ import type { InboxAsideHistory } from './asides'
 import type { InboxDraftStore } from './drafts'
 import { readSessionAttachment } from '../files/tree'
 import { randomUUID } from 'node:crypto'
+import { isThreadPermissionMode, threadPermissionRules } from '@shared/permission-modes'
 import type {
   ChatAgent,
   ChatCreateRequest,
@@ -13,6 +14,7 @@ import type {
   ChatDiscardPendingRequest,
   ChatEvent,
   ChatForkRequest,
+  ChatPermissionModeRequest,
   ChatForkResult,
   ChatFormReplyRequest,
   ChatGoal,
@@ -544,6 +546,8 @@ export class InboxChatService {
     if (request.worktree && folder.worktree) throw new Error('This folder is already a worktree. Start the thread in it, or start a new worktree from the folder it came from.')
     const text = this.promptText(request.text, request.attachmentIds)
     if (!isChatAgentId(request.agent)) throw new Error('Choose an agent.')
+    if (request.permissionMode !== undefined && !isThreadPermissionMode(request.permissionMode)) throw new Error('Choose a permission mode.')
+    const permissionMode = request.permissionMode && request.permissionMode !== 'default' ? request.permissionMode : undefined
     // The files come from the draft this starts from, and that draft is spent once the thread has its message.
     if (request.attachmentIds?.length && !request.draftId) throw new Error('The attachments do not belong to a draft.')
     const draftKey = request.draftId ? `draft:${request.draftId}` as const : undefined
@@ -558,7 +562,13 @@ export class InboxChatService {
     let thread: InboxThread
     try {
       created = parseCreatedSession(await this.dependencies.client.request(folder.target, 'session.create', {
-        body: { agent: request.agent, model: modelBody(request.model), location: { directory: place?.directory ?? folder.directory } },
+        body: {
+          agent: request.agent,
+          model: modelBody(request.model),
+          location: { directory: place?.directory ?? folder.directory },
+          // The default mode sends nothing, so the OpenCode configuration decides alone.
+          ...(permissionMode ? { permissions: threadPermissionRules(permissionMode) } : {}),
+        },
       }))
       thread = this.dependencies.recorder.recordChatThread({
         mode: request.mode,
@@ -566,6 +576,7 @@ export class InboxChatService {
         title: created.title,
         folder,
         model: request.model,
+        ...(permissionMode ? { permissionMode } : {}),
         ...(options.spawnedBy ? { spawnedBy: options.spawnedBy } : {}),
         // A thread started in a worktree folder runs in it, and carries the folder's worktree record.
         ...(place ? { directory: place.directory, worktree: place.worktree } : folder.worktree ? { worktree: folder.worktree } : {}),
@@ -1048,13 +1059,52 @@ export class InboxChatService {
     }
     const created = parseCreatedSession(answer)
     const model = parseSessionInfo(answer).model
+    // A fork works with the same permissions as its source. They are given to it outright rather than trusting the
+    // copy to carry them; if that fails the fork still exists, and runs under the configuration alone, as it says.
+    let permissionMode = source.permissionMode
+    if (permissionMode) {
+      try {
+        await this.dependencies.client.request(source.target, 'session.update', {
+          params: { sessionID: created.id },
+          body: { permissions: threadPermissionRules(permissionMode) },
+        })
+      } catch {
+        permissionMode = undefined
+      }
+    }
     const thread = this.dependencies.recorder.recordForkedThread({
       id: created.id,
       title: created.title,
       source,
       ...(model ? { model } : {}),
+      ...(permissionMode ? { permissionMode } : {}),
     })
     return { thread, ...(text ? { text } : {}) }
+  }
+
+  /**
+   * Gives a thread another permission mode. OpenCode keeps the rules with the session and reads them at every check,
+   * so a working agent follows them from its next step; subagents already running keep the rules they started with.
+   * The default mode clears the rules, which leaves the OpenCode configuration to decide alone.
+   */
+  async setPermissionMode(request: ChatPermissionModeRequest): Promise<InboxThread> {
+    this.assertEnabled()
+    if (!isThreadPermissionMode(request.mode)) throw new Error('Choose a permission mode.')
+    const thread = this.liveThread(request.threadId)
+    this.streams.ensure(thread.target)
+    try {
+      await this.dependencies.client.request(thread.target, 'session.update', {
+        params: { sessionID: thread.id },
+        body: { permissions: threadPermissionRules(request.mode) },
+      })
+    } catch (error) {
+      // An OpenCode that does not know session permissions refuses the field it has never heard of.
+      if (error instanceof OpenCodeServiceError && error.status === 400) {
+        throw new Error('This OpenCode service does not support permissions per thread. Update OpenCode and try again.')
+      }
+      throw error
+    }
+    return this.dependencies.recorder.setPermissionMode(thread.id, request.mode) ?? thread
   }
 
   /**

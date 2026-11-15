@@ -8,6 +8,7 @@ import type {
   InboxThreadStatus,
   Session
 } from '@shared/types'
+import type { ThreadPermissionMode } from '@shared/permission-modes'
 import { targetSession } from '../opencode/service/discovery'
 import type { ServiceEvent } from '../opencode/service/events'
 import { serviceEventSessionId } from '../opencode/service/events'
@@ -112,7 +113,8 @@ function sameThread(a: InboxThread, b: InboxThread): boolean {
     a.snoozedUntil === b.snoozedUntil &&
     Boolean(a.woke) === Boolean(b.woke) &&
     a.folderId === b.folderId &&
-    a.worktreeRemovedAt === b.worktreeRemovedAt
+    a.worktreeRemovedAt === b.worktreeRemovedAt &&
+    a.permissionMode === b.permissionMode
 }
 
 /**
@@ -242,6 +244,14 @@ export class InboxRecorder {
     return this.save(thread, { ...thread, pinned })
   }
 
+  /** Records the permission mode a thread was given; `default` takes the mark away. */
+  setPermissionMode(id: string, mode: ThreadPermissionMode): InboxThread | null {
+    const thread = this.store.get(id)
+    if (!thread) return null
+    const { permissionMode: _previous, ...rest } = thread
+    return this.save(thread, { ...rest, ...(mode !== 'default' ? { permissionMode: mode } : {}) })
+  }
+
   /** Forgets MDE's record only; later events for the removed thread are ignored. */
   remove(id: string): void {
     this.store.remove(id)
@@ -260,6 +270,7 @@ export class InboxRecorder {
     directory?: string
     worktree?: InboxWorktree
     spawnedBy?: InboxThread['spawnedBy']
+    permissionMode?: InboxThread['permissionMode']
   }): InboxThread {
     const now = this.dependencies.now()
     const existing = this.store.get(input.id)
@@ -280,7 +291,8 @@ export class InboxRecorder {
       archived: false,
       folderId: input.folder.id,
       ...(input.spawnedBy ? { spawnedBy: input.spawnedBy } : {}),
-      ...(input.worktree ? { worktree: input.worktree } : {})
+      ...(input.worktree ? { worktree: input.worktree } : {}),
+      ...(input.permissionMode ? { permissionMode: input.permissionMode } : {})
     }
     this.insert(created)
     return created
@@ -290,7 +302,13 @@ export class InboxRecorder {
    * Records a thread forked from another: idle until it is given something to do, already read, and
    * in the source's folder, target and directory, which stay valid if the folder has been removed.
    */
-  recordForkedThread(input: { id: string; title?: string | null; source: InboxThread; model?: OpenCodeModelRef }): InboxThread {
+  recordForkedThread(input: {
+    id: string
+    title?: string | null
+    source: InboxThread
+    model?: OpenCodeModelRef
+    permissionMode?: InboxThread['permissionMode']
+  }): InboxThread {
     const now = this.dependencies.now()
     const existing = this.store.get(input.id)
     if (existing) return existing
@@ -312,7 +330,8 @@ export class InboxRecorder {
       forkedFrom: source.id,
       ...(source.mode === 'terminal' ? { mode: source.mode } : {}),
       // A fork shares the source's directory, so it shares the worktree too.
-      ...(source.worktree ? { worktree: source.worktree } : {})
+      ...(source.worktree ? { worktree: source.worktree } : {}),
+      ...(input.permissionMode ? { permissionMode: input.permissionMode } : {})
     }
     this.insert(created)
     return created

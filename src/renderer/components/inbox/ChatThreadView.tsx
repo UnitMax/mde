@@ -10,6 +10,7 @@ import { ModelQuickSwitch } from '@/components/inbox/ModelQuickSwitch'
 import { ChatComposer, type ChatComposerHandle } from '@/components/inbox/ChatComposer'
 import { ChatGoalCard, type GoalAction } from '@/components/inbox/ChatGoalCard'
 import { McpChip } from '@/components/inbox/McpChip'
+import { PermissionModePicker } from '@/components/inbox/PermissionModePicker'
 import { ChatFileSourceContext, McpServerNamesContext } from '@/components/inbox/mcp-context'
 import { ChatMessageView } from '@/components/inbox/ChatMessageView'
 import { ChatPendingView } from '@/components/inbox/ChatPendingView'
@@ -71,6 +72,7 @@ type UserMessage = Extract<ChatMessage, { kind: 'user' }>
 /** The conversation of one thread with its composer. */
 export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element {
   const openThread = useInboxChat((state) => state.openThread)
+  const setPermissionMode = useInboxChat((state) => state.setPermissionMode)
   const state = useInboxChat((store) => store.threads[thread.id])
   const options = useInboxChat((store) => store.options[optionsKey({ threadId: thread.id })])
   const remembered = useInboxChat((store) => store.composer)
@@ -651,6 +653,12 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
             return true
           }}
           extraPickers={<>
+            <PermissionModePicker
+              placement="toolbar"
+              value={thread.permissionMode ?? 'default'}
+              running={running}
+              onChange={(mode) => setPermissionMode(thread.id, mode)}
+            />
             <McpChip place={mcpPlace} running={running} messages={shown} complete={!state?.older} />
             <AsideHistoryChip count={asidesKept} open={aside !== null} onToggle={() => aside ? closeAside() : openAsides(thread.id)} />
           </>}

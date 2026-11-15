@@ -9,6 +9,7 @@ import type {
   InboxThreadStatus
 } from '@shared/types'
 import { normalizeInboxFolderIcon } from '@shared/inbox-folder-icons'
+import { isThreadPermissionMode } from '@shared/permission-modes'
 import { writeJsonAtomic } from '../store/atomic-json'
 
 export const INBOX_FILE = 'inbox.json'
@@ -125,7 +126,9 @@ export function validateInboxThread(raw: unknown): InboxThread | null {
     ...(spawnedBy ? { spawnedBy } : {}),
     // Without its record the thread still works; only removing its worktree from the Inbox is lost.
     ...(worktree ? { worktree } : {}),
-    ...(worktree && timestamp(record.worktreeRemovedAt) ? { worktreeRemovedAt: record.worktreeRemovedAt } : {})
+    ...(worktree && timestamp(record.worktreeRemovedAt) ? { worktreeRemovedAt: record.worktreeRemovedAt } : {}),
+    // Only the mark the chip shows: OpenCode keeps the rules themselves, so a bad one is dropped and the chip says Default.
+    ...(isThreadPermissionMode(record.permissionMode) && record.permissionMode !== 'default' ? { permissionMode: record.permissionMode } : {})
   }
 }
 

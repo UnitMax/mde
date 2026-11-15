@@ -29,6 +29,8 @@ import { InboxToolbar } from '@/components/inbox/InboxToolbar'
 import { StatusMark, statusGlyph } from '@/components/inbox/StatusMark'
 import { ThreadEffect } from '@/components/ThreadEffect'
 import { ProjectIcon } from '@/components/inbox/ProjectIcon'
+import { PERMISSION_MODE_ICONS, permissionModeTone } from '@/components/inbox/PermissionModePicker'
+import { threadPermissionModeInfo } from '@shared/permission-modes'
 import { ThreadRenameDialog, useThreadRename } from '@/components/inbox/ThreadRename'
 import {
   AlertDialog,
@@ -163,6 +165,18 @@ export function InboxLockedNotice({ compact = false }: { compact?: boolean }): J
 
 type BulkAction = 'pin' | 'read' | 'park'
 
+/** A thread that runs with permissions of its own, not the OpenCode configuration's: its mode, as the composer's chip draws it. */
+function PermissionModeMark({ thread }: { thread: InboxThread }): JSX.Element | null {
+  if (!thread.permissionMode) return null
+  const Icon = PERMISSION_MODE_ICONS[thread.permissionMode]
+  const label = `Permissions: ${threadPermissionModeInfo(thread.permissionMode).label}`
+  return (
+    <span title={label} data-testid={`inbox-thread-permission-mark-${thread.id}`}>
+      <Icon role="img" aria-label={label} className={cn('h-3 w-3 shrink-0', permissionModeTone(thread.permissionMode) ?? 'text-fg-subtle')} />
+    </span>
+  )
+}
+
 function InboxThreadRow({
   thread,
   selected,
@@ -281,6 +295,7 @@ function InboxThreadRow({
                   <FolderX role="img" aria-label="Read only: its worktree was deleted" className="h-3 w-3 shrink-0 text-fg-subtle" />
                 </span>
               )}
+              {thread.permissionMode && <PermissionModeMark thread={thread} />}
               {thread.mode === 'terminal' && (
                 <span title="Terminal thread" data-testid={`inbox-thread-terminal-mark-${thread.id}`}>
                   <Terminal role="img" aria-label="Terminal thread" className="h-3 w-3 shrink-0 text-fg-subtle" />

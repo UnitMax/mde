@@ -1727,6 +1727,43 @@ The new thread's header says "Forked from" with the original's title (a muted ma
 still in the Inbox, and the sidebar row shows a small fork icon. `forkedFrom` is stored in
 `inbox.json` as a thread ID and dropped if it is not one; it is not otherwise used.
 
+**Permission modes.** A thread can run with permissions of its own instead of the OpenCode configuration's
+(`PermissionModePicker`). On the new-thread page it is a chip in the strip under the box, after the GUI/Terminal
+chip; in a GUI thread it is a chip in the composer's toolbar, before the MCP chip, a quiet shield for the default and
+the mode's icon and name otherwise (the name goes below the medium toolbar size). A sidebar row shows a small mark
+for a thread that is not on the default, in the warning colour for the two full-access modes. Every fresh new-thread
+page starts on the default; only a saved draft keeps another mode (`ChatDraftChoice.permissionMode`), and nothing
+is remembered across threads.
+
+| Mode | What the agent may do |
+|---|---|
+| Default permissions | Sends nothing: the OpenCode configuration, global and project, decides alone. |
+| Read-only | Edits, shell, Code Mode, web fetch and search and MCP tools are denied; outside the project asks. |
+| Ask first | Edits, shell, Code Mode, web, MCP tools and outside the project all ask. |
+| Auto-accept edits | Edits are allowed; the rest asks. |
+| Full access | All of them are allowed. |
+| Full access, web asks | All allowed, except web fetch and web search, which ask. |
+
+The rules live in `src/shared/permission-modes.ts`. OpenCode 2 takes a `permissions` ruleset on
+`POST /api/session` and `PATCH /api/session/{sessionID}` and keeps it with the session; it evaluates the agent's
+rules (its built-ins, then the configuration's, global and project), then the session's, and the last matching rule
+wins, so a mode stands on its own and overrides the configuration both ways, a denied `git push` included. A mode
+names only the actions it is about (`edit`, which also covers writing and patching, `shell`, `execute`, `webfetch`,
+`websearch`, `external_directory`, and `*_*` for MCP tools, which are named `<server>_<tool>`; reading MCP resources
+is let through again). It never sets `*`: that would also override what OpenCode asks or denies by itself, such as
+reading `.env` files, and what it forbids subagents (a subagent may not start subagents or ask the person), and a
+subagent takes its thread's rules along when it starts. A denied tool is taken from the agent, not refused when it is
+called. A deny is final, but where a mode asks, approvals saved with **Always** (`/api/permission/saved`, per project)
+still let a call through, which the menu says. Facts checked live on OpenCode 2.2.6 in an isolated service.
+
+`chat:create` sends the mode's rules with the session; `chat:permission-mode` (`InboxChatService.setPermissionMode`)
+sends them with `PATCH` (an empty list for the default) and records the mode, which takes effect at the agent's next
+step since OpenCode reads the rules at every check; a subagent already running keeps the rules it started with. The
+menu says so while the agent works, stays open while the change is on its way and shows the reason when it is
+refused. A fork is given its original's mode the same way after `session.fork`; if that fails it is recorded on the
+default. `inbox.json` keeps only the mode's name (`permissionMode`, absent for the default), for the chips; a bad one
+is dropped. Threads an agent starts through the MDE MCP always use the configuration.
+
 **Composer dock.** `ComposerDock` is the tray tucked behind the top edge of the message box (the thread's and the
 new-thread page's), matching the worktree strip below the new-thread box. It holds rows that draw themselves or
 nothing, told apart by a hairline: the background tasks and the model quick switch. A tray with no row is not there.
