@@ -153,9 +153,12 @@ export function saveInboxModelQuickSwitch(on: boolean): void {
   writeSwitch(INBOX_MODEL_QUICK_SWITCH_STORAGE_KEY, on)
 }
 
-/** Whether a finished turn suggests the next message as ghost text in the message box. On unless turned off. */
+/**
+ * Whether a finished turn suggests the next message as ghost text in the message box. Off unless it was turned on:
+ * each guess is a model call the person pays for.
+ */
 export function getInboxNextSuggestion(): boolean {
-  return readSwitchOnByDefault(INBOX_NEXT_SUGGESTION_STORAGE_KEY)
+  return readSwitch(INBOX_NEXT_SUGGESTION_STORAGE_KEY)
 }
 
 export function saveInboxNextSuggestion(on: boolean): void {

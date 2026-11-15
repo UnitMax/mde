@@ -1368,7 +1368,7 @@ conversation ends with a finished step without an error and nothing is pending: 
 card, no held message, no staged revert (`suggestionTurn` in `lib/next-suggestion.ts`). Each turn is asked
 about at most once, including after a failure, which shows nothing; the guess is kept in memory per thread
 (`store/inbox-suggestion.ts`) and becomes stale with the next turn. Opening a thread whose last turn has no
-guess yet asks after the same five seconds. The Inbox settings menu turns it off ("Suggest next message", on
+guess yet asks after the same five seconds. The Inbox settings menu turns it on ("Suggest next message", off
 by default, `mde.inbox-next-suggestion`); each guess is one extra model call. Terminal threads have none.
 
 **Goals (`/goal`).** A goal keeps the agent working on an objective until a reviewer decides it is met.

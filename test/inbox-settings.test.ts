@@ -5,10 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { InboxPanel } from '../src/renderer/components/InboxPanel'
 import {
   getInboxModelQuickSwitch,
+  getInboxNextSuggestion,
   getInboxSidebarChanges,
   INBOX_MODEL_QUICK_SWITCH_STORAGE_KEY,
+  INBOX_NEXT_SUGGESTION_STORAGE_KEY,
   INBOX_SIDEBAR_CHANGES_STORAGE_KEY,
   saveInboxModelQuickSwitch,
+  saveInboxNextSuggestion,
   saveInboxSidebarChanges
 } from '../src/renderer/lib/inbox-settings'
 import { useInboxView } from '../src/renderer/store/inbox-view'
@@ -155,5 +158,24 @@ describe('Inbox display setting for the model quick switch', () => {
     expect(localStorage.getItem(INBOX_MODEL_QUICK_SWITCH_STORAGE_KEY)).toBe('off')
     await openMenu()
     expect(entry().getAttribute('aria-checked')).toBe('false')
+  })
+})
+
+describe('Inbox setting for the next-message suggestion', () => {
+  beforeEach(() => localStorage.clear())
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('is off until it is turned on, and an unreadable or unknown stored value is off too', () => {
+    expect(getInboxNextSuggestion()).toBe(false)
+    saveInboxNextSuggestion(true)
+    expect(localStorage.getItem(INBOX_NEXT_SUGGESTION_STORAGE_KEY)).toBe('on')
+    expect(getInboxNextSuggestion()).toBe(true)
+    saveInboxNextSuggestion(false)
+    expect(localStorage.getItem(INBOX_NEXT_SUGGESTION_STORAGE_KEY)).toBe('off')
+    expect(getInboxNextSuggestion()).toBe(false)
+    localStorage.setItem(INBOX_NEXT_SUGGESTION_STORAGE_KEY, 'maybe')
+    expect(getInboxNextSuggestion()).toBe(false)
+    vi.stubGlobal('localStorage', { getItem: () => { throw new Error('blocked') } })
+    expect(getInboxNextSuggestion()).toBe(false)
   })
 })
