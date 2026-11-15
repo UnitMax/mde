@@ -179,7 +179,8 @@ the validated `chat:*` channels.
   and path pairs (agents, skills, MCP servers, providers, models, session create/get/active, the child sessions of a
   recorded thread (`parentID` only, to find a running subagent's session), message
   list, prompt, interrupt, agent and model switch, permission and form
-  list/reply, the project's saved "Always allow" approvals (listed by the thread's folder; one is removed only when
+  list/reply (a subagent's found in the directory's pending lists and answered in its session only when its parents
+  lead to the thread), the project's saved "Always allow" approvals (listed by the thread's folder; one is removed only when
   that list holds it), session update, staging or clearing a revert, fork, compact, one-off text generation for a
   side question, running a slash command of the session, reading the goal plugin's state, listing or cancelling the inbox items the service holds for a busy agent, changing their
   delivery, and listing, connecting and disconnecting MCP servers). The skill list (`GET /api/skill`)

@@ -847,7 +847,7 @@ describe('OpenCode service parsing', () => {
     expect(parsePermissions({ data: [
       { id: 'per_1', sessionID: 'ses_1', action: 'read', resources: ['.env'], save: ['*'] },
       { id: 'bad', action: 'read', resources: [] },
-    ] })).toEqual([{ id: 'per_1', action: 'read', resources: ['.env'] }])
+    ] })).toEqual([{ id: 'per_1', action: 'read', resources: ['.env'], save: ['*'] }])
 
     const question = fixture('question.jsonl').trim().split('\n').map(parseServiceEvent)
       .find((event) => event?.type === 'form.created')!

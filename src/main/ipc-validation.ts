@@ -324,6 +324,7 @@ export const ipcPayloadValidators = {
     threadId: opencodeSessionId,
     requestId: (value) => typeof value === 'string' && /^per_[A-Za-z0-9_-]{1,200}$/.test(value),
     decision: oneOf('once', 'always', 'reject'),
+    sessionId: optional(opencodeSessionId),
   }),
   [IpcChannels.chatSavedPermissions]: chatThread,
   [IpcChannels.chatSavedPermissionRemove]: object({
@@ -334,6 +335,7 @@ export const ipcPayloadValidators = {
     threadId: opencodeSessionId,
     formId: (value) => typeof value === 'string' && /^frm_[A-Za-z0-9_-]{1,200}$/.test(value),
     answer: formAnswer,
+    sessionId: optional(opencodeSessionId),
   }),
   [IpcChannels.chatSubscribe]: chatThread,
   [IpcChannels.chatUnsubscribe]: chatThread,

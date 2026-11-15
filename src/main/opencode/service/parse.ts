@@ -839,7 +839,17 @@ export function parsePermissions(value: unknown): ChatPermission[] {
       .filter(Boolean)
       .slice(0, 50)
     const message = body(request.message, 4000).text.trim()
-    permissions.push({ id, action, resources, ...(message ? { message } : {}), ...(incomplete ? { incomplete: true } : {}) })
+    const save = list(request.save)
+      .filter((pattern): pattern is string => typeof pattern === 'string' && Boolean(short(pattern, 4096)))
+      .slice(0, 20)
+    permissions.push({
+      id,
+      action,
+      resources,
+      ...(message ? { message } : {}),
+      ...(incomplete ? { incomplete: true } : {}),
+      ...(save.length > 0 ? { save } : {}),
+    })
   }
   return permissions
 }
@@ -932,6 +942,26 @@ export function parseSessionInfo(value: unknown): { agent: string | null; model:
     model: parseModelRef(session?.model),
     title: short(session?.title, 512),
   }
+}
+
+/** The session a request was filed under (`sessionID`), when it names one; used to find a subagent's requests. */
+export function requestSessionIds(value: unknown): Map<string, string> {
+  const sessions = new Map<string, string>()
+  for (const item of list(data(value, 'a request list'))) {
+    const request = record(item)
+    const id = short(request?.id)
+    const session = short(request?.sessionID)
+    if (id && session && /^ses_[A-Za-z0-9_-]{1,200}$/.test(session)) sessions.set(id, session)
+  }
+  return sessions
+}
+
+/** A session's parent (a subagent's session has one) and title; null when the answer is not that session. */
+export function parseSessionParent(value: unknown, sessionId: string): { parentId: string | null; title: string | null } | null {
+  const session = record(data(value, 'a session'))
+  if (session?.id !== sessionId) return null
+  const parent = short(session.parentID)
+  return { parentId: parent && /^ses_[A-Za-z0-9_-]{1,200}$/.test(parent) ? parent : null, title: short(session.title, 512) }
 }
 
 /** Only a confirmed child of the recorded thread may supply a subagent's model. */

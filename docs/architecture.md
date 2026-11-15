@@ -1040,7 +1040,15 @@ replies; each tool call is a row too (see **Activity rows** below), whose input 
 cut at 64 KB. Subagent calls (OpenCode's `subagent` tool) are shown as cards instead: the agent type, the selected model and variant, the title, its state (Working, Done, Stopped, Failed) and a one-line preview of the task. The model uses the same display name as the composer; hovering reveals the full provider/model ID. MDE reads the child session named by the tool's metadata (or its result/error wrapper), checks that it belongs to the recorded parent, and returns only its model. OpenCode saves the child session with the call only once the subagent has finished; while it runs, it says so only in a passing `session.tool.progress` event (`metadata.sessionID`, keyed by the call ID), which MDE keeps per subscribed thread until the call carries the session itself. For a thread opened while a subagent is already running, MDE lists the thread's child sessions (`GET /api/session?parentID=…`, which carries each child's model) and takes the one titled with the call's description, only when exactly one child not already claimed by another call is; otherwise the card shows no model until the subagent finishes. So the model is shown from the moment the subagent starts. Reads are deduplicated per page, limited to four at once, and time out after two seconds; unavailable models do not prevent the conversation from loading. Model and agent selection events in these child sessions refresh the open parent. Subagents started together are grouped under one heading, and a card expands to the full task and the answer rendered as Markdown. The subagent's own steps are not shown. Agent and model switches, failures and stops appear as small notes. Text streams in as OpenCode
 produces it. Permission requests (Allow once, Always allow, Reject) and questions (option buttons,
 checkboxes, free text) are answered inline as cards; a question with field types MDE cannot show
-asks you to answer it in a terminal. While the thread works and the box is empty, the send button becomes Stop. A
+asks you to answer it in a terminal. A subagent's requests and questions are shown the same way, marked with the
+subagent that asks: OpenCode files them under the subagent's own session, so MDE also reads the directory's pending
+lists (`GET /api/permission/request` and `GET /api/form` with `location[directory]`) and keeps those whose session
+leads up to the thread through its parents (`session.get`'s `parentID`, followed at most four deep, the answer kept
+per session). The answer goes to the subagent's session, and main refuses a session that does not lead to the thread.
+Their events (`permission.asked` and the rest) are passed on to the thread, so it needs input and notifies as if its
+own agent had asked. A permission card says what Always allow would save: the request's patterns for the whole
+project, in every thread, and, in the warning colour, when that is `*`, every call of the kind (a file edit saves `*`).
+While the thread works and the box is empty, the send button becomes Stop. A
 follow-up switches the session's agent or model first only when you changed them. The renderer
 keeps the last ten opened threads in memory so going back to one is instant; MDE never writes
 messages to disk.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groupSavedPermissions, savedPermissionAction, savedPermissionPattern } from '../src/renderer/lib/saved-permissions'
+import { alwaysAllowHint, groupSavedPermissions, savedPermissionAction, savedPermissionPattern } from '../src/renderer/lib/saved-permissions'
 
 const saved = (id: string, action: string, resource: string, created = 0) => ({ id, action, resource, created })
 
@@ -32,5 +32,11 @@ describe('saved permissions', () => {
   it('reads a lone star as anything', () => {
     expect(savedPermissionPattern('*')).toEqual({ text: 'Anything', anything: true })
     expect(savedPermissionPattern('ls *')).toEqual({ text: 'ls *', anything: false })
+  })
+
+  it('says what Always allow would save, and when that is every call of the kind', () => {
+    expect(alwaysAllowHint('edit', ['*'])).toEqual({ broad: true, noun: 'file edit', patterns: [] })
+    expect(alwaysAllowHint('shell', ['git status *'])).toEqual({ broad: false, noun: 'command', patterns: ['git status *'] })
+    expect(alwaysAllowHint('shell', undefined)).toBeNull()
   })
 })

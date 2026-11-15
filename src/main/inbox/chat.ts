@@ -92,6 +92,8 @@ import {
   parsePendingMessages,
   parsePermissions,
   parseSavedPermissions,
+  parseSessionParent,
+  requestSessionIds,
   parsePromptAnswer,
   parseProviderNames,
   parseSessionInfo,
@@ -135,6 +137,8 @@ const SKILL_ATTEMPTS = 4
  * first answer of a place; after that an empty list is believed.
  */
 const MCP_ATTEMPTS = 6
+/** How many parents up a subagent's session is followed to find its thread (a subagent of a subagent…). */
+const SUBAGENT_DEPTH = 4
 const MCP_RETRY_MS = 750
 /**
  * OpenCode refuses to revert a conversation that is running, and an interrupt takes a moment to
@@ -261,6 +265,12 @@ export class InboxChatService {
    * thread and call ID). OpenCode saves it with the call only when the subagent has finished.
    */
   private readonly subagentCalls = new Map<string, string>()
+  /**
+   * The recorded thread each other session belongs to by its chain of parents (a subagent's, a subagent's subagent's),
+   * with the session's title, or null for a session that is no thread's. Keyed by target and session; a session's
+   * parent never changes, so an answer is kept.
+   */
+  private readonly sessionOwners = new Map<string, Promise<{ threadId: string; title: string | null } | null>>()
   private readonly options = new Map<string, { at: number; value: Promise<ChatOptions> }>()
   /** Places (service + directory) whose MCP list has been answered once, so an empty one is believed. */
   private readonly mcpSettled = new Set<string>()
@@ -303,6 +313,7 @@ export class InboxChatService {
     this.streams.stopAll()
     this.subagentParents.clear()
     this.subagentCalls.clear()
+    this.sessionOwners.clear()
   }
 
   /** The OpenCode executable from Settings; discovery runs it to find each service. */
@@ -1274,24 +1285,104 @@ export class InboxChatService {
     }
   }
 
+  /**
+   * What the thread waits for: its own permission requests and questions, and those of its subagents. OpenCode files
+   * a subagent's under the subagent's session, so they are found in the directory's lists and kept when that session
+   * belongs to this thread.
+   */
   async requests(threadId: string): Promise<ChatRequests> {
     const thread = this.thread(threadId)
-    const [permissions, forms] = await Promise.all([
+    const [permissions, forms, subagents] = await Promise.all([
       this.dependencies.client.request(thread.target, 'session.permission.list', { params: { sessionID: thread.id } }),
       this.dependencies.client.request(thread.target, 'session.form.list', { params: { sessionID: thread.id } }),
+      // A subagent's request that cannot be listed is no reason to hide the thread's own.
+      this.subagentRequests(thread).catch((): ChatRequests => ({ permissions: [], forms: [] })),
     ])
-    return { permissions: parsePermissions(permissions), forms: parseForms(forms) }
+    return {
+      permissions: [...parsePermissions(permissions), ...subagents.permissions],
+      forms: [...parseForms(forms), ...subagents.forms],
+    }
+  }
+
+  private async subagentRequests(thread: InboxThread): Promise<ChatRequests> {
+    if (thread.worktreeRemovedAt !== undefined) return { permissions: [], forms: [] }
+    const query = { 'location[directory]': thread.directory }
+    const listed = (operation: 'permission.request.list' | 'form.list') =>
+      this.dependencies.client.request(thread.target, operation, { query }).catch((error: unknown) => {
+        // An OpenCode without the route has nothing more to show.
+        if (error instanceof OpenCodeServiceError && error.status === 404 && !error.tag) return { data: [] }
+        throw error
+      })
+    const [permissionList, formList] = await Promise.all([listed('permission.request.list'), listed('form.list')])
+    const mine = async <T extends { id: string }>(items: T[], sessions: Map<string, string>): Promise<(T & { subagent: { sessionId: string; title?: string } })[]> => {
+      const found = await Promise.all(items.map(async (item) => {
+        const sessionId = sessions.get(item.id)
+        if (!sessionId || sessionId === thread.id) return null
+        const owner = await this.sessionOwner(thread.target, sessionId)
+        if (owner?.threadId !== thread.id) return null
+        return { ...item, subagent: { sessionId, ...(owner.title ? { title: owner.title } : {}) } }
+      }))
+      return found.filter((item) => item !== null)
+    }
+    const [permissions, forms] = await Promise.all([
+      mine(parsePermissions(permissionList), requestSessionIds(permissionList)),
+      mine(parseForms(formList), requestSessionIds(formList)),
+    ])
+    return { permissions, forms }
+  }
+
+  /**
+   * The recorded thread a session belongs to: itself, or the thread at the top of its chain of parents (at most a
+   * few subagents deep), with the session's own title. Null for a session that is no recorded thread's.
+   */
+  private sessionOwner(target: OpenCodeTarget, sessionId: string): Promise<{ threadId: string; title: string | null } | null> {
+    if (this.dependencies.store.get(sessionId)) return Promise.resolve({ threadId: sessionId, title: null })
+    const key = `${serviceTargetKey(target)}\n${sessionId}`
+    const known = this.sessionOwners.get(key)
+    if (known) return known.then((owner) => (owner && this.dependencies.store.get(owner.threadId) ? owner : null))
+    const lookup = (async () => {
+      let title: string | null = null
+      let current = sessionId
+      for (let depth = 0; depth < SUBAGENT_DEPTH; depth += 1) {
+        const session = parseSessionParent(
+          await this.dependencies.client.request(target, 'session.get', { params: { sessionID: current } }),
+          current,
+        )
+        if (!session) return null
+        if (depth === 0) title = session.title
+        if (!session.parentId) return null
+        const thread = this.dependencies.store.get(session.parentId)
+        if (thread) return serviceTargetKey(thread.target) === serviceTargetKey(target) ? { threadId: thread.id, title } : null
+        current = session.parentId
+      }
+      return null
+    })()
+    this.sessionOwners.set(key, lookup)
+    // A failed read is not an answer: the next request asks again.
+    lookup.catch(() => {
+      if (this.sessionOwners.get(key) === lookup) this.sessionOwners.delete(key)
+    })
+    return lookup
+  }
+
+  /** The session an answer goes to: the thread's own, or a subagent's that belongs to the thread. */
+  private async answeringSession(thread: InboxThread, sessionId: string | undefined): Promise<string> {
+    if (!sessionId || sessionId === thread.id) return thread.id
+    const owner = await this.sessionOwner(thread.target, sessionId)
+    if (owner?.threadId !== thread.id) throw new Error('That request is not from this thread or its subagents.')
+    return sessionId
   }
 
   async replyPermission(request: ChatPermissionReplyRequest): Promise<void> {
     const thread = this.thread(request.threadId)
+    const sessionId = await this.answeringSession(thread, request.sessionId)
     if (request.decision !== 'reject') {
-      const answer = await this.dependencies.client.request(thread.target, 'session.permission.list', { params: { sessionID: thread.id } })
+      const answer = await this.dependencies.client.request(thread.target, 'session.permission.list', { params: { sessionID: sessionId } })
       const permission = parsePermissions(answer).find((entry) => entry.id === request.requestId)
       if (!permission || permission.incomplete) throw new Error('Review this permission request in an OpenCode terminal, or reject it here.')
     }
     await this.dependencies.client.request(thread.target, 'session.permission.reply', {
-      params: { sessionID: thread.id, requestID: request.requestId },
+      params: { sessionID: sessionId, requestID: request.requestId },
       body: { decision: request.decision },
     })
   }
@@ -1335,8 +1426,9 @@ export class InboxChatService {
 
   async replyForm(request: ChatFormReplyRequest): Promise<void> {
     const thread = this.thread(request.threadId)
+    const sessionId = await this.answeringSession(thread, request.sessionId)
     await this.dependencies.client.request(thread.target, 'session.form.reply', {
-      params: { sessionID: thread.id, formID: request.formId },
+      params: { sessionID: sessionId, formID: request.formId },
       body: { answer: request.answer },
     })
   }
@@ -1363,6 +1455,11 @@ export class InboxChatService {
 
   private onEvent(event: ServiceEvent, target: OpenCodeTarget): void {
     this.dependencies.recorder.applyServiceEvent(event)
+    const sessionId = serviceEventSessionId(event)
+    // A subagent's permission request or question is filed under its own session, which is no thread.
+    if (sessionId && REQUEST_EVENTS.has(event.type) && !this.dependencies.store.get(sessionId)) {
+      void this.forwardSubagentRequest(event, target, sessionId)
+    }
     // Shell lifecycle events need not carry a session ID. Refresh open lists on this service,
     // including parents whose subagents own the shell. The list API supplies the actual scope.
     if (event.type.startsWith('shell.') || event.type.startsWith('session.shell.')) {
@@ -1429,6 +1526,22 @@ export class InboxChatService {
     // An "Always allow", from MDE or an OpenCode terminal on the same session, saved an approval for the project.
     if (event.type === 'permission.replied' && event.data.reply === 'always') {
       this.dependencies.send({ type: 'saved-permissions', threadId })
+    }
+  }
+
+  /**
+   * Passes a subagent's request event on to the thread it belongs to, as if the thread had asked: the thread needs
+   * input (or goes back to work), an open one reads its requests again, and an "Always allow" changes its project's
+   * saved approvals.
+   */
+  private async forwardSubagentRequest(event: ServiceEvent, target: OpenCodeTarget, sessionId: string): Promise<void> {
+    const owner = await this.sessionOwner(target, sessionId).catch(() => null)
+    if (!owner) return
+    this.dependencies.recorder.applyServiceEvent({ ...event, data: { ...event.data, sessionID: owner.threadId } })
+    if (!this.subscribed.has(owner.threadId)) return
+    this.dependencies.send({ type: 'requests', threadId: owner.threadId })
+    if (event.type === 'permission.replied' && event.data.reply === 'always') {
+      this.dependencies.send({ type: 'saved-permissions', threadId: owner.threadId })
     }
   }
 

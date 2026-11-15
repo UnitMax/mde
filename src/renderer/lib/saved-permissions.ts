@@ -69,3 +69,27 @@ export function groupSavedPermissions(permissions: readonly ChatSavedPermission[
 export function savedPermissionPattern(resource: string): { text: string; anything: boolean } {
   return resource === '*' ? { text: 'Anything', anything: true } : { text: resource, anything: false }
 }
+
+const NOUNS: Partial<Record<string, string>> = {
+  shell: 'command',
+  bash: 'command',
+  edit: 'file edit',
+  write: 'file edit',
+  read: 'file read',
+  glob: 'file search',
+  grep: 'text search',
+  external_directory: 'use of a folder outside the project',
+  webfetch: 'web page',
+  websearch: 'web search',
+  execute: 'Code Mode script',
+}
+
+/**
+ * What answering a permission request "Always allow" would save, said before it is chosen: OpenCode saves the
+ * request's patterns for the whole project, and for some tools (file edits) that is `*`, every one of them.
+ */
+export function alwaysAllowHint(action: string, save: readonly string[] | undefined): { broad: boolean; noun: string; patterns: string[] } | null {
+  if (!save || save.length === 0) return null
+  const noun = NOUNS[action] ?? `use of ${action}`
+  return { broad: save.includes('*'), noun, patterns: save.filter((pattern) => pattern !== '*') }
+}

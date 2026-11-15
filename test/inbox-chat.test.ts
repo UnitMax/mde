@@ -1492,6 +1492,40 @@ describe('Inbox conversation', () => {
     expect(api.chat.replyForm).toHaveBeenCalledWith({ threadId: 'ses_one', formId: 'frm_1', answer: { q0: 'Tea' } })
   })
 
+  it('shows which subagent asks, answers in its session, and says what Always allow saves', async () => {
+    requests = {
+      permissions: [
+        { id: 'per_1', action: 'edit', resources: ['hello.txt'], save: ['*'], subagent: { sessionId: 'ses_child', title: 'Write hello.txt file' } },
+        { id: 'per_2', action: 'shell', resources: ['git status --short'], save: ['git status *'] },
+      ],
+      forms: [{ id: 'frm_1', title: 'Pick one', unsupported: false, subagent: { sessionId: 'ses_child' },
+        fields: [{ key: 'q0', type: 'string', title: 'Colour', required: false, custom: true, options: [] }] }],
+    }
+    const view = await render()
+    await vi.waitFor(() => expect(view.querySelector('[data-testid="chat-permission-per_1"]')).not.toBeNull())
+    const fromChild = view.querySelector<HTMLElement>('[data-testid="chat-permission-per_1"]')!
+    expect(fromChild.getAttribute('aria-label')).toBe('Subagent “Write hello.txt file”: Permission: Edit files')
+    expect(fromChild.querySelector('[data-testid="chat-request-subagent"]')?.textContent).toBe('Subagent “Write hello.txt file” asks')
+    // Edits save `*`: every edit in the project, which the card says before it is chosen.
+    const broad = fromChild.querySelector('[data-testid="chat-permission-always-hint"]')!
+    expect(broad.getAttribute('data-broad')).toBe('true')
+    expect(broad.textContent).toContain('every file edit in this project')
+    const own = view.querySelector<HTMLElement>('[data-testid="chat-permission-per_2"]')!
+    expect(own.querySelector('[data-testid="chat-request-subagent"]')).toBeNull()
+    expect(own.querySelector('[data-testid="chat-permission-always-hint"]')?.textContent).toContain('Always allow saves git status * for this project')
+    await act(async () => button(fromChild, 'Allow once').click())
+    expect(api.chat.replyPermission).toHaveBeenCalledWith({ threadId: 'ses_one', requestId: 'per_1', decision: 'once', sessionId: 'ses_child' })
+    const question = view.querySelector<HTMLElement>('[data-testid="chat-question-frm_1"]')!
+    expect(question.textContent).toContain('Subagent asks')
+    const input = question.querySelector<HTMLInputElement>('input')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Blue')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => button(question, 'Send answer').click())
+    expect(api.chat.replyForm).toHaveBeenCalledWith({ threadId: 'ses_one', formId: 'frm_1', answer: { q0: 'Blue' }, sessionId: 'ses_child' })
+  })
+
   it('refetches when the service reports changes and unsubscribes on leave', async () => {
     const view = await render()
     await vi.waitFor(() => expect(api.chat.messages).toHaveBeenCalledTimes(1))

@@ -1703,6 +1703,85 @@ describe('Inbox chat service', () => {
     service.stop()
   })
 
+  describe('subagent requests', () => {
+    const session = (id: string, parentID?: string, title = 'Task') => ({ data: { id, title, ...(parentID ? { parentID } : {}) } })
+    async function started() {
+      const context = setup({ 'session.create': { data: { id: 'ses_new' } } })
+      await context.service.create({ folderId: context.folder.id, text: 'Hi', agent: 'build', model })
+      context.request.mockImplementation(async (_target: unknown, operation: ServiceOperation, req: ServiceRequest = {}) => {
+        context.calls.push({ operation, request: req })
+        switch (operation) {
+          case 'session.permission.list':
+            return { data: req.params?.sessionID === 'ses_child' ? [{ id: 'per_child', sessionID: 'ses_child', action: 'edit', resources: ['hello.txt'], save: ['*'] }] : [] }
+          case 'session.form.list': return { data: [] }
+          case 'permission.request.list': return {
+            data: [
+              { id: 'per_child', sessionID: 'ses_child', action: 'edit', resources: ['hello.txt'], save: ['*'] },
+              { id: 'per_grand', sessionID: 'ses_grand', action: 'shell', resources: ['ls'], save: ['ls *'] },
+              { id: 'per_other', sessionID: 'ses_stranger', action: 'shell', resources: ['rm x'] },
+              { id: 'per_own', sessionID: 'ses_new', action: 'read', resources: ['a'] },
+            ],
+          }
+          case 'form.list': return { data: [{ id: 'frm_child', sessionID: 'ses_child', title: 'Pick', fields: [] }] }
+          case 'session.get': {
+            const id = req.params?.sessionID
+            return id === 'ses_child' ? session('ses_child', 'ses_new', 'Write hello.txt file')
+              : id === 'ses_grand' ? session('ses_grand', 'ses_child', 'Look around')
+                : id === 'ses_stranger' ? session('ses_stranger', 'ses_elsewhere')
+                  : id === 'ses_elsewhere' ? session('ses_elsewhere') : null
+          }
+          default: return null
+        }
+      })
+      return context
+    }
+
+    it('lists what the thread\'s subagents ask, with the subagent, and leaves other sessions\' out', async () => {
+      const { service } = await started()
+      const requests = await service.requests('ses_new')
+      expect(requests.permissions).toEqual([
+        { id: 'per_child', action: 'edit', resources: ['hello.txt'], save: ['*'], subagent: { sessionId: 'ses_child', title: 'Write hello.txt file' } },
+        { id: 'per_grand', action: 'shell', resources: ['ls'], save: ['ls *'], subagent: { sessionId: 'ses_grand', title: 'Look around' } },
+      ])
+      expect(requests.forms).toEqual([{ id: 'frm_child', title: 'Pick', fields: [], unsupported: true, subagent: { sessionId: 'ses_child', title: 'Write hello.txt file' } }])
+      service.stop()
+    })
+
+    it('answers a subagent\'s request in its session, and only one that belongs to the thread', async () => {
+      const { service, calls } = await started()
+      await service.replyPermission({ threadId: 'ses_new', requestId: 'per_child', decision: 'always', sessionId: 'ses_child' })
+      expect(calls.at(-1)).toEqual({ operation: 'session.permission.reply', request: { params: { sessionID: 'ses_child', requestID: 'per_child' }, body: { decision: 'always' } } })
+      await service.replyForm({ threadId: 'ses_new', formId: 'frm_child', answer: { q0: 'x' }, sessionId: 'ses_child' })
+      expect(calls.at(-1)?.request.params).toEqual({ sessionID: 'ses_child', formID: 'frm_child' })
+      calls.length = 0
+      await expect(service.replyPermission({ threadId: 'ses_new', requestId: 'per_other', decision: 'reject', sessionId: 'ses_stranger' }))
+        .rejects.toThrow('not from this thread')
+      expect(calls.some((call) => call.operation === 'session.permission.reply')).toBe(false)
+      service.stop()
+    })
+
+    it('passes a subagent\'s request events on to its thread', async () => {
+      const { service, events, store } = await started()
+      const emit = (type: string, data: Record<string, unknown>) =>
+        (service as unknown as { onEvent(event: { type: string; data: Record<string, unknown> }, target: typeof wsl): void }).onEvent({ type, data }, wsl)
+      service.subscribe('ses_new')
+      emit('permission.asked', { sessionID: 'ses_child', id: 'per_child' })
+      await vi.waitFor(() => expect(store.get('ses_new')?.status).toBe('attention'))
+      expect(store.get('ses_new')?.attentionReason).toBe('permission')
+      expect(events).toContainEqual({ type: 'requests', threadId: 'ses_new' })
+      events.length = 0
+      emit('permission.replied', { sessionID: 'ses_child', requestID: 'per_child', reply: 'always' })
+      await vi.waitFor(() => expect(events).toContainEqual({ type: 'saved-permissions', threadId: 'ses_new' }))
+      expect(store.get('ses_new')?.status).toBe('working')
+      events.length = 0
+      // Another thread's session is not this one's business.
+      emit('permission.asked', { sessionID: 'ses_stranger', id: 'per_other' })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(events).toEqual([])
+      service.stop()
+    })
+  })
+
   describe('saved permissions', () => {
     const saved = {
       data: [

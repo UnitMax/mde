@@ -715,6 +715,16 @@ export interface ChatPermission {
   resources: string[]
   message?: string
   incomplete?: boolean
+  /** The patterns "Always allow" saves for the project (`git status *`, or `*` for every edit). */
+  save?: string[]
+  /** Set when a subagent of the thread asks: its session, where the answer goes, and its title (the task). */
+  subagent?: ChatRequestSubagent
+}
+
+/** The subagent session a permission request or question came from. */
+export interface ChatRequestSubagent {
+  sessionId: string
+  title?: string
 }
 
 export interface ChatFormOption {
@@ -741,6 +751,8 @@ export interface ChatForm {
   fields: ChatFormField[]
   /** Fields MDE cannot show; such a form has to be answered in a terminal. */
   unsupported: boolean
+  /** Set when a subagent of the thread asks. */
+  subagent?: ChatRequestSubagent
 }
 
 export interface ChatRequests {
@@ -955,6 +967,8 @@ export interface ChatPermissionReplyRequest {
   threadId: string
   requestId: string
   decision: 'once' | 'always' | 'reject'
+  /** The subagent session that asked, when it was not the thread itself. */
+  sessionId?: string
 }
 
 /**
@@ -984,6 +998,8 @@ export interface ChatFormReplyRequest {
   threadId: string
   formId: string
   answer: Record<string, ChatFormValue>
+  /** The subagent session that asked, when it was not the thread itself. */
+  sessionId?: string
 }
 
 /** Live changes for subscribed chat threads, pushed from the main process. */

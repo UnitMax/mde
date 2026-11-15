@@ -46,6 +46,10 @@ export const SERVICE_OPERATIONS = {
   // forgetting one of them. OpenCode saves no rejections.
   'permission.saved.list': { method: 'GET', path: '/api/permission/saved' },
   'permission.saved.remove': { method: 'DELETE', path: '/api/permission/saved/{savedID}' },
+  // Every pending permission request and question of a directory (`location[directory]`), subagents' included:
+  // OpenCode files a subagent's under its own session, which MDE only learns of here.
+  'permission.request.list': { method: 'GET', path: '/api/permission/request' },
+  'form.list': { method: 'GET', path: '/api/form' },
   'session.form.list': { method: 'GET', path: '/api/session/{sessionID}/form' },
   'session.form.reply': { method: 'POST', path: '/api/session/{sessionID}/form/{formID}/reply' },
   // MCP servers: the list, and turning one on or off for the running service (OpenCode keeps neither across a restart
