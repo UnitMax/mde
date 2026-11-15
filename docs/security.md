@@ -342,6 +342,13 @@ the same policy:
   settings. Bounded command-line overrides empty every configured driver's clean,
   smudge and process command. No filter command values are passed to the UI or logged.
   `GIT_CONFIG` is removed so it cannot redirect only the configuration probe.
+- In WSL, the commands of one reading run in a single `wsl.exe` round trip, started by a fixed
+  bash script (`src/main/git-batch.ts`) under the same `/usr/bin/env` policy. Repository data
+  (paths, commit names) reaches the script only as positional arguments, never as script text.
+  The script applies the same safety options to every command and makes the same filter probe,
+  once for the round trip and before its commands, with the same limits; a driver name it cannot
+  pass safely stops the batch with an error. Results are separated by a boundary that is random
+  for each batch, so file contents cannot forge the end of a result.
 - Read operations compare unfiltered content. Worktree checkout/removal requires
   a selected configured filter to succeed while its commands are disabled, so Git
   refuses that operation instead of silently producing an incomplete checkout.

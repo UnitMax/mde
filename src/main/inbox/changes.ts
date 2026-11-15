@@ -10,7 +10,7 @@ import type {
 } from '@shared/types'
 import { createGitCommandRunner, createGitFetchRunner, readGitCheckoutChangesWithRunner, readGitCheckoutDiffWithRunner } from '../git'
 import {
-  fetchGitWithRunners, readGitCheckoutHeadsWithRunner, readGitCommitDiffWithRunner, readGitCommitWithRunner, readGitGraphWithRunner,
+  fetchGitWithRunners, readGitCommitDiffWithRunner, readGitCommitWithRunner, readGitGraphAndCheckouts, readGitGraphWithRunner,
   threadsInCheckouts,
 } from '../git-graph'
 
@@ -65,11 +65,8 @@ export async function readInboxGitGraphWithThreads(
   threads: readonly InboxThread[],
   own?: string,
 ): Promise<InboxGitGraph> {
-  const run = createGitCommandRunner(session, process.platform, session.path)
-  const [graph, checkouts] = await Promise.all([
-    readGitGraphWithRunner(run, limit, scope),
-    readGitCheckoutHeadsWithRunner(run).catch(() => []),
-  ])
+  const { graph, checkouts } = await readGitGraphAndCheckouts(
+    createGitCommandRunner(session, process.platform, session.path), limit, scope, true)
   if (!graph.available) return graph
   const here = threads.filter((thread) =>
     !thread.archived && !thread.worktreeRemovedAt && thread.target.kind === session.kind &&

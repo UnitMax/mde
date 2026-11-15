@@ -2224,6 +2224,22 @@ refreshes. The Inbox’s worktrees create and remove a worktree on request throu
 Every Git process goes through a shared pool of three slots (`src/main/spawn-limiter.ts`), where
 polled readers queue behind requests such as opening an Inbox diff.
 
+In WSL, what costs is the round trip, not Git: every `wsl.exe` that is started takes about 100 ms,
+while the Git command it runs in the distro takes a few milliseconds. So the commands of one reading
+(the Git chip, an Inbox thread's changes, a diff, the Git graph, a commit) travel together
+(`src/main/git-batch.ts`): one `wsl.exe` starts one bash script in the distro, which finds the
+checkout root, reads `HEAD`, probes the filter drivers and then runs the commands one after the
+other, each with the same safety options and environment as a single command. Every value is a
+positional argument of the script, and the results come back separated by a boundary that is random
+for each batch. A reading takes a second round trip only when its second question depends on the
+first answer: the line counts of untracked files, and the diff of an untracked or renamed file.
+Commands that would not fit on one Windows command line are spread over several round trips.
+Natively the same steps run as separate processes (`runGitCheckoutBatch` in `src/main/git.ts`), so
+both paths ask Git the same questions. A terminal's folder is likewise resolved and checked to be a
+directory in one round trip (`canonicalWslDirectory`), without a login shell. Listing a folder of the
+file tree still costs one `wsl.exe` each; a helper process that stays running in the distro would
+remove that cost and is noted in `git-batch.ts` as the next step.
+
 Git and `wsl.exe` processes are started on a worker thread (`src/main/exec-host.ts`), not on the main
 thread. Starting a process is a blocking call, and on Windows it occasionally takes over 100 ms (about
 one launch in eight on the machine this was measured on, whatever the executable, options or console).

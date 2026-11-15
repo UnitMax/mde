@@ -20,6 +20,8 @@ export interface WslCommandOptions {
   /** Working directory inside the selected distro. */
   cwd?: string
   timeoutMs?: number
+  /** Output beyond this ends the command with an error. Node's default (1 MiB) when absent. */
+  maxBuffer?: number
 }
 
 /** Builds a direct-exec distro command. Data arguments are never shell-reparsed by WSL. */
@@ -43,7 +45,7 @@ export function runWslCommand(
   command: readonly string[],
   options: WslCommandOptions = {}
 ): Promise<WslResult> {
-  return runWslClient(buildWslExecArgs(distro, command, options.cwd), options.timeoutMs)
+  return runWslClient(buildWslExecArgs(distro, command, options.cwd), options.timeoutMs, options.maxBuffer)
 }
 
 export interface WslBufferResult {
@@ -53,9 +55,7 @@ export interface WslBufferResult {
   code: number
 }
 
-export interface WslBufferCommandOptions extends WslCommandOptions {
-  maxBuffer?: number
-}
+export type WslBufferCommandOptions = WslCommandOptions
 
 /** Like `runWslCommand`, but returns stdout untouched for binary-safe reads. */
 export function runWslCommandBuffer(
@@ -99,8 +99,8 @@ async function runWslClientRaw(
 }
 
 /** Low-level launcher reserved for wsl.exe client operations such as --status and --list. */
-async function runWslClient(args: readonly string[], timeoutMs = 15_000): Promise<WslResult> {
-  const { stdout, stderr, code } = await runWslClientRaw(args, timeoutMs)
+async function runWslClient(args: readonly string[], timeoutMs = 15_000, maxBuffer?: number): Promise<WslResult> {
+  const { stdout, stderr, code } = await runWslClientRaw(args, timeoutMs, maxBuffer)
   return { stdout: decodeWslOutput(stdout), stderr: decodeWslOutput(stderr), code }
 }
 

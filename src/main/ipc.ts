@@ -166,6 +166,7 @@ import { createAppInfo } from '@shared/app-info'
 import { isWslAvailable, listDistros, runWslCommand } from './wsl/distros'
 import {
   canonicalizeWslPath,
+  canonicalWslDirectory,
   directoryCheckArgs,
   isPlainAbsolutePath,
   resolveForTarget,
@@ -333,12 +334,10 @@ async function verifiedDirectory(session: Session, directory: string, quiet = fa
   }
 
   if (!isPlainAbsolutePath(path)) return reject('not a plain absolute path')
+  const canonical = await canonicalWslDirectory(distro, path)
+  if (canonical === null) return reject(`not a directory in ${distro}`)
   // `realpath` output is distro-side data, so it is re-checked like any other.
-  const canonical = (await canonicalizeWslPath(distro, path)) ?? path
-  if (!isPlainAbsolutePath(canonical)) return reject(`canonicalized to ${canonical}`)
-
-  const result = await runWslCommand(distro, directoryCheckArgs(canonical))
-  return result.code === 0 ? canonical : reject(`not a directory in ${distro}`)
+  return isPlainAbsolutePath(canonical) ? canonical : reject(`canonicalized to ${canonical}`)
 }
 
 /** `verifiedDirectory`, but always the real path: links resolved on the host or inside the distro. */

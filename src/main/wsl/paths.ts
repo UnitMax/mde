@@ -72,9 +72,11 @@ const CANONICALIZE_WSL_PATH_SCRIPT = [
  * default shell, which re-parses it and eats the script's `;;` and quoting.
  */
 export async function canonicalizeWslPath(distro: string, rawPath: string): Promise<string | null> {
+  // Not a login shell: `wsl.exe -e` already sets HOME, and reading the person's profile on every
+  // call costs more than the round trip itself.
   const result = await runWslCommand(distro, [
     'bash',
-    '-lc',
+    '-c',
     CANONICALIZE_WSL_PATH_SCRIPT,
     'mde-path',
     rawPath
@@ -85,6 +87,36 @@ export async function canonicalizeWslPath(distro: string, rawPath: string): Prom
   }
   const path = result.stdout.trim()
   return path.length > 0 ? path : null
+}
+
+const CANONICAL_WSL_DIRECTORY_SCRIPT = [
+  'resolved=$(realpath -- "$1" 2>/dev/null) || resolved=$1',
+  '[ -d "$resolved" ] || exit 3',
+  'printf "%s\\n" "$resolved"'
+].join('\n')
+
+const directoryChecks = new Map<string, Promise<string | null>>()
+
+/**
+ * The real path of a folder inside the distro, or null when it is not a folder there: `realpath`
+ * and the `test -d` of `directoryCheckArgs` in one round trip. A path `realpath` cannot resolve is
+ * checked as it was given. The answer is distro-side data, so the caller checks its shape again.
+ *
+ * Nothing is remembered between calls, but callers asking about the same folder at the same moment
+ * (a file tree reloading every open folder) share one round trip.
+ */
+export function canonicalWslDirectory(distro: string, path: string): Promise<string | null> {
+  const key = `${distro}\0${path}`
+  const running = directoryChecks.get(key)
+  if (running) return running
+  const check = runWslCommand(distro, ['bash', '-c', CANONICAL_WSL_DIRECTORY_SCRIPT, 'mde-directory', path])
+    .then((result) => {
+      const resolved = result.stdout.trim()
+      return result.code === 0 && resolved ? resolved : null
+    })
+    .finally(() => { directoryChecks.delete(key) })
+  directoryChecks.set(key, check)
+  return check
 }
 
 /** `wsl.exe -d <distro> -e wslpath -u <windowsPath>` */

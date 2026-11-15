@@ -29,10 +29,20 @@ const workspaceMock = vi.hoisted(() => ({
 
 vi.mock('electron', () => electronMock)
 vi.mock('../src/main/store/workspace', () => workspaceMock)
-vi.mock('../src/main/wsl/paths', async () => ({
-  ...await vi.importActual('../src/main/wsl/paths'),
-  canonicalizeWslPath: vi.fn(), resolveForTarget: vi.fn(), toWindows: vi.fn(), uncPathFor: vi.fn(),
-}))
+vi.mock('../src/main/wsl/paths', async () => {
+  const actual = await vi.importActual<typeof import('../src/main/wsl/paths')>('../src/main/wsl/paths')
+  const canonicalizeWslPath = vi.fn()
+  return {
+    ...actual,
+    canonicalizeWslPath, resolveForTarget: vi.fn(), toWindows: vi.fn(), uncPathFor: vi.fn(),
+    // The real one is a single wsl.exe call; here it is made of the two mocked steps.
+    canonicalWslDirectory: async (distro: string, path: string) => {
+      const { runWslCommand } = await import('../src/main/wsl/distros')
+      const canonical = (await canonicalizeWslPath(distro, path)) ?? path
+      return (await runWslCommand(distro, actual.directoryCheckArgs(canonical))).code === 0 ? canonical : null
+    },
+  }
+})
 vi.mock('../src/main/wsl/distros', () => ({ isWslAvailable: vi.fn(), listDistros: vi.fn(), runWslCommand: vi.fn() }))
 
 import { IpcChannels } from '../src/shared/ipc'

@@ -227,7 +227,7 @@ describe('WSL path resolution', () => {
   it.skipIf(process.platform === 'win32')('executes home shorthand expansion without retaining a literal tilde', async () => {
     vi.mocked(runWslCommand).mockImplementation(async (_distro, command) => {
       const result = spawnSync('bash', [
-        '-lc',
+        '-c',
         command[2] ?? '',
         command[3] ?? '',
         command[4] ?? ''
@@ -254,7 +254,7 @@ describe('WSL path resolution', () => {
 
     expect(vi.mocked(runWslCommand).mock.calls[0]?.slice(0, 2)).toEqual([
       'Ubuntu-24.04',
-      ['bash', '-lc', expect.any(String), 'mde-path', '~']
+      ['bash', '-c', expect.any(String), 'mde-path', '~']
     ])
   })
 
