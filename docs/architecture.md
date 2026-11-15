@@ -582,6 +582,18 @@ Terminal shows the floating terminal when there is one (F11); otherwise it docks
 needs the room. "Open in Terminal" from the file tree does the same. The card's hide button shrinks it to one small
 button in its corner (the same collapsed state as the docked sidebar's).
 
+Where there is room, the conversation makes way for the card instead of running under it (`lib/floating-reserve.ts`,
+applied by `InboxThreadView`): a chat or the new-thread page, a centred column of at most 768 px, takes just enough
+right padding that the column ends 16 px short of the card, and none when centred it already does; a terminal
+thread, which fills the width, makes way for all of it. The card publishes its measured width (`floatingCardWidth`
+in `useInboxView`), so opening a section, which widens it, moves the conversation along. When beside the card the
+conversation would be narrower than 520 px, it keeps its width and the card floats over it again. Hidden for the Git
+graph, the card keeps its place, so the conversation under the graph does not move.
+
+A GUI chat's scrollbar shows only while the pointer is over the conversation (`.hover-scrollbar` in `index.css`);
+otherwise it would run as a bar down the gap beside the card. Chromium does not repaint a scrollbar thumb on a
+plain `:hover` rule, so `ChatThreadView` sets a `data-scrollbar-shown` attribute on pointer enter and leave instead.
+
 ### Inbox tool calls
 
 The **Tools** tab in the right-hand sidebar (between Changes and Terminal) lists every tool call of the open

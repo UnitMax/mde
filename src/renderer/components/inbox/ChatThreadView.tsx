@@ -492,7 +492,16 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
     >
       <div className="relative flex min-h-0 flex-1 flex-col">
       <ChatTranscriptMenu messages={messages} complete={!state?.older} transcriptRef={scrollRef} onCopyError={setCopyError} onQuote={quote}>
-      <div ref={scrollRef} onScroll={onScroll} className="chat-selectable min-h-0 flex-1 overflow-y-auto" data-testid="chat-transcript" data-chat-scroller="">
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        // Set on the element itself rather than through state: drawing the conversation again for it would cost.
+        onPointerEnter={(event) => event.currentTarget.setAttribute('data-scrollbar-shown', '')}
+        onPointerLeave={(event) => event.currentTarget.removeAttribute('data-scrollbar-shown')}
+        className="hover-scrollbar chat-selectable min-h-0 flex-1 overflow-y-auto"
+        data-testid="chat-transcript"
+        data-chat-scroller=""
+      >
         <div ref={contentRef} className={cn('chat-flow mx-auto w-full max-w-3xl px-6 py-5', railGutter)}>
           {(first > 0 || state?.older) && (
             <button

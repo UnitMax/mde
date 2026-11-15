@@ -138,6 +138,19 @@
   .inbox-thread-list-hovered::-webkit-scrollbar-thumb:hover {
     background-color: var(--color-scrollbar-hover);
   }
+  /*
+   * The conversation's scrollbar shows only while the pointer is over it (`data-scrollbar-shown`, set from script:
+   * Chromium does not repaint a scrollbar for a plain :hover rule). Its room stays, so the text does not move.
+   */
+  .hover-scrollbar::-webkit-scrollbar-thumb {
+    background-color: transparent;
+  }
+  .hover-scrollbar[data-scrollbar-shown]::-webkit-scrollbar-thumb {
+    background-color: var(--color-line-strong);
+  }
+  .hover-scrollbar[data-scrollbar-shown]::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-scrollbar-hover);
+  }
 }
 
 @layer components {

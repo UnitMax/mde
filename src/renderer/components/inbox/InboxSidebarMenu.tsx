@@ -1,6 +1,7 @@
-import { useMemo, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { ChangesSection, FilesSection, showInboxTerminal } from '@/components/inbox/InboxChanges'
 import { InboxToolCalls } from '@/components/inbox/InboxToolCalls'
+import { usePublishFloatingCardWidth } from '@/components/inbox/use-floating-reserve'
 import { ChevronRight, Code, FileDiff, Folder, FolderOpen, FolderX, GitBranch, PanelRight, PanelRightClose, PanelRightOpen, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react'
 import type { DirectoryContext, InboxThread } from '@shared/types'
 import { ProjectIcon } from '@/components/inbox/ProjectIcon'
@@ -152,6 +153,8 @@ export function InboxSidebarMenu({
   const stored = useInboxView((s) => s.floatingSection)
   const sidebarWidth = useInboxView((s) => s.sidebarWidth)
   const removed = thread?.worktreeRemovedAt !== undefined
+  const card = useRef<HTMLElement>(null)
+  usePublishFloatingCardWidth(card)
   // Changes and Tools belong to a thread, and Tools to a GUI one; a section that does not apply is shut.
   const open: FloatingSection | null = stored === 'files' || (stored === 'changes' && threadId) || (stored === 'tools' && tally) ? stored : null
   const toggle = (section: FloatingSection): void => useInboxView.getState().setFloatingSection(open === section ? null : section)
@@ -161,6 +164,7 @@ export function InboxSidebarMenu({
   const available = changes?.available ? changes : null
   return (
     <nav
+      ref={card}
       aria-label="Thread sidebar"
       data-testid="inbox-sidebar-menu"
       data-open={open ?? undefined}
@@ -282,8 +286,11 @@ export function InboxSidebarMenu({
 /** The menu hidden: one small button in its corner brings it back. */
 export function InboxSidebarMenuButton({ threadId }: { threadId?: string }): JSX.Element {
   const toggle = useWorkspace((s) => s.toggleFileTree)
+  const button = useRef<HTMLButtonElement>(null)
+  usePublishFloatingCardWidth(button)
   return (
     <button
+      ref={button}
       type="button"
       aria-label="Show menu"
       title="Show menu"

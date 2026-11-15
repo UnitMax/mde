@@ -240,3 +240,16 @@ describe('scroll to bottom', () => {
     expect(byId('chat-scroll-to-bottom')).toBeNull()
   })
 })
+
+describe('conversation scrollbar', () => {
+  it('shows only while the pointer is over the conversation', async () => {
+    await render()
+    const scroller = transcript()
+    expect(scroller.classList.contains('hover-scrollbar')).toBe(true)
+    expect(scroller.hasAttribute('data-scrollbar-shown')).toBe(false)
+    await act(async () => { scroller.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, relatedTarget: document.body })) })
+    expect(scroller.hasAttribute('data-scrollbar-shown')).toBe(true)
+    await act(async () => { scroller.dispatchEvent(new PointerEvent('pointerout', { bubbles: true, relatedTarget: document.body })) })
+    expect(scroller.hasAttribute('data-scrollbar-shown')).toBe(false)
+  })
+})

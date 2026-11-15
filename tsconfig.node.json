@@ -142,6 +142,8 @@
     "src/renderer/lib/diff.ts",
     "src/renderer/lib/turn-changes.ts",
     "src/renderer/lib/tool-review.ts",
+    "src/renderer/lib/floating-reserve.ts",
+    "src/renderer/components/inbox/use-floating-reserve.ts",
     "src/renderer/lib/diff-highlight.ts",
     "src/renderer/lib/git-graph.ts",
     "src/renderer/store/session-git-graph.ts",

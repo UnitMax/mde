@@ -94,6 +94,12 @@ interface Store {
   /** With the sidebar floating: the section of the card that is opened out below its row, or null. Not kept between runs. */
   floatingSection: FloatingSection | null
   setFloatingSection: (section: FloatingSection | null) => void
+  /**
+   * How wide the floating card (or the button it hides to) is on screen, in pixels; 0 when there is none. The
+   * conversation makes way for it where there is room (`floatingReserve`).
+   */
+  floatingCardWidth: number
+  setFloatingCardWidth: (width: number) => void
 }
 
 /** How the Inbox sidebar is laid out, as the user last left it. */
@@ -166,4 +172,6 @@ export const useInboxView = create<Store>((set) => ({
   },
   floatingSection: null,
   setFloatingSection: (section) => set({ floatingSection: section }),
+  floatingCardWidth: 0,
+  setFloatingCardWidth: (width) => set((state) => (state.floatingCardWidth === width ? state : { floatingCardWidth: width })),
 }))
