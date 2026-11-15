@@ -11,6 +11,8 @@ export const SERVICE_OPERATIONS = {
   'skill.list': { method: 'GET', path: '/api/skill' },
   // The files and folders of a directory ranked for a few typed letters; it leaves out what Git ignores.
   'fs.find': { method: 'GET', path: '/api/fs/find' },
+  // What is directly in one folder of a directory, Git-ignored or not; the folder is checked by the caller.
+  'fs.list': { method: 'GET', path: '/api/fs/list' },
   'session.create': { method: 'POST', path: '/api/session' },
   'session.active': { method: 'GET', path: '/api/session/active' },
   // Only ever asked for the children of a recorded thread (`parentID`), to find a running subagent's session.
@@ -86,6 +88,8 @@ const QUERY_PARAMETERS: Record<string, RegExp> = {
   from: /^\d{1,16}$/,
   timezone: /^[A-Za-z][A-Za-z0-9_+\/-]{0,63}$/,
   tools: /^(none|summary|detail)$/,
+  // A folder to list, relative to the directory; that it stays inside it is checked before the request.
+  path: /^[^\u0000-\u001f\u007f-\u009f]{1,1000}$/,
 }
 
 export const SERVICE_REQUEST_TIMEOUT_MS = 30_000

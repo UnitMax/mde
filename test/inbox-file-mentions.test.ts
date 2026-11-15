@@ -6,7 +6,7 @@ import { InboxChatService } from '../src/main/inbox/chat'
 import { InboxRecorder } from '../src/main/inbox/recorder'
 import { InboxStore } from '../src/main/inbox/store'
 import { OpenCodeServiceError, type ServiceOperation, type ServiceRequest } from '../src/main/opencode/service/client'
-import { applyFile, describeFile, splitMentions } from '../src/renderer/lib/file-mentions'
+import { applyFile, describeFile, enterFolder, splitMentions } from '../src/renderer/lib/file-mentions'
 import type { ChatFileEntry } from '../src/shared/types'
 
 describe('writing a path after an @', () => {
@@ -229,6 +229,14 @@ describe('choosing a file in the picker', () => {
     expect(applyFile(text, fileTriggerAt(text, 7)!, entry('my notes.txt'))).toEqual({ text: '@"my notes.txt" next', caret: 16 })
   })
 
+  it('steps into a folder leaving the word open, without a space or a closing quote', () => {
+    const text = 'Look at @sr please'
+    expect(enterFolder(text, fileTriggerAt(text, 11)!, 'src/')).toEqual({ text: 'Look at @src/ please', caret: 13 })
+    const quoted = '@"my no" next'
+    expect(enterFolder(quoted, fileTriggerAt(quoted, 7)!, 'my notes/')).toEqual({ text: '@"my notes/ next', caret: 11 })
+    expect(fileTriggerAt('@"my notes/ next', 11)?.query).toBe('my notes/')
+  })
+
   it('shows the name first and the folders after it', () => {
     expect(describeFile('src/main/app.ts')).toEqual({ name: 'app.ts', folder: 'src/main/' })
     expect(describeFile('src/main/')).toEqual({ name: 'main/', folder: 'src/' })
@@ -240,13 +248,23 @@ describe('the files and folders of a project, through the chat service', () => {
   const model = { id: 'model-1', providerId: 'provider-1' }
   const project = ['src/app.ts', 'src/sub/', 'my notes.txt', 'README.md']
 
-  function setup(options: { find?: (query: string) => unknown } = {}) {
+  const tree: Record<string, string[]> = {
+    'src/': ['src/sub/', 'src/app.ts', 'src/Apple.md', 'src/map.ts', 'src/node_modules/', 'src/.git/', '../outside/'],
+    'src/sub/': [],
+  }
+
+  function setup(options: { find?: (query: string) => unknown; ignored?: (paths: string[]) => Promise<Set<string>> } = {}) {
     const store = new InboxStore('/unused', { writeFile: async () => {}, writeDelayMs: 60_000 })
     const recorder = new InboxRecorder(store, { now: () => 1_000, readBranch: async () => 'main', onChanged: () => {} })
     const calls: { operation: ServiceOperation; request: ServiceRequest }[] = []
     const request = vi.fn(async (_target: unknown, operation: ServiceOperation, req: ServiceRequest = {}) => {
       calls.push({ operation, request: req })
       if (operation === 'session.create') return { data: { id: 'ses_new' } }
+      if (operation === 'fs.list') {
+        const children = tree[req.query?.path ?? '']
+        if (!children) throw new OpenCodeServiceError('Directory not found', 404)
+        return { data: children.map((path) => ({ path, type: path.endsWith('/') ? 'directory' : 'file' })) }
+      }
       if (operation === 'fs.find') {
         const query = req.query?.query ?? ''
         if (options.find) return options.find(query)
@@ -264,6 +282,7 @@ describe('the files and folders of a project, through the chat service', () => {
       now: () => 1_000,
       createId: () => (nextId++ === 0 ? 'abc' : `abc${nextId}`),
       sleep: async () => {},
+      ignored: async (_root, paths) => (options.ignored ? options.ignored(paths) : new Set(paths.filter((path) => path.includes('node_modules')))),
     })
     const folder = service.addFolder({ directory: '/home/me/app', target: { kind: 'wsl', distro: 'Ubuntu-24.04' } })
     return { service, folder, calls }
@@ -277,6 +296,38 @@ describe('the files and folders of a project, through the chat service', () => {
     await service.create({ folderId: folder.id, text: 'Hi', agent: 'build', model })
     expect(await service.files({ threadId: 'ses_new', query: 'notes' })).toEqual([{ path: 'my notes.txt', directory: false }])
     service.stop()
+  })
+
+  it('reads a word with a slash like a shell path: what the folder holds, folders first, the folder itself leading', async () => {
+    const { service, folder, calls } = setup()
+    expect(await service.files({ folderId: folder.id, query: 'src/' })).toEqual([
+      { path: 'src/', directory: true },
+      { path: 'src/sub/', directory: true },
+      { path: 'src/app.ts', directory: false },
+      { path: 'src/Apple.md', directory: false },
+      { path: 'src/map.ts', directory: false },
+    ])
+    expect(calls[0]).toEqual({ operation: 'fs.list', request: { query: { 'location[directory]': '/home/me/app', path: 'src/' } } })
+    // What follows the slash narrows the folder: names starting with it first, then names holding it.
+    expect((await service.files({ folderId: folder.id, query: 'src/ap' })).map((entry) => entry.path)).toEqual(['src/app.ts', 'src/Apple.md', 'src/map.ts'])
+    expect(await service.files({ folderId: folder.id, query: 'src/sub/' })).toEqual([{ path: 'src/sub/', directory: true }])
+  })
+
+  it('searches the whole project instead when the folder is not there or nothing in it fits', async () => {
+    const { service, folder, calls } = setup()
+    expect(await service.files({ folderId: folder.id, query: 'nope/' })).toEqual([])
+    expect(calls.map((call) => call.operation)).toEqual(['fs.list', 'fs.find'])
+    expect((await service.files({ folderId: folder.id, query: 'src/zz' })).length).toBe(0)
+    expect(calls.at(-1)?.operation).toBe('fs.find')
+    // A path out of the project is not listed at all.
+    calls.length = 0
+    await service.files({ folderId: folder.id, query: '../' })
+    expect(calls.map((call) => call.operation)).toEqual(['fs.find'])
+  })
+
+  it('lists everything when Git cannot say what it ignores', async () => {
+    const { service, folder } = setup({ ignored: async () => { throw new Error('not a repository') } })
+    expect((await service.files({ folderId: folder.id, query: 'src/' })).map((entry) => entry.path)).toContain('src/node_modules/')
   })
 
   it('refuses a folder or thread that is gone', async () => {

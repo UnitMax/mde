@@ -109,6 +109,7 @@ import {
   type TurnMarker,
 } from '../opencode/service/parse'
 import { skillMentions } from '@shared/skills'
+import { isMentionablePath } from '@shared/file-mentions'
 import { mentionAttachments, resolveFile } from './file-mentions'
 import type { InboxRecorder } from './recorder'
 import { InboxSearch } from './search'
@@ -120,6 +121,8 @@ export const CHAT_TEXT_MAX_LENGTH = 100_000
 const OPTIONS_TTL_MS = 60_000
 /** The `@` picker lists at most this many files and folders at once; typing narrows them down. */
 const FILE_PICKER_LIMIT = 40
+/** The most entries of one folder the `@` picker looks at, and asks Git about. */
+const FOLDER_LIST_LIMIT = 1000
 /**
  * OpenCode answers the first agent request for a folder it has not loaded yet with an empty list
  * (the models are fine), and the next request is complete. Ask a few more times before giving up.
@@ -183,6 +186,17 @@ export interface InboxChatDependencies {
   createId?(): string
   /** Waits between agent list attempts; tests replace it. */
   sleep?(ms: number): Promise<void>
+  /**
+   * Which of these paths (relative to the root, a folder's ending in `/`) Git ignores there. Without it, or where
+   * it fails (not a repository), nothing counts as ignored.
+   */
+  ignored?(root: DirectoryContext, paths: string[]): Promise<Set<string>>
+}
+
+/** The last part of a project path, a folder's with its `/`. */
+function fileName(path: string): string {
+  const bare = path.endsWith('/') ? path.slice(0, -1) : path
+  return `${bare.slice(bare.lastIndexOf('/') + 1)}${path.endsWith('/') ? '/' : ''}`
 }
 
 function folderName(directory: string): string {
@@ -1571,7 +1585,40 @@ export class InboxChatService {
    */
   async files(request: ChatFilesRequest): Promise<ChatFileEntry[]> {
     this.assertEnabled()
-    return this.findFiles(this.place(request), request.query)
+    const place = this.place(request)
+    const listed = request.query.includes('/') ? await this.folderFiles(request, place, request.query).catch(() => null) : null
+    return listed ?? this.findFiles(place, request.query)
+  }
+
+  /**
+   * What was typed after an `@` read like a path in a shell: `src/li` is what `src/` holds that starts with (then
+   * contains) `li`, folders first. With nothing after the `/` the folder itself leads the list, so it can be chosen as
+   * it is. Git-ignored entries and `.git` are left out, as the search leaves them out. Null, for the search to answer
+   * instead, when that is no folder of the project or nothing in it fits.
+   */
+  private async folderFiles(request: ChatOptionsRequest, place: { target: OpenCodeTarget; directory: string }, query: string): Promise<ChatFileEntry[] | null> {
+    const cut = query.lastIndexOf('/')
+    const folder = query.slice(0, cut + 1)
+    const typed = query.slice(cut + 1).toLowerCase()
+    if (!isMentionablePath(folder)) return null
+    const children = parseFileEntries(await this.dependencies.client.request(place.target, 'fs.list', {
+      query: { 'location[directory]': place.directory, path: folder },
+    })).filter((entry) => entry.path.startsWith(folder) && entry.path !== folder && fileName(entry.path) !== '.git/').slice(0, FOLDER_LIST_LIMIT)
+    const root = this.fileRoot(request.threadId ?? request.folderId ?? '')
+    const ignored = root && this.dependencies.ignored && children.length
+      ? await this.dependencies.ignored(root, children.map((entry) => entry.path)).catch(() => new Set<string>())
+      : new Set<string>()
+    const kept = children.filter((entry) => !ignored.has(entry.path))
+    const rank = (entry: ChatFileEntry): number => {
+      const name = fileName(entry.path).toLowerCase()
+      return name.startsWith(typed) ? 0 : name.includes(typed) ? 1 : -1
+    }
+    const fitting = kept
+      .filter((entry) => rank(entry) >= 0)
+      .sort((a, b) => rank(a) - rank(b) || Number(b.directory) - Number(a.directory) || a.path.localeCompare(b.path))
+      .slice(0, FILE_PICKER_LIMIT)
+    if (typed) return fitting.length ? fitting : null
+    return [{ path: folder, directory: true }, ...fitting.slice(0, FILE_PICKER_LIMIT - 1)]
   }
 
   /** Which of these paths the folder or thread has; the answer holds the ones it does, as they were written. */

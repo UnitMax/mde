@@ -13,6 +13,16 @@ export function applyFile(text: string, trigger: FileTrigger, entry: ChatFileEnt
   return { text: text.slice(0, trigger.start) + written + gap + after, caret }
 }
 
+/**
+ * Writes a folder over the `@word` being typed and leaves the word open, without a space or closing quote, so the
+ * picker goes on to list what is in the folder, as Tab does in a shell.
+ */
+export function enterFolder(text: string, trigger: FileTrigger, path: string): { text: string; caret: number } {
+  const full = mentionText(path)
+  const written = full.endsWith('"') ? full.slice(0, -1) : full
+  return { text: text.slice(0, trigger.start) + written + text.slice(trigger.end), caret: trigger.start + written.length }
+}
+
 /** A path as the picker shows it: the name first, and the folders it is in after it. */
 export function describeFile(path: string): { name: string; folder: string } {
   const bare = path.endsWith('/') ? path.slice(0, -1) : path

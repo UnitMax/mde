@@ -21,6 +21,7 @@ import { OpenCodeServiceClient } from './opencode/service/client'
 import { createOpenCodeConfigService } from './opencode/config'
 import { discoverOpenCodeService } from './opencode/service/discovery'
 import { readGitTerminalInfo } from './git'
+import { readGitIgnoredPaths } from './inbox/changes'
 import { adjustZoomFactor, DEFAULT_ZOOM_FACTOR, getZoomAction } from './zoom'
 import { handleWindowOpen } from './external-links'
 import { installPermissionPolicy } from './permissions'
@@ -251,6 +252,7 @@ if (bridgeLaunch) {
       recorder: inboxRecorder,
       now: () => Date.now(),
       enabled: inboxEnabled,
+      ignored: readGitIgnoredPaths,
       send: (event) => {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send(IpcEvents.chatEvent, event)

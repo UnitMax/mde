@@ -1208,8 +1208,19 @@ own directory (the worktree, for a thread started in one). The search is OpenCod
 bare `@`, and runs in the distro for a WSL folder, so MDE walks no directory itself. Typing waits 60 ms for
 a pause, and the list stays as it was until the answer for the longer word arrives. Up and Down move, Tab
 or Enter write `@path ` over the word (the whole word, with the caret in the middle of it), Escape closes
-the list until that word is gone, and a click does the same as Enter without moving the caret. A folder is
-written with its closing `/`, and a path with a space or other punctuation in quotes, `@"my notes.txt"`;
+the list until that word is gone, and a click does the same as Enter without moving the caret.
+
+Folders are walked like a shell's Tab completion. Tab on a folder writes it with its `/` and no space, and
+the list goes on with what that folder holds (`enterFolder`); Enter on a folder finishes it with a space. A
+word with a `/` in it is read as a path: what comes before the last `/` is the folder, listed with
+OpenCode's `GET /api/fs/list` (direct children only), and what comes after narrows it, names that start
+with it first, then names that hold it, folders before files. With nothing after the `/`, the folder itself
+leads the list marked "this folder", so a second Tab finishes it; Tab again before that list has arrived
+finishes the folder just stepped into too. The listing is not filtered by OpenCode, so MDE leaves out `.git`
+and asks Git which of the entries it ignores (`git check-ignore`, one call per listing, `readGitIgnoredPaths`
+in `src/main/inbox/changes.ts`; outside a repository nothing is left out). When the folder is not there,
+is not a path inside the project (`..`), or holds nothing that fits, the word goes to the search as before.
+A folder is written with its closing `/`, and a path with a space or other punctuation in quotes, `@"my notes.txt"`;
 the rules for what counts as an `@word` and as a mention are in `src/shared/file-mentions.ts`, shared by
 the composer, the sender and the transcript. An `@` inside a word (`me@example.com`) is not one.
 

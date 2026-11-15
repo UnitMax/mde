@@ -5,7 +5,7 @@ import type { ChatDelivery, ChatDraft, ChatDraftChoice, ChatDraftKey, ChatDraftR
 import { fileMentionTokens, fileTriggerAt } from '@shared/file-mentions'
 import { skillTriggerAt } from '@shared/skills'
 import { addQuote, joinQuotes, leadingQuotes, MESSAGE_TEXT_LIMIT } from '@/lib/chat-quote'
-import { applyFile, describeFile } from '@/lib/file-mentions'
+import { applyFile, describeFile, enterFolder } from '@/lib/file-mentions'
 import { applySkill, filterSkills } from '@/lib/skills'
 import { applyCommand, filterCommands, parseInvocation, slashTriggerAt, type SlashCommand, type SlashInvocation } from '@/lib/slash-commands'
 import {
@@ -391,7 +391,9 @@ export const ChatComposer = forwardRef(function ChatComposer({
     () => (!slashTrigger && scopeKey && cursor?.text === text ? fileTriggerAt(text, cursor.at) : null),
     [slashTrigger, scopeKey, cursor, text],
   )
-  const [fileResults, setFileResults] = useState<{ scope: string; entries: ChatFileEntry[] } | null>(null)
+  const [fileResults, setFileResults] = useState<{ scope: string; query: string; entries: ChatFileEntry[] } | null>(null)
+  // The folder Tab last stepped into: Tab again before its list has come finishes it, as the list would.
+  const enteredFolder = useRef<string | null>(null)
   const fileQuery = fileTrigger?.query ?? null
   useEffect(() => {
     if (fileQuery === null || !scopeKey) {
@@ -404,7 +406,7 @@ export const ChatComposer = forwardRef(function ChatComposer({
       Promise.resolve()
         .then(() => window.api.chat.files({ ...scope.current!, query: fileQuery }))
         .catch((): ChatFileEntry[] => [])
-        .then((entries) => { if (current) setFileResults({ scope: scopeKey, entries }) })
+        .then((entries) => { if (current) setFileResults({ scope: scopeKey, query: fileQuery, entries }) })
     }, FILE_SEARCH_MS)
     return () => { current = false; window.clearTimeout(timer) }
   }, [fileQuery, scopeKey])
@@ -573,6 +575,18 @@ export const ChatComposer = forwardRef(function ChatComposer({
     // A new object each time, so the box renders and puts the caret in place even when the text is unchanged.
     setCursor({ text: next.text, at: next.caret })
   }
+  // Tab on a folder: the word becomes the folder, still open, and the list shows what is in it.
+  const stepIntoFolder = (entry: ChatFileEntry): void => {
+    if (!fileTrigger) return
+    resetHistory()
+    const next = enterFolder(text, fileTrigger, entry.path)
+    enteredFolder.current = entry.path
+    pendingCaret.current = next.caret
+    setText(next.text)
+    persist(next.text)
+    setCursor({ text: next.text, at: next.caret })
+    setActiveItem(0)
+  }
   const pickFile = (entry: ChatFileEntry): void => {
     if (!fileTrigger) return
     resetHistory()
@@ -636,8 +650,16 @@ export const ChatComposer = forwardRef(function ChatComposer({
   const choose = (index: number, completeOnly = false): void => {
     if (!slashTrigger) {
       if (fileTrigger) {
+        // Tab steps into a folder, like a shell; Tab on the folder itself (the first row once in it) and Enter finish.
+        // Before the list for a folder just stepped into has come, Tab finishes that folder and Enter waits.
+        if (fileResults?.query !== fileTrigger.query) {
+          if (completeOnly && enteredFolder.current === fileTrigger.query) pickFile({ path: fileTrigger.query, directory: true })
+          return
+        }
         const entry = fileEntries[index]
-        if (entry) pickFile(entry)
+        if (!entry) return
+        if (completeOnly && entry.directory && entry.path !== fileTrigger.query) stepIntoFolder(entry)
+        else pickFile(entry)
         return
       }
       const skill = matches[index]
@@ -814,9 +836,11 @@ export const ChatComposer = forwardRef(function ChatComposer({
       : fileTrigger
         ? fileEntries.map((entry) => {
           const { name, folder } = describeFile(entry.path)
+          const self = entry.directory && entry.path === fileTrigger.query
           return {
             key: entry.path,
             label: name,
+            hint: self ? 'this folder' : undefined,
             description: folder || undefined,
             icon: entry.directory ? <Folder aria-hidden className="h-3.5 w-3.5" /> : <FileIcon aria-hidden className="h-3.5 w-3.5" />,
             testId: `file-option-${entry.path}`,

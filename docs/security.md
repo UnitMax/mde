@@ -358,6 +358,10 @@ the same policy:
   path, which must be one of the files that commit changed. The `git:*` graph channels take
   either an Inbox thread ID or a terminal ID (exactly one, never a path); a terminal
   resolves to its live current directory, verified on disk like its Git chip's.
+- The Inbox `@` picker asks `git check-ignore` (with `core.quotePath=false`, through the same hardened
+  runner) which entries of a listed folder Git ignores. The paths are the ones OpenCode's
+  `/api/fs/list` returned for a folder that passed `isMentionablePath` (relative, no `..`), passed
+  after `--`, and the folder or thread is named by its ID, never by a path from the renderer.
 - **User-started fetch.** `git:fetch` (a thread or terminal ID, nothing else) is the one call
   allowed to reach the network, and the renderer sends it only from the Git graph's Fetch
   button. It uses a separate runner, `createGitFetchRunner`, with `GIT_ALLOW_PROTOCOL` set to
