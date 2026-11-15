@@ -54,18 +54,35 @@
   --chat-text: color-mix(in oklab, var(--color-fg) 82%, var(--color-bg));
   --chat-strong: color-mix(in oklab, var(--color-fg) 70%, #fff);
   /* What a step of the agent's work was about (a command, a file): a level below its words, so a row reads as an aside. */
-  --chat-step: color-mix(in oklab, var(--color-fg) 62%, var(--color-bg));
+  --chat-step: color-mix(in oklab, var(--color-fg) 52%, var(--color-bg));
+  /* The muted and faint text of an activity line (.chat-aside-line), a step further back than elsewhere. */
+  --chat-aside: color-mix(in oklab, var(--color-fg-muted) 74%, var(--color-bg));
+  --chat-aside-faint: color-mix(in oklab, var(--color-fg-subtle) 78%, var(--color-bg));
 }
 
 :root[data-mode='light'] {
   --chat-text: color-mix(in oklab, var(--color-fg) 85%, var(--color-bg));
   --chat-strong: color-mix(in oklab, var(--color-fg) 75%, #000);
-  --chat-step: color-mix(in oklab, var(--color-fg) 68%, var(--color-bg));
+  --chat-step: color-mix(in oklab, var(--color-fg) 58%, var(--color-bg));
+  --chat-aside: color-mix(in oklab, var(--color-fg-muted) 74%, var(--color-bg));
+  --chat-aside-faint: color-mix(in oklab, var(--color-fg-subtle) 78%, var(--color-bg));
 }
 
 :root[data-theme^='high-contrast'] {
   --chat-text: var(--color-fg);
   --chat-step: var(--color-fg);
+  --chat-aside: var(--color-fg-muted);
+  --chat-aside-faint: var(--color-fg-subtle);
+}
+
+/*
+ * A line of the agent's activity in a chat (a tool call, a thought, the summary of a run of steps): its muted and faint
+ * text sit further back than elsewhere, so the lines stay out of the way of the replies. Hovered, its words still light
+ * up to full text colour, which is not changed here.
+ */
+.chat-aside-line {
+  --color-fg-muted: var(--chat-aside);
+  --color-fg-subtle: var(--chat-aside-faint);
 }
 
 @layer base {

@@ -162,7 +162,7 @@ export function ActivityGroup({
           type="button"
           aria-expanded={open}
           onClick={() => choose(!open)}
-          className="group/row flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-[5px] text-left text-[12.5px] leading-5 transition-colors hover:bg-hover/70 focus-visible:bg-hover/70 focus-visible:outline-none"
+          className="chat-aside-line group/row flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-[5px] text-left text-[12.5px] leading-5 transition-colors hover:bg-hover/70 focus-visible:bg-hover/70 focus-visible:outline-none"
         >
           {live ? (
             <LoaderCircle aria-hidden className="h-3.5 w-3.5 shrink-0 animate-spin text-accent motion-reduce:animate-none" />

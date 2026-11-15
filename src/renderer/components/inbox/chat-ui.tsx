@@ -222,7 +222,7 @@ export function ActivityRow({
       )}
     </>
   )
-  const base = 'group/row flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-[5px] text-left text-[12.5px] leading-5'
+  const base = 'chat-aside-line group/row flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-[5px] text-left text-[12.5px] leading-5'
   return (
     <div
       {...attrs}

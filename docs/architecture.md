@@ -130,7 +130,10 @@ keeps its own muted color. Inline code uses the code preview font at 0.88em in r
 `em` so the smaller reasoning text scales with them.
 
 What a step of the agent's work was about (the command, the file of a row) uses `--chat-step`, a level below
-the words (full contrast in the high-contrast themes), and brightens when the row is hovered. The conversation
+the words (full contrast in the high-contrast themes), and brightens when the row is hovered. The rest of an
+activity line (the verb, its icon, the summary of a run of steps) sits back too: a `.chat-aside-line` swaps the
+theme's muted and faint text colors for `--chat-aside` and `--chat-aside-faint`, the same colors mixed further
+toward the background, so the lines stand out less against the replies. The conversation
 is spaced by what meets what, not by OpenCode's messages, which break at every round of tool calls: the
 transcript and each agent message are a `.chat-flow`, and each piece carries `data-flow-start` and
 `data-flow-end` (`user`, `text`, `step` or `footer`, from `flowAttrs` in `chat-ui.tsx`). Rows stack with no gap,
