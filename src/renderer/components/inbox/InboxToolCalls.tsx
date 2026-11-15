@@ -12,6 +12,7 @@ import {
   FolderSearch,
   Globe,
   ListChecks,
+  ListTree,
   LoaderCircle,
   MessageCircleQuestion,
   Plug,
@@ -31,6 +32,7 @@ import { filterTurns, toolCounts, toolTurns, type ToolEntry, type ToolFilter, ty
 import { cn } from '@/lib/utils'
 import { useInboxChat } from '@/store/inbox-chat'
 import { useInboxMcp } from '@/store/inbox-mcp'
+import { useInboxView } from '@/store/inbox-view'
 
 const NO_SERVERS: readonly string[] = []
 
@@ -233,13 +235,16 @@ function TurnSection({
 }
 
 /**
- * The Tools tab of a GUI thread: every tool call the agent made, MCP ones included, under the message it answered.
+ * The Tools tab of a GUI thread: every tool call the agent made, MCP ones included, one after another or, with the
+ * messages shown, under the message it answered.
  * The list can be narrowed to MCP calls or failures and searched; a row opens onto its input, output and error.
  */
 export function InboxToolCalls({ thread }: { thread: InboxThread }): JSX.Element {
   const state = useInboxChat((store) => store.threads[thread.id])
   const loadOlder = useInboxChat((store) => store.loadOlder)
   const servers = useInboxMcp((store) => store.entries[mcpKey(thread.target, thread.directory)]?.names) ?? NO_SERVERS
+  const grouped = useInboxView((store) => store.toolTurns)
+  const setGrouped = useInboxView((store) => store.setToolTurns)
   const [filter, setFilter] = useState<ToolFilter>('actions')
   const [query, setQuery] = useState('')
   const [opened, setOpened] = useState<ReadonlySet<string>>(new Set())
@@ -310,6 +315,20 @@ export function InboxToolCalls({ thread }: { thread: InboxThread }): JSX.Element
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-fg-subtle transition-colors hover:bg-hover hover:text-fg disabled:pointer-events-none disabled:opacity-40"
           >
             {allOpen ? <ChevronsDownUp aria-hidden className="h-3.5 w-3.5" /> : <ChevronsUpDown aria-hidden className="h-3.5 w-3.5" />}
+          </button>
+          <button
+            type="button"
+            aria-pressed={grouped}
+            aria-label="Show messages"
+            title={grouped ? 'Hide the messages the calls answered' : 'Group the calls under the messages they answered'}
+            data-testid="inbox-tools-turns"
+            onClick={() => setGrouped(!grouped)}
+            className={cn(
+              'flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors',
+              grouped ? 'bg-fg/10 text-fg hover:bg-fg/15' : 'text-fg-subtle hover:bg-hover hover:text-fg',
+            )}
+          >
+            <ListTree aria-hidden className="h-3.5 w-3.5" />
           </button>
         </div>
         <div className="flex min-w-0 items-center">
@@ -384,6 +403,12 @@ export function InboxToolCalls({ thread }: { thread: InboxThread }): JSX.Element
               </button>
             )}
           </div>
+        ) : !grouped ? (
+          <ul className="flex min-w-0 flex-col px-1.5 py-1" data-testid="inbox-tools-flat">
+            {shown.flatMap((turn) => turn.entries).map((entry) => (
+              <EntryRow key={entry.id} entry={entry} open={opened.has(entry.id)} onToggle={() => setOpened((current) => toggle(current, entry.id))} />
+            ))}
+          </ul>
         ) : (
           shown.map((turn) => (
             <TurnSection

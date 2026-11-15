@@ -11,6 +11,7 @@ export const INBOX_TITLE_ICONS_STORAGE_KEY = 'mde.inbox-title-icons'
 export const INBOX_COMPACT_CHAT_STORAGE_KEY = 'mde.inbox-compact-chat'
 export const INBOX_TURN_CHANGES_STORAGE_KEY = 'mde.inbox-turn-changes'
 export const INBOX_SIDEBAR_FLOATING_STORAGE_KEY = 'mde.inbox-sidebar-floating'
+export const INBOX_TOOL_TURNS_STORAGE_KEY = 'mde.inbox-tool-turns'
 export const INBOX_COMMAND_NAMES_STORAGE_KEY = 'mde.inbox-command-names'
 export const INBOX_COMPACT_TEXT_STORAGE_KEY = 'mde.inbox-compact-text'
 export const INBOX_MODEL_QUICK_SWITCH_STORAGE_KEY = 'mde.inbox-model-quick-switch'
@@ -202,6 +203,15 @@ export function getInboxSidebarFloating(): boolean {
 
 export function saveInboxSidebarFloating(on: boolean): void {
   writeSwitch(INBOX_SIDEBAR_FLOATING_STORAGE_KEY, on)
+}
+
+/** Whether the Tools tab groups its calls under the messages they answered; off by default, a flat list. */
+export function getInboxToolTurns(): boolean {
+  return readSwitch(INBOX_TOOL_TURNS_STORAGE_KEY)
+}
+
+export function saveInboxToolTurns(on: boolean): void {
+  writeSwitch(INBOX_TOOL_TURNS_STORAGE_KEY, on)
 }
 
 /** How wide the Inbox's right-hand sidebar was left. The default when never set, and when unreadable. */

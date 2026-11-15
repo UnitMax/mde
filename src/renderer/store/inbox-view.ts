@@ -8,6 +8,7 @@ import {
   getInboxModelQuickSwitch,
   getInboxProjectFilter,
   getInboxSidebarFloating,
+  getInboxToolTurns,
   getInboxSidebarWidth,
   getInboxSnoozedOpen,
   getInboxTitleIcons,
@@ -21,6 +22,7 @@ import {
   saveInboxModelQuickSwitch,
   saveInboxProjectFilter,
   saveInboxSidebarFloating,
+  saveInboxToolTurns,
   saveInboxSidebarWidth,
   saveInboxSnoozedOpen,
   saveInboxTitleIcons,
@@ -91,6 +93,9 @@ interface Store {
    */
   sidebarFloating: boolean
   setSidebarFloating: (on: boolean) => void
+  /** The Tools tab shows a header for each message of the person's above the calls answering it (a preference, off by default). */
+  toolTurns: boolean
+  setToolTurns: (on: boolean) => void
   /** With the sidebar floating: the section of the card that is opened out below its row, or null. Not kept between runs. */
   floatingSection: FloatingSection | null
   setFloatingSection: (section: FloatingSection | null) => void
@@ -169,6 +174,11 @@ export const useInboxView = create<Store>((set) => ({
   setSidebarFloating: (on) => {
     saveInboxSidebarFloating(on)
     set({ sidebarFloating: on, floatingSection: null })
+  },
+  toolTurns: getInboxToolTurns(),
+  setToolTurns: (on) => {
+    saveInboxToolTurns(on)
+    set({ toolTurns: on })
   },
   floatingSection: null,
   setFloatingSection: (section) => set({ floatingSection: section }),

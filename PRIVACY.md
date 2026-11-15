@@ -59,6 +59,8 @@ backed-up locations can place copies elsewhere. These stores are not encrypted b
   narrowed to, as that project's folder ID (`fld_…`), or absent when it shows all projects.
 - The renderer's local storage (`mde.inbox-sidebar-floating`): whether the Inbox's right-hand sidebar floats
   over the conversation as a menu card instead of standing beside it.
+- The renderer's local storage (`mde.inbox-tool-turns`): whether the Inbox's Tools tab groups tool calls
+  under the messages they answered (the word `on` or `off`).
 - The renderer's local storage (`mde.inbox-sidebar-width` and `mde.inbox-terminal-layout`): how wide
   the Inbox's right-hand sidebar is (a number of pixels), and the arrangement of the Inbox terminal
   (a tree of pane IDs, split IDs, horizontal or vertical directions, and numeric divider ratios).

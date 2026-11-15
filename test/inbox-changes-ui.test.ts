@@ -684,15 +684,18 @@ describe('Tools tab', () => {
   afterEach(() => {
     useInboxChat.setState({ threads: {} })
     useInboxMcp.setState({ entries: {} } as never)
+    useInboxView.setState({ toolTurns: false })
+    localStorage.removeItem('mde.inbox-tool-turns')
   })
 
-  it('counts the calls on the tab and lists them under the prompt they answered', async () => {
+  it('counts the calls on the tab and lists them one after another', async () => {
     seed(conversation)
     await sidebar()
     expect(container.querySelector('[data-testid="inbox-tools-count"]')?.textContent).toBe('3')
     await act(async () => tab('tools')!.click())
     expect(toolsPanel()).not.toBeNull()
-    expect(toolsPanel()?.querySelector('[data-testid="inbox-tool-turn-msg_1"]')?.textContent).toContain('Fix the build')
+    expect(toolsPanel()?.querySelector('[data-testid="inbox-tools-flat"]')).not.toBeNull()
+    expect(toolsPanel()?.querySelector('[data-testid="inbox-tool-turn-msg_1"]')).toBeNull()
     // Commands and MCP calls by default; the file read shows with All.
     expect(container.querySelector('[data-testid="inbox-tools-filter-actions"]')?.getAttribute('aria-checked')).toBe('true')
     expect(rowIds()).toEqual(['t2', 't3'])
@@ -729,11 +732,26 @@ describe('Tools tab', () => {
     expect(container.querySelector('[data-testid="inbox-tool-t1"] [data-testid="inbox-tool-output"]')?.textContent).toBe('line one')
   })
 
+  it('shows the messages the calls answered when asked, and remembers it', async () => {
+    seed(conversation)
+    useInboxChanges.setState({ tab: 'tools' })
+    await sidebar()
+    const toggle = container.querySelector<HTMLButtonElement>('[data-testid="inbox-tools-turns"]')!
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    await act(async () => toggle.click())
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    expect(toolsPanel()?.querySelector('[data-testid="inbox-tool-turn-msg_1"]')?.textContent).toContain('Fix the build')
+    expect(toolsPanel()?.querySelector('[data-testid="inbox-tools-flat"]')).toBeNull()
+    expect(rowIds()).toEqual(['t2', 't3'])
+    expect(localStorage.getItem('mde.inbox-tool-turns')).toBe('on')
+  })
+
   it('folds a turn, and offers to load earlier messages when the start is not loaded', async () => {
     seed(conversation, 'cursor')
     const loadOlder = vi.fn(async () => undefined)
     useInboxChat.setState({ loadOlder })
     useInboxChanges.setState({ tab: 'tools' })
+    useInboxView.setState({ toolTurns: true })
     await sidebar()
     await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="inbox-tool-turn-msg_1"] > button')!.click())
     expect(rowIds()).toEqual([])
