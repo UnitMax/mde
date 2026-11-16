@@ -83,7 +83,7 @@ export function TodoSearch({
 }: TodoSearchProps): JSX.Element {
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
-  // Done tasks are left out until the Done button in the search box is switched on; it is off again the next time the search opens.
+  // Done tasks are left out until "Include done" in the footer is ticked; it is unticked again the next time the search opens.
   const [includeDone, setIncludeDone] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -168,27 +168,8 @@ export function TodoSearch({
                 close(false)
               }
             }}
-            className="h-10 pl-9 pr-28 text-sm"
+            className="h-10 pl-9 pr-10 text-sm"
           />
-          <button
-            type="button"
-            aria-pressed={includeDone}
-            data-testid="todo-search-done"
-            title={includeDone ? 'Done tasks are searched too' : 'Search done tasks too'}
-            onClick={() => {
-              setIncludeDone((current) => !current)
-              inputRef.current?.focus()
-            }}
-            className={cn(
-              'absolute right-12 top-2 flex h-6 items-center gap-1 rounded-full border px-2 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
-              includeDone
-                ? 'border-accent/60 bg-accent/15 text-fg'
-                : 'border-line text-fg-subtle hover:border-line-strong hover:text-fg'
-            )}
-          >
-            <Check aria-hidden="true" className="h-3 w-3" />
-            Done
-          </button>
           <kbd className="pointer-events-none absolute right-3 top-3 rounded border border-line-strong px-1.5 text-[10px] leading-4 text-fg-subtle">
             Esc
           </kbd>
@@ -225,11 +206,33 @@ export function TodoSearch({
         </div>
         <div className="mt-2 flex items-center justify-between gap-3 px-1 text-[10px] text-fg-subtle">
           <span>↑↓ to navigate · Enter to open · Esc to close</span>
-          {hiddenDone > 0 && results.length > 0 && (
-            <span data-testid="todo-search-hidden">
-              {hiddenDone} done {hiddenDone === 1 ? 'task' : 'tasks'} not shown
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={includeDone}
+            data-testid="todo-search-done"
+            title="Also search tasks in the Done column"
+            onClick={() => {
+              setIncludeDone((current) => !current)
+              inputRef.current?.focus()
+            }}
+            className={cn(
+              '-my-0.5 -mr-1 flex items-center gap-1.5 rounded px-1 py-0.5 transition-colors hover:bg-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
+              includeDone && 'text-fg-muted'
+            )}
+          >
+            <span
+              aria-hidden="true"
+              className={cn(
+                'flex h-3 w-3 items-center justify-center rounded-sm border',
+                includeDone ? 'border-accent bg-accent text-accent-fg' : 'border-line-strong'
+              )}
+            >
+              {includeDone && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
             </span>
-          )}
+            Include done
+            {hiddenDone > 0 && <span data-testid="todo-search-hidden">({hiddenDone})</span>}
+          </button>
         </div>
       </DialogContent>
     </Dialog>
