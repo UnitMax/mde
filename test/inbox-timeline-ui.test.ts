@@ -217,8 +217,11 @@ describe('scroll to bottom', () => {
     await render()
     expect(byId('chat-scroll-to-bottom')).toBeNull()
 
-    const metrics = { scrollHeight: 3000, clientHeight: 600, scrollTop: 1000 }
+    const metrics = { scrollHeight: 3000, clientHeight: 600, scrollTop: 2400 }
     const { scrollTo } = layout(transcript(), metrics, {})
+    await scrolled(transcript())
+    expect(byId('chat-scroll-to-bottom')).toBeNull()
+    metrics.scrollTop = 1000
     await scrolled(transcript())
     const button = byId('chat-scroll-to-bottom')!
     expect(button).not.toBeNull()
@@ -238,6 +241,57 @@ describe('scroll to bottom', () => {
     layout(transcript(), { scrollHeight: 3000, clientHeight: 600, scrollTop: 2350 }, {})
     await scrolled(transcript())
     expect(byId('chat-scroll-to-bottom')).toBeNull()
+  })
+})
+
+describe('following the end', () => {
+  /** The observers the view made, by what they watch; calling one is the conversation changing height. */
+  const observed = new Map<Element, () => void>()
+  beforeEach(() => {
+    observed.clear()
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(private readonly changed: () => void) {}
+      observe(element: Element): void { observed.set(element, this.changed) }
+      disconnect(): void {}
+    })
+  })
+  const grow = (metrics: { scrollHeight: number }, by: number): Promise<void> =>
+    act(async () => {
+      metrics.scrollHeight += by
+      observed.get(transcript().firstElementChild!)!()
+    })
+
+  it('goes with a conversation that grows without a new message, such as a reply drawn a moment after it arrived', async () => {
+    await render()
+    const metrics = { scrollHeight: 3000, clientHeight: 600, scrollTop: 2400 }
+    layout(transcript(), metrics, {})
+    await scrolled(transcript())
+
+    // The scroll event can come before the view has gone with it: that is not the reader scrolling up.
+    metrics.scrollHeight += 400
+    await scrolled(transcript())
+    expect(byId('chat-scroll-to-bottom')).toBeNull()
+    await grow(metrics, 0)
+    expect(metrics.scrollTop).toBe(3400)
+    await grow(metrics, 200)
+    expect(metrics.scrollTop).toBe(3600)
+  })
+
+  it('stays where it is for a step the reader opened, and when the reader scrolled up', async () => {
+    await render()
+    const metrics = { scrollHeight: 3000, clientHeight: 600, scrollTop: 2400 }
+    layout(transcript(), metrics, {})
+    await scrolled(transcript())
+
+    await act(async () => transcript().firstElementChild!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await grow(metrics, 400)
+    expect(metrics.scrollTop).toBe(2400)
+    // Scrolling on from there is the reader's own doing, and is measured as such.
+    metrics.scrollTop = 2500
+    await scrolled(transcript())
+    expect(byId('chat-scroll-to-bottom')).not.toBeNull()
+    await grow(metrics, 400)
+    expect(metrics.scrollTop).toBe(2500)
   })
 })
 

@@ -1177,7 +1177,10 @@ stop (Shift+Tab from the message box reaches it): Up, Down or Enter opens the ca
 current prompt, Up, Down, Home and End move, Enter jumps, Escape closes it. Only the loaded
 messages are listed, and held (steered or queued) messages are not prompts yet. While the view is
 scrolled up (more than 80 px from the newest message), a **Scroll to bottom** button floats above the
-message box; it takes the reader to the newest message and following new output again. In a pane narrower than 54 rem, where the centred column would come within reach of the
+message box; it takes the reader to the newest message and following new output again. While the view follows the end it goes with
+every change of the conversation's height, not only with new messages (a reply's text is drawn a moment after it
+arrives, and file chips, math and the changed-files panel later still); a change within a second of a click or a
+key press in the conversation is taken to be a step the reader opened or closed, and leaves the view where it is. In a pane narrower than 54 rem, where the centred column would come within reach of the
 rail, the conversation and the message box keep a left margin wider than the rail while it is there, so that it does not touch the text.
 
 **Find in a thread.** Ctrl+F (Cmd+F on a Mac) opens a search bar over the top right of a GUI
