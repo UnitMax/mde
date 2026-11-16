@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Search } from 'lucide-react'
+import { Check, Search } from 'lucide-react'
 import type { TodoProject, TodoTask } from '@shared/types'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -7,6 +7,7 @@ import { HighlightedText } from '@/components/HighlightedText'
 import { cn } from '@/lib/utils'
 import {
   buildTodoSearchItems,
+  listedTodoMatches,
   searchTodoTasks,
   todoDescriptionSnippet,
   type TodoSearchMatch
@@ -82,10 +83,14 @@ export function TodoSearch({
 }: TodoSearchProps): JSX.Element {
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
+  // Done tasks are left out until the Done button in the search box is switched on; it is off again the next time the search opens.
+  const [includeDone, setIncludeDone] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const items = useMemo(() => buildTodoSearchItems(project, tasks), [project, tasks])
-  const results = useMemo(() => searchTodoTasks(items, query), [items, query])
+  const matches = useMemo(() => searchTodoTasks(items, query), [items, query])
+  const results = useMemo(() => listedTodoMatches(matches, includeDone), [matches, includeDone])
+  const hiddenDone = matches.length - results.length
   const resultKey = results.map((result) => result.item.task.id).join('\0')
 
   useEffect(() => {
@@ -103,6 +108,7 @@ export function TodoSearch({
     if (!nextOpen) {
       setQuery('')
       setActiveIndex(0)
+      setIncludeDone(false)
     }
     onOpenChange(nextOpen)
   }
@@ -162,8 +168,27 @@ export function TodoSearch({
                 close(false)
               }
             }}
-            className="h-10 pl-9 pr-10 text-sm"
+            className="h-10 pl-9 pr-28 text-sm"
           />
+          <button
+            type="button"
+            aria-pressed={includeDone}
+            data-testid="todo-search-done"
+            title={includeDone ? 'Done tasks are searched too' : 'Search done tasks too'}
+            onClick={() => {
+              setIncludeDone((current) => !current)
+              inputRef.current?.focus()
+            }}
+            className={cn(
+              'absolute right-12 top-2 flex h-6 items-center gap-1 rounded-full border px-2 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
+              includeDone
+                ? 'border-accent/60 bg-accent/15 text-fg'
+                : 'border-line text-fg-subtle hover:border-line-strong hover:text-fg'
+            )}
+          >
+            <Check aria-hidden="true" className="h-3 w-3" />
+            Done
+          </button>
           <kbd className="pointer-events-none absolute right-3 top-3 rounded border border-line-strong px-1.5 text-[10px] leading-4 text-fg-subtle">
             Esc
           </kbd>
@@ -177,7 +202,13 @@ export function TodoSearch({
         >
           {results.length === 0 ? (
             <p className="px-2 py-8 text-center text-xs text-fg-subtle">
-              {items.length === 0 ? 'No tasks yet.' : 'No matching tasks.'}
+              {items.length === 0
+                ? 'No tasks yet.'
+                : hiddenDone === 0
+                  ? 'No matching tasks.'
+                  : query.trim()
+                    ? `No matching open tasks. ${hiddenDone} done ${hiddenDone === 1 ? 'task matches' : 'tasks match'}.`
+                    : 'No open tasks.'}
             </p>
           ) : (
             results.map((result, index) => (
@@ -192,9 +223,14 @@ export function TodoSearch({
             ))
           )}
         </div>
-        <p className="mt-2 px-1 text-[10px] text-fg-subtle">
-          ↑↓ to navigate · Enter to open · Esc to close
-        </p>
+        <div className="mt-2 flex items-center justify-between gap-3 px-1 text-[10px] text-fg-subtle">
+          <span>↑↓ to navigate · Enter to open · Esc to close</span>
+          {hiddenDone > 0 && results.length > 0 && (
+            <span data-testid="todo-search-hidden">
+              {hiddenDone} done {hiddenDone === 1 ? 'task' : 'tasks'} not shown
+            </span>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   )

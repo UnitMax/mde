@@ -2164,7 +2164,9 @@ written to disk.
 A To Do project is a separate kind of project: a board with a name, an uppercase shorthand
 (2–10 characters, such as `MDE`) and columns, which default to To Do, In Progress and Done. Tasks
 have a title and description, are numbered per project (`MDE-12`), and move between columns by
-drag and drop. Ctrl+F (Cmd+F on macOS) searches tasks in the open To Do project, and Ctrl+N (Cmd+N)
+drag and drop. Ctrl+F (Cmd+F on macOS) searches tasks in the open To Do project; tasks in the Done column
+are left out until the **Done** button in the search box is switched on, which is off again each time the
+search opens (the search says how many done tasks it left out). Ctrl+N (Cmd+N)
 opens the new-task dialog for the first column, like a column's + button. In the task dialog, Enter in the
 title saves the task, and so does Ctrl+Enter (Cmd+Enter) in the description, where plain Enter still
 starts a new paragraph.
