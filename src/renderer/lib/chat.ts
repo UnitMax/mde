@@ -440,6 +440,21 @@ export function hideReverted(messages: ChatMessage[], revert: ChatRevert | null 
   return messages.filter((message) => message.id < revert.messageId)
 }
 
+/** Keep the boxed assistant error and omit a run-ending note only when it adds nothing to it. */
+export function hideRepeatedRunFailures(messages: ChatMessage[]): ChatMessage[] {
+  let error: string | undefined
+  return messages.filter((message) => {
+    if (message.kind === 'assistant') error = message.error?.trim()
+    else if (message.kind === 'user' || message.goal) error = undefined
+    else if (message.runFailure) {
+      const repeated = message.tone === 'error' && Boolean(error) && message.text.trim() === error && !message.detail?.trim()
+      error = undefined
+      return !repeated
+    }
+    return true
+  })
+}
+
 /**
  * How many of the user's own messages a staged revert hides. It counts the loaded ones, and that is
  * all of them once a message before the cut is loaded, because older pages hold nothing after it.

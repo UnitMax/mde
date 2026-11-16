@@ -32,7 +32,7 @@ import { compactPlans, type RenderBlock } from '@/lib/chat-tools'
 import { hoverScrollbar } from '@/lib/hover-scrollbar'
 import { turnChanges } from '@/lib/turn-changes'
 import { cn } from '@/lib/utils'
-import { compactionState, contextUsage, drawnStart, findModel, goalPhase, hideReverted, initialChoice, mergeLive, revertedMessageCount, sameModelRef, turnStats } from '@/lib/chat'
+import { compactionState, contextUsage, drawnStart, findModel, goalPhase, hideRepeatedRunFailures, hideReverted, initialChoice, mergeLive, revertedMessageCount, sameModelRef, turnStats } from '@/lib/chat'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { mcpKey } from '@/lib/mcp'
 import { slashCommands } from '@/lib/slash-commands'
@@ -50,6 +50,8 @@ const NO_SERVERS: readonly string[] = []
 
 /** Within this distance of the bottom, new content keeps the view pinned to it. */
 const STICK_THRESHOLD_PX = 80
+/** For this long after a click or a key in the conversation, a change of its height is taken to be the person's doing (a step opened), and the view is not moved for it. */
+const OWN_CHANGE_MS = 1000
 
 /**
  * How many of the newest messages are drawn when a thread opens, and how many more each step back adds.
@@ -131,6 +133,19 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   // Text sent from the Inbox terminal's right-click menu arrives the same way.
   useEffect(() => registerThreadInput(thread.id, quote), [thread.id, quote])
   const stickRef = useRef(true)
+  // Where the end was when the view was last at it: how far down the view was, and how tall the conversation. A
+  // conversation taller than that, with the view no higher, has grown since and was not scrolled away from.
+  const atEnd = useRef({ top: 0, height: 0 })
+  // When the person last clicked or pressed a key in the conversation.
+  const pressedAt = useRef(Number.NEGATIVE_INFINITY)
+  const notePress = useCallback(() => { pressedAt.current = performance.now() }, [])
+  /** Puts the view at the end, when it is following it. */
+  const follow = useCallback(() => {
+    const element = scrollRef.current
+    if (!element || !stickRef.current) return
+    element.scrollTop = element.scrollHeight
+    atEnd.current = { top: element.scrollTop, height: element.scrollHeight }
+  }, [])
   // Whether the view is scrolled up from the newest message, which is when the way back is offered.
   const [away, setAway] = useState(false)
   const [agent, setAgent] = useState<string | null>(null)
@@ -192,7 +207,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   )
   const latest = useMemo(() => lastAssistant(shown), [shown])
   const messages = useMemo(
-    () => (state ? mergeLive(shown, state.live, latest ?? (thread.model ? { agent: 'build', model: thread.model } : undefined)) : []),
+    () => (state ? hideRepeatedRunFailures(mergeLive(shown, state.live, latest ?? (thread.model ? { agent: 'build', model: thread.model } : undefined))) : []),
     [state, shown, latest, thread.model],
   )
 
@@ -253,8 +268,15 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   const onScroll = useCallback(() => {
     const element = scrollRef.current
     if (!element) return
-    stickRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < STICK_THRESHOLD_PX
-    setAway(!stickRef.current)
+    const near = element.scrollHeight - element.scrollTop - element.clientHeight < STICK_THRESHOLD_PX
+    if (near) atEnd.current = { top: element.scrollTop, height: element.scrollHeight }
+    // A reply's text is drawn a moment after it arrives, so the conversation can grow between the view being put at
+    // the end and the scroll event for that. The view was not scrolled up then, and it goes on following the end.
+    const grown = stickRef.current && !near && element.scrollTop >= atEnd.current.top - 1 && element.scrollHeight > atEnd.current.height
+    if (!grown) {
+      stickRef.current = near
+      setAway(!near)
+    }
     if (element.scrollTop < 40 && (first > 0 || canLoadOlder)) showEarlier()
   }, [first, canLoadOlder, showEarlier])
 
@@ -282,10 +304,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   }, [])
   const requests = state?.requests
   const pending = state?.pending
-  useLayoutEffect(() => {
-    const element = scrollRef.current
-    if (element && stickRef.current) element.scrollTop = element.scrollHeight
-  }, [messages, requests, pending])
+  useLayoutEffect(follow, [follow, messages, requests, pending])
 
   const prompts = useMemo(() => timelineEntries(messages), [messages])
   // The timeline's rail sits at the left edge (where the floating sidebar card never is) and is about 46 px wide.
@@ -323,7 +342,7 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
     keepPlace.current = null
     const anchor = kept && Array.from(element.querySelectorAll<HTMLElement>('[data-chat-message]')).find((item) => item.dataset.chatMessage === kept.id)
     if (kept && anchor) element.scrollTop += anchor.getBoundingClientRect().top - kept.top
-    else if (stickRef.current) element.scrollTop = element.scrollHeight
+    else follow()
     const jump = jumpAfterDraw.current
     if (jump) {
       jumpToPrompt(jump)
@@ -353,15 +372,22 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
     const observer = new ResizeObserver(() => {
       if (element.clientHeight === height) return
       height = element.clientHeight
-      if (stickRef.current) element.scrollTop = element.scrollHeight
+      follow()
     })
     observer.observe(element)
-    // The conversation itself changes height too (a folded step opening or closing). Closing one while scrolled up can leave
-    // the view at the end without a scroll event, so the place is measured again, or the button would be stuck on screen.
+    // The conversation itself changes height too. While the view follows the end it goes with it: a reply's text is drawn
+    // a moment after it arrives, and file chips, math and the panel of changed files later still, none of which is a new
+    // message. A step the person opened or closed is theirs to look at, so the view stays where it is for that. Closing
+    // one while scrolled up can leave the view at the end without a scroll event, so the place is measured again, or the
+    // button would be stuck on screen.
     const content = contentRef.current
     const contentObserver = content
       ? new ResizeObserver(() => {
-          if (stickRef.current) return
+          if (stickRef.current) {
+            if (performance.now() - pressedAt.current < OWN_CHANGE_MS) atEnd.current = { ...atEnd.current, height: element.scrollHeight }
+            else follow()
+            return
+          }
           const near = element.scrollHeight - element.scrollTop - element.clientHeight < STICK_THRESHOLD_PX
           if (!near) return
           stickRef.current = true
@@ -373,14 +399,11 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
       observer.disconnect()
       contentObserver?.disconnect()
     }
-  }, [])
+  }, [follow])
   // The side question takes room from the conversation, so a conversation that is following its end keeps doing so.
   const asideId = aside?.id
   const asideStatus = aside?.status
-  useLayoutEffect(() => {
-    const element = scrollRef.current
-    if (element && stickRef.current) element.scrollTop = element.scrollHeight
-  }, [asideId, asideStatus])
+  useLayoutEffect(follow, [follow, asideId, asideStatus])
   // Closed from inside itself (Escape, a button reached by keyboard), the caret goes back to the box instead of nowhere.
   const closeAside = useCallback(() => {
     const inside = document.activeElement?.closest('[data-testid="chat-aside"]') != null
@@ -389,7 +412,8 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   }, [dismissAside, thread.id])
 
   const running = state?.running ?? thread.status === 'working'
-  // Only the newest step of the agent can be live; one before it that never finished was cut short.
+  // Only the newest step of the agent can be live; one before it that never finished was cut short. In the compact
+  // layouts it stays live between the agent's steps, until the agent is done.
   const lastAssistantId = useMemo(() => [...messages].reverse().find((message) => message.kind === 'assistant')?.id, [messages])
   // The compact layout folds the activity of the agent's steps together, across steps. A step whose layout did not
   // change keeps the one it had, so that streaming a new step does not draw all the earlier ones again.
@@ -526,6 +550,8 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
       <div
         ref={scrollRef}
         onScroll={onScroll}
+        onClickCapture={notePress}
+        onKeyDownCapture={notePress}
         // Set on the element itself rather than through state: drawing the conversation again for it would cost.
         {...hoverScrollbar}
         className="hover-scrollbar chat-selectable min-h-0 flex-1 overflow-y-auto"

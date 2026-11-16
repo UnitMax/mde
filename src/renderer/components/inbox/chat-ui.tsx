@@ -362,7 +362,12 @@ export function Chip({
 }
 
 /** Copies `text` and says so for a moment. The clipboard is the main process's, so it works in any window. */
-export function CopyButton({ text, label = 'Copy', className }: { text: string; label?: string; className?: string }): JSX.Element {
+export function CopyButton({ text, label = 'Copy', className, onError }: {
+  text: string
+  label?: string
+  className?: string
+  onError?: (error: unknown) => void
+}): JSX.Element {
   const [copied, setCopied] = useState(false)
   const timer = useRef<number | undefined>(undefined)
   useEffect(() => () => window.clearTimeout(timer.current), [])
@@ -375,7 +380,7 @@ export function CopyButton({ text, label = 'Copy', className }: { text: string; 
         window.clearTimeout(timer.current)
         timer.current = window.setTimeout(() => setCopied(false), 1500)
       },
-      () => undefined,
+      (error: unknown) => onError?.(error),
     )
   }
   return (

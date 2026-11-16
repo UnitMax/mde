@@ -7,6 +7,7 @@ import { getMiniWindowAction, MiniWindowController } from './mini-window'
 import { TitleBarController } from './window-chrome'
 import { TaskbarAttention } from './taskbar-attention'
 import { FloatingTerminalKey } from './floating-terminal-key'
+import { WslResourceMonitor } from './wsl/resources'
 import { BADGE_SIZE, badgeBitmap } from './taskbar-badge'
 import { PtyManager } from './pty/manager'
 import { TerminalDirectoryStore } from './pty/directories'
@@ -14,6 +15,7 @@ import { initWorkspaceStore } from './store/workspace'
 import { InboxStore, INBOX_FILE } from './inbox/store'
 import { InboxRecorder } from './inbox/recorder'
 import { InboxAsideHistory } from './inbox/asides'
+import { AUTOMATIONS_FILE, InboxAutomations } from './inbox/automations'
 import { InboxDraftStore } from './inbox/drafts'
 import { InboxChatService } from './inbox/chat'
 import { InboxWorktrees } from './inbox/worktree'
@@ -27,6 +29,7 @@ import { handleWindowOpen } from './external-links'
 import { installPermissionPolicy } from './permissions'
 import { installRendererProtocol, registerRendererScheme } from './renderer-protocol'
 import { isMcpBridgeLaunch, mdeMcpCommand, startMdeMcp } from './mcp'
+import { BridgeStandby, MDE_MCP_STANDBY_FILE } from './mcp/standby'
 import { startMcpBridge } from './mcp/bridge-main'
 import { AgentTerminals } from './mcp/agent-terminals'
 import type { McpListener } from './mcp/listener'
@@ -38,8 +41,10 @@ let inboxStore: InboxStore | null = null
 let inboxRecorder: InboxRecorder | null = null
 let inboxDrafts: InboxDraftStore | null = null
 let inboxAsides: InboxAsideHistory | null = null
+let inboxAutomations: InboxAutomations | null = null
 let inboxChat: InboxChatService | null = null
 let mdeMcp: McpListener | null = null
+let bridgeStandby: BridgeStandby | null = null
 let quitPrepared = false
 /** The Inbox (and with it the MDE MCP) runs OpenCode natively on macOS and inside WSL on Windows. */
 const inboxEnabled = (): boolean => process.platform === 'darwin' || process.platform === 'win32'
@@ -67,12 +72,17 @@ const titleBar = new TitleBarController({
 
 /** Whether F11 belongs to the Inbox's floating terminal; the renderer says so while it has one. */
 const floatingTerminalKey = new FloatingTerminalKey()
+/** Reads WSL's CPU and memory while the renderer shows the title bar meter. */
+const wslResources = new WslResourceMonitor((sample) => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcEvents.wslResources, sample)
+})
 // Flashes, colours and badges the taskbar button when a thread needs the person; the renderer decides when.
 const taskbarAttention = new TaskbarAttention({
   platform: process.platform,
   getWindow: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
   badge: (tone, count) =>
     nativeImage.createFromBitmap(badgeBitmap(tone, count), { width: BADGE_SIZE, height: BADGE_SIZE }),
+  setDockBadge: (text) => app.dock?.setBadge(text),
   setInterval: (callback, ms) => setInterval(callback, ms),
   clearInterval: (timer) => clearInterval(timer as ReturnType<typeof setInterval>)
 })
@@ -126,6 +136,7 @@ function createWindow(): void {
   mainWindow.on('blur', () => { void inboxDrafts?.save() })
   mainWindow.on('closed', () => {
     taskbarAttention.dispose()
+    wslResources.dispose()
     miniWindow.reset()
     mainWindow = null
   })
@@ -139,6 +150,8 @@ function createWindow(): void {
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault())
   // A reloaded page has no floating terminal until it says so again.
   mainWindow.webContents.on('did-start-loading', () => floatingTerminalKey.setActive(false))
+  // Nor a meter: the page asks for the readings again when it shows one.
+  mainWindow.webContents.on('did-start-loading', () => wslResources.setEnabled(false))
   mainWindow.webContents.on('before-input-event', (event, input) => {
     // Handled here rather than in the renderer so it works from every pane and
     // dialog, and so the terminal never receives F12's escape sequence.
@@ -222,7 +235,8 @@ if (bridgeLaunch) {
     powerMonitor.on('resume', () => inboxRecorder?.wakeSnoozed())
     const serviceClient = new OpenCodeServiceClient({
       discover: discoverOpenCodeService,
-      executable: () => inboxChat?.executable() ?? 'opencode'
+      executable: () => inboxChat?.executable() ?? 'opencode',
+      onDirectory: (target, directory) => bridgeStandby?.use(target, directory)
     })
     const previewAttachment = (bytes: Buffer): string | undefined => {
       const image = nativeImage.createFromBuffer(bytes)
@@ -239,7 +253,10 @@ if (bridgeLaunch) {
     })
     const openCodeConfig = createOpenCodeConfigService({
       client: serviceClient,
-      onSaved: () => inboxChat?.invalidateOptions()
+      onSaved: () => {
+        inboxChat?.invalidateOptions()
+        bridgeStandby?.refresh()
+      }
     })
     inboxAsides = new InboxAsideHistory(join(app.getPath('userData'), 'inbox-asides.json'), (threadId) => Boolean(inboxStore?.get(threadId)))
     inboxChat = new InboxChatService({
@@ -267,6 +284,15 @@ if (bridgeLaunch) {
       // A second MDE kept apart with --user-data-dir has its own socket and token, so its bridge needs the same folder.
       ...(app.commandLine.hasSwitch('user-data-dir') ? { userDataDir: app.getPath('userData') } : {}),
     }
+    // While MDE is closed its bridges are stopped, so nothing keeps the executable in use; they come back now.
+    if (inboxEnabled()) {
+      bridgeStandby = new BridgeStandby({
+        file: join(app.getPath('userData'), MDE_MCP_STANDBY_FILE),
+        client: serviceClient,
+        owned: async (target) => (await openCodeConfig.mdeMcpStatus(target, await mdeMcpCommand(target, self, toWsl))).state === 'installed',
+      })
+      void bridgeStandby.resume()
+    }
     const agentTerminals = new AgentTerminals(app.getPath('userData'))
     // Agents can only start threads where the Inbox runs; elsewhere nothing listens and no token is made.
     mdeMcp = !inboxEnabled() ? null : await startMdeMcp({
@@ -283,14 +309,51 @@ if (bridgeLaunch) {
       terminals: agentTerminals,
       now: () => Date.now(),
     })
+    // Automations run where the Inbox does. What came due while MDE was closed runs once, shortly after the start.
+    if (inboxEnabled()) {
+      const store = inboxStore
+      const chat = inboxChat
+      inboxAutomations = new InboxAutomations(join(app.getPath('userData'), AUTOMATIONS_FILE), {
+        now: () => Date.now(),
+        folderExists: (folderId) => store.folders().some((folder) => folder.id === folderId),
+        threadExists: (threadId) => Boolean(store.get(threadId)),
+        busy: (threadId) => {
+          const status = store.get(threadId)?.status
+          return status === 'working' || status === 'attention'
+        },
+        run: async (automation) => {
+          const before = store.folders().length
+          try {
+            return await chat.create({
+              folderId: automation.folderId,
+              text: automation.text,
+              agent: automation.agent,
+              model: automation.model,
+              ...(automation.permissionMode ? { permissionMode: automation.permissionMode } : {}),
+              ...(automation.worktree ? { worktree: automation.worktree } : {}),
+            }, { automationId: automation.id })
+          } finally {
+            // A worktree run adds the worktree as a project.
+            if (store.folders().length !== before && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcEvents.inboxFoldersChanged)
+          }
+        },
+        onChanged: (automations) => {
+          if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcEvents.automationsChanged, automations)
+        },
+      })
+      await inboxAutomations.load()
+      inboxAutomations.start()
+      powerMonitor.on('resume', () => inboxAutomations?.check())
+    }
     registerIpcHandlers(
       { getWebContents: () => mainWindow?.webContents ?? null, rendererUrl },
       ptyManager,
       miniWindow,
       titleBar,
-      { recorder: inboxRecorder, chat: inboxChat, openCodeConfig, mdeMcpCommand: (target) => mdeMcpCommand(target, self, toWsl), agentTerminals },
+      { recorder: inboxRecorder, chat: inboxChat, openCodeConfig, mdeMcpCommand: (target) => mdeMcpCommand(target, self, toWsl), agentTerminals, ...(inboxAutomations ? { automations: inboxAutomations } : {}) },
       taskbarAttention,
-      floatingTerminalKey
+      floatingTerminalKey,
+      wslResources
     )
     createWindow()
 
@@ -307,12 +370,14 @@ if (bridgeLaunch) {
     if (quitPrepared) return
     quitPrepared = true
     ptyManager.disposeAll()
+    wslResources.dispose()
     inboxChat?.stop()
     inboxRecorder?.dispose()
+    inboxAutomations?.dispose()
     void mdeMcp?.close()
     // Save the last pane directories and Inbox state before exiting.
     event.preventDefault()
-    void Promise.all([terminalDirectories.flush(), inboxStore?.flush(), inboxDrafts?.flush(), inboxAsides?.flush()])
+    void Promise.all([terminalDirectories.flush(), inboxStore?.flush(), inboxDrafts?.flush(), inboxAsides?.flush(), inboxAutomations?.flush(), bridgeStandby?.pause()])
       .catch(() => console.warn('[app] Could not finish saving local state.'))
       .finally(() => app.quit())
   })

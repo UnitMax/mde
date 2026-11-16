@@ -3,7 +3,7 @@ import type { ThreadPermissionMode } from './permission-modes'
 
 export type SessionKind = 'native' | 'wsl'
 
-/** Parsed argv for the OpenCode command an Inbox terminal thread runs; no shell syntax is represented. */
+/** Parsed argv for a command run after a login shell has loaded its environment; no shell syntax is represented. */
 export interface AgentCommand {
   executable: string
   args: string[]
@@ -146,15 +146,11 @@ export interface OpenCodeModelRef {
   variant?: string
 }
 
-export type InboxThreadMode = 'gui' | 'terminal'
-
 /**
  * One OpenCode conversation recorded in MDE's own inbox. Only metadata is stored,
  * never prompts or messages. A thread is unread while `lastActivityAt > readAt`.
  */
 export interface InboxThread {
-  /** Omitted for existing GUI threads. Terminal threads attach to this same API session. */
-  mode?: InboxThreadMode
   /** Initial prompt failed; the created thread keeps its draft for retry. */
   sendError?: string
   id: string
@@ -196,6 +192,8 @@ export interface InboxThread {
    * asked (it may since have been removed), absent when the caller was not an Inbox thread.
    */
   spawnedBy?: { threadId?: string }
+  /** Set when an automation started the thread on its schedule (`aut_…`); the automation may since have been deleted. */
+  automationId?: string
   /** Set when the thread runs in a Git worktree MDE created; `directory` is then inside `root`. */
   worktree?: InboxWorktree
   /**
@@ -561,6 +559,8 @@ export type ChatMessage =
       tone: 'info' | 'error'
       text: string
       detail?: string
+      /** The run ended with a failure; may repeat the preceding assistant message's error. */
+      runFailure?: boolean
       compaction?: ChatCompaction
       goal?: ChatGoalNote
       /** Routine work or context notifications that can join a compact activity group. */
@@ -817,7 +817,6 @@ export type ChatMcpRequest = ChatOptionsRequest
 export type ChatMcpSetRequest = ChatOptionsRequest & { server: string; enabled: boolean }
 
 export interface ChatCreateRequest {
-  mode?: InboxThreadMode
   attachmentIds?: string[]
   draftRevision?: number
   /** The new-thread draft this starts from (`drf_…`): its files are sent and it is removed once the thread has its first message. */
@@ -1208,7 +1207,6 @@ export type ChatDraftRequest = (
 
 /** What a new thread's draft remembers of how it would start, so reopening it brings the same choices back. */
 export interface ChatDraftChoice {
-  mode?: InboxThreadMode
   agent?: string
   model?: OpenCodeModelRef
   /** The thread would run in a new Git worktree cut from `base`; `branch` is the name typed for it, valid or not yet. */
@@ -1295,6 +1293,8 @@ export type GitGraphRequest = GitRootRequest & {
    * `head`: only what HEAD can reach.
    */
   scope: GitGraphScope
+  /** Also say which Inbox threads run in a checkout of this repository, and at which commit. */
+  threads?: boolean
 }
 
 export interface GitGraphCommit {
@@ -1314,6 +1314,17 @@ export interface GitGraphRef {
   kind: 'branch' | 'remote' | 'tag'
 }
 
+/** An Inbox thread that runs in a checkout (the main one or a worktree) of the repository a graph shows. */
+export interface GitGraphThread {
+  threadId: string
+  /** The commit checked out where the thread runs; null in a checkout with no commits yet. */
+  head: string | null
+  /** The branch checked out there; null for a detached HEAD. */
+  branch: string | null
+  /** That checkout's root, which tells the threads of one checkout from those of another. */
+  root: string
+}
+
 export interface InboxGitGraph {
   available: boolean
   reason?: string
@@ -1330,6 +1341,8 @@ export interface InboxGitGraph {
   commits: GitGraphCommit[]
   /** More commits exist past the limit. */
   more: boolean
+  /** Only when asked for: the Inbox threads in this repository's checkouts. Archived threads are left out. */
+  threads?: GitGraphThread[]
 }
 
 export type GitCommitRequest = GitRootRequest & { hash: string }

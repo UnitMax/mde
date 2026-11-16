@@ -1,5 +1,6 @@
 import type { InboxTerminalConfiguration, InboxTerminalSettings } from './inbox-terminal'
 import type { TaskbarAttentionRequest } from './taskbar-attention'
+import type { AutomationEnabledRequest, AutomationIdRequest, AutomationSaveRequest, InboxAutomation } from './automations'
 import type {
   AgentTerminalClaim,
   AgentTerminalDecision,
@@ -165,6 +166,7 @@ export const IpcChannels = {
 
   wslAvailable: 'wsl:available',
   wslDistros: 'wsl:distros',
+  wslResourcesWatch: 'wsl:resources-watch',
 
   pathBrowse: 'path:browse',
   pathResolve: 'path:resolve',
@@ -244,6 +246,11 @@ export const IpcChannels = {
   opencodeConfigRead: 'opencode-config:read',
   opencodeConfigPreview: 'opencode-config:preview',
   opencodeConfigSave: 'opencode-config:save',
+  automationsList: 'automations:list',
+  automationsSave: 'automations:save',
+  automationsRemove: 'automations:remove',
+  automationsSetEnabled: 'automations:set-enabled',
+  automationsRun: 'automations:run',
   mdeMcpStatus: 'mde-mcp:status',
   mdeMcpInstall: 'mde-mcp:install',
   mdeMcpRemove: 'mde-mcp:remove',
@@ -273,16 +280,45 @@ export const IpcEvents = {
   /** The projects changed outside the window (an agent added one through the MDE MCP); read them again. */
   inboxFoldersChanged: 'inbox:folders-changed',
   chatEvent: 'chat:event',
+  /** The automations changed: one was saved, removed, paused, or ran. Carries all of them. */
+  automationsChanged: 'automations:changed',
   windowModeChanged: 'window-mode:changed',
   floatingTerminalToggle: 'floating-terminal:toggle',
   /** An agent asked, through the MDE MCP, for a new pane in the Inbox terminal. */
   agentTerminalOpen: 'agent-terminal:open',
+  /** A reading of WSL's CPU and memory, while the title bar meter is shown. */
+  wslResources: 'wsl:resources',
 } as const
 
 export interface PlatformInfo {
   platform: HostPlatform
   isWindows: boolean
 }
+
+/**
+ * CPU and memory of WSL. All WSL 2 distros share one virtual machine, so the numbers are for WSL
+ * as a whole. Loads are from 0 to 1, sizes are in bytes.
+ */
+export type WslResourceSample =
+  /** Not Windows, so there is no WSL. */
+  | { state: 'unavailable' }
+  /** No WSL 2 distro is running. */
+  | { state: 'stopped' }
+  | {
+      state: 'running'
+      /** The distro the numbers were read in. */
+      distro: string
+      /** Null for the first reading: a load is the difference between two readings. */
+      cpu: number | null
+      /** The load of each logical processor; empty for the first reading. */
+      cores: number[]
+      coreCount: number
+      memoryTotal: number
+      /** Total minus available, so caches that can be given back do not count as used. */
+      memoryUsed: number
+      swapTotal: number
+      swapUsed: number
+    }
 
 export interface AppInfo {
   name: string
@@ -561,6 +597,9 @@ export interface RendererApi {
   wsl: {
     available(): Promise<boolean>
     distros(): Promise<Distro[]>
+    /** Starts or stops the readings behind the title bar meter. */
+    watchResources(enabled: boolean): Promise<void>
+    onResources(listener: (sample: WslResourceSample) => void): () => void
   }
   paths: {
     browse(): Promise<string | null>
@@ -701,6 +740,20 @@ export interface RendererApi {
      * the one the revision came from. Returns the file as it is afterwards.
      */
     save(req: OpenCodeConfigSaveRequest): Promise<OpenCodeConfigSnapshot>
+  }
+  /**
+   * The Inbox automations: prompts that start a new thread on a schedule. The main process keeps them and runs
+   * them; the window only lists and edits them.
+   */
+  automations: {
+    list(): Promise<InboxAutomation[]>
+    /** Makes an automation (no `id`) or changes one. */
+    save(req: AutomationSaveRequest): Promise<InboxAutomation>
+    remove(req: AutomationIdRequest): Promise<void>
+    setEnabled(req: AutomationEnabledRequest): Promise<InboxAutomation | null>
+    /** Starts a thread now and leaves the schedule as it is. */
+    run(req: AutomationIdRequest): Promise<InboxAutomation | null>
+    onChanged(listener: (automations: InboxAutomation[]) => void): () => void
   }
   /**
    * The MDE MCP in OpenCode's configuration for a target: whether it is there and starts this copy of MDE, and

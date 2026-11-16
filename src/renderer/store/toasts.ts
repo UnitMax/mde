@@ -12,6 +12,7 @@ export type ToastIcon =
   | 'woke'
   | 'background'
   | 'agent-thread'
+  | 'automation'
   | 'agent-terminal'
   | 'approval'
   | 'error'

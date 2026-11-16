@@ -6,10 +6,6 @@ vi.mock('../src/renderer/components/inbox/InboxTerminal', () => ({
   InboxTerminal: () => createElement('div'),
   focusInboxTerminalWhenShown: vi.fn(),
 }))
-vi.mock('../src/renderer/components/inbox/TerminalThreadView', () => ({
-  // The real one draws xterm.js, which needs a real browser.
-  TerminalThreadView: () => createElement('div'),
-}))
 import { InboxThreadView } from '../src/renderer/components/InboxThreadView'
 import { useInboxChanges } from '../src/renderer/store/inbox-changes'
 import { useInboxChat } from '../src/renderer/store/inbox-chat'
@@ -207,13 +203,6 @@ describe('Inbox thread header', () => {
     expect(byLabel('Thread actions')).not.toBeNull()
     expect(byLabel('Regenerate title')).toBeNull()
     expect(header().textContent).not.toContain('Regenerate title')
-  })
-
-  it('has no compact toggle on a terminal thread', async () => {
-    useWorkspace.setState({ inboxThreads: [thread({ mode: 'terminal' })] })
-    await render()
-    expect(byLabel('Compact mode')).toBeNull()
-    expect(byLabel('Thread actions')).not.toBeNull()
   })
 
   it('lists what can be done to the thread in the menu', async () => {

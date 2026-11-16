@@ -10,6 +10,7 @@ import type {
 } from '@shared/types'
 import { normalizeInboxFolderIcon } from '@shared/inbox-folder-icons'
 import { isThreadPermissionMode } from '@shared/permission-modes'
+import { isAutomationId } from '@shared/automations'
 import { writeJsonAtomic } from '../store/atomic-json'
 
 export const INBOX_FILE = 'inbox.json'
@@ -83,7 +84,8 @@ export function validateInboxThread(raw: unknown): InboxThread | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   const record = raw as Record<string, unknown>
   if (!isInboxThreadId(record.id)) return null
-  if (record.mode !== undefined && record.mode !== 'gui' && record.mode !== 'terminal') return null
+  // A thread saved as a Terminal chat, a kind MDE no longer has, is not kept.
+  if (record.mode !== undefined && record.mode !== 'gui') return null
   if (!text(record.title, INBOX_TITLE_MAX_LENGTH)) return null
   if (!text(record.directory, INBOX_DIRECTORY_MAX_LENGTH)) return null
   const target = validateTarget(record.target)
@@ -103,7 +105,6 @@ export function validateInboxThread(raw: unknown): InboxThread | null {
   const spawnedBy = validateSpawnedBy(record.spawnedBy)
   return {
     id: record.id,
-    ...(record.mode === 'terminal' ? { mode: 'terminal' as const } : {}),
     title: record.title,
     ...(text(record.customTitle, INBOX_TITLE_MAX_LENGTH) ? { customTitle: record.customTitle.trim() } : {}),
     directory: record.directory,
@@ -124,6 +125,7 @@ export function validateInboxThread(raw: unknown): InboxThread | null {
     // Only a pointer for the header, so a bad one is dropped instead of losing the thread.
     ...(isInboxThreadId(record.forkedFrom) ? { forkedFrom: record.forkedFrom } : {}),
     ...(spawnedBy ? { spawnedBy } : {}),
+    ...(isAutomationId(record.automationId) ? { automationId: record.automationId } : {}),
     // Without its record the thread still works; only removing its worktree from the Inbox is lost.
     ...(worktree ? { worktree } : {}),
     ...(worktree && timestamp(record.worktreeRemovedAt) ? { worktreeRemovedAt: record.worktreeRemovedAt } : {}),

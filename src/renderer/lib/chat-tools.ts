@@ -736,7 +736,7 @@ export interface CompactOptions {
 export interface FlowStep {
   id: string
   parts: readonly ChatPart[]
-  /** The agent is writing this step now. */
+  /** The agent is at this step now: it is writing it, or has written it and is at work on what comes next. */
   live: boolean
   /** A routine notification interleaved with the assistant's work. Its parts are empty. */
   note?: ActivityNote
@@ -848,7 +848,7 @@ export function compactFlow(steps: readonly FlowStep[], options: CompactOptions 
       last = shown
     }
   }
-  // The group the agent is at the end of is live while the last step is being written.
+  // The group the agent is at the end of is live while the agent is at its last step.
   if (live && last?.kind === 'activity') last.live = true
   return plan
 }
@@ -878,6 +878,11 @@ export function samePlan(a: readonly RenderBlock[], b: readonly RenderBlock[]): 
  * The compact layout of a whole conversation, by the id of each assistant message: runs of consecutive steps are laid
  * out together (`compactFlow`), including routine notifications. Other notes and user messages end a run. A layout that is the same as the one
  * in `previous` is that one, so that a message whose layout did not change is not drawn again as the conversation streams.
+ *
+ * `liveId` is the agent's newest step while the agent is at work. Its activity is live whether or not the step is
+ * finished: the agent finishes a step with every round of tool calls and takes a moment to start the next, and a line
+ * that stopped for each of those moments would look done many times before it is. Only when it is in the last run,
+ * though: with a message from the person or a note after it, the agent is no longer at that work.
  */
 export function compactPlans(
   messages: readonly ChatMessage[],
@@ -887,20 +892,21 @@ export function compactPlans(
 ): Map<string, RenderBlock[]> {
   const plans = new Map<string, RenderBlock[]>()
   let run: FlowStep[] = []
-  const flush = (): void => {
-    for (const [id, blocks] of compactFlow(run, options)) {
+  const flush = (last = false): void => {
+    const steps = last ? run : run.map((step) => (step.live ? { ...step, live: false } : step))
+    for (const [id, blocks] of compactFlow(steps, options)) {
       const before = previous?.get(id)
       plans.set(id, before && samePlan(before, blocks) ? before : blocks)
     }
     run = []
   }
   for (const message of messages) {
-    if (message.kind === 'assistant') run.push({ id: message.id, parts: message.parts, live: !message.completed && message.id === liveId })
+    if (message.kind === 'assistant') run.push({ id: message.id, parts: message.parts, live: message.id === liveId })
     else if (message.kind === 'note' && message.activity && message.tone === 'info' && !message.goal && !message.compaction) {
       run.push({ id: message.id, parts: [], live: false, note: message })
     }
     else flush()
   }
-  flush()
+  flush(true)
   return plans
 }

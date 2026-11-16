@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import { IpcChannels, IpcEvents, type RendererApi } from '@shared/ipc'
+import { IpcChannels, IpcEvents, type RendererApi, type WslResourceSample } from '@shared/ipc'
 import type { AgentTerminalOpenRequest } from '@shared/mde-mcp'
+import type { InboxAutomation } from '@shared/automations'
 import type {
   ChatEvent,
   InboxThread,
@@ -99,7 +100,9 @@ const api: RendererApi = {
   },
   wsl: {
     available: () => ipcRenderer.invoke(IpcChannels.wslAvailable),
-    distros: () => ipcRenderer.invoke(IpcChannels.wslDistros)
+    distros: () => ipcRenderer.invoke(IpcChannels.wslDistros),
+    watchResources: (enabled) => ipcRenderer.invoke(IpcChannels.wslResourcesWatch, { enabled }),
+    onResources: (listener) => subscribe<WslResourceSample>(IpcEvents.wslResources, listener)
   },
   paths: {
     browse: () => ipcRenderer.invoke(IpcChannels.pathBrowse),
@@ -190,6 +193,14 @@ const api: RendererApi = {
     read: (req) => ipcRenderer.invoke(IpcChannels.opencodeConfigRead, req),
     preview: (req) => ipcRenderer.invoke(IpcChannels.opencodeConfigPreview, req),
     save: (req) => ipcRenderer.invoke(IpcChannels.opencodeConfigSave, req)
+  },
+  automations: {
+    list: () => ipcRenderer.invoke(IpcChannels.automationsList),
+    save: (req) => ipcRenderer.invoke(IpcChannels.automationsSave, req),
+    remove: (req) => ipcRenderer.invoke(IpcChannels.automationsRemove, req),
+    setEnabled: (req) => ipcRenderer.invoke(IpcChannels.automationsSetEnabled, req),
+    run: (req) => ipcRenderer.invoke(IpcChannels.automationsRun, req),
+    onChanged: (listener) => subscribe<InboxAutomation[]>(IpcEvents.automationsChanged, listener)
   },
   mdeMcp: {
     status: (req) => ipcRenderer.invoke(IpcChannels.mdeMcpStatus, req),

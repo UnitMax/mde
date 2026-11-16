@@ -4,7 +4,6 @@ import * as nodePty from 'node-pty'
 import type { IPty, IWindowsPtyForkOptions } from 'node-pty'
 import type { TerminalPalette } from '@shared/ipc'
 import type {
-  AgentCommand,
   PtyDataChunk,
   PtyDirectoryUpdate,
   PtyExitInfo,
@@ -53,10 +52,7 @@ export interface PtyTerminalInfo {
 }
 
 export interface PtyLaunchOptions {
-  /** Main-owned values passed in the child environment, never as command-line arguments. */
-  environment?: Record<string, string>
   directory?: string
-  agent?: AgentCommand
   /**
    * Started before any view shows it: its output is kept (up to `HELD_OUTPUT_LIMIT`) and sent on when a view
    * first attaches, which is the renderer's next `ensure` for it.
@@ -184,18 +180,9 @@ export class PtyManager {
     }
 
     const context = launchContext(session)
-    const forwardedKeys = Object.keys(options?.environment ?? {})
-    if (forwardedKeys.some((key) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key))) throw new Error('Invalid terminal environment variable.')
-    const processEnvironment = ptyEnv(options?.environment)
-    if (session.kind === 'wsl' && options?.environment) {
-      // WSLENV forwards these from Windows into WSL without putting their values in wsl.exe argv.
-      const inherited = (processEnvironment.WSLENV ?? '').split(':').filter((entry) => entry && !forwardedKeys.includes(entry.split('/')[0]!))
-      processEnvironment.WSLENV = [...inherited, ...forwardedKeys.map((key) => `${key}/u`)].join(':')
-    }
     const spec = buildLaunchSpec(session, {
       ...context,
       workingDirectory: options?.directory,
-      agent: options?.agent
     })
     const { cols, rows } = clampSize(size)
 
@@ -204,7 +191,7 @@ export class PtyManager {
       cols,
       rows,
       cwd: spec.cwd ?? homedir(),
-      env: processEnvironment,
+      env: ptyEnv(),
     }, process.platform)
 
     const queryResponder = new TerminalQueryResponder(palette)

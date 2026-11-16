@@ -1,8 +1,8 @@
 import type { CSSProperties } from 'react'
-import { highlightCode, tagHighlighter } from '@lezer/highlight'
+import { highlightCode } from '@lezer/highlight'
+import { codeHighlighter, codeStyleOf, loadCodeParser, type CodeParser } from '@/lib/code-highlight'
 import { languageForPath } from '@/lib/code-languages'
 import type { CharRange, DiffHunk } from '@/lib/diff'
-import { SYNTAX_STYLE } from '@/lib/syntax-style'
 
 /** A run of text in one line of a diff, with its syntax color and whether its words changed. */
 export interface StyledSpan {
@@ -14,38 +14,16 @@ export interface StyledSpan {
 /** Diffs bigger than this are shown without syntax colors. */
 const MAX_HIGHLIGHT_CHARS = 200_000
 
-// One class per entry of the shared style table, so a class name tells which entry colors the text.
-const highlighter = tagHighlighter(SYNTAX_STYLE.map((style, index) => ({ tag: style.tag, class: `s${index}` })))
-const STYLES: CSSProperties[] = SYNTAX_STYLE.map(({ tag: _tag, class: _class, ...css }) => css as CSSProperties)
-
-function styleOf(classes: string): CSSProperties | undefined {
-  let style: CSSProperties | undefined
-  for (const name of classes.split(' ')) {
-    const index = /^s(\d+)$/.exec(name)?.[1]
-    if (index !== undefined && STYLES[Number(index)]) style = { ...style, ...STYLES[Number(index)] }
-  }
-  return style
-}
-
-type Parser = { parse(input: string): Parameters<typeof highlightCode>[1] }
-
-/** The Lezer parser inside a language extension: a language pack holds it, a stream language is one. */
-function parserOf(extension: unknown): Parser | null {
-  const candidate = extension as { language?: { parser?: Parser }; parser?: Parser } | null
-  const parser = candidate?.language?.parser ?? candidate?.parser
-  return parser && typeof parser.parse === 'function' ? parser : null
-}
-
 /** Colors a block of code and returns it line by line. */
-function highlightLines(code: string, parser: Parser): StyledSpan[][] {
+function highlightLines(code: string, parser: CodeParser): StyledSpan[][] {
   const lines: StyledSpan[][] = [[]]
   highlightCode(
     code,
     parser.parse(code),
-    highlighter,
+    codeHighlighter,
     (text, classes) => {
       if (!text) return
-      const style = styleOf(classes)
+      const style = codeStyleOf(classes)
       lines[lines.length - 1]!.push(style ? { text, style } : { text })
     },
     () => lines.push([]),
@@ -63,7 +41,7 @@ export async function highlightHunks(path: string, hunks: readonly DiffHunk[]): 
   if (!language) return null
   if (hunks.reduce((sum, hunk) => hunk.lines.reduce((inner, line) => inner + line.text.length + 1, sum), 0) > MAX_HIGHLIGHT_CHARS) return null
   try {
-    const parser = parserOf(await language.load())
+    const parser = await loadCodeParser(language.load)
     if (!parser) return null
     return hunks.map((hunk) => {
       const before = highlightLines(hunk.lines.filter((line) => line.kind !== 'add').map((line) => line.text).join('\n'), parser)

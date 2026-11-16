@@ -3,15 +3,17 @@ import type {
   GitGraphCommit,
   GitGraphRef,
   GitGraphScope,
+  GitGraphThread,
   InboxChangeDiff,
   InboxGitCommitDetails,
   InboxGitCommitFile,
   InboxGitGraph,
 } from '@shared/types'
 import {
-  checkoutRunner, diffPreview, GIT_DIFF_CONTEXT_LINES, isBinaryGitDiff, parseGitFileNumstat, repositoryFetchPrograms,
+  checkoutRunner, diffPreview, runGitCheckoutBatch, GIT_DIFF_CONTEXT_LINES, isBinaryGitDiff, parseGitFileNumstat, repositoryFetchPrograms,
   type GitCommandResult, type GitCommandRunner,
 } from './git'
+import { GIT_BATCH_HEAD } from './git-batch'
 
 /** The most commits one request reads; the view asks for more in steps. */
 export const GIT_GRAPH_MAX_COMMITS = 5000
@@ -73,15 +75,6 @@ function unavailable(reason: string): InboxGitGraph {
   }
 }
 
-async function readUpstream(run: GitCommandRunner): Promise<InboxGitGraph['upstream']> {
-  const name = await run(['--no-pager', 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'])
-  if (name.code !== 0 || !name.stdout.trim()) return null
-  const counts = await run(['--no-pager', 'rev-list', '--left-right', '--count', 'HEAD...@{upstream}', '--'])
-  const match = /^(\d+)\s+(\d+)/.exec(counts.stdout.trim())
-  if (counts.code !== 0 || !match) return null
-  return { name: name.stdout.trim(), ahead: Number(match[1]), behind: Number(match[2]) }
-}
-
 /**
  * The commits reachable from the refs the scope names, and always from HEAD,
  * newest first in date order, with the refs that point into them. Metadata only: no file is read.
@@ -91,56 +84,143 @@ export async function readGitGraphWithRunner(
   limit: number,
   scope: GitGraphScope,
 ): Promise<InboxGitGraph> {
-  const checkout = await checkoutRunner(source)
-  if (!checkout) return unavailable('This folder is not a Git repository.')
-  const run = checkout.run
+  return (await readGitGraphAndCheckouts(source, limit, scope, false)).graph
+}
+
+/** The graph and, when asked for, every checkout of the repository, in one reading. */
+export async function readGitGraphAndCheckouts(
+  source: GitCommandRunner,
+  limit: number,
+  scope: GitGraphScope,
+  withCheckouts: boolean,
+): Promise<{ graph: InboxGitGraph; checkouts: GitCheckoutHead[] }> {
   const count = Math.max(1, Math.min(GIT_GRAPH_MAX_COMMITS, Math.floor(limit)))
-  const [head, branch, refs, remotes] = await Promise.all([
-    run(['--no-pager', 'rev-parse', '--verify', '--quiet', 'HEAD^{commit}']),
-    run(['--no-pager', 'symbolic-ref', '--quiet', '--short', 'HEAD']),
-    run([
+  // Every command is asked at once, so some are asked in vain: the history of a repository with
+  // nothing to show, the upstream of a detached HEAD. Their failures are expected and not looked at.
+  const batch = await runGitCheckoutBatch(source, [
+    ['--no-pager', 'symbolic-ref', '--quiet', '--short', 'HEAD'],
+    [
       '--no-pager', 'for-each-ref', `--count=${GIT_GRAPH_REF_LIMIT}`,
       '--format=%(objectname)%1f%(*objectname)%1f%(refname)',
       'refs/heads', 'refs/remotes', 'refs/tags',
-    ]),
-    run(['--no-pager', 'remote']),
-  ])
-  if (head.launchError) throw failure('HEAD', head)
-  if (refs.code !== 0) throw failure('refs', refs)
-  if (remotes.code !== 0) throw failure('remotes', remotes)
-  const headHash = head.code === 0 ? head.stdout.trim() || null : null
-  const branchName = branch.code === 0 ? branch.stdout.trim() || null : null
-  const allRefs = parseGitGraphRefs(refs.stdout)
-  const revisions = [
-    ...(scope !== 'head' && allRefs.length ? ['--branches', '--tags'] : []),
-    ...(scope === 'all' && allRefs.length ? ['--remotes'] : []),
-    ...(headHash ? ['HEAD'] : []),
-  ]
-  let commits: GitGraphCommit[] = []
-  if (revisions.length) {
-    const log = await run([
+    ],
+    ['--no-pager', 'remote'],
+    [
       '--no-pager', 'log', '--no-show-signature', '--no-color', '--date-order',
       '--format=%H%x1f%P%x1f%an%x1f%at%x1f%s%x1e',
       '-n', String(count + 1),
-      ...revisions, '--',
-    ])
+      ...(scope !== 'head' ? ['--branches', '--tags'] : []),
+      ...(scope === 'all' ? ['--remotes'] : []),
+      GIT_BATCH_HEAD, '--',
+    ],
+    ['--no-pager', 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'],
+    ['--no-pager', 'rev-list', '--left-right', '--count', 'HEAD...@{upstream}', '--'],
+    ...(withCheckouts ? [['--no-pager', 'worktree', 'list', '--porcelain']] : []),
+  ])
+  if (!batch) return { graph: unavailable('This folder is not a Git repository.'), checkouts: [] }
+  const [branch, refs, remotes, log, upstreamName, upstreamCounts, worktrees] = batch.results as [
+    GitCommandResult, GitCommandResult, GitCommandResult, GitCommandResult, GitCommandResult, GitCommandResult,
+    GitCommandResult | undefined,
+  ]
+  if (refs.code !== 0) throw failure('refs', refs)
+  if (remotes.code !== 0) throw failure('remotes', remotes)
+  const headHash = batch.head
+  const branchName = branch.code === 0 ? branch.stdout.trim() || null : null
+  const allRefs = parseGitGraphRefs(refs.stdout)
+  // With no commit and no ref there is no history, and Git answers the question with an error.
+  const hasHistory = headHash !== null || (scope !== 'head' && allRefs.length > 0)
+  let commits: GitGraphCommit[] = []
+  if (hasHistory) {
     if (log.code !== 0) throw failure('history', log)
     commits = parseGitGraphLog(log.stdout)
   }
   const more = commits.length > count
   if (more) commits = commits.slice(0, count)
   const shown = new Set(commits.map((commit) => commit.hash))
+  const divergence = /^(\d+)\s+(\d+)/.exec(upstreamCounts.stdout.trim())
+  const upstream = branchName && headHash && upstreamName.code === 0 && upstreamName.stdout.trim() &&
+    upstreamCounts.code === 0 && divergence
+    ? { name: upstreamName.stdout.trim(), ahead: Number(divergence[1]), behind: Number(divergence[2]) }
+    : null
   return {
-    available: true,
-    worktree: checkout.root,
-    head: headHash,
-    branch: branchName,
-    upstream: branchName && headHash ? await readUpstream(run) : null,
-    remotes: remotes.stdout.split('\n').map((line) => line.trim()).filter(Boolean),
-    refs: allRefs.filter((ref) => shown.has(ref.hash)),
-    commits,
-    more,
+    graph: {
+      available: true,
+      worktree: batch.root,
+      head: headHash,
+      branch: branchName,
+      upstream,
+      remotes: remotes.stdout.split('\n').map((line) => line.trim()).filter(Boolean),
+      refs: allRefs.filter((ref) => shown.has(ref.hash)),
+      commits,
+      more,
+    },
+    checkouts: worktrees && worktrees.code === 0 ? parseGitCheckoutHeads(worktrees.stdout) : [],
   }
+}
+
+/** One checkout of a repository: its main working tree or a linked worktree. */
+export interface GitCheckoutHead {
+  root: string
+  head: string | null
+  branch: string | null
+}
+
+/**
+ * Parses `git worktree list --porcelain`: every checkout of the repository with the commit and branch
+ * checked out in it. A bare repository has no checkout, and one whose folder is gone is left out.
+ */
+export function parseGitCheckoutHeads(stdout: string): GitCheckoutHead[] {
+  const checkouts: GitCheckoutHead[] = []
+  for (const block of stdout.split(/\r?\n\s*\r?\n/)) {
+    const lines = block.split(/\r?\n/)
+    const root = lines.find((line) => line.startsWith('worktree '))?.slice('worktree '.length)
+    if (!root || lines.includes('bare') || lines.some((line) => line === 'prunable' || line.startsWith('prunable '))) continue
+    const head = lines.find((line) => line.startsWith('HEAD '))?.slice('HEAD '.length)
+    const branch = lines.find((line) => line.startsWith('branch refs/heads/'))?.slice('branch refs/heads/'.length)
+    checkouts.push({
+      root,
+      // An unborn branch is listed with the all-zero object name.
+      head: head && /^[0-9a-f]{40,64}$/.test(head) && !/^0+$/.test(head) ? head : null,
+      branch: branch ?? null,
+    })
+  }
+  return checkouts
+}
+
+/** Every checkout of the repository the runner's folder is in; none when Git cannot say. */
+export async function readGitCheckoutHeadsWithRunner(run: GitCommandRunner): Promise<GitCheckoutHead[]> {
+  const result = await run(['--no-pager', 'worktree', 'list', '--porcelain'])
+  return result.code === 0 ? parseGitCheckoutHeads(result.stdout) : []
+}
+
+/**
+ * A path in a form two spellings of one folder share: no trailing slash, and for a Windows path
+ * (`C:\\repo` from MDE, `C:/repo` from Git) forward slashes and no difference in case.
+ */
+function comparablePath(path: string): string {
+  if (!/^[A-Za-z]:[\\/]|^\\\\/.test(path)) return path.length > 1 ? path.replace(/\/+$/, '') : path
+  return path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+}
+
+/**
+ * Which of the threads run in which checkout: a thread belongs to the checkout its directory is in,
+ * the innermost when one checkout lies inside another. Threads are given already narrowed to the
+ * machine (native, or one WSL distribution) the checkouts are on.
+ */
+export function threadsInCheckouts(
+  checkouts: readonly GitCheckoutHead[],
+  threads: readonly { id: string; directory: string }[],
+): GitGraphThread[] {
+  const roots = checkouts
+    .map((checkout) => ({ checkout, path: comparablePath(checkout.root) }))
+    .sort((a, b) => b.path.length - a.path.length)
+  const found: GitGraphThread[] = []
+  for (const thread of threads) {
+    const directory = comparablePath(thread.directory)
+    const match = roots.find(({ path }) => directory === path || directory.startsWith(path.endsWith('/') ? path : `${path}/`))
+    if (match) found.push({ threadId: thread.id, head: match.checkout.head, branch: match.checkout.branch, root: match.checkout.root })
+  }
+  return found
 }
 
 const STATUS_LETTERS: Record<string, GitChangeStatus> = {
@@ -172,23 +252,28 @@ export function parseGitNameStatus(stdout: string): Array<{ path: string; from?:
  * object name checked by the IPC boundary, so it cannot be read as an option or a range.
  */
 export async function readGitCommitWithRunner(source: GitCommandRunner, hash: string): Promise<InboxGitCommitDetails> {
-  const checkout = await checkoutRunner(source)
-  if (!checkout) throw new Error('This folder is not a Git repository.')
-  const run = checkout.run
-  const info = await run([
-    '--no-pager', 'log', '-1', '--no-show-signature', '--no-color',
-    '--format=%H%x00%P%x00%an%x00%at%x00%cn%x00%ct%x00%B', `${hash}^{commit}`, '--',
+  const commit = `${hash}^{commit}`
+  const common = ['--no-pager', 'diff-tree', '-r', '-z', '--no-commit-id', '--find-renames', '--no-ext-diff', '--no-textconv', '--no-color']
+  // Whether the commit has a parent is not known yet, so its files are asked for both ways.
+  const batch = await runGitCheckoutBatch(source, [
+    [
+      '--no-pager', 'log', '-1', '--no-show-signature', '--no-color',
+      '--format=%H%x00%P%x00%an%x00%at%x00%cn%x00%ct%x00%B', commit, '--',
+    ],
+    [...common, '--name-status', `${commit}^1`, commit, '--'],
+    [...common, '--numstat', `${commit}^1`, commit, '--'],
+    [...common, '--name-status', '--root', commit, '--'],
+    [...common, '--numstat', '--root', commit, '--'],
   ])
+  if (!batch) throw new Error('This folder is not a Git repository.')
+  const [info, parentNames, parentNumbers, rootNames, rootNumbers] = batch.results as [
+    GitCommandResult, GitCommandResult, GitCommandResult, GitCommandResult, GitCommandResult,
+  ]
   if (info.code !== 0) throw new Error('That commit is not in this repository.')
   const [full, parentList, author, authorTime, committer, commitTime, ...message] = info.stdout.split('\0')
   const parents = (parentList ?? '').split(' ').filter(Boolean)
   // A merge is shown against its first parent, the way the branch it was merged into saw it.
-  const range = parents.length > 1 ? [parents[0]!, full!] : ['--root', full!]
-  const common = ['--no-pager', 'diff-tree', '-r', '-z', '--no-commit-id', '--find-renames', '--no-ext-diff', '--no-textconv', '--no-color']
-  const [names, numbers] = await Promise.all([
-    run([...common, '--name-status', ...range, '--']),
-    run([...common, '--numstat', ...range, '--']),
-  ])
+  const [names, numbers] = parents.length ? [parentNames, parentNumbers] : [rootNames, rootNumbers]
   if (names.code !== 0) throw failure('commit files', names)
   if (numbers.code !== 0) throw failure('commit files', numbers)
   const counts = parseGitFileNumstat(numbers.stdout)
@@ -223,21 +308,39 @@ export async function readGitCommitWithRunner(source: GitCommandRunner, hash: st
  * for another file or a pathspec; a renamed file is shown with its old path.
  */
 export async function readGitCommitDiffWithRunner(source: GitCommandRunner, hash: string, path: string): Promise<InboxChangeDiff> {
-  const checkout = await checkoutRunner(source)
-  if (!checkout) throw new Error('This folder is not a Git repository.')
-  const run = checkout.run
-  const parents = await run(['--no-pager', 'rev-list', '--parents', '-n', '1', `${hash}^{commit}`, '--'])
-  if (parents.code !== 0) throw new Error('That commit is not in this repository.')
-  const [full, first] = parents.stdout.trim().split(/\s+/)
-  const range = first ? [first, full!] : ['--root', full!]
+  const commit = `${hash}^{commit}`
   const common = ['--no-pager', 'diff-tree', '-r', '--no-commit-id', '--find-renames', '--no-ext-diff', '--no-textconv', '--no-color']
-  const names = await run([...common, '-z', '--name-status', ...range, '--'])
+  const ranges = { parent: [`${commit}^1`, commit], root: ['--root', commit] }
+  const patch = (range: string[], paths: string[]): string[] =>
+    [...common, '-p', `--unified=${GIT_DIFF_CONTEXT_LINES}`, ...range, '--', ...paths]
+  // Whether the commit has a parent is not known yet, so the question is asked both ways. The patch
+  // is read along with the list of files and only used when the list has the path.
+  const batch = await runGitCheckoutBatch(source, [
+    ['--no-pager', 'rev-list', '--parents', '-n', '1', commit, '--'],
+    [...common, '-z', '--name-status', ...ranges.parent, '--'],
+    patch(ranges.parent, [path]),
+    [...common, '-z', '--name-status', ...ranges.root, '--'],
+    patch(ranges.root, [path]),
+  ])
+  if (!batch) throw new Error('This folder is not a Git repository.')
+  const [parents, parentNames, parentPatch, rootNames, rootPatch] = batch.results as [
+    GitCommandResult, GitCommandResult, GitCommandResult, GitCommandResult, GitCommandResult,
+  ]
+  if (parents.code !== 0) throw new Error('That commit is not in this repository.')
+  const hasParent = parents.stdout.trim().split(/\s+/).length > 1
+  const names = hasParent ? parentNames : rootNames
   if (names.code !== 0) throw failure('commit files', names)
   const file = parseGitNameStatus(names.stdout).find((entry) => entry.path === path)
   if (!file) throw new Error('That file is not changed in this commit.')
-  const patch = await run([...common, '-p', `--unified=${GIT_DIFF_CONTEXT_LINES}`, ...range, '--', ...(file.from ? [file.from] : []), file.path])
-  if (patch.code !== 0) throw failure('diff', patch)
-  return { path: file.path, binary: isBinaryGitDiff(patch.stdout), ...diffPreview(patch.stdout) }
+  let result = hasParent ? parentPatch : rootPatch
+  if (file.from) {
+    // A renamed file is shown with its old path, which only the list of files names.
+    const second = await runGitCheckoutBatch(source, [patch(hasParent ? ranges.parent : ranges.root, [file.from, file.path])])
+    if (!second) throw new Error('This folder is not a Git repository.')
+    result = second.results[0]!
+  }
+  if (result.code !== 0) throw failure('diff', result)
+  return { path: file.path, binary: isBinaryGitDiff(result.stdout), ...diffPreview(result.stdout) }
 }
 
 /**

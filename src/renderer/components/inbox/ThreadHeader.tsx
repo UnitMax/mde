@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Bot, Copy, Ellipsis, FolderGit2, FolderX, GitBranch, GitFork, LoaderCircle, PenLine, RefreshCw } from 'lucide-react'
+import { Bot, CalendarClock, Copy, Ellipsis, FolderGit2, FolderX, GitBranch, GitFork, LoaderCircle, PenLine, RefreshCw } from 'lucide-react'
 import type { InboxThread } from '@shared/types'
 import { InboxStatusBadge, useInboxClock } from '@/components/InboxPanel'
 import { CompactChatToggle } from '@/components/inbox/CompactChatToggle'
@@ -21,6 +21,7 @@ import { worktreeKey } from '@/lib/inbox-worktrees'
 import { notifyActionError, openThreadFromToast, threadDisplayTitle } from '@/lib/toasts'
 import { cn } from '@/lib/utils'
 import { useInboxChat } from '@/store/inbox-chat'
+import { useInboxAutomations } from '@/store/inbox-automations'
 import { inboxChangesKey, useInboxChanges } from '@/store/inbox-changes'
 import { useWorkspace } from '@/store/workspace'
 
@@ -83,6 +84,33 @@ function ForkedFrom({ source }: { source: string }): JSX.Element {
 }
 
 /** "Started by <thread>": an agent asked MDE for this thread through the MDE MCP. */
+/** Says that an automation started the thread, and leads to it while it still exists. */
+function StartedByAutomation({ automationId }: { automationId: string }): JSX.Element {
+  const exists = useInboxAutomations((state) => state.automations.some((item) => item.id === automationId))
+  const openManager = useInboxAutomations((state) => state.openManager)
+  const body = (
+    <>
+      <CalendarClock aria-hidden className={ICON} />
+      <span className="min-w-0 max-w-[14rem] truncate">Started by an automation</span>
+    </>
+  )
+  const className = '@max-[56rem]/thread:hidden flex shrink-0 items-center gap-1'
+  if (!exists) {
+    return <span data-testid="inbox-started-by-automation" title="An automation started this thread on its schedule." className={className}>{body}</span>
+  }
+  return (
+    <button
+      type="button"
+      data-testid="inbox-started-by-automation"
+      onClick={() => openManager(automationId)}
+      title="Open the automation that started this thread on its schedule."
+      className={cn(className, 'rounded hover:text-fg')}
+    >
+      {body}
+    </button>
+  )
+}
+
 function SpawnedBy({ parentId }: { parentId?: string }): JSX.Element {
   const parent = useWorkspace((state) => (parentId ? state.inboxThreads.find((item) => item.id === parentId) : undefined))
   const select = useWorkspace((state) => state.selectInboxThread)
@@ -218,6 +246,7 @@ export function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
           )}
           {thread.forkedFrom && <ForkedFrom source={thread.forkedFrom} />}
           {thread.spawnedBy && <SpawnedBy parentId={thread.spawnedBy.threadId} />}
+          {thread.automationId && <StartedByAutomation automationId={thread.automationId} />}
         </div>
         <div className="min-w-2 flex-1" />
         <div className="flex shrink-0 items-center gap-0.5">
@@ -228,7 +257,7 @@ export function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
               distro={wsl}
             />
           )}
-          {thread.mode !== 'terminal' && <CompactChatToggle />}
+          <CompactChatToggle />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon-sm" aria-label="Thread actions" title="Thread actions" data-testid="thread-actions">

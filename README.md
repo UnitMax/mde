@@ -6,8 +6,11 @@ sessions, with first-class WSL support on Windows.
 It is a desktop shell focused on persistent terminal workflows: tabbed multi-pane terminals per
 session, Git changes in each terminal header, a file tree that follows the selected terminal,
 Markdown and Mermaid preview, and To Do boards. The Inbox is a separate
-view for starting and continuing OpenCode conversations in GUI chat or a direct OpenCode terminal;
-both use OpenCode's API for thread activity. Choose GUI (the default) or Terminal from the menu under the new-thread message box.
+view for starting and continuing OpenCode conversations as chats, through OpenCode's API.
+To run something again and again, pick a schedule from the **Run once** menu under the new-thread message box
+(every hour, every day at 9:00, weekdays, or your own): sending then saves an automation that starts a new
+thread each time, while MDE is open; a run missed while it was closed is made up once. The calendar-clock
+button in the Inbox toolbar lists, pauses, edits and deletes them.
 Add, rename, remove and give icons to the folders threads start in from Projects (the folder button
 beside the Inbox settings); the icon shows beside each project's threads. On macOS and in WSL,
 Settings → OpenCode → Edit configuration changes OpenCode's own configuration file: permission rules,
@@ -19,7 +22,8 @@ you choose otherwise there), and show you charts, tables and small dashboards in
 [`docs/architecture.md`](docs/architecture.md) for how each part behaves.
 
 Settings → Notifications plays a sound and flashes the taskbar button when an Inbox thread is done, needs
-input or fails; on Windows the button is also coloured red, yellow or green with a count until you return.
+input or fails; on Windows the button is also coloured red, yellow or green with a count until you return, and on macOS the
+Dock icon shows the count.
 It needs nothing installed.
 
 The Inbox terminal can also float as a window over the conversation: use the button beside Collapse sidebar on

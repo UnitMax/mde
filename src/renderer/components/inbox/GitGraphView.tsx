@@ -12,6 +12,12 @@ import { useInboxChanges, inboxChangesKey } from '@/store/inbox-changes'
 import { useWorkspace } from '@/store/workspace'
 import { codeViewerFontFamily, getTerminalSettings, subscribeTerminalSettings } from '@/terminal/terminal-settings'
 import { ChangeCounts, ChangeDiffViewer, StatusMark } from './InboxChanges'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import {
+  contain, graphThreadMarkerWidth, markerKey,
+  GraphThreadMarker, GraphThreadsMenu, placeGraphThreads, saveGraphThreadsShown, storedGraphThreadsShown, threadCheckouts,
+  type PlacedThread,
+} from './GitGraphThreads'
 
 /** Commits read at first, and added each time the list nears its end. */
 export const GRAPH_PAGE = 400
@@ -72,7 +78,7 @@ export function commitBodyParagraphs(body: string): string[] {
 }
 
 /** A local branch, with the remote branches of the same name that point at the same commit. */
-interface RefChip {
+export interface RefChip {
   key: string
   kind: 'head' | 'branch' | 'remote' | 'tag'
   name: string
@@ -137,6 +143,66 @@ function Chip({ chip, color }: { chip: RefChip; color: string }): JSX.Element {
       <span className="truncate">{chip.name}</span>
       {chip.remotes.length > 0 && <Cloud className="h-3 w-3 opacity-70" aria-hidden />}
     </span>
+  )
+}
+
+const CHIP_GAP = 6
+/** The `+3` chip that stands for the chips a row has no room for. */
+const MORE_CHIP_WIDTH = 40
+
+/** How wide a chip is drawn, near enough to count how many fit: its icon and padding, and its name. */
+export function refChipWidth(chip: RefChip): number {
+  return Math.min(220, 30 + Math.ceil(chip.name.length * 6.4) + (chip.remotes.length ? 16 : 0))
+}
+
+/**
+ * How many of a commit's chips are shown in its row, given the room there is for them; the rest go
+ * behind a `+N` chip, which needs room of its own. The first (the checked-out branch, when it is
+ * here) is always shown. `null` is a row not yet measured, which shows them all.
+ */
+export function fitRefChips(chips: readonly RefChip[], available: number | null): number {
+  if (available === null || chips.length <= 1) return chips.length
+  const widths = chips.map(refChipWidth)
+  const all = widths.reduce((sum, width) => sum + width, 0) + CHIP_GAP * (chips.length - 1)
+  if (all <= available) return chips.length
+  let used = MORE_CHIP_WIDTH
+  let count = 0
+  for (const width of widths) {
+    if (used + width + CHIP_GAP > available) break
+    used += width + CHIP_GAP
+    count++
+  }
+  return Math.max(1, Math.min(count, chips.length - 1))
+}
+
+/** The chips a row had no room for, behind one chip that lists them. */
+function MoreChips({ chips, color }: { chips: readonly RefChip[]; color: string }): JSX.Element {
+  const names = chips.map((chip) => chip.name).join('\n')
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          data-testid="git-graph-more-refs"
+          title={`${chips.length} more here:\n${names}`}
+          aria-label={`${chips.length} more branches and tags at this commit`}
+          onClick={contain}
+          onKeyDown={markerKey}
+          className={cn(
+            'inline-flex h-[18px] shrink-0 items-center rounded-full border border-line-strong bg-panel px-1.5 text-[11px] leading-none tabular-nums text-fg-muted outline-none',
+            'transition-colors hover:bg-elevated hover:text-fg focus-visible:border-accent/60 focus-visible:text-fg data-[state=open]:bg-elevated data-[state=open]:text-fg',
+          )}
+        >
+          +{chips.length}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="max-h-[min(22rem,60vh)] w-80 overflow-y-auto" onClick={contain} onKeyDown={contain}>
+        <DropdownMenuLabel>{chips.length} more at this commit</DropdownMenuLabel>
+        <div className="flex flex-wrap gap-1 px-2 pb-1.5 pt-0.5" data-testid="git-graph-more-refs-list">
+          {chips.map((chip) => <Chip key={chip.key} chip={chip} color={color} />)}
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -487,6 +553,11 @@ export interface GitGraphPanelProps {
   refreshKey?: string
   /** The pane shown beside the graph for the uncommitted changes. */
   renderWorking: (close: () => void) => ReactNode
+  /**
+   * Opens an Inbox thread. With it, the graph also shows which threads run in the repository's
+   * checkouts and at which commit; without it, threads are not read at all.
+   */
+  onOpenThread?: (threadId: string) => void
 }
 
 /**
@@ -511,6 +582,11 @@ export function GitGraphView({ threadId }: { threadId: string }): JSX.Element | 
       identity={threadId}
       source={source}
       onClose={() => useInboxChanges.getState().closeGraph()}
+      // Another thread takes the graph's place; this one is beneath it already.
+      onOpenThread={(id) => {
+        useInboxChanges.getState().closeGraph()
+        if (id !== threadId) useWorkspace.getState().selectInboxThread(id)
+      }}
       workingCount={changes?.available ? changes.fileCount : 0}
       // A commit made in the thread changes the working tree, which the Changes watcher notices.
       refreshKey={changes ? JSON.stringify([changes.branch, changes.fileCount, changes.additions, changes.deletions]) : undefined}
@@ -524,7 +600,7 @@ export function GitGraphView({ threadId }: { threadId: string }): JSX.Element | 
  * branches, remote branches and tags that point at them, and where HEAD is. Fetch brings the
  * remote branches up to date. Laid over the conversation (Inbox) or the terminals (Sessions).
  */
-export function GitGraphPanel({ open, identity, source, onClose, workingCount, refreshKey, renderWorking }: GitGraphPanelProps): JSX.Element | null {
+export function GitGraphPanel({ open, identity, source, onClose, workingCount, refreshKey, renderWorking, onOpenThread }: GitGraphPanelProps): JSX.Element | null {
   const [scope, setScope] = useState<GitGraphScope>(storedScope)
   const [limit, setLimit] = useState(GRAPH_PAGE)
   const [state, setState] = useState<GraphState>({ loading: true })
@@ -540,20 +616,25 @@ export function GitGraphPanel({ open, identity, source, onClose, workingCount, r
   const [query, setQuery] = useState('')
   const [family, setFamily] = useState(() => getTerminalSettings().codeFamily)
   const [view, setView] = useState({ top: 0, height: 600 })
+  /** The list's width once measured, for how many chips a row has room for. */
+  const [listWidth, setListWidth] = useState(0)
   const [, setTick] = useState(0)
   const list = useRef<HTMLDivElement>(null)
   const request = useRef(0)
+  const withThreads = Boolean(onOpenThread)
+  const [threadsShown, setThreadsShown] = useState(storedGraphThreadsShown)
+  const inboxThreads = useWorkspace((s) => s.inboxThreads)
 
   const load = useCallback((nextLimit = limit, nextScope = scope) => {
     const id = ++request.current
     setState((previous) => ({ ...previous, loading: true }))
-    window.api.git.graph({ ...source, limit: nextLimit, scope: nextScope }).then(
+    window.api.git.graph({ ...source, limit: nextLimit, scope: nextScope, ...(withThreads ? { threads: true } : {}) }).then(
       (value) => { if (id === request.current) setState({ value, loading: false }) },
       (error) => {
         if (id === request.current) setState((previous) => ({ value: previous.value, loading: false, error: ipcErrorMessage(error, 'Could not read the Git history.') }))
       },
     )
-  }, [source, limit, scope])
+  }, [source, limit, scope, withThreads])
 
   // Another thread or terminal starts afresh. Coming back (after a diff review opened from here)
   // keeps the chosen commit and the search, and reads the graph again.
@@ -601,7 +682,10 @@ export function GitGraphPanel({ open, identity, source, onClose, workingCount, r
   useLayoutEffect(() => {
     const element = list.current
     if (!element || !open) return
-    const measure = (): void => setView({ top: element.scrollTop, height: element.clientHeight })
+    const measure = (): void => {
+      setView({ top: element.scrollTop, height: element.clientHeight })
+      setListWidth(element.clientWidth)
+    }
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(element)
@@ -624,6 +708,25 @@ export function GitGraphPanel({ open, identity, source, onClose, workingCount, r
     return map
   }, [value?.refs])
   const byHash = useMemo(() => new Map((value?.commits ?? []).map((commit, index) => [commit.hash, index + (working ? 1 : 0)])), [value?.commits, working])
+  const placed = useMemo(() => placeGraphThreads(value?.threads, inboxThreads), [value?.threads, inboxThreads])
+  const threadsByCommit = useMemo(() => {
+    const map = new Map<string, PlacedThread[]>()
+    for (const item of placed) if (item.head) map.set(item.head, [...(map.get(item.head) ?? []), item])
+    return map
+  }, [placed])
+  const checkouts = useMemo(() => threadCheckouts(placed, value?.worktree ?? null), [placed, value?.worktree])
+  // A thread that starts, stops or is added may have moved its checkout: the graph is read again.
+  // What a new reading brings is not itself a change.
+  const threadsKey = withThreads
+    ? `${inboxThreads.filter((thread) => !thread.archived).length}|${placed.map((item) => `${item.thread.id}:${item.thread.status}`).sort().join(',')}`
+    : ''
+  const threadsSeen = useRef<{ value: InboxGitGraph | undefined; key: string }>()
+  useEffect(() => {
+    const previous = threadsSeen.current
+    threadsSeen.current = { value: state.value, key: threadsKey }
+    if (!open || !withThreads || !previous || previous.value !== state.value || previous.key === threadsKey) return
+    load()
+  }, [open, withThreads, state.value, threadsKey, load])
   const lanes = Math.min(MAX_DRAWN_LANES, rows.layout.reduce((max, row) => Math.max(max, row.width), 1))
   const graphWidth = lanes * LANE_WIDTH + 8
   const needle = query.trim().toLowerCase()
@@ -690,6 +793,17 @@ export function GitGraphPanel({ open, identity, source, onClose, workingCount, r
     setLimit(GRAPH_PAGE)
     load(GRAPH_PAGE, next)
   }
+  const currentThreadId = 'threadId' in source ? source.threadId : undefined
+  const locateCommit = (hash: string): void => {
+    const index = byHash.get(hash)
+    if (index === undefined) return
+    setSelected(hash)
+    centerRow(index)
+  }
+  const changeThreadsShown = (next: boolean): void => {
+    setThreadsShown(next)
+    saveGraphThreadsShown(next)
+  }
   const locateHead = (): void => {
     if (!value?.head) return
     const index = byHash.get(value.head)
@@ -730,6 +844,12 @@ export function GitGraphPanel({ open, identity, source, onClose, workingCount, r
   const selectedCommit = selected && selected !== WORKING ? value?.commits.find((commit) => commit.hash === selected) : undefined
   const headIndex = value?.head ? byHash.get(value.head) : undefined
 
+  // What a row has for its chips, thread marker and message: the list without the graph, the gaps and
+  // the columns on the right (which come and go with the width, as the container queries below say).
+  const rowRoom = listWidth > 0
+    ? listWidth - graphWidth - 24 - 84 - (listWidth >= 520 ? 108 : 0) - (listWidth >= 720 ? 156 : 0)
+    : null
+
   let body: JSX.Element
   if (state.error && !state.value) {
     body = (
@@ -760,6 +880,13 @@ export function GitGraphPanel({ open, identity, source, onClose, workingCount, r
           const chips = refChips(refs, value?.branch ?? null, isHead && !value?.branch)
           const dim = Boolean(needle) && (isWorking || !found.includes(index))
           const isSelected = selected === item.hash
+          const here = threadsShown && onOpenThread ? threadsByCommit.get(item.hash) : undefined
+          // The thread marker and a readable part of the message come before more chips: a commit many
+          // worktree branches point at would otherwise push both out of the row.
+          const marker = graphThreadMarkerWidth(here)
+          const chipRoom = rowRoom === null ? null
+            : rowRoom - (marker ? marker + CHIP_GAP : 0) - Math.min(240, Math.max(96, rowRoom * 0.35)) - CHIP_GAP
+          const fitting = fitRefChips(chips, chipRoom)
           return (
             <div
               key={item.hash}
@@ -786,7 +913,9 @@ export function GitGraphPanel({ open, identity, source, onClose, workingCount, r
                 kind={isWorking ? 'working' : isHead ? 'head' : commit!.parents.length > 1 ? 'merge' : 'commit'}
               />
               <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-                {chips.map((chip) => <Chip key={chip.key} chip={chip} color={laneColor(row.color)} />)}
+                {chips.slice(0, fitting).map((chip) => <Chip key={chip.key} chip={chip} color={laneColor(row.color)} />)}
+                {fitting < chips.length && <MoreChips chips={chips.slice(fitting)} color={laneColor(row.color)} />}
+                {here && onOpenThread && <GraphThreadMarker threads={here} currentId={currentThreadId} onOpen={onOpenThread} />}
                 {isWorking ? (
                   <span className="truncate italic text-fg-muted">
                     Uncommitted changes · {workingCount} {workingCount === 1 ? 'file' : 'files'}
@@ -900,6 +1029,18 @@ export function GitGraphPanel({ open, identity, source, onClose, workingCount, r
         <span className="flex-1" />
         {fetching.at && !fetching.busy && (
           <span className="text-[11px] text-fg-subtle" data-testid="git-graph-fetched">Fetched {relativeCommitTime(fetching.at / 1000)}</span>
+        )}
+        {onOpenThread && placed.length > 0 && (
+          <GraphThreadsMenu
+            checkouts={checkouts}
+            count={placed.length}
+            shown={threadsShown}
+            currentId={currentThreadId}
+            inGraph={(hash) => byHash.has(hash)}
+            onShownChange={changeThreadsShown}
+            onLocate={locateCommit}
+            onOpen={onOpenThread}
+          />
         )}
         <Button
           variant="ghost"

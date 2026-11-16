@@ -106,7 +106,7 @@ the temporary fullscreen view; it is enabled by default. Ctrl+Shift+Enter toggle
 focused terminal pane (Ctrl+Shift+F is the Inbox's search over all threads, so the two never share a chord). The Sidebar section controls whether terminal pane entries appear
 beneath each session; this preference is global and stored with the local terminal settings. The
 OpenCode section (shown on macOS and Windows only) sets the command that starts OpenCode for the
-Inbox, which is its background service and its terminal threads, and opens the OpenCode configuration
+Inbox, which is its background service, and opens the OpenCode configuration
 editor (see **OpenCode configuration editor** below). A command that is empty or contains a control
 character is explained under the field and not used: the Inbox keeps the previous one. The application theme and zoom are also adjustable
 (see **Themes** below). The Appearance section sets the terminal
@@ -273,7 +273,7 @@ Tools:
   ID, title, project and directory at once. OpenCode sends the calling session in each call's `_meta`, so the
   thread whose agent asked (the parent) is known when it is an Inbox thread. Defaults: the parent's directory
   (else the bridge's working directory), preferring the parent's project when several match; the parent's
-  model (else the new-thread page's); the page's agent (else `build`); GUI mode. A directory that is not a
+  model (else the new-thread page's); the page's agent (else `build`). A directory that is not a
   project yet is checked like **Add project** and added without becoming the page's choice. `worktree: {}`
   cuts a worktree from the directory's current branch (`base` and `branch` can be given), never from a
   worktree project. The new-thread page's saved agent and model are not changed. If the first message
@@ -284,6 +284,28 @@ A thread started this way carries `spawnedBy: { threadId? }` in `inbox.json`. Th
 other new thread, under Working, without taking focus; projects an agent adds reach the window through the
 `inbox:folders-changed` event. Limits: 10 threads a minute across all agents, and chains stop at three levels
 of agent-started threads. Security details are in `docs/security.md` under "MDE MCP boundary".
+
+**Bridges stop while MDE is closed** (`src/main/mcp/standby.ts`). OpenCode keeps a bridge running for as long
+as its service runs, also after MDE quit, and on Windows a running `mde.exe` cannot be replaced, so an update
+or a rebuild would fail until the service restarted. A bridge cannot simply exit: OpenCode 2.2.6 then lists the
+server as failed and does not start it again, not when idle and not for a new session, until someone connects
+it. So MDE uses OpenCode's own switch:
+
+- **On quitting** MDE asks OpenCode for the MCP list of each directory it named in a request during this run
+  (the service client reports them), and where `mde` is `connected` it calls the disconnect route. OpenCode
+  closes the bridge's stdin and the bridge exits. The directories are written to `mde-mcp-standby.json` before
+  anything is stopped. Quitting waits at most two seconds for all of it.
+- **On starting** MDE reads that file and calls the connect route for each directory where `mde` is still
+  `disabled`. After an OpenCode restart nothing is disabled (OpenCode keeps no such state) and nothing is
+  done. A directory OpenCode could not be asked about stays in the file for the next start.
+
+Only directories from this run are asked about, because asking about another one would make OpenCode load it
+and start its MCP servers. And only where the configured entry starts this copy of MDE (`installed`, not
+`outdated`), so a second MDE with its own data folder does not switch off the bridges of the first. A server
+someone switched off by hand is not `connected` on quitting, so it is not written down and stays off. What this
+does not cover: MDE crashing or being killed, and a bridge in a directory only a terminal `opencode` session
+used. Restarting the OpenCode service ends those. While MDE is closed, agents elsewhere do not see the `mde`
+tools at all, where before a call answered "MDE is not running".
 
 **Terminals agents open.** `open_terminal({ command?, directory?, title? })` adds a pane to the Inbox terminal
 (the one in the sidebar's Terminal tab, or floating) whose shell starts in the directory (default: the
@@ -353,8 +375,7 @@ The Inbox is selected in the title bar beside Sessions and To Do. It lists OpenC
 ("threads") like a mail inbox, the most recent agent action first. Each row shows the time since
 that action ("5m ago"), the title, the folder name with the full path as a tooltip, the Git branch,
 the model, and a status mark: Needs input or Needs permission, Done, Failed, or Working. The mark (`StatusMark`, `.status-mark` in `index.css`, also used in the thread header, the mini Inbox and for the Draft mark) is a glyph and a label with no box around them, so that a long list stays calm. The glyph tells the states apart without the color: a spinner while working, a beating dot where the person is wanted (still under reduced motion), a check for Done, a cross for Failed. "Needs" is the strongest (the state's color, heavier type), Failed is in its color, Done the quietest (a green check and a muted label) and Working the neutral one with an accent spinner. The label is the state's color mixed toward the text color, so it reads on dark and light themes; `test/status-mark.test.ts` holds every theme to a readable label and a visible glyph. Threads
-with activity you have not opened are bold with a dot, and the tab shows how many there are. Terminal
-threads have a terminal icon beside their title; GUI threads have no mode icon. The
+with activity you have not opened are bold with a dot, and the tab shows how many there are. The
 list can be searched by title, folder, branch and model, and filtered to All, Unread or Parked (see **Toolbar** below).
 Unread includes threads waiting for an answer or permission even after they have been opened, until
 they no longer need input. Parked threads stay under Parked. Hovering or focusing a row shows a car icon and a "Park" label; parked threads offer
@@ -403,7 +424,7 @@ timers do not count time the computer slept and the clock can change; and on Ele
 removes `snoozedUntil`, sets `woke`, and moves the thread to the top as new activity does, unread (`lastActivityAt` is
 kept past `readAt` even when the clock was turned back). Its status mark then says **Woke up** with an alarm clock, in
 the accent color, instead of Done, Failed or nothing; it stays after the thread is read and goes once its status
-changes. A wake plays no alert sound and does not flash a terminal thread's border, since the agent did nothing. New
+changes. A wake plays no alert sound, since the agent did nothing. New
 activity (done, failed, a question or permission) brings a snoozed thread back early without the Woke up mark, as a
 reply unsnoozes a mail; starting work does not.
 
@@ -479,40 +500,16 @@ The Inbox talks to OpenCode's background service directly (see Inbox chat). It i
 cannot reach that service: everywhere except macOS and Windows with WSL. The main area shows the
 selected thread's conversation, or the new-thread page when nothing is selected.
 
-The new-thread page offers **GUI** (the default for every fresh page) and **Terminal**, as a menu chip
-in the strip under the message box (`ThreadModePicker`), the first chip of the strip, in front of the
-choice of where to run (see Git worktrees below); it is there for every folder, Git or not. The
-choice belongs to the page, so a fresh page starts as GUI again and a draft remembers it. Both
-create the same OpenCode API session with the selected folder or worktree, agent, model and variant,
-then submit the same first message, attachments and skill mentions through the API. Terminal mode
-opens the native OpenCode TUI in the main conversation area using `--session` and that session ID,
-with `--server` pointing explicitly to the service Inbox uses. Its password stays in the main process
-and the child environment; WSL receives it through `WSLENV`, never command-line arguments.
-The Inbox sidebar, statuses, unread activity, pinning, parking, forks, Files and Changes continue to
-use the same thread record and APIs. Background creation starts the agent through the API immediately;
-the terminal attaches when the thread is opened. Switching away detaches the terminal view while its
-PTY and scrollback stay alive. **Reopen OpenCode** reattaches to the same conversation after the TUI
-exits; restarting MDE creates a fresh terminal for the saved conversation. Removing the thread disposes
-its terminal too. An unfinished message preserved by a sidebar fork is shown above the terminal as
-a saved draft, with an explicit send action; it is never submitted automatically. A failed first
-message can likewise be retried without creating another session. The shared shell in the right
-sidebar remains independent.
+A new thread creates an OpenCode API session with the selected folder or worktree, agent, model and
+variant, then submits the first message, attachments and skill mentions through the API, and is shown
+as a chat. Background creation starts the agent through the API immediately. A failed first message
+can be retried without creating another session. The shared shell in the right sidebar is independent
+of the threads.
 
-The OpenCode surface of a Terminal chat plays a one-shot border animation when its API status
-starts waiting for permission or an answer (accent color), finishes (green), or fails (red).
-A bright streak travels once around the border while a soft inner glow fades in and out, for
-about 1.5 seconds. New activity can repeat the animation even if the status name stays the same;
-title, branch, pin and read updates stay quiet, as does the first report of a thread. Each thread
-keeps its own brief animation in renderer memory, so switching threads does not replay an expired
-one. Under the OS reduced-motion setting the streak is replaced by a still fade. These animations
-use Inbox API metadata only; they do not run in Sessions, GUI chat, or the shared Inbox shell.
-
-Only new terminal threads store `mode: "terminal"`; older threads continue in GUI mode. Drafts
-remember the chosen interface and forks inherit it. Each terminal thread has one reserved
-`inbox-thread:<sessionID>` terminal/session identity. Main resolves its folder, target and configured
-OpenCode executable from trusted Inbox state and refuses renderer launch overrides. Sidebar activity for these terminals comes from OpenCode service events.
-The association follows the conversation the thread was created for; switching to another conversation
-inside OpenCode's TUI does not relink the Inbox thread.
+A thread is always a chat. Earlier versions could also show a thread as OpenCode's own terminal
+interface ("Terminal chat"); that is gone. A thread `inbox.json` still holds with `mode: "terminal"` is
+dropped when the file is read (the OpenCode conversation itself is not touched), and a draft or an
+automation that remembered that interface simply loses it.
 
 Threads are only the ones started in the Inbox; conversations run in terminals, and OpenCode's
 history, are never imported. In the main process `src/main/inbox/recorder.ts` records each new
@@ -588,21 +585,67 @@ button in its corner (the same collapsed state as the docked sidebar's).
 
 Where there is room, the conversation makes way for the card instead of running under it (`lib/floating-reserve.ts`,
 applied by `InboxThreadView`): a chat or the new-thread page, a centred column of at most 768 px, takes just enough
-right padding that the column ends 16 px short of the card, and none when centred it already does; a terminal
-thread, which fills the width, makes way for all of it. The card publishes its measured width (`floatingCardWidth`
+right padding that the column ends 16 px short of the card, and none when centred it already does. The card publishes its measured width (`floatingCardWidth`
 in `useInboxView`), so opening a section, which widens it, moves the conversation along. When beside the card the
 conversation would be narrower than 520 px, it keeps its width and the card floats over it again. Hidden for the Git
 graph, the card keeps its place, so the conversation under the graph does not move.
 
-A GUI chat's scrollbar shows only while the pointer is over the conversation (`.hover-scrollbar` in `index.css`);
+A chat's scrollbar shows only while the pointer is over the conversation (`.hover-scrollbar` in `index.css`);
 otherwise it would run as a bar down the gap beside the card. Chromium does not repaint a scrollbar thumb on a
 plain `:hover` rule, so the pointer sets a `data-scrollbar-shown` attribute on enter and leave instead
 (`lib/hover-scrollbar.ts`, also used by the Usage dialog).
 
+### Inbox automations
+
+An automation is a message that starts a new Inbox thread on a schedule. It is made on the New thread page:
+the strip under the message box has a chip (`AutomationPicker` in `AutomationSchedule.tsx`) that says **Run
+once** and offers the schedules in `AUTOMATION_PRESETS` (every 30 minutes, every hour, every 4 hours, every day
+at 9:00, weekdays at 9:00, every Monday at 9:00) and **Custom…**, a dialog with the two kinds of schedule
+there are (`AutomationSchedule` in `src/shared/automations.ts`): at a time of day on chosen days of the week,
+or every so often (5 minutes to 28 days). With a schedule chosen the chip names it in the accent color, the
+heading asks what should run, a line under the strip says what sending will do and when it first runs, and the
+send button is a **Schedule** pill: sending saves the automation (`automations:save`) with the page's folder,
+agent, model, permission mode and worktree base, starts no thread, removes the page's draft and
+leaves a blank page that says when the automation first runs. The choice is per page: the
+next page runs once again. An automation carries text only (files named with `@` are part of the text;
+attached files are refused), and a worktree automation keeps only the base branch, since every run needs a
+branch of its own (`mde/<id>`).
+
+The main process owns them (`InboxAutomations` in `src/main/inbox/automations.ts`, stored in
+`inbox-automations.json`, at most 100) and runs them, so they run with the window in mini mode too, but only
+while MDE is open. A timer looks at most every minute (`AUTOMATION_CHECK_MS`; timers do not count sleep, and
+the clock can change), first 5 seconds after the start, and again when the computer wakes (`powerMonitor`
+`resume`). Each automation holds `nextRunAt`. When that has passed, `followingAutomationRun` moves it to the
+first time after now, the file is written, and only then is one thread started through
+`InboxChatService.create` with `{ automationId }`. So however many runs were missed while MDE was closed or
+the computer slept, one is made up, and a crash in the middle of a run does not repeat it. An interval keeps
+its rhythm (every hour from 9:10 stays at ten past); a time of day is worked out in the computer's time zone.
+A run is left out, and noted (`skippedAt`), while the thread of the run before it is still working or waiting
+for an answer. A run that cannot start keeps the reason (`lastError`) and tries again at the next time; one
+whose project was removed pauses the automation. Turning a paused automation on, or changing its schedule,
+counts from now and makes nothing up. A clock set back pulls `nextRunAt` back to what the schedule gives
+from now.
+
+A thread an automation started is an ordinary thread: working and read at first, unread when it finishes,
+fails or needs input. It carries `automationId`, shown as a calendar-clock mark in the list and **Started by
+an automation** in the header (a button to the automation while it exists), and a toast says that it started.
+Like an agent-started thread it does not change the remembered folder, agent and model, and a first message
+that could not be sent becomes the thread's draft.
+
+The **Automations** dialog (`InboxAutomationsDialog`, mounted in `InboxThreadView`, state in
+`store/inbox-automations.ts`) opens from the calendar-clock button in the Inbox toolbar (a dot when any are
+on), from the chip's menu, from the saved line and from a thread's header. Each row has a switch (on or
+paused), the first line of the message, the project, the schedule and the next run, the permission mode when one
+other than the default was chosen, the last run with a link to
+its thread, any error, and on hover Run now (starts a thread and leaves the schedule alone), Edit and Delete
+(asked first). Editing changes the message and the schedule; where and with what it runs is fixed when it is
+made. The main process sends the whole list on `automations:changed` whenever one is saved, removed, paused
+or run.
+
 ### Inbox tool calls
 
 The **Tools** tab in the right-hand sidebar (between Changes and Terminal) lists every tool call of the open
-GUI thread, for review after the fact; its label carries the number of calls. By default the calls run one
+thread, for review after the fact; its label carries the number of calls. By default the calls run one
 after another; the **Show messages** button beside the search box (kept in `localStorage` as
 `mde.inbox-tool-turns`, off by default) groups them under the message of the person's they answered (`#1`, `#2`,
 …, with calls before the first loaded message under "Earlier calls"), and each such header folds. A row shows the icon of
@@ -625,7 +668,7 @@ the input and the error, every word having to match. A call counts as MCP when i
 thread's place (`useInboxMcp`), the same rule the chat uses, so nothing counts as MCP until the server list has
 loaded. The tab reads only the messages already in `useInboxChat` (reverted ones are left out); when older
 messages are not loaded, a button loads the next page through the chat's own `loadOlder`. It asks nothing of
-the main process. Terminal threads do not offer the tab: their agent runs in a terminal MDE cannot see into.
+the main process.
 
 ### Inbox changes
 
@@ -684,7 +727,10 @@ above it, a merge opens a lane for its other parent, and lanes meet where they r
 commit. Their colors come from the theme. Branches, remote branches and tags are chips on the
 commit they point at; the checked-out branch comes first with a check mark, a remote branch of the
 same name at the same commit folds into the local chip as a cloud, and a detached HEAD has its own
-chip. HEAD is a ring. When the checkout has uncommitted changes, a dashed row above HEAD says how
+chip. A row shows as many chips as it has room for beside the thread marker and a readable part of
+the message (counted from the list's width and the names' lengths, `fitRefChips`); the rest go
+behind a `+N` chip that lists them, so a commit many worktree branches point at keeps its threads
+and message in view. The first chip, the checked-out branch when it is there, is always shown. HEAD is a ring. When the checkout has uncommitted changes, a dashed row above HEAD says how
 many files; choosing it lists those files beside the graph, like a commit's, and choosing a file
 there reviews its diff, whose close (or Escape) comes back to the graph with the row still chosen. The header names the branch and how far it is ahead
 of and behind its upstream, as of the last fetch.
@@ -704,6 +750,29 @@ file, laid over the graph, which keeps its place beneath; Escape or the close bu
 it. The graph is
 read again after a Changes refresh with a different summary (a commit in the thread clears its
 changes), after a fetch, and with Refresh.
+
+**Threads in the graph.** The graph also shows where the Inbox threads of the repository are: a
+thread runs in a checkout (the repository's main working tree or one of its worktrees), and that
+checkout's HEAD is the thread's place. The commit carries a small marker after its branch chips:
+one thread is a button with its state (the same glyphs as the thread list: working, needs input or
+permission, done, failed, woke up) and its title, which opens the thread; several at one commit are
+collected into one button (their glyphs and a count) that lists them, most pressing first, each
+opening its thread. The toolbar's Threads button (shown when the repository has any) lists every
+thread by checkout, the graph's own first; a checkout's line goes to its commit, or says *not
+shown* when that commit is not among those read (the Current scope, or further down than the
+commits loaded). Its switch **Show threads on the graph** takes the markers off or puts them back
+and is kept in `localStorage` (`mde.gitGraph.threads`, on by default). Opening a thread closes the
+graph. The graph is read again when a listed thread changes state or the number of threads
+changes, since an agent that stopped may have committed. `git:graph` takes an optional `threads`
+flag (sent by the Inbox and Sessions graphs alike); the main process then also runs
+`git worktree list --porcelain` and returns, for each thread that is not archived, whose worktree
+was not deleted, and that is on the same machine as the checkout (native, or the same WSL
+distribution), the checkout its recorded directory is in (the innermost, comparing Windows paths
+without regard to slashes and case) with that checkout's commit and branch. The renderer joins
+these with the threads it already has; no thread content is read. The pieces are
+`parseGitCheckoutHeads`/`threadsInCheckouts` in `src/main/git-graph.ts`,
+`readInboxGitGraphWithThreads` in `src/main/inbox/changes.ts` and
+`components/inbox/GitGraphThreads.tsx`.
 
 The same graph opens in Sessions from a terminal's Git chip (see Git below). `git:graph` takes a
 root (a thread ID or a terminal ID, never both and never a path), a commit limit (1 to 5,000) and the
@@ -779,7 +848,7 @@ when `inbox.json` is read, leaving the plain folder.
 
 The Inbox also shows a right-hand sidebar with three tabs, Files, Changes and Terminal (a new thread, which has no changes yet, offers Files and Terminal). The Files tab shows the open thread's folder, or the folder a new thread starts in. It is the same tree and viewer as in Sessions mode. The renderer passes the thread's or folder's own ID to `files:list` and `files:read`; the main process looks it up in the Inbox store when no workspace session has that ID.
 
-**Opening a folder.** The Files tab's footer has the same Open folder in VS Code and Open folder in File Explorer buttons as the Sessions file sidebar (there they sit in the header, but the Inbox header is full with the three tabs at 260 px), and a thread's header has one **Open** button for chat and terminal threads alike (`OpenFolderMenu`): it opens the folder in the file manager, and where VS Code is offered a chevron beside it adds that choice. VS Code is offered for a WSL folder on Windows with WSL installed, as in Sessions; the file manager works for a folder on the Mac as well, and opens a WSL folder through its `\\wsl.localhost` path. The new-thread page's Files tab opens the project the new thread starts in. The renderer sends only the thread or project ID (`path:reveal-inbox`, `path:open-inbox-in-vscode`); the main process resolves it in the Inbox store and checks the folder like a terminal's directory (a plain absolute path that is still a directory in the distro, with symlinks resolved) before handing it to the desktop, and does nothing for an ID that is no longer in the Inbox.
+**Opening a folder.** The Files tab's footer has the same Open folder in VS Code and Open folder in File Explorer buttons as the Sessions file sidebar (there they sit in the header, but the Inbox header is full with the three tabs at 260 px), and a thread's header has one **Open** button (`OpenFolderMenu`): it opens the folder in the file manager, and where VS Code is offered a chevron beside it adds that choice. VS Code is offered for a WSL folder on Windows with WSL installed, as in Sessions; the file manager works for a folder on the Mac as well, and opens a WSL folder through its `\\wsl.localhost` path. The new-thread page's Files tab opens the project the new thread starts in. The renderer sends only the thread or project ID (`path:reveal-inbox`, `path:open-inbox-in-vscode`); the main process resolves it in the Inbox store and checks the folder like a terminal's directory (a plain absolute path that is still a directory in the distro, with symlinks resolved) before handing it to the desktop, and does nothing for an ID that is no longer in the Inbox.
 
 **Right-click in the Files tree.** In both views, right-clicking a folder in the Files tree offers **Open folder in File Explorer** for that folder, right-clicking a file offers its containing folder, and right-clicking empty space in the tree opens the folder the tree shows. The renderer sends the tree's root (terminal or Inbox ID, as for a listing) and the folder's path relative to it (`path:reveal-tree-folder`, `''` for the root); the main process checks the relative path like a listing's, verifies root and folder as directories, resolves both to their real paths (`realpath` inside the distro for WSL) and refuses a folder that is not the root or below it, so a link out of the tree opens nothing.
 
@@ -871,6 +940,22 @@ starts with OpenCode's default model and the Build agent. Sending creates the Op
 the folder (or in a new worktree, below), records it as a chat thread, selects it, and sends the
 prompt.
 
+**Copying code blocks.** Inbox Markdown code blocks show a **Copy code** button in the upper right
+on hover or keyboard focus (always visible on devices without hover). It copies only the code,
+preserving whitespace, through the existing main-process clipboard channel, and briefly shows a
+checkmark after a successful copy. Each block copies its current contents, including while a reply
+streams. The button stays in place while long code scrolls sideways. Clipboard failures show an
+error toast. This also applies to expanded reasoning; Mermaid blocks keep their diagram preview.
+
+Fenced code blocks use their language label for syntax highlighting, reusing the installed CodeMirror
+language packs and the file viewer/diff preview's theme colors (`lib/syntax-style.ts`). Supported
+labels include C/C++ (`c`, `cpp`, `c++`), JavaScript/TypeScript (including JSX/TSX), Python, Rust,
+Go, Java, JSON, CSS, HTML, XML, Markdown, YAML, SQL, shell, PowerShell, TOML and Dockerfile.
+Parsers load lazily and are shared across blocks and diffs. ProseMirror inline decorations color
+the original text, including partial streamed code, without changing selection, search or copying.
+Unlabelled, unsupported and oversized blocks (over 200,000 characters), or a failed parser load,
+stay plain text. Theme changes update the colors through CSS variables without parsing again.
+
 **Right-click menus.** Right-clicking the conversation opens a menu that depends on what is under
 the cursor. **Copy** copies the selected text, but only when the click lands on the selection;
 right-clicking elsewhere does not copy text the pointer has left. **Quote**, next to it, adds the
@@ -940,7 +1025,7 @@ timeline names a message by what was written, not by what it quoted. There is no
 quoting, so the shortcut list has no entry for it.
 
 **Git worktrees for threads.** The strip under the new-thread composer (`ComposerBar`) always holds the
-GUI / Terminal chip. When the folder is a Git repository it also chooses where the thread runs
+schedule chip (**Run once**, see Automations). When the folder is a Git repository it also chooses where the thread runs
 (`WorktreeBar`, which puts that chip first and a divider after it, so the chip keeps its place when Git's
 answer arrives; for a folder without Git, or when Git cannot be asked, the strip holds the chip alone).
 **Current directory**, the default, runs it in the
@@ -1088,10 +1173,13 @@ stop (Shift+Tab from the message box reaches it): Up, Down or Enter opens the ca
 current prompt, Up, Down, Home and End move, Enter jumps, Escape closes it. Only the loaded
 messages are listed, and held (steered or queued) messages are not prompts yet. While the view is
 scrolled up (more than 80 px from the newest message), a **Scroll to bottom** button floats above the
-message box; it takes the reader to the newest message and following new output again. In a pane narrower than 54 rem, where the centred column would come within reach of the
+message box; it takes the reader to the newest message and following new output again. While the view follows the end it goes with
+every change of the conversation's height, not only with new messages (a reply's text is drawn a moment after it
+arrives, and file chips, math and the changed-files panel later still); a change within a second of a click or a
+key press in the conversation is taken to be a step the reader opened or closed, and leaves the view where it is. In a pane narrower than 54 rem, where the centred column would come within reach of the
 rail, the conversation and the message box keep a left margin wider than the rail while it is there, so that it does not touch the text.
 
-**Find in a thread.** Ctrl+F (Cmd+F on a Mac) opens a search bar over the top right of a GUI
+**Find in a thread.** Ctrl+F (Cmd+F on a Mac) opens a search bar over the top right of a
 thread (`ChatFindBar`, with the pure logic in `lib/chat-find.ts`), from the message box or anywhere
 else in the thread's pane but not from inside a dialog. It searches the text of the user's messages
 and the agent's replies, ignoring case; reasoning, tool calls and command output are not searched.
@@ -1128,7 +1216,7 @@ are read. The match is case-insensitive on the written text (`shared/text-search
 find bar), so Markdown markers count: a search for text that only exists in the rendered form can miss.
 Results are messages, at most three per thread (with the count of the rest) and 100 threads, the thread's
 title, project and age as the heading and a snippet with the match marked. Enter or a click opens the
-thread (a terminal thread is only opened) and hands `store/inbox-find.ts` a request that the thread's
+thread and hands `store/inbox-find.ts` a request that the thread's
 `ChatThreadView` takes: it opens its own find bar with the query, loads earlier messages as needed and
 makes the first match inside that message the current one (`target` of `ChatFindBar`), or the nearest
 match when that message's text is drawn differently.
@@ -1353,7 +1441,7 @@ box's toolbar (`AsideHistoryChip`, the `btw` mark and the count, shown once the 
 question), which opens the card on the newest one and closes it again; `/btw` with no question does the
 same once there is a history (without one it still asks for a question).
 
-**Next-message suggestion.** Once a GUI thread's turn has ended and stood still for five seconds
+**Next-message suggestion.** Once a thread's turn has ended and stood still for five seconds
 (`SUGGESTION_DELAY_MS`) with the message box empty (nothing typed, quoted or attached), the thread's own model
 guesses the message the person would most likely send next, and the empty box shows it as ghost text with a
 Tab key hint. Tab (or the right arrow) takes it into the box, where it can be changed or sent; Enter in the
@@ -1369,7 +1457,7 @@ card, no held message, no staged revert (`suggestionTurn` in `lib/next-suggestio
 about at most once, including after a failure, which shows nothing; the guess is kept in memory per thread
 (`store/inbox-suggestion.ts`) and becomes stale with the next turn. Opening a thread whose last turn has no
 guess yet asks after the same five seconds. The Inbox settings menu turns it on ("Suggest next message", off
-by default, `mde.inbox-next-suggestion`); each guess is one extra model call. Terminal threads have none.
+by default, `mde.inbox-next-suggestion`); each guess is one extra model call.
 
 **Goals (`/goal`).** A goal keeps the agent working on an objective until a reviewer decides it is met.
 It is OpenCode's own `opencode.goal` plugin; MDE only starts, controls and shows it, and keeps no goal
@@ -1484,7 +1572,11 @@ on across the messages. The group is drawn in the message where it
 starts, and a message left with nothing to draw (and no error) renders nothing. Layouts are reused when
 they did not change, so streaming does not redraw the earlier messages. The group never opens by itself,
 not even while the agent is at it: it spins and shimmers in the present tense ("Running 2 commands"),
-keeps the failed count, and opens on a click. All other tools use this same grouping rule, including writes,
+keeps the failed count, and opens on a click. It goes on spinning in the pauses between the agent's steps
+(a finished round of tool calls, the next message not yet begun), so that it does not look done before it
+is: the last group of the last run is live for as long as the thread is running and nothing is drawn after
+it, and stops when the answer begins, a question is asked or the turn ends. A single finished step, which
+is otherwise drawn as its own row, is drawn as the line in such a pause for the same reason. All other tools use this same grouping rule, including writes,
 edits, patches, subagents and unknown tools. Opening the group shows their full
 views: file changes start shut with their counts, and consecutive
 subagents from the same step retain their grouped cards and model labels. Active permission and
@@ -1804,7 +1896,7 @@ whose worktree was deleted lists none; an OpenCode without the routes (an untagg
 
 **Permission modes.** A thread can run with permissions of its own instead of the OpenCode configuration's
 (`PermissionModePicker`). It is a chip in the composer's toolbar, before the MCP chip, on the new-thread page as in a
-GUI thread (there it only picks; in a thread it changes the running thread), a quiet shield for the default and
+thread (there it only picks; in a thread it changes the running thread), a quiet shield for the default and
 the mode's icon and name otherwise (the name goes below the medium toolbar size). A sidebar row shows a small mark
 for a thread that is not on the default, in the warning colour for the two full-access modes. Every fresh new-thread
 page starts on the default; only a saved draft keeps another mode (`ChatDraftChoice.permissionMode`), and nothing
@@ -1967,7 +2059,8 @@ When an Inbox thread becomes Done, needs input (a question or a permission) or F
 sound, flash its taskbar button and colour it, so that a long run does not have to be watched. Settings →
 Notifications has a switch and volume for the sounds, a sound for each of the three states (with a play
 button), a switch to stay quiet while MDE is the window in use, how the taskbar flashes, and, on Windows, a
-switch for the colour and badge, which stay on for as long as threads are unread or waiting. All of it is on by default except that last quiet switch.
+switch for the colour and badge, which stay on for as long as threads are unread or waiting. On macOS the same
+switch is called Dock badge and shows the count on MDE's Dock icon. All of it is on by default except that last quiet switch.
 
 The renderer decides, because it has the threads, the open thread and the window's focus
 (`lib/alerts.ts`, started by `lib/alert-controller.ts` from `App`). It watches `inboxThreads` and compares each
@@ -1999,6 +2092,8 @@ are read or answered. Only the flash is for when MDE is not in use, and the focu
   Needs input, `normal` (green) for Done.
 - **Badge (Windows only):** an overlay icon with the number, 16 x 16. It is drawn in code as raw pixels
   (`taskbar-badge.ts`: a disc and a 3 x 5 pixel font), so no image or font ships.
+- **Dock badge (macOS only):** the same count as the Dock icon's badge (`app.dock.setBadge`). The system draws
+  it and it is always red, so the three colours are not shown there. Not checked on a real Mac.
 
 None of this needs anything installed: these are window states Windows draws itself, which is why the ZIP
 release is enough. Windows toast notifications are left out on purpose, because they need a Start Menu
@@ -2012,6 +2107,10 @@ Notifications → Toasts turns them off (on by default). There is no history: a 
 - **A thread changing** (`lib/toast-controller.ts`, watching `inboxThreads` like the alerts): Done, Failed, Needs
   input or Needs permission (the same `alertKind`), and Woke up when a snooze ends. They show even for the thread that
   is open; the list loaded at startup shows none.
+  The conversation keeps the boxed error on the assistant's response. A run-ending failure note is hidden when it
+  repeats that response's error without adding detail; the existing Failed toast announces the failure. Notes with
+  different errors, extra detail, or no preceding loaded assistant error remain visible. This is a display filter
+  over the loaded conversation, so a match across pages is recognized once both records are loaded.
 - **A chat started in the background** with Ctrl/Cmd+Enter (`createThread` in `store/inbox-chat.ts`).
 - **The MDE MCP:** a thread an agent started (a new thread with `spawnedBy`, created in the last two minutes, with the
   calling thread's title) and a terminal pane an agent opened (`openForAgent` in `store/inbox-terminal.ts`), which
@@ -2037,7 +2136,7 @@ F12 shrinks the main window into a small always-on-top list of Inbox threads, wi
 and a restore button; F12 again restores the full window. The list is the Inbox sidebar's: one list,
 pinned threads first and then the latest activity, not grouped by project. Each row has the title
 (bold while unread, a pin for a pinned thread), the project's icon and name with the branch, how long
-ago the thread was active (the date is its tooltip) and its status. It shows GUI and Terminal chat
+ago the thread was active (the date is its tooltip) and its status. It shows the
 threads using the same titles, branch names, unread state and API-driven status as the Inbox. Parked
 threads are hidden. Threads whose folder was removed are labelled with the directory name, and
 worktrees with the original repository name. It uses Inbox metadata independently of workspace sessions and terminal layouts. New activity stays unread while only the mini Inbox is
@@ -2064,7 +2163,9 @@ written to disk.
 A To Do project is a separate kind of project: a board with a name, an uppercase shorthand
 (2–10 characters, such as `MDE`) and columns, which default to To Do, In Progress and Done. Tasks
 have a title and description, are numbered per project (`MDE-12`), and move between columns by
-drag and drop. Ctrl+F (Cmd+F on macOS) searches tasks in the open To Do project, and Ctrl+N (Cmd+N)
+drag and drop. Ctrl+F (Cmd+F on macOS) searches tasks in the open To Do project; tasks in the Done column
+are left out until **Include done** in the search's footer is ticked, which is unticked again each time the
+search opens (beside it the search says how many done tasks it left out). Ctrl+N (Cmd+N)
 opens the new-task dialog for the first column, like a column's + button. In the task dialog, Enter in the
 title saves the task, and so does Ctrl+Enter (Cmd+Enter) in the description, where plain Enter still
 starts a new paragraph.
@@ -2092,7 +2193,8 @@ shared `TerminalSurface`, and `TerminalSelectionActionsContext` is how a termina
 and Paste.
 On Linux, left-dragged text also becomes the desktop's separate PRIMARY selection, which middle-click
 pastes without changing the normal clipboard. WSL terminals on Windows provide the same middle-click
-workflow within MDE using an in-app transient selection; native Windows terminals do not.
+workflow within MDE using an in-app transient selection, and so do terminals on macOS; native Windows
+terminals do not.
 
 ### Files and drag and drop
 
@@ -2149,7 +2251,7 @@ stays text). Code spans and code blocks stay code. KaTeX runs with `trust: false
 4,000-character limit; a formula it cannot read shows as its source in monospace with the reason as a tooltip.
 Display math scrolls horizontally when wider than the reply. KaTeX's fonts and CSS are bundled; nothing loads
 from the network.
-In an Inbox GUI chat, a web (http/https) link carries a globe icon before it, so a click that opens the browser
+In an Inbox chat, a web (http/https) link carries a globe icon before it, so a click that opens the browser
 is seen coming. A file of the thread's folder that a reply or its reasoning names, as inline code (`src/a.ts`,
 `src/a.ts:12`) or as a link (relative, absolute under the folder, `file://`, or `#L12`), becomes a chip with a
 file icon; clicking it, or Enter on it, opens the file in the file viewer (at its top: the viewer has no line
@@ -2189,6 +2291,22 @@ MDE polls terminal metadata every ten seconds, on directory changes and on windo
 refreshes. The Inbox’s worktrees create and remove a worktree on request through a separate runner.
 Every Git process goes through a shared pool of three slots (`src/main/spawn-limiter.ts`), where
 polled readers queue behind requests such as opening an Inbox diff.
+
+In WSL, what costs is the round trip, not Git: every `wsl.exe` that is started takes about 100 ms,
+while the Git command it runs in the distro takes a few milliseconds. So the commands of one reading
+(the Git chip, an Inbox thread's changes, a diff, the Git graph, a commit) travel together
+(`src/main/git-batch.ts`): one `wsl.exe` starts one bash script in the distro, which finds the
+checkout root, reads `HEAD`, probes the filter drivers and then runs the commands one after the
+other, each with the same safety options and environment as a single command. Every value is a
+positional argument of the script, and the results come back separated by a boundary that is random
+for each batch. A reading takes a second round trip only when its second question depends on the
+first answer: the line counts of untracked files, and the diff of an untracked or renamed file.
+Commands that would not fit on one Windows command line are spread over several round trips.
+Natively the same steps run as separate processes (`runGitCheckoutBatch` in `src/main/git.ts`), so
+both paths ask Git the same questions. A terminal's folder is likewise resolved and checked to be a
+directory in one round trip (`canonicalWslDirectory`), without a login shell. Listing a folder of the
+file tree still costs one `wsl.exe` each; a helper process that stays running in the distro would
+remove that cost and is noted in `git-batch.ts` as the next step.
 
 Git and `wsl.exe` processes are started on a worker thread (`src/main/exec-host.ts`), not on the main
 thread. Starting a process is a blocking call, and on Windows it occasionally takes over 100 ms (about
@@ -2273,6 +2391,30 @@ Regression evidence and platform limits are in
   (`OPENCODE_CONFIG_DIR`, else `XDG_CONFIG_HOME`, else `~/.config`) and reads and writes the file
   through `\\wsl.localhost\<distro>\...`; links are resolved with `realpath` inside the distro.
 
+### WSL resource meter
+
+Settings → Appearance → **WSL resource meter** (Windows only, off by default, saved with the local
+terminal settings) puts WSL's CPU and memory use in the title bar of the full window
+(`WslResourceMeter`): the processor load as a percentage and the memory in use, each with a thin bar
+that turns amber from 75% and red from 90%. Clicking it opens a panel with the load over the last two
+minutes, one bar for each logical processor, and memory and swap. With no distro running it reads
+"WSL idle".
+
+The numbers come from `/proc/stat` and `/proc/meminfo` inside a distro (`src/main/wsl/resources.ts`).
+All WSL 2 distros run in one virtual machine, so they describe WSL as a whole, whichever distro they
+are read in. A load is the difference between two readings, so the first reading has memory only.
+Memory in use is `MemTotal − MemAvailable`, which leaves out caches Linux can give back; Task Manager's
+figure for WSL includes them and is usually higher.
+
+Because every `wsl.exe` costs about 100 ms, there is no process for each reading. While the meter is
+mounted, the main process keeps one `wsl.exe` running a fixed `sh` loop that writes a reading every two
+seconds, and sends each one to the window (`wsl:resources`). The renderer starts and stops it
+(`wsl:resources-watch`) by mounting and unmounting the meter; it also stops when the page reloads, the
+window closes or MDE quits, and the loop ends by itself once its output is closed. The loop is only
+started in a distro that is already running (`wsl.exe --list --running`), so the meter never starts WSL;
+with none running the main process looks again every ten seconds. While the loop runs it counts as
+activity in the distro, so WSL does not shut down for being idle as long as the meter is shown.
+
 Native Windows shells also resolve before PTY creation: the default PowerShell
 and built-in PowerShell/cmd aliases use system locations. Custom Windows shells,
 including PowerShell 7, need a full drive-qualified `.exe`/`.com` path; ambiguous
@@ -2289,8 +2431,7 @@ the key now reaches the program in the terminal like any other. Split a pane wit
 instead. The Agents section of Settings and its per-agent executable and argument fields are gone.
 Their stored `agents` entry in `mde.terminal-settings` is ignored and not migrated. The one
 setting the Inbox still needs, the command that starts OpenCode, moved to Settings → OpenCode →
-Executable and starts again as `opencode`; set it there if you had changed it. Terminal threads in the
-Inbox are not affected.
+Executable and starts again as `opencode`; set it there if you had changed it.
 
 ### Removed OpenCode status integration
 

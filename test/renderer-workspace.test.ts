@@ -100,7 +100,6 @@ describe('renderer workspace event bridge', () => {
     })
     useWorkspace.setState({
       ready: false,
-      inboxTerminalHighlights: {},
       sessions: [],
       todoProjects: [],
       todoTasks: [],

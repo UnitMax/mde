@@ -10,6 +10,7 @@ import {
   SquareTerminal,
   TerminalSquare,
   X,
+  CalendarClock,
   type LucideIcon
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -23,6 +24,7 @@ const ICONS: Record<ToastIcon, LucideIcon> = {
   woke: AlarmClock,
   background: Send,
   'agent-thread': Bot,
+  automation: CalendarClock,
   'agent-terminal': SquareTerminal,
   approval: TerminalSquare,
   error: CircleAlert
@@ -48,7 +50,7 @@ function ToastCard({ toast }: { toast: Toast }): JSX.Element {
         <div className="pt-2">
           <div
             role="status"
-            className="mde-toast group relative overflow-hidden rounded-lg border border-line-strong bg-elevated shadow-xl shadow-shade/50"
+            className="mde-toast group relative overflow-hidden rounded-lg border border-line-strong bg-elevated"
             data-tone={toast.tone}
             data-testid="toast"
             onKeyDown={onKeyDown}

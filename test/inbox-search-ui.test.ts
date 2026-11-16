@@ -149,16 +149,6 @@ describe('the search over all threads', () => {
     expect(useInboxFind.getState().request?.messageId).toBe('msg_9')
   })
 
-  it('only opens a terminal thread, which has no conversation to search', async () => {
-    useWorkspace.setState({ inboxThreads: [thread('ses_a', 'Fix login', { mode: 'terminal' }), thread('ses_b', 'Plan')] })
-    await render()
-    await type('needle')
-    await vi.waitFor(() => expect(rows()).toHaveLength(3))
-    await key('Enter')
-    expect(useWorkspace.getState().selectedInboxThreadId).toBe('ses_a')
-    expect(useInboxFind.getState().request).toBeNull()
-  })
-
   it('asks again while the threads are still being read, and says how far it is', async () => {
     search.mockImplementation(async () => (search.mock.calls.length < 3 ? answer({ results: [], indexed: 1, total: 4 }) : answer({ indexed: 4, total: 4 })))
     await render()

@@ -314,6 +314,16 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
                     onClick={() => updateSettings({ terminalCards: !settings.terminalCards })}
                   />
 
+                  {platform?.isWindows && (
+                    <SwitchRow
+                      checked={settings.wslResourceMeter}
+                      label="WSL resource meter"
+                      description="Show the CPU and memory use of WSL in the title bar. Click it for each processor and a graph. While it is shown, WSL does not shut down for being idle."
+                      testId="wsl-resource-meter-setting"
+                      onClick={() => updateSettings({ wslResourceMeter: !settings.wslResourceMeter })}
+                    />
+                  )}
+
                   <FancyModeSettings />
                 </div>
               </section>
@@ -403,7 +413,7 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
                     </p>
                   ) : (
                     <p className="text-[11px] text-fg-subtle">
-                      The command that starts OpenCode for the Inbox: its background service and its terminal threads.
+                      The command that starts OpenCode's background service for the Inbox.
                       A missing program is reported by the Inbox, not here.
                     </p>
                   )}

@@ -4,6 +4,7 @@ import { GitGraphPanel, WorkingPane } from '@/components/inbox/GitGraphView'
 import { ChangeDiffViewer } from '@/components/inbox/InboxChanges'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { useSessionGitGraph } from '@/store/session-git-graph'
+import { useWorkspace } from '@/store/workspace'
 
 const REFRESH_INTERVAL_MS = 10_000
 
@@ -102,6 +103,11 @@ export function SessionGitGraph({ sessionId, terminalIds, filePath }: {
         identity={terminalId}
         source={source}
         onClose={() => useSessionGitGraph.getState().close()}
+        // The Inbox shows the thread; the graph does not stay over it, or wait for the terminals to be shown again.
+        onOpenThread={(id) => {
+          useSessionGitGraph.getState().close()
+          useWorkspace.getState().selectInboxThread(id)
+        }}
         workingCount={info?.changedFiles ?? 0}
         refreshKey={summary}
         renderWorking={(close) => <SessionWorking terminalId={terminalId} summary={summary} onOpen={setDiff} onClose={close} />}

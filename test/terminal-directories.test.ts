@@ -100,11 +100,4 @@ describe('saved terminal directories', () => {
     await fs.writeFile(join(directory, TERMINAL_DIRECTORIES_FILE), 'invalid JSON')
     expect((await open()).get('pane', session)).toBeUndefined()
   })
-
-  it('leaves Inbox conversation terminal directories to the recorded API thread', async () => {
-    const store = await open()
-    const thread = { ...session, id: 'inbox-thread:ses_one' }
-    store.remember(thread.id, thread, directory)
-    expect(store.get(thread.id, thread)).toBeUndefined()
-  })
 })

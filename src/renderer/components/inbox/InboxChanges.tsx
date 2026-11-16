@@ -453,21 +453,12 @@ type SidebarTab = (typeof SIDEBAR_TABS)[number]
 const SIDEBAR_TAB_LABELS: Record<SidebarTab, string> = { files: 'Files', changes: 'Changes', tools: 'Tools', permissions: 'Permissions', terminal: 'Terminal' }
 const SIDEBAR_TAB_ICONS: Record<SidebarTab, LucideIcon> = { files: Folder, changes: FileDiff, tools: Wrench, permissions: ShieldCheck, terminal: SquareTerminal }
 /**
- * A thread has changes to show; the page for a new one has none yet, so it offers Files and Terminal. Tool calls
- * are only known for a GUI thread: a terminal thread's agent runs where MDE cannot see its calls. Permissions is
- * there only while the thread's project has "Always allow" approvals saved.
+ * A thread has changes and tool calls to show; the page for a new one has none yet, so it offers Files and Terminal.
+ * Permissions is there only while the thread's project has "Always allow" approvals saved.
  */
-const tabsFor = (threadId: string | undefined, gui: boolean, saved: number): readonly SidebarTab[] =>
+const tabsFor = (threadId: string | undefined, saved: number): readonly SidebarTab[] =>
   SIDEBAR_TABS.filter((item) =>
-    (item !== 'changes' || threadId) && (item !== 'tools' || (threadId && gui)) && (item !== 'permissions' || (threadId && saved > 0)))
-
-/** The open thread, when it is a GUI chat, whose tool calls the Tools tab lists. */
-function useGuiThread(threadId: string | undefined): InboxThread | undefined {
-  return useWorkspace((s) => {
-    const thread = threadId ? s.inboxThreads.find((item) => item.id === threadId) : undefined
-    return thread && thread.mode !== 'terminal' ? thread : undefined
-  })
-}
+    (item !== 'changes' || threadId) && (item !== 'tools' || threadId) && (item !== 'permissions' || (threadId && saved > 0)))
 /**
  * Each panel draws its own tabs in its header, so switching replaces the strip that has focus. The tab that was
  * chosen is focused again in the one that takes its place.
@@ -480,15 +471,14 @@ let refocusTab: SidebarTab | null = null
  */
 function SidebarTabs({ threadId }: { threadId?: string }): JSX.Element {
   const stored = useInboxChanges((s) => s.tab)
-  const gui = Boolean(useGuiThread(threadId))
   const saved = useSavedPermissionCount(threadId)
-  const tabs = tabsFor(threadId, gui, saved)
+  const tabs = tabsFor(threadId, saved)
   const tab = tabs.includes(stored) ? stored : 'files'
   const count = useInboxChanges((s) => {
     const value = threadId ? s.entries[inboxChangesKey(threadId)]?.value : undefined
     return value?.available ? value.fileCount : 0
   })
-  const toolCount = useInboxChat((s) => (threadId && gui ? toolCallCount(s.threads[threadId]?.messages ?? []) : 0))
+  const toolCount = useInboxChat((s) => (threadId ? toolCallCount(s.threads[threadId]?.messages ?? []) : 0))
   const choose = (next: SidebarTab, pointer = false): void => {
     // Nothing is replaced when the tab is already showing, so nothing would take the focus back.
     if (tab === next) return
@@ -728,7 +718,7 @@ function ChangesAside({ threadId }: { threadId: string }): JSX.Element {
   )
 }
 
-/** The Tools tab: every tool call of the open GUI thread, MCP calls included, to be looked over. */
+/** The Tools tab: every tool call of the open thread, MCP calls included, to be looked over. */
 function ToolsAside({ thread }: { thread: InboxThread }): JSX.Element {
   return (
     <aside data-testid="inbox-tools-panel" className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-line bg-panel">
@@ -846,11 +836,10 @@ export function InboxSidebar({ session, threadId }: { session: DirectoryContext;
   const collapsed = useWorkspace((s) => s.fileTreeCollapsed)
   const floating = useInboxView((s) => s.sidebarFloating)
   const graphOpen = useInboxChanges((s) => s.graphThreadId !== null)
-  const guiThread = useGuiThread(threadId)
   const thread = useWorkspace((s) => (threadId ? s.inboxThreads.find((item) => item.id === threadId) : undefined))
   const saved = useSavedPermissionCount(threadId)
   // Changes, Tools and Permissions belong to a thread. Without one, they are not offered and Files shows in their place.
-  const tab = tabsFor(threadId, Boolean(guiThread), saved).includes(stored) ? stored : 'files'
+  const tab = tabsFor(threadId, saved).includes(stored) ? stored : 'files'
   const shown = Boolean(threadId) && !collapsed
   // A thread whose worktree was deleted has no folder: nothing to list, and nothing to ask Git about.
   const gone = useWorkspace((s) => (threadId ? s.inboxThreads.find((item) => item.id === threadId)?.worktreeRemovedAt !== undefined : false))
@@ -868,7 +857,7 @@ export function InboxSidebar({ session, threadId }: { session: DirectoryContext;
   if (floating) {
     if (graphOpen) return null
     if (collapsed) return <InboxSidebarMenuButton threadId={threadId} />
-    return <InboxSidebarMenu session={session} gui={Boolean(guiThread)} {...(threadId ? { threadId } : {})} />
+    return <InboxSidebarMenu session={session} {...(threadId ? { threadId } : {})} />
   }
   // Tool calls are in the conversation, which a deleted worktree leaves as it was.
   if (gone && threadId && !collapsed && (tab === 'files' || tab === 'changes')) {
@@ -901,7 +890,7 @@ export function InboxSidebar({ session, threadId }: { session: DirectoryContext;
         />
       </div>}
       {tab === 'changes' && threadId && <ChangesAside threadId={threadId} />}
-      {tab === 'tools' && guiThread && <ToolsAside thread={guiThread} />}
+      {tab === 'tools' && thread && <ToolsAside thread={thread} />}
       {tab === 'permissions' && thread && <PermissionsAside thread={thread} />}
       {tab === 'terminal' && <TerminalAside threadId={threadId} />}
     </InboxSidebarFrame>

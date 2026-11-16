@@ -177,6 +177,8 @@ export interface ChatComposerProps {
   disabled?: boolean
   /** True while something outside the box makes sending impossible (the Git bar's branch name is invalid). */
   sendBlocked?: boolean
+  /** Sending saves an automation rather than starting a thread; the send button then carries this word. */
+  scheduled?: { label: string; title: string }
   /** Shown directly under the box, above any error; the new-thread page puts its Git bar here. */
   footer?: ReactNode
   /** More controls for the right side of the toolbar, before the context meter; the MCP servers go here. */
@@ -243,6 +245,7 @@ export const ChatComposer = forwardRef(function ChatComposer({
   autoFocus = false,
   disabled = false,
   sendBlocked = false,
+  scheduled,
   footer,
   extraPickers,
   commands = NO_COMMANDS,
@@ -1002,6 +1005,7 @@ export const ChatComposer = forwardRef(function ChatComposer({
                   disabled={invocation ? !canRun || missingArgument || strayArgument : !canSend}
                   sending={sending}
                   backgroundShortcut={allowBackgroundSend ? `${mac ? 'Cmd' : 'Ctrl'}+Enter` : undefined}
+                  scheduled={invocation ? undefined : scheduled}
                   command={invocation ? { name: invocation.command.name, icon: <SlashCommandIcon name={invocation.command.name} className="h-4 w-4" /> } : undefined}
                   onSend={() => void (invocation ? runCommand(invocation) : send())}
                   onMenuClosed={() => messageRef.current?.focus()}

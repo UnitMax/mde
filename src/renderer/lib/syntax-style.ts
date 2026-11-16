@@ -2,7 +2,7 @@ import type { TagStyle } from '@codemirror/language'
 import { tags } from '@lezer/highlight'
 
 /**
- * How code is coloured, shared by the file viewer and the chat's diffs so the two always agree.
+ * How code is coloured, shared by the file viewer, chat code blocks and diffs so they always agree.
  * The colors are theme variables, which follow the application theme.
  */
 export const SYNTAX_STYLE: readonly TagStyle[] = [

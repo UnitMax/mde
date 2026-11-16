@@ -53,6 +53,14 @@ interface DescriptionTokenMatch {
   match: TodoDescriptionMatch
 }
 
+/** The column finished tasks are in; every project has the same three columns. */
+export const TODO_DONE_COLUMN_ID = 'done'
+
+/** The results the search lists: tasks that are done only when asked for. */
+export function listedTodoMatches(matches: readonly TodoSearchMatch[], includeDone: boolean): TodoSearchMatch[] {
+  return includeDone ? [...matches] : matches.filter((match) => match.item.task.columnId !== TODO_DONE_COLUMN_ID)
+}
+
 export function buildTodoSearchItems(
   project: TodoProject,
   tasks: readonly TodoTask[]

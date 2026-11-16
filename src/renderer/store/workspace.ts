@@ -19,14 +19,9 @@ import type {
 } from '@shared/types'
 import { fileRootTerminalId } from '@/lib/file-root'
 import { disposeSession } from '@/terminal/sessions'
-import { inboxThreadTerminalId } from '@shared/inbox-thread-terminal'
 import { viewportSettle } from '@/terminal/viewport-settle'
 import { isInboxThreadUnread } from '@/lib/inbox'
 import { getWorkspaceNavigation, saveWorkspaceNavigation, type WorkspaceView } from '@/lib/workspace-navigation'
-import {
-  inboxTerminalHighlightTone,
-  type InboxTerminalHighlight,
-} from '@/lib/inbox-terminal-highlight'
 
 let eventBridgeReady = false
 
@@ -78,8 +73,6 @@ interface WorkspaceState {
   settingsDialog: SettingsDialogState
   /** The OpenCode configuration editor, opened from Settings → OpenCode. */
   opencodeConfigDialog: { open: boolean }
-  /** Brief border animations for Inbox Terminal chats, keyed by thread ID and never persisted. */
-  inboxTerminalHighlights: Record<string, InboxTerminalHighlight>
   platform: PlatformInfo | null
   /** Owned by the main process, which resizes the window; mirrored here to pick the UI. */
   windowMode: WindowMode
@@ -133,7 +126,6 @@ interface WorkspaceState {
   setTerminalDirectory: (update: PtyDirectoryUpdate) => void
   noteExit: (info: PtyExitInfo) => void
   clearExit: (id: string) => void
-  clearInboxTerminalHighlight: (threadId: string, token: number) => void
   openSettings: (section?: SettingsSection) => void
   closeSettings: () => void
   openOpenCodeConfig: () => void
@@ -170,7 +162,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   inboxCues: {},
   settingsDialog: { open: false, section: 'appearance' },
   opencodeConfigDialog: { open: false },
-  inboxTerminalHighlights: {},
   platform: null,
   windowMode: 'normal',
   wslAvailable: false,
@@ -488,14 +479,6 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       return { exits }
     }),
 
-  clearInboxTerminalHighlight: (threadId, token) =>
-    set((state) => {
-      if (state.inboxTerminalHighlights[threadId]?.token !== token) return state
-      const inboxTerminalHighlights = { ...state.inboxTerminalHighlights }
-      delete inboxTerminalHighlights[threadId]
-      return { inboxTerminalHighlights }
-    }),
-
   openSettings: (section = 'appearance') => set({ settingsDialog: { open: true, section } }),
 
   closeSettings: () =>
@@ -545,19 +528,12 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   removeInboxThread: async (id, options) => {
     await window.api.inbox.remove({ id, ...(options?.removeWorktree ? { removeWorktree: true } : {}) })
-    const terminalId = inboxThreadTerminalId(id)
-    disposeSession(terminalId)
-    get().setStatus(terminalId, 'none')
-    get().clearExit(terminalId)
-    get().setTerminalDirectory({ terminalId, directory: null })
     set((state) => {
       const { [id]: _cue, ...inboxCues } = state.inboxCues
-      const { [id]: _highlight, ...inboxTerminalHighlights } = state.inboxTerminalHighlights
       return {
         inboxThreads: state.inboxThreads.filter((thread) => thread.id !== id),
         selectedInboxThreadId: state.selectedInboxThreadId === id ? null : state.selectedInboxThreadId,
         inboxCues,
-        inboxTerminalHighlights,
       }
     })
   },
@@ -565,16 +541,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   upsertInboxThread: (thread) => {
     const state = get()
     const previous = state.inboxThreads.find((item) => item.id === thread.id)
-    const tone = inboxTerminalHighlightTone(previous, thread)
-    set({
-      inboxThreads: withInboxThread(state.inboxThreads, thread),
-      ...(tone ? {
-        inboxTerminalHighlights: {
-          ...state.inboxTerminalHighlights,
-          [thread.id]: { tone, token: (state.inboxTerminalHighlights[thread.id]?.token ?? 0) + 1, at: Date.now() },
-        },
-      } : {}),
-    })
+    set({ inboxThreads: withInboxThread(state.inboxThreads, thread) })
     // New activity on the thread being read stays unread until the person clicks or types in it (or opens it
     // again), so a reply that lands while they look elsewhere is not lost. It is also cued, for a moment.
     if (

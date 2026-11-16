@@ -88,8 +88,7 @@ export function InboxSearchDialog({ open, onOpenChange }: { open: boolean; onOpe
     if (!row) return
     const text = asked
     selectInboxThread(row.thread.id)
-    // A terminal thread has no conversation to search in; it is only opened.
-    if (row.thread.mode !== 'terminal') useInboxFind.getState().ask({ threadId: row.thread.id, query: text, messageId: row.hit.messageId })
+    useInboxFind.getState().ask({ threadId: row.thread.id, query: text, messageId: row.hit.messageId })
     close(false)
   }
 

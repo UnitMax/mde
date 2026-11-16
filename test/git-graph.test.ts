@@ -8,14 +8,17 @@ import { createGitCommandRunner, createGitFetchRunner, repositoryFetchPrograms }
 import {
   fetchErrorMessage,
   fetchGitWithRunners,
+  parseGitCheckoutHeads,
   parseGitGraphLog,
   parseGitGraphRefs,
   parseGitNameStatus,
   readGitCommitDiffWithRunner,
   readGitCommitWithRunner,
   readGitGraphWithRunner,
+  threadsInCheckouts,
 } from '../src/main/git-graph'
-import type { DirectoryContext } from '../src/shared/types'
+import { readInboxGitGraphWithThreads } from '../src/main/inbox/changes'
+import type { DirectoryContext, InboxThread } from '../src/shared/types'
 
 const run = promisify(execFile)
 const hash = (seed: string): string => seed.repeat(40).slice(0, 40)
@@ -43,6 +46,37 @@ describe('Git graph parsing', () => {
       { hash: hash('a'), name: 'origin/main', kind: 'remote' },
       { hash: hash('b'), name: 'v1', kind: 'tag' },
       { hash: hash('c'), name: 'light', kind: 'tag' },
+    ])
+  })
+
+  it('reads every checkout with its commit and branch, leaving out a bare repository and a missing folder', () => {
+    expect(parseGitCheckoutHeads([
+      `worktree /home/me/app\nHEAD ${hash('a')}\nbranch refs/heads/main`,
+      `worktree /home/me/wt/one\nHEAD ${hash('b')}\ndetached`,
+      `worktree /home/me/wt/new\nHEAD ${'0'.repeat(40)}\nbranch refs/heads/unborn`,
+      `worktree /home/me/wt/gone\nHEAD ${hash('c')}\nbranch refs/heads/gone\nprunable gitdir file points to non-existent location`,
+      'worktree /home/me/bare.git\nbare',
+    ].join('\n\n') + '\n')).toEqual([
+      { root: '/home/me/app', head: hash('a'), branch: 'main' },
+      { root: '/home/me/wt/one', head: hash('b'), branch: null },
+      { root: '/home/me/wt/new', head: null, branch: 'unborn' },
+    ])
+  })
+
+  it('puts a thread in the innermost checkout its directory is in, however a Windows path is written', () => {
+    const checkouts = [
+      { root: '/home/me/app', head: hash('a'), branch: 'main' },
+      { root: '/home/me/app/.worktrees/x', head: hash('b'), branch: 'x' },
+      { root: 'C:/Users/Me/app', head: hash('c'), branch: 'win' },
+    ]
+    expect(threadsInCheckouts(checkouts, [
+      { id: 'ses_root', directory: '/home/me/app' },
+      { id: 'ses_sub', directory: '/home/me/app/packages/ui/' },
+      { id: 'ses_inner', directory: '/home/me/app/.worktrees/x/packages' },
+      { id: 'ses_sibling', directory: '/home/me/app-two' },
+      { id: 'ses_win', directory: 'c:\\Users\\me\\App\\src' },
+    ]).map((item) => [item.threadId, item.branch])).toEqual([
+      ['ses_root', 'main'], ['ses_sub', 'main'], ['ses_inner', 'x'], ['ses_win', 'win'],
     ])
   })
 
@@ -124,6 +158,34 @@ describe.skipIf(!hasPosixGit)('Git graph against a real repository', () => {
 
   afterAll(async () => {
     if (root) await rm(root, { recursive: true, force: true })
+  })
+
+  it('says which threads run in which checkout of the repository, and at which commit', async () => {
+    const tree = join(root, 'tree')
+    const linked = join(root, 'linked')
+    await git(root, 'clone', '--quiet', `file://${origin}`, tree)
+    await git(tree, 'worktree', 'add', '--quiet', '-b', 'side', linked, 'HEAD~1')
+    await mkdir(join(linked, 'sub'))
+    const thread = (id: string, directory: string, extra: Partial<InboxThread> = {}): InboxThread => ({
+      id, title: id, directory, target: { kind: 'native' }, branch: null, folderId: 'fld_app', createdAt: 1, lastActivityAt: 1,
+      readAt: 0, archived: false, status: 'idle', ...extra,
+    })
+    const threads = [
+      thread('ses_main', tree),
+      thread('ses_side', join(linked, 'sub')),
+      thread('ses_archived', linked, { archived: true }),
+      thread('ses_wsl', tree, { target: { kind: 'wsl', distro: 'Ubuntu' } }),
+      thread('ses_other', clone),
+    ]
+    const here: DirectoryContext = { id: 'ses_main', name: 'tree', kind: 'native', path: tree, createdAt: '' }
+    const graph = await readInboxGitGraphWithThreads(here, 100, 'all', threads, 'ses_main')
+    const side = (await git(linked, 'rev-parse', 'HEAD')).stdout.trim()
+    expect(graph.threads).toEqual([
+      { threadId: 'ses_main', head: graph.head, branch: 'main', root: tree },
+      { threadId: 'ses_side', head: side, branch: 'side', root: linked },
+    ])
+    expect(side).not.toBe(graph.head)
+    expect(graph.commits.some((commit) => commit.hash === side)).toBe(true)
   })
 
   it('reads every commit with its refs, HEAD and upstream', async () => {

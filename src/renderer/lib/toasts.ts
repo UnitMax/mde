@@ -93,6 +93,20 @@ export function spawnedThreadToast(
   }
 }
 
+/** The toast for a thread an automation just started on its schedule, or null for any other new thread. */
+export function automationThreadToast(thread: InboxThread, now: number, context: ThreadToastContext = {}): ToastInput | null {
+  if (!thread.automationId || now - thread.createdAt > FRESH_THREAD_MS) return null
+  return {
+    key: `thread:${thread.id}`,
+    tone: 'muted',
+    icon: 'automation',
+    label: 'Automation started a thread',
+    title: threadDisplayTitle(thread),
+    ...(context.project ? { detail: context.project } : {}),
+    onOpen: () => openThreadFromToast(thread.id),
+  }
+}
+
 /** The toast for a chat the person started in the background (Ctrl+Enter), so they can still jump to it. */
 export function backgroundThreadToast(thread: InboxThread, context: ThreadToastContext = {}): ToastInput {
   return {

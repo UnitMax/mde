@@ -464,6 +464,37 @@
     font-size: 1em;
   }
 
+  .chat-code-block {
+    position: relative;
+    margin: 0.75em 0;
+  }
+
+  .chat-markdown .chat-code-block pre {
+    margin: 0;
+    padding-right: 3rem;
+  }
+
+  /* Outside the scrolling pre, so the button stays in reach when code scrolls sideways. */
+  .chat-code-copy {
+    position: absolute;
+    top: 0.4rem;
+    right: 0.4rem;
+    opacity: 0;
+    transition: opacity 120ms;
+    user-select: none;
+  }
+
+  .chat-code-block:hover .chat-code-copy,
+  .chat-code-block:focus-within .chat-code-copy {
+    opacity: 1;
+  }
+
+  @media (hover: none) {
+    .chat-code-copy {
+      opacity: 1;
+    }
+  }
+
   .chat-markdown li > p,
   .chat-markdown li > ul,
   .chat-markdown li > ol {
@@ -829,53 +860,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .terminal-file-drop-preview { animation: none; }
-}
-
-/* Inbox Terminal chat highlight (TerminalThreadHighlight): a comet travels once around the border while
-   an inset glow fades in and out. The streak is a rotating conic gradient cut down to a 2px ring. */
-@property --mde-inbox-terminal-sweep {
-  syntax: '<angle>';
-  inherits: false;
-  initial-value: 0deg;
-}
-
-.inbox-terminal-highlight {
-  --mde-inbox-terminal-hl: var(--color-accent);
-  position: absolute;
-  inset: 0;
-  z-index: 30;
-  pointer-events: none;
-}
-
-.inbox-terminal-highlight[data-tone='done'] { --mde-inbox-terminal-hl: var(--color-ok); }
-.inbox-terminal-highlight[data-tone='error'] { --mde-inbox-terminal-hl: var(--color-danger); }
-
-.inbox-terminal-highlight::before,
-.inbox-terminal-highlight::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-}
-
-.inbox-terminal-highlight::before {
-  padding: 3px;
-  background: conic-gradient(
-    from var(--mde-inbox-terminal-sweep),
-    transparent 0deg,
-    transparent 190deg,
-    color-mix(in srgb, var(--mde-inbox-terminal-hl) 18%, transparent) 240deg,
-    color-mix(in srgb, var(--mde-inbox-terminal-hl) 55%, transparent) 310deg,
-    var(--mde-inbox-terminal-hl) 352deg,
-    color-mix(in srgb, var(--mde-inbox-terminal-hl) 50%, white) 360deg
-  );
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask-composite: exclude;
-  animation: mde-inbox-terminal-sweep 1200ms cubic-bezier(0.4, 0.1, 0.3, 1) both;
-}
-
-.inbox-terminal-highlight::after {
-  box-shadow: inset 0 0 22px color-mix(in srgb, var(--mde-inbox-terminal-hl) 38%, transparent);
-  animation: mde-inbox-terminal-glow 1500ms ease-out both;
 }
 
 /*
@@ -1263,55 +1247,6 @@
   }
 }
 
-@keyframes mde-inbox-terminal-sweep {
-  0% {
-    --mde-inbox-terminal-sweep: 0deg;
-    opacity: 0;
-  }
-  8% {
-    opacity: 1;
-  }
-  65% {
-    opacity: 1;
-  }
-  100% {
-    --mde-inbox-terminal-sweep: 360deg;
-    opacity: 0;
-  }
-}
-
-@keyframes mde-inbox-terminal-glow {
-  0% {
-    opacity: 0;
-  }
-  25% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-
-@keyframes mde-inbox-terminal-fade {
-  0% {
-    opacity: 0;
-  }
-  20% {
-    opacity: 0.9;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-
-/* The cue stays, the movement goes: a still ring fades in and out instead of sweeping. */
-@media (prefers-reduced-motion: reduce) {
-  .inbox-terminal-highlight::before {
-    background: var(--mde-inbox-terminal-hl);
-    animation: mde-inbox-terminal-fade 1200ms ease-out both;
-  }
-}
-
 
 /*
  * Fancy mode (src/renderer/fancy). The animated background is a canvas behind everything (FancyBackground); panels
@@ -1407,6 +1342,8 @@
   display: grid;
   grid-template-rows: 1fr;
   pointer-events: auto;
+  /* Shadow the rounded card after the inner wrapper clips it, so the shadow has no square cutoff. */
+  filter: drop-shadow(0 10px 10px color-mix(in srgb, var(--color-shade) 25%, transparent));
   animation: mde-toast-in 240ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
   transition: grid-template-rows 180ms ease-in, opacity 160ms ease-in, transform 180ms ease-in;
 }

@@ -60,17 +60,17 @@ describe('inbox thread validation', () => {
     }
   })
 
-  it('preserves terminal mode and keeps older threads in GUI mode', async () => {
+  it('drops a thread saved as a Terminal chat, a kind that is gone', async () => {
     const path = join(await temporaryDirectory(), 'inbox.json')
     const store = new InboxStore(path)
-    store.put(thread({ mode: 'terminal' }))
+    store.put({ ...thread(), mode: 'terminal' } as InboxThread)
     store.put(thread({ id: 'ses_legacy' }))
     await store.flush()
     const reloaded = new InboxStore(path)
     await reloaded.load()
-    expect(reloaded.get('ses_one')).toEqual(thread({ mode: 'terminal' }))
+    expect(reloaded.get('ses_one')).toBeUndefined()
     expect(reloaded.get('ses_legacy')).toEqual(thread({ id: 'ses_legacy' }))
-    expect(validateInboxThread({ ...thread(), mode: 'shell' })).toBeNull()
+    expect(validateInboxThread({ ...thread(), mode: 'gui' })).toEqual(thread())
   })
 
   it('keeps a well-formed thread and drops unknown fields', () => {

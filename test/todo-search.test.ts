@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { TodoProject, TodoTask } from '../src/shared/types'
 import {
   buildTodoSearchItems,
+  listedTodoMatches,
   isTodoNewTaskShortcut,
   isTodoSearchShortcut,
   searchTodoTasks,
@@ -53,6 +54,16 @@ describe('To Do search', () => {
     const items = buildTodoSearchItems(project, tasks)
     expect(items.map((item) => item.identifier)).toEqual(['MDE-2', 'MDE-4', 'MDE-3', 'MDE-1'])
     expect(items.map((item) => item.columnName)).toEqual(['To Do', 'To Do', 'In Progress', 'Done'])
+  })
+
+  it('leaves done tasks out of the list unless they are asked for', () => {
+    const matches = searchTodoTasks(buildTodoSearchItems(project, [
+      task({ id: 'open', title: 'Fix login', number: 1 }),
+      task({ id: 'finished', title: 'Fix logout', columnId: 'done', number: 2 })
+    ]), 'fix')
+
+    expect(listedTodoMatches(matches, false).map((match) => match.item.task.id)).toEqual(['open'])
+    expect(listedTodoMatches(matches, true).map((match) => match.item.task.id)).toEqual(['open', 'finished'])
   })
 
   it('matches titles as case-insensitive subsequences', () => {

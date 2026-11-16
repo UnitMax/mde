@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Search } from 'lucide-react'
+import { Check, Search } from 'lucide-react'
 import type { TodoProject, TodoTask } from '@shared/types'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -7,6 +7,7 @@ import { HighlightedText } from '@/components/HighlightedText'
 import { cn } from '@/lib/utils'
 import {
   buildTodoSearchItems,
+  listedTodoMatches,
   searchTodoTasks,
   todoDescriptionSnippet,
   type TodoSearchMatch
@@ -82,10 +83,14 @@ export function TodoSearch({
 }: TodoSearchProps): JSX.Element {
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
+  // Done tasks are left out until "Include done" in the footer is ticked; it is unticked again the next time the search opens.
+  const [includeDone, setIncludeDone] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const items = useMemo(() => buildTodoSearchItems(project, tasks), [project, tasks])
-  const results = useMemo(() => searchTodoTasks(items, query), [items, query])
+  const matches = useMemo(() => searchTodoTasks(items, query), [items, query])
+  const results = useMemo(() => listedTodoMatches(matches, includeDone), [matches, includeDone])
+  const hiddenDone = matches.length - results.length
   const resultKey = results.map((result) => result.item.task.id).join('\0')
 
   useEffect(() => {
@@ -103,6 +108,7 @@ export function TodoSearch({
     if (!nextOpen) {
       setQuery('')
       setActiveIndex(0)
+      setIncludeDone(false)
     }
     onOpenChange(nextOpen)
   }
@@ -177,7 +183,13 @@ export function TodoSearch({
         >
           {results.length === 0 ? (
             <p className="px-2 py-8 text-center text-xs text-fg-subtle">
-              {items.length === 0 ? 'No tasks yet.' : 'No matching tasks.'}
+              {items.length === 0
+                ? 'No tasks yet.'
+                : hiddenDone === 0
+                  ? 'No matching tasks.'
+                  : query.trim()
+                    ? `No matching open tasks. ${hiddenDone} done ${hiddenDone === 1 ? 'task matches' : 'tasks match'}.`
+                    : 'No open tasks.'}
             </p>
           ) : (
             results.map((result, index) => (
@@ -192,9 +204,36 @@ export function TodoSearch({
             ))
           )}
         </div>
-        <p className="mt-2 px-1 text-[10px] text-fg-subtle">
-          ↑↓ to navigate · Enter to open · Esc to close
-        </p>
+        <div className="mt-2 flex items-center justify-between gap-3 px-1 text-[10px] text-fg-subtle">
+          <span>↑↓ to navigate · Enter to open · Esc to close</span>
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={includeDone}
+            data-testid="todo-search-done"
+            title="Also search tasks in the Done column"
+            onClick={() => {
+              setIncludeDone((current) => !current)
+              inputRef.current?.focus()
+            }}
+            className={cn(
+              '-my-0.5 -mr-1 flex items-center gap-1.5 rounded px-1 py-0.5 transition-colors hover:bg-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
+              includeDone && 'text-fg-muted'
+            )}
+          >
+            <span
+              aria-hidden="true"
+              className={cn(
+                'flex h-3 w-3 items-center justify-center rounded-sm border',
+                includeDone ? 'border-accent bg-accent text-accent-fg' : 'border-line-strong'
+              )}
+            >
+              {includeDone && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
+            </span>
+            Include done
+            {hiddenDone > 0 && <span data-testid="todo-search-hidden">({hiddenDone})</span>}
+          </button>
+        </div>
       </DialogContent>
     </Dialog>
   )

@@ -12,7 +12,6 @@ import {
   workingInboxThreads,
 } from '../src/renderer/lib/inbox'
 import { taskbarIndicator } from '../src/renderer/lib/alerts'
-import { inboxTerminalHighlightTone } from '../src/renderer/lib/inbox-terminal-highlight'
 
 const folder = {
   id: 'fld_app', name: 'app', directory: '/home/me/app',
@@ -222,11 +221,6 @@ describe('snoozed threads in the sidebar', () => {
     expect(inboxStatusChip(thread({ woke: true }))).toEqual({ label: 'Woke up', tone: 'accent' })
     expect(inboxStatusChip(thread({ woke: true, status: 'idle' }))?.label).toBe('Woke up')
     expect(inboxStatusChip(thread({ woke: true, status: 'working' }))?.label).toBe('Working')
-  })
-
-  it('does not flash a terminal thread\'s border for a wake', () => {
-    const before = thread({ mode: 'terminal', snoozedUntil: 5 })
-    expect(inboxTerminalHighlightTone(before, thread({ mode: 'terminal', woke: true, lastActivityAt: 20 }))).toBeNull()
   })
 
   it('offers an hour, five hours and tomorrow at 8:00 local time', () => {

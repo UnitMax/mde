@@ -75,7 +75,6 @@ export const MDE_MCP_TOOLS: McpToolDefinition[] = [
         directory: { type: 'string', description: 'Absolute directory to work in. Defaults to this thread\'s directory.' },
         agent: { type: 'string', description: 'OpenCode agent, for example "build" or "plan". Defaults to the one last chosen in MDE.' },
         model: { type: 'string', description: 'Model as "provider/model", for example "anthropic/claude-sonnet-4". Defaults to this thread\'s model.' },
-        mode: { type: 'string', enum: ['gui', 'terminal'], description: 'Show the thread as a chat ("gui", the default) or in OpenCode\'s terminal interface.' },
         worktree: {
           type: 'object',
           description: 'Run the thread in a new Git worktree of the directory\'s repository.',

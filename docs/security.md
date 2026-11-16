@@ -96,16 +96,6 @@ See "OpenCode configuration boundary".
 
 The Inbox terminal belongs to no workspace session. Terminal requests accept the reserved session ID `inbox-terminal`; the main process builds its launch session on demand, as a shell in its saved directory or the home directory (`~` in the default WSL distro on Windows), and the reserved ID always wins over a stored session. File browsing, previews, tree drops and attachments accept either an Inbox folder/thread identity or a live terminal ID with its expected directory. For a terminal root, main resolves the launch environment and current directory from the PTY, verifies the directory on disk, and rejects a mismatch or a terminal that moves during verification. The renderer’s directory is a consistency check, not an arbitrary filesystem root. Relative-path and symlink containment checks still apply below the resolved root. Terminal Git summaries likewise resolve the live terminal’s verified directory and run from its checkout root. Mixed root selectors are rejected at the IPC boundary. Naming `inbox-terminal` as a saved file-root session still fails. This adds no authority the renderer does not already have through `pty:write`.
 
-Inbox terminal chat threads use the reserved `inbox-thread:<sessionID>` identity for both the terminal
-and its launch session. Main resolves a recorded terminal-mode thread, its native/WSL target, and its
-directory from the Inbox store, checks that directory on disk, and launches only the configured
-OpenCode executable with `--session <sessionID>` and the API client's validated loopback server URL.
-The service password is passed only in the child environment (`WSLENV` forwards it into WSL), never
-through renderer IPC or command-line arguments. Renderer-provided launch overrides, alternate pane
-identities, GUI threads and removed threads are rejected. The thread is checked again after the
-directory check. Removing a thread cancels pending launches and disposes its PTY. These terminals use
-the existing API event stream for status.
-
 Terminal directory restoration uses main-process records (`src/main/pty/directories.ts`), populated
 from PTY directory reports and explicit main-owned launch directories. Records must match both
 the terminal ID and its owning session and target; a changed WSL distro cannot inherit another
@@ -342,6 +332,13 @@ the same policy:
   settings. Bounded command-line overrides empty every configured driver's clean,
   smudge and process command. No filter command values are passed to the UI or logged.
   `GIT_CONFIG` is removed so it cannot redirect only the configuration probe.
+- In WSL, the commands of one reading run in a single `wsl.exe` round trip, started by a fixed
+  bash script (`src/main/git-batch.ts`) under the same `/usr/bin/env` policy. Repository data
+  (paths, commit names) reaches the script only as positional arguments, never as script text.
+  The script applies the same safety options to every command and makes the same filter probe,
+  once for the round trip and before its commands, with the same limits; a driver name it cannot
+  pass safely stops the batch with an error. Results are separated by a boundary that is random
+  for each batch, so file contents cannot forge the end of a result.
 - Read operations compare unfiltered content. Worktree checkout/removal requires
   a selected configured filter to succeed while its commands are disabled, so Git
   refuses that operation instead of silently producing an incomplete checkout.
@@ -457,6 +454,16 @@ object takes no other key, so the renderer cannot name a path, a remote or a com
 base) on the thread and on the folder entry, and is validated on load like every other field; a
 malformed record on a folder is dropped and the folder stays.
 
+### WSL resource meter boundary
+
+The title bar meter (see **WSL resource meter** in `docs/architecture.md`) has one channel,
+`wsl:resources-watch`, whose only value is a boolean: on or off. The renderer names no distro, path or
+command. The main process picks a running WSL 2 distro itself and runs a constant script through
+`wsl.exe -e sh -c`, into which no outside value is placed; it reads the `cpu` lines of `/proc/stat` and
+four lines of `/proc/meminfo`, both readable by any user. What reaches the window is numbers and the
+distro's name. Output that does not parse as a reading is dropped, and the loop is stopped if it writes
+a megabyte without completing one.
+
 ### WSL folder browser boundary
 
 The Windows file dialog cannot show a WSL distro's own filesystem, so choosing a WSL folder uses a
@@ -531,6 +538,20 @@ a seeded fuzz that parses every result), `test/opencode-config-files.test.ts` (r
 symbolic links, modes, conflicts, WSL paths), `test/ipc-opencode-config.test.ts` and the validator cases in
 `test/ipc-validation.test.ts`.
 
+### Inbox automations
+
+An automation starts a thread without a person at the box, so what it can hold is kept to what the New thread
+page can send. `automations:save` is validated like `chat:create` (folder ID, agent ID, model reference,
+prompt text, permission mode, worktree base), takes no attachments and no branch name, and its schedule must
+pass `isAutomationSchedule` (an interval of 5 minutes to 28 days, or a time of day with distinct days of the
+week); the other channels take only an `aut_…` ID. The main process checks the same fields again when it
+saves and when it reads `inbox-automations.json`, drops entries that fail, and keeps at most 100. A run goes
+through `InboxChatService.create`, the same path and checks as a thread started by hand; nothing else can be
+scheduled, and neither agents nor the MDE MCP can create or change automations. The scheduler starts at most
+one thread per automation per look, moves the next run past now and writes the file before starting, and
+leaves a run out while the previous run's thread is still working, so a missed stretch or a short interval
+cannot start a pile of agents.
+
 ### MDE MCP boundary
 
 The MDE MCP lets an agent start Inbox threads and open Inbox terminal panes (`src/main/mcp/`, `src/shared/mde-mcp.ts`). It adds the one
@@ -566,6 +587,11 @@ place where something other than the window can ask the main process to act, so 
   agents with your OpenCode configuration and cost model usage. That is no more than such a process could do
   through OpenCode's own service password or the terminal. Agents that have the MCP installed can do the
   same, within the limits above. Removing the entry (Settings → OpenCode → MDE MCP → Remove) stops it.
+- **Stopped while MDE is closed.** On quitting MDE disconnects the server through OpenCode's service and on
+  starting connects it again (`standby.ts`). The server name is the fixed `mde`, never one read from a file or
+  an answer, and the directories are ones MDE itself sent to the service in this run; the file that carries
+  them to the next start (`mde-mcp-standby.json`, mode 0600) is re-validated on reading and used only as the
+  directory of a list and a connect request for `mde`. It can make OpenCode load a directory, nothing more.
 - **Install** writes only `mcp.servers.mde` = `{ type: "local", command: [...] }` into OpenCode's global
   configuration, with the configuration editor's guarantees (surgical JSONC edit, re-parse, serialized atomic
   write, nothing written to a file that does not parse). The command is built in the main process from
@@ -605,7 +631,8 @@ place where something other than the window can ask the main process to act, so 
 
 Regression coverage: `test/view-spec.test.ts` and `test/inbox-views-ui.test.ts` (views: the check, the bridge's
 answer, the parser keeping a view whole, drawing), `test/mde-mcp.test.ts` (protocol, framing, bridge ↔ listener over a real socket, token,
-tools, configuration edits), `test/mde-mcp-agent-terminals.test.ts` (approval, the hour, refusals, timeouts),
+tools, configuration edits), `test/mde-mcp-standby.test.ts` (stopping and reconnecting bridges),
+`test/mde-mcp-agent-terminals.test.ts` (approval, the hour, refusals, timeouts),
 the agent-pane cases in `test/ipc-inbox-terminal.test.ts`, `test/pty-manager.test.ts` (kept output, typed input)
 and the validator cases in `test/ipc-validation.test.ts`.
 

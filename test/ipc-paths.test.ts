@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { trustedIpcSender } from './helpers/ipc-sender'
+import { answerGitBatch, isGitBatch } from './helpers/git-batch'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Session } from '../src/shared/types'
 
@@ -71,7 +72,15 @@ vi.mock('../src/main/wsl/paths', async () => {
   )
   return {
     ...actual,
-    ...wslPathsMock
+    ...wslPathsMock,
+    // The real one resolves and checks a folder in one wsl.exe call. Here it is made of the two
+    // mocked steps, so each test still says what `realpath` and `test -d` answer.
+    canonicalWslDirectory: async (distro: string, path: string) => {
+      const canonical = (await wslPathsMock.canonicalizeWslPath(distro, path)) ?? path
+      if (!actual.isPlainAbsolutePath(canonical)) return canonical
+      const result = await wslDistrosMock.runWslCommand(distro, actual.directoryCheckArgs(canonical))
+      return result.code === 0 ? canonical : null
+    }
   }
 })
 vi.mock('../src/main/wsl/distros', () => wslDistrosMock)
@@ -621,11 +630,11 @@ describe('terminal Git IPC', () => {
       _options: { cwd?: string } = {}
     ) => {
       if (command[0] === 'test') return { stdout: '', stderr: '', code: 0 }
-      if (command.includes('config')) return { stdout: '', stderr: '', code: 1 }
-      if (command.includes('--is-inside-work-tree')) return { stdout: 'true\n', stderr: '', code: 0 }
-      if (command.includes('status') || command.includes('diff')) return { stdout: '', stderr: '', code: 0 }
-      if (command.includes('branch')) return { stdout: 'feature/live\n', stderr: '', code: 0 }
-      return { stdout: '/home/me/repo\n', stderr: '', code: 0 }
+      return answerGitBatch(command, (args) => {
+        if (args.includes('config')) return { code: 1 }
+        if (args.includes('--show-toplevel')) return { stdout: 'true\n/home/me/repo\n' }
+        return { stdout: args.includes('branch') ? 'feature/live\n' : '' }
+      })
     })
     registerForTest(terminalInfo)
 
@@ -639,9 +648,10 @@ describe('terminal Git IPC', () => {
 
     expect(terminalInfo).toHaveBeenCalledWith('pane-1')
     const gitCalls = wslDistrosMock.runWslCommand.mock.calls.filter(
-      ([, command]) => command[0] === '/usr/bin/env' && command.includes('git')
+      ([, command]) => command[0] === '/usr/bin/env' && isGitBatch(command)
     )
-    expect(gitCalls).toHaveLength(8)
+    // One wsl.exe for the whole reading.
+    expect(gitCalls).toHaveLength(1)
     expect(gitCalls.every(([, , options]) => options.cwd === '/home/me/current')).toBe(true)
   })
 

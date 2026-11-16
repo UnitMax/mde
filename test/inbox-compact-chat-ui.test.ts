@@ -141,13 +141,6 @@ describe('the layout menu', () => {
     expect(toggle.dataset.layout).toBe('full')
   })
 
-  it('is not offered for a thread that is a terminal', async () => {
-    useWorkspace.setState({ inboxThreads: [thread({ mode: 'terminal' })] })
-    await render()
-    expect(q('[data-testid="inbox-thread-view"]')).not.toBeNull()
-    expect(q(TOGGLE)).toBeNull()
-  })
-
   it('offers the three layouts, and remembers the one chosen', async () => {
     await render()
     await chooseLayout('compact')
@@ -516,6 +509,27 @@ describe('a conversation in compact mode', () => {
     expect(all('.file-diff-row')).toHaveLength(3)
   })
 
+  it('keeps the line spinning in the pause between two steps', async () => {
+    page = { messages: [prompt, step('a1', [shell('npm test')]), step('a2', [shell('npm run build')])], older: null, running: true }
+    useWorkspace.setState({ inboxThreads: [thread({ status: 'working' })] })
+    useInboxView.setState({ compactChat: true })
+    await render()
+    await vi.waitFor(() => expect(q('[data-testid="chat-activity"]')).not.toBeNull())
+    expect(q('[data-testid="chat-activity"]')!.hasAttribute('data-live')).toBe(true)
+    expect(q('[data-testid="chat-activity"] .animate-spin')).not.toBeNull()
+    expect(text(q('[data-testid="chat-activity-summary"]'))).toBe('Ran 2 commands')
+  })
+
+  it('draws a single finished step as the spinning line while the agent works on', async () => {
+    page = { messages: [prompt, step('a1', [shell('npm test')])], older: null, running: true }
+    useWorkspace.setState({ inboxThreads: [thread({ status: 'working' })] })
+    useInboxView.setState({ compactChat: true })
+    await render()
+    await vi.waitFor(() => expect(q('[data-testid="chat-activity"]')).not.toBeNull())
+    expect(q('[data-testid="chat-activity"]')!.hasAttribute('data-live')).toBe(true)
+    expect(all('[data-testid^="chat-tool-"]')).toHaveLength(0)
+  })
+
   it('shows the work in progress as one shut line that spins, not as the rows of each step', async () => {
     page = {
       messages: [prompt, step('a1', [shell('npm test')]), step('a2', [shell('npm run build', { status: 'running', exitCode: undefined, output: undefined })], false)],
@@ -548,6 +562,34 @@ describe('a conversation in compact mode', () => {
     await vi.waitFor(() => expect(q('[data-testid="chat-message-a2"]')).not.toBeNull())
     expect(text(q('[data-testid="chat-message-a2"]'))).toBe('The provider closed the connection.')
     expect(text(q('[data-testid="chat-activity-summary"]'))).toBe('Ran 2 commands')
+  })
+})
+
+describe('run failure messages', () => {
+  it.each(['full', 'compact', 'compact-text'] as const)('shows the boxed error once in the %s layout', async (layout) => {
+    const failure = parseMessage({ id: 'n1', type: 'idle', outcome: 'failed', error: { message: 'Rate limited' }, time: { created: 3 } })!
+    page = {
+      messages: [prompt, { ...step('a1', []), error: 'Rate limited' } as ChatMessage, failure],
+      older: null, running: false,
+    }
+    useInboxView.setState({ compactChat: layout !== 'full', compactText: layout === 'compact-text' })
+    await render()
+    await vi.waitFor(() => expect(text(q('[data-testid="chat-message-a1"] [role="alert"]'))).toBe('Rate limited'))
+    expect(q('[data-testid="chat-message-n1"]')).toBeNull()
+    expect(useInboxChat.getState().threads.ses_one?.messages).toContainEqual(failure)
+  })
+
+  it('retains a failure note until its matching assistant error has loaded', async () => {
+    const failure = parseMessage({ id: 'n1', type: 'idle', outcome: 'failed', error: { message: 'Rate limited' }, time: { created: 3 } })!
+    page = { messages: [failure], older: 'older-page', running: false }
+    await render()
+    await vi.waitFor(() => expect(text(q('[data-testid="chat-note-n1"]'))).toBe('Rate limited'))
+    await act(async () => useInboxChat.setState((state) => ({ threads: {
+      ...state.threads,
+      ses_one: { ...state.threads.ses_one!, messages: [prompt, { ...step('a1', []), error: 'Rate limited' } as ChatMessage, failure], older: null },
+    } })))
+    await vi.waitFor(() => expect(text(q('[data-testid="chat-message-a1"] [role="alert"]'))).toBe('Rate limited'))
+    expect(q('[data-testid="chat-message-n1"]')).toBeNull()
   })
 })
 

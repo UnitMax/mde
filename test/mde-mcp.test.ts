@@ -369,14 +369,14 @@ describe('MDE MCP tools', () => {
     const { call, created } = tools({ threads: [thread('ses_parent', { model: parentModel })], composer: { agent: 'plan', model } })
     const response = await call({ prompt: 'Write the tests' }, { sessionId: 'ses_parent' })
     expect(response).toMatchObject({ ok: true, data: { threadId: 'ses_new1', directory: '/home/me/app', project: 'app' } })
-    expect(created).toEqual([{ request: { folderId: 'fld_app', text: 'Write the tests', agent: 'plan', model: parentModel, mode: 'gui' }, options: { parentId: 'ses_parent' } }])
+    expect(created).toEqual([{ request: { folderId: 'fld_app', text: 'Write the tests', agent: 'plan', model: parentModel }, options: { parentId: 'ses_parent' } }])
   })
 
   it('falls back to the bridge’s working directory and the page’s choices when the caller is not an Inbox thread', async () => {
     const { call, created } = tools({ composer: { model } })
-    await call({ prompt: 'Hi', mode: 'terminal', agent: 'review', model: 'openrouter/anthropic/claude-sonnet-4' })
+    await call({ prompt: 'Hi', agent: 'review', model: 'openrouter/anthropic/claude-sonnet-4' })
     expect(created[0]).toEqual({
-      request: { folderId: 'fld_app', text: 'Hi', agent: 'review', model: { providerId: 'openrouter', id: 'anthropic/claude-sonnet-4' }, mode: 'terminal' },
+      request: { folderId: 'fld_app', text: 'Hi', agent: 'review', model: { providerId: 'openrouter', id: 'anthropic/claude-sonnet-4' } },
       options: {},
     })
     await call({ prompt: 'Hi' })
@@ -411,7 +411,7 @@ describe('MDE MCP tools', () => {
     const { call, created } = tools({ composer: { model } })
     for (const args of [
       {}, { prompt: '   ' }, { prompt: 'x'.repeat(100_001) }, { prompt: 'a\u0000b' }, { prompt: 'Hi', extra: 1 },
-      { prompt: 'Hi', mode: 'tui' }, { prompt: 'Hi', agent: '../x' }, { prompt: 'Hi', model: 'no-slash' }, { prompt: 'Hi', worktree: 'yes' },
+      { prompt: 'Hi', mode: 'terminal' }, { prompt: 'Hi', agent: '../x' }, { prompt: 'Hi', model: 'no-slash' }, { prompt: 'Hi', worktree: 'yes' },
     ]) {
       expect(await call(args)).toMatchObject({ ok: false, error: expect.any(String) })
     }

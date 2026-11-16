@@ -20,6 +20,8 @@ export interface WslCommandOptions {
   /** Working directory inside the selected distro. */
   cwd?: string
   timeoutMs?: number
+  /** Output beyond this ends the command with an error. Node's default (1 MiB) when absent. */
+  maxBuffer?: number
 }
 
 /** Builds a direct-exec distro command. Data arguments are never shell-reparsed by WSL. */
@@ -43,7 +45,7 @@ export function runWslCommand(
   command: readonly string[],
   options: WslCommandOptions = {}
 ): Promise<WslResult> {
-  return runWslClient(buildWslExecArgs(distro, command, options.cwd), options.timeoutMs)
+  return runWslClient(buildWslExecArgs(distro, command, options.cwd), options.timeoutMs, options.maxBuffer)
 }
 
 export interface WslBufferResult {
@@ -53,9 +55,7 @@ export interface WslBufferResult {
   code: number
 }
 
-export interface WslBufferCommandOptions extends WslCommandOptions {
-  maxBuffer?: number
-}
+export type WslBufferCommandOptions = WslCommandOptions
 
 /** Like `runWslCommand`, but returns stdout untouched for binary-safe reads. */
 export function runWslCommandBuffer(
@@ -99,8 +99,8 @@ async function runWslClientRaw(
 }
 
 /** Low-level launcher reserved for wsl.exe client operations such as --status and --list. */
-async function runWslClient(args: readonly string[], timeoutMs = 15_000): Promise<WslResult> {
-  const { stdout, stderr, code } = await runWslClientRaw(args, timeoutMs)
+async function runWslClient(args: readonly string[], timeoutMs = 15_000, maxBuffer?: number): Promise<WslResult> {
+  const { stdout, stderr, code } = await runWslClientRaw(args, timeoutMs, maxBuffer)
   return { stdout: decodeWslOutput(stdout), stderr: decodeWslOutput(stderr), code }
 }
 
@@ -208,4 +208,22 @@ export async function listDistros(): Promise<Distro[]> {
   }
 
   return parseDistroList(result.stdout).filter((distro) => distro.version === 2)
+}
+
+/**
+ * Names of the WSL 2 distros that are running, the default one first. Asking does not start WSL.
+ *
+ * `--running --quiet` prints only names, in every display language. With nothing running it prints
+ * a sentence instead, which is why the names are checked against the list of distros.
+ */
+export async function listRunningDistros(): Promise<string[]> {
+  const distros = await listDistros()
+  if (distros.length === 0) return []
+  const result = await runWslClient(['--list', '--running', '--quiet'])
+  if (result.code !== 0) return []
+  const running = new Set(result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean))
+  return distros
+    .filter((distro) => running.has(distro.name))
+    .sort((a, b) => Number(b.isDefault) - Number(a.isDefault))
+    .map((distro) => distro.name)
 }

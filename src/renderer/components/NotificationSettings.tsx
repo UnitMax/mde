@@ -48,6 +48,7 @@ function isFlash(value: string): value is AlertFlash {
 export function NotificationSettings(): JSX.Element {
   const [settings, setSettings] = useState<AlertSettings>(() => getAlertSettings())
   const windows = useWorkspace((state) => state.platform?.platform === 'win32')
+  const mac = useWorkspace((state) => state.platform?.platform === 'darwin')
   const update = (patch: Partial<AlertSettings>): void => {
     const next = { ...settings, ...patch }
     setSettings(next)
@@ -182,6 +183,15 @@ export function NotificationSettings(): JSX.Element {
             checked={settings.badge}
             label="Taskbar colour and badge"
             description="Colour the taskbar button red for failed, yellow for needs input or green for done, with the number of threads on it, for as long as they are unread or waiting."
+            testId="alert-badge"
+            onClick={() => update({ badge: !settings.badge })}
+          />
+        )}
+        {mac && (
+          <SwitchRow
+            checked={settings.badge}
+            label="Dock badge"
+            description="Show the number of threads that failed, need input or are done on MDE’s Dock icon, for as long as they are unread or waiting."
             testId="alert-badge"
             onClick={() => update({ badge: !settings.badge })}
           />

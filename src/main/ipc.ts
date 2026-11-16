@@ -17,7 +17,6 @@ import type {
   MdeMcpTerminalSettingsUpdate,
 } from '@shared/mde-mcp'
 import type { AgentTerminals } from './mcp/agent-terminals'
-import { inboxTerminalThreadId, inboxThreadTerminalId } from '@shared/inbox-thread-terminal'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import {
   type AppInfo,
@@ -155,8 +154,11 @@ import { assertIpcPayload, type IpcChannel } from './ipc-validation'
 import type { PtyLaunchOptions, PtyManager } from './pty/manager'
 import { fileTreeDropFile, resolveTerminalDrop } from './pty/drop'
 import type { InboxRecorder } from './inbox/recorder'
+import type { InboxAutomations } from './inbox/automations'
+import type { AutomationEnabledRequest, AutomationIdRequest, AutomationSaveRequest, InboxAutomation } from '@shared/automations'
 import type { TaskbarAttention } from './taskbar-attention'
 import type { FloatingTerminalKey } from './floating-terminal-key'
+import type { WslResourceMonitor } from './wsl/resources'
 import type { TaskbarAttentionRequest } from '@shared/taskbar-attention'
 import type { InboxChatService } from './inbox/chat'
 import type { OpenCodeConfigService } from './opencode/config'
@@ -166,6 +168,7 @@ import { createAppInfo } from '@shared/app-info'
 import { isWslAvailable, listDistros, runWslCommand } from './wsl/distros'
 import {
   canonicalizeWslPath,
+  canonicalWslDirectory,
   directoryCheckArgs,
   isPlainAbsolutePath,
   resolveForTarget,
@@ -176,7 +179,10 @@ import { listWslDirectories } from './wsl/browse'
 import { buildVsCodeRemoteUri } from './vscode'
 import { safeVsCodeRemoteUrl } from './external-links'
 import { readGitTerminalInfo } from './git'
-import { fetchInboxGit, readInboxGitChanges, readInboxGitCommit, readInboxGitCommitDiff, readInboxGitDiff, readInboxGitGraph } from './inbox/changes'
+import {
+  fetchInboxGit, readInboxGitChanges, readInboxGitCommit, readInboxGitCommitDiff, readInboxGitDiff, readInboxGitGraph,
+  readInboxGitGraphWithThreads,
+} from './inbox/changes'
 import { terminalSessionResolver } from './inbox/terminal'
 import { INBOX_TERMINAL_SESSION_ID, inboxTerminalSession, type InboxTerminalConfiguration, type InboxTerminalSettings } from '@shared/inbox-terminal'
 import { isSafeRelativePath, isWithinRoot, listSessionDirectory, readSessionFile, treeFolderPath } from './files/tree'
@@ -330,12 +336,10 @@ async function verifiedDirectory(session: Session, directory: string, quiet = fa
   }
 
   if (!isPlainAbsolutePath(path)) return reject('not a plain absolute path')
+  const canonical = await canonicalWslDirectory(distro, path)
+  if (canonical === null) return reject(`not a directory in ${distro}`)
   // `realpath` output is distro-side data, so it is re-checked like any other.
-  const canonical = (await canonicalizeWslPath(distro, path)) ?? path
-  if (!isPlainAbsolutePath(canonical)) return reject(`canonicalized to ${canonical}`)
-
-  const result = await runWslCommand(distro, directoryCheckArgs(canonical))
-  return result.code === 0 ? canonical : reject(`not a directory in ${distro}`)
+  return isPlainAbsolutePath(canonical) ? canonical : reject(`canonicalized to ${canonical}`)
 }
 
 /** `verifiedDirectory`, but always the real path: links resolved on the host or inside the distro. */
@@ -408,40 +412,20 @@ export function registerIpcHandlers(
     mdeMcpCommand?: (target: OpenCodeTarget) => Promise<string[]>
     /** Inbox terminal panes agents open through the MDE MCP; this layer starts their shells. */
     agentTerminals?: AgentTerminals
+    /** Absent where the Inbox does not run: nothing is listed and nothing can be saved. */
+    automations?: InboxAutomations
   },
   taskbar?: TaskbarAttention,
-  floatingTerminalKey?: FloatingTerminalKey
+  floatingTerminalKey?: FloatingTerminalKey,
+  wslResources?: WslResourceMonitor
 ): void {
   const inboxRecorder = inbox.recorder
   const chat = inbox.chat
   const pendingEnsures = new Map<string, symbol>()
-  // Inbox shells and conversation terminals have reserved identities, resolved from main-owned state.
+  // The Inbox terminal has a reserved identity, resolved from main-owned state.
   let inboxTerminalGeneration = 0
   let pendingInboxConfiguration: symbol | undefined
   const getShellSession = terminalSessionResolver({ getSession, listDistros, platform: process.platform })
-  const getTerminalSession = async (id: string): Promise<Session | null> => {
-    const threadId = inboxTerminalThreadId(id)
-    return threadId ? chat.terminalSession(threadId) : getShellSession(id)
-  }
-  const threadTerminalLaunch = async (req: EnsurePtyRequest, session: Session): Promise<PtyLaunchOptions | null> => {
-    const threadId = inboxTerminalThreadId(session.id)
-    if (!threadId) {
-      if (inboxTerminalThreadId(req.terminalId)) throw new Error('Invalid Inbox thread terminal.')
-      return null
-    }
-    if (req.terminalId !== session.id) throw new Error('Invalid Inbox thread terminal launch.')
-    const threadDirectory = chat.fileRoot(threadId)?.path
-    if (!threadDirectory) throw new Error('The thread directory is not available.')
-    const directory = await verifiedDirectory(session, threadDirectory)
-    if (!directory) throw new Error('The thread directory is not available.')
-    const launch = await chat.terminalLaunch(threadId)
-    // Recheck after filesystem work: removing a thread must not leave a late launch behind.
-    const current = chat.terminalSession(threadId)
-    if (chat.fileRoot(threadId)?.path !== threadDirectory || current.kind !== session.kind || current.distro !== session.distro) {
-      throw new Error('The thread directory has changed.')
-    }
-    return { directory, ...launch }
-  }
   const restoredShellLaunch = async (
     req: EnsurePtyRequest,
     session: Session,
@@ -473,7 +457,7 @@ export function registerIpcHandlers(
     if (!isFileRoot(req) || !req.terminalId) throw new Error('Invalid terminal directory request.')
     const terminal = ptyManager.terminalInfo(req.terminalId)
     if (!terminal) throw new Error('Terminal no longer exists.')
-    const session = await getTerminalSession(terminal.sessionId)
+    const session = await getShellSession(terminal.sessionId)
     if (!session) throw new Error('Session no longer exists.')
     const candidate = terminal.directory
     if (!candidate || candidate !== req.directory) throw new Error('The terminal directory has changed.')
@@ -587,9 +571,6 @@ export function registerIpcHandlers(
     await chat.removeDraft(`thread:${req.id}`)
     await chat.removeAsides(req.id)
     inboxRecorder.remove(req.id)
-    const terminalId = inboxThreadTerminalId(req.id)
-    pendingEnsures.delete(terminalId)
-    ptyManager.dispose(terminalId)
   })
   handle<void, InboxFoldersState>(IpcChannels.inboxFolders, () => chat.folders())
   handle<InboxAddFolderRequest, InboxFolder>(IpcChannels.inboxFoldersAdd, async (req) => {
@@ -603,6 +584,15 @@ export function registerIpcHandlers(
   handle<InboxUpdateFolderRequest, InboxFolder>(IpcChannels.inboxFoldersUpdate, (req) => chat.updateFolder(req))
   handle<InboxRemoveFolderRequest, void>(IpcChannels.inboxFoldersRemove, (req) => chat.removeFolder(req.id))
   handle<InboxComposerState, InboxComposerState>(IpcChannels.inboxComposerSet, (req) => chat.setComposer(req))
+  const automations = (): InboxAutomations => {
+    if (!inbox.automations) throw new Error('Automations are not available on this computer.')
+    return inbox.automations
+  }
+  handle<void, InboxAutomation[]>(IpcChannels.automationsList, () => inbox.automations?.list() ?? [])
+  handle<AutomationSaveRequest, InboxAutomation>(IpcChannels.automationsSave, (req) => automations().save(req))
+  handle<AutomationIdRequest, void>(IpcChannels.automationsRemove, (req) => automations().remove(req.id))
+  handle<AutomationEnabledRequest, InboxAutomation | null>(IpcChannels.automationsSetEnabled, (req) => automations().setEnabled(req.id, req.enabled))
+  handle<AutomationIdRequest, InboxAutomation | null>(IpcChannels.automationsRun, (req) => automations().runNow(req.id))
   handle<InboxGitInfoRequest, InboxGitInfo>(IpcChannels.inboxGitInfo, (req) => chat.gitInfo(req))
   handle<void, InboxWorktreeEntry[]>(IpcChannels.inboxWorktrees, () => chat.worktreeList())
   handle<InboxWorktreeRemoveRequest, InboxWorktreeRemoveResult>(IpcChannels.inboxWorktreeRemove, async (req) => {
@@ -660,8 +650,8 @@ export function registerIpcHandlers(
       return true
     },
     start: async (terminalId, target, directory, palette) => {
-      // Only a new pane of the Inbox terminal: never a thread's own terminal or a Sessions pane.
-      if (!terminalId.startsWith(`${INBOX_TERMINAL_SESSION_ID}:tab:`) || inboxTerminalThreadId(terminalId)) {
+      // Only a new pane of the Inbox terminal: never a Sessions pane.
+      if (!terminalId.startsWith(`${INBOX_TERMINAL_SESSION_ID}:tab:`)) {
         throw new Error('MDE could not add the pane to its terminal.')
       }
       if (ptyManager.terminalInfo(terminalId) || pendingEnsures.has(terminalId)) throw new Error('MDE could not add the pane to its terminal.')
@@ -723,12 +713,16 @@ export function registerIpcHandlers(
     if ('threadId' in req) return inboxGitRoot(req.threadId)
     const terminal = ptyManager.terminalInfo(req.terminalId)
     if (!terminal) throw new Error('This terminal is no longer running.')
-    const session = await getTerminalSession(terminal.sessionId)
+    const session = await getShellSession(terminal.sessionId)
     const directory = session && terminal.directory ? await verifiedDirectory(session, terminal.directory) : null
     if (!session || !directory) throw new Error('The folder of this terminal could not be found.')
     return { ...session, path: directory }
   }
-  handle<GitGraphRequest, InboxGitGraph>(IpcChannels.gitGraph, async (req) => readInboxGitGraph(await gitGraphRoot(req), req.limit, req.scope))
+  handle<GitGraphRequest, InboxGitGraph>(IpcChannels.gitGraph, async (req) => {
+    const root = await gitGraphRoot(req)
+    if (!req.threads) return readInboxGitGraph(root, req.limit, req.scope)
+    return readInboxGitGraphWithThreads(root, req.limit, req.scope, inboxRecorder.list(), 'threadId' in req ? req.threadId : undefined)
+  })
   handle<GitCommitRequest, InboxGitCommitDetails>(IpcChannels.gitCommit, async (req) => readInboxGitCommit(await gitGraphRoot(req), req.hash))
   handle<GitFetchRequest, InboxGitFetchResult>(IpcChannels.gitFetch, async (req) => {
     if (!('folderId' in req)) return fetchInboxGit(await gitGraphRoot(req))
@@ -818,9 +812,9 @@ export function registerIpcHandlers(
     const generation = inboxTerminalGeneration
     pendingEnsures.set(req.terminalId, pending)
     try {
-      const session = await getTerminalSession(req.sessionId)
+      const session = await getShellSession(req.sessionId)
       if (!session) return 'none'
-      const launch = await threadTerminalLaunch(req, session) ?? await restoredShellLaunch(req, session)
+      const launch = await restoredShellLaunch(req, session)
       if (pendingEnsures.get(req.terminalId) !== pending ||
         (req.sessionId === INBOX_TERMINAL_SESSION_ID && generation !== inboxTerminalGeneration)) return 'none'
       return ptyManager.ensure(
@@ -839,9 +833,9 @@ export function registerIpcHandlers(
     const generation = inboxTerminalGeneration
     pendingEnsures.set(req.terminalId, pending)
     try {
-      const session = await getTerminalSession(req.sessionId)
+      const session = await getShellSession(req.sessionId)
       if (!session) return 'none'
-      const launch = await threadTerminalLaunch(req, session) ?? await restoredShellLaunch(req, session, true)
+      const launch = await restoredShellLaunch(req, session, true)
       if (pendingEnsures.get(req.terminalId) !== pending ||
         (req.sessionId === INBOX_TERMINAL_SESSION_ID && generation !== inboxTerminalGeneration)) return 'none'
       return ptyManager.restart(
@@ -897,7 +891,7 @@ export function registerIpcHandlers(
       return terminalDropUnavailable(droppedFiles)
     }
 
-    const session = await getTerminalSession(terminal.sessionId)
+    const session = await getShellSession(terminal.sessionId)
     if (!session) return terminalDropUnavailable(droppedFiles)
 
     const files = [...req.files]
@@ -910,6 +904,7 @@ export function registerIpcHandlers(
 
   handle<void, boolean>(IpcChannels.wslAvailable, () => isWslAvailable())
   handle<void, Distro[]>(IpcChannels.wslDistros, () => listDistros())
+  handle<{ enabled: boolean }, void>(IpcChannels.wslResourcesWatch, ({ enabled }) => wslResources?.setEnabled(enabled))
 
   handle<void, string | null>(IpcChannels.pathBrowse, async (_req, event) => {
     const window = BrowserWindow.fromWebContents(event.sender)
@@ -932,7 +927,7 @@ export function registerIpcHandlers(
     const terminal = ptyManager.terminalInfo(terminalId)
     if (!terminal?.directory) return
 
-    const session = await getTerminalSession(terminal.sessionId)
+    const session = await getShellSession(terminal.sessionId)
     if (!session || !canRevealSession(session)) return
 
     const directory = await verifiedDirectory(session, terminal.directory)
@@ -944,7 +939,7 @@ export function registerIpcHandlers(
     const terminal = ptyManager.terminalInfo(terminalId)
     if (!terminal?.directory) return
 
-    const session = await getTerminalSession(terminal.sessionId)
+    const session = await getShellSession(terminal.sessionId)
     if (!session || !canOpenSessionInVsCode(session)) return
 
     const directory = await verifiedDirectory(session, terminal.directory)
@@ -994,11 +989,11 @@ export function registerIpcHandlers(
   })
   // The new terminal's shell starts there through the saved-directory record, which the launch checks again.
   handle<StartTerminalInFolderRequest, void>(IpcChannels.ptyStartInFolder, async (req) => {
-    if (inboxTerminalThreadId(req.sessionId) || !req.terminalId.startsWith(`${req.sessionId}:tab:`)) {
+    if (!req.terminalId.startsWith(`${req.sessionId}:tab:`)) {
       throw new Error('Invalid terminal.')
     }
     if (ptyManager.terminalInfo(req.terminalId)) throw new Error('That terminal is already running.')
-    const session = await getTerminalSession(req.sessionId)
+    const session = await getShellSession(req.sessionId)
     if (!session) throw new Error('Session no longer exists.')
     const folder = await treeFolder(req.folder)
     if (!folder) throw new Error('Folder not found.')
@@ -1018,7 +1013,7 @@ export function registerIpcHandlers(
       const terminal = ptyManager.terminalInfo(req.terminalId)
       if (!terminal) return null
 
-      const session = await getTerminalSession(terminal.sessionId)
+      const session = await getShellSession(terminal.sessionId)
       if (!session) return null
 
       const candidateDirectory = terminal.directory

@@ -48,7 +48,7 @@ beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('ResizeObserver', class { observe(): void {} disconnect(): void {} })
   vi.stubGlobal('api', api)
-  useWorkspace.setState({ activeWorkspaceView: 'inbox', platform: { platform: 'darwin', isWindows: false }, inboxThreads: [], selectedInboxThreadId: null, inboxTerminalHighlights: {}, statuses: {}, exits: {}, terminalDirectories: {} })
+  useWorkspace.setState({ activeWorkspaceView: 'inbox', platform: { platform: 'darwin', isWindows: false }, inboxThreads: [], selectedInboxThreadId: null, statuses: {}, exits: {}, terminalDirectories: {} })
   useInboxChat.setState({ folders: [folder], composer: { folderId: folder.id }, foldersLoaded: true, threads: {}, options: {}, recent: [], titleRegenerations: {}, draftReloads: {} })
   useInboxDrafts.setState({ page: { id: 'drf_perm', opened: false }, drafts: [], threadDrafts: [] })
   container = document.createElement('div')

@@ -6,7 +6,7 @@ vi.mock('../src/renderer/components/inbox/InboxTerminal', () => ({
   InboxTerminal: () => createElement('div'),
   focusInboxTerminalWhenShown: vi.fn(),
 }))
-import { commitBodyParagraphs, GitGraphView, refChips } from '../src/renderer/components/inbox/GitGraphView'
+import { commitBodyParagraphs, fitRefChips, GitGraphView, refChipWidth, refChips } from '../src/renderer/components/inbox/GitGraphView'
 import { InboxSidebar } from '../src/renderer/components/inbox/InboxChanges'
 import { useInboxChanges } from '../src/renderer/store/inbox-changes'
 import { useWorkspace } from '../src/renderer/store/workspace'
@@ -89,7 +89,7 @@ describe('Git graph view', () => {
     await click(button)
     expect(view()).not.toBeNull()
     expect(button.getAttribute('aria-pressed')).toBe('true')
-    expect(gitGraph).toHaveBeenCalledWith({ threadId: thread.id, limit: 400, scope: 'all' })
+    expect(gitGraph).toHaveBeenCalledWith({ threadId: thread.id, limit: 400, scope: 'all', threads: true })
     // The uncommitted changes sit above HEAD, then every commit.
     expect(rows().map((r) => r.dataset.hash)).toEqual(['working-tree', h('d'), h('c'), h('b'), h('a')])
     expect(row('working-tree').textContent).toContain('Uncommitted changes · 2 files')
@@ -205,7 +205,7 @@ describe('Git graph view', () => {
     useInboxChanges.getState().openGraph(thread.id)
     await render()
     await click(container.querySelector('[data-testid="git-graph-scope-head"]'))
-    expect(gitGraph).toHaveBeenLastCalledWith({ threadId: thread.id, limit: 400, scope: 'head' })
+    expect(gitGraph).toHaveBeenLastCalledWith({ threadId: thread.id, limit: 400, scope: 'head', threads: true })
     expect(container.querySelector('[data-testid="git-graph-scope-head"]')?.getAttribute('aria-checked')).toBe('true')
   })
 
@@ -237,6 +237,106 @@ describe('Git graph view', () => {
   })
 })
 
+describe('Git graph threads', () => {
+  const other = (id: string, title: string, status: InboxThread['status'], extra: Partial<InboxThread> = {}): InboxThread =>
+    ({ ...thread, id, title, status, directory: '/home/me/.mde/worktrees/app/one', ...extra })
+  const working = other('ses_two', 'Add login', 'working')
+  const asking = other('ses_three', 'Tidy tests', 'attention', { attentionReason: 'question' })
+  const elsewhere = other('ses_four', 'Old idea', 'idle')
+  const withThreads: InboxGitGraph = {
+    ...graph,
+    threads: [
+      { threadId: thread.id, head: h('c'), branch: 'main', root: '/home/me/app' },
+      { threadId: working.id, head: h('d'), branch: 'feature', root: '/home/me/.mde/worktrees/app/one' },
+      { threadId: asking.id, head: h('d'), branch: 'feature', root: '/home/me/.mde/worktrees/app/one' },
+      { threadId: elsewhere.id, head: h('e'), branch: 'spike', root: '/home/me/.mde/worktrees/app/two' },
+      { threadId: 'ses_gone', head: h('c'), branch: 'main', root: '/home/me/app' },
+    ],
+  }
+  const settle = (): Promise<void> => act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  const openMenu = (trigger: Element | null): Promise<void> =>
+    act(async () => { trigger!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+  const items = (): HTMLElement[] => Array.from(document.body.querySelectorAll<HTMLElement>('[data-testid="git-graph-thread-item"]'))
+  const start = async (): Promise<void> => {
+    gitGraph.mockResolvedValue(withThreads)
+    useWorkspace.setState({ inboxThreads: [thread, working, asking, elsewhere] })
+    useInboxChanges.getState().openGraph(thread.id)
+    await render()
+  }
+
+  it('marks each commit with the threads whose checkout is there, one by its title and several collected', async () => {
+    await start()
+    const own = row(h('c')).querySelector<HTMLElement>('[data-testid="git-graph-thread"]')!
+    expect(own.textContent).toBe('Fix')
+    expect(own.dataset.status).toBe('completed')
+    const group = row(h('d')).querySelector<HTMLElement>('[data-testid="git-graph-thread-group"]')!
+    expect(group.textContent).toBe('2 threads')
+    expect(row(h('b')).querySelector('[data-testid="git-graph-thread"], [data-testid="git-graph-thread-group"]')).toBeNull()
+    // Opening the collected ones lists them, the one that wants an answer first, each with its state.
+    await openMenu(group)
+    expect(items().map((item) => item.textContent)).toEqual(['Tidy testsNeeds input', 'Add loginWorking'])
+    // Choosing one neither chooses the commit beneath nor leaves the graph over the thread it opens.
+    await click(items()[1]!)
+    await settle()
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe(working.id)
+    expect(useInboxChanges.getState().graphThreadId).toBeNull()
+  })
+
+  it('opens a single thread from its marker without choosing the commit', async () => {
+    await start()
+    await click(row(h('c')).querySelector('[data-testid="git-graph-thread"]'))
+    // Its own thread is already beneath the graph, which closes.
+    expect(useWorkspace.getState().selectedInboxThreadId).toBe(thread.id)
+    expect(view()).toBeNull()
+    expect(gitCommit).not.toHaveBeenCalled()
+  })
+
+  it('collects every thread of the repository by checkout in the toolbar, and goes to a checkout’s commit', async () => {
+    await start()
+    const button = container.querySelector<HTMLElement>('[data-testid="git-graph-threads"]')!
+    expect(button.textContent).toBe('4')
+    await openMenu(button)
+    const groups = Array.from(document.body.querySelectorAll<HTMLElement>('[data-testid="git-graph-thread-checkout"]'))
+    // Its own checkout first; a checkout whose commit is not among those shown is listed all the same.
+    expect(groups.map((group) => group.getAttribute('aria-label'))).toEqual(['main', 'feature', 'spike'])
+    expect(groups[0]!.textContent).toContain('This thread')
+    expect(groups[2]!.textContent).toContain('not shown')
+    expect(groups[2]!.querySelector('[role="menuitem"]')?.getAttribute('aria-disabled')).toBe('true')
+    await click(groups[1]!.querySelector('[role="menuitem"]'))
+    await settle()
+    expect(row(h('d')).getAttribute('aria-selected')).toBe('true')
+    expect(view()).not.toBeNull()
+  })
+
+  it('takes the markers off the graph with the switch, and remembers that', async () => {
+    await start()
+    await openMenu(container.querySelector('[data-testid="git-graph-threads"]'))
+    await click(document.body.querySelector('[data-testid="git-graph-threads-shown"]'))
+    expect(container.querySelector('[data-testid="git-graph-thread"]')).toBeNull()
+    expect(container.querySelector('[data-testid="git-graph-thread-group"]')).toBeNull()
+    expect(localStorage.getItem('mde.gitGraph.threads')).toBe('off')
+    // The list of threads stays where it was.
+    expect(items()).toHaveLength(4)
+  })
+
+  it('follows a thread’s state, and reads the graph again when it changes', async () => {
+    await start()
+    expect(gitGraph).toHaveBeenCalledTimes(1)
+    await act(async () => { useWorkspace.setState({ inboxThreads: [thread, { ...working, status: 'completed' }, asking, elsewhere] }) })
+    expect(gitGraph).toHaveBeenCalledTimes(2)
+    await openMenu(row(h('d')).querySelector('[data-testid="git-graph-thread-group"]'))
+    expect(items().map((item) => item.textContent)).toEqual(['Tidy testsNeeds input', 'Add loginDone'])
+  })
+
+  it('has no Threads button when no thread is known for the repository', async () => {
+    gitGraph.mockResolvedValue({ ...graph, threads: [] })
+    useInboxChanges.getState().openGraph(thread.id)
+    await render()
+    expect(view()).not.toBeNull()
+    expect(container.querySelector('[data-testid="git-graph-threads"]')).toBeNull()
+  })
+})
+
 describe('refChips', () => {
   it('puts the current branch first and folds a same-named remote branch at the same commit into it', () => {
     const chips = refChips([
@@ -252,6 +352,28 @@ describe('refChips', () => {
 
   it('marks a detached HEAD', () => {
     expect(refChips([], null, true)[0]).toMatchObject({ kind: 'head', name: 'HEAD', current: true })
+  })
+})
+
+describe('fitRefChips', () => {
+  const chips = refChips([
+    { hash: h('a'), name: 'mybranch', kind: 'branch' },
+    ...['3d9d875f', '5dfba40b', 'ed857ea2', '0a1b2c3d'].map((id) => ({ hash: h('a'), name: `mde/${id}`, kind: 'branch' as const })),
+  ], 'mybranch', false)
+  const width = (count: number): number => chips.slice(0, count).reduce((sum, chip) => sum + refChipWidth(chip) + 6, 0)
+
+  it('shows every chip when they fit, and in a row not yet measured', () => {
+    expect(fitRefChips(chips, width(5))).toBe(5)
+    expect(fitRefChips(chips, null)).toBe(5)
+  })
+
+  it('keeps room for the chip that stands for the rest, and always shows the first', () => {
+    expect(fitRefChips(chips, width(5) - 10)).toBe(4)
+    expect(fitRefChips(chips, width(4) + 10)).toBe(3)
+    expect(fitRefChips(chips, width(2) + 40)).toBe(2)
+    expect(fitRefChips(chips, 20)).toBe(1)
+    expect(fitRefChips(chips, -100)).toBe(1)
+    expect(fitRefChips(chips.slice(0, 1), 0)).toBe(1)
   })
 })
 

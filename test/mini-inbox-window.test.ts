@@ -17,7 +17,7 @@ function thread(id: string, overrides: Partial<InboxThread> = {}): InboxThread {
 }
 const threads = [
   thread('ses_gui', { title: 'Fix login', status: 'working', pinned: true }),
-  thread('ses_terminal', { title: 'Review tests', mode: 'terminal', status: 'attention', attentionReason: 'permission' }),
+  thread('ses_review', { title: 'Review tests', status: 'attention', attentionReason: 'permission' }),
   thread('ses_error', { title: 'Investigate failure', status: 'error' }),
 ]
 let root: Root
@@ -127,7 +127,7 @@ describe('MiniInboxWindow', () => {
   it('opens the clicked Inbox thread by its session ID', async () => {
     await render()
     await act(async () => rows()[1]?.click())
-    expect(onOpenThread).toHaveBeenCalledExactlyOnceWith('ses_terminal')
+    expect(onOpenThread).toHaveBeenCalledExactlyOnceWith('ses_review')
   })
 
   it('shares the Inbox title, count and restore control in one title bar', async () => {

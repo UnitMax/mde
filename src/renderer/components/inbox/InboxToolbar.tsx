@@ -4,6 +4,7 @@ import type { InboxFolder } from '@shared/types'
 import { InboxProjectsButton } from '@/components/inbox/InboxProjectsButton'
 import { InboxSettingsMenu } from '@/components/inbox/InboxSettingsMenu'
 import { InboxUsageButton } from '@/components/inbox/InboxUsageButton'
+import { InboxAutomationsButton } from '@/components/inbox/InboxAutomationsButton'
 import { ProjectIcon } from '@/components/inbox/ProjectIcon'
 import { Input } from '@/components/ui/input'
 import {
@@ -221,6 +222,7 @@ export function InboxToolbar({
           </DropdownMenuContent>
         </DropdownMenu>
         <div className="ml-auto flex shrink-0 items-center">
+          <InboxAutomationsButton />
           <InboxUsageButton project={project} />
           <InboxProjectsButton />
           <InboxSettingsMenu />

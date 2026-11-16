@@ -19,7 +19,8 @@ export function terminalPrimarySelectionMode(
   sessionKind: SessionKind
 ): TerminalPrimarySelectionMode {
   if (platform === 'linux') return 'native'
-  if (platform === 'win32' && sessionKind === 'wsl') return 'local'
+  // macOS has no selection clipboard either, so MDE keeps the last terminal selection itself there too.
+  if ((platform === 'win32' && sessionKind === 'wsl') || platform === 'darwin') return 'local'
   return 'none'
 }
 

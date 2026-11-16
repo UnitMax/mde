@@ -29,10 +29,20 @@ const workspaceMock = vi.hoisted(() => ({
 
 vi.mock('electron', () => electronMock)
 vi.mock('../src/main/store/workspace', () => workspaceMock)
-vi.mock('../src/main/wsl/paths', async () => ({
-  ...await vi.importActual('../src/main/wsl/paths'),
-  canonicalizeWslPath: vi.fn(), resolveForTarget: vi.fn(), toWindows: vi.fn(), uncPathFor: vi.fn(),
-}))
+vi.mock('../src/main/wsl/paths', async () => {
+  const actual = await vi.importActual<typeof import('../src/main/wsl/paths')>('../src/main/wsl/paths')
+  const canonicalizeWslPath = vi.fn()
+  return {
+    ...actual,
+    canonicalizeWslPath, resolveForTarget: vi.fn(), toWindows: vi.fn(), uncPathFor: vi.fn(),
+    // The real one is a single wsl.exe call; here it is made of the two mocked steps.
+    canonicalWslDirectory: async (distro: string, path: string) => {
+      const { runWslCommand } = await import('../src/main/wsl/distros')
+      const canonical = (await canonicalizeWslPath(distro, path)) ?? path
+      return (await runWslCommand(distro, actual.directoryCheckArgs(canonical))).code === 0 ? canonical : null
+    },
+  }
+})
 vi.mock('../src/main/wsl/distros', () => ({ isWslAvailable: vi.fn(), listDistros: vi.fn(), runWslCommand: vi.fn() }))
 
 import { IpcChannels } from '../src/shared/ipc'
@@ -162,82 +172,6 @@ describe('choosing the sidebar terminal WSL distribution', () => {
   })
 })
 
-describe('Inbox terminal chat launches over IPC', () => {
-  const terminalId = 'inbox-thread:ses_chat'
-  let directory: string
-  const pty = { savedDirectory: vi.fn(), ensure: vi.fn(() => 'running'), restart: vi.fn(() => 'running'), terminalInfo: vi.fn(), dispose: vi.fn() }
-  const launch = { agent: { executable: 'custom-opencode', args: ['--server', 'http://127.0.0.1:49374', '--session', 'ses_chat'] }, environment: { OPENCODE_PASSWORD: 'test-password' } }
-  const chat = { fileRoot: vi.fn(), terminalSession: vi.fn(), terminalLaunch: vi.fn(async () => launch), removeDraft: vi.fn(), removeAsides: vi.fn(), removeThreadWorktree: vi.fn() }
-  const recorder = { remove: vi.fn() }
-  const request = () => ({ terminalId, sessionId: terminalId, size, palette })
-
-  beforeEach(async () => {
-    directory = await fs.mkdtemp(join(tmpdir(), 'mde-thread-terminal-'))
-    vi.clearAllMocks()
-    electronMock.handlers.clear()
-    chat.fileRoot.mockImplementation(() => ({ id: 'ses_chat', name: 'Chat', kind: 'native', path: directory, createdAt: '' }))
-    chat.terminalSession.mockImplementation(() => ({ id: terminalId, name: 'Chat', kind: 'native', createdAt: '' }))
-    registerIpcHandlers(security, pty as never, {} as never, {} as never, { chat, recorder } as never)
-  })
-
-  afterEach(async () => {
-    vi.restoreAllMocks()
-    await fs.rm(directory, { recursive: true, force: true })
-  })
-
-  it('attaches to the recorded API conversation and uses the configured executable on ensure and reopen', async () => {
-    for (const channel of [IpcChannels.ptyEnsure, IpcChannels.ptyRestart]) {
-      await expect(handler(channel)(trustedEvent, request())).resolves.toBe('running')
-    }
-    for (const fn of [pty.ensure, pty.restart]) {
-      expect(fn).toHaveBeenCalledWith(terminalId, expect.objectContaining({ id: terminalId }), size, palette, {
-        directory,
-        ...launch,
-      })
-    }
-    expect(workspaceMock.getSession).not.toHaveBeenCalled()
-  })
-
-  it('rejects other pane identities, missing threads and removed folders', async () => {
-    await expect(handler(IpcChannels.ptyEnsure)(trustedEvent, { ...request(), terminalId: 'another-pane' })).rejects.toThrow('Invalid Inbox')
-    await fs.rm(directory, { recursive: true })
-    await expect(handler(IpcChannels.ptyEnsure)(trustedEvent, request())).rejects.toThrow('directory is not available')
-    chat.terminalSession.mockImplementation(() => { throw new Error('Thread no longer exists') })
-    await expect(handler(IpcChannels.ptyEnsure)(trustedEvent, request())).rejects.toThrow('no longer exists')
-    expect(pty.ensure).not.toHaveBeenCalled()
-  })
-
-  it('uses the thread’s recorded WSL distro and worktree directory', async () => {
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    const path = '/home/me/worktrees/task'
-    chat.fileRoot.mockImplementation(() => ({ id: 'ses_chat', name: 'Chat', kind: 'wsl', distro: 'Ubuntu-24.04', path, createdAt: '' }))
-    chat.terminalSession.mockImplementation(() => ({ id: terminalId, name: 'Chat', kind: 'wsl', distro: 'Ubuntu-24.04', createdAt: '' }))
-    vi.mocked(canonicalizeWslPath).mockResolvedValue(path)
-    vi.mocked(runWslCommand).mockResolvedValue({ stdout: '', stderr: '', code: 0 })
-    await handler(IpcChannels.ptyEnsure)(trustedEvent, request())
-    expect(pty.ensure).toHaveBeenCalledWith(terminalId, expect.objectContaining({ kind: 'wsl', distro: 'Ubuntu-24.04' }), size, palette, {
-      directory: path, ...launch,
-    })
-  })
-
-  it('rejects a thread removed while its directory is being checked', async () => {
-    chat.terminalSession.mockImplementationOnce(() => ({ id: terminalId, name: 'Chat', kind: 'native', path: directory, createdAt: '' }))
-      .mockImplementationOnce(() => { throw new Error('Thread no longer exists') })
-    await expect(handler(IpcChannels.ptyEnsure)(trustedEvent, request())).rejects.toThrow('no longer exists')
-    expect(pty.ensure).not.toHaveBeenCalled()
-  })
-
-  it('disposes the associated terminal only after removing the thread succeeds', async () => {
-    await handler(IpcChannels.inboxRemove)(trustedEvent, { id: 'ses_chat' })
-    expect(recorder.remove).toHaveBeenCalledWith('ses_chat')
-    expect(pty.dispose).toHaveBeenCalledWith(terminalId)
-    pty.dispose.mockClear()
-    chat.removeThreadWorktree.mockRejectedValueOnce(new Error('Worktree is dirty'))
-    await expect(handler(IpcChannels.inboxRemove)(trustedEvent, { id: 'ses_chat', removeWorktree: true })).rejects.toThrow('dirty')
-    expect(pty.dispose).not.toHaveBeenCalled()
-  })
-})
-
 describe('Inbox terminal panes agents open', () => {
   const pane = 'inbox-terminal:tab:inbox-terminal:tab:default:pane:pane-2'
   let folder: string
@@ -304,11 +238,8 @@ describe('Inbox terminal panes agents open', () => {
     expect(pty.writeWhenStarted).toHaveBeenCalledWith(pane, 'npm run dev\r')
   })
 
-  it.each([
-    ['a thread\'s own terminal', 'inbox-thread:ses_1'],
-    ['a Sessions pane', 'ses-1:tab:default:pane:pane-1'],
-  ])('refuses %s, so an agent cannot start a shell anywhere but a new Inbox pane', async (_name, terminalId) => {
-    const { result, claimed } = await open(terminalId)
+  it('refuses a Sessions pane, so an agent cannot start a shell anywhere but a new Inbox pane', async () => {
+    const { result, claimed } = await open('ses-1:tab:default:pane:pane-1')
     await expect(claimed).rejects.toThrow()
     await expect(result).rejects.toThrow('could not add the pane')
     expect(pty.ensure).not.toHaveBeenCalled()

@@ -14,15 +14,14 @@ export const CHAT_COLUMN_MAX_PX = 768
 export const CHAT_COLUMN_MIN_PX = 520
 
 /**
- * The right padding the conversation takes for a card `card` pixels wide in an area `width` pixels wide. `column`
- * is a centred column of at most `CHAT_COLUMN_MAX_PX` (a chat, the new-thread page), which only moves as far as it
- * must; `fill` is content that takes the whole width (a terminal), which makes way for all of the card.
+ * The right padding the conversation takes for a card `card` pixels wide in an area `width` pixels wide. The
+ * conversation is a centred column of at most `CHAT_COLUMN_MAX_PX` (a chat, the new-thread page), which only moves
+ * as far as it must.
  */
-export function floatingReserve(width: number, card: number, layout: 'column' | 'fill'): number {
+export function floatingReserve(width: number, card: number): number {
   if (!(card > 0) || !(width > 0)) return 0
   const reserve = card + FLOATING_CARD_INSET_PX + FLOATING_CARD_GAP_PX
   if (width - reserve < CHAT_COLUMN_MIN_PX) return 0
-  if (layout === 'fill') return reserve
   // Centred in what is left of the width, the column's right edge is clear of the card once
   // (width - padding - column) / 2 + padding >= reserve.
   const needed = 2 * reserve - width + CHAT_COLUMN_MAX_PX

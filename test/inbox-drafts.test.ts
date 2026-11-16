@@ -62,14 +62,12 @@ describe('Inbox saved drafts', () => {
     } finally { warn.mockRestore() }
   })
 
-  it('restores a new thread draft with its chosen chat interface', async () => {
+  it('restores a new thread draft with its chosen agent, and forgets a chat interface an older version saved', async () => {
     const { path, store } = await setup()
-    await store.text(draftKey, 'Review this', { ...folder, choice: { mode: 'terminal', agent: 'plan', model: { id: 'm', providerId: 'p' } } })
+    const choice = { mode: 'terminal', agent: 'plan', model: { id: 'm', providerId: 'p' } }
+    await store.text(draftKey, 'Review this', { ...folder, choice })
     await store.save()
-    const restarted = new InboxDraftStore(path)
-    expect((await restarted.list())[0]?.choice).toMatchObject({ mode: 'terminal', agent: 'plan' })
-    await restarted.setMeta(draftKey, { ...folder, choice: { mode: 'gui', agent: 'plan' } })
-    expect((await new InboxDraftStore(path).list())[0]?.choice).toEqual({ mode: 'gui', agent: 'plan' })
+    expect((await new InboxDraftStore(path).list())[0]?.choice).toEqual({ agent: 'plan', model: { id: 'm', providerId: 'p' } })
   })
 
   it('restores a new thread draft with its permission mode, and forgets one it does not know', async () => {

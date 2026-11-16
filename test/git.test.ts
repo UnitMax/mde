@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { answerGitBatch, parseGitBatch } from './helpers/git-batch'
 import {
   createGitCommandRunner,
   createGitMutationRunner,
@@ -172,7 +173,7 @@ describe('Git command transport and status parsing', () => {
       (file: string, args: string[], options: { cwd?: string }, callback: (error: null, stdout: string, stderr: string) => void) => {
         calls.push({ file, args, cwd: options.cwd })
         const stdout = args.includes('rev-parse')
-          ? 'true\n'
+          ? `true\n${nativeSession.path}\n`
           : args.includes('branch')
             ? 'main\n'
             : ''
@@ -182,7 +183,8 @@ describe('Git command transport and status parsing', () => {
 
     await readGitTerminalInfo(nativeSession, nativeSession.path)
 
-    expect(calls).toHaveLength(6)
+    // The checkout root, HEAD, then branch, status and diff.
+    expect(calls).toHaveLength(5)
     expect(calls.every((call) => call.file === 'git' && call.cwd === nativeSession.path)).toBe(true)
   })
 
@@ -235,20 +237,25 @@ describe('Git command transport and status parsing', () => {
       options: { cwd?: string } = {}
     ) => {
       calls.push({ distro, command, cwd: options.cwd })
-      const stdout = command.includes('rev-parse')
-        ? 'true\n'
-        : command.includes('branch')
-          ? 'main\n'
-          : ''
-      return { stdout, stderr: '', code: 0 }
+      return answerGitBatch(command, (args) => ({
+        stdout: args.includes('--show-toplevel') ? 'true\n/home/me/src/app\n' : args.includes('branch') ? 'main\n' : '',
+      }))
     })
 
-    await readGitStatusWithRunner(createGitCommandRunner(wslSession, 'win32'))
+    await expect(readGitStatusWithRunner(createGitCommandRunner(wslSession, 'win32'))).resolves.toMatchObject({
+      repository: true, branch: 'main',
+    })
 
-    expect(calls).toHaveLength(5)
-    expect(calls.every((call) => call.distro === 'Ubuntu-24.04')).toBe(true)
-    expect(calls.every((call) => call.cwd === '/home/me/src/app')).toBe(true)
-    expect(calls.every((call) => call.command[0] === '/usr/bin/env' && call.command.includes('git'))).toBe(true)
+    // The whole reading is one wsl.exe: every extra one costs a round trip into the distro.
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.distro).toBe('Ubuntu-24.04')
+    expect(calls[0]!.cwd).toBe('/home/me/src/app')
+    expect(calls[0]!.command.slice(0, 3)).toEqual(['/usr/bin/env', '-u', 'GIT_CONFIG'])
+    expect(calls[0]!.command).toContain('GIT_ALLOW_PROTOCOL=')
+    const batch = parseGitBatch(calls[0]!.command)
+    expect(batch.safety).toEqual(safetyArgs)
+    expect(batch.commands.map((command) => command.args[1])).toEqual(['branch', 'status', 'diff'])
+    expect(batch.commands.map((command) => command.converts)).toEqual([false, true, true])
   })
 
   it('preserves Git separators and hostile filenames as direct arguments', async () => {
@@ -325,7 +332,7 @@ describe('Git status summaries', () => {
     const calls: string[][] = []
     const run = async (args: string[]): Promise<GitCommandResult> => {
       calls.push(args)
-      if (args.includes('--is-inside-work-tree')) return result('true\n')
+      if (args.includes('--is-inside-work-tree')) return result('true\n/repo\n')
       if (args.includes('branch')) return result('feature/terminal\n')
       if (args.includes('--verify')) return result('0123456\n')
       if (args.includes('status')) {
@@ -343,6 +350,7 @@ describe('Git status summaries', () => {
       changedFiles: 0,
     })
     expect(calls).toContainEqual([
+      '--literal-pathspecs', '-C', '/repo',
       '--no-pager',
       'status',
       '--porcelain=v2',
@@ -351,6 +359,7 @@ describe('Git status summaries', () => {
       '--untracked-files=normal'
     ])
     expect(calls).toContainEqual([
+      '--literal-pathspecs', '-C', '/repo',
       '--no-pager',
       'diff',
       '--numstat',
@@ -368,7 +377,7 @@ describe('Git status summaries', () => {
     const calls: string[][] = []
     const run = async (args: string[]): Promise<GitCommandResult> => {
       calls.push(args)
-      if (args.includes('--is-inside-work-tree')) return result('true\n')
+      if (args.includes('--is-inside-work-tree')) return result('true\n/repo\n')
       if (args.includes('branch')) return result('main\n')
       if (args.includes('--verify')) return result('', 'fatal: Needed a single revision', 128)
       if (args.includes('status')) return result('# branch.head main\u0000')
@@ -408,7 +417,7 @@ describe('terminal Git identity queries', () => {
       (_file: string, args: string[], options: { cwd?: string }, callback: (error: null, stdout: string, stderr: string) => void) => {
         calls.push({ args, cwd: options.cwd })
         const stdout = args.includes('status') || args.includes('diff') ? '' : args.includes('--is-inside-work-tree')
-          ? 'true\n'
+          ? 'true\n/workspace/other-repo\n'
           : args.includes('branch')
             ? 'feature/native\n'
             : '/workspace/other-repo\n'
@@ -423,7 +432,7 @@ describe('terminal Git identity queries', () => {
       directory: '/workspace/other-repo',
       additions: 0, deletions: 0, commitsAhead: null, changedFiles: 0
     })
-    expect(calls).toHaveLength(6)
+    expect(calls).toHaveLength(5)
     expect(calls.every((call) => call.cwd === '/workspace/other-repo')).toBe(true)
   })
 
@@ -431,9 +440,8 @@ describe('terminal Git identity queries', () => {
     const calls: string[][] = []
     const run = async (args: string[]): Promise<GitCommandResult> => {
       calls.push(args)
-      if (args.includes('--is-inside-work-tree')) return result('true\n')
+      if (args.includes('--is-inside-work-tree')) return result('true\n/workspace/other-repo\n')
       if (args.includes('branch')) return result('feature/terminal\n')
-      if (args.includes('--show-toplevel')) return result('/workspace/other-repo\n')
       return result('')
     }
 
@@ -444,15 +452,15 @@ describe('terminal Git identity queries', () => {
       additions: 0, deletions: 0, commitsAhead: null, changedFiles: 0
     })
     expect(calls).toContainEqual(['--literal-pathspecs', '-C', '/workspace/other-repo', '--no-pager', 'branch', '--show-current'])
-    expect(calls).toContainEqual(['--no-pager', 'rev-parse', '--show-toplevel'])
+    expect(calls[0]).toEqual(['--no-pager', 'rev-parse', '--is-inside-work-tree', '--show-toplevel'])
   })
 
   it('keeps the worktree when HEAD is detached', async () => {
     const run = async (args: string[]): Promise<GitCommandResult> => {
-      if (args.includes('--is-inside-work-tree')) return result('true\n')
+      if (args.includes('--is-inside-work-tree')) return result('true\n/workspace/repo\n')
       if (args.includes('status') || args.includes('diff')) return result('')
       if (args.includes('branch')) return result('\n')
-      return result('/workspace/repo\n')
+      return result('0123456\n')
     }
 
     await expect(readGitTerminalInfoWithRunner(run)).resolves.toEqual({
@@ -483,10 +491,9 @@ describe('terminal Git identity queries', () => {
       options: { cwd?: string } = {}
     ) => {
       calls.push({ cwd: options.cwd, command })
-      if (command.includes('--is-inside-work-tree')) return { stdout: 'true\n', stderr: '', code: 0 }
-      if (command.includes('status') || command.includes('diff')) return { stdout: '', stderr: '', code: 0 }
-      if (command.includes('branch')) return { stdout: 'feature/live\n', stderr: '', code: 0 }
-      return { stdout: '/home/me/other-repo\n', stderr: '', code: 0 }
+      return answerGitBatch(command, (args) => ({
+        stdout: args.includes('--show-toplevel') ? 'true\n/home/me/other-repo\n' : args.includes('branch') ? 'feature/live\n' : '',
+      }))
     })
 
     await expect(
@@ -500,8 +507,8 @@ describe('terminal Git identity queries', () => {
       additions: 0, deletions: 0, commitsAhead: null, changedFiles: 0
     })
 
-    expect(calls).toHaveLength(6)
-    expect(calls.every((call) => call.cwd === '/home/me/other-repo')).toBe(true)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.cwd).toBe('/home/me/other-repo')
   })
 })
 
@@ -510,7 +517,7 @@ describe('Git diff queries', () => {
     const calls: string[][] = []
     const run = async (args: string[]): Promise<GitCommandResult> => {
       calls.push(args)
-      if (args.includes('rev-parse')) return result('true\n')
+      if (args.includes('rev-parse')) return result('true\n/repo\n')
       if (args.includes('status')) return result('1 M. N... 100644 100644 100644 abc123 def456 src/changed.ts\u0000')
       return result('diff --git a/src/changed.ts b/src/changed.ts\n@@ -1 +1 @@\n-old\n+new\n')
     }
@@ -521,6 +528,7 @@ describe('Git diff queries', () => {
       binary: false
     })
     expect(calls).toContainEqual([
+      '--literal-pathspecs', '-C', '/repo',
       '--no-pager',
       'diff',
       '--no-ext-diff',
@@ -539,7 +547,7 @@ describe('Git diff queries', () => {
     const calls: string[][] = []
     const run = async (args: string[]): Promise<GitCommandResult> => {
       calls.push(args)
-      if (args.includes('rev-parse')) return result('true\n')
+      if (args.includes('rev-parse')) return result('true\n/repo\n')
       if (args.includes('status')) return result('? new file.ts\u0000')
       return result('diff --git a/new file.ts b/new file.ts\n+new\n', '', 1)
     }
@@ -549,6 +557,7 @@ describe('Git diff queries', () => {
       binary: false
     })
     expect(calls).toContainEqual([
+      '--literal-pathspecs', '-C', '/repo',
       '--no-pager',
       'diff',
       '--no-index',
@@ -567,7 +576,7 @@ describe('Git diff queries', () => {
     const run = async (args: string[]): Promise<GitCommandResult> => {
       calls.push(args)
       if (args.includes('--verify')) return result('', 'fatal: Needed a single revision', 128)
-      if (args.includes('rev-parse')) return result('true\n')
+      if (args.includes('rev-parse')) return result('true\n/repo\n')
       if (args.includes('status')) return result('1 A. N... 100644 100644 100644 abc123 abc123 staged.ts\u0000')
       return result('diff --git a/staged.ts b/staged.ts\n+new\n')
     }
@@ -581,7 +590,7 @@ describe('Git diff queries', () => {
 
   it('rejects paths that are no longer listed as changes', async () => {
     const run = async (args: string[]): Promise<GitCommandResult> => {
-      if (args.includes('rev-parse')) return result('true\n')
+      if (args.includes('rev-parse')) return result('true\n/repo\n')
       return result('')
     }
 
@@ -609,13 +618,13 @@ describe('Git command hardening (SEC-008)', () => {
     mocks.execFile.mockImplementation(
       (_file: string, args: string[], _options: unknown, callback: (error: null, stdout: string, stderr: string) => void) => {
         calls.push(args)
-        callback(null, args.includes('rev-parse') ? 'true\n' : '', '')
+        callback(null, args.includes('rev-parse') ? 'true\n/workspace/repo\n' : '', '')
       }
     )
 
     await readGitTerminalInfo(nativeSession, nativeSession.path)
 
-    expect(calls).not.toHaveLength(0)
+    expect(calls).toHaveLength(5)
     for (const args of calls) {
       expect(args.slice(0, safetyArgs.length)).toEqual(safetyArgs)
       expect(args[0]).toBe('--no-pager')

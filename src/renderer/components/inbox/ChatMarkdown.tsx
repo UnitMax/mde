@@ -1,5 +1,6 @@
 import { memo, useContext, useEffect, useRef, type KeyboardEvent, type MouseEvent } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
+import { ChatCodeBlock } from '@/components/inbox/ChatCodeBlock'
 import { ChatFileSourceContext } from '@/components/inbox/mcp-context'
 import { ChatFileLinks, type ChatFileSource } from '@/lib/chat-file-links'
 import { externalLinkUrl } from '@/lib/file-viewer'
@@ -26,7 +27,11 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   filesRef.current = files
   const editor = useEditor(
     {
-      extensions: [...markdownPreviewExtensions, ChatFileLinks.configure({ source: filesRef })],
+      extensions: [
+        ...markdownPreviewExtensions.filter((extension) => extension.name !== 'codeBlock'),
+        ChatCodeBlock,
+        ChatFileLinks.configure({ source: filesRef }),
+      ],
       content: text,
       contentType: 'markdown',
       editable: false,

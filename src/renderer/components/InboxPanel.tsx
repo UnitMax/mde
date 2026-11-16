@@ -17,9 +17,9 @@ import {
   PenLine,
   Pin,
   PinOff,
-  Terminal,
   Trash2,
-  X
+  X,
+  CalendarClock
 } from 'lucide-react'
 import type { InboxThread } from '@shared/types'
 import { ElapsedTime } from '@/components/ElapsedTime'
@@ -290,17 +290,17 @@ function InboxThreadRow({
                   <Bot role="img" aria-label="Started by an agent" className="h-3 w-3 shrink-0 text-fg-subtle" />
                 </span>
               )}
+              {thread.automationId && (
+                <span title="Started by an automation" data-testid={`inbox-thread-automation-mark-${thread.id}`}>
+                  <CalendarClock role="img" aria-label="Started by an automation" className="h-3 w-3 shrink-0 text-fg-subtle" />
+                </span>
+              )}
               {thread.worktreeRemovedAt !== undefined && (
                 <span title="Its worktree was deleted; kept to read" data-testid={`inbox-thread-read-only-mark-${thread.id}`}>
                   <FolderX role="img" aria-label="Read only: its worktree was deleted" className="h-3 w-3 shrink-0 text-fg-subtle" />
                 </span>
               )}
               {thread.permissionMode && <PermissionModeMark thread={thread} />}
-              {thread.mode === 'terminal' && (
-                <span title="Terminal thread" data-testid={`inbox-thread-terminal-mark-${thread.id}`}>
-                  <Terminal role="img" aria-label="Terminal thread" className="h-3 w-3 shrink-0 text-fg-subtle" />
-                </span>
-              )}
               {thread.pinned && (
                 <Pin
                   role="img"

@@ -12,6 +12,7 @@ import {
   formatTokens,
   formAnswer,
   groupModels,
+  hideRepeatedRunFailures,
   hideReverted,
   initialChoice,
   initialFormDraft,
@@ -37,6 +38,45 @@ const models = [
   { id: 'a-model', providerId: 'zed', providerName: 'Zed', name: 'Alpha' },
   { id: 'free-1', providerId: 'opencode', providerName: 'OpenCode', name: 'Flint Free' },
 ]
+
+describe('repeated run failures', () => {
+  const assistant: ChatMessage = {
+    kind: 'assistant', id: 'a1', time: 1, agent: 'build', model, parts: [], completed: true, error: 'Rate limited',
+  }
+  const failure: Extract<ChatMessage, { kind: 'note' }> = {
+    kind: 'note', id: 'n1', time: 2, tone: 'error', runFailure: true, text: 'Rate limited',
+  }
+
+  it('hides the repeated note while keeping the original messages intact', () => {
+    const messages = [assistant, failure]
+    expect(hideRepeatedRunFailures(messages)).toEqual([assistant])
+    expect(messages).toEqual([assistant, failure])
+  })
+
+  it.each([
+    { text: 'A different error' },
+    { detail: 'Additional diagnostic information' },
+    { runFailure: undefined },
+    { runFailure: undefined, compaction: { status: 'failed' as const, reason: 'manual' as const } },
+  ])('preserves a note that adds information or is not a run failure: %j', (overrides) => {
+    const messages = [assistant, { ...failure, ...overrides }]
+    expect(hideRepeatedRunFailures(messages)).toEqual(messages)
+  })
+
+  it('keeps a failure when the assistant error is not loaded', () => {
+    expect(hideRepeatedRunFailures([failure])).toEqual([failure])
+  })
+
+  it.each<ChatMessage>([
+    { kind: 'user', id: 'u2', time: 3, text: 'Try again' },
+    { kind: 'note', id: 'g1', time: 3, tone: 'info', text: 'Continue the goal', goal: 'continue' },
+    { ...assistant, id: 'a2', error: undefined },
+    { ...failure, id: 'n2', text: 'Another run failed' },
+  ])('does not match an earlier run or assistant step across $id', (boundary) => {
+    const messages = [assistant, boundary, failure]
+    expect(hideRepeatedRunFailures(messages)).toEqual(messages)
+  })
+})
 
 describe('chat picker helpers', () => {
   it('treats effort changes and returning to defaults as model selection changes', () => {
