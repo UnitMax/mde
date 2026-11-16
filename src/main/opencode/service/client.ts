@@ -193,6 +193,8 @@ export interface OpenCodeServiceClientOptions {
   discover: OpenCodeServiceDiscover
   /** The configured OpenCode executable, read on every discovery. */
   executable(): string
+  /** Told of every directory a request names, which OpenCode loads to answer it. */
+  onDirectory?(target: OpenCodeTarget, directory: string): void
   fetch?: typeof fetch
   timeoutMs?: number
   maxResponseBytes?: number
@@ -237,6 +239,8 @@ export class OpenCodeServiceClient {
   }
 
   async request(target: OpenCodeTarget, operation: ServiceOperation, request: ServiceRequest = {}): Promise<unknown> {
+    const directory = request.query?.['location[directory]']
+    if (directory) this.options.onDirectory?.(target, directory)
     for (let attempt = 0; ; attempt += 1) {
       const pending = this.endpoint(target)
       const endpoint = await pending

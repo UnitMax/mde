@@ -29,6 +29,7 @@ import { handleWindowOpen } from './external-links'
 import { installPermissionPolicy } from './permissions'
 import { installRendererProtocol, registerRendererScheme } from './renderer-protocol'
 import { isMcpBridgeLaunch, mdeMcpCommand, startMdeMcp } from './mcp'
+import { BridgeStandby, MDE_MCP_STANDBY_FILE } from './mcp/standby'
 import { startMcpBridge } from './mcp/bridge-main'
 import { AgentTerminals } from './mcp/agent-terminals'
 import type { McpListener } from './mcp/listener'
@@ -43,6 +44,7 @@ let inboxAsides: InboxAsideHistory | null = null
 let inboxAutomations: InboxAutomations | null = null
 let inboxChat: InboxChatService | null = null
 let mdeMcp: McpListener | null = null
+let bridgeStandby: BridgeStandby | null = null
 let quitPrepared = false
 /** The Inbox (and with it the MDE MCP) runs OpenCode natively on macOS and inside WSL on Windows. */
 const inboxEnabled = (): boolean => process.platform === 'darwin' || process.platform === 'win32'
@@ -233,7 +235,8 @@ if (bridgeLaunch) {
     powerMonitor.on('resume', () => inboxRecorder?.wakeSnoozed())
     const serviceClient = new OpenCodeServiceClient({
       discover: discoverOpenCodeService,
-      executable: () => inboxChat?.executable() ?? 'opencode'
+      executable: () => inboxChat?.executable() ?? 'opencode',
+      onDirectory: (target, directory) => bridgeStandby?.use(target, directory)
     })
     const previewAttachment = (bytes: Buffer): string | undefined => {
       const image = nativeImage.createFromBuffer(bytes)
@@ -250,7 +253,10 @@ if (bridgeLaunch) {
     })
     const openCodeConfig = createOpenCodeConfigService({
       client: serviceClient,
-      onSaved: () => inboxChat?.invalidateOptions()
+      onSaved: () => {
+        inboxChat?.invalidateOptions()
+        bridgeStandby?.refresh()
+      }
     })
     inboxAsides = new InboxAsideHistory(join(app.getPath('userData'), 'inbox-asides.json'), (threadId) => Boolean(inboxStore?.get(threadId)))
     inboxChat = new InboxChatService({
@@ -277,6 +283,15 @@ if (bridgeLaunch) {
       ...(app.isPackaged ? {} : { appPath: app.getAppPath() }),
       // A second MDE kept apart with --user-data-dir has its own socket and token, so its bridge needs the same folder.
       ...(app.commandLine.hasSwitch('user-data-dir') ? { userDataDir: app.getPath('userData') } : {}),
+    }
+    // While MDE is closed its bridges are stopped, so nothing keeps the executable in use; they come back now.
+    if (inboxEnabled()) {
+      bridgeStandby = new BridgeStandby({
+        file: join(app.getPath('userData'), MDE_MCP_STANDBY_FILE),
+        client: serviceClient,
+        owned: async (target) => (await openCodeConfig.mdeMcpStatus(target, await mdeMcpCommand(target, self, toWsl))).state === 'installed',
+      })
+      void bridgeStandby.resume()
     }
     const agentTerminals = new AgentTerminals(app.getPath('userData'))
     // Agents can only start threads where the Inbox runs; elsewhere nothing listens and no token is made.
@@ -362,7 +377,7 @@ if (bridgeLaunch) {
     void mdeMcp?.close()
     // Save the last pane directories and Inbox state before exiting.
     event.preventDefault()
-    void Promise.all([terminalDirectories.flush(), inboxStore?.flush(), inboxDrafts?.flush(), inboxAsides?.flush(), inboxAutomations?.flush()])
+    void Promise.all([terminalDirectories.flush(), inboxStore?.flush(), inboxDrafts?.flush(), inboxAsides?.flush(), inboxAutomations?.flush(), bridgeStandby?.pause()])
       .catch(() => console.warn('[app] Could not finish saving local state.'))
       .finally(() => app.quit())
   })

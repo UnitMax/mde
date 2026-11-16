@@ -93,6 +93,9 @@ backed-up locations can place copies elsewhere. These stores are not encrypted b
 - `mcp-token` under Electron's user-data directory, once MDE has started on the Mac or Windows: a random
   secret (64 hex characters, readable only by your account) that the MDE MCP bridge must present. It
   identifies nothing. On the Mac, `mcp.sock` beside it is the socket the bridge connects to while MDE runs.
+- `mde-mcp-standby.json` under Electron's user-data directory, from quitting MDE until its next start, when
+  the MDE MCP is installed: the project directories (and, on Windows, their WSL distribution) whose MDE MCP
+  bridge MDE asked OpenCode to stop, so it can ask OpenCode to start them again. Nothing else.
 - `mde-mcp.json` under Electron's user-data directory, once you change **Commands in terminals agents open**
   (Settings, OpenCode, MDE MCP): only that choice (`ask` or `run`). "Allow for an hour" is not written down.
 - OpenCode's own global configuration file (`opencode.jsonc`, or `opencode.json`, in OpenCode's
@@ -186,7 +189,9 @@ The Inbox's MCP list asks the same local service which MCP servers OpenCode has 
 thread and how each stands: name, title, connected, failed or needs a sign-in, and a short error with
 credentials and paths removed. MDE drops everything else in the answer (commands, URLs, headers and
 environment variables), keeps the list in memory only and stores nothing. Switching a server off or on
-there tells the service to disconnect or connect it until OpenCode restarts. Apart from its own MDE MCP
+there tells the service to disconnect or connect it until OpenCode restarts. MDE does the same by itself for
+its own MDE MCP only: it disconnects it on quitting and connects it again on starting, in the project
+directories used since MDE started, so that no MDE process keeps running while MDE is closed. Apart from its own MDE MCP
 (below), MDE does not start, contact or configure MCP servers itself and leaves the MCP part of OpenCode's
 configuration alone; OpenCode starts and contacts them, and may send them what the model passes to their tools, as it does
 in a terminal. What a tool is called with and returns is part of the conversation, which is fetched

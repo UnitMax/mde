@@ -285,6 +285,28 @@ other new thread, under Working, without taking focus; projects an agent adds re
 `inbox:folders-changed` event. Limits: 10 threads a minute across all agents, and chains stop at three levels
 of agent-started threads. Security details are in `docs/security.md` under "MDE MCP boundary".
 
+**Bridges stop while MDE is closed** (`src/main/mcp/standby.ts`). OpenCode keeps a bridge running for as long
+as its service runs, also after MDE quit, and on Windows a running `mde.exe` cannot be replaced, so an update
+or a rebuild would fail until the service restarted. A bridge cannot simply exit: OpenCode 2.2.6 then lists the
+server as failed and does not start it again, not when idle and not for a new session, until someone connects
+it. So MDE uses OpenCode's own switch:
+
+- **On quitting** MDE asks OpenCode for the MCP list of each directory it named in a request during this run
+  (the service client reports them), and where `mde` is `connected` it calls the disconnect route. OpenCode
+  closes the bridge's stdin and the bridge exits. The directories are written to `mde-mcp-standby.json` before
+  anything is stopped. Quitting waits at most two seconds for all of it.
+- **On starting** MDE reads that file and calls the connect route for each directory where `mde` is still
+  `disabled`. After an OpenCode restart nothing is disabled (OpenCode keeps no such state) and nothing is
+  done. A directory OpenCode could not be asked about stays in the file for the next start.
+
+Only directories from this run are asked about, because asking about another one would make OpenCode load it
+and start its MCP servers. And only where the configured entry starts this copy of MDE (`installed`, not
+`outdated`), so a second MDE with its own data folder does not switch off the bridges of the first. A server
+someone switched off by hand is not `connected` on quitting, so it is not written down and stays off. What this
+does not cover: MDE crashing or being killed, and a bridge in a directory only a terminal `opencode` session
+used. Restarting the OpenCode service ends those. While MDE is closed, agents elsewhere do not see the `mde`
+tools at all, where before a call answered "MDE is not running".
+
 **Terminals agents open.** `open_terminal({ command?, directory?, title? })` adds a pane to the Inbox terminal
 (the one in the sidebar's Terminal tab, or floating) whose shell starts in the directory (default: the
 parent thread's, else the bridge's working directory), and returns once the shell has started, saying whether

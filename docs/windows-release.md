@@ -43,7 +43,12 @@ Windows `node_modules` directory until the dependency or native build inputs cha
 ## Prepare the release
 
 1. Close every running packaged MDE instance. Windows keeps Electron DLLs open
-   and electron-builder cannot replace `dist/win-unpacked` while they are in use.
+   and electron-builder cannot replace `dist/win-unpacked` while they are in use. With the MDE MCP installed
+   from that build, OpenCode runs `mde.exe --mcp-bridge` processes from it; MDE stops them when it quits, but
+   not when it crashed or was killed. `npm run build:win:remote` stops any that are left before it empties
+   `dist`, and prints how many it stopped; OpenCode then shows the `mde` server as failed until MDE's MCP
+   menu connects it or `opencode service restart` runs in WSL. For a build made another way, run that
+   restart if the folder cannot be replaced.
 2. Update `package.json` and `package-lock.json` to the same release version.
 3. Run `npm run audit:deps` against the full lockfile and resolve or document any
    advisories (see [`security.md`](security.md)).

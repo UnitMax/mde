@@ -587,6 +587,11 @@ place where something other than the window can ask the main process to act, so 
   agents with your OpenCode configuration and cost model usage. That is no more than such a process could do
   through OpenCode's own service password or the terminal. Agents that have the MCP installed can do the
   same, within the limits above. Removing the entry (Settings → OpenCode → MDE MCP → Remove) stops it.
+- **Stopped while MDE is closed.** On quitting MDE disconnects the server through OpenCode's service and on
+  starting connects it again (`standby.ts`). The server name is the fixed `mde`, never one read from a file or
+  an answer, and the directories are ones MDE itself sent to the service in this run; the file that carries
+  them to the next start (`mde-mcp-standby.json`, mode 0600) is re-validated on reading and used only as the
+  directory of a list and a connect request for `mde`. It can make OpenCode load a directory, nothing more.
 - **Install** writes only `mcp.servers.mde` = `{ type: "local", command: [...] }` into OpenCode's global
   configuration, with the configuration editor's guarantees (surgical JSONC edit, re-parse, serialized atomic
   write, nothing written to a file that does not parse). The command is built in the main process from
@@ -626,7 +631,8 @@ place where something other than the window can ask the main process to act, so 
 
 Regression coverage: `test/view-spec.test.ts` and `test/inbox-views-ui.test.ts` (views: the check, the bridge's
 answer, the parser keeping a view whole, drawing), `test/mde-mcp.test.ts` (protocol, framing, bridge ↔ listener over a real socket, token,
-tools, configuration edits), `test/mde-mcp-agent-terminals.test.ts` (approval, the hour, refusals, timeouts),
+tools, configuration edits), `test/mde-mcp-standby.test.ts` (stopping and reconnecting bridges),
+`test/mde-mcp-agent-terminals.test.ts` (approval, the hour, refusals, timeouts),
 the agent-pane cases in `test/ipc-inbox-terminal.test.ts`, `test/pty-manager.test.ts` (kept output, typed input)
 and the validator cases in `test/ipc-validation.test.ts`.
 

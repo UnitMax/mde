@@ -52,6 +52,35 @@ esac
 
 mkdir -p "$WIN_DIR"
 
+# With the MDE MCP installed from this build, OpenCode runs `mde.exe --mcp-bridge`
+# processes out of dist/win-unpacked. MDE stops them when it quits, but not when
+# it crashed or was killed, and Windows refuses to delete a running mde.exe. Stop
+# what is left, and say so: it should not happen after a normal quit. Only bridge
+# processes started from this build's dist are touched, never a running MDE.
+stop_leftover_bridges() {
+  local dist="${WIN_DIR_NATIVE}\\dist\\"
+  local pids pid count=0
+  pids="$(cd /mnt/c && powershell.exe -NoProfile -NonInteractive -Command "
+    \$dist = '${dist//\'/\'\'}'
+    Get-CimInstance Win32_Process |
+      Where-Object { \$_.ExecutablePath -and \$_.ExecutablePath.StartsWith(\$dist, [StringComparison]::OrdinalIgnoreCase) -and \$_.CommandLine -like '*--mcp-bridge*' } |
+      ForEach-Object { \$_.ProcessId }" 2>/dev/null | tr -d '\r')" || return 0
+  for pid in $pids; do
+    [[ "$pid" =~ ^[0-9]+$ ]] || continue
+    # /T takes the bridge's Chromium helper processes with it.
+    if (cd /mnt/c && taskkill.exe /PID "$pid" /T /F >/dev/null 2>&1); then
+      count=$((count + 1))
+    fi
+  done
+  if ((count > 0)); then
+    echo "Stopped ${count} leftover MDE MCP bridge process(es) running from ${dist}"
+    echo "  (MDE did not quit cleanly, or OpenCode started them after it quit). The 'mde' MCP server now shows"
+    echo "  as failed in OpenCode until MDE's Inbox MCP menu connects it or 'opencode service restart' runs."
+    # Windows releases the executable a moment after the process is gone.
+    sleep 1
+  fi
+}
+
 rsync -a --delete \
   --exclude='.git/' \
   --exclude='node_modules/' \
@@ -66,6 +95,8 @@ rsync -a --delete \
 # only overwrites files whose names collide. Empty the directory instead, so
 # every run starts clean and `npm run audit:package` only ever sees the build
 # it just made. Artifacts are reproducible; nothing here is worth keeping.
+stop_leftover_bridges
+
 rm -rf "$WIN_DIR/dist"
 
 # cd into the Windows dir first so cmd.exe doesn't start from the \\wsl.localhost\...
