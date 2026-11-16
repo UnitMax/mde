@@ -30,6 +30,13 @@ backed-up locations can place copies elsewhere. These stores are not encrypted b
   be read again after their card is closed and after a restart. Written when a side question is
   answered or a thread is removed. Removing a thread removes its side questions; they do not expire
   otherwise.
+- `inbox-automations.json` under Electron's user-data directory: the Inbox automations. For each, the
+  message every run sends, the project folder's ID, the agent and model, the interface, permission mode and
+  worktree base branch if chosen, the schedule, whether it is on, when it was made, when it runs next and
+  last ran, how many runs it has made, the ID of the thread the last run started, and the reason the last
+  run failed if it did. Plain text, unencrypted. Written when an automation is saved, changed, paused, run
+  or deleted; deleting one removes it from the file. A run sends its message to OpenCode exactly as
+  starting a thread by hand does, on its schedule and without asking again, while MDE is open.
 - The renderer's local storage (`mde.terminal-settings`): appearance and terminal preferences,
   including the command that starts OpenCode for the Inbox (Settings, OpenCode, Executable: a program
   name or path, without arguments). An older `agents` entry from a removed launcher is ignored.

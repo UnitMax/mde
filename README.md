@@ -8,6 +8,10 @@ session, Git changes in each terminal header, a file tree that follows the selec
 Markdown and Mermaid preview, and To Do boards. The Inbox is a separate
 view for starting and continuing OpenCode conversations in GUI chat or a direct OpenCode terminal;
 both use OpenCode's API for thread activity. Choose GUI (the default) or Terminal from the menu under the new-thread message box.
+To run something again and again, pick a schedule from the **Run once** menu under the new-thread message box
+(every hour, every day at 9:00, weekdays, or your own): sending then saves an automation that starts a new
+thread each time, while MDE is open; a run missed while it was closed is made up once. The calendar-clock
+button in the Inbox toolbar lists, pauses, edits and deletes them.
 Add, rename, remove and give icons to the folders threads start in from Projects (the folder button
 beside the Inbox settings); the icon shows beside each project's threads. On macOS and in WSL,
 Settings → OpenCode → Edit configuration changes OpenCode's own configuration file: permission rules,

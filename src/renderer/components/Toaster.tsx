@@ -10,6 +10,7 @@ import {
   SquareTerminal,
   TerminalSquare,
   X,
+  CalendarClock,
   type LucideIcon
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -23,6 +24,7 @@ const ICONS: Record<ToastIcon, LucideIcon> = {
   woke: AlarmClock,
   background: Send,
   'agent-thread': Bot,
+  automation: CalendarClock,
   'agent-terminal': SquareTerminal,
   approval: TerminalSquare,
   error: CircleAlert

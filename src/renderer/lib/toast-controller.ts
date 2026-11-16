@@ -3,7 +3,7 @@ import { useInboxChat } from '@/store/inbox-chat'
 import { useToasts } from '@/store/toasts'
 import { useWorkspace } from '@/store/workspace'
 import { ALERT_SETTINGS_CHANGE_EVENT, getAlertSettings } from './alert-settings'
-import { notify, spawnedThreadToast, threadDisplayTitle, threadToast, titleErrorToastKey } from './toasts'
+import { automationThreadToast, notify, spawnedThreadToast, threadDisplayTitle, threadToast, titleErrorToastKey } from './toasts'
 
 function projectName(thread: InboxThread): string | undefined {
   return useInboxChat.getState().folders.find((folder) => folder.id === thread.folderId)?.name
@@ -11,7 +11,7 @@ function projectName(thread: InboxThread): string | undefined {
 
 /**
  * Starts showing toasts for the Inbox threads: one finished, failed, needs input or woke up, or an agent started
- * one. Other toasts (a chat started in the background, a terminal an agent opened) come from where those happen.
+ * one, or an automation did. Other toasts (a chat started in the background, a terminal an agent opened) come from where those happen.
  * Returns what stops it.
  */
 export function startToasts(): () => void {
@@ -34,6 +34,7 @@ export function startToasts(): () => void {
       const parentId = thread.spawnedBy?.threadId
       const parent = parentId ? state.inboxThreads.find((item) => item.id === parentId) : undefined
       const toast = spawnedThreadToast(thread, Date.now(), { project, ...(parent ? { parentTitle: threadDisplayTitle(parent) } : {}) })
+        ?? automationThreadToast(thread, Date.now(), { project })
       if (toast) notify(toast)
     }
   })

@@ -15,6 +15,7 @@ import { initWorkspaceStore } from './store/workspace'
 import { InboxStore, INBOX_FILE } from './inbox/store'
 import { InboxRecorder } from './inbox/recorder'
 import { InboxAsideHistory } from './inbox/asides'
+import { AUTOMATIONS_FILE, InboxAutomations } from './inbox/automations'
 import { InboxDraftStore } from './inbox/drafts'
 import { InboxChatService } from './inbox/chat'
 import { InboxWorktrees } from './inbox/worktree'
@@ -39,6 +40,7 @@ let inboxStore: InboxStore | null = null
 let inboxRecorder: InboxRecorder | null = null
 let inboxDrafts: InboxDraftStore | null = null
 let inboxAsides: InboxAsideHistory | null = null
+let inboxAutomations: InboxAutomations | null = null
 let inboxChat: InboxChatService | null = null
 let mdeMcp: McpListener | null = null
 let quitPrepared = false
@@ -292,12 +294,49 @@ if (bridgeLaunch) {
       terminals: agentTerminals,
       now: () => Date.now(),
     })
+    // Automations run where the Inbox does. What came due while MDE was closed runs once, shortly after the start.
+    if (inboxEnabled()) {
+      const store = inboxStore
+      const chat = inboxChat
+      inboxAutomations = new InboxAutomations(join(app.getPath('userData'), AUTOMATIONS_FILE), {
+        now: () => Date.now(),
+        folderExists: (folderId) => store.folders().some((folder) => folder.id === folderId),
+        threadExists: (threadId) => Boolean(store.get(threadId)),
+        busy: (threadId) => {
+          const status = store.get(threadId)?.status
+          return status === 'working' || status === 'attention'
+        },
+        run: async (automation) => {
+          const before = store.folders().length
+          try {
+            return await chat.create({
+              folderId: automation.folderId,
+              text: automation.text,
+              agent: automation.agent,
+              model: automation.model,
+              ...(automation.mode ? { mode: automation.mode } : {}),
+              ...(automation.permissionMode ? { permissionMode: automation.permissionMode } : {}),
+              ...(automation.worktree ? { worktree: automation.worktree } : {}),
+            }, { automationId: automation.id })
+          } finally {
+            // A worktree run adds the worktree as a project.
+            if (store.folders().length !== before && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcEvents.inboxFoldersChanged)
+          }
+        },
+        onChanged: (automations) => {
+          if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcEvents.automationsChanged, automations)
+        },
+      })
+      await inboxAutomations.load()
+      inboxAutomations.start()
+      powerMonitor.on('resume', () => inboxAutomations?.check())
+    }
     registerIpcHandlers(
       { getWebContents: () => mainWindow?.webContents ?? null, rendererUrl },
       ptyManager,
       miniWindow,
       titleBar,
-      { recorder: inboxRecorder, chat: inboxChat, openCodeConfig, mdeMcpCommand: (target) => mdeMcpCommand(target, self, toWsl), agentTerminals },
+      { recorder: inboxRecorder, chat: inboxChat, openCodeConfig, mdeMcpCommand: (target) => mdeMcpCommand(target, self, toWsl), agentTerminals, ...(inboxAutomations ? { automations: inboxAutomations } : {}) },
       taskbarAttention,
       floatingTerminalKey,
       wslResources
@@ -320,10 +359,11 @@ if (bridgeLaunch) {
     wslResources.dispose()
     inboxChat?.stop()
     inboxRecorder?.dispose()
+    inboxAutomations?.dispose()
     void mdeMcp?.close()
     // Save the last pane directories and Inbox state before exiting.
     event.preventDefault()
-    void Promise.all([terminalDirectories.flush(), inboxStore?.flush(), inboxDrafts?.flush(), inboxAsides?.flush()])
+    void Promise.all([terminalDirectories.flush(), inboxStore?.flush(), inboxDrafts?.flush(), inboxAsides?.flush(), inboxAutomations?.flush()])
       .catch(() => console.warn('[app] Could not finish saving local state.'))
       .finally(() => app.quit())
   })

@@ -19,7 +19,8 @@ import {
   PinOff,
   Terminal,
   Trash2,
-  X
+  X,
+  CalendarClock
 } from 'lucide-react'
 import type { InboxThread } from '@shared/types'
 import { ElapsedTime } from '@/components/ElapsedTime'
@@ -288,6 +289,11 @@ function InboxThreadRow({
               {thread.spawnedBy && (
                 <span title="Started by an agent" data-testid={`inbox-thread-spawned-mark-${thread.id}`}>
                   <Bot role="img" aria-label="Started by an agent" className="h-3 w-3 shrink-0 text-fg-subtle" />
+                </span>
+              )}
+              {thread.automationId && (
+                <span title="Started by an automation" data-testid={`inbox-thread-automation-mark-${thread.id}`}>
+                  <CalendarClock role="img" aria-label="Started by an automation" className="h-3 w-3 shrink-0 text-fg-subtle" />
                 </span>
               )}
               {thread.worktreeRemovedAt !== undefined && (

@@ -548,6 +548,20 @@ a seeded fuzz that parses every result), `test/opencode-config-files.test.ts` (r
 symbolic links, modes, conflicts, WSL paths), `test/ipc-opencode-config.test.ts` and the validator cases in
 `test/ipc-validation.test.ts`.
 
+### Inbox automations
+
+An automation starts a thread without a person at the box, so what it can hold is kept to what the New thread
+page can send. `automations:save` is validated like `chat:create` (folder ID, agent ID, model reference,
+prompt text, permission mode, worktree base), takes no attachments and no branch name, and its schedule must
+pass `isAutomationSchedule` (an interval of 5 minutes to 28 days, or a time of day with distinct days of the
+week); the other channels take only an `aut_…` ID. The main process checks the same fields again when it
+saves and when it reads `inbox-automations.json`, drops entries that fail, and keeps at most 100. A run goes
+through `InboxChatService.create`, the same path and checks as a thread started by hand; nothing else can be
+scheduled, and neither agents nor the MDE MCP can create or change automations. The scheduler starts at most
+one thread per automation per look, moves the next run past now and writes the file before starting, and
+leaves a run out while the previous run's thread is still working, so a missed stretch or a short interval
+cannot start a pile of agents.
+
 ### MDE MCP boundary
 
 The MDE MCP lets an agent start Inbox threads and open Inbox terminal panes (`src/main/mcp/`, `src/shared/mde-mcp.ts`). It adds the one

@@ -599,6 +599,52 @@ otherwise it would run as a bar down the gap beside the card. Chromium does not 
 plain `:hover` rule, so the pointer sets a `data-scrollbar-shown` attribute on enter and leave instead
 (`lib/hover-scrollbar.ts`, also used by the Usage dialog).
 
+### Inbox automations
+
+An automation is a message that starts a new Inbox thread on a schedule. It is made on the New thread page:
+the strip under the message box has a chip (`AutomationPicker` in `AutomationSchedule.tsx`) that says **Run
+once** and offers the schedules in `AUTOMATION_PRESETS` (every 30 minutes, every hour, every 4 hours, every day
+at 9:00, weekdays at 9:00, every Monday at 9:00) and **Custom…**, a dialog with the two kinds of schedule
+there are (`AutomationSchedule` in `src/shared/automations.ts`): at a time of day on chosen days of the week,
+or every so often (5 minutes to 28 days). With a schedule chosen the chip names it in the accent color, the
+heading asks what should run, a line under the strip says what sending will do and when it first runs, and the
+send button is a **Schedule** pill: sending saves the automation (`automations:save`) with the page's folder,
+agent, model, interface, permission mode and worktree base, starts no thread, removes the page's draft and
+leaves a blank page that says when the automation first runs. The choice is per page, like GUI/Terminal: the
+next page runs once again. An automation carries text only (files named with `@` are part of the text;
+attached files are refused), and a worktree automation keeps only the base branch, since every run needs a
+branch of its own (`mde/<id>`).
+
+The main process owns them (`InboxAutomations` in `src/main/inbox/automations.ts`, stored in
+`inbox-automations.json`, at most 100) and runs them, so they run with the window in mini mode too, but only
+while MDE is open. A timer looks at most every minute (`AUTOMATION_CHECK_MS`; timers do not count sleep, and
+the clock can change), first 5 seconds after the start, and again when the computer wakes (`powerMonitor`
+`resume`). Each automation holds `nextRunAt`. When that has passed, `followingAutomationRun` moves it to the
+first time after now, the file is written, and only then is one thread started through
+`InboxChatService.create` with `{ automationId }`. So however many runs were missed while MDE was closed or
+the computer slept, one is made up, and a crash in the middle of a run does not repeat it. An interval keeps
+its rhythm (every hour from 9:10 stays at ten past); a time of day is worked out in the computer's time zone.
+A run is left out, and noted (`skippedAt`), while the thread of the run before it is still working or waiting
+for an answer. A run that cannot start keeps the reason (`lastError`) and tries again at the next time; one
+whose project was removed pauses the automation. Turning a paused automation on, or changing its schedule,
+counts from now and makes nothing up. A clock set back pulls `nextRunAt` back to what the schedule gives
+from now.
+
+A thread an automation started is an ordinary thread: working and read at first, unread when it finishes,
+fails or needs input. It carries `automationId`, shown as a calendar-clock mark in the list and **Started by
+an automation** in the header (a button to the automation while it exists), and a toast says that it started.
+Like an agent-started thread it does not change the remembered folder, agent and model, and a first message
+that could not be sent becomes the thread's draft.
+
+The **Automations** dialog (`InboxAutomationsDialog`, mounted in `InboxThreadView`, state in
+`store/inbox-automations.ts`) opens from the calendar-clock button in the Inbox toolbar (a dot when any are
+on), from the chip's menu, from the saved line and from a thread's header. Each row has a switch (on or
+paused), the first line of the message, the project, the schedule and the next run, the last run with a link to
+its thread, any error, and on hover Run now (starts a thread and leaves the schedule alone), Edit and Delete
+(asked first). Editing changes the message and the schedule; where and with what it runs is fixed when it is
+made. The main process sends the whole list on `automations:changed` whenever one is saved, removed, paused
+or run.
+
 ### Inbox tool calls
 
 The **Tools** tab in the right-hand sidebar (between Changes and Terminal) lists every tool call of the open

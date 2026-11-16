@@ -196,6 +196,8 @@ export interface InboxThread {
    * asked (it may since have been removed), absent when the caller was not an Inbox thread.
    */
   spawnedBy?: { threadId?: string }
+  /** Set when an automation started the thread on its schedule (`aut_…`); the automation may since have been deleted. */
+  automationId?: string
   /** Set when the thread runs in a Git worktree MDE created; `directory` is then inside `root`. */
   worktree?: InboxWorktree
   /**

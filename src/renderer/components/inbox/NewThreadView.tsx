@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, FolderCog, FolderPlus, Trash2 } from 'lucide-react'
+import { CalendarClock, ChevronDown, FolderCog, FolderPlus, Trash2 } from 'lucide-react'
 import type { ChatDraftChoice, InboxFolder, InboxGitBranch, InboxThreadMode, OpenCodeModelRef } from '@shared/types'
 import { worktreeBranchConflict, worktreeBranchProblem } from '@shared/worktree-branch'
 import { Button } from '@/components/ui/button'
@@ -22,6 +22,10 @@ import { ProjectIcon } from '@/components/inbox/ProjectIcon'
 import { ThreadModePicker } from '@/components/inbox/ThreadModePicker'
 import { PermissionModePicker } from '@/components/inbox/PermissionModePicker'
 import type { ThreadPermissionMode } from '@shared/permission-modes'
+import { nextAutomationRun, type AutomationSchedule, type InboxAutomation } from '@shared/automations'
+import { AutomationPicker, useNow } from '@/components/inbox/AutomationSchedule'
+import { automationScheduleInSentence, automationScheduleLabel, automationTimeLabel } from '@/lib/automations'
+import { useInboxAutomations } from '@/store/inbox-automations'
 import { WorktreeBar, useInboxGit, type WorktreeMode } from '@/components/inbox/WorktreeBar'
 import { findModel, initialChoice } from '@/lib/chat'
 import { defaultWorktreeBase, inboxThreadFolder, inboxWorktreeSource } from '@/lib/inbox'
@@ -99,6 +103,8 @@ interface Picked {
   permissionMode?: ThreadPermissionMode
   agent?: string
   model?: OpenCodeModelRef
+  /** Set when the page makes an automation: sending then saves it instead of starting a thread. */
+  schedule?: AutomationSchedule
 }
 
 const pickedFrom = (choice: ChatDraftChoice | undefined): Omit<Picked, 'pageId'> => ({
@@ -213,7 +219,22 @@ export function NewThreadView(): JSX.Element {
   const chooseMode = (next: InboxThreadMode): void => setPicked({ ...pick, mode: next })
   // So are the permissions: every fresh page starts with the default ones, and only a draft keeps another mode.
   const choosePermissionMode = (next: ThreadPermissionMode): void => setPicked({ ...pick, permissionMode: next })
-  const pickers = <ThreadModePicker value={mode} onChange={chooseMode} />
+  // So is running it again and again: every fresh page starts a thread once.
+  const schedule = pick.schedule ?? null
+  const chooseSchedule = (next: AutomationSchedule | null): void => {
+    const { schedule: _previous, ...rest } = pick
+    setPicked(next ? { ...rest, schedule: next } : rest)
+  }
+  const automationCount = useInboxAutomations((state) => state.automations.length)
+  const saveAutomation = useInboxAutomations((state) => state.save)
+  const openAutomations = useInboxAutomations((state) => state.openManager)
+  const now = useNow()
+  const pickers = (
+    <>
+      <ThreadModePicker value={mode} onChange={chooseMode} />
+      <AutomationPicker value={schedule} onChange={chooseSchedule} count={automationCount} onManage={() => openAutomations()} />
+    </>
+  )
 
   // What the draft remembers of how it would start: the agent and model once they are known, and a worktree
   // when one is chosen, whether or not Git has answered yet. Left out until then, so a draft keeps what it had.
@@ -245,6 +266,13 @@ export function NewThreadView(): JSX.Element {
   const saveDraft = (): void => {
     void startFresh().then((done) => { if (done) setSaved(true) })
   }
+  // An automation that was just saved is out of sight too (it has no thread yet), so the page says when it first runs.
+  const [scheduledNow, setScheduledNow] = useState<InboxAutomation | null>(null)
+  useEffect(() => {
+    if (!scheduledNow) return
+    const timer = window.setTimeout(() => setScheduledNow(null), 10_000)
+    return () => window.clearTimeout(timer)
+  }, [scheduledNow])
 
   return (
     <div className="flex h-full min-h-0 flex-col items-center overflow-y-auto px-6" data-testid="inbox-new-thread">
@@ -253,7 +281,7 @@ export function NewThreadView(): JSX.Element {
           <h1 className="text-[28px] font-semibold tracking-tight text-fg">
             {folder ? (
               <>
-                What should we build in{' '}
+                {schedule ? 'What should run in' : 'What should we build in'}{' '}
                 {/* The name and the question mark stay together; a very long name is cut short, its tooltip has it all. */}
                 <span className="whitespace-nowrap">
                   <DropdownMenu>
@@ -335,7 +363,8 @@ export function NewThreadView(): JSX.Element {
             onAgentChange={chooseAgent}
             onModelChange={chooseModel}
             onRetryOptions={() => void loadOptions({ folderId: folder.id }, true)}
-            placeholder="Describe what you want to build or change"
+            placeholder={schedule ? 'Describe what every run should do' : 'Describe what you want to build or change'}
+            scheduled={schedule ? { label: 'Schedule', title: `Save as an automation: ${automationScheduleLabel(schedule)}` } : undefined}
             sendBlocked={Boolean(branchProblem)}
             // The servers of the folder itself: a new worktree loads its own, so then they are shown but not switched.
             // The permissions sit in the box's toolbar, where a thread has them too.
@@ -369,6 +398,28 @@ export function NewThreadView(): JSX.Element {
             )}
             onSend={async (text, { background, ...attachments } = {}) => {
               if (!agent || !model) return
+              if (schedule) {
+                // Every run starts from the words alone: a file saved with this draft would be gone after the first.
+                if (attachments.attachmentIds?.length) throw new Error('An automation cannot carry attached files. Remove them, or name files in the project with @.')
+                if (!text.trim()) throw new Error('Write what every run should do.')
+                const made = await saveAutomation({
+                  folderId: folder.id,
+                  text,
+                  agent,
+                  model,
+                  ...(mode === 'terminal' ? { mode } : {}),
+                  ...(permissionMode !== 'default' ? { permissionMode } : {}),
+                  // Each run names its own branch: one name could only be used once.
+                  ...(worktree ? { worktree: { base: worktree.base } } : {}),
+                  schedule,
+                })
+                // The words live in the automation now; left as a draft they would look unsent.
+                await window.api.chat.draft({ key: `draft:${page.id}`, action: 'clear' }).catch(() => undefined)
+                setScheduledNow(made)
+                setSaved(false)
+                if (useInboxDrafts.getState().page.id === page.id) useInboxDrafts.getState().leave()
+                return
+              }
               await createThread({ folderId: folder.id, text, agent, model, draftId: page.id, ...attachments, ...(mode === 'terminal' ? { mode } : {}), ...(worktree ? { worktree } : {}), ...(permissionMode !== 'default' ? { permissionMode } : {}) }, { background })
               const drafts = useInboxDrafts.getState()
               if (background && drafts.page.id === page.id) {
@@ -379,6 +430,22 @@ export function NewThreadView(): JSX.Element {
             }}
           />
           </div>
+        )}
+        {schedule && !scheduledNow && (
+          <p data-testid="inbox-automation-hint" className="-mt-3 text-balance text-center text-xs text-fg-muted">
+            {/* In the line, so that it stays with the words when they wrap. */}
+            <CalendarClock aria-hidden className="mr-1.5 inline-block h-3.5 w-3.5 align-[-2px] text-accent" />
+            Sending saves an automation: a new thread starts <span className="text-fg">{automationScheduleInSentence(schedule)}</span>,
+            first {automationTimeLabel(nextAutomationRun(schedule, now), now)}.
+          </p>
+        )}
+        {scheduledNow && (
+          <p role="status" data-testid="inbox-automation-saved" className="-mt-3 text-center text-xs text-fg-muted">
+            Automation saved. It first runs {automationTimeLabel(scheduledNow.nextRunAt, now)}.{' '}
+            <button type="button" data-testid="inbox-automation-saved-open" onClick={() => openAutomations(scheduledNow.id)} className="rounded text-accent underline-offset-2 hover:underline">
+              Show it
+            </button>
+          </p>
         )}
         {saved && (
           <p role="status" data-testid="inbox-draft-saved" className="-mt-3 text-center text-xs text-fg-muted">

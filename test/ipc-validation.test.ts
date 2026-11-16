@@ -130,6 +130,11 @@ const validPayloads = {
   [IpcChannels.chatSubscribe]: { threadId: 'ses_thread' },
   [IpcChannels.chatUnsubscribe]: { threadId: 'ses_thread' },
   [IpcChannels.opencodeConfigRead]: { kind: 'wsl', distro: 'Ubuntu-24.04' },
+  [IpcChannels.automationsList]: undefined,
+  [IpcChannels.automationsSave]: { folderId: 'fld_app', text: 'Check the build', agent: 'build', model: { id: 'model-1', providerId: 'provider-1' }, schedule: { kind: 'daily', time: 540, days: [1, 2, 3, 4, 5] } },
+  [IpcChannels.automationsRemove]: { id: 'aut_one' },
+  [IpcChannels.automationsSetEnabled]: { id: 'aut_one', enabled: false },
+  [IpcChannels.automationsRun]: { id: 'aut_one' },
   [IpcChannels.mdeMcpStatus]: { kind: 'wsl', distro: 'Ubuntu-24.04' },
   [IpcChannels.mdeMcpInstall]: { kind: 'native' },
   [IpcChannels.mdeMcpRemove]: { kind: 'wsl', distro: 'Ubuntu-24.04' },
@@ -221,6 +226,17 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.inboxSetSnoozed, { id: 'ses_thread', until: 1.5 })
     rejects(IpcChannels.inboxSetSnoozed, { id: 'ses_thread', until: Infinity })
     rejects(IpcChannels.inboxSetSnoozed, { id: 'thread', until: null })
+    const automation = { folderId: 'fld_app', text: 'Check the build', agent: 'build', model: { id: 'model-1', providerId: 'provider-1' } }
+    expect(() => assertIpcPayload(IpcChannels.automationsSave, { ...automation, id: 'aut_one', worktree: { base: 'main' }, schedule: { kind: 'interval', minutes: 60 } })).not.toThrow()
+    rejects(IpcChannels.automationsSave, { ...automation, schedule: { kind: 'interval', minutes: 1 } })
+    rejects(IpcChannels.automationsSave, { ...automation, schedule: { kind: 'daily', time: 1440 } })
+    rejects(IpcChannels.automationsSave, { ...automation, schedule: { kind: 'daily', time: 540, days: [7] } })
+    rejects(IpcChannels.automationsSave, { ...automation, schedule: { kind: 'daily', time: 540, days: [1, 1] } })
+    rejects(IpcChannels.automationsSave, { ...automation, schedule: { kind: 'interval', minutes: 60, extra: true } })
+    rejects(IpcChannels.automationsSave, { ...automation, text: '   ', schedule: { kind: 'interval', minutes: 60 } })
+    rejects(IpcChannels.automationsSave, { ...automation, worktree: { base: 'main', branch: 'mine' }, schedule: { kind: 'interval', minutes: 60 } })
+    rejects(IpcChannels.automationsSave, { ...automation, attachmentIds: ['a'], schedule: { kind: 'interval', minutes: 60 } })
+    rejects(IpcChannels.automationsRun, { id: 'ses_thread' })
     rejects(IpcChannels.inboxRemove, { id: '' })
     expect(() => assertIpcPayload(IpcChannels.inboxRemove, { id: 'ses_thread', removeWorktree: true })).not.toThrow()
     rejects(IpcChannels.inboxRemove, { id: 'ses_thread', removeWorktree: 'yes' })

@@ -155,6 +155,8 @@ import { assertIpcPayload, type IpcChannel } from './ipc-validation'
 import type { PtyLaunchOptions, PtyManager } from './pty/manager'
 import { fileTreeDropFile, resolveTerminalDrop } from './pty/drop'
 import type { InboxRecorder } from './inbox/recorder'
+import type { InboxAutomations } from './inbox/automations'
+import type { AutomationEnabledRequest, AutomationIdRequest, AutomationSaveRequest, InboxAutomation } from '@shared/automations'
 import type { TaskbarAttention } from './taskbar-attention'
 import type { FloatingTerminalKey } from './floating-terminal-key'
 import type { WslResourceMonitor } from './wsl/resources'
@@ -411,6 +413,8 @@ export function registerIpcHandlers(
     mdeMcpCommand?: (target: OpenCodeTarget) => Promise<string[]>
     /** Inbox terminal panes agents open through the MDE MCP; this layer starts their shells. */
     agentTerminals?: AgentTerminals
+    /** Absent where the Inbox does not run: nothing is listed and nothing can be saved. */
+    automations?: InboxAutomations
   },
   taskbar?: TaskbarAttention,
   floatingTerminalKey?: FloatingTerminalKey,
@@ -607,6 +611,15 @@ export function registerIpcHandlers(
   handle<InboxUpdateFolderRequest, InboxFolder>(IpcChannels.inboxFoldersUpdate, (req) => chat.updateFolder(req))
   handle<InboxRemoveFolderRequest, void>(IpcChannels.inboxFoldersRemove, (req) => chat.removeFolder(req.id))
   handle<InboxComposerState, InboxComposerState>(IpcChannels.inboxComposerSet, (req) => chat.setComposer(req))
+  const automations = (): InboxAutomations => {
+    if (!inbox.automations) throw new Error('Automations are not available on this computer.')
+    return inbox.automations
+  }
+  handle<void, InboxAutomation[]>(IpcChannels.automationsList, () => inbox.automations?.list() ?? [])
+  handle<AutomationSaveRequest, InboxAutomation>(IpcChannels.automationsSave, (req) => automations().save(req))
+  handle<AutomationIdRequest, void>(IpcChannels.automationsRemove, (req) => automations().remove(req.id))
+  handle<AutomationEnabledRequest, InboxAutomation | null>(IpcChannels.automationsSetEnabled, (req) => automations().setEnabled(req.id, req.enabled))
+  handle<AutomationIdRequest, InboxAutomation | null>(IpcChannels.automationsRun, (req) => automations().runNow(req.id))
   handle<InboxGitInfoRequest, InboxGitInfo>(IpcChannels.inboxGitInfo, (req) => chat.gitInfo(req))
   handle<void, InboxWorktreeEntry[]>(IpcChannels.inboxWorktrees, () => chat.worktreeList())
   handle<InboxWorktreeRemoveRequest, InboxWorktreeRemoveResult>(IpcChannels.inboxWorktreeRemove, async (req) => {

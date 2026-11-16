@@ -591,8 +591,10 @@ export class InboxChatService {
    * Starts a thread. `spawnedBy` marks one an agent asked for through the MDE MCP: it is not the person's
    * choice of agent and model, so the new-thread page's selection is left alone.
    */
-  async create(request: ChatCreateRequest, options: { spawnedBy?: InboxThread['spawnedBy'] } = {}): Promise<InboxThread> {
+  async create(request: ChatCreateRequest, options: { spawnedBy?: InboxThread['spawnedBy']; automationId?: string } = {}): Promise<InboxThread> {
     this.assertEnabled()
+    // Started by an agent or an automation rather than by the person at the new-thread page.
+    const unattended = Boolean(options.spawnedBy || options.automationId)
     const folder = this.folder(request.folderId)
     // A worktree folder already is one: threads started in it run in it, and a new worktree is cut from the real folder.
     if (request.worktree && folder.worktree) throw new Error('This folder is already a worktree. Start the thread in it, or start a new worktree from the folder it came from.')
@@ -630,6 +632,7 @@ export class InboxChatService {
         model: request.model,
         ...(permissionMode ? { permissionMode } : {}),
         ...(options.spawnedBy ? { spawnedBy: options.spawnedBy } : {}),
+        ...(options.automationId ? { automationId: options.automationId } : {}),
         // A thread started in a worktree folder runs in it, and carries the folder's worktree record.
         ...(place ? { directory: place.directory, worktree: place.worktree } : folder.worktree ? { worktree: folder.worktree } : {}),
       })
@@ -640,7 +643,7 @@ export class InboxChatService {
     }
     this.dependencies.store.putFolder({ ...folder, lastUsedAt: this.dependencies.now() })
     if (place) this.addWorktreeFolder(folder, place)
-    if (!options.spawnedBy) this.dependencies.store.setComposer({ folderId: folder.id, agent: request.agent, model: request.model })
+    if (!unattended) this.dependencies.store.setComposer({ folderId: folder.id, agent: request.agent, model: request.model })
     if (draftKey) await this.dependencies.drafts?.move(draftKey, `thread:${thread.id}`)
     try {
       await this.dependencies.client.request(folder.target, 'session.prompt', {
@@ -649,8 +652,8 @@ export class InboxChatService {
       })
     } catch (error) {
       this.dependencies.recorder.markStatus(thread.id, 'idle')
-      // An agent's prompt has no draft behind it; it becomes the thread's draft, so the person can send it.
-      if (options.spawnedBy) await this.dependencies.drafts?.text(`thread:${thread.id}`, text).catch(() => undefined)
+      // An agent's or an automation's prompt has no draft behind it; it becomes the thread's draft, so the person can send it.
+      if (unattended) await this.dependencies.drafts?.text(`thread:${thread.id}`, text).catch(() => undefined)
       if (this.dependencies.drafts) return { ...(this.dependencies.store.get(thread.id) ?? thread), sendError: 'Could not send the first message. Your draft has been kept; try sending again.' }
       throw error
     }

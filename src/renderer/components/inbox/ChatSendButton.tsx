@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { ArrowUp, Check, ChevronDown, CornerDownRight, ListEnd, LoaderCircle } from 'lucide-react'
+import { ArrowUp, CalendarClock, Check, ChevronDown, CornerDownRight, ListEnd, LoaderCircle } from 'lucide-react'
 import type { ChatDelivery } from '@shared/types'
 import { useComposerSize } from '@/components/inbox/composer-toolbar'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -38,10 +38,15 @@ export interface ChatSendButtonProps {
    * the agent works.
    */
   command?: { name: string; icon: ReactNode }
+  /**
+   * Sending saves an automation instead of starting a thread, so the button says so: a pill with a calendar clock
+   * and a word, which no thread's button is. `title` says what will be saved.
+   */
+  scheduled?: { label: string; title: string }
 }
 
 /** The way out of the prompt box: round when the agent is idle, a Steer / Queue button while it works. */
-export function ChatSendButton({ running, delivery, onDeliveryChange, disabled, sending, onSend, backgroundShortcut, onMenuClosed, command }: ChatSendButtonProps): JSX.Element {
+export function ChatSendButton({ running, delivery, onDeliveryChange, disabled, sending, onSend, backgroundShortcut, onMenuClosed, command, scheduled }: ChatSendButtonProps): JSX.Element {
   const labelled = atLeast(useComposerSize(), 'medium')
   if (command) {
     return (
@@ -56,6 +61,26 @@ export function ChatSendButton({ running, delivery, onDeliveryChange, disabled, 
         className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-accent-fg transition-colors hover:bg-accent-hover disabled:opacity-35"
       >
         {command.icon}
+      </button>
+    )
+  }
+  if (scheduled) {
+    return (
+      <button
+        type="button"
+        aria-label={scheduled.label}
+        title={`${scheduled.title} (Enter)`}
+        disabled={disabled}
+        onClick={onSend}
+        data-testid="chat-send"
+        data-scheduled=""
+        className={cn(
+          'flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-accent text-[12.5px] font-medium text-accent-fg transition-colors hover:bg-accent-hover disabled:opacity-35',
+          labelled ? 'pl-3 pr-3.5' : 'w-8 justify-center',
+        )}
+      >
+        {sending ? <LoaderCircle aria-hidden className="h-4 w-4 animate-spin" /> : <CalendarClock aria-hidden className="h-4 w-4" />}
+        {labelled && <span aria-hidden>{scheduled.label}</span>}
       </button>
     )
   }

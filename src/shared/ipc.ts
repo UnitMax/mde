@@ -1,5 +1,6 @@
 import type { InboxTerminalConfiguration, InboxTerminalSettings } from './inbox-terminal'
 import type { TaskbarAttentionRequest } from './taskbar-attention'
+import type { AutomationEnabledRequest, AutomationIdRequest, AutomationSaveRequest, InboxAutomation } from './automations'
 import type {
   AgentTerminalClaim,
   AgentTerminalDecision,
@@ -245,6 +246,11 @@ export const IpcChannels = {
   opencodeConfigRead: 'opencode-config:read',
   opencodeConfigPreview: 'opencode-config:preview',
   opencodeConfigSave: 'opencode-config:save',
+  automationsList: 'automations:list',
+  automationsSave: 'automations:save',
+  automationsRemove: 'automations:remove',
+  automationsSetEnabled: 'automations:set-enabled',
+  automationsRun: 'automations:run',
   mdeMcpStatus: 'mde-mcp:status',
   mdeMcpInstall: 'mde-mcp:install',
   mdeMcpRemove: 'mde-mcp:remove',
@@ -274,6 +280,8 @@ export const IpcEvents = {
   /** The projects changed outside the window (an agent added one through the MDE MCP); read them again. */
   inboxFoldersChanged: 'inbox:folders-changed',
   chatEvent: 'chat:event',
+  /** The automations changed: one was saved, removed, paused, or ran. Carries all of them. */
+  automationsChanged: 'automations:changed',
   windowModeChanged: 'window-mode:changed',
   floatingTerminalToggle: 'floating-terminal:toggle',
   /** An agent asked, through the MDE MCP, for a new pane in the Inbox terminal. */
@@ -732,6 +740,20 @@ export interface RendererApi {
      * the one the revision came from. Returns the file as it is afterwards.
      */
     save(req: OpenCodeConfigSaveRequest): Promise<OpenCodeConfigSnapshot>
+  }
+  /**
+   * The Inbox automations: prompts that start a new thread on a schedule. The main process keeps them and runs
+   * them; the window only lists and edits them.
+   */
+  automations: {
+    list(): Promise<InboxAutomation[]>
+    /** Makes an automation (no `id`) or changes one. */
+    save(req: AutomationSaveRequest): Promise<InboxAutomation>
+    remove(req: AutomationIdRequest): Promise<void>
+    setEnabled(req: AutomationEnabledRequest): Promise<InboxAutomation | null>
+    /** Starts a thread now and leaves the schedule as it is. */
+    run(req: AutomationIdRequest): Promise<InboxAutomation | null>
+    onChanged(listener: (automations: InboxAutomation[]) => void): () => void
   }
   /**
    * The MDE MCP in OpenCode's configuration for a target: whether it is there and starts this copy of MDE, and

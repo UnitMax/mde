@@ -166,6 +166,8 @@
     "src/renderer/store/inbox-saved-permissions.ts",
     "src/renderer/lib/saved-permissions.ts",
     "src/renderer/store/inbox-drafts.ts",
+    "src/renderer/store/inbox-automations.ts",
+    "src/renderer/lib/automations.ts",
     "src/renderer/store/inbox-changes.ts",
     "src/renderer/store/inbox-view.ts",
     "src/renderer/store/inbox-terminal.ts",

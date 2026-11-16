@@ -1,3 +1,4 @@
+import { InboxAutomationsDialog } from '@/components/inbox/InboxAutomationsDialog'
 import { useRef, type ReactNode } from 'react'
 import { InboxLockedNotice, useInboxLock } from '@/components/InboxPanel'
 import { ChatThreadView } from '@/components/inbox/ChatThreadView'
@@ -34,13 +35,14 @@ export function InboxThreadView(): JSX.Element {
   const thread = threads.find((item) => item.id === selectedId) ?? null
 
   if (lock) return <InboxLockedNotice />
-  if (!thread) return <MakesWayForCard layout="column" page><NewThreadView /></MakesWayForCard>
+  if (!thread) return <><MakesWayForCard layout="column" page><NewThreadView /></MakesWayForCard><InboxAutomationsDialog /></>
 
   return (
     // Something new in the open thread stays unread until the person acts in it: a click anywhere in the thread,
     // or a key (typing a reply). Capture, so a terminal or editor that stops the event still counts.
     <div className="flex h-full min-h-0 flex-col" onPointerDownCapture={markSeen} onKeyDownCapture={markSeen}>
       <ThreadHeader thread={thread} />
+      <InboxAutomationsDialog />
       {/* A terminal thread whose worktree was deleted has no folder to start in; its conversation is read as a chat. */}
       {thread.mode === 'terminal' && thread.worktreeRemovedAt === undefined
         ? <MakesWayForCard layout="fill"><TerminalThreadView key={thread.id} thread={thread} /></MakesWayForCard>

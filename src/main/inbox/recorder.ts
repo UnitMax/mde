@@ -270,6 +270,7 @@ export class InboxRecorder {
     directory?: string
     worktree?: InboxWorktree
     spawnedBy?: InboxThread['spawnedBy']
+    automationId?: string
     permissionMode?: InboxThread['permissionMode']
   }): InboxThread {
     const now = this.dependencies.now()
@@ -291,6 +292,7 @@ export class InboxRecorder {
       archived: false,
       folderId: input.folder.id,
       ...(input.spawnedBy ? { spawnedBy: input.spawnedBy } : {}),
+      ...(input.automationId ? { automationId: input.automationId } : {}),
       ...(input.worktree ? { worktree: input.worktree } : {}),
       ...(input.permissionMode ? { permissionMode: input.permissionMode } : {})
     }
