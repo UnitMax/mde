@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -137,7 +137,8 @@ describe.skipIf(!hasPosixGit)('Git graph against a real repository', () => {
   }
 
   beforeAll(async () => {
-    root = await mkdtemp(join(tmpdir(), 'mde-git-graph.'))
+    // Git names checkouts by their real path, and the Mac's temporary folder is behind a symlink (/var -> /private/var).
+    root = await realpath(await mkdtemp(join(tmpdir(), 'mde-git-graph.')))
     origin = join(root, 'origin.git')
     const seed = join(root, 'seed')
     clone = join(root, 'clone')
