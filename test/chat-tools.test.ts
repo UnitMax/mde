@@ -712,6 +712,21 @@ describe('the compact layout', () => {
       expect(group('a1')).toBe(false)
     })
 
+    it('keeps the group live between two steps, until the answer begins or the person writes', () => {
+      const live = (messages: ChatMessage[], id: string | undefined) =>
+        [...compactPlans(messages, id).values()].flat().filter((block) => block.kind === 'activity').map((block) => (block as Extract<RenderBlock, { kind: 'activity' }>).live)
+      // The step is finished and the next one has not begun: the agent is still at work.
+      expect(live([user('u1'), assistant('a1', [shell('s1')])], 'a1')).toEqual([true])
+      expect(live([user('u1'), assistant('a1', [shell('s1')]), assistant('a2', [shell('s2')])], 'a2')).toEqual([true])
+      // The answer has begun, so the work is over.
+      expect(live([user('u1'), assistant('a1', [shell('s1')]), assistant('a2', [text('Done.')])], 'a2')).toEqual([false])
+      // The agent is done.
+      expect(live([user('u1'), assistant('a1', [shell('s1')])], undefined)).toEqual([false])
+      // A new turn that has no step yet does not bring the work of the turn before it back to life.
+      expect(live([user('u1'), assistant('a1', [shell('s1')]), user('u2')], 'a1')).toEqual([false])
+      expect(live([user('u1'), assistant('a1', [shell('s1')]), note('n1')], 'a1')).toEqual([false])
+    })
+
     it('keeps the earlier layout of a step whose layout did not change', () => {
       const first = [assistant('a1', [text('Hi'), shell('s1')]), assistant('a2', [text('Next')], false)]
       const before = compactPlans(first, 'a2')

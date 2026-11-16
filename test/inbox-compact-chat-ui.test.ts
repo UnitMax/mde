@@ -516,6 +516,27 @@ describe('a conversation in compact mode', () => {
     expect(all('.file-diff-row')).toHaveLength(3)
   })
 
+  it('keeps the line spinning in the pause between two steps', async () => {
+    page = { messages: [prompt, step('a1', [shell('npm test')]), step('a2', [shell('npm run build')])], older: null, running: true }
+    useWorkspace.setState({ inboxThreads: [thread({ status: 'working' })] })
+    useInboxView.setState({ compactChat: true })
+    await render()
+    await vi.waitFor(() => expect(q('[data-testid="chat-activity"]')).not.toBeNull())
+    expect(q('[data-testid="chat-activity"]')!.hasAttribute('data-live')).toBe(true)
+    expect(q('[data-testid="chat-activity"] .animate-spin')).not.toBeNull()
+    expect(text(q('[data-testid="chat-activity-summary"]'))).toBe('Ran 2 commands')
+  })
+
+  it('draws a single finished step as the spinning line while the agent works on', async () => {
+    page = { messages: [prompt, step('a1', [shell('npm test')])], older: null, running: true }
+    useWorkspace.setState({ inboxThreads: [thread({ status: 'working' })] })
+    useInboxView.setState({ compactChat: true })
+    await render()
+    await vi.waitFor(() => expect(q('[data-testid="chat-activity"]')).not.toBeNull())
+    expect(q('[data-testid="chat-activity"]')!.hasAttribute('data-live')).toBe(true)
+    expect(all('[data-testid^="chat-tool-"]')).toHaveLength(0)
+  })
+
   it('shows the work in progress as one shut line that spins, not as the rows of each step', async () => {
     page = {
       messages: [prompt, step('a1', [shell('npm test')]), step('a2', [shell('npm run build', { status: 'running', exitCode: undefined, output: undefined })], false)],

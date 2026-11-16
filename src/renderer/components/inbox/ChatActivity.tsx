@@ -6,7 +6,7 @@ import { ChatMarkdown } from '@/components/inbox/ChatMarkdown'
 import { ToolCallView } from '@/components/inbox/ChatTools'
 import { SubagentGroup } from '@/components/inbox/ChatSubagents'
 import { isSubagentCall } from '@/lib/chat'
-import { activityNames, activityNamesText, activitySummary, reasoningPreview, reasoningTitle, textHeadline, toolFailed, type ActivityItem } from '@/lib/chat-tools'
+import { activityNames, activityNamesText, activitySummary, isActiveTool, reasoningPreview, reasoningTitle, textHeadline, toolFailed, type ActivityItem } from '@/lib/chat-tools'
 import { cn } from '@/lib/utils'
 import { useInboxView } from '@/store/inbox-view'
 
@@ -95,7 +95,8 @@ export function NoteRow({ message }: { message: Extract<ChatMessage, { kind: 'no
  * A run of steps (thoughts, reads, searches, commands) folded into one line that sums them up, in the compact layouts.
  * It is never open of itself: a live one spins and shimmers. A click on it is the person's choice, and stays. A run of
  * one step is that step's own row: it takes the same room and says more ("Ran npm test" rather than "Ran 1 command"),
- * and it opens onto the step in one click rather than two. A subagent, whose card is more than a row, keeps its line.
+ * and it opens onto the step in one click rather than two. A subagent, whose card is more than a row, keeps its line,
+ * and so does a step that is done while the agent works on: its row would stand still, and look like the end.
  */
 export function ActivityGroup({
   items,
@@ -127,7 +128,9 @@ export function ActivityGroup({
   > = []
   // A subagent is a card rather than a row, so one keeps its line.
   const only = items.length === 1 ? items[0]!.part : undefined
-  const single = only !== undefined && !(only.kind === 'tool' && isSubagentCall(only))
+  // Between two steps nothing is running, and only the line can show that the agent is still at it.
+  const waiting = live && only !== undefined && only.kind !== 'reasoning' && !(only.kind === 'tool' && isActiveTool(only))
+  const single = only !== undefined && !(only.kind === 'tool' && isSubagentCall(only)) && !waiting
   for (const [position, item] of (open || single ? items.entries() : [])) {
     const part = item.part
     if (part.kind === 'tool' && isSubagentCall(part)) {

@@ -389,7 +389,8 @@ export function ChatThreadView({ thread }: { thread: InboxThread }): JSX.Element
   }, [dismissAside, thread.id])
 
   const running = state?.running ?? thread.status === 'working'
-  // Only the newest step of the agent can be live; one before it that never finished was cut short.
+  // Only the newest step of the agent can be live; one before it that never finished was cut short. In the compact
+  // layouts it stays live between the agent's steps, until the agent is done.
   const lastAssistantId = useMemo(() => [...messages].reverse().find((message) => message.kind === 'assistant')?.id, [messages])
   // The compact layout folds the activity of the agent's steps together, across steps. A step whose layout did not
   // change keeps the one it had, so that streaming a new step does not draw all the earlier ones again.

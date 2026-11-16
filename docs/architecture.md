@@ -1526,7 +1526,11 @@ on across the messages. The group is drawn in the message where it
 starts, and a message left with nothing to draw (and no error) renders nothing. Layouts are reused when
 they did not change, so streaming does not redraw the earlier messages. The group never opens by itself,
 not even while the agent is at it: it spins and shimmers in the present tense ("Running 2 commands"),
-keeps the failed count, and opens on a click. All other tools use this same grouping rule, including writes,
+keeps the failed count, and opens on a click. It goes on spinning in the pauses between the agent's steps
+(a finished round of tool calls, the next message not yet begun), so that it does not look done before it
+is: the last group of the last run is live for as long as the thread is running and nothing is drawn after
+it, and stops when the answer begins, a question is asked or the turn ends. A single finished step, which
+is otherwise drawn as its own row, is drawn as the line in such a pause for the same reason. All other tools use this same grouping rule, including writes,
 edits, patches, subagents and unknown tools. Opening the group shows their full
 views: file changes start shut with their counts, and consecutive
 subagents from the same step retain their grouped cards and model labels. Active permission and
