@@ -72,7 +72,7 @@ export interface MdeMcpHost {
 
 const AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 const CONTROLS = /[\u0000-\u001f\u007f-\u009f]/
-const CREATE_KEYS = new Set(['prompt', 'directory', 'agent', 'model', 'mode', 'worktree'])
+const CREATE_KEYS = new Set(['prompt', 'directory', 'agent', 'model', 'worktree'])
 const TERMINAL_KEYS = new Set(['command', 'directory', 'title'])
 
 class ToolError extends Error {}
@@ -203,8 +203,6 @@ export class MdeMcpTools {
     const directoryText = optionalText(args, 'directory', 4096)
     const agentText = optionalText(args, 'agent', 128)
     const modelText = optionalText(args, 'model', 1025)
-    const mode = args.mode === undefined || args.mode === null ? 'gui' : args.mode
-    if (mode !== 'gui' && mode !== 'terminal') throw new ToolError('`mode` must be "gui" or "terminal".')
     if (args.worktree !== undefined && args.worktree !== null && !isRecord(args.worktree)) throw new ToolError('`worktree` must be an object.')
     const worktreeArgs = isRecord(args.worktree) ? args.worktree : undefined
     const branch = worktreeArgs ? optionalText(worktreeArgs, 'branch', 100) : undefined
@@ -247,7 +245,7 @@ export class MdeMcpTools {
     // Counted before the work starts, so calls arriving together cannot all slip under the limit.
     this.spawns.push(now)
     const thread = await this.host.create(
-      { folderId: folder.id, text: prompt, agent, model, mode, ...(worktree ? { worktree } : {}) },
+      { folderId: folder.id, text: prompt, agent, model, ...(worktree ? { worktree } : {}) },
       parent ? { parentId: parent.id } : {},
     )
     const data = {

@@ -23,7 +23,7 @@ export interface TerminalSettings {
    * clipboard. Hidden, unfocused and idle panes are refused under every value.
    */
   osc52Policy: Osc52Policy
-  /** The command that starts OpenCode for the Inbox: its background service and terminal threads. */
+  /** The command that starts OpenCode's background service for the Inbox. */
   openCodeExecutable: string
 }
 

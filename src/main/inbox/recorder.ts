@@ -1,7 +1,6 @@
 import type {
   InboxFolder,
   InboxThread,
-  InboxThreadMode,
   InboxWorktree,
   OpenCodeModelRef,
   InboxAttentionReason,
@@ -262,7 +261,6 @@ export class InboxRecorder {
    * folder's directory unless it was given a worktree of its own, whose directory is then used.
    */
   recordChatThread(input: {
-    mode?: InboxThreadMode
     id: string
     title?: string | null
     folder: InboxFolder
@@ -277,7 +275,6 @@ export class InboxRecorder {
     const existing = this.store.get(input.id)
     if (existing) return existing
     const created: InboxThread = {
-      ...(input.mode === 'terminal' ? { mode: input.mode } : {}),
       id: input.id,
       title: input.title?.trim() || UNTITLED_THREAD,
       directory: input.directory ?? input.folder.directory,
@@ -330,7 +327,6 @@ export class InboxRecorder {
       archived: false,
       folderId: source.folderId,
       forkedFrom: source.id,
-      ...(source.mode === 'terminal' ? { mode: source.mode } : {}),
       // A fork shares the source's directory, so it shares the worktree too.
       ...(source.worktree ? { worktree: source.worktree } : {}),
       ...(input.permissionMode ? { permissionMode: input.permissionMode } : {})

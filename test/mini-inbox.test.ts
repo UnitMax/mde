@@ -15,9 +15,8 @@ function thread(id: string, overrides: Partial<InboxThread> = {}): InboxThread {
 }
 
 describe('mini Inbox helpers', () => {
-  it('names the project of GUI and Terminal threads by their Inbox folder, with its path', () => {
+  it('names the project of a thread by its Inbox folder, with its path', () => {
     expect(miniInboxProject(thread('ses_one'), [folder])).toEqual({ name: 'Application', directory: '/workspace/app' })
-    expect(miniInboxProject(thread('ses_terminal', { mode: 'terminal' }), [folder]).name).toBe('Application')
     expect(miniInboxProject(thread('ses_other', { folderId: 'fld_other', directory: '/workspace/other' }), [folder]))
       .toEqual({ name: 'other', directory: '/workspace/other' })
   })

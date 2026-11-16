@@ -133,7 +133,6 @@ const modelRef = object({ id: string(512), providerId: string(512), variant: opt
  */
 const permissionMode: Validator = (value) => isThreadPermissionMode(value)
 const draftChoice = object({
-  mode: optional(oneOf('gui', 'terminal')),
   permissionMode: optional((value) => isThreadPermissionMode(value) && value !== 'default'),
   agent: optional(agentId),
   model: optional(modelRef),
@@ -270,7 +269,7 @@ export const ipcPayloadValidators = {
   [IpcChannels.opencodeConfigPreview]: object({ kind, distro: optional(distro), draft: configDraft }),
   [IpcChannels.automationsList]: noPayload,
   // No attachments and no branch name: every run starts from the text alone, and names its own branch.
-  [IpcChannels.automationsSave]: object({ id: optional(automationId), folderId: inboxFolderId, text: (value) => promptText(value) && String(value).trim().length > 0, agent: agentId, model: modelRef, mode: optional(oneOf('gui', 'terminal')), permissionMode: optional(permissionMode), worktree: optional(object({ base: worktreeBase })), schedule: isAutomationSchedule }),
+  [IpcChannels.automationsSave]: object({ id: optional(automationId), folderId: inboxFolderId, text: (value) => promptText(value) && String(value).trim().length > 0, agent: agentId, model: modelRef, permissionMode: optional(permissionMode), worktree: optional(object({ base: worktreeBase })), schedule: isAutomationSchedule }),
   [IpcChannels.automationsRemove]: object({ id: automationId }),
   [IpcChannels.automationsSetEnabled]: object({ id: automationId, enabled: boolean }),
   [IpcChannels.automationsRun]: object({ id: automationId }),
@@ -299,7 +298,7 @@ export const ipcPayloadValidators = {
       object({ key, action: oneOf('remove'), attachmentId: string(64), folderId, choice })(value)
   },
   [IpcChannels.chatDrafts]: noPayload,
-  [IpcChannels.chatCreate]: object({ mode: optional(oneOf('gui', 'terminal')), attachmentIds: optional(array(string(64), 10)), draftRevision: optional((v) => Number.isSafeInteger(v) && Number(v) >= 0), draftId: optional((v) => typeof v === 'string' && /^drf_[A-Za-z0-9-]{1,64}$/.test(v)), folderId: inboxFolderId, text: promptText, agent: agentId, model: modelRef, worktree: optional(object({ base: worktreeBase, branch: optional(worktreeBranch) })), permissionMode: optional(permissionMode) }),
+  [IpcChannels.chatCreate]: object({ attachmentIds: optional(array(string(64), 10)), draftRevision: optional((v) => Number.isSafeInteger(v) && Number(v) >= 0), draftId: optional((v) => typeof v === 'string' && /^drf_[A-Za-z0-9-]{1,64}$/.test(v)), folderId: inboxFolderId, text: promptText, agent: agentId, model: modelRef, worktree: optional(object({ base: worktreeBase, branch: optional(worktreeBranch) })), permissionMode: optional(permissionMode) }),
   [IpcChannels.chatMessages]: object({ threadId: opencodeSessionId, cursor: optional((value) => typeof value === 'string' && /^[A-Za-z0-9_=.-]{1,2048}$/.test(value)) }),
   [IpcChannels.chatSearch]: object({ query: string(200, true) }),
   [IpcChannels.chatFiles]: (value) => object({ folderId: optional(inboxFolderId), threadId: optional(opencodeSessionId), query: string(300, true) })(value) &&

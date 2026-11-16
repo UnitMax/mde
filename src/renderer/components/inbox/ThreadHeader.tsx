@@ -257,7 +257,7 @@ export function ThreadHeader({ thread }: { thread: InboxThread }): JSX.Element {
               distro={wsl}
             />
           )}
-          {thread.mode !== 'terminal' && <CompactChatToggle />}
+          <CompactChatToggle />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon-sm" aria-label="Thread actions" title="Thread actions" data-testid="thread-actions">

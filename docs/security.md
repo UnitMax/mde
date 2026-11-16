@@ -96,16 +96,6 @@ See "OpenCode configuration boundary".
 
 The Inbox terminal belongs to no workspace session. Terminal requests accept the reserved session ID `inbox-terminal`; the main process builds its launch session on demand, as a shell in its saved directory or the home directory (`~` in the default WSL distro on Windows), and the reserved ID always wins over a stored session. File browsing, previews, tree drops and attachments accept either an Inbox folder/thread identity or a live terminal ID with its expected directory. For a terminal root, main resolves the launch environment and current directory from the PTY, verifies the directory on disk, and rejects a mismatch or a terminal that moves during verification. The renderer’s directory is a consistency check, not an arbitrary filesystem root. Relative-path and symlink containment checks still apply below the resolved root. Terminal Git summaries likewise resolve the live terminal’s verified directory and run from its checkout root. Mixed root selectors are rejected at the IPC boundary. Naming `inbox-terminal` as a saved file-root session still fails. This adds no authority the renderer does not already have through `pty:write`.
 
-Inbox terminal chat threads use the reserved `inbox-thread:<sessionID>` identity for both the terminal
-and its launch session. Main resolves a recorded terminal-mode thread, its native/WSL target, and its
-directory from the Inbox store, checks that directory on disk, and launches only the configured
-OpenCode executable with `--session <sessionID>` and the API client's validated loopback server URL.
-The service password is passed only in the child environment (`WSLENV` forwards it into WSL), never
-through renderer IPC or command-line arguments. Renderer-provided launch overrides, alternate pane
-identities, GUI threads and removed threads are rejected. The thread is checked again after the
-directory check. Removing a thread cancels pending launches and disposes its PTY. These terminals use
-the existing API event stream for status.
-
 Terminal directory restoration uses main-process records (`src/main/pty/directories.ts`), populated
 from PTY directory reports and explicit main-owned launch directories. Records must match both
 the terminal ID and its owning session and target; a changed WSL distro cannot inherit another

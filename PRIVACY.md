@@ -84,8 +84,7 @@ backed-up locations can place copies elsewhere. These stores are not encrypted b
   sounds play, the sound for each of Done, Needs input and Failed, whether the taskbar flashes, and whether
   it is coloured and badged. The sounds are generated on the device; nothing is downloaded or sent.
 - `inbox.json` under Electron's user-data directory, once you use the Inbox: one record for each
-  OpenCode conversation you started in the Inbox, with its session ID, OpenCode title, optional custom name, folder, terminal chat mode
-  when chosen (older threads use GUI chat), target (Mac
+  OpenCode conversation you started in the Inbox, with its session ID, OpenCode title, optional custom name, folder, target (Mac
   or WSL distro), Git branch, model and provider identifiers and the selected model variant (reasoning effort), last status, timestamps (including,
   while a conversation is working, when its current run began), read, archived and pinned flags, when a snoozed conversation comes back and whether it came back from a snooze, for a forked conversation the session ID of the one it was forked from, the permission mode you gave a conversation when it is not the default (only its name, such as `read-only`; OpenCode keeps the rules themselves with its session), and for a conversation an agent started through the MDE MCP a mark saying so with the session ID of the conversation that asked. For a conversation started in a Git worktree it also holds that worktree's root path, the repository's path, and the names of the new branch and the branch it was cut from, and, once you delete that worktree, when you did. It also holds the Inbox folders (projects) you add (path, target, name, the icon you picked for it — the name of a built-in icon and its color, or one emoji — and timestamps; at most 200), the worktrees MDE created for you (the same record and a name made from the folder and branch; at most 100, so that more conversations can be started in them) and the folder, model and agent
   you last chose in the Inbox composer. It never holds prompts, messages or tool data. It keeps at
@@ -114,9 +113,6 @@ OpenCode's `service.json` state file from the command's standard output, on the 
 WSL distro. That file holds the service's local address and the password OpenCode generated for
 it. MDE keeps the password in the main process's memory, sends it only to that loopback
 address as HTTP Basic auth, and never writes it to disk, logs it or passes it to the renderer.
-Terminal chat passes the same password to its OpenCode child process through the environment
-(`WSLENV` forwards it into WSL), so the terminal attaches to the same service. It is never placed
-in command-line arguments.
 Conversations, the messages the service is holding for a busy agent, tool input and output, permission
 requests and questions are fetched from the
 service when a thread is opened and are kept in memory only (the renderer keeps the last ten
@@ -159,7 +155,7 @@ answered question and its answer for the thread in `inbox-asides.json` (see abov
 can be read again; a question that failed is not kept.
 
 The next-message suggestion (off by default; Inbox settings → "Suggest next message") works the same way:
-five seconds after a GUI thread's turn ends, MDE asks the same local service to guess your next message from
+five seconds after a thread's turn ends, MDE asks the same local service to guess your next message from
 the conversation, which may send the conversation to the model provider you chose. Nothing is added to the
 conversation, and the guess is kept only in memory until the next turn.
 
@@ -299,7 +295,7 @@ These local drafts are not encrypted. They survive app restarts and changes to t
 files. Text being typed is held in memory and written to `index.json` when typing pauses for a few
 seconds, when a draft is opened, when the window loses focus and when MDE quits, so an abrupt
 shutdown can lose the last few seconds of typing. Each thread has its own draft, and any number of unsent new threads are kept as drafts of
-their own, each noting the folder it was written for, how it would start (GUI or Terminal, agent, model, and the
+their own, each noting the folder it was written for, how it would start (agent, model, and the
 worktree branch and name if a new worktree was chosen) and when it last changed; the Inbox lists them
 in its sidebar and marks the threads that have an unsent message. Removing an attachment, successfully sending its draft, deleting a new-thread
 draft from the sidebar, or removing a thread deletes the relevant copies. Removing a folder from the
@@ -370,7 +366,7 @@ The Inbox's application HTTP client makes requests and holds an event stream ope
 background service. MDE accepts only a loopback address (`127.0.0.1`, `localhost` or `[::1]`) with an
 explicit port in the service state file and refuses redirects. On Windows these reach WSL through
 localhost forwarding. These connections support Inbox options, conversations and background thread
-activity in GUI and Terminal mode; service startup can occur during options/configuration reads or
+activity; service startup can occur during options/configuration reads or
 restored thread activity. Provider and MCP connections resulting from these OpenCode operations are
 made by OpenCode. The accepted `localhost` name still depends on OS name resolution, and MDE does
 not install an application-wide firewall or independently verify the actual socket peer.

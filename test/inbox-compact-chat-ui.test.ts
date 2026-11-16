@@ -141,13 +141,6 @@ describe('the layout menu', () => {
     expect(toggle.dataset.layout).toBe('full')
   })
 
-  it('is not offered for a thread that is a terminal', async () => {
-    useWorkspace.setState({ inboxThreads: [thread({ mode: 'terminal' })] })
-    await render()
-    expect(q('[data-testid="inbox-thread-view"]')).not.toBeNull()
-    expect(q(TOGGLE)).toBeNull()
-  })
-
   it('offers the three layouts, and remembers the one chosen', async () => {
     await render()
     await chooseLayout('compact')

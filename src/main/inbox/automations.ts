@@ -69,7 +69,7 @@ function moment(value: unknown): value is number {
 }
 
 /** What is run, checked the same whether it comes from the window or from the file. Null when it cannot be run. */
-function runnable(record: Record<string, unknown>): Pick<InboxAutomation, 'folderId' | 'text' | 'agent' | 'model' | 'mode' | 'permissionMode' | 'worktree' | 'schedule'> | null {
+function runnable(record: Record<string, unknown>): Pick<InboxAutomation, 'folderId' | 'text' | 'agent' | 'model' | 'permissionMode' | 'worktree' | 'schedule'> | null {
   const model = modelRef(record.model)
   if (!isInboxFolderId(record.folderId) || !promptText(record.text) || !isChatAgentId(record.agent) || !model) return null
   if (!isAutomationSchedule(record.schedule)) return null
@@ -81,7 +81,6 @@ function runnable(record: Record<string, unknown>): Pick<InboxAutomation, 'folde
     text: record.text,
     agent: record.agent,
     model,
-    ...(record.mode === 'terminal' ? { mode: 'terminal' as const } : {}),
     ...(permissionMode ? { permissionMode } : {}),
     ...(worktree ? { worktree: { base: worktree.base as string } } : {}),
     schedule: normalizeAutomationSchedule(record.schedule),
@@ -196,7 +195,7 @@ export class InboxAutomations {
       const existing = this.automations.find((item) => item.id === request.id)
       if (!existing) throw new Error('That automation no longer exists.')
       const rescheduled = !sameAutomationSchedule(existing.schedule, base.schedule)
-      const { mode: _mode, permissionMode: _permission, worktree: _worktree, ...kept } = existing
+      const { permissionMode: _permission, worktree: _worktree, ...kept } = existing
       saved = { ...kept, ...base, ...(rescheduled ? { nextRunAt: nextAutomationRun(base.schedule, now) } : {}) }
       this.automations = this.automations.map((item) => (item.id === saved.id ? saved : item))
     } else {

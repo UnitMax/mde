@@ -40,7 +40,7 @@ const api = {
   },
   automations: {
     list: vi.fn(async (): Promise<InboxAutomation[]> => []),
-    save: vi.fn(async (request: AutomationSaveRequest): Promise<InboxAutomation> => automation({ ...request, id: request.id ?? 'aut_new', mode: request.mode === 'terminal' ? 'terminal' : undefined, permissionMode: undefined }) as InboxAutomation),
+    save: vi.fn(async (request: AutomationSaveRequest): Promise<InboxAutomation> => automation({ ...request, id: request.id ?? 'aut_new', permissionMode: undefined }) as InboxAutomation),
     remove: vi.fn(async () => {}),
     setEnabled: vi.fn(async ({ id, enabled }: { id: string; enabled: boolean }) => automation({ id, enabled })),
     run: vi.fn(async ({ id }: { id: string }) => automation({ id, runs: 1, lastRunAt: NOW, lastThreadId: 'ses_one' })),
@@ -275,16 +275,16 @@ describe('the automations dialog', () => {
   })
 
   it('edits the message and the schedule and keeps how it runs', async () => {
-    api.automations.list.mockResolvedValue([automation({ mode: 'terminal', permissionMode: 'read-only', worktree: { base: 'main' } })])
+    api.automations.list.mockResolvedValue([automation({ permissionMode: 'read-only', worktree: { base: 'main' } })])
     await render()
     await click('[data-testid="inbox-automations-button"]')
     await click('[data-testid="automation-edit"]')
-    expect(text('[data-testid="automation-runs-with"]')).toBe('app · build · model-1 · Read-only · Terminal · new worktree from main')
+    expect(text('[data-testid="automation-runs-with"]')).toBe('app · build · model-1 · Read-only · new worktree from main')
     await type('[data-testid="automation-text"]', 'Check the build and the tests')
     await click('[data-testid="automation-days-weekdays"]')
     await click('[data-testid="automation-save"]')
     expect(api.automations.save).toHaveBeenCalledWith({
-      id: 'aut_one', folderId: folder.id, text: 'Check the build and the tests', agent: 'build', model, mode: 'terminal', permissionMode: 'read-only', worktree: { base: 'main' },
+      id: 'aut_one', folderId: folder.id, text: 'Check the build and the tests', agent: 'build', model, permissionMode: 'read-only', worktree: { base: 'main' },
       schedule: { kind: 'daily', time: 540, days: [1, 2, 3, 4, 5] },
     })
     // Back at the list.

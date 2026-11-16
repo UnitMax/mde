@@ -1,8 +1,7 @@
 /**
- * Where text from outside a thread goes when it is sent to it: the open thread says how it takes text (a chat
- * thread attaches it as a quote above its message box; a terminal thread pastes it into its terminal), and
- * whoever has text to send, such as the Inbox terminal, hands it over by thread id without knowing which kind
- * of thread it is.
+ * Where text from outside a thread goes when it is sent to it: the open thread says how it takes text (it
+ * attaches it as a quote above its message box), and whoever has text to send, such as the Inbox terminal,
+ * hands it over by thread id.
  */
 type ThreadInput = (text: string) => void
 

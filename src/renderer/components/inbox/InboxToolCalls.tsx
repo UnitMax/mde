@@ -242,7 +242,7 @@ function TurnSection({
 }
 
 /**
- * The Tools tab of a GUI thread: every tool call the agent made, MCP ones included, one after another or, with the
+ * The Tools tab of a thread: every tool call the agent made, MCP ones included, one after another or, with the
  * messages shown, under the message it answered.
  * The list can be narrowed to MCP calls or failures and searched; a row opens onto its input, output and error.
  */

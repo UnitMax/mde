@@ -27,7 +27,7 @@ export function usePublishFloatingCardWidth(element: RefObject<HTMLElement>): vo
  * The padding that keeps the area `element` (the conversation below the thread's header, or the new-thread page)
  * clear of the floating card where there is room: see `floatingReserve`.
  */
-export function useFloatingReserve(element: RefObject<HTMLElement>, layout: 'column' | 'fill'): CSSProperties | undefined {
+export function useFloatingReserve(element: RefObject<HTMLElement>): CSSProperties | undefined {
   const card = useInboxView((s) => (s.sidebarFloating ? s.floatingCardWidth : 0))
   const [width, setWidth] = useState(0)
   useLayoutEffect(() => {
@@ -40,6 +40,6 @@ export function useFloatingReserve(element: RefObject<HTMLElement>, layout: 'col
     observer.observe(node)
     return () => observer.disconnect()
   }, [element, card])
-  const padding = floatingReserve(width, card, layout)
+  const padding = floatingReserve(width, card)
   return padding > 0 ? { paddingRight: padding } : undefined
 }

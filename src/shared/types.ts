@@ -3,7 +3,7 @@ import type { ThreadPermissionMode } from './permission-modes'
 
 export type SessionKind = 'native' | 'wsl'
 
-/** Parsed argv for the OpenCode command an Inbox terminal thread runs; no shell syntax is represented. */
+/** Parsed argv for a command run after a login shell has loaded its environment; no shell syntax is represented. */
 export interface AgentCommand {
   executable: string
   args: string[]
@@ -146,15 +146,11 @@ export interface OpenCodeModelRef {
   variant?: string
 }
 
-export type InboxThreadMode = 'gui' | 'terminal'
-
 /**
  * One OpenCode conversation recorded in MDE's own inbox. Only metadata is stored,
  * never prompts or messages. A thread is unread while `lastActivityAt > readAt`.
  */
 export interface InboxThread {
-  /** Omitted for existing GUI threads. Terminal threads attach to this same API session. */
-  mode?: InboxThreadMode
   /** Initial prompt failed; the created thread keeps its draft for retry. */
   sendError?: string
   id: string
@@ -821,7 +817,6 @@ export type ChatMcpRequest = ChatOptionsRequest
 export type ChatMcpSetRequest = ChatOptionsRequest & { server: string; enabled: boolean }
 
 export interface ChatCreateRequest {
-  mode?: InboxThreadMode
   attachmentIds?: string[]
   draftRevision?: number
   /** The new-thread draft this starts from (`drf_…`): its files are sent and it is removed once the thread has its first message. */
@@ -1212,7 +1207,6 @@ export type ChatDraftRequest = (
 
 /** What a new thread's draft remembers of how it would start, so reopening it brings the same choices back. */
 export interface ChatDraftChoice {
-  mode?: InboxThreadMode
   agent?: string
   model?: OpenCodeModelRef
   /** The thread would run in a new Git worktree cut from `base`; `branch` is the name typed for it, valid or not yet. */

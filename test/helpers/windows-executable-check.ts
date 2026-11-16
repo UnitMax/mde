@@ -87,9 +87,8 @@ export async function runWindowsExecutableCheck(): Promise<void> {
     // cmd has no persistent command history; exercise the real native ConPTY path.
     manager.ensure('native', { ...nativeSession, shell: 'cmd.exe' }, { cols: 80, rows: 24 }, palette)
     manager.write('native', 'echo WINDOWS_LOOKUP_NATIVE_PTY_OK\r\nexit\r\n')
-    manager.ensure('wsl', wslSession, { cols: 80, rows: 24 }, palette, {
-      directory: '/tmp', agent: { executable: '/usr/bin/printf', args: ['%s', 'WINDOWS_LOOKUP_WSL_PTY_OK'] },
-    })
+    manager.ensure('wsl', wslSession, { cols: 80, rows: 24 }, palette, { directory: '/tmp' })
+    manager.write('wsl', 'echo WINDOWS_LOOKUP_WSL_PTY_OK\nexit\n')
     const deadline = Date.now() + 30_000
     while (Date.now() < deadline && (manager.status('native') !== 'exited' || manager.status('wsl') !== 'exited')) {
       await new Promise((resolve) => setTimeout(resolve, 50))

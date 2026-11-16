@@ -1,4 +1,4 @@
-import type { InboxThreadMode, OpenCodeModelRef } from './types'
+import type { OpenCodeModelRef } from './types'
 import type { ThreadPermissionMode } from './permission-modes'
 
 /** The shortest time between two runs: every run starts an agent, so nothing runs every minute. */
@@ -28,7 +28,6 @@ export interface InboxAutomation {
   text: string
   agent: string
   model: OpenCodeModelRef
-  mode?: Extract<InboxThreadMode, 'terminal'>
   permissionMode?: Exclude<ThreadPermissionMode, 'default'>
   /** Each run works in a new Git worktree cut from this branch, on a branch MDE names. */
   worktree?: { base: string }
@@ -55,7 +54,6 @@ export interface AutomationSaveRequest {
   text: string
   agent: string
   model: OpenCodeModelRef
-  mode?: InboxThreadMode
   permissionMode?: ThreadPermissionMode
   worktree?: { base: string }
   schedule: AutomationSchedule

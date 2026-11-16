@@ -17,7 +17,6 @@ import {
   PenLine,
   Pin,
   PinOff,
-  Terminal,
   Trash2,
   X,
   CalendarClock
@@ -302,11 +301,6 @@ function InboxThreadRow({
                 </span>
               )}
               {thread.permissionMode && <PermissionModeMark thread={thread} />}
-              {thread.mode === 'terminal' && (
-                <span title="Terminal thread" data-testid={`inbox-thread-terminal-mark-${thread.id}`}>
-                  <Terminal role="img" aria-label="Terminal thread" className="h-3 w-3 shrink-0 text-fg-subtle" />
-                </span>
-              )}
               {thread.pinned && (
                 <Pin
                   role="img"

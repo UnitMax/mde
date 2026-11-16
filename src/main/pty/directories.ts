@@ -1,7 +1,6 @@
 import { promises as fs } from 'node:fs'
 import { join, posix, win32 } from 'node:path'
 import type { Session } from '@shared/types'
-import { inboxTerminalThreadId } from '@shared/inbox-thread-terminal'
 import { writeJsonAtomic } from '../store/atomic-json'
 import { isPlainAbsolutePath } from '../wsl/paths'
 
@@ -25,7 +24,6 @@ function savedDirectory(value: unknown): value is SavedDirectory {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const entry = value as Record<string, unknown>
   if (!text(entry.terminalId, 2048) || !text(entry.sessionId, 512) || !text(entry.directory, 32768)) return false
-  if (inboxTerminalThreadId(entry.sessionId)) return false
   if (entry.kind === 'wsl') return text(entry.distro, 128) && isPlainAbsolutePath(entry.directory)
   if (entry.kind !== 'native') return false
   return process.platform === 'win32'

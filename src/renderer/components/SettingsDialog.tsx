@@ -413,7 +413,7 @@ export function SettingsDialog({ terminalIds }: { terminalIds: string[] }): JSX.
                     </p>
                   ) : (
                     <p className="text-[11px] text-fg-subtle">
-                      The command that starts OpenCode for the Inbox: its background service and its terminal threads.
+                      The command that starts OpenCode's background service for the Inbox.
                       A missing program is reported by the Inbox, not here.
                     </p>
                   )}

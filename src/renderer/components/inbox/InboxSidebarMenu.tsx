@@ -141,17 +141,14 @@ function OpenFolderRows({ inboxId, kind, distro }: { inboxId: string; kind: 'nat
 export function InboxSidebarMenu({
   session,
   threadId,
-  gui,
 }: {
   session: DirectoryContext
   threadId?: string
-  /** The open thread is a GUI chat, whose tool calls can be listed. */
-  gui: boolean
 }): JSX.Element {
   const thread: InboxThread | undefined = useWorkspace((s) => (threadId ? s.inboxThreads.find((item) => item.id === threadId) : undefined))
   const project = useInboxChat((s) => (thread ? inboxThreadFolder(thread, s.folders) : s.folders.find((folder) => folder.id === session.id)))
-  const messages = useInboxChat((s) => (threadId && gui ? s.threads[threadId]?.messages : undefined))
-  const tally = useMemo(() => (threadId && gui ? toolTally(messages ?? []) : null), [threadId, gui, messages])
+  const messages = useInboxChat((s) => (threadId ? s.threads[threadId]?.messages : undefined))
+  const tally = useMemo(() => (threadId ? toolTally(messages ?? []) : null), [threadId, messages])
   const changes = useInboxChanges((s) => (threadId ? s.entries[inboxChangesKey(threadId)]?.value : undefined))
   const floatingTerminal = useInboxFloatingTerminal((s) => s.floating)
   const toggleCollapsed = useWorkspace((s) => s.toggleFileTree)
@@ -161,7 +158,7 @@ export function InboxSidebarMenu({
   const saved = useSavedPermissionCount(threadId)
   const card = useRef<HTMLElement>(null)
   usePublishFloatingCardWidth(card)
-  // Changes and Tools belong to a thread, and Tools to a GUI one; a section that does not apply is shut.
+  // Changes and Tools belong to a thread; a section that does not apply is shut.
   const open: FloatingSection | null = stored === 'files' || (stored === 'changes' && threadId) || (stored === 'tools' && tally) ||
     (stored === 'permissions' && saved > 0) ? stored : null
   const toggle = (section: FloatingSection): void => useInboxView.getState().setFloatingSection(open === section ? null : section)

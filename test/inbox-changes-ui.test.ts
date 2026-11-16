@@ -789,16 +789,12 @@ describe('Tools tab', () => {
     expect(rowIds()).toEqual(['t1'])
   })
 
-  it('says when there are no calls yet, and is not offered for a terminal thread', async () => {
+  it('says when there are no calls yet', async () => {
     seed([{ kind: 'user', id: 'msg_1', time: 1, text: 'Hi' }])
     useInboxChanges.setState({ tab: 'tools' })
     await sidebar()
     expect(container.querySelector('[data-testid="inbox-tools-empty"]')?.textContent).toContain('No tool calls yet')
     expect(container.querySelector('[data-testid="inbox-tools-count"]')).toBeNull()
-    useWorkspace.setState({ inboxThreads: [{ ...thread, mode: 'terminal' }] })
-    await sidebar()
-    expect(tab('tools')).toBeNull()
-    expect(tab('files')?.getAttribute('aria-selected')).toBe('true')
   })
 })
 

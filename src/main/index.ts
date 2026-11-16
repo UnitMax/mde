@@ -314,7 +314,6 @@ if (bridgeLaunch) {
               text: automation.text,
               agent: automation.agent,
               model: automation.model,
-              ...(automation.mode ? { mode: automation.mode } : {}),
               ...(automation.permissionMode ? { permissionMode: automation.permissionMode } : {}),
               ...(automation.worktree ? { worktree: automation.worktree } : {}),
             }, { automationId: automation.id })

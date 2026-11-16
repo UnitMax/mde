@@ -6,8 +6,7 @@ sessions, with first-class WSL support on Windows.
 It is a desktop shell focused on persistent terminal workflows: tabbed multi-pane terminals per
 session, Git changes in each terminal header, a file tree that follows the selected terminal,
 Markdown and Mermaid preview, and To Do boards. The Inbox is a separate
-view for starting and continuing OpenCode conversations in GUI chat or a direct OpenCode terminal;
-both use OpenCode's API for thread activity. Choose GUI (the default) or Terminal from the menu under the new-thread message box.
+view for starting and continuing OpenCode conversations as chats, through OpenCode's API.
 To run something again and again, pick a schedule from the **Run once** menu under the new-thread message box
 (every hour, every day at 9:00, weekdays, or your own): sending then saves an automation that starts a new
 thread each time, while MDE is open; a run missed while it was closed is made up once. The calendar-clock

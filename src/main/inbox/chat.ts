@@ -62,12 +62,10 @@ import type {
   OpenCodeModelRef,
   OpenCodeTarget,
   DirectoryContext,
-  Session,
 } from '@shared/types'
 import { OpenCodeServiceError, type OpenCodeServiceClient } from '../opencode/service/client'
 import { listBackgroundTasks } from '../opencode/service/background'
 import { serviceTargetKey } from '../opencode/service/discovery'
-import { inboxThreadTerminalSession } from '@shared/inbox-thread-terminal'
 import { normalizeInboxFolderIcon } from '@shared/inbox-folder-icons'
 import { goalObjectiveProblem } from '@shared/goal'
 import {
@@ -333,27 +331,6 @@ export class InboxChatService {
   /** The OpenCode executable from Settings; discovery runs it to find each service. */
   executable(): string {
     return this.configuredExecutable
-  }
-
-  /** Only Inbox terminal threads may launch their recorded conversation in a PTY. */
-  terminalSession(threadId: string): Session {
-    this.assertEnabled()
-    const thread = this.liveThread(threadId)
-    if (thread.mode !== 'terminal') throw new Error('This thread uses GUI chat.')
-    this.streams.ensure(thread.target)
-    return inboxThreadTerminalSession(thread)
-  }
-
-  /** Connect explicitly to Inbox's server even when the CLI defaults to a private server. */
-  async terminalLaunch(threadId: string) {
-    this.terminalSession(threadId)
-    const thread = this.thread(threadId)
-    const endpoint = await this.dependencies.client.endpoint(thread.target)
-    return {
-      agent: { executable: this.executable(), args: ['--server', endpoint.url, '--session', threadId] },
-      // Main-process launch options only: never returned over IPC or placed in argv.
-      environment: { OPENCODE_PASSWORD: endpoint.password },
-    }
   }
 
   /** A changed executable makes the next request rediscover each service. */
@@ -625,7 +602,6 @@ export class InboxChatService {
         },
       }))
       thread = this.dependencies.recorder.recordChatThread({
-        mode: request.mode,
         id: created.id,
         title: created.title,
         folder,

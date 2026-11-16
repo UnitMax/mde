@@ -8,7 +8,7 @@ export const barTrigger =
 
 /**
  * The strip tucked under the new-thread message box, which holds the choices about how a thread starts
- * without crowding the box's own toolbar: how it is shown (GUI or Terminal) and, in a Git folder, where it runs.
+ * without crowding the box's own toolbar: whether it runs on a schedule and, in a Git folder, where it runs.
  */
 export function ComposerBar({
   testId,

@@ -35,14 +35,13 @@ import { useWorkspace } from '@/store/workspace'
 
 const MESSAGE_LIMIT = 100_000
 
-/** Where and how an automation's threads run, in a line: "app · build · gpt-5 · Read-only · Terminal · new worktree from main". */
+/** Where and how an automation's threads run, in a line: "app · build · gpt-5 · Read-only · new worktree from main". */
 function runsWith(automation: InboxAutomation, folder: InboxFolder | undefined): string {
   return [
     folder?.name ?? 'Removed project',
     automation.agent,
     automation.model.id,
     threadPermissionModeInfo(automation.permissionMode ?? 'default').label,
-    ...(automation.mode === 'terminal' ? ['Terminal'] : []),
     ...(automation.worktree ? [`new worktree from ${automation.worktree.base}`] : []),
   ].join(' · ')
 }
@@ -210,7 +209,6 @@ function AutomationEditor({
           text,
           agent: automation.agent,
           model: automation.model,
-          ...(automation.mode ? { mode: automation.mode } : {}),
           ...(automation.permissionMode ? { permissionMode: automation.permissionMode } : {}),
           ...(automation.worktree ? { worktree: automation.worktree } : {}),
           schedule: result.schedule,
