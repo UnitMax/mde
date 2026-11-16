@@ -238,6 +238,11 @@ describe('the automations dialog', () => {
     ])
     expect(rows[1]!.querySelector('[data-testid="automation-error"]')!.textContent).toBe('OpenCode is not running.')
     expect(text('[data-testid="inbox-automations-count"]')).toContain('1 on, 1 paused')
+    // The default permissions are not named; a chosen mode is, once the list brings one.
+    expect(q('[data-testid="automation-permission"]')).toBeNull()
+    await act(async () => listeners[0]!([automation({ permissionMode: 'read-only' })]))
+    expect(text('[data-testid="automation-permission"]')).toBe('Read-only')
+    expect(q('[data-testid="automation-row-open"]')!.textContent).toContain('Next run today at 9:00')
     // A run in the main process arrives as a new list.
     await act(async () => listeners[0]!([automation({ runs: 1, lastRunAt: NOW, lastThreadId: 'ses_one', nextRunAt: new Date(2026, 10, 17, 9, 0).getTime() })]))
     expect(all('[data-testid="automation-row"]')).toHaveLength(1)
@@ -270,16 +275,16 @@ describe('the automations dialog', () => {
   })
 
   it('edits the message and the schedule and keeps how it runs', async () => {
-    api.automations.list.mockResolvedValue([automation({ mode: 'terminal', worktree: { base: 'main' } })])
+    api.automations.list.mockResolvedValue([automation({ mode: 'terminal', permissionMode: 'read-only', worktree: { base: 'main' } })])
     await render()
     await click('[data-testid="inbox-automations-button"]')
     await click('[data-testid="automation-edit"]')
-    expect(text('[data-testid="automation-runs-with"]')).toBe('app · build · model-1 · Terminal · new worktree from main')
+    expect(text('[data-testid="automation-runs-with"]')).toBe('app · build · model-1 · Read-only · Terminal · new worktree from main')
     await type('[data-testid="automation-text"]', 'Check the build and the tests')
     await click('[data-testid="automation-days-weekdays"]')
     await click('[data-testid="automation-save"]')
     expect(api.automations.save).toHaveBeenCalledWith({
-      id: 'aut_one', folderId: folder.id, text: 'Check the build and the tests', agent: 'build', model, mode: 'terminal', worktree: { base: 'main' },
+      id: 'aut_one', folderId: folder.id, text: 'Check the build and the tests', agent: 'build', model, mode: 'terminal', permissionMode: 'read-only', worktree: { base: 'main' },
       schedule: { kind: 'daily', time: 540, days: [1, 2, 3, 4, 5] },
     })
     // Back at the list.

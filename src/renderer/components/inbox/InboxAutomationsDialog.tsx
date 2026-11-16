@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, CalendarClock, CircleAlert, LoaderCircle, Pencil, Play, Trash2 } from 'lucide-react'
+import { ArrowLeft, CalendarClock, CircleAlert, LoaderCircle, Pencil, Play, Shield, Trash2 } from 'lucide-react'
 import type { InboxAutomation } from '@shared/automations'
 import type { InboxFolder } from '@shared/types'
+import { threadPermissionModeInfo } from '@shared/permission-modes'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,12 +35,13 @@ import { useWorkspace } from '@/store/workspace'
 
 const MESSAGE_LIMIT = 100_000
 
-/** Where and how an automation's threads run, in a line: "app · build · gpt-5 · Terminal · new worktree from main". */
+/** Where and how an automation's threads run, in a line: "app · build · gpt-5 · Read-only · Terminal · new worktree from main". */
 function runsWith(automation: InboxAutomation, folder: InboxFolder | undefined): string {
   return [
     folder?.name ?? 'Removed project',
     automation.agent,
     automation.model.id,
+    threadPermissionModeInfo(automation.permissionMode ?? 'default').label,
     ...(automation.mode === 'terminal' ? ['Terminal'] : []),
     ...(automation.worktree ? [`new worktree from ${automation.worktree.base}`] : []),
   ].join(' · ')
@@ -101,6 +103,7 @@ function AutomationRow({
     work().catch((reason) => setError(ipcErrorMessage(reason, fallback))).finally(() => setBusy(false))
   }
   const problem = error ?? automation.lastError
+  const permission = automation.permissionMode ? threadPermissionModeInfo(automation.permissionMode) : null
   return (
     <li data-testid="automation-row" data-automation={automation.id} data-enabled={automation.enabled ? '' : undefined} className="group flex flex-wrap items-start gap-x-3 gap-y-2 rounded-md px-2 py-2 hover:bg-hover">
       <Switch
@@ -123,6 +126,13 @@ function AutomationRow({
             {' · '}
             <span data-testid="automation-next" className={automation.enabled ? 'text-fg' : undefined}>{automationStatusLine(automation, now)}</span>
           </span>
+          {/* Only a mode that was chosen: the default says nothing the OpenCode settings do not. */}
+          {permission && (
+            <span data-testid="automation-permission" title={`Permissions: ${permission.label}. ${permission.description}`} className="flex shrink-0 items-center gap-1 rounded bg-hover px-1 text-[10px] font-medium text-fg-muted group-hover:bg-active">
+              <Shield aria-hidden className="h-2.5 w-2.5" />
+              {permission.label}
+            </span>
+          )}
         </span>
       </button>
       <span className="flex shrink-0 items-center opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">

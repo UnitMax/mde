@@ -639,7 +639,8 @@ that could not be sent becomes the thread's draft.
 The **Automations** dialog (`InboxAutomationsDialog`, mounted in `InboxThreadView`, state in
 `store/inbox-automations.ts`) opens from the calendar-clock button in the Inbox toolbar (a dot when any are
 on), from the chip's menu, from the saved line and from a thread's header. Each row has a switch (on or
-paused), the first line of the message, the project, the schedule and the next run, the last run with a link to
+paused), the first line of the message, the project, the schedule and the next run, the permission mode when one
+other than the default was chosen, the last run with a link to
 its thread, any error, and on hover Run now (starts a thread and leaves the schedule alone), Edit and Delete
 (asked first). Editing changes the message and the schedule; where and with what it runs is fixed when it is
 made. The main process sends the whole list on `automations:changed` whenever one is saved, removed, paused
