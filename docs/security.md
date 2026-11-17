@@ -680,6 +680,16 @@ before releases. Renderer libraries such as Mermaid are bundled into the app
 even though they are declared as development dependencies, so a production-only
 audit does not cover all shipped code.
 
+`audit:deps` (`scripts/audit-deps.mjs`) runs `npm audit --json` and fails on every
+advisory except those listed in its `EXCEPTIONS`, each with the reason it does not reach
+MDE. An exception is only for an advisory with no fixed version yet. It stops holding on
+its own: the script reads the package's published versions, and once the newest release
+is outside the advisory's range (a fix is out) the audit fails again, asking for the
+lockfile update and the exception's removal. An exception the audit no longer reports also
+fails, so it gets removed. Currently excepted: `picomatch` GHSA-fc5q-39xc-vjpf (ReDoS
+through crafted extglobs, unfixed as of 2026-11-17), which comes in only through build
+and test tools and only matches glob patterns from our own configuration.
+
 The release workflow (started by hand on the default branch) runs the full dependency
 audit, tests, license check, typecheck, and packaged-output audit in fresh Windows and
 macOS jobs before uploading ZIP/DMG artifacts and checksums. Build jobs have read-only

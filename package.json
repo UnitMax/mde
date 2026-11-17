@@ -20,7 +20,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "audit:package": "node scripts/audit-packaged-output.mjs",
-    "audit:deps": "npm audit",
+    "audit:deps": "node scripts/audit-deps.mjs",
     "licenses": "node scripts/generate-third-party-notices.mjs",
     "licenses:check": "node scripts/generate-third-party-notices.mjs --check",
     "build": "npm run licenses:check && npm run typecheck && electron-vite build && electron-builder && npm run audit:package",

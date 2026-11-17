@@ -24,7 +24,7 @@ Run `npm install` after checkout to rebuild native `node-pty`.
 - `npm run compile` — bundle the Electron application without packaging.
 - `npm run build` — validate notices, typecheck, bundle, and package for the current platform.
 - `npm run build:mac` — run the same checks and package an ARM64 DMG on macOS, without publishing.
-- `npm run audit:deps` — run the full npm vulnerability audit against the committed lockfile.
+- `npm run audit:deps` — run the full npm vulnerability audit against the committed lockfile (failing on every advisory but the documented, self-expiring exceptions in `scripts/audit-deps.mjs`).
 - `npm run licenses:check` — verify `THIRD_PARTY_NOTICES.md` matches the lockfile.
 
 ## Coding Style & Naming Conventions
