@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // The dependency audit: `npm audit` over the whole lockfile, failing on every advisory except the few listed in
 // EXCEPTIONS below. An exception is for an advisory that has no fixed version yet and does not reach MDE. It only
 // holds while that is so: once the package publishes a version outside the advisory's range, the audit fails
