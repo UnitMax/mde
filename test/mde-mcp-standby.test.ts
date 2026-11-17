@@ -53,8 +53,10 @@ describe('MDE MCP standby', () => {
   let folder: string
   let file: string
   let service: FakeService
+  let changed: OpenCodeTarget[]
 
   beforeEach(async () => {
+    changed = []
     folder = await fs.mkdtemp(join(tmpdir(), 'mde-standby-'))
     file = join(folder, 'mde-mcp-standby.json')
     service = new FakeService()
@@ -66,7 +68,7 @@ describe('MDE MCP standby', () => {
   })
 
   const standby = (owned: (target: OpenCodeTarget) => Promise<boolean> = async () => true) =>
-    new BridgeStandby({ file, client: service, owned })
+    new BridgeStandby({ file, client: service, owned, changed: (target) => changed.push(target), sleep: async () => {} })
 
   it('disconnects the server in the directories it used and connects them again at the next start', async () => {
     service.set('/home/me/app', { mde: 'connected', other: 'connected' })
@@ -176,12 +178,13 @@ describe('MDE MCP standby', () => {
     await expect(fs.access(file)).rejects.toThrow()
   })
 
-  it('does not connect a server that is no longer disabled, as after an OpenCode restart', async () => {
+  it('does not connect a server that is connected already, as after an OpenCode restart, or that is gone', async () => {
     await fs.writeFile(file, JSON.stringify({ version: 1, places: [
       { target: native, directory: '/home/me/app' },
-      { target: native, directory: '/home/me/fresh' },
+      { target: native, directory: '/home/me/removed' },
     ] }))
     service.set('/home/me/app', { mde: 'connected' })
+    service.set('/home/me/removed', { other: 'connected' })
     await standby().resume()
 
     expect(service.switches()).toEqual([])
@@ -221,6 +224,118 @@ describe('MDE MCP standby', () => {
 
     expect(service.statuses.get('/home/me/app')).toEqual({ mde: 'disabled' })
     expect(parseStandbyPlaces(await fs.readFile(file, 'utf8'))).toEqual([{ target: ubuntu, directory: '/home/me/app' }])
+  })
+
+  it('connects a server that failed while MDE was closed, and tells the app', async () => {
+    await fs.writeFile(file, JSON.stringify({ version: 1, places: [{ target: ubuntu, directory: '/home/me/app' }] }))
+    service.set('/home/me/app', { mde: 'failed' })
+    await standby().resume()
+
+    expect(service.switches()).toEqual(['connect mde /home/me/app'])
+    expect(changed).toEqual([ubuntu])
+    await expect(fs.access(file)).rejects.toThrow()
+  })
+
+  it('tries again when a connect does not take, and when OpenCode does not answer at first', async () => {
+    await fs.writeFile(file, JSON.stringify({ version: 1, places: [{ target: native, directory: '/home/me/app' }] }))
+    service.set('/home/me/app', { mde: 'disabled' })
+    const original = service.request
+    let lists = 0
+    let connects = 0
+    service.request = async (target, operation, request) => {
+      if (operation === 'mcp.list' && ++lists === 1) throw new Error('The OpenCode service is not reachable.')
+      if (operation === 'mcp.connect' && ++connects === 1) {
+        service.calls.push('connect mde /home/me/app')
+        service.statuses.get('/home/me/app')!.mde = 'failed'
+        return null
+      }
+      return original(target, operation, request)
+    }
+    await standby().resume()
+
+    expect(service.switches()).toEqual(['connect mde /home/me/app', 'connect mde /home/me/app'])
+    expect(service.statuses.get('/home/me/app')).toEqual({ mde: 'connected' })
+    await expect(fs.access(file)).rejects.toThrow()
+  })
+
+  it('waits for a server that is still connecting', async () => {
+    await fs.writeFile(file, JSON.stringify({ version: 1, places: [{ target: native, directory: '/home/me/app' }] }))
+    service.set('/home/me/app', { mde: 'disabled' })
+    const original = service.request
+    let afterConnect = 0
+    service.request = async (target, operation, request) => {
+      const answer = await original(target, operation, request)
+      if (operation === 'mcp.connect') service.statuses.get('/home/me/app')!.mde = 'pending'
+      if (operation === 'mcp.list' && service.statuses.get('/home/me/app')!.mde === 'pending' && ++afterConnect === 3) service.statuses.get('/home/me/app')!.mde = 'connected'
+      return answer
+    }
+    await standby().resume()
+
+    expect(service.switches()).toEqual(['connect mde /home/me/app'])
+    expect(service.statuses.get('/home/me/app')).toEqual({ mde: 'connected' })
+    await expect(fs.access(file)).rejects.toThrow()
+  })
+
+  it('keeps a directory whose server would not connect for the next start', async () => {
+    await fs.writeFile(file, JSON.stringify({ version: 1, places: [{ target: native, directory: '/home/me/app' }] }))
+    service.set('/home/me/app', { mde: 'disabled' })
+    const original = service.request
+    service.request = async (target, operation, request) => {
+      const answer = await original(target, operation, request)
+      if (operation === 'mcp.connect') service.statuses.get('/home/me/app')!.mde = 'failed'
+      return answer
+    }
+    await standby().resume()
+
+    expect(service.switches()).toHaveLength(4)
+    expect(parseStandbyPlaces(await fs.readFile(file, 'utf8'))).toEqual([{ target: native, directory: '/home/me/app' }])
+  })
+
+  it('stops trying when MDE quits during the start, and keeps what it had not connected', async () => {
+    await fs.writeFile(file, JSON.stringify({ version: 1, places: [{ target: native, directory: '/home/me/app' }] }))
+    service.set('/home/me/app', { mde: 'disabled' })
+    let release = (): void => {}
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const instance = new BridgeStandby({ file, client: service, owned: async () => true, sleep: (ms) => (ms === 2000 ? held : Promise.resolve()) })
+    service.failing = true
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const resuming = instance.resume()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    service.failing = false
+    await instance.pause()
+    release()
+    await resuming
+
+    expect(service.switches()).toEqual([])
+    expect(parseStandbyPlaces(await fs.readFile(file, 'utf8'))).toEqual([{ target: native, directory: '/home/me/app' }])
+  })
+
+  it('connects its own failed server again when a directory is listed, once per directory', async () => {
+    service.set('/home/me/app', { mde: 'failed', other: 'connected' })
+    const instance = standby()
+    const servers = [{ name: 'mde', status: 'failed' as const }]
+    instance.revive(native, '/home/me/app', servers)
+    instance.revive(native, '/home/me/app', servers)
+    await vi.waitFor(() => expect(changed).toEqual([native]))
+
+    expect(service.switches()).toEqual(['connect mde /home/me/app'])
+    expect(service.statuses.get('/home/me/app')).toEqual({ mde: 'connected', other: 'connected' })
+  })
+
+  it('does not revive a server switched off by hand, another MDE\'s server, or after quitting', async () => {
+    service.set('/home/me/app', { mde: 'failed' })
+    service.set('/home/me/site', { mde: 'disabled' })
+    const mine = standby()
+    mine.revive(native, '/home/me/site', [{ name: 'mde', status: 'disabled' }])
+    mine.revive(native, '/home/me/other', [{ name: 'other', status: 'failed' }])
+    const theirs = standby(async () => false)
+    theirs.revive(native, '/home/me/app', [{ name: 'mde', status: 'failed' }])
+    const quitting = standby()
+    await quitting.pause()
+    quitting.revive(native, '/home/me/app', [{ name: 'mde', status: 'failed' }])
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(service.switches()).toEqual([])
   })
 
   it('reads only well-formed places from the file', () => {

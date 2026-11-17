@@ -178,6 +178,8 @@ export interface InboxChatDependencies {
   recorder: InboxRecorder
   /** Pushes a live change to the renderer. */
   send(event: ChatEvent): void
+  /** Told of the MCP servers OpenCode listed for a directory, so a failed MDE MCP bridge can be connected again. */
+  onMcpServers?(target: OpenCodeTarget, directory: string, servers: readonly ChatMcpServer[]): void
   /** Whether the Inbox can be used on this platform (macOS, or Windows with WSL). */
   enabled(): boolean
   now(): number
@@ -467,6 +469,7 @@ export class InboxChatService {
       }
       if (servers.length > 0 || this.mcpSettled.has(key) || attempt >= MCP_ATTEMPTS) {
         this.mcpSettled.add(key)
+        this.dependencies.onMcpServers?.(place.target, place.directory, servers)
         return { servers, supported: true }
       }
       await this.pause(MCP_RETRY_MS)

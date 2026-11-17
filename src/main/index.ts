@@ -274,7 +274,8 @@ if (bridgeLaunch) {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send(IpcEvents.chatEvent, event)
         }
-      }
+      },
+      onMcpServers: (target, directory, servers) => bridgeStandby?.revive(target, directory, servers),
     })
     // Threads that were still working when MDE last quit start receiving their events again.
     inboxChat.start()
@@ -290,6 +291,10 @@ if (bridgeLaunch) {
         file: join(app.getPath('userData'), MDE_MCP_STANDBY_FILE),
         client: serviceClient,
         owned: async (target) => (await openCodeConfig.mdeMcpStatus(target, await mdeMcpCommand(target, self, toWsl))).state === 'installed',
+        // The chat box's server list reads again, as on any MCP change OpenCode reports.
+        changed: (target) => {
+          if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcEvents.chatEvent, { type: 'mcp', target })
+        },
       })
       void bridgeStandby.resume()
     }

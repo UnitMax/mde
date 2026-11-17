@@ -305,16 +305,27 @@ it. So MDE uses OpenCode's own switch:
   (the service client reports them), and where `mde` is `connected` it calls the disconnect route. OpenCode
   closes the bridge's stdin and the bridge exits. The directories are written to `mde-mcp-standby.json` before
   anything is stopped. Quitting waits at most two seconds for all of it.
-- **On starting** MDE reads that file and calls the connect route for each directory where `mde` is still
-  `disabled`. After an OpenCode restart nothing is disabled (OpenCode keeps no such state) and nothing is
-  done. A directory OpenCode could not be asked about stays in the file for the next start.
+- **On starting** MDE reads that file and calls the connect route for each directory where `mde` is
+  `disabled` or `failed`, then asks again until OpenCode says `connected`. It tries four times, 2, 5 and 10
+  seconds apart, because the first start of a fresh build can be slow (Windows scans the new `mde.exe`,
+  Electron starts cold through WSL) and OpenCode may still be loading the directory (an empty list). After an
+  OpenCode restart `mde` is connected already (OpenCode keeps no disabled state) and nothing is done. A
+  directory that still is not connected, or that OpenCode could not be asked about, stays in the file for the
+  next start. Quitting during these tries ends them and keeps those directories in the file. Each connect
+  sends the renderer an `mcp` chat event, so the composer's server list reads again.
+- **A failed bridge is connected again** when MDE lists a directory's MCP servers (`revive`, through the
+  chat service's `onMcpServers`) and finds its own `mde` server `failed`, once per directory and run. That
+  covers a bridge ended without MDE asking: MDE crashed or was killed, the Windows build script stopped a
+  leftover, or the directory was not used in the run that quit, so quitting never stopped its bridge. A server
+  switched off by hand is `disabled`, never `failed`, and stays off.
 
 Only directories from this run are asked about, because asking about another one would make OpenCode load it
 and start its MCP servers. And only where the configured entry starts this copy of MDE (`installed`, not
 `outdated`), so a second MDE with its own data folder does not switch off the bridges of the first. A server
-someone switched off by hand is not `connected` on quitting, so it is not written down and stays off. What this
-does not cover: MDE crashing or being killed, and a bridge in a directory only a terminal `opencode` session
-used. Restarting the OpenCode service ends those. While MDE is closed, agents elsewhere do not see the `mde`
+someone switched off by hand is not `connected` on quitting, so it is not written down and stays off. What
+quitting does not stop: the bridges of a crashed or killed MDE, and a bridge in a directory only a terminal
+`opencode` session used. Restarting the OpenCode service ends those; if one is killed instead, it is revived
+as above the next time MDE lists that directory. While MDE is closed, agents elsewhere do not see the `mde`
 tools at all, where before a call answered "MDE is not running".
 
 **Terminals agents open.** `open_terminal({ command?, directory?, title? })` adds a pane to the Inbox terminal

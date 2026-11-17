@@ -510,6 +510,15 @@ describe('Inbox chat service', () => {
       service.stop()
     })
 
+    it('passes the servers it listed on, so a failed MDE MCP bridge can be connected again', async () => {
+      const { service, folder } = setup({ 'mcp.list': listing(['mde', 'failed']) })
+      const onMcpServers = vi.fn()
+      ;(service as unknown as { dependencies: InboxChatDependencies }).dependencies.onMcpServers = onMcpServers
+      await service.mcpList({ folderId: folder.id })
+      expect(onMcpServers).toHaveBeenCalledWith(wsl, '/home/me/app', [{ name: 'mde', status: 'failed' }])
+      service.stop()
+    })
+
     it('keeps only the name, title and state, and takes secrets out of an error', async () => {
       const { service, folder } = setup({
         'mcp.list': { data: [
