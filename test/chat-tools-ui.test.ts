@@ -110,12 +110,23 @@ describe('a command', () => {
     expect(row.getAttribute('data-status')).toBe('pending')
   })
 
-  it('writes only the first line of a script on the row, and all of it in the terminal', async () => {
+  it('writes the steps of a script on the row, and all of it in the terminal', async () => {
     const row = await call(tool('bash', { command: 'set -e\nnpm ci\nnpm test' }, { output: 'done' }))
-    expect(text(row)).toContain('Ran set -e …')
-    expect(text(row)).not.toContain('npm ci')
+    expect(text(row)).toContain('Ran set -e ; npm ci ; npm test')
     await open(row)
     expect(q('[data-testid="chat-shell"] pre', row)!.textContent).toBe('set -e\nnpm ci\nnpm test')
+  })
+
+  it('folds a leading cd into where the command ran, and marks one out of the thread folder', async () => {
+    const here = await call(tool('bash', { command: `cd ${DIR} && npm test` }))
+    expect(text(here)).toContain('Ran npm test')
+    expect(q('[data-testid="shell-place"]', here)).toBeNull()
+    const away = await call(tool('bash', { command: 'cd /tmp && rm -rf x' }))
+    expect(q('[data-testid="shell-place"]', away)!.getAttribute('data-status')).toBe('outside')
+    expect(text(away)).toContain('in /tmp')
+    expect(text(away)).toContain('rm -rf x')
+    await open(away)
+    expect(q('[data-testid="chat-shell"] pre', away)!.textContent).toBe('cd /tmp && rm -rf x')
   })
 
   it('drops what is left of color codes from the output', async () => {

@@ -147,6 +147,7 @@
     "src/renderer/lib/diff.ts",
     "src/renderer/lib/turn-changes.ts",
     "src/renderer/lib/tool-review.ts",
+    "src/renderer/lib/shell-command.ts",
     "src/renderer/lib/floating-reserve.ts",
     "src/renderer/lib/hover-scrollbar.ts",
     "src/renderer/components/inbox/use-floating-reserve.ts",

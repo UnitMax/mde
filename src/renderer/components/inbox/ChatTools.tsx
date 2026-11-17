@@ -25,6 +25,7 @@ import { FileChangeView, useSyntaxColors } from '@/components/inbox/ChatFileChan
 import { McpCallView, Arguments } from '@/components/inbox/ChatMcpCall'
 import { ChatViewCall } from '@/components/inbox/ChatViewCall'
 import { McpServerNamesContext } from '@/components/inbox/mcp-context'
+import { ShellSteps } from '@/components/inbox/ShellSteps'
 import {
   ActivityRow,
   Chip,
@@ -68,6 +69,7 @@ import { toolFileChanges, type DiffHunk } from '@/lib/diff'
 import type { StyledSpan } from '@/lib/diff-highlight'
 import { externalLinkUrl } from '@/lib/file-viewer'
 import { argsPreview, mcpCalls, scriptDuration, scriptOf } from '@/lib/mcp'
+import { shellCommandView } from '@/lib/tool-review'
 import { cn } from '@/lib/utils'
 
 type ToolPart = Extract<ChatPart, { kind: 'tool' }>
@@ -156,7 +158,7 @@ function RawDetail({ part }: { part: ToolPart }): JSX.Element {
 
 function ShellCall({ part, directory }: ViewProps): JSX.Element {
   const info = shellInfo(part, directory)
-  const lines = info.command.split('\n')
+  const view = useMemo(() => shellCommandView(part, directory), [part, directory])
   const output = useMemo(() => (part.output ? shellOutput(part.output) : ''), [part.output])
   const outputLines = useMemo(() => (output ? output.split('\n') : []), [output])
   const hasDetail = Boolean(info.command || output || part.error)
@@ -170,8 +172,8 @@ function ShellCall({ part, directory }: ViewProps): JSX.Element {
       title={info.description ?? undefined}
       subject={(
         <>
-          <span className={MONO}>{lines[0] || '…'}</span>
-          {lines.length > 1 && <span className="text-fg-subtle"> …</span>}
+          {/* The steps it chains, with a leading `cd` folded into where it ran; the whole command is in the detail. */}
+          {view.steps.length > 0 ? <ShellSteps view={view} className={MONO} /> : <span className={MONO}>…</span>}
           <Reason part={part} />
         </>
       )}

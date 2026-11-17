@@ -142,6 +142,16 @@ each other, the line under a turn sits 0.5rem below it, and the person's message
 Rows and that line (`data-flow-row`) reach 0.375rem out to the left, so their icons line up with the words and
 the padding of the hover background sits outside the column.
 
+A shell command's row, in the chat and in the sidebar's Tools tab, shows the steps it chains rather than its
+first line (`commandView` in `src/renderer/lib/shell-command.ts`, drawn by `ShellSteps.tsx`). It splits on `&&`,
+`||`, `;`, `&` and line breaks outside quotes, `$(…)`, backticks, subshells and braces; a pipe stays within its
+step. A heredoc, an `if`/`for`/`case` or quotes that do not close leave the command whole, shown by its first
+line. The tool's `workdir` and any leading `cd` (also `pushd`, `Set-Location`) fold into an `in <folder>` chip:
+none for the thread's own folder, a quiet one inside it, a `warn` one outside it or for a target MDE cannot
+follow (`$DIR`, `-`). A `cd` later in the chain stays a step, marked the same way. A thread on a Windows path
+reads backslashes as separators and compares paths without case. The whole command is always in the opened row
+and the row's tooltip.
+
 The Appearance section also has a **Card terminals** switch (`terminalCards` in the local terminal
 settings, off by default). Off, panes tile edge to edge, divided by a 1px line. On, `TerminalView` draws
 every pane as a rounded card on the panel background with a 6px margin around and between the cards

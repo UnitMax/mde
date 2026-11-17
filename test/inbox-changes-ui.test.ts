@@ -761,9 +761,36 @@ describe('Tools tab', () => {
     expect(row('t3')).toContain('query: flaky')
     // Every row says it in the same code type, with nothing in a chip or in the plain type of a heading.
     const rows = Array.from(toolsPanel()!.querySelectorAll('li[data-testid^="inbox-tool-"] button'))
-    expect(rows.every((item) => item.querySelector('.inbox-code-font [data-testid="inbox-tool-name"]'))).toBe(true)
+    expect(rows.every((item) => item.querySelector('.inbox-code-font [data-testid="inbox-tool-name"], .inbox-code-font[data-testid="shell-steps"]'))).toBe(true)
     expect(rows.some((item) => item.querySelector('.font-medium'))).toBe(false)
     expect(toolsPanel()!.querySelector('[data-testid="inbox-tool-t2"] button')!.getAttribute('title')).toBe('Shell: npm test')
+  })
+
+  it('lists a command as its steps, with a leading cd folded into where it ran', async () => {
+    const shell = (id: string, command: string): ChatPart => toolPart(id, 'bash', { command })
+    seed([conversation[0]!, {
+      ...(conversation[1] as Extract<ChatMessage, { kind: 'assistant' }>),
+      parts: [
+        shell('s1', `cd ${thread.directory} && npm test`),
+        shell('s2', 'cd /tmp && rm -rf build && ls'),
+        shell('s3', 'a && b && c && d && e && f'),
+      ],
+    }])
+    useInboxChanges.setState({ tab: 'tools' })
+    await sidebar()
+    const row = (id: string): HTMLElement => toolsPanel()!.querySelector<HTMLElement>(`[data-testid="inbox-tool-${id}"] button`)!
+    const steps = (id: string): string[] => Array.from(row(id).querySelectorAll('[data-testid="shell-step"]')).map((item) => item.textContent ?? '')
+    // The cd into the thread's own folder says nothing, so it goes.
+    expect(steps('s1')).toEqual(['npm test'])
+    expect(row('s1').querySelector('[data-testid="shell-place"]')).toBeNull()
+    expect(row('s1').getAttribute('title')).toBe(`Shell: cd ${thread.directory} && npm test`)
+    // One that leaves it is marked, and each step has its line.
+    expect(row('s2').querySelector('[data-testid="shell-place"]')!.getAttribute('data-status')).toBe('outside')
+    expect(row('s2').querySelector('[data-testid="shell-place"]')!.textContent).toBe('in /tmp')
+    expect(steps('s2')).toEqual(['rm -rf build', '&&ls'])
+    // A long chain shows three steps and how many more.
+    expect(steps('s3')).toEqual(['a', '&&b', '&&c'])
+    expect(row('s3').textContent).toContain('+3 more')
   })
 
   it('folds a turn, and offers to load earlier messages when the start is not loaded', async () => {

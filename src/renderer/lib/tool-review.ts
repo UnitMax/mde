@@ -2,6 +2,7 @@ import type { ChatMessage, ChatPart } from '@shared/types'
 import { displayPath, skillCall } from '@/lib/chat'
 import { commandName, humanizeTool, inputText, shellInfo, toolFailed, toolInputOf, toolKind, toolPath, type ToolKind } from '@/lib/chat-tools'
 import { argsPreview, mcpCalls, scriptOf, type McpCall } from '@/lib/mcp'
+import { commandView, type CommandView } from '@/lib/shell-command'
 
 type ToolPart = Extract<ChatPart, { kind: 'tool' }>
 
@@ -32,6 +33,8 @@ export interface ToolEntry {
   title: string
   /** What it was about: a file, a command, the arguments. Empty when there is nothing to say. */
   subject: string
+  /** A shell command split into the steps it chains, with where it ran; null for any other call. */
+  command: CommandView | null
   failed: boolean
   active: boolean
 }
@@ -111,6 +114,12 @@ function subjectOf(part: ToolPart, kind: ToolKind, calls: readonly McpCall[], di
   }
 }
 
+/** A shell call's command as the Inbox shows it, from the folder the tool was asked to run in. */
+export function shellCommandView(part: ToolPart, directory: string): CommandView {
+  const input = toolInputOf(part)
+  return commandView(inputText(input, 'command') ?? '', directory, inputText(input, 'workdir', 'cwd'))
+}
+
 /** One tool part as the review lists it, with what MCP servers it called told by their names. */
 export function toolEntry(part: ToolPart, messageId: string, servers: readonly string[], directory: string): ToolEntry {
   const kind = toolKind(part.name)
@@ -126,6 +135,7 @@ export function toolEntry(part: ToolPart, messageId: string, servers: readonly s
     action: kind === 'shell' || kind === 'execute' || kind === 'other' || calls.length > 0,
     title: direct ? direct.tool : TITLES[kind] ?? humanizeTool(part.name),
     subject: subjectOf(part, kind, calls, directory),
+    command: kind === 'shell' ? shellCommandView(part, directory) : null,
     failed: toolFailed(part),
     active: part.status === 'running' || part.status === 'pending',
   }

@@ -24,9 +24,10 @@ import {
 } from 'lucide-react'
 import type { InboxThread } from '@shared/types'
 import { Arguments, Badge, Result } from '@/components/inbox/ChatMcpCall'
+import { ShellSteps } from '@/components/inbox/ShellSteps'
 import { Chip, CodeText, CopyButton, Glyph, Label, Surface, SurfaceHeader, TruncatedNote } from '@/components/inbox/chat-ui'
 import { hideReverted } from '@/lib/chat'
-import { shellOutput, type ToolKind } from '@/lib/chat-tools'
+import { shellInfo, shellOutput, type ToolKind } from '@/lib/chat-tools'
 import { mcpKey, scriptDuration, scriptOf } from '@/lib/mcp'
 import { filterTurns, rowText, toolCounts, toolTurns, type ToolEntry, type ToolFilter, type ToolTurn } from '@/lib/tool-review'
 import { cn } from '@/lib/utils'
@@ -148,12 +149,44 @@ function EntryDetail({ entry }: { entry: ToolEntry }): JSX.Element {
   )
 }
 
+/**
+ * What a call other than a command says: the name takes what it needs and truncates only when the row cannot hold
+ * it; the arguments get what is left. Either way the time stays at the end.
+ */
+function NameAndArgs({ entry }: { entry: ToolEntry }): JSX.Element {
+  const { name, args } = rowText(entry)
+  return (
+    <span className="inbox-code-font flex min-w-0 flex-1 items-baseline gap-1.5 text-[11.5px]">
+      <span
+        data-testid="inbox-tool-name"
+        className={cn(
+          'min-w-0 truncate',
+          !args && 'flex-1',
+          entry.failed ? 'text-danger' : 'text-fg-muted group-hover/row:text-fg',
+          entry.active && 'chat-shimmer',
+        )}
+      >
+        {name}
+      </span>
+      {args && (
+        <span className={cn('min-w-0 flex-1 truncate', entry.failed ? 'text-danger/70' : 'text-fg-subtle group-hover/row:text-fg-muted')}>
+          {args}
+        </span>
+      )}
+    </span>
+  )
+}
+
 /** One call: the icon stands for the kind of call, the row says what it did; the kind's name is in the tooltip and the detail. */
 function EntryRow({ entry, open, onToggle }: { entry: ToolEntry; open: boolean; onToggle: () => void }): JSX.Element {
   const { part } = entry
-  const { name, args } = rowText(entry)
   const icon = entry.calls.length > 0 ? Plug : ICONS[entry.kind]
   const time = part.durationMs !== undefined ? scriptDuration(part.durationMs) : ''
+  // A command shows the steps it chains, one per line, with the folder it ran in when that is not the thread's.
+  const command = entry.command && entry.command.steps.length > 0 ? entry.command : null
+  // Its lines start at the top, by the icon, once there may be more than one.
+  const tall = command !== null
+  const raw = command ? shellInfo(part).command : ''
   return (
     <li data-testid={`inbox-tool-${part.id}`} data-status={part.status} data-failed={entry.failed || undefined} className="min-w-0">
       <button
@@ -161,38 +194,30 @@ function EntryRow({ entry, open, onToggle }: { entry: ToolEntry; open: boolean; 
         data-tool-row
         aria-expanded={open}
         onClick={onToggle}
-        title={entry.subject ? `${entry.title}: ${entry.subject}` : entry.title}
+        title={command ? `${entry.title}: ${raw}` : entry.subject ? `${entry.title}: ${entry.subject}` : entry.title}
         className={cn(
-          'group/row flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-[5px] text-left text-[12.5px] leading-5 transition-colors',
+          'group/row flex w-full min-w-0 gap-2 rounded-md px-1.5 py-[5px] text-left text-[12.5px] leading-5 transition-colors',
           'hover:bg-hover/70 focus-visible:bg-hover/70 focus-visible:outline-none',
+          tall ? 'items-start' : 'items-center',
           open && 'bg-hover/50',
         )}
       >
-        <Glyph icon={icon} status={part.status} failed={entry.failed} />
-        {/* The name takes what it needs and truncates only when the row cannot hold it; the arguments get what is
-            left. Either way the time stays at the end. */}
-        <span className="inbox-code-font flex min-w-0 flex-1 items-baseline gap-1.5 text-[11.5px]">
-          <span
-            data-testid="inbox-tool-name"
+        <Glyph icon={icon} status={part.status} failed={entry.failed} className={cn(tall && 'mt-[3px]')} />
+        {command ? (
+          <ShellSteps
+            view={command}
+            stacked
             className={cn(
-              'min-w-0 truncate',
-              !args && 'flex-1',
+              'inbox-code-font flex-1 text-[11.5px]',
               entry.failed ? 'text-danger' : 'text-fg-muted group-hover/row:text-fg',
               entry.active && 'chat-shimmer',
             )}
-          >
-            {name}
-          </span>
-          {args && (
-            <span className={cn('min-w-0 flex-1 truncate', entry.failed ? 'text-danger/70' : 'text-fg-subtle group-hover/row:text-fg-muted')}>
-              {args}
-            </span>
-          )}
-        </span>
+          />
+        ) : <NameAndArgs entry={entry} />}
         {time && <span className="shrink-0 pl-1 text-[11px] tabular-nums text-fg-subtle">{time}</span>}
         <ChevronRight
           aria-hidden
-          className={cn('h-3.5 w-3.5 shrink-0 text-fg-subtle transition-transform duration-150', open ? 'rotate-90' : 'opacity-0 group-hover/row:opacity-100 group-focus-visible/row:opacity-100')}
+          className={cn('h-3.5 w-3.5 shrink-0 text-fg-subtle transition-transform duration-150', tall && 'mt-[3px]', open ? 'rotate-90' : 'opacity-0 group-hover/row:opacity-100 group-focus-visible/row:opacity-100')}
         />
       </button>
       {open && <EntryDetail entry={entry} />}
