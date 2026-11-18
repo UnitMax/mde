@@ -1225,6 +1225,15 @@ typed it lists the threads of the sidebar list in its order, with the open threa
 the title, the project and the branch of every thread, archived and snoozed ones too (those after the listed
 threads that match as well). Nothing is stored.
 
+**Go to file.** Ctrl+P (Cmd+P on a Mac) in the Inbox opens a picker over the files of what the file tree shows: the
+open thread's project, or on the new-thread page the folder the thread starts in (`InboxFilePicker`,
+`lib/inbox-file-picker.ts`). Typed text goes to OpenCode's file search (`chat:files` with `search`, OpenCode's
+`fs/find`, up to 80 answers), the one the `@` picker uses: it ranks fuzzily and leaves out what Git ignores, and
+hidden files; in a folder that is no Git repository nothing is ignored, so `node_modules` is searched too. The picker
+leaves folders out, puts files whose name holds every typed word first and marks the matched letters; Enter opens the
+file in the file viewer, as a click in the tree does. A thread whose worktree was deleted has no picker, and a
+terminal keeps its Ctrl+P (the shell's previous command). Nothing is stored.
+
 **Clearing the message box.** Ctrl+C in the message box with no text selected clears it: the text, the quote
 cards and the attached files (each removed from the draft as the remove button would). With a selection Ctrl+C
 copies as usual; Cmd+C on a Mac only ever copies.

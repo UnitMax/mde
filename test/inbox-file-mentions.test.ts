@@ -298,6 +298,13 @@ describe('the files and folders of a project, through the chat service', () => {
     service.stop()
   })
 
+  it('searches the whole project for Ctrl+P, a word with a slash too, and asks for more files', async () => {
+    const { service, folder, calls } = setup()
+    await service.files({ folderId: folder.id, query: 'src/ap', search: true })
+    expect(calls).toEqual([{ operation: 'fs.find', request: { query: { 'location[directory]': '/home/me/app', query: 'src/ap', limit: '80' } } }])
+    service.stop()
+  })
+
   it('reads a word with a slash like a shell path: what the folder holds, folders first, the folder itself leading', async () => {
     const { service, folder, calls } = setup()
     expect(await service.files({ folderId: folder.id, query: 'src/' })).toEqual([

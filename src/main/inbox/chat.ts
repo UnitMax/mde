@@ -119,6 +119,8 @@ export const CHAT_TEXT_MAX_LENGTH = 100_000
 const OPTIONS_TTL_MS = 60_000
 /** The `@` picker lists at most this many files and folders at once; typing narrows them down. */
 const FILE_PICKER_LIMIT = 40
+/** How many files the Ctrl+P search lists at most. */
+const FILE_SEARCH_LIMIT = 80
 /** The most entries of one folder the `@` picker looks at, and asks Git about. */
 const FOLDER_LIST_LIMIT = 1000
 /**
@@ -1568,6 +1570,7 @@ export class InboxChatService {
   async files(request: ChatFilesRequest): Promise<ChatFileEntry[]> {
     this.assertEnabled()
     const place = this.place(request)
+    if (request.search) return this.findFiles(place, request.query, FILE_SEARCH_LIMIT)
     const listed = request.query.includes('/') ? await this.folderFiles(request, place, request.query).catch(() => null) : null
     return listed ?? this.findFiles(place, request.query)
   }
@@ -1614,9 +1617,9 @@ export class InboxChatService {
     return found.flat()
   }
 
-  private async findFiles(place: { target: OpenCodeTarget; directory: string }, query: string): Promise<ChatFileEntry[]> {
+  private async findFiles(place: { target: OpenCodeTarget; directory: string }, query: string, limit = FILE_PICKER_LIMIT): Promise<ChatFileEntry[]> {
     return parseFileEntries(await this.dependencies.client.request(place.target, 'fs.find', {
-      query: { 'location[directory]': place.directory, query, limit: String(FILE_PICKER_LIMIT) },
+      query: { 'location[directory]': place.directory, query, limit: String(limit) },
     }))
   }
 

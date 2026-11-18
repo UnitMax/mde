@@ -14,6 +14,8 @@ import { NewTodoProjectDialog } from '@/components/NewTodoProjectDialog'
 import { Sidebar } from '@/components/Sidebar'
 import { SessionSwitcher } from '@/components/SessionSwitcher'
 import { InboxThreadSwitcher } from '@/components/inbox/InboxThreadSwitcher'
+import { InboxFilePicker } from '@/components/inbox/InboxFilePicker'
+import { inTerminal, isFilePickerShortcut } from '@/lib/inbox-file-picker'
 import { TerminalView } from '@/components/TerminalView'
 import { TitleBar, TitleBarButton } from '@/components/TitleBar'
 import { WslResourceMeter } from '@/components/WslResourceMeter'
@@ -118,6 +120,7 @@ export function App(): JSX.Element {
   const [todoTaskDialogColumnId, setTodoTaskDialogColumnId] = useState<string | null>(null)
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false)
   const [threadSwitcherOpen, setThreadSwitcherOpen] = useState(false)
+  const [filePickerOpen, setFilePickerOpen] = useState(false)
   const [inboxSearchOpen, setInboxSearchOpen] = useState(false)
   const [todoSearchOpen, setTodoSearchOpen] = useState(false)
   const [terminalLayouts, setTerminalLayouts] = useState<RuntimeLayouts>({})
@@ -330,6 +333,7 @@ export function App(): JSX.Element {
         !isSessionSwitcherShortcut(event) ||
         sessionSwitcherOpen ||
         threadSwitcherOpen ||
+        filePickerOpen ||
         inboxSearchOpen ||
         todoSearchOpen ||
         newSessionOpen ||
@@ -352,6 +356,7 @@ export function App(): JSX.Element {
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [
     activeWorkspaceView,
+    filePickerOpen,
     inboxSearchOpen,
     threadSwitcherOpen,
     newSessionOpen,
@@ -651,6 +656,36 @@ export function App(): JSX.Element {
     return folder ? inboxFileRoot(folder) : null
   }, [activeWorkspaceView, inboxLock, inboxThreads, selectedInboxThreadId, inboxFolders, inboxComposerFolderId])
   const inboxOpenFilePath = inboxRoot ? openFiles[inboxRoot.id] : undefined
+  // Ctrl+P searches the files of what the tree shows: the open thread's project, or the new thread's folder. A deleted
+  // worktree has none.
+  const inboxFilePlace = useMemo<{ threadId: string } | { folderId: string } | null>(() => {
+    if (!inboxRoot) return null
+    const thread = inboxThreads.find((item) => item.id === inboxRoot.id)
+    if (thread) return thread.worktreeRemovedAt === undefined ? { threadId: thread.id } : null
+    return { folderId: inboxRoot.id }
+  }, [inboxRoot, inboxThreads])
+  const filePickerAvailable = inboxFilePlace !== null
+  useEffect(() => {
+    if (!filePickerAvailable) return
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (
+        !isFilePickerShortcut(event) ||
+        // In a terminal Ctrl+P is the shell's: the previous command.
+        inTerminal(document.activeElement) ||
+        document.querySelector('[role="dialog"], [role="alertdialog"]')
+      ) {
+        return
+      }
+      event.preventDefault()
+      event.stopPropagation()
+      setFilePickerOpen(true)
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [filePickerAvailable])
+  useEffect(() => {
+    if (!filePickerAvailable) setFilePickerOpen(false)
+  }, [filePickerAvailable])
   /** The conversation area, which a floating terminal over it gives up when something opens there. */
   const mainRef = useRef<HTMLElement>(null)
 
@@ -855,6 +890,15 @@ export function App(): JSX.Element {
         )}
         <SessionSwitcher open={sessionSwitcherOpen} onOpenChange={setSessionSwitcherOpen} />
         <InboxThreadSwitcher open={threadSwitcherOpen} onOpenChange={setThreadSwitcherOpen} />
+        {inboxRoot && inboxFilePlace && (
+          <InboxFilePicker
+            open={filePickerOpen}
+            onOpenChange={setFilePickerOpen}
+            place={inboxFilePlace}
+            rootId={inboxRoot.id}
+            project={inboxRoot.name}
+          />
+        )}
         <InboxSearchDialog open={inboxSearchOpen} onOpenChange={setInboxSearchOpen} />
       </div>
       <Toaster />

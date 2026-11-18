@@ -180,6 +180,11 @@ describe('IPC payload boundary', () => {
     rejects(IpcChannels.gitGraph, { threadId: 'ses_thread', limit: 400, scope: 'all', threads: 'yes' })
   })
 
+  it('searches the files of a project for Ctrl+P with a flag, and only with a true or false one', () => {
+    expect(() => assertIpcPayload(IpcChannels.chatFiles, { threadId: 'ses_thread', query: 'src/app', search: true })).not.toThrow()
+    rejects(IpcChannels.chatFiles, { threadId: 'ses_thread', query: 'app', search: 'yes' })
+  })
+
   it.each(channels)('rejects malformed, oversized and prototype-shaped requests on %s', (channel) => {
     for (const value of [null, true, 42, [], new Date(), Object.create({ name: 'Inherited' }),
       JSON.parse('{"__proto__":{"polluted":true}}'), 'x'.repeat(IPC_LIMITS.text + 1)]) {

@@ -779,8 +779,12 @@ export interface ChatFileEntry {
   directory: boolean
 }
 
-/** The files and folders of a folder (new thread) or of an existing thread that fit `query`, best first; exactly one place is given. */
-export type ChatFilesRequest = ChatOptionsRequest & { query: string }
+/**
+ * The files and folders of a folder (new thread) or of an existing thread that fit `query`, best first; exactly one
+ * place is given. `search` searches the whole project for the query as Ctrl+P does, even when it holds a `/`, and
+ * answers with more of them.
+ */
+export type ChatFilesRequest = ChatOptionsRequest & { query: string; search?: boolean }
 
 /**
  * Which of these paths exist in the folder or thread (a path without the closing `/` also finds a folder).

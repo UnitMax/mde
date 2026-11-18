@@ -75,6 +75,7 @@ export function getKeyboardShortcutGroups(
         { id: 'inbox-new-thread', keys: ['Ctrl+N'], description: 'Start a new thread, setting aside any current draft.' },
         { id: 'inbox-find', keys: [`${primaryModifier}+F`], description: 'Find in the open thread. Enter and Shift+Enter step through the matches.' },
         { id: 'inbox-search-all', keys: [`${primaryModifier}+Shift+F`], description: 'Search the text of every thread.' },
+        { id: 'inbox-go-to-file', keys: [`${primaryModifier}+P`], description: 'Go to a file of the thread\'s project by typing part of its name, and open it in the file viewer. Not in a terminal, where Ctrl+P is the previous command.' },
         { id: 'inbox-save-draft', keys: [`${primaryModifier}+S`], description: 'On the new-thread page, save what you typed as a draft.' },
         {
           id: 'inbox-send-background',
