@@ -76,8 +76,11 @@ describe('dependency audit', () => {
     expect(newestRelease(['4.0.7', '10.0.0', '11.0.0-rc.1', '9.9.9'])).toBe('10.0.0')
   })
 
-  it('keeps the exception for the picomatch advisory with a reason', () => {
-    expect(EXCEPTIONS.map((item) => `${item.package} ${item.advisory}`)).toEqual(['picomatch GHSA-fc5q-39xc-vjpf'])
-    expect(EXCEPTIONS[0]!.reason).toMatch(/not bundled/)
+  it('gives every exception an advisory id, a package and a reason', () => {
+    for (const item of EXCEPTIONS) {
+      expect(advisoryId(item.advisory)).toBe(item.advisory)
+      expect(item.package).not.toBe('')
+      expect(item.reason).not.toBe('')
+    }
   })
 })

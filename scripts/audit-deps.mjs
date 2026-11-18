@@ -6,15 +6,7 @@ import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
 /** @type {import('./audit-deps.d.mts').AuditException[]} */
-export const EXCEPTIONS = [
-  {
-    advisory: 'GHSA-fc5q-39xc-vjpf',
-    package: 'picomatch',
-    reason: 'ReDoS through crafted extglob patterns, no fixed version published (2026-11-17). picomatch comes in only '
-      + 'through build and test tools (vite, vitest, electron-builder, node-gyp), is not bundled into the app, and '
-      + 'only ever matches glob patterns from our own configuration.',
-  },
-]
+export const EXCEPTIONS = []
 
 /** The advisory id (`GHSA-…`) in an advisory URL, or null. */
 export function advisoryId(url) {

@@ -686,9 +686,9 @@ MDE. An exception is only for an advisory with no fixed version yet. It stops ho
 its own: the script reads the package's published versions, and once the newest release
 is outside the advisory's range (a fix is out) the audit fails again, asking for the
 lockfile update and the exception's removal. An exception the audit no longer reports also
-fails, so it gets removed. Currently excepted: `picomatch` GHSA-fc5q-39xc-vjpf (ReDoS
-through crafted extglobs, unfixed as of 2026-11-17), which comes in only through build
-and test tools and only matches glob patterns from our own configuration.
+fails, so it gets removed, as also happens when GitHub withdraws an advisory. Nothing is
+currently excepted (the `picomatch` GHSA-fc5q-39xc-vjpf exception was removed on
+2026-11-18 after GitHub withdrew that advisory).
 
 The release workflow (started by hand on the default branch) runs the full dependency
 audit, tests, license check, typecheck, and packaged-output audit in fresh Windows and
