@@ -13,7 +13,10 @@ import { useWorkspace } from '@/store/workspace'
 import { getTerminalSettings } from '@/terminal/terminal-settings'
 import { getTerminalPalette } from '@/theme/themes'
 import { disposeRuntimeTerminal } from '@/terminal/dispose'
-import { disposeSession } from '@/terminal/sessions'
+import { disposeSession, getSession } from '@/terminal/sessions'
+import { terminalBufferText } from '@/terminal/read-output'
+import { directoryLeafName } from '@/lib/terminal-title'
+import { TERMINAL_READ_CHAR_LIMIT, type TerminalReadAnswer, type TerminalReadRequest } from '@shared/terminal-references'
 import { focusTerminalWhenReady } from '@/terminal/focus'
 import {
   layoutReordered,
@@ -77,6 +80,8 @@ interface Store {
   /** Which pane has the keyboard, so closing it can hand the keyboard on. */
   paneFocused: (terminalId: string) => void
   paneExited: (info: PtyExitInfo) => void
+  /** Answers main, which reads a pane for an agent: what the pane shows (see `@shared/terminal-references`). */
+  answerRead: (request: TerminalReadRequest) => void
   /** Starts listening for shells that end. Returns the function that stops. */
   init: () => () => void
 }
@@ -320,12 +325,35 @@ export const useInboxTerminal = create<Store>((set, get) => {
       focusAfterRemoval(previous, [info.terminalId], next)
     },
 
+    answerRead: (request) => {
+      const reply = (answer: TerminalReadAnswer): void => { void window.api.terminalReferences.answer(answer).catch(() => undefined) }
+      const pane = get().layout.panes.find((item) => item.terminalId === request.terminalId)
+      if (!pane) {
+        reply({ requestId: request.requestId, error: 'That terminal was closed. The person can drag the terminal they mean into the chat again.' })
+        return
+      }
+      const directory = useWorkspace.getState().terminalDirectories[request.terminalId] ?? null
+      const title = pane.title?.trim() || (directoryLeafName(directory) ?? 'terminal')
+      const session = getSession(request.terminalId)
+      if (!session) {
+        reply({ requestId: request.requestId, error: `The terminal "${title}" has not been opened since MDE started, so it shows nothing yet.` })
+        return
+      }
+      const { text, totalLines } = terminalBufferText(session.term.buffer.active, request.lines)
+      reply({
+        requestId: request.requestId,
+        reading: { title, directory, running: !pane.exited, totalLines, text: text.length > TERMINAL_READ_CHAR_LIMIT ? text.slice(-TERMINAL_READ_CHAR_LIMIT) : text },
+      })
+    },
+
     init: () => {
       const stopExits = window.api.pty.onExit((info) => get().paneExited(info))
       const stopAgents = window.api.agentTerminals.onOpen((request) => { void get().openForAgent(request) })
+      const stopReads = window.api.terminalReferences.onRead((request) => get().answerRead(request))
       return () => {
         stopExits()
         stopAgents()
+        stopReads()
       }
     },
   }

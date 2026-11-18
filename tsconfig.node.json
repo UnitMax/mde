@@ -30,6 +30,8 @@
     "src/renderer/terminal/tabs.ts",
     "src/renderer/terminal/layout-edits.ts",
     "src/renderer/terminal/dispose.ts",
+    "src/renderer/terminal/read-output.ts",
+    "src/renderer/terminal/reference-drag.ts",
     "src/renderer/terminal/focus.ts",
     "src/renderer/terminal/clipboard.ts",
     "src/renderer/terminal/osc52.ts",

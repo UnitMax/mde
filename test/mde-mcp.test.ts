@@ -6,6 +6,7 @@ import { PassThrough } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { MDE_MCP_MAX_DEPTH, MDE_MCP_SPAWNS_PER_MINUTE, MDE_MCP_TERMINALS_PER_MINUTE, MDE_MCP_TOOLS, terminalCommandProblem, type MdeMcpRequest } from '../src/shared/mde-mcp'
 import type { ChatCreateRequest, InboxComposerState, InboxFolder, InboxThread, OpenCodeTarget } from '../src/shared/types'
+import type { TerminalReading } from '../src/shared/terminal-references'
 import { LineSplitter } from '../src/main/mcp/lines'
 import { McpStdioServer, MCP_PROTOCOL_VERSIONS } from '../src/main/mcp/protocol'
 import { bridgeCommand, bridgeDataFolder, bridgeTarget, callMde, isMcpBridgeLaunch, MDE_NOT_RUNNING, runBridge } from '../src/main/mcp/bridge'
@@ -240,13 +241,14 @@ function folderOf(id: string, directory: string, extra: Partial<InboxFolder> = {
   return { id, name: directory.split('/').at(-1) ?? id, directory, target: wsl, createdAt: 1, lastUsedAt: 1, ...extra }
 }
 
-function tools(options: { threads?: InboxThread[]; folders?: InboxFolder[]; composer?: InboxComposerState; branch?: string | null; terminal?: 'running' | 'waiting' | 'none' | Error } = {}) {
+function tools(options: { threads?: InboxThread[]; folders?: InboxFolder[]; composer?: InboxComposerState; branch?: string | null; terminal?: 'running' | 'waiting' | 'none' | Error; reading?: TerminalReading | Error } = {}) {
   let now = 100_000
   const threads = new Map((options.threads ?? []).map((item) => [item.id, item]))
   const folders = [...(options.folders ?? [folderOf('fld_app', '/home/me/app')])]
   const created: { request: ChatCreateRequest; options: McpThreadOptions }[] = []
   const added: string[] = []
   const terminals: McpTerminalRequest[] = []
+  const reads: { ref: string; lines: number }[] = []
   const host: MdeMcpHost = {
     available: () => true,
     targetAllowed: (target) => target.kind === 'wsl',
@@ -278,13 +280,19 @@ function tools(options: { threads?: InboxThread[]; folders?: InboxFolder[]; comp
       if (options.terminal instanceof Error) throw options.terminal
       return { command: options.terminal ?? (request.command ? 'waiting' : 'none'), directory: request.directory }
     },
+    readTerminal: async (ref, lines) => {
+      reads.push({ ref, lines })
+      if (options.reading instanceof Error) throw options.reading
+      return options.reading ?? { title: 'Dev server', directory: '/home/me/app', running: true, totalLines: 3, text: 'a\nb\nc' }
+    },
     now: () => now,
   }
   const instance = new MdeMcpTools(host)
   const call = (args: Record<string, unknown>, extra: Partial<MdeMcpRequest> = {}) =>
     instance.handle({ version: 1, token: 't', target: wsl, cwd: '\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\app', tool: 'create_thread', arguments: args, ...extra })
   const openTerminal = (args: Record<string, unknown>, extra: Partial<MdeMcpRequest> = {}) => call(args, { tool: 'open_terminal', ...extra })
-  return { host, created, added, terminals, call, openTerminal, folders, advance: (ms: number) => { now += ms } }
+  const readTerminal = (args: Record<string, unknown>) => call(args, { tool: 'read_terminal' })
+  return { host, created, added, terminals, reads, call, openTerminal, readTerminal, folders, advance: (ms: number) => { now += ms } }
 }
 
 describe('MDE MCP open_terminal', () => {
@@ -496,5 +504,56 @@ describe('MDE MCP in OpenCode’s configuration', () => {
 
   it('reports a file it cannot parse', () => {
     expect(readMdeMcpState('{ "mcp": ', command).parseError).toBeTruthy()
+  })
+})
+
+describe('MDE MCP read_terminal', () => {
+  it('reads the pane a ref names, 200 lines unless asked', async () => {
+    const { readTerminal, reads } = tools()
+    const response = await readTerminal({ terminal: 'k3m9x2qavw' })
+    expect(reads).toEqual([{ ref: 'k3m9x2qavw', lines: 200 }])
+    expect(response).toMatchObject({ ok: true, data: { title: 'Dev server', directory: '/home/me/app', running: true, lines: 3, totalLines: 3 } })
+    expect(response.ok && response.text).toBe('Terminal "Dev server" in /home/me/app. Its shell is running. This is all of its 3 lines:\n\na\nb\nc')
+  })
+
+  it('says how much of a longer output it gives, and that a shell exited', async () => {
+    const { readTerminal, reads } = tools({ reading: { title: 'db', directory: null, running: false, totalLines: 900, text: 'x\ny' } })
+    const response = await readTerminal({ terminal: 'k3m9x2qavw', lines: 5000 })
+    expect(reads[0]!.lines).toBe(2000)
+    expect(response.ok && response.text).toBe('Terminal "db". Its shell has exited. These are its last 2 of 900 lines:\n\nx\ny')
+  })
+
+  it('says when the pane shows nothing yet', async () => {
+    const { readTerminal } = tools({ reading: { title: 'db', directory: null, running: true, totalLines: 0, text: '' } })
+    const response = await readTerminal({ terminal: 'k3m9x2qavw' })
+    expect(response.ok && response.text).toBe('Terminal "db". Its shell is running. It shows nothing yet.')
+  })
+
+  it('keeps the newest end of a reading that is too long', async () => {
+    const text = `${'old\n'.repeat(20_000)}newest`
+    const { readTerminal } = tools({ reading: { title: 'log', directory: null, running: true, totalLines: 20_001, text } })
+    const response = await readTerminal({ terminal: 'k3m9x2qavw' })
+    expect(response.ok && response.text.endsWith('newest')).toBe(true)
+    expect(response.ok && response.text.length).toBeLessThan(61_000)
+  })
+
+  it('refuses anything but a ref, and bad line counts, without asking MDE', async () => {
+    const { readTerminal, reads } = tools()
+    expect(await readTerminal({ terminal: 'inbox-terminal:tab:default:pane:pane-1' })).toMatchObject({ ok: false, error: expect.stringMatching(/ref/) })
+    expect(await readTerminal({})).toMatchObject({ ok: false })
+    expect(await readTerminal({ terminal: 'k3m9x2qavw', lines: 0 })).toMatchObject({ ok: false, error: expect.stringMatching(/lines/) })
+    expect(await readTerminal({ terminal: 'k3m9x2qavw', lines: 2.5 })).toMatchObject({ ok: false })
+    expect(await readTerminal({ terminal: 'k3m9x2qavw', extra: 1 })).toMatchObject({ ok: false, error: expect.stringMatching(/extra/) })
+    expect(reads).toEqual([])
+  })
+
+  it('passes on why MDE could not read the pane', async () => {
+    const { readTerminal } = tools({ reading: new Error('That terminal was closed.') })
+    expect(await readTerminal({ terminal: 'k3m9x2qavw' })).toEqual({ ok: false, error: 'That terminal was closed.' })
+  })
+
+  it('is listed with the ref as its one required argument', () => {
+    const tool = MDE_MCP_TOOLS.find((item) => item.name === 'read_terminal')
+    expect(tool?.inputSchema).toMatchObject({ required: ['terminal'], additionalProperties: false })
   })
 })

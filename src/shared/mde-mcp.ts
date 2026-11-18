@@ -1,5 +1,6 @@
 import type { TerminalPalette } from './ipc'
 import type { OpenCodeTarget } from './types'
+import { TERMINAL_READ_DEFAULT_LINES, TERMINAL_READ_LINE_LIMIT } from './terminal-references'
 import { VIEW_COMPONENTS, viewCatalogText } from './view-spec'
 
 /**
@@ -110,6 +111,31 @@ export const MDE_MCP_TOOLS: McpToolDefinition[] = [
     },
   },
   {
+    name: 'read_terminal',
+    title: 'Read an MDE terminal',
+    description: [
+      'Reads what a pane of the MDE Inbox terminal shows: its newest output, as plain text. The person points at a',
+      'terminal by dragging it into their message, which then holds `[terminal:<ref> "<title>"]`; pass that <ref>.',
+      'Only terminals the person put into a message can be read. Use it when they ask about a terminal, such as a',
+      'dev server\'s error or a container\'s logs, and read it again after a change to see what it prints now. The',
+      'answer says whether the shell still runs and which directory it is in.',
+    ].join(' '),
+    inputSchema: {
+      type: 'object',
+      properties: {
+        terminal: { type: 'string', description: 'The ref from `[terminal:<ref> "<title>"]` in the message.' },
+        lines: {
+          type: 'integer',
+          minimum: 1,
+          maximum: TERMINAL_READ_LINE_LIMIT,
+          description: `How many of the last lines to read. Defaults to ${TERMINAL_READ_DEFAULT_LINES}.`,
+        },
+      },
+      required: ['terminal'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: MDE_VIEW_TOOL,
     title: 'Show a view in MDE',
     description: [
@@ -150,7 +176,7 @@ export const MDE_MCP_TOOLS: McpToolDefinition[] = [
   },
 ]
 
-export type MdeMcpToolName = 'list_projects' | 'create_thread' | 'open_terminal' | typeof MDE_VIEW_TOOL
+export type MdeMcpToolName = 'list_projects' | 'create_thread' | 'open_terminal' | 'read_terminal' | typeof MDE_VIEW_TOOL
 
 /** One tool call, sent by the bridge as the only line of a connection. */
 export interface MdeMcpRequest {

@@ -10,17 +10,26 @@ import { ActivityRow, flowAttrs, Surface, type FlowKind } from '@/components/inb
 import { formatTokens, messageBlocks } from '@/lib/chat'
 import type { RenderBlock } from '@/lib/chat-tools'
 import { splitQuotes } from '@/lib/chat-quote'
-import { splitMentions } from '@/lib/file-mentions'
+import { splitMentions, type MentionPart } from '@/lib/file-mentions'
+import { splitTerminalReferences, type TerminalReferenceToken } from '@shared/terminal-references'
+import { TerminalReferenceChip } from '@/components/inbox/TerminalReferenceChip'
 import { cn } from '@/lib/utils'
 
-/** The text of a message with the files and folders it named marked, as they are in the box they were written in. */
+/**
+ * The text of a message with the files and folders it named marked, as they are in the box they were written in,
+ * and the terminals it points at shown as chips.
+ */
 function MentionedText({ text, mentions }: { text: string; mentions: readonly ChatFileMention[] }): JSX.Element {
-  const parts = useMemo(() => splitMentions(text, mentions), [text, mentions])
+  const parts = useMemo(() => splitTerminalReferences(text).flatMap((piece): (MentionPart & { terminal?: TerminalReferenceToken })[] => piece.reference
+    ? [{ text: piece.text, terminal: piece.reference }]
+    : splitMentions(piece.text, mentions)), [text, mentions])
   return (
     <>
-      {parts.map((part, index) => part.mention
-        ? <span key={index} data-testid="chat-file-mention" title={part.mention.path} className="rounded bg-accent/15 text-accent">{part.text}</span>
-        : part.text)}
+      {parts.map((part, index) => part.terminal
+        ? <TerminalReferenceChip key={index} reference={part.terminal} text={part.text} />
+        : part.mention
+          ? <span key={index} data-testid="chat-file-mention" title={part.mention.path} className="rounded bg-accent/15 text-accent">{part.text}</span>
+          : part.text)}
     </>
   )
 }

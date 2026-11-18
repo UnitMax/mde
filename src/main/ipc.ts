@@ -16,7 +16,9 @@ import type {
   MdeMcpTerminalSettings,
   MdeMcpTerminalSettingsUpdate,
 } from '@shared/mde-mcp'
+import type { TerminalReadAnswer, TerminalReferenceCreated, TerminalReferenceCreateRequest } from '@shared/terminal-references'
 import type { AgentTerminals } from './mcp/agent-terminals'
+import type { TerminalReferences } from './mcp/terminal-references'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import {
   type AppInfo,
@@ -413,6 +415,8 @@ export function registerIpcHandlers(
     mdeMcpCommand?: (target: OpenCodeTarget) => Promise<string[]>
     /** Inbox terminal panes agents open through the MDE MCP; this layer starts their shells. */
     agentTerminals?: AgentTerminals
+    /** Inbox terminal panes the person put into messages, which agents read through the MDE MCP. */
+    terminalReferences?: TerminalReferences
     /** Absent where the Inbox does not run: nothing is listed and nothing can be saved. */
     automations?: InboxAutomations
   },
@@ -696,6 +700,28 @@ export function registerIpcHandlers(
   })
   handle<AgentTerminalRefusal, void>(IpcChannels.agentTerminalRefuse, (req) => agentTerminals?.refuse(req))
   handle<AgentTerminalDecision, void>(IpcChannels.agentTerminalDecide, (req) => agentTerminals?.decide(req))
+
+  // Panes put into messages: main keeps which pane a ref names, and asks the window what it shows.
+  const terminalReferences = inbox.terminalReferences
+  terminalReferences?.attach({
+    send: (request) => {
+      const contents = security.getWebContents()
+      if (!contents || contents.isDestroyed()) return false
+      contents.send(IpcEvents.terminalRead, request)
+      return true
+    },
+    now: () => Date.now(),
+  })
+  handle<TerminalReferenceCreateRequest, TerminalReferenceCreated>(IpcChannels.terminalReferenceCreate, async (req) => {
+    if (!terminalReferences) throw new Error('Terminals cannot be put into messages in this build.')
+    if (!ptyManager.terminalInfo(req.terminalId)) throw new Error('That terminal is not running.')
+    return terminalReferences.create(req.terminalId, req.title)
+  })
+  handle<{ ref: string }, { terminalId: string } | null>(IpcChannels.terminalReferenceResolve, async (req) => {
+    const entry = await terminalReferences?.resolve(req.ref)
+    return entry ? { terminalId: entry.terminalId } : null
+  })
+  handle<TerminalReadAnswer, void>(IpcChannels.terminalReadAnswer, (req) => terminalReferences?.answer(req))
 
   handle<ChatConfigureRequest, void>(IpcChannels.chatConfigure, (req) => chat.configure(req.executable))
   handle<ChatOptionsRequest, ChatOptions>(IpcChannels.chatOptions, (req) => chat.chatOptions(req))

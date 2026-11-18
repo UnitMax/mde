@@ -121,6 +121,12 @@ export function getKeyboardShortcutGroups(
           description: 'Show + buttons on every edge of a pane; click one to split that way.'
         },
         {
+          id: 'terminal-drag-pane',
+          keys: ['Ctrl+Shift+Drag'],
+          description: 'Drag a pane onto another to swap them, or out into the Inbox message box so the agent can read what it shows.',
+          note: 'The agent reads the terminal through the MDE MCP (Settings → OpenCode).'
+        },
+        {
           id: 'terminal-copy-paste',
           keys: platform === 'darwin' ? ['Cmd+C', 'Cmd+V'] : ['Ctrl+C', 'Ctrl+V'],
           description: 'Copy the selected text; paste from the clipboard.',

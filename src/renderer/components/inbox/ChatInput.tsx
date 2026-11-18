@@ -14,6 +14,8 @@ import {
 } from '@/components/ui/context-menu'
 import { quoteLines } from '@/lib/chat-quote'
 import { cleanPromptText } from '@shared/prompt-text'
+import { terminalReferenceTokens } from '@shared/terminal-references'
+import { terminalIconElement } from '@/terminal/reference-drag'
 
 const externalChange = Annotation.define<boolean>()
 const continueList = insertNewlineContinueMarkupCommand({ nonTightLists: false })
@@ -67,6 +69,41 @@ const quoteField = StateField.define<DecorationSet>({
   create: quotes,
   update: (value, transaction) => (transaction.docChanged ? quotes(transaction.state) : value),
   provide: (field) => EditorView.decorations.from(field),
+})
+
+/** A terminal the message points at (`[terminal:<ref> "<title>"]`), shown as a chip with the pane's title. */
+class TerminalChip extends WidgetType {
+  constructor(readonly title: string) { super() }
+
+  override eq(other: TerminalChip): boolean { return other.title === this.title }
+
+  toDOM(): HTMLElement {
+    const chip = document.createElement('span')
+    chip.className = 'chat-input-terminal'
+    chip.dataset.testid = 'chat-input-terminal'
+    chip.title = 'The agent can read this terminal through the MDE MCP'
+    chip.append(terminalIconElement('chat-input-terminal-icon'), this.title)
+    return chip
+  }
+
+  override ignoreEvent(): boolean { return false }
+}
+
+function terminalChips(state: EditorState): DecorationSet {
+  const tokens = terminalReferenceTokens(state.doc.toString())
+  return tokens.length
+    ? Decoration.set(tokens.map((token) => Decoration.replace({ widget: new TerminalChip(token.title) }).range(token.start, token.end)), true)
+    : Decoration.none
+}
+
+const terminalField = StateField.define<DecorationSet>({
+  create: terminalChips,
+  update: (value, transaction) => (transaction.docChanged ? terminalChips(transaction.state) : value),
+  provide: (field) => [
+    EditorView.decorations.from(field),
+    // One piece: the caret steps over it, and Backspace takes all of it.
+    EditorView.atomicRanges.of((view) => view.state.field(field)),
+  ],
 })
 
 /** Asks the command mark to be worked out again for text that did not change, when the commands did. */
@@ -127,6 +164,22 @@ const inputTheme = EditorView.theme({
     color: 'var(--color-fg-subtle)',
   },
   '.cm-selectionBackground': { backgroundColor: 'var(--color-active)' },
+  '.chat-input-terminal': {
+    display: 'inline-flex',
+    alignItems: 'baseline',
+    gap: '5px',
+    margin: '0 1px',
+    padding: '0 6px',
+    border: '1px solid color-mix(in srgb, var(--color-accent) 40%, transparent)',
+    borderRadius: '5px',
+    backgroundColor: 'color-mix(in srgb, var(--color-accent) 12%, transparent)',
+    color: 'var(--color-fg)',
+    fontSize: '12.5px',
+    lineHeight: '1.5',
+    whiteSpace: 'nowrap',
+    cursor: 'default',
+  },
+  '.chat-input-terminal-icon': { width: '12px', height: '12px', flexShrink: '0', alignSelf: 'center', color: 'var(--color-accent)' },
 })
 
 function inBulletList(state: EditorState): boolean {
@@ -155,6 +208,11 @@ export interface ChatInputHandle {
   insertNewline: () => void
   /** Whether any text in the box is selected. */
   hasSelection: () => boolean
+  /**
+   * Puts text in as one word, where the point is (a drop) or else at the caret, with a space on either side when
+   * the text around it needs one, and gives the box the focus. False when the box takes no text now.
+   */
+  insertWord: (text: string, point?: { x: number; y: number }) => boolean
 }
 
 interface ChatInputProps {
@@ -207,6 +265,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           commonmarkLanguage,
           bulletField,
           quoteField,
+          terminalField,
           StateField.define<DecorationSet>({
             create: (state) => commandMarks(state, latest.current.commandToken),
             update: (value, transaction) =>
@@ -324,6 +383,29 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       view.dispatch(view.state.replaceSelection('\n'), { scrollIntoView: true, userEvent: 'input' })
     },
     hasSelection: () => viewRef.current?.state.selection.ranges.some((range) => !range.empty) ?? false,
+    insertWord: (text, point) => {
+      const view = viewRef.current
+      if (!view || view.state.readOnly) return false
+      let dropped: number | null = null
+      try {
+        dropped = point ? view.posAtCoords(point) : null
+      } catch {
+        // Not laid out (a hidden box): the caret's place is used.
+      }
+      const at = dropped ?? view.state.selection.main.head
+      const doc = view.state.doc
+      const before = at > 0 ? doc.sliceString(at - 1, at) : ''
+      const after = doc.sliceString(at, at + 1)
+      const insert = `${before && !/\s/.test(before) ? ' ' : ''}${text}${/^\s/.test(after) ? '' : ' '}`
+      const limit = latest.current.maxLength
+      if (limit !== undefined && doc.length + insert.length > limit) {
+        latest.current.onTooLong?.()
+        return false
+      }
+      view.dispatch({ changes: { from: at, insert }, selection: { anchor: at + insert.length }, scrollIntoView: true, userEvent: 'input.drop' })
+      view.focus()
+      return true
+    },
   }), [])
 
   const selectedText = (): string => {

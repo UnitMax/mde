@@ -33,6 +33,7 @@ import { isMcpBridgeLaunch, mdeMcpCommand, startMdeMcp } from './mcp'
 import { BridgeStandby, MDE_MCP_STANDBY_FILE } from './mcp/standby'
 import { startMcpBridge } from './mcp/bridge-main'
 import { AgentTerminals } from './mcp/agent-terminals'
+import { TerminalReferences } from './mcp/terminal-references'
 import type { McpListener } from './mcp/listener'
 import { checkedInboxFolderPlace } from './ipc'
 import { toWsl } from './wsl/paths'
@@ -310,6 +311,7 @@ if (bridgeLaunch) {
       void bridgeStandby.resume()
     }
     const agentTerminals = new AgentTerminals(app.getPath('userData'))
+    const terminalReferences = new TerminalReferences(app.getPath('userData'))
     // Agents can only start threads where the Inbox runs; elsewhere nothing listens and no token is made.
     mdeMcp = !inboxEnabled() ? null : await startMdeMcp({
       userData: app.getPath('userData'),
@@ -323,6 +325,7 @@ if (bridgeLaunch) {
         if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcEvents.inboxFoldersChanged)
       },
       terminals: agentTerminals,
+      references: terminalReferences,
       now: () => Date.now(),
     })
     // Automations run where the Inbox does. What came due while MDE was closed runs once, shortly after the start.
@@ -366,7 +369,7 @@ if (bridgeLaunch) {
       ptyManager,
       miniWindow,
       titleBar,
-      { recorder: inboxRecorder, chat: inboxChat, openCodeConfig, mdeMcpCommand: (target) => mdeMcpCommand(target, self, toWsl), agentTerminals, ...(inboxAutomations ? { automations: inboxAutomations } : {}) },
+      { recorder: inboxRecorder, chat: inboxChat, openCodeConfig, mdeMcpCommand: (target) => mdeMcpCommand(target, self, toWsl), agentTerminals, terminalReferences, ...(inboxAutomations ? { automations: inboxAutomations } : {}) },
       taskbarAttention,
       floatingTerminalKey,
       wslResources,

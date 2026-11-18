@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IpcChannels, IpcEvents, type RendererApi, type WslResourceSample } from '@shared/ipc'
 import type { AgentTerminalOpenRequest } from '@shared/mde-mcp'
+import type { TerminalReadRequest } from '@shared/terminal-references'
 import type { InboxAutomation } from '@shared/automations'
 import type {
   ChatEvent,
@@ -214,6 +215,12 @@ const api: RendererApi = {
     claim: (req) => ipcRenderer.invoke(IpcChannels.agentTerminalClaim, req),
     refuse: (req) => ipcRenderer.invoke(IpcChannels.agentTerminalRefuse, req),
     decide: (req) => ipcRenderer.invoke(IpcChannels.agentTerminalDecide, req)
+  },
+  terminalReferences: {
+    create: (req) => ipcRenderer.invoke(IpcChannels.terminalReferenceCreate, req),
+    resolve: (req) => ipcRenderer.invoke(IpcChannels.terminalReferenceResolve, req),
+    onRead: (listener) => subscribe<TerminalReadRequest>(IpcEvents.terminalRead, listener),
+    answer: (req) => ipcRenderer.invoke(IpcChannels.terminalReadAnswer, req)
   },
   windowMode: {
     get: () => ipcRenderer.invoke(IpcChannels.windowModeGet),

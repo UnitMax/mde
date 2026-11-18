@@ -8,7 +8,8 @@ const focus = vi.fn((_terminalId: string) => () => {})
 const disposeScreen = vi.fn()
 vi.mock('../src/renderer/terminal/dispose', () => ({ disposeRuntimeTerminal: (id: string) => dispose(id) }))
 vi.mock('../src/renderer/terminal/focus', () => ({ focusTerminalWhenReady: (id: string) => focus(id) }))
-vi.mock('../src/renderer/terminal/sessions', () => ({ disposeSession: (id: string) => disposeScreen(id) }))
+const screens = new Map<string, { term: { buffer: { active: { length: number; getLine: (index: number) => { isWrapped: boolean; translateToString: () => string } | undefined } } } }>()
+vi.mock('../src/renderer/terminal/sessions', () => ({ disposeSession: (id: string) => disposeScreen(id), getSession: (id: string) => screens.get(id) }))
 
 const ID = (pane: number): string => `inbox-terminal:tab:inbox-terminal:tab:default:pane:pane-${pane}`
 const stored = (): unknown => JSON.parse(localStorage.getItem(INBOX_TERMINAL_LAYOUT_STORAGE_KEY) ?? 'null')
@@ -174,7 +175,8 @@ describe('the Inbox terminal store', () => {
       const stop = vi.fn()
       const onExit = vi.fn((_listener: (info: PtyExitInfo) => void) => stop)
       const stopAgents = vi.fn()
-      vi.stubGlobal('api', { pty: { onExit }, agentTerminals: { onOpen: vi.fn(() => stopAgents) } })
+      const stopReads = vi.fn()
+      vi.stubGlobal('api', { pty: { onExit }, agentTerminals: { onOpen: vi.fn(() => stopAgents) }, terminalReferences: { onRead: vi.fn(() => stopReads) } })
       store.getState().splitPane(ID(1), 'right')
       const unsubscribe = store.getState().init()
       onExit.mock.calls[0]![0](exit(ID(2)))
@@ -182,6 +184,40 @@ describe('the Inbox terminal store', () => {
       unsubscribe()
       expect(stop).toHaveBeenCalled()
       expect(stopAgents).toHaveBeenCalled()
+      expect(stopReads).toHaveBeenCalled()
+    })
+  })
+
+  describe('reading a pane for an agent', () => {
+    const screen = (lines: string[]) => ({
+      term: { buffer: { active: { length: lines.length, getLine: (index: number) => ({ isWrapped: false, translateToString: () => lines[index]! }) } } },
+    })
+
+    afterEach(() => screens.clear())
+
+    it('answers with the pane\'s last lines, its title and directory', async () => {
+      const answer = vi.fn(async () => {})
+      vi.stubGlobal('api', { terminalReferences: { answer } })
+      const store = await load()
+      store.getState().titlePane(ID(1), 'Dev server')
+      const { useWorkspace } = await import('../src/renderer/store/workspace')
+      useWorkspace.setState({ terminalDirectories: { [ID(1)]: '/home/me/app' } })
+      screens.set(ID(1), screen(['one', 'two', 'three', '', '']))
+      store.getState().answerRead({ requestId: 'r1', terminalId: ID(1), lines: 2 })
+      expect(answer).toHaveBeenCalledWith({
+        requestId: 'r1',
+        reading: { title: 'Dev server', directory: '/home/me/app', running: true, totalLines: 3, text: 'two\nthree' },
+      })
+    })
+
+    it('says when the pane was closed or has not been opened since MDE started', async () => {
+      const answer = vi.fn(async () => {})
+      vi.stubGlobal('api', { terminalReferences: { answer } })
+      const store = await load()
+      store.getState().answerRead({ requestId: 'r1', terminalId: ID(7), lines: 2 })
+      store.getState().answerRead({ requestId: 'r2', terminalId: ID(1), lines: 2 })
+      expect(answer).toHaveBeenNthCalledWith(1, { requestId: 'r1', error: expect.stringMatching(/closed/) })
+      expect(answer).toHaveBeenNthCalledWith(2, { requestId: 'r2', error: expect.stringMatching(/not been opened/) })
     })
   })
 

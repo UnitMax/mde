@@ -10,6 +10,7 @@ import { isAutomationId, isAutomationSchedule } from '@shared/automations'
 import { PROMPT_CONTROL_CHARACTERS, PROMPT_TEXT_LIMIT } from '@shared/prompt-text'
 import { worktreeBranchProblem } from '@shared/worktree-branch'
 import { ATTENTION_COUNT_LIMIT } from '@shared/taskbar-attention'
+import { isTerminalRef, TERMINAL_READ_CHAR_LIMIT } from '@shared/terminal-references'
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels]
 type Validator = (value: unknown) => boolean
@@ -281,6 +282,21 @@ export const ipcPayloadValidators = {
   [IpcChannels.agentTerminalClaim]: object({ requestId: id, terminalId: id, palette }),
   [IpcChannels.agentTerminalRefuse]: object({ requestId: id, reason: string(1000) }),
   [IpcChannels.agentTerminalDecide]: object({ terminalId: id, decision: oneOf('run', 'run-for-hour', 'cancel') }),
+  [IpcChannels.terminalReferenceCreate]: object({ terminalId: id, title: string(1000, true) }),
+  [IpcChannels.terminalReferenceResolve]: object({ ref: isTerminalRef }),
+  [IpcChannels.terminalReadAnswer]: (value) =>
+    object({ requestId: id, error: string(1000) })(value) ||
+    object({
+      requestId: id,
+      reading: object({
+        title: string(1000, true),
+        directory: nullable(path),
+        running: boolean,
+        totalLines: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 10_000_000,
+        // Terminal text keeps tabs; the agent reads it as it is.
+        text: string(TERMINAL_READ_CHAR_LIMIT * 2, true, true),
+      }),
+    })(value),
   [IpcChannels.opencodeConfigSave]: object({ kind, distro: optional(distro), draft: configDraft, revision: string(128) }),
   [IpcChannels.chatConfigure]: object({ executable: path }),
   [IpcChannels.chatOptions]: (value) => object({ folderId: optional(inboxFolderId), threadId: optional(opencodeSessionId) })(value) &&

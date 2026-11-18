@@ -9,6 +9,13 @@ import {
   type MdeMcpResponse,
 } from '@shared/mde-mcp'
 import { PROMPT_CONTROL_CHARACTERS, PROMPT_TEXT_LIMIT } from '@shared/prompt-text'
+import {
+  isTerminalRef,
+  TERMINAL_READ_CHAR_LIMIT,
+  TERMINAL_READ_DEFAULT_LINES,
+  TERMINAL_READ_LINE_LIMIT,
+  type TerminalReading,
+} from '@shared/terminal-references'
 import type {
   ChatCreateRequest,
   InboxComposerState,
@@ -67,6 +74,11 @@ export interface MdeMcpHost {
    * Inbox terminal whose shell starts there. Resolves once the shell has started.
    */
   openTerminal(request: McpTerminalRequest): Promise<McpTerminalResult & { directory: string }>
+  /**
+   * What the Inbox terminal pane a ref names shows (a ref the person put into a message). Throws with a reason
+   * the agent reads when there is no such ref or the pane cannot be read.
+   */
+  readTerminal(ref: string, lines: number): Promise<TerminalReading>
   now(): number
 }
 
@@ -74,6 +86,7 @@ const AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 const CONTROLS = /[\u0000-\u001f\u007f-\u009f]/
 const CREATE_KEYS = new Set(['prompt', 'directory', 'agent', 'model', 'worktree'])
 const TERMINAL_KEYS = new Set(['command', 'directory', 'title'])
+const READ_KEYS = new Set(['terminal', 'lines'])
 
 class ToolError extends Error {}
 
@@ -145,6 +158,7 @@ export class MdeMcpTools {
       if (request.tool === 'list_projects') return this.listProjects(request)
       if (request.tool === 'create_thread') return await this.createThread(request)
       if (request.tool === 'open_terminal') return await this.openTerminal(request)
+      if (request.tool === 'read_terminal') return await this.readTerminal(request)
       return { ok: false, error: `Unknown tool: ${request.tool}` }
     } catch (error) {
       if (error instanceof ToolError) return { ok: false, error: error.message }
@@ -311,6 +325,42 @@ export class MdeMcpTools {
     return {
       ok: true,
       text: `Opened a terminal in ${result.directory}. ${status} You cannot see its output; the person follows it in MDE.\n${JSON.stringify(data, null, 2)}`,
+      data,
+    }
+  }
+
+  private async readTerminal(request: MdeMcpRequest): Promise<MdeMcpResponse> {
+    const args = request.arguments
+    const unknown = Object.keys(args).find((key) => !READ_KEYS.has(key))
+    if (unknown) throw new ToolError(`Unknown argument \`${unknown}\`.`)
+    const ref = typeof args.terminal === 'string' ? args.terminal.trim() : ''
+    if (!isTerminalRef(ref)) {
+      throw new ToolError('`terminal` must be the ref from `[terminal:<ref> "<title>"]` in the person\'s message, for example "k3m9x2qavw".')
+    }
+    let lines = TERMINAL_READ_DEFAULT_LINES
+    if (args.lines !== undefined && args.lines !== null) {
+      if (typeof args.lines !== 'number' || !Number.isInteger(args.lines) || args.lines < 1) throw new ToolError('`lines` must be a whole number from 1.')
+      lines = Math.min(args.lines, TERMINAL_READ_LINE_LIMIT)
+    }
+    let reading: TerminalReading
+    try {
+      reading = await this.host.readTerminal(ref, lines)
+    } catch (error) {
+      throw new ToolError(error instanceof Error ? error.message : String(error))
+    }
+    const text = reading.text.length > TERMINAL_READ_CHAR_LIMIT ? reading.text.slice(-TERMINAL_READ_CHAR_LIMIT) : reading.text
+    const shown = text ? text.split('\n').length : 0
+    const place = reading.directory ? ` in ${reading.directory}` : ''
+    const state = reading.running ? 'Its shell is running.' : 'Its shell has exited.'
+    const extent = shown === 0
+      ? 'It shows nothing yet.'
+      : shown < reading.totalLines
+        ? `These are its last ${shown} of ${reading.totalLines} lines:`
+        : `This is all of its ${shown} lines:`
+    const data = { title: reading.title, directory: reading.directory, running: reading.running, lines: shown, totalLines: reading.totalLines }
+    return {
+      ok: true,
+      text: `Terminal "${reading.title}"${place}. ${state} ${extent}${shown ? `\n\n${text}` : ''}`,
       data,
     }
   }

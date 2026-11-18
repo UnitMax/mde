@@ -366,6 +366,27 @@ lights up for 4 s when an agent opens a terminal ("New agent terminal"): the but
 terminal icon drops into it and its dot pings (`hidden-terminal-arrival` in `index.css`; without motion only
 the words change). While commands wait, it says so ("1 command to approve") until they are answered.
 
+**Terminals put into a message.** With Ctrl+Shift held, a pane of the Inbox terminal is picked up as it is for
+swapping panes (`beginReorder` in `TerminalView`); carried out of the terminal it shows a small chip with its
+title beside the pointer, and a message box under the pointer gets an accent outline
+(`src/renderer/terminal/reference-drag.ts`: a box takes part with `data-terminal-drop` and the
+`mde:terminal-drop` event). Let go there, the box asks main for the pane's reference (`terminal-reference:create`)
+and writes it where it was dropped as `[terminal:<ref> "<title>"]` (`src/shared/terminal-references.ts`).
+The text is what is kept and sent: the agent reads it as it is, and the box (a CodeMirror widget, one atomic
+piece) and the conversation (`TerminalReferenceChip`, which brings the pane into view on a click) show it as a
+chip. The ref is ten random letters and digits that main maps to the pane's terminal ID
+(`src/main/mcp/terminal-references.ts`, kept in `terminal-references.json`, the newest 200); a pane keeps its
+ref, and the Inbox terminal's panes keep their IDs between runs, so an old message still names its pane. Only
+Inbox terminal panes that are running can get one.
+
+`read_terminal({ terminal, lines? })` reads such a pane: main sends `terminal-read:request` to the window, which
+answers `terminal-read:answer` from the pane's xterm.js buffer (`terminalBufferText` in
+`src/renderer/terminal/read-output.ts`: scrollback and screen, lines xterm wrapped joined again, the empty rows
+under the prompt left out, no colours since xterm keeps them as attributes) with the title, the shell's
+directory and whether it still runs. 200 lines unless asked, at most 2,000 lines and 60,000 characters (the
+newest end), 5 s for the window to answer, eight readings waiting at once. A pane that was closed, or has not
+been opened since MDE started (so it has no output), is a tool error saying so.
+
 **Views agents show.** `show_view({ title?, root, elements })` shows the person a dashboard, chart or table in
 the chat, where the agent called it. The format follows the idea of Vercel's json-render (a `root` and a flat map
 of `elements`, each `{ type, props, children }`), with MDE's own small set of components and its own code:

@@ -31,6 +31,9 @@ import { useTerminalSelectionActions } from '@/components/terminal-selection-act
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { cn } from '@/lib/utils'
 import { useWorkspace } from '@/store/workspace'
+import { directoryLeafName } from '@/lib/terminal-title'
+import { INBOX_TERMINAL_SESSION_ID } from '@shared/inbox-terminal'
+import { dropTerminalReference, endTerminalReferenceDrag, moveTerminalReference } from '@/terminal/reference-drag'
 import {
   attachSession,
   detachSession,
@@ -854,6 +857,12 @@ function terminalPaneSlotAtPoint(
   return Number.isInteger(index) ? index : null
 }
 
+function pointInside(element: HTMLElement | null, point: TerminalReorderPoint): boolean {
+  if (!element) return false
+  const rect = element.getBoundingClientRect()
+  return point.clientX >= rect.left && point.clientX <= rect.right && point.clientY >= rect.top && point.clientY <= rect.bottom
+}
+
 function restoreTerminalReorderStyles(drag: TerminalReorderDragState): void {
   document.body.style.cursor = drag.previousCursor
   document.body.style.userSelect = drag.previousUserSelect
@@ -1077,6 +1086,7 @@ export function TerminalView({
     }
 
     if (drag.frame !== undefined) cancelAnimationFrame(drag.frame)
+    endTerminalReferenceDrag()
     const grid = gridRef.current
     reorderDragRef.current = null
     setReorderSourceId(null)
@@ -1088,6 +1098,13 @@ export function TerminalView({
     }
   }, [])
 
+  // Only the Inbox terminal's panes can be put into a message.
+  const referenceable = selectedSession.id === INBOX_TERMINAL_SESSION_ID
+  /** A pane's title as its header shows it. */
+  const paneTitle = (terminalId: string): string =>
+    terminalLayout.panes.find((pane) => pane.terminalId === terminalId)?.title?.trim()
+    || (directoryLeafName(useWorkspace.getState().terminalDirectories[terminalId]) ?? 'terminal')
+
   // Panes stay in place while dragging; only the dashed target preview follows the pointer.
   const updateReorderTarget = (drag: TerminalReorderDragState, point: TerminalReorderPoint): void => {
     const grid = gridRef.current
@@ -1096,6 +1113,9 @@ export function TerminalView({
     const targetTerminalId = targetPane && targetPane.terminalId !== drag.sourceTerminalId
       ? targetPane.terminalId
       : null
+
+    // An Inbox terminal pane carried out of the terminal can be dropped into a message (reference-drag.ts).
+    if (referenceable) moveTerminalReference(paneTitle(drag.sourceTerminalId), point.clientX, point.clientY, pointInside(grid, point))
 
     if (targetTerminalId === drag.targetTerminalId) return
     drag.targetTerminalId = targetTerminalId
@@ -1181,6 +1201,11 @@ export function TerminalView({
     })
     const { targetTerminalId } = drag
     const grid = gridRef.current
+    if (referenceable && !targetTerminalId && !pointInside(grid, event)) {
+      dropTerminalReference({ terminalId: drag.sourceTerminalId, title: paneTitle(drag.sourceTerminalId), clientX: event.clientX, clientY: event.clientY })
+    } else {
+      endTerminalReferenceDrag()
+    }
     reorderDragRef.current = null
     setReorderSourceId(null)
     setReorderTargetId(null)

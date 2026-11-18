@@ -45,7 +45,7 @@ describe('KeyboardShortcutsSettings', () => {
     const section = container.querySelector<HTMLElement>('[data-testid="keyboard-shortcuts-settings"]')
 
     expect(section).not.toBeNull()
-    expect(section?.querySelectorAll('[data-testid^="keyboard-shortcut-row-"]')).toHaveLength(28)
+    expect(section?.querySelectorAll('[data-testid^="keyboard-shortcut-row-"]')).toHaveLength(29)
     expect(section?.querySelectorAll('button')).toHaveLength(0)
     expect(Array.from(section?.querySelectorAll('h4') ?? []).map((heading) => heading.textContent))
       .toEqual(['Everywhere', 'Inbox', 'Terminal', 'Files and To Do'])
@@ -71,6 +71,7 @@ describe('KeyboardShortcutsSettings', () => {
     expect(section?.querySelector('[data-testid="keyboard-shortcut-keys-inbox-search-all"]')?.textContent).toBe('⌘⇧F')
     expect(section?.querySelector('[data-testid="keyboard-shortcut-keys-terminal-fullscreen"]')?.textContent).toBe('⌃⇧ Enter')
     expect(section?.querySelector('[data-testid="keyboard-shortcut-keys-terminal-copy-paste"]')?.textContent).toBe('⌘C⌘V')
+    expect(section?.querySelector('[data-testid="keyboard-shortcut-keys-terminal-drag-pane"]')?.textContent).toBe('⌃⇧ Drag')
     expect(section?.textContent).toContain('Esc also exits fullscreen (Terminal settings).')
 
     act(() => {

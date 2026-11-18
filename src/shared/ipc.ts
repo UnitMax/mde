@@ -115,6 +115,12 @@ import type {
   OpenCodeConfigSaveRequest,
   OpenCodeConfigSnapshot
 } from './opencode-config'
+import type {
+  TerminalReadAnswer,
+  TerminalReadRequest,
+  TerminalReferenceCreated,
+  TerminalReferenceCreateRequest
+} from './terminal-references'
 
 export interface WorkspaceData {
   todoProjects: TodoProject[]
@@ -259,6 +265,9 @@ export const IpcChannels = {
   agentTerminalClaim: 'agent-terminal:claim',
   agentTerminalRefuse: 'agent-terminal:refuse',
   agentTerminalDecide: 'agent-terminal:decide',
+  terminalReferenceCreate: 'terminal-reference:create',
+  terminalReferenceResolve: 'terminal-reference:resolve',
+  terminalReadAnswer: 'terminal-read:answer',
 
   windowModeGet: 'window-mode:get',
   windowModeSet: 'window-mode:set',
@@ -289,6 +298,8 @@ export const IpcEvents = {
   fileViewerClose: 'file-viewer:close',
   /** An agent asked, through the MDE MCP, for a new pane in the Inbox terminal. */
   agentTerminalOpen: 'agent-terminal:open',
+  /** An agent reads, through the MDE MCP, a pane of the Inbox terminal the person put into a message. */
+  terminalRead: 'terminal-read:request',
   /** A reading of WSL's CPU and memory, while the title bar meter is shown. */
   wslResources: 'wsl:resources',
 } as const
@@ -779,6 +790,17 @@ export interface RendererApi {
     claim(req: AgentTerminalClaim): Promise<void>
     refuse(req: AgentTerminalRefusal): Promise<void>
     decide(req: AgentTerminalDecision): Promise<void>
+  }
+  /**
+   * Inbox terminal panes put into messages (`[terminal:<ref> "<title>"]`). Main keeps which pane a ref names;
+   * when an agent reads one through the MDE MCP, main asks the window what the pane shows.
+   */
+  terminalReferences: {
+    create(req: TerminalReferenceCreateRequest): Promise<TerminalReferenceCreated>
+    /** The pane a ref names, or null when MDE has no such ref. */
+    resolve(req: { ref: string }): Promise<{ terminalId: string } | null>
+    onRead(listener: (request: TerminalReadRequest) => void): () => void
+    answer(req: TerminalReadAnswer): Promise<void>
   }
   windowMode: {
     get(): Promise<WindowMode>

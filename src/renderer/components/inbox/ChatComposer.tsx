@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ForwardedRef, type ReactNode } from 'react'
 import { Paperclip, PenLine, X, File as FileIcon, Folder, Bot, Hammer, ListChecks, LoaderCircle, Square } from 'lucide-react'
 import { readFileTreeDrop, isFileDrop } from '@/terminal/drop'
+import { TERMINAL_DROP_ATTRIBUTE, TERMINAL_DROP_EVENT, type TerminalDropDetail } from '@/terminal/reference-drag'
 import type { ChatDelivery, ChatDraft, ChatDraftChoice, ChatDraftKey, ChatDraftRequest, ChatAgent, ChatFileEntry, ChatSkill, OpenCodeModelRef } from '@shared/types'
 import { fileMentionTokens, fileTriggerAt } from '@shared/file-mentions'
 import { skillTriggerAt } from '@shared/skills'
@@ -342,6 +343,27 @@ export const ChatComposer = forwardRef(function ChatComposer({
   const [delivery, setDelivery] = useState<ChatDelivery>('steer')
   useEffect(() => { if (!running) setDelivery('steer') }, [running])
   const messageRef = useRef<ChatInputHandle>(null)
+  // An Inbox terminal pane dropped on the box (Ctrl+Shift+drag): it goes into the text as a terminal the agent can read.
+  const composerRef = useRef<HTMLDivElement>(null)
+  const dropReady = !disabled && !sending && loaded
+  const dropReadyRef = useRef(dropReady)
+  dropReadyRef.current = dropReady
+  useEffect(() => {
+    const element = composerRef.current
+    if (!element) return undefined
+    const onDrop = (event: Event): void => {
+      const detail = (event as CustomEvent<TerminalDropDetail>).detail
+      if (!dropReadyRef.current) return
+      void window.api.terminalReferences.create({ terminalId: detail.terminalId, title: detail.title }).then(
+        (created) => {
+          if (messageRef.current?.insertWord(created.text, { x: detail.clientX, y: detail.clientY })) setError(null)
+        },
+        (reason: unknown) => setError(ipcErrorMessage(reason, 'Could not put the terminal into the message.')),
+      )
+    }
+    element.addEventListener(TERMINAL_DROP_EVENT, onDrop)
+    return () => element.removeEventListener(TERMINAL_DROP_EVENT, onDrop)
+  }, [])
   const appliedReload = useRef(0)
   useEffect(() => {
     // Once it is let go of the next one may start counting again.
@@ -859,7 +881,9 @@ export const ChatComposer = forwardRef(function ChatComposer({
   return (
     <div className="flex flex-col gap-1.5">
       <div
+        ref={composerRef}
         data-testid="chat-composer"
+        {...{ [TERMINAL_DROP_ATTRIBUTE]: '' }}
         onDragOver={(event) => { if (isFileDrop(event.dataTransfer)) { event.preventDefault(); setDragging(true) } }}
         onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false) }}
         onDropCapture={(event) => {
@@ -881,7 +905,7 @@ export const ChatComposer = forwardRef(function ChatComposer({
           }
         }}
         style={dragging ? { outline: '2px solid var(--color-accent)' } : undefined}
-        className="relative rounded-2xl border border-line-strong bg-elevated shadow-lg shadow-shade/20 focus-within:border-accent/60"
+        className="relative rounded-2xl border border-line-strong bg-elevated shadow-lg shadow-shade/20 focus-within:border-accent/60 data-[terminal-drop-over]:outline data-[terminal-drop-over]:outline-2 data-[terminal-drop-over]:outline-accent"
       >
         {pickerOpen && (
           <CompletionPicker

@@ -3,6 +3,7 @@ import type { InboxChatService } from '../inbox/chat'
 import type { InboxStore } from '../inbox/store'
 import { serviceTargetKey } from '../opencode/service/discovery'
 import type { AgentTerminals } from './agent-terminals'
+import type { TerminalReferences } from './terminal-references'
 import { bridgeCommand } from './bridge'
 import { ensureMcpToken, mcpEndpoint } from './endpoint'
 import { McpListener } from './listener'
@@ -22,6 +23,8 @@ export interface MdeMcpOptions {
   foldersChanged(): void
   /** Opens agents' panes in the Inbox terminal. */
   terminals: AgentTerminals
+  /** Inbox terminal panes the person put into messages, which agents may read. */
+  references: TerminalReferences
   now(): number
 }
 
@@ -65,6 +68,7 @@ export async function startMdeMcp(options: MdeMcpOptions): Promise<McpListener |
       })
       return { command: outcome.command, directory: place.directory }
     },
+    readTerminal: (ref, lines) => options.references.read(ref, lines),
     now: options.now,
   })
   try {

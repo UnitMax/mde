@@ -554,7 +554,7 @@ cannot start a pile of agents.
 
 ### MDE MCP boundary
 
-The MDE MCP lets an agent start Inbox threads and open Inbox terminal panes (`src/main/mcp/`, `src/shared/mde-mcp.ts`). It adds the one
+The MDE MCP lets an agent start Inbox threads, open Inbox terminal panes and read the ones the person put into a message (`src/main/mcp/`, `src/shared/mde-mcp.ts`). It adds the one
 place where something other than the window can ask the main process to act, so it is kept narrow.
 
 - **Two processes, no network.** OpenCode starts MDE's own executable with `--mcp-bridge` as a stdio MCP
@@ -615,6 +615,15 @@ place where something other than the window can ask the main process to act, so 
   takes the keyboard, so nothing the person types goes into it by surprise. Limits: ten terminals a minute,
   four requests waiting for the window at once, none once the terminal has nine panes, and a background
   shell's kept output is capped at 2 MB.
+
+- **Terminals put into a message.** `read_terminal` gives an agent what a terminal shows, which can hold
+  anything the person ran there, so it reads only panes the person put into a message. The message holds a ref
+  of ten random characters (about 49 bits), never the terminal ID, which follows a guessable pattern; main
+  keeps which pane a ref names and makes one only for a running Inbox terminal pane, when the window asks after
+  the person dropped that pane into a message box (`terminal-reference:create`). An agent can therefore read a
+  pane only when it was shown the ref: in its own thread, or passed on by another agent or person. The tool
+  takes nothing but a well-formed ref and a line count; the window reads the pane and main checks the answer's
+  shape and size. Reading never writes to the terminal. Refs stay valid until 200 newer ones push them out.
 
 - **Views agents show.** `show_view` sends data, never code: the view is a JSON tree of MDE's own components,
   checked against a fixed catalog (`checkView` in `src/shared/view-spec.ts`) by the bridge before it answers

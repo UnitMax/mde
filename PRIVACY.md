@@ -98,6 +98,9 @@ backed-up locations can place copies elsewhere. These stores are not encrypted b
   bridge MDE asked OpenCode to stop, so it can ask OpenCode to start them again. Nothing else.
 - `mde-mcp.json` under Electron's user-data directory, once you change **Commands in terminals agents open**
   (Settings, OpenCode, MDE MCP): only that choice (`ask` or `run`). "Allow for an hour" is not written down.
+- `terminal-references.json` under Electron's user-data directory, once you drag an Inbox terminal pane into a
+  message: for each such pane (at most 200) the random reference written into the message, the pane's internal
+  ID, its title at the time and when the reference was made. Never anything the terminal showed.
 - OpenCode's own global configuration file (`opencode.jsonc`, or `opencode.json`, in OpenCode's
   configuration folder), only when you use the **OpenCode configuration** editor (Settings, OpenCode) and
   press Save, or press Install or Remove for the **MDE MCP**. This is OpenCode's file, not an MDE store; see the paragraph on the editor below for what
@@ -218,7 +221,13 @@ project yet is added as one. Nothing about the calls is logged except a short er
 An agent can also open a pane in the Inbox terminal (`open_terminal`): the call carries the directory, an
 optional pane title and an optional command line. MDE starts a shell there like any terminal you open, shows
 the command for your approval unless you chose otherwise, and keeps none of it beyond the pane's title in the
-terminal layout it already remembers; the shell's output is never sent back to the agent.
+terminal layout it already remembers; the shell's output is not sent back to the agent.
+When you drag a pane of the Inbox terminal into a message, the message holds a reference to it, and an agent
+that has the reference can read what that pane shows (`read_terminal`): up to the last 2,000 lines of its
+screen and scrollback, as text, with its title, its current folder and whether its shell still runs. The agent
+receives that text as a tool result, so it goes to the model provider like the rest of the conversation and
+OpenCode keeps it in the conversation. Only panes you dragged into a message can be read; MDE logs nothing
+about it.
 An agent can also show you a view in the chat (`show_view`): a chart, table or dashboard described as data
 in the call's arguments, which OpenCode keeps in the conversation like any tool call. The bridge checks it
 and answers without contacting MDE; MDE draws it from the conversation and stores nothing more. A view
