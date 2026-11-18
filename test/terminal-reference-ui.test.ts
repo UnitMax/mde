@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChatComposer } from '../src/renderer/components/inbox/ChatComposer'
 import { UserBubble } from '../src/renderer/components/inbox/ChatMessageView'
 import { useInboxTerminal } from '../src/renderer/store/inbox-terminal'
+import { useWorkspace } from '../src/renderer/store/workspace'
+import type { InboxThread } from '../src/shared/types'
 import {
   dropTerminalReference,
   endTerminalReferenceDrag,
@@ -39,7 +41,7 @@ async function render(element: ReturnType<typeof createElement>): Promise<HTMLEl
   return container
 }
 
-async function composer(api: Record<string, unknown>) {
+async function composer(api: Record<string, unknown>, fileScope?: { threadId: string }) {
   let draft: ChatDraft = { text: '', revision: 0, attachments: [] }
   const request = vi.fn(async (input: ChatDraftRequest) => {
     if (input.action === 'text') draft = { ...draft, text: input.text, revision: draft.revision + 1 }
@@ -49,7 +51,7 @@ async function composer(api: Record<string, unknown>) {
   const container = await render(createElement(ChatComposer, {
     draftKey: 'draft:drf_one', agent: 'build', model: { id: 'm', providerId: 'p' },
     options: { status: 'ready', value: { agents: [], models: [], defaultModel: null, defaultAgent: null, skills: [] } },
-    onAgentChange: () => {}, onModelChange: () => {}, onSend: async () => {},
+    onAgentChange: () => {}, onModelChange: () => {}, onSend: async () => {}, ...(fileScope ? { fileScope } : {}),
   }))
   return { container, box: messageInput(container) }
 }
@@ -86,6 +88,37 @@ describe('dropping a terminal into the message box', () => {
     await act(async () => { drop(container.querySelector(`[${TERMINAL_DROP_ATTRIBUTE}]`)!) })
     await vi.waitFor(() => expect(container.textContent).toContain('That terminal is not running.'))
     expect(box.state.doc.toString()).toBe('')
+  })
+})
+
+describe('the MDE MCP notice after a drop', () => {
+  const create = vi.fn(async () => ({ ref: REF, text: `[terminal:${REF} "Dev server"]` }))
+  const thread = { id: 'ses_one', target: { kind: 'wsl', distro: 'Ubuntu' } } as InboxThread
+
+  it('says the agent cannot read the terminal without the MDE MCP, links to Settings, and goes with the chip', async () => {
+    useWorkspace.setState({ inboxThreads: [thread] })
+    const openSettings = vi.fn()
+    useWorkspace.setState({ openSettings })
+    const status = vi.fn(async () => ({ state: 'missing', file: '~/.config/opencode/opencode.jsonc', parseError: null }))
+    const { container, box } = await composer({ terminalReferences: { create }, mdeMcp: { status } }, { threadId: 'ses_one' })
+    await act(async () => { drop(container.querySelector(`[${TERMINAL_DROP_ATTRIBUTE}]`)!) })
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="chat-terminal-mcp-notice"]')?.textContent).toContain('not installed'))
+    expect(status).toHaveBeenCalledWith({ kind: 'wsl', distro: 'Ubuntu' })
+    await act(async () => { (container.querySelector('[data-testid="chat-terminal-mcp-settings"]') as HTMLButtonElement).click() })
+    expect(openSettings).toHaveBeenCalledWith('opencode')
+
+    await setMessageText(box, 'no terminal any more')
+    expect(container.querySelector('[data-testid="chat-terminal-mcp-notice"]')).toBeNull()
+  })
+
+  it('says nothing when it is installed', async () => {
+    useWorkspace.setState({ inboxThreads: [thread] })
+    const status = vi.fn(async () => ({ state: 'installed', file: '~/x', parseError: null }))
+    const { container, box } = await composer({ terminalReferences: { create }, mdeMcp: { status } }, { threadId: 'ses_one' })
+    await act(async () => { drop(container.querySelector(`[${TERMINAL_DROP_ATTRIBUTE}]`)!) })
+    await vi.waitFor(() => expect(status).toHaveBeenCalled())
+    expect(box.state.doc.toString()).toContain(REF)
+    expect(container.querySelector('[data-testid="chat-terminal-mcp-notice"]')).toBeNull()
   })
 })
 

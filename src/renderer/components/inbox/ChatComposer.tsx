@@ -2,6 +2,8 @@ import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useLayo
 import { Paperclip, PenLine, X, File as FileIcon, Folder, Bot, Hammer, ListChecks, LoaderCircle, Square } from 'lucide-react'
 import { readFileTreeDrop, isFileDrop } from '@/terminal/drop'
 import { TERMINAL_DROP_ATTRIBUTE, TERMINAL_DROP_EVENT, type TerminalDropDetail } from '@/terminal/reference-drag'
+import { terminalReferenceTokens } from '@shared/terminal-references'
+import { useInboxChat } from '@/store/inbox-chat'
 import type { ChatDelivery, ChatDraft, ChatDraftChoice, ChatDraftKey, ChatDraftRequest, ChatAgent, ChatFileEntry, ChatSkill, OpenCodeModelRef } from '@shared/types'
 import { fileMentionTokens, fileTriggerAt } from '@shared/file-mentions'
 import { skillTriggerAt } from '@shared/skills'
@@ -345,6 +347,23 @@ export const ChatComposer = forwardRef(function ChatComposer({
   const messageRef = useRef<ChatInputHandle>(null)
   // An Inbox terminal pane dropped on the box (Ctrl+Shift+drag): it goes into the text as a terminal the agent can read.
   const composerRef = useRef<HTMLDivElement>(null)
+  // The agent reads a terminal through the MDE MCP; without it the reference is only words. Asked on each drop,
+  // since the person may install it in between, and shown until no terminal is left in the message.
+  const [mcpNotice, setMcpNotice] = useState<'missing' | 'outdated' | null>(null)
+  const checkMdeMcp = async (): Promise<void> => {
+    const place = scope.current
+    if (!place) return
+    const target = 'threadId' in place
+      ? useWorkspace.getState().inboxThreads.find((thread) => thread.id === place.threadId)?.target
+      : useInboxChat.getState().folders.find((folder) => folder.id === place.folderId)?.target
+    if (!target) return
+    try {
+      const { state } = await window.api.mdeMcp.status(target.kind === 'wsl' ? { kind: 'wsl', distro: target.distro } : { kind: 'native' })
+      setMcpNotice(state === 'installed' ? null : state)
+    } catch {
+      // OpenCode's configuration could not be read: nothing to say for sure.
+    }
+  }
   const dropReady = !disabled && !sending && loaded
   const dropReadyRef = useRef(dropReady)
   dropReadyRef.current = dropReady
@@ -356,7 +375,9 @@ export const ChatComposer = forwardRef(function ChatComposer({
       if (!dropReadyRef.current) return
       void window.api.terminalReferences.create({ terminalId: detail.terminalId, title: detail.title }).then(
         (created) => {
-          if (messageRef.current?.insertWord(created.text, { x: detail.clientX, y: detail.clientY })) setError(null)
+          if (!messageRef.current?.insertWord(created.text, { x: detail.clientX, y: detail.clientY })) return
+          setError(null)
+          void checkMdeMcp()
         },
         (reason: unknown) => setError(ipcErrorMessage(reason, 'Could not put the terminal into the message.')),
       )
@@ -492,6 +513,9 @@ export const ChatComposer = forwardRef(function ChatComposer({
   const pickerOpen = completionWord !== null && listLength > 0 && completionWord !== dismissed && !disabled && !sending && loaded
   const activeIndex = Math.min(activeItem, Math.max(listLength - 1, 0))
   // The suggested next message shows only in a box with nothing in it, and goes as soon as anything is typed.
+  useEffect(() => {
+    if (mcpNotice && terminalReferenceTokens(text).length === 0) setMcpNotice(null)
+  }, [mcpNotice, text])
   const blank = loaded && text === '' && quotes.length === 0 && draft.attachments.length === 0
   const ghost = suggestion && blank && !disabled && !sending ? suggestion : null
   const takeSuggestion = (value: string): void => {
@@ -1040,6 +1064,16 @@ export const ChatComposer = forwardRef(function ChatComposer({
         </ComposerSizeContext.Provider>
       </div>
       {footer}
+      {mcpNotice && (
+        <p role="status" data-testid="chat-terminal-mcp-notice" className="px-2 text-xs text-warn">
+          {mcpNotice === 'missing'
+            ? 'The agent cannot read this terminal: the MDE MCP is not installed for this thread’s OpenCode.'
+            : 'The agent may not read this terminal: OpenCode’s MDE MCP entry starts another copy of MDE.'}
+          <button type="button" data-testid="chat-terminal-mcp-settings" className="ml-2 text-accent hover:underline" onClick={() => useWorkspace.getState().openSettings('opencode')}>
+            {mcpNotice === 'missing' ? 'Install it in Settings' : 'Update it in Settings'}
+          </button>
+        </p>
+      )}
       {error && <p role="alert" className="px-2 text-xs text-danger">
         {error}
         {!loaded && draftKey && <button type="button" className="ml-2 text-accent hover:underline" onClick={() => {

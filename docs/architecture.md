@@ -377,7 +377,10 @@ piece) and the conversation (`TerminalReferenceChip`, which brings the pane into
 chip. The ref is ten random letters and digits that main maps to the pane's terminal ID
 (`src/main/mcp/terminal-references.ts`, kept in `terminal-references.json`, the newest 200); a pane keeps its
 ref, and the Inbox terminal's panes keep their IDs between runs, so an old message still names its pane. Only
-Inbox terminal panes that are running can get one.
+Inbox terminal panes that are running can get one. After a drop the box asks whether OpenCode's configuration
+for the thread's target has the MDE MCP (`mde-mcp:status`); when it is missing, or starts another copy of MDE,
+a line under the box says the agent cannot read the terminal and links to Settings → OpenCode. It goes once no
+terminal is left in the message.
 
 `read_terminal({ terminal, lines? })` reads such a pane: main sends `terminal-read:request` to the window, which
 answers `terminal-read:answer` from the pane's xterm.js buffer (`terminalBufferText` in
