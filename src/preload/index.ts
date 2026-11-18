@@ -227,6 +227,10 @@ const api: RendererApi = {
     update: (req) => ipcRenderer.invoke(IpcChannels.attentionUpdate, req),
     beep: () => ipcRenderer.invoke(IpcChannels.attentionBeep)
   },
+  fileViewer: {
+    setOpen: (open) => ipcRenderer.invoke(IpcChannels.fileViewerOpen, { open }),
+    onClose: (listener) => subscribe<void>(IpcEvents.fileViewerClose, () => listener())
+  },
   floatingTerminal: {
     setActive: (active) => ipcRenderer.invoke(IpcChannels.floatingTerminalActive, { active }),
     onToggle: (listener) => subscribe<void>(IpcEvents.floatingTerminalToggle, () => listener())

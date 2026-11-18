@@ -141,6 +141,7 @@ export function getKeyboardShortcutGroups(
       where: 'Works in the file viewer and in a To Do project.',
       shortcuts: [
         { id: 'find-in-view', keys: [`${primaryModifier}+F`], description: 'Search the open file, or the tasks of the open To Do project.' },
+        { id: 'file-viewer-close', keys: ['Esc', `${primaryModifier}+W`], description: 'Close the file viewer. Esc in a text field or a terminal stays theirs; with no file open, Ctrl+W closes the window.' },
         { id: 'todo-new-task', keys: [`${primaryModifier}+N`], description: 'Open the new-task dialog in a To Do project.' },
         { id: 'todo-save-task', keys: ['Enter', `${primaryModifier}+Enter`], description: 'Save the task: Enter in its title, Ctrl+Enter in its description.' }
       ]

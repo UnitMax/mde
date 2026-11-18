@@ -2277,6 +2277,11 @@ preview searches the drawn text and paints it with the Custom Highlight API, lik
 markers do not count, and the labels of Mermaid diagrams are found), while the source view searches CodeMirror's whole document, lines not drawn included, and
 marks only the matches in view (`lib/code-find.ts`). CodeMirror's own search panel stays in the read-only
 `CodeViewer`s that have no such bar (the OpenCode config source).
+Escape closes the viewer when the search bar or a dialog or menu does not take it first, and not while a text
+field or a terminal outside the viewer has the focus. Ctrl+W (Cmd+W) closes it too. The window menu would close the
+window on that key before the page sees it, so the viewer tells the main process while it is open
+(`file-viewer:open`), and the main process then takes the key in `before-input-event` and sends `file-viewer:close`
+(`src/main/file-viewer-key.ts`); with no viewer open, Ctrl+W still closes the window.
 The file viewer covers the terminal view while terminals stay mounted at their existing size.
 The terminal view has its own stacking context so resize handles and pane overlays stay beneath the viewer.
 Fenced `mermaid` blocks render with selectable text and follow the application's color theme.

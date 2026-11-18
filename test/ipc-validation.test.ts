@@ -151,6 +151,7 @@ const validPayloads = {
   [IpcChannels.attentionUpdate]: { indicator: { tone: 'failed', count: 2 }, flash: 'brief' },
   [IpcChannels.attentionBeep]: undefined,
   [IpcChannels.floatingTerminalActive]: { active: true },
+  [IpcChannels.fileViewerOpen]: { open: true },
 } satisfies Record<IpcChannel, unknown>
 
 const channels = Object.values(IpcChannels)

@@ -45,7 +45,7 @@ describe('KeyboardShortcutsSettings', () => {
     const section = container.querySelector<HTMLElement>('[data-testid="keyboard-shortcuts-settings"]')
 
     expect(section).not.toBeNull()
-    expect(section?.querySelectorAll('[data-testid^="keyboard-shortcut-row-"]')).toHaveLength(27)
+    expect(section?.querySelectorAll('[data-testid^="keyboard-shortcut-row-"]')).toHaveLength(28)
     expect(section?.querySelectorAll('button')).toHaveLength(0)
     expect(Array.from(section?.querySelectorAll('h4') ?? []).map((heading) => heading.textContent))
       .toEqual(['Everywhere', 'Inbox', 'Terminal', 'Files and To Do'])

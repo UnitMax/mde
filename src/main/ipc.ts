@@ -158,6 +158,7 @@ import type { InboxAutomations } from './inbox/automations'
 import type { AutomationEnabledRequest, AutomationIdRequest, AutomationSaveRequest, InboxAutomation } from '@shared/automations'
 import type { TaskbarAttention } from './taskbar-attention'
 import type { FloatingTerminalKey } from './floating-terminal-key'
+import type { FileViewerKey } from './file-viewer-key'
 import type { WslResourceMonitor } from './wsl/resources'
 import type { TaskbarAttentionRequest } from '@shared/taskbar-attention'
 import type { InboxChatService } from './inbox/chat'
@@ -417,7 +418,8 @@ export function registerIpcHandlers(
   },
   taskbar?: TaskbarAttention,
   floatingTerminalKey?: FloatingTerminalKey,
-  wslResources?: WslResourceMonitor
+  wslResources?: WslResourceMonitor,
+  fileViewerKey?: FileViewerKey
 ): void {
   const inboxRecorder = inbox.recorder
   const chat = inbox.chat
@@ -783,6 +785,7 @@ export function registerIpcHandlers(
   handle<TaskbarAttentionRequest, void>(IpcChannels.attentionUpdate, (req) => taskbar?.update(req))
   handle<void, void>(IpcChannels.attentionBeep, () => shell.beep())
   handle<{ active: boolean }, void>(IpcChannels.floatingTerminalActive, ({ active }) => floatingTerminalKey?.setActive(active))
+  handle<{ open: boolean }, void>(IpcChannels.fileViewerOpen, ({ open }) => fileViewerKey?.setOpen(open))
 
   handle<InboxTerminalSettings, InboxTerminalConfiguration>(IpcChannels.ptyConfigureInbox, async (req) => {
     if (process.platform !== 'win32' && req.distro !== null) throw new Error('WSL is only available on Windows.')

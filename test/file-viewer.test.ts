@@ -27,6 +27,14 @@ const roots: Root[] = []
 const containers: HTMLDivElement[] = []
 const read = vi.fn()
 const writeText = vi.fn(async (_text: string): Promise<void> => undefined)
+let closeListener: (() => void) | null = null
+const fileViewer = {
+  setOpen: vi.fn(async (_open: boolean): Promise<void> => undefined),
+  onClose: vi.fn((listener: () => void) => {
+    closeListener = listener
+    return () => { if (closeListener === listener) closeListener = null }
+  })
+}
 
 const session: Session = {
   id: 'session-1',
@@ -169,7 +177,7 @@ describe('file viewer helpers', () => {
 describe('FileViewer', () => {
   beforeEach(() => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-    Object.defineProperty(window, 'api', { configurable: true, value: { files: { read }, clipboard: { writeText } } })
+    Object.defineProperty(window, 'api', { configurable: true, value: { files: { read }, clipboard: { writeText }, fileViewer } })
     read.mockReset()
     writeText.mockReset()
     writeText.mockResolvedValue(undefined)
@@ -476,6 +484,63 @@ describe('FileViewer', () => {
       container.querySelector<HTMLButtonElement>('[aria-label="Close file"]')?.click()
     })
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  describe('closing (Escape, Ctrl+W)', () => {
+    const escape = (target: EventTarget) => act(async () => {
+      target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    })
+
+    it('closes on Escape in the viewer, and tells the main process while it is open', async () => {
+      read.mockResolvedValue(file({ path: 'notes.txt', content: 'hello' }))
+      fileViewer.setOpen.mockClear()
+      const onClose = vi.fn()
+      const container = await renderViewer('notes.txt', { onClose })
+      expect(fileViewer.setOpen).toHaveBeenLastCalledWith(true)
+      const viewer = container.querySelector<HTMLElement>('[tabindex]')!
+      viewer.focus()
+      await escape(viewer)
+      expect(onClose).toHaveBeenCalledTimes(1)
+      act(() => roots.splice(0).forEach((root) => root.unmount()))
+      expect(fileViewer.setOpen).toHaveBeenLastCalledWith(false)
+    })
+
+    it('closes when the main process passes on Ctrl+W', async () => {
+      read.mockResolvedValue(file({ path: 'notes.txt', content: 'hello' }))
+      const onClose = vi.fn()
+      await renderViewer('notes.txt', { onClose })
+      act(() => closeListener?.())
+      expect(onClose).toHaveBeenCalledTimes(1)
+    })
+
+    it('leaves Escape to a text field, a terminal, an open dialog and the search bar', async () => {
+      read.mockResolvedValue(file({ path: 'notes.txt', content: 'hello' }))
+      const onClose = vi.fn()
+      const container = await renderViewer('notes.txt', { onClose })
+      const outside = document.createElement('div')
+      outside.innerHTML = '<textarea id="box"></textarea><div class="xterm"><textarea id="term"></textarea></div>'
+      document.body.append(outside)
+      for (const id of ['box', 'term']) {
+        const field = document.getElementById(id)!
+        field.focus()
+        await escape(field)
+      }
+      const dialog = document.createElement('div')
+      dialog.setAttribute('role', 'dialog')
+      document.body.append(dialog)
+      const viewer = container.querySelector<HTMLElement>('[tabindex]')!
+      viewer.focus()
+      await escape(viewer)
+      dialog.remove()
+      await act(async () => {
+        viewer.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true, cancelable: true }))
+      })
+      const input = container.querySelector<HTMLInputElement>('[data-testid="file-find-input"]')!
+      await escape(input)
+      expect(container.querySelector('[data-testid="file-find"]')).toBeNull()
+      expect(onClose).not.toHaveBeenCalled()
+      outside.remove()
+    })
   })
 
   describe('find (Ctrl+F)', () => {

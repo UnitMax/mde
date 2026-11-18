@@ -7,6 +7,7 @@ import { getMiniWindowAction, MiniWindowController } from './mini-window'
 import { TitleBarController } from './window-chrome'
 import { TaskbarAttention } from './taskbar-attention'
 import { FloatingTerminalKey } from './floating-terminal-key'
+import { FileViewerKey } from './file-viewer-key'
 import { WslResourceMonitor } from './wsl/resources'
 import { BADGE_SIZE, badgeBitmap } from './taskbar-badge'
 import { PtyManager } from './pty/manager'
@@ -72,6 +73,7 @@ const titleBar = new TitleBarController({
 
 /** Whether F11 belongs to the Inbox's floating terminal; the renderer says so while it has one. */
 const floatingTerminalKey = new FloatingTerminalKey()
+const fileViewerKey = new FileViewerKey()
 /** Reads WSL's CPU and memory while the renderer shows the title bar meter. */
 const wslResources = new WslResourceMonitor((sample) => {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcEvents.wslResources, sample)
@@ -150,6 +152,8 @@ function createWindow(): void {
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault())
   // A reloaded page has no floating terminal until it says so again.
   mainWindow.webContents.on('did-start-loading', () => floatingTerminalKey.setActive(false))
+  // Nor a file viewer.
+  mainWindow.webContents.on('did-start-loading', () => fileViewerKey.setOpen(false))
   // Nor a meter: the page asks for the readings again when it shows one.
   mainWindow.webContents.on('did-start-loading', () => wslResources.setEnabled(false))
   mainWindow.webContents.on('before-input-event', (event, input) => {
@@ -166,6 +170,13 @@ function createWindow(): void {
     if (floatingTerminalAction) {
       event.preventDefault()
       if (floatingTerminalAction === 'toggle') mainWindow?.webContents.send(IpcEvents.floatingTerminalToggle)
+      return
+    }
+
+    // The window menu closes the window on Ctrl+W (Cmd+W); with a file viewer open the key closes the viewer instead.
+    if (fileViewerKey.closes(input)) {
+      event.preventDefault()
+      mainWindow?.webContents.send(IpcEvents.fileViewerClose)
       return
     }
 
@@ -358,7 +369,8 @@ if (bridgeLaunch) {
       { recorder: inboxRecorder, chat: inboxChat, openCodeConfig, mdeMcpCommand: (target) => mdeMcpCommand(target, self, toWsl), agentTerminals, ...(inboxAutomations ? { automations: inboxAutomations } : {}) },
       taskbarAttention,
       floatingTerminalKey,
-      wslResources
+      wslResources,
+      fileViewerKey
     )
     createWindow()
 

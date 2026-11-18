@@ -266,6 +266,7 @@ export const IpcChannels = {
   attentionUpdate: 'attention:update',
   attentionBeep: 'attention:beep',
   floatingTerminalActive: 'floating-terminal:active',
+  fileViewerOpen: 'file-viewer:open',
 
   appInfo: 'app:info',
   platformInfo: 'platform:info'
@@ -284,6 +285,8 @@ export const IpcEvents = {
   automationsChanged: 'automations:changed',
   windowModeChanged: 'window-mode:changed',
   floatingTerminalToggle: 'floating-terminal:toggle',
+  /** Ctrl+W (Cmd+W) was pressed while a file viewer is open: close it. */
+  fileViewerClose: 'file-viewer:close',
   /** An agent asked, through the MDE MCP, for a new pane in the Inbox terminal. */
   agentTerminalOpen: 'agent-terminal:open',
   /** A reading of WSL's CPU and memory, while the title bar meter is shown. */
@@ -790,6 +793,12 @@ export interface RendererApi {
     update(req: TaskbarAttentionRequest): Promise<void>
     /** The system's own alert sound. */
     beep(): Promise<void>
+  }
+  fileViewer: {
+    /** Says whether a file viewer is open, so the main process hands it Ctrl+W (Cmd+W) instead of closing the window. */
+    setOpen(open: boolean): Promise<void>
+    /** Ctrl+W (Cmd+W) was pressed while one is open: close it. */
+    onClose(listener: () => void): () => void
   }
   floatingTerminal: {
     /** Says whether the Inbox has a floating terminal, so the main process hands it F11 instead of keeping it. */

@@ -54,6 +54,19 @@ function Message({ children, tone = 'muted' }: { children: string; tone?: 'muted
   )
 }
 
+/**
+ * Whether the key press is an Escape that closes the file viewer: one nothing else took, with no dialog or menu open,
+ * pressed in the viewer or anywhere but a text field or a terminal, whose Escape is their own.
+ */
+export function escapeClosesViewer(event: KeyboardEvent, root: HTMLElement | null): boolean {
+  if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return false
+  if (!root || document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')) return false
+  const active = document.activeElement
+  if (!active || active === document.body || root.contains(active)) return true
+  if (active.closest('.xterm')) return false
+  return !(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement || (active instanceof HTMLElement && active.isContentEditable))
+}
+
 export function FileViewer({ session, root: requestedRoot, path, onOpenFile, onClose }: FileViewerProps): JSX.Element {
   const root = useMemo<FileRoot>(
     () => requestedRoot?.terminalId
@@ -86,6 +99,27 @@ export function FileViewer({ session, root: requestedRoot, path, onOpenFile, onC
     }
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [])
+  // Escape and Ctrl+W (Cmd+W) close the viewer. The main process takes Ctrl+W before the window menu would close the
+  // window, while it knows a viewer is open.
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
+  useEffect(() => {
+    void window.api.fileViewer.setOpen(true)
+    const stop = window.api.fileViewer.onClose(() => closeRef.current())
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (escapeClosesViewer(event, rootRef.current)) {
+        event.preventDefault()
+        closeRef.current()
+      }
+    }
+    // Bubbling, so what Escape closes first inside the viewer (its search bar) keeps it.
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      stop()
+      window.removeEventListener('keydown', onKeyDown)
+      void window.api.fileViewer.setOpen(false)
+    }
   }, [])
   const closeFind = useCallback(() => {
     setFind(null)

@@ -356,6 +356,7 @@ export const ipcPayloadValidators = {
   }),
   [IpcChannels.attentionBeep]: noPayload,
   [IpcChannels.floatingTerminalActive]: object({ active: boolean }),
+  [IpcChannels.fileViewerOpen]: object({ open: boolean }),
 } satisfies Record<IpcChannel, Validator>
 
 export function assertIpcPayload(channel: IpcChannel, payload: unknown): void {
