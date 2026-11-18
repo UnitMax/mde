@@ -263,18 +263,20 @@ describe('while the window is being dragged', () => {
   beforeEach(async () => { await click('floating-terminal-break-out') })
   const body = () => query('floating-terminal-body')!
 
-  it('follows the pointer with the terminal hidden, shows it again on release, and keeps the place only then', async () => {
+  it('slides after the pointer with a transform and the terminal showing, and keeps the place only on release', async () => {
     await pointer('floating-terminal-titlebar', 'pointerdown', 500, 20)
-    await pointer('floating-terminal-titlebar', 'pointermove', 400, -80)
-    expect(windowBox()).toEqual({ x: 284, y: 234, width: 600, height: 350 })
+    await pointer('floating-terminal-titlebar', 'pointermove', 400.4, -80.6)
+    // left/top stay where the move started, so nothing is laid out again while the window is carried.
+    expect(windowBox()).toEqual({ x: 384, y: 334, width: 600, height: 350 })
+    expect(query('floating-terminal')!.style.transform).toBe('translate3d(-100px, -101px, 0)')
     expect(query('floating-terminal')!.getAttribute('data-drag-mode')).toBe('move')
-    expect(body().className).toContain('invisible')
-    // The terminal stays mounted, so nothing about the shell is touched.
+    expect(body().className).not.toContain('invisible')
     expect(body().querySelector('[data-testid="inbox-terminal-stub"]')).not.toBeNull()
     expect(stored().rect).toBeNull()
     await pointer('floating-terminal-titlebar', 'pointerup', 400, -80)
-    expect(body().className).not.toContain('invisible')
+    expect(query('floating-terminal')!.style.transform).toBe('')
     expect(query('floating-terminal')!.getAttribute('data-drag-mode')).toBeNull()
+    expect(windowBox()).toEqual({ x: 284, y: 234, width: 600, height: 350 })
     expect(stored().rect).toEqual({ x: 284, y: 234, width: 600, height: 350 })
   })
 
@@ -294,7 +296,7 @@ describe('while the window is being dragged', () => {
   it('ends the drag when the pointer is cancelled', async () => {
     await pointer('floating-terminal-titlebar', 'pointerdown', 500, 20)
     await pointer('floating-terminal-titlebar', 'pointercancel', 450, 20)
-    expect(body().className).not.toContain('invisible')
+    expect(query('floating-terminal')!.style.transform).toBe('')
     expect(windowBox().x).toBe(334)
   })
 })

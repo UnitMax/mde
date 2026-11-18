@@ -99,9 +99,14 @@ function FloatingTerminalWindow({ bounds }: { bounds: FloatingBounds }): JSX.Ele
   const placed = maximized
     ? { x: 0, y: 0, width: bounds.width, height: bounds.height }
     : clampFloatingRect(stored ?? defaultFloatingRect(bounds), bounds)
-  // A move shows the window following the pointer; a resize leaves it as it is and draws an outline, because
+  // A move slides the window after the pointer with a transform, in whole pixels, so the browser only moves the
+  // terminal's already drawn layer: no layout and no repaint of the live xterm (its WebGL canvas flickered when
+  // the window was moved by left/top). A resize leaves the window as it is and draws an outline, because
   // resizing a live terminal refits it (and its shell) on every step and makes its content flicker.
-  const rect = drag?.mode === 'move' ? drag.rect : placed
+  const rect = placed
+  const shift = drag?.mode === 'move'
+    ? { x: Math.round(drag.rect.x - placed.x), y: Math.round(drag.rect.y - placed.y) }
+    : null
 
   const begin = (event: ReactPointerEvent<HTMLElement>, edge?: FloatingEdge): void => {
     if (event.button !== 0 || maximized) return
@@ -145,7 +150,13 @@ function FloatingTerminalWindow({ bounds }: { bounds: FloatingBounds }): JSX.Ele
         'pointer-events-auto absolute flex min-h-0 flex-col overflow-hidden border border-line bg-panel shadow-2xl shadow-black/40',
         maximized ? 'rounded-none border-0' : 'rounded-lg'
       )}
-      style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
+      style={{
+        left: rect.x,
+        top: rect.y,
+        width: rect.width,
+        height: rect.height,
+        ...(shift && { transform: `translate3d(${shift.x}px, ${shift.y}px, 0)`, willChange: 'transform' }),
+      }}
     >
       <div
         data-testid="floating-terminal-titlebar"
@@ -193,9 +204,7 @@ function FloatingTerminalWindow({ bounds }: { bounds: FloatingBounds }): JSX.Ele
           <Minus className="h-3.5 w-3.5" />
         </Button>
       </div>
-      {/* Kept mounted but not painted while the window is carried, so its shell and screen are untouched and
-          nothing flickers; the panel colour shows through in its place. */}
-      <div className={cn('flex min-h-0 flex-1 flex-col', drag?.mode === 'move' && 'invisible')} data-testid="floating-terminal-body">
+      <div className="flex min-h-0 flex-1 flex-col" data-testid="floating-terminal-body">
         <InboxTerminal focusOnMount />
       </div>
       {!maximized && FLOATING_EDGES.map((edge) => (
