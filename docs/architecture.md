@@ -1206,8 +1206,12 @@ else in the thread's pane but not from inside a dialog. It searches the text of 
 and the agent's replies, ignoring case; reasoning, tool calls and command output are not searched.
 The search reads what is drawn: the elements marked `data-chat-searchable` are walked for their text
 nodes, so a match can run across Markdown formatting, and text that is hidden (a collapsed step in
-compact mode) is not found. Matches are painted with the CSS Custom Highlight API (`::highlight` in
-`index.css`), the current one apart from the rest, so the message DOM is not touched. A new query
+compact mode) is not found. Mermaid diagrams are searched too: their SVG sits in a shadow root of its
+own, which the search enters to read each label (`<text>`) separately, adding a space between a label's
+wrapped lines (the drawing has none), and leaving out the diagram's styles. Matches are painted with the
+CSS Custom Highlight API (`::highlight` in `chat-find.css`, repeated in each diagram's shadow root because
+page styles do not reach it), the current one apart from the rest, so the message DOM is not touched. A
+match in something that scrolls sideways (a wide diagram) is also scrolled into view sideways. A new query
 starts at the match nearest the top of the view (the newest one when the view is at the end);
 Enter and Shift+Enter, or the arrow buttons, step through the matches around the ends and scroll
 the current one into view; Escape closes the bar and gives the focus back to the message box. While
@@ -2261,7 +2265,7 @@ Ctrl+F (Cmd+F on a Mac) anywhere in the file viewer opens a search bar over the 
 Enter and Shift+Enter step through the matches, Escape closes it, and the query stays across Preview and Source
 and reloads. The search ignores case. Each view hands the bar a `FileFinder` (`lib/file-find.ts`): the Markdown
 preview searches the drawn text and paints it with the Custom Highlight API, like the find in a thread (so Markdown
-markers do not count), while the source view searches CodeMirror's whole document, lines not drawn included, and
+markers do not count, and the labels of Mermaid diagrams are found), while the source view searches CodeMirror's whole document, lines not drawn included, and
 marks only the matches in view (`lib/code-find.ts`). CodeMirror's own search panel stays in the read-only
 `CodeViewer`s that have no such bar (the OpenCode config source).
 The file viewer covers the terminal view while terminals stay mounted at their existing size.

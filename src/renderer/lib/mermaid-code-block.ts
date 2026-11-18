@@ -46,6 +46,14 @@ export const MermaidCodeBlock = CodeBlock.extend({
               :host { display: block; user-select: text; }
               svg { display: block; margin: 0 auto; max-width: none !important; }
               svg text, svg tspan { user-select: text !important; cursor: text; }
+              /* Page styles do not reach into the shadow root, so the find bars' marks (chat-find.css) are repeated. */
+              ::highlight(chat-find), ::highlight(file-find) {
+                background-color: color-mix(in srgb, var(--color-accent) 38%, transparent);
+              }
+              ::highlight(chat-find-current), ::highlight(file-find-current) {
+                background-color: var(--color-accent);
+                color: var(--color-bg);
+              }
             `
             const svg = fragment.querySelector('svg')
             const dimensions = svg?.getAttribute('viewBox')?.trim().split(/[\s,]+/).map(Number)

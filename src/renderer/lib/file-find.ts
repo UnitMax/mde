@@ -4,7 +4,7 @@
  * the source view searches CodeMirror's document, which draws only the lines in view.
  */
 
-import { clearMatches, matchRanges, paintMatches, startingMatch, type HighlightNames } from '@/lib/chat-find'
+import { clearMatches, matchRanges, paintMatches, revealSideways, startingMatch, type HighlightNames } from '@/lib/chat-find'
 import { scrollBehavior } from '@/lib/chat-timeline'
 
 /** What the file viewer's search bar needs from the view it searches. */
@@ -47,8 +47,12 @@ export function seedQuery(selected: string): string {
   return text && !text.includes('\n') && text.length <= 200 ? text : ''
 }
 
-/** Scrolls the element so the range sits a third of the way down, unless it is already well inside the view. */
+/**
+ * Scrolls the element so the range sits a third of the way down, unless it is already well inside the view, and
+ * brings it into view sideways inside a wide diagram or table.
+ */
 export function revealRange(scroller: HTMLElement, range: Range): void {
+  revealSideways(range)
   const box = range.getBoundingClientRect()
   const view = scroller.getBoundingClientRect()
   const margin = Math.min(48, view.height / 4)

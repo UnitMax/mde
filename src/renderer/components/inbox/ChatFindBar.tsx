@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
 import { ChevronDown, ChevronUp, LoaderCircle, X } from 'lucide-react'
-import { clearMatches, matchRanges, paintMatches, startingMatch } from '@/lib/chat-find'
+import { clearMatches, matchRanges, paintMatches, revealSideways, startingMatch } from '@/lib/chat-find'
 import { scrollBehavior } from '@/lib/chat-timeline'
 
 /** Typing waits this long for the next key before the conversation is searched again. */
@@ -139,6 +139,7 @@ export function ChatFindBar({
     const scroller = scrollRef.current
     const range = ranges.current[current]
     if (!scroller || !range) return
+    revealSideways(range)
     const box = range.getBoundingClientRect()
     const view = scroller.getBoundingClientRect()
     const margin = Math.min(48, view.height / 4)

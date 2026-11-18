@@ -57,6 +57,39 @@ describe('matchRanges', () => {
     expect(found('shown')).toEqual(['shown'])
   })
 
+  /** A Mermaid diagram as it is drawn: SVG in a shadow root, a label as a tspan per line holding a tspan per word. */
+  function diagram(host: HTMLElement): void {
+    const row = (words: string[]): string =>
+      `<tspan class="text-outer-tspan row">${words.map((word) => `<tspan class="text-inner-tspan">${word}</tspan>`).join('')}</tspan>`
+    host.attachShadow({ mode: 'open' }).innerHTML =
+      '<style>.node { fill: red; }</style><svg><g>' +
+      `<text>${row(['A', ' much', ' longer'])}${row(['label', ' here'])}</text>` +
+      `<text>${row(['Done'])}</text>` +
+      '<text class="messageText"><tspan dy="1em">Hello Bob</tspan><tspan dy="1em">again</tspan></text>' +
+      '</g></svg>'
+  }
+
+  it('finds the labels of a diagram drawn in a shadow root, reading its wrapped lines with a space between them', () => {
+    root.innerHTML = '<div data-chat-searchable><p>Before the longer one</p><div id="host"></div></div>'
+    diagram(root.querySelector<HTMLElement>('#host')!)
+    expect(found('longer')).toEqual(['longer', 'longer'])
+    const across = matchRanges(root, 'longer label')
+    expect(across).toHaveLength(1)
+    // The space between the lines is not in the drawing: the range runs from one word's tspan to the next line's.
+    expect(across[0]!.toString()).toBe('longerlabel')
+    expect(found('bob again')).toEqual(['Bobagain'])
+    // A match at the start of a line, right after the space the search added.
+    expect(found(' label')).toEqual(['label'])
+  })
+
+  it('does not search a diagram\'s styles or run a match from one label into the next', () => {
+    root.innerHTML = '<div data-chat-searchable><div id="host"></div></div>'
+    diagram(root.querySelector<HTMLElement>('#host')!)
+    expect(found('fill')).toEqual([])
+    expect(found('here done')).toEqual([])
+    expect(found('hereDone')).toEqual([])
+  })
+
   it('finds nothing for an empty query', () => {
     root.innerHTML = '<p data-chat-searchable>text</p>'
     expect(found('')).toEqual([])
