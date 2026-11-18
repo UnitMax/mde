@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const dependencyFingerprintFile = '.mde-windows-deps-fingerprint'
@@ -98,12 +98,22 @@ export function dependenciesNeedInstall({ rootDirectory, fingerprint, force = fa
   return requiredPackagePaths.some((path) => !existsSync(join(rootDirectory, path)))
 }
 
+function runNpm(args, options) {
+  if (process.platform !== 'win32') return spawnSync('npm', args, options)
+
+  // The WSL wrapper launches this helper with Windows Node outside an npm script.
+  const inheritedCli = process.env.npm_execpath
+  const cli = inheritedCli && isAbsolute(inheritedCli) && basename(inheritedCli) === 'npm-cli.js' && existsSync(inheritedCli)
+    ? inheritedCli
+    : join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js')
+  if (!existsSync(cli)) {
+    throw new Error(`npm-cli.js was not found next to node.exe at ${cli}; install npm with this Node, or run the helper from an npm script.`)
+  }
+  return spawnSync(process.execPath, [cli, ...args], options)
+}
+
 function npmVersion() {
-  const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
-  const result = spawnSync(npmCommand, ['--version'], {
-    encoding: 'utf8',
-    shell: process.platform === 'win32',
-  })
+  const result = runNpm(['--version'], { encoding: 'utf8' })
   if (result.error) throw result.error
   if (result.status !== 0) {
     throw new Error(`Unable to determine npm version (exit code ${result.status ?? 'unknown'})`)
@@ -113,11 +123,9 @@ function npmVersion() {
 }
 
 function installDependencies(rootDirectory) {
-  const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
-  const result = spawnSync(
-    npmCommand,
+  const result = runNpm(
     ['ci', '--prefer-offline', '--no-audit', '--no-fund'],
-    { cwd: rootDirectory, shell: process.platform === 'win32', stdio: 'inherit' }
+    { cwd: rootDirectory, stdio: 'inherit' }
   )
   if (result.error) throw result.error
   return result.status ?? 1
