@@ -92,23 +92,31 @@ interface HighlightRegistry {
   delete: (name: string) => void
 }
 
+/** The two highlight names one search paints with: every match, and the current one. */
+export interface HighlightNames {
+  all: string
+  current: string
+}
+
+const CHAT_HIGHLIGHTS: HighlightNames = { all: FIND_HIGHLIGHT, current: FIND_CURRENT_HIGHLIGHT }
+
 /** Paints the matches, the current one apart from the rest. */
-export function paintMatches(ranges: readonly Range[], current: number): void {
+export function paintMatches(ranges: readonly Range[], current: number, names: HighlightNames = CHAT_HIGHLIGHTS): void {
   const registry = highlights()
   const Highlight = (globalThis as { Highlight?: new (...ranges: Range[]) => unknown }).Highlight
   if (!registry || !Highlight) return
   const others = ranges.filter((_, index) => index !== current)
-  if (others.length > 0) registry.set(FIND_HIGHLIGHT, new Highlight(...others))
-  else registry.delete(FIND_HIGHLIGHT)
+  if (others.length > 0) registry.set(names.all, new Highlight(...others))
+  else registry.delete(names.all)
   const chosen = ranges[current]
-  if (chosen) registry.set(FIND_CURRENT_HIGHLIGHT, new Highlight(chosen))
-  else registry.delete(FIND_CURRENT_HIGHLIGHT)
+  if (chosen) registry.set(names.current, new Highlight(chosen))
+  else registry.delete(names.current)
 }
 
-export function clearMatches(): void {
+export function clearMatches(names: HighlightNames = CHAT_HIGHLIGHTS): void {
   const registry = highlights()
-  registry?.delete(FIND_HIGHLIGHT)
-  registry?.delete(FIND_CURRENT_HIGHLIGHT)
+  registry?.delete(names.all)
+  registry?.delete(names.current)
 }
 
 /** The match to start at: the first one that is not above the top of the view, or the last one when all of them are. */

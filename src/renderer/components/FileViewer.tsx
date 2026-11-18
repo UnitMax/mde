@@ -15,6 +15,8 @@ import { useWorkspace } from '@/store/workspace'
 import { Button } from '@/components/ui/button'
 import { CodeViewer } from '@/components/CodeViewer'
 import { MarkdownPreview } from '@/components/MarkdownPreview'
+import { FileFindBar } from '@/components/FileFindBar'
+import { seedQuery, type FileFinder } from '@/lib/file-find'
 import { cn } from '@/lib/utils'
 import { ipcErrorMessage } from '@/lib/ipc-error'
 import { MAX_FILE_VIEW_LABEL, formatFileSize, isMarkdownPath } from '@/lib/file-viewer'
@@ -65,7 +67,31 @@ export function FileViewer({ session, root: requestedRoot, path, onOpenFile, onC
   const [previewWidth, setPreviewWidth] = useState<MarkdownPreviewWidth>(getMarkdownPreviewWidth)
   const requestSequence = useRef(0)
   const rootRef = useRef<HTMLDivElement>(null)
+  const finderRef = useRef<FileFinder | null>(null)
+  // The search bar (Ctrl+F) while it is open; asking again gives its field the focus, with the selection as the query.
+  const [find, setFind] = useState<{ seed: string; signal: number } | null>(null)
   const markdown = isMarkdownPath(path)
+
+  // Ctrl+F (Cmd+F on a Mac) searches the file from anywhere in the viewer, in the rendered Markdown and in source.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key.toLowerCase() !== 'f' || !(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.isComposing || event.defaultPrevented) return
+      const root = rootRef.current
+      const active = document.activeElement
+      if (!root || !active || !root.contains(active)) return
+      event.preventDefault()
+      event.stopPropagation()
+      const seed = seedQuery(finderRef.current?.selectedText() ?? '')
+      setFind((current) => ({ seed, signal: (current?.signal ?? 0) + 1 }))
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [])
+  const closeFind = useCallback(() => {
+    setFind(null)
+    const finder = finderRef.current
+    requestAnimationFrame(() => (finder ? finder.focus() : rootRef.current?.focus()))
+  }, [])
 
   const load = useCallback(async (): Promise<void> => {
     const sequence = ++requestSequence.current
@@ -121,10 +147,12 @@ export function FileViewer({ session, root: requestedRoot, path, onOpenFile, onC
         content={state.file.content}
         width={previewWidth}
         onOpenFile={onOpenFile}
+        finderRef={finderRef}
+        onFocus={() => rootRef.current?.focus()}
       />
     )
   } else {
-    body = <CodeViewer path={path} content={state.file.content} />
+    body = <CodeViewer path={path} content={state.file.content} finderRef={finderRef} />
   }
 
   return (
@@ -226,7 +254,18 @@ export function FileViewer({ session, root: requestedRoot, path, onOpenFile, onC
           <X className="h-3.5 w-3.5" />
         </Button>
       </div>
-      <div className="min-h-0 flex-1">{body}</div>
+      <div className="relative min-h-0 flex-1">
+        {body}
+        {find && (
+          <FileFindBar
+            finderRef={finderRef}
+            version={`${state.status === 'ready' ? state.file.content : state.status}:${showSource}`}
+            seed={find.seed}
+            focusSignal={find.signal}
+            onClose={closeFind}
+          />
+        )}
+      </div>
     </div>
   )
 }

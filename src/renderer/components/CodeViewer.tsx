@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type MutableRefObject } from 'react'
 import { defaultKeymap, selectAll } from '@codemirror/commands'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search'
@@ -12,6 +12,8 @@ import {
   lineNumbers
 } from '@codemirror/view'
 import { languageForPath } from '@/lib/code-languages'
+import { codeFindExtension, codeFinder } from '@/lib/code-find'
+import type { FileFinder } from '@/lib/file-find'
 import { SYNTAX_STYLE } from '@/lib/syntax-style'
 import { FilePreviewMenu } from '@/components/FilePreviewMenu'
 import {
@@ -83,9 +85,14 @@ interface CodeViewerProps {
   /** File path relative to the session root, used to pick the syntax. */
   path: string
   content: string
+  /**
+   * Receives the search over this view for a search bar outside it (the file viewer's), which replaces
+   * CodeMirror's own search panel. Read once, when the view is made.
+   */
+  finderRef?: MutableRefObject<FileFinder | null>
 }
 
-export function CodeViewer({ path, content }: CodeViewerProps): JSX.Element {
+export function CodeViewer({ path, content, finderRef }: CodeViewerProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const languageRef = useRef(new Compartment())
@@ -111,8 +118,9 @@ export function CodeViewer({ path, content }: CodeViewerProps): JSX.Element {
           highlightActiveLineGutter(),
           drawSelection(),
           highlightSelectionMatches(),
-          search({ top: true }),
-          keymap.of([...searchKeymap, ...defaultKeymap]),
+          ...(finderRef
+            ? [codeFindExtension, keymap.of(defaultKeymap)]
+            : [search({ top: true }), keymap.of([...searchKeymap, ...defaultKeymap])]),
           modeRef.current.of(viewerTheme(dark)),
           fontRef.current.of(fontTheme(family)),
           syntaxHighlighting(viewerHighlight),
@@ -121,6 +129,7 @@ export function CodeViewer({ path, content }: CodeViewerProps): JSX.Element {
       })
     })
     viewRef.current = view
+    if (finderRef) finderRef.current = codeFinder(view)
     const unsubscribe = subscribeTerminalSettings(() => {
       const settings = getTerminalSettings()
       if (settings.codeFamily !== family) {
@@ -137,6 +146,7 @@ export function CodeViewer({ path, content }: CodeViewerProps): JSX.Element {
       unsubscribe()
       view.destroy()
       viewRef.current = null
+      if (finderRef) finderRef.current = null
     }
   }, [])
 

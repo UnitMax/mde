@@ -9,6 +9,7 @@ import type { FileReadResponse, Session } from '../src/shared/types'
 import { useWorkspace } from '../src/renderer/store/workspace'
 import { FileViewer } from '../src/renderer/components/FileViewer'
 import { languageForPath } from '../src/renderer/lib/code-languages'
+import { firstMatchFrom, seedQuery } from '../src/renderer/lib/file-find'
 import {
   externalLinkUrl,
   formatFileSize,
@@ -136,6 +137,20 @@ describe('file viewer helpers', () => {
 
     expect(getMarkdownPreviewWidth()).toBe('centered')
     expect(() => saveMarkdownPreviewWidth('full')).not.toThrow()
+  })
+
+  it('starts a file search at the first match from the top of the view', () => {
+    expect(firstMatchFrom([], 5)).toBe(-1)
+    expect(firstMatchFrom([2, 10, 30], 0)).toBe(0)
+    expect(firstMatchFrom([2, 10, 30], 10)).toBe(1)
+    expect(firstMatchFrom([2, 10, 30], 11)).toBe(2)
+    expect(firstMatchFrom([2, 10, 30], 31)).toBe(2)
+  })
+
+  it('takes only a single, short selected line as the search query', () => {
+    expect(seedQuery('  value  ')).toBe('value')
+    expect(seedQuery('one\ntwo')).toBe('')
+    expect(seedQuery('x'.repeat(201))).toBe('')
   })
 
   it('maps file names to syntaxes and falls back to plain text', () => {
@@ -461,5 +476,92 @@ describe('FileViewer', () => {
       container.querySelector<HTMLButtonElement>('[aria-label="Close file"]')?.click()
     })
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  describe('find (Ctrl+F)', () => {
+    const findInput = (container: HTMLElement): HTMLInputElement | null =>
+      container.querySelector<HTMLInputElement>('[data-testid="file-find-input"]')
+    const findStatus = (container: HTMLElement): string =>
+      container.querySelector('[data-testid="file-find-status"]')?.textContent ?? ''
+    const press = (init: KeyboardEventInit, target: EventTarget = document.activeElement ?? document.body): Promise<void> =>
+      act(async () => { target.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })) })
+    const type = async (container: HTMLElement, value: string): Promise<void> => {
+      await act(async () => {
+        const field = findInput(container)!
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, value)
+        field.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      // Typing waits a moment before it searches.
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 150)) })
+    }
+
+    it('searches the whole source, including lines that are not drawn, and steps through the matches', async () => {
+      const content = Array.from({ length: 1000 }, (_, index) => `const value${index} = ${index}`).join('\n')
+      read.mockResolvedValue(file({ path: 'src/index.ts', content, size: content.length }))
+      const container = await renderViewer('src/index.ts')
+      const view = EditorView.findFromDOM(container.querySelector('.cm-content')!)!
+      expect(container.querySelector('[data-testid="file-find"]')).toBeNull()
+
+      await press({ key: 'f', ctrlKey: true })
+      expect(document.activeElement).toBe(findInput(container))
+      // Case does not matter; value99, value990 … value999 match.
+      await type(container, 'VALUE99')
+      expect(findStatus(container)).toBe('1 of 11')
+
+      await press({ key: 'Enter' }, findInput(container)!)
+      expect(findStatus(container)).toBe('2 of 11')
+      await press({ key: 'Enter', shiftKey: true }, findInput(container)!)
+      await press({ key: 'Enter', shiftKey: true }, findInput(container)!)
+      expect(findStatus(container)).toBe('11 of 11')
+      // The last match is far below the first lines, yet it is marked once the view has gone to it.
+      await vi.waitFor(() => expect(view.contentDOM.querySelector('.cm-searchMatch-selected')?.textContent).toBe('value99'))
+
+      await press({ key: 'Escape' }, findInput(container)!)
+      expect(container.querySelector('[data-testid="file-find"]')).toBeNull()
+      expect(view.contentDOM.querySelector('.cm-searchMatch')).toBeNull()
+    })
+
+    it('starts with the selected source text as the query', async () => {
+      read.mockResolvedValue(file({ path: 'notes.txt', content: 'hello world, world', size: 18 }))
+      const container = await renderViewer('notes.txt')
+      const view = EditorView.findFromDOM(container.querySelector('.cm-content')!)!
+      await act(async () => view.dispatch({ selection: { anchor: 6, head: 11 } }))
+      view.focus()
+
+      await press({ key: 'f', ctrlKey: true })
+      expect(findInput(container)?.value).toBe('world')
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 150)) })
+      expect(findStatus(container)).toBe('1 of 2')
+    })
+
+    it('searches the rendered Markdown and keeps the query when switching to the source', async () => {
+      read.mockResolvedValue(file({ content: '# Title\n\nSome **bold** text and more text.', size: 40 }))
+      const container = await renderViewer('README.md')
+
+      await press({ key: 'f', metaKey: true })
+      await type(container, 'text')
+      expect(findStatus(container)).toBe('1 of 2')
+      // Markup is not text in the preview.
+      await type(container, '**bold')
+      expect(findStatus(container)).toBe('No results')
+
+      const source = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Source')!
+      await act(async () => source.click())
+      await act(async () => {})
+      expect(findInput(container)?.value).toBe('**bold')
+      expect(findStatus(container)).toBe('1 of 1')
+    })
+
+    it('leaves Ctrl+F alone while the focus is outside the viewer', async () => {
+      read.mockResolvedValue(file({ path: 'a.txt', content: 'one', size: 3 }))
+      const container = await renderViewer('a.txt')
+      const outside = document.createElement('input')
+      document.body.append(outside)
+      outside.focus()
+
+      await press({ key: 'f', ctrlKey: true }, outside)
+      expect(container.querySelector('[data-testid="file-find"]')).toBeNull()
+      outside.remove()
+    })
   })
 })

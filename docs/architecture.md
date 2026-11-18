@@ -2256,6 +2256,14 @@ Right-clicking rendered Markdown or a source preview offers **Copy** and **Selec
 Copy uses the selected text; Select all selects the file contents without the viewer toolbar or
 surrounding app. Source selections cover the full document, including lines outside the viewport.
 Copy uses the existing main-process clipboard channel and shows a message if the clipboard write fails.
+Ctrl+F (Cmd+F on a Mac) anywhere in the file viewer opens a search bar over the top right of the file
+(`FileFindBar`), in the rendered Markdown and in the source alike; text selected on one line becomes the query.
+Enter and Shift+Enter step through the matches, Escape closes it, and the query stays across Preview and Source
+and reloads. The search ignores case. Each view hands the bar a `FileFinder` (`lib/file-find.ts`): the Markdown
+preview searches the drawn text and paints it with the Custom Highlight API, like the find in a thread (so Markdown
+markers do not count), while the source view searches CodeMirror's whole document, lines not drawn included, and
+marks only the matches in view (`lib/code-find.ts`). CodeMirror's own search panel stays in the read-only
+`CodeViewer`s that have no such bar (the OpenCode config source).
 The file viewer covers the terminal view while terminals stay mounted at their existing size.
 The terminal view has its own stacking context so resize handles and pane overlays stay beneath the viewer.
 Fenced `mermaid` blocks render with selectable text and follow the application's color theme.

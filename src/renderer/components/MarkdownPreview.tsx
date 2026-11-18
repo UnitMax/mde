@@ -1,8 +1,10 @@
-import { useEffect, type MouseEvent } from 'react'
+import { useEffect, useRef, type MouseEvent, type MutableRefObject } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { FilePreviewMenu } from '@/components/FilePreviewMenu'
 import { markdownPreviewExtensions } from '@/lib/markdown-extensions'
 import { externalLinkUrl, resolveRelativeLink } from '@/lib/file-viewer'
+import { domFinder, type FileFinder } from '@/lib/file-find'
+import { SEARCHABLE_ATTRIBUTE } from '@/lib/chat-find'
 import type { MarkdownPreviewWidth } from '@/lib/markdown-preview-width'
 
 interface MarkdownPreviewProps {
@@ -12,9 +14,16 @@ interface MarkdownPreviewProps {
   /** Whether the document is a centered column or fills the whole page. */
   width: MarkdownPreviewWidth
   onOpenFile: (path: string) => void
+  /** Receives the search over the rendered document, for the file viewer's search bar. */
+  finderRef?: MutableRefObject<FileFinder | null>
+  /** Where the keyboard focus goes back to when the search closes. */
+  onFocus?: () => void
 }
 
-export function MarkdownPreview({ path, content, width, onOpenFile }: MarkdownPreviewProps): JSX.Element {
+export function MarkdownPreview({ path, content, width, onOpenFile, finderRef, onFocus }: MarkdownPreviewProps): JSX.Element {
+  const scrollerRef = useRef<HTMLDivElement>(null)
+  const focusRef = useRef(onFocus)
+  focusRef.current = onFocus
   const editor = useEditor(
     {
       extensions: markdownPreviewExtensions,
@@ -33,6 +42,15 @@ export function MarkdownPreview({ path, content, width, onOpenFile }: MarkdownPr
     },
     [],
   )
+
+  useEffect(() => {
+    const scroller = scrollerRef.current
+    if (!finderRef || !scroller) return undefined
+    finderRef.current = domFinder(scroller, () => focusRef.current?.())
+    return () => {
+      finderRef.current = null
+    }
+  }, [finderRef])
 
   useEffect(() => {
     editor.commands.setContent(content, { contentType: 'markdown', emitUpdate: false })
@@ -69,11 +87,14 @@ export function MarkdownPreview({ path, content, width, onOpenFile }: MarkdownPr
       onSelectAll={() => window.getSelection()?.selectAllChildren(editor.view.dom)}
     >
       <div
+        ref={scrollerRef}
         className="markdown-preview h-full min-h-0 overflow-y-auto"
         data-width={width}
         onClick={onClick}
       >
-        <EditorContent editor={editor} />
+        <div {...{ [SEARCHABLE_ATTRIBUTE]: '' }}>
+          <EditorContent editor={editor} />
+        </div>
       </div>
     </FilePreviewMenu>
   )

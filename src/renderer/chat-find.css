@@ -1,10 +1,12 @@
 /* Kept separate from Tailwind's optimizer, which does not recognize ::highlight. */
-::highlight(chat-find) {
+::highlight(chat-find),
+::highlight(file-find) {
   background-color: color-mix(in srgb, var(--color-accent) 38%, transparent);
   color: inherit;
 }
 
-::highlight(chat-find-current) {
+::highlight(chat-find-current),
+::highlight(file-find-current) {
   background-color: var(--color-accent);
   color: var(--color-bg);
 }
