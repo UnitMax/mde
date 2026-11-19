@@ -2460,6 +2460,12 @@ Regression evidence and platform limits are in
   `wsl.exe --`: `--` hands the rest of the command line to the distro's default shell, which
   re-parses it and mangles anything containing quotes, `$`, or `;`. The login shell is required
   because nvm/mise/bun/asdf put their shims on `PATH` from the login profile.
+- A macOS app started from the Dock inherits no locale, and a shell in the "C" locale counts each
+  byte of a prompt's non-ASCII symbol (Starship, Oh My Zsh) as a column, so zsh redrew the line in
+  the wrong place after Tab and left a stale copy of the command on screen. When none of `LC_ALL`,
+  `LC_CTYPE` and `LANG` is set, native macOS terminals get `LANG` from the app's locale
+  (`de-DE` → `de_DE.UTF-8`, `src/main/pty/locale.ts`), or `en_US.UTF-8` when that locale does not
+  exist, as Terminal.app and VS Code do.
 - The per-terminal Open in VS Code and File Explorer buttons follow the terminal's current
   directory. They become available once the shell reports it through OSC 7. MDE installs
   process-local prompt hooks for Bash, Zsh, and Fish; other custom shells need to emit OSC 7

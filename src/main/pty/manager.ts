@@ -1,5 +1,6 @@
 import { homedir } from 'node:os'
 import { nativeLoginShell } from '../native-environment'
+import { macTerminalLang } from './locale'
 import * as nodePty from 'node-pty'
 import type { IPty, IWindowsPtyForkOptions } from 'node-pty'
 import type { TerminalPalette } from '@shared/ipc'
@@ -79,7 +80,7 @@ function launchContext(session: Session): LaunchContext {
   return context
 }
 
-function ptyEnv(additional?: Record<string, string>): Record<string, string> {
+function ptyEnv(appLocale?: () => string): Record<string, string> {
   const env: Record<string, string> = {}
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined) env[key] = value
@@ -89,7 +90,10 @@ function ptyEnv(additional?: Record<string, string>): Record<string, string> {
   delete env.NODE_OPTIONS
   env.TERM = 'xterm-256color'
   env.COLORTERM = 'truecolor'
-  Object.assign(env, additional)
+  if (process.platform === 'darwin') {
+    const lang = macTerminalLang(env, appLocale?.() ?? '')
+    if (lang) env.LANG = lang
+  }
   return env
 }
 
@@ -124,6 +128,8 @@ export class PtyManager {
   constructor(
     private readonly events: PtyEvents,
     private readonly directoryStore?: TerminalDirectoryStore,
+    /** The app's locale (`app.getLocale()`), which names the `LANG` of a macOS terminal that has none. */
+    private readonly appLocale?: () => string,
   ) {}
 
   /** Sets the folder a terminal that has not started yet opens in, through the same record a restart reads. */
@@ -191,7 +197,7 @@ export class PtyManager {
       cols,
       rows,
       cwd: spec.cwd ?? homedir(),
-      env: ptyEnv(),
+      env: ptyEnv(this.appLocale),
     }, process.platform)
 
     const queryResponder = new TerminalQueryResponder(palette)

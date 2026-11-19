@@ -1,5 +1,6 @@
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import fs from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Session } from '@shared/types'
@@ -431,6 +432,26 @@ describe('PtyManager runtime terminal identities', () => {
 
     expect(ptyMock.spawn.mock.calls[0]?.[2]).not.toHaveProperty('useConpty')
     expect(ptyMock.spawn.mock.calls[0]?.[2]).not.toHaveProperty('useConptyDll')
+  })
+
+  it.each([
+    ['darwin', undefined, 'de_DE.UTF-8'],
+    ['darwin', 'en_GB.UTF-8', 'en_GB.UTF-8'],
+    ['linux', undefined, undefined],
+  ] as const)('gives a %s terminal without a locale a UTF-8 LANG (inherited %s)', (platform, inherited, expected) => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
+    vi.spyOn(fs, 'existsSync').mockImplementation((path) => String(path) === '/usr/share/locale/de_DE.UTF-8')
+    vi.stubEnv('LANG', inherited ?? '')
+    vi.stubEnv('LC_ALL', '')
+    vi.stubEnv('LC_CTYPE', '')
+    if (!inherited) delete process.env.LANG
+    const manager = new PtyManager({ onData: vi.fn(), onDirectory: vi.fn(), onExit: vi.fn() }, undefined, () => 'de-DE')
+
+    manager.ensure('pane-a', sourceSession(), { cols: 80, rows: 24 }, palette)
+
+    const env = (ptyMock.spawn.mock.calls[0]?.[2] as { env: Record<string, string> }).env
+    expect(env.LANG).toBe(expected)
+    vi.unstubAllEnvs()
   })
 
   it('fails closed when the bundled ConPTY backend cannot initialize', () => {

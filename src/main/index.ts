@@ -107,7 +107,7 @@ const ptyManager = new PtyManager({
       mainWindow.webContents.send(IpcEvents.ptyExit, info)
     }
   }
-}, terminalDirectories)
+}, terminalDirectories, () => app.getLocale())
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
